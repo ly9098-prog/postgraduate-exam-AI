@@ -60,13 +60,18 @@ var pageConfig = {
     weekSessions: 0,
     weekDurationText: '0分钟',
     trends: [],
+    trendHasData: false,
     subjects: [],
+    distributionHasData: false,
     history: [],
     historyTotal: 0,
 
     // 累计专注摘要。默认使用 statistics-overview 的 lifetime_summary；
     // 用户主动修改起始日后，改用 range-summary 精确刷新。
     lifetimeStartDate: '',
+    datePickerMinDate: '1970-01-01',
+    cumulativePickerStartDate: '',
+    customRangePickerStartDate: '',
     cumulativeStartDate: '',
     cumulativeSessions: 0,
     cumulativeDurationText: '0分钟',
@@ -144,6 +149,8 @@ var pageConfig = {
       _todayDate: today,
       pieDateLabel: '今日',
       canGoNextDate: false,
+      cumulativePickerStartDate: this._shiftDate(today, -365),
+      customRangePickerStartDate: this._shiftDate(today, -365),
       customRangeStartDate: today,
       distributionRangeStart: today,
       distributionRangeEnd: today,
@@ -186,6 +193,7 @@ var pageConfig = {
         dayStartMinute: dsm,
         dayStartTime: chinaTime.minuteToTimeText(dsm),
         studyDayRangeText: this._studyDayRangeText(dsm),
+        cumulativePickerStartDate: this._shiftDate(today, -365),
       }
       if (today !== prevToday) patch._todayDate = today
       // 用户停留在旧"今天"或原选中日期超过新最大日期时，跟随新的 today
@@ -196,8 +204,14 @@ var pageConfig = {
       }
       const nextSelected = patch.selectedDate || this.data.selectedDate
       patch.canGoNextDate = !!(nextSelected && today && nextSelected < today)
-      if (this.data.customRangeStartDate && nextSelected && this.data.customRangeStartDate > nextSelected) {
-        patch.customRangeStartDate = nextSelected
+      if (nextSelected) {
+        const customMin = this._shiftDate(nextSelected, -365)
+        patch.customRangePickerStartDate = customMin
+        if (this.data.customRangeStartDate && this.data.customRangeStartDate > nextSelected) {
+          patch.customRangeStartDate = nextSelected
+        } else if (this.data.customRangeStartDate && this.data.customRangeStartDate < customMin) {
+          patch.customRangeStartDate = customMin
+        }
       }
       this._settingsLoaded = true
       this.setData(patch)
@@ -231,6 +245,7 @@ var pageConfig = {
     }
     // stats.today_date 恒为权威"今日"；仅当查看"今日"时，summary.date 亦可代表今日
     const today = (stats && stats.today_date) || (summary && summary.date) || ''
+    if (today) patch.cumulativePickerStartDate = this._shiftDate(today, -365)
     const prevToday = this.data._todayDate
     const prevSelected = this.data.selectedDate
     let changedToday = false
@@ -247,8 +262,14 @@ var pageConfig = {
     const finalToday = patch._todayDate || today || prevToday
     const finalSelected = patch.selectedDate || prevSelected
     if (finalToday && finalSelected) patch.canGoNextDate = finalSelected < finalToday
-    if (this.data.customRangeStartDate && finalSelected && this.data.customRangeStartDate > finalSelected) {
-      patch.customRangeStartDate = finalSelected
+    if (finalSelected) {
+      const customMin = this._shiftDate(finalSelected, -365)
+      patch.customRangePickerStartDate = customMin
+      if (this.data.customRangeStartDate && this.data.customRangeStartDate > finalSelected) {
+        patch.customRangeStartDate = finalSelected
+      } else if (this.data.customRangeStartDate && this.data.customRangeStartDate < customMin) {
+        patch.customRangeStartDate = customMin
+      }
     }
     if (Object.keys(patch).length) this.setData(patch)
     return {
@@ -465,6 +486,10 @@ var pageConfig = {
     return dateLabel === '今日' ? '今日学习' : `${dateLabel}学习`
   },
 
+  _hasDistributionData(subjects) {
+    return Array.isArray(subjects) && subjects.some(item => Number(item && item.duration_sec) > 0)
+  },
+
   _buildSubjectItems(subjects) {
     const subjArr = Array.isArray(subjects) ? subjects : []
     const totalDur = Math.max(1, subjArr.reduce((sum, item) => sum + (item.duration_sec || 0), 0))
@@ -526,8 +551,13 @@ var pageConfig = {
   },
 
   onCumulativeStartChange(e) {
-    const date = e && e.detail ? String(e.detail.value || '') : ''
-    if (!date || date === this.data.cumulativeStartDate) return
+    let date = e && e.detail ? String(e.detail.value || '') : ''
+    if (!date) return
+    const minDate = this.data.cumulativePickerStartDate || this._shiftDate(this.data._todayDate, -365)
+    const maxDate = this.data._todayDate
+    if (minDate && date < minDate) date = minDate
+    if (maxDate && date > maxDate) date = maxDate
+    if (date === this.data.cumulativeStartDate) return
     this._cumulativeCustomized = true
     this.setData({ cumulativeStartDate: date, cumulativeLoading: true }, () => {
       this._refreshCumulativeSummary(date, false)
@@ -536,12 +566,13 @@ var pageConfig = {
 
   _commitDistributionSubjects(rawSubjects, animate) {
     this._resetPieCache()
+    const subjectItems = this._buildSubjectItems(rawSubjects)
     this.setData({
-      subjects: this._buildSubjectItems(rawSubjects),
+      subjects: subjectItems,
+      distributionHasData: this._hasDistributionData(subjectItems),
       pieLoading: false,
       selectedSubjectDetail: null,
       _selectedSubject: null,
-      durationValueAnimating: true,
     }, () => {
       if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
       this._initCanvases(() => {
@@ -576,7 +607,6 @@ var pageConfig = {
       pieLoading: true,
       selectedSubjectDetail: null,
       _selectedSubject: null,
-      durationValueAnimating: true,
     })
     try {
       const summary = await api.get('/pomodoro/range-summary', {
@@ -594,7 +624,7 @@ var pageConfig = {
     } catch (e) {
       if (!this._alive || seq !== this._distributionRequestSeq) return
       console.error('加载区间专注分布失败', e)
-      this.setData({ pieLoading: false, durationValueAnimating: false })
+      this.setData({ pieLoading: false })
       if (wx.showToast) wx.showToast({ title: '分布统计加载失败', icon: 'none' })
     }
   },
@@ -611,6 +641,8 @@ var pageConfig = {
     let date = e && e.detail ? String(e.detail.value || '') : ''
     if (!date) return
     const anchor = this.data.selectedDate || this.data._todayDate
+    const minDate = this.data.customRangePickerStartDate || (anchor ? this._shiftDate(anchor, -365) : '')
+    if (minDate && date < minDate) date = minDate
     if (anchor && date > anchor) date = anchor
     this.setData({ customRangeStartDate: date, distributionPeriod: 'custom' }, () => {
       this._loadDistributionForPeriod('custom', true)
@@ -640,7 +672,6 @@ var pageConfig = {
       barRendering: firstMount || !this._barRenderedOnce,
       selectedSubjectDetail: null,
       _selectedSubject: null,
-      durationValueAnimating: true,
     }, () => {
       const drawBar = () => {
         if (!this._alive || !this._isVisible || this.data.chartMode !== 'bar') return
@@ -932,7 +963,9 @@ var pageConfig = {
           duration_sec: item.duration_sec,
           _shortDate: (item.date || '').slice(5),
         })),
+        trendHasData: this._hasDistributionData(trends),
         subjects: displayDaySubjects ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
+        distributionHasData: displayDaySubjects ? this._hasDistributionData(subjectBreakdown) : this.data.distributionHasData,
         pieDateLabel: this._formatPieDateLabel(effectiveDate),
         distributionRangeStart: displayDaySubjects ? effectiveDate : this.data.distributionRangeStart,
         distributionRangeEnd: displayDaySubjects ? effectiveDate : this.data.distributionRangeEnd,
@@ -1046,12 +1079,16 @@ var pageConfig = {
       pieDateLabel: this._formatPieDateLabel(nextDate),
       selectedDurationLabel: this._formatSelectedDurationLabel(nextDate),
       canGoNextDate: !!(today && nextDate < today),
+      customRangePickerStartDate: this._shiftDate(nextDate, -365),
       selectedSubjectDetail: null,
       _selectedSubject: null,
       durationValueAnimating: true,
     }
+    const customMin = patch.customRangePickerStartDate
     if (this.data.customRangeStartDate && this.data.customRangeStartDate > nextDate) {
       patch.customRangeStartDate = nextDate
+    } else if (this.data.customRangeStartDate && this.data.customRangeStartDate < customMin) {
+      patch.customRangeStartDate = customMin
     }
     this.setData(patch, () => this.loadDateData(nextDate))
   },
@@ -1184,6 +1221,7 @@ var pageConfig = {
       this.setData({
         todaySessions: selectedSessionCount,
         subjects: showDayDistribution ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
+        distributionHasData: showDayDistribution ? this._hasDistributionData(subjectBreakdown) : this.data.distributionHasData,
         todayDurationText: this._fmtMin(selectedDurationSec),
         selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
         history: daySessions.slice(0, 20).map(item => this._formatSession(item)),
@@ -1346,6 +1384,9 @@ var pageConfig = {
         const ctx = node.getContext('2d')
         const w = res[0].width
         const h = res[0].height
+        // hidden Canvas may report a zero-sized node. Do not cache that node;
+        // the next data-bearing render will initialize it again at its real size.
+        if (!w || !h) { finish(); return }
         node.width = Math.round(w * dpr)
         node.height = Math.round(h * dpr)
         ctx.scale(dpr, dpr)
@@ -1390,6 +1431,9 @@ var pageConfig = {
         const ctx = node.getContext('2d')
         const w = res[0].width
         const h = res[0].height
+        // hidden Canvas may report a zero-sized node. Do not cache that node;
+        // the next data-bearing render will initialize it again at its real size.
+        if (!w || !h) { finish(); return }
         node.width = Math.round(w * dpr)
         node.height = Math.round(h * dpr)
         ctx.scale(dpr, dpr)
@@ -1863,18 +1907,9 @@ var pageConfig = {
     ctx.clearRect(0, 0, w, h)
 
     const hasData = subjects && subjects.length && subjects.some(item => (item.duration_sec || 0) > 0)
-    if (!hasData) {
-      this._drawEllipticSector(
-        ctx, centerX, centerY, radius, tilt, 0, Math.PI * 2,
-        palette.emptyPieFill, palette.emptyPieStroke, 1
-      )
-      ctx.fillStyle = palette.emptyPieText
-      ctx.font = '12px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(`${this.data.pieDateLabel || '该日'}暂无数据`, centerX, centerY + 5)
-      return
-    }
+    // 空状态由 WXML 插画承载。Canvas 这里只保持透明，避免原来的
+    // “空饼图 + 暂无数据”穿透插画层，尤其是在真机/开发者工具的 Canvas 合成层中。
+    if (!hasData) return
 
     // Geometry, shades and label positions are cached for the entire data set.
     if (!this._pieSectors) {
@@ -2032,6 +2067,7 @@ var pageConfig = {
   /* ==================== Touch Interactions ==================== */
 
   onPieTap(e) {
+    if (!this.data.distributionHasData) return
     const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0])
     const tapX = touch ? touch.clientX : e.detail && e.detail.x
     const tapY = touch ? touch.clientY : e.detail && e.detail.y
@@ -2090,7 +2126,6 @@ var pageConfig = {
     this.setData({
       selectedSubjectDetail: null,
       _selectedSubject: null,
-      durationValueAnimating: true,
     }, () => { if (this._alive) this._renderPieChart(1) })
   },
 

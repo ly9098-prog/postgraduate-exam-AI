@@ -51,6 +51,42 @@ _OUTBOX_RETENTION_DAYS = 7  # purge published rows after 7 days
 _OUTBOX_MAX_RETRIES = 10  # max publish attempts before permanent failure
 _RECONCILE_BATCH_SIZE = 50  # max records to reconcile per cycle
 
+
+class OutboxContractError(ValueError):
+    """Deterministic task-envelope error that retrying cannot repair."""
+
+
+def _normalize_outbox_contract(
+    task_type: str,
+    payload: dict[str, Any],
+    schema_version: int | None,
+) -> int:
+    """Validate an Outbox task contract and return its persisted schema version.
+
+    The generic Outbox historically defaulted to schema v1.  Answer projection
+    moved to a stricter v2 worker contract, but a short-lived producer version
+    still emitted the current per-answer payload under a v1 envelope.  Upgrade
+    only that validated payload shape; never reinterpret retired batch payloads.
+    """
+    try:
+        version = 1 if schema_version is None else int(schema_version)
+    except (TypeError, ValueError) as exc:
+        raise OutboxContractError("schema_version must be an integer") from exc
+    if version <= 0:
+        raise OutboxContractError("schema_version must be positive")
+
+    if task_type == "answer_projection":
+        from app.services.practice.answer_projection_contract import (
+            normalize_answer_projection_outbox_schema,
+        )
+
+        try:
+            return normalize_answer_projection_outbox_schema(payload, version)
+        except ValueError as exc:
+            raise OutboxContractError(str(exc)) from exc
+    return version
+
+
 # ── Outbox Service ──
 
 
@@ -59,7 +95,7 @@ async def create_outbox(
     task_id: str,
     task_type: str,
     payload: dict[str, Any],
-    schema_version: int = 1,
+    schema_version: int | None = None,
 ) -> TaskOutbox:
     """Create a pending outbox record.
 
@@ -68,9 +104,13 @@ async def create_outbox(
     rolled back — guaranteeing consistency.
 
     Raises:
-        ValueError: If a non-terminal outbox record already exists for this
-            task_id (idempotent conflict detected at the DB level).
+        ValueError: If the task contract is invalid or a non-terminal outbox
+            record already exists for this task_id.
     """
+    effective_schema_version = _normalize_outbox_contract(
+        task_type, payload, schema_version,
+    )
+
     # Idempotent check: skip if already published
     existing = await db.execute(
         select(TaskOutbox).where(
@@ -114,7 +154,7 @@ async def create_outbox(
         task_id=task_id,
         task_type=task_type,
         payload=persisted_payload,
-        schema_version=schema_version,
+        schema_version=effective_schema_version,
         status="pending",
     )
     db.add(outbox)
@@ -143,19 +183,33 @@ async def claim_pending(
     Returns:
         List of claimed outbox records (status set to ``leased``).
     """
-    conditions = [TaskOutbox.status == "pending"]
+    now = utcnow()
+    retry_cutoff = now - timedelta(seconds=_OUTBOX_RETRY_DELAY_SEC)
+    claimable_state = or_(
+        TaskOutbox.status == "pending",
+        and_(
+            TaskOutbox.status == "leased",
+            or_(
+                TaskOutbox.lease_expires_at.is_(None),
+                TaskOutbox.lease_expires_at < now,
+            ),
+        ),
+    )
+    retry_ready = or_(
+        TaskOutbox.retry_count == 0,
+        TaskOutbox.updated_at <= retry_cutoff,
+    )
 
-    # Also reclaim expired leases
-    conditions.append(TaskOutbox.status == "leased")
-    conditions.append(TaskOutbox.lease_expires_at < utcnow())
-
-    # Build the main query with OR for (pending OR expired-lease)
+    # Filter claimability in SQL *before* LIMIT.  The previous query selected
+    # unexpired leased rows and discarded them in Python, so enough old active
+    # leases could starve newer pending work for an entire lease window.
     query = (
         select(TaskOutbox)
         .where(
             and_(
-                TaskOutbox.status.in_(["pending", "leased"]),
+                claimable_state,
                 TaskOutbox.retry_count < _OUTBOX_MAX_RETRIES,
+                retry_ready,
             )
         )
         .order_by(TaskOutbox.created_at.asc())
@@ -169,7 +223,6 @@ async def claim_pending(
     result = await db.execute(query)
     rows = list(result.scalars().all())
 
-    now = utcnow()
     lease_expiry = now + timedelta(seconds=lease_sec)
 
     claimed: list[TaskOutbox] = []
@@ -180,9 +233,12 @@ async def claim_pending(
             row.lease_token = f"lease_{row.id}_{int(unix_timestamp(now))}"
             row.lease_expires_at = lease_expiry
             claimed.append(row)
-        elif row.status == "leased" and row.lease_expires_at and row.lease_expires_at < now:
-            # Expired lease — reclaim
-            row.retry_count += 1
+        elif row.status == "leased" and (
+            row.lease_expires_at is None or row.lease_expires_at < now
+        ):
+            # Lease expiry is a dispatcher/process failure, not a business
+            # publish rejection.  Reclaim it without consuming finite retry
+            # budget; Redis task IDs make a post-crash re-publish idempotent.
             row.lease_token = f"lease_{row.id}_{int(unix_timestamp(now))}"
             row.lease_expires_at = lease_expiry
             row.error_message = "lease expired, reclaimed"
@@ -335,6 +391,151 @@ async def retry_failed_outbox(db: AsyncSession, outbox_id: int) -> TaskOutbox | 
     return row
 
 
+async def _persist_schema_upgrade(
+    db: AsyncSession,
+    *,
+    outbox_id: int,
+    task_id: str,
+    schema_version: int,
+) -> bool:
+    """Persist a safe envelope upcast while the dispatcher owns the lease."""
+    result = await db.execute(
+        update(TaskOutbox)
+        .where(
+            TaskOutbox.id == outbox_id,
+            TaskOutbox.task_id == task_id,
+            TaskOutbox.status == "leased",
+        )
+        .values(schema_version=schema_version, updated_at=utcnow())
+    )
+    await db.commit()
+    return bool(result.rowcount)
+
+
+async def recover_legacy_answer_projection_outbox(
+    db: AsyncSession,
+    *,
+    limit: int = _RECONCILE_BATCH_SIZE,
+) -> int:
+    """Recover v1-envelope answer projections rejected by the v2 publisher.
+
+    Failed rows and legacy ``pending`` rows with an exhausted retry budget are
+    both repaired. Only payloads that validate as the current per-answer
+    contract are upgraded. Retired batch payloads remain terminal and are
+    repaired by the business-level projection reconciler from
+    ``practice_records`` instead of being guessed or reinterpreted here.
+    """
+    rows = list((await db.execute(
+        select(TaskOutbox)
+        .where(
+            TaskOutbox.task_type == "answer_projection",
+            TaskOutbox.schema_version == 1,
+            TaskOutbox.status.in_(["failed", "pending"]),
+            TaskOutbox.error_message.is_not(None),
+            func.lower(TaskOutbox.error_message).like(
+                "%unsupported answer_projection schema_version=%"
+            ),
+        )
+        .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
+        .limit(max(1, int(limit)))
+        .with_for_update(skip_locked=True)
+    )).scalars().all())
+
+    if not rows:
+        await db.rollback()
+        return 0
+
+    now = utcnow()
+    recovered = 0
+    for row in rows:
+        try:
+            schema_version = _normalize_outbox_contract(
+                row.task_type, row.payload, int(row.schema_version or 1),
+            )
+        except OutboxContractError:
+            logger.error(
+                "Legacy answer_projection Outbox payload is not upgradeable: id=%d task_id=%s",
+                row.id, row.task_id,
+            )
+            continue
+        if schema_version == row.schema_version:
+            continue
+        row.schema_version = schema_version
+        row.status = "pending"
+        row.retry_count = 0
+        row.error_message = None
+        row.lease_token = None
+        row.lease_expires_at = None
+        row.updated_at = now
+        recovered += 1
+
+    if recovered:
+        await db.commit()
+        logger.warning(
+            "Recovered %d legacy answer_projection Outbox rows by safe schema upcast",
+            recovered,
+        )
+    else:
+        await db.rollback()
+    return recovered
+
+
+async def finalize_exhausted_nonterminal_outbox(
+    db: AsyncSession,
+    *,
+    limit: int = _RECONCILE_BATCH_SIZE,
+) -> int:
+    """Terminalize legacy rows that can no longer be claimed.
+
+    Older dispatcher versions could leave ``pending``/``leased`` rows at or
+    above the retry ceiling. ``claim_pending`` correctly refuses to execute
+    them, but without this invariant repair they remain permanently
+    *unpublished* and keep the task health monitor in a stalled state forever.
+    """
+    rows = list((await db.execute(
+        select(TaskOutbox)
+        .where(
+            or_(
+                TaskOutbox.status == "pending",
+                and_(
+                    TaskOutbox.status == "leased",
+                    or_(
+                        TaskOutbox.lease_expires_at.is_(None),
+                        TaskOutbox.lease_expires_at < utcnow(),
+                    ),
+                ),
+            ),
+            TaskOutbox.retry_count >= _OUTBOX_MAX_RETRIES,
+        )
+        .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
+        .limit(max(1, int(limit)))
+        .with_for_update(skip_locked=True)
+    )).scalars().all())
+
+    if not rows:
+        await db.rollback()
+        return 0
+
+    now = utcnow()
+    for row in rows:
+        previous_error = str(row.error_message or "").strip()
+        suffix = f"retry budget exhausted ({int(row.retry_count or 0)}/{_OUTBOX_MAX_RETRIES})"
+        row.status = "failed"
+        row.error_message = (
+            f"{previous_error}; {suffix}" if previous_error else suffix
+        )[:500]
+        row.lease_token = None
+        row.lease_expires_at = None
+        row.updated_at = now
+
+    await db.commit()
+    logger.error(
+        "Terminalized %d exhausted non-terminal Outbox rows",
+        len(rows),
+    )
+    return len(rows)
+
+
 async def recover_infrastructure_failed_outbox(
     db: AsyncSession,
     *,
@@ -450,8 +651,32 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
         "fixed_publish": 0,
         "fixed_status": 0,
         "recovered_infra_failed": 0,
+        "recovered_contract_failed": 0,
+        "finalized_exhausted": 0,
         "errors": 0,
     }
+
+    # Repair the exact rolling-deployment failure that occurs when a current
+    # per-answer payload was persisted under the historical v1 envelope.  This
+    # does not depend on Redis health and is safe to run repeatedly.
+    try:
+        stats["recovered_contract_failed"] = await recover_legacy_answer_projection_outbox(
+            db, limit=batch_size,
+        )
+    except Exception as exc:
+        stats["errors"] += 1
+        logger.warning("Legacy answer_projection Outbox recovery failed: %s", exc)
+
+    # Enforce the terminal-state invariant after contract recovery so old poison
+    # rows cannot sit in `pending` forever merely because they already consumed
+    # the retry budget under an earlier dispatcher implementation.
+    try:
+        stats["finalized_exhausted"] = await finalize_exhausted_nonterminal_outbox(
+            db, limit=batch_size,
+        )
+    except Exception as exc:
+        stats["errors"] += 1
+        logger.warning("Exhausted Outbox invariant repair failed: %s", exc)
 
     # A Redis outage must never become a permanent business-task failure.
     # New dispatcher code already preserves pending rows; this probe + repair
@@ -601,12 +826,39 @@ async def run_outbox_dispatcher(
 
                 for index, outbox in enumerate(claimed):
                     try:
+                        effective_schema_version = _normalize_outbox_contract(
+                            outbox.task_type,
+                            outbox.payload,
+                            int(outbox.schema_version or 1),
+                        )
+                        if effective_schema_version != int(outbox.schema_version or 1):
+                            async with async_session() as schema_db:
+                                upgraded = await _persist_schema_upgrade(
+                                    schema_db,
+                                    outbox_id=outbox.id,
+                                    task_id=outbox.task_id,
+                                    schema_version=effective_schema_version,
+                                )
+                            if not upgraded:
+                                logger.info(
+                                    "Outbox schema upgrade lost lease; deferring: task_id=%s",
+                                    outbox.task_id,
+                                )
+                                continue
+                            logger.warning(
+                                "Outbox schema safely upgraded before publish: task_id=%s type=%s %s->%s",
+                                outbox.task_id,
+                                outbox.task_type,
+                                outbox.schema_version,
+                                effective_schema_version,
+                            )
+
                         async with async_session() as publish_db:
                             result = await enqueue_fn(
                                 outbox.task_id,
                                 outbox.task_type,
                                 outbox.payload,
-                                int(outbox.schema_version or 1),
+                                effective_schema_version,
                             )
                             if result and result.accepted:
                                 await mark_published(publish_db, outbox.id, outbox.task_id)
@@ -666,6 +918,27 @@ async def run_outbox_dispatcher(
                                 await mark_failed(
                                     publish_db, outbox.id, outbox.task_id, error,
                                 )
+                    except (OutboxContractError, ValueError) as e:
+                        # Payload/schema validation is deterministic. Repeating
+                        # it cannot recover, so fail once instead of burning the
+                        # retry budget and flooding diagnostics.
+                        logger.error(
+                            "Outbox permanent contract error: task_id=%s error=%s",
+                            outbox.task_id, e,
+                        )
+                        try:
+                            async with async_session() as invalid_db:
+                                await mark_failed(
+                                    invalid_db,
+                                    outbox.id,
+                                    outbox.task_id,
+                                    f"dispatcher contract error: {type(e).__name__}: {e}",
+                                )
+                        except Exception:
+                            logger.exception(
+                                "Outbox permanent-failure state update failed: task_id=%s",
+                                outbox.task_id,
+                            )
                     except Exception as e:
                         if is_redis_infrastructure_exception(e):
                             error = f"redis unavailable: {type(e).__name__}: {e}"

@@ -24,10 +24,12 @@
     <view class="stats-content {{contentReady ? 'stats-content-ready' : 'stats-content-pending'}}">
         <!-- ===== 累计专注 ===== -->
         <view class="card-section cumulative-focus-card">
+          <view class="stats-card-decor cumulative-card-decor" aria-hidden="true"></view>
+          <view class="stats-card-decor cumulative-card-decor-bottom" aria-hidden="true"></view>
           <view class="focus-card-head">
             <view class="focus-card-title-line">
               <text class="focus-card-title">累计专注</text>
-              <picker mode="date" value="{{cumulativeStartDate}}" start="{{lifetimeStartDate}}" end="{{_todayDate}}" bindchange="onCumulativeStartChange">
+              <picker mode="date" value="{{cumulativeStartDate}}" start="{{cumulativePickerStartDate}}" end="{{_todayDate}}" bindchange="onCumulativeStartChange">
                 <view class="cumulative-start-picker" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择累计专注起始日期">
                   <text>自 {{cumulativeStartDate || _todayDate}} 起</text>
                   <view class="micro-chevron" aria-hidden="true"></view>
@@ -65,10 +67,11 @@
 
         <!-- ===== 当日专注 ===== -->
         <view class="card-section daily-focus-card">
+          <view class="stats-card-decor daily-card-decor" aria-hidden="true"></view>
           <view class="focus-card-head daily-focus-head">
             <view class="focus-card-title-line daily-title-line">
               <text class="focus-card-title">当日专注</text>
-              <picker mode="date" value="{{selectedDate}}" end="{{_todayDate}}" bindchange="onDateChange">
+              <picker mode="date" value="{{selectedDate}}" start="{{datePickerMinDate}}" end="{{_todayDate}}" bindchange="onDateChange">
                 <view class="daily-date-picker" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择统计日期">
                   <text>{{selectedDate}}</text>
                 </view>
@@ -97,6 +100,14 @@
 
         <!-- ===== 专注时长分布：默认扇形图，柱状图按需挂载 ===== -->
         <view class="card-section pie-card-section distribution-card">
+          <view class="distribution-card-decor" aria-hidden="true">
+            <view class="distribution-corner distribution-corner-top-left"></view>
+            <view class="distribution-corner distribution-corner-bottom-left"></view>
+            <view class="distribution-corner distribution-corner-bottom-right"></view>
+            <view class="distribution-dot distribution-dot-a"></view>
+            <view class="distribution-dot distribution-dot-b"></view>
+            <view class="distribution-dot distribution-dot-c"></view>
+          </view>
           <view class="section-header distribution-section-header">
             <text class="section-title distribution-title">专注时长分布</text>
             <view class="chart-switch-btn" hover-class="chart-switch-pressed" hover-start-time="20" hover-stay-time="80" catchtap="toggleChartMode" aria-role="button" aria-label="{{chartMode === 'pie' ? '切换到柱状图' : '切换到扇形图'}}">
@@ -129,7 +140,7 @@
                 <view class="period-segment {{distributionPeriod === 'month' ? 'period-segment-active' : ''}}" data-period="month" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">月</view>
               </view>
               <view class="period-slot period-slot-picker">
-                <picker mode="date" value="{{customRangeStartDate}}" start="{{lifetimeStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
+                <picker mode="date" value="{{customRangeStartDate}}" start="{{customRangePickerStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
                   <view class="period-segment period-segment-custom {{distributionPeriod === 'custom' ? 'period-segment-active' : ''}}" hover-class="period-segment-pressed">自定义</view>
                 </picker>
               </view>
@@ -138,8 +149,16 @@
 
           <view class="distribution-chart-stage distribution-chart-stage-{{chartMode}}">
             <view class="distribution-chart-panel distribution-chart-panel-pie distribution-chart-panel-animate {{chartMode === 'pie' ? 'distribution-chart-panel-active' : 'distribution-chart-panel-hidden'}}" hidden="{{chartMode !== 'pie'}}">
-              <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
-                <canvas class="pie-canvas" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
+              <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}} {{distributionHasData ? '' : 'pie-wrap-empty'}}" id="pie-chart-wrap">
+                <canvas class="pie-canvas {{distributionHasData ? '' : 'pie-canvas-empty'}}" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!distributionHasData || !!selectedSubjectDetail}}"></canvas>
+                <view class="distribution-empty-state" wx:if="{{!pieLoading && !distributionHasData}}">
+                  <image class="distribution-empty-image" src="./assets/empty-duration.png" mode="aspectFit"></image>
+                  <text class="distribution-empty-title" wx:if="{{distributionPeriod === 'day'}}">{{pieDateLabel}}暂无数据</text>
+                  <text class="distribution-empty-title" wx:elif="{{distributionPeriod === 'week'}}">该周暂无数据</text>
+                  <text class="distribution-empty-title" wx:elif="{{distributionPeriod === 'month'}}">该月暂无数据</text>
+                  <text class="distribution-empty-title" wx:else>所选区间暂无数据</text>
+                  <text class="distribution-empty-subtitle">开始专注，记录你的每一段时光吧</text>
+                </view>
                 <view class="pie-loading-mask" wx:if="{{chartMode === 'pie' && pieLoading}}">
                   <view class="pie-loading-ring"></view>
                   <text>正在更新分布</text>
@@ -148,16 +167,21 @@
             </view>
 
             <view class="distribution-chart-panel distribution-chart-panel-bar distribution-chart-panel-animate {{chartMode === 'bar' ? 'distribution-chart-panel-active' : 'distribution-chart-panel-hidden'}}" wx:if="{{barCanvasMounted}}" hidden="{{chartMode !== 'bar'}}">
-              <view class="bar-chart-wrap">
-                <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
+              <view class="bar-chart-wrap {{trendHasData ? '' : 'bar-chart-wrap-empty'}}">
+                <canvas class="trend-canvas {{trendHasData ? '' : 'trend-canvas-empty'}}" type="2d" id="trend-bars-canvas" hidden="{{!trendHasData || !!selectedSubjectDetail}}"></canvas>
+                <view class="distribution-empty-state distribution-empty-state-bar" wx:if="{{!barRendering && !trendHasData}}">
+                  <image class="distribution-empty-image distribution-empty-image-bar" src="./assets/empty-duration.png" mode="aspectFit"></image>
+                  <text class="distribution-empty-title distribution-empty-title-bar">近7日暂无数据</text>
+                  <text class="distribution-empty-subtitle distribution-empty-subtitle-bar">开始专注，记录你的每一段时光吧</text>
+                </view>
                 <view class="bar-loading-mask" wx:if="{{barRendering}}"><view class="pie-loading-ring"></view><text>正在生成柱状图</text></view>
               </view>
             </view>
           </view>
 
-          <view class="distribution-legend-stage">
+          <view class="distribution-legend-stage {{(chartMode === 'pie' && !distributionHasData) || (chartMode === 'bar' && !trendHasData) ? 'distribution-legend-stage-empty' : ''}}">
             <view class="distribution-legend-panel distribution-legend-panel-animate {{chartMode === 'bar' ? 'distribution-legend-panel-active' : 'distribution-legend-panel-hidden'}}" hidden="{{chartMode !== 'bar'}}">
-              <view class="chart-legend distribution-bar-legend">
+              <view class="chart-legend distribution-bar-legend" wx:if="{{trendHasData}}">
                 <view class="legend-item"><view class="legend-dot legend-dot-record"></view><text class="legend-text">有记录</text></view>
                 <view class="legend-item"><view class="legend-dot legend-dot-empty"></view><text class="legend-text">无记录</text></view>
               </view>
@@ -207,17 +231,20 @@
               <view class="history-placeholder-status"></view>
             </view>
           </view>
-          <view wx:elif="{{history.length === 0}}" class="empty-hint">
-            <view class="empty-icon"></view>
-            <view class="empty-text" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">
-              <text class="empty-text-line">今日暂无当日开始的学习记录</text>
-              <text class="empty-text-line">但存在跨统计日的学习时长</text>
+          <view wx:elif="{{history.length === 0}}" class="empty-hint history-empty-state">
+            <image class="history-empty-image" src="./assets/empty-history.png" mode="aspectFit"></image>
+            <view class="history-empty-copy" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">
+              <text class="history-empty-title">今日暂无当日开始的学习记录</text>
+              <text class="history-empty-subtitle">已有跨统计日的学习时长</text>
             </view>
-            <view class="empty-text" wx:elif="{{selectedDate === _todayDate}}">
-              <text class="empty-text-line">今天还没有学习记录</text>
-              <text class="empty-text-line">开始专注或刷一组题吧</text>
+            <view class="history-empty-copy" wx:elif="{{selectedDate === _todayDate}}">
+              <text class="history-empty-title">今天还没有学习记录</text>
+              <text class="history-empty-subtitle">开始专注或刷一组题吧，记录你的每一段时光</text>
             </view>
-            <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
+            <view class="history-empty-copy" wx:else>
+              <text class="history-empty-title">{{selectedDate}} 暂无学习记录</text>
+              <text class="history-empty-subtitle">换个日期看看，或开始一段新的专注吧</text>
+            </view>
           </view>
           <view class="history-list" wx:elif="{{history.length > 0}}">
             <view class="bleed-hint" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">部分时长来自跨统计日（前一统计日开始）</view>

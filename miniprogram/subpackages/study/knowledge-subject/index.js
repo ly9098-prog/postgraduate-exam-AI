@@ -9,9 +9,18 @@ const FILTERS = [
   { id: 'mastered', label: '较稳定', statuses: ['good', 'mastered'] },
 ]
 const INITIAL_INDEX_LIMIT = 12
+const INDEX_TREE_BASE_X = 42
+const INDEX_TREE_STEP_X = 44
+const INDEX_CONTENT_BASE_INDENT = 44
 const QUICK_THEME_LIMIT = 5
 const RECENT_THEME_LIMIT = 5
-const SEARCH_DEBOUNCE_MS = 280
+const SEARCH_DEBOUNCE_MS = 300
+const INDEX_SEARCH_LEAVE_MS = 72
+const INDEX_SEARCH_ENTER_MS = 210
+const INDEX_SEARCH_HEIGHT_MS = 220
+const INDEX_NAVIGATE_FEEDBACK_MS = 76
+const INDEX_GRAPH_SCROLL_MS = 320
+const INDEX_SEARCH_FLOOR_EPSILON = 1
 const THEME_SHEET_SELECT_DELAY_MS = 96
 const THEME_SHEET_CLOSE_MS = 236
 const THEME_TRANSITION_MS = 180
@@ -19,6 +28,7 @@ const LABEL_SWITCH_OUT_MS = 72
 const SELECTION_SWITCH_OUT_MS = 82
 const SELECTION_SWITCH_IN_MS = 220
 const RETURN_REFRESH_DELAY_MS = 260
+const INDEX_ANCHOR_EPSILON = 1.25
 const VIEW_STATE_VERSION = 2
 const VIEW_STATE_MAX_AGE_MS = 30 * 60 * 1000
 const CAMERA_FRAME_MS = 16
@@ -61,6 +71,49 @@ const THEME_ICON_ASSETS = {
 }
 const themeIconSrc = kind => THEME_ICON_ASSETS[kind] || THEME_ICON_ASSETS.nodes
 
+const INDEX_ICON_ASSETS = {
+  index: '/assets/icons/knowledge-index/index.svg',
+  search: '/assets/icons/knowledge-index/search.svg',
+  locate: '/assets/icons/knowledge-index/locate.svg',
+  database: '/assets/icons/knowledge-index/database.svg',
+  network: '/assets/icons/knowledge-index/network.svg',
+  link: '/assets/icons/knowledge-index/link.svg',
+  code: '/assets/icons/knowledge-index/code.svg',
+  list: '/assets/icons/knowledge-index/list.svg',
+  layers: '/assets/icons/knowledge-index/layers.svg',
+  queue: '/assets/icons/knowledge-index/queue.svg',
+  type: '/assets/icons/knowledge-index/type.svg',
+  grid: '/assets/icons/knowledge-index/grid.svg',
+  binary: '/assets/icons/knowledge-index/binary.svg',
+  memory: '/assets/icons/knowledge-index/memory.svg',
+  tree: '/assets/icons/knowledge-index/tree.svg',
+  workflow: '/assets/icons/knowledge-index/workflow.svg',
+}
+const indexIconSrc = kind => INDEX_ICON_ASSETS[kind] || INDEX_ICON_ASSETS.link
+const indexIconKind = (node, depth = 0, index = 0) => {
+  const name = String(node && node.name ? node.name : '').toLowerCase()
+  const text = `${name} ${node && node.groupName ? node.groupName : ''}`.toLowerCase()
+  if (/存储|数据库|database|磁盘|文件|外存/.test(text)) return 'database'
+  if (/逻辑|关系|图|网络|拓扑|graph|network/.test(text)) return 'network'
+  if (/树|二叉|avl|b树|b-tree|tree/.test(text)) return 'tree'
+  if (/队列|queue/.test(text)) return 'queue'
+  if (/栈|stack|层|递归/.test(text)) return 'layers'
+  if (/串|字符串|string|字符/.test(text)) return 'type'
+  if (/数组|矩阵|matrix|array/.test(text)) return 'grid'
+  if (/内存|cache|缓存|地址|页|memory/.test(text)) return 'memory'
+  if (/二进制|binary|位运算|bit/.test(text)) return 'binary'
+  if (/算法|代码|程序|排序|查找|search|sort|code|语言/.test(text)) return 'code'
+  if (/线性结构.*非线性|结构关系|连接关系/.test(name)) return 'link'
+  if (/^线性结构$|线性表|链表|顺序表|list|sequence/.test(name)) return 'list'
+  if (/流程|步骤|过程|workflow/.test(text)) return 'workflow'
+  if (depth >= 2) return 'link'
+  return depth === 0
+    ? ['database', 'network', 'code', 'list', 'tree', 'queue', 'type', 'grid'][index % 8]
+    : ['network', 'list', 'tree', 'code'][index % 4]
+}
+const branchStatusText = node => node && node.tone === 'weak' ? '需强化' : (node && node.tone === 'stable' ? '较稳定' : '待建立')
+const isEstablishedNode = node => Boolean(node && node.status && node.status !== 'no_data' && node.status !== 'insufficient')
+
 const themeIconKind = (group, index = 0) => {
   const text = `${group && group.name ? group.name : ''} ${group && group.key ? group.key : ''}`.toLowerCase()
   if (/b树|b-tree|btree|二叉|tree|树|avl/.test(text)) return 'tree'
@@ -73,6 +126,76 @@ const themeIconKind = (group, index = 0) => {
   if (/c语言|字符|标识符|code|string|kmp|search|查找|binary/.test(text)) return 'code'
   return ['nodes', 'tree', 'move', 'layers', 'code', 'relation', 'chip', 'queue'][index % 8]
 }
+const buildFilteredKnowledgeGroups = (groups, config, queryValue) => {
+  const query = normalizeSearchText(queryValue)
+  const forceOpenTree = Boolean(query) || config.id !== 'all'
+  return (Array.isArray(groups) ? groups : []).map((group, groupIndex) => {
+    const groupIconKind = themeIconKind(group, groupIndex)
+    const groupIconSrc = themeIconSrc(groupIconKind)
+    const fullById = new Map(group.nodes.map(node => [Number(node.knowledge_point_id), node]))
+    const matchedIds = new Set()
+    const matchedAliases = new Map()
+
+    group.nodes.forEach((node) => {
+      if (config.statuses && !config.statuses.includes(node.status)) return
+      const searchMatch = pointSearchMatch(node, query)
+      if (!searchMatch.matched) return
+      const id = Number(node.knowledge_point_id)
+      matchedIds.add(id)
+      if (searchMatch.alias) matchedAliases.set(id, searchMatch.alias)
+    })
+
+    const visibleIds = new Set(matchedIds)
+    if (forceOpenTree) {
+      matchedIds.forEach((id) => {
+        let cursor = fullById.get(Number(id))
+        const seen = new Set()
+        while (cursor && cursor.parentId && !seen.has(Number(cursor.parentId))) {
+          const parentId = Number(cursor.parentId)
+          seen.add(parentId)
+          if (!fullById.has(parentId)) break
+          visibleIds.add(parentId)
+          cursor = fullById.get(parentId)
+        }
+      })
+    }
+
+    let filteredNodes = group.nodes.reduce((result, node, nodeIndex) => {
+      const id = Number(node.knowledge_point_id)
+      if (!visibleIds.has(id)) return result
+      const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
+      result.push({
+        ...node,
+        groupKey: String(group.key),
+        groupName: group.name,
+        iconKind: nodeIconKind,
+        iconSrc: themeIconSrc(nodeIconKind),
+        matched: matchedIds.has(id),
+        contextOnly: !matchedIds.has(id),
+        matchedAlias: matchedAliases.get(id) || '',
+      })
+      return result
+    }, [])
+
+    const visibleChildCount = new Map()
+    filteredNodes.forEach((node) => {
+      const parentId = Number(node.parentId)
+      if (!parentId) return
+      visibleChildCount.set(parentId, (visibleChildCount.get(parentId) || 0) + 1)
+    })
+    filteredNodes = filteredNodes.map(node => ({ ...node, visibleChildCount: visibleChildCount.get(Number(node.knowledge_point_id)) || 0 }))
+
+    return {
+      ...group,
+      iconKind: groupIconKind,
+      iconSrc: groupIconSrc,
+      matchCount: matchedIds.size,
+      nodes: filteredNodes,
+      rootNode: filteredNodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId)) || null,
+    }
+  })
+}
+
 const formatThemeOrder = (group, index = 0) => {
   const value = group && group.number != null ? String(group.number) : String(index + 1)
   const digits = value.replace(/\D+/g, '')
@@ -126,12 +249,14 @@ Page({
     loadingMetrics: [1, 2, 3],
     stats: { total: 0, reliable: 0, weak: 0, coverage: 0 },
     filters: FILTERS.map(item => ({ id: item.id, label: item.label, count: 0 })),
-    filter: 'all', query: '', searchFocused: false, searchPending: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '',
+    filter: 'all', query: '', searchDraft: '', searchFocused: false, searchPending: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '',
     groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '', themeSheetGroups: [],
     scene: { nodes: [], edges: [], page: 0, pageCount: 1, focused: false },
     pageEntered: false, sceneAnimating: false, themeSwitching: false, themeSwitchPhase: '', selectionSwitching: false, selectionSwitchPhase: '', graphInteracting: false,
     stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
-    indexNodes: [], indexCount: 0, indexDisplayCount: 0, hasMore: false,
+    indexNodes: [], indexCount: 0, indexDisplayCount: 0, hasMore: false, indexSearchOpen: false, indexSearchFocused: false,
+    indexQuery: '', indexSearchDraft: '', indexSearchPending: false, indexSearchResultCount: 0, indexNavigatingId: 0,
+    indexResultsTransitioning: false, indexResultsPhase: '', indexResultsHeightStyle: '', indexResultsFloorStyle: '', indexResultsLayoutLocked: false,
     practiceLaunching: false, practiceLaunchingId: 0,
   },
 
@@ -147,6 +272,11 @@ Page({
     this._detailNavigationPending = false
     this._focusNodeId = 0
     this._expandedNodeIds = new Set()
+    // Dedicated index search keeps a monotonic result-surface floor for the whole
+    // search session. This prevents the document height from collapsing when a
+    // long tree becomes a short/no-result state, which would otherwise clamp the
+    // page scroll position upward into the graph section.
+    this._indexSearchFloorHeight = 0
     let width = 375
     try {
       const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
@@ -204,6 +334,10 @@ Page({
     clearTimeout(this._cameraTimer)
     clearTimeout(this._inertiaTimer)
     clearTimeout(this._searchTimer)
+    clearTimeout(this._indexSearchTimer)
+    clearTimeout(this._indexNavigateTimer)
+    clearTimeout(this._indexSearchLeaveTimer)
+    clearTimeout(this._indexSearchSettleTimer)
     clearTimeout(this._entryTimer)
     clearTimeout(this._sceneAnimationTimer)
     clearTimeout(this._themeSheetCloseTimer)
@@ -267,9 +401,12 @@ Page({
     return {
       filter,
       query: String(state.query || '').slice(0, 80),
+      searchDraft: String(state.query || '').slice(0, 80),
       activeGroupKey: String(state.activeGroupKey || ''),
       searchPending: false,
       searchFocused: false,
+      indexSearchOpen: false,
+      indexSearchFocused: false,
       themeSheetOpen: false,
       themeSheetClosing: false,
       themeSheetPendingKey: '__idle__',
@@ -328,6 +465,15 @@ Page({
         }
       })
       this._groups = buildKnowledgeGroups(this._nodes, data.subject)
+      if (!this._loadedOnce && !(options && options.preserveViewState) && !(this._expandedNodeIds && this._expandedNodeIds.size)) {
+        const firstStructuredGroup = this._groups.find(group => group && group.rootNode && group.rootNode.hasChildren)
+        if (firstStructuredGroup) {
+          const rootId = Number(firstStructuredGroup.rootId)
+          if (rootId) this._expandedNodeIds.add(rootId)
+          const firstStructuredChild = firstStructuredGroup.nodes.find(node => Number(node.parentId) === rootId && node.hasChildren)
+          if (firstStructuredChild) this._expandedNodeIds.add(Number(firstStructuredChild.knowledge_point_id))
+        }
+      }
       this._nodeById = new Map()
       this._groups.forEach(group => group.nodes.forEach((node) => {
         const pathNames = (Array.isArray(node.pathIds) ? node.pathIds : [])
@@ -402,77 +548,115 @@ Page({
     else reveal()
   },
 
+  _buildIndexPayload(options = {}) {
+    const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
+    const query = normalizeSearchText(options.query != null ? options.query : (this.data.indexQuery || this.data.query))
+    const dedicatedQuery = normalizeSearchText(options.dedicatedQuery != null ? options.dedicatedQuery : this.data.indexQuery)
+    const activeGroupKey = String(options.activeGroupKey != null ? options.activeGroupKey : (this.data.activeGroupKey || ''))
+    const forceOpenTree = Boolean(query) || config.id !== 'all'
+    const filteredGroups = buildFilteredKnowledgeGroups(this._groups, config, query)
+    const availableGroups = filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
+    const activeIndexGroup = activeGroupKey ? availableGroups.find(group => String(group.key) === activeGroupKey) : null
+    // 索引自己的搜索始终跨主题检索；只有未使用索引搜索时才跟随图谱当前主题范围。
+    // 因此输入关键词只会替换索引结果，不会改写图谱场景。
+    const scopedGroups = dedicatedQuery ? availableGroups : (activeIndexGroup ? [activeIndexGroup] : availableGroups)
+    const limit = this._indexLimit || INITIAL_INDEX_LIMIT
+    const indexRows = []
+
+    scopedGroups.forEach((group, groupIndex) => {
+      const byParent = new Map()
+      group.nodes.forEach((node) => {
+        const parentId = Number(node.parentId) || 0
+        if (!byParent.has(parentId)) byParent.set(parentId, [])
+        byParent.get(parentId).push(node)
+      })
+      const fullGroup = (this._groups || []).find(item => String(item.key) === String(group.key)) || group
+      const fullNodes = Array.isArray(fullGroup.nodes) ? fullGroup.nodes : []
+      const root = group.nodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId))
+      if (!root) return
+      const walk = (node, siblingIndex = 0, siblingCount = 1, ancestorHasNext = []) => {
+        const id = Number(node.knowledge_point_id)
+        const children = byParent.get(id) || []
+        const indexExpandable = children.length > 0
+        const indexForcedOpen = indexExpandable && forceOpenTree
+        const indexExpanded = indexExpandable && (indexForcedOpen || this._expandedNodeIds.has(id))
+        const subtreeNodes = fullNodes.filter(candidate => Array.isArray(candidate.pathIds) && candidate.pathIds.some(pathId => Number(pathId) === id))
+        const subtreeTotal = Math.max(1, subtreeNodes.length || Number(node.descendantCount || 0) + 1)
+        const establishedCount = subtreeNodes.reduce((count, candidate) => count + (isEstablishedNode(candidate) ? 1 : 0), 0)
+        let indexMetaText = `${node.statusText} · ${node.trainable_question_count} 题可练`
+        if (node.contextOnly) indexMetaText = `路径 · ${children.length || node.visibleChildCount || 1} 个匹配分支`
+        else if (node.hasChildren) indexMetaText = `${node.childCount} 个子节点 · ${branchStatusText(node)} · 已建立 ${establishedCount}/${subtreeTotal}`
+        const indexSelected = Number(this._selectedId) === id
+        let indexActionText = indexForcedOpen
+          ? (node.contextOnly ? '路径' : '查看')
+          : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级' : '定位'))
+        if (!indexExpandable && !node.hasChildren && indexSelected) indexActionText = '已定位'
+        const depth = Math.max(0, Number(node.depth) || 0)
+        const visualDepth = Math.min(depth, 5)
+        const indexHasNextSibling = siblingIndex + 1 < siblingCount
+        const indexAncestorGuides = ancestorHasNext
+          .slice(1, visualDepth)
+          .reduce((guides, hasNext, ancestorIndex) => {
+            if (hasNext) guides.push({ left: INDEX_TREE_BASE_X + ancestorIndex * INDEX_TREE_STEP_X })
+            return guides
+          }, [])
+        const iconKind = indexIconKind(node, depth, siblingIndex + groupIndex)
+        indexRows.push({
+          ...node,
+          depth,
+          indexExpandable,
+          indexForcedOpen,
+          indexExpanded,
+          indexSelected,
+          indexHasNextSibling,
+          indexMetaText,
+          indexActionText,
+          indexIconKind: iconKind,
+          indexIconSrc: indexIconSrc(iconKind),
+          indexIndent: INDEX_CONTENT_BASE_INDENT + Math.max(0, Math.min(depth - 1, 4)) * INDEX_TREE_STEP_X,
+          indexAncestorGuides,
+          indexJointLeft: depth ? INDEX_TREE_BASE_X + Math.max(0, visualDepth - 1) * INDEX_TREE_STEP_X : 0,
+          indexChildStemLeft: INDEX_TREE_BASE_X + Math.min(depth, 4) * INDEX_TREE_STEP_X,
+          indexSearchTarget: Boolean(dedicatedQuery && node.matched),
+          indexAriaAction: dedicatedQuery && node.matched
+            ? '在图谱中查看'
+            : (indexSelected && !indexExpandable && !node.hasChildren
+              ? '已在图谱中定位'
+              : (indexForcedOpen ? (node.contextOnly ? '匹配路径' : '在图谱中查看') : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级路径' : '在图谱中定位')))),
+        })
+        if (indexExpanded) {
+          const descendantAncestorFlags = ancestorHasNext.concat(indexHasNextSibling)
+          children.forEach((child, childIndex) => walk(child, childIndex, children.length, descendantAncestorFlags))
+        }
+      }
+      walk(root, 0, 1, [])
+    })
+
+    return {
+      indexNodes: indexRows.slice(0, limit).map((row, rowIndex, visibleRows) => ({
+        ...row,
+        indexIsLastVisible: rowIndex === visibleRows.length - 1,
+      })),
+      indexCount: scopedGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0),
+      indexDisplayCount: indexRows.length,
+      hasMore: indexRows.length > limit,
+      indexSearchResultCount: availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0),
+    }
+  },
+
+  _applyIndexViewOnly(callback) {
+    if (!this.data.subject) { if (typeof callback === 'function') callback(); return }
+    const dedicatedQuery = normalizeSearchText(this.data.indexQuery)
+    const effectiveQuery = dedicatedQuery || normalizeSearchText(this.data.query)
+    const payload = this._buildIndexPayload({ query: effectiveQuery, dedicatedQuery, activeGroupKey: this.data.activeGroupKey })
+    this.setData(payload, () => { if (typeof callback === 'function') callback() })
+  },
+
   applyView(resetCamera = false, animateScene = resetCamera, callback) {
     if (!this.data.subject) return
     const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
     const query = normalizeSearchText(this.data.query)
-    const forceOpenTree = Boolean(query) || config.id !== 'all'
-
-    this._filteredGroups = (this._groups || []).map((group, groupIndex) => {
-      const groupIconKind = themeIconKind(group, groupIndex)
-      const groupIconSrc = themeIconSrc(groupIconKind)
-      const fullById = new Map(group.nodes.map(node => [Number(node.knowledge_point_id), node]))
-      const matchedIds = new Set()
-      const matchedAliases = new Map()
-
-      group.nodes.forEach((node) => {
-        if (config.statuses && !config.statuses.includes(node.status)) return
-        const searchMatch = pointSearchMatch(node, query)
-        if (!searchMatch.matched) return
-        const id = Number(node.knowledge_point_id)
-        matchedIds.add(id)
-        if (searchMatch.alias) matchedAliases.set(id, searchMatch.alias)
-      })
-
-      const visibleIds = new Set(matchedIds)
-      if (forceOpenTree) {
-        matchedIds.forEach((id) => {
-          let cursor = fullById.get(Number(id))
-          const seen = new Set()
-          while (cursor && cursor.parentId && !seen.has(Number(cursor.parentId))) {
-            const parentId = Number(cursor.parentId)
-            seen.add(parentId)
-            if (!fullById.has(parentId)) break
-            visibleIds.add(parentId)
-            cursor = fullById.get(parentId)
-          }
-        })
-      }
-
-      let filteredNodes = group.nodes.reduce((result, node, nodeIndex) => {
-        const id = Number(node.knowledge_point_id)
-        if (!visibleIds.has(id)) return result
-        const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
-        result.push({
-          ...node,
-          groupKey: String(group.key),
-          groupName: group.name,
-          iconKind: nodeIconKind,
-          iconSrc: themeIconSrc(nodeIconKind),
-          matched: matchedIds.has(id),
-          contextOnly: !matchedIds.has(id),
-          matchedAlias: matchedAliases.get(id) || '',
-        })
-        return result
-      }, [])
-
-      const visibleChildCount = new Map()
-      filteredNodes.forEach((node) => {
-        const parentId = Number(node.parentId)
-        if (!parentId) return
-        visibleChildCount.set(parentId, (visibleChildCount.get(parentId) || 0) + 1)
-      })
-      filteredNodes = filteredNodes.map(node => ({ ...node, visibleChildCount: visibleChildCount.get(Number(node.knowledge_point_id)) || 0 }))
-
-      return {
-        ...group,
-        iconKind: groupIconKind,
-        iconSrc: groupIconSrc,
-        matchCount: matchedIds.size,
-        nodes: filteredNodes,
-        rootNode: filteredNodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId)) || null,
-      }
-    })
+    this._filteredGroups = buildFilteredKnowledgeGroups(this._groups, config, query)
 
     const availableGroups = this._filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
     let activeGroupKey = availableGroups.some(group => String(group.key) === String(this.data.activeGroupKey)) ? String(this.data.activeGroupKey) : ''
@@ -513,43 +697,6 @@ Page({
     }
     this._graphPage = scene.page
 
-    const limit = this._indexLimit || INITIAL_INDEX_LIMIT
-    const indexRows = []
-    scopedGroups.forEach((group) => {
-      const byParent = new Map()
-      group.nodes.forEach((node) => {
-        const parentId = Number(node.parentId) || 0
-        if (!byParent.has(parentId)) byParent.set(parentId, [])
-        byParent.get(parentId).push(node)
-      })
-      const root = group.nodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId))
-      if (!root) return
-      const walk = (node) => {
-        const id = Number(node.knowledge_point_id)
-        const children = byParent.get(id) || []
-        const indexExpandable = children.length > 0
-        const indexForcedOpen = indexExpandable && forceOpenTree
-        const indexExpanded = indexExpandable && (indexForcedOpen || this._expandedNodeIds.has(id))
-        let indexMetaText = `${node.statusText} · ${node.trainable_question_count} 题可练`
-        if (node.contextOnly) indexMetaText = `路径 · ${children.length || node.visibleChildCount || 1} 个匹配分支`
-        else if (node.hasChildren) indexMetaText = `${node.childCount} 个子节点 · ${node.descendantCount} 个下级知识点`
-        const indexActionText = indexForcedOpen
-          ? (node.contextOnly ? '路径' : '查看')
-          : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级' : '定位'))
-        indexRows.push({
-          ...node,
-          indexExpandable,
-          indexForcedOpen,
-          indexExpanded,
-          indexMetaText,
-          indexActionText,
-          indexAriaAction: indexForcedOpen ? '在图谱中查看' : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级路径' : '在图谱中定位')),
-        })
-        if (indexExpanded) children.forEach(walk)
-      }
-      walk(root)
-    })
-
     const visibleById = new Map(this._visibleNodes.map(node => [Number(node.knowledge_point_id), node]))
     const selectedVisible = visibleById.get(Number(this._selectedId)) || null
     const selectedBase = this._nodeById && this._nodeById.get(Number(this._selectedId))
@@ -574,8 +721,9 @@ Page({
     const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey, this._recentGroupKeys)
     const themeSheetGroups = groupChips.filter(group => themeSearchMatch(group, this.data.themeQuery))
     const activeGroup = groupChips.find(group => group.key === activeGroupKey)
-    const indexCount = scopedGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0)
     const searchResultCount = availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0)
+    const effectiveIndexQuery = normalizeSearchText(this.data.indexQuery) || query
+    const indexPayload = this._buildIndexPayload({ query: effectiveIndexQuery, dedicatedQuery: normalizeSearchText(this.data.indexQuery), activeGroupKey })
     const payload = {
       activeGroupKey,
       activeGroupName: activeGroup ? activeGroup.name : '',
@@ -584,13 +732,10 @@ Page({
       quickGroupChips,
       themeGroupCount: groupChips.length,
       themeSheetGroups,
-      searchPending: false,
+      searchPending: normalizeSearchText(this.data.searchDraft) !== query,
       searchResultCount,
       selectedPoint: selectedBase && selectedVisible ? { ...selectedBase, matchedAlias: selectedVisible.matchedAlias || '' } : null,
-      indexNodes: indexRows.slice(0, limit),
-      indexCount,
-      indexDisplayCount: indexRows.length,
-      hasMore: indexRows.length > limit,
+      ...indexPayload,
     }
     if (animateScene) payload.sceneAnimating = true
     if (resetCamera && this._frame) {
@@ -615,7 +760,7 @@ Page({
     else commit()
   },
 
-  transitionLabelView(dataChanges = {}) {
+  transitionLabelView(dataChanges = {}, callback) {
     clearTimeout(this._labelSwitchTimer)
     clearTimeout(this._themeTransitionTimer)
     clearTimeout(this._sceneAnimationTimer)
@@ -631,6 +776,7 @@ Page({
         this.applyView(false, false, () => {
           if (this._unloaded) return
           this.setData({ themeSwitchPhase: 'entering' }, () => {
+            if (typeof callback === 'function') callback()
             this._themeTransitionTimer = setTimeout(() => {
               this._themeTransitionTimer = null
               if (!this._unloaded) this.setData({ themeSwitching: false, themeSwitchPhase: '' })
@@ -645,51 +791,395 @@ Page({
     const filter = String(event.currentTarget.dataset.filter || 'all')
     if (!FILTERS.some(item => item.id === filter) || filter === this.data.filter) return
     clearTimeout(this._searchTimer)
+    this._searchTimer = null
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.transitionLabelView({ filter, searchPending: false, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' })
+    // 用户在防抖窗口内切换状态筛选时，直接采用输入框当前值，避免“文字已变但结果还是旧关键词”。
+    this.transitionLabelView({ query: String(this.data.searchDraft || '').slice(0, 80), filter, searchPending: false, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' })
   },
   searchPoints(event) {
-    const query = String(event.detail.value || '')
-    this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
+    const searchDraft = String(event.detail.value || '').slice(0, 80)
     clearTimeout(this._searchTimer)
-    const normalizedQuery = normalizeSearchText(query)
+    this._searchTimer = null
+    // 若上一轮搜索仍停留在“淡出但尚未提交”的 72ms 窗口，新输入直接取消
+    // 旧提交，避免快速连续输入时闪过一次过期结果。
+    const cancelLeavingTransition = Boolean(this._indexSearchLeaveTimer || this._indexSearchSettleTimer || this.data.indexResultsTransitioning)
+    if (cancelLeavingTransition) {
+      clearTimeout(this._indexSearchLeaveTimer)
+      clearTimeout(this._indexSearchSettleTimer)
+      this._indexSearchLeaveTimer = null
+      this._indexSearchSettleTimer = null
+      this._indexSearchTransitionToken = (this._indexSearchTransitionToken || 0) + 1
+    }
+    const draftQuery = normalizeSearchText(searchDraft)
+    const committedQuery = normalizeSearchText(this.data.query)
+    const changed = draftQuery !== committedQuery
+
+    // 输入值与已应用查询分离：键入阶段只更新搜索框，不立刻重建图谱/索引。
+    // 这样防抖期间旧结果保持稳定，避免每个字符都触发布局抖动。
     this.setData({
-      query,
-      searchPending: Boolean(normalizedQuery),
-      activeGroupKey: '',
+      searchDraft,
+      searchPending: changed,
+      ...(cancelLeavingTransition ? { indexResultsTransitioning: false, indexResultsPhase: '', indexResultsHeightStyle: '' } : {}),
       themeSheetOpen: false,
       themeSheetClosing: false,
       themeSheetPendingKey: '__idle__',
       themeQuery: '',
     })
-    if (!normalizedQuery) {
-      this.applyView(true, false)
-      return
-    }
+    if (!changed) return
+
+    const scheduledDraft = searchDraft
+    const preserveIndexAnchor = Boolean(this.data.indexSearchOpen || this.data.indexSearchFocused)
     this._searchTimer = setTimeout(() => {
       this._searchTimer = null
-      if (!this._unloaded) this.applyView(true, false)
+      if (this._unloaded || String(this.data.searchDraft || '') !== scheduledDraft) return
+      this._commitSearchQuery(scheduledDraft, { source: 'debounce', preserveIndexAnchor })
     }, SEARCH_DEBOUNCE_MS)
   },
-  focusSearch() { if (!this.data.searchFocused) this.setData({ searchFocused: true }) },
+  focusSearch() { if (!this.data.searchFocused) this.setData({ searchFocused: true, indexSearchFocused: false }) },
+  toggleIndexSearch() {
+    // 顶部搜索按钮既负责展开，也负责再次点击收起；查询条件保留，避免用户
+    // 只是想腾出浏览空间时被迫丢失当前筛选结果。
+    if (this.data.indexSearchOpen) {
+      this.closeIndexSearch()
+      return
+    }
+    this.openIndexSearch()
+  },
+  openIndexSearch() {
+    // 索引内搜索就地展开，不触发页面滚动。输入框只在展开完成后获取焦点，
+    // 减少键盘与布局同时变化造成的视觉跳动。
+    const focus = () => {
+      if (!this._unloaded && this.data.indexSearchOpen) {
+        this.setData({ indexSearchFocused: true, searchFocused: false })
+      }
+    }
+    if (this.data.indexSearchOpen) {
+      focus()
+      return
+    }
+    this.setData({ indexSearchOpen: true, indexSearchFocused: false, searchFocused: false }, () => {
+      if (typeof wx.nextTick === 'function') wx.nextTick(focus)
+      else setTimeout(focus, 0)
+    })
+  },
+  focusIndexSearch() {
+    if (!this.data.indexSearchFocused || this.data.searchFocused) this.setData({ indexSearchFocused: true, searchFocused: false })
+  },
+  blurIndexSearch() { if (this.data.indexSearchFocused) this.setData({ indexSearchFocused: false }) },
+  indexSearchPoints(event) {
+    const indexSearchDraft = String(event.detail.value || '').slice(0, 80)
+    clearTimeout(this._indexSearchTimer)
+    this._indexSearchTimer = null
+    const cancelLeavingTransition = Boolean(this._indexSearchLeaveTimer || this._indexSearchSettleTimer || this.data.indexResultsTransitioning)
+    if (cancelLeavingTransition) {
+      clearTimeout(this._indexSearchLeaveTimer)
+      clearTimeout(this._indexSearchSettleTimer)
+      this._indexSearchLeaveTimer = null
+      this._indexSearchSettleTimer = null
+      this._indexSearchTransitionToken = (this._indexSearchTransitionToken || 0) + 1
+    }
+    const changed = normalizeSearchText(indexSearchDraft) !== normalizeSearchText(this.data.indexQuery)
+    this.setData({
+      indexSearchDraft,
+      indexSearchPending: changed,
+      ...(cancelLeavingTransition ? { indexResultsTransitioning: false, indexResultsPhase: '', indexResultsHeightStyle: '' } : {}),
+    })
+    if (!changed) return
+    const scheduledDraft = indexSearchDraft
+    this._indexSearchTimer = setTimeout(() => {
+      this._indexSearchTimer = null
+      if (this._unloaded || String(this.data.indexSearchDraft || '') !== scheduledDraft) return
+      this._commitIndexSearchQuery(scheduledDraft, { source: 'debounce', preserveIndexAnchor: true })
+    }, SEARCH_DEBOUNCE_MS)
+  },
+  submitIndexSearch(event) {
+    const value = String(event && event.detail ? event.detail.value || '' : this.data.indexSearchDraft || '').slice(0, 80)
+    clearTimeout(this._indexSearchTimer)
+    this._indexSearchTimer = null
+    this.setData({ indexSearchDraft: value }, () => this._commitIndexSearchQuery(value, { source: 'confirm', preserveIndexAnchor: true }))
+  },
+  closeIndexSearch() {
+    if (!this.data.indexSearchOpen && !this.data.indexSearchFocused) return
+    // 先撤销 focus 再收起搜索框，并主动关闭软键盘。保留 query，折叠后仍维持
+    // 当前搜索结果，搜索按钮上的状态点会提示“仍有搜索条件生效”。
+    this.setData({ indexSearchOpen: false, indexSearchFocused: false, searchFocused: false }, () => {
+      if (typeof wx.hideKeyboard === 'function') {
+        try { wx.hideKeyboard() } catch (error) { /* 键盘状态不影响搜索结果。 */ }
+      }
+      // Only release the layout floor after the user explicitly closes an idle
+      // search. Active queries keep the floor even when the search bar is folded.
+      if (!normalizeSearchText(this.data.indexQuery) && !normalizeSearchText(this.data.indexSearchDraft)) {
+        this._releaseIndexSearchFloor()
+      }
+    })
+  },
+  clearIndexSearch() {
+    clearTimeout(this._indexSearchTimer)
+    this._indexSearchTimer = null
+    this.setData({ indexSearchDraft: '', indexSearchPending: normalizeSearchText(this.data.indexQuery) !== '' }, () => {
+      this._commitIndexSearchQuery('', { source: 'clear', preserveIndexAnchor: true })
+      if (!this._unloaded) {
+        const focus = () => this.setData({ indexSearchOpen: true, indexSearchFocused: true, searchFocused: false })
+        if (typeof wx.nextTick === 'function') wx.nextTick(focus)
+        else setTimeout(focus, 0)
+      }
+    })
+  },
   blurSearch() { if (this.data.searchFocused) this.setData({ searchFocused: false }) },
   submitSearch(event) {
+    const value = String(event && event.detail ? event.detail.value || '' : this.data.searchDraft || '').slice(0, 80)
     clearTimeout(this._searchTimer)
     this._searchTimer = null
-    this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ query: String(event.detail.value || ''), searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true, false))
+    const preserveIndexAnchor = Boolean(this.data.indexSearchOpen || this.data.indexSearchFocused)
+    this.setData({ searchDraft: value }, () => this._commitSearchQuery(value, { source: 'confirm', preserveIndexAnchor }))
   },
   clearSearch() {
     clearTimeout(this._searchTimer)
     this._searchTimer = null
-    this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ query: '', searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true, false))
+    const preserveIndexAnchor = Boolean(this.data.indexSearchOpen || this.data.indexSearchFocused)
+    this.setData({ searchDraft: '', searchPending: normalizeSearchText(this.data.query) !== '' }, () => this._commitSearchQuery('', { source: 'clear', preserveIndexAnchor }))
+  },
+  _indexSearchFloorPatch(height, allowGrow = true) {
+    const measured = Math.max(0, Number(height) || 0)
+    const current = Math.max(0, Number(this._indexSearchFloorHeight) || 0)
+    const next = allowGrow ? Math.max(current, measured) : measured
+    this._indexSearchFloorHeight = next > INDEX_SEARCH_FLOOR_EPSILON ? Math.ceil(next) : 0
+    return {
+      indexResultsFloorStyle: this._indexSearchFloorHeight ? `min-height:${this._indexSearchFloorHeight}px;` : '',
+      indexResultsLayoutLocked: Boolean(this._indexSearchFloorHeight),
+    }
+  },
+  _releaseIndexSearchFloor() {
+    this._indexSearchFloorHeight = 0
+    if (this.data.indexResultsFloorStyle || this.data.indexResultsLayoutLocked) {
+      this.setData({ indexResultsFloorStyle: '', indexResultsLayoutLocked: false })
+    }
+  },
+  _captureIndexSearchLayout(callback, preserveAnchor = false) {
+    if (typeof callback !== 'function') return
+    if (!wx.createSelectorQuery) { callback(null); return }
+    try {
+      let query = wx.createSelectorQuery()
+      if (query.in) query = query.in(this)
+      query.select('#knowledge-index-panel').boundingClientRect()
+      query.select('#knowledge-index-results-content').boundingClientRect()
+      query.selectViewport().scrollOffset()
+      query.exec((result) => {
+        const panel = result && result[0]
+        const content = result && result[1]
+        const viewport = result && result[2]
+        callback({
+          panelTop: preserveAnchor && panel && Number.isFinite(Number(panel.top)) ? Number(panel.top) : null,
+          resultsHeight: content && Number.isFinite(Number(content.height)) ? Math.max(0, Number(content.height)) : 0,
+          scrollTop: viewport && Number.isFinite(Number(viewport.scrollTop)) ? Number(viewport.scrollTop) : (Number(this._scrollTop) || 0),
+        })
+      })
+    } catch (error) { callback(null) }
+  },
+  _measureIndexResultsHeight(callback) {
+    if (typeof callback !== 'function') return
+    if (!wx.createSelectorQuery) { callback(0); return }
+    try {
+      let query = wx.createSelectorQuery()
+      if (query.in) query = query.in(this)
+      query.select('#knowledge-index-results-content').boundingClientRect()
+      query.exec((result) => {
+        const rect = result && result[0]
+        callback(rect && Number.isFinite(Number(rect.height)) ? Math.max(0, Number(rect.height)) : 0)
+      })
+    } catch (error) { callback(0) }
+  },
+  _restoreIndexSearchAnchor(anchor) {
+    if (!anchor || anchor.panelTop == null || !wx.createSelectorQuery || typeof wx.pageScrollTo !== 'function') return
+    const restore = () => {
+      if (this._unloaded) return
+      try {
+        let query = wx.createSelectorQuery()
+        if (query.in) query = query.in(this)
+        query.select('#knowledge-index-panel').boundingClientRect()
+        query.selectViewport().scrollOffset()
+        query.exec((result) => {
+          const panel = result && result[0]
+          const viewport = result && result[1]
+          if (!panel || !Number.isFinite(Number(panel.top))) return
+          const currentScrollTop = viewport && Number.isFinite(Number(viewport.scrollTop)) ? Number(viewport.scrollTop) : (Number(this._scrollTop) || 0)
+          const delta = Number(panel.top) - Number(anchor.panelTop)
+          if (Math.abs(delta) <= INDEX_ANCHOR_EPSILON) return
+          wx.pageScrollTo({ scrollTop: Math.max(0, currentScrollTop + delta), duration: 0 })
+        })
+      } catch (error) { /* 搜索布局锚定失败时不干预系统滚动。 */ }
+    }
+    if (typeof wx.nextTick === 'function') wx.nextTick(restore)
+    else setTimeout(restore, 0)
+  },
+  _commitIndexSearchQuery(value, options = {}) {
+    const nextQuery = String(value || '').slice(0, 80)
+    const normalizedNext = normalizeSearchText(nextQuery)
+    const normalizedCurrent = normalizeSearchText(this.data.indexQuery)
+    clearTimeout(this._indexSearchTimer)
+    this._indexSearchTimer = null
+
+    if (normalizedNext === normalizedCurrent) {
+      if (this.data.indexSearchPending || String(this.data.indexSearchDraft || '') !== nextQuery) {
+        this.setData({ indexSearchDraft: nextQuery, indexSearchPending: false })
+      }
+      return
+    }
+
+    const token = (this._indexSearchTransitionToken || 0) + 1
+    this._indexSearchTransitionToken = token
+    clearTimeout(this._indexSearchLeaveTimer)
+    clearTimeout(this._indexSearchSettleTimer)
+
+    this._captureIndexSearchLayout((anchor) => {
+      if (this._unloaded || token !== this._indexSearchTransitionToken) return
+      const measuredOldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
+      // The result area is allowed to grow during a search session, but never to
+      // shrink. A no-result state therefore occupies the same document footprint
+      // as the result tree it replaced, so the browser has no reason to clamp the
+      // page back toward #atlas-shell.
+      const floorPatch = this._indexSearchFloorPatch(measuredOldHeight, true)
+      const oldHeight = Math.max(measuredOldHeight, Number(this._indexSearchFloorHeight) || 0)
+      const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
+      this.setData({
+        ...floorPatch,
+        indexSearchPending: true,
+        indexResultsTransitioning: true,
+        indexResultsPhase: 'leaving',
+        indexResultsHeightStyle: leavingStyle,
+      }, () => {
+        const commit = () => {
+          if (this._unloaded || token !== this._indexSearchTransitionToken) return
+          this._indexLimit = INITIAL_INDEX_LIMIT
+          // 关键：这里只提交索引查询并重建索引列表。图谱 scene / 相机 / 当前图谱范围
+          // 完全不动，用户输入或搜不到内容时不会再被带到图谱区域。
+          this.setData({ indexQuery: nextQuery }, () => {
+            this._applyIndexViewOnly(() => {
+              if (this._unloaded || token !== this._indexSearchTransitionToken) return
+              this._restoreIndexSearchAnchor(anchor)
+              this._measureIndexResultsHeight((newHeight) => {
+                if (this._unloaded || token !== this._indexSearchTransitionToken) return
+                const nextFloorPatch = this._indexSearchFloorPatch(Math.max(oldHeight, newHeight), true)
+                const targetHeight = Math.max(newHeight, Number(this._indexSearchFloorHeight) || 0, oldHeight)
+                const heightStyle = oldHeight > 0 && targetHeight > 0 ? `height:${targetHeight}px;overflow:hidden;` : ''
+                const stillPending = normalizeSearchText(this.data.indexSearchDraft) !== normalizedNext
+                this.setData({
+                  ...nextFloorPatch,
+                  indexSearchPending: stillPending,
+                  indexResultsPhase: 'entering',
+                  indexResultsHeightStyle: heightStyle,
+                }, () => {
+                  this._restoreIndexSearchAnchor(anchor)
+                  this._indexSearchSettleTimer = setTimeout(() => {
+                    this._indexSearchSettleTimer = null
+                    if (this._unloaded || token !== this._indexSearchTransitionToken) return
+                    this.setData({
+                      indexResultsTransitioning: false,
+                      indexResultsPhase: '',
+                      indexResultsHeightStyle: '',
+                    }, () => this._restoreIndexSearchAnchor(anchor))
+                  }, Math.max(INDEX_SEARCH_ENTER_MS, INDEX_SEARCH_HEIGHT_MS))
+                })
+              })
+            })
+          })
+        }
+        if (options.immediate || !oldHeight) commit()
+        else {
+          this._indexSearchLeaveTimer = setTimeout(() => {
+            this._indexSearchLeaveTimer = null
+            commit()
+          }, INDEX_SEARCH_LEAVE_MS)
+        }
+      })
+    }, Boolean(options.preserveIndexAnchor))
+  },
+
+  _commitSearchQuery(value, options = {}) {
+    const nextQuery = String(value || '').slice(0, 80)
+    const normalizedNext = normalizeSearchText(nextQuery)
+    const normalizedCurrent = normalizeSearchText(this.data.query)
+    clearTimeout(this._searchTimer)
+    this._searchTimer = null
+
+    if (normalizedNext === normalizedCurrent) {
+      if (this.data.searchPending || String(this.data.searchDraft || '') !== nextQuery) {
+        this.setData({ searchDraft: nextQuery, searchPending: false })
+      }
+      return
+    }
+
+    const token = (this._indexSearchTransitionToken || 0) + 1
+    this._indexSearchTransitionToken = token
+    clearTimeout(this._indexSearchLeaveTimer)
+    clearTimeout(this._indexSearchSettleTimer)
+
+    this._captureIndexSearchLayout((anchor) => {
+      if (this._unloaded || token !== this._indexSearchTransitionToken) return
+      const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
+      const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
+      this.setData({
+        searchPending: true,
+        indexResultsTransitioning: true,
+        indexResultsPhase: 'leaving',
+        indexResultsHeightStyle: leavingStyle,
+      }, () => {
+        const commit = () => {
+          if (this._unloaded || token !== this._indexSearchTransitionToken) return
+          this._graphPage = 0
+          this._indexLimit = INITIAL_INDEX_LIMIT
+          this.setData({
+            query: nextQuery,
+            activeGroupKey: '',
+            themeSheetOpen: false,
+            themeSheetClosing: false,
+            themeSheetPendingKey: '__idle__',
+            themeQuery: '',
+          }, () => {
+            // 搜索只替换内容，不重置相机视角；图谱与索引一起更新但页面不被强制带走。
+            this.applyView(false, false, () => {
+              if (this._unloaded || token !== this._indexSearchTransitionToken) return
+              this._restoreIndexSearchAnchor(anchor)
+              this._measureIndexResultsHeight((newHeight) => {
+                if (this._unloaded || token !== this._indexSearchTransitionToken) return
+                const targetHeight = newHeight > 0 ? newHeight : oldHeight
+                const heightStyle = oldHeight > 0 && targetHeight > 0 ? `height:${targetHeight}px;overflow:hidden;` : ''
+                const stillPending = normalizeSearchText(this.data.searchDraft) !== normalizedNext
+                this.setData({
+                  searchPending: stillPending,
+                  indexResultsPhase: 'entering',
+                  indexResultsHeightStyle: heightStyle,
+                }, () => {
+                  this._restoreIndexSearchAnchor(anchor)
+                  this._indexSearchSettleTimer = setTimeout(() => {
+                    this._indexSearchSettleTimer = null
+                    if (this._unloaded || token !== this._indexSearchTransitionToken) return
+                    this.setData({
+                      indexResultsTransitioning: false,
+                      indexResultsPhase: '',
+                      indexResultsHeightStyle: '',
+                    }, () => this._restoreIndexSearchAnchor(anchor))
+                  }, Math.max(INDEX_SEARCH_ENTER_MS, INDEX_SEARCH_HEIGHT_MS))
+                })
+              })
+            })
+          })
+        }
+        if (options.immediate || !oldHeight) commit()
+        else {
+          this._indexSearchLeaveTimer = setTimeout(() => {
+            this._indexSearchLeaveTimer = null
+            commit()
+          }, INDEX_SEARCH_LEAVE_MS)
+        }
+      })
+    }, Boolean(options.preserveIndexAnchor))
   },
   resetFilters() {
     clearTimeout(this._searchTimer)
     this._searchTimer = null
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ filter: 'all', query: '', searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true))
+    this.setData({ filter: 'all', query: '', searchDraft: '', searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true))
   },
   chooseGroup(event) { this.openGroup(String(event.currentTarget.dataset.key || '')) },
   rememberGroup(key) {
@@ -701,28 +1191,28 @@ Page({
     this._recentGroupKeys = next
     try { if (this._recentGroupStorageKey) wx.setStorageSync(this._recentGroupStorageKey, next) } catch (error) { /* 本地偏好写入失败不影响主题切换。 */ }
   },
-  openGroup(key) {
+  openGroup(key, callback) {
     const normalized = String(key || '')
     const targetGroup = normalized
       ? (this._filteredGroups || []).find(group => String(group.key) === normalized && group.matchCount > 0 && group.nodes.length)
       : null
-    if (normalized && !targetGroup) return
+    if (normalized && !targetGroup) { if (typeof callback === 'function') callback(); return }
     if (targetGroup && targetGroup.rootNode && !targetGroup.rootNode.hasChildren) {
-      this.locatePointById(Number(targetGroup.rootId))
+      this.locatePointById(Number(targetGroup.rootId), { afterRender: callback })
       return
     }
     const targetFocusId = targetGroup ? Number(targetGroup.rootId) || 0 : 0
-    if (normalized === this.data.activeGroupKey && Number(this._focusNodeId) === targetFocusId) return
+    if (normalized === this.data.activeGroupKey && Number(this._focusNodeId) === targetFocusId) { if (typeof callback === 'function') callback(); return }
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
     this._focusNodeId = targetFocusId
     if (targetFocusId) this._expandedNodeIds.add(targetFocusId)
     if (normalized) this.rememberGroup(normalized)
     const quickGroupChips = buildQuickGroupChips(this.data.groupChips, normalized, this._recentGroupKeys)
-    this.transitionLabelView({ activeGroupKey: normalized, quickGroupChips })
+    this.transitionLabelView({ activeGroupKey: normalized, quickGroupChips }, callback)
   },
-  showOverview() {
+  showOverview(callback) {
     this._focusNodeId = 0
-    this.openGroup('')
+    this.openGroup('', callback)
   },
   openThemeSheet() {
     const groups = Array.isArray(this.data.groupChips) ? this.data.groupChips : []
@@ -773,25 +1263,25 @@ Page({
     this._graphPage = next; this._selectedId = 0
     this.applyView(true)
   },
-  navigateToFocus(groupKey, focusNodeId) {
+  navigateToFocus(groupKey, focusNodeId, callback) {
     const normalizedGroupKey = String(groupKey || '')
     const nextFocusId = Math.max(0, Number(focusNodeId) || 0)
     if (!normalizedGroupKey || !nextFocusId) {
       this._focusNodeId = 0
-      this.openGroup('')
+      this.openGroup('', callback)
       return
     }
     const group = (this._filteredGroups || []).find(item => String(item.key) === normalizedGroupKey && item.matchCount > 0)
     const node = group && group.nodes.find(item => Number(item.knowledge_point_id) === nextFocusId)
-    if (!group || !node) return
-    if (String(this.data.activeGroupKey) === normalizedGroupKey && Number(this._focusNodeId) === nextFocusId) return
+    if (!group || !node) { if (typeof callback === 'function') callback(); return }
+    if (String(this.data.activeGroupKey) === normalizedGroupKey && Number(this._focusNodeId) === nextFocusId) { if (typeof callback === 'function') callback(); return }
     this._graphPage = 0
     this._selectedId = 0
     this._focusNodeId = nextFocusId
     const base = this._nodeById && this._nodeById.get(nextFocusId)
     ;(base && Array.isArray(base.pathIds) ? base.pathIds : [nextFocusId]).forEach(id => this._expandedNodeIds.add(Number(id)))
     const quickGroupChips = buildQuickGroupChips(this.data.groupChips, normalizedGroupKey, this._recentGroupKeys)
-    this.transitionLabelView({ activeGroupKey: normalizedGroupKey, quickGroupChips })
+    this.transitionLabelView({ activeGroupKey: normalizedGroupKey, quickGroupChips }, callback)
   },
   onGraphBreadcrumbTap(event) {
     const focusNodeId = Number(event.currentTarget.dataset.id) || 0
@@ -845,60 +1335,206 @@ Page({
       }, SELECTION_SWITCH_OUT_MS)
     })
   },
-  handleIndexRowTap(event) {
-    const id = Number(event.currentTarget.dataset.id)
-    const node = this._nodeById && this._nodeById.get(id)
-    if (!node) return
+  _captureIndexViewportAnchor(id, callback) {
+    if (typeof callback !== 'function') return
+    if (!wx.createSelectorQuery) { callback(null); return }
+    try {
+      let query = wx.createSelectorQuery()
+      if (query.in) query = query.in(this)
+      query.select(`#knowledge-index-node-${Number(id)}`).boundingClientRect()
+      query.selectViewport().scrollOffset()
+      query.exec((result) => {
+        const rect = result && result[0]
+        const viewport = result && result[1]
+        if (!rect || !Number.isFinite(Number(rect.top))) { callback(null); return }
+        callback({
+          top: Number(rect.top),
+          scrollTop: viewport && Number.isFinite(Number(viewport.scrollTop)) ? Number(viewport.scrollTop) : (Number(this._scrollTop) || 0),
+        })
+      })
+    } catch (error) { callback(null) }
+  },
+  _restoreIndexViewportAnchor(id, anchor) {
+    if (!anchor || !wx.createSelectorQuery || typeof wx.pageScrollTo !== 'function') return
+    const restore = () => {
+      if (this._unloaded) return
+      try {
+        let query = wx.createSelectorQuery()
+        if (query.in) query = query.in(this)
+        query.select(`#knowledge-index-node-${Number(id)}`).boundingClientRect()
+        query.selectViewport().scrollOffset()
+        query.exec((result) => {
+          const rect = result && result[0]
+          const viewport = result && result[1]
+          if (!rect || !Number.isFinite(Number(rect.top))) return
+          const currentScrollTop = viewport && Number.isFinite(Number(viewport.scrollTop)) ? Number(viewport.scrollTop) : (Number(this._scrollTop) || 0)
+          const delta = Number(rect.top) - Number(anchor.top)
+          if (Math.abs(delta) <= INDEX_ANCHOR_EPSILON) return
+          wx.pageScrollTo({ scrollTop: Math.max(0, currentScrollTop + delta), duration: 0 })
+        })
+      } catch (error) { /* 锚点恢复失败时保持系统当前滚动位置，不做二次跳转。 */ }
+    }
+    if (typeof wx.nextTick === 'function') wx.nextTick(restore)
+    else setTimeout(restore, 0)
+  },
+  _runIndexInteraction(id) {
+    const pointId = Number(id)
+    if (!pointId || Number(this.data.indexNavigatingId)) return
+    const dedicatedQuery = normalizeSearchText(this.data.indexQuery)
+    const row = (Array.isArray(this.data.indexNodes) ? this.data.indexNodes : []).find(item => Number(item.knowledge_point_id) === pointId)
+    if (dedicatedQuery) {
+      // 搜索路径节点仅用于说明层级；真正命中的标签才会显式驱动图谱。
+      if (!row || !row.matched) return
+      this._navigateFromIndexSearch(pointId)
+      return
+    }
+    this._captureIndexViewportAnchor(pointId, (anchor) => {
+      if (this._unloaded) return
+      this.activateIndexNode(pointId, {
+        keepViewport: true,
+        afterRender: () => this._restoreIndexViewportAnchor(pointId, anchor),
+      })
+    })
+  },
+  _navigateFromIndexSearch(id) {
+    const pointId = Number(id)
+    const point = this._nodeById && this._nodeById.get(pointId)
+    if (!point) return
+    const sourceGroup = (this._groups || []).find(group => String(group.key) === String(point.groupKey))
+    if (!sourceGroup) return
+
+    clearTimeout(this._indexNavigateTimer)
+    if (typeof wx.hideKeyboard === 'function') {
+      try { wx.hideKeyboard() } catch (error) { /* 键盘关闭失败不阻断定位。 */ }
+    }
+    this.setData({ indexNavigatingId: pointId, indexSearchFocused: false, searchFocused: false })
+
+    this._indexNavigateTimer = setTimeout(() => {
+      this._indexNavigateTimer = null
+      if (this._unloaded) return
+
+      // 只有用户明确点击搜索结果时，才把图谱切到该知识点。若当前全局筛选
+      // 会隐藏目标，则只清除冲突条件，不破坏索引搜索关键词。
+      const currentConfig = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
+      const targetFilter = currentConfig.statuses && !currentConfig.statuses.includes(point.status) ? 'all' : this.data.filter
+      const currentGraphQuery = String(this.data.query || '')
+      const targetGraphQuery = currentGraphQuery && !pointSearchMatch(point, currentGraphQuery).matched ? '' : currentGraphQuery
+      const targetConfig = FILTERS.find(item => item.id === targetFilter) || FILTERS[0]
+
+      this._selectedId = pointId
+      ;(Array.isArray(point.pathIds) ? point.pathIds : []).forEach(pathId => this._expandedNodeIds.add(Number(pathId)))
+
+      let activeGroupKey = String(point.groupKey || '')
+      if (point.hasChildren) {
+        this._focusNodeId = pointId
+        this._graphPage = 0
+      } else {
+        const parentId = Number(point.parentId) || 0
+        if (parentId) {
+          this._focusNodeId = parentId
+          const siblings = sourceGroup.nodes.filter((item) => {
+            if (Number(item.parentId) !== parentId) return false
+            if (targetConfig.statuses && !targetConfig.statuses.includes(item.status)) return false
+            return pointSearchMatch(item, targetGraphQuery).matched
+          })
+          const siblingIndex = Math.max(0, siblings.findIndex(item => Number(item.knowledge_point_id) === pointId))
+          this._graphPage = Math.floor(siblingIndex / POINTS_PER_PAGE)
+        } else {
+          this._focusNodeId = 0
+          activeGroupKey = ''
+          const visibleGroups = (this._groups || []).filter((group) => group.nodes.some((item) => {
+            if (targetConfig.statuses && !targetConfig.statuses.includes(item.status)) return false
+            return pointSearchMatch(item, targetGraphQuery).matched
+          }))
+          const groupIndex = Math.max(0, visibleGroups.findIndex(group => String(group.key) === String(point.groupKey)))
+          this._graphPage = Math.floor(groupIndex / POINTS_PER_PAGE)
+        }
+      }
+
+      this.setData({
+        filter: targetFilter,
+        query: targetGraphQuery,
+        searchDraft: targetGraphQuery,
+        searchPending: false,
+        activeGroupKey,
+      }, () => {
+        this.applyView(true, true, () => {
+          const scrollToGraph = () => {
+            if (this._unloaded) return
+            if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ selector: '#atlas-shell', duration: INDEX_GRAPH_SCROLL_MS })
+            setTimeout(() => {
+              if (!this._unloaded && Number(this.data.indexNavigatingId) === pointId) this.setData({ indexNavigatingId: 0 })
+            }, INDEX_GRAPH_SCROLL_MS + 90)
+          }
+          if (typeof wx.nextTick === 'function') wx.nextTick(scrollToGraph)
+          else setTimeout(scrollToGraph, 0)
+        })
+      })
+    }, INDEX_NAVIGATE_FEEDBACK_MS)
+  },
+  handleIndexRowTap(event) { this._runIndexInteraction(Number(event.currentTarget.dataset.id)) },
+  handleIndexActionTap(event) { this._runIndexInteraction(Number(event.currentTarget.dataset.id)) },
+  activateIndexNode(id, options = {}) {
+    const done = typeof options.afterRender === 'function' ? options.afterRender : () => {}
+    const node = this._nodeById && this._nodeById.get(Number(id))
+    if (!node) { done(); return }
     const group = (this._filteredGroups || []).find(item => String(item.key) === String(node.groupKey))
-    const filteredNode = group && group.nodes.find(item => Number(item.knowledge_point_id) === id)
-    const visibleChildren = group ? group.nodes.filter(item => Number(item.parentId) === id) : []
+    const visibleChildren = group ? group.nodes.filter(item => Number(item.parentId) === Number(id)) : []
     if (visibleChildren.length) {
       const forceOpenTree = Boolean(normalizeSearchText(this.data.query)) || this.data.filter !== 'all'
       if (forceOpenTree) {
-        this.navigateToFocus(String(node.groupKey), id)
+        this.navigateToFocus(String(node.groupKey), Number(id), done)
         return
       }
-      if (this._expandedNodeIds.has(id)) this._expandedNodeIds.delete(id)
-      else this._expandedNodeIds.add(id)
+      if (this._expandedNodeIds.has(Number(id))) this._expandedNodeIds.delete(Number(id))
+      else this._expandedNodeIds.add(Number(id))
       this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(this._indexLimit) || INITIAL_INDEX_LIMIT)
-      this.applyView(false, false)
+      this.applyView(false, false, done)
       return
     }
-    // 搜索/状态筛选下，父节点可能保留为上下文但子项被过滤掉；此时不把父节点伪装成叶子节点。
-    if ((filteredNode && filteredNode.hasChildren) || node.hasChildren) return
-    this.locatePointById(id)
+    // 搜索/状态筛选下父节点可能仅作为路径上下文保留。此时点击仍更新图谱父级，
+    // 但索引交互会保持当前视口，不再把用户强制带离正在浏览的位置。
+    if (node.hasChildren) {
+      this.navigateToFocus(String(node.groupKey), Number(id), done)
+      return
+    }
+    this.locatePointById(Number(id), { scrollToGraph: !options.keepViewport, afterRender: done })
   },
   locatePoint(event) { this.locatePointById(Number(event.currentTarget.dataset.id)) },
-  locatePointById(id) {
+  locatePointById(id, options = {}) {
     const point = this._nodeById && this._nodeById.get(Number(id))
-    if (!point) return
+    if (!point) { if (typeof options.afterRender === 'function') options.afterRender(); return }
     const group = (this._filteredGroups || []).find(item => String(item.key) === String(point.groupKey))
-    if (!group) return
+    if (!group) { if (typeof options.afterRender === 'function') options.afterRender(); return }
 
     this._selectedId = Number(point.knowledge_point_id)
     this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(this._indexLimit) || INITIAL_INDEX_LIMIT)
     ;(Array.isArray(point.pathIds) ? point.pathIds : []).forEach(pathId => this._expandedNodeIds.add(Number(pathId)))
 
+    const finish = () => {
+      if (typeof options.afterRender === 'function') options.afterRender()
+      if (options.scrollToGraph === false || typeof wx.pageScrollTo !== 'function') return
+      wx.pageScrollTo({ selector: '#atlas-shell', duration: 220 })
+    }
     const parentId = Number(point.parentId) || 0
     if (parentId) {
       const siblings = group.nodes.filter(item => Number(item.parentId) === parentId)
       const index = siblings.findIndex(item => Number(item.knowledge_point_id) === Number(point.knowledge_point_id))
-      if (index < 0) return
+      if (index < 0) { finish(); return }
       this._focusNodeId = parentId
       this._graphPage = Math.floor(index / POINTS_PER_PAGE)
-      this.setData({ activeGroupKey: String(point.groupKey) }, () => this.applyView(true))
+      this.setData({ activeGroupKey: String(point.groupKey) }, () => this.applyView(true, options.scrollToGraph !== false, finish))
     } else {
       const availableGroups = (this._filteredGroups || []).filter(item => item.matchCount > 0 && item.nodes.length)
       const groupIndex = availableGroups.findIndex(item => String(item.key) === String(point.groupKey))
-      if (groupIndex < 0) return
+      if (groupIndex < 0) { finish(); return }
       this._focusNodeId = 0
       this._graphPage = Math.floor(groupIndex / POINTS_PER_PAGE)
-      this.setData({ activeGroupKey: '' }, () => this.applyView(true))
+      this.setData({ activeGroupKey: '' }, () => this.applyView(true, options.scrollToGraph !== false, finish))
     }
-    wx.pageScrollTo({ selector: '#atlas-shell', duration: 220 })
   },
 
-  loadMore() { this._indexLimit = (this._indexLimit || INITIAL_INDEX_LIMIT) + INITIAL_INDEX_LIMIT; this.applyView(false) },
+  loadMore() { this._indexLimit = (this._indexLimit || INITIAL_INDEX_LIMIT) + INITIAL_INDEX_LIMIT; this._applyIndexViewOnly() },
   openPoint(event) {
     const id = Number(event.currentTarget.dataset.id)
     if (!id || this._detailNavigationPending || this._practiceNavigationPending) return

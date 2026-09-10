@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 ANSWER_PROJECTION_TASK_TYPE = "answer_projection"
+ANSWER_PROJECTION_LEGACY_SCHEMA_VERSION = 1
 ANSWER_PROJECTION_TASK_SCHEMA_VERSION = 2
 ANSWER_PROJECTION_MINIMUM_WORKER_VERSION = 2
 
@@ -86,4 +87,39 @@ def parse_answer_projection_payload(payload: Any) -> AnswerProjectionTaskPayload
     return AnswerProjectionTaskPayload(
         practice_record_id=practice_record_id,
         request_id=request_id,
+    )
+
+
+def normalize_answer_projection_outbox_schema(
+    payload: Any,
+    schema_version: Any,
+) -> int:
+    """Return the safe current schema for a durable Outbox envelope.
+
+    Early per-answer producers wrote the *current* small payload shape while the
+    generic :func:`create_outbox` default still persisted ``schema_version=1``.
+    Those rows are semantically v2 payloads with a stale envelope version.  They
+    can be upgraded safely after validating the payload, which lets rolling
+    deployments drain legacy rows without ever routing them to a v1 worker.
+
+    Truly retired batch-shaped payloads are rejected by
+    :func:`parse_answer_projection_payload` and are intentionally not upgraded.
+    """
+    try:
+        version = int(schema_version)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("answer_projection schema_version must be an integer") from exc
+
+    # Validate before considering an envelope upgrade.  This is what makes the
+    # v1 -> v2 conversion safe: only the already-current per-answer payload can
+    # cross the compatibility boundary.
+    parse_answer_projection_payload(payload)
+
+    if version == ANSWER_PROJECTION_TASK_SCHEMA_VERSION:
+        return version
+    if version == ANSWER_PROJECTION_LEGACY_SCHEMA_VERSION:
+        return ANSWER_PROJECTION_TASK_SCHEMA_VERSION
+    raise ValueError(
+        "unsupported answer_projection schema_version="
+        f"{version}; required={ANSWER_PROJECTION_TASK_SCHEMA_VERSION}"
     )

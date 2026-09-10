@@ -9,10 +9,12 @@
     "pages/pomodoro/pomodoro"
   ],
   "window": {
-    "navigationBarBackgroundColor": "#4F7FFF",
+    "navigationBarBackgroundColor": "#F4F4EE",
     "navigationBarTitleText": "MemoGrad",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#EEF5FF"
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F4F4EE",
+    "backgroundColorTop": "#F4F4EE",
+    "backgroundColorBottom": "#F4F4EE"
   },
   "subPackages": [
     {

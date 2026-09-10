@@ -2285,280 +2285,1230 @@ page { min-height: 100%; background: #EFF5EA; color: #1E3325; font-family: -appl
   .index-locate { font-size: 17rpx; }
 }
 
-/* ===== Knowledge index refinement (scoped: no other page modules affected) ===== */
+/* ===== Knowledge index · reference-image rebuild / hierarchy refinement ===== */
 .knowledge-index {
   margin-top: 42rpx;
-  padding: 0 1rpx;
+  padding: 0 1rpx 10rpx;
+}
+.knowledge-index .index-panel {
+  overflow: hidden;
+  border: 1rpx solid rgba(184, 212, 206, .68);
+  border-radius: 17rpx;
+  background: rgba(255, 255, 255, .95);
+  box-shadow: 0 9rpx 28rpx rgba(54, 91, 83, .065), inset 0 1rpx 0 rgba(255, 255, 255, .98);
+}
+
+.knowledge-index .index-toolbar {
+  display: flex;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  padding: 17rpx 20rpx 13rpx;
+  box-sizing: border-box;
 }
 .knowledge-index .index-heading {
-  display: block;
-  padding: 0 6rpx 13rpx;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 13rpx;
+  padding: 0;
 }
-.knowledge-index .index-heading-copy { min-width: 0; }
+.knowledge-index .index-heading-icon {
+  display: flex;
+  width: 31rpx;
+  height: 31rpx;
+  flex: 0 0 31rpx;
+  align-items: center;
+  justify-content: center;
+}
+.knowledge-index .index-heading-icon image {
+  width: 31rpx;
+  height: 31rpx;
+}
 .knowledge-index .index-title-row {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 11rpx;
+  gap: 10rpx;
 }
 .knowledge-index .index-title {
-  color: #20392A;
-  font-size: 34rpx;
-  font-weight: 720;
-  line-height: 44rpx;
-  letter-spacing: .2rpx;
+  color: #172D36;
+  font-size: 29rpx;
+  font-weight: 760;
+  line-height: 39rpx;
 }
 .knowledge-index .index-count-badge {
-  min-width: 40rpx;
-  padding: 3rpx 10rpx;
+  min-width: 36rpx;
+  padding: 1rpx 9rpx;
   box-sizing: border-box;
-  border: 1rpx solid #D7E2D2;
   border-radius: 999rpx;
-  background: #F2F6EE;
-  color: #70856B;
+  background: #EEF5F2;
+  color: #6E8F85;
   font-family: 'DIN Alternate', sans-serif;
-  font-size: 17rpx;
+  font-size: 15rpx;
   font-weight: 650;
-  line-height: 25rpx;
+  line-height: 24rpx;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.knowledge-index .index-subtitle {
-  display: block;
-  margin-top: 5rpx;
-  color: #7A887C;
-  font-size: 18rpx;
-  line-height: 28rpx;
-}
-
-.knowledge-index .status-key {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.knowledge-index .index-toolbar-side {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 7rpx;
-  margin-bottom: 12rpx;
-  padding: 9rpx;
-  border: 1rpx solid #DEE6DB;
-  border-radius: 16rpx;
-  background: rgba(248,250,246,.82);
-  color: #68766A;
-  font-size: 17rpx;
-  line-height: 1.2;
+  gap: 12rpx;
+}
+.knowledge-index .status-key {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7A8E95;
+  font-size: 13rpx;
+  line-height: 22rpx;
+  white-space: nowrap;
 }
 .knowledge-index .status-key-item {
   display: flex;
-  min-width: 0;
-  height: 42rpx;
   align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  border-radius: 11rpx;
+  gap: 5rpx;
 }
 .knowledge-index .status-key-dot {
-  width: 8rpx;
-  height: 8rpx;
-  margin: 0;
-  flex: 0 0 8rpx;
+  width: 5rpx;
+  height: 5rpx;
+  flex: 0 0 5rpx;
+  border-radius: 50%;
 }
+.knowledge-index .status-key-dot.tone-unseen { background: #8EA8B2; }
+.knowledge-index .status-key-dot.tone-weak { background: #F0AA2B; }
+.knowledge-index .status-key-dot.tone-stable { background: #35B56E; }
+.knowledge-index .index-search-trigger {
+  display: flex;
+  width: 44rpx;
+  height: 44rpx;
+  min-width: 44rpx;
+  margin: 0 !important;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  line-height: 1;
+}
+.knowledge-index .index-search-trigger::after { border: 0; }
+.knowledge-index .index-search-trigger image {
+  width: 25rpx;
+  height: 25rpx;
+}
+.knowledge-index .index-search-pressed { background: #F2F7F5; }
 
 .knowledge-index .index-list {
-  overflow: hidden;
-  border: 1rpx solid #D8E2D4;
-  border-radius: 22rpx;
-  background: rgba(255,255,252,.9);
-  box-shadow: 0 12rpx 30rpx rgba(56,82,48,.042), inset 0 1rpx 0 rgba(255,255,255,.92);
+  position: relative;
+  overflow: visible;
+  padding: 0 8rpx 16rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .knowledge-index .index-row {
   position: relative;
   display: flex;
-  min-height: 96rpx;
+  min-height: 82rpx;
   align-items: center;
-  gap: 13rpx;
-  padding: 16rpx 20rpx 16rpx 18rpx;
+  gap: 8rpx;
+  padding: 5rpx 7rpx 5rpx 12rpx;
   box-sizing: border-box;
-  background: rgba(255,255,252,.62);
-  transition: transform 170ms cubic-bezier(.16,1,.3,1), background 170ms ease, opacity 170ms ease;
+  border: 0;
+  border-radius: 13rpx;
+  background: transparent;
+  transition: background 150ms ease, transform 150ms cubic-bezier(.16,1,.3,1);
 }
-.knowledge-index .index-row + .index-row { border-top: 1rpx solid #E5EBE2; }
-.knowledge-index .index-row-branch {
-  min-height: 106rpx;
-  background: #F7FAF4;
+.knowledge-index .index-row + .index-row { border-top: 0; }
+.knowledge-index .index-row-branch { min-height: 92rpx; }
+.knowledge-index .index-row-leaf { min-height: 78rpx; }
+.knowledge-index .index-row-context {
+  background: transparent;
+  opacity: .78;
 }
-.knowledge-index .index-row-context { background: #FBFCF9; opacity: .82; }
 .knowledge-index .index-row.index-row-selected {
-  background: #EDF5E7;
-  box-shadow: inset 2rpx 0 0 #7FA866;
+  background: linear-gradient(90deg, rgba(237, 248, 244, .78), rgba(248, 252, 250, .22) 82%, rgba(255,255,255,0));
 }
-.knowledge-index .index-pressed { background: #E9F1E4; transform: scale(.996); }
-.knowledge-index .index-tone-rail {
-  width: 2rpx;
-  height: 38rpx;
-  flex: 0 0 2rpx;
-  border-radius: 999rpx;
-  background: #A8B3A7;
-  opacity: .72;
+.knowledge-index .index-row.index-row-selected .index-node-name { color: #153D38; }
+.knowledge-index .index-row.index-row-selected .index-node-icon {
+  border-color: #C7E3DB;
+  box-shadow: 0 0 0 3rpx rgba(72, 169, 143, .055), 0 6rpx 16rpx rgba(58, 99, 105, .08);
 }
-.knowledge-index .index-tone-rail.tone-weak { background: #B98F61; }
-.knowledge-index .index-tone-rail.tone-stable { background: #789D51; }
-.knowledge-index .index-row-branch .index-tone-rail { height: 44rpx; background: #91A88A; opacity: .5; }
+.knowledge-index .index-pressed {
+  background: rgba(240, 247, 244, .82);
+  transform: scale(.998);
+}
 
-.knowledge-index .index-tree-control {
+/* Connectors only continue where the ancestor really has more siblings. */
+.knowledge-index .index-tree-layer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 258rpx;
+  overflow: hidden;
+  pointer-events: none;
+}
+.knowledge-index .index-ancestor-guide,
+.knowledge-index .index-joint::before,
+.knowledge-index .index-joint::after,
+.knowledge-index .index-joint-tail,
+.knowledge-index .index-child-stem {
+  background: #D5E5E8;
+}
+.knowledge-index .index-ancestor-guide {
+  position: absolute;
+  top: -1rpx;
+  bottom: -1rpx;
+  width: 1rpx;
+  opacity: .88;
+}
+.knowledge-index .index-joint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1rpx;
+}
+.knowledge-index .index-joint::before {
+  content: '';
+  position: absolute;
+  top: -1rpx;
+  left: 0;
+  width: 1rpx;
+  height: calc(50% + 1rpx);
+}
+.knowledge-index .index-joint::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 23rpx;
+  height: 1rpx;
+  border-radius: 999rpx;
+}
+.knowledge-index .index-joint-tail {
+  position: absolute;
+  top: 50%;
+  bottom: -1rpx;
+  left: 0;
+  width: 1rpx;
+}
+.knowledge-index .index-joint-dot {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 0;
+  width: 7rpx;
+  height: 7rpx;
+  box-sizing: border-box;
+  border: 2rpx solid #FFFFFF;
+  border-radius: 50%;
+  background: #9EB8C1;
+  box-shadow: 0 0 0 1rpx #C7DADF;
+  transform: translate3d(-3rpx, -3rpx, 0);
+}
+.knowledge-index .index-joint-dot.tone-weak {
+  background: #E8A83C;
+  box-shadow: 0 0 0 1rpx #E9D0A2;
+}
+.knowledge-index .index-joint-dot.tone-stable {
+  background: #42B57B;
+  box-shadow: 0 0 0 1rpx #B0DAC3;
+}
+.knowledge-index .index-child-stem {
+  position: absolute;
+  top: 50%;
+  bottom: -1rpx;
+  width: 1rpx;
+  opacity: .9;
+}
+.knowledge-index .index-row-last-visible .index-ancestor-guide { bottom: 50%; }
+.knowledge-index .index-row-last-visible .index-joint-tail,
+.knowledge-index .index-row-last-visible .index-child-stem { display: none; }
+
+.knowledge-index .index-row-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 14rpx;
+  box-sizing: border-box;
+}
+.knowledge-index .index-node-icon {
+  display: flex;
   width: 42rpx;
   height: 42rpx;
   flex: 0 0 42rpx;
-  border: 1rpx solid #D7E2D2;
-  border-radius: 13rpx;
-  background: #F5F8F1;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(236, 244, 242, .72);
+  border-radius: 12rpx;
+  background: rgba(250, 252, 251, .92);
+  box-shadow: 0 4rpx 12rpx rgba(67, 117, 106, .055);
 }
-.knowledge-index .index-row-branch .index-tree-control {
-  border-color: #CADBC3;
-  background: #EAF2E5;
+.knowledge-index .index-node-icon image {
+  width: 32rpx;
+  height: 32rpx;
 }
-.knowledge-index .index-chevron {
-  width: 12rpx;
-  height: 12rpx;
-  border-right-color: #577553;
-  border-bottom-color: #577553;
+.knowledge-index .index-node-icon-leaf {
+  width: 44rpx;
+  height: 44rpx;
+  flex-basis: 44rpx;
+  border-color: #ECF2F3;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .98);
+  box-shadow: 0 5rpx 14rpx rgba(58, 99, 105, .07);
 }
-.knowledge-index .index-parent-node {
-  width: 15rpx;
-  height: 15rpx;
-  border-color: #779471;
-  background: #F6FAF2;
-  box-shadow: 6rpx 6rpx 0 -3rpx #B7CAB0;
+.knowledge-index .index-node-icon-leaf image {
+  width: 28rpx;
+  height: 28rpx;
 }
-.knowledge-index .index-leaf-node { width: 10rpx; height: 10rpx; }
-
 .knowledge-index .index-row-copy {
-  flex: 1;
   min-width: 0;
-  padding-top: 1rpx;
-  padding-bottom: 1rpx;
-}
-.knowledge-index .index-row-copy.index-row-child { position: relative; }
-.knowledge-index .index-tree-guide {
-  top: 3rpx;
-  bottom: 3rpx;
-  left: 0;
-  width: 13rpx;
-  border-color: #D2DDD0;
-  opacity: .72;
+  flex: 1 1 auto;
+  padding: 0;
 }
 .knowledge-index .index-node-name {
-  color: #314C39;
-  font-size: 24rpx;
-  font-weight: 580;
-  line-height: 34rpx;
+  display: block;
+  max-width: 100%;
+  color: #20343A;
+  font-size: 23rpx;
+  font-weight: 640;
+  line-height: 32rpx;
+  overflow-wrap: break-word;
 }
 .knowledge-index .index-row-branch .index-node-name {
-  color: #24422E;
-  font-size: 25rpx;
-  font-weight: 680;
+  color: #1D3137;
+  font-size: 24rpx;
+  font-weight: 710;
 }
-.knowledge-index .index-row-context .index-node-name { color: #6D7D6E; }
+.knowledge-index .depth-0 .index-node-name {
+  font-size: 25rpx;
+  font-weight: 730;
+}
+.knowledge-index .index-row-context .index-node-name { color: #71838A; }
 .knowledge-index .index-meta-row {
   display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6rpx 9rpx;
-  margin-top: 5rpx;
+  gap: 8rpx;
+  margin-top: 2rpx;
+  overflow: hidden;
 }
 .knowledge-index .index-node-meta {
-  color: #7A897C;
-  font-size: 17rpx;
-  line-height: 25rpx;
+  min-width: 0;
+  overflow: hidden;
+  color: #80939B;
+  font-size: 16rpx;
+  font-weight: 450;
+  line-height: 24rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .knowledge-index .index-alias-match {
   max-width: 100%;
+  flex: 0 1 auto;
+  overflow: hidden;
   padding: 1rpx 7rpx;
-  border: 1rpx solid #DCE7D6;
-  border-radius: 8rpx;
-  background: #F0F6EB;
-  color: #5B7854;
-  font-size: 15rpx;
-  line-height: 22rpx;
-  overflow-wrap: anywhere;
+  border-radius: 7rpx;
+  background: #F0F7F4;
+  color: #5E8A7D;
+  font-size: 13rpx;
+  line-height: 21rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.knowledge-index .index-locate {
+.knowledge-index .index-action {
+  position: relative;
+  z-index: 2;
   display: flex;
-  height: 44rpx;
+  width: auto;
+  min-width: 68rpx;
+  height: 50rpx;
   flex: 0 0 auto;
   align-items: center;
-  gap: 7rpx;
-  padding: 0 11rpx;
+  justify-content: flex-end;
+  gap: 6rpx;
+  margin: 0 !important;
+  padding: 0 5rpx 0 8rpx;
   box-sizing: border-box;
-  border: 1rpx solid transparent;
-  border-radius: 12rpx;
-  color: #61765F;
-  font-size: 17rpx;
+  border: 0;
+  border-radius: 11rpx;
+  background: transparent;
+  color: #49656D;
+  font-size: 16rpx;
+  font-weight: 590;
   line-height: 1;
   white-space: nowrap;
 }
-.knowledge-index .index-expand-action {
-  border-color: #D8E4D3;
-  background: #F1F6ED;
-  color: #526D50;
-  font-weight: 650;
+.knowledge-index .index-action::after { border: 0; }
+.knowledge-index .index-action-expand { color: #3E5960; }
+.knowledge-index .index-action-locate { color: #4F877E; }
+.knowledge-index .index-action-pressed { background: #EEF6F3; }
+.knowledge-index .index-locate-icon {
+  width: 23rpx;
+  height: 23rpx;
 }
-.knowledge-index .locate-crosshair {
-  width: 17rpx;
-  height: 17rpx;
-  border-color: #839780;
-}
-.knowledge-index .locate-crosshair::before,
-.knowledge-index .locate-crosshair::after { background: #839780; }
-.knowledge-index .index-action-chevron {
+.knowledge-index .index-action-caret {
   width: 8rpx;
   height: 8rpx;
+  margin-left: 1rpx;
   box-sizing: border-box;
-  border-top: 2rpx solid currentColor;
-  border-right: 2rpx solid currentColor;
-  transform: rotate(45deg);
-  opacity: .7;
+  border-right: 1.5rpx solid #789198;
+  border-bottom: 1.5rpx solid #789198;
+  transform: rotate(45deg) translate3d(-1rpx, -1rpx, 0);
+  transform-origin: center;
+  transition: transform 160ms cubic-bezier(.2,.8,.2,1);
+}
+.knowledge-index .index-action-caret-open {
+  transform: rotate(225deg) translate3d(-1rpx, -1rpx, 0);
 }
 
 .knowledge-index .index-more {
   display: flex;
-  width: 100%;
-  min-height: 88rpx;
+  width: calc(100% - 34rpx);
+  min-height: 66rpx;
   align-items: center;
   justify-content: center;
-  gap: 12rpx;
-  margin-top: 12rpx !important;
+  gap: 11rpx;
+  margin: 3rpx 17rpx 18rpx !important;
   padding: 0 18rpx;
   box-sizing: border-box;
-  border: 1rpx solid #D8E2D5;
-  border-radius: 18rpx;
-  background: #F6F8F3;
-  color: #5C7458;
-  font-size: 19rpx;
-  font-weight: 600;
+  border: 1rpx solid #E2EDEA;
+  border-radius: 13rpx;
+  background: #F8FBFA;
+  color: #557D72;
+  font-size: 18rpx;
+  font-weight: 620;
   line-height: 1;
 }
 .knowledge-index .index-more::after { border: 0; }
-.knowledge-index .index-more-label { color: #5C7458; font-size: 19rpx; }
+.knowledge-index .index-more-label { color: #557D72; font-size: 18rpx; }
 .knowledge-index .index-more-count {
-  color: #8A9A86;
+  color: #91A6A0;
   font-family: 'DIN Alternate', sans-serif;
-  font-size: 17rpx;
+  font-size: 16rpx;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
-.knowledge-index .index-heading,
+.knowledge-index .index-panel,
+.knowledge-index .index-toolbar,
 .knowledge-index .status-key,
+.knowledge-index .index-search-trigger,
 .knowledge-index .index-list,
 .knowledge-index .index-row,
-.knowledge-index .index-more,
-.knowledge-index .index-tree-control,
-.knowledge-index .index-locate {
+.knowledge-index .index-action,
+.knowledge-index .index-more {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
 }
 
 @media (max-width: 350px) {
-  .knowledge-index .index-row { gap: 10rpx; padding-left: 14rpx; padding-right: 15rpx; }
-  .knowledge-index .index-tree-control { width: 38rpx; height: 38rpx; flex-basis: 38rpx; }
-  .knowledge-index .index-locate { padding: 0 8rpx; font-size: 16rpx; }
-  .knowledge-index .status-key { gap: 3rpx; }
+  .knowledge-index .index-toolbar { padding-left: 16rpx; padding-right: 12rpx; }
+  .knowledge-index .index-heading { gap: 10rpx; }
+  .knowledge-index .index-title { font-size: 27rpx; }
+  .knowledge-index .status-key { gap: 7rpx; font-size: 11rpx; }
+  .knowledge-index .index-search-trigger { width: 40rpx; height: 40rpx; min-width: 40rpx; }
+  .knowledge-index .index-list { padding-left: 5rpx; padding-right: 5rpx; }
+  .knowledge-index .index-row { padding-left: 8rpx; padding-right: 3rpx; }
+  .knowledge-index .index-row-main { gap: 11rpx; }
+  .knowledge-index .index-node-name { font-size: 21rpx; }
+  .knowledge-index .index-row-branch .index-node-name { font-size: 22rpx; }
+  .knowledge-index .depth-0 .index-node-name { font-size: 23rpx; }
+  .knowledge-index .index-node-meta { font-size: 14rpx; }
+  .knowledge-index .index-action { min-width: 58rpx; padding-left: 3rpx; padding-right: 2rpx; font-size: 14rpx; }
+  .knowledge-index .index-locate-icon { width: 21rpx; height: 21rpx; }
+}
+
+/* ===== Knowledge index · interaction & viewport stability refinement v3 ===== */
+.knowledge-index .index-toolbar-searching {
+  padding-bottom: 11rpx;
+}
+.knowledge-index .index-search-trigger {
+  transition: background 140ms ease, box-shadow 140ms ease, transform 140ms cubic-bezier(.16,1,.3,1);
+}
+.knowledge-index .index-search-active {
+  background: #EEF7F4;
+  box-shadow: inset 0 0 0 1rpx #D7EAE4;
+}
+.knowledge-index .index-search-active image { opacity: .9; }
+
+.knowledge-index .index-inline-search {
+  display: flex;
+  min-height: 68rpx;
+  align-items: center;
+  gap: 10rpx;
+  margin: 0 15rpx 12rpx;
+  padding: 7rpx 8rpx 7rpx 13rpx;
+  box-sizing: border-box;
+  border: 1rpx solid #DFECE8;
+  border-radius: 14rpx;
+  background: #F8FBFA;
+  box-shadow: 0 4rpx 14rpx rgba(50, 99, 88, .035), inset 0 1rpx 0 rgba(255,255,255,.96);
+  animation: index-inline-search-enter 180ms cubic-bezier(.16,1,.3,1) both;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+.knowledge-index .index-inline-search-focused {
+  border-color: #BFDCD4;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3rpx rgba(69, 167, 142, .055), 0 6rpx 18rpx rgba(50, 99, 88, .05);
+}
+.knowledge-index .index-inline-search-main {
+  display: flex;
+  min-width: 0;
+  height: 52rpx;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 9rpx;
+}
+.knowledge-index .index-inline-search-icon {
+  width: 23rpx;
+  height: 23rpx;
+  flex: 0 0 23rpx;
+  opacity: .72;
+}
+.knowledge-index .index-inline-search-input {
+  min-width: 0;
+  height: 52rpx;
+  flex: 1 1 auto;
+  padding: 0;
+  color: #263C42;
+  font-size: 20rpx;
+  line-height: 52rpx;
+}
+.knowledge-index .index-inline-search-placeholder { color: #9AA8AC; }
+.knowledge-index .index-inline-clear,
+.knowledge-index .index-inline-cancel {
+  display: flex;
+  margin: 0 !important;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+}
+.knowledge-index .index-inline-clear::after,
+.knowledge-index .index-inline-cancel::after { border: 0; }
+.knowledge-index .index-inline-clear {
+  width: 44rpx;
+  height: 44rpx;
+  flex: 0 0 44rpx;
+  border-radius: 50%;
+}
+.knowledge-index .index-inline-clear-symbol {
+  position: relative;
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: #C7D3D0;
+}
+.knowledge-index .index-inline-clear-symbol::before,
+.knowledge-index .index-inline-clear-symbol::after {
+  content: '';
+  position: absolute;
+  left: 4rpx;
+  top: 8rpx;
+  width: 10rpx;
+  height: 1.5rpx;
+  border-radius: 999rpx;
+  background: #FFFFFF;
+}
+.knowledge-index .index-inline-clear-symbol::before { transform: rotate(45deg); }
+.knowledge-index .index-inline-clear-symbol::after { transform: rotate(-45deg); }
+.knowledge-index .index-inline-cancel {
+  min-width: 58rpx;
+  height: 46rpx;
+  flex: 0 0 auto;
+  padding: 0 7rpx;
+  border-radius: 10rpx;
+  color: #55786F;
+  font-size: 16rpx;
+  font-weight: 620;
+  line-height: 46rpx;
+}
+.knowledge-index .index-inline-control-pressed { background: #EAF3F0; }
+.knowledge-index .index-inline-search-meta {
+  display: flex;
+  max-width: 128rpx;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5rpx;
+  overflow: hidden;
+  color: #8A9B9E;
+  font-size: 13rpx;
+  line-height: 22rpx;
+  white-space: nowrap;
+}
+.knowledge-index .index-inline-search-meta text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-index .index-row {
+  isolation: isolate;
+  transition: background 130ms ease, transform 130ms cubic-bezier(.16,1,.3,1), box-shadow 130ms ease;
+}
+.knowledge-index .index-row::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  left: 4rpx;
+  top: 18rpx;
+  bottom: 18rpx;
+  width: 3rpx;
+  border-radius: 999rpx;
+  background: transparent;
+  transform: scaleY(.55);
+  opacity: 0;
+  transition: opacity 150ms ease, transform 150ms cubic-bezier(.16,1,.3,1), background 150ms ease;
+}
+.knowledge-index .index-row.index-row-selected {
+  background: linear-gradient(90deg, rgba(235, 247, 243, .9), rgba(248, 252, 250, .3) 76%, rgba(255,255,255,0));
+  box-shadow: inset 0 0 0 1rpx rgba(210, 232, 225, .26);
+}
+.knowledge-index .index-row.index-row-selected::before {
+  background: #48A98F;
+  opacity: .82;
+  transform: scaleY(1);
+}
+.knowledge-index .index-pressed {
+  background: rgba(237, 246, 243, .9);
+  transform: scale(.997);
+}
+.knowledge-index .index-row-main { z-index: 1; }
+.knowledge-index .index-tree-layer { z-index: 0; }
+.knowledge-index .index-node-icon-branch {
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, transform 140ms cubic-bezier(.16,1,.3,1);
+}
+.knowledge-index .index-row.index-row-selected .index-node-icon-branch,
+.knowledge-index .index-row.index-row-selected .index-node-icon-leaf {
+  transform: translate3d(0,-1rpx,0);
+}
+
+.knowledge-index .index-action {
+  min-width: 72rpx;
+  height: 54rpx;
+  padding-left: 8rpx;
+  padding-right: 7rpx;
+  transition: background 130ms ease, color 130ms ease, transform 130ms cubic-bezier(.16,1,.3,1);
+}
+.knowledge-index .index-action-selected {
+  color: #3F8E79;
+  font-weight: 650;
+}
+.knowledge-index .index-action-selected .index-locate-icon { opacity: .78; }
+.knowledge-index .index-action-pressed {
+  background: #EAF4F1;
+  transform: scale(.97);
+}
+.knowledge-index .index-action-caret {
+  transition: transform 170ms cubic-bezier(.16,1,.3,1), border-color 140ms ease;
+}
+.knowledge-index .index-row-branch.index-pressed .index-action-caret { border-color: #567A70; }
+
+/* The connector is intentionally quieter during interaction so text and tap targets lead the eye. */
+.knowledge-index .index-ancestor-guide,
+.knowledge-index .index-joint::before,
+.knowledge-index .index-joint::after,
+.knowledge-index .index-joint-tail,
+.knowledge-index .index-child-stem {
+  background: #D8E7E9;
+}
+.knowledge-index .index-joint-dot { box-shadow: 0 0 0 1rpx #CCDDE1, 0 0 0 3rpx rgba(255,255,255,.72); }
+.knowledge-index .index-row-selected .index-joint-dot {
+  box-shadow: 0 0 0 1rpx #AED2C9, 0 0 0 3rpx rgba(255,255,255,.78);
+}
+
+@keyframes index-inline-search-enter {
+  from { opacity: 0; transform: translate3d(0,-5rpx,0) scale(.995); }
+  to { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+
+@media (max-width: 350px) {
+  .knowledge-index .index-inline-search { margin-left: 10rpx; margin-right: 10rpx; padding-left: 10rpx; gap: 6rpx; }
+  .knowledge-index .index-inline-search-meta { display: none; }
+  .knowledge-index .index-inline-cancel { min-width: 52rpx; padding-left: 4rpx; padding-right: 4rpx; font-size: 14rpx; }
+  .knowledge-index .index-action { min-width: 62rpx; height: 50rpx; padding-left: 4rpx; padding-right: 3rpx; }
+}
+
+/* ===== Knowledge index · search / micro-interaction refinement v4 ===== */
+.knowledge-index .index-toolbar-searching {
+  padding-bottom: 13rpx;
+}
+
+/* The toolbar icon is a true toggle now: search when closed, close when open. */
+.knowledge-index .index-search-trigger {
+  position: relative;
+  overflow: visible;
+  border: 1rpx solid transparent;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 120ms cubic-bezier(.16,1,.3,1);
+}
+.knowledge-index .index-search-has-query {
+  background: #F7FAF9;
+  border-color: #E2ECE9;
+}
+.knowledge-index .index-search-open {
+  border-color: #CFE4DE;
+  background: #EDF7F4;
+  box-shadow: 0 3rpx 10rpx rgba(57, 116, 101, .055), inset 0 1rpx 0 rgba(255,255,255,.92);
+}
+.knowledge-index .index-search-pressed {
+  transform: scale(.93);
+  background: #E8F3EF;
+}
+.knowledge-index .index-search-close-symbol {
+  position: relative;
+  width: 20rpx;
+  height: 20rpx;
+}
+.knowledge-index .index-search-close-symbol::before,
+.knowledge-index .index-search-close-symbol::after {
+  content: '';
+  position: absolute;
+  left: 2rpx;
+  top: 9rpx;
+  width: 16rpx;
+  height: 2rpx;
+  border-radius: 999rpx;
+  background: #5D8178;
+}
+.knowledge-index .index-search-close-symbol::before { transform: rotate(45deg); }
+.knowledge-index .index-search-close-symbol::after { transform: rotate(-45deg); }
+.knowledge-index .index-search-query-dot {
+  position: absolute;
+  right: 4rpx;
+  top: 3rpx;
+  width: 8rpx;
+  height: 8rpx;
+  box-sizing: border-box;
+  border: 2rpx solid #FFFFFF;
+  border-radius: 50%;
+  background: #42B68C;
+  box-shadow: 0 1rpx 4rpx rgba(43, 124, 99, .2);
+}
+
+/* One compact search field: no floating “完成” action and no detached result text. */
+.knowledge-index .index-inline-search {
+  display: flex;
+  min-height: 64rpx;
+  align-items: center;
+  gap: 8rpx;
+  margin: 0 14rpx 15rpx;
+  padding: 6rpx 8rpx 6rpx 7rpx;
+  box-sizing: border-box;
+  border: 1rpx solid #DCE9E5;
+  border-radius: 15rpx;
+  background: #FAFCFB;
+  box-shadow: 0 4rpx 14rpx rgba(49, 91, 80, .035), inset 0 1rpx 0 rgba(255,255,255,.96);
+  animation: index-inline-search-enter 175ms cubic-bezier(.16,1,.3,1) both;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+.knowledge-index .index-inline-search-focused {
+  border-color: #AFCFC6;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3rpx rgba(64, 163, 137, .055), 0 7rpx 20rpx rgba(48, 92, 80, .05);
+}
+.knowledge-index .index-inline-search-leading {
+  display: flex;
+  width: 42rpx;
+  height: 42rpx;
+  flex: 0 0 42rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11rpx;
+  background: #F0F6F4;
+  transition: background 140ms ease, transform 140ms cubic-bezier(.16,1,.3,1);
+}
+.knowledge-index .index-inline-search-focused .index-inline-search-leading {
+  background: #EAF5F1;
+  transform: scale(1.02);
+}
+.knowledge-index .index-inline-search-icon {
+  width: 21rpx;
+  height: 21rpx;
+  flex: 0 0 21rpx;
+  opacity: .7;
+}
+.knowledge-index .index-inline-search-input {
+  min-width: 0;
+  height: 50rpx;
+  flex: 1 1 auto;
+  padding: 0 2rpx;
+  color: #23383E;
+  font-size: 19rpx;
+  font-weight: 480;
+  line-height: 50rpx;
+}
+.knowledge-index .index-inline-search-placeholder {
+  color: #9AA9AB;
+  font-weight: 430;
+}
+.knowledge-index .index-inline-clear {
+  width: 38rpx;
+  height: 38rpx;
+  flex: 0 0 38rpx;
+  border-radius: 10rpx;
+}
+.knowledge-index .index-inline-clear-symbol {
+  width: 17rpx;
+  height: 17rpx;
+  background: #C8D5D2;
+  transition: background 130ms ease, transform 130ms cubic-bezier(.16,1,.3,1);
+}
+.knowledge-index .index-inline-clear-symbol::before,
+.knowledge-index .index-inline-clear-symbol::after {
+  left: 4rpx;
+  top: 7.5rpx;
+  width: 9rpx;
+}
+.knowledge-index .index-inline-clear.index-inline-control-pressed .index-inline-clear-symbol {
+  background: #AFC2BD;
+  transform: scale(.92);
+}
+.knowledge-index .index-inline-divider {
+  width: 1rpx;
+  height: 28rpx;
+  flex: 0 0 1rpx;
+  background: #E5EEEB;
+}
+.knowledge-index .index-inline-search-meta {
+  display: flex;
+  min-width: 74rpx;
+  max-width: 108rpx;
+  height: 34rpx;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5rpx;
+  overflow: hidden;
+  padding: 0 9rpx;
+  box-sizing: border-box;
+  border: 1rpx solid #E1ECE8;
+  border-radius: 999rpx;
+  background: #F3F8F6;
+  color: #708B84;
+  font-size: 12rpx;
+  font-weight: 560;
+  line-height: 32rpx;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.knowledge-index .index-inline-search-meta-pending {
+  color: #78918B;
+  background: #F7FAF9;
+}
+.knowledge-index .index-inline-search-meta .search-pending-dot {
+  width: 6rpx;
+  height: 6rpx;
+  flex: 0 0 6rpx;
+  margin: 0;
+}
+.knowledge-index .index-inline-search-meta text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No-result state stays inside the index so the user can recover without losing the search UI. */
+.knowledge-index .index-search-empty {
+  display: flex;
+  min-height: 224rpx;
+  margin: 2rpx 14rpx 16rpx;
+  padding: 29rpx 20rpx 24rpx;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx dashed #DCE8E5;
+  border-radius: 15rpx;
+  background: linear-gradient(180deg, rgba(249,252,251,.92), rgba(253,254,254,.98));
+  text-align: center;
+}
+.knowledge-index .index-search-empty-icon {
+  position: relative;
+  width: 54rpx;
+  height: 54rpx;
+  margin-bottom: 12rpx;
+  border: 1rpx solid #DCEAE6;
+  border-radius: 50%;
+  background: #F3F8F6;
+}
+.knowledge-index .index-search-empty-icon::before {
+  content: '';
+  position: absolute;
+  left: 14rpx;
+  top: 13rpx;
+  width: 17rpx;
+  height: 17rpx;
+  box-sizing: border-box;
+  border: 2rpx solid #86A69D;
+  border-radius: 50%;
+}
+.knowledge-index .index-search-empty-icon::after {
+  content: '';
+  position: absolute;
+  left: 31rpx;
+  top: 31rpx;
+  width: 10rpx;
+  height: 2rpx;
+  border-radius: 999rpx;
+  background: #86A69D;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+.knowledge-index .index-search-empty-icon view {
+  position: absolute;
+  right: 8rpx;
+  bottom: 8rpx;
+  width: 13rpx;
+  height: 13rpx;
+  box-sizing: border-box;
+  border: 2rpx solid #FFFFFF;
+  border-radius: 50%;
+  background: #D8E9E3;
+}
+.knowledge-index .index-search-empty-title {
+  color: #344C52;
+  font-size: 20rpx;
+  font-weight: 650;
+  line-height: 30rpx;
+}
+.knowledge-index .index-search-empty-note {
+  margin-top: 4rpx;
+  color: #8A9B9E;
+  font-size: 15rpx;
+  line-height: 24rpx;
+}
+.knowledge-index .index-search-empty-action {
+  min-width: 118rpx;
+  height: 46rpx;
+  margin: 15rpx 0 0 !important;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 11rpx;
+  background: #EEF6F3;
+  color: #527B70;
+  font-size: 15rpx;
+  font-weight: 620;
+  line-height: 46rpx;
+}
+.knowledge-index .index-search-empty-action::after { border: 0; }
+
+/* Small interaction polish: actions read as tap targets without competing with the tree content. */
+.knowledge-index .index-action-selected {
+  padding-left: 8rpx;
+  padding-right: 8rpx;
+  border: 1rpx solid #D8EBE5;
+  background: #F1F8F5;
+  color: #3E8B77;
+}
+.knowledge-index .index-row-context {
+  opacity: .72;
+}
+.knowledge-index .index-row-context.index-pressed {
+  opacity: .9;
+}
+.knowledge-index .index-row-leaf .index-node-name {
+  transition: color 120ms ease;
+}
+.knowledge-index .index-row-leaf.index-pressed .index-node-name,
+.knowledge-index .index-row-branch.index-pressed .index-node-name {
+  color: #17453F;
+}
+
+@media (max-width: 350px) {
+  .knowledge-index .index-inline-search {
+    min-height: 60rpx;
+    gap: 6rpx;
+    margin-left: 10rpx;
+    margin-right: 10rpx;
+    padding-left: 6rpx;
+    padding-right: 7rpx;
+  }
+  .knowledge-index .index-inline-search-leading { width: 38rpx; height: 38rpx; flex-basis: 38rpx; }
+  .knowledge-index .index-inline-search-input { font-size: 17rpx; }
+  .knowledge-index .index-inline-divider { display: none; }
+  .knowledge-index .index-inline-search-meta { min-width: 58rpx; max-width: 72rpx; padding-left: 6rpx; padding-right: 6rpx; font-size: 11rpx; }
+  .knowledge-index .index-search-empty { margin-left: 10rpx; margin-right: 10rpx; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-index .index-search-trigger,
+  .knowledge-index .index-inline-search,
+  .knowledge-index .index-inline-search-leading,
+  .knowledge-index .index-inline-clear-symbol { transition: none; }
+  .knowledge-index .index-inline-search { animation: none; }
+}
+
+
+/* ===== Knowledge index · debounced search & stable result transition v5 ===== */
+/* Keep result replacement local to the index. Explicit height is injected only while
+   switching, so large -> empty / empty -> large searches no longer collapse abruptly. */
+.knowledge-index .index-results-shell {
+  position: relative;
+  width: 100%;
+  overflow: visible;
+  transition: height 220ms cubic-bezier(.22,.78,.22,1);
+  will-change: height;
+}
+.knowledge-index .index-results-transitioning {
+  overflow: hidden;
+}
+.knowledge-index .index-results-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transform-origin: 50% 0;
+  will-change: opacity, transform;
+}
+.knowledge-index .index-results-content.index-results-leaving {
+  opacity: .18;
+  transform: translate3d(0,-4rpx,0) scale(.998);
+  transition: opacity 72ms ease-out, transform 72ms ease-out;
+  pointer-events: none;
+}
+.knowledge-index .index-results-content.index-results-entering {
+  animation: index-search-results-enter 210ms cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes index-search-results-enter {
+  0% { opacity: .22; transform: translate3d(0,5rpx,0) scale(.998); }
+  62% { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+
+/* Pending feedback is deliberately subtle: old results remain readable during the
+   debounce window instead of disappearing under a loading state. */
+.knowledge-index .index-inline-search-meta-pending {
+  border-color: #DCEAE6;
+  background: #F7FAF9;
+  color: #78918B;
+}
+.knowledge-index .index-inline-search-meta-pending .search-pending-dot {
+  animation: index-search-pending-pulse 780ms ease-in-out infinite;
+}
+@keyframes index-search-pending-pulse {
+  0%, 100% { opacity: .42; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+
+/* The no-result card participates in the same content transition and feels less like
+   a hard replacement of the tree. */
+.knowledge-index .index-search-empty {
+  transform-origin: 50% 0;
+}
+.knowledge-index .index-results-entering .index-search-empty {
+  animation: index-search-empty-enter 240ms cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes index-search-empty-enter {
+  from { opacity: .25; transform: translate3d(0,8rpx,0) scale(.992); }
+  to { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+
+/* While typing, keep the search field visually active without changing its geometry. */
+.knowledge-index .index-inline-search-has-value {
+  border-color: #D5E7E2;
+}
+.knowledge-index .index-inline-search-focused.index-inline-search-has-value {
+  border-color: #A7CCC2;
+}
+.knowledge-index .index-inline-search-meta {
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-index .index-results-shell,
+  .knowledge-index .index-results-content,
+  .knowledge-index .index-search-empty,
+  .knowledge-index .index-inline-search-meta,
+  .knowledge-index .index-inline-search-meta-pending .search-pending-dot {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* ===== Knowledge index · isolated search / explicit graph navigation v6 ===== */
+/* Typing only changes the local result surface. A slim progress trace communicates
+   debounce/replace work without covering the previous readable result set. */
+.knowledge-index .index-results-shell::before {
+  content: '';
+  position: absolute;
+  z-index: 6;
+  left: 18rpx;
+  right: 18rpx;
+  top: 0;
+  height: 2rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, rgba(67,169,143,0), rgba(67,169,143,.62), rgba(67,169,143,0));
+  opacity: 0;
+  transform: scaleX(.18);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+.knowledge-index .index-results-pending::before {
+  opacity: .72;
+  animation: index-search-progress 920ms cubic-bezier(.22,.78,.22,1) infinite;
+}
+@keyframes index-search-progress {
+  0% { transform: translate3d(-34%,0,0) scaleX(.18); opacity: .2; }
+  45% { opacity: .72; }
+  100% { transform: translate3d(72%,0,0) scaleX(.42); opacity: .08; }
+}
+
+/* A real search hit is visually distinct from its ancestor-only path rows. This
+   makes it clear which labels are actionable and which rows merely explain context. */
+.knowledge-index .index-row-search-target:not(.index-row-selected) {
+  background: linear-gradient(90deg, rgba(245,250,248,.72), rgba(255,255,255,0) 78%);
+}
+.knowledge-index .index-row-search-target .index-node-name {
+  color: #1C3D38;
+}
+.knowledge-index .index-row-context .index-action-path,
+.knowledge-index .index-action-path[disabled] {
+  opacity: .42;
+  background: transparent;
+  color: #789097;
+}
+.knowledge-index .index-action-path[disabled]::after { border: 0; }
+
+/* Explicit navigation feedback appears only after a user taps a matched label.
+   The graph then animates and the page scrolls smoothly to it. */
+.knowledge-index .index-row-navigating {
+  background: linear-gradient(90deg, rgba(230,246,240,.96), rgba(248,252,250,.52) 76%, rgba(255,255,255,0));
+  box-shadow: inset 0 0 0 1rpx rgba(166,214,201,.36);
+  transform: translate3d(0,-1rpx,0);
+}
+.knowledge-index .index-row-navigating::before {
+  background: #42A989;
+  opacity: .9;
+  transform: scaleY(1);
+}
+.knowledge-index .index-action-navigating {
+  min-width: 86rpx;
+  background: #EDF7F3;
+  color: #3E8875;
+  pointer-events: none;
+}
+.knowledge-index .index-navigation-spinner {
+  width: 15rpx;
+  height: 15rpx;
+  flex: 0 0 15rpx;
+  box-sizing: border-box;
+  border: 2rpx solid rgba(62,136,117,.22);
+  border-top-color: #4A9A83;
+  border-radius: 50%;
+  animation: index-navigation-spin 620ms linear infinite;
+}
+@keyframes index-navigation-spin { to { transform: rotate(360deg); } }
+
+/* Search-result replacement gets a softer settle so switching between a long list
+   and an empty state reads as one local transition rather than a page relocation. */
+.knowledge-index .index-results-content.index-results-entering .index-row-search-target {
+  animation: index-search-target-enter 260ms cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes index-search-target-enter {
+  from { opacity: .35; transform: translate3d(0,6rpx,0); }
+  to { opacity: 1; transform: translate3d(0,0,0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-index .index-results-pending::before,
+  .knowledge-index .index-navigation-spinner,
+  .knowledge-index .index-results-content.index-results-entering .index-row-search-target {
+    animation: none;
+  }
+  .knowledge-index .index-row-navigating { transform: none; }
+}
+
+/* ===== Knowledge index · non-collapsing search surface / interaction polish v7 ===== */
+/* A dedicated index-search session keeps the largest result footprint it has shown.
+   This is intentionally a min-height (not a fixed height): results may grow naturally,
+   but a short or empty result can no longer shrink the document and clamp page scroll
+   upward into the graph section. The floor is released only after an idle search is
+   explicitly closed. */
+.knowledge-index .index-results-layout-locked.index-results-empty-state .index-results-content-empty {
+  min-height: inherit;
+  justify-content: center;
+}
+.knowledge-index .index-results-layout-locked.index-results-empty-state .index-search-empty {
+  width: calc(100% - 28rpx);
+  align-self: center;
+  margin-top: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+/* While the debounce/replace cycle is pending, the previous rows stay visible as
+   spatial context but are temporarily non-interactive so a fast tap cannot navigate
+   using stale results from the previous keyword. */
+.knowledge-index .index-results-pending .index-list,
+.knowledge-index .index-results-pending .index-more {
+  pointer-events: none;
+}
+.knowledge-index .index-results-pending .index-results-content {
+  opacity: .88;
+  transition: opacity 120ms ease;
+}
+.knowledge-index .index-results-shell:not(.index-results-pending) .index-results-content {
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+/* Empty-result feedback should feel like a local state change, not a replacement page. */
+.knowledge-index .index-search-empty-icon {
+  animation: index-search-empty-float 2.4s ease-in-out infinite;
+}
+.knowledge-index .index-search-empty-icon view {
+  animation: index-search-empty-pulse 1.7s ease-in-out infinite;
+}
+.knowledge-index .index-search-empty-action {
+  transition: transform 130ms cubic-bezier(.16,1,.3,1), background 130ms ease, box-shadow 130ms ease;
+}
+.knowledge-index .index-search-empty-action.index-inline-control-pressed {
+  background: #E5F1ED;
+  box-shadow: inset 0 0 0 1rpx #D2E7E0;
+  transform: scale(.98);
+}
+@keyframes index-search-empty-float {
+  0%, 100% { transform: translate3d(0,0,0); }
+  50% { transform: translate3d(0,-3rpx,0); }
+}
+@keyframes index-search-empty-pulse {
+  0%, 100% { opacity: .55; transform: scale(.88); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+/* Search hits settle as a group; path-only rows remain quieter so users can scan for
+   actionable labels quickly without the tree flickering between keywords. */
+.knowledge-index .index-results-entering .index-row-context {
+  animation: index-search-context-enter 220ms ease-out both;
+}
+@keyframes index-search-context-enter {
+  from { opacity: .35; }
+  to { opacity: .72; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-index .index-results-pending .index-results-content,
+  .knowledge-index .index-results-shell:not(.index-results-pending) .index-results-content,
+  .knowledge-index .index-search-empty-icon,
+  .knowledge-index .index-search-empty-icon view,
+  .knowledge-index .index-results-entering .index-row-context {
+    transition: none;
+    animation: none;
+  }
 }
