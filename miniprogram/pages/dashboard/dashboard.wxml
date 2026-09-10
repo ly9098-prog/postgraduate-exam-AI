@@ -29,7 +29,7 @@
     </view>
     <text class="state-kicker">MEMOGRAD REPORT</text>
     <text class="state-title">从第一组练习开始</text>
-    <text class="state-desc">完成练习后，这里会生成趋势、薄弱点与今日建议。</text>
+    <text class="state-desc">完成练习后，这里会生成趋势、薄弱点与诊断报告。</text>
     <button class="state-button" bindtap="goPractice">开始练习</button>
     <text class="state-link" bindtap="goWrongBook">查看错题本</text>
   </view>
@@ -93,7 +93,7 @@
       <view class="hero-actions">
         <button class="hero-primary-button" bindtap="goPractice" hover-class="button-pressed">
           <text class="line-icon icon-play"></text>
-          <text>开始今日学习</text>
+          <text>继续练习</text>
         </button>
         <view class="hero-secondary-button" bindtap="goReview" hover-class="surface-pressed">
           <text>去复习</text>
@@ -244,52 +244,54 @@
       </view>
     </view>
 
-    <!-- P0: Today plan -->
-    <view class="dashboard-section">
-      <view class="section-heading">
-        <view>
-          <text class="section-title no-kicker">今日推荐任务</text>
-        </view>
-        <text class="section-side-note">按优先级</text>
+    <!-- Knowledge hierarchy diagnosis · full analysis belongs in this existing report page -->
+    <view id="knowledge-diagnosis-section" class="dashboard-section knowledge-diagnosis-section" wx:if="{{knowledgeDiagnosisLoading || knowledgeDiagnosis || knowledgeDiagnosisError}}">
+      <view class="knowledge-diagnosis-card is-loading" wx:if="{{knowledgeDiagnosisLoading && !knowledgeDiagnosis}}">
+        <view class="knowledge-diagnosis-skeleton skeleton-title"></view>
+        <view class="knowledge-diagnosis-skeleton skeleton-line"></view>
+        <view class="knowledge-diagnosis-skeleton skeleton-line short"></view>
       </view>
 
-      <view class="action-card" wx:if="{{insights && insights.actionPlan && insights.actionPlan.items.length}}">
-        <block wx:for="{{insights.actionPlan.items}}" wx:for-item="action" wx:key="priority">
-          <view class="action-row" wx:if="{{index < 3}}" data-type="{{action.type}}" data-topic="{{action.actionData.topic}}" bindtap="goActionPlan" hover-class="surface-pressed">
-            <view class="action-number {{index == 0 ? 'primary' : ''}}">{{action.priority < 10 ? '0' + action.priority : action.priority}}</view>
-            <view class="action-copy">
-              <text class="action-title">{{action.title}}</text>
-              <text class="action-desc">{{action.desc}}</text>
-            </view>
-            <text class="line-icon icon-chevron-right action-arrow"></text>
-          </view>
-        </block>
+      <view class="knowledge-diagnosis-card is-error" wx:elif="{{knowledgeDiagnosisError && !knowledgeDiagnosis}}">
+        <view class="knowledge-diagnosis-copy">
+          <text class="knowledge-diagnosis-title">章节诊断暂不可用</text>
+          <text class="knowledge-diagnosis-reason">知识图谱与其他学习报告不受影响。</text>
+        </view>
+        <view class="knowledge-diagnosis-link" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">重试</view>
       </view>
 
-      <view class="action-card" wx:else>
-        <view class="action-row" bindtap="goReview" hover-class="surface-pressed">
-          <view class="action-number primary">01</view>
-          <view class="action-copy">
-            <text class="action-title">完成 {{hero.dueReviewCount}} 道到期复习</text>
-            <text class="action-desc">优先处理即将遗忘的内容</text>
+      <view class="knowledge-diagnosis-card" wx:elif="{{knowledgeDiagnosis && knowledgeDiagnosis.primary}}">
+        <view class="knowledge-diagnosis-card-heading">
+          <view>
+            <text class="knowledge-diagnosis-kicker">KNOWLEDGE DIAGNOSIS</text>
+            <text class="knowledge-diagnosis-card-title">章节学习诊断</text>
           </view>
-          <text class="line-icon icon-chevron-right action-arrow"></text>
+          <text class="knowledge-diagnosis-period">{{knowledgeDiagnosis.subjectName}} · 近{{knowledgeDiagnosis.periodDays}}天</text>
         </view>
-        <view class="action-row" bindtap="goPractice" hover-class="surface-pressed">
-          <view class="action-number">02</view>
-          <view class="action-copy">
-            <text class="action-title">完成一组智能练习</text>
-            <text class="action-desc">根据薄弱点动态推荐题目</text>
+        <view class="knowledge-diagnosis-head">
+          <view class="knowledge-diagnosis-icon">
+            <image src="/assets/icons/home-actions/target.svg" mode="aspectFit" />
           </view>
-          <text class="line-icon icon-chevron-right action-arrow"></text>
+          <view class="knowledge-diagnosis-divider"></view>
+          <view class="knowledge-diagnosis-copy">
+            <text class="knowledge-diagnosis-label">当前优先章节</text>
+            <text class="knowledge-diagnosis-title">{{knowledgeDiagnosis.primary.title}}</text>
+            <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.primary.reason}}</text>
+          </view>
         </view>
-        <view class="action-row" bindtap="goWrongBook" hover-class="surface-pressed">
-          <view class="action-number">03</view>
-          <view class="action-copy">
-            <text class="action-title">复盘最近错题</text>
-            <text class="action-desc">及时整理错误原因与解题路径</text>
+
+        <view class="knowledge-diagnosis-metrics">
+          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.masteryText}}</text><text class="metric-sub">掌握</text></view>
+          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.coverageText}}</text><text class="metric-sub">覆盖</text></view>
+          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.weakCount}}</text><text class="metric-sub">薄弱点</text></view>
+          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.report.sessionCount}}</text><text class="metric-sub">章节专项</text></view>
+        </view>
+
+        <view class="knowledge-diagnosis-actions">
+          <view class="knowledge-diagnosis-primary" bindtap="startKnowledgeDiagnosisPractice" hover-class="primary-action-pressed">
+            <text>{{knowledgeDiagnosis.primary.actionLabel}}</text><text class="knowledge-diagnosis-primary-arrow">→</text>
           </view>
-          <text class="line-icon icon-chevron-right action-arrow"></text>
+          <view class="knowledge-diagnosis-secondary" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱 ›</view>
         </view>
       </view>
     </view>

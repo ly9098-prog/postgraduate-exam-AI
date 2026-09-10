@@ -339,7 +339,6 @@ module.exports = {
   buildSpeedAccuracy,
   buildNewVsReview,
   buildInputOutput,
-  buildActionPlan,
 }
 
 // ──────────────────────────────────────────────
@@ -361,7 +360,6 @@ function buildInsights(data) {
     speedAccuracy: buildSpeedAccuracy(data.speed_accuracy),
     newVsReview: buildNewVsReview(data.new_vs_review),
     inputOutput: buildInputOutput(data.input_output),
-    actionPlan: buildActionPlan(data.action_plan),
   }
 }
 
@@ -494,19 +492,6 @@ function buildInputOutput(io) {
       efficiencyScore: i.efficiency_score || 0,
       efficiencyLabel: i.efficiency_label || '数据不足',
       suggestion: i.suggestion || '',
-    })),
-  }
-}
-
-function buildActionPlan(ap) {
-  if (!ap || !ap.data_available || !ap.items || !ap.items.length) return null
-  return {
-    items: ap.items.map(a => ({
-      type: a.type || 'practice',
-      priority: a.priority || 0,
-      title: a.title || '',
-      desc: a.desc || '',
-      actionData: a.action_data || {},
     })),
   }
 }

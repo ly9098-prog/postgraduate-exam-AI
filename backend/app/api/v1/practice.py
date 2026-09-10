@@ -222,6 +222,7 @@ async def get_practice_questions(
     # smart 默认走综合 scored；客户端仍只需要传 mode=smart。
     # weakness_vector 保留为显式 fallback / A/B control。
     smart_strategy: str = Query("scored"),
+    plan_token: str | None = Query(None, max_length=2048),
     x_trace_id: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -537,6 +538,30 @@ async def get_practice_questions(
         questions=questions,
         revision_ids=latest_revision_ids,
     )
+
+    # Home today-plan attribution is accepted only from a valid server-issued token
+    # that still matches the actual practice request.  Users may edit the config
+    # page; a mismatch simply drops attribution and never blocks normal practice.
+    entry_context = None
+    if plan_token:
+        from app.services.study_hub_plan_token import validate_plan_task_token
+
+        entry_context = validate_plan_task_token(
+            plan_token,
+            user_id=current_user.id,
+            subject_id=subject_id,
+            mode=mode,
+            count=count,
+            knowledge_point_id=knowledge_point_id,
+            include_descendants=include_descendants,
+            question_ids=question_ids,
+        )
+        if entry_context is None:
+            logger.info(
+                "[STUDY_HUB_PLAN_ATTRIBUTION_SKIPPED] user_id=%s subject_id=%s mode=%s",
+                current_user.id, subject_id, mode,
+            )
+
     batch_token, issued_revisions, submission_request_id = svc.create_practice_batch_token(
         user_id=current_user.id,
         subject_id=subject_id,
@@ -545,6 +570,7 @@ async def get_practice_questions(
         revision_ids=latest_revision_ids,
         recommendation_request_id=request_id,
         knowledge_context=knowledge_context,
+        entry_context=entry_context,
     )
     revision_views = await load_revision_views(db, issued_revisions.values())
     revision_kps = await load_revision_kp_names(db, issued_revisions.values())

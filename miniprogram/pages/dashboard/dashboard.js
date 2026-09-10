@@ -12,6 +12,52 @@ function clampPct(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
 }
 
+function nullablePct(value) {
+  if (value == null || !Number.isFinite(Number(value))) return null
+  return clampPct(value)
+}
+
+function ratioPct(value) {
+  if (value == null || !Number.isFinite(Number(value))) return 0
+  const number = Number(value)
+  return clampPct(Math.abs(number) <= 1 ? number * 100 : number)
+}
+
+function buildKnowledgeDiagnosisSnapshot(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const recommendations = Array.isArray(raw.recommendations) ? raw.recommendations : []
+  const primaryRaw = raw.primary_recommendation || recommendations[0] || null
+  const report = raw.report || {}
+  const primary = primaryRaw ? {
+    knowledgePointId: Number(primaryRaw.knowledge_point_id) || 0,
+    knowledgePointName: String(primaryRaw.knowledge_point_name || ''),
+    title: String(primaryRaw.title || primaryRaw.knowledge_point_name || '章节专项'),
+    reason: String(primaryRaw.reason || ''),
+    actionLabel: String(primaryRaw.action_label || '开始章节专项'),
+    masteryText: nullablePct(primaryRaw.mastery_score) == null ? '待建立' : `${nullablePct(primaryRaw.mastery_score)}%`,
+    coverageText: `${ratioPct(primaryRaw.coverage_ratio)}%`,
+    weakCount: Math.max(0, Number(primaryRaw.weak_knowledge_points) || 0),
+    trainableCount: Math.max(0, Number(primaryRaw.trainable_knowledge_points) || 0),
+    routeParams: primaryRaw.route_params && typeof primaryRaw.route_params === 'object' ? primaryRaw.route_params : {},
+  } : null
+  const accuracy = report.accuracy == null ? null : ratioPct(report.accuracy)
+  return {
+    subjectId: Number(raw.subject_id) || 0,
+    subjectName: String(raw.subject_name || ''),
+    periodDays: Number(raw.period_days || report.period_days) || 30,
+    primary,
+    report: {
+      sessionCount: Math.max(0, Number(report.session_count) || 0),
+      questionCount: Math.max(0, Number(report.question_count) || 0),
+      accuracyText: accuracy == null ? '--' : `${accuracy}%`,
+      practicedChapterCount: Math.max(0, Number(report.practiced_chapter_count) || 0),
+      servedKnowledgePointCount: Math.max(0, Number(report.served_knowledge_point_count) || 0),
+      coverageText: `${ratioPct(report.current_coverage_ratio)}%`,
+      weakCount: Math.max(0, Number(report.current_weak_knowledge_points) || 0),
+    },
+  }
+}
+
 function buildDeepAnalysisState(source) {
   const hero = source.hero || {}
   const trend = source.trend || {}
@@ -240,6 +286,12 @@ Page({
     errorDiagnosisPrimaryChange: null,
     errorDiagnosisChanges: [],
     errorDiagnosisTopKnowledge: null,
+
+    // Knowledge hierarchy diagnosis (uses the existing learning-report page).
+    knowledgeDiagnosisLoading: false,
+    knowledgeDiagnosisError: '',
+    knowledgeDiagnosis: null,
+    knowledgeDiagnosisSubjectId: 0,
   },
 
   _alive: false,
@@ -266,8 +318,18 @@ Page({
   _insightsError: null,
   _insightSeq: 0,
   _errorDiagnosisSeq: 0,
+  _knowledgeDiagnosisSeq: 0,
+  _knowledgeDiagnosisLoadedAt: 0,
+  _chapterPracticeNavigationPending: false,
   _insightRetryTimer: null,
   _insightKickoffTimer: null,
+
+  onLoad(options) {
+    this._focusSubjectId = Math.max(0, Number(options && options.focus_subject_id) || 0)
+    this._focusDiagnosisOnLoad = String((options && options.section) || '') === 'knowledge_diagnosis'
+    this._diagnosisAutoScrolled = false
+    this._chapterPracticeNavigationPending = false
+  },
 
   goBack() {
     wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
@@ -276,6 +338,7 @@ Page({
   onShow() {
     this._alive = true
     this._visible = true
+    this._chapterPracticeNavigationPending = false
 
     var forceRefresh = this._forceRefreshOnNextShow
     this._forceRefreshOnNextShow = false
@@ -286,7 +349,7 @@ Page({
     }
 
     if (forceRefresh) {
-      this.loadDashboard({ mode: 'background' })
+      this.loadDashboard({ mode: 'silent' })
       return
     }
 
@@ -312,6 +375,7 @@ Page({
     this._yearlySeq++
     this._insightSeq++
     this._errorDiagnosisSeq++
+    this._knowledgeDiagnosisSeq++
     this._loadPromise = null  // 页面隐藏后使当前加载失效，允许下一次 onShow 发起新请求
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -336,6 +400,7 @@ Page({
       pendingTrendDays: null,
       _activeTabDays: this.data.trendDays,
       yearlyLoading: false,
+      knowledgeDiagnosisLoading: false,
     })
   },
 
@@ -347,6 +412,7 @@ Page({
     this._yearlySeq++
     this._insightSeq++
     this._errorDiagnosisSeq++
+    this._knowledgeDiagnosisSeq++
     this._loadPromise = null
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -476,6 +542,79 @@ Page({
       if (!this._alive || !this._visible || seq !== this._errorDiagnosisSeq) return
       this.setData({ errorDiagnosisLoading: false })
     }
+  },
+
+  async loadKnowledgeDiagnosis(subjectId, options = {}) {
+    const id = Math.max(0, Number(subjectId) || 0)
+    if (!id || !this._alive || !this._visible) return null
+    const force = Boolean(options && options.force)
+    if (!force && this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis && Date.now() - this._knowledgeDiagnosisLoadedAt < 30000) {
+      return this.data.knowledgeDiagnosis
+    }
+
+    const seq = ++this._knowledgeDiagnosisSeq
+    const keepCurrent = this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis
+    if (!keepCurrent) this.setData({ knowledgeDiagnosisLoading: true, knowledgeDiagnosisError: '', knowledgeDiagnosisSubjectId: id })
+    try {
+      const raw = await api.get('/study-hub/knowledge-diagnosis', { subject_id: id, days: 30 })
+      if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
+      const snapshot = buildKnowledgeDiagnosisSnapshot(raw)
+      this._knowledgeDiagnosisLoadedAt = Date.now()
+      this.setData({
+        knowledgeDiagnosisLoading: false,
+        knowledgeDiagnosisError: '',
+        knowledgeDiagnosis: snapshot,
+        knowledgeDiagnosisSubjectId: id,
+      }, () => {
+        if (this._focusDiagnosisOnLoad && !this._diagnosisAutoScrolled && typeof wx.pageScrollTo === 'function') {
+          this._diagnosisAutoScrolled = true
+          const scroll = () => wx.pageScrollTo({ selector: '#knowledge-diagnosis-section', duration: 180 })
+          if (typeof wx.nextTick === 'function') wx.nextTick(scroll)
+          else setTimeout(scroll, 0)
+        }
+      })
+      return snapshot
+    } catch (e) {
+      if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
+      console.warn('[dashboard] knowledge diagnosis load failed', e)
+      if (!keepCurrent) this.setData({ knowledgeDiagnosisLoading: false, knowledgeDiagnosisError: '章节诊断暂不可用' })
+      return null
+    }
+  },
+
+  retryKnowledgeDiagnosis() {
+    const id = this.data.knowledgeDiagnosisSubjectId || this._focusSubjectId || (this.data.subjects && this.data.subjects.focusItem && this.data.subjects.focusItem.subjectId)
+    return this.loadKnowledgeDiagnosis(id, { force: true })
+  },
+
+  startKnowledgeDiagnosisPractice() {
+    if (this._chapterPracticeNavigationPending) return
+    const diagnosis = this.data.knowledgeDiagnosis
+    const item = diagnosis && diagnosis.primary
+    if (!item || !diagnosis.subjectId || !item.knowledgePointId) return
+    const routeParams = item.routeParams || {}
+    const count = Math.max(1, Math.min(50, Number(routeParams.count) || 10))
+    const includeDescendants = Number(routeParams.include_descendants) === 1 || routeParams.include_descendants === true
+    const returnTo = encodeURIComponent(`/pages/dashboard/dashboard?focus_subject_id=${diagnosis.subjectId}&section=knowledge_diagnosis`)
+    const subjectName = encodeURIComponent(diagnosis.subjectName || '章节专项')
+    const url = `/subpackages/study/practice/practice?subject_id=${diagnosis.subjectId}&subject_name=${subjectName}&mode=random&count=${count}&knowledge_point_id=${item.knowledgePointId}&include_descendants=${includeDescendants ? 1 : 0}&include_children=1&allow_repeat=1&autostart=1&source=knowledge_diagnosis&return_to=${returnTo}`
+    this._chapterPracticeNavigationPending = true
+    this._forceRefreshOnNextShow = true
+    wx.navigateTo({
+      url,
+      fail: () => {
+        this._chapterPracticeNavigationPending = false
+        this._forceRefreshOnNextShow = false
+        wx.showToast({ title: '专项练习打开失败，请重试', icon: 'none' })
+      },
+    })
+  },
+
+  openKnowledgeDiagnosisMap() {
+    const diagnosis = this.data.knowledgeDiagnosis
+    const subjectId = Number(diagnosis && diagnosis.subjectId) || Number(this.data.knowledgeDiagnosisSubjectId) || 0
+    if (!subjectId) return
+    this.goTo(`/subpackages/study/knowledge-subject/index?subject_id=${subjectId}`)
   },
 
   async loadInsights(retryCount = 0, requestSeq = null) {
@@ -657,6 +796,11 @@ Page({
       _hasData: hasData,
     }, () => {
       if (!this._alive) return
+
+      const diagnosisSubjectId = this._focusSubjectId || (subjects && subjects.focusItem && subjects.focusItem.subjectId) || 0
+      if (diagnosisSubjectId) {
+        this.loadKnowledgeDiagnosis(diagnosisSubjectId, { force: mode !== 'initial' })
+      }
 
       // The redesigned dashboard uses a single primary chart to keep the page calm and focused.
       if (trend && canRedrawTrend) {
@@ -943,19 +1087,6 @@ Page({
     this.goTo(url)
   },
 
-  // ── Action Plan ──
-  goActionPlan(e) {
-    const type = e.currentTarget.dataset.type
-    const topic = e.currentTarget.dataset.topic
-    if (type === 'review') this.goReview()
-    else if (type === 'wrong') {
-      let url = '/subpackages/study/wrong-book/wrong-book'
-      if (topic) url += '?topic=' + encodeURIComponent(topic)
-      this.goTo(url)
-    }
-    else if (type === 'practice') this.goPractice()
-    else this.goPractice()
-  },
   onInsightCta() {
     const ctaType = this._insight && this._insight.cta_type
     if (ctaType === 'review') this.goReview()

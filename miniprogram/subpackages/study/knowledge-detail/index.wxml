@@ -38,12 +38,12 @@
       <view class="metric-strip">
         <view class="metric-item">
           <text class="metric-value">{{scoreText}}</text>
-          <text class="metric-label">掌握度</text>
+          <text class="metric-label">{{detail.is_parent_node ? '章节掌握度' : '掌握度'}}</text>
         </view>
         <view class="metric-divider"></view>
         <view class="metric-item">
           <text class="metric-value">{{accuracyText}}</text>
-          <text class="metric-label">正确率</text>
+          <text class="metric-label">{{detail.is_parent_node ? '知识覆盖' : '正确率'}}</text>
         </view>
         <view class="metric-divider"></view>
         <view class="metric-item">
@@ -55,10 +55,28 @@
 
     <view class="evidence-card surface-card">
       <view class="section-head">
-        <text class="section-title">练习证据</text>
-        <text class="section-note">共 {{detail.attempt_count}} 次</text>
+        <text class="section-title">{{detail.is_parent_node ? '章节学习概况' : '练习证据'}}</text>
+        <text class="section-note">{{detail.is_parent_node ? ('共 ' + detail.descendant_count + ' 个下级知识点') : ('共 ' + detail.attempt_count + ' 次')}}</text>
       </view>
-      <view class="evidence-grid">
+      <view class="evidence-grid" wx:if="{{detail.is_parent_node}}">
+        <view class="evidence-item">
+          <text class="evidence-value">{{detail.subtree_reliable_knowledge_points}}</text>
+          <text class="evidence-label">已建立</text>
+        </view>
+        <view class="evidence-item">
+          <text class="evidence-value">{{detail.subtree_weak_knowledge_points}}</text>
+          <text class="evidence-label">薄弱</text>
+        </view>
+        <view class="evidence-item">
+          <text class="evidence-value">{{detail.subtree_trainable_knowledge_points}}</text>
+          <text class="evidence-label">可练知识点</text>
+        </view>
+        <view class="evidence-item">
+          <text class="evidence-value evidence-accent">{{detail.direct_children.length}}</text>
+          <text class="evidence-label">直接子节点</text>
+        </view>
+      </view>
+      <view class="evidence-grid" wx:else>
         <view class="evidence-item">
           <text class="evidence-value">{{detail.correct_count}}</text>
           <text class="evidence-label">答对</text>
@@ -77,7 +95,7 @@
         </view>
       </view>
 
-      <view class="recent-performance" wx:if="{{recent.length}}">
+      <view class="recent-performance" wx:if="{{!detail.is_parent_node && recent.length}}">
         <view class="recent-copy">
           <text>最近 {{recent.length}} 次表现</text>
           <text>由近到远</text>
@@ -87,9 +105,40 @@
         </view>
       </view>
 
-      <view class="confidence-hint" wx:if="{{detail.status === 'insufficient'}}">
+      <view class="confidence-hint" wx:if="{{detail.display_status === 'insufficient'}}">
         <view class="hint-icon">i</view>
         <text>当前证据还不足，继续完成几次练习后会得到更稳定的判断。</text>
+      </view>
+    </view>
+
+    <view class="relation-card surface-card" wx:if="{{detail.direct_children.length}}">
+      <view class="section-head relation-head">
+        <view class="relation-title-wrap">
+          <image src="/assets/icons/knowledge-subject/tree.png" mode="aspectFit" aria-hidden="true" />
+          <text class="section-title">下级知识点</text>
+        </view>
+        <text class="section-note">{{detail.direct_children.length}} 个</text>
+      </view>
+      <view class="relation-list">
+        <view
+          wx:for="{{detail.direct_children}}"
+          wx:key="knowledge_point_id"
+          class="relation-chip relation-chip-related {{relationSwitchingId == item.knowledge_point_id ? 'relation-chip-loading' : ''}}"
+          data-id="{{item.knowledge_point_id}}"
+          bindtouchstart="prefetchRelation"
+          bindtap="openRelation"
+          hover-class="relation-chip-pressed"
+          hover-stay-time="80"
+          aria-role="button"
+          aria-label="打开下级知识点{{item.name}}"
+        >
+          <view class="relation-chip-icon-wrap">
+            <image class="relation-chip-icon" src="/assets/icons/knowledge-subject/tree.png" mode="aspectFit" aria-hidden="true" />
+          </view>
+          <text class="relation-chip-name">{{item.name}}</text>
+          <view wx:if="{{relationSwitchingId == item.knowledge_point_id}}" class="chip-spinner" aria-hidden="true"></view>
+          <text wx:else class="chip-arrow" aria-hidden="true">›</text>
+        </view>
       </view>
     </view>
 
@@ -215,8 +264,8 @@
         <image class="practice-target-icon" src="/assets/icons/knowledge-detail/practice-target.svg" mode="aspectFit" />
       </view>
       <view class="practice-copy">
-        <text class="practice-title">专项强化</text>
-        <text class="practice-desc">{{practiceDisabled ? '当前知识点暂无可练题目' : (practiceLaunching ? '正在准备专项题组…' : '聚焦高频考点，提升解题能力')}}</text>
+        <text class="practice-title">{{detail.is_parent_node ? '章节专项练习' : '专项强化'}}</text>
+        <text class="practice-desc">{{practiceDisabled ? (detail.is_parent_node ? '当前章节暂无可练题目' : '当前知识点暂无可练题目') : (practiceLaunching ? '正在准备专项题组…' : (detail.is_parent_node ? '覆盖本章节子知识点，优先练薄弱与待建立内容' : '聚焦高频考点，提升解题能力'))}}</text>
       </view>
       <view class="practice-arrow" aria-hidden="true">
         <view wx:if="{{practiceLaunching}}" class="practice-launch-spinner"></view>

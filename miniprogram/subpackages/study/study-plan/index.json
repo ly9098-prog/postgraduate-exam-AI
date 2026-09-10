@@ -3,7 +3,7 @@
   "navigationBarBackgroundColor": "#F4F4EE",
   "navigationBarTextStyle": "black",
   "backgroundColor": "#F4F4EE",
-  "enablePullDownRefresh": true,
+  "enablePullDownRefresh": false,
   "usingComponents": {
     "app-dialog": "/components/app-dialog/index"
   }

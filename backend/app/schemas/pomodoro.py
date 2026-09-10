@@ -141,6 +141,30 @@ class PomodoroDailySummaryResponse(BaseModel):
     subjects: list[PomodoroDailySummarySubject] = []
 
 
+class PomodoroRangeSummaryResponse(BaseModel):
+    """Learning-duration distribution for an inclusive study-day range."""
+
+    start_date: str
+    end_date: str
+    timezone: str
+    day_start_minute: int
+    day_start_time: str
+    sessions: int = 0
+    duration_sec: int = 0
+    active_days: int = 0
+    subjects: list[PomodoroDailySummarySubject] = []
+
+
+class PomodoroLifetimeSummaryResponse(BaseModel):
+    """Compact lifetime roll-up used by the statistics overview header."""
+
+    start_date: str
+    end_date: str
+    sessions: int = 0
+    duration_sec: int = 0
+    active_days: int = 0
+
+
 class PomodoroTrendPoint(BaseModel):
     date: str
     sessions: int = 0
@@ -150,13 +174,15 @@ class PomodoroTrendPoint(BaseModel):
 class PomodoroStatisticsOverviewResponse(BaseModel):
     """One-page payload for the mini-program statistics page.
 
-    stats / trends / daily_summary are computed from a single bounded window load
-    + a single attribution pass (see ``pomodoro_service.build_pomodoro_statistics_snapshot``).
+    stats / trends / daily_summary share one bounded attribution pass; the compact
+    lifetime_summary reuses the same attribution rules over the user's completed
+    learning history.
     """
 
     stats: PomodoroStatsResponse
     trends: list[PomodoroTrendPoint]
     daily_summary: PomodoroDailySummaryResponse
+    lifetime_summary: PomodoroLifetimeSummaryResponse
 
 
 class LearningHistoryItem(BaseModel):

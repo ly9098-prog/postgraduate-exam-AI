@@ -51,15 +51,23 @@
           <view class="focus-status-dot"></view>
           <text>{{primaryTaskKicker}}</text>
         </view>
-        <view class="goal-link" bindtap="toggleGoalPicker" hover-class="soft-pressed">目标 {{todayGoalTotal}} 题</view>
+        <view class="focus-plan-anchor" bindtap="goStudyPlan" hover-class="soft-pressed" aria-role="button" aria-label="查看学习目标">
+          <text class="focus-plan-anchor-label">目标</text>
+        </view>
       </view>
 
       <text class="focus-title">{{primaryTaskTitle}}</text>
       <text class="focus-desc">{{primaryTaskDesc}}</text>
 
       <view class="progress-head">
-        <text>今日进度</text>
-        <text class="progress-value">{{_animGoalDone}} / {{todayGoalTotal}}</text>
+        <view class="progress-head-copy">
+          <text>今日进度</text>
+          <text class="progress-head-sub">目标题量 {{todayGoalTotal}} 题</text>
+        </view>
+        <view class="progress-pair">
+          <text class="progress-value">{{_animGoalDone}} / {{todayGoalTotal}}</text>
+          <text class="progress-rate">{{_animLevelProgress}}%</text>
+        </view>
       </view>
       <view class="focus-progress-track">
         <view class="focus-progress-fill" style="width: {{_animLevelProgress}}%;"></view>
@@ -67,16 +75,6 @@
       <view class="progress-foot">
         <text>{{missionText}}</text>
         <text>{{_animLevelProgress}}%</text>
-      </view>
-
-      <view class="goal-picker" wx:if="{{showGoalPicker}}">
-        <view
-          wx:for="{{goalOptions}}"
-          wx:key="*this"
-          class="goal-option {{item === todayGoalTotal ? 'goal-option-active' : ''}}"
-          data-goal="{{item}}"
-          bindtap="selectTodayGoal"
-        >{{item}} 题</view>
       </view>
 
       <view class="focus-actions">
@@ -106,33 +104,6 @@
     </view>
   </view>
 
-  <!-- Long-range study plan / countdown -->
-  <view class="plan-strip page-enter delay-two" bindtap="goStudyPlan" hover-class="plan-strip-pressed">
-    <view class="plan-strip-main">
-      <view class="plan-strip-topline">
-        <text class="plan-strip-kicker">LONG-RANGE PLAN</text>
-        <text class="plan-strip-link">{{studyPlanConfigured ? '调整计划' : '设置计划'}} ›</text>
-      </view>
-      <block wx:if="{{studyPlanConfigured}}">
-        <view class="plan-strip-countdown-row">
-          <text class="plan-strip-days">{{planDaysRemaining}}</text>
-          <text class="plan-strip-days-unit">天后目标日</text>
-          <text class="plan-strip-phase">{{planPhaseLabel}}</text>
-        </view>
-        <text class="plan-strip-primary">{{planPrimaryText}}</text>
-        <view class="plan-strip-progress-row">
-          <text>{{planTodayText}}</text>
-          <text>{{planWeeklyText}}</text>
-        </view>
-        <view class="plan-strip-track"><view class="plan-strip-fill" style="width: {{planProgressPercent}}%;"></view></view>
-      </block>
-      <block wx:else>
-        <text class="plan-strip-empty-title">设置目标日期，让今天的任务服务于长期节奏</text>
-        <text class="plan-strip-empty-desc">按每日时长和每周学习天数，动态分配复习 / 弱项 / 新题 / 真题选择题。</text>
-      </block>
-    </view>
-    <view class="plan-strip-arrow">→</view>
-  </view>
 
   <!-- Smart Study Hub tasks -->
   <view class="content-section page-enter delay-two">
@@ -141,19 +112,22 @@
         <text class="section-kicker">SMART STUDY HUB</text>
         <text class="section-title">今日学习</text>
       </view>
-      <text class="section-note">{{studyHubAvailable ? '按优先级安排' : '四科专项'}}</text>
+      <view class="section-quick-action" bindtap="startRandom" hover-class="section-quick-action-pressed" aria-role="button" aria-label="进入随机练习">
+        <image class="section-quick-icon" src="/assets/icons/home-actions/shuffle.svg" mode="aspectFit" />
+        <text>随机练习</text><text class="section-quick-arrow">›</text>
+      </view>
     </view>
 
-    <view class="route-stack hub-task-stack" wx:if="{{studyHubAvailable && hubTasks.length > 0}}">
+    <view class="route-stack hub-task-stack" wx:if="{{studyHubAvailable}}">
       <view
         wx:for="{{hubTasks}}"
         wx:key="key"
-        class="route-card hub-task-card hub-task-{{item.taskType}}"
+        class="route-card hub-task-card hub-task-{{item.taskType}} {{item.completedToday ? 'hub-task-completed' : ''}}"
         data-task-key="{{item.key}}"
         bindtap="openHubTask"
         hover-class="card-pressed"
       >
-        <view class="route-index hub-task-index">{{item.priorityText}}</view>
+        <view class="route-index hub-task-index"><image class="route-icon-image" src="{{item.iconSrc}}" mode="aspectFit" /></view>
         <view class="route-copy">
           <view class="hub-task-eyebrow-row">
             <text class="route-eyebrow">{{item.eyebrow}}</text>
@@ -164,11 +138,22 @@
         </view>
         <view class="route-arrow">→</view>
       </view>
+
+      <!-- Wrong-book is a permanent Home tool, never hidden by recommendation availability. -->
+      <view class="route-card route-wrong wrongbook-tool-card" bindtap="goWrongBook" hover-class="card-pressed">
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/book-x.svg" mode="aspectFit" /></view>
+        <view class="route-copy">
+          <text class="route-eyebrow">常用工具</text>
+          <text class="route-title">错题本</text>
+          <text class="route-desc">聚焦错题，复盘反复出错的知识点</text>
+        </view>
+        <view class="route-arrow">→</view>
+      </view>
     </view>
 
     <view class="route-stack" wx:else>
       <view class="route-card route-review" bindtap="goReview" hover-class="card-pressed">
-        <view class="route-index">01</view>
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/refresh-cw.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">记忆复习</text>
           <text class="route-title">今日复习</text>
@@ -178,7 +163,7 @@
       </view>
 
       <view class="route-card route-practice" bindtap="startRandom" hover-class="card-pressed">
-        <view class="route-index">02</view>
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/shuffle.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">新题训练</text>
           <text class="route-title">随机练习</text>
@@ -188,7 +173,7 @@
       </view>
 
       <view class="route-card route-wrong" bindtap="goWrongBook" hover-class="card-pressed">
-        <view class="route-index">03</view>
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/book-x.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">薄弱项管理</text>
           <text class="route-title">错题本</text>
@@ -198,7 +183,7 @@
       </view>
 
       <view class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
-        <view class="route-index">04</view>
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/list-checks.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">套卷训练</text>
           <text class="route-title">选择题真题 / 模拟</text>

@@ -174,6 +174,28 @@ Page({
     this.setData({ priorityIndex: clampIndex(e.detail.value, PRIORITY_OPTIONS) })
   },
 
+  goBack() {
+    wx.navigateBack({ delta: 1 })
+  },
+
+  onPlanEnabledChange(e) {
+    const checked = !!(e && e.detail && e.detail.value)
+    if (checked) {
+      if (!this.data.configured) {
+        wx.showToast({ title: '请继续设置目标后保存', icon: 'none' })
+      }
+      return
+    }
+    if (this.data.configured && !this.data.saving) {
+      this.deletePlan()
+      return
+    }
+    this.setData({
+      targetDate: '',
+      targetDateText: '请选择目标日期',
+    })
+  },
+
   _showAppDialog(opts) {
     const dialog = this.selectComponent('#appDialog')
     if (!dialog || typeof dialog.show !== 'function') return Promise.resolve(false)

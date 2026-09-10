@@ -20,6 +20,7 @@ from app.models.admin import QuestionVersion, Subject
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
+from app.models.practice_session import PracticeSession
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
@@ -52,6 +53,8 @@ def _practice_params(
     mode: str,
     count: int,
     knowledge_point: str | None = None,
+    knowledge_point_id: int | None = None,
+    include_descendants: bool = False,
     question_ids: list[int] | None = None,
     allow_repeat: bool = False,
 ) -> dict:
@@ -62,7 +65,14 @@ def _practice_params(
         "autostart": 1,
         "source": "study_hub",
     }
-    if knowledge_point:
+    if knowledge_point_id:
+        params["knowledge_point_id"] = int(knowledge_point_id)
+        if include_descendants:
+            params["include_descendants"] = 1
+        # Knowledge-point deep links may target a 408 leaf subject, but keeping
+        # include_children=1 is harmless and preserves current launch behavior.
+        params["include_children"] = 1
+    elif knowledge_point:
         params["knowledge_point"] = str(knowledge_point)
     if question_ids:
         params["question_ids"] = ",".join(str(int(qid)) for qid in question_ids)
@@ -173,6 +183,146 @@ async def _build_subject_mastery(
             "accuracy": round(correct / attempts, 4) if attempts > 0 else None,
         })
     return result
+
+
+async def _pick_chapter_recommendation(
+    db: AsyncSession,
+    user_id: int,
+    subject_mastery: list[dict],
+) -> dict | None:
+    """Pick one actionable chapter from the weakest *known* 408 subject.
+
+    Stage 7 already owns hierarchy diagnosis/ranking.  Home only asks that service
+    for the one or two weakest practiced subjects, avoiding four full knowledge-map
+    projections on every page show while still producing a concrete chapter plan.
+    """
+    practiced = [
+        item for item in subject_mastery
+        if bool(item.get("data_available")) and int(item.get("attempt_count") or 0) > 0
+    ]
+    if not practiced:
+        return None
+    practiced.sort(
+        key=lambda item: (
+            float(item.get("mastery_score") if item.get("mastery_score") is not None else 100.0),
+            float(item.get("confidence") or 0.0),
+            -int(item.get("attempt_count") or 0),
+            int(item.get("subject_id") or 0),
+        )
+    )
+
+    from app.services import knowledge_diagnosis_service
+
+    for subject in practiced[:2]:
+        subject_id = int(subject.get("subject_id") or 0)
+        if subject_id <= 0:
+            continue
+        diagnosis = await knowledge_diagnosis_service.get_knowledge_diagnosis(
+            db,
+            user_id,
+            subject_id,
+            days=30,
+        )
+        recommendation = diagnosis.get("primary_recommendation") if diagnosis else None
+        if not isinstance(recommendation, dict):
+            continue
+        kp_id = int(recommendation.get("knowledge_point_id") or 0)
+        if kp_id <= 0:
+            continue
+        count = min(
+            SMART_TASK_COUNT,
+            max(3, int(recommendation.get("trainable_knowledge_points") or SMART_TASK_COUNT)),
+        )
+        return {
+            "key": f"chapter:{subject_id}:{kp_id}",
+            "task_type": "knowledge_chapter",
+            "priority": 0,
+            "title": str(recommendation.get("title") or "进行章节专项"),
+            "reason": str(recommendation.get("reason") or "根据当前知识覆盖和掌握状态安排章节练习。"),
+            "action_label": str(recommendation.get("action_label") or "开始章节专项"),
+            "route": "practice",
+            "route_params": _practice_params(
+                subject_id=subject_id,
+                mode="random",
+                count=count,
+                knowledge_point_id=kp_id,
+                include_descendants=True,
+                allow_repeat=True,
+            ),
+            "estimated_question_count": count,
+            "estimated_minutes": _minutes_for_questions(count),
+            "subject_id": subject_id,
+            "subject_code": str(diagnosis.get("subject_code") or subject.get("subject_code") or ""),
+            "subject_name": str(diagnosis.get("subject_name") or subject.get("subject_name") or ""),
+            "knowledge_point_id": kp_id,
+            "knowledge_point_name": str(recommendation.get("knowledge_point_name") or ""),
+        }
+    return None
+
+
+async def _load_completed_plan_task_keys(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    plan_date,
+) -> set[str]:
+    """Load server-attributed Home plan tasks completed on one China calendar day."""
+    start, end = shanghai_date_utc_range(plan_date)
+    payloads = (await db.execute(
+        select(PracticeSession.submission_response).where(
+            PracticeSession.user_id == int(user_id),
+            PracticeSession.status == "completed",
+            PracticeSession.finished_at >= start,
+            PracticeSession.finished_at < end,
+        )
+    )).scalars().all()
+    keys: set[str] = set()
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        context = payload.get("entry_context")
+        if not isinstance(context, dict):
+            continue
+        if str(context.get("source") or "") != "home_today_plan":
+            continue
+        if str(context.get("plan_date") or "") != plan_date.isoformat():
+            continue
+        key = str(context.get("task_key") or "").strip()
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _attach_plan_token(
+    task: dict,
+    *,
+    user_id: int,
+    plan_date: str,
+) -> None:
+    if str(task.get("route") or "") != "practice":
+        return
+    params = dict(task.get("route_params") or {})
+    subject_id = int(params.get("subject_id") or task.get("subject_id") or 0)
+    count = int(params.get("count") or task.get("estimated_question_count") or 0)
+    if subject_id <= 0 or count <= 0:
+        return
+
+    from app.services.study_hub_plan_token import issue_plan_task_token
+
+    token = issue_plan_task_token(
+        user_id=user_id,
+        plan_date=plan_date,
+        task_key=str(task.get("key") or "")[:128],
+        subject_id=subject_id,
+        mode=str(params.get("mode") or "random"),
+        count=count,
+        knowledge_point_id=(int(params["knowledge_point_id"]) if params.get("knowledge_point_id") else None),
+        include_descendants=bool(params.get("include_descendants")),
+        question_ids=str(params.get("question_ids") or "") or None,
+    )
+    params["source"] = "home_today_plan"
+    params["plan_token"] = token
+    task["route_params"] = params
 
 
 async def _pick_weak_point(
@@ -447,6 +597,11 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
         db, user_id, core_ids
     )
     subject_mastery = await _build_subject_mastery(db, user_id, core_subjects)
+    chapter_task = (
+        await _pick_chapter_recommendation(db, user_id, subject_mastery)
+        if total_practice_count > 0
+        else None
+    )
     weak_point = await _pick_weak_point(db, user_id, core_ids)
     hard_questions = await _pick_hard_questions(db, user_id, core_ids)
     path_prereq = await _pick_path_prerequisite(db, user_id, core_ids)
@@ -475,7 +630,13 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
             "estimated_minutes": int(review_overview.get("estimated_minutes") or 0),
         })
 
-    if weak_point is not None:
+    if chapter_task is not None:
+        tasks.append(chapter_task)
+
+    if weak_point is not None and (
+        chapter_task is None
+        or int(chapter_task.get("subject_id") or 0) != int(weak_point.get("subject_id") or 0)
+    ):
         recent_wrong = int(weak_point["recent_wrong_count"])
         if recent_wrong >= 2:
             reason = (
@@ -500,7 +661,7 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
                 subject_id=weak_point["subject_id"],
                 mode="random",
                 count=weak_count,
-                knowledge_point=weak_point["knowledge_point_name"],
+                knowledge_point_id=weak_point["knowledge_point_id"],
                 allow_repeat=True,
             ),
             "estimated_question_count": weak_count,
@@ -608,14 +769,42 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
     # 其他任务只有学习状态真实变化时才会重新排序。
     task_order = {
         "review": 1,
-        "weakness": 2,
-        "hard_questions": 3,
-        "knowledge_path": 4,
-        "smart_practice": 5,
+        "knowledge_chapter": 2,
+        "weakness": 3,
+        "hard_questions": 4,
+        "knowledge_path": 5,
+        "smart_practice": 6,
     }
     tasks.sort(key=lambda task: (task_order[task["task_type"]], task["key"]))
+
+    plan_date = shanghai_today()
+    completed_plan_keys = await _load_completed_plan_task_keys(
+        db, user_id=user_id, plan_date=plan_date
+    )
+    completed_key_set = set(completed_plan_keys)
+
+    # 先标记完成态，再把“今日已完成”的推荐顺延到后面。
+    # 这样 Home 首屏会优先展示仍值得继续做的任务，同时保留完成项作为弱提示。
+    for task in tasks:
+        task["completed_today"] = str(task.get("key") or "") in completed_key_set
+
+    tasks.sort(key=lambda task: (
+        1 if task.get("completed_today") else 0,
+        task_order[task["task_type"]],
+        task["key"],
+    ))
+
+    # Home exposes three recommendation slots in total:
+    # one focus-card primary task plus up to two supplementary recommendation
+    # cards. Permanent tools such as the wrong-book are not recommendation slots.
+    tasks = tasks[:3]
     for index, task in enumerate(tasks, start=1):
         task["priority"] = index
+        _attach_plan_token(
+            task,
+            user_id=user_id,
+            plan_date=plan_date.isoformat(),
+        )
 
     review_summary = {
         "due_count": int(review_overview.get("today_due_count") or 0),
@@ -626,10 +815,13 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
     }
 
     return {
-        "date": shanghai_today().isoformat(),
+        "date": plan_date.isoformat(),
         "scope": EXAM408_ROOT_CODE,
         "scope_ready": True,
         "fallback_used": is_new_user,
+        "recommendation_limit": 3,
+        "recommended_task_count": len(tasks),
+        "completed_recommendation_count": len(completed_plan_keys),
         "today_question_count": today_question_count,
         "total_practice_count": total_practice_count,
         "review": review_summary,

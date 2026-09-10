@@ -1000,6 +1000,10 @@ async def build_pomodoro_statistics_snapshot(
     need_stats: bool = False,
     need_trends: bool = False,
     need_daily_summary: bool = False,
+    range_start: date | None = None,
+    range_end: date | None = None,
+    need_range_summary: bool = False,
+    range_include_subjects: bool = True,
 ) -> dict:
     """One bounded window load + one attribution pass → the requested stats dims.
 
@@ -1026,16 +1030,32 @@ async def build_pomodoro_statistics_snapshot(
         ranges.append((trend_start, trend_end))
     if need_daily_summary:
         ranges.append(study_day_utc_range(target, dsm))
+    if need_range_summary:
+        if range_start is None or range_end is None:
+            raise ValueError("range_start and range_end are required for range summary")
+        if range_end < range_start:
+            raise ValueError("range_end must be on or after range_start")
+        range_period_start, _ = study_day_utc_range(range_start, dsm)
+        _, range_period_end = study_day_utc_range(range_end, dsm)
+        ranges.append((range_period_start, range_period_end))
 
     if not ranges:
         return {}
     period_start = min(r[0] for r in ranges)
     period_end = max(r[1] for r in ranges)
     pomodoro_sessions = await _load_overlapping_sessions(
-        db, user_id, period_start, period_end, with_subject=need_daily_summary
+        db,
+        user_id,
+        period_start,
+        period_end,
+        with_subject=(need_daily_summary or (need_range_summary and range_include_subjects)),
     )
     practice_sessions = await _load_overlapping_practice_sessions(
-        db, user_id, period_start, period_end, with_subject=need_daily_summary
+        db,
+        user_id,
+        period_start,
+        period_end,
+        with_subject=(need_daily_summary or (need_range_summary and range_include_subjects)),
     )
 
     week_start_date = study_day_for_utc(study_week_utc_range(dsm)[0], dsm)
@@ -1055,6 +1075,11 @@ async def build_pomodoro_statistics_snapshot(
         target_groups: dict[int | None, dict] = {}
         target_sessions = 0
         target_duration = 0
+    if need_range_summary:
+        range_groups: dict[int | None, dict] = {}
+        range_sessions = 0
+        range_duration = 0
+        range_active_day_set: set[date] = set()
 
     # 已被计时的"占用"墙钟区间（用于刷题去重）：
     #  - 所有 Pomodoro 的 active（非暂停）区间
@@ -1079,6 +1104,25 @@ async def build_pomodoro_statistics_snapshot(
                     today_duration += sec
                 if week_start_date <= day < week_end_date:
                     week_duration += sec
+        if need_range_summary:
+            if range_start <= start_day <= range_end:
+                range_sessions += 1
+            range_contrib = 0
+            for day, sec in split.items():
+                if range_start <= day <= range_end:
+                    range_contrib += sec
+                    range_duration += sec
+                    if sec > 0:
+                        range_active_day_set.add(day)
+            if range_include_subjects and range_contrib > 0:
+                key, code, name = _resolve_subject(s)
+                g = range_groups.setdefault(key, {
+                    "subject_id": key, "subject_code": code, "subject_name": name,
+                    "duration_sec": 0, "sessions": 0,
+                })
+                g["duration_sec"] += range_contrib
+                if range_start <= start_day <= range_end:
+                    g["sessions"] += 1
         if need_trends:
             if start_day in trend_agg:
                 trend_agg[start_day]["sessions"] += 1
@@ -1119,6 +1163,23 @@ async def build_pomodoro_statistics_snapshot(
                     today_duration += sec
                 if week_start_date <= day < week_end_date:
                     week_duration += sec
+        if need_range_summary:
+            range_contrib = 0
+            for day, sec in split.items():
+                if range_start <= day <= range_end:
+                    range_contrib += sec
+                    range_duration += sec
+                    if sec > 0:
+                        range_active_day_set.add(day)
+            if range_include_subjects and range_contrib > 0:
+                key, code, name = _resolve_subject(s)
+                g = range_groups.setdefault(key, {
+                    "subject_id": key, "subject_code": code, "subject_name": name,
+                    "duration_sec": 0, "sessions": 0,
+                })
+                g["duration_sec"] += range_contrib
+                if range_start <= start_day <= range_end:
+                    g["sessions"] += 1
         if need_trends:
             for day, sec in split.items():
                 if day in trend_agg:
@@ -1180,6 +1241,29 @@ async def build_pomodoro_statistics_snapshot(
             "duration_sec": target_duration,
             "subjects": subjects,
         }
+    if need_range_summary:
+        range_subjects = [
+            {
+                "subject_id": key,
+                "subject_code": g["subject_code"],
+                "subject_name": g["subject_name"],
+                "sessions": g["sessions"],
+                "duration_sec": g["duration_sec"],
+            }
+            for key, g in range_groups.items()
+        ]
+        range_subjects.sort(key=lambda r: r["duration_sec"], reverse=True)
+        result["range_summary"] = {
+            "start_date": range_start.isoformat(),
+            "end_date": range_end.isoformat(),
+            "timezone": "Asia/Shanghai",
+            "day_start_minute": dsm,
+            "day_start_time": settings["day_start_time"],
+            "sessions": range_sessions,
+            "duration_sec": range_duration,
+            "active_days": len(range_active_day_set),
+            "subjects": range_subjects,
+        }
     return result
 
 
@@ -1215,6 +1299,66 @@ async def get_daily_summary(
         db, user_id, target_date=filter_date, need_daily_summary=True
     )
     return snapshot["daily_summary"]
+
+
+async def get_range_summary(
+    db: AsyncSession,
+    user_id: int,
+    start_date: date,
+    end_date: date,
+) -> dict:
+    snapshot = await build_pomodoro_statistics_snapshot(
+        db,
+        user_id,
+        range_start=start_date,
+        range_end=end_date,
+        need_range_summary=True,
+    )
+    return snapshot["range_summary"]
+
+
+async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
+    """Return a compact completed-learning roll-up from the first recorded study day.
+
+    The actual duration is intentionally computed through the same attribution path
+    as day/range statistics so Pomodoro pause intervals and Practice/Pomodoro overlap
+    de-duplication stay identical across every statistics surface.
+    """
+    settings = await get_pomodoro_settings(db, user_id)
+    dsm = settings["day_start_minute"]
+    today = current_study_day(dsm)
+
+    pomo_first = await db.scalar(
+        select(func.min(PomodoroSession.start_time)).where(
+            PomodoroSession.user_id == user_id,
+            PomodoroSession.status == "completed",
+        )
+    )
+    practice_first = await db.scalar(
+        select(func.min(PracticeSession.started_at)).where(
+            PracticeSession.user_id == user_id,
+            PracticeSession.status == "completed",
+        )
+    )
+    first_candidates = [value for value in (pomo_first, practice_first) if value is not None]
+    start_date = study_day_for_utc(min(first_candidates), dsm) if first_candidates else today
+
+    snapshot = await build_pomodoro_statistics_snapshot(
+        db,
+        user_id,
+        range_start=start_date,
+        range_end=today,
+        need_range_summary=True,
+        range_include_subjects=False,
+    )
+    summary = snapshot["range_summary"]
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": today.isoformat(),
+        "sessions": summary["sessions"],
+        "duration_sec": summary["duration_sec"],
+        "active_days": summary["active_days"],
+    }
 
 
 async def get_history(

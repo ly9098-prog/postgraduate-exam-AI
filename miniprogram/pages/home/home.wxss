@@ -287,7 +287,7 @@ page {
 
 .focus-topline {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20rpx;
 }
@@ -313,15 +313,42 @@ page {
   box-shadow: 0 0 0 8rpx rgba(183, 232, 42, .12);
 }
 
-.goal-link {
-  flex-shrink: 0;
-  padding: 10rpx 16rpx;
-  border: 1rpx solid rgba(255, 255, 255, .13);
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, .065);
-  color: rgba(255, 255, 255, .68);
-  font-size: 20rpx;
-  font-weight: 800;
+.focus-plan-anchor {
+  flex: 0 0 246rpx;
+  min-width: 0;
+  padding: 14rpx 18rpx;
+  border: 1rpx solid rgba(255, 255, 255, .12);
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, .07);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, .08);
+}
+
+.focus-plan-anchor-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8rpx;
+}
+
+.focus-plan-anchor-label {
+  color: rgba(255, 255, 255, .58);
+  font-size: 17rpx;
+  font-weight: 850;
+  letter-spacing: 1.5rpx;
+}
+
+.focus-plan-anchor-value {
+  color: #FFFFFF;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.focus-plan-anchor-sub {
+  display: block;
+  margin-top: 8rpx;
+  color: rgba(255, 255, 255, .72);
+  font-size: 17rpx;
+  line-height: 1.4;
 }
 
 .soft-pressed { opacity: .72; }
@@ -364,11 +391,35 @@ page {
   font-weight: 750;
 }
 
+.progress-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.progress-head-sub {
+  color: rgba(255, 255, 255, .44);
+  font-size: 17rpx;
+  font-weight: 700;
+}
+
+.progress-pair {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
 .progress-value {
   color: #FFFFFF;
   font-size: 24rpx;
   font-weight: 950;
   font-variant-numeric: tabular-nums;
+}
+
+.progress-rate {
+  color: #B7E82A;
+  font-size: 19rpx;
+  font-weight: 900;
 }
 
 .focus-progress-track {
@@ -406,14 +457,60 @@ page {
   font-weight: 900;
 }
 
+.goal-panel {
+  margin-top: 20rpx;
+  padding: 14rpx;
+  border: 1rpx solid rgba(255, 255, 255, .09);
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, .055);
+  backdrop-filter: blur(8px);
+}
+
+.goal-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.goal-panel-title,
+.goal-panel-desc,
+.goal-panel-summary {
+  display: block;
+}
+
+.goal-panel-title {
+  color: #FFFFFF;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.goal-panel-desc {
+  margin-top: 8rpx;
+  color: rgba(239, 245, 240, .62);
+  font-size: 18rpx;
+  line-height: 1.5;
+}
+
+.goal-panel-summary {
+  min-width: 148rpx;
+  padding: 8rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.08);
+  color: #F4FFE0;
+  font-size: 18rpx;
+  font-weight: 850;
+  text-align: center;
+}
+
 .goal-picker {
   display: flex;
   gap: 10rpx;
-  margin-top: 20rpx;
+  margin-top: 18rpx;
   padding: 11rpx;
-  border: 1rpx solid rgba(255, 255, 255, .09);
+  border: 1rpx solid rgba(255, 255, 255, .08);
   border-radius: 22rpx;
-  background: rgba(255, 255, 255, .055);
+  background: rgba(255, 255, 255, .035);
 }
 
 .goal-option {
@@ -430,6 +527,114 @@ page {
 .goal-option-active {
   color: #10251A;
   background: #B7E82A;
+}
+
+
+.goal-plan-card {
+  margin-top: 14rpx;
+  padding: 20rpx 18rpx;
+  border-radius: 22rpx;
+  border: 1rpx solid rgba(255, 255, 255, .08);
+  background: linear-gradient(145deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+}
+
+.goal-plan-topline,
+.goal-plan-highlight,
+.goal-plan-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.goal-plan-kicker {
+  color: rgba(255,255,255,.48);
+  font-size: 16rpx;
+  font-weight: 900;
+  letter-spacing: 2rpx;
+}
+
+.goal-plan-link {
+  color: #D6F681;
+  font-size: 18rpx;
+  font-weight: 850;
+}
+
+.goal-plan-highlight {
+  justify-content: flex-start;
+  margin-top: 14rpx;
+}
+
+.goal-plan-days {
+  color: #FFFFFF;
+  font-size: 42rpx;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.goal-plan-days-unit {
+  color: rgba(255,255,255,.74);
+  font-size: 18rpx;
+  font-weight: 700;
+}
+
+.goal-plan-phase {
+  padding: 7rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(183,232,42,.14);
+  color: #D6F681;
+  font-size: 17rpx;
+  font-weight: 900;
+}
+
+.goal-plan-primary,
+.goal-plan-empty-title,
+.goal-plan-empty-desc {
+  display: block;
+}
+
+.goal-plan-primary {
+  margin-top: 10rpx;
+  color: #FFFFFF;
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.goal-plan-meta {
+  margin-top: 11rpx;
+  color: rgba(255,255,255,.52);
+  font-size: 17rpx;
+  line-height: 1.4;
+}
+
+.goal-plan-track {
+  height: 8rpx;
+  margin-top: 10rpx;
+  overflow: hidden;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.10);
+}
+
+.goal-plan-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8FB700 0%, #B7E82A 100%);
+}
+
+.goal-plan-empty-title {
+  margin-top: 12rpx;
+  color: #FFFFFF;
+  font-size: 21rpx;
+  line-height: 1.45;
+  font-weight: 900;
+}
+
+.goal-plan-empty-desc {
+  margin-top: 8rpx;
+  color: rgba(239,245,240,.58);
+  font-size: 17rpx;
+  line-height: 1.5;
 }
 
 .focus-actions {
@@ -580,6 +785,37 @@ page {
   font-size: 21rpx;
 }
 
+.section-quick-action {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-height: 48rpx;
+  padding: 0 4rpx 0 12rpx;
+  border-radius: 999rpx;
+  color: #46604E;
+  font-size: 20rpx;
+  font-weight: 800;
+  transition: opacity .16s ease, transform .16s ease, background-color .16s ease;
+}
+
+.section-quick-action-pressed {
+  opacity: .7;
+  transform: scale(.98);
+  background: rgba(224, 232, 221, .62);
+}
+
+.section-quick-icon {
+  width: 26rpx;
+  height: 26rpx;
+}
+
+.section-quick-arrow {
+  margin-left: -2rpx;
+  color: #7C8A80;
+  font-size: 28rpx;
+  line-height: 1;
+}
+
 .route-stack {
   overflow: hidden;
   border: 1rpx solid #DFE3DC;
@@ -618,13 +854,14 @@ page {
   border-radius: 22rpx;
   flex-shrink: 0;
   background: #173426;
-  color: #B7E82A;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22rpx;
-  font-weight: 950;
-  font-variant-numeric: tabular-nums;
+}
+
+.route-icon-image {
+  width: 34rpx;
+  height: 34rpx;
 }
 
 .route-practice .route-index {
@@ -2797,4 +3034,106 @@ page {
 
 @media (max-width: 360px) {
   .mastery-icon::before { inset: 4rpx; }
+}
+
+
+/* Keep supplementary recommendations readable while separating the permanent
+   wrong-book tool with tone rather than an extra border. */
+.hub-task-stack { gap: 14rpx; }
+.wrongbook-tool-card {
+  margin-top: 4rpx;
+  border: 0;
+  background: linear-gradient(90deg, rgba(246, 239, 227, .72), rgba(255, 252, 246, .72));
+}
+.wrongbook-tool-card .route-title { font-size: 28rpx; }
+.wrongbook-tool-card .route-desc { opacity: .82; }
+.section-quick-action { min-height: 58rpx; padding-left: 18rpx; padding-right: 16rpx; }
+
+
+/* Stage 12.4 — integrate study plan settings into the home hero target area. */
+@media (max-width: 350px) {
+  .focus-plan-anchor { flex-basis: 220rpx; padding-left: 14rpx; padding-right: 14rpx; }
+  .goal-panel-head { flex-direction: column; }
+  .goal-panel-summary { min-width: 0; }
+  .goal-plan-meta { flex-direction: column; align-items: flex-start; }
+}
+
+/* Stage 12.5 — target entry should jump to study-plan instead of expanding inline. */
+.focus-plan-anchor {
+  min-width: 214rpx;
+  max-width: 244rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.05));
+  border: 1rpx solid rgba(255,255,255,.12);
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.10);
+}
+
+.focus-plan-anchor-top {
+  align-items: center;
+}
+
+.focus-plan-anchor-value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.focus-plan-anchor-arrow {
+  color: rgba(255,255,255,.56);
+  font-size: 24rpx;
+  line-height: 1;
+}
+
+.focus-plan-anchor-sub {
+  margin-top: 8rpx;
+  line-height: 1.4;
+}
+
+.hub-task-completed {
+  opacity: .88;
+  border-color: rgba(190, 208, 186, .9);
+  background: linear-gradient(180deg, rgba(248,250,245,.96), rgba(241,246,239,.92));
+}
+
+.hub-task-completed .route-title {
+  color: #48614E;
+}
+
+.hub-task-completed .route-desc,
+.hub-task-completed .hub-task-meta {
+  color: #7A8D7D;
+}
+
+/* Reference pass: keep the hero target entry compact and singular. */
+.focus-plan-anchor {
+  flex: 0 0 auto;
+  min-width: 82rpx;
+  max-width: none;
+  min-height: 46rpx;
+  padding: 0 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  border-color: rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, .12);
+}
+
+.focus-plan-anchor-label {
+  color: rgba(255, 255, 255, .84);
+  font-size: 19rpx;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+}
+
+@media (max-width: 350px) {
+  .focus-plan-anchor {
+    flex-basis: auto;
+    min-width: 76rpx;
+    min-height: 44rpx;
+    padding: 0 17rpx;
+  }
 }

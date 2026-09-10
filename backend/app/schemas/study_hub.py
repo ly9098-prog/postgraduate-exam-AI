@@ -11,6 +11,7 @@ StudyHubTaskType = Literal[
     "weakness",
     "hard_questions",
     "knowledge_path",
+    "knowledge_chapter",
     "smart_practice",
 ]
 
@@ -34,6 +35,7 @@ class StudyHubTask(BaseModel):
     knowledge_point_id: int | None = None
     knowledge_point_name: str | None = None
     question_ids: list[int] = Field(default_factory=list)
+    completed_today: bool = False
 
 
 class StudyHubSubjectMastery(BaseModel):
@@ -60,6 +62,9 @@ class StudyHubOverviewResponse(BaseModel):
     scope: str = "exam408"
     scope_ready: bool = True
     fallback_used: bool = False
+    recommendation_limit: int = 3
+    recommended_task_count: int = 0
+    completed_recommendation_count: int = 0
     today_question_count: int = 0
     total_practice_count: int = 0
     review: StudyHubReviewSummary = Field(default_factory=StudyHubReviewSummary)

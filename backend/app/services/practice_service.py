@@ -142,6 +142,7 @@ def create_practice_batch_token(
     revision_ids: dict[int, int],
     recommendation_request_id: str | None = None,
     knowledge_context: dict | None = None,
+    entry_context: dict | None = None,
 ) -> tuple[str | None, dict[int, int], str | None]:
     """Create a signed batch bound to immutable QuestionVersion ids.
 
@@ -191,6 +192,10 @@ def create_practice_batch_token(
         # Signed snapshot used only for post-practice knowledge impact reporting.
         # It does not change grading or question scope during submission.
         payload["knowledge_context"] = knowledge_context
+    if entry_context:
+        # Recommendation/entry attribution is server-validated before token issue,
+        # then re-signed into the immutable batch so submit cannot relabel it.
+        payload["entry_context"] = entry_context
     body = _urlsafe_b64encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
@@ -3467,6 +3472,11 @@ async def batch_submit_answers(
         "total_wrong": total_wrong,
         "total_skipped": len(skipped_questions),
         "knowledge_session": persisted_knowledge_session(batch_payload.get("knowledge_context")),
+        "entry_context": (
+            dict(batch_payload.get("entry_context"))
+            if isinstance(batch_payload.get("entry_context"), dict)
+            else None
+        ),
     })
     # submission_response is a SQL JSON column and is also the source used for
     # idempotent replay.  Nested diagnostics may contain datetime values, so

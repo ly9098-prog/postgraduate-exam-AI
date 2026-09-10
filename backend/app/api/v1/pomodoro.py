@@ -11,6 +11,7 @@ from app.schemas.pomodoro import (
     PomodoroDailySummaryResponse,
     PomodoroHistoryResponse,
     PomodoroPauseRequest,
+    PomodoroRangeSummaryResponse,
     PomodoroResumeRequest,
     PomodoroSessionResponse,
     PomodoroSettingsResponse,
@@ -202,7 +203,7 @@ async def get_statistics_overview(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """统计页首屏：stats + trends + daily_summary 一次返回（单次窗口加载 + 单次归因）。"""
+    """统计页首屏：当前统计 + 趋势 + 当日 + 累计摘要一次返回。"""
     data = await svc.build_pomodoro_statistics_snapshot(
         db,
         current_user.id,
@@ -211,7 +212,27 @@ async def get_statistics_overview(
         need_trends=True,
         need_daily_summary=True,
     )
+    data["lifetime_summary"] = await svc.get_lifetime_summary(db, current_user.id)
     return data
+
+
+@router.get("/range-summary", response_model=PomodoroRangeSummaryResponse)
+async def get_range_summary(
+    start_date: str = Query(..., description="Inclusive study-day range start (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="Inclusive study-day range end (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return one attribution-consistent duration distribution for a study-day range."""
+    start = _parse_study_date(start_date)
+    end = _parse_study_date(end_date)
+    if start is None or end is None:
+        raise HTTPException(status_code=400, detail="start_date and end_date are required")
+    if end < start:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+    if (end - start).days > 365:
+        raise HTTPException(status_code=400, detail="date range cannot exceed 366 days")
+    return await svc.get_range_summary(db, current_user.id, start, end)
 
 
 @router.get("/daily-summary", response_model=PomodoroDailySummaryResponse)

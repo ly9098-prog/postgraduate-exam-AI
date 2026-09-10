@@ -106,6 +106,8 @@ Page({
     hubPrimaryTask: null,
     hubSecondaryTask: null,
     hubTasks: [],
+    hubRecommendationCount: 0,
+    hubCompletedRecommendationCount: 0,
     subjectMastery: [],
     studyPlanConfigured: false,
     planDaysRemaining: 0,
@@ -945,6 +947,8 @@ Page({
         hubPrimaryTask: null,
         hubSecondaryTask: null,
         hubTasks: [],
+        hubRecommendationCount: 0,
+        hubCompletedRecommendationCount: 0,
         subjectMastery,
       }
     }
@@ -953,40 +957,50 @@ Page({
     const primaryKey = hub.primary_task && hub.primary_task.key
     const secondaryRaw = allTasks.find(task => task && task.key !== primaryKey) || null
     const taskTypeMeta = {
-      review: { eyebrow: '记忆优先', icon: 'R' },
-      weakness: { eyebrow: '弱项强化', icon: 'W' },
-      hard_questions: { eyebrow: '困难题重练', icon: 'H' },
-      knowledge_path: { eyebrow: '知识路径', icon: 'P' },
-      smart_practice: { eyebrow: '智能新题', icon: 'S' },
+      review: { eyebrow: '记忆优先', iconSrc: '/assets/icons/home-actions/refresh-cw.svg' },
+      weakness: { eyebrow: '弱项强化', iconSrc: '/assets/icons/home-actions/target.svg' },
+      hard_questions: { eyebrow: '困难题重练', iconSrc: '/assets/icons/home-actions/triangle-alert.svg' },
+      knowledge_path: { eyebrow: '知识路径', iconSrc: '/assets/icons/home-actions/route.svg' },
+      knowledge_chapter: { eyebrow: '章节专项', iconSrc: '/assets/icons/home-actions/book-open-check.svg' },
+      smart_practice: { eyebrow: '智能新题', iconSrc: '/assets/icons/home-actions/sparkles.svg' },
     }
+    // Home exposes three recommendation entrances in total:
+    // the focus-card primary task + up to two supplementary cards.
+    // Permanent tools (wrong-book, random practice) are not recommendation slots.
+    // Keep this frontend cap even when talking to an older/newer backend.
     const displayTasks = allTasks
       .filter(task => task && task.key !== primaryKey)
-      .slice(0, 4)
-      .map((task, index) => {
-        const meta = taskTypeMeta[task.task_type] || { eyebrow: '今日任务', icon: 'T' }
+      .slice(0, 2)
+      .map((task) => {
+        const meta = taskTypeMeta[task.task_type] || { eyebrow: '今日任务', iconSrc: '/assets/icons/home-actions/target.svg' }
         const q = this.toNonNegativeInt(task.estimated_question_count)
         const m = this.toNonNegativeInt(task.estimated_minutes)
         return {
           key: task.key,
           taskType: task.task_type,
-          priorityText: String(index + 2).padStart(2, '0'),
           eyebrow: meta.eyebrow,
-          icon: meta.icon,
+          iconSrc: meta.iconSrc,
           title: task.title || '继续学习',
           reason: task.reason || '',
           actionLabel: task.action_label || '开始',
-          metaText: q > 0 ? `约 ${q} 题 · ${m || 1} 分钟` : '按当前学习状态推荐',
+          metaText: task.completed_today
+            ? `今日已完成 · ${q > 0 ? '约 ' + q + ' 题' : '可再次练习'}`
+            : (q > 0 ? `约 ${q} 题 · ${m || 1} 分钟` : '按当前学习状态推荐'),
+          completedToday: Boolean(task.completed_today),
           route: task.route || '',
           routeParams: task.route_params || {},
         }
       })
 
+    const completedRecommendationCount = Math.min(3, this.toNonNegativeInt(hub.completed_recommendation_count))
     return {
       studyHubAvailable: true,
       studyHubFallback: !!hub.fallback_used,
       hubPrimaryTask: hub.primary_task,
       hubSecondaryTask: secondaryRaw,
       hubTasks: displayTasks,
+      hubRecommendationCount: Math.min(3, this.toNonNegativeInt(hub.recommended_task_count) || (1 + displayTasks.length)),
+      hubCompletedRecommendationCount: completedRecommendationCount,
       subjectMastery,
     }
   },
@@ -996,19 +1010,17 @@ Page({
     if (!task) return this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, 0)
     const remainingCount = Math.max(0, todayGoalTotal - todayGoalDone)
     const dueReviewCount = this.toNonNegativeInt(hub && hub.review && hub.review.remaining_count)
-    const priority = this.toNonNegativeInt(task.priority) || 1
-    const secondary = Array.isArray(hub.tasks)
-      ? hub.tasks.find(item => item && item.key !== task.key)
-      : null
     return {
       dueReviewCount,
       remainingCount,
       primaryTaskType: task.task_type || 'practice',
-      primaryTaskKicker: `SMART STUDY · 优先级 ${String(priority).padStart(2, '0')}`,
+      primaryTaskKicker: task.completed_today
+        ? 'SMART STUDY · 今日已完成'
+        : 'SMART STUDY · 今日优先',
       primaryTaskTitle: task.title || '继续今日学习',
       primaryTaskDesc: task.reason || '根据当前学习状态安排下一项任务。',
-      primaryTaskAction: task.action_label || '开始学习',
-      secondaryTaskAction: secondary ? (secondary.action_label || '下一项任务') : '查看学习报告',
+      primaryTaskAction: task.completed_today ? '再练一次' : (task.action_label || '开始学习'),
+      secondaryTaskAction: '查看学习报告',
     }
   },
 
@@ -1020,7 +1032,7 @@ Page({
         dueReviewCount,
         remainingCount,
         primaryTaskType: 'review',
-        primaryTaskKicker: 'MEMORY FIRST · 优先级 01',
+        primaryTaskKicker: 'MEMORY FIRST · 今日优先',
         primaryTaskTitle: `先复习 ${dueReviewCount} 道到期错题`,
         primaryTaskDesc: '这些错题已进入复习窗口。先巩固记忆，再开始新练习，效率会更高。',
         primaryTaskAction: '开始今日复习',
@@ -1033,7 +1045,7 @@ Page({
         dueReviewCount,
         remainingCount,
         primaryTaskType: 'practice',
-        primaryTaskKicker: 'TODAY PLAN · 优先级 01',
+        primaryTaskKicker: 'TODAY PLAN · 今日目标',
         primaryTaskTitle: `完成剩余 ${remainingCount} 道练习`,
         primaryTaskDesc: `今天已完成 ${todayGoalDone} 道练习。保持稳定节奏即可，不必一次全部做完。`,
         primaryTaskAction: '开始练习',
@@ -1182,11 +1194,15 @@ Page({
   },
 
   startPrimaryTask() {
-    // 首页主卡片是“进入刷题配置”的通用入口。不要把学习中心的推荐
-    // subject/mode 强行灌进配置页，否则会覆盖用户最近使用科目，并让
-    // “默认随机”失效。复习任务仍保持原路由；其它明确的任务入口继续
-    // 通过 openHubTaskByData 保留自己的定向参数。
-    if (this.data.primaryTaskType === 'review' || (this.data.hubPrimaryTask && this.data.hubPrimaryTask.route === 'review_today')) {
+    // Stage 8 turns the focus card into the first concrete item of today's plan.
+    // The practice setup page is still shown (autostart=0), so users can inspect
+    // or change the recommendation before starting. If they change its scope,
+    // backend plan-token validation simply drops attribution.
+    if (this.data.studyHubAvailable && this.data.hubPrimaryTask) {
+      this.openHubTaskByData(this.data.hubPrimaryTask)
+      return
+    }
+    if (this.data.primaryTaskType === 'review') {
       this.goReview()
       return
     }
@@ -1194,10 +1210,6 @@ Page({
   },
 
   startSecondaryTask() {
-    if (this.data.studyHubAvailable && this.data.hubSecondaryTask) {
-      this.openHubTaskByData(this.data.hubSecondaryTask)
-      return
-    }
     if (this.data.studyHubAvailable) {
       this.goDashboard()
       return
@@ -1234,7 +1246,7 @@ Page({
     // Home is the configuration entry: recommendation parameters may preselect
     // subject/mode/count, but the user must still see and confirm the setup page.
     // Other entry points can keep using autostart when they explicitly request it.
-    const params = { ...routeParams, autostart: 0, source: 'home' }
+    const params = { ...routeParams, autostart: 0, source: routeParams.source || 'home' }
     const query = Object.keys(params)
       .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
       .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
@@ -1276,7 +1288,10 @@ Page({
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
   goExams() { wx.navigateTo({ url: '/subpackages/exam/paper-list/index' }) },
-  goStudyPlan() { wx.navigateTo({ url: '/subpackages/study/study-plan/index' }) },
+  goStudyPlan() {
+    if (this.data.showGoalPicker) this.setData({ showGoalPicker: false })
+    wx.navigateTo({ url: '/subpackages/study/study-plan/index' })
+  },
   openMasterySubject(event) {
     const subjectId = Number(event && event.currentTarget && event.currentTarget.dataset.subjectId)
     if (!subjectId) return

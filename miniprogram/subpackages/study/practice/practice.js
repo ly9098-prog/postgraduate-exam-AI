@@ -297,9 +297,10 @@ Page({
     this._systemBackRearmTimer = null
     this._returnNavigationLocked = false
     this._launchPreset = this._parseLaunchPreset(options || {})
+    const fastKnowledgeSources = new Set(['knowledge_map', 'knowledge_diagnosis'])
     this._fastLaunchEligible = Boolean(
       this._launchPreset &&
-      this._launchPreset.source === 'knowledge_map' &&
+      fastKnowledgeSources.has(this._launchPreset.source) &&
       this._launchPreset.autostart &&
       this._launchPreset.subjectId &&
       this._launchPreset.knowledgePointId
@@ -316,6 +317,7 @@ Page({
     this._launchQuestionIds = ''
     this._launchAllowRepeat = false
     this._launchSource = ''
+    this._launchPlanToken = ''
     this._launchReturnTo = ''
     this._resetSession()
     this._pendingResultUrl = ''
@@ -694,6 +696,7 @@ Page({
       allowRepeat: String((options && options.allow_repeat) || '') === '1',
       autostart: String((options && options.autostart) || '') === '1',
       source: String((options && options.source) || '').trim().slice(0, 32),
+      planToken: String((options && options.plan_token) || '').trim().slice(0, 2048),
       subjectName: safeDecodeURIComponent(options && options.subject_name, '').trim().slice(0, 80),
       includeChildren: String((options && options.include_children) || '') === '1',
       includeDescendants: String((options && options.include_descendants) || '') === '1',
@@ -716,6 +719,7 @@ Page({
     this._launchQuestionIds = preset.questionIds
     this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
     this._launchSource = preset.source
+    this._launchPlanToken = preset.planToken || ''
     this._launchReturnTo = preset.returnTo || ''
 
     // knowledge-point deep link 可以安全允许下级科目：最终仍由 knowledge_point_id
@@ -768,6 +772,7 @@ Page({
     this._launchQuestionIds = preset.questionIds
     this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
     this._launchSource = preset.source
+    this._launchPlanToken = preset.planToken || ''
     this._launchReturnTo = preset.returnTo || ''
 
     await new Promise((resolve) => {
@@ -1604,6 +1609,7 @@ Page({
         if (!this._launchAllowRepeat) params.no_repeat_days = 30
         params.use_leitner = true
       }
+      if (this._launchPlanToken) params.plan_token = this._launchPlanToken
       if (this._launchKnowledgePointId) {
         params.knowledge_point_id = this._launchKnowledgePointId
         if (this._launchIncludeDescendants) params.include_descendants = true

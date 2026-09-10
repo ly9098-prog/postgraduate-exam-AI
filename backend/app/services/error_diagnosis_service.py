@@ -624,6 +624,28 @@ def _effective_type_sql():
     )
 
 
+def _effective_type_count_stmt(conditions):
+    """Build a PostgreSQL-safe grouped effective-type count query.
+
+    Repeating ``_effective_type_sql()`` independently in SELECT and GROUP BY
+    creates distinct bind parameters for the CASE literals. PostgreSQL then no
+    longer considers the two CASE expressions identical and raises GroupingError
+    for ``user_confirmed_at``. Grouping a labeled subquery column avoids that
+    dialect-specific ambiguity and remains valid on SQLite.
+    """
+    effective_type = _effective_type_sql().label("effective_type")
+    source = (
+        select(effective_type)
+        .join(
+            QuestionVersion,
+            QuestionVersion.id == WrongQuestionErrorDiagnosis.question_version_id,
+        )
+        .where(*conditions)
+        .subquery()
+    )
+    return select(source.c.effective_type, func.count()).group_by(source.c.effective_type)
+
+
 async def get_stats(
     db: AsyncSession,
     *,
@@ -780,15 +802,7 @@ async def get_stats(
             )
         )
     previous_rows = (
-        await db.execute(
-            select(_effective_type_sql(), func.count(WrongQuestionErrorDiagnosis.id))
-            .join(
-                QuestionVersion,
-                QuestionVersion.id == WrongQuestionErrorDiagnosis.question_version_id,
-            )
-            .where(*previous_conditions)
-            .group_by(_effective_type_sql())
-        )
+        await db.execute(_effective_type_count_stmt(previous_conditions))
     ).all()
     previous_counts = Counter(
         {normalize_error_type(error_type): int(count) for error_type, count in previous_rows}
