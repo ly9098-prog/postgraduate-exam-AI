@@ -419,8 +419,9 @@ async def recover_legacy_answer_projection_outbox(
 ) -> int:
     """Recover v1-envelope answer projections rejected by the v2 publisher.
 
-    Failed rows and legacy ``pending`` rows with an exhausted retry budget are
-    both repaired. Only payloads that validate as the current per-answer
+    Failed rows, legacy ``pending`` rows with an exhausted retry budget, and
+    expired/missing-lease ``leased`` rows are repaired before generic exhausted
+    state finalization runs. Only payloads that validate as the current per-answer
     contract are upgraded. Retired batch payloads remain terminal and are
     repaired by the business-level projection reconciler from
     ``practice_records`` instead of being guessed or reinterpreted here.
@@ -430,7 +431,16 @@ async def recover_legacy_answer_projection_outbox(
         .where(
             TaskOutbox.task_type == "answer_projection",
             TaskOutbox.schema_version == 1,
-            TaskOutbox.status.in_(["failed", "pending"]),
+            or_(
+                TaskOutbox.status.in_(["failed", "pending"]),
+                and_(
+                    TaskOutbox.status == "leased",
+                    or_(
+                        TaskOutbox.lease_expires_at.is_(None),
+                        TaskOutbox.lease_expires_at < utcnow(),
+                    ),
+                ),
+            ),
             TaskOutbox.error_message.is_not(None),
             func.lower(TaskOutbox.error_message).like(
                 "%unsupported answer_projection schema_version=%"
@@ -678,14 +688,18 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
         stats["errors"] += 1
         logger.warning("Exhausted Outbox invariant repair failed: %s", exc)
 
-    # A Redis outage must never become a permanent business-task failure.
-    # New dispatcher code already preserves pending rows; this probe + repair
-    # handles legacy failed rows created by older deployments.
+    # A Redis outage must never become a permanent business-task failure *or* be
+    # mistaken for a missing Redis task.  ``get_task_v2`` returning ``None`` is
+    # meaningful only after we have proved Redis is reachable; an exception is
+    # an unknown state and must not rewrite published rows back to pending.
+    redis_available = False
     try:
         await task_queue.get_task_v2("__outbox_reconcile_health_probe__")
-    except Exception:
-        pass
-    else:
+        redis_available = True
+    except Exception as exc:
+        logger.debug("Outbox reconcile Redis probe unavailable: %s", exc)
+
+    if redis_available:
         try:
             stats["recovered_infra_failed"] = await recover_infrastructure_failed_outbox(
                 db, limit=batch_size,
@@ -693,8 +707,15 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
         except Exception as exc:
             stats["errors"] += 1
             logger.warning("Legacy Redis-outage Outbox recovery failed: %s", exc)
+    else:
+        # Contract/state repairs above are PostgreSQL-only and remain safe during
+        # Redis downtime.  Stop here so a transient lookup failure cannot create
+        # false DB↔Redis drift or trigger duplicate re-publication later.
+        return stats
 
-    # Find non-terminal outbox records
+    # Find records whose DB state can be reconciled against a *known reachable*
+    # Redis.  Redis lookups below can still fail independently; those failures
+    # are skipped rather than reinterpreted as ``task_data is None``.
     result = await db.execute(
         select(TaskOutbox)
         .where(TaskOutbox.status.in_(["leased", "published"]))
@@ -706,19 +727,23 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
     for row in rows:
         stats["checked"] += 1
         try:
-            # Check Redis for this task
-            try:
-                task_data = await task_queue.get_task_v2(row.task_id)
-            except Exception:
-                task_data = None
+            task_data = await task_queue.get_task_v2(row.task_id)
+        except Exception as exc:
+            stats["errors"] += 1
+            logger.debug(
+                "Outbox reconcile Redis lookup unavailable: task_id=%s error=%s",
+                row.task_id, exc,
+            )
+            continue
 
+        try:
             if row.status == "leased":
                 if task_data is None:
                     # Redis has no record — should retry (lease will expire naturally)
-                    # If lease is old, re-claim via normal flow
+                    # If lease is old, re-claim via normal flow.
                     continue
 
-                # Redis has the task but outbox is still leased → mark published
+                # Redis has the task but outbox is still leased → mark published.
                 row.status = "published"
                 row.published_at = utcnow()
                 stats["fixed_publish"] += 1
@@ -727,18 +752,17 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
                     row.task_id,
                 )
 
-            elif row.status == "published":
-                if task_data is None:
-                    # Redis lost the task — re-enqueue
-                    # This is handled by the dispatcher re-claiming
-                    row.status = "pending"
-                    row.lease_token = None
-                    row.lease_expires_at = None
-                    stats["fixed_publish"] += 1
-                    logger.warning(
-                        "Reconcile: outbox published→pending (Redis lost task): task_id=%s",
-                        row.task_id,
-                    )
+            elif row.status == "published" and task_data is None:
+                # Redis is reachable and genuinely has no record — re-enqueue.
+                # This is handled by the dispatcher re-claiming the pending row.
+                row.status = "pending"
+                row.lease_token = None
+                row.lease_expires_at = None
+                stats["fixed_publish"] += 1
+                logger.warning(
+                    "Reconcile: outbox published→pending (Redis lost task): task_id=%s",
+                    row.task_id,
+                )
 
         except Exception as e:
             stats["errors"] += 1
@@ -1030,12 +1054,17 @@ async def run_outbox_reconciler(
     logger.info("Outbox reconciler started: poll_interval=%ss", poll_interval)
 
     try:
-        while _outbox_dispatcher_running or _outbox_dispatcher_draining:
+        # Reconciliation is an independent scheduler safety net.  Do not couple
+        # its lifetime to an in-process dispatcher flag: scheduler/worker roles
+        # can start tasks in either order, and a dispatcher restart must not
+        # silently disable contract recovery, state repair, or Redis drift checks.
+        # TaskRegistry cancellation owns shutdown.
+        while True:
             await asyncio.sleep(poll_interval)
             try:
                 async with async_session() as db:
                     stats = await reconcile(db, task_queue, batch_size=batch_size)
-                    if stats["checked"] > 0:
+                    if stats["checked"] > 0 or stats["errors"] > 0:
                         logger.info("Outbox reconcile cycle: %s", stats)
 
                 # Purge old records
@@ -1045,7 +1074,7 @@ async def run_outbox_reconciler(
                         logger.info("Outbox purge: %d records removed", purged)
 
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.warning("Outbox reconciler error: %s", e)
 

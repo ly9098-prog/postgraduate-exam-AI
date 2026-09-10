@@ -20,7 +20,7 @@ const INDEX_SEARCH_ENTER_MS = 210
 const INDEX_SEARCH_HEIGHT_MS = 220
 const INDEX_NAVIGATE_FEEDBACK_MS = 76
 const INDEX_GRAPH_SCROLL_MS = 320
-const INDEX_SEARCH_FLOOR_EPSILON = 1
+const INDEX_SEARCH_RETENTION_EPSILON = 1
 const THEME_SHEET_SELECT_DELAY_MS = 96
 const THEME_SHEET_CLOSE_MS = 236
 const THEME_TRANSITION_MS = 180
@@ -256,7 +256,7 @@ Page({
     stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
     indexNodes: [], indexCount: 0, indexDisplayCount: 0, hasMore: false, indexSearchOpen: false, indexSearchFocused: false,
     indexQuery: '', indexSearchDraft: '', indexSearchPending: false, indexSearchResultCount: 0, indexNavigatingId: 0,
-    indexResultsTransitioning: false, indexResultsPhase: '', indexResultsHeightStyle: '', indexResultsFloorStyle: '', indexResultsLayoutLocked: false,
+    indexResultsTransitioning: false, indexResultsPhase: '', indexResultsHeightStyle: '', indexScrollRetentionStyle: '',
     practiceLaunching: false, practiceLaunchingId: 0,
   },
 
@@ -272,11 +272,12 @@ Page({
     this._detailNavigationPending = false
     this._focusNodeId = 0
     this._expandedNodeIds = new Set()
-    // Dedicated index search keeps a monotonic result-surface floor for the whole
-    // search session. This prevents the document height from collapsing when a
-    // long tree becomes a short/no-result state, which would otherwise clamp the
-    // page scroll position upward into the graph section.
-    this._indexSearchFloorHeight = 0
+    // Keep the *document footprint* stable during index search without forcing the
+    // visible result card itself to stay tall. Any temporary height difference is
+    // moved into a transparent retainer below the panel, so no-result UI can stay
+    // compact while the page still has no reason to clamp upward into the graph.
+    this._indexSearchFootprintHeight = 0
+    this._indexSearchRetentionHeight = 0
     let width = 375
     try {
       const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
@@ -906,10 +907,10 @@ Page({
       if (typeof wx.hideKeyboard === 'function') {
         try { wx.hideKeyboard() } catch (error) { /* 键盘状态不影响搜索结果。 */ }
       }
-      // Only release the layout floor after the user explicitly closes an idle
-      // search. Active queries keep the floor even when the search bar is folded.
+      // Release the invisible scroll retainer only after an idle search is closed.
+      // Active queries keep it while folded so reopening the search never causes a jump.
       if (!normalizeSearchText(this.data.indexQuery) && !normalizeSearchText(this.data.indexSearchDraft)) {
-        this._releaseIndexSearchFloor()
+        this._releaseIndexSearchRetention()
       }
     })
   },
@@ -939,21 +940,27 @@ Page({
     const preserveIndexAnchor = Boolean(this.data.indexSearchOpen || this.data.indexSearchFocused)
     this.setData({ searchDraft: '', searchPending: normalizeSearchText(this.data.query) !== '' }, () => this._commitSearchQuery('', { source: 'clear', preserveIndexAnchor }))
   },
-  _indexSearchFloorPatch(height, allowGrow = true) {
-    const measured = Math.max(0, Number(height) || 0)
-    const current = Math.max(0, Number(this._indexSearchFloorHeight) || 0)
-    const next = allowGrow ? Math.max(current, measured) : measured
-    this._indexSearchFloorHeight = next > INDEX_SEARCH_FLOOR_EPSILON ? Math.ceil(next) : 0
+  _indexSearchRetentionPatch(height) {
+    const next = Math.max(0, Number(height) || 0)
+    this._indexSearchRetentionHeight = next > INDEX_SEARCH_RETENTION_EPSILON ? Math.ceil(next) : 0
     return {
-      indexResultsFloorStyle: this._indexSearchFloorHeight ? `min-height:${this._indexSearchFloorHeight}px;` : '',
-      indexResultsLayoutLocked: Boolean(this._indexSearchFloorHeight),
+      indexScrollRetentionStyle: this._indexSearchRetentionHeight ? `height:${this._indexSearchRetentionHeight}px;` : '',
     }
   },
-  _releaseIndexSearchFloor() {
-    this._indexSearchFloorHeight = 0
-    if (this.data.indexResultsFloorStyle || this.data.indexResultsLayoutLocked) {
-      this.setData({ indexResultsFloorStyle: '', indexResultsLayoutLocked: false })
-    }
+  _releaseIndexSearchRetention() {
+    this._indexSearchFootprintHeight = 0
+    this._indexSearchRetentionHeight = 0
+    if (this.data.indexScrollRetentionStyle) this.setData({ indexScrollRetentionStyle: '' })
+  },
+  _capIndexSearchFootprint(anchor, footprint) {
+    const raw = Math.max(0, Number(footprint) || 0)
+    if (!anchor || anchor.panelTop == null || !anchor.viewportHeight || !anchor.panelHeight) return raw
+    const chromeHeight = Math.max(0, Number(anchor.panelHeight) - Math.max(0, Number(anchor.resultsHeight) || 0))
+    // We only need enough post-toolbar document height to keep the current viewport
+    // valid. Retaining an entire multi-screen result list would fix scroll clamping
+    // but simply move the old problem into a huge blank area below the compact card.
+    const viewportNeed = Math.max(0, Number(anchor.viewportHeight) - Number(anchor.panelTop) - chromeHeight + 24)
+    return Math.min(raw, Math.max(Math.max(0, Number(anchor.resultsHeight) || 0), viewportNeed))
   },
   _captureIndexSearchLayout(callback, preserveAnchor = false) {
     if (typeof callback !== 'function') return
@@ -968,9 +975,16 @@ Page({
         const panel = result && result[0]
         const content = result && result[1]
         const viewport = result && result[2]
+        let viewportHeight = 0
+        try {
+          const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+          viewportHeight = Math.max(0, Number(info && info.windowHeight) || 0)
+        } catch (error) { /* 视口高度仅用于优化保留空间，读取失败时退回原始占位。 */ }
         callback({
           panelTop: preserveAnchor && panel && Number.isFinite(Number(panel.top)) ? Number(panel.top) : null,
+          panelHeight: panel && Number.isFinite(Number(panel.height)) ? Math.max(0, Number(panel.height)) : 0,
           resultsHeight: content && Number.isFinite(Number(content.height)) ? Math.max(0, Number(content.height)) : 0,
+          viewportHeight,
           scrollTop: viewport && Number.isFinite(Number(viewport.scrollTop)) ? Number(viewport.scrollTop) : (Number(this._scrollTop) || 0),
         })
       })
@@ -1033,16 +1047,12 @@ Page({
 
     this._captureIndexSearchLayout((anchor) => {
       if (this._unloaded || token !== this._indexSearchTransitionToken) return
-      const measuredOldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
-      // The result area is allowed to grow during a search session, but never to
-      // shrink. A no-result state therefore occupies the same document footprint
-      // as the result tree it replaced, so the browser has no reason to clamp the
-      // page back toward #atlas-shell.
-      const floorPatch = this._indexSearchFloorPatch(measuredOldHeight, true)
-      const oldHeight = Math.max(measuredOldHeight, Number(this._indexSearchFloorHeight) || 0)
+      const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
+      const oldRetention = Math.max(0, Number(this._indexSearchRetentionHeight) || 0)
+      const oldFootprint = this._capIndexSearchFootprint(anchor, Math.max(oldHeight + oldRetention, Number(this._indexSearchFootprintHeight) || 0))
+      this._indexSearchFootprintHeight = oldFootprint
       const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
       this.setData({
-        ...floorPatch,
         indexSearchPending: true,
         indexResultsTransitioning: true,
         indexResultsPhase: 'leaving',
@@ -1059,12 +1069,14 @@ Page({
               this._restoreIndexSearchAnchor(anchor)
               this._measureIndexResultsHeight((newHeight) => {
                 if (this._unloaded || token !== this._indexSearchTransitionToken) return
-                const nextFloorPatch = this._indexSearchFloorPatch(Math.max(oldHeight, newHeight), true)
-                const targetHeight = Math.max(newHeight, Number(this._indexSearchFloorHeight) || 0, oldHeight)
-                const heightStyle = oldHeight > 0 && targetHeight > 0 ? `height:${targetHeight}px;overflow:hidden;` : ''
+                const measuredNewHeight = Math.max(0, Number(newHeight) || 0)
+                const nextFootprint = Math.max(oldFootprint, measuredNewHeight)
+                this._indexSearchFootprintHeight = nextFootprint
+                const retentionPatch = this._indexSearchRetentionPatch(Math.max(0, nextFootprint - measuredNewHeight))
+                const heightStyle = oldHeight > 0 && measuredNewHeight > 0 ? `height:${measuredNewHeight}px;overflow:hidden;` : ''
                 const stillPending = normalizeSearchText(this.data.indexSearchDraft) !== normalizedNext
                 this.setData({
-                  ...nextFloorPatch,
+                  ...retentionPatch,
                   indexSearchPending: stillPending,
                   indexResultsPhase: 'entering',
                   indexResultsHeightStyle: heightStyle,
@@ -1117,6 +1129,11 @@ Page({
     this._captureIndexSearchLayout((anchor) => {
       if (this._unloaded || token !== this._indexSearchTransitionToken) return
       const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
+      const oldRetention = options.preserveIndexAnchor ? Math.max(0, Number(this._indexSearchRetentionHeight) || 0) : 0
+      const oldFootprint = options.preserveIndexAnchor
+        ? this._capIndexSearchFootprint(anchor, Math.max(oldHeight + oldRetention, Number(this._indexSearchFootprintHeight) || 0))
+        : oldHeight
+      if (options.preserveIndexAnchor) this._indexSearchFootprintHeight = oldFootprint
       const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
       this.setData({
         searchPending: true,
@@ -1142,10 +1159,16 @@ Page({
               this._restoreIndexSearchAnchor(anchor)
               this._measureIndexResultsHeight((newHeight) => {
                 if (this._unloaded || token !== this._indexSearchTransitionToken) return
-                const targetHeight = newHeight > 0 ? newHeight : oldHeight
+                const measuredNewHeight = Math.max(0, Number(newHeight) || 0)
+                const targetHeight = measuredNewHeight > 0 ? measuredNewHeight : oldHeight
+                const retentionPatch = options.preserveIndexAnchor
+                  ? this._indexSearchRetentionPatch(Math.max(0, Math.max(oldFootprint, targetHeight) - targetHeight))
+                  : {}
+                if (options.preserveIndexAnchor) this._indexSearchFootprintHeight = Math.max(oldFootprint, targetHeight)
                 const heightStyle = oldHeight > 0 && targetHeight > 0 ? `height:${targetHeight}px;overflow:hidden;` : ''
                 const stillPending = normalizeSearchText(this.data.searchDraft) !== normalizedNext
                 this.setData({
+                  ...retentionPatch,
                   searchPending: stillPending,
                   indexResultsPhase: 'entering',
                   indexResultsHeightStyle: heightStyle,

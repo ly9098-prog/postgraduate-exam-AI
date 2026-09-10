@@ -3512,3 +3512,197 @@ page { min-height: 100%; background: #EFF5EA; color: #1E3325; font-family: -appl
     animation: none;
   }
 }
+
+/* ===== Knowledge index · compact line-art empty state / scroll retention v8 ===== */
+/* The visible panel is allowed to become compact. The transparent retainer below it
+   absorbs the inverse height change, so the document footprint stays stable and the
+   browser does not clamp the user back toward the graph when a search becomes empty. */
+.knowledge-index .index-scroll-retainer {
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+  background: transparent;
+  transition: height 220ms cubic-bezier(.22,.78,.22,1);
+  will-change: height;
+}
+
+.knowledge-index .index-results-empty-state {
+  min-height: 0;
+}
+.knowledge-index .index-results-empty-state .index-results-content-empty {
+  min-height: 0;
+  justify-content: flex-start;
+}
+
+/* 方案三「线条艺术风」：把无结果反馈做成一个紧凑、完整的状态卡，而不是
+   用大面积空白去维持页面高度。 */
+.knowledge-index .index-search-empty {
+  position: relative;
+  display: flex;
+  min-height: 286rpx;
+  margin: 10rpx 14rpx 18rpx;
+  padding: 16rpx 24rpx 22rpx;
+  overflow: hidden;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(202,224,218,.82);
+  border-radius: 18rpx;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(213,239,232,.46), rgba(247,252,250,0) 42%),
+    linear-gradient(180deg, rgba(250,253,252,.98), rgba(246,251,249,.94));
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.9);
+  text-align: center;
+}
+.knowledge-index .index-search-empty::before,
+.knowledge-index .index-search-empty::after {
+  content: '';
+  position: absolute;
+  width: 124rpx;
+  height: 124rpx;
+  border: 1rpx solid rgba(112,161,149,.09);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.knowledge-index .index-search-empty::before {
+  left: -70rpx;
+  top: -74rpx;
+}
+.knowledge-index .index-search-empty::after {
+  right: -76rpx;
+  bottom: -82rpx;
+}
+
+.knowledge-index .index-search-empty-art {
+  position: relative;
+  width: 214rpx;
+  height: 104rpx;
+  margin: -2rpx 0 3rpx;
+  flex: 0 0 104rpx;
+}
+.knowledge-index .index-search-empty-planet {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 50%;
+  width: 188rpx;
+  height: 95rpx;
+  transform: translate3d(-50%,-50%,0);
+  transform-origin: 50% 55%;
+  animation: index-empty-planet-float 3.2s ease-in-out infinite;
+}
+.knowledge-index .index-search-empty-spark {
+  position: absolute;
+  z-index: 1;
+  width: 9rpx;
+  height: 9rpx;
+  opacity: .48;
+  transform: rotate(45deg);
+}
+.knowledge-index .index-search-empty-spark::before,
+.knowledge-index .index-search-empty-spark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 999rpx;
+  background: rgba(91,151,136,.55);
+  transform: translate3d(-50%,-50%,0);
+}
+.knowledge-index .index-search-empty-spark::before { width: 2rpx; height: 11rpx; }
+.knowledge-index .index-search-empty-spark::after { width: 11rpx; height: 2rpx; }
+.knowledge-index .index-search-empty-spark-left { left: 19rpx; top: 34rpx; animation: index-empty-spark 2.5s ease-in-out infinite; }
+.knowledge-index .index-search-empty-spark-right { right: 20rpx; top: 19rpx; animation: index-empty-spark 2.5s .7s ease-in-out infinite; }
+
+.knowledge-index .index-search-empty-title {
+  position: relative;
+  z-index: 2;
+  color: #2F474D;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 32rpx;
+  letter-spacing: .1rpx;
+}
+.knowledge-index .index-search-empty-note {
+  position: relative;
+  z-index: 2;
+  max-width: 470rpx;
+  margin-top: 3rpx;
+  color: #87999C;
+  font-size: 15rpx;
+  line-height: 24rpx;
+}
+.knowledge-index .index-search-empty-action {
+  position: relative;
+  z-index: 2;
+  width: 226rpx;
+  min-width: 226rpx;
+  height: 50rpx;
+  margin: 14rpx 0 0 !important;
+  padding: 0 24rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #5B9A88, #467E70);
+  box-shadow: 0 7rpx 16rpx rgba(60,118,102,.13), inset 0 1rpx 0 rgba(255,255,255,.24);
+  color: #FFFFFF;
+  font-size: 15rpx;
+  font-weight: 650;
+  line-height: 50rpx;
+  transition: transform 130ms cubic-bezier(.16,1,.3,1), box-shadow 130ms ease, opacity 130ms ease;
+}
+.knowledge-index .index-search-empty-action::after { border: 0; }
+.knowledge-index .index-search-empty-action-pressed {
+  opacity: .9;
+  box-shadow: 0 3rpx 9rpx rgba(60,118,102,.12), inset 0 2rpx 5rpx rgba(34,84,70,.08);
+  transform: translate3d(0,1rpx,0) scale(.985);
+}
+
+.knowledge-index .index-results-entering .index-search-empty {
+  animation: index-empty-card-enter 260ms cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes index-empty-card-enter {
+  from { opacity: .28; transform: translate3d(0,7rpx,0) scale(.993); }
+  to { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+@keyframes index-empty-planet-float {
+  0%, 100% { transform: translate3d(-50%,-50%,0) rotate(-.8deg); }
+  50% { transform: translate3d(-50%,-53%,0) rotate(.8deg); }
+}
+@keyframes index-empty-spark {
+  0%, 100% { opacity: .22; transform: rotate(45deg) scale(.82); }
+  50% { opacity: .62; transform: rotate(45deg) scale(1.08); }
+}
+
+@media (max-width: 360px) {
+  .knowledge-index .index-search-empty {
+    min-height: 272rpx;
+    margin-left: 10rpx;
+    margin-right: 10rpx;
+    padding-left: 18rpx;
+    padding-right: 18rpx;
+  }
+  .knowledge-index .index-search-empty-art { width: 196rpx; height: 96rpx; flex-basis: 96rpx; }
+  .knowledge-index .index-search-empty-planet { width: 172rpx; height: 87rpx; }
+  .knowledge-index .index-search-empty-action { width: 212rpx; min-width: 212rpx; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-index .index-scroll-retainer,
+  .knowledge-index .index-search-empty-action {
+    transition: none;
+  }
+  .knowledge-index .index-search-empty-planet,
+  .knowledge-index .index-search-empty-spark,
+  .knowledge-index .index-results-entering .index-search-empty {
+    animation: none;
+  }
+}
+
+.knowledge-index .index-count-badge-empty {
+  min-width: 30rpx;
+  padding-left: 8rpx;
+  padding-right: 8rpx;
+  background: #F1F6F4;
+  color: #91A5A0;
+}

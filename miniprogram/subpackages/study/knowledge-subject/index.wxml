@@ -176,7 +176,7 @@
             </view>
             <view class="index-title-row">
               <text class="index-title">知识索引</text>
-              <text class="index-count-badge">{{indexCount}}</text>
+              <text class="index-count-badge {{(indexQuery || query) && !indexCount ? 'index-count-badge-empty' : ''}}">{{indexCount}}</text>
             </view>
           </view>
 
@@ -204,11 +204,12 @@
           <view class="index-inline-search-meta {{indexSearchPending ? 'index-inline-search-meta-pending' : ''}}" wx:if="{{indexSearchDraft}}">
             <view class="search-pending-dot" wx:if="{{indexSearchPending}}" aria-hidden="true"></view>
             <text wx:if="{{indexSearchPending}}">搜索中</text>
+            <text wx:elif="{{!indexSearchResultCount}}">暂无匹配</text>
             <text wx:else>{{indexSearchResultCount}} 个结果</text>
           </view>
         </view>
 
-        <view id="knowledge-index-results-shell" class="index-results-shell {{indexResultsTransitioning ? 'index-results-transitioning' : ''}} {{indexSearchPending ? 'index-results-pending' : ''}} {{indexResultsLayoutLocked ? 'index-results-layout-locked' : ''}} {{(indexQuery || query) && !indexCount ? 'index-results-empty-state' : ''}}" style="{{indexResultsFloorStyle}}{{indexResultsHeightStyle}}" aria-busy="{{indexSearchPending ? 'true' : 'false'}}">
+        <view id="knowledge-index-results-shell" class="index-results-shell {{indexResultsTransitioning ? 'index-results-transitioning' : ''}} {{indexSearchPending ? 'index-results-pending' : ''}} {{(indexQuery || query) && !indexCount ? 'index-results-empty-state' : ''}}" style="{{indexResultsHeightStyle}}" aria-busy="{{indexSearchPending ? 'true' : 'false'}}">
           <view id="knowledge-index-results-content" class="index-results-content index-results-{{indexResultsPhase}} {{(indexQuery || query) && !indexCount ? 'index-results-content-empty' : ''}}">
             <view class="index-list" wx:if="{{indexNodes.length}}">
               <view wx:for="{{indexNodes}}" wx:key="knowledge_point_id" id="knowledge-index-node-{{item.knowledge_point_id}}" class="index-row depth-{{item.depth}} {{item.hasChildren ? 'index-row-branch' : 'index-row-leaf'}} {{item.indexSelected ? 'index-row-selected' : ''}} {{item.contextOnly ? 'index-row-context' : ''}} {{item.indexSearchTarget ? 'index-row-search-target' : ''}} {{indexNavigatingId === item.knowledge_point_id ? 'index-row-navigating' : ''}} {{item.indexIsLastVisible ? 'index-row-last-visible' : ''}}" data-id="{{item.knowledge_point_id}}" bindtap="handleIndexRowTap" hover-class="index-pressed" hover-start-time="12" hover-stay-time="55" hover-stop-propagation="true" aria-role="button" aria-label="{{item.indexAriaAction}}{{item.name}}">
@@ -244,11 +245,15 @@
             </view>
 
             <view class="index-search-empty" wx:if="{{(indexQuery || query) && !indexCount}}">
-              <view class="index-search-empty-icon" aria-hidden="true"><view></view></view>
-              <text class="index-search-empty-title">没有找到匹配知识点</text>
-              <text class="index-search-empty-note">可继续修改关键词，结果更新不会离开当前位置</text>
-              <button class="index-search-empty-action" wx:if="{{indexQuery}}" catchtap="clearIndexSearch" hover-class="index-inline-control-pressed">清除搜索</button>
-              <button class="index-search-empty-action" wx:else bindtap="clearSearch" hover-class="index-inline-control-pressed">清除搜索</button>
+              <view class="index-search-empty-art" aria-hidden="true">
+                <view class="index-search-empty-spark index-search-empty-spark-left"></view>
+                <view class="index-search-empty-spark index-search-empty-spark-right"></view>
+                <image class="index-search-empty-planet" src="/assets/images/knowledge-index/search-empty-planet.png" mode="aspectFit" />
+              </view>
+              <text class="index-search-empty-title">没有找到匹配的知识点</text>
+              <text class="index-search-empty-note">可能关键词不够准确，试试更换关键词或清除当前搜索</text>
+              <button class="index-search-empty-action" wx:if="{{indexQuery}}" catchtap="clearIndexSearch" hover-class="index-search-empty-action-pressed">清除搜索</button>
+              <button class="index-search-empty-action" wx:else bindtap="clearSearch" hover-class="index-search-empty-action-pressed">清除搜索</button>
             </view>
 
             <button wx:if="{{hasMore}}" class="index-more" bindtap="loadMore" hover-class="atlas-pressed">
@@ -258,6 +263,7 @@
           </view>
         </view>
       </view>
+      <view class="index-scroll-retainer" style="{{indexScrollRetentionStyle}}" aria-hidden="true"></view>
     </view>
 
     <view class="theme-sheet-layer {{themeSheetClosing ? 'theme-sheet-closing' : ''}}" wx:if="{{themeSheetOpen}}">

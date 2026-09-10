@@ -91,6 +91,10 @@ def upgrade() -> None:
             outbox.c.status,
             outbox.c.retry_count,
             outbox.c.error_message,
+            sa.or_(
+                outbox.c.lease_expires_at.is_(None),
+                outbox.c.lease_expires_at < sa.func.now(),
+            ).label("lease_reclaimable"),
         ).where(
             outbox.c.task_type == "answer_projection",
             outbox.c.schema_version == 1,
@@ -104,9 +108,10 @@ def upgrade() -> None:
 
         values: dict[str, Any] = {"schema_version": _CURRENT_SCHEMA_VERSION}
         error = str(row["error_message"] or "").lower()
-        if (
+        has_schema_error = "unsupported answer_projection schema_version=" in error
+        if has_schema_error and (
             row["status"] in {"failed", "pending"}
-            and "unsupported answer_projection schema_version=" in error
+            or (row["status"] == "leased" and bool(row["lease_reclaimable"]))
         ):
             values.update({
                 "status": "pending",
@@ -114,6 +119,15 @@ def upgrade() -> None:
                 "error_message": None,
                 "lease_token": None,
                 "lease_expires_at": None,
+            })
+        elif has_schema_error and row["status"] == "leased":
+            # Do not steal a live lease during a rolling deploy.  The payload is
+            # already proven compatible and its envelope is upgraded above, so
+            # reset only the exhausted retry counter/error.  If the live owner
+            # disappears, the row remains claimable as soon as its lease expires.
+            values.update({
+                "retry_count": 0,
+                "error_message": None,
             })
 
         bind.execute(
