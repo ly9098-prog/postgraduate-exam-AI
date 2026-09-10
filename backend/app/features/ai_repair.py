@@ -503,6 +503,7 @@ async def _call_ai_for_repair(
     raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None,
     api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
     provider: str | None = None,
+    call_stats: dict[str, int] | None = None,
 ) -> dict | None:
     """调用 OpenAI-compatible 模型修复单题。返回修复结果或 None（降级）。
 
@@ -542,6 +543,8 @@ async def _call_ai_for_repair(
         return None
 
     try:
+        if call_stats is not None:
+            call_stats["llm_calls"] = call_stats.get("llm_calls", 0) + 1
         result = await llm.chat(messages, temperature=0.3, model=model_name, api_key=api_key, base_url=base_url, provider=provider)
     except Exception:
         return None
@@ -565,6 +568,7 @@ async def _call_ai_for_batch_repair(
     candidates: list[tuple[int, dict, str]],
     config: dict,
     db: AsyncSession | None = None,
+    call_stats: dict[str, int] | None = None,
 ) -> list[tuple[int, dict | None]]:
     """批量调用 OpenAI-compatible 模型修复多题。自动分批（每批最多 _BATCH_LIMIT 题）。"""
     from app.ai.client import llm
@@ -605,6 +609,8 @@ async def _call_ai_for_batch_repair(
             continue
 
         try:
+            if call_stats is not None:
+                call_stats["llm_calls"] = call_stats.get("llm_calls", 0) + 1
             result = await llm.chat(
                 messages, temperature=0.3, model=model_name,
                 api_key=api_key, base_url=base_url, provider=provider,
@@ -643,7 +649,7 @@ async def _call_ai_for_batch_repair(
             for idx, q, raw_text in batch:
                 single = await _call_ai_for_repair(
                     raw_text, q, config, db, api_key=api_key, base_url=base_url,
-                    model_name=model_name, provider=provider,
+                    model_name=model_name, provider=provider, call_stats=call_stats,
                 )
                 if single:
                     single["_batch_fallback"] = True  # L2: mark degradation source
@@ -683,6 +689,7 @@ async def _call_ai_for_roman_decision(
     anomalies: list[dict],
     config: dict,
     db: AsyncSession | None = None,
+    call_stats: dict[str, int] | None = None,
 ) -> dict | None:
     """Call the configured OpenAI-compatible model for constrained Roman numeral repair decisions.
 
@@ -710,6 +717,8 @@ async def _call_ai_for_roman_decision(
         return None
 
     try:
+        if call_stats is not None:
+            call_stats["llm_calls"] = call_stats.get("llm_calls", 0) + 1
         result = await llm.chat(
             messages, temperature=0.2, model=model_name,
             api_key=api_key, base_url=base_url, provider=provider,
@@ -847,6 +856,7 @@ async def _run_roman_repair_phase(
     roman_anomalies: list[dict],
     config: dict,
     db: AsyncSession | None = None,
+    call_stats: dict[str, int] | None = None,
 ) -> list[dict]:
     """Run the constrained Roman numeral decision phase.
 
@@ -871,7 +881,9 @@ async def _run_roman_repair_phase(
     async def _decide_one(idx: int, anoms: list[dict]):
         async with sem:
             q = questions[idx] if idx < len(questions) else {}
-            ai_result = await _call_ai_for_roman_decision(q, anoms, config, db)
+            ai_result = await _call_ai_for_roman_decision(
+                q, anoms, config, db, call_stats=call_stats,
+            )
             if ai_result:
                 return {
                     "index": idx,
@@ -926,11 +938,13 @@ async def repair_questions(
     high_confidence_threshold = config.get("high_confidence_threshold", 0.95)
     enabled = config.get("enabled", True)
     low_risk_skip_enabled = config.get("low_risk_skip_enabled", True)
+    enable_roman_repair_phase = config.get("enable_roman_repair_phase", True)
 
     repaired: list[dict] = []
     unrepaired: list[dict] = []
     skipped: list[dict] = []
     total_tokens = 0
+    call_stats: dict[str, int] = {"llm_calls": 0}
 
     if not enabled:
         for i, q in enumerate(questions):
@@ -945,6 +959,7 @@ async def repair_questions(
                 "total_candidates": len(questions),
                 "repaired": 0, "unrepaired": 0, "skipped": len(skipped),
                 "total_tokens": 0,
+                "llm_calls": 0,
             },
         }
 
@@ -964,6 +979,7 @@ async def repair_questions(
                 "total_candidates": len(questions),
                 "repaired": 0, "unrepaired": len(unrepaired), "skipped": 0,
                 "total_tokens": 0,
+                "llm_calls": 0,
             },
         }
 
@@ -974,9 +990,9 @@ async def repair_questions(
     roman_results: dict[int, dict] = {}  # index → {decisions, token_used}
     roman_total_tokens = 0
 
-    if roman_diagnostics and runtime is not None:
+    if enable_roman_repair_phase and roman_diagnostics and runtime is not None:
         phase1_results = await _run_roman_repair_phase(
-            questions, roman_diagnostics, config, db,
+            questions, roman_diagnostics, config, db, call_stats=call_stats,
         )
         for r in phase1_results:
             idx = r["index"]
@@ -1055,14 +1071,18 @@ async def repair_questions(
     # 批量修复（一次 LLM 调用修复多题），超长自动分批
     batch_size = config.get("batch_size", _BATCH_LIMIT)
     if batch_size > 1 and len(candidates) > 1:
-        results = await _call_ai_for_batch_repair(candidates, config, db)
+        results = await _call_ai_for_batch_repair(
+            candidates, config, db, call_stats=call_stats,
+        )
     else:
         # 单题修复（并发 3 路）
         sem = asyncio.Semaphore(3)
 
         async def _repair_one(idx: int, q: dict, raw_text: str):
             async with sem:
-                return idx, await _call_ai_for_repair(raw_text, q, config, db)
+                return idx, await _call_ai_for_repair(
+                    raw_text, q, config, db, call_stats=call_stats,
+                )
 
         gathered = await asyncio.gather(
             *[_repair_one(i, q, rt) for i, q, rt in candidates],
@@ -1330,5 +1350,6 @@ async def repair_questions(
             "unrepaired": len(unrepaired),
             "skipped": len(skipped),
             "total_tokens": total_tokens + roman_total_tokens,
+            "llm_calls": call_stats["llm_calls"],
         },
     }

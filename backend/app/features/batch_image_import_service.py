@@ -614,9 +614,14 @@ async def _merge_image_texts(
         async with async_session() as pdb:
             from app.features.pipeline_coordinator_entry import run_pipeline
 
+            from app.features.import_ai_policy import apply_image_single_pass_policy
+
             merge_opts = dict(options)
             merge_opts["_merged_from_job"] = job_id
-            merge_opts["skip_ocr_correction"] = True
+            merge_opts = apply_image_single_pass_policy(
+                merge_opts,
+                enabled=bool(merge_opts.get("batch_fast_mode", True)),
+            )
             result = await run_pipeline(
                 file_content=merged_text.encode("utf-8"),
                 source_type="txt",
@@ -850,8 +855,10 @@ async def _run_single_image(
         # 批量图片默认启用 single-AI-pass：通用 repair 已能同时修复代码结构
         # 与缺失答案时，不再先做一次独立 code-structure LLM 调用。
         pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction, "_original_raw_text": raw_ocr_text}
-        if pipeline_opts.get("batch_fast_mode", True) and pipeline_opts.get("enable_ai_repair", True):
-            pipeline_opts.setdefault("enable_code_structure_reconstruct", False)
+        if pipeline_opts.get("batch_fast_mode", True):
+            from app.features.import_ai_policy import apply_image_single_pass_policy
+
+            pipeline_opts = apply_image_single_pass_policy(pipeline_opts)
 
         # paddlex_http 首轮 OCR 已经拿到文本 + bbox 时，不再因为低 layout
         # confidence 触发同一图片的第二次 VL_REBUILD OCR。让 layout_enhanced
@@ -1473,14 +1480,21 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
 
     # ── Run pipeline ──
     async with async_session() as pdb:
+        from app.features.import_ai_policy import apply_image_single_pass_policy
         from app.features.pipeline_orchestrator import run_import_pipeline
+
+        reparse_options = apply_image_single_pass_policy({
+            "enable_ai_repair": True,
+            "confidence_threshold": 0.6,
+            "batch_fast_mode": True,
+        })
         result = await run_import_pipeline(
             file_content=cleaned.encode("utf-8"),
             source_type="txt",
             source_file=item.source_file or "reparse",
             subject=effective_subject_code,
             subject_id=effective_subject_id,
-            options={"enable_ai_repair": True, "confidence_threshold": 0.6},
+            options=reparse_options,
             db=pdb,
         )
 

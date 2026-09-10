@@ -425,3 +425,71 @@ async def structure_text_block(
     cleaned["_dropped"] = dropped
     cleaned["_tokens"] = int(result.get("tokens_used") or 0)
     return cleaned
+
+async def structure_text_blocks(
+    candidates: list[dict[str, Any]],
+    db: AsyncSession | None = None,
+) -> dict[int, dict[str, Any]]:
+    """一次 LLM 调用结构化多个可疑文本块。
+
+    批量返回仍逐块经过 ``_validate_no_hallucination``。批量响应解析失败时
+    直接使用规则解析结果，不降级成 N 次单题调用，从而保证调用数有上界。
+    """
+    if not candidates or not settings.TEXT_IMPORT_LLM_ENABLED or db is None:
+        return {}
+
+    from app.ai.gateway import chat_with_db_model
+    from app.ai.prompts import build_text_structure_batch
+    from app.services.model_config_resolver import AICapability
+
+    messages = build_text_structure_batch(candidates)
+    estimated = estimate_tokens(json.dumps(messages, ensure_ascii=False))
+    if not await check_token_limit(estimated, {
+        "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
+    }):
+        logger.info("text_structure_batch: daily token budget exhausted")
+        return {}
+
+    try:
+        result = await chat_with_db_model(
+            db,
+            messages,
+            capability=AICapability.TEXT_STRUCTURING,
+            temperature=0.0,
+        )
+        if result is None:
+            return {}
+    except Exception as exc:
+        logger.warning("text_structure_batch llm call failed: %s", exc)
+        return {}
+
+    total_tokens = int(result.get("tokens_used") or 0)
+    await record_token_usage(total_tokens)
+    parsed = _parse_json_response(result.get("content") or "")
+    items = parsed.get("items") if isinstance(parsed, dict) else None
+    if not isinstance(items, list):
+        logger.warning("text_structure_batch: invalid batch JSON; keeping rule results")
+        return {}
+
+    sources = {
+        int(item["index"]): str(item.get("text") or "")
+        for item in candidates
+        if isinstance(item.get("index"), int)
+    }
+    valid_items = [item for item in items if isinstance(item, dict) and isinstance(item.get("index"), int)]
+    token_share = total_tokens // max(1, len(valid_items))
+    outputs: dict[int, dict[str, Any]] = {}
+    for item in valid_items:
+        index = int(item["index"])
+        original = sources.get(index)
+        if original is None or index in outputs:
+            continue
+        structured = {k: v for k, v in item.items() if k != "index"}
+        cleaned, dropped = _validate_no_hallucination(structured, original)
+        if not cleaned.get("stem") and not cleaned.get("options") and not cleaned.get("answer"):
+            continue
+        cleaned["_dropped"] = dropped
+        cleaned["_tokens"] = token_share
+        outputs[index] = cleaned
+
+    return outputs

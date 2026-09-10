@@ -107,6 +107,7 @@ async def run_repair_stage(
         "monthly_token_limit": options.get("monthly_token_limit", 2000000),
         "enabled": options.get("enable_ai_repair", True),
         "low_risk_skip_enabled": options.get("enable_low_risk_skip", True),
+        "enable_roman_repair_phase": options.get("enable_roman_repair_phase", True),
     }
     roman_anomalies = (batch_validation_diagnostics or {}).get("roman_anomalies", [])
     result = await repair_questions(
@@ -192,6 +193,8 @@ async def run_repair_stage(
         "skip_rate": skip_rate,
         "estimated_tokens_saved": estimated_tokens_saved,
         "avg_tokens_per_repair": avg_tokens_per_repair,
+        "ai_calls": int(stats.get("llm_calls", 0) or 0),
+        "llm_calls": int(stats.get("llm_calls", 0) or 0),
     }
 
     return {

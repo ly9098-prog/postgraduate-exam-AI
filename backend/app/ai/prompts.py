@@ -699,6 +699,39 @@ def build_text_structure(block_text: str, rule_hint: dict | None = None) -> list
     ]
 
 
+def build_text_structure_batch(items: list[dict]) -> list:
+    """构建多文本块一次性结构化 prompt，避免逐题重复调用模型。"""
+    payload = []
+    for item in items:
+        hint = item.get("rule_hint") or {}
+        payload.append({
+            "index": item.get("index"),
+            "text": item.get("text") or "",
+            "rule_hint": {
+                "stem_length": len(hint.get("stem") or ""),
+                "option_count": len(hint.get("options") or []),
+                "answer_empty": not hint.get("answer"),
+                "analysis_empty": not hint.get("analysis"),
+            },
+        })
+    return [
+        {
+            "role": "system",
+            "content": (
+                SYSTEM_PROMPTS["text_structure"]
+                + "\n\n批量模式补充约束：每个输入 item 必须独立处理，不得跨 item 合并、拆分或借用内容。"
+                "返回严格 JSON 对象：{\"items\":[{\"index\":0,\"stem\":...,\"question_type\":...,"
+                "\"options\":[],\"answer\":null,\"analysis\":null}, ...]}。"
+                "index 必须原样返回，且只返回输入中存在的 index。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": "请一次性结构化以下文本块：\n" + json.dumps(payload, ensure_ascii=False),
+        },
+    ]
+
+
 def build_ocr_correction(block_text: str, system_prompt: str | None = None) -> list:
     """构建 OCR 文本纠错 prompt。
 

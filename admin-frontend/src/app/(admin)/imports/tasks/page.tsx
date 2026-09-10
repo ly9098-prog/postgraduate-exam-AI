@@ -218,6 +218,7 @@ export default function ImportTasksPage() {
         import_mode: importMode,
         enable_ai_repair: enableAiRepair,
         confidence_threshold: confidenceThreshold || undefined,
+        image_fast_mode: true,
         page_start: pageStart || undefined,
         page_end: pageEnd || undefined,
       });

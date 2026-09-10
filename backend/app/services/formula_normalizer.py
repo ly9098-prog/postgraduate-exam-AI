@@ -124,20 +124,103 @@ def fix_ocr_formula(text: str) -> str:
     return text
 
 
-def normalize_text_import_math(text: str, *, compact: bool = False) -> str:
-    """Normalize math from text imports. Preserves $ delimiters for frontend rendering.
+_VALID_DOLLAR_MATH_RE = re.compile(
+    r"\$\$[\s\S]*?\$\$|(?<!\$)\$(?!\$)[^\$\n]+?(?<!\$)\$(?!\$)"
+)
 
-    Does NOT strip math delimiters (frontend needs $...$ to render math).
-    Does NOT apply OCR fixes (text import is user-pasted, not OCR-generated;
-    OCR fixes are applied separately in PDF/OCR paths).
+
+def _map_outside_code_fences(text: str, transform) -> str:
+    """Apply *transform* only outside Markdown fenced code blocks.
+
+    Splitting on the literal fence deliberately treats an unmatched trailing fence
+    as code too, which is safer than rewriting possible C/SQL/shell content.
+    """
+    chunks = text.split("```")
+    return "```".join(transform(chunk) if index % 2 == 0 else chunk for index, chunk in enumerate(chunks))
+
+
+def _strip_outside_code_fence_boundaries(text: str) -> str:
+    """Trim outer prose without trimming an unmatched trailing code fence."""
+    chunks = text.split("```")
+    chunks[0] = chunks[0].lstrip()
+    if (len(chunks) - 1) % 2 == 0:
+        chunks[-1] = chunks[-1].rstrip()
+    return "```".join(chunks)
+
+
+def normalize_text_import_delimiters(text: str) -> str:
+    r"""Canonicalize supported text-import math delimiters without touching code.
+
+    Canonical storage/import format follows the project LaTeX rule:
+    inline math uses ``$...$`` and display math uses ``$$...$$``.  The common
+    ``\(...\)`` / ``\[...\]`` forms remain accepted input and are converted
+    mechanically.  Formula content itself is never rewritten here.
     """
     if not text:
         return text
-    text = _collapse_latex_escapes(text)
-    text = _normalize_common_math_notation(text)
-    if compact:
-        text = _compact_formula_spacing(text)
-    return text.strip()
+
+    def _normalize(segment: str) -> str:
+        # Tolerate copy/paste artifacts such as \($x\) / \[$$x\].
+        segment = re.sub(r"\\\(\$", r"\\(", segment)
+        segment = re.sub(r"\$\\\)", r"\\)", segment)
+        segment = re.sub(r"\\\[\$\$", r"\\[", segment)
+        segment = re.sub(r"\$\$\\\]", r"\\]", segment)
+        segment = re.sub(r"\\\(([\s\S]*?)\\\)", lambda m: f"${m.group(1)}$", segment)
+        segment = re.sub(r"\\\[([\s\S]*?)\\\]", lambda m: f"$${m.group(1)}$$", segment)
+        return segment
+
+    return _map_outside_code_fences(text, _normalize)
+
+
+def strip_unpaired_text_import_dollars(text: str) -> str:
+    """Remove orphan ``$`` markers while preserving valid inline/display math.
+
+    This keeps the legacy text-import cleanup behaviour for malformed pasted
+    Markdown, but unlike the old implementation it does not collapse ``$$...$$``
+    display formulas into inline formulas. Fenced code is passed through verbatim.
+    """
+    if not text:
+        return text
+
+    def _strip(segment: str) -> str:
+        protected: list[str] = []
+
+        def _protect(match: re.Match) -> str:
+            key = f"\x00MATH{len(protected)}\x00"
+            protected.append(match.group(0))
+            return key
+
+        cleaned = _VALID_DOLLAR_MATH_RE.sub(_protect, segment)
+        cleaned = cleaned.replace("$", "")
+        for index, value in enumerate(protected):
+            cleaned = cleaned.replace(f"\x00MATH{index}\x00", value)
+        return cleaned
+
+    return _map_outside_code_fences(text, _strip)
+
+
+def normalize_text_import_math(text: str, *, compact: bool = False) -> str:
+    r"""Normalize math from text imports. Preserves canonical math delimiters.
+
+    Accepted input delimiters ``\(...\)`` / ``\[...\]`` are normalized to
+    ``$...$`` / ``$$...$$``. OCR-specific symbol fixes are intentionally not
+    applied because text import is user-pasted rather than OCR-generated.
+    """
+    if not text:
+        return text
+    text = normalize_text_import_delimiters(text)
+
+    def _normalize(segment: str) -> str:
+        segment = _collapse_latex_escapes(segment)
+        segment = _normalize_common_math_notation(segment)
+        if compact:
+            segment = _compact_formula_spacing(segment)
+        return segment
+
+    # Text imports may contain C/Java/SQL snippets.  Formula cleanup must never
+    # turn tokens such as ``log`` inside a fenced code block into LaTeX or
+    # collapse code spacing, so all normalization stays outside ``` fences.
+    return _strip_outside_code_fence_boundaries(_map_outside_code_fences(text, _normalize))
 
 
 def _collapse_latex_escapes(text: str) -> str:

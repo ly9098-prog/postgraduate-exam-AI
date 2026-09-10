@@ -532,6 +532,12 @@ async def _run_image_pipeline_with_db(
         )
 
         logger.info("image pipeline started: pipeline_id=%s", pipeline_id)
+        from app.features.import_ai_policy import apply_image_single_pass_policy
+
+        pipeline_options = apply_image_single_pass_policy(
+            options,
+            enabled=bool(options.get("image_fast_mode", True)),
+        )
         async with async_session() as db:
             result = await run_pipeline(
                 file_content=raw_text.encode("utf-8"),
@@ -539,7 +545,7 @@ async def _run_image_pipeline_with_db(
                 source_file=source_file,
                 subject=subject,
                 subject_id=subject_id,
-                options=options,
+                options=pipeline_options,
                 db=db,
                 page_images={1: image_content},
                 pre_extracted_blocks=pre_extracted_blocks,
@@ -708,6 +714,7 @@ async def start_import_pipeline(
     import_mode: str = "auto",
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
+    image_fast_mode: bool = True,
     page_start: int | None = None,
     page_end: int | None = None,
     created_by: str | None = None,
@@ -785,6 +792,7 @@ async def start_import_pipeline(
                 "enable_ai_repair": enable_ai_repair,
                 "confidence_threshold": confidence_threshold,
                 "image_hash": image_hash,
+                "image_fast_mode": image_fast_mode,
             }
 
             _ctx = get_log_context()

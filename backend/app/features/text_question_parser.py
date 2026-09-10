@@ -15,7 +15,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.question_pipeline import _guess_subject, process_question_pipeline
-from app.services.formula_normalizer import fix_ocr_formula, normalize_text_import_math
+from app.services.formula_normalizer import (
+    fix_ocr_formula,
+    normalize_text_import_delimiters,
+    normalize_text_import_math,
+    strip_unpaired_text_import_dollars,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,9 @@ _LABEL_LINE_RE = re.compile(
 
 _OPTION_LINE_RE = re.compile(r"^\s*([A-Da-d])\s*[.．、:：)）]\s*(.+)")
 _OPTION_OCR_RE = re.compile(r"^\s*([A-Da-d])\s*[.．、:：)）]\s{1,3}(.+[^\s])")
+# 复制自网页 / OCR 的常见格式会把选项字母与正文拆成两行：
+# A\n选项内容\nB\n选项内容。仅在 options section 内使用该规则，避免把答案 A 误判为选项。
+_OPTION_BARE_KEY_RE = re.compile(r"^\s*([A-Da-d])\s*$")
 
 # ============================================================
 # 判断题答案
@@ -94,40 +102,41 @@ _Q_NUMBER_PREFIX_RE = re.compile(r"^\s*\d+\s*[.．、)）]\s*")
 
 
 def _normalize_text(text: str) -> str:
-    """文本预处理：符号规范化、空行清洗。保留 【】 不被转换。"""
-    text = text.replace("\xa0", " ").replace("　", " ")
-    text = text.replace("：", ":").replace("（", "(").replace("）", ")")
-    text = text.replace("．", ".")
-    # 去除 Markdown 加粗标记（如 **答案：C** → 答案：C，**29．xxx** → 29．xxx）
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
-    # 去除 Markdown 引用标记（> 开头，可能连续多个 > >）
-    text = re.sub(r"^(?:>\s?)+", "", text, flags=re.MULTILINE)
-    # LaTeX 定界符统一为 $...$ 格式（前端渲染器仅支持 $）
-    # 1) 清除 \( 和 \) 旁边多余的 $（如 \($P_{1}\) → \(P_{1}\)）
-    text = re.sub(r"\\\(\$", r"\\(", text)
-    text = re.sub(r"\$\\\)", r"\\)", text)
-    # 2) 将 \(...\) 转换为 $...$（前端只识别 $ 定界符）
-    text = re.sub(r"\\\((.+?)\\\)", r"$\1$", text, flags=re.DOTALL)
-    # 3) 清除 LaTeX 文本字体命令（AI 常对普通文本过度使用 \mathrm 等）
-    text = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", text)
-    text = re.sub(r"\\textbf\{([^}]*)\}", r"\1", text)
-    text = re.sub(r"\\textit\{([^}]*)\}", r"\1", text)
-    text = re.sub(r"\\mathtt\{([^}]*)\}", r"\1", text)
-    # 4) 保护成对的 $...$，移除残余孤立 $
-    _pairs = re.findall(r"\$[^$\n]+?\$", text)
-    _map = {}
-    for _i, _p in enumerate(_pairs):
-        _k = f"\x00PROT{_i}\x00"
-        _map[_k] = _p
-        text = text.replace(_p, _k)
-    text = re.sub(r"\$", "", text)
-    for _k, _p in _map.items():
-        text = text.replace(_k, _p)
-    # "第X题" 独立标题行 → 批量分隔标记，让 _split_batch 能正确分题
-    text = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "\n===\n", text, flags=re.MULTILINE)
-    # 连续空行压缩
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    """文本预处理：机械清理正文，同时逐字保护 ``` 代码围栏。"""
+    if not text:
+        return text
+
+    # 数学定界符可以跨行，因此先走专用 normalizer；该函数自身会跳过代码围栏。
+    # LaTeX 定界符按项目规则统一：行内 $...$，块级 $$...$$。
+    # 兼容输入 \(...\) / \[...\]，但不改写 ``` 代码围栏内内容。
+    text = normalize_text_import_delimiters(text)
+    # 保护成对的 $...$ / $$...$$，仅移除残余孤立 $。
+    # 旧实现会把 $$...$$ 错误压成 $...$，导致块级公式语义丢失。
+    text = strip_unpaired_text_import_dollars(text)
+
+    chunks = text.split("```")
+    for index in range(0, len(chunks), 2):
+        segment = chunks[index]
+        segment = segment.replace("\xa0", " ").replace("　", " ")
+        segment = segment.replace("：", ":").replace("（", "(").replace("）", ")")
+        segment = segment.replace("．", ".")
+        # 去除 Markdown 加粗标记（如 **答案：C** → 答案：C，**29．xxx** → 29．xxx）
+        segment = re.sub(r"\*\*(.*?)\*\*", r"\1", segment)
+        # 去除 Markdown 引用标记（> 开头，可能连续多个 > >）
+        segment = re.sub(r"^(?:>\s?)+", "", segment, flags=re.MULTILINE)
+        # 不主动剥离 \mathrm / \mathtt / \textbf 等命令。它们可能属于用户
+        # 明确输入的合法 LaTeX，文本结构化阶段只做机械格式清理，不改写公式内容。
+        # "第X题" 独立标题行 → 批量分隔标记，让 _split_batch 能正确分题
+        segment = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "\n===\n", segment, flags=re.MULTILINE)
+        # 仅压缩正文连续空行；代码块内部换行和空格逐字保留。
+        segment = re.sub(r"\n{3,}", "\n\n", segment)
+        chunks[index] = segment
+
+    # 只修剪正文边界。若最后一个 ``` 没闭合，末尾代码内容也不做 rstrip。
+    chunks[0] = chunks[0].lstrip()
+    if (len(chunks) - 1) % 2 == 0:
+        chunks[-1] = chunks[-1].rstrip()
+    return "```".join(chunks)
 
 
 def _split_batch(text: str) -> list[str]:
@@ -251,45 +260,75 @@ _INLINE_OPTION_SPLIT_RE = re.compile(r"\s+(?=[A-Da-d]\s*[.．、:：)）])")
 
 
 def _parse_options_from_text(text: str) -> list[dict[str, str]]:
-    """从文本中提取选项。"""
+    """从文本中提取选项。
+
+    同时支持：
+    - ``A. 选项内容`` / ``A、选项内容``
+    - ``A`` 与选项内容分处相邻两行
+    - ``A. ... B. ...`` 多个选项被压平在同一行
+
+    这里接收到的仅是 options section，因此允许把独立 A-D 行解释为选项键；
+    答案 section 已在上游切开，不会因此把单字母答案误收进选项。
+    """
     if not text.strip():
         return []
 
     options: dict[str, str] = {}
-    lines = text.strip().split("\n")
+    current_key: str | None = None
+    current_parts: list[str] = []
 
-    for line in lines:
+    def commit_current() -> None:
+        nonlocal current_key, current_parts
+        if current_key and current_parts and current_key not in options:
+            value = _normalize_option_math("\n".join(current_parts).strip())
+            if value:
+                options[current_key] = value
+        current_key = None
+        current_parts = []
+
+    def start_option(key: str, value: str = "") -> None:
+        nonlocal current_key, current_parts
+        commit_current()
+        current_key = key.upper()
+        current_parts = [value.strip()] if value.strip() else []
+
+    for line in text.strip().split("\n"):
         stripped = line.strip()
         if not stripped:
             continue
 
-        # 检查是否包含内联多选项（一行含多个 A.xxx B.xxx）
+        # 一行中可能同时出现 A. ... B. ... C. ...
         parts = _INLINE_OPTION_SPLIT_RE.split(stripped)
         candidates = parts if len(parts) > 1 else [stripped]
 
-        for cand in candidates:
-            cand = cand.strip()
-            if not cand:
-                continue
+        if len(candidates) > 1:
+            for cand in candidates:
+                cand = cand.strip()
+                if not cand:
+                    continue
+                match = _OPTION_LINE_RE.match(cand) or _OPTION_OCR_RE.match(cand)
+                if match:
+                    start_option(match.group(1), match.group(2))
+                elif current_key is not None:
+                    current_parts.append(cand)
+            continue
 
-            # 精确匹配
-            m = _OPTION_LINE_RE.match(cand)
-            if m:
-                key = m.group(1).upper()
-                value = _normalize_option_math(m.group(2).strip())
-                if key not in options and value:
-                    options[key] = value
-                continue
+        match = _OPTION_LINE_RE.match(stripped) or _OPTION_OCR_RE.match(stripped)
+        if match:
+            start_option(match.group(1), match.group(2))
+            continue
 
-            # OCR 容错
-            m = _OPTION_OCR_RE.match(cand)
-            if m:
-                key = m.group(1).upper()
-                value = _normalize_option_math(m.group(2).strip())
-                if key not in options and value:
-                    options[key] = value
-                continue
+        # 网页复制 / OCR 经常得到 "A\n正文\nB\n正文"。
+        bare_key = _OPTION_BARE_KEY_RE.match(stripped)
+        if bare_key:
+            start_option(bare_key.group(1))
+            continue
 
+        # 已进入某个选项后，后续非标记行视为该选项的续行。
+        if current_key is not None:
+            current_parts.append(stripped)
+
+    commit_current()
     return [{"key": k, "text": v} for k, v in sorted(options.items())]
 
 
@@ -742,6 +781,7 @@ def _merge_llm_into_raw(raw: dict[str, Any], llm_out: dict[str, Any]) -> dict[st
 def _finalize_questions(
     raw_questions: list[dict[str, Any]],
     subject_code: str,
+    subject_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """走 pipeline 标准化 + 校验，返回 (questions, valid_count)。"""
     out: list[dict] = []
@@ -750,6 +790,11 @@ def _finalize_questions(
 
         pipeline_input = {
             "subject": q_subject_code,
+            "subject_id": raw.get("subject_id") or subject_id,
+            # 文本导入先进入审核暂存区，subject_id 可在审核阶段补充；
+            # 不应因为科目未指定而阻断结构解析与暂存。
+            "allow_subjectless": True,
+            "skip_ocr_quality_gate": True,
             "stem": raw["stem"],
             "options": raw["options"],
             "answer": raw["answer"],
@@ -769,6 +814,7 @@ def _finalize_questions(
         normalized = result["normalized"]
         out.append({
             "subject": normalized.get("subject"),
+            "subject_id": normalized.get("subject_id"),
             "question_type": normalized.get("question_type"),
             "stem": normalized.get("stem"),
             "options": normalized.get("options"),
@@ -789,7 +835,7 @@ def _finalize_questions(
     return out, valid_count
 
 
-def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
+def parse_text_questions(text: str, subject: str, subject_id: int | None = None) -> dict[str, Any]:
     """解析用户粘贴的文本，返回结构化题目列表（仅规则解析）。
 
     保留同步入口以兼容现有调用方与测试。需要 LLM 兜底请使用
@@ -808,7 +854,7 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
         for w in raw.get("warnings", []):
             global_warnings.append(f"第{q_index + 1}题: {w}")
 
-    questions, valid_count = _finalize_questions(raw_questions, subject)
+    questions, valid_count = _finalize_questions(raw_questions, subject, subject_id)
     if not questions:
         global_warnings.append("未识别到任何题目，请检查文本格式")
 
@@ -820,58 +866,85 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
     }
 
 
-async def parse_text_questions_async(text: str, subject: str, db: AsyncSession | None = None) -> dict[str, Any]:
+async def parse_text_questions_async(
+    text: str,
+    subject: str,
+    db: AsyncSession | None = None,
+    subject_id: int | None = None,
+) -> dict[str, Any]:
     """规则解析为主，结构完整度低时调用 LLM 结构化兜底。
 
-    LLM 仅做格式整理：识别题干 / 选项 / 答案 / 解析区域、修复换行、
-    提取多空结构。绝不补全、推测、生成内容。所有 LLM 输出经过反幻觉
-    守门后才合并回结果，最终仍走 process_question_pipeline 标准化。
+    多个可疑题块会合并为一次 LLM 结构化请求；每个返回项仍独立经过
+    反幻觉守门。批量响应失败时直接保留规则结果，不回退为 N 次模型调用。
     """
-    from app.features.llm_text_structurer import should_call_llm, structure_text_block
+    from app.features.llm_text_structurer import (
+        should_call_llm,
+        structure_text_block,
+        structure_text_blocks,
+    )
 
     blocks, early = _prepare_blocks(text)
     if early is not None:
         return early
 
     global_warnings: list[str] = []
-    raw_questions: list[dict] = []
+    prepared: list[tuple[int, str, dict, bool, str, dict]] = []
+    llm_candidates: list[dict] = []
 
     for q_index, block in enumerate(blocks):
         raw = _block_to_raw(block)
         raw["block_index"] = q_index
-
         should_call, reason = should_call_llm(block, raw)
+        rule_hint = {
+            "stem": raw.get("stem"),
+            "options": raw.get("options"),
+            "answer": raw.get("answer"),
+            "analysis": raw.get("analysis"),
+        }
+        prepared.append((q_index, block, raw, should_call, reason, rule_hint))
         if should_call:
-            llm_out = await structure_text_block(
-                block,
-                rule_hint={
-                    "stem": raw.get("stem"),
-                    "options": raw.get("options"),
-                    "answer": raw.get("answer"),
-                    "analysis": raw.get("analysis"),
-                },
-                db=db,
-            )
+            llm_candidates.append({
+                "index": q_index,
+                "text": block,
+                "rule_hint": rule_hint,
+            })
+
+    llm_outputs: dict[int, dict[str, Any]] = {}
+    if len(llm_candidates) == 1:
+        candidate = llm_candidates[0]
+        single = await structure_text_block(
+            candidate["text"],
+            rule_hint=candidate["rule_hint"],
+            db=db,
+        )
+        if single is not None:
+            llm_outputs[int(candidate["index"])] = single
+    elif len(llm_candidates) > 1:
+        llm_outputs = await structure_text_blocks(llm_candidates, db=db)
+
+    raw_questions: list[dict] = []
+    for q_index, _block, raw, should_call, reason, _rule_hint in prepared:
+        if should_call:
+            llm_out = llm_outputs.get(q_index)
             if llm_out is not None:
                 raw = _merge_llm_into_raw(raw, llm_out)
                 raw["block_index"] = q_index
                 raw["detection_method"] = "llm_structured"
                 raw["llm_reason"] = reason
                 raw["llm_dropped"] = llm_out.get("_dropped") or []
-                # 守门移除字段记录到 warnings，便于排查
-                for f in raw["llm_dropped"]:
+                for field_name in raw["llm_dropped"]:
                     global_warnings.append(
-                        f"第{q_index + 1}题: LLM 输出字段 {f} 未通过反幻觉校验，已置空"
+                        f"第{q_index + 1}题: LLM 输出字段 {field_name} 未通过反幻觉校验，已置空"
                     )
             else:
                 raw["llm_reason"] = reason
                 raw["detection_method"] = raw.get("detection_method", "heuristic") + "_llm_failed"
 
         raw_questions.append(raw)
-        for w in raw.get("warnings", []):
-            global_warnings.append(f"第{q_index + 1}题: {w}")
+        for warning in raw.get("warnings", []):
+            global_warnings.append(f"第{q_index + 1}题: {warning}")
 
-    questions, valid_count = _finalize_questions(raw_questions, subject)
+    questions, valid_count = _finalize_questions(raw_questions, subject, subject_id)
     if not questions:
         global_warnings.append("未识别到任何题目，请检查文本格式")
 

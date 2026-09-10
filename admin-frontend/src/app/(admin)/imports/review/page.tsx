@@ -2034,7 +2034,7 @@ export default function ImportReviewPage() {
                       <span className="text-sm font-semibold text-[var(--ink)]">题干</span>
                     </div>
                     <div className="ml-9 stem-text">
-                      <QuestionContentRenderer content={previewItem?.parsed_content} fallbackText={editState.stem} showTableMetadata ignoredSegmentIds={optionVisualModel.consumedSegmentIds} />
+                      <QuestionContentRenderer content={previewItem?.parsed_content} fallbackText={editState.stem} showTableMetadata ignoredSegmentIds={optionVisualModel.consumedSegmentIds} preserveCodeText />
                     </div>
                   </section>
 

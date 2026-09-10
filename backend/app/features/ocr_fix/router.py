@@ -305,6 +305,13 @@ class OCRFixRouter:
         chain = self._resolve_chain()
         attempts: list[_AdapterAttempt] = []
         last_error: str | None = None
+        call_stats = {"ai_calls": 0, "llm_calls": 0, "vl_calls": 0, "tokens_used": 0}
+
+        def _attach_call_stats(result: OCRFixResult) -> OCRFixResult:
+            metadata = dict(result.metadata or {})
+            metadata["router_call_stats"] = dict(call_stats)
+            result.metadata = metadata
+            return result
 
         for model_name in chain:
             adapter = self._get_adapter(model_name)
@@ -320,9 +327,17 @@ class OCRFixRouter:
             start = time.monotonic()
 
             try:
+                if model_name != "rule_fallback":
+                    call_stats["ai_calls"] += 1
+                    if model_name == "paddleocr-vl":
+                        call_stats["vl_calls"] += 1
+                    else:
+                        call_stats["llm_calls"] += 1
                 result = await adapter.fix(
                     image=image, ocr_text=ocr_text, context=context,
                 )
+                if result.tokens_used:
+                    call_stats["tokens_used"] += int(result.tokens_used)
                 attempt.latency_ms = (time.monotonic() - start) * 1000
 
                 # Check for error responses
@@ -365,7 +380,7 @@ class OCRFixRouter:
                         }
                         attempts.append(attempt)
                         self._log_audit_trail(attempts, final_decision="accepted")
-                        return result
+                        return _attach_call_stats(result)
 
                     if evaluation.decision == CandidateDecision.REJECT_STOP:
                         logger.warning(
@@ -382,7 +397,7 @@ class OCRFixRouter:
                         )
                         attempts.append(attempt)
                         self._log_audit_trail(attempts, final_decision="reject_stop")
-                        return OCRFixResult(
+                        return _attach_call_stats(OCRFixResult(
                             fixed_text=ocr_text,
                             confidence=0.0,
                             model_used=f"rejected_{model_name}",
@@ -394,7 +409,7 @@ class OCRFixRouter:
                                 "reason": evaluation.reason,
                                 "risk_flags": list(evaluation.risk_flags),
                             },
-                        )
+                        ))
 
                     # REJECT_CONTINUE
                     logger.info(
@@ -433,7 +448,7 @@ class OCRFixRouter:
             attempt_count=len(attempts),
             last_error=last_error[:200] if last_error else None,
         )
-        return OCRFixResult(
+        return _attach_call_stats(OCRFixResult(
             fixed_text=ocr_text,
             confidence=0.0,
             model_used="degraded_all_adapters",
@@ -450,7 +465,7 @@ class OCRFixRouter:
                     for a in attempts
                 ],
             },
-        )
+        ))
 
     def _log_audit_trail(
         self,

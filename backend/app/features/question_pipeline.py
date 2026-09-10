@@ -144,6 +144,8 @@ class QuestionNormalizer:
 
         plain_math = bool(raw.get("preserve_plain_math"))
         subject_code = self.normalize_subject(raw.get("subject") or raw.get("科目"))
+        subject_id = self.normalize_subject_id(raw.get("subject_id") or raw.get("科目ID"))
+        allow_subjectless = bool(raw.get("allow_subjectless"))
         previous_plain_math = getattr(self, "_plain_math_options", False)
         self._plain_math_options = plain_math
         try:
@@ -196,8 +198,12 @@ class QuestionNormalizer:
         if question_type != "multi_blank_choice":
             stem = self._break_before_number_markers(stem)
         stem = self._remove_embedded_options(stem, options)
-        # OCR quality gate on cleaned stem
-        _ocr_gate_result = run_ocr_quality_gate(stem)
+        # 文本导入不是 OCR 来源。代码题中的换行、符号不应被 OCR 污染规则
+        # 误判并制造无意义的“解析警告”；OCR/PDF 图片链路仍保持原质量门。
+        if raw.get("skip_ocr_quality_gate"):
+            _ocr_gate_result = {"passed": True, "ocr_quality_flags": []}
+        else:
+            _ocr_gate_result = run_ocr_quality_gate(stem)
         answer = self.normalize_answer(answer_raw, question_type)
         analysis = self.clean_analysis(
             raw.get("analysis")
@@ -212,6 +218,7 @@ class QuestionNormalizer:
         difficulty = self.normalize_difficulty(raw.get("difficulty") or raw.get("难度"))
         normalized = {
             "subject": subject_code,
+            "subject_id": subject_id,
             "question_type": question_type,
             "stem": stem,
             "options": options,
@@ -240,7 +247,7 @@ class QuestionNormalizer:
                     isinstance(s, dict) and "option_group" in str(s.get("region_type", ""))
                     for s in raw_seg_check
                 )
-        normalized.update(self.validate(normalized))
+        normalized.update(self.validate(normalized, allow_subjectless=allow_subjectless))
 
         # Preserve segments and visual region metadata from the raw input
         raw_segments = (
@@ -276,6 +283,16 @@ class QuestionNormalizer:
                 normalized["warnings"].append(f"ocr_quality:{flag}")
 
         return normalized
+
+    @staticmethod
+    def normalize_subject_id(value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            subject_id = int(value)
+        except (TypeError, ValueError):
+            return None
+        return subject_id if subject_id > 0 else None
 
     def normalize_subject(self, value: Any) -> str:
         subject_code = str(value or "").strip()
@@ -494,7 +511,7 @@ class QuestionNormalizer:
         text = re.sub(r"^(?:【)?(?:答案解析|解析|解答)(?:】)?\s*[：:]\s*", "", text)
         return text.strip()
 
-    def validate(self, question: dict) -> dict:
+    def validate(self, question: dict, *, allow_subjectless: bool = False) -> dict:
         errors: list[str] = []
         warnings: list[str] = []
         if not question.get("stem"):
@@ -547,7 +564,7 @@ class QuestionNormalizer:
             answer = question.get("answer")
             _, answer_errors = validate_multi_blank_question(groups, answer)
             errors.extend(answer_errors)
-        if not question.get("subject"):
+        if not question.get("subject") and not question.get("subject_id") and not allow_subjectless:
             errors.append("subject_empty")
         return {"is_valid": not errors, "errors": errors, "warnings": warnings}
 

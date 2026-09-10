@@ -117,6 +117,10 @@ async def upload_import_file(
     import_mode: ImportMode = ImportMode.AUTO,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
+    image_fast_mode: bool = Query(
+        True,
+        description="图片快速解析：OCR 后只保留题目级 AI repair，避免逐 OCR 块重复调用模型",
+    ),
     page_start: int | None = None,
     page_end: int | None = None,
     current_admin=Depends(require_permissions("import:write")),
@@ -133,6 +137,7 @@ async def upload_import_file(
             import_mode=import_mode.value if isinstance(import_mode, ImportMode) else import_mode,
             enable_ai_repair=enable_ai_repair,
             confidence_threshold=confidence_threshold,
+            image_fast_mode=image_fast_mode,
             page_start=page_start,
             page_end=page_end,
             created_by=f"admin:{current_admin.id}",
@@ -622,7 +627,9 @@ async def parse_text_questions(
     """解析用户粘贴的文本，返回结构化题目预览。"""
     from app.features.text_question_parser import parse_text_questions_async
 
-    result = await parse_text_questions_async(data.text, data.subject, db=db)
+    result = await parse_text_questions_async(
+        data.text, data.subject, db=db, subject_id=data.subject_id
+    )
     return TextParseResponse(**result)
 
 
@@ -652,6 +659,10 @@ async def import_text_questions(
             q_input = {
                 "subject": q.subject or data.subject,
                 "subject_id": q.subject_id or data.subject_id,
+                # 文本导入写入的是审核暂存区，允许科目留空；最终发布前
+                # 仍由审核流程保证 Question.subject_id 满足数据库约束。
+                "allow_subjectless": True,
+                "skip_ocr_quality_gate": True,
                 "stem": q.stem,
                 "options": q.options,
                 "answer": q.answer or "",
@@ -977,7 +988,7 @@ async def batch_image_upload(
     confidence_threshold: float = 0.6,
     batch_fast_mode: bool = Query(
         True,
-        description="批量图片快速模式：避免重复 OCR，并将代码结构修复并入通用 AI repair 单次调用",
+        description="批量图片快速模式：OCR 后跳过逐块纠错/代码重建/Roman 独立调用，仅保留题目级 AI repair",
     ),
     ocr_mode: str = Query("local", alias="ocr_mode"),
     # Idempotency / trace identifiers

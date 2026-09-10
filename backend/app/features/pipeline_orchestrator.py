@@ -12,11 +12,8 @@ Features:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.document_ir import DocumentIR
+from app.core.time_utils import serialize_utc_datetime, utcnow
 
 
 import asyncio
@@ -1853,9 +1850,8 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
         stage.output_count = len(result.get("normalized_blocks") or [])
         # AI call count from correction diagnostics
         diag = result.get("ocr_correction_diagnostics") or {}
-        corrections = diag.get("corrections") or []
-        stage.ai_calls = diag.get("ai_calls", len(corrections))
-        stage.tokens_used = diag.get("tokens_used", 0)
+        stage.ai_calls = int(diag.get("ai_calls", 0) or 0)
+        stage.tokens_used = int(diag.get("tokens_used", 0) or 0)
         # OCR cache stats
         cache_stats = _get_ocr_cache_stats_safe()
         stage.cache_hit = cache_stats.get("hits", 0)
@@ -1907,7 +1903,8 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
         stage.input_count = len(data.get("questions") or [])
         stage.output_count = len(result.get("questions") or [])
         rstats = result.get("repair_stats") or {}
-        stage.ai_calls = rstats.get("repaired_count", rstats.get("repaired", 0))
+        stage.ai_calls = int(rstats.get("ai_calls", rstats.get("llm_calls", 0)) or 0)
+        stage.tokens_used = int(result.get("total_tokens", 0) or 0)
     # ── ai_validation ──
     elif name == "ai_validation":
         stage.input_count = len(data.get("questions") or [])
@@ -3228,6 +3225,7 @@ class ImportPipeline:
             "model_used": "",
         }
         quality_gate_shadow_records: list[dict] = []
+        model_call_totals = {"ai_calls": 0, "llm_calls": 0, "vl_calls": 0, "tokens_used": 0}
 
         # Phase 1: classify blocks and collect correction candidates
         to_correct: list[tuple[int, dict, str, float, float]] = []
@@ -3302,8 +3300,10 @@ class ImportPipeline:
                              "has_options": has_options},
                 )
 
-                if result.tokens_used:
-                    await record_token_usage(result.tokens_used)
+                router_stats = (getattr(result, "metadata", None) or {}).get("router_call_stats") or {}
+                used_tokens = int(router_stats.get("tokens_used", result.tokens_used or 0) or 0)
+                if used_tokens:
+                    await record_token_usage(used_tokens)
 
                 return idx, result
 
@@ -3331,6 +3331,9 @@ class ImportPipeline:
 
             _, result = fix_result
             new_block = dict(block)
+            router_stats = (getattr(result, "metadata", None) or {}).get("router_call_stats") or {}
+            for key in model_call_totals:
+                model_call_totals[key] += int(router_stats.get(key, 0) or 0)
 
             # Preserve bounded provider layout metadata even when the text
             # candidate is unchanged or rejected.  Later table recovery only
@@ -3532,6 +3535,7 @@ class ImportPipeline:
             "ocr_correction_diagnostics": {
                 "stats": stats,
                 "corrections": corrections,
+                **model_call_totals,
             },
             "quality_gate_shadow_records": quality_gate_shadow_records,
             "warnings": warnings,
