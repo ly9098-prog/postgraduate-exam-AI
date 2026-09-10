@@ -29,16 +29,6 @@ Page({
     primaryStatCount: 0,
     masteredCount: 0,
 
-    // 今日复习 Hero
-    reviewOverviewAvailable: false,
-    todayDueCount: 0,
-    todayCompletedCount: 0,
-    todayRemainingCount: 0,
-    todayOverdueCount: 0,
-    estimatedMinutes: 0,
-    todayProgressPercent: 0,
-    heroRemainingCount: 0,
-    heroRingStyle: 'background: conic-gradient(from -90deg, rgba(255,255,255,0.14) 0deg 360deg);',
 
     // 新任务流与批量管理
     activeView: 'task',
@@ -149,7 +139,6 @@ Page({
   _aiAutoSwitchTimer: null,
   _exportCapabilityRequestId: 0,
   _statsRequestSeq: 0,
-  _reviewOverviewRequestSeq: 0,
   _subjectsRequestSeq: 0,
   _taskFlowRequestSeq: 0,
   _destroyed: false,
@@ -157,7 +146,6 @@ Page({
   onLoad(options) {
     this._destroyed = false
     this._statsRequestSeq = 0
-    this._reviewOverviewRequestSeq = 0
     this._subjectsRequestSeq = 0
     this._taskFlowRequestSeq = 0
     this._batchMasterUndoInFlight = false
@@ -195,7 +183,6 @@ Page({
     Promise.all([
       this.loadStats(),
       this.loadList(true),
-      this.loadReviewOverview(),
     ]).then(() => this._checkAiDiagnosis())
   },
 
@@ -209,7 +196,6 @@ Page({
     this._destroyed = true
     this._exportCapabilityRequestId++
     this._statsRequestSeq++
-    this._reviewOverviewRequestSeq++
     this._subjectsRequestSeq++
     this._taskFlowRequestSeq++
     this._listRequestSeq++
@@ -277,7 +263,6 @@ Page({
     await Promise.all([
       this.loadStats(),
       this.loadList(true),
-      this.loadReviewOverview(),
     ])
     if (this._destroyed) return
     // 首次加载完成后检查 AI 诊断
@@ -387,13 +372,6 @@ Page({
         ),
       }
 
-      // 旧后端没有今日复习概览时，Hero 至少仍能展示“待复习错题”数量，
-      // 但不会伪造完成率。
-      if (!this.data.reviewOverviewAvailable) {
-        patch.heroRemainingCount = primaryStatCount
-        patch.todayProgressPercent = 0
-        patch.heroRingStyle = this._buildHeroRingStyle(0)
-      }
 
       this.setData(patch)
 
@@ -412,48 +390,6 @@ Page({
       if (this._destroyed || requestSeq !== this._statsRequestSeq) return
       console.error('加载错题统计失败', e)
     }
-  },
-
-  async loadReviewOverview() {
-    const requestSeq = ++this._reviewOverviewRequestSeq
-    try {
-      const overview = await api.get('/review/today/overview')
-      if (this._destroyed || requestSeq !== this._reviewOverviewRequestSeq) return
-      const due = this._positiveNumber(overview.today_due_count, 0)
-      const completed = this._positiveNumber(overview.today_completed_count, 0)
-      const remaining = this._positiveNumber(overview.today_remaining_count, Math.max(0, due - completed))
-      const progress = due > 0 ? Math.round((completed / due) * 100) : 100
-
-      this.setData({
-        reviewOverviewAvailable: true,
-        todayDueCount: due,
-        todayCompletedCount: completed,
-        todayRemainingCount: remaining,
-        todayOverdueCount: this._positiveNumber(overview.today_overdue_count, 0),
-        estimatedMinutes: this._positiveNumber(overview.estimated_minutes, Math.ceil(remaining * 0.5)),
-        todayProgressPercent: Math.max(0, Math.min(100, progress)),
-        heroRemainingCount: remaining,
-        heroRingStyle: this._buildHeroRingStyle(progress),
-      })
-    } catch (e) {
-      if (this._destroyed || requestSeq !== this._reviewOverviewRequestSeq) return
-      // 兼容尚未提供 overview 接口的旧后端；页面其它能力继续可用。
-      console.warn('今日复习概览暂不可用，已使用错题统计兜底', e)
-      const fallback = this.data.primaryStatCount || 0
-      this.setData({
-        reviewOverviewAvailable: false,
-        heroRemainingCount: fallback,
-        todayProgressPercent: 0,
-        heroRingStyle: this._buildHeroRingStyle(0),
-      })
-    }
-  },
-
-  _buildHeroRingStyle(percent) {
-    const safe = Math.max(0, Math.min(100, Number(percent) || 0))
-    const endDeg = Math.round(safe * 3.6)
-    const splitDeg = Math.round(endDeg * 0.48)
-    return `background: conic-gradient(from -90deg, #A9F16C 0deg ${splitDeg}deg, #32D276 ${splitDeg}deg ${endDeg}deg, rgba(255,255,255,0.14) ${endDeg}deg 360deg);`
   },
 
   async loadList(reset = false) {
@@ -672,13 +608,6 @@ Page({
     this._syncSelectionState()
   },
 
-  startTodayReview() {
-    if (this.data.heroRemainingCount <= 0) {
-      wx.showToast({ title: '今日复习已经完成', icon: 'none' })
-      return
-    }
-    wx.navigateTo({ url: '/subpackages/study/review-today/review-today?autostart=1' })
-  },
 
   toggleBatchMode() {
     const next = !this.data.batchMode
@@ -1011,7 +940,7 @@ Page({
 
   _reloadAfterBatch() {
     if (this._destroyed) return Promise.resolve([])
-    return Promise.all([this.loadStats(), this.loadList(true), this.loadReviewOverview()])
+    return Promise.all([this.loadStats(), this.loadList(true)])
   },
 
   onExportSelected() {

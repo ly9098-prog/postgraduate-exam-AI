@@ -138,7 +138,7 @@
   <view class="ai-card" id="ai-card" bindtouchstart="onAiSwipeStart" bindtouchend="onAiSwipeEnd" bindtouchcancel="onAiSwipeCancel">
     <view class="ai-card-head">
       <view class="ai-brand">
-        <view class="ai-brand-icon" aria-hidden="true"><image class="ai-brand-icon-image" src="/assets/icons/wrong-detail/sparkle.svg" mode="aspectFit" /></view>
+        <view class="ai-brand-icon" aria-hidden="true"><image class="ai-brand-icon-image" src="/assets/icons/wrong-detail/ai-review.png" mode="aspectFit" /></view>
         <view class="ai-head-copy">
           <text class="ai-title">AI 复盘</text>
           <text class="ai-subtitle">先抓住关键，再按需深入</text>

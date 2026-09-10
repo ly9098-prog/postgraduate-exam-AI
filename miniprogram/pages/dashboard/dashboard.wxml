@@ -270,7 +270,7 @@
         </view>
         <view class="knowledge-diagnosis-head">
           <view class="knowledge-diagnosis-icon">
-            <image src="/assets/icons/home-actions/target.svg" mode="aspectFit" />
+            <image src="/assets/icons/dashboard/knowledge-diagnosis.png" mode="aspectFit" />
           </view>
           <view class="knowledge-diagnosis-divider"></view>
           <view class="knowledge-diagnosis-copy">
@@ -330,9 +330,7 @@
           <view class="error-pattern-focus-card" wx:if="{{errorDiagnosisPrimary}}">
             <view class="error-pattern-primary-head">
               <view class="error-pattern-symbol">
-                <view class="book-left"></view>
-                <view class="book-right"></view>
-                <view class="book-spine"></view>
+                <image class="error-pattern-symbol-image" src="/assets/icons/dashboard/error-diagnosis.png" mode="aspectFit" />
               </view>
               <text class="error-pattern-primary-label">{{errorDiagnosisPrimary.label}}</text>
               <text class="error-pattern-primary-count">{{errorDiagnosisPrimary.count}} 次 · {{errorDiagnosisPrimary.percentPct}}%</text>

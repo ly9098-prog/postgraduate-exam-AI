@@ -89,53 +89,6 @@
     </view>
   </view>
 
-  <!-- 今日复习 Hero -->
-  <view class="hero-card">
-    <view class="hero-glow hero-glow-one"></view>
-    <view class="hero-glow hero-glow-two"></view>
-    <view class="hero-content">
-      <view class="hero-copy">
-        <view class="hero-eyebrow">
-          <text class="hero-eyebrow-dot"></text>
-          <text>{{reviewOverviewAvailable ? '今日复习任务' : '错题复习任务'}}</text>
-        </view>
-        <view class="hero-number-row">
-          <text class="hero-number">{{heroRemainingCount}}</text>
-          <text class="hero-unit">题</text>
-        </view>
-        <text class="hero-title">{{heroRemainingCount > 0 ? '等待你重新攻克' : '今日任务已经完成'}}</text>
-        <text class="hero-desc" wx:if="{{heroRemainingCount > 0}}">
-          {{estimatedMinutes > 0 ? '预计 ' + estimatedMinutes + ' 分钟' : '从到期错题开始'}} · {{todayOverdueCount > 0 ? todayOverdueCount + ' 题已逾期' : '按计划复习更牢固'}}
-        </text>
-        <text class="hero-desc" wx:else>保持当前节奏，明天会自动生成新任务</text>
-      </view>
-
-      <!-- 参考示例优化：双色分段圆环 + 中心完成率 -->
-      <view class="hero-ring-wrap">
-        <view class="hero-ring" style="{{heroRingStyle}}">
-          <view class="hero-ring-gaps"></view>
-          <view class="hero-ring-core">
-            <text class="hero-ring-percent">{{todayProgressPercent}}%</text>
-            <text class="hero-ring-label">已完成</text>
-          </view>
-        </view>
-        <view class="ring-legend">
-          <view class="ring-legend-item"><text class="legend-dot lime"></text><text>完成 {{todayCompletedCount}}</text></view>
-          <view class="ring-legend-item"><text class="legend-dot track"></text><text>剩余 {{heroRemainingCount}}</text></view>
-        </view>
-      </view>
-    </view>
-
-    <view
-      class="hero-button {{heroRemainingCount <= 0 ? 'disabled' : ''}}"
-      hover-class="{{heroRemainingCount > 0 ? 'hero-button-pressed' : 'none'}}"
-      bindtap="startTodayReview"
-    >
-      <view class="hero-play"><text class="line-icon icon-play"></text></view>
-      <text>{{heroRemainingCount > 0 ? '立即开始复习（' + heroRemainingCount + '）' : '今日复习已完成'}}</text>
-    </view>
-  </view>
-
   <!-- 错题本专属概览：避免与 Dashboard 的综合报表重复 -->
   <view class="overview-card">
     <view class="overview-item">
@@ -206,8 +159,7 @@
     <block wx:else>
     <view class="insight-main {{aiDiagnosisRefreshing ? 'insight-main-dimmed' : ''}}" bindtap="{{aiDiagnosisRefreshing ? '' : 'toggleAiInsight'}}" hover-class="{{aiDiagnosisRefreshing ? 'none' : 'insight-main-pressed'}}">
       <view class="insight-icon">
-        <text class="insight-eye-one"></text>
-        <text class="insight-eye-two"></text>
+        <image class="insight-icon-image" src="/assets/icons/wrong-book/ai-insight.png" mode="aspectFit" />
       </view>
       <view class="insight-content">
         <view class="insight-head">

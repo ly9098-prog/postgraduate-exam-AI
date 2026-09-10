@@ -37,10 +37,10 @@ function getMasteryIconClass(name, code) {
 
 function getMasteryIconSrc(iconClass) {
   const icons = {
-    data: '/assets/icons/home-mastery/data-structure.svg',
-    chip: '/assets/icons/home-mastery/computer-organization.svg',
-    code: '/assets/icons/home-mastery/operating-system.svg',
-    network: '/assets/icons/home-mastery/computer-network.svg',
+    data: '/assets/icons/home-mastery/data-structure.png',
+    chip: '/assets/icons/home-mastery/computer-organization.png',
+    code: '/assets/icons/home-mastery/operating-system.png',
+    network: '/assets/icons/home-mastery/computer-network.png',
   }
   return icons[String(iconClass || '')] || ''
 }

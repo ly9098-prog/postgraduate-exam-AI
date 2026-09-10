@@ -1920,54 +1920,25 @@ page { background:#F2F3EF; background-color:#F2F3EF; }
   gap: 20rpx;
 }
 
-/* Open-book badge, drawn with CSS so there is no external icon dependency. */
+/* Error diagnosis icon replaced with supplied image asset. */
 .error-pattern-symbol {
   position: relative;
   flex: 0 0 auto;
   width: 70rpx;
   height: 70rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  border-radius: 50%;
-  background: linear-gradient(145deg, #356C50 0%, #5C8E6B 100%);
-  box-shadow:
-    inset 0 1rpx 0 rgba(255,255,255,.25),
-    0 8rpx 20rpx rgba(49, 91, 67, .13);
-}
-
-.error-pattern-symbol .book-left,
-.error-pattern-symbol .book-right {
-  position: absolute;
-  top: 22rpx;
-  width: 21rpx;
-  height: 27rpx;
-  border: 3rpx solid rgba(255,255,255,.96);
-  box-sizing: border-box;
+  border-radius: 18rpx;
   background: transparent;
+  box-shadow: none;
 }
 
-.error-pattern-symbol .book-left {
-  left: 14rpx;
-  border-right-width: 2rpx;
-  border-radius: 3rpx 0 2rpx 5rpx;
-  transform: skewY(8deg);
-}
-
-.error-pattern-symbol .book-right {
-  right: 14rpx;
-  border-left-width: 2rpx;
-  border-radius: 0 3rpx 5rpx 2rpx;
-  transform: skewY(-8deg);
-}
-
-.error-pattern-symbol .book-spine {
-  position: absolute;
-  left: 50%;
-  top: 20rpx;
-  width: 2rpx;
-  height: 31rpx;
-  border-radius: 99rpx;
-  background: rgba(255,255,255,.96);
-  transform: translateX(-50%);
+.error-pattern-symbol-image {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .error-pattern-primary-label {
@@ -2634,45 +2605,30 @@ page { background:#F2F3EF; background-color:#F2F3EF; }
 
 .knowledge-diagnosis-icon {
   position: relative;
-  width: 116rpx;
-  height: 116rpx;
-  flex: 0 0 116rpx;
-  overflow: hidden;
+  width: 138rpx;
+  height: 138rpx;
+  flex: 0 0 138rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
   border: 0;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 38% 32%, #FFFFFF 0 7%, #DDE2E4 18%, #7E888D 32%, #E7EBEC 45%, #6C767B 58%, #242B2F 73%, #080B0D 100%);
-  box-shadow:
-    inset 0 0 0 10rpx rgba(255,255,255,.10),
-    inset 0 0 0 25rpx rgba(5,9,11,.10),
-    0 10rpx 22rpx rgba(25, 32, 35, .16);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .knowledge-diagnosis-icon::before,
 .knowledge-diagnosis-icon::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.knowledge-diagnosis-icon::before {
-  inset: 17rpx;
-  border: 1rpx solid rgba(255,255,255,.46);
-  box-shadow: inset 0 0 0 11rpx rgba(4,8,10,.13);
-}
-
-.knowledge-diagnosis-icon::after {
-  inset: 40rpx;
-  border: 2rpx solid rgba(255,255,255,.78);
+  display: none;
 }
 
 .knowledge-diagnosis-icon image {
   position: relative;
   z-index: 1;
-  width: 40rpx;
-  height: 40rpx;
-  filter: brightness(0) invert(1);
+  width: 125%;
+  height: 125%;
+  filter: none;
 }
 
 .knowledge-diagnosis-divider {
@@ -2774,7 +2730,7 @@ page { background:#F2F3EF; background-color:#F2F3EF; }
   .knowledge-diagnosis-card-title { font-size: 35rpx; }
   .knowledge-diagnosis-period { font-size: 16rpx; }
   .knowledge-diagnosis-head { gap: 17rpx; padding-top: 30rpx; }
-  .knowledge-diagnosis-icon { width: 94rpx; height: 94rpx; flex-basis: 94rpx; }
+  .knowledge-diagnosis-icon { width: 118rpx; height: 118rpx; flex-basis: 118rpx; }
   .knowledge-diagnosis-divider { height: 112rpx; }
   .knowledge-diagnosis-title { font-size: 27rpx; }
   .knowledge-diagnosis-metrics { grid-template-columns: repeat(4, 1fr); }

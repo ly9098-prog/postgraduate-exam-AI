@@ -3137,3 +3137,624 @@ page {
     padding: 0 17rpx;
   }
 }
+
+/* User-provided four-subject mastery artwork. The PNGs already contain their
+ * own glass/sage surface, so the wrapper stays visually neutral. */
+.mastery-icon {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.mastery-icon::before {
+  display: none;
+}
+.mastery-icon-image {
+  width: 58rpx;
+  height: 58rpx;
+  display: block;
+}
+@media (max-width: 360px) {
+  .mastery-icon-image {
+    width: 54rpx;
+    height: 54rpx;
+  }
+}
+
+
+/* Round 4 — rebuild home hero card to match the supplied clean reference. */
+.focus-card {
+  position: relative;
+  overflow: hidden;
+  margin: 0 24rpx;
+  border-radius: 38rpx;
+  border: 1rpx solid rgba(188, 223, 191, .72);
+  color: #15231A;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F6FFF5 100%);
+  box-shadow: 0 22rpx 58rpx rgba(83, 111, 87, .12);
+}
+
+.focus-card::before {
+  content: '';
+  position: absolute;
+  right: -52rpx;
+  top: -86rpx;
+  width: 280rpx;
+  height: 280rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(151, 233, 142, .22), rgba(151, 233, 142, 0) 70%);
+}
+
+.focus-card::after {
+  content: '';
+  position: absolute;
+  right: -10rpx;
+  bottom: -46rpx;
+  width: 228rpx;
+  height: 228rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(164, 239, 159, .16), rgba(164, 239, 159, 0) 70%);
+}
+
+.focus-ambient {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999rpx;
+  background: linear-gradient(180deg, rgba(190, 239, 186, .18), rgba(190, 239, 186, .04));
+}
+
+.focus-ambient-top {
+  right: 22rpx;
+  top: 18rpx;
+  width: 170rpx;
+  height: 170rpx;
+  opacity: .7;
+  transform: rotate(-16deg);
+}
+
+.focus-ambient-bottom {
+  right: -30rpx;
+  bottom: 18rpx;
+  width: 146rpx;
+  height: 146rpx;
+  opacity: .55;
+  transform: rotate(22deg);
+}
+
+.focus-curve-image {
+  position: absolute;
+  right: 24rpx;
+  top: 92rpx;
+  width: 280rpx;
+  height: 142rpx;
+  opacity: .95;
+  pointer-events: none;
+}
+
+.focus-leaf-decor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: .18;
+}
+
+.focus-leaf-large {
+  width: 128rpx;
+  height: 128rpx;
+  right: 8rpx;
+  bottom: 6rpx;
+  transform: rotate(-4deg);
+}
+
+.focus-leaf-small {
+  width: 96rpx;
+  height: 96rpx;
+  right: 86rpx;
+  bottom: 28rpx;
+  opacity: .12;
+  transform: rotate(-28deg);
+}
+
+.focus-content {
+  position: relative;
+  z-index: 2;
+  padding: 28rpx 30rpx 24rpx;
+}
+
+.focus-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.focus-status {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: #26392A;
+  font-size: 17rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: 1.7rpx;
+}
+
+.focus-status-dot {
+  display: none;
+}
+
+.focus-kicker-icon {
+  width: 22rpx;
+  height: 22rpx;
+  margin-right: 12rpx;
+  flex-shrink: 0;
+}
+
+.focus-kicker-divider {
+  margin: 0 10rpx;
+  color: #7F8B80;
+}
+
+.focus-plan-anchor {
+  flex: 0 0 auto;
+  min-width: 92rpx;
+  min-height: 52rpx;
+  padding: 0 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  border: 2rpx solid #3D8E49;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 8rpx 20rpx rgba(81, 152, 87, .09);
+}
+
+.focus-plan-anchor-label {
+  color: #173C22;
+  font-size: 24rpx;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .8rpx;
+}
+
+.focus-title-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 28rpx;
+  padding-right: 220rpx;
+}
+
+.focus-title {
+  margin-top: 0;
+  max-width: none;
+  color: #0E1711;
+  font-size: 56rpx;
+  line-height: 1.12;
+  font-weight: 950;
+  letter-spacing: -1.6rpx;
+}
+
+.focus-title-arrow {
+  flex-shrink: 0;
+  color: #59C16D;
+  font-size: 58rpx;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.focus-desc {
+  margin-top: 18rpx;
+  max-width: 430rpx;
+  color: #6B776D;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.progress-head {
+  margin-top: 40rpx;
+  color: #213127;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.progress-label {
+  color: #223325;
+  font-size: 30rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.progress-head-sub {
+  color: #778379;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.progress-value {
+  color: #102019;
+  font-size: 24rpx;
+  font-weight: 950;
+}
+
+.progress-rate {
+  color: #33B04A;
+  font-size: 20rpx;
+  font-weight: 950;
+}
+
+.focus-progress-track {
+  height: 14rpx;
+  margin-top: 14rpx;
+  border-radius: 999rpx;
+  background: #E7ECE6;
+}
+
+.focus-progress-fill {
+  background: linear-gradient(90deg, #48D95E 0%, #7AEC72 100%);
+  box-shadow: 0 0 18rpx rgba(104, 221, 106, .24);
+}
+
+.progress-foot {
+  margin-top: 14rpx;
+  color: #617063;
+  font-size: 18rpx;
+}
+
+.progress-foot text:last-child {
+  color: #33B04A;
+}
+
+.focus-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
+
+.primary-action {
+  flex: 1;
+  min-height: 94rpx;
+  padding: 0 18rpx 0 28rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #3CD45A 0%, #55D467 100%);
+  color: #FFFFFF;
+  box-shadow: 0 16rpx 30rpx rgba(86, 206, 101, .22);
+}
+
+.primary-action-arrow {
+  width: 58rpx;
+  height: 58rpx;
+  background: #0E2618;
+  font-size: 30rpx;
+}
+
+.secondary-action {
+  flex: 0 0 260rpx;
+  min-height: 94rpx;
+  padding: 0 20rpx;
+  gap: 10rpx;
+  border: 1rpx solid rgba(172, 221, 174, .8);
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, .82);
+  color: #27412E;
+  font-size: 24rpx;
+  font-weight: 900;
+  box-shadow: 0 12rpx 28rpx rgba(99, 142, 99, .08);
+}
+
+.secondary-action-icon {
+  width: 28rpx;
+  height: 28rpx;
+  flex-shrink: 0;
+}
+
+.focus-metrics {
+  margin: 28rpx 0 0;
+  padding: 24rpx 4rpx 0;
+  border-top: 1rpx solid rgba(157, 191, 159, .35);
+  background: transparent;
+}
+
+.metric-value {
+  color: #101813;
+}
+
+.metric-label {
+  color: #6E7B70;
+}
+
+.metric-divider {
+  background: rgba(157, 191, 159, .48);
+}
+
+@media (max-width: 350px) {
+  .focus-content {
+    padding: 24rpx 24rpx 22rpx;
+  }
+
+  .focus-curve-image {
+    right: 8rpx;
+    top: 102rpx;
+    width: 236rpx;
+    height: 122rpx;
+    opacity: .9;
+  }
+
+  .focus-title-line {
+    padding-right: 180rpx;
+  }
+
+  .focus-title {
+    font-size: 48rpx;
+  }
+
+  .focus-desc {
+    max-width: 390rpx;
+    font-size: 22rpx;
+  }
+
+  .focus-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .secondary-action {
+    flex-basis: auto;
+    width: 100%;
+  }
+}
+
+
+/* Round 4.1 — refine the top-right visual area to better match the reference. */
+.focus-card::before {
+  right: -70rpx;
+  top: -94rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: radial-gradient(circle, rgba(158, 233, 149, .18), rgba(158, 233, 149, 0) 72%);
+}
+
+.focus-ambient-top {
+  right: 18rpx;
+  top: 12rpx;
+  width: 194rpx;
+  height: 194rpx;
+  opacity: .44;
+  transform: rotate(-18deg);
+}
+
+.focus-ambient-bottom {
+  right: -22rpx;
+  bottom: -6rpx;
+  width: 166rpx;
+  height: 166rpx;
+  opacity: .38;
+}
+
+.focus-hero-visual {
+  position: absolute;
+  right: 16rpx;
+  top: 26rpx;
+  width: 314rpx;
+  height: 212rpx;
+  pointer-events: none;
+}
+
+.focus-visual-blob {
+  position: absolute;
+  background: linear-gradient(180deg, rgba(212, 247, 207, .65), rgba(212, 247, 207, .10));
+}
+
+.focus-visual-blob-main {
+  right: 8rpx;
+  top: 0;
+  width: 206rpx;
+  height: 156rpx;
+  border-radius: 48% 52% 44% 56% / 50% 42% 58% 50%;
+  opacity: .45;
+}
+
+.focus-visual-blob-side {
+  right: -28rpx;
+  top: 36rpx;
+  width: 112rpx;
+  height: 164rpx;
+  border-radius: 62% 38% 40% 60% / 38% 58% 42% 62%;
+  opacity: .34;
+}
+
+.focus-curve-image {
+  right: 0;
+  top: 68rpx;
+  width: 288rpx;
+  height: 126rpx;
+  opacity: 1;
+  transform: scale(1.03);
+  transform-origin: right center;
+}
+
+.focus-title-line {
+  padding-right: 256rpx;
+}
+
+.focus-desc {
+  max-width: 408rpx;
+  padding-right: 220rpx;
+}
+
+.focus-plan-anchor {
+  min-width: 98rpx;
+  min-height: 54rpx;
+  padding: 0 22rpx;
+}
+
+@media (max-width: 350px) {
+  .focus-hero-visual {
+    right: 6rpx;
+    top: 34rpx;
+    width: 266rpx;
+    height: 186rpx;
+  }
+
+  .focus-visual-blob-main {
+    width: 176rpx;
+    height: 136rpx;
+  }
+
+  .focus-visual-blob-side {
+    width: 92rpx;
+    height: 140rpx;
+    right: -20rpx;
+  }
+
+  .focus-curve-image {
+    top: 70rpx;
+    right: -2rpx;
+    width: 242rpx;
+    height: 108rpx;
+  }
+
+  .focus-title-line {
+    padding-right: 190rpx;
+  }
+
+  .focus-desc {
+    max-width: 360rpx;
+    padding-right: 154rpx;
+  }
+}
+
+
+/* Round 4.2 — continue matching the reference: free text width, move the
+ * decorative trend farther right, and rebalance the two CTA buttons. */
+.focus-card::before {
+  right: -38rpx;
+  top: -44rpx;
+  width: 254rpx;
+  height: 276rpx;
+  border-radius: 44% 0 0 66% / 38% 0 0 62%;
+  background: linear-gradient(145deg, rgba(224, 249, 220, .74), rgba(193, 242, 187, .20) 58%, rgba(193, 242, 187, 0) 100%);
+}
+
+.focus-ambient-top {
+  right: -18rpx;
+  top: 42rpx;
+  width: 166rpx;
+  height: 184rpx;
+  border-radius: 58% 0 0 68% / 42% 0 0 58%;
+  opacity: .32;
+  transform: rotate(0deg);
+}
+
+.focus-hero-visual {
+  right: -2rpx;
+  top: 36rpx;
+  width: 278rpx;
+  height: 206rpx;
+}
+
+.focus-visual-blob-main {
+  right: -8rpx;
+  top: 10rpx;
+  width: 176rpx;
+  height: 146rpx;
+  border-radius: 62% 20% 22% 72% / 44% 24% 64% 58%;
+  opacity: .34;
+}
+
+.focus-visual-blob-side {
+  right: -36rpx;
+  top: 64rpx;
+  width: 102rpx;
+  height: 132rpx;
+  opacity: .25;
+}
+
+.focus-curve-image {
+  right: -4rpx;
+  top: 78rpx;
+  width: 258rpx;
+  height: 112rpx;
+  transform: none;
+}
+
+.focus-title-line {
+  padding-right: 174rpx;
+}
+
+.focus-desc {
+  width: 430rpx;
+  max-width: 430rpx;
+  padding-right: 0;
+  line-height: 1.55;
+}
+
+.focus-plan-anchor {
+  min-width: 94rpx;
+  min-height: 50rpx;
+  padding: 0 20rpx;
+  border-width: 2rpx;
+}
+
+.focus-actions {
+  gap: 14rpx;
+}
+
+.primary-action {
+  min-height: 90rpx;
+  padding-left: 26rpx;
+}
+
+.secondary-action {
+  flex: 0 0 232rpx;
+  min-height: 90rpx;
+  padding: 0 18rpx 0 22rpx;
+  justify-content: center;
+  gap: 12rpx;
+  border-color: rgba(190, 226, 190, .62);
+  background: rgba(250, 253, 249, .90);
+  box-shadow: 0 10rpx 24rpx rgba(99, 142, 99, .06);
+}
+
+.secondary-action-icon {
+  width: 26rpx;
+  height: 26rpx;
+}
+
+@media (max-width: 350px) {
+  .focus-hero-visual {
+    right: -8rpx;
+    top: 44rpx;
+    width: 242rpx;
+    height: 178rpx;
+  }
+
+  .focus-curve-image {
+    right: -6rpx;
+    top: 72rpx;
+    width: 222rpx;
+    height: 98rpx;
+  }
+
+  .focus-title-line {
+    padding-right: 128rpx;
+  }
+
+  .focus-desc {
+    width: 390rpx;
+    max-width: 390rpx;
+    padding-right: 0;
+  }
+
+  .focus-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .secondary-action {
+    width: auto;
+    flex: 0 0 214rpx;
+  }
+}
