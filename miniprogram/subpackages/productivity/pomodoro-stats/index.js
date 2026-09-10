@@ -64,6 +64,16 @@ var pageConfig = {
     history: [],
     historyTotal: 0,
 
+    // 累计专注摘要。默认使用 statistics-overview 的 lifetime_summary；
+    // 用户主动修改起始日后，改用 range-summary 精确刷新。
+    lifetimeStartDate: '',
+    cumulativeStartDate: '',
+    cumulativeSessions: 0,
+    cumulativeDurationText: '0分钟',
+    cumulativeAverageText: '0分钟',
+    cumulativeActiveDays: 0,
+    cumulativeLoading: false,
+
     // 统计日设置（后端为权威，此处为本地展示/计算缓存）
     dayStartMinute: 0,
     dayStartTime: '00:00',
@@ -72,11 +82,21 @@ var pageConfig = {
     // 当日无"开始"记录但有时长（跨统计日 session 归属到本日）时用于空态文案
     _crossDayBleedIn: false,
 
-    // The only date picker lives in the pie card; the selected date also filters history.
+    // 当日卡片的日期同时过滤最近记录，并作为周/月/自定义分布的锚点。
     selectedDate: '',
     _todayDate: '',
     pieDateLabel: '今日',
     pieLoading: false,
+    canGoNextDate: false,
+
+    // 分布图默认只挂载扇形图。柱状图 canvas 直到用户第一次点击切换才创建。
+    chartMode: 'pie',
+    barCanvasMounted: false,
+    barRendering: false,
+    distributionPeriod: 'day',
+    customRangeStartDate: '',
+    distributionRangeStart: '',
+    distributionRangeEnd: '',
 
     // pie chart detail popup
     selectedSubjectDetail: null,
@@ -86,6 +106,7 @@ var pageConfig = {
     // Animated display values
     _dispTodaySessions: 0,
     _dispTodayDurationText: '0分钟',
+    _dispTodayDurationSegments: [{ type: 'num', text: '0' }, { type: 'unit', text: '分钟' }],
     durationValueAnimating: false,
     _dispWeekSessions: 0,
     _dispWeekDurationText: '0分钟',
@@ -106,6 +127,14 @@ var pageConfig = {
     this._pendingHistoryCommit = null
     this._canvasInitPending = false
     this._canvasInitCallbacks = []
+    this._barInitPending = false
+    this._barInitCallbacks = []
+    this._barAnimationToken = 0
+    this._barRenderedOnce = false
+    this._cumulativeCustomized = false
+    this._cumulativeRequestSeq = 0
+    this._distributionRequestSeq = 0
+    this._daySubjectsRaw = []
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
     // 先用默认 day_start=0 计算当前中国统计日，settings 加载后若 day_start 不同会校正。
@@ -114,6 +143,10 @@ var pageConfig = {
       selectedDate: today,
       _todayDate: today,
       pieDateLabel: '今日',
+      canGoNextDate: false,
+      customRangeStartDate: today,
+      distributionRangeStart: today,
+      distributionRangeEnd: today,
       themeMode,
     })
     this._init()
@@ -161,6 +194,11 @@ var pageConfig = {
         patch.pieDateLabel = '今日'
         patch.selectedDurationLabel = '今日学习'
       }
+      const nextSelected = patch.selectedDate || this.data.selectedDate
+      patch.canGoNextDate = !!(nextSelected && today && nextSelected < today)
+      if (this.data.customRangeStartDate && nextSelected && this.data.customRangeStartDate > nextSelected) {
+        patch.customRangeStartDate = nextSelected
+      }
       this._settingsLoaded = true
       this.setData(patch)
     } catch (e) {
@@ -205,6 +243,12 @@ var pageConfig = {
       patch.pieDateLabel = '今日'
       patch.selectedDurationLabel = '今日学习'
       changedToday = true
+    }
+    const finalToday = patch._todayDate || today || prevToday
+    const finalSelected = patch.selectedDate || prevSelected
+    if (finalToday && finalSelected) patch.canGoNextDate = finalSelected < finalToday
+    if (this.data.customRangeStartDate && finalSelected && this.data.customRangeStartDate > finalSelected) {
+      patch.customRangeStartDate = finalSelected
     }
     if (Object.keys(patch).length) this.setData(patch)
     return {
@@ -272,11 +316,17 @@ var pageConfig = {
     this.setData({ themeMode, subjects, history }, () => {
       this._resetPieCache()
       if (!this._alive || !this._viewReady || !this._hasData) return
-      wx.nextTick(() => {
+      const redraw = () => {
         if (!this._alive || !this._isVisible) return
-        this._renderTrendBars(1)
-        this._renderPieChart(1, true)
-      })
+        if (this.data.chartMode === 'pie') {
+          this._renderPieChart(1, true)
+        } else if (this.data.barCanvasMounted && this._trendCtx) {
+          // 柱状图只有在用户主动挂载过后才允许参与主题重绘。
+          this._renderTrendBars(1)
+        }
+      }
+      if (wx.nextTick) wx.nextTick(redraw)
+      else setTimeout(redraw, 0)
     })
     return true
   },
@@ -336,6 +386,64 @@ var pageConfig = {
     return [Number(m[1]), Number(m[2]), Number(m[3])]
   },
 
+  _formatDateParts(parts) {
+    if (!parts) return ''
+    const pad = n => String(n).padStart(2, '0')
+    return `${parts[0]}-${pad(parts[1])}-${pad(parts[2])}`
+  },
+
+  _shiftDate(value, deltaDays) {
+    const parts = this._parseDateStr(value)
+    if (!parts) return value || ''
+    const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + Number(deltaDays || 0)))
+    return this._formatDateParts([utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate()])
+  },
+
+  _startOfWeek(value) {
+    const parts = this._parseDateStr(value)
+    if (!parts) return value || ''
+    const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]))
+    const weekday = utc.getUTCDay()
+    const offset = weekday === 0 ? -6 : 1 - weekday
+    return this._shiftDate(value, offset)
+  },
+
+  _monthStart(value) {
+    const parts = this._parseDateStr(value)
+    return parts ? this._formatDateParts([parts[0], parts[1], 1]) : (value || '')
+  },
+
+  _monthEnd(value) {
+    const parts = this._parseDateStr(value)
+    if (!parts) return value || ''
+    const utc = new Date(Date.UTC(parts[0], parts[1], 0))
+    return this._formatDateParts([utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate()])
+  },
+
+  _minDate(a, b) {
+    if (!a) return b || ''
+    if (!b) return a || ''
+    return a <= b ? a : b
+  },
+
+  _resolveDistributionRange(period, anchorDate) {
+    const anchor = anchorDate || this.data.selectedDate || this.data._todayDate
+    const today = this.data._todayDate || anchor
+    if (period === 'week') {
+      const start = this._startOfWeek(anchor)
+      return { start, end: this._minDate(this._shiftDate(start, 6), today) }
+    }
+    if (period === 'month') {
+      return { start: this._monthStart(anchor), end: this._minDate(this._monthEnd(anchor), today) }
+    }
+    if (period === 'custom') {
+      let start = this.data.customRangeStartDate || anchor
+      if (start > anchor) start = anchor
+      return { start, end: anchor }
+    }
+    return { start: anchor, end: anchor }
+  },
+
   _formatPieDateLabel(value) {
     if (!value) return '今日'
     if (value === this.data._todayDate) return '今日'
@@ -378,6 +486,209 @@ var pageConfig = {
         _pctText: (pct * 100).toFixed(1) + '%',
       }
     })
+  },
+
+
+  _cumulativeSummaryPatch(summary, requestedStart) {
+    const data = summary || {}
+    const startDate = requestedStart || data.start_date || this.data._todayDate || ''
+    const sessions = Math.max(0, Number(data.sessions) || 0)
+    const durationSec = Math.max(0, Number(data.duration_sec) || 0)
+    const activeDays = Math.max(0, Number(data.active_days) || 0)
+    const averageSec = activeDays > 0 ? Math.floor(durationSec / activeDays) : 0
+    return {
+      cumulativeStartDate: startDate,
+      cumulativeSessions: sessions,
+      cumulativeDurationText: this._fmtMin(durationSec),
+      cumulativeAverageText: this._fmtMin(averageSec),
+      cumulativeActiveDays: activeDays,
+      cumulativeLoading: false,
+    }
+  },
+
+  async _refreshCumulativeSummary(startDate, silent) {
+    const start = String(startDate || '').trim()
+    const end = this.data._todayDate
+    if (!start || !end) return
+    const seq = (this._cumulativeRequestSeq || 0) + 1
+    this._cumulativeRequestSeq = seq
+    if (!silent) this.setData({ cumulativeLoading: true })
+    try {
+      const summary = await api.get('/pomodoro/range-summary', { start_date: start, end_date: end })
+      if (!this._alive || seq !== this._cumulativeRequestSeq || start !== this.data.cumulativeStartDate) return
+      this.setData(this._cumulativeSummaryPatch(summary, start))
+    } catch (e) {
+      if (!this._alive || seq !== this._cumulativeRequestSeq) return
+      console.error('加载累计专注失败', e)
+      this.setData({ cumulativeLoading: false })
+      if (!silent && wx.showToast) wx.showToast({ title: '累计统计加载失败', icon: 'none' })
+    }
+  },
+
+  onCumulativeStartChange(e) {
+    const date = e && e.detail ? String(e.detail.value || '') : ''
+    if (!date || date === this.data.cumulativeStartDate) return
+    this._cumulativeCustomized = true
+    this.setData({ cumulativeStartDate: date, cumulativeLoading: true }, () => {
+      this._refreshCumulativeSummary(date, false)
+    })
+  },
+
+  _commitDistributionSubjects(rawSubjects, animate) {
+    this._resetPieCache()
+    this.setData({
+      subjects: this._buildSubjectItems(rawSubjects),
+      pieLoading: false,
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+      durationValueAnimating: true,
+    }, () => {
+      if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
+      this._initCanvases(() => {
+        if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
+        if (animate) this._animatePieOnly()
+        else this._renderPieChart(1, true)
+      })
+    })
+  },
+
+  async _loadDistributionForPeriod(period, animate = true) {
+    const normalized = ['day', 'week', 'month', 'custom'].includes(period) ? period : 'day'
+    const range = this._resolveDistributionRange(normalized, this.data.selectedDate)
+    if (!range.start || !range.end) return
+
+    if (normalized === 'day') {
+      this.setData({
+        distributionPeriod: 'day',
+        distributionRangeStart: range.start,
+        distributionRangeEnd: range.end,
+      })
+      this._commitDistributionSubjects(this._daySubjectsRaw || [], animate)
+      return
+    }
+
+    const seq = (this._distributionRequestSeq || 0) + 1
+    this._distributionRequestSeq = seq
+    this.setData({
+      distributionPeriod: normalized,
+      distributionRangeStart: range.start,
+      distributionRangeEnd: range.end,
+      pieLoading: true,
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+      durationValueAnimating: true,
+    })
+    try {
+      const summary = await api.get('/pomodoro/range-summary', {
+        start_date: range.start,
+        end_date: range.end,
+      })
+      if (
+        !this._alive ||
+        seq !== this._distributionRequestSeq ||
+        normalized !== this.data.distributionPeriod ||
+        range.start !== this.data.distributionRangeStart ||
+        range.end !== this.data.distributionRangeEnd
+      ) return
+      this._commitDistributionSubjects((summary && summary.subjects) || [], animate)
+    } catch (e) {
+      if (!this._alive || seq !== this._distributionRequestSeq) return
+      console.error('加载区间专注分布失败', e)
+      this.setData({ pieLoading: false, durationValueAnimating: false })
+      if (wx.showToast) wx.showToast({ title: '分布统计加载失败', icon: 'none' })
+    }
+  },
+
+  onDistributionPeriodTap(e) {
+    const period = e && e.currentTarget && e.currentTarget.dataset
+      ? e.currentTarget.dataset.period
+      : ''
+    if (!period || period === this.data.distributionPeriod) return
+    this._loadDistributionForPeriod(period, true)
+  },
+
+  onCustomRangeStartChange(e) {
+    let date = e && e.detail ? String(e.detail.value || '') : ''
+    if (!date) return
+    const anchor = this.data.selectedDate || this.data._todayDate
+    if (anchor && date > anchor) date = anchor
+    this.setData({ customRangeStartDate: date, distributionPeriod: 'custom' }, () => {
+      this._loadDistributionForPeriod('custom', true)
+    })
+  },
+
+  toggleChartMode() {
+    if (this.data.chartMode === 'bar') {
+      this._barAnimationToken = (this._barAnimationToken || 0) + 1
+      this.setData({ chartMode: 'pie', barRendering: false }, () => {
+        const drawPie = () => {
+          if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
+          this._initCanvases(() => this._renderPieChart(1, true))
+        }
+        if (wx.nextTick) wx.nextTick(drawPie)
+        else setTimeout(drawPie, 0)
+      })
+      return
+    }
+
+    // Lazy mount: WXML does not create #trend-bars-canvas before this explicit
+    // user action, so entering the page never pays bar-canvas init/draw cost.
+    const firstMount = !this.data.barCanvasMounted
+    this.setData({
+      chartMode: 'bar',
+      barCanvasMounted: true,
+      barRendering: firstMount || !this._barRenderedOnce,
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+      durationValueAnimating: true,
+    }, () => {
+      const drawBar = () => {
+        if (!this._alive || !this._isVisible || this.data.chartMode !== 'bar') return
+        this._initTrendCanvas(() => {
+          if (!this._alive || !this._isVisible || this.data.chartMode !== 'bar') return
+          if (firstMount || !this._barRenderedOnce) this._animateTrendOnly()
+          else this._renderTrendBars(1)
+        })
+      }
+      if (wx.nextTick) wx.nextTick(drawBar)
+      else setTimeout(drawBar, 0)
+    })
+  },
+
+  _animateTrendOnly() {
+    if (!this._trendCtx || !this._trendBarsRect) {
+      this.setData({ barRendering: false })
+      return
+    }
+    const token = (this._barAnimationToken || 0) + 1
+    this._barAnimationToken = token
+    const duration = 620
+    const startedAt = Date.now()
+    const node = this._trendCanvasNode
+    const raf = node && node.requestAnimationFrame
+      ? cb => node.requestAnimationFrame(cb)
+      : cb => setTimeout(cb, 16)
+    let lastDrawAt = -Infinity
+    this._renderTrendBars(0)
+
+    const tick = () => {
+      if (!this._alive || !this._isVisible || token !== this._barAnimationToken || this.data.chartMode !== 'bar') return
+      const elapsed = Date.now() - startedAt
+      const raw = Math.min(1, elapsed / duration)
+      if (raw < 1 && elapsed - lastDrawAt >= 40) {
+        lastDrawAt = elapsed
+        this._renderTrendBars(this._easeOutCubic(raw))
+      }
+      if (raw < 1) {
+        this._barRafId = raf(tick)
+      } else {
+        this._renderTrendBars(1)
+        this._barRafId = null
+        this._barRenderedOnce = true
+        this.setData({ barRendering: false })
+      }
+    }
+    this._barRafId = raf(tick)
   },
 
 
@@ -454,7 +765,7 @@ var pageConfig = {
       this._displayTodayDurationSec = targetValue
       this.setData({
         _dispTodaySessions: targetSessions,
-        _dispTodayDurationText: targetText,
+        ...this._getTodayDurationDisplayPatch(targetText),
         durationValueAnimating: false,
       })
       return
@@ -462,8 +773,8 @@ var pageConfig = {
 
     // Keep the selected-day count and duration on one transition clock. Sparse
     // setData ticks leave the canvas animation enough main-thread time.
-    const duration = 960
-    const steps = 15
+    const duration = 620
+    const steps = 12
     const interval = Math.round(duration / steps)
     const delta = targetValue - startValue
     const sessionDelta = targetSessions - startSessions
@@ -509,7 +820,7 @@ var pageConfig = {
         lastText = nextText
         this.setData({
           _dispTodaySessions: nextSessions,
-          _dispTodayDurationText: nextText,
+          ...this._getTodayDurationDisplayPatch(nextText),
           durationValueAnimating: !isFinal,
         })
       }
@@ -538,8 +849,7 @@ var pageConfig = {
     const viewingToday = !requestedDate || requestedDate === this.data._todayDate
     try {
       const initialResponses = await Promise.all([
-        // 统计页首屏组合接口：一次返回 stats + trends + daily-summary，
-        // 后端单次窗口加载 + 单次归因，避免逐接口重复加载
+        // 首屏只请求组合接口 + 当前日 history；柱状图 canvas 不在这里挂载。
         api.get('/pomodoro/statistics-overview', viewingToday ? {} : { date: requestedDate }),
         api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
       ])
@@ -548,6 +858,7 @@ var pageConfig = {
       const stats = (overview && overview.stats) || {}
       const trends = (overview && overview.trends) || []
       const summary = (overview && overview.daily_summary) || {}
+      const lifetime = (overview && overview.lifetime_summary) || {}
       if (
         !this._alive ||
         reqId !== this._requestId ||
@@ -555,13 +866,13 @@ var pageConfig = {
         requestedDate !== this.data.selectedDate
       ) return
 
-      // 以后端为准校正"今日"（settings 失败 / 设备时钟偏差兜底）
+      // 以后端为准校正“今日”（settings 失败 / 设备时钟偏差兜底）。
       const reconciled = this._reconcileFromServer(stats, viewingToday ? summary : null)
       if (!this._alive || reqId !== this._requestId || dateSeq !== this._dateRequestSeq) return
 
       const effectiveDate = this.data.selectedDate
+      const authoritativeToday = reconciled.today || this.data._todayDate || effectiveDate
       let effectiveHistory = historyRes
-      // 校正后"今日"变化且原先请求的是旧"今日" → 用权威日期重取 history
       if (reconciled.changedToday && viewingToday && effectiveDate !== requestedDate) {
         try {
           effectiveHistory = await api.get('/pomodoro/history', { page: 1, page_size: 20, date: effectiveDate })
@@ -573,21 +884,15 @@ var pageConfig = {
       }
 
       const daySessions = (effectiveHistory && effectiveHistory.items) || []
-      // 统计口径由后端 daily-summary 提供，前端不再拉全量 history 自算。
       const subjectBreakdown = (summary && summary.subjects) || []
       const selectedDurationSec = Number(summary && summary.duration_sec) || 0
       const selectedSessionCount = Number(summary && summary.sessions) || 0
-      // 跨统计日渗透：daily-summary 中 duration>0 但 sessions==0 的科目切片即来自
-      // 前一日开始、本日结束的 session —— 时长计入本日但 history（按开始日）无对应行。
-      // 用它作为提示信号，比"本日无 session"更准（本日有其他 session 时同样成立）。
-      const hasBleedInSubjects = (subjectBreakdown || []).some(
-        s => Number(s.duration_sec) > 0 && Number(s.sessions) === 0
+      const hasBleedInSubjects = subjectBreakdown.some(
+        item => Number(item.duration_sec) > 0 && Number(item.sessions) === 0
       )
-      // Both values in the main overview card follow the same selected-date
-      // records used by the pie chart and recent-history list.
+      this._daySubjectsRaw = subjectBreakdown
       this._rawTodayDur = selectedDurationSec
       this._rawWeekDur = stats.week_duration_sec || 0
-      this._resetPieCache()
 
       const willAnimate = !this._hasData
       const recentSessions = daySessions
@@ -596,16 +901,25 @@ var pageConfig = {
       this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
 
       const historyPatch = willAnimate
-        ? {
-            history: [],
-            historyTotal: effectiveHistory.total || 0,
-            historyReady: false,
-          }
+        ? { history: [], historyTotal: effectiveHistory.total || 0, historyReady: false }
         : {
             history: recentSessions.map(item => this._formatSession(item)),
             historyTotal: effectiveHistory.total || 0,
             historyReady: true,
           }
+
+      const lifetimeStart = lifetime.start_date || this.data.lifetimeStartDate || effectiveDate || authoritativeToday
+      const cumulativePatch = this._cumulativeCustomized
+        ? { lifetimeStartDate: lifetimeStart }
+        : {
+            lifetimeStartDate: lifetimeStart,
+            ...this._cumulativeSummaryPatch({
+              ...lifetime,
+              start_date: lifetimeStart,
+            }, lifetimeStart),
+          }
+      const displayDaySubjects = this.data.distributionPeriod === 'day'
+      if (displayDaySubjects) this._resetPieCache()
 
       this.setData({
         todaySessions: selectedSessionCount,
@@ -613,23 +927,27 @@ var pageConfig = {
         selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
         weekSessions: stats.week_sessions || 0,
         weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
-        trends: (trends || []).map(t => ({
-          date: t.date,
-          duration_sec: t.duration_sec,
-          _shortDate: (t.date || '').slice(5),
+        trends: trends.map(item => ({
+          date: item.date,
+          duration_sec: item.duration_sec,
+          _shortDate: (item.date || '').slice(5),
         })),
-        subjects: this._buildSubjectItems(subjectBreakdown),
+        subjects: displayDaySubjects ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
         pieDateLabel: this._formatPieDateLabel(effectiveDate),
+        distributionRangeStart: displayDaySubjects ? effectiveDate : this.data.distributionRangeStart,
+        distributionRangeEnd: displayDaySubjects ? effectiveDate : this.data.distributionRangeEnd,
+        canGoNextDate: !!(effectiveDate && authoritativeToday && effectiveDate < authoritativeToday),
         _crossDayBleedIn: hasBleedInSubjects,
         pieLoading: false,
         loading: false,
         contentReady: true,
         errorText: '',
         _dispTodaySessions: willAnimate ? 0 : selectedSessionCount,
-        _dispTodayDurationText: willAnimate ? '0分钟' : this._fmtMin(selectedDurationSec),
+        ...this._getTodayDurationDisplayPatch(willAnimate ? '0分钟' : this._fmtMin(selectedDurationSec)),
         durationValueAnimating: willAnimate,
         _dispWeekSessions: willAnimate ? 0 : (stats.week_sessions || 0),
         _dispWeekDurationText: willAnimate ? '0分钟' : this._fmtMin(stats.week_duration_sec || 0),
+        ...cumulativePatch,
         ...historyPatch,
       }, () => {
         if (!this._alive || !this._isVisible || reqId !== this._requestId) return
@@ -642,22 +960,35 @@ var pageConfig = {
             effectiveHistory.total || 0
           )
         }
-        this._initCanvases(() => {
-          if (!this._alive || !this._isVisible) return
-          if (willAnimate) {
-            this._renderPieChart(0, false)
-            this._renderTrendBars(0)
-            const node = this._pieCanvasNode
-            const raf = node && node.requestAnimationFrame
-              ? cb => node.requestAnimationFrame(cb)
-              : cb => setTimeout(cb, 16)
-            const animReqId = this._requestId
-            raf(() => raf(() => this._startAnimations(animReqId)))
-          } else {
-            this._renderPieChart(1)
-            this._renderTrendBars(1)
-          }
-        })
+
+        if (this._cumulativeCustomized && this.data.cumulativeStartDate) {
+          this._refreshCumulativeSummary(this.data.cumulativeStartDate, true)
+        }
+
+        if (!displayDaySubjects) {
+          // 周 / 月 / 自定义分布随当日锚点变化重新查询；不触碰柱状图挂载状态。
+          this._loadDistributionForPeriod(this.data.distributionPeriod, !willAnimate)
+        }
+
+        if (this.data.chartMode === 'pie' && displayDaySubjects) {
+          this._initCanvases(() => {
+            if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
+            if (willAnimate) {
+              this._renderPieChart(0, false)
+              const node = this._pieCanvasNode
+              const raf = node && node.requestAnimationFrame
+                ? cb => node.requestAnimationFrame(cb)
+                : cb => setTimeout(cb, 16)
+              const animReqId = this._requestId
+              raf(() => raf(() => this._startAnimations(animReqId)))
+            } else {
+              this._renderPieChart(1, true)
+            }
+          })
+        } else if (this.data.chartMode === 'bar' && this.data.barCanvasMounted) {
+          // 这里仅可能发生在用户已经主动切换过柱状图之后。
+          this._initTrendCanvas(() => this._renderTrendBars(1))
+        }
       })
     } catch (e) {
       if (
@@ -667,7 +998,7 @@ var pageConfig = {
         requestedDate !== this.data.selectedDate
       ) return
       console.error('加载统计失败', e)
-      this.setData({ loading: false, pieLoading: false, errorText: '加载失败，请检查网络后重试' })
+      this.setData({ loading: false, pieLoading: false, cumulativeLoading: false, errorText: '加载失败，请检查网络后重试' })
     }
   },
 
@@ -701,20 +1032,48 @@ var pageConfig = {
       _color: getSubjectColor(s.subject_id != null ? String(s.subject_id) : (subjectKey || subjectName), this.data.themeMode),
       _statusLabel,
       _statusClass,
+      _iconType: isPractice ? 'practice' : (isFree ? 'free' : 'focus'),
     }
+  },
+
+  _selectDate(date) {
+    const nextDate = String(date || '').trim()
+    const today = this.data._todayDate
+    if (!nextDate || nextDate === this.data.selectedDate || (today && nextDate > today)) return
+    this._cancelDeferredHistory(true)
+    const patch = {
+      selectedDate: nextDate,
+      pieDateLabel: this._formatPieDateLabel(nextDate),
+      selectedDurationLabel: this._formatSelectedDurationLabel(nextDate),
+      canGoNextDate: !!(today && nextDate < today),
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+      durationValueAnimating: true,
+    }
+    if (this.data.customRangeStartDate && this.data.customRangeStartDate > nextDate) {
+      patch.customRangeStartDate = nextDate
+    }
+    this.setData(patch, () => this.loadDateData(nextDate))
   },
 
   onDateChange(e) {
     const date = e && e.detail ? e.detail.value : ''
-    if (!date || date === this.data.selectedDate) return
-    this._cancelDeferredHistory(true)
-    this.setData({
-      selectedDate: date,
-      pieDateLabel: this._formatPieDateLabel(date),
-      selectedDurationLabel: this._formatSelectedDurationLabel(date),
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-    }, () => this.loadDateData(date))
+    this._selectDate(date)
+  },
+
+  goPrevDay() {
+    const current = this.data.selectedDate || this.data._todayDate
+    if (!current) return
+    this._selectDate(this._shiftDate(current, -1))
+  },
+
+  goNextDay() {
+    if (!this.data.canGoNextDate) return
+    const current = this.data.selectedDate || this.data._todayDate
+    const today = this.data._todayDate
+    if (!current || !today) return
+    const next = this._shiftDate(current, 1)
+    this._selectDate(next > today ? today : next)
   },
 
   /* ==================== 统计日设置 ==================== */
@@ -744,6 +1103,10 @@ var pageConfig = {
         selectedDate,
         pieDateLabel: this._formatPieDateLabel(selectedDate),
         selectedDurationLabel: this._formatSelectedDurationLabel(selectedDate),
+        canGoNextDate: !!(selectedDate && selectedDate < today),
+        customRangeStartDate: this.data.customRangeStartDate && this.data.customRangeStartDate <= selectedDate
+          ? this.data.customRangeStartDate
+          : selectedDate,
         selectedSubjectDetail: null,
         _selectedSubject: null,
       }, () => {
@@ -762,14 +1125,7 @@ var pageConfig = {
   goToToday() {
     const today = this.data._todayDate
     if (!today || today === this.data.selectedDate) return
-    this._cancelDeferredHistory(true)
-    this.setData({
-      selectedDate: today,
-      pieDateLabel: '今日',
-      selectedDurationLabel: '今日学习',
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-    }, () => this.loadDateData(today))
+    this._selectDate(today)
   },
 
   async loadDateData(date) {
@@ -777,11 +1133,12 @@ var pageConfig = {
     if (!requestDate) return
     this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
     const seq = this._dateRequestSeq
-    this.setData({ pieLoading: true })
+    const showDayDistribution = this.data.distributionPeriod === 'day'
+    if (showDayDistribution) this.setData({ pieLoading: true })
     const viewingToday = requestDate === this.data._todayDate
     try {
       const dateResponses = await Promise.all([
-        // 查看"今日"时不传 date，由后端返回权威当前学习日
+        // 查看“今日”时不传 date，由后端返回权威当前学习日。
         api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestDate }),
         api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestDate }),
       ])
@@ -794,7 +1151,6 @@ var pageConfig = {
         requestDate !== this.data.selectedDate
       ) return
 
-      // 查看"今日"时以后端返回的 date 校正"今日"（settings 失败 / 时钟偏差兜底）
       const reconciled = this._reconcileFromServer(null, viewingToday ? summary : null)
       if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
 
@@ -814,24 +1170,29 @@ var pageConfig = {
       const subjectBreakdown = (summary && summary.subjects) || []
       const selectedDurationSec = Number(summary && summary.duration_sec) || 0
       const selectedSessionCount = Number(summary && summary.sessions) || 0
-      const hasBleedInSubjects = (subjectBreakdown || []).some(
-        s => Number(s.duration_sec) > 0 && Number(s.sessions) === 0
+      const hasBleedInSubjects = subjectBreakdown.some(
+        item => Number(item.duration_sec) > 0 && Number(item.sessions) === 0
       )
       const previousDurationSec = Number.isFinite(this._displayTodayDurationSec)
         ? this._displayTodayDurationSec
         : (Number(this._rawTodayDur) || 0)
       const previousSessionCount = Math.max(0, Number(this.data._dispTodaySessions) || 0)
       this._rawTodayDur = selectedDurationSec
-      this._resetPieCache()
+      this._daySubjectsRaw = subjectBreakdown
+      if (showDayDistribution) this._resetPieCache()
+
       this.setData({
         todaySessions: selectedSessionCount,
-        subjects: this._buildSubjectItems(subjectBreakdown),
+        subjects: showDayDistribution ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
         todayDurationText: this._fmtMin(selectedDurationSec),
         selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
         history: daySessions.slice(0, 20).map(item => this._formatSession(item)),
         historyTotal: (effectiveHistory && effectiveHistory.total) || 0,
         historyReady: true,
         pieDateLabel: this._formatPieDateLabel(effectiveDate),
+        distributionRangeStart: showDayDistribution ? effectiveDate : this.data.distributionRangeStart,
+        distributionRangeEnd: showDayDistribution ? effectiveDate : this.data.distributionRangeEnd,
+        canGoNextDate: !!(effectiveDate && this.data._todayDate && effectiveDate < this.data._todayDate),
         _crossDayBleedIn: hasBleedInSubjects,
         pieLoading: false,
         selectedSubjectDetail: null,
@@ -839,17 +1200,20 @@ var pageConfig = {
       }, () => {
         if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
         this._animateSelectedDuration(previousDurationSec, selectedDurationSec, previousSessionCount, selectedSessionCount)
-        if (this._pieCtx && this._pieRect) {
-          this._animatePieOnly()
-        } else {
-          this._initCanvases(() => this._animatePieOnly())
+
+        if (!showDayDistribution) {
+          this._loadDistributionForPeriod(this.data.distributionPeriod, true)
+          return
         }
+        if (this.data.chartMode !== 'pie') return
+        if (this._pieCtx && this._pieRect) this._animatePieOnly()
+        else this._initCanvases(() => this._animatePieOnly())
       })
     } catch (e) {
       if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
       console.error('加载指定日期数据失败', e)
-      this.setData({ pieLoading: false })
-      wx.showToast({ title: '该日期数据加载失败', icon: 'none' })
+      this.setData({ pieLoading: false, durationValueAnimating: false })
+      if (wx.showToast) wx.showToast({ title: '该日期数据加载失败', icon: 'none' })
     }
   },
 
@@ -934,11 +1298,16 @@ var pageConfig = {
     if (this._pieLabelRafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
       this._pieCanvasNode.cancelAnimationFrame(this._pieLabelRafId)
     }
+    if (this._barRafId && this._trendCanvasNode && this._trendCanvasNode.cancelAnimationFrame) {
+      this._trendCanvasNode.cancelAnimationFrame(this._barRafId)
+    }
     this._rafId = null
     this._pieDateRafId = null
     this._pieLabelRafId = null
+    this._barRafId = null
     this._pieAnimationToken = (this._pieAnimationToken || 0) + 1
     this._pieLabelToken = (this._pieLabelToken || 0) + 1
+    this._barAnimationToken = (this._barAnimationToken || 0) + 1
     if (this._animTimer) {
       clearTimeout(this._animTimer)
       this._animTimer = null
@@ -946,11 +1315,10 @@ var pageConfig = {
   },
 
   _initCanvases(callback) {
+    // Compatibility name retained for existing callers/tests; this method now
+    // initializes the pie canvas only.  The bar canvas has a separate lazy path.
     const doneCallback = typeof callback === 'function' ? callback : () => {}
-    if (
-      this._pieCanvasNode && this._pieCtx && this._pieRect &&
-      this._trendCanvasNode && this._trendCtx && this._trendBarsRect
-    ) {
+    if (this._pieCanvasNode && this._pieCtx && this._pieRect) {
       doneCallback()
       return
     }
@@ -960,43 +1328,76 @@ var pageConfig = {
     }
     this._canvasInitPending = true
     this._canvasInitCallbacks = [doneCallback]
-    let pending = 2
-    const done = () => {
-      if (--pending !== 0) return
+
+    const finish = () => {
       this._canvasInitPending = false
       const callbacks = this._canvasInitCallbacks.slice()
       this._canvasInitCallbacks.length = 0
       callbacks.forEach(cb => cb())
     }
-    // Cap DPR at 2 — backbuffer cost grows quadratically and DPR=3 on iPhones
-    // produces ~56% more pixel-fill work for negligible visual gain on a 250px pie.
     const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-    const rawDpr = windowInfo.pixelRatio || 2
-    const dpr = Math.min(2, rawDpr)
+    const dpr = Math.min(2, windowInfo.pixelRatio || 2)
+    wx.createSelectorQuery().in(this)
+      .select('#pie-canvas')
+      .fields({ node: true, size: true })
+      .exec(res => {
+        if (!this._alive || !res || !res[0] || !res[0].node) { finish(); return }
+        const node = res[0].node
+        const ctx = node.getContext('2d')
+        const w = res[0].width
+        const h = res[0].height
+        node.width = Math.round(w * dpr)
+        node.height = Math.round(h * dpr)
+        ctx.scale(dpr, dpr)
+        this._pieCanvasNode = node
+        this._pieCtx = ctx
+        this._pieRect = { width: w, height: h }
+        finish()
+      })
+  },
 
-    const setup = (selector, nodeKey, ctxKey, rectKey) => {
-      wx.createSelectorQuery().in(this)
-        .select(selector)
-        .fields({ node: true, size: true })
-        .exec(res => {
-          if (!this._alive) { done(); return }
-          if (!res || !res[0] || !res[0].node) { done(); return }
-          const node = res[0].node
-          const ctx = node.getContext('2d')
-          const w = res[0].width
-          const h = res[0].height
-          node.width = Math.round(w * dpr)
-          node.height = Math.round(h * dpr)
-          ctx.scale(dpr, dpr)
-          this[nodeKey] = node
-          this[ctxKey] = ctx
-          this[rectKey] = { width: w, height: h }
-          done()
-        })
+  _initTrendCanvas(callback) {
+    const doneCallback = typeof callback === 'function' ? callback : () => {}
+    if (!this.data.barCanvasMounted) {
+      doneCallback()
+      return
     }
+    if (this._trendCanvasNode && this._trendCtx && this._trendBarsRect) {
+      doneCallback()
+      return
+    }
+    if (this._barInitPending) {
+      this._barInitCallbacks.push(doneCallback)
+      return
+    }
+    this._barInitPending = true
+    this._barInitCallbacks = [doneCallback]
 
-    setup('#pie-canvas', '_pieCanvasNode', '_pieCtx', '_pieRect')
-    setup('#trend-bars-canvas', '_trendCanvasNode', '_trendCtx', '_trendBarsRect')
+    const finish = () => {
+      this._barInitPending = false
+      const callbacks = this._barInitCallbacks.slice()
+      this._barInitCallbacks.length = 0
+      callbacks.forEach(cb => cb())
+    }
+    const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
+    const dpr = Math.min(2, windowInfo.pixelRatio || 2)
+    wx.createSelectorQuery().in(this)
+      .select('#trend-bars-canvas')
+      .fields({ node: true, size: true })
+      .exec(res => {
+        if (!this._alive || !res || !res[0] || !res[0].node) { finish(); return }
+        const node = res[0].node
+        const ctx = node.getContext('2d')
+        const w = res[0].width
+        const h = res[0].height
+        node.width = Math.round(w * dpr)
+        node.height = Math.round(h * dpr)
+        ctx.scale(dpr, dpr)
+        this._trendCanvasNode = node
+        this._trendCtx = ctx
+        this._trendBarsRect = { width: w, height: h }
+        finish()
+      })
   },
 
   _shadeColorCached(hex, amount) {
@@ -1009,35 +1410,29 @@ var pageConfig = {
   },
 
   _startAnimations(reqId) {
-    if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+    if (!this._alive || !this._isVisible || reqId !== this._requestId || this.data.chartMode !== 'pie') return
     this._animActive = true
     this._finalDrawn = false
     this._pieLabelToken = (this._pieLabelToken || 0) + 1
-    const pieAnimDuration = 1100
-    const trendAnimDuration = 700
-    const animDuration = Math.max(pieAnimDuration, trendAnimDuration)
+    const pieAnimDuration = 980
     const startTime = Date.now()
 
-    // Finish number updates before the two canvas charts reach their final
-    // frames, so setData/layout work never competes with the heaviest draws.
-    const tSessions = this.data.todaySessions
-    const wSessions = this.data.weekSessions
-    const numberDuration = 520
-    const totalSteps = 9
+    // 首屏只做“当日专注”数字 + 扇形图动画。柱状图完全留到用户点击切换后。
+    const targetSessions = this.data.todaySessions
+    const numberDuration = 420
+    const totalSteps = 7
     let step = 0
     const numTick = () => {
       if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
-      step++
+      step += 1
       const p = Math.min(1, step / totalSteps)
-      const e = this._easeOutCubic(p)
-      const displayDurationSec = Math.round(this._rawTodayDur * e)
+      const eased = this._easeOutCubic(p)
+      const displayDurationSec = Math.round(this._rawTodayDur * eased)
       this._displayTodayDurationSec = displayDurationSec
       this.setData({
-        _dispTodaySessions: Math.round(tSessions * e),
-        _dispTodayDurationText: this._fmtMin(displayDurationSec),
+        _dispTodaySessions: Math.round(targetSessions * eased),
+        ...this._getTodayDurationDisplayPatch(this._fmtMin(displayDurationSec)),
         durationValueAnimating: p < 1,
-        _dispWeekSessions: Math.round(wSessions * e),
-        _dispWeekDurationText: this._fmtMin(Math.round(this._rawWeekDur * e)),
       })
       if (step < totalSteps) {
         this._animTimer = setTimeout(numTick, Math.round(numberDuration / totalSteps))
@@ -1047,50 +1442,35 @@ var pageConfig = {
     }
     numTick()
 
-    // Canvas animation — RAF only, no setData
     const node = this._pieCanvasNode
     const raf = node && node.requestAnimationFrame
       ? cb => node.requestAnimationFrame(cb)
       : cb => setTimeout(cb, 16)
-
     let lastPieDraw = -Infinity
-    let lastTrendDraw = -Infinity
     const tick = () => {
-      if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
+      if (
+        !this._animActive ||
+        !this._alive ||
+        !this._isVisible ||
+        reqId !== this._requestId ||
+        this.data.chartMode !== 'pie'
+      ) return
       const elapsed = Date.now() - startTime
-      const rawP = Math.min(1, elapsed / animDuration)
-      const pieProgress = this._easeInOutCubic(Math.min(1, elapsed / pieAnimDuration))
-      const trendProgress = this._easeOutCubic(Math.min(1, elapsed / trendAnimDuration))
-
-      if (rawP < 1) {
-        // Draw at most one canvas per RAF.  Previously both charts often
-        // repainted in the same final frames, producing a visible hitch.
-        const pieLag = elapsed - lastPieDraw
-        const trendLag = elapsed - lastTrendDraw
-        const pieDue = pieLag >= 28
-        const trendDue = trendLag >= 42
-        if (pieDue && (!trendDue || pieLag >= trendLag)) {
-          lastPieDraw = elapsed
-          this._renderPieChart(pieProgress, false)
-        } else if (trendDue) {
-          lastTrendDraw = elapsed
-          this._renderTrendBars(trendProgress)
-        }
+      const raw = Math.min(1, elapsed / pieAnimDuration)
+      if (raw < 1 && elapsed - lastPieDraw >= 28) {
+        lastPieDraw = elapsed
+        this._renderPieChart(this._easeInOutCubic(raw), false)
+      }
+      if (raw < 1) {
         this._rafId = raf(tick)
       } else if (!this._finalDrawn) {
         this._finalDrawn = true
         this._animActive = false
-        // Stagger final chart frames and then paint percentage labels in small
-        // batches.  Data remains dynamic, but no single frame carries all work.
         this._renderPieChart(1, false)
         this._rafId = raf(() => {
-          if (!this._alive || !this._isVisible || reqId !== this._requestId) return
-          this._renderTrendBars(1)
-          this._rafId = raf(() => {
-            if (!this._alive || !this._isVisible || reqId !== this._requestId) return
-            this._rafId = null
-            this._revealPieLabelsIncrementally()
-          })
+          this._rafId = null
+          if (!this._alive || !this._isVisible || reqId !== this._requestId || this.data.chartMode !== 'pie') return
+          this._revealPieLabelsIncrementally()
         })
       }
     }
@@ -1345,7 +1725,7 @@ var pageConfig = {
   },
 
   _buildPieLabelLayout(sectors, geometry) {
-    const { w, h, centerY, radius, tilt } = geometry
+    const { w, h, centerX, centerY, radius, tilt } = geometry
     const minY = 24
     const maxY = h - 28
     const left = []
@@ -1353,13 +1733,25 @@ var pageConfig = {
 
     sectors.forEach(sec => {
       const mid = (sec.startA + sec.endA) / 2
+      const side = Math.cos(mid) >= 0 ? 'right' : 'left'
+      const rawY = centerY + Math.sin(mid) * radius * tilt * 1.14
+      const sign = side === 'right' ? 1 : -1
+      const startX = centerX + Math.cos(mid) * radius * 1.02
+      const startY = centerY + Math.sin(mid) * radius * tilt * 1.02
+      const shoulderX = centerX + Math.cos(mid) * radius * 1.11
+      const shoulderY = centerY + Math.sin(mid) * radius * tilt * 1.11
       const item = {
         sec,
         mid,
-        side: Math.cos(mid) >= 0 ? 'right' : 'left',
-        rawY: centerY + Math.sin(mid) * radius * tilt * 1.14,
+        side,
+        sign,
+        rawY,
+        startX,
+        startY,
+        shoulderX,
+        shoulderY,
       }
-      ;(item.side === 'right' ? right : left).push(item)
+      ;(side === 'right' ? right : left).push(item)
     })
 
     const distribute = items => {
@@ -1387,17 +1779,32 @@ var pageConfig = {
     distribute(left)
     distribute(right)
 
-    return left.concat(right).map(item => ({
-      ...item,
-      badgeX: item.side === 'right' ? w - 57 : 7,
-      badgeW: 50,
-      badgeH: 23,
-    }))
+    return left.concat(right).map(item => {
+      const badgeW = 54
+      const badgeH = 23
+      const badgeX = item.side === 'right' ? w - 61 : 7
+      const lineEndX = item.side === 'right' ? badgeX : badgeX + badgeW
+      const deltaY = item.labelY - item.shoulderY
+      const radialBendX = item.shoulderX + item.sign * Math.max(7, Math.min(13, Math.abs(deltaY) * 0.08 + 6))
+      const radialBendY = item.shoulderY + deltaY * 0.22
+      const outerBendX = centerX + item.sign * (radius + 18 + Math.min(10, Math.abs(deltaY) * 0.05))
+      const outerBendY = item.shoulderY + deltaY * 0.68
+      return {
+        ...item,
+        badgeX,
+        badgeW,
+        badgeH,
+        lineEndX,
+        radialBendX,
+        radialBendY,
+        outerBendX,
+        outerBendY,
+      }
+    })
   },
 
   _drawPieLabels(ctx, geometry, layout, reveal, startIndex = 0, endIndex = layout ? layout.length : 0) {
     if (!layout || !layout.length || reveal <= 0) return
-    const { centerX, centerY, radius, tilt } = geometry
     const palette = this._getCanvasPalette()
     ctx.save()
     ctx.globalAlpha = Math.max(0, Math.min(1, reveal))
@@ -1407,25 +1814,21 @@ var pageConfig = {
     for (let i = startIndex; i < Math.min(endIndex, layout.length); i++) {
       const item = layout[i]
       const sec = item.sec
-      const startX = centerX + Math.cos(item.mid) * radius * 1.02
-      const startY = centerY + Math.sin(item.mid) * radius * tilt * 1.02
-      const elbowX = item.side === 'right'
-        ? centerX + radius + 13
-        : centerX - radius - 13
-      const lineEndX = item.side === 'right' ? item.badgeX : item.badgeX + item.badgeW
       const lineY = item.labelY
 
       ctx.strokeStyle = sec.color
       ctx.lineWidth = 1.15
       ctx.beginPath()
-      ctx.moveTo(startX, startY)
-      ctx.lineTo(elbowX, lineY)
-      ctx.lineTo(lineEndX, lineY)
+      ctx.moveTo(item.startX, item.startY)
+      ctx.lineTo(item.shoulderX, item.shoulderY)
+      ctx.lineTo(item.radialBendX, item.radialBendY)
+      ctx.lineTo(item.outerBendX, item.outerBendY)
+      ctx.lineTo(item.lineEndX, lineY)
       ctx.stroke()
 
       ctx.fillStyle = sec.color
       ctx.beginPath()
-      ctx.arc(startX, startY, 2.1, 0, Math.PI * 2)
+      ctx.arc(item.startX, item.startY, 2.1, 0, Math.PI * 2)
       ctx.fill()
 
       const badgeY = lineY - item.badgeH / 2
@@ -1687,10 +2090,31 @@ var pageConfig = {
     this.setData({
       selectedSubjectDetail: null,
       _selectedSubject: null,
+      durationValueAnimating: true,
     }, () => { if (this._alive) this._renderPieChart(1) })
   },
 
   noop() {},
+
+  _getTodayDurationDisplayPatch(text) {
+    return {
+      _dispTodayDurationText: text,
+      _dispTodayDurationSegments: this._buildDurationSegments(text),
+    }
+  },
+
+  _buildDurationSegments(text) {
+    const normalized = String(text || '').trim() || '0分钟'
+    const parts = []
+    const regex = /(\d+)|(小时|分钟|时|分)/g
+    let match = null
+    while ((match = regex.exec(normalized))) {
+      if (match[1]) parts.push({ type: 'num', text: match[1] })
+      else if (match[2]) parts.push({ type: 'unit', text: match[2] })
+    }
+    if (!parts.length) return [{ type: 'num', text: normalized }]
+    return parts
+  },
 
   _fmtMin(sec) {
     const s = Math.max(0, sec || 0)

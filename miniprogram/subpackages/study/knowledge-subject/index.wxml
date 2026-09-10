@@ -168,9 +168,25 @@
     </view>
 
     <view class="knowledge-index {{themeSwitching ? 'theme-content-switching' : ''}} theme-switch-{{themeSwitchPhase}} {{selectionSwitching ? 'selection-switching' : ''}} selection-{{selectionSwitchPhase}}" wx:if="{{indexCount}}">
-      <view class="index-heading"><text class="index-title">知识索引 <text>{{indexCount}}</text></text><view class="status-key"><view class="status-key-dot tone-unseen"></view><text>待建立</text><view class="status-key-dot tone-weak"></view><text>需强化</text><view class="status-key-dot tone-stable"></view><text>较稳定</text></view></view>
+      <view class="index-heading">
+        <view class="index-heading-copy">
+          <view class="index-title-row">
+            <text class="index-title">知识索引</text>
+            <text class="index-count-badge">{{indexCount}}</text>
+          </view>
+          <text class="index-subtitle">按主题层级浏览，点击目录项可展开或定位到图谱</text>
+        </view>
+      </view>
+
+      <view class="status-key" aria-label="掌握状态图例">
+        <view class="status-key-item"><view class="status-key-dot tone-unseen"></view><text>待建立</text></view>
+        <view class="status-key-item"><view class="status-key-dot tone-weak"></view><text>需强化</text></view>
+        <view class="status-key-item"><view class="status-key-dot tone-stable"></view><text>较稳定</text></view>
+      </view>
+
       <view class="index-list">
-        <view wx:for="{{indexNodes}}" wx:key="knowledge_point_id" class="index-row {{selectedPoint && selectedPoint.knowledge_point_id === item.knowledge_point_id ? 'index-row-selected' : ''}} {{item.contextOnly ? 'index-row-context' : ''}}" data-id="{{item.knowledge_point_id}}" bindtap="handleIndexRowTap" hover-class="index-pressed" aria-role="button" aria-label="{{item.indexAriaAction}}{{item.name}}">
+        <view wx:for="{{indexNodes}}" wx:key="knowledge_point_id" class="index-row {{item.hasChildren ? 'index-row-branch' : 'index-row-leaf'}} {{selectedPoint && selectedPoint.knowledge_point_id === item.knowledge_point_id ? 'index-row-selected' : ''}} {{item.contextOnly ? 'index-row-context' : ''}}" data-id="{{item.knowledge_point_id}}" bindtap="handleIndexRowTap" hover-class="index-pressed" aria-role="button" aria-label="{{item.indexAriaAction}}{{item.name}}">
+          <view class="index-tone-rail tone-{{item.tone}}" aria-hidden="true"></view>
           <view class="index-tree-control" aria-hidden="true">
             <view class="index-chevron {{item.indexExpanded ? 'index-chevron-open' : ''}}" wx:if="{{item.indexExpandable}}"></view>
             <view class="index-parent-node" wx:elif="{{item.hasChildren}}"></view>
@@ -179,15 +195,21 @@
           <view class="index-row-copy {{item.depth ? 'index-row-child' : ''}}" style="padding-left: {{item.indent}}rpx;">
             <view wx:if="{{item.depth}}" class="index-tree-guide" aria-hidden="true"></view>
             <text class="index-node-name">{{item.name}}</text>
-            <view class="index-meta-row"><text class="index-node-meta">{{item.indexMetaText}}</text><text class="index-alias-match" wx:if="{{item.matchedAlias}}">别名：{{item.matchedAlias}}</text></view>
+            <view class="index-meta-row">
+              <text class="index-node-meta">{{item.indexMetaText}}</text>
+              <text class="index-alias-match" wx:if="{{item.matchedAlias}}">别名：{{item.matchedAlias}}</text>
+            </view>
           </view>
           <view class="index-locate {{item.indexExpandable ? 'index-expand-action' : ''}}">
             <view class="locate-crosshair" wx:if="{{!item.hasChildren}}" aria-hidden="true"></view>
             <text>{{item.indexActionText}}</text>
+            <view class="index-action-chevron" wx:if="{{item.hasChildren}}" aria-hidden="true"></view>
           </view>
         </view>
       </view>
-      <button wx:if="{{hasMore}}" class="index-more" bindtap="loadMore" hover-class="atlas-pressed">加载更多目录项 <text>{{indexNodes.length}} / {{indexDisplayCount}}</text></button>
+      <button wx:if="{{hasMore}}" class="index-more" bindtap="loadMore" hover-class="atlas-pressed">
+        <text class="index-more-label">加载更多目录项</text><text class="index-more-count">{{indexNodes.length}} / {{indexDisplayCount}}</text>
+      </button>
     </view>
 
     <view class="theme-sheet-layer {{themeSheetClosing ? 'theme-sheet-closing' : ''}}" wx:if="{{themeSheetOpen}}">

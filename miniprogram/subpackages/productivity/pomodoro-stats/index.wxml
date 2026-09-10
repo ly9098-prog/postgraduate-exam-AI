@@ -22,114 +22,156 @@
     </view>
 
     <view class="stats-content {{contentReady ? 'stats-content-ready' : 'stats-content-pending'}}">
-        <!-- ===== OVERVIEW ===== -->
-        <view class="overview-section">
-          <view class="overview-main-card">
-            <view class="overview-main-head">
-              <view class="overview-main-copy">
-                <text class="overview-kicker">DAILY LEARNING</text>
-                <text class="overview-main-label">{{selectedDurationLabel}}</text>
-              </view>
-              <view class="overview-session-chip">
-                <view class="overview-session-dot"></view>
-                <text class="overview-session-number">{{_dispTodaySessions}}</text>
-                <text class="overview-session-unit">次专注</text>
-              </view>
-            </view>
-            <view class="overview-duration-row">
-              <text class="overview-duration duration-value {{durationValueAnimating ? 'duration-value-updating' : ''}}">{{_dispTodayDurationText}}</text>
-              <text class="overview-duration-note">学习时长</text>
-            </view>
-            <view class="overview-accent-line"><view class="overview-accent-glow"></view></view>
-          </view>
-
-          <view class="overview-secondary-row">
-            <view class="overview-secondary-card">
-              <view class="overview-secondary-head">
-                <view class="overview-mini-mark overview-mini-mark-count"></view>
-                <text class="overview-secondary-kicker">WEEKLY SESSIONS</text>
-              </view>
-              <text class="overview-secondary-value">{{_dispWeekSessions}}</text>
-              <text class="overview-secondary-label">本周专注次数</text>
-            </view>
-            <view class="overview-secondary-card overview-secondary-card-duration">
-              <view class="overview-secondary-head">
-                <view class="overview-mini-mark overview-mini-mark-time"></view>
-                <text class="overview-secondary-kicker">WEEKLY DURATION</text>
-              </view>
-              <text class="overview-secondary-value overview-secondary-value-green">{{_dispWeekDurationText}}</text>
-              <text class="overview-secondary-label">本周学习时长</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- ===== 统计日设置 ===== -->
-        <view class="card-section day-start-section">
-          <picker mode="time" value="{{dayStartTime}}" bindchange="onDayStartChange">
-            <view class="day-start-row">
-              <view class="day-start-left">
-                <text class="day-start-title">{{studyDayRangeText}}</text>
-                <text class="day-start-note">{{dayStartNoteText}}</text>
-              </view>
-              <view class="day-start-edit">
-                <text class="day-start-edit-text">调整</text>
-                <text class="day-start-arrow">›</text>
-              </view>
-            </view>
-          </picker>
-        </view>
-
-        <!-- ===== TREND CHART ===== -->
-        <view class="card-section">
-          <text class="section-title">最近 7 天趋势</text>
-          <view class="chart-wrap">
-            <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
-          </view>
-          <view class="chart-legend">
-            <view class="legend-item"><view class="legend-dot legend-dot-record"></view><text class="legend-text">有记录</text></view>
-            <view class="legend-item"><view class="legend-dot legend-dot-empty"></view><text class="legend-text">无记录</text></view>
-          </view>
-        </view>
-
-        <!-- ===== SUBJECTS DISTRIBUTION ===== -->
-        <view class="card-section pie-card-section">
-          <view class="section-header pie-section-header">
-            <view class="pie-title-wrap">
-              <text class="section-title">{{pieDateLabel}}科目分布</text>
-              <text class="pie-section-subtitle">各科目学习时长占比</text>
-            </view>
-            <view class="header-actions">
-              <view
-                class="today-btn"
-                wx:if="{{selectedDate !== _todayDate}}"
-                hover-class="today-btn-pressed"
-                hover-start-time="20"
-                hover-stay-time="80"
-                catchtap="goToToday"
-              >
-                <text class="today-btn-text">今天</text>
-              </view>
-              <picker mode="date" value="{{selectedDate}}" end="{{_todayDate}}" bindchange="onDateChange">
-                <view class="date-picker-btn pie-date-picker-btn">
-                  <text class="date-picker-text">{{selectedDate}}</text>
-                  <text class="date-picker-arrow">▾</text>
+        <!-- ===== 累计专注 ===== -->
+        <view class="card-section cumulative-focus-card">
+          <view class="focus-card-head">
+            <view class="focus-card-title-line">
+              <text class="focus-card-title">累计专注</text>
+              <picker mode="date" value="{{cumulativeStartDate}}" start="{{lifetimeStartDate}}" end="{{_todayDate}}" bindchange="onCumulativeStartChange">
+                <view class="cumulative-start-picker" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择累计专注起始日期">
+                  <text>自 {{cumulativeStartDate || _todayDate}} 起</text>
+                  <view class="micro-chevron" aria-hidden="true"></view>
                 </view>
               </picker>
             </view>
+            <picker mode="time" value="{{dayStartTime}}" bindchange="onDayStartChange">
+              <view class="study-day-chip" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="调整统计日开始时间">
+                <text>统计日 {{dayStartTime}}</text>
+                <view class="micro-chevron" aria-hidden="true"></view>
+              </view>
+            </picker>
           </view>
-          <!-- Pie Chart -->
-          <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
-            <canvas class="pie-canvas" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
-            <view class="pie-loading-mask" wx:if="{{pieLoading}}">
-              <view class="pie-loading-ring"></view>
-              <text>正在切换日期</text>
+
+          <view class="cumulative-metrics {{cumulativeLoading ? 'cumulative-metrics-loading' : ''}}">
+            <view class="cumulative-metric">
+              <text class="metric-label">次数</text>
+              <view class="metric-value-row"><text class="metric-value">{{cumulativeSessions}}</text><text class="metric-unit">次</text></view>
+            </view>
+            <view class="metric-divider"></view>
+            <view class="cumulative-metric cumulative-metric-wide">
+              <text class="metric-label">时长</text>
+              <text class="metric-value metric-value-text">{{cumulativeDurationText}}</text>
+            </view>
+            <view class="metric-divider"></view>
+            <view class="cumulative-metric cumulative-metric-wide">
+              <text class="metric-label">日均时长</text>
+              <text class="metric-value metric-value-text">{{cumulativeAverageText}}</text>
             </view>
           </view>
-          <view class="subject-legend" aria-label="学科图例" wx:if="{{subjects.length > 0}}">
-            <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject_id">
-              <view class="subject-legend-dot" style="background: {{item._color}};"></view>
-              <text class="subject-legend-name">{{item._label}}</text>
-              <text class="subject-legend-percent">{{item._pctText}}</text>
+          <view class="cumulative-foot">
+            <text>{{studyDayRangeText}}</text><text class="cumulative-foot-sep">·</text><text>{{cumulativeActiveDays}} 个活跃日</text>
+          </view>
+        </view>
+
+        <!-- ===== 当日专注 ===== -->
+        <view class="card-section daily-focus-card">
+          <view class="focus-card-head daily-focus-head">
+            <view class="focus-card-title-line daily-title-line">
+              <text class="focus-card-title">当日专注</text>
+              <picker mode="date" value="{{selectedDate}}" end="{{_todayDate}}" bindchange="onDateChange">
+                <view class="daily-date-picker" hover-class="soft-control-pressed" hover-start-time="20" hover-stay-time="80" aria-label="选择统计日期">
+                  <text>{{selectedDate}}</text>
+                </view>
+              </picker>
+            </view>
+            <view class="daily-date-nav" aria-label="切换统计日期">
+              <view class="daily-date-nav-btn" hover-class="daily-date-nav-pressed" hover-start-time="20" hover-stay-time="80" catchtap="goPrevDay" aria-role="button" aria-label="前一天"><view class="daily-nav-chevron daily-nav-chevron-prev" aria-hidden="true"></view></view>
+              <view class="daily-date-nav-btn {{canGoNextDate ? '' : 'daily-date-nav-disabled'}}" hover-class="{{canGoNextDate ? 'daily-date-nav-pressed' : ''}}" hover-start-time="20" hover-stay-time="80" catchtap="goNextDay" aria-role="button" aria-label="后一天" aria-disabled="{{!canGoNextDate}}"><view class="daily-nav-chevron daily-nav-chevron-next" aria-hidden="true"></view></view>
+            </view>
+          </view>
+          <view class="daily-focus-metrics">
+            <view class="daily-count-metric">
+              <text class="daily-metric-label">次数</text>
+              <text class="daily-count-value {{durationValueAnimating ? 'daily-number-updating' : ''}}">{{_dispTodaySessions}}</text>
+            </view>
+            <view class="daily-duration-metric">
+              <text class="daily-metric-label daily-duration-label">学习时长</text>
+              <view class="daily-duration-value-row duration-value {{durationValueAnimating ? 'daily-number-updating duration-value-updating' : ''}}">
+                <block wx:for="{{_dispTodayDurationSegments}}" wx:key="index">
+                  <text class="{{item.type === 'num' ? 'daily-duration-segment-num' : 'daily-duration-segment-unit'}}">{{item.text}}</text>
+                </block>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- ===== 专注时长分布：默认扇形图，柱状图按需挂载 ===== -->
+        <view class="card-section pie-card-section distribution-card">
+          <view class="section-header distribution-section-header">
+            <text class="section-title distribution-title">专注时长分布</text>
+            <view class="chart-switch-btn" hover-class="chart-switch-pressed" hover-start-time="20" hover-stay-time="80" catchtap="toggleChartMode" aria-role="button" aria-label="{{chartMode === 'pie' ? '切换到柱状图' : '切换到扇形图'}}">
+              <view class="chart-switch-icon-shell" aria-hidden="true">
+                <view class="chart-switch-icon chart-switch-icon-bars" wx:if="{{chartMode === 'pie'}}">
+                  <view class="chart-switch-icon-bar chart-switch-icon-bar-a"></view>
+                  <view class="chart-switch-icon-bar chart-switch-icon-bar-b"></view>
+                  <view class="chart-switch-icon-bar chart-switch-icon-bar-c"></view>
+                </view>
+                <view class="chart-switch-icon chart-switch-icon-pie" wx:else>
+                  <view class="chart-switch-icon-pie-ring"></view>
+                  <view class="chart-switch-icon-pie-slice"></view>
+                  <view class="chart-switch-icon-pie-divider"></view>
+                </view>
+              </view>
+              <text class="chart-switch-target">{{chartMode === 'pie' ? '柱状图' : '扇形图'}}</text>
+            </view>
+          </view>
+
+
+          <view class="distribution-period-stage {{chartMode === 'pie' ? 'distribution-period-stage-active' : 'distribution-period-stage-hidden'}}" hidden="{{chartMode !== 'pie'}}">
+            <view class="distribution-period-shell" aria-label="选择分布统计周期">
+              <view class="period-slot">
+                <view class="period-segment {{distributionPeriod === 'day' ? 'period-segment-active' : ''}}" data-period="day" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">日</view>
+              </view>
+              <view class="period-slot">
+                <view class="period-segment {{distributionPeriod === 'week' ? 'period-segment-active' : ''}}" data-period="week" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">周</view>
+              </view>
+              <view class="period-slot">
+                <view class="period-segment {{distributionPeriod === 'month' ? 'period-segment-active' : ''}}" data-period="month" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">月</view>
+              </view>
+              <view class="period-slot period-slot-picker">
+                <picker mode="date" value="{{customRangeStartDate}}" start="{{lifetimeStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
+                  <view class="period-segment period-segment-custom {{distributionPeriod === 'custom' ? 'period-segment-active' : ''}}" hover-class="period-segment-pressed">自定义</view>
+                </picker>
+              </view>
+            </view>
+          </view>
+
+          <view class="distribution-chart-stage distribution-chart-stage-{{chartMode}}">
+            <view class="distribution-chart-panel distribution-chart-panel-pie distribution-chart-panel-animate {{chartMode === 'pie' ? 'distribution-chart-panel-active' : 'distribution-chart-panel-hidden'}}" hidden="{{chartMode !== 'pie'}}">
+              <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
+                <canvas class="pie-canvas" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
+                <view class="pie-loading-mask" wx:if="{{chartMode === 'pie' && pieLoading}}">
+                  <view class="pie-loading-ring"></view>
+                  <text>正在更新分布</text>
+                </view>
+              </view>
+            </view>
+
+            <view class="distribution-chart-panel distribution-chart-panel-bar distribution-chart-panel-animate {{chartMode === 'bar' ? 'distribution-chart-panel-active' : 'distribution-chart-panel-hidden'}}" wx:if="{{barCanvasMounted}}" hidden="{{chartMode !== 'bar'}}">
+              <view class="bar-chart-wrap">
+                <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
+                <view class="bar-loading-mask" wx:if="{{barRendering}}"><view class="pie-loading-ring"></view><text>正在生成柱状图</text></view>
+              </view>
+            </view>
+          </view>
+
+          <view class="distribution-legend-stage">
+            <view class="distribution-legend-panel distribution-legend-panel-animate {{chartMode === 'bar' ? 'distribution-legend-panel-active' : 'distribution-legend-panel-hidden'}}" hidden="{{chartMode !== 'bar'}}">
+              <view class="chart-legend distribution-bar-legend">
+                <view class="legend-item"><view class="legend-dot legend-dot-record"></view><text class="legend-text">有记录</text></view>
+                <view class="legend-item"><view class="legend-dot legend-dot-empty"></view><text class="legend-text">无记录</text></view>
+              </view>
+            </view>
+            <view class="distribution-legend-panel distribution-legend-panel-animate {{chartMode === 'pie' ? 'distribution-legend-panel-active' : 'distribution-legend-panel-hidden'}}" hidden="{{chartMode !== 'pie'}}">
+              <view class="subject-legend" aria-label="学科图例" wx:if="{{subjects.length > 0}}">
+                <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject_id">
+                  <view class="subject-legend-dot" style="background: {{item._color}};"></view>
+                  <view class="subject-legend-copy">
+                    <text class="subject-legend-name">{{item._label}}</text>
+                    <text class="subject-legend-percent">{{item._pctText}}</text>
+                  </view>
+                </view>
+              </view>
             </view>
           </view>
         </view>
@@ -180,11 +222,15 @@
           <view class="history-list" wx:elif="{{history.length > 0}}">
             <view class="bleed-hint" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">部分时长来自跨统计日（前一统计日开始）</view>
             <view class="history-item" wx:for="{{history}}" wx:key="record_key">
-              <view class="hist-icon" aria-hidden="true">
-                <view class="hist-icon-tint" style="background: {{item._color}};"></view>
-                <text class="hist-icon-label" style="color: {{item._color}};" wx:if="{{item.record_type === 'practice'}}">题</text>
-                <text class="hist-icon-label" style="color: {{item._color}};" wx:elif="{{item.preset === 'free'}}">计</text>
-                <text class="hist-icon-label" style="color: {{item._color}};" wx:else>专</text>
+              <view class="hist-icon" style="color: {{item._color}};" aria-hidden="true">
+                <view class="hist-icon-tint"></view>
+                <view class="hist-pomodoro-body"></view>
+                <view class="hist-pomodoro-stem"></view>
+                <view class="hist-pomodoro-leaf hist-pomodoro-leaf-left"></view>
+                <view class="hist-pomodoro-leaf hist-pomodoro-leaf-right"></view>
+                <view class="hist-pomodoro-clock"></view>
+                <view class="hist-pomodoro-hand hist-pomodoro-hand-hour"></view>
+                <view class="hist-pomodoro-hand hist-pomodoro-hand-minute"></view>
               </view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>
@@ -217,11 +263,11 @@
           <text class="detail-value">{{selectedSubjectDetail._durationText}}</text>
         </view>
         <view class="detail-item">
-          <text class="detail-label">{{pieDateLabel}}占比</text>
+          <text class="detail-label">{{distributionPeriod === 'day' ? pieDateLabel : '区间'}}占比</text>
           <text class="detail-value">{{selectedSubjectDetail._pctText}}</text>
         </view>
         <view class="detail-item">
-          <text class="detail-label">当日开始次数</text>
+          <text class="detail-label">{{distributionPeriod === 'day' ? '当日开始次数' : '区间开始次数'}}</text>
           <text class="detail-value">{{selectedSubjectDetail.sessions || 0}} 次</text>
         </view>
       </view>

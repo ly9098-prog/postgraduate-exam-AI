@@ -585,10 +585,9 @@ Page({
       clearTimeout(this._themeSwitchTimer)
       this._themeSwitchTimer = null
     }
-    wx.setNavigationBarColor({
-      frontColor: '#ffffff',
-      backgroundColor: '#4F7FFF',
-    })
+    // Do not overwrite the native navigation bar with a blue fallback here.
+    // That global write survived page teardown and appeared as a blue rectangle
+    // before the next pomodoro theme frame was applied on re-entry.
     try {
       if (wx.setBackgroundColor) {
         wx.setBackgroundColor({

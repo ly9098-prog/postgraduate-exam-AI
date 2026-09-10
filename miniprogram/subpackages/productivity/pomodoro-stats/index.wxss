@@ -1479,3 +1479,1492 @@ page {
     transition: none !important;
   }
 }
+
+/* ============================================
+   2026 REFINEMENT — cumulative / day / chart switch
+   Applied last so the new statistics hierarchy remains intentional in both themes.
+   ============================================ */
+.stats-content { padding-top: 28rpx; }
+.card-section { margin-bottom: 20rpx; }
+
+.focus-card-head,
+.focus-card-title-line,
+.cumulative-start-picker,
+.study-day-chip,
+.metric-value-row,
+.daily-value-row,
+.daily-date-picker,
+.daily-date-nav,
+.daily-date-nav-btn,
+.chart-switch-btn,
+.chart-switch-glyph,
+.subject-legend-copy {
+  display: flex;
+  align-items: center;
+}
+
+.focus-card-head { justify-content: space-between; gap: 18rpx; }
+.focus-card-title-line { min-width: 0; gap: 14rpx; }
+.focus-card-title {
+  color: rgba(255,255,255,.92);
+  font-size: 30rpx;
+  font-weight: 760;
+  line-height: 1.25;
+  letter-spacing: .3rpx;
+  white-space: nowrap;
+}
+
+.cumulative-focus-card,
+.daily-focus-card,
+.distribution-card {
+  border-radius: 26rpx;
+}
+.cumulative-focus-card { padding: 28rpx 28rpx 22rpx; }
+.cumulative-start-picker {
+  gap: 7rpx;
+  min-height: 44rpx;
+  padding: 0 4rpx;
+  color: rgba(255,255,255,.46);
+  font-size: 20rpx;
+  line-height: 1.2;
+}
+.study-day-chip {
+  gap: 8rpx;
+  min-height: 52rpx;
+  padding: 0 17rpx;
+  border: 1rpx solid rgba(255,255,255,.075);
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.045);
+  color: rgba(255,255,255,.5);
+  font-size: 18rpx;
+  white-space: nowrap;
+}
+.micro-chevron {
+  width: 9rpx;
+  height: 9rpx;
+  box-sizing: border-box;
+  border-right: 2rpx solid currentColor;
+  border-bottom: 2rpx solid currentColor;
+  transform: rotate(45deg) translateY(-2rpx);
+  opacity: .72;
+}
+.soft-control-pressed { opacity: .7; transform: scale(.97); }
+
+.focus-card-title-line > picker,
+.focus-card-head > picker,
+.distribution-period-shell > picker {
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+.focus-card-title-line > picker .cumulative-start-picker,
+.focus-card-title-line > picker .daily-date-picker {
+  min-height: 88rpx;
+}
+
+.cumulative-metrics {
+  display: grid;
+  grid-template-columns: .8fr 1rpx 1.35fr 1rpx 1.35fr;
+  align-items: stretch;
+  gap: 22rpx;
+  margin-top: 24rpx;
+  padding: 4rpx 0 17rpx;
+  transition: opacity 180ms ease;
+}
+.cumulative-metrics-loading { opacity: .48; }
+.cumulative-metric { min-width: 0; }
+.metric-divider { width: 1rpx; min-height: 70rpx; background: rgba(255,255,255,.08); }
+.metric-label,
+.daily-metric-label {
+  display: block;
+  color: rgba(255,255,255,.36);
+  font-size: 18rpx;
+  line-height: 1.35;
+}
+.metric-value-row { align-items: baseline; gap: 5rpx; margin-top: 8rpx; }
+.metric-value {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #52D4A1;
+  font-size: 35rpx;
+  font-weight: 780;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-value-text { margin-top: 8rpx; font-size: 29rpx; letter-spacing: -.6rpx; }
+.metric-unit { color: rgba(255,255,255,.31); font-size: 16rpx; }
+.cumulative-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7rpx;
+  padding-top: 17rpx;
+  border-top: 1rpx solid rgba(255,255,255,.06);
+  color: rgba(255,255,255,.3);
+  font-size: 17rpx;
+  line-height: 1.45;
+}
+.cumulative-foot-sep { opacity: .55; }
+
+.daily-focus-card { padding: 27rpx 28rpx 26rpx; }
+.daily-focus-head { margin-bottom: 21rpx; }
+.daily-title-line { gap: 14rpx; }
+.daily-date-picker {
+  min-height: 40rpx;
+  padding: 0 3rpx;
+  color: #53CBA2;
+  font-size: 19rpx;
+  font-weight: 520;
+  letter-spacing: .2rpx;
+}
+.daily-date-nav {
+  overflow: hidden;
+  flex-shrink: 0;
+  gap: 4rpx;
+  padding: 4rpx;
+  border-radius: 16rpx;
+  background: rgba(255,255,255,.045);
+}
+.daily-date-nav-btn {
+  width: 88rpx;
+  height: 88rpx;
+  justify-content: center;
+  border-radius: 12rpx;
+  color: rgba(255,255,255,.65);
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+.daily-date-nav-pressed { transform: scale(.9); background: rgba(255,255,255,.08); }
+.daily-nav-chevron {
+  width: 14rpx;
+  height: 14rpx;
+  box-sizing: border-box;
+  border-top: 2rpx solid currentColor;
+  border-right: 2rpx solid currentColor;
+}
+.daily-nav-chevron-prev { transform: rotate(-135deg); margin-left: 5rpx; }
+.daily-nav-chevron-next { transform: rotate(45deg); margin-right: 5rpx; }
+.daily-date-nav-disabled { opacity: .22; }
+.daily-focus-metrics {
+  display: grid;
+  grid-template-columns: .86fr 1.45fr;
+  gap: 22rpx;
+  align-items: stretch;
+}
+.daily-count-metric { padding: 14rpx 4rpx 10rpx; }
+.daily-value-row { align-items: baseline; gap: 7rpx; margin-top: 8rpx; }
+.daily-count-value {
+  color: #4ED2A0;
+  font-size: 49rpx;
+  font-weight: 760;
+  line-height: 1.08;
+  letter-spacing: -1rpx;
+}
+.daily-count-unit { color: rgba(255,255,255,.28); font-size: 17rpx; }
+.daily-duration-metric {
+  padding: 18rpx 22rpx 17rpx;
+  border: 1rpx solid rgba(82,212,161,.08);
+  border-radius: 18rpx;
+  background: rgba(82,212,161,.07);
+}
+.daily-duration-value {
+  display: block;
+  margin-top: 8rpx;
+  color: #59D6A6;
+  font-size: 35rpx;
+  font-weight: 760;
+  line-height: 1.18;
+}
+
+.distribution-card { padding: 28rpx 24rpx 25rpx; overflow: hidden; }
+.distribution-section-header { margin-bottom: 22rpx; padding: 0 4rpx; }
+.distribution-title {
+  color: rgba(255,255,255,.9);
+  font-size: 29rpx;
+  font-weight: 750;
+  letter-spacing: .2rpx;
+}
+.chart-switch-btn {
+  flex-shrink: 0;
+  gap: 9rpx;
+  min-height: 88rpx;
+  padding: 0 18rpx;
+  border: 1rpx solid rgba(255,255,255,.08);
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.045);
+  color: rgba(255,255,255,.53);
+  font-size: 18rpx;
+  transition: transform 150ms cubic-bezier(.16,1,.3,1), background 150ms ease;
+}
+.chart-switch-pressed { transform: scale(.95); background: rgba(255,255,255,.08); }
+.chart-switch-glyph {
+  width: 25rpx;
+  height: 24rpx;
+  justify-content: center;
+  gap: 3rpx;
+}
+.chart-switch-bar {
+  width: 4rpx;
+  border-radius: 4rpx 4rpx 2rpx 2rpx;
+  background: currentColor;
+  transform-origin: bottom;
+}
+.chart-switch-bar-a { height: 10rpx; }
+.chart-switch-bar-b { height: 19rpx; }
+.chart-switch-bar-c { height: 14rpx; }
+.chart-switch-glyph-bar { transform: rotate(0deg); }
+.chart-switch-glyph-pie {
+  overflow: hidden;
+  width: 22rpx;
+  height: 22rpx;
+  gap: 0;
+  border: 1rpx solid currentColor;
+  border-radius: 50%;
+}
+.chart-switch-glyph-pie .chart-switch-bar { width: 3rpx; height: 18rpx; border-radius: 0; opacity: .72; }
+
+.distribution-period-shell {
+  display: flex;
+  align-items: center;
+  width: 430rpx;
+  max-width: calc(100% - 16rpx);
+  min-height: 98rpx;
+  margin: 0 auto 6rpx;
+  padding: 5rpx;
+  box-sizing: border-box;
+  border: 1rpx solid rgba(255,255,255,.075);
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.035);
+}
+.distribution-period-shell picker { flex: 1; min-width: 0; }
+.period-segment {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1rpx solid transparent;
+  border-radius: 999rpx;
+  color: rgba(255,255,255,.38);
+  font-size: 18rpx;
+  line-height: 1.2;
+  text-align: center;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 140ms ease;
+}
+.period-segment-custom { width: 100%; }
+.period-segment-active {
+  border-color: rgba(87,210,162,.14);
+  background: rgba(87,210,162,.11);
+  color: #70DAB2;
+  font-weight: 680;
+}
+.period-segment-pressed { transform: scale(.94); }
+
+.distribution-card .pie-wrap {
+  height: 510rpx;
+  margin: 0 0 2rpx;
+}
+.distribution-card .pie-canvas { height: 510rpx; }
+.bar-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 326rpx;
+  margin-top: 8rpx;
+}
+.bar-chart-wrap .trend-canvas { width: 100%; height: 326rpx; }
+.bar-loading-mask {
+  position: absolute;
+  inset: 18rpx 22rpx 12rpx;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  border-radius: 20rpx;
+  background: rgba(11,17,33,.74);
+  color: rgba(255,255,255,.45);
+  font-size: 18rpx;
+}
+.distribution-bar-legend { margin-top: 5rpx; }
+
+/* 图例采用真正的二维网格，不再给每一项套胶囊背景。 */
+.distribution-card .subject-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13rpx 24rpx;
+  justify-content: stretch;
+  padding: 15rpx 8rpx 2rpx;
+  border-top: 0;
+}
+.distribution-card .subject-legend-item {
+  min-width: 0;
+  min-height: 48rpx;
+  padding: 3rpx 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  gap: 11rpx;
+}
+.distribution-card .subject-legend-dot { width: 12rpx; height: 12rpx; box-shadow: none; }
+.subject-legend-copy { min-width: 0; flex: 1; justify-content: space-between; gap: 8rpx; }
+.distribution-card .subject-legend-name {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.56);
+  font-size: 20rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.distribution-card .subject-legend-percent {
+  flex-shrink: 0;
+  color: rgba(255,255,255,.3);
+  font-size: 17rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Light: match the warm paper + green hierarchy already used by the timer page. */
+.theme-light .focus-card-title,
+.theme-light .distribution-title { color: #294233; }
+.theme-light .cumulative-start-picker { color: #829087; }
+.theme-light .study-day-chip {
+  border-color: #DEE5DA;
+  background: #F2F5EE;
+  color: #718078;
+}
+.theme-light .cumulative-metrics { color: #294233; }
+.theme-light .metric-divider { background: #DDE4DB; }
+.theme-light .metric-label,
+.theme-light .daily-metric-label { color: #829087; }
+.theme-light .metric-value,
+.theme-light .daily-count-value,
+.theme-light .daily-duration-value { color: #3DA987; }
+.theme-light .metric-unit,
+.theme-light .daily-count-unit { color: #9AA49D; }
+.theme-light .cumulative-foot { border-top-color: #E3E8E1; color: #89958D; }
+.theme-light .daily-date-picker { color: #389B7D; }
+.theme-light .daily-date-nav { background: #F1F4EF; }
+.theme-light .daily-date-nav-btn { color: #63736A; }
+.theme-light .daily-date-nav-pressed { background: #E6ECE4; }
+.theme-light .daily-duration-metric {
+  border-color: #DDE9E1;
+  background: #EEF3EE;
+}
+.theme-light .chart-switch-btn {
+  border-color: #DCE4D9;
+  background: #F2F5EF;
+  color: #62736A;
+}
+.theme-light .chart-switch-pressed { background: #E8EEE7; }
+.theme-light .distribution-period-shell {
+  border-color: #DCE4D8;
+  background: #F1F4EF;
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.86);
+}
+.theme-light .period-segment { color: #819087; }
+.theme-light .period-segment-active {
+  border-color: #D8E8DF;
+  background: #E4F0EA;
+  color: #348A70;
+  box-shadow: 0 4rpx 10rpx rgba(36,84,58,.045);
+}
+.theme-light .bar-loading-mask {
+  border: 1rpx solid #E1E7DF;
+  background: rgba(247,248,244,.88);
+  color: #7E8B83;
+}
+.theme-light .distribution-card .subject-legend-item { background: transparent; border: 0; }
+.theme-light .distribution-card .subject-legend-name { color: #5D6B62; }
+.theme-light .distribution-card .subject-legend-percent { color: #8A978F; }
+
+.focus-card-title,
+.cumulative-start-picker,
+.study-day-chip,
+.cumulative-metrics,
+.cumulative-foot,
+.daily-date-picker,
+.daily-date-nav,
+.daily-duration-metric,
+.chart-switch-btn,
+.distribution-period-shell,
+.period-segment,
+.subject-legend-copy {
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+
+/* ============================================
+   Round 2 refinements — distribution / daily focus / history icons
+   ============================================ */
+.focus-card-title-line,
+.chart-switch-copy,
+.chart-switch-icon-shell,
+.chart-switch-icon,
+.daily-duration-value-row,
+.period-slot,
+.distribution-chart-panel,
+.distribution-legend-panel {
+  display: flex;
+}
+
+.chart-switch-copy,
+.daily-duration-metric {
+  flex-direction: column;
+}
+
+.daily-focus-card {
+  padding: 27rpx 28rpx 24rpx;
+}
+
+.daily-focus-head {
+  margin-bottom: 15rpx;
+}
+
+.daily-title-line {
+  gap: 10rpx;
+}
+
+.daily-date-picker {
+  min-height: 36rpx;
+  padding: 0 2rpx;
+  font-size: 19rpx;
+  font-weight: 620;
+}
+
+.daily-date-nav {
+  gap: 8rpx;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.daily-date-nav-btn {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 14rpx;
+  background: transparent;
+  color: rgba(255,255,255,.72);
+}
+
+.daily-date-nav-pressed {
+  transform: scale(.92);
+  background: transparent;
+}
+
+.daily-nav-chevron {
+  width: 15rpx;
+  height: 15rpx;
+  border-top-width: 3rpx;
+  border-right-width: 3rpx;
+}
+
+.daily-focus-metrics {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 22rpx;
+}
+
+.daily-count-metric {
+  flex: 0 0 188rpx;
+  padding: 10rpx 0 4rpx 6rpx;
+  text-align: center;
+}
+
+.daily-metric-label {
+  font-size: 18rpx;
+}
+
+.daily-count-value {
+  display: block;
+  margin-top: 9rpx;
+  font-size: 58rpx;
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -1.3rpx;
+}
+
+.daily-duration-metric {
+  flex: 1;
+  align-items: flex-end;
+  padding: 10rpx 4rpx 4rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: right;
+}
+
+.daily-duration-label {
+  width: 100%;
+  text-align: right;
+}
+
+.daily-duration-value-row {
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2rpx;
+  margin-top: 8rpx;
+  flex-wrap: nowrap;
+}
+
+.daily-duration-segment-num {
+  color: #59D6A6;
+  font-size: 54rpx;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -1rpx;
+}
+
+.daily-duration-segment-unit {
+  color: rgba(255,255,255,.34);
+  font-size: 18rpx;
+  line-height: 1.1;
+  margin: 0 4rpx 6rpx 1rpx;
+}
+
+.chart-switch-btn {
+  gap: 10rpx;
+  min-height: 72rpx;
+  padding: 0 16rpx 0 10rpx;
+  border-color: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.72);
+  box-shadow: 0 8rpx 20rpx rgba(0,0,0,.06);
+}
+
+.chart-switch-pressed {
+  transform: scale(.96);
+  background: rgba(255,255,255,.07);
+}
+
+.chart-switch-icon-shell {
+  width: 44rpx;
+  height: 44rpx;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.07);
+}
+
+.chart-switch-copy {
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1rpx;
+}
+
+.chart-switch-label {
+  color: rgba(255,255,255,.34);
+  font-size: 14rpx;
+  line-height: 1.1;
+}
+
+.chart-switch-target {
+  color: currentColor;
+  font-size: 18rpx;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.chart-switch-icon {
+  position: relative;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-switch-icon-bars {
+  width: 22rpx;
+  height: 18rpx;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3rpx;
+}
+
+.chart-switch-icon-bar {
+  width: 4rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+}
+
+.chart-switch-icon-bar-a { height: 8rpx; }
+.chart-switch-icon-bar-b { height: 16rpx; }
+.chart-switch-icon-bar-c { height: 11rpx; }
+
+.chart-switch-icon-pie {
+  width: 20rpx;
+  height: 20rpx;
+}
+
+.chart-switch-icon-pie-ring,
+.chart-switch-icon-pie-slice,
+.chart-switch-icon-pie-divider {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.chart-switch-icon-pie-ring {
+  inset: 0;
+  border: 2rpx solid currentColor;
+  border-radius: 50%;
+}
+
+.chart-switch-icon-pie-slice {
+  right: 2rpx;
+  top: 2rpx;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 0 100% 0 0;
+  background: currentColor;
+}
+
+.chart-switch-icon-pie-divider {
+  left: 9rpx;
+  top: 1rpx;
+  width: 2rpx;
+  height: 10rpx;
+  background: currentColor;
+  transform: rotate(45deg);
+  transform-origin: bottom center;
+  border-radius: 999rpx;
+}
+
+.distribution-card {
+  padding: 28rpx 24rpx 24rpx;
+  overflow: hidden;
+}
+
+.distribution-section-header {
+  margin-bottom: 18rpx;
+}
+
+.distribution-period-stage {
+  min-height: 76rpx;
+  margin-bottom: 10rpx;
+  overflow: hidden;
+  transition: max-height 260ms cubic-bezier(.22,1,.36,1), opacity 220ms ease, margin-bottom 220ms ease;
+}
+
+.distribution-period-stage-active {
+  max-height: 92rpx;
+  opacity: 1;
+}
+
+.distribution-period-stage-hidden {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
+.distribution-period-shell {
+  width: 430rpx;
+  max-width: calc(100% - 16rpx);
+  min-height: 72rpx;
+  margin: 0 auto;
+  padding: 0 4rpx;
+  box-sizing: border-box;
+  border: 1rpx solid rgba(255,255,255,.09);
+  border-radius: 999rpx;
+  background: transparent;
+}
+
+.period-slot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.period-slot::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 16rpx;
+  bottom: 16rpx;
+  width: 1rpx;
+  background: rgba(255,255,255,.08);
+}
+
+.period-slot:last-child::after {
+  display: none;
+}
+
+.period-slot-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.period-slot-picker picker {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 64rpx;
+  align-items: center;
+  justify-content: center;
+}
+
+.period-segment {
+  flex: 1;
+  min-height: 64rpx;
+  padding: 0 8rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: transparent;
+  color: rgba(255,255,255,.42);
+  font-size: 19rpx;
+  font-weight: 540;
+}
+
+.period-segment-active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #70DAB2;
+  font-weight: 720;
+}
+
+.period-segment-pressed {
+  transform: scale(.97);
+  opacity: .75;
+}
+
+.distribution-chart-stage {
+  position: relative;
+  height: 510rpx;
+}
+
+.distribution-chart-panel {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(16rpx) scale(.985);
+  pointer-events: none;
+  transition: opacity 260ms ease, transform 320ms cubic-bezier(.22,1,.36,1);
+}
+
+.distribution-chart-panel-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.distribution-chart-panel-pie {
+  position: absolute;
+  inset: 0;
+}
+
+.distribution-chart-panel-bar {
+  position: absolute;
+  inset: 0;
+  align-items: flex-start;
+}
+
+.distribution-card .pie-wrap,
+.distribution-card .pie-canvas {
+  height: 510rpx;
+}
+
+.bar-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 360rpx;
+  margin-top: 44rpx;
+}
+
+.bar-chart-wrap .trend-canvas {
+  width: 100%;
+  height: 320rpx;
+}
+
+.bar-loading-mask {
+  inset: 12rpx 22rpx 10rpx;
+}
+
+.distribution-legend-stage {
+  position: relative;
+  min-height: 120rpx;
+}
+
+.distribution-legend-panel {
+  width: 100%;
+  transition: opacity 240ms ease, transform 260ms cubic-bezier(.22,1,.36,1);
+}
+
+.distribution-legend-panel-hidden {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: translateY(10rpx);
+  pointer-events: none;
+}
+
+.distribution-legend-panel-active {
+  position: relative;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.distribution-bar-legend {
+  margin-top: 12rpx;
+  padding: 10rpx 6rpx 0;
+}
+
+.distribution-card .subject-legend {
+  padding-top: 14rpx;
+}
+
+.history-item {
+  align-items: center;
+}
+
+.hist-icon {
+  position: relative;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 18rpx;
+  overflow: hidden;
+  background: transparent;
+}
+
+.hist-icon-tint {
+  position: absolute;
+  inset: 0;
+  border-radius: 18rpx;
+  background: currentColor;
+  opacity: .14;
+}
+
+.hist-pomodoro-body,
+.hist-pomodoro-stem,
+.hist-pomodoro-leaf,
+.hist-pomodoro-clock,
+.hist-pomodoro-hand {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.hist-pomodoro-body {
+  left: 14rpx;
+  bottom: 12rpx;
+  width: 28rpx;
+  height: 24rpx;
+  border-radius: 48% 48% 52% 52%;
+  background: currentColor;
+  box-shadow: inset 0 -4rpx 0 rgba(0,0,0,.08);
+}
+
+.hist-pomodoro-stem {
+  left: 26rpx;
+  top: 10rpx;
+  width: 4rpx;
+  height: 9rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+}
+
+.hist-pomodoro-leaf {
+  top: 11rpx;
+  width: 10rpx;
+  height: 6rpx;
+  border-radius: 10rpx 10rpx 3rpx 10rpx;
+  background: currentColor;
+  opacity: .82;
+}
+
+.hist-pomodoro-leaf-left {
+  left: 16rpx;
+  transform: rotate(-32deg);
+}
+
+.hist-pomodoro-leaf-right {
+  left: 29rpx;
+  transform: rotate(34deg) scaleX(-1);
+}
+
+.hist-pomodoro-clock {
+  left: 21rpx;
+  bottom: 18rpx;
+  width: 12rpx;
+  height: 12rpx;
+  border: 2rpx solid rgba(255,255,255,.78);
+  border-radius: 50%;
+}
+
+.hist-pomodoro-hand {
+  left: 26rpx;
+  bottom: 24rpx;
+  width: 2rpx;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,.82);
+  transform-origin: bottom center;
+}
+
+.hist-pomodoro-hand-hour {
+  height: 4rpx;
+  transform: rotate(0deg);
+}
+
+.hist-pomodoro-hand-minute {
+  height: 5rpx;
+  transform: rotate(55deg);
+}
+
+.theme-light .daily-date-picker {
+  color: #2F8D72;
+}
+
+.theme-light .daily-date-nav {
+  background: transparent;
+}
+
+.theme-light .daily-date-nav-btn {
+  color: #6A786F;
+}
+
+.theme-light .daily-date-nav-pressed {
+  background: transparent;
+}
+
+.theme-light .daily-duration-segment-num,
+.theme-light .daily-count-value {
+  color: #36A382;
+}
+
+.theme-light .daily-duration-segment-unit {
+  color: #97A29B;
+}
+
+.theme-light .daily-duration-metric {
+  border: 0;
+  background: transparent;
+}
+
+.theme-light .chart-switch-btn {
+  border-color: #DCE3DA;
+  background: #F7F8F4;
+  color: #62736A;
+  box-shadow: 0 8rpx 18rpx rgba(21,51,35,.045);
+}
+
+.theme-light .chart-switch-icon-shell {
+  background: #ECF1E8;
+}
+
+.theme-light .chart-switch-label {
+  color: #97A29A;
+}
+
+.theme-light .distribution-period-shell {
+  border-color: #DDE4DA;
+  background: transparent;
+  box-shadow: none;
+}
+
+.theme-light .period-slot::after {
+  background: #DDE4DA;
+}
+
+.theme-light .period-segment {
+  color: #819087;
+}
+
+.theme-light .period-segment-active {
+  color: #348A70;
+}
+
+.theme-light .distribution-bar-legend {
+  padding-top: 12rpx;
+}
+
+.theme-light .hist-icon-tint {
+  opacity: .12;
+}
+
+@media (max-width: 350px) {
+  .daily-count-metric {
+    flex-basis: 170rpx;
+  }
+
+  .chart-switch-btn {
+    padding-right: 12rpx;
+  }
+
+  .distribution-period-shell {
+    width: 400rpx;
+  }
+}
+
+@media (max-width: 350px) {
+  .focus-card-head { gap: 10rpx; }
+  .study-day-chip { padding: 0 12rpx; font-size: 17rpx; }
+  .chart-switch-btn { padding-left: 13rpx; padding-right: 13rpx; }
+  .cumulative-metrics { gap: 13rpx; }
+  .metric-value-text { font-size: 26rpx; }
+  .distribution-period-shell { width: 400rpx; }
+  .distribution-card .subject-legend { gap: 10rpx 16rpx; }
+}
+
+
+/* ============================================
+   Round 3 refinements — compact stats / robust chart switching
+   ============================================ */
+.duration-value {
+  transform: translateZ(0);
+  transform-origin: center;
+  opacity: 1;
+  text-shadow: none;
+  transition: opacity 160ms ease;
+  will-change: opacity;
+}
+
+.duration-value-updating {
+  transform: translateZ(0);
+  opacity: .88;
+  text-shadow: none;
+}
+
+.daily-number-updating {
+  opacity: .9;
+}
+
+.daily-count-value,
+.daily-duration-segment-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-count-value {
+  min-width: 42rpx;
+  margin-top: 7rpx;
+  font-size: 54rpx;
+  font-weight: 730;
+  letter-spacing: -1rpx;
+}
+
+.daily-duration-metric {
+  flex: 0 0 auto;
+  min-width: 208rpx;
+  padding: 8rpx 16rpx 5rpx 0;
+  margin-right: 10rpx;
+}
+
+.daily-duration-value-row {
+  margin-top: 7rpx;
+  gap: 1rpx;
+}
+
+.daily-duration-segment-num {
+  font-size: 50rpx;
+  font-weight: 740;
+  letter-spacing: -.6rpx;
+}
+
+.daily-duration-segment-unit {
+  font-size: 17rpx;
+  margin: 0 4rpx 5rpx 0;
+}
+
+.daily-date-nav-btn {
+  width: 52rpx;
+  height: 52rpx;
+}
+
+.daily-nav-chevron {
+  width: 14rpx;
+  height: 14rpx;
+}
+
+.chart-switch-btn {
+  gap: 8rpx;
+  min-height: 58rpx;
+  padding: 0 14rpx 0 8rpx;
+  border-width: 1rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0,0,0,.04);
+}
+
+.chart-switch-icon-shell {
+  width: 34rpx;
+  height: 34rpx;
+}
+
+.chart-switch-target {
+  font-size: 16rpx;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.chart-switch-icon-bars {
+  width: 18rpx;
+  height: 14rpx;
+  gap: 2rpx;
+}
+
+.chart-switch-icon-bar { width: 3rpx; }
+.chart-switch-icon-bar-a { height: 6rpx; }
+.chart-switch-icon-bar-b { height: 13rpx; }
+.chart-switch-icon-bar-c { height: 9rpx; }
+
+.chart-switch-icon-pie {
+  width: 16rpx;
+  height: 16rpx;
+}
+
+.chart-switch-icon-pie-ring {
+  border-width: 2rpx;
+}
+
+.chart-switch-icon-pie-slice {
+  right: 2rpx;
+  top: 2rpx;
+  width: 6rpx;
+  height: 6rpx;
+}
+
+.chart-switch-icon-pie-divider {
+  left: 7rpx;
+  top: 1rpx;
+  width: 2rpx;
+  height: 8rpx;
+}
+
+.distribution-period-stage {
+  min-height: 62rpx;
+  margin-bottom: 8rpx;
+}
+
+.distribution-period-stage-active {
+  max-height: 72rpx;
+}
+
+.distribution-period-shell {
+  min-height: 62rpx;
+  padding: 0;
+  border-width: 1rpx;
+}
+
+.period-slot {
+  min-height: 60rpx;
+}
+
+.period-slot::after {
+  top: 14rpx;
+  bottom: 14rpx;
+}
+
+.period-slot:first-child .period-segment {
+  border-radius: 999rpx 0 0 999rpx;
+}
+
+.period-slot:last-child .period-segment,
+.period-slot:last-child picker .period-segment {
+  border-radius: 0 999rpx 999rpx 0;
+}
+
+.period-slot:not(:first-child):not(:last-child) .period-segment,
+.period-slot:not(:first-child):not(:last-child) picker .period-segment {
+  border-radius: 0;
+}
+
+.period-slot-picker picker {
+  min-height: 60rpx;
+}
+
+.period-segment {
+  min-height: 60rpx;
+  padding: 0 6rpx;
+  font-size: 18rpx;
+}
+
+.period-segment-active {
+  background: rgba(112,218,178,.12);
+}
+
+.distribution-chart-stage {
+  height: 520rpx;
+}
+
+.distribution-chart-panel {
+  transition: opacity 220ms ease, transform 260ms cubic-bezier(.22,1,.36,1);
+}
+
+.distribution-chart-panel-animate {
+  animation: distributionPanelIn 220ms cubic-bezier(.22,1,.36,1);
+}
+
+.distribution-legend-panel-animate {
+  animation: distributionLegendIn 220ms cubic-bezier(.22,1,.36,1);
+}
+
+.bar-chart-wrap {
+  height: 336rpx;
+  margin-top: 46rpx;
+}
+
+.bar-chart-wrap .trend-canvas {
+  height: 306rpx;
+}
+
+.theme-light .chart-switch-btn {
+  box-shadow: 0 4rpx 10rpx rgba(21,51,35,.035);
+}
+
+.theme-light .distribution-period-shell {
+  background: transparent;
+}
+
+.theme-light .period-segment-active {
+  background: #E3F0E8;
+}
+
+@keyframes distributionPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(12rpx) scale(.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes distributionLegendIn {
+  from {
+    opacity: 0;
+    transform: translateY(8rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 350px) {
+  .chart-switch-btn {
+    padding-right: 10rpx;
+  }
+
+  .daily-duration-metric {
+    min-width: 188rpx;
+    margin-right: 4rpx;
+  }
+}
+
+
+/* ============================================
+   Round 4 refinements — centering / legend / smoother switching
+   ============================================ */
+.cumulative-metrics {
+  width: min(100%, 640rpx);
+  grid-template-columns: 1fr 1rpx 1fr 1rpx 1fr;
+  gap: 18rpx;
+  margin: 24rpx auto 0;
+  padding-left: 10rpx;
+  padding-right: 10rpx;
+}
+
+.cumulative-metric {
+  text-align: center;
+}
+
+.metric-value-row {
+  justify-content: center;
+}
+
+.daily-focus-metrics {
+  align-items: end;
+}
+
+.daily-duration-metric {
+  min-width: 194rpx;
+  padding-right: 24rpx;
+  margin-right: 22rpx;
+}
+
+.daily-count-value,
+.daily-duration-value-row {
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(.22,1,.36,1);
+  will-change: opacity, transform;
+}
+
+.daily-number-updating {
+  opacity: .78;
+  transform: translateY(-3rpx);
+}
+
+.chart-switch-btn {
+  gap: 6rpx;
+  min-height: 52rpx;
+  padding: 0 12rpx 0 8rpx;
+  box-shadow: 0 3rpx 10rpx rgba(0,0,0,.035);
+}
+
+.chart-switch-icon-shell {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.chart-switch-target {
+  font-size: 15rpx;
+  font-weight: 620;
+}
+
+.chart-switch-icon-bars {
+  width: 16rpx;
+  height: 12rpx;
+}
+
+.chart-switch-icon-bar { width: 3rpx; }
+.chart-switch-icon-bar-a { height: 5rpx; }
+.chart-switch-icon-bar-b { height: 11rpx; }
+.chart-switch-icon-bar-c { height: 8rpx; }
+
+.chart-switch-icon-pie {
+  width: 14rpx;
+  height: 14rpx;
+}
+
+.chart-switch-icon-pie-slice {
+  width: 5rpx;
+  height: 5rpx;
+}
+
+.chart-switch-icon-pie-divider {
+  left: 6rpx;
+  height: 7rpx;
+}
+
+.distribution-period-stage {
+  min-height: 56rpx;
+  margin-bottom: 6rpx;
+}
+
+.distribution-period-stage-active {
+  max-height: 64rpx;
+}
+
+.distribution-period-shell {
+  min-height: 56rpx;
+  max-width: 460rpx;
+}
+
+.period-slot,
+.period-slot-picker picker,
+.period-segment {
+  min-height: 54rpx;
+}
+
+.period-slot::after {
+  top: 12rpx;
+  bottom: 12rpx;
+}
+
+.period-segment {
+  font-size: 17rpx;
+  font-weight: 560;
+}
+
+.period-segment-active {
+  background: rgba(112,218,178,.16);
+}
+
+.distribution-chart-stage {
+  overflow: hidden;
+  transition: height 240ms cubic-bezier(.22,1,.36,1);
+}
+
+.distribution-chart-stage-pie {
+  height: 500rpx;
+}
+
+.distribution-chart-stage-bar {
+  height: 348rpx;
+}
+
+.distribution-chart-panel {
+  transform: translateY(8rpx);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(.22,1,.36,1);
+}
+
+.distribution-chart-panel-active {
+  transform: translateY(0);
+}
+
+.distribution-chart-panel-hidden {
+  opacity: 0;
+  transform: translateY(8rpx);
+}
+
+.distribution-chart-panel-animate,
+.distribution-legend-panel-animate {
+  animation: none;
+}
+
+.bar-chart-wrap {
+  height: 300rpx;
+  margin-top: 26rpx;
+}
+
+.bar-chart-wrap .trend-canvas {
+  height: 286rpx;
+}
+
+.distribution-legend-stage {
+  min-height: 72rpx;
+}
+
+.distribution-bar-legend {
+  justify-content: center;
+  width: fit-content;
+  margin: 8rpx auto 0;
+  padding: 0;
+  gap: 26rpx;
+}
+
+.distribution-card .subject-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12rpx 28rpx;
+  max-width: 520rpx;
+  margin: 0 auto;
+  padding: 12rpx 0 2rpx;
+}
+
+.distribution-card .subject-legend-item {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.subject-legend-copy {
+  justify-content: flex-start;
+  gap: 10rpx;
+}
+
+.theme-light .chart-switch-btn {
+  box-shadow: 0 3rpx 8rpx rgba(21,51,35,.03);
+}
+
+.theme-light .period-segment-active {
+  background: #DFEEE5;
+}
+
+@media (max-width: 350px) {
+  .daily-duration-metric {
+    min-width: 176rpx;
+    margin-right: 12rpx;
+    padding-right: 16rpx;
+  }
+
+  .distribution-chart-stage-pie {
+    height: 470rpx;
+  }
+}
