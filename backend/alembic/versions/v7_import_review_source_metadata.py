@@ -79,16 +79,9 @@ def downgrade():
     insp = sa.inspect(conn)
     columns = {c["name"] for c in insp.get_columns("question_imports")}
 
-    removals = [
-        "source_question_no", "source_question_label", "source_image_seq",
-        "source_image_name", "source_page_start", "source_page_end",
-        "source_order_index", "raw_text_preview", "answer_status",
-        "answer_source", "answer_confidence", "review_priority",
-    ]
-    for col_name in removals:
-        if col_name in columns:
-            op.drop_column("question_imports", col_name)
-
+    # SQLite rejects DROP COLUMN while an index still references that column.
+    # Remove the indexes first on every dialect; this also makes the downgrade
+    # safe when a partially applied upgrade left only some indexes behind.
     index_names = [
         "ix_question_imports_source_order",
         "ix_question_imports_answer_status",
@@ -99,3 +92,18 @@ def downgrade():
     for idx_name in index_names:
         if idx_name in existing_idxs:
             op.drop_index(idx_name, table_name="question_imports")
+
+    removals = [
+        "source_question_no", "source_question_label", "source_image_seq",
+        "source_image_name", "source_page_start", "source_page_end",
+        "source_order_index", "raw_text_preview", "answer_status",
+        "answer_source", "answer_confidence", "review_priority",
+    ]
+    present_removals = [col_name for col_name in removals if col_name in columns]
+    if conn.dialect.name == "sqlite" and present_removals:
+        with op.batch_alter_table("question_imports", recreate="auto") as batch_op:
+            for col_name in present_removals:
+                batch_op.drop_column(col_name)
+    else:
+        for col_name in present_removals:
+            op.drop_column("question_imports", col_name)

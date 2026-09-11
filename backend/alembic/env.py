@@ -63,6 +63,15 @@ def _get_database_url() -> str:
     return config.get_main_option("sqlalchemy.url")
 
 
+def _async_database_url(url: str) -> str:
+    """Use an async driver when Alembic is running through the async env."""
+    if url.startswith("sqlite+pysqlite://"):
+        return url.replace("sqlite+pysqlite://", "sqlite+aiosqlite://", 1)
+    if url.startswith("sqlite://"):
+        return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return url
+
+
 def run_migrations_offline() -> None:
     url = _get_database_url()
     context.configure(
@@ -83,7 +92,7 @@ def do_run_migrations(connection):
 
 async def run_async_migrations() -> None:
     connectable = create_async_engine(
-        _get_database_url(),
+        _async_database_url(_get_database_url()),
         poolclass=pool.NullPool,
     )
     async with connectable.connect() as connection:

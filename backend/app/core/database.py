@@ -11,6 +11,21 @@ from app.core.deployment_profile import DeploymentProfile, detect_deployment_pro
 
 logger = logging.getLogger("postgraduate-ai.database")
 
+
+def _async_database_url(url: str) -> str:
+    """Return a SQLAlchemy URL usable by the async application engine.
+
+    Alembic's CI jobs intentionally use the shorthand ``sqlite:///...`` URL,
+    while the application engine requires an async driver.  Keep accepting the
+    shorthand at the configuration boundary and select aiosqlite here.
+    """
+    if url.startswith("sqlite+pysqlite://"):
+        return url.replace("sqlite+pysqlite://", "sqlite+aiosqlite://", 1)
+    if url.startswith("sqlite://"):
+        return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return url
+
+
 # Per-role connection pool configuration
 _POOL_BY_ROLE = {
     "web": (settings.DB_POOL_SIZE_WEB, settings.DB_MAX_OVERFLOW_WEB),
@@ -29,21 +44,23 @@ _engine_kwargs: dict = {
     "pool_recycle": settings.DB_POOL_RECYCLE,
 }
 
-if "sqlite" in settings.DATABASE_URL:
+_database_url = _async_database_url(settings.DATABASE_URL)
+
+if "sqlite" in _database_url:
     _connect_args = {"check_same_thread": False}
 else:
     # Production uses PostgreSQL+asyncpg.  DateTime columns intentionally store
     # naive UTC, while many models rely on server_default=func.now().  Pin the
     # PostgreSQL session timezone to UTC so CURRENT_TIMESTAMP cannot silently
     # become a local wall-clock value when the DB host/session timezone differs.
-    if "postgresql+asyncpg" in settings.DATABASE_URL:
+    if "postgresql+asyncpg" in _database_url:
         _connect_args = {"server_settings": {"timezone": "UTC"}}
     _engine_kwargs["pool_size"] = _pool_size
     _engine_kwargs["max_overflow"] = _max_overflow
     _engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    _database_url,
     connect_args=_connect_args,
     **_engine_kwargs,
 )
@@ -52,7 +69,7 @@ engine = create_async_engine(
 # SQLite defaults PRAGMA foreign_keys to OFF per connection.  Enable it on every
 # new connection so DB-level FK constraints (subject_id -> subjects.id, etc.)
 # are actually enforced, not just declared.
-if "sqlite" in settings.DATABASE_URL:
+if "sqlite" in _database_url:
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_foreign_keys(dbapi_conn, connection_record):
