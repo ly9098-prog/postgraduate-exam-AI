@@ -8,3 +8,14 @@ page{min-height: 100%;background: #EFF5EA;color: #1E3325;font-family: -apple-sys
 .knowledge-index .index-row-selected,.knowledge-index.selection-leaving .index-row-selected,.knowledge-index.selection-entering .index-row-selected{opacity:1!important;transform:none!important;animation:none!important;}
 .knowledge-index .index-row-navigating{transform:none!important;}
 .knowledge-index .index-pressed,.knowledge-index .index-action-pressed{transform:none!important;}
+
+
+/* Measured detail reveal: no placeholder. The shell is mounted at zero height
+   after the smooth scroll, then expands to the card's measured pixel height. */
+.point-card-reveal-shell{position:relative;box-sizing:border-box;margin:18rpx 0 0;overflow:visible;opacity:1;will-change:height,margin-top,opacity;transition:height 320ms cubic-bezier(.2,.82,.24,1),margin-top 320ms cubic-bezier(.2,.82,.24,1),opacity 180ms ease-out;}
+.point-card-reveal-shell>.point-card{margin-top:0;}
+.point-card-reveal-collapsed,.point-card-reveal-expanding{overflow:hidden;}
+.point-card-reveal-collapsed{height:0!important;margin-top:0!important;opacity:0!important;}
+.point-card-reveal-expanding>.point-card,.point-card-reveal-settling>.point-card{animation:point-card-content-settle 320ms cubic-bezier(.2,.82,.24,1) both;}
+@keyframes point-card-content-settle{from{transform:translate3d(0,-8rpx,0);opacity:.72;}to{transform:translate3d(0,0,0);opacity:1;}}
+@media (prefers-reduced-motion: reduce){.point-card-reveal-shell{transition:none;}.point-card-reveal-expanding>.point-card,.point-card-reveal-settling>.point-card{animation:none;}}

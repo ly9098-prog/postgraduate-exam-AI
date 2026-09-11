@@ -177,6 +177,10 @@
       {
         "type": "folder",
         "value": "miniprogram_code_quality_no_flash_fix_patch_v13"
+      },
+      {
+        "type": "glob",
+        "value": "miniprogram_*_patch*/**"
       }
     ],
     "include": []

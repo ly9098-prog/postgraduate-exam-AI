@@ -20,6 +20,7 @@ const INDEX_SEARCH_HEIGHT_MS = 220
 const INDEX_NAVIGATE_FEEDBACK_MS = 76
 const INDEX_DETAIL_SCROLL_MS = 360
 const INDEX_DETAIL_SCROLL_TOP_GAP = 12
+const INDEX_DETAIL_REVEAL_MS = 320
 const INDEX_SEARCH_RETENTION_EPSILON = 1
 const THEME_SHEET_SELECT_DELAY_MS = 96
 const THEME_SHEET_CLOSE_MS = 236
@@ -243,6 +244,7 @@ groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, 
 scene: { nodes: [], edges: [], page: 0, pageCount: 1, focused: false },
 pageEntered: false, sceneAnimating: false, themeSwitching: false, themeSwitchPhase: '', selectionSwitching: false, selectionSwitchPhase: '', graphInteracting: false,
 stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
+indexDetailRevealPhase: '', indexDetailRevealStyle: '',
 indexNodes: [], indexCount: 0, indexDisplayCount: 0, hasMore: false, indexSearchOpen: false, indexSearchFocused: false,
 indexQuery: '', indexSearchDraft: '', indexSearchPending: false, indexSearchResultCount: 0, indexNavigatingId: 0,
 indexResultsTransitioning: false, indexResultsPhase: '', indexResultsHeightStyle: '', indexScrollRetentionStyle: '',
@@ -259,6 +261,8 @@ this._practiceLaunchFeedbackTimer = null
 this._practiceNavigationPending = false
 this._detailNavigationPending = false
 this._indexDetailScrollToken = 0
+this._indexDetailRevealToken = 0
+this._indexDetailRevealTimer = null
 this._pageVisible = true
 this._focusNodeId = 0
 this._expandedNodeIds = new Set()
@@ -309,6 +313,9 @@ onShow() {
 this._pageVisible = true
 this._practiceNavigationPending = false
 this._detailNavigationPending = false
+if (this.data.indexDetailRevealPhase || this.data.indexDetailRevealStyle) {
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' })
+}
 if (this._practiceLaunchFeedbackTimer) {
 clearTimeout(this._practiceLaunchFeedbackTimer)
 this._practiceLaunchFeedbackTimer = null
@@ -340,6 +347,9 @@ clearTimeout(this._searchTimer)
 clearTimeout(this._indexSearchTimer)
 clearTimeout(this._indexNavigateTimer)
 this._indexDetailScrollToken = (this._indexDetailScrollToken || 0) + 1
+this._indexDetailRevealToken = (this._indexDetailRevealToken || 0) + 1
+clearTimeout(this._indexDetailRevealTimer)
+this._indexDetailRevealTimer = null
 clearTimeout(this._indexSearchLeaveTimer)
 clearTimeout(this._indexSearchSettleTimer)
 clearTimeout(this._entryTimer)
@@ -366,6 +376,9 @@ clearTimeout(this._searchTimer)
 clearTimeout(this._indexSearchTimer)
 clearTimeout(this._indexNavigateTimer)
 this._indexDetailScrollToken = (this._indexDetailScrollToken || 0) + 1
+this._indexDetailRevealToken = (this._indexDetailRevealToken || 0) + 1
+clearTimeout(this._indexDetailRevealTimer)
+this._indexDetailRevealTimer = null
 clearTimeout(this._indexSearchLeaveTimer)
 clearTimeout(this._indexSearchSettleTimer)
 clearTimeout(this._entryTimer)
@@ -1294,6 +1307,7 @@ if (!nextId || !this._nodeById || !this._nodeById.has(nextId) || nextId === Numb
 clearTimeout(this._selectionSwitchTimer)
 clearTimeout(this._selectionSettleTimer)
 this._selectedId = nextId
+this._cancelIndexDetailReveal(true)
 this.applyView(false, false)
 },
 _measureIndexDetailTarget(callback) {
@@ -1359,6 +1373,84 @@ done(true)
 })
 })
 },
+_cancelIndexDetailReveal(resetVisual = false) {
+this._indexDetailRevealToken = (this._indexDetailRevealToken || 0) + 1
+clearTimeout(this._indexDetailRevealTimer)
+this._indexDetailRevealTimer = null
+if (resetVisual && (this.data.indexDetailRevealPhase || this.data.indexDetailRevealStyle)) {
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' })
+}
+},
+_prepareIndexDetailReveal(callback) {
+this._cancelIndexDetailReveal(false)
+const token = this._indexDetailRevealToken
+const hadCard = Boolean(this.data.selectedPoint)
+this._indexDetailRevealHadCard = hadCard
+const patch = hadCard
+? { indexDetailRevealPhase: 'holding', indexDetailRevealStyle: '' }
+: { indexDetailRevealPhase: 'collapsed', indexDetailRevealStyle: 'height:0px;margin-top:0px;opacity:0;overflow:hidden;' }
+this.setData(patch, () => {
+if (typeof callback === 'function' && !this._unloaded && this._pageVisible !== false && token === this._indexDetailRevealToken) callback(token)
+})
+},
+_expandIndexDetailCard(token, callback) {
+const done = typeof callback === 'function' ? callback : () => {}
+if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+if (this._indexDetailRevealHadCard) {
+this._indexDetailRevealHadCard = false
+this.setData({ indexDetailRevealPhase: 'settling', indexDetailRevealStyle: '' }, () => {
+clearTimeout(this._indexDetailRevealTimer)
+this._indexDetailRevealTimer = setTimeout(() => {
+this._indexDetailRevealTimer = null
+if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+}, INDEX_DETAIL_REVEAL_MS)
+})
+return
+}
+const measure = () => {
+if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+if (!wx.createSelectorQuery) {
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+return
+}
+try {
+let query = wx.createSelectorQuery()
+if (query.in) query = query.in(this)
+query.select('#knowledge-point-detail-card').boundingClientRect()
+query.exec((result) => {
+if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+const rect = result && result[0]
+const height = rect && Number.isFinite(Number(rect.height)) ? Math.max(1, Math.ceil(Number(rect.height))) : 0
+if (!height) {
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+return
+}
+let width = 375
+try {
+const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+width = Number(info && info.windowWidth) || width
+} catch (error) { }
+const gap = Math.max(0, 18 * width / 750)
+this.setData({
+indexDetailRevealPhase: 'expanding',
+indexDetailRevealStyle: `height:${height}px;margin-top:${gap}px;opacity:1;overflow:hidden;`,
+}, () => {
+clearTimeout(this._indexDetailRevealTimer)
+this._indexDetailRevealTimer = setTimeout(() => {
+this._indexDetailRevealTimer = null
+if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+}, INDEX_DETAIL_REVEAL_MS)
+})
+})
+} catch (error) {
+this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+}
+}
+if (typeof wx.nextTick === 'function') wx.nextTick(measure)
+else setTimeout(measure, 0)
+},
 _finishIndexNavigation(pointId) {
 if (this._unloaded || this._pageVisible === false) return
 if (Number(this.data.indexNavigatingId) === Number(pointId)) this.setData({ indexNavigatingId: 0 })
@@ -1381,14 +1473,17 @@ if (row && row.hasChildren) {
 this.activateIndexNode(pointId, { keepViewport: true })
 return
 }
-// Do not insert the detail card before scrolling. Inserting it above the index
-// changes page height and was the source of the visible compensation flash.
+// Scroll to the future card position first. The card is then mounted inside a
+// zero-height shell and expanded to its measured height, so the index below is
+// pushed down progressively instead of jumping when selectedPoint appears.
 this.setData({ indexNavigatingId: pointId }, () => {
 this._scrollToIndexDetailTarget((ready) => {
 if (!ready || this._unloaded || this._pageVisible === false) { this._finishIndexNavigation(pointId); return }
+this._prepareIndexDetailReveal((revealToken) => {
 this.activateIndexNode(pointId, {
 keepViewport: true,
-afterRender: () => this._finishIndexNavigation(pointId),
+afterRender: () => this._expandIndexDetailCard(revealToken, () => this._finishIndexNavigation(pointId)),
+})
 })
 })
 })
@@ -1409,6 +1504,7 @@ this._indexNavigateTimer = null
 if (this._unloaded || this._pageVisible === false) return
 this._scrollToIndexDetailTarget((ready) => {
 if (!ready || this._unloaded || this._pageVisible === false) { this._finishIndexNavigation(pointId); return }
+this._prepareIndexDetailReveal((revealToken) => {
 const currentConfig = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
 const targetFilter = currentConfig.statuses && !currentConfig.statuses.includes(point.status) ? 'all' : this.data.filter
 const currentGraphQuery = String(this.data.query || '')
@@ -1451,7 +1547,8 @@ activeGroupKey,
 }, () => {
 // Avoid graph entrance animation while landing on the detail card; the graph is
 // outside the focal viewport and the extra compositor pass can look like a flash.
-this.applyView(true, false, () => this._finishIndexNavigation(pointId))
+this.applyView(true, false, () => this._expandIndexDetailCard(revealToken, () => this._finishIndexNavigation(pointId)))
+})
 })
 })
 }, INDEX_NAVIGATE_FEEDBACK_MS)

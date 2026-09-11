@@ -145,12 +145,12 @@
 </view>
 </view>
 </view>
-<view id="knowledge-point-detail-card" class="point-card point-card-index-target {{themeSwitching ? 'theme-content-switching' : ''}} theme-switch-{{themeSwitchPhase}}" wx:if="{{selectedPoint}}">
+<view class="point-card-reveal-shell point-card-reveal-{{indexDetailRevealPhase || 'stable'}}" style="{{indexDetailRevealStyle}}" wx:if="{{selectedPoint}}"><view id="knowledge-point-detail-card" class="point-card point-card-index-target {{themeSwitching ? 'theme-content-switching' : ''}} theme-switch-{{themeSwitchPhase}}">
 <view class="point-card-top"><view class="point-card-kicker"><view class="selected-beacon"></view><text>当前知识点</text></view><text class="point-status tone-{{selectedPoint.tone}}">{{selectedPoint.statusText}}</text></view>
 <view class="point-card-heading"><view class="point-card-copy"><text class="point-card-name">{{selectedPoint.name}}</text><view class="point-card-subline"><text class="point-card-theme">{{selectedPoint.pathText || selectedPoint.groupName}}</text><text class="point-match-alias" wx:if="{{selectedPoint.matchedAlias}}">匹配别名：{{selectedPoint.matchedAlias}}</text></view></view><view class="point-mastery"><text class="point-mastery-value {{!selectedPoint.hasScore ? 'score-empty' : ''}}">{{selectedPoint.scoreText}}</text><text class="point-mastery-label">掌握度</text></view></view>
 <view class="point-facts"><view><text class="fact-value">{{selectedPoint.attempt_count}}</text><text class="fact-label">练习次数</text></view><view><text class="fact-value">{{selectedPoint.accuracyText}}</text><text class="fact-label">正确率</text></view><view><text class="fact-value">{{selectedPoint.trainable_question_count}}</text><text class="fact-label">可练题量</text></view></view>
 <view class="point-actions"><button class="point-detail" disabled="{{practiceLaunching}}" data-id="{{selectedPoint.knowledge_point_id}}" bindtap="openPoint" hover-class="atlas-pressed">查看详情</button><button class="point-practice {{practiceLaunchingId === selectedPoint.knowledge_point_id ? 'point-practice-launching' : ''}}" disabled="{{!selectedPoint.hasPractice || practiceLaunching}}" data-id="{{selectedPoint.knowledge_point_id}}" bindtap="practicePoint" hover-class="atlas-pressed"><view wx:if="{{practiceLaunchingId === selectedPoint.knowledge_point_id}}" class="point-practice-spinner" aria-hidden="true"></view><text>{{!selectedPoint.hasPractice ? '暂无可练题目' : (practiceLaunchingId === selectedPoint.knowledge_point_id ? '正在进入…' : '开始练习')}}</text></button></view>
-</view>
+</view></view>
 <view class="knowledge-index" wx:if="{{indexCount || query || searchDraft || indexQuery || indexSearchDraft || indexSearchOpen}}">
 <view id="knowledge-index-panel" class="index-panel">
 <view class="index-toolbar {{indexSearchOpen ? 'index-toolbar-searching' : ''}}">
