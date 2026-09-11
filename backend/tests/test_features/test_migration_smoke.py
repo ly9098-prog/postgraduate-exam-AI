@@ -35,6 +35,21 @@ def test_alembic_single_head():
     assert len(lines) == 1, f"Expected 1 head, got {len(lines)}:\n{lines}"
 
 
+def test_alembic_upgrade_head_sqlite(tmp_path):
+    """Fresh SQLite databases can traverse the complete migration chain."""
+    db_url = f"sqlite+aiosqlite:///{tmp_path / 'migration.db'}"
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+        cwd=BACKEND,
+        env={**os.environ, "DATABASE_URL": db_url},
+    )
+    assert result.returncode == 0, (
+        f"SQLite upgrade head failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+
+
 @pytest.mark.skipif(
     not _has_postgres(),
     reason="migration chain uses Postgres-specific ALTER/FK operations, not SQLite-compatible",

@@ -359,11 +359,15 @@ class TestApiOcrModelConfigCaching:
                 db.add(ImportBatchJobItem(**_make_item(job_id, 2, image_import_id="img_2")))
                 await db.commit()
 
-            resolve_count = {"count": 0}
-
-            async def _count_resolve(db, **kw):
-                resolve_count["count"] += 1
-                return {"api_key": "test_key", "api_base_url": "https://test.api", "model_name": "test-model"}
+            resolved = MagicMock(
+                endpoint="https://test.api",
+                model_name="test-model",
+                timeout_seconds=120,
+                max_retries=3,
+            )
+            resolver = MagicMock()
+            resolver.resolve_for_capability = AsyncMock(return_value=resolved)
+            resolver.resolve_secret = AsyncMock(return_value="test_key")
 
             # Create temp files that actually exist
             tmp1 = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
@@ -380,8 +384,8 @@ class TestApiOcrModelConfigCaching:
 
             try:
                 with patch(
-                    "app.services.model_config_resolver.resolve_active_model",
-                    side_effect=_count_resolve,
+                    "app.services.model_config_resolver.AIModelConfigResolver",
+                    return_value=resolver,
                 ), patch(
                     "app.features.batch_image_import_service._run_single_image",
                     return_value={
@@ -406,10 +410,8 @@ class TestApiOcrModelConfigCaching:
                 except OSError:
                     pass
 
-            # resolve_active_model should be called exactly once (not 2x)
-            assert resolve_count["count"] == 1, (
-                f"Expected 1 resolve_active_model call for api mode, got {resolve_count['count']}"
-            )
+            resolver.resolve_for_capability.assert_awaited_once()
+            resolver.resolve_secret.assert_awaited_once_with(resolved)
 
         _run(_go())
 

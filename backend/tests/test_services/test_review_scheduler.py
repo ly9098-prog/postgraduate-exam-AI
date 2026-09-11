@@ -1,19 +1,10 @@
 """Stage 12: SM-2 复习调度系统 — 单元测试。"""
+
 import asyncio
 from datetime import UTC, date, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from app.services.review_scheduler import (
-    auto_schedule_wrong_question,
-    batch_submit_review,
-    get_review_history,
-    get_review_stats,
-    get_today_review,
-    submit_review,
-)
-from app.services.sm2_service import calc_sm2
 
 # Ensure all ORM models are registered so Subject's string relationships
 # (practice_records, answer_behaviors, review_schedules, ...) resolve at
@@ -25,9 +16,19 @@ from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.pomodoro import PomodoroSession  # noqa: F401
 from app.models.practice_record import PracticeRecord  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.tag import Tag  # noqa: F401
 from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+from app.services.review_scheduler import (
+    auto_schedule_wrong_question,
+    get_review_history,
+    get_review_stats,
+    get_today_review,
+    submit_review,
+)
+from app.services.sm2_service import calc_sm2
 
 # ── Helpers ──
 
@@ -38,6 +39,8 @@ def _make_mock_db():
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock()
+    db.scalars = AsyncMock()
     return db
 
 
@@ -59,24 +62,43 @@ def _mock_execute_sequence(db, *results):
     db.execute.side_effect = [_make_execute_result(**r) for r in results]
 
 
-def _make_schedule_mock(id=1, user_id=1, question_id=10, subject_id=1,
-                        interval=5, ease_factor=2.5, repetitions=2,
-                        next_review_at=None):
+def _make_schedule_mock(
+    id=1,
+    user_id=1,
+    question_id=10,
+    subject_id=1,
+    interval=5,
+    ease_factor=2.5,
+    repetitions=2,
+    next_review_at=None,
+):
     s = MagicMock()
     s.id = id
     s.user_id = user_id
     s.question_id = question_id
+    s.question_version_id = 1000 + question_id
+    s.occurrence_seq = 0
     s.subject_id = subject_id
     s.interval = interval
     s.ease_factor = ease_factor
     s.repetitions = repetitions
+    s.mastered = False
+    s.is_active = True
     s.next_review_at = next_review_at or datetime.now(UTC) - timedelta(days=1)
     s.last_reviewed_at = None
     return s
 
 
-def _make_question_mock(id=10, subject_id=1, subject_code="math2", question_type="single_choice",
-                        content=None, options=None, answer="A", analysis="test"):
+def _make_question_mock(
+    id=10,
+    subject_id=1,
+    subject_code="math2",
+    question_type="single_choice",
+    content=None,
+    options=None,
+    answer="A",
+    analysis="test",
+):
     q = MagicMock()
     q.id = id
     q.subject_id = subject_id
@@ -88,6 +110,20 @@ def _make_question_mock(id=10, subject_id=1, subject_code="math2", question_type
     q.answer = answer
     q.analysis = analysis
     return q
+
+
+def _make_revision_mock(question_id=10, subject_id=1):
+    revision = MagicMock()
+    revision.id = 1000 + question_id
+    revision.question_id = question_id
+    revision.subject_id = subject_id
+    revision.subject_ref = MagicMock(code="math2", name="数学二")
+    revision.question_type = "single_choice"
+    revision.content = {"text": "Test question stem"}
+    revision.options = {"A": "option a", "B": "option b"}
+    revision.image_url = None
+    revision.answer = "A"
+    return revision
 
 
 # ── SM-2 Algorithm Tests (pure function) ──
@@ -155,7 +191,9 @@ class TestSM2Algorithm:
         result_before = calc_sm2(quality=5, efactor=2.5, interval=1, repetitions=1)
         ef_after_good = result_before["efactor"]
 
-        result_after = calc_sm2(quality=1, efactor=ef_after_good, interval=1, repetitions=0)
+        result_after = calc_sm2(
+            quality=1, efactor=ef_after_good, interval=1, repetitions=0
+        )
         assert result_after["efactor"] < ef_after_good
 
     def test_invalid_rating_raises(self):
@@ -177,21 +215,33 @@ class TestGetTodayReview:
         db = _make_mock_db()
         now = datetime.now(UTC)
         schedules = [
-            _make_schedule_mock(id=1, question_id=10, next_review_at=now - timedelta(days=2)),
-            _make_schedule_mock(id=2, question_id=11, next_review_at=now - timedelta(hours=1)),
+            _make_schedule_mock(
+                id=1, question_id=10, next_review_at=now - timedelta(days=2)
+            ),
+            _make_schedule_mock(
+                id=2, question_id=11, next_review_at=now - timedelta(hours=1)
+            ),
         ]
-        questions = [
-            _make_question_mock(id=10),
-            _make_question_mock(id=11),
-        ]
-        _mock_execute_sequence(
-            db,
-            {"scalar": 2},           # count
-            {"scalars": schedules},   # schedules query
-            {"scalars": questions},   # questions query
-        )
-
-        result = asyncio.run(get_today_review(db, user_id=1))
+        db.scalar.side_effect = [2]
+        result = MagicMock()
+        result.all.return_value = schedules
+        db.scalars.return_value = result
+        with (
+            patch(
+                "app.services.review_scheduler._active_408_subject_ids",
+                new=AsyncMock(return_value={1}),
+            ),
+            patch(
+                "app.services.review_scheduler.load_revision_views",
+                new=AsyncMock(
+                    return_value={
+                        1010: _make_revision_mock(10),
+                        1011: _make_revision_mock(11),
+                    }
+                ),
+            ),
+        ):
+            result = asyncio.run(get_today_review(db, user_id=1))
 
         assert result["total_today"] == 2
         assert len(result["questions"]) == 2
@@ -201,14 +251,21 @@ class TestGetTodayReview:
 
     def test_empty_when_no_due(self):
         db = _make_mock_db()
-        _mock_execute_sequence(
-            db,
-            {"scalar": 0},
-            {"scalars": []},
-            {"scalars": []},
-        )
-
-        result = asyncio.run(get_today_review(db, user_id=1))
+        db.scalar.return_value = 0
+        result = MagicMock()
+        result.all.return_value = []
+        db.scalars.return_value = result
+        with (
+            patch(
+                "app.services.review_scheduler._active_408_subject_ids",
+                new=AsyncMock(return_value={1}),
+            ),
+            patch(
+                "app.services.review_scheduler.load_revision_views",
+                new=AsyncMock(return_value={}),
+            ),
+        ):
+            result = asyncio.run(get_today_review(db, user_id=1))
 
         assert result["total_today"] == 0
         assert result["questions"] == []
@@ -217,19 +274,34 @@ class TestGetTodayReview:
         db = _make_mock_db()
         now = datetime.now(UTC)
         schedules = [
-            _make_schedule_mock(id=1, question_id=10, subject_id=1, next_review_at=now - timedelta(days=1)),
-            _make_schedule_mock(id=2, question_id=11, subject_id=2, next_review_at=now - timedelta(days=1)),
+            _make_schedule_mock(
+                id=1,
+                question_id=10,
+                subject_id=1,
+                next_review_at=now - timedelta(days=1),
+            ),
+            _make_schedule_mock(
+                id=2,
+                question_id=11,
+                subject_id=2,
+                next_review_at=now - timedelta(days=1),
+            ),
         ]
-        math_q = _make_question_mock(id=10, subject_id=1)
-        _make_question_mock(id=11, subject_id=2)
-        _mock_execute_sequence(
-            db,
-            {"scalar": 1},
-            {"scalars": [schedules[0]]},
-            {"scalars": [math_q]},
-        )
-
-        result = asyncio.run(get_today_review(db, user_id=1, subject_id=1))
+        db.scalar.return_value = 1
+        result = MagicMock()
+        result.all.return_value = [schedules[0]]
+        db.scalars.return_value = result
+        with (
+            patch(
+                "app.services.review_scheduler._active_408_subject_ids",
+                new=AsyncMock(return_value={1, 2}),
+            ),
+            patch(
+                "app.services.review_scheduler.load_revision_views",
+                new=AsyncMock(return_value={1010: _make_revision_mock(10, 1)}),
+            ),
+        ):
+            result = asyncio.run(get_today_review(db, user_id=1, subject_id=1))
 
         assert result["total_today"] == 1
         assert result["questions"][0]["subject_id"] == 1
@@ -238,34 +310,58 @@ class TestGetTodayReview:
         db = _make_mock_db()
         now = datetime.now(UTC)
         schedules = [
-            _make_schedule_mock(id=i, question_id=10 + i, next_review_at=now - timedelta(days=i))
+            _make_schedule_mock(
+                id=i, question_id=10 + i, next_review_at=now - timedelta(days=i)
+            )
             for i in range(1, 6)
         ]
-        questions = [_make_question_mock(id=10 + i) for i in range(1, 6)]
-        _mock_execute_sequence(
-            db,
-            {"scalar": 5},
-            {"scalars": schedules[:3]},   # limit=3
-            {"scalars": questions},
-        )
-
-        result = asyncio.run(get_today_review(db, user_id=1, limit=3))
+        db.scalar.return_value = 5
+        result = MagicMock()
+        result.all.return_value = schedules[:3]
+        db.scalars.return_value = result
+        revisions = {
+            1000 + q.question_id: _make_revision_mock(q.question_id)
+            for q in schedules[:3]
+        }
+        with (
+            patch(
+                "app.services.review_scheduler._active_408_subject_ids",
+                new=AsyncMock(return_value={1}),
+            ),
+            patch(
+                "app.services.review_scheduler.load_revision_views",
+                new=AsyncMock(return_value=revisions),
+            ),
+        ):
+            result = asyncio.run(get_today_review(db, user_id=1, limit=3))
 
         assert len(result["questions"]) == 3
 
     def test_stem_from_string_content(self):
         db = _make_mock_db()
         now = datetime.now(UTC)
-        schedules = [_make_schedule_mock(id=1, question_id=10, next_review_at=now - timedelta(days=1))]
-        q = _make_question_mock(id=10, content="Plain text stem")
-        _mock_execute_sequence(
-            db,
-            {"scalar": 1},
-            {"scalars": schedules},
-            {"scalars": [q]},
-        )
-
-        result = asyncio.run(get_today_review(db, user_id=1))
+        schedules = [
+            _make_schedule_mock(
+                id=1, question_id=10, next_review_at=now - timedelta(days=1)
+            )
+        ]
+        db.scalar.return_value = 1
+        result = MagicMock()
+        result.all.return_value = schedules
+        db.scalars.return_value = result
+        revision = _make_revision_mock(10)
+        revision.content = "Plain text stem"
+        with (
+            patch(
+                "app.services.review_scheduler._active_408_subject_ids",
+                new=AsyncMock(return_value={1}),
+            ),
+            patch(
+                "app.services.review_scheduler.load_revision_views",
+                new=AsyncMock(return_value={1010: revision}),
+            ),
+        ):
+            result = asyncio.run(get_today_review(db, user_id=1))
 
         assert result["questions"][0]["stem"] == "Plain text stem"
 
@@ -277,15 +373,28 @@ class TestSubmitReview:
     def test_successful_submit(self):
         db = _make_mock_db()
         schedule = _make_schedule_mock(
-            id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
+            id=1,
+            question_id=10,
+            interval=5,
+            ease_factor=2.5,
+            repetitions=2,
             next_review_at=datetime.now(UTC) - timedelta(days=1),
         )
         # First execute: get schedule
         # commit/refresh don't need execute results
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.scalar.side_effect = [None, schedule, 10, None]
 
         async def _run():
-            return await submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4)
+            return await submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=10,
+                question_version_id=1010,
+                occurrence_seq=0,
+                rating=4,
+                request_id="r1",
+            )
 
         result = asyncio.run(_run())
 
@@ -299,27 +408,62 @@ class TestSubmitReview:
 
     def test_schedule_not_found(self):
         db = _make_mock_db()
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
+        db.scalar.side_effect = [None, None]
 
         with pytest.raises(ValueError, match="复习记录不存在"):
-            asyncio.run(submit_review(db, user_id=1, schedule_id=999, question_id=10, rating=4))
+            asyncio.run(
+                submit_review(
+                    db,
+                    user_id=1,
+                    schedule_id=999,
+                    question_id=10,
+                    question_version_id=1010,
+                    occurrence_seq=0,
+                    rating=4,
+                    request_id="r1",
+                )
+            )
 
     def test_invalid_rating(self):
         db = _make_mock_db()
 
         with pytest.raises(ValueError, match="评分必须在 0-5 之间"):
-            asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=6))
+            asyncio.run(
+                submit_review(
+                    db,
+                    user_id=1,
+                    schedule_id=1,
+                    question_id=10,
+                    question_version_id=1010,
+                    occurrence_seq=0,
+                    rating=6,
+                    request_id="r1",
+                )
+            )
 
     def test_wrong_answer_resets_schedule(self):
         db = _make_mock_db()
         schedule = _make_schedule_mock(
-            id=1, question_id=10, interval=30, ease_factor=2.5, repetitions=5,
+            id=1,
+            question_id=10,
+            interval=30,
+            ease_factor=2.5,
+            repetitions=5,
             next_review_at=datetime.now(UTC) - timedelta(days=1),
         )
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.scalar.side_effect = [None, schedule, 10, None]
 
         async def _run():
-            return await submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=1)
+            return await submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=10,
+                question_version_id=1010,
+                occurrence_seq=0,
+                rating=1,
+                request_id="r1",
+            )
 
         result = asyncio.run(_run())
 
@@ -335,69 +479,36 @@ class TestSubmitReview:
 
         db.add.side_effect = _add
         schedule = _make_schedule_mock(
-            id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
+            id=1,
+            question_id=10,
+            interval=5,
+            ease_factor=2.5,
+            repetitions=2,
             next_review_at=datetime.now(UTC) - timedelta(days=1),
         )
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.scalar.side_effect = [None, schedule, 10, None]
 
-        asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4))
+        asyncio.run(
+            submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=10,
+                question_version_id=1010,
+                occurrence_seq=0,
+                rating=4,
+                request_id="r1",
+            )
+        )
 
         # Check that a ReviewRecord was added
         from app.models.review_scheduler import ReviewRecord
+
         records = [obj for obj in added_objects if isinstance(obj, ReviewRecord)]
         assert len(records) == 1
         assert records[0].rating == 4
         assert records[0].user_id == 1
         assert records[0].question_id == 10
-
-
-# ── batch_submit_review Tests ──
-
-
-class TestBatchSubmitReview:
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
-    def test_batch_success(self):
-        db = _make_mock_db()
-        schedules = {
-            1: _make_schedule_mock(id=1, question_id=10),
-            2: _make_schedule_mock(id=2, question_id=11),
-        }
-
-        def _execute_side_effect(*args, **kwargs):
-            # First call: get schedule for id=1
-            # Second call: get schedule for id=2
-            return _make_execute_result(
-                scalar_one_or_none=schedules.get(
-                    args[0]._whereclause.right.right.value  # fragile but works for mock
-                )
-            )
-
-        db.execute.side_effect = lambda *a, **kw: _make_execute_result(
-            scalar_one_or_none=_make_schedule_mock()
-        )
-
-        async def _run():
-            return await batch_submit_review(db, user_id=1, reviews=[
-                {"schedule_id": 1, "question_id": 10, "rating": 4},
-                {"schedule_id": 2, "question_id": 11, "rating": 3},
-            ])
-
-        result = asyncio.run(_run())
-
-        assert result["total"] == 2
-        assert len(result["results"]) == 2
-
-    def test_batch_continues_on_error(self):
-        """批量提交时，单个失败不影响其他。submit_review 失败被记录在结果中。"""
-        db = _make_mock_db()
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
-
-        result = asyncio.run(batch_submit_review(db, user_id=1, reviews=[
-            {"schedule_id": 999, "question_id": 10, "rating": 4},
-        ]))
-
-        assert result["total"] == 1
-        assert len(result["results"]) == 1
 
 
 # ── auto_schedule_wrong_question Tests ──
@@ -412,14 +523,21 @@ class TestAutoScheduleWrongQuestion:
             added_objects.append(obj)
 
         db.add.side_effect = _add
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
+        db.scalar.side_effect = [None, None]
 
         async def _run():
-            return await auto_schedule_wrong_question(db, user_id=1, question_id=10)
+            return await auto_schedule_wrong_question(
+                db, user_id=1, question_id=10, question_version_id=1010
+            )
 
-        asyncio.run(_run())
+        with patch(
+            "app.services.review_scheduler.load_revision_views",
+            new=AsyncMock(return_value={1010: _make_revision_mock(10)}),
+        ):
+            asyncio.run(_run())
 
         from app.models.review_scheduler import ReviewSchedule
+
         schedules = [obj for obj in added_objects if isinstance(obj, ReviewSchedule)]
         assert len(schedules) == 1
         assert schedules[0].user_id == 1
@@ -432,15 +550,25 @@ class TestAutoScheduleWrongQuestion:
     def test_updates_existing_schedule(self):
         db = _make_mock_db()
         existing = _make_schedule_mock(
-            id=1, question_id=10, interval=30, ease_factor=2.8, repetitions=10,
+            id=1,
+            question_id=10,
+            interval=30,
+            ease_factor=2.8,
+            repetitions=10,
             next_review_at=datetime.now(UTC) + timedelta(days=30),
         )
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=existing)
+        db.scalar.side_effect = [existing, None]
 
         async def _run():
-            return await auto_schedule_wrong_question(db, user_id=1, question_id=10)
+            return await auto_schedule_wrong_question(
+                db, user_id=1, question_id=10, question_version_id=1010
+            )
 
-        asyncio.run(_run())
+        with patch(
+            "app.services.review_scheduler.load_revision_views",
+            new=AsyncMock(return_value={1010: _make_revision_mock(10)}),
+        ):
+            asyncio.run(_run())
 
         # Should reset to difficult state
         assert existing.interval == 1
@@ -456,13 +584,13 @@ class TestReviewStats:
         db = _make_mock_db()
         _mock_execute_sequence(
             db,
-            {"scalar": 50},           # total_scheduled
-            {"scalar": 5},            # total_reviewed_today
-            {"scalar": 10},           # remaining_today
-            {"scalar": 3},            # overdue
-            {"one": (20, 16)},        # accuracy: 20 total, 16 correct
-            {"all": []},              # by_subject scheduled
-            {"all": []},              # by_subject reviewed
+            {"scalar": 50},  # total_scheduled
+            {"scalar": 5},  # total_reviewed_today
+            {"scalar": 10},  # remaining_today
+            {"scalar": 3},  # overdue
+            {"one": (20, 16)},  # accuracy: 20 total, 16 correct
+            {"all": []},  # by_subject scheduled
+            {"all": []},  # by_subject reviewed
         )
 
         result = asyncio.run(get_review_stats(db, user_id=1))
@@ -503,11 +631,13 @@ class TestReviewStats:
             {"scalar": 2},
             {"one": (15, 12)},
             {"all": [(1, 30, 8), (2, 20, 5)]},  # by_subject scheduled rows
-            {"all": [(1, 3), (2, 1)]},           # by_subject reviewed rows
-            {"scalars": [
-                Subject(id=1, code="math2", name="数学二", level=1, path="math2"),
-                Subject(id=2, code="english", name="英语", level=1, path="english"),
-            ]},                                   # subjects query
+            {"all": [(1, 3), (2, 1)]},  # by_subject reviewed rows
+            {
+                "scalars": [
+                    Subject(id=1, code="math2", name="数学二", level=1, path="math2"),
+                    Subject(id=2, code="english", name="英语", level=1, path="english"),
+                ]
+            },  # subjects query
         )
 
         result = asyncio.run(get_review_stats(db, user_id=1))
@@ -529,10 +659,22 @@ class TestReviewHistory:
         from app.models.review_scheduler import ReviewRecord
 
         records = [
-            ReviewRecord(user_id=1, question_id=10, schedule_id=1, rating=4,
-                        interval_after=6, reviewed_at=datetime.now(UTC)),
-            ReviewRecord(user_id=1, question_id=11, schedule_id=2, rating=2,
-                        interval_after=1, reviewed_at=datetime.now(UTC) - timedelta(days=1)),
+            ReviewRecord(
+                user_id=1,
+                question_id=10,
+                schedule_id=1,
+                rating=4,
+                interval_after=6,
+                reviewed_at=datetime.now(UTC),
+            ),
+            ReviewRecord(
+                user_id=1,
+                question_id=11,
+                schedule_id=2,
+                rating=2,
+                interval_after=1,
+                reviewed_at=datetime.now(UTC) - timedelta(days=1),
+            ),
         ]
         _mock_execute_sequence(
             db,

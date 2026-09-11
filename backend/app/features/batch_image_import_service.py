@@ -616,7 +616,11 @@ async def _merge_image_texts(
 
             from app.features.import_ai_policy import apply_image_single_pass_policy
 
-            merge_opts = dict(options)
+            merge_opts = {
+                key: value
+                for key, value in options.items()
+                if key not in {"_ocr_vl_runtime", "_ocr_vl_error"}
+            }
             merge_opts["_merged_from_job"] = job_id
             merge_opts = apply_image_single_pass_policy(
                 merge_opts,
@@ -693,32 +697,49 @@ async def _merge_image_texts(
         return {"merged": False, "reason": "exception during merge pipeline"}
 
 
-async def _run_vl_ocr(content: bytes, source_file: str) -> str:
+async def _resolve_vl_ocr_runtime() -> dict[str, object]:
+    """Resolve PaddleOCR-VL credentials once for a batch job.
+
+    A batch can contain many images. Keep the resolved runtime in the in-memory
+    job options so each worker reuses the same capability-specific model and
+    decrypted secret instead of querying the model-config tables per image.
+    """
+    from app.services.model_config_resolver import AICapability, AIModelConfigResolver
+
+    async with async_session() as db:
+        resolver = AIModelConfigResolver(db)
+        resolved = await resolver.resolve_for_capability(AICapability.OCR_VL)
+        api_token = await resolver.resolve_secret(resolved)
+
+    if not api_token:
+        raise ValueError(
+            "PaddleOCR-VL 未配置：请在 AI 设置页面配置 provider=paddleocr-vl 且用途=vision 的模型"
+        )
+    return {
+        "api_token": api_token,
+        "base_url": resolved.endpoint or "https://paddleocr.aistudio-app.com",
+        "model": resolved.model_name or "PaddleOCR-VL-1.6",
+        "poll_timeout": getattr(resolved, "timeout_seconds", None),
+        "max_retries": getattr(resolved, "max_retries", None),
+    }
+
+
+async def _run_vl_ocr(
+    content: bytes,
+    source_file: str,
+    *,
+    runtime: dict[str, object] | None = None,
+) -> str:
     """使用 PaddleOCR-VL 远程 API 识别图片，返回原始文本。
 
     从 DB 模型配置中读取 api_key/api_base_url/model_name，
     通过 PaddleOCRVLClient 异步提交+轮询获取结果。
     """
-    from app.services.model_config_resolver import AICapability, AIModelConfigResolver
-
-    # PaddleOCR-VL 使用厂商专用 job API，不属于通用 chat/completions。
-    # 单独按 OCR_VL capability 解析，避免把标记为 OCR 纠错的 Qwen/DeepSeek
-    # 等 OpenAI-compatible 模型误当成 PaddleOCR 端点。
-    async with async_session() as db:
-        resolver = AIModelConfigResolver(db)
-        try:
-            resolved = await resolver.resolve_for_capability(AICapability.OCR_VL.value)
-            api_token = await resolver.resolve_secret(resolved)
-        except (ValueError, TypeError):
-            resolved = None
-            api_token = ""
-    if not resolved or not api_token:
-        raise ValueError(
-            "PaddleOCR-VL 未配置：请在 AI 设置页面配置 provider=paddleocr-vl 且用途=vision 的模型"
-        )
-
-    base_url = resolved.endpoint or "https://paddleocr.aistudio-app.com"
-    model = resolved.model_name or "PaddleOCR-VL-1.6"
+    if runtime is None:
+        runtime = await _resolve_vl_ocr_runtime()
+    api_token = str(runtime["api_token"])
+    base_url = str(runtime["base_url"])
+    model = str(runtime["model"])
 
     from app.features.ocr_vl.paddleocr_vl_client import PaddleOCRVLClient
 
@@ -726,6 +747,14 @@ async def _run_vl_ocr(content: bytes, source_file: str) -> str:
         api_token=api_token,
         base_url=base_url,
         model=model,
+        **{
+            key: value
+            for key, value in {
+                "poll_timeout": runtime.get("poll_timeout"),
+                "max_retries": runtime.get("max_retries"),
+            }.items()
+            if value is not None
+        },
     )
 
     vl_start = _now()
@@ -763,9 +792,15 @@ async def _run_single_image(
     configured_backend = "paddleocr-vl" if ocr_mode == "api" else "configured"
 
     if ocr_mode == "api":
+        if options.get("_ocr_vl_error"):
+            raise ValueError(str(options["_ocr_vl_error"]))
         # API 模式保留厂商专用 PaddleOCR-VL。该模式本身已经完成视觉 OCR，
         # 因此跳过后续文本 OCR correction。
-        raw_ocr_text = await _run_vl_ocr(content, source_file)
+        raw_ocr_text = await _run_vl_ocr(
+            content,
+            source_file,
+            runtime=options.get("_ocr_vl_runtime"),
+        )
         skip_ocr_correction = True
     else:
         # 标准模式必须服从 OCR_EXECUTION_BACKEND。以前这里直接调用
@@ -854,7 +889,15 @@ async def _run_single_image(
         # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段。
         # 批量图片默认启用 single-AI-pass：通用 repair 已能同时修复代码结构
         # 与缺失答案时，不再先做一次独立 code-structure LLM 调用。
-        pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction, "_original_raw_text": raw_ocr_text}
+        pipeline_opts = {
+            key: value
+            for key, value in options.items()
+            if key not in {"_ocr_vl_runtime", "_ocr_vl_error"}
+        }
+        pipeline_opts.update(
+            skip_ocr_correction=skip_ocr_correction,
+            _original_raw_text=raw_ocr_text,
+        )
         if pipeline_opts.get("batch_fast_mode", True):
             from app.features.import_ai_policy import apply_image_single_pass_policy
 
@@ -1107,6 +1150,14 @@ async def run_batch_job(
     merge is actually done.
     """
     concurrency = clamp_concurrency(concurrency)
+    job_options = dict(options or {})
+    if job_options.get("ocr_mode") == "api":
+        try:
+            job_options["_ocr_vl_runtime"] = await _resolve_vl_ocr_runtime()
+        except Exception as exc:
+            # Preserve per-item failure isolation while preventing every worker
+            # from repeating the same failed config lookup.
+            job_options["_ocr_vl_error"] = str(exc)
     logger.info(
         "batch image job started: job_id=%s total=%d concurrency=%d",
         job_id, len(sources), concurrency,
@@ -1124,7 +1175,7 @@ async def run_batch_job(
     log_event(
         logger, "batch_image.job.start", "info",
         total=len(sources), concurrency=concurrency,
-        subject=subject, ocr_mode=(options or {}).get("ocr_mode", "local"),
+        subject=subject, ocr_mode=job_options.get("ocr_mode", "local"),
     )
 
     try:
@@ -1152,7 +1203,7 @@ async def run_batch_job(
                 src=src,
                 subject=subject,
                 subject_id=subject_id,
-                options=options,
+                options=job_options,
                 job_id=job_id,
             )
             for src in sources
@@ -1182,7 +1233,7 @@ async def run_batch_job(
                 trace_message="图片全部处理完成，开始合并",
             )
             merge_result = await _merge_image_texts(
-                job_id=job_id, subject=subject, options=options, subject_id=subject_id,
+                job_id=job_id, subject=subject, options=job_options, subject_id=subject_id,
             )
             if merge_result.get("merged"):
                 logger.info(

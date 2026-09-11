@@ -1,8 +1,11 @@
 import hashlib
+import json
 import logging
 import re
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -12,23 +15,25 @@ from app.core.log_context import get_log_context, normalize_trace_id
 logger = logging.getLogger(__name__)
 from app.core.security import get_current_user
 from app.features.text_normalizer import _split_inline_roman_subitems
+from app.models.sequential_reservation import SequentialReservation
 from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.practice import (
     AnswerResult,
     BatchSubmitRequest,
     BatchSubmitResponse,
+    PracticeKnowledgeSummaryResponse,
     PracticeMode,
     PracticeQuestion,
     PracticeQuestionsResponse,
-    PracticeKnowledgeSummaryResponse,
-    PracticeSessionScopeResponse,
     PracticeRecordItem,
+    PracticeSessionScopeResponse,
     PracticeStatsResponse,
     SequentialPracticeResetRequest,
     SequentialPracticeResetResponse,
 )
 from app.services import practice_service as svc
+from app.services.knowledge_point_service import load_question_kps  # noqa: F401
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.services.question_revision_service import (
     load_revision_kp_names,
@@ -82,6 +87,24 @@ def _contains_code(text: str) -> bool:
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
+
+
+def _sequential_submission_request_id(
+    start_request_id: str,
+    subject_id: int,
+    scope_identity: dict,
+) -> str:
+    """Derive a stable submission id without crossing practice scopes."""
+    canonical_scope = json.dumps(
+        scope_identity,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(
+        f"{start_request_id}:{subject_id}:{canonical_scope}".encode()
+    ).hexdigest()[:48]
+    return f"practice_{digest}"
 
 
 def _ensure_true_false_options(question_type: str, options: dict | None) -> dict | None:
@@ -219,6 +242,7 @@ async def get_practice_questions(
     use_leitner: bool = Query(True),
     source_question_id: int | None = Query(None),
     question_ids: str | None = Query(None, max_length=1024),
+    start_request_id: str | None = Query(None, max_length=128),
     # smart 默认走综合 scored；客户端仍只需要传 mode=smart。
     # weakness_vector 保留为显式 fallback / A/B control。
     smart_strategy: str = Query("scored"),
@@ -305,11 +329,17 @@ async def get_practice_questions(
             raise HTTPException(status_code=400, detail="定向题目不可与 source_question_id/knowledge_point 混用")
         if mode != "random":
             raise HTTPException(status_code=400, detail="定向题目仅支持 random runner")
+        # A targeted retry is an explicit set, not a candidate pool.  Honour
+        # every requested id (the client may omit ``count`` or leave its
+        # generic default in place) and make the signed session count match
+        # that immutable set instead of silently truncating it.
+        count = len(targeted_question_ids)
 
     # metadata: 题目推荐元数据（仅 smart/similar 模式使用）
     question_metadata: dict[int, dict] = {}
     request_id: str | None = None
     sequential_progress: dict | None = None
+    sequential_reservation_request_id: str | None = None
 
     # Random 模式多取一小段候选。最终版本/学科一致性守卫可能隔离历史误分类题；
     # 预留候选可以在不改变客户端请求 count 的情况下尽量补足题量。
@@ -318,11 +348,11 @@ async def get_practice_questions(
     if targeted_question_ids:
         questions = await svc.get_targeted_practice_questions(
             db,
-            question_ids=targeted_question_ids[:count],
+            question_ids=targeted_question_ids,
             subject_ids=scope_subject_ids,
         )
         returned_ids = [int(question.id) for question in questions]
-        expected_ids = targeted_question_ids[:count]
+        expected_ids = targeted_question_ids
         if returned_ids != expected_ids:
             missing_ids = [qid for qid in expected_ids if qid not in set(returned_ids)]
             raise HTTPException(
@@ -380,6 +410,9 @@ async def get_practice_questions(
         # 顺序模式是独立的题库进度模式：严格按 Question.id 推进，
         # 不参与 Leitner、薄弱点、错题优先或 no-repeat 调度。
         try:
+            sequential_reservation_request_id = str(
+                start_request_id or f"seqstart:{current_user.id}:{uuid4().hex}"
+            ).strip()
             questions, sequential_progress = await svc.get_sequential_practice_questions(
                 db=db,
                 user_id=current_user.id,
@@ -387,6 +420,7 @@ async def get_practice_questions(
                 subject_ids=scope_subject_ids,
                 count=count,
                 knowledge_points=kps,
+                reservation_request_id=sequential_reservation_request_id,
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -454,6 +488,51 @@ async def get_practice_questions(
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
             )
+    # Recommendation providers (vector/path/scored) are external to the
+    # canonical Leitner query and may return a question that became
+    # not-yet-due after the provider built its candidate list. Enforce the
+    # user-question schedule immediately before signing the batch.
+    if use_leitner and mode in {"smart", "similar"} and questions:
+        from app.services.question_review_service import get_due_question_ids
+
+        due_ids = await get_due_question_ids(
+            db, current_user.id, [int(question.id) for question in questions]
+        )
+        filtered_questions = [question for question in questions if int(question.id) in due_ids]
+        if len(filtered_questions) != len(questions):
+            logger.info(
+                "[PRACTICE_LEITNER_GUARD] uid=%s mode=%s filtered=%s remaining=%s",
+                current_user.id,
+                mode,
+                len(questions) - len(filtered_questions),
+                len(filtered_questions),
+            )
+        missing_count = max(0, count - len(filtered_questions))
+        if missing_count:
+            fallback = await svc.get_practice_questions(
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
+                subject_ids=scope_subject_ids,
+                count=min(100, missing_count + len(filtered_questions)),
+                mode="random",
+                knowledge_points=kps,
+                knowledge_point_ids=knowledge_point_ids,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=True,
+            )
+            fallback_due_ids = await get_due_question_ids(
+                db, current_user.id, [int(question.id) for question in fallback]
+            )
+            existing_ids = {int(question.id) for question in filtered_questions}
+            for question in fallback:
+                if int(question.id) in fallback_due_ids and int(question.id) not in existing_ids:
+                    filtered_questions.append(question)
+                    existing_ids.add(int(question.id))
+                if len(filtered_questions) >= count:
+                    break
+        questions = filtered_questions[:count]
     # ── 作用域强制过滤：同时校验 mutable Question 与将实际下发的 current revision。
     # 候选查询大多按 questions.subject_id 过滤，但响应内容来自 QuestionVersion。
     # 两者若因历史修复/并发编辑短暂不一致，旧逻辑仍可能把其他学科的 revision
@@ -488,6 +567,20 @@ async def get_practice_questions(
             subject_id, mode, sorted(set(duplicate_question_ids)),
         )
     questions = deduped_questions[:count]
+    if targeted_question_ids:
+        # A targeted retry is an explicit immutable set.  If a question is
+        # disabled or its current revision leaves the scope between the initial
+        # load and this final guard, reject the whole request instead of issuing
+        # a silently shortened batch that no longer matches the client snapshot.
+        final_targeted_ids = [int(question.id) for question in questions]
+        if final_targeted_ids != targeted_question_ids:
+            missing_ids = [
+                qid for qid in targeted_question_ids if qid not in set(final_targeted_ids)
+            ]
+            raise HTTPException(
+                status_code=409,
+                detail=f"定向题目在签发前已失效或超出当前科目范围: {missing_ids}",
+            )
     final_question_ids = {int(q.id) for q in questions}
     question_metadata = {
         k: v for k, v in question_metadata.items() if int(k) in final_question_ids
@@ -529,7 +622,9 @@ async def get_practice_questions(
     # For knowledge-scoped practice, snapshot the user's pre-practice state in the
     # signed token so the result page can later show an exact before/after impact
     # without introducing a second chapter-mastery persistence table.
-    from app.services.practice.knowledge_session_summary import build_issue_knowledge_context
+    from app.services.practice.knowledge_session_summary import (
+        build_issue_knowledge_context,
+    )
 
     knowledge_context = await build_issue_knowledge_context(
         db,
@@ -562,6 +657,18 @@ async def get_practice_questions(
                 current_user.id, subject_id, mode,
             )
 
+    sequential_submission_request_id = None
+    if sequential_reservation_request_id:
+        scope_identity = (
+            {"knowledge_scope": knowledge_scope}
+            if knowledge_scope is not None
+            else {"knowledge_points": sorted(kps or [])}
+        )
+        sequential_submission_request_id = _sequential_submission_request_id(
+            sequential_reservation_request_id,
+            subject_id,
+            scope_identity,
+        )
     batch_token, issued_revisions, submission_request_id = svc.create_practice_batch_token(
         user_id=current_user.id,
         subject_id=subject_id,
@@ -571,6 +678,8 @@ async def get_practice_questions(
         recommendation_request_id=request_id,
         knowledge_context=knowledge_context,
         entry_context=entry_context,
+        sequential_reservation_request_id=sequential_reservation_request_id,
+        submission_request_id=sequential_submission_request_id,
     )
     revision_views = await load_revision_views(db, issued_revisions.values())
     revision_kps = await load_revision_kp_names(db, issued_revisions.values())
@@ -650,6 +759,22 @@ async def get_practice_questions(
             "total": len(questions),
         },
     )
+    if mode == "sequential":
+        # A revision/scope guard may remove a question after reservation.  Do
+        # not leave a lease for an item that was never included in the signed
+        # response; the whole cleanup remains in this request transaction.
+        await db.execute(
+            delete(SequentialReservation).where(
+                SequentialReservation.user_id == current_user.id,
+                SequentialReservation.subject_id == subject_id,
+                SequentialReservation.start_request_id == sequential_reservation_request_id,
+                SequentialReservation.question_id.notin_(final_question_ids),
+            )
+        )
+        # Reservation writes are intentionally committed only after the full
+        # response has been assembled. Any exception before this point causes
+        # the request transaction to roll back and leaves no ghost claims.
+        await db.commit()
     return response
 
 
@@ -809,7 +934,9 @@ async def get_practice_session_knowledge_summary(
     The endpoint deliberately reports ``processing`` while answer-projection outbox
     tasks are pending, so the result UI never presents stale mastery values as final.
     """
-    from app.services.practice.knowledge_session_summary import get_session_knowledge_summary
+    from app.services.practice.knowledge_session_summary import (
+        get_session_knowledge_summary,
+    )
 
     summary = await get_session_knowledge_summary(
         db,

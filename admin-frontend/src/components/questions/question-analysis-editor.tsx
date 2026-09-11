@@ -147,7 +147,9 @@ export function QuestionAnalysisEditor({
   const [enteringKey, setEnteringKey] = useState<string | null>(null);
   const timersRef = useRef<number[]>([]);
   const modulesRef = useRef(modules);
-  modulesRef.current = modules;
+  useEffect(() => {
+    modulesRef.current = modules;
+  }, [modules]);
 
   useEffect(() => {
     return () => {

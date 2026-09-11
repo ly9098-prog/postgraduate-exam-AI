@@ -3759,366 +3759,786 @@ page {
   }
 }
 
-/* Round 4.3 — unify the whole Home page with the top card's fresh mint-green system. */
-page {
-  background: #F2F7F1;
-  background-color: #F2F7F1;
-  color: #132018;
+
+/* Round 4.3 — use the supplied hero background artwork and keep refining the
+ * top card to more closely match the reference composition. */
+.focus-card {
+  position: relative;
+  overflow: hidden;
+  margin: 0 24rpx;
+  border-radius: 38rpx;
+  border: 1rpx solid rgba(186, 223, 188, .82);
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8FFF7 100%);
+  box-shadow: 0 20rpx 52rpx rgba(74, 111, 79, .10);
 }
 
-.home-page {
-  background:
-    radial-gradient(circle at 100% 8%, rgba(80, 216, 101, .075), transparent 420rpx),
-    radial-gradient(circle at 0% 44%, rgba(108, 222, 125, .045), transparent 520rpx),
-    linear-gradient(180deg, #F7FAF6 0%, #F1F7F1 54%, #EEF5EF 100%);
+.focus-card::before,
+.focus-card::after,
+.focus-ambient,
+.focus-visual-blob,
+.focus-leaf-decor {
+  display: none;
 }
 
-/* Navigation adopts the same white / mint / dark-green language as the hero. */
-.brand-mark {
-  border: 1rpx solid #CEE8D1;
-  background: linear-gradient(145deg, #F8FFF8, #E8F8E9);
-  box-shadow: 0 8rpx 22rpx rgba(57, 137, 70, .10);
+.focus-bg-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  z-index: 0;
 }
 
-.brand-mark-line {
-  background: #38C95A;
+.focus-bg-wash {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 1;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.985) 0%,
+    rgba(255,255,255,.97) 38%,
+    rgba(255,255,255,.88) 58%,
+    rgba(255,255,255,.42) 76%,
+    rgba(255,255,255,.08) 100%);
 }
 
-.brand-mark-line.line-two {
-  background: #64D978;
+.focus-content {
+  position: relative;
+  z-index: 2;
+  padding: 28rpx 32rpx 24rpx;
 }
 
-.brand-mark-dot {
-  background: #39D05C;
-  box-shadow: 0 0 0 6rpx rgba(57, 208, 92, .12);
+.focus-topline {
+  align-items: flex-start;
 }
 
-.brand-name {
-  color: #13231A;
+.focus-status {
+  color: #26372B;
+  font-size: 17rpx;
+  letter-spacing: 1.7rpx;
 }
 
-.brand-caption {
-  color: #6F9076;
+.focus-kicker-icon {
+  width: 22rpx;
+  height: 22rpx;
+  margin-right: 12rpx;
 }
 
-.profile-chip {
-  border-color: #D0E8D3;
-  background: rgba(255, 255, 255, .88);
-  box-shadow: 0 7rpx 20rpx rgba(56, 117, 66, .055);
+.focus-plan-anchor {
+  position: relative;
+  z-index: 3;
+  min-width: 92rpx;
+  min-height: 50rpx;
+  padding: 0 22rpx;
+  border-width: 2rpx;
+  border-color: #3E9150;
+  background: rgba(255,255,255,.88);
+  box-shadow: 0 8rpx 18rpx rgba(84, 141, 89, .08);
 }
 
-.profile-avatar {
-  background: #E8F8E9;
-  color: #1B6B31;
+.focus-plan-anchor-label {
+  color: #143B20;
+  font-size: 24rpx;
+  font-weight: 900;
 }
 
-.profile-level {
-  color: #45644D;
+.focus-title-line {
+  margin-top: 28rpx;
+  gap: 10rpx;
+  padding-right: 168rpx;
 }
 
-/* Greeting keeps the editorial hierarchy but removes the old olive cast. */
-.editorial-date {
-  color: #729578;
+.focus-title {
+  color: #0F1711;
+  font-size: 58rpx;
+  line-height: 1.1;
+  letter-spacing: -1.8rpx;
 }
 
-.editorial-title {
-  color: #101B14;
+.focus-title-arrow {
+  color: #59C16D;
+  font-size: 60rpx;
+  line-height: 1;
 }
 
-.editorial-rule {
-  background: linear-gradient(90deg, #BBDDBF 0%, rgba(187, 221, 191, 0) 100%);
+.focus-desc {
+  width: 432rpx;
+  max-width: 432rpx;
+  margin-top: 16rpx;
+  padding-right: 0;
+  color: #667366;
+  font-size: 24rpx;
+  line-height: 1.58;
 }
 
-.editorial-subtitle {
-  color: #6D7D70;
+.focus-hero-visual {
+  position: absolute;
+  right: 8rpx;
+  top: 46rpx;
+  width: 266rpx;
+  height: 168rpx;
+  z-index: 2;
+  pointer-events: none;
 }
 
-/* Shared section typography. */
-.section-kicker,
-.mastery-heading .section-kicker {
-  color: #6D9975;
+.focus-curve-image {
+  position: absolute;
+  right: 0;
+  top: 62rpx;
+  width: 246rpx;
+  height: 102rpx;
+  opacity: .98;
 }
 
-.section-title,
-.mastery-heading .section-title {
-  color: #14231A;
+.progress-head {
+  margin-top: 34rpx;
 }
 
-.section-note,
-.mastery-map-link {
-  color: #7A897C;
+.progress-label {
+  font-size: 30rpx;
 }
 
-.section-quick-action {
-  min-height: 54rpx;
-  padding: 0 14rpx;
-  border: 1rpx solid #D2E9D5;
-  background: rgba(255, 255, 255, .76);
-  color: #2F7140;
-  box-shadow: 0 7rpx 18rpx rgba(55, 126, 65, .045);
+.progress-head-sub {
+  font-size: 24rpx;
+  color: #748276;
 }
 
-.section-quick-action-pressed {
-  background: #EAF8EB;
-}
-
-.section-quick-arrow {
-  color: #52B865;
-}
-
-/* Today's study list: turn the former mixed-color stack into one coherent card family. */
-.route-stack {
-  display: flex;
-  flex-direction: column;
+.progress-pair {
   gap: 14rpx;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
+}
+
+.progress-value {
+  color: #102019;
+  font-size: 25rpx;
+}
+
+.progress-rate,
+.progress-foot text:last-child {
+  color: #38B74E;
+}
+
+.focus-progress-track {
+  height: 14rpx;
+  margin-top: 12rpx;
+  background: rgba(220, 229, 220, .88);
+}
+
+.focus-progress-fill {
+  background: linear-gradient(90deg, #4BDC62 0%, #92F06E 100%);
+  box-shadow: 0 0 16rpx rgba(104, 221, 106, .22);
+}
+
+.progress-foot {
+  margin-top: 12rpx;
+  color: #687668;
+}
+
+.focus-actions {
+  margin-top: 26rpx;
+  gap: 14rpx;
+}
+
+.primary-action {
+  min-height: 90rpx;
+  padding: 0 18rpx 0 26rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #43D75D 0%, #58D56B 100%);
+  color: #FFFFFF;
+  box-shadow: 0 14rpx 30rpx rgba(86, 206, 101, .18);
+}
+
+.primary-action-arrow {
+  width: 56rpx;
+  height: 56rpx;
+  background: #10271A;
+}
+
+.secondary-action {
+  flex: 0 0 230rpx;
+  min-height: 90rpx;
+  padding: 0 20rpx;
+  gap: 10rpx;
+  justify-content: center;
+  border-color: rgba(182, 224, 182, .9);
+  background: rgba(255,255,255,.84);
+  box-shadow: 0 10rpx 22rpx rgba(93, 135, 94, .05);
+}
+
+.secondary-action-icon {
+  width: 26rpx;
+  height: 26rpx;
+}
+
+.focus-metrics {
+  margin-top: 22rpx;
+  padding: 22rpx 2rpx 0;
+  border-top: 1rpx solid rgba(184, 215, 186, .56);
+}
+
+.metric-value {
+  color: #101813;
+}
+
+.metric-label {
+  color: #718073;
+}
+
+.metric-divider {
+  background: rgba(184, 215, 186, .72);
+}
+
+@media (max-width: 350px) {
+  .focus-content {
+    padding: 24rpx 24rpx 22rpx;
+  }
+
+  .focus-hero-visual {
+    right: 0;
+    top: 52rpx;
+    width: 232rpx;
+    height: 152rpx;
+  }
+
+  .focus-curve-image {
+    right: 0;
+    top: 58rpx;
+    width: 214rpx;
+    height: 90rpx;
+  }
+
+  .focus-title-line {
+    padding-right: 124rpx;
+  }
+
+  .focus-title {
+    font-size: 50rpx;
+  }
+
+  .focus-desc {
+    width: 394rpx;
+    max-width: 394rpx;
+    font-size: 22rpx;
+  }
+
+  .focus-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .secondary-action {
+    flex: 0 0 208rpx;
+    width: auto;
+  }
+}
+
+/* Round 4.4 — fine-tune the highlighted header/description/trend areas against
+ * the latest reference screenshot. */
+.focus-kicker-icon {
+  width: 30rpx;
+  height: 30rpx;
+  margin-right: 10rpx;
+  transform: translateY(-1rpx);
+}
+
+.focus-status {
+  font-size: 17rpx;
+  letter-spacing: 1.55rpx;
+}
+
+.focus-plan-anchor {
+  min-width: 90rpx;
+  min-height: 48rpx;
+  margin-top: 8rpx;
+  padding: 0 20rpx;
+  border-width: 2rpx;
+  box-shadow: 0 6rpx 16rpx rgba(84, 141, 89, .06);
+}
+
+.focus-plan-anchor-label {
+  font-size: 23rpx;
+}
+
+.focus-hero-visual {
+  right: 2rpx;
+  top: 62rpx;
+  width: 304rpx;
+  height: 196rpx;
+}
+
+.focus-curve-image {
+  right: 0;
+  top: 96rpx;
+  width: 292rpx;
+  height: 120rpx;
+  opacity: 1;
+}
+
+.focus-title-line {
+  padding-right: 172rpx;
+}
+
+.focus-desc {
+  width: 480rpx;
+  max-width: 480rpx;
+  margin-top: 14rpx;
+  color: #667366;
+  font-size: 22rpx;
+  line-height: 1.56;
+}
+
+@media (max-width: 350px) {
+  .focus-kicker-icon {
+    width: 28rpx;
+    height: 28rpx;
+  }
+
+  .focus-plan-anchor {
+    margin-top: 6rpx;
+  }
+
+  .focus-hero-visual {
+    right: -2rpx;
+    top: 66rpx;
+    width: 264rpx;
+    height: 178rpx;
+  }
+
+  .focus-curve-image {
+    right: 0;
+    top: 88rpx;
+    width: 252rpx;
+    height: 106rpx;
+  }
+
+  .focus-desc {
+    width: 430rpx;
+    max-width: 430rpx;
+    font-size: 21rpx;
+  }
+}
+
+
+/* Round 4.5 — tighten highlighted areas against the latest reference. */
+.focus-kicker-icon {
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: 10rpx;
+  transform: translateY(-2rpx);
+}
+
+.focus-status {
+  font-size: 17rpx;
+  letter-spacing: 1.45rpx;
+}
+
+.focus-plan-anchor {
+  min-width: 92rpx;
+  min-height: 48rpx;
+  margin-top: 7rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid #3C8E4C;
   background: transparent;
   box-shadow: none;
 }
 
-.route-card,
-.route-review,
-.route-practice,
-.route-wrong,
-.route-exam,
-.hub-task-review,
-.hub-task-weakness,
-.hub-task-hard_questions,
-.hub-task-knowledge_path,
-.hub-task-smart_practice,
-.wrongbook-tool-card {
-  border: 1rpx solid #D6E9D8;
-  border-radius: 30rpx;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(80, 214, 100, .055), transparent 180rpx),
-    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(247, 253, 247, .97));
-  box-shadow: 0 12rpx 28rpx rgba(49, 102, 57, .055);
+.focus-plan-anchor-label {
+  font-size: 23rpx;
 }
 
-.route-card + .route-card {
-  border-top: 1rpx solid #D6E9D8;
+.focus-hero-visual {
+  right: -6rpx;
+  top: 58rpx;
+  width: 336rpx;
+  height: 212rpx;
 }
 
-.route-card::after {
-  content: '';
+.focus-curve-image {
+  right: -4rpx;
+  top: 96rpx;
+  width: 324rpx;
+  height: 134rpx;
+  opacity: 1;
+}
+
+.focus-title-line {
+  padding-right: 178rpx;
+}
+
+.focus-desc {
+  width: 392rpx;
+  max-width: 392rpx;
+  margin-top: 14rpx;
+  color: #667366;
+  font-size: 22rpx;
+  line-height: 1.52;
+}
+
+.progress-head {
+  align-items: flex-end;
+  margin-top: 34rpx;
+}
+
+.progress-pair {
+  gap: 0;
+  transform: translateY(10rpx);
+}
+
+.progress-value {
+  font-size: 25rpx;
+}
+
+.focus-progress-track {
+  margin-top: 10rpx;
+}
+
+@media (max-width: 350px) {
+  .focus-kicker-icon {
+    width: 34rpx;
+    height: 34rpx;
+  }
+
+  .focus-plan-anchor {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .focus-hero-visual {
+    right: -8rpx;
+    top: 62rpx;
+    width: 292rpx;
+    height: 190rpx;
+  }
+
+  .focus-curve-image {
+    right: -4rpx;
+    top: 90rpx;
+    width: 280rpx;
+    height: 118rpx;
+  }
+
+  .focus-desc {
+    width: 352rpx;
+    max-width: 352rpx;
+    font-size: 21rpx;
+  }
+}
+
+/* Round 4.6 — continue matching the latest reference: reveal more of the
+ * supplied background leaf artwork, enlarge the header leaf and trend line,
+ * and lift the trend line slightly. */
+.focus-bg-art {
+  left: -42rpx;
+  right: auto;
+  top: 0;
+  width: calc(100% + 58rpx);
+  height: 100%;
+}
+
+.focus-kicker-icon {
+  width: 42rpx;
+  height: 42rpx;
+  margin-right: 10rpx;
+  transform: translateY(-3rpx);
+}
+
+.focus-hero-visual {
+  right: -12rpx;
+  top: 48rpx;
+  width: 358rpx;
+  height: 214rpx;
+}
+
+.focus-curve-image {
+  right: -6rpx;
+  top: 76rpx;
+  width: 350rpx;
+  height: 146rpx;
+  opacity: 1;
+}
+
+@media (max-width: 350px) {
+  .focus-bg-art {
+    left: -36rpx;
+    width: calc(100% + 50rpx);
+  }
+
+  .focus-kicker-icon {
+    width: 39rpx;
+    height: 39rpx;
+    transform: translateY(-2rpx);
+  }
+
+  .focus-hero-visual {
+    right: -12rpx;
+    top: 52rpx;
+    width: 310rpx;
+    height: 194rpx;
+  }
+
+  .focus-curve-image {
+    right: -6rpx;
+    top: 72rpx;
+    width: 302rpx;
+    height: 128rpx;
+  }
+}
+
+/* Round 4.7 — enlarge the trend artwork again and shift the supplied
+ * background farther left so the lower-right leaf cluster is fully revealed. */
+.focus-bg-art {
+  left: -96rpx;
+  right: auto;
+  width: calc(100% + 58rpx);
+  height: 100%;
+}
+
+.focus-hero-visual {
+  right: -14rpx;
+  top: 44rpx;
+  width: 392rpx;
+  height: 232rpx;
+}
+
+.focus-curve-image {
+  right: -8rpx;
+  top: 68rpx;
+  width: 382rpx;
+  height: 160rpx;
+  opacity: 1;
+}
+
+@media (max-width: 350px) {
+  .focus-bg-art {
+    left: -82rpx;
+    width: calc(100% + 50rpx);
+  }
+
+  .focus-hero-visual {
+    right: -14rpx;
+    top: 48rpx;
+    width: 336rpx;
+    height: 208rpx;
+  }
+
+  .focus-curve-image {
+    right: -8rpx;
+    top: 64rpx;
+    width: 326rpx;
+    height: 140rpx;
+  }
+}
+
+
+/* Round 4.8 — fix the supplied background artwork cropping. The source PNG
+ * intentionally has a large transparent left side, so aspectFill was cropping
+ * its lower-right leaf cluster. Keep the full source ratio visible, extend the
+ * transparent side off-card, and inset the artwork slightly from the right. */
+.focus-bg-art {
+  left: auto;
+  right: 10rpx;
+  top: 0;
+  bottom: 0;
+  width: 124%;
+  height: 100%;
+  transform: none;
+}
+
+.focus-bg-wash {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.99) 0%,
+    rgba(255,255,255,.975) 40%,
+    rgba(255,255,255,.88) 57%,
+    rgba(255,255,255,.34) 76%,
+    rgba(255,255,255,.03) 100%);
+}
+
+@media (max-width: 350px) {
+  .focus-bg-art {
+    left: auto;
+    right: 8rpx;
+    width: 125%;
+    height: 100%;
+  }
+}
+
+
+/* Round 4.9 — repair the lower-right background composition. The supplied
+ * background artwork itself reaches the source edge, so simply shifting the
+ * image keeps making the leaf cluster look cut off. Soften that edge and add
+ * two subtle complete leaves using the existing supplied leaf asset. */
+.focus-bg-art {
+  left: auto;
+  right: 20rpx;
+  top: 0;
+  width: 124%;
+  height: 100%;
+}
+
+.focus-bg-wash {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.99) 0%,
+    rgba(255,255,255,.975) 40%,
+    rgba(255,255,255,.88) 57%,
+    rgba(255,255,255,.30) 76%,
+    rgba(255,255,255,.015) 100%);
+}
+
+.focus-bg-leaf-softener {
   position: absolute;
-  right: -42rpx;
-  top: -48rpx;
-  width: 126rpx;
-  height: 126rpx;
-  border-radius: 50%;
-  border: 1rpx solid rgba(78, 199, 94, .055);
+  z-index: 1;
+  right: -6rpx;
+  bottom: -4rpx;
+  width: 186rpx;
+  height: 170rpx;
+  pointer-events: none;
+  border-radius: 72% 0 0 0;
+  background: radial-gradient(circle at 72% 78%,
+    rgba(183, 239, 184, .25) 0%,
+    rgba(219, 248, 218, .20) 34%,
+    rgba(255,255,255,.03) 72%);
+}
+
+.focus-bg-leaf-cluster {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  width: 170rpx;
+  height: 142rpx;
+  overflow: visible;
   pointer-events: none;
 }
 
-.route-index,
-.route-practice .route-index,
-.route-wrong .route-index,
-.route-exam .route-index {
-  border: 1rpx solid #D1EBD5;
-  background: linear-gradient(145deg, #F4FFF5, #E6F7E8);
-  color: #25723A;
-  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, .9);
+.focus-bg-leaf {
+  position: absolute;
+  display: block;
+  opacity: .12;
 }
 
-.route-icon-image {
-  opacity: .92;
+.focus-bg-leaf-a {
+  width: 112rpx;
+  height: 112rpx;
+  right: 0rpx;
+  bottom: -4rpx;
+  transform: rotate(-10deg);
 }
 
-.route-eyebrow {
-  color: #719379;
+.focus-bg-leaf-b {
+  width: 92rpx;
+  height: 92rpx;
+  right: 68rpx;
+  bottom: 2rpx;
+  opacity: .09;
+  transform: rotate(-34deg);
 }
 
-.route-title {
-  color: #15251B;
+@media (max-width: 350px) {
+  .focus-bg-art {
+    right: 18rpx;
+    width: 125%;
+  }
+
+  .focus-bg-leaf-softener {
+    width: 162rpx;
+    height: 150rpx;
+  }
+
+  .focus-bg-leaf-cluster {
+    width: 150rpx;
+    height: 126rpx;
+  }
+
+  .focus-bg-leaf-a {
+    width: 100rpx;
+    height: 100rpx;
+  }
+
+  .focus-bg-leaf-b {
+    width: 82rpx;
+    height: 82rpx;
+    right: 60rpx;
+  }
 }
 
-.route-desc {
-  color: #718075;
+
+/* Round 5.0 — use a card-ready crop of the supplied background artwork.
+ * This removes the large transparent source canvas that caused the visible
+ * blank/right strip, keeps the original lower-right leaf cluster intact,
+ * removes the two extra leaf overlays, and shortens the CTA row so the
+ * background leaves remain visible. */
+.focus-bg-art {
+  left: auto;
+  right: -2rpx;
+  top: 0;
+  bottom: 0;
+  width: 73%;
+  height: 100%;
+  transform: none;
+  opacity: 1;
 }
 
-.route-arrow {
-  border-color: #CBE5CF;
-  background: #F7FFF8;
-  color: #34AF50;
-}
-
-.card-pressed {
-  background-color: #EDF9EE;
-}
-
-.hub-task-meta {
-  color: #6F8D75;
-}
-
-.hub-task-completed {
-  opacity: .92;
-  border-color: #BFE2C4;
-  background: linear-gradient(145deg, #F9FFF9, #ECF9ED);
-}
-
-.hub-task-completed .route-title {
-  color: #376443;
-}
-
-.hub-task-completed .route-desc,
-.hub-task-completed .hub-task-meta {
-  color: #78907C;
-}
-
-/* Four-subject mastery cards use the same white-mint surface and bright progress accent. */
-.mastery-card-tech {
-  border-color: #D3E8D6;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(73, 207, 94, .055), transparent 150rpx),
-    linear-gradient(145deg, #FFFFFF 0%, #F8FDF8 64%, #F3FAF4 100%);
-  box-shadow:
-    0 12rpx 28rpx rgba(47, 101, 56, .06),
-    inset 0 1rpx 0 rgba(255, 255, 255, .96);
-}
-
-.mastery-card-tech::before {
-  background: linear-gradient(128deg, rgba(255,255,255,.88), transparent 46%, rgba(72, 203, 92, .022));
-}
-
-.mastery-card-tech .mastery-subject {
-  color: #16271C;
-}
-
-.mastery-card-tech .mastery-score {
-  color: #244C30;
-}
-
-.mastery-more view {
-  background: #79A982;
-}
-
-.mastery-hex-rail {
-  background: linear-gradient(180deg, #EAF1EA 0%, #E2EBE3 100%);
-}
-
-.mastery-hex-fill {
-  background: #43C95C;
-}
-
-.mastery-hex-gradient {
-  background: linear-gradient(90deg, #32BD50 0%, #48CF61 48%, #66DA76 100%);
-}
-
-.mastery-hex-stripe {
+.focus-bg-wash {
+  z-index: 1;
   background: linear-gradient(90deg,
-    rgba(232,255,234,.54) 0%,
-    rgba(203,245,207,.45) 70%,
-    rgba(159,227,167,.30) 100%);
-  box-shadow:
-    inset 2rpx 0 0 rgba(247,255,248,.26),
-    inset -2rpx 0 0 rgba(35,132,51,.07);
+    rgba(255,255,255,.995) 0%,
+    rgba(255,255,255,.985) 38%,
+    rgba(255,255,255,.90) 54%,
+    rgba(255,255,255,.38) 70%,
+    rgba(255,255,255,.04) 88%,
+    rgba(255,255,255,0) 100%);
 }
 
-.mastery-hex-bottomshade {
-  background: rgba(31, 125, 47, .10);
+.focus-bg-leaf-softener,
+.focus-bg-leaf-cluster,
+.focus-bg-leaf,
+.focus-bg-leaf-a,
+.focus-bg-leaf-b {
+  display: none !important;
 }
 
-.mastery-foot-tech,
-.mastery-foot-tech .mastery-status,
-.mastery-sample-copy {
-  color: #748478;
+.focus-actions {
+  padding-right: 42rpx;
+  gap: 14rpx;
 }
 
-/* Tool dock becomes a lighter sibling of the hero instead of a beige utility panel. */
-.tool-panel {
-  padding: 12rpx;
-  border-color: #D2E7D5;
-  background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(247,253,247,.96));
-  box-shadow: 0 12rpx 30rpx rgba(49, 103, 58, .055);
+.primary-action {
+  min-width: 0;
 }
 
-.tool-item {
-  border-radius: 24rpx;
+.secondary-action {
+  flex: 0 0 214rpx;
+  min-width: 0;
+  padding-left: 18rpx;
+  padding-right: 18rpx;
 }
 
-.tool-pressed {
-  background: #EAF8EB;
-}
-
-.tool-divider {
-  background: #DCEADE;
-}
-
-.tool-icon {
-  border: 1rpx solid #D1EAD5;
-  background: linear-gradient(145deg, #F3FFF4, #E4F6E7);
-  color: #1E6D34;
-}
-
-.chart-icon .bar,
-.chart-icon .bar-a {
-  background: #20773A;
-}
-
-.chart-icon .bar-b {
-  background: #3CC657;
-}
-
-.chart-icon .bar-c {
-  background: #64DB77;
-}
-
-.clock-icon::before {
-  border-color: #23763A;
-}
-
-.clock-hand {
-  background: #42C95C;
-}
-
-.tool-title {
-  color: #17271D;
-}
-
-.tool-desc {
-  color: #7A897D;
-}
-
-/* Closing note echoes the hero's soft green card treatment. */
-.growth-note {
-  margin: 36rpx 24rpx 0;
-  padding: 24rpx 26rpx;
-  border: 1rpx solid #D4E9D7;
-  border-radius: 28rpx;
-  background: linear-gradient(145deg, rgba(255,255,255,.90), rgba(240,250,241,.94));
-  box-shadow: 0 10rpx 26rpx rgba(49, 103, 58, .045);
-}
-
-.growth-note-line {
-  width: 6rpx;
-  height: 66rpx;
-  background: linear-gradient(180deg, #39C955, #6BDC7A);
-}
-
-.growth-note-label {
-  color: #6D9875;
-}
-
-.growth-note-text {
-  color: #56695B;
-}
-
-@media (max-width: 360px) {
-  .route-stack {
-    gap: 12rpx;
+@media (max-width: 350px) {
+  .focus-bg-art {
+    left: auto;
+    right: -2rpx;
+    width: 75%;
+    height: 100%;
   }
 
-  .route-card {
-    border-radius: 26rpx;
+  .focus-actions {
+    padding-right: 34rpx;
   }
 
-  .growth-note {
-    margin-left: 20rpx;
-    margin-right: 20rpx;
-    padding-left: 22rpx;
-    padding-right: 22rpx;
+  .secondary-action {
+    flex-basis: 196rpx;
+  }
+}
+
+/* Round 5.1 — remove the final narrow blank strip on the card's right edge.
+ * aspectFit leaves a small inner gap because the cropped artwork is taller
+ * than its container ratio; nudge the artwork farther beyond the clipped
+ * right edge so the visible painted area reaches the rounded border. */
+.focus-bg-art {
+  right: -20rpx;
+}
+
+@media (max-width: 350px) {
+  .focus-bg-art {
+    right: -18rpx;
   }
 }

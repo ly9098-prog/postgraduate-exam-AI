@@ -45,7 +45,9 @@ export function QuestionKnowledgePointsEditor({
   const timersRef = useRef<number[]>([]);
   const addInputRef = useRef<HTMLInputElement>(null);
   const pointsRef = useRef(points);
-  pointsRef.current = points;
+  useEffect(() => {
+    pointsRef.current = points;
+  }, [points]);
 
   useEffect(() => {
     return () => {

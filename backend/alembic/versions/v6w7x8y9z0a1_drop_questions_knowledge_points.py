@@ -117,31 +117,50 @@ def upgrade() -> None:
             )
 
     constraints = _constraint_names(inspector, "question_knowledge_points")
-    if _CONSTRAINT not in constraints:
-        op.create_unique_constraint(
-            _CONSTRAINT,
-            "question_knowledge_points",
-            ["question_id", "position"],
-        )
 
     # question_knowledge_points.question_id 外键补 ON DELETE CASCADE：与 ORM 的
     # passive_deletes 配合，硬删题目时在 DB 层级联清理关联行（lazy=noload 下
     # delete-orphan 不会触发）。幂等：已有 cascade 则跳过。
     fks = inspector.get_foreign_keys("question_knowledge_points")
     q_fk = next((f for f in fks if f["constrained_columns"] == ["question_id"]), None)
-    if q_fk and "ondelete" not in q_fk.get("options", {}):
-        fk_name = q_fk["name"]
-        op.drop_constraint(fk_name, "question_knowledge_points", type_="foreignkey")
-        op.create_foreign_key(
-            fk_name,
-            "question_knowledge_points",
-            "questions",
-            ["question_id"],
-            ["id"],
-            ondelete="CASCADE",
-        )
-
-    op.drop_column("questions", _COLUMN)
+    if bind.dialect.name == "sqlite":
+        # SQLite cannot ALTER constraints in place. Batch mode recreates the
+        # table while preserving existing data and indexes.
+        with op.batch_alter_table("question_knowledge_points", recreate="always") as batch_op:
+            if _CONSTRAINT not in constraints:
+                batch_op.create_unique_constraint(_CONSTRAINT, ["question_id", "position"])
+            if q_fk and "ondelete" not in q_fk.get("options", {}):
+                fk_name = q_fk.get("name")
+                if fk_name:
+                    batch_op.drop_constraint(fk_name, type="foreignkey")
+                    batch_op.create_foreign_key(
+                        fk_name,
+                        "questions",
+                        ["question_id"],
+                        ["id"],
+                        ondelete="CASCADE",
+                    )
+        with op.batch_alter_table("questions", recreate="always") as batch_op:
+            batch_op.drop_column(_COLUMN)
+    else:
+        if _CONSTRAINT not in constraints:
+            op.create_unique_constraint(
+                _CONSTRAINT,
+                "question_knowledge_points",
+                ["question_id", "position"],
+            )
+        if q_fk and "ondelete" not in q_fk.get("options", {}):
+            fk_name = q_fk["name"]
+            op.drop_constraint(fk_name, "question_knowledge_points", type_="foreignkey")
+            op.create_foreign_key(
+                fk_name,
+                "question_knowledge_points",
+                "questions",
+                ["question_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+        op.drop_column("questions", _COLUMN)
 
 
 def downgrade() -> None:
@@ -170,4 +189,8 @@ def downgrade() -> None:
 
     constraints = _constraint_names(inspector, "question_knowledge_points")
     if _CONSTRAINT in constraints:
-        op.drop_constraint(_CONSTRAINT, "question_knowledge_points", type_="unique")
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("question_knowledge_points", recreate="always") as batch_op:
+                batch_op.drop_constraint(_CONSTRAINT)
+        else:
+            op.drop_constraint(_CONSTRAINT, "question_knowledge_points", type_="unique")

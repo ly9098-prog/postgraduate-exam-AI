@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import Date as SQLDate
-from sqlalchemy import and_, case, cast, func, or_, select, text
+from sqlalchemy import and_, case, cast, delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,9 +20,9 @@ from app.core.subject_scope import (
     EXAM408_CORE_CODES,
     EXAM408_DISPLAY_ORDER,
     canonical_408_code,
+    is_study_subject_enabled,
     select_study_subject_records,
     selected_study_subject_ids,
-    is_study_subject_enabled,
     study_subject_display_name,
 )
 from app.core.time_utils import (
@@ -45,6 +45,7 @@ from app.models.question import Question
 from app.models.question_import import (
     QuestionImport,  # noqa: F401 — ensures Subject mapper resolves
 )
+from app.models.sequential_reservation import SequentialReservation
 from app.models.syllabus import SyllabusKnowledgePoint
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import (
@@ -58,6 +59,8 @@ from app.services.practice.answer_projection_contract import (
 )
 from app.services.practice.chapter_scope import (
     bucket_targets as _chapter_bucket_targets,
+)
+from app.services.practice.chapter_scope import (
     knowledge_bucket as _chapter_knowledge_bucket,
 )
 from app.services.practice.recommendation_pipeline import (
@@ -143,6 +146,8 @@ def create_practice_batch_token(
     recommendation_request_id: str | None = None,
     knowledge_context: dict | None = None,
     entry_context: dict | None = None,
+    sequential_reservation_request_id: str | None = None,
+    submission_request_id: str | None = None,
 ) -> tuple[str | None, dict[int, int], str | None]:
     """Create a signed batch bound to immutable QuestionVersion ids.
 
@@ -175,7 +180,9 @@ def create_practice_batch_token(
         revisions[question_id] = int(version_id)
 
     now = int(time.time())
-    submission_request_id = f"practice_{uuid4().hex}"
+    submission_request_id = str(submission_request_id or f"practice_{uuid4().hex}").strip()
+    if not submission_request_id or len(submission_request_id) > 128:
+        raise PracticeBatchTokenError("练习批次 request_id 无效")
     payload = {
         "v": _PRACTICE_BATCH_TOKEN_VERSION,
         "uid": int(user_id),
@@ -196,6 +203,8 @@ def create_practice_batch_token(
         # Recommendation/entry attribution is server-validated before token issue,
         # then re-signed into the immutable batch so submit cannot relabel it.
         payload["entry_context"] = entry_context
+    if sequential_reservation_request_id:
+        payload["seq_reservation_request_id"] = str(sequential_reservation_request_id)
     body = _urlsafe_b64encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
@@ -964,10 +973,11 @@ async def resolve_practice_knowledge_scope(
 
     # Preserve syllabus order in each level so diagnostics and future client
     # surfaces receive a stable scope even though the SQL edge table has no order.
-    sort_key = lambda kp_id: (
-        int(memberships[kp_id].sort_order or 0) if kp_id in memberships else 0,
-        kp_id,
-    )
+    def sort_key(kp_id: int) -> tuple[int, int]:
+        return (
+            int(memberships[kp_id].sort_order or 0) if kp_id in memberships else 0,
+            kp_id,
+        )
     for child_ids in children.values():
         child_ids.sort(key=sort_key)
 
@@ -3464,7 +3474,9 @@ async def batch_submit_answers(
             "wrong_question_id": None,
         }
 
-    from app.services.practice.knowledge_session_summary import persisted_knowledge_session
+    from app.services.practice.knowledge_session_summary import (
+        persisted_knowledge_session,
+    )
 
     response_payload = jsonable_encoder({
         "results": [response_by_question[qid] for qid in issued_order],
@@ -3482,6 +3494,16 @@ async def batch_submit_answers(
     # idempotent replay.  Nested diagnostics may contain datetime values, so
     # normalize the entire payload once before both persistence and response.
     session_obj.submission_response = response_payload
+    sequential_reservation_request_id = batch_payload.get("seq_reservation_request_id")
+    if sequential_reservation_request_id and str(batch_payload.get("mode")) == "sequential":
+        await db.execute(
+            delete(SequentialReservation).where(
+                SequentialReservation.user_id == user_id,
+                SequentialReservation.subject_id == int(batch_payload.get("sid") or 0),
+                SequentialReservation.start_request_id == str(sequential_reservation_request_id),
+                SequentialReservation.question_id.in_(all_question_ids),
+            )
+        )
     await db.commit()
 
     if prewarm_wrong_questions:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban,
   CheckCircle2,
@@ -13,7 +13,7 @@ import {
   UsersRound,
   UserX,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -152,8 +152,6 @@ export default function AppUsersPage() {
   const [exporting, setExporting] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const previousUsersRef = useRef<PaginatedResponse<AppUser> | null>(null);
-
   const today = chinaDateString();
   const isBanned = statusToQueryValue(status);
   const createdFrom = dateFrom ? chinaDateToUtcIso(dateFrom) : undefined;
@@ -172,14 +170,11 @@ export default function AppUsersPage() {
           created_to: createdTo,
         })}`,
       ),
+    placeholderData: keepPreviousData,
   });
 
-  useEffect(() => {
-    if (users.data) previousUsersRef.current = users.data;
-  }, [users.data]);
-
-  const displayedUsers = users.data ?? previousUsersRef.current;
-  const hasDisplayedUsers = displayedUsers !== null;
+  const displayedUsers = users.data;
+  const hasDisplayedUsers = displayedUsers !== undefined;
 
   const totalUsers = useQuery({
     queryKey: ["app-users-summary", "total"],

@@ -13,6 +13,7 @@ from app.models.question import Question
 from app.models.question_import import QuestionImport
 from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
+from app.models.sequential_reservation import SequentialReservation  # noqa: F401
 from app.models.wrong_question import WrongQuestion
 from app.models.error_diagnosis import WrongQuestionErrorDiagnosis
 from app.models.answer_behavior import AnswerBehavior

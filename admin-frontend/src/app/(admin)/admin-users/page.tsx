@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
   Edit3,
@@ -22,7 +22,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -177,8 +177,6 @@ export default function AdminUsersPage() {
 
   const [searchInput, setSearchInput] = useState("");
 
-  const previousUsersRef = useRef<PaginatedResponse<AdminUserSummary> | null>(null);
-
   const [keyword, setKeyword] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -212,6 +210,7 @@ export default function AdminUsersPage() {
           created_to: createdTo,
         })}`,
       ),
+    placeholderData: keepPreviousData,
   });
 
   const roles = useQuery({
@@ -351,12 +350,8 @@ export default function AdminUsersPage() {
     onError: (error) => setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。"),
   });
 
-  useEffect(() => {
-    if (users.data) previousUsersRef.current = users.data;
-  }, [users.data]);
-
-  const displayedUsers = users.data ?? previousUsersRef.current;
-  const hasDisplayedUsers = displayedUsers !== null;
+  const displayedUsers = users.data;
+  const hasDisplayedUsers = displayedUsers !== undefined;
 
   const currentItems = displayedUsers?.items ?? [];
   const totalPages = Math.max(displayedUsers?.total_pages ?? 1, 1);

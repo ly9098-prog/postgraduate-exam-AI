@@ -63,6 +63,7 @@ async def _add_schedule(session, user_id=1, question_id=1, *,
     schedule = ReviewSchedule(
         user_id=user_id,
         question_id=question_id,
+        question_version_id=1,
         subject_id=None,
         interval=1,
         ease_factor=2.5,
@@ -79,6 +80,7 @@ async def _add_schedule(session, user_id=1, question_id=1, *,
 async def _add_wq(session, user_id=1, question_id=1, **kw):
     wq = WrongQuestion(
         user_id=user_id, question_id=question_id,
+        question_version_id=1,
         error_type=kw.pop("error_type", "other"),
         wrong_answer=kw.pop("wrong_answer", "B"),
         review_count=kw.pop("review_count", 1),
@@ -193,8 +195,9 @@ class TestMasterUnmasterAPI:
 
             # Create a review record
             record = ReviewRecord(
-                user_id=1, question_id=100, schedule_id=sch.id,
-                rating=4, reviewed_at=utcnow(),
+                user_id=1, question_id=100, question_version_id=1,
+                request_id="test-master-record-1", occurrence_seq=0,
+                schedule_id=sch.id, rating=4, reviewed_at=utcnow(),
             )
             self.session.add(record)
             await self.session.commit()

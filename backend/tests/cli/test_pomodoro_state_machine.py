@@ -9,20 +9,7 @@ Usage: python -m app.cli.test_pomodoro_state_machine
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
 from datetime import datetime, timedelta
-
-from sqlalchemy.orm import DeclarativeBase
-
-
-class _TestBase(DeclarativeBase):
-    pass
-
-
-_fake_database = types.ModuleType("app.core.database")
-_fake_database.Base = _TestBase
-sys.modules.setdefault("app.core.database", _fake_database)
 
 from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession  # noqa: E402
 from app.services import pomodoro_service as svc  # noqa: E402

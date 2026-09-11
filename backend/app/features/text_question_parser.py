@@ -252,6 +252,11 @@ def _parse_labeled_block(text: str) -> dict[str, Any]:
 def _normalize_option_math(text: str) -> str:
     value = fix_ocr_formula(text)
     value = normalize_text_import_math(value, compact=True)
+    # Option text is stored as a compact value and has historically omitted
+    # Markdown math wrappers. Keep that contract while stems retain canonical
+    # delimiters for the client renderer.
+    value = re.sub(r"\$\$([\s\S]*?)\$\$", r"\1", value)
+    value = re.sub(r"(?<!\$)\$([^$\n]+?)\$(?!\$)", r"\1", value)
     value = re.sub(r"^\$\s*(.*?)\s*\$$", r"\1", value, flags=re.S)
     return value
 

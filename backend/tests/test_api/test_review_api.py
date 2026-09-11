@@ -1,361 +1,106 @@
-"""Review API 测试 — schedule-submit, batch-submit, grade-submit。
+"""Current review grading API contract tests."""
 
-覆盖 3 个备用复习接口的完整链路。
-"""
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 from app.api.v1 import review
 from app.main import app
-from app.models.review_scheduler import ReviewSchedule
 from app.models.user import User
 
 client = TestClient(app)
 
 
-# ── Fixtures ──
-
-
-def _make_user(user_id=1):
+def _override_auth_and_db():
     user = MagicMock(spec=User)
-    user.id = user_id
-    return user
-
-
-def _make_schedule(schedule_id=1, user_id=1, question_id=1, interval=1, ease_factor=2.5, repetitions=0):
-    schedule = MagicMock(spec=ReviewSchedule)
-    schedule.id = schedule_id
-    schedule.user_id = user_id
-    schedule.question_id = question_id
-    schedule.interval = interval
-    schedule.ease_factor = ease_factor
-    schedule.repetitions = repetitions
-    schedule.next_review_at = datetime.now(UTC)
-    schedule.last_reviewed_at = None
-    schedule.mastered = False
-    schedule.subject_id = 1
-    return schedule
-
-
-def _make_db_with_mocks():
+    user.id = 1
     db = MagicMock()
-    db.execute = AsyncMock()
-    db.commit = AsyncMock()
-    db.rollback = AsyncMock()
-    return db
-
-
-def _override_auth_and_db(user_id=1):
-    user = _make_user(user_id)
-    db = _make_db_with_mocks()
-
     app.dependency_overrides[review.get_current_user] = lambda: user
     app.dependency_overrides[review.get_db] = lambda: db
-
-    return user, db
+    return db
 
 
 def _clear_overrides():
     app.dependency_overrides.clear()
 
 
-# ── /review/schedule-submit ──
+def _review_item(**overrides):
+    item = {
+        "schedule_id": 7,
+        "question_id": 11,
+        "question_version_id": 23,
+        "occurrence_seq": 2,
+        "request_id": "review-request-123",
+        "user_answer": "A",
+    }
+    item.update(overrides)
+    return item
 
 
-class TestScheduleSubmitAPI:
+def _grade_result(**overrides):
+    result = {
+        **_review_item(),
+        "success": True,
+        "error": None,
+        "error_code": None,
+        "retryable": False,
+        "refresh_required": False,
+        "is_correct": True,
+        "correct_answer": "A",
+        "rating": 4,
+        "interval_after": 6,
+        "ease_factor_after": 2.5,
+        "next_review_at": datetime.now(UTC),
+        "mastery_percent": 65,
+        "mastered": False,
+    }
+    result.update(overrides)
+    return result
+
+
+class TestGradeBatchAPI:
     def setup_method(self):
-        self.user, self.db = _override_auth_and_db()
+        self.db = _override_auth_and_db()
 
     def teardown_method(self):
         _clear_overrides()
 
-    def test_schedule_submit_success(self, monkeypatch):
-        """提交单题复习结果成功。"""
-        _make_schedule()
-        mock_result = {
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 4,
-            "interval_after": 6,
-            "ease_factor_after": 2.6,
-            "next_review_at": datetime.now(UTC) + timedelta(days=6),
-            "is_correct": True,
-        }
-        monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_result))
-
-        resp = client.post("/api/v1/review/schedule-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 4,
+    def test_success(self, monkeypatch):
+        service = AsyncMock(return_value={
+            "results": [_grade_result()],
+            "total": 1,
+            "correct_count": 1,
+            "wrong_count": 0,
         })
+        monkeypatch.setattr(review.review_scheduler, "grade_batch_review", service)
+        response = client.post("/api/v1/review/grade-batch", json={"reviews": [_review_item()]})
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["schedule_id"] == 1
-        assert data["rating"] == 4
-        assert data["interval_after"] == 6
+        assert response.status_code == 200
+        body = response.json()
+        assert body["results"][0]["question_version_id"] == 23
+        assert body["results"][0]["occurrence_seq"] == 2
+        assert body["results"][0]["request_id"] == "review-request-123"
+        service.assert_awaited_once()
 
-    def test_schedule_submit_rating_0_valid(self, monkeypatch):
-        """rating=0 合法。"""
-        mock_result = {
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 0,
-            "interval_after": 1,
-            "ease_factor_after": 2.0,
-            "next_review_at": datetime.now(UTC) + timedelta(days=1),
-            "is_correct": False,
-        }
-        monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_result))
+    def test_rejects_missing_immutable_identity(self):
+        item = _review_item()
+        item.pop("question_version_id")
+        item.pop("occurrence_seq")
+        item.pop("request_id")
+        response = client.post("/api/v1/review/grade-batch", json={"reviews": [item]})
+        assert response.status_code == 422
 
-        resp = client.post("/api/v1/review/schedule-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 0,
-        })
+    def test_rejects_empty_batch(self):
+        response = client.post("/api/v1/review/grade-batch", json={"reviews": []})
+        assert response.status_code == 422
 
-        assert resp.status_code == 200
-        assert resp.json()["rating"] == 0
-
-    def test_schedule_submit_rating_5_valid(self, monkeypatch):
-        """rating=5 合法。"""
-        mock_result = {
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 5,
-            "interval_after": 10,
-            "ease_factor_after": 2.7,
-            "next_review_at": datetime.now(UTC) + timedelta(days=10),
-            "is_correct": True,
-        }
-        monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_result))
-
-        resp = client.post("/api/v1/review/schedule-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 5,
-        })
-
-        assert resp.status_code == 200
-        assert resp.json()["rating"] == 5
-
-    def test_schedule_submit_invalid_rating_too_high(self):
-        """rating=6 非法，返回 422。"""
-        resp = client.post("/api/v1/review/schedule-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 6,
-        })
-
-        assert resp.status_code == 422
-
-    def test_schedule_submit_invalid_rating_negative(self):
-        """rating=-1 非法，返回 422。"""
-        resp = client.post("/api/v1/review/schedule-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": -1,
-        })
-
-        assert resp.status_code == 422
-
-    def test_schedule_submit_value_error_returns_400(self, monkeypatch):
-        """ValueError 返回 400。"""
+    def test_service_value_error_returns_400(self, monkeypatch):
         monkeypatch.setattr(
             review.review_scheduler,
-            "submit_review",
-            AsyncMock(side_effect=ValueError("Invalid schedule_id"))
+            "grade_batch_review",
+            AsyncMock(side_effect=ValueError("复习题版本已更新，请刷新后重试")),
         )
-
-        resp = client.post("/api/v1/review/schedule-submit", json={
-            "schedule_id": 999,
-            "question_id": 1,
-            "rating": 4,
-        })
-
-        assert resp.status_code == 400
-        assert "Invalid schedule_id" in resp.json()["detail"]
-
-
-# ── /review/batch-submit ──
-
-
-class TestBatchSubmitAPI:
-    def setup_method(self):
-        self.user, self.db = _override_auth_and_db()
-
-    def teardown_method(self):
-        _clear_overrides()
-
-    def test_batch_submit_success(self, monkeypatch):
-        """批量提交多个 schedule_id 成功。"""
-        mock_result = {
-            "results": [
-                {"schedule_id": 1, "question_id": 1, "next_review_at": datetime.now(UTC).isoformat(), "is_correct": True},
-                {"schedule_id": 2, "question_id": 2, "next_review_at": datetime.now(UTC).isoformat(), "is_correct": False},
-            ],
-            "total": 2,
-        }
-        monkeypatch.setattr(review.review_scheduler, "batch_submit_review", AsyncMock(return_value=mock_result))
-
-        resp = client.post("/api/v1/review/batch-submit", json={
-            "reviews": [
-                {"schedule_id": 1, "question_id": 1, "rating": 4},
-                {"schedule_id": 2, "question_id": 2, "rating": 1},
-            ]
-        })
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == 2
-        assert len(data["results"]) == 2
-
-    def test_batch_submit_empty_list_returns_400(self):
-        """空列表返回 400。"""
-        resp = client.post("/api/v1/review/batch-submit", json={"reviews": []})
-
-        assert resp.status_code == 400
-        assert "复习列表不能为空" in resp.json()["detail"]
-
-    def test_batch_submit_partial_failure(self, monkeypatch):
-        """部分失败时返回错误信息。"""
-        monkeypatch.setattr(
-            review.review_scheduler,
-            "batch_submit_review",
-            AsyncMock(side_effect=ValueError("Schedule 999 not found"))
-        )
-
-        resp = client.post("/api/v1/review/batch-submit", json={
-            "reviews": [
-                {"schedule_id": 999, "question_id": 1, "rating": 4},
-            ]
-        })
-
-        assert resp.status_code == 400
-        assert "Schedule 999 not found" in resp.json()["detail"]
-
-
-# ── /review/grade-submit ──
-
-
-class TestGradeSubmitAPI:
-    def setup_method(self):
-        self.user, self.db = _override_auth_and_db()
-
-    def teardown_method(self):
-        _clear_overrides()
-
-    def test_grade_submit_correct_answer(self, monkeypatch):
-        """答对时默认 rating=4。"""
-        mock_question = MagicMock()
-        mock_question.id = 1
-        mock_question.answer = "A"
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_question
-        self.db.execute = AsyncMock(return_value=mock_result)
-
-        mock_review_result = {
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 4,
-            "interval_after": 6,
-            "ease_factor_after": 2.6,
-            "next_review_at": datetime.now(UTC) + timedelta(days=6),
-        }
-        monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_review_result))
-
-        resp = client.post("/api/v1/review/grade-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "user_answer": "A",
-        })
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["is_correct"] is True
-        assert data["rating"] == 4
-
-    def test_grade_submit_wrong_answer(self, monkeypatch):
-        """答错时默认 rating=1。"""
-        mock_question = MagicMock()
-        mock_question.id = 1
-        mock_question.answer = "A"
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_question
-        self.db.execute = AsyncMock(return_value=mock_result)
-
-        mock_review_result = {
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 1,
-            "interval_after": 1,
-            "ease_factor_after": 2.0,
-            "next_review_at": datetime.now(UTC) + timedelta(days=1),
-        }
-        monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_review_result))
-
-        resp = client.post("/api/v1/review/grade-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "user_answer": "B",
-        })
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["is_correct"] is False
-        assert data["rating"] == 1
-
-    def test_grade_submit_question_not_found(self):
-        """题目不存在返回 404。"""
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        self.db.execute = AsyncMock(return_value=mock_result)
-
-        resp = client.post("/api/v1/review/grade-submit", json={
-            "schedule_id": 1,
-            "question_id": 999,
-            "user_answer": "A",
-        })
-
-        assert resp.status_code == 404
-        assert "题目不存在" in resp.json()["detail"]
-
-    def test_grade_submit_not_use_5_or_0(self, monkeypatch):
-        """验证不会再使用 5/0 作为自动批改默认值。"""
-        mock_question = MagicMock()
-        mock_question.id = 1
-        mock_question.answer = "A"
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_question
-        self.db.execute = AsyncMock(return_value=mock_result)
-
-        mock_review_result = {
-            "schedule_id": 1,
-            "question_id": 1,
-            "rating": 4,
-            "interval_after": 6,
-            "ease_factor_after": 2.6,
-            "next_review_at": datetime.now(UTC) + timedelta(days=6),
-        }
-        submit_mock = AsyncMock(return_value=mock_review_result)
-        monkeypatch.setattr(review.review_scheduler, "submit_review", submit_mock)
-
-        resp = client.post("/api/v1/review/grade-submit", json={
-            "schedule_id": 1,
-            "question_id": 1,
-            "user_answer": "A",
-        })
-
-        assert resp.status_code == 200
-        assert resp.json()["rating"] == 4
-        assert resp.json()["rating"] != 5
-        assert resp.json()["rating"] != 0
-
-        # 验证调用 submit_review 时传入的 rating 是 4
-        call_args = submit_mock.call_args
-        assert call_args.kwargs["rating"] == 4
+        response = client.post("/api/v1/review/grade-batch", json={"reviews": [_review_item()]})
+        assert response.status_code == 400
+        assert response.json()["error"]["message"] == "请求参数有误，请检查后重试"

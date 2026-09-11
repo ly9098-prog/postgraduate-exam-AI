@@ -1,6 +1,8 @@
 """LLM 文本结构化层测试 — features/llm_text_structurer.py"""
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from app.core.config import settings
@@ -371,10 +373,8 @@ class TestStructureTextBlock:
         assert result is None
 
     async def test_successful_structure_with_clean_output(self, monkeypatch):
-        from app.ai import client as client_mod
-        monkeypatch.setattr(client_mod.deepseek, "_api_key", "sk-real")
         original = "题干？\nA. 选项A\nB. 选项B\n答案：B"
-        async def _fake_chat(*a, **kw):
+        async def _fake_chat(*_args, **_kwargs):
             return {
                 "content": (
                     '{"stem": "题干？", "question_type": "single_choice", '
@@ -385,8 +385,9 @@ class TestStructureTextBlock:
                 "model": "deepseek-chat",
                 "duration_ms": 200,
             }
-        monkeypatch.setattr(client_mod.deepseek, "chat", _fake_chat)
-        result = await mod.structure_text_block(original)
+        from app.ai import gateway
+        monkeypatch.setattr(gateway, "chat_with_db_model", _fake_chat)
+        result = await mod.structure_text_block(original, db=MagicMock())
         assert result is not None
         assert result["stem"] == "题干？"
         assert result["answer"] == "B"
@@ -395,18 +396,17 @@ class TestStructureTextBlock:
         assert result["_dropped"] == []
 
     async def test_all_fields_dropped_returns_none(self, monkeypatch):
-        from app.ai import client as client_mod
-        monkeypatch.setattr(client_mod.deepseek, "_api_key", "sk-real")
-        original = "短"  # 不会触发 should_call_llm 的真实路径，但模块允许直接调用
-        async def _fake_chat(*a, **kw):
+        original = "题干内容足够长，原文中没有模型输出的捏造字段。"
+        async def _fake_chat(*_args, **_kwargs):
             return {
                 "content": '{"stem": "捏造内容", "options": [{"key":"X","text":"虚假"}], "answer": null}',
                 "tokens_used": 50,
                 "model": "deepseek-chat",
                 "duration_ms": 100,
             }
-        monkeypatch.setattr(client_mod.deepseek, "chat", _fake_chat)
-        result = await mod.structure_text_block(original)
+        from app.ai import gateway
+        monkeypatch.setattr(gateway, "chat_with_db_model", _fake_chat)
+        result = await mod.structure_text_block(original, db=MagicMock())
         assert result is None
 
 

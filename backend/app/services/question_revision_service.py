@@ -13,6 +13,7 @@ The function is idempotent and serializes revisions per question with a row lock
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from types import SimpleNamespace
 from typing import Iterable
@@ -289,7 +290,12 @@ async def load_latest_question_revision_ids(
             ),
         )
     )
-    return {int(question_id): int(version_id) for question_id, version_id in rows.all()}
+    values = rows.all()
+    # SQLAlchemy's ``Result.all`` is synchronous; lightweight async test
+    # doubles may expose it as an awaitable. Accept both forms.
+    if inspect.isawaitable(values):
+        values = await values
+    return {int(question_id): int(version_id) for question_id, version_id in values}
 
 
 async def require_current_question_revisions(

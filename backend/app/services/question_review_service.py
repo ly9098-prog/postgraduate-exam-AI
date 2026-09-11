@@ -4,6 +4,7 @@ V2 核心：为每个用户、每道题维护独立的复习状态，
 根据答题表现动态计算 box_level 和 next_review_at。
 """
 
+import inspect
 import logging
 from datetime import datetime, timedelta
 from typing import NamedTuple
@@ -195,9 +196,10 @@ async def get_due_question_ids(
             UserQuestionState.question_id.in_(question_ids),
         )
     )
-    state_map: dict[int, datetime | None] = {
-        row[0]: row[1] for row in result.all()
-    }
+    values = result.all()
+    if inspect.isawaitable(values):
+        values = await values
+    state_map: dict[int, datetime | None] = {row[0]: row[1] for row in values}
 
     due_ids: set[int] = set()
     for qid in question_ids:

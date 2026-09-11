@@ -1,6 +1,5 @@
 """Review API tests — content normalization, question filtering, count consistency."""
 from unittest.mock import AsyncMock
-
 from fastapi.testclient import TestClient
 
 from app.api.v1 import review
@@ -8,7 +7,6 @@ from app.main import app
 from app.models.user import User
 
 client = TestClient(app)
-
 
 def _override_auth():
     user = User(id=1, openid="test_openid", nickname="test")
@@ -42,7 +40,7 @@ class TestReviewNextBatch:
             review.review_scheduler, "get_next_today_review_batch", AsyncMock(
                 return_value={
                     "questions": [{
-                        "schedule_id": 1, "question_id": 1,
+                        "schedule_id": 1, "question_id": 1, "question_version_id": 11, "occurrence_seq": 0,
                         "subject_id": 1, "subject_code": "math2", "subject_name": "数学二",
                         "question_type": "single_choice",
                         "stem": "Test",
@@ -68,7 +66,7 @@ class TestReviewNextBatch:
             review.review_scheduler, "get_next_today_review_batch", AsyncMock(
                 return_value={
                     "questions": [{
-                        "schedule_id": 1, "question_id": 1,
+                        "schedule_id": 1, "question_id": 1, "question_version_id": 11, "occurrence_seq": 0,
                         "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Raw stem",
                         "options": {"A": "a", "B": "b"},
@@ -93,7 +91,7 @@ class TestReviewNextBatch:
             review.review_scheduler, "get_next_today_review_batch", AsyncMock(
                 return_value={
                     "questions": [{
-                        "schedule_id": 1, "question_id": 1,
+                        "schedule_id": 1, "question_id": 1, "question_version_id": 11, "occurrence_seq": 0,
                         "subject_id": None,  # Must be accepted
                         "question_type": "single_choice",
                         "stem": "Test",
@@ -119,7 +117,7 @@ class TestReviewNextBatch:
             review.review_scheduler, "get_next_today_review_batch", AsyncMock(
                 return_value={
                     "questions": [{
-                        "schedule_id": 1, "question_id": 1,
+                        "schedule_id": 1, "question_id": 1, "question_version_id": 11, "occurrence_seq": 0,
                         "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Test",
                         "options": {"A": "a", "B": "b"},
@@ -144,7 +142,7 @@ class TestReviewNextBatch:
             review.review_scheduler, "get_next_today_review_batch", AsyncMock(
                 return_value={
                     "questions": [{
-                        "schedule_id": 1, "question_id": 1,
+                        "schedule_id": 1, "question_id": 1, "question_version_id": 11, "occurrence_seq": 0,
                         "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Test",
                         "options": {"A": "a", "B": "b"},
@@ -173,7 +171,7 @@ class TestReviewNextBatch:
             review.review_scheduler, "get_next_today_review_batch", AsyncMock(
                 return_value={
                     "questions": [{
-                        "schedule_id": 3, "question_id": 3,
+                        "schedule_id": 3, "question_id": 3, "question_version_id": 13, "occurrence_seq": 0,
                         "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Q3",
                         "options": {"A": "a", "B": "b"},

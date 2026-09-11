@@ -145,6 +145,8 @@ async def _batch_find_duplicate_questions(
                     conditions.append(
                         (Question.subject_id == sid) & (Question.question_hash == h)
                     )
+        if not conditions:
+            continue
         from sqlalchemy import or_
         select_cols = [Question.question_hash, Question.id]
         stmt = select(*select_cols).where(
@@ -199,6 +201,8 @@ async def _batch_find_duplicate_imports(
                     conditions.append(
                         (QuestionImport.subject_id == sid) & (QuestionImport.question_hash == h)
                     )
+        if not conditions:
+            continue
         from sqlalchemy import or_
         stmt = select(QuestionImport.question_hash, QuestionImport.id, QuestionImport.question_id).where(
             or_(*conditions),

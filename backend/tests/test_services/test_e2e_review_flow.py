@@ -9,9 +9,10 @@
 6. WrongQuestion.last_review_at 被同步
 7. WrongQuestion 不存在任何 SM-2 字段读写
 """
+
 import asyncio
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure all ORM models are registered so Subject's string relationships
 # (practice_records, answer_behaviors, review_schedules, ...) resolve at
@@ -23,7 +24,9 @@ from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.pomodoro import PomodoroSession  # noqa: F401
 from app.models.practice_record import PracticeRecord  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.review_scheduler import ReviewSchedule  # noqa: F401
 from app.models.tag import Tag  # noqa: F401
 from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
@@ -39,6 +42,8 @@ def _make_mock_db():
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock()
+    db.scalars = AsyncMock()
     return db
 
 
@@ -53,7 +58,9 @@ def _make_execute_result(**methods):
     if "scalars" in methods:
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = methods["scalars"]
-        scalars_mock.first.return_value = methods["scalars"][0] if methods["scalars"] else None
+        scalars_mock.first.return_value = (
+            methods["scalars"][0] if methods["scalars"] else None
+        )
         result.scalars.return_value = scalars_mock
 
     if "one" in methods:
@@ -71,15 +78,25 @@ def _make_execute_result(**methods):
     return result
 
 
-def _make_question_mock(qid=1, answer="A", subject_id=1, question_type="single_choice",
-                        content=None, options=None, knowledge_points=None):
+def _make_question_mock(
+    qid=1,
+    answer="A",
+    subject_id=1,
+    question_type="single_choice",
+    content=None,
+    options=None,
+    knowledge_points=None,
+):
     q = MagicMock()
     q.id = qid
     q.answer = answer
     q.subject_id = subject_id
     q.question_type = question_type
     q.content = content or {"stem": f"题目{qid}"}
-    q.options = options or [{"key": "A", "text": "选项A"}, {"key": "B", "text": "选项B"}]
+    q.options = options or [
+        {"key": "A", "text": "选项A"},
+        {"key": "B", "text": "选项B"},
+    ]
     q.knowledge_points = knowledge_points or ["代数"]
     q.analysis = "解析"
     q.is_active = True
@@ -107,6 +124,8 @@ def _make_schedule_mock(schedule_id=1, user_id=1, question_id=1, subject_id=1):
     s.id = schedule_id
     s.user_id = user_id
     s.question_id = question_id
+    s.question_version_id = 1000 + question_id
+    s.occurrence_seq = 0
     s.subject_id = subject_id
     s.interval = 0
     s.ease_factor = 2.5
@@ -114,12 +133,14 @@ def _make_schedule_mock(schedule_id=1, user_id=1, question_id=1, subject_id=1):
     s.next_review_at = datetime.now(UTC)
     s.last_reviewed_at = None
     s.mastered = False
+    s.is_active = True
     return s
 
 
 # ============================================================
 # 端到端链路测试
 # ============================================================
+
 
 class TestE2EWrongToReviewFlow:
     """完整链路：答错 → 创建 WrongQuestion → 创建 ReviewSchedule → 复习提交。"""
@@ -129,7 +150,6 @@ class TestE2EWrongToReviewFlow:
         from app.services.wrong_question_service import record_wrong
 
         db = _make_mock_db()
-        q = _make_question_mock()
 
         # record_wrong 内部调用链：
         # 1. db.execute → 查询已有 WrongQuestion → None（新建）
@@ -137,18 +157,24 @@ class TestE2EWrongToReviewFlow:
         #    a. db.execute → 查询已有 ReviewSchedule → None（新建）
         #    b. db.execute → 查询 Question 获取 subject
         existing_wq_result = _make_execute_result(scalars=[])  # no existing WQ
-        existing_schedule_result = _make_execute_result(scalar_one_or_none=None)  # no existing schedule
-        question_for_subject_result = _make_execute_result(scalar_one_or_none=q)  # get question for subject
-        sync_wq_result = _make_execute_result(scalar_one_or_none=None)  # _sync_schedule_to_wq: no existing WQ yet
 
-        db.execute.side_effect = [
-            existing_wq_result,
-            existing_schedule_result,
-            question_for_subject_result,
-            sync_wq_result,
-        ]
+        db.execute.side_effect = [existing_wq_result]
+        db.scalar.side_effect = [None, None]
 
-        wq = _run(record_wrong(db, user_id=1, question_id=1, wrong_answer="B"))
+        revision = MagicMock(question_id=1, subject_id=1)
+        with patch(
+            "app.services.review_scheduler.load_revision_views",
+            new=AsyncMock(return_value={1001: revision}),
+        ):
+            wq = _run(
+                record_wrong(
+                    db,
+                    user_id=1,
+                    question_id=1,
+                    wrong_answer="B",
+                    question_version_id=1001,
+                )
+            )
 
         # 验证 WrongQuestion 被创建
         assert wq is not None
@@ -168,22 +194,33 @@ class TestE2EWrongToReviewFlow:
         from app.services.review_scheduler import get_today_review
 
         db = _make_mock_db()
-        q = _make_question_mock()
         schedule = _make_schedule_mock()
         schedule.next_review_at = datetime.now(UTC) - timedelta(hours=1)  # 已到期
 
-        # get_today_review 内部 3 次 db.execute:
-        # 1. count query → scalar
-        # 2. schedules query → scalars().all()
-        # 3. questions query → scalars().all()
-        count_result = _make_execute_result(scalar=1)
-        schedules_result = MagicMock()
-        schedules_result.scalars.return_value.all.return_value = [schedule]
-        questions_result = _make_execute_result(scalars=[q])
-
-        db.execute.side_effect = [count_result, schedules_result, questions_result]
-
-        result = _run(get_today_review(db, user_id=1))
+        db.scalar.return_value = 1
+        scalars_result = MagicMock()
+        scalars_result.all.return_value = [schedule]
+        db.scalars.return_value = scalars_result
+        revision = MagicMock(
+            question_id=1,
+            subject_id=1,
+            subject_ref=MagicMock(code="math2", name="数学二"),
+            question_type="single_choice",
+            content={"text": "题目1"},
+            options={},
+            image_url=None,
+        )
+        with (
+            patch(
+                "app.services.review_scheduler._active_408_subject_ids",
+                new=AsyncMock(return_value={1}),
+            ),
+            patch(
+                "app.services.review_scheduler.load_revision_views",
+                new=AsyncMock(return_value={1001: revision}),
+            ),
+        ):
+            result = _run(get_today_review(db, user_id=1))
 
         assert result["total_today"] == 1
         assert len(result["questions"]) == 1
@@ -203,12 +240,20 @@ class TestE2EWrongToReviewFlow:
 
         # submit_review 内部：
         # 1. db.execute → 查询 ReviewSchedule
-        schedule_result = _make_execute_result(scalar_one_or_none=schedule)
-        db.execute.return_value = schedule_result
+        db.scalar.side_effect = [None, schedule, None, None]
 
-        result = _run(submit_review(
-            db, user_id=1, schedule_id=1, question_id=1, rating=4
-        ))
+        result = _run(
+            submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=1,
+                question_version_id=1001,
+                occurrence_seq=0,
+                rating=4,
+                request_id="e2e-1",
+            )
+        )
 
         # 验证 schedule 被更新
         assert schedule.interval > 0 or result["interval_after"] >= 1
@@ -228,10 +273,20 @@ class TestE2EWrongToReviewFlow:
         db = _make_mock_db()
         schedule = _make_schedule_mock()
 
-        schedule_result = _make_execute_result(scalar_one_or_none=schedule)
-        db.execute.return_value = schedule_result
+        db.scalar.side_effect = [None, schedule, None, None]
 
-        _run(submit_review(db, user_id=1, schedule_id=1, question_id=1, rating=4))
+        _run(
+            submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=1,
+                question_version_id=1001,
+                occurrence_seq=0,
+                rating=4,
+                request_id="e2e-2",
+            )
+        )
 
         # 验证 db.add 被调用（新增 ReviewRecord）
         add_calls = db.add.call_args_list
@@ -255,18 +310,27 @@ class TestE2EWrongToReviewFlow:
         schedule = _make_schedule_mock()
         wq = _make_wrong_question_mock()
 
-        schedule_result = _make_execute_result(scalar_one_or_none=schedule)
-        wq_result = _make_execute_result(scalar_one_or_none=wq)
 
         # submit_review 内部：
         # 1. db.execute → 查询 ReviewSchedule
         # 2. _sync_schedule_to_wq → db.execute → 查询 WrongQuestion
-        db.execute.side_effect = [schedule_result, wq_result]
+        db.scalar.side_effect = [None, schedule, None, wq]
 
-        _run(submit_review(db, user_id=1, schedule_id=1, question_id=1, rating=4))
+        _run(
+            submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=1,
+                question_version_id=1001,
+                occurrence_seq=0,
+                rating=4,
+                request_id="e2e-3",
+            )
+        )
 
-        # 验证 WQ 的 last_review_at 被同步
-        assert wq.last_review_at == schedule.last_reviewed_at
+        # 正确复习不会把错题 UI 的“最近答错时间”伪更新为复习时间。
+        assert wq.last_review_at is None
 
     def test_step6_no_sm2_fields_on_wrong_question(self):
         """WrongQuestion 模型不存在 SM-2 字段。"""
@@ -278,13 +342,27 @@ class TestE2EWrongToReviewFlow:
         mapper = sa_inspect(WrongQuestion)
         column_names = {c.key for c in mapper.columns}
 
-        sm2_fields = {"efactor", "interval", "repetitions", "next_review_date", "quality"}
+        sm2_fields = {
+            "efactor",
+            "interval",
+            "repetitions",
+            "next_review_date",
+            "quality",
+        }
         found_sm2 = column_names & sm2_fields
         assert not found_sm2, f"WrongQuestion 仍存在 SM-2 字段: {found_sm2}"
 
         # 验证必要字段存在
-        expected_fields = {"id", "user_id", "question_id", "wrong_answer", "error_type",
-                          "review_count", "last_review_at", "mastered"}
+        expected_fields = {
+            "id",
+            "user_id",
+            "question_id",
+            "wrong_answer",
+            "error_type",
+            "review_count",
+            "last_review_at",
+            "mastered",
+        }
         assert expected_fields.issubset(column_names)
 
 
@@ -300,9 +378,20 @@ class TestAutoGradeRatingMapping:
         schedule.interval = 0
         schedule.ease_factor = 2.5
 
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.scalar.side_effect = [None, schedule, None, None]
 
-        result = _run(submit_review(db, user_id=1, schedule_id=1, question_id=1, rating=4))
+        result = _run(
+            submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=1,
+                question_version_id=1001,
+                occurrence_seq=0,
+                rating=4,
+                request_id="e2e-4",
+            )
+        )
 
         # rating=4 应该通过阈值，interval 增长
         assert result["interval_after"] >= 1
@@ -318,9 +407,20 @@ class TestAutoGradeRatingMapping:
         schedule.ease_factor = 2.5
         schedule.repetitions = 2
 
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.scalar.side_effect = [None, schedule, None, None]
 
-        _run(submit_review(db, user_id=1, schedule_id=1, question_id=1, rating=1))
+        _run(
+            submit_review(
+                db,
+                user_id=1,
+                schedule_id=1,
+                question_id=1,
+                question_version_id=1001,
+                occurrence_seq=0,
+                rating=1,
+                request_id="e2e-5",
+            )
+        )
 
         # rating=1 应该重置 interval 和 repetitions
         assert schedule.interval <= 1
@@ -330,8 +430,20 @@ class TestAutoGradeRatingMapping:
         """rating=4 的增长比 rating=5 保守（efactor 更低）。"""
         from app.services.sm2_service import calc_sm2
 
-        r4 = calc_sm2(quality=4, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
-        r5 = calc_sm2(quality=5, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
+        r4 = calc_sm2(
+            quality=4,
+            efactor=2.5,
+            interval=6,
+            repetitions=2,
+            review_date=datetime.now(UTC).date(),
+        )
+        r5 = calc_sm2(
+            quality=5,
+            efactor=2.5,
+            interval=6,
+            repetitions=2,
+            review_date=datetime.now(UTC).date(),
+        )
 
         # rating=5 应该获得更高的 efactor
         assert r5["efactor"] > r4["efactor"]
@@ -343,8 +455,20 @@ class TestAutoGradeRatingMapping:
         """rating=1 的惩罚比 rating=0 轻（efactor 更高）。"""
         from app.services.sm2_service import calc_sm2
 
-        r0 = calc_sm2(quality=0, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
-        r1 = calc_sm2(quality=1, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
+        r0 = calc_sm2(
+            quality=0,
+            efactor=2.5,
+            interval=6,
+            repetitions=2,
+            review_date=datetime.now(UTC).date(),
+        )
+        r1 = calc_sm2(
+            quality=1,
+            efactor=2.5,
+            interval=6,
+            repetitions=2,
+            review_date=datetime.now(UTC).date(),
+        )
 
         # 两者都重置 interval=1，但 efactor 降低幅度不同
         assert r0["interval"] == 1

@@ -13,16 +13,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Keep these unit tests independent from a concrete async database driver.
-import types
-from sqlalchemy.orm import declarative_base
-
-database_stub = types.ModuleType("app.core.database")
-async def _unused_get_db():
-    yield None
-database_stub.get_db = _unused_get_db
-database_stub.Base = declarative_base()
-sys.modules.setdefault("app.core.database", database_stub)
-
 from fastapi import HTTPException
 
 from app.core.cache import cache

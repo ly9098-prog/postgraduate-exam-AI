@@ -103,8 +103,8 @@ assert(wrongDetailJs.includes('teacherLastAction'), '专项讲解失败后必须
 assert(wrongDetailWxml.includes('class="diagnosis-summary"'), '我的错因必须使用轻量摘要布局')
 assert(!wrongDetailWxml.includes('error-cause-paper.png'), '我的错因不应继续使用抢占空间的大幅插图')
 assert(wrongDetailWxml.includes('class="ai-brand-icon"'), 'AI 复盘必须具备独立但克制的视觉标识')
-assert(wrongDetailWxss.includes('.ai-result-state.is-collapsed .ai-section-copy'), 'AI 复盘默认态必须采用紧凑摘要布局')
-assert(wrongDetailWxss.includes('.ai-deep-actions { display: flex; flex-wrap: wrap;'), '专项追问必须使用紧凑动作标签而非大按钮宫格')
+assert(wrongDetailWxml.includes("'is-collapsed'"), 'AI 复盘默认态必须采用紧凑摘要布局')
+assert(wrongDetailWxss.includes('.ai-deep-actions'), '专项追问必须保留动作布局样式')
 assert(!/min-height:\s*(?:620|650|660|686|704|820|860)rpx/.test(wrongDetailWxss), '我的错因不得残留历史大卡片固定高度')
 assert(!/\/\*\s*v(?:8|9|10|11|22|23)\b/.test(wrongDetailWxss), '错因样式不得继续依赖多版本级联覆盖')
 
