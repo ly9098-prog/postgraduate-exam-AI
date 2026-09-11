@@ -1,9 +1,7 @@
 <view class="loading-lottie loading-lottie-{{size}} loading-lottie-{{theme}}">
-  <view wx:if="{{mode === 'lottie' && ready}}" class="loading-lottie-canvas-wrap">
-    <canvas type="2d" id="loading-lottie-canvas" class="loading-lottie-canvas"></canvas>
-  </view>
-
-  <view wx:else class="loading-lottie-fallback {{fallbackClass}}"></view>
-
-  <text wx:if="{{text}}" class="loading-lottie-text">{{text}}</text>
+<view wx:if="{{mode === 'lottie' && ready}}" class="loading-lottie-canvas-wrap">
+<canvas type="2d" id="loading-lottie-canvas" class="loading-lottie-canvas"></canvas>
+</view>
+<view wx:else class="loading-lottie-fallback {{fallbackClass}}"></view>
+<text wx:if="{{text}}" class="loading-lottie-text">{{text}}</text>
 </view>

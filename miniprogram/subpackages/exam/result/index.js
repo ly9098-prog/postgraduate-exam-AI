@@ -1,7 +1,7 @@
 const api = require('../../../utils/api')
 const stemRender = require('../../study/utils/stem-render')
-const errorDiagnosis = require('../../../utils/error-diagnosis')
-const aiTeacher408 = require('../../../utils/ai-teacher-408')
+const errorDiagnosis = require('../utils/error-diagnosis')
+const aiTeacher408 = require('../utils/ai-teacher-408')
 
 function percent(value) { return `${Math.round(Number(value || 0) * 100)}%` }
 function durationText(sec) {

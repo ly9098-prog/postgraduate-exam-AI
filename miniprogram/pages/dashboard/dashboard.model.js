@@ -3,7 +3,7 @@
  * Extracted from dashboard.js to keep page logic lean.
  */
 
-const { getSubjectName } = require('../../utils/subject-meta')
+const { getSubjectName } = require('./utils/subject-meta')
 
 /** Subject palette (stable per index hash) */
 const SUBJECT_COLORS = ['#4F7FFF', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']

@@ -53,6 +53,130 @@
       {
         "type": "folder",
         "value": "miniprogram_npm"
+      },
+      {
+        "type": "glob",
+        "value": "utils/ai-teacher-408.js"
+      },
+      {
+        "type": "glob",
+        "value": "assets/icons/home-hero/top-card-background.png"
+      },
+      {
+        "type": "glob",
+        "value": "assets/icons/error-cause-paper.png"
+      },
+      {
+        "type": "folder",
+        "value": "assets/animation"
+      },
+      {
+        "type": "folder",
+        "value": "components/mp-user-avatar"
+      },
+      {
+        "type": "folder",
+        "value": "components/AnimatedView"
+      },
+      {
+        "type": "glob",
+        "value": "utils/pomodoro-theme.js"
+      },
+      {
+        "type": "glob",
+        "value": "utils/route-params.js"
+      },
+      {
+        "type": "glob",
+        "value": "utils/subject-scope.js"
+      },
+      {
+        "type": "glob",
+        "value": "utils/error-diagnosis.js"
+      },
+      {
+        "type": "glob",
+        "value": "utils/katex.min.js"
+      },
+      {
+        "type": "glob",
+        "value": "utils/subject-meta.js"
+      },
+      {
+        "type": "glob",
+        "value": "subpackages/study/assets/wrong-book-empty.png"
+      },
+      {
+        "type": "glob",
+        "value": "subpackages/study/assets/review-today-empty.png"
+      },
+      {
+        "type": "glob",
+        "value": "subpackages/study/assets/search-empty-planet.png"
+      },
+      {
+        "type": "glob",
+        "value": "subpackages/study/assets/ai-review.png"
+      },
+      {
+        "type": "glob",
+        "value": "subpackages/study/assets/ai-insight.png"
+      },
+      {
+        "type": "suffix",
+        "value": ".zip"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_upload_fix_patch"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_upload_fix_patch_v2"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_upload_fix_patch_v3"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_upload_fix_patch_v4"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_home_progress_fix_patch_v5"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_code_quality_fix_patch_v6"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_runtime_fix_patch_v7"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_runtime_index_fix_patch_v8"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_runtime_index_fix_patch_v9"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_code_quality_fix_patch_v10"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_code_runtime_fix_patch_v11"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_code_quality_smooth_index_fix_patch_v12"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_code_quality_no_flash_fix_patch_v13"
       }
     ],
     "include": []
@@ -73,15 +197,15 @@
     "newFeature": false,
     "uglifyFileName": false,
     "uploadWithSourceMap": false,
-    "useIsolateContext": true,
+    "useIsolateContext": false,
     "nodeModules": false,
     "enhance": true,
-    "useMultiFrameRuntime": true,
+    "useMultiFrameRuntime": false,
     "useApiHook": true,
     "useApiHostProcess": true,
     "showShadowRootInWxmlPanel": true,
     "packNpmManually": false,
-    "enableEngines": true,
+    "enableEngines": false,
     "packNpmRelationList": [],
     "minifyWXSS": true,
     "showES6CompileOption": false,
@@ -93,8 +217,8 @@
     },
     "swc": false,
     "disableSWC": true,
-    "ignoreUploadUnusedFiles": false,
-    "ignoreDevUnusedFiles": false
+    "ignoreUploadUnusedFiles": true,
+    "ignoreDevUnusedFiles": true
   },
   "compileType": "miniprogram",
   "libVersion": "3.6.6",

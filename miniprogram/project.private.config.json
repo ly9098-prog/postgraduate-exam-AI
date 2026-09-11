@@ -1,3 +1,8 @@
 {
-  "libVersion": "3.6.6"
+  "libVersion": "3.6.6",
+  "setting": {
+    "bigPackageSizeSupport": false,
+    "urlCheck": true,
+    "autoAudits": false
+  }
 }

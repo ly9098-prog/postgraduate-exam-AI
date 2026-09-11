@@ -47,19 +47,23 @@ Component({
           }
           // 比较现有的部分
           for (let i = 0; i < Math.min(a.length, b.length); i++) {
-            const keys = new Set(Object.keys(a[i]).concat(Object.keys(b[i])))
-            for (const key of keys) {
+            const keys = Array.from(new Set(Object.keys(a[i]).concat(Object.keys(b[i]))))
+            for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+              const key = keys[keyIndex]
               if (a[i][key] === undefined || b[i][key] === undefined || (typeof b[i][key] !== 'object' && a[i][key] !== b[i][key])) {
                 data[path + '[' + i + ']'] = b[i]
                 break
               }
             }
             if (!((path + '[' + i + ']') in data)) {
-              for (const key of keys) {
+              for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+                const key = keys[keyIndex]
                 if (Array.isArray(b[i][key])) {
                   diff(a[i][key], b[i][key], path + '[' + i + '].' + key)
                 } else {
-                  for (const subKey of Object.keys(a[i][key]).concat(Object.keys(b[i][key]))) {
+                  const subKeys = Object.keys(a[i][key]).concat(Object.keys(b[i][key]))
+                  for (let subKeyIndex = 0; subKeyIndex < subKeys.length; subKeyIndex++) {
+                    const subKey = subKeys[subKeyIndex]
                     if (a[i][key][subKey] !== b[i][key][subKey]) {
                       data[path + '[' + i + '].' + key] = b[i][key]
                       break

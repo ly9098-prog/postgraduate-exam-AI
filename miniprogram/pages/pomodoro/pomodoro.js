@@ -1,8 +1,8 @@
 const api = require('../../utils/api')
-const { filter408SubjectTree } = require('../../utils/subject-scope')
+const { filter408SubjectTree } = require('./utils/subject-scope')
 const config = require('../../config')
-const { safeDecodeURIComponent } = require('../../utils/route-params')
-const pomodoroTheme = require('../../utils/pomodoro-theme')
+const { safeDecodeURIComponent } = require('./utils/route-params')
+const pomodoroTheme = require('./utils/pomodoro-theme')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
@@ -65,7 +65,9 @@ const MOTTOES = [
 function flattenSubjectTree(tree) {
   const result = []
   function walk(nodes) {
-    for (const node of nodes) {
+    var list = Array.isArray(nodes) ? nodes : []
+    for (var nodeIndex = 0; nodeIndex < list.length; nodeIndex += 1) {
+      var node = list[nodeIndex]
       if (!node) continue
       const activeChildren = (node.children || []).filter(c => c.is_active !== false)
       if (activeChildren.length === 0) {
@@ -2287,7 +2289,9 @@ Page({
 
     // Also remove stale per-session optimistic snapshots. Never touch a newer
     // session's cache when reconciliation discovers an old cross-device row.
-    for (const key of ['pomodoro_pause', 'pomodoro_free_pause', 'pomodoro_pause_adjustment']) {
+    const staleSnapshotKeys = ['pomodoro_pause', 'pomodoro_free_pause', 'pomodoro_pause_adjustment']
+    for (var keyIndex = 0; keyIndex < staleSnapshotKeys.length; keyIndex += 1) {
+      const key = staleSnapshotKeys[keyIndex]
       const stored = this._safeGetPomodoroStorage(key, 'drop reconciled session snapshot')
       if (!stored.ok) return false
       if (stored.value && stored.value.sessionId === sessionId) {
@@ -3762,7 +3766,7 @@ Page({
   /* ==================== Utility ==================== */
 
   subjectLabel(key) {
-    const { getSubjectName } = require('../../utils/subject-meta')
+    const { getSubjectName } = require('./utils/subject-meta')
     const s = this.data.subjects.find(s => s.code === key)
     return s ? s.name : getSubjectName(key)
   },

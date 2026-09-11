@@ -1,5 +1,5 @@
 const api = require('../../../utils/api')
-const pomodoroTheme = require('../../../utils/pomodoro-theme')
+const pomodoroTheme = require('../utils/pomodoro-theme')
 const chinaTime = require('../utils/china-time')
 
 const DARK_SUBJECT_COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
@@ -1542,7 +1542,7 @@ var pageConfig = {
     const chartH = h - padT - padB
     const barW = Math.min(32, chartW / trends.length * 0.5)
     const gap = chartW / trends.length
-    const maxDur = Math.max(1, ...trends.map(t => t.duration_sec || 0))
+    const maxDur = Math.max.apply(Math, [1].concat(trends.map(t => t.duration_sec || 0)))
     const depth = Math.min(7, barW * 0.28)
     const topTilt = 0.45
 
@@ -2102,7 +2102,8 @@ var pageConfig = {
       const subjects = this.data.subjects
       const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
       let cumulativeStart = -Math.PI / 2
-      for (const s of subjects) {
+      for (let subjectIndex = 0; subjectIndex < subjects.length; subjectIndex++) {
+        const s = subjects[subjectIndex]
         const pct = (s.duration_sec || 0) / totalDur
         const cumulativeEnd = cumulativeStart + Math.PI * 2 * pct
         if (pct > 0 && angle >= cumulativeStart && angle < cumulativeEnd) {

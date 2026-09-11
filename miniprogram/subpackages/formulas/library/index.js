@@ -569,7 +569,7 @@ Page({
 
   onTagSelect(e) {
     const tagId = e.currentTarget.dataset.id
-    let activeTags = [...this.data.activeTags]
+    let activeTags = (this.data.activeTags || []).slice()
     const idx = activeTags.indexOf(tagId)
     if (idx >= 0) {
       activeTags.splice(idx, 1)
@@ -714,7 +714,7 @@ Page({
       const hasKnownTotal = Number.isFinite(parsedTotal) && parsedTotal >= 0
       const mergedFormulas = replace
         ? items
-        : [...this.data.formulas, ...items].filter((item, index, list) => (
+        : (this.data.formulas || []).concat(items).filter((item, index, list) => (
           list.findIndex((candidate) => String(candidate.id) === String(item.id)) === index
         ))
       const fetchedThroughPage = Math.max(0, requestPage - 1)
@@ -872,7 +872,7 @@ Page({
           : item
       ))
       const favoriteIds = isFavorited
-        ? Array.from(new Set([...(this.data.favoriteIds || []), formulaId]))
+        ? Array.from(new Set((this.data.favoriteIds || []).concat([formulaId])))
         : (this.data.favoriteIds || []).filter((id) => Number(id) !== formulaId)
 
       if (this.data.onlyFavorites && !isFavorited) {

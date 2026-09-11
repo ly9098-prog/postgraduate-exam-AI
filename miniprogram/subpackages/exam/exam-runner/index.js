@@ -329,7 +329,7 @@ Page({
       while (true) {
         const ids = Object.keys(this._pending || {})
         if (!ids.length) return true
-        for (const id of ids) await this._syncItem(id)
+        for (let idIndex = 0; idIndex < ids.length; idIndex++) await this._syncItem(ids[idIndex])
       }
     } catch (error) {
       if (!options.quiet) wx.showToast({ title: '还有答案未同步，请检查网络', icon: 'none' })

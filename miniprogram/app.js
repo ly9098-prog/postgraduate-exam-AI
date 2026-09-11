@@ -2,6 +2,8 @@
 // 动画分包加载管理 — 按需加载，不在启动时主动下载
 // ═══════════════════════════════════════════════
 
+var animationLoader = require('./utils/animation-loader')
+
 var _ANIM_LOADED = false
 var _ANIM_CALLBACKS = []
 var _animLoadPromise = null
@@ -82,6 +84,7 @@ App({
   },
 
   loadRewardAnimationPackage: loadRewardAnimationPackage,
+  animationLoader: animationLoader,
 
   onShow() {
     this._tryRestoreLogin()

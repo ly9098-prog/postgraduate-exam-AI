@@ -1,134 +1,125 @@
 <page-meta page-style="{{!loading && list.length === 0 ? 'height: 100vh; overflow: hidden;' : ''}}" />
-
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
 <app-dialog id="appDialog" />
 <view class="page {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
-  <!-- 顶部视图切换与编辑模式 -->
-  <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
-    <block wx:if="{{!batchMode}}">
-      <view class="view-tabs" role="tablist">
-        <view
+<view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
+<block wx:if="{{!batchMode}}">
+<view class="view-tabs" role="tablist">
+<view
           class="view-tab {{activeView === 'task' ? 'active' : ''}}"
           bindtap="switchView"
           data-view="task"
         >任务流</view>
-        <view
+<view
           class="view-tab {{activeView === 'all' ? 'active' : ''}}"
           bindtap="switchView"
           data-view="all"
         >全部错题</view>
-      </view>
-      <view class="topbar-actions">
-        <view
+</view>
+<view class="topbar-actions">
+<view
           class="top-action {{showFilter || filterCount > 0 ? 'active' : ''}}"
           hover-class="top-action-pressed"
           bindtap="toggleFilter"
         >
-          <text>筛选</text>
-          <text class="action-count" wx:if="{{filterCount > 0}}">{{filterCount}}</text>
-        </view>
-        <view
+<text>筛选</text>
+<text class="action-count" wx:if="{{filterCount > 0}}">{{filterCount}}</text>
+</view>
+<view
           class="top-action manage"
           hover-class="top-action-pressed"
           bindtap="toggleBatchMode"
         >选择</view>
-        <view
+<view
           class="top-action {{exportAvailable ? '' : 'export-unavailable'}}"
           hover-class="{{exportAvailable ? 'top-action-pressed' : 'none'}}"
           bindtap="onViewExportRecords"
         >{{exportAvailable ? '导出记录' : '导出不可用'}}</view>
-      </view>
-    </block>
-
-    <block wx:else>
-      <view class="edit-heading">
-        <text class="edit-heading-title">选择错题</text>
-      </view>
-      <view class="edit-complete" hover-class="edit-complete-pressed" bindtap="toggleBatchMode">完成</view>
-    </block>
-  </view>
-
-  <!-- 筛选面板 -->
-  <view class="filter-panel" wx:if="{{showFilter}}">
-    <view class="filter-head">
-      <text class="filter-title">筛选错题</text>
-      <text class="filter-reset" bindtap="resetFilters">重置</text>
-    </view>
-    <view class="filter-section">
-      <text class="filter-label">学科</text>
-      <scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
-        <view class="filter-row">
-          <view class="filter-inline-state" wx:if="{{subjectsLoading}}">正在加载学科…</view>
-          <view class="filter-inline-state error" wx:elif="{{subjectsError}}" bindtap="loadSubjects">加载失败，点击重试</view>
-          <view
+</view>
+</block>
+<block wx:else>
+<view class="edit-heading">
+<text class="edit-heading-title">选择错题</text>
+</view>
+<view class="edit-complete" hover-class="edit-complete-pressed" bindtap="toggleBatchMode">完成</view>
+</block>
+</view>
+<view class="filter-panel" wx:if="{{showFilter}}">
+<view class="filter-head">
+<text class="filter-title">筛选错题</text>
+<text class="filter-reset" bindtap="resetFilters">重置</text>
+</view>
+<view class="filter-section">
+<text class="filter-label">学科</text>
+<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
+<view class="filter-row">
+<view class="filter-inline-state" wx:if="{{subjectsLoading}}">正在加载学科…</view>
+<view class="filter-inline-state error" wx:elif="{{subjectsError}}" bindtap="loadSubjects">加载失败，点击重试</view>
+<view
             wx:for="{{subjects}}"
             wx:key="value"
             class="filter-chip {{(selectedSubjectId || '') === item.value ? 'active' : ''}}"
             bindtap="selectSubject"
             data-value="{{item.value}}"
           >{{item.label}}</view>
-        </view>
-      </scroll-view>
-    </view>
-    <view class="filter-section">
-      <text class="filter-label">错因</text>
-      <scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
-        <view class="filter-row">
-          <view
+</view>
+</scroll-view>
+</view>
+<view class="filter-section">
+<text class="filter-label">错因</text>
+<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
+<view class="filter-row">
+<view
             wx:for="{{errorTypes}}"
             wx:key="value"
             class="filter-chip {{selectedErrorType === item.value ? 'active' : ''}}"
             bindtap="selectErrorType"
             data-value="{{item.value}}"
           >{{item.label}}</view>
-        </view>
-      </scroll-view>
-    </view>
-    <view class="topic-active" wx:if="{{selectedTopic}}">
-      <text>知识点 · {{selectedTopic}}</text>
-      <text class="topic-clear" bindtap="clearTopic">清除</text>
-    </view>
-  </view>
-
-  <!-- 错题本专属概览：避免与 Dashboard 的综合报表重复 -->
-  <view class="overview-card">
-    <view class="overview-item">
-      <view class="overview-icon book"><text class="line-icon icon-list"></text></view>
-      <view class="overview-text">
-        <text class="overview-label">累计错题</text>
-        <view><text class="overview-value">{{stats.total || 0}}</text><text class="overview-suffix">题</text></view>
-      </view>
-    </view>
-    <view class="overview-divider"></view>
-    <view class="overview-item">
-      <view class="overview-icon mastered"><text class="line-icon icon-check"></text></view>
-      <view class="overview-text">
-        <text class="overview-label">已经掌握</text>
-        <view><text class="overview-value">{{masteredCount}}</text><text class="overview-suffix">题</text></view>
-      </view>
-    </view>
-    <view class="overview-divider"></view>
-    <view class="overview-item">
-      <view class="overview-icon repeat"><text class="line-icon icon-trend"></text></view>
-      <view class="overview-text">
-        <text class="overview-label">高频错题</text>
-        <view><text class="overview-value">{{highFrequencyCount}}</text><text class="overview-suffix">题</text></view>
-      </view>
-    </view>
-  </view>
-
-  <!-- 一句话 AI 洞察：点击展开错题本专属建议 -->
-  <view class="insight-card {{aiInsightExpanded ? 'expanded' : ''}} {{aiDiagnosisLoading && !aiDiagnosis ? 'insight-loading' : ''}} {{aiDiagnosisRefreshing ? 'insight-refreshing' : ''}}" wx:if="{{stats.total > 0}}">
-    <view class="insight-mode-strip">
-      <view class="insight-mode-copy">
-        <view class="insight-mode-orbit"><view class="insight-mode-orbit-dot"></view></view>
-        <view class="insight-mode-texts">
-          <text class="insight-mode-title">自动 AI 洞察</text>
-          <text class="insight-mode-desc">{{autoAiInsightEnabled ? '进入页面后自动生成' : '仅在点击后生成'}}</text>
-        </view>
-      </view>
-      <view
+</view>
+</scroll-view>
+</view>
+<view class="topic-active" wx:if="{{selectedTopic}}">
+<text>知识点 · {{selectedTopic}}</text>
+<text class="topic-clear" bindtap="clearTopic">清除</text>
+</view>
+</view>
+<view class="overview-card">
+<view class="overview-item">
+<view class="overview-icon book"><text class="line-icon icon-list"></text></view>
+<view class="overview-text">
+<text class="overview-label">累计错题</text>
+<view><text class="overview-value">{{stats.total || 0}}</text><text class="overview-suffix">题</text></view>
+</view>
+</view>
+<view class="overview-divider"></view>
+<view class="overview-item">
+<view class="overview-icon mastered"><text class="line-icon icon-check"></text></view>
+<view class="overview-text">
+<text class="overview-label">已经掌握</text>
+<view><text class="overview-value">{{masteredCount}}</text><text class="overview-suffix">题</text></view>
+</view>
+</view>
+<view class="overview-divider"></view>
+<view class="overview-item">
+<view class="overview-icon repeat"><text class="line-icon icon-trend"></text></view>
+<view class="overview-text">
+<text class="overview-label">高频错题</text>
+<view><text class="overview-value">{{highFrequencyCount}}</text><text class="overview-suffix">题</text></view>
+</view>
+</view>
+</view>
+<view class="insight-card {{aiInsightExpanded ? 'expanded' : ''}} {{aiDiagnosisLoading && !aiDiagnosis ? 'insight-loading' : ''}} {{aiDiagnosisRefreshing ? 'insight-refreshing' : ''}}" wx:if="{{stats.total > 0}}">
+<view class="insight-mode-strip">
+<view class="insight-mode-copy">
+<view class="insight-mode-orbit"><view class="insight-mode-orbit-dot"></view></view>
+<view class="insight-mode-texts">
+<text class="insight-mode-title">自动 AI 洞察</text>
+<text class="insight-mode-desc">{{autoAiInsightEnabled ? '进入页面后自动生成' : '仅在点击后生成'}}</text>
+</view>
+</view>
+<view
         class="ai-auto-control {{autoAiInsightEnabled ? 'enabled' : ''}} {{aiAutoSwitchPulse ? 'pulse' : ''}}"
         catchtap="toggleAiAutoAnalysis"
         hover-class="ai-auto-control-pressed"
@@ -136,154 +127,138 @@
         aria-label="自动生成 AI 洞察"
         aria-checked="{{autoAiInsightEnabled}}"
       >
-        <text class="ai-auto-mode-label">{{autoAiInsightEnabled ? '自动' : '手动'}}</text>
-        <view class="ai-auto-switch">
-          <view class="ai-auto-switch-glow"></view>
-          <view class="ai-auto-thumb"><text>✦</text></view>
-        </view>
-      </view>
-    </view>
-
-    <!-- 骨架屏：首次加载中 -->
-    <block wx:if="{{aiDiagnosisLoading && !aiDiagnosis}}">
-      <view class="insight-skeleton">
-        <view class="insight-skeleton-icon"></view>
-        <view class="insight-skeleton-body">
-          <view class="insight-skeleton-row short"></view>
-          <view class="insight-skeleton-row long"></view>
-          <view class="insight-skeleton-row medium"></view>
-        </view>
-        <view class="insight-skeleton-chevron"></view>
-      </view>
-    </block>
-
-    <!-- 正常内容（含刷新态：通过 CSS overlay 避免 DOM 变动导致页面跳动） -->
-    <block wx:else>
-    <view class="insight-main {{aiDiagnosisRefreshing ? 'insight-main-dimmed' : ''}}" bindtap="{{aiDiagnosisRefreshing ? '' : 'toggleAiInsight'}}" hover-class="{{aiDiagnosisRefreshing ? 'none' : 'insight-main-pressed'}}">
-      <view class="insight-icon">
-        <image class="insight-icon-image" src="/assets/icons/wrong-book/ai-insight.png" mode="aspectFit" />
-      </view>
-      <view class="insight-content">
-        <view class="insight-head">
-          <view class="insight-title-row">
-            <text class="insight-title">AI 洞察</text>
-            <text class="insight-state" wx:if="{{aiDiagnosisCacheTimeLabel}}">{{aiDiagnosisCacheTimeLabel}}</text>
-          </view>
-          <view
+<text class="ai-auto-mode-label">{{autoAiInsightEnabled ? '自动' : '手动'}}</text>
+<view class="ai-auto-switch">
+<view class="ai-auto-switch-glow"></view>
+<view class="ai-auto-thumb"><text>✦</text></view>
+</view>
+</view>
+</view>
+<block wx:if="{{aiDiagnosisLoading && !aiDiagnosis}}">
+<view class="insight-skeleton">
+<view class="insight-skeleton-icon"></view>
+<view class="insight-skeleton-body">
+<view class="insight-skeleton-row short"></view>
+<view class="insight-skeleton-row long"></view>
+<view class="insight-skeleton-row medium"></view>
+</view>
+<view class="insight-skeleton-chevron"></view>
+</view>
+</block>
+<block wx:else>
+<view class="insight-main {{aiDiagnosisRefreshing ? 'insight-main-dimmed' : ''}}" bindtap="{{aiDiagnosisRefreshing ? '' : 'toggleAiInsight'}}" hover-class="{{aiDiagnosisRefreshing ? 'none' : 'insight-main-pressed'}}">
+<view class="insight-icon">
+<image class="insight-icon-image" src="/assets/icons/wrong-book/ai-insight.png" mode="aspectFit" />
+</view>
+<view class="insight-content">
+<view class="insight-head">
+<view class="insight-title-row">
+<text class="insight-title">AI 洞察</text>
+<text class="insight-state" wx:if="{{aiDiagnosisCacheTimeLabel}}">{{aiDiagnosisCacheTimeLabel}}</text>
+</view>
+<view
             class="insight-refresh {{aiDiagnosisRefreshing || aiDiagnosisLoading ? 'disabled' : ''}}"
             hover-class="insight-refresh-pressed"
             catchtap="refreshAiDiagnosis"
           ><text>{{aiDiagnosisRefreshing || aiDiagnosisLoading ? '分析中' : (aiDiagnosis ? '更新' : '生成')}}</text></view>
-        </view>
-        <text class="insight-summary">{{aiInsightText}}</text>
-        <text class="insight-hint">{{aiDiagnosis ? (aiInsightExpanded ? '点击收起' : '点击查看复盘建议') : (autoAiInsightEnabled ? '自动分析已开启' : '点击卡片或“生成”手动分析')}}</text>
-      </view>
-      <text class="insight-arrow {{aiInsightExpanded ? 'expanded' : ''}}">›</text>
-    </view>
-
-    <view class="insight-detail" wx:if="{{aiInsightExpanded}}" catchtap="noop">
-      <view class="insight-detail-divider"></view>
-
-      <view class="insight-detail-section" wx:if="{{aiInsightWeakPoints.length > 0}}">
-        <text class="insight-detail-label">优先复盘</text>
-        <view
+</view>
+<text class="insight-summary">{{aiInsightText}}</text>
+<text class="insight-hint">{{aiDiagnosis ? (aiInsightExpanded ? '点击收起' : '点击查看复盘建议') : (autoAiInsightEnabled ? '自动分析已开启' : '点击卡片或“生成”手动分析')}}</text>
+</view>
+<text class="insight-arrow {{aiInsightExpanded ? 'expanded' : ''}}">›</text>
+</view>
+<view class="insight-detail" wx:if="{{aiInsightExpanded}}" catchtap="noop">
+<view class="insight-detail-divider"></view>
+<view class="insight-detail-section" wx:if="{{aiInsightWeakPoints.length > 0}}">
+<text class="insight-detail-label">优先复盘</text>
+<view
           class="insight-weak-row"
           wx:for="{{aiInsightWeakPoints}}"
           wx:key="name"
         >
-          <view class="insight-weak-index">{{index + 1}}</view>
-          <view class="insight-weak-content">
-            <view class="insight-weak-head">
-              <text class="insight-weak-name">{{item.name}}</text>
-              <text class="insight-weak-score">掌握 {{item.accuracyPercent}}%</text>
-            </view>
-            <text class="insight-weak-suggestion" wx:if="{{item.suggestion}}">{{item.suggestion}}</text>
-          </view>
-        </view>
-      </view>
-
-      <view class="insight-detail-section" wx:if="{{aiInsightSuggestions.length > 0}}">
-        <text class="insight-detail-label">下一步建议</text>
-        <view
+<view class="insight-weak-index">{{index + 1}}</view>
+<view class="insight-weak-content">
+<view class="insight-weak-head">
+<text class="insight-weak-name">{{item.name}}</text>
+<text class="insight-weak-score">掌握 {{item.accuracyPercent}}%</text>
+</view>
+<text class="insight-weak-suggestion" wx:if="{{item.suggestion}}">{{item.suggestion}}</text>
+</view>
+</view>
+</view>
+<view class="insight-detail-section" wx:if="{{aiInsightSuggestions.length > 0}}">
+<text class="insight-detail-label">下一步建议</text>
+<view
           class="insight-suggestion-row"
           wx:for="{{aiInsightSuggestions}}"
           wx:key="*this"
         >
-          <text class="insight-suggestion-dot"></text>
-          <text class="insight-suggestion-text">{{item}}</text>
-        </view>
-      </view>
-
-      <view class="insight-detail-empty" wx:if="{{!aiInsightHasDetails && !aiDiagnosisError}}">
-        <text>当前洞察暂时只有摘要，继续积累错题后会生成更具体的薄弱点和建议。</text>
-      </view>
-
-      <view class="insight-detail-error" wx:if="{{aiDiagnosisError}}">
-        <text>AI 洞察暂时不可用</text>
-        <text class="insight-error-retry" catchtap="refreshAiDiagnosis">重新分析</text>
-      </view>
-
-      <view class="insight-detail-footer">
-        <text class="insight-feedback" catchtap="onAiFeedback">反馈分析结果</text>
-        <text class="insight-detail-note">仅基于错题记录生成</text>
-      </view>
-    </view>
-    </block>
-  </view>
-
-  <!-- 加载 / 空状态 -->
-  <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
-    <loading-lottie text="正在整理错题任务..." size="large" />
-  </view>
-  <view wx:if="{{!loading && list.length === 0}}" class="empty-state">
-    <image
+<text class="insight-suggestion-dot"></text>
+<text class="insight-suggestion-text">{{item}}</text>
+</view>
+</view>
+<view class="insight-detail-empty" wx:if="{{!aiInsightHasDetails && !aiDiagnosisError}}">
+<text>当前洞察暂时只有摘要，继续积累错题后会生成更具体的薄弱点和建议。</text>
+</view>
+<view class="insight-detail-error" wx:if="{{aiDiagnosisError}}">
+<text>AI 洞察暂时不可用</text>
+<text class="insight-error-retry" catchtap="refreshAiDiagnosis">重新分析</text>
+</view>
+<view class="insight-detail-footer">
+<text class="insight-feedback" catchtap="onAiFeedback">反馈分析结果</text>
+<text class="insight-detail-note">仅基于错题记录生成</text>
+</view>
+</view>
+</block>
+</view>
+<view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
+<loading-lottie text="正在整理错题任务..." size="large" />
+</view>
+<view wx:if="{{!loading && list.length === 0}}" class="empty-state">
+<image
       class="empty-image"
       src="/assets/images/wrong-book-empty.png"
       mode="widthFix"
       aria-label="暂无错题"
     />
-    <text class="empty-title">这里暂时没有错题</text>
-    <view class="empty-desc">
-      <text class="empty-desc-line">新产生的错题会自动进入任务流，</text>
-      <text class="empty-desc-line">并按照复习时间排序</text>
-    </view>
-  </view>
-
-  <!-- 任务流视图 -->
-  <view class="task-flow" wx:if="{{list.length > 0 && activeView === 'task'}}">
-    <view class="section-title-row">
-      <view>
-        <text class="section-title">错题任务流</text>
-        <text class="section-subtitle">按复习优先级自动整理，不再翻找整本错题</text>
-      </view>
-      <view class="select-all" wx:if="{{batchMode}}" bindtap="toggleSelectAll">
-        <text class="select-all-box {{allVisibleSelected ? 'selected' : ''}}">{{allVisibleSelected ? '✓' : ''}}</text>
-        <text>{{allVisibleSelected ? '取消全选' : '全选'}}</text>
-      </view>
-    </view>
-
-    <view
+<text class="empty-title">这里暂时没有错题</text>
+<view class="empty-desc">
+<text class="empty-desc-line">新产生的错题会自动进入任务流，</text>
+<text class="empty-desc-line">并按照复习时间排序</text>
+</view>
+</view>
+<view class="task-flow" wx:if="{{list.length > 0 && activeView === 'task'}}">
+<view class="section-title-row">
+<view>
+<text class="section-title">错题任务流</text>
+<text class="section-subtitle">按复习优先级自动整理，不再翻找整本错题</text>
+</view>
+<view class="select-all" wx:if="{{batchMode}}" bindtap="toggleSelectAll">
+<text class="select-all-box {{allVisibleSelected ? 'selected' : ''}}">{{allVisibleSelected ? '✓' : ''}}</text>
+<text>{{allVisibleSelected ? '取消全选' : '全选'}}</text>
+</view>
+</view>
+<view
       wx:for="{{taskGroups}}"
       wx:key="key"
       wx:for-item="group"
       class="task-group tone-{{group.tone}}"
     >
-      <view class="group-head">
-        <view class="group-title-wrap">
-          <view class="group-badge">{{group.icon}}</view>
-          <view>
-            <view class="group-title-line">
-              <text class="group-title">{{group.title}}</text>
-              <text class="group-count">{{group.total}}</text>
-            </view>
-            <text class="group-desc">{{group.desc}}</text>
-          </view>
-        </view>
-        <text class="group-more" bindtap="openAllQuestions">查看全部 ›</text>
-      </view>
-
-      <view class="group-list">
-        <view
+<view class="group-head">
+<view class="group-title-wrap">
+<view class="group-badge">{{group.icon}}</view>
+<view>
+<view class="group-title-line">
+<text class="group-title">{{group.title}}</text>
+<text class="group-count">{{group.total}}</text>
+</view>
+<text class="group-desc">{{group.desc}}</text>
+</view>
+</view>
+<text class="group-more" bindtap="openAllQuestions">查看全部 ›</text>
+</view>
+<view class="group-list">
+<view
           wx:for="{{group.items}}"
           wx:key="id"
           wx:for-item="question"
@@ -293,58 +268,54 @@
           bindlongpress="onQuestionLongPress"
           data-id="{{question.id}}"
         >
-          <view
+<view
             class="question-select {{batchMode ? 'batch-visible' : ''}} {{selectedIdMap[question.id] ? 'selected' : ''}}"
             catchtap="onSelectControlTap"
             data-id="{{question.id}}"
           >
-            <text wx:if="{{selectedIdMap[question.id]}}">✓</text>
-          </view>
-          <view class="question-main">
-            <view class="question-tags">
-              <text class="question-tag subject">{{question._subjectLabel}}</text>
-              <text class="question-tag error">{{question._errorTypeLabel}}</text>
-              <text class="question-tag due {{question._statusTone}}">{{question._taskStatusLabel}}</text>
-            </view>
-            <text class="question-title">{{question._cleanText || '题目内容待补充'}}</text>
-            <view class="question-meta">
-              <text>错 {{question._wrongCount}} 次</text>
-              <text class="meta-dot">·</text>
-              <text>复习 {{question._reviewCount}} 次</text>
-              <text class="meta-dot">·</text>
-              <text>{{question._lastErrorLabel}}</text>
-            </view>
-          </view>
-          <view class="question-end" wx:if="{{!batchMode}}">
-            <text class="question-end-value">{{question._masteryPercent}}%</text>
-            <text class="question-end-label">{{question._isMastered ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
-            <text class="question-chevron">›</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <view class="task-flow-foot" wx:if="{{ungroupedCount > 0}}" bindtap="openAllQuestions">
+<text wx:if="{{selectedIdMap[question.id]}}">✓</text>
+</view>
+<view class="question-main">
+<view class="question-tags">
+<text class="question-tag subject">{{question._subjectLabel}}</text>
+<text class="question-tag error">{{question._errorTypeLabel}}</text>
+<text class="question-tag due {{question._statusTone}}">{{question._taskStatusLabel}}</text>
+</view>
+<text class="question-title">{{question._cleanText || '题目内容待补充'}}</text>
+<view class="question-meta">
+<text>错 {{question._wrongCount}} 次</text>
+<text class="meta-dot">·</text>
+<text>复习 {{question._reviewCount}} 次</text>
+<text class="meta-dot">·</text>
+<text>{{question._lastErrorLabel}}</text>
+</view>
+</view>
+<view class="question-end" wx:if="{{!batchMode}}">
+<text class="question-end-value">{{question._masteryPercent}}%</text>
+<text class="question-end-label">{{question._isMastered ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
+<text class="question-chevron">›</text>
+</view>
+</view>
+</view>
+</view>
+<view class="task-flow-foot" wx:if="{{ungroupedCount > 0}}" bindtap="openAllQuestions">
       还有 {{ungroupedCount}} 道错题未展开，前往“全部错题”查看
       <text>›</text>
-    </view>
-  </view>
-
-  <!-- 全部错题视图 -->
-  <view class="all-view" wx:if="{{list.length > 0 && activeView === 'all'}}">
-    <view class="section-title-row all-head">
-      <view>
-        <text class="section-title">全部错题</text>
-        <text class="section-subtitle">当前已加载 {{list.length}} / {{listTotal || list.length}} 道</text>
-      </view>
-      <view class="select-all" wx:if="{{batchMode}}" bindtap="toggleSelectAll">
-        <text class="select-all-box {{allVisibleSelected ? 'selected' : ''}}">{{allVisibleSelected ? '✓' : ''}}</text>
-        <text>{{allVisibleSelected ? '取消全选' : '全选'}}</text>
-      </view>
-    </view>
-
-    <view class="all-list-card">
-      <view
+</view>
+</view>
+<view class="all-view" wx:if="{{list.length > 0 && activeView === 'all'}}">
+<view class="section-title-row all-head">
+<view>
+<text class="section-title">全部错题</text>
+<text class="section-subtitle">当前已加载 {{list.length}} / {{listTotal || list.length}} 道</text>
+</view>
+<view class="select-all" wx:if="{{batchMode}}" bindtap="toggleSelectAll">
+<text class="select-all-box {{allVisibleSelected ? 'selected' : ''}}">{{allVisibleSelected ? '✓' : ''}}</text>
+<text>{{allVisibleSelected ? '取消全选' : '全选'}}</text>
+</view>
+</view>
+<view class="all-list-card">
+<view
         wx:for="{{list}}"
         wx:key="id"
         wx:for-item="question"
@@ -354,89 +325,79 @@
         bindlongpress="onQuestionLongPress"
         data-id="{{question.id}}"
       >
-        <view
+<view
           class="question-select {{batchMode ? 'batch-visible' : ''}} {{selectedIdMap[question.id] ? 'selected' : ''}}"
           catchtap="onSelectControlTap"
           data-id="{{question.id}}"
         >
-          <text wx:if="{{selectedIdMap[question.id]}}">✓</text>
-        </view>
-        <view class="question-main">
-          <view class="question-tags">
-            <text class="question-tag subject">{{question._subjectLabel}}</text>
-            <text class="question-tag error">{{question._errorTypeLabel}}</text>
-            <text class="question-tag due {{question._statusTone}}">{{question._taskStatusLabel}}</text>
-          </view>
-          <text class="question-title">{{question._cleanText || '题目内容待补充'}}</text>
-          <view class="question-meta">
-            <text>错 {{question._wrongCount}} 次</text>
-            <text class="meta-dot">·</text>
-            <text>复习 {{question._reviewCount}} 次</text>
-            <text class="meta-dot">·</text>
-            <text>{{question._lastErrorLabel}}</text>
-          </view>
-        </view>
-        <view class="question-end" wx:if="{{!batchMode}}">
-          <text class="question-end-value">{{question._masteryPercent}}%</text>
-          <text class="question-end-label">{{question._isMastered ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
-          <text class="question-chevron">›</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">
-      <text>{{loading ? '正在加载…' : '加载更多错题'}}</text>
-      <text>⌄</text>
-    </view>
-  </view>
-
-  <!-- 极简悬浮胶囊：已选数量 / 两项核心动作 / 更多 -->
-  <view
+<text wx:if="{{selectedIdMap[question.id]}}">✓</text>
+</view>
+<view class="question-main">
+<view class="question-tags">
+<text class="question-tag subject">{{question._subjectLabel}}</text>
+<text class="question-tag error">{{question._errorTypeLabel}}</text>
+<text class="question-tag due {{question._statusTone}}">{{question._taskStatusLabel}}</text>
+</view>
+<text class="question-title">{{question._cleanText || '题目内容待补充'}}</text>
+<view class="question-meta">
+<text>错 {{question._wrongCount}} 次</text>
+<text class="meta-dot">·</text>
+<text>复习 {{question._reviewCount}} 次</text>
+<text class="meta-dot">·</text>
+<text>{{question._lastErrorLabel}}</text>
+</view>
+</view>
+<view class="question-end" wx:if="{{!batchMode}}">
+<text class="question-end-value">{{question._masteryPercent}}%</text>
+<text class="question-end-label">{{question._isMastered ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
+<text class="question-chevron">›</text>
+</view>
+</view>
+</view>
+<view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">
+<text>{{loading ? '正在加载…' : '加载更多错题'}}</text>
+<text>⌄</text>
+</view>
+</view>
+<view
     class="batch-capsule {{batchCapsuleVisible ? 'capsule-visible' : 'capsule-hidden'}} {{batchSubmitting ? 'submitting' : ''}}"
     wx:if="{{batchMode}}"
   >
-    <view
+<view
       class="capsule-count {{selectionPulse ? 'pulse' : ''}} {{allVisibleSelected ? 'all-selected' : ''}}"
       hover-class="capsule-item-pressed"
       bindtap="toggleSelectAll"
     >
-      <text class="capsule-count-number">{{selectedCount}}</text>
-      <text class="capsule-count-unit">项</text>
-    </view>
-
-    <view class="capsule-divider"></view>
-
-    <view
+<text class="capsule-count-number">{{selectedCount}}</text>
+<text class="capsule-count-unit">项</text>
+</view>
+<view class="capsule-divider"></view>
+<view
       class="capsule-action capsule-action-secondary {{selectedCount === 0 ? 'disabled' : ''}}"
       hover-class="{{selectedCount > 0 ? 'capsule-button-pressed' : 'none'}}"
       bindtap="onBatchAction"
       data-action="add_to_review"
     >加入复习</view>
-
-    <view
+<view
       class="capsule-action capsule-action-primary {{selectedCount === 0 ? 'disabled' : ''}}"
       hover-class="{{selectedCount > 0 ? 'capsule-primary-pressed' : 'none'}}"
       bindtap="onBatchAction"
       data-action="mark_mastered"
     >标记掌握</view>
-
-    <view
+<view
       class="capsule-more {{selectedCount === 0 ? 'disabled' : ''}}"
       hover-class="{{selectedCount > 0 ? 'capsule-button-pressed' : 'none'}}"
       bindtap="openBatchMore"
     >更多</view>
-
-    <view
+<view
       class="capsule-action capsule-action-export {{selectedCount === 0 || !exportAvailable ? 'disabled' : ''}}"
       hover-class="{{selectedCount > 0 && exportAvailable ? 'capsule-primary-pressed' : 'none'}}"
       bindtap="onExportSelected"
     >{{exportAvailable ? '导出' : '导出不可用'}}</view>
-  </view>
-
-  <!-- 批量标记已掌握撤销 -->
-  <view class="undo-toast {{batchMasterUndoVisible ? 'show' : ''}}">
-    <text class="undo-toast-text">已标记 {{_batchMasterUndoCount || 0}} 项为已掌握</text>
-    <view class="undo-divider"></view>
-    <text class="undo-action" bindtap="undoBatchMaster">撤销</text>
-  </view>
+</view>
+<view class="undo-toast {{batchMasterUndoVisible ? 'show' : ''}}">
+<text class="undo-toast-text">已标记 {{_batchMasterUndoCount || 0}} 项为已掌握</text>
+<view class="undo-divider"></view>
+<text class="undo-action" bindtap="undoBatchMaster">撤销</text>
+</view>
 </view>

@@ -1230,7 +1230,7 @@ Page({
     if (this.data.hubPrimaryTask) candidates.push(this.data.hubPrimaryTask)
     if (this.data.hubSecondaryTask) candidates.push(this.data.hubSecondaryTask)
     const rawTasks = Array.isArray(this._lastHub && this._lastHub.tasks) ? this._lastHub.tasks : []
-    candidates.push(...rawTasks)
+    Array.prototype.push.apply(candidates, rawTasks)
     const task = candidates.find(item => item && item.key === key)
     if (task) this.openHubTaskByData(task)
   },

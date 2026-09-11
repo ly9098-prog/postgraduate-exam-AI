@@ -97,7 +97,9 @@ class ExportStatusSyncManager {
   setTaskIds(ids) {
     const newSet = new Set(ids.filter(id => typeof id === 'number'))
     // Clean up statuses for removed IDs
-    for (const tid of this._taskIds) {
+    const previousTaskIds = Array.from(this._taskIds)
+    for (let taskIndex = 0; taskIndex < previousTaskIds.length; taskIndex++) {
+      const tid = previousTaskIds[taskIndex]
       if (!newSet.has(tid)) {
         delete this._taskStatuses[tid]
       }
@@ -444,7 +446,8 @@ class ExportStatusSyncManager {
     // Collect IDs from tasks that are not known to be terminal
     const ids = Array.from(this._taskIds)
 
-    for (const tid of ids) {
+    for (let taskIndex = 0; taskIndex < ids.length; taskIndex++) {
+      const tid = ids[taskIndex]
       if (this._stopped || this._hidden || this._allTerminal()) return
       try {
         const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })
@@ -502,7 +505,8 @@ class ExportStatusSyncManager {
 
       try {
         const ids = Array.from(this._taskIds)
-        for (const tid of ids) {
+        for (let taskIndex = 0; taskIndex < ids.length; taskIndex++) {
+          const tid = ids[taskIndex]
           if (this._stopped) return
           try {
             const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })

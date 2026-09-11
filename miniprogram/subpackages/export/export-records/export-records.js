@@ -639,7 +639,7 @@ Page({
           const current = currentById.get(Number(incoming.id))
           return current && this._isTaskSnapshotOlder(incoming, current) ? current : incoming
         })
-        const combined = reset ? enriched : [...this.data.list, ...enriched]
+        const combined = reset ? enriched : (this.data.list || []).concat(enriched)
         const seen = {}
         const list = combined.filter(function(item) {
           const id = Number(item.id)

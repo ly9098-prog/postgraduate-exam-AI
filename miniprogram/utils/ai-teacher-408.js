@@ -78,7 +78,8 @@ function structuredSections(value) {
   const used = new Set()
   STRUCTURED_ANALYSIS_KEYS.forEach(group => {
     let picked
-    for (const key of group.keys) {
+    for (let keyIndex = 0; keyIndex < group.keys.length; keyIndex++) {
+      const key = group.keys[keyIndex]
       if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] != null && obj[key] !== '') {
         picked = obj[key]
         used.add(key)
@@ -142,10 +143,7 @@ function normalizeResult(raw) {
   if (source.data && typeof source.data === 'object' && !source.action && !source.sections) source = source.data
 
   const summaryStructured = structuredSections(source.summary)
-  const sections = dedupeSections([
-    ...summaryStructured,
-    ...normalizeSections(source.sections),
-  ])
+  const sections = dedupeSections(summaryStructured.concat(normalizeSections(source.sections)))
   let summary = cleanText(source.summary)
   if (summaryStructured.length) {
     summary = summaryStructured[0].points[0] || ''

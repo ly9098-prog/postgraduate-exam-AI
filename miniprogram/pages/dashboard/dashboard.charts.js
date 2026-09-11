@@ -278,7 +278,7 @@ function drawTrendChart(canvasId, pageThis, points, options) {
         values.push(item.correct || 0, item.questions || 0)
         if (item.hasPrevious) values.push(item.previousQuestions || 0)
       })
-      const scale = niceScale(Math.max(1, ...values))
+      const scale = niceScale(Math.max.apply(Math, [1].concat(values)))
 
       // More left padding is reserved for editorial y-axis labels.
       const pad = { l: 38, r: 8, t: 12, b: 34 }

@@ -2,7 +2,7 @@ const api = require('../../utils/api')
 const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
 const { getChinaDate, parseServerUtc } = require('../../utils/china-time')
-const errorDiagnosis = require('../../utils/error-diagnosis')
+const errorDiagnosis = require('./utils/error-diagnosis')
 
 const DASHBOARD_AI_HTTP_TIMEOUT_MS = 55000
 const DASHBOARD_AI_SUCCESS_COOLDOWN_MS = 60000

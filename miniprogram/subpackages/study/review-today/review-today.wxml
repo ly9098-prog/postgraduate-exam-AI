@@ -1,108 +1,93 @@
 <page-meta page-style="{{phase === 'overview' || phase === 'empty' ? 'height: 100vh; overflow: hidden;' : ''}}" />
-
 <premium-nav
   title="今日复习"
   variant="{{phase === 'reviewing' ? 'dark' : 'light'}}"
   bind:back="onNavBack"
 />
-
-<!-- ==================== 加载 ==================== -->
 <view wx:if="{{phase === 'loading'}}" class="page state-page loading-page">
-  <view class="page-ambient ambient-one"></view>
-  <view class="page-ambient ambient-two"></view>
-  <view class="loading-shell">
-    <view class="loading-mark">
-      <view class="memory-line line-1"></view>
-      <view class="memory-line line-2"></view>
-      <view class="memory-line line-3"></view>
-      <view class="memory-dot d-1"></view>
-      <view class="memory-dot d-2"></view>
-      <view class="memory-dot d-3"></view>
-      <view class="memory-dot d-4"></view>
-    </view>
-    <text class="loading-title">正在整理今天的记忆任务</text>
-    <text class="loading-desc">从最需要巩固的内容开始</text>
-    <view class="loading-bars">
-      <view class="loading-bar long"></view>
-      <view class="loading-bar medium"></view>
-      <view class="loading-bar short"></view>
-    </view>
-  </view>
+<view class="page-ambient ambient-one"></view>
+<view class="page-ambient ambient-two"></view>
+<view class="loading-shell">
+<view class="loading-mark">
+<view class="memory-line line-1"></view>
+<view class="memory-line line-2"></view>
+<view class="memory-line line-3"></view>
+<view class="memory-dot d-1"></view>
+<view class="memory-dot d-2"></view>
+<view class="memory-dot d-3"></view>
+<view class="memory-dot d-4"></view>
 </view>
-
-<!-- ==================== 概览 ==================== -->
+<text class="loading-title">正在整理今天的记忆任务</text>
+<text class="loading-desc">从最需要巩固的内容开始</text>
+<view class="loading-bars">
+<view class="loading-bar long"></view>
+<view class="loading-bar medium"></view>
+<view class="loading-bar short"></view>
+</view>
+</view>
+</view>
 <view wx:elif="{{phase === 'overview'}}" class="page overview-page">
-  <view class="overview-ambient" aria-hidden="true">
-    <view class="overview-memory-trail">
-      <view class="trail-arc ta-1"></view>
-      <view class="trail-arc ta-2"></view>
-      <view class="trail-arc ta-3"></view>
-      <view class="trail-node tn-1"></view>
-      <view class="trail-node tn-2"></view>
-      <view class="trail-node tn-3"></view>
-      <view class="trail-focus-ring ring-outer"></view>
-      <view class="trail-focus-ring ring-inner"></view>
-      <view class="trail-node tn-4 active"></view>
-      <view class="trail-node tn-5"></view>
-      <view class="trail-node tn-6"></view>
-    </view>
-  </view>
-
-  <view class="overview-shell motion-page-enter">
-    <view class="overview-heading">
-      <text class="page-kicker">{{_dateStr}}</text>
-      <text class="page-title">把快要变淡的记忆，重新变清晰。</text>
-      <text class="page-intro">已按记忆曲线排好顺序，从最需要巩固的内容开始。</text>
-    </view>
-
-    <view class="mission-panel">
-      <view class="mission-top">
-        <view>
-          <text class="mission-eyebrow">MEMORY CURVE</text>
-          <text class="mission-label">今日还需复习</text>
-        </view>
-        <view class="mission-batch-link" bindtap="showBatchSizeSelector" hover-class="mission-batch-link-pressed">
+<view class="overview-ambient" aria-hidden="true">
+<view class="overview-memory-trail">
+<view class="trail-arc ta-1"></view>
+<view class="trail-arc ta-2"></view>
+<view class="trail-arc ta-3"></view>
+<view class="trail-node tn-1"></view>
+<view class="trail-node tn-2"></view>
+<view class="trail-node tn-3"></view>
+<view class="trail-focus-ring ring-outer"></view>
+<view class="trail-focus-ring ring-inner"></view>
+<view class="trail-node tn-4 active"></view>
+<view class="trail-node tn-5"></view>
+<view class="trail-node tn-6"></view>
+</view>
+</view>
+<view class="overview-shell motion-page-enter">
+<view class="overview-heading">
+<text class="page-kicker">{{_dateStr}}</text>
+<text class="page-title">把快要变淡的记忆，重新变清晰。</text>
+<text class="page-intro">已按记忆曲线排好顺序，从最需要巩固的内容开始。</text>
+</view>
+<view class="mission-panel">
+<view class="mission-top">
+<view>
+<text class="mission-eyebrow">MEMORY CURVE</text>
+<text class="mission-label">今日还需复习</text>
+</view>
+<view class="mission-batch-link" bindtap="showBatchSizeSelector" hover-class="mission-batch-link-pressed">
           每组 {{reviewBatchSize}} 道 ›
         </view>
-      </view>
-
-      <view class="mission-main">
-        <view class="mission-number-wrap">
-          <text class="mission-number">{{todayRemainingCount}}</text>
-          <text class="mission-unit">道</text>
-        </view>
-
-        <view class="curve-stage" aria-hidden="true">
-          <view class="curve-axis"></view>
-          <view class="curve-segment cs-1"></view>
-          <view class="curve-segment cs-2"></view>
-          <view class="curve-segment cs-3"></view>
-          <view class="curve-segment cs-4"></view>
-          <view class="curve-node cn-1"></view>
-          <view class="curve-node cn-2"></view>
-          <view class="curve-node cn-3"></view>
-          <view class="curve-node cn-4 active"></view>
-        </view>
-      </view>
-
-      <view class="mission-meta-line">
-        <text>预计 {{estimatedMinutes}} 分钟</text>
-        <view class="mission-meta-dot"></view>
-        <text class="{{todayOverdueCount > 0 ? 'mission-meta-alert' : ''}}">逾期 {{todayOverdueCount}} 道</text>
-      </view>
-    </view>
-
-    <view class="overview-note">
-      <text class="overview-note-label">记忆提示</text>
-      <text class="overview-note-text">{{todayAdviceText}}</text>
-    </view>
-
-  </view>
-
-  <!-- 主操作按钮独立于带 transform 动画的 overview-shell。
-       否则 iOS / 微信 WebView 会把 position: fixed 按动画容器定位，导致按钮上浮覆盖任务卡。 -->
-  <view class="overview-action-dock">
-    <button
+</view>
+<view class="mission-main">
+<view class="mission-number-wrap">
+<text class="mission-number">{{todayRemainingCount}}</text>
+<text class="mission-unit">道</text>
+</view>
+<view class="curve-stage" aria-hidden="true">
+<view class="curve-axis"></view>
+<view class="curve-segment cs-1"></view>
+<view class="curve-segment cs-2"></view>
+<view class="curve-segment cs-3"></view>
+<view class="curve-segment cs-4"></view>
+<view class="curve-node cn-1"></view>
+<view class="curve-node cn-2"></view>
+<view class="curve-node cn-3"></view>
+<view class="curve-node cn-4 active"></view>
+</view>
+</view>
+<view class="mission-meta-line">
+<text>预计 {{estimatedMinutes}} 分钟</text>
+<view class="mission-meta-dot"></view>
+<text class="{{todayOverdueCount > 0 ? 'mission-meta-alert' : ''}}">逾期 {{todayOverdueCount}} 道</text>
+</view>
+</view>
+<view class="overview-note">
+<text class="overview-note-label">记忆提示</text>
+<text class="overview-note-text">{{todayAdviceText}}</text>
+</view>
+</view>
+<view class="overview-action-dock">
+<button
       class="primary-action overview-primary-action"
       hover-class="{{todayRemainingCount <= 0 || isStarting || isContinuing ? 'none' : 'primary-action-pressed'}}"
       hover-start-time="20"
@@ -111,31 +96,27 @@
       disabled="{{todayRemainingCount <= 0 || isStarting || isContinuing}}"
       bindtap="startTodayReview"
     >
-      <text>{{todayCompletedCount > 0 ? '继续今日复习' : '开始今日复习'}}</text>
-      <text class="primary-action-arrow">↗</text>
-    </button>
-  </view>
+<text>{{todayCompletedCount > 0 ? '继续今日复习' : '开始今日复习'}}</text>
+<text class="primary-action-arrow">↗</text>
+</button>
 </view>
-
-<!-- ==================== 练习 ==================== -->
+</view>
 <view wx:elif="{{phase === 'reviewing'}}" class="page reviewing-page">
-  <view class="review-context-bar">
-    <text class="review-context-group">第 {{currentBatchNo}} / {{totalBatchCount}} 组</text>
-    <text class="review-context-progress">今日已完成 {{todayCompletedCount}} / {{todayDueCount}}</text>
-  </view>
-
-  <view wx:if="{{batchLoading}}" class="batch-loading-shell">
-    <view class="batch-loading-head"></view>
-    <view class="batch-loading-card">
-      <view class="batch-loading-tag"></view>
-      <view class="batch-loading-line long"></view>
-      <view class="batch-loading-line medium"></view>
-      <view class="batch-loading-option" wx:for="{{skeletonOptions}}" wx:key="*this"></view>
-    </view>
-  </view>
-
-  <view class="review-practice-content" wx:else>
-    <quiz-runner
+<view class="review-context-bar">
+<text class="review-context-group">第 {{currentBatchNo}} / {{totalBatchCount}} 组</text>
+<text class="review-context-progress">今日已完成 {{todayCompletedCount}} / {{todayDueCount}}</text>
+</view>
+<view wx:if="{{batchLoading}}" class="batch-loading-shell">
+<view class="batch-loading-head"></view>
+<view class="batch-loading-card">
+<view class="batch-loading-tag"></view>
+<view class="batch-loading-line long"></view>
+<view class="batch-loading-line medium"></view>
+<view class="batch-loading-option" wx:for="{{skeletonOptions}}" wx:key="*this"></view>
+</view>
+</view>
+<view class="review-practice-content" wx:else>
+<quiz-runner
       theme="premium-review"
       mode="review"
       title="今日复习"
@@ -164,114 +145,103 @@
       bind:submit="submitGroup"
       bind:master="tapMaster"
     />
-  </view>
 </view>
-
-<!-- ==================== 组结果 ==================== -->
+</view>
 <view
   wx:elif="{{phase === 'group-result'}}"
   class="page result-page"
   bindtouchstart="onResultPageInteraction"
   bindtouchmove="onResultPageInteraction"
 >
-  <view class="result-shell motion-page-enter">
-    <view class="result-celebrate-card">
-      <view class="result-orbit"></view>
-      <text class="result-kicker">GROUP {{currentGroupIdx + 1}} COMPLETE</text>
-      <text class="result-title">这一组已经完成。</text>
-      <text class="result-desc">记忆计划已更新，先看需要再巩固的内容。</text>
-
-      <view class="result-score-row">
-        <view class="result-score-main">
-          <text class="result-score-num">{{groupAccuracyPercent}}</text>
-          <text class="result-score-unit">%</text>
-        </view>
-        <view class="result-score-copy">
-          <text class="result-score-label">本组正确率</text>
-          <text class="result-score-note">{{groupWrong > 0 ? '错题已经进入后续复习安排' : '这组很稳，保持现在的节奏'}}</text>
-        </view>
-      </view>
-
-      <view class="result-stat-strip">
-        <view class="result-stat"><text class="result-stat-value success">{{groupCorrect}}</text><text>正确</text></view>
-        <view class="result-stat"><text class="result-stat-value danger">{{groupWrong}}</text><text>需巩固</text></view>
-        <view class="result-stat"><text class="result-stat-value muted">{{_groupSkipped}}</text><text>未提交</text></view>
-      </view>
-    </view>
-
-    <view class="memory-update-card">
-      <view class="memory-update-icon">
-        <view class="memory-update-line l1"></view>
-        <view class="memory-update-line l2"></view>
-        <view class="memory-update-line l3"></view>
-      </view>
-      <view>
-        <text class="memory-update-title">记忆计划已更新</text>
-        <text class="memory-update-desc">掌握度已更新；达到 80% 的题目将退出复习计划，未掌握题会在更合适的时间再次出现。</text>
-      </view>
-    </view>
-
-    <view class="wrong-summary-card" wx:if="{{groupWrongResults.length > 0}}">
-      <view class="section-heading-row">
-        <view>
-          <text class="section-kicker">NEED ANOTHER LOOK</text>
-          <text class="section-title">需要再看</text>
-        </view>
-        <text class="section-count">{{groupWrongResults.length}} 题</text>
-      </view>
-
-      <view wx:for="{{groupWrongResults}}" wx:key="schedule_id" class="wrong-summary-item">
-        <text class="wrong-summary-index">{{index + 1}}</text>
-        <view class="wrong-summary-body">
-          <view class="wrong-summary-stem">
-            <block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}"><math-question segments="{{item._renderModel.segments}}" /></block>
-            <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
-            <text wx:else>{{item._stemPreview}}</text>
-          </view>
-          <text class="wrong-summary-answer">你的 {{item.userAnswer || '未作答'}} · 正确 {{item.correctAnswer}}</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="all-clear-card" wx:else>
-      <view class="all-clear-mark">✓</view>
-      <view><text class="all-clear-title">本组没有错题</text><text class="all-clear-desc">继续下一组，保持清晰的作答节奏。</text></view>
-    </view>
-
-    <view class="detail-fold-card">
-      <view class="detail-fold-trigger" bindtap="toggleGroupDetails" hover-class="detail-fold-trigger-pressed">
-        <view>
-          <text class="detail-fold-title">完整答题详情</text>
-          <text class="detail-fold-desc">查看正确题、跳过题和全部答案</text>
-        </view>
-        <text class="detail-fold-arrow {{showGroupDetails ? 'open' : ''}}">⌄</text>
-      </view>
-
-      <view class="detail-list" wx:if="{{showGroupDetails}}">
-        <view
+<view class="result-shell motion-page-enter">
+<view class="result-celebrate-card">
+<view class="result-orbit"></view>
+<text class="result-kicker">GROUP {{currentGroupIdx + 1}} COMPLETE</text>
+<text class="result-title">这一组已经完成。</text>
+<text class="result-desc">记忆计划已更新，先看需要再巩固的内容。</text>
+<view class="result-score-row">
+<view class="result-score-main">
+<text class="result-score-num">{{groupAccuracyPercent}}</text>
+<text class="result-score-unit">%</text>
+</view>
+<view class="result-score-copy">
+<text class="result-score-label">本组正确率</text>
+<text class="result-score-note">{{groupWrong > 0 ? '错题已经进入后续复习安排' : '这组很稳，保持现在的节奏'}}</text>
+</view>
+</view>
+<view class="result-stat-strip">
+<view class="result-stat"><text class="result-stat-value success">{{groupCorrect}}</text><text>正确</text></view>
+<view class="result-stat"><text class="result-stat-value danger">{{groupWrong}}</text><text>需巩固</text></view>
+<view class="result-stat"><text class="result-stat-value muted">{{_groupSkipped}}</text><text>未提交</text></view>
+</view>
+</view>
+<view class="memory-update-card">
+<view class="memory-update-icon">
+<view class="memory-update-line l1"></view>
+<view class="memory-update-line l2"></view>
+<view class="memory-update-line l3"></view>
+</view>
+<view>
+<text class="memory-update-title">记忆计划已更新</text>
+<text class="memory-update-desc">掌握度已更新；达到 80% 的题目将退出复习计划，未掌握题会在更合适的时间再次出现。</text>
+</view>
+</view>
+<view class="wrong-summary-card" wx:if="{{groupWrongResults.length > 0}}">
+<view class="section-heading-row">
+<view>
+<text class="section-kicker">NEED ANOTHER LOOK</text>
+<text class="section-title">需要再看</text>
+</view>
+<text class="section-count">{{groupWrongResults.length}} 题</text>
+</view>
+<view wx:for="{{groupWrongResults}}" wx:key="schedule_id" class="wrong-summary-item">
+<text class="wrong-summary-index">{{index + 1}}</text>
+<view class="wrong-summary-body">
+<view class="wrong-summary-stem">
+<block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}"><math-question segments="{{item._renderModel.segments}}" /></block>
+<rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
+<text wx:else>{{item._stemPreview}}</text>
+</view>
+<text class="wrong-summary-answer">你的 {{item.userAnswer || '未作答'}} · 正确 {{item.correctAnswer}}</text>
+</view>
+</view>
+</view>
+<view class="all-clear-card" wx:else>
+<view class="all-clear-mark">✓</view>
+<view><text class="all-clear-title">本组没有错题</text><text class="all-clear-desc">继续下一组，保持清晰的作答节奏。</text></view>
+</view>
+<view class="detail-fold-card">
+<view class="detail-fold-trigger" bindtap="toggleGroupDetails" hover-class="detail-fold-trigger-pressed">
+<view>
+<text class="detail-fold-title">完整答题详情</text>
+<text class="detail-fold-desc">查看正确题、跳过题和全部答案</text>
+</view>
+<text class="detail-fold-arrow {{showGroupDetails ? 'open' : ''}}">⌄</text>
+</view>
+<view class="detail-list" wx:if="{{showGroupDetails}}">
+<view
           wx:for="{{groupResults}}" wx:key="schedule_id"
           class="detail-item {{!item.wasSubmitted ? 'is-skipped' : (item.isCorrect ? 'is-correct' : 'is-wrong')}}"
         >
-          <view class="detail-status-dot"></view>
-          <view class="detail-item-body">
-            <view class="detail-stem">
-              <block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}"><math-question segments="{{item._renderModel.segments}}" /></block>
-              <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
-              <text wx:else>{{item._stemPreview}}</text>
-            </view>
-            <text class="detail-answer" wx:if="{{item.submitFailed}}">{{item.submitError || '本题提交失败，已保留待重试'}}</text>
-            <text class="detail-answer" wx:elif="{{item.wasSubmitted && !item.isCorrect}}">你的 {{item.userAnswer || '未作答'}} · 正确 {{item.correctAnswer}}</text>
-            <text class="detail-answer" wx:elif="{{item.wasSkipped}}">本题未提交</text>
-          </view>
-          <view class="detail-status-stack">
-            <text class="detail-status-text">{{item.submitFailed ? '提交失败' : (item.wasSkipped ? '未提交' : (item.isCorrect ? '正确' : '错误'))}}</text>
-            <text wx:if="{{item.wasSubmitted && item.masteryPercent !== null}}" class="detail-mastery-text">掌握 {{item.masteryPercent}}%{{item.mastered ? ' · 已掌握' : ''}}</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <button
+<view class="detail-status-dot"></view>
+<view class="detail-item-body">
+<view class="detail-stem">
+<block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}"><math-question segments="{{item._renderModel.segments}}" /></block>
+<rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
+<text wx:else>{{item._stemPreview}}</text>
+</view>
+<text class="detail-answer" wx:if="{{item.submitFailed}}">{{item.submitError || '本题提交失败，已保留待重试'}}</text>
+<text class="detail-answer" wx:elif="{{item.wasSubmitted && !item.isCorrect}}">你的 {{item.userAnswer || '未作答'}} · 正确 {{item.correctAnswer}}</text>
+<text class="detail-answer" wx:elif="{{item.wasSkipped}}">本题未提交</text>
+</view>
+<view class="detail-status-stack">
+<text class="detail-status-text">{{item.submitFailed ? '提交失败' : (item.wasSkipped ? '未提交' : (item.isCorrect ? '正确' : '错误'))}}</text>
+<text wx:if="{{item.wasSubmitted && item.masteryPercent !== null}}" class="detail-mastery-text">掌握 {{item.masteryPercent}}%{{item.mastered ? ' · 已掌握' : ''}}</text>
+</view>
+</view>
+</view>
+</view>
+<button
       wx:if="{{todayRemainingCount > 0}}"
       class="primary-action result-next"
       bindtap="nextGroup"
@@ -279,115 +249,96 @@
       loading="{{resultTransitioning}}"
       hover-class="primary-action-pressed"
     >
-      <text>继续下一组</text>
-      <text class="primary-action-arrow">↗</text>
-    </button>
-
-    <view wx:else class="result-complete-bottom-space"></view>
-  </view>
-
-  <view wx:if="{{todayRemainingCount <= 0}}" class="result-complete-actions {{resultDockVisible ? 'is-visible' : 'is-hidden'}}">
-    <button class="result-complete-primary" bindtap="goWrongBook" hover-class="result-complete-pressed">复盘错题</button>
-    <button class="result-complete-secondary" bindtap="goPractice" hover-class="result-complete-pressed">继续练习</button>
-  </view>
+<text>继续下一组</text>
+<text class="primary-action-arrow">↗</text>
+</button>
+<view wx:else class="result-complete-bottom-space"></view>
 </view>
-
-<!-- ==================== 空状态 ==================== -->
+<view wx:if="{{todayRemainingCount <= 0}}" class="result-complete-actions {{resultDockVisible ? 'is-visible' : 'is-hidden'}}">
+<button class="result-complete-primary" bindtap="goWrongBook" hover-class="result-complete-pressed">复盘错题</button>
+<button class="result-complete-secondary" bindtap="goPractice" hover-class="result-complete-pressed">继续练习</button>
+</view>
+</view>
 <view wx:elif="{{phase === 'empty'}}" class="page state-page empty-page">
-  <view class="empty-page-orb empty-page-orb-bottom" aria-hidden="true"></view>
-  <view class="state-shell empty-state-shell motion-page-enter">
-    <view class="empty-visual">
-      <view class="empty-visual-halo"></view>
-      <image
+<view class="empty-page-orb empty-page-orb-bottom" aria-hidden="true"></view>
+<view class="state-shell empty-state-shell motion-page-enter">
+<view class="empty-visual">
+<view class="empty-visual-halo"></view>
+<image
         class="empty-image"
         src="/assets/images/review-today-empty.png"
         mode="widthFix"
         aria-label="今日复习已清空"
       />
-    </view>
-    <text class="state-kicker empty-kicker">MEMORY CLEAR</text>
-    <text class="state-title empty-title">今天没有待复习的题目。</text>
-    <text class="state-desc empty-desc">记忆计划暂时清空，可以放松一下，也可以继续练几道新题。</text>
-
-    <view class="empty-status-row">
-      <view class="empty-status-item"><text class="empty-status-label">今日复习</text><text class="empty-status-value">已清空</text></view>
-      <view class="empty-status-divider"></view>
-      <view class="empty-status-item"><text class="empty-status-label">下一步</text><text class="empty-status-value">自由练习</text></view>
-    </view>
-
-    <button class="primary-action empty-primary-action" bindtap="goPractice" hover-class="primary-action-pressed"><text>去练习新题</text><text class="primary-action-arrow empty-primary-arrow">↗</text></button>
-    <button class="secondary-action empty-secondary-action" bindtap="goWrongBook" hover-class="secondary-action-pressed">查看错题本</button>
-  </view>
 </view>
-
-<!-- ==================== 错误状态 ==================== -->
+<text class="state-kicker empty-kicker">MEMORY CLEAR</text>
+<text class="state-title empty-title">今天没有待复习的题目。</text>
+<text class="state-desc empty-desc">记忆计划暂时清空，可以放松一下，也可以继续练几道新题。</text>
+<view class="empty-status-row">
+<view class="empty-status-item"><text class="empty-status-label">今日复习</text><text class="empty-status-value">已清空</text></view>
+<view class="empty-status-divider"></view>
+<view class="empty-status-item"><text class="empty-status-label">下一步</text><text class="empty-status-value">自由练习</text></view>
+</view>
+<button class="primary-action empty-primary-action" bindtap="goPractice" hover-class="primary-action-pressed"><text>去练习新题</text><text class="primary-action-arrow empty-primary-arrow">↗</text></button>
+<button class="secondary-action empty-secondary-action" bindtap="goWrongBook" hover-class="secondary-action-pressed">查看错题本</button>
+</view>
+</view>
 <view wx:elif="{{phase === 'error'}}" class="page state-page error-page">
-  <view class="state-shell motion-page-enter">
-    <view class="error-mark">!</view>
-    <text class="state-kicker danger">LOAD INTERRUPTED</text>
-    <text class="state-title">暂时没有读到复习计划。</text>
-    <text class="state-desc">{{errorText}}</text>
-    <button class="primary-action" bindtap="retryLoad" hover-class="primary-action-pressed"><text>重新加载</text><text class="primary-action-arrow">↗</text></button>
-  </view>
+<view class="state-shell motion-page-enter">
+<view class="error-mark">!</view>
+<text class="state-kicker danger">LOAD INTERRUPTED</text>
+<text class="state-title">暂时没有读到复习计划。</text>
+<text class="state-desc">{{errorText}}</text>
+<button class="primary-action" bindtap="retryLoad" hover-class="primary-action-pressed"><text>重新加载</text><text class="primary-action-arrow">↗</text></button>
 </view>
-
+</view>
 <submit-confirm id="submitConfirm" />
-
-<!-- 已掌握确认 -->
 <view class="modal-overlay" wx:if="{{masterConfirmId}}" catchtap="cancelMaster" catchtouchmove="noop">
-  <view class="decision-sheet" catchtap="noop">
-    <view class="sheet-handle"></view>
-    <text class="decision-kicker">MASTERED</text>
-    <text class="decision-title">确认已经掌握？</text>
-    <text class="decision-desc">标记后，这道题会退出当前复习计划并保留在历史错题记录中；以后再次答错时会自动重新加入复习。</text>
-    <view class="decision-actions">
-      <button class="decision-secondary" bindtap="cancelMaster">继续看看</button>
-      <button class="decision-primary" bindtap="confirmMaster">确认掌握</button>
-    </view>
-  </view>
+<view class="decision-sheet" catchtap="noop">
+<view class="sheet-handle"></view>
+<text class="decision-kicker">MASTERED</text>
+<text class="decision-title">确认已经掌握？</text>
+<text class="decision-desc">标记后，这道题会退出当前复习计划并保留在历史错题记录中；以后再次答错时会自动重新加入复习。</text>
+<view class="decision-actions">
+<button class="decision-secondary" bindtap="cancelMaster">继续看看</button>
+<button class="decision-primary" bindtap="confirmMaster">确认掌握</button>
 </view>
-
-<!-- 退出确认 -->
+</view>
+</view>
 <view class="modal-overlay" wx:if="{{exitConfirmVisible}}" catchtap="closeExitConfirm" catchtouchmove="noop">
-  <view class="decision-sheet" catchtap="noop">
-    <view class="sheet-handle"></view>
-    <text class="decision-kicker">PAUSE REVIEW</text>
-    <text class="decision-title">退出本组复习？</text>
-    <text class="decision-desc">本组尚未提交的答案不会计入复习结果，已经标记为掌握的题目不会受到影响。</text>
-    <view class="decision-actions">
-      <button class="decision-secondary" bindtap="confirmExitReview">确认退出</button>
-      <button class="decision-primary" bindtap="closeExitConfirm">继续复习</button>
-    </view>
-  </view>
+<view class="decision-sheet" catchtap="noop">
+<view class="sheet-handle"></view>
+<text class="decision-kicker">PAUSE REVIEW</text>
+<text class="decision-title">退出本组复习？</text>
+<text class="decision-desc">本组尚未提交的答案不会计入复习结果，已经标记为掌握的题目不会受到影响。</text>
+<view class="decision-actions">
+<button class="decision-secondary" bindtap="confirmExitReview">确认退出</button>
+<button class="decision-primary" bindtap="closeExitConfirm">继续复习</button>
 </view>
-
-<!-- 撤销提示 -->
+</view>
+</view>
 <view class="undo-toast {{masterUndoVisible ? 'show' : ''}}">
-  <text class="undo-toast-text">{{masterUndoText}}</text>
-  <view class="undo-divider"></view>
-  <text class="undo-action" bindtap="undoMaster">撤销</text>
+<text class="undo-toast-text">{{masterUndoText}}</text>
+<view class="undo-divider"></view>
+<text class="undo-action" bindtap="undoMaster">撤销</text>
 </view>
-
-<!-- ==================== 每组题数底部弹层 ==================== -->
 <view
   wx:if="{{showBatchSizeSheet}}"
   class="batch-sheet-mask"
   catchtap="handleBatchSheetMaskTap"
 >
-  <view
+<view
     class="batch-sheet"
     catchtap="stopBatchSheetPropagation"
   >
-    <view class="batch-sheet-handle"></view>
-
-    <view class="batch-sheet-head">
-      <text class="batch-sheet-kicker">REVIEW BATCH</text>
-      <text class="batch-sheet-title">每组题数</text>
-      <text class="batch-sheet-desc">选择每轮复习包含的题目数量</text>
-    </view>
-
-    <view class="batch-size-grid">
-      <view
+<view class="batch-sheet-handle"></view>
+<view class="batch-sheet-head">
+<text class="batch-sheet-kicker">REVIEW BATCH</text>
+<text class="batch-sheet-title">每组题数</text>
+<text class="batch-sheet-desc">选择每轮复习包含的题目数量</text>
+</view>
+<view class="batch-size-grid">
+<view
         wx:for="{{batchSizeOptions}}"
         wx:key="*this"
         class="batch-size-option {{item === pendingBatchSize ? 'is-pending' : ''}} {{item === reviewBatchSize && item !== pendingBatchSize ? 'is-current' : ''}}"
@@ -396,26 +347,24 @@
         aria-role="button"
         aria-label="每组 {{item}} 道"
       >
-        <view class="batch-size-option-top">
-          <text class="batch-size-num">{{item}}</text>
-          <text class="batch-size-unit">道</text>
-          <view wx:if="{{item === pendingBatchSize}}" class="batch-size-check">✓</view>
-        </view>
-        <text class="batch-size-label">
-          <block wx:if="{{item === 5}}">快速复习</block>
-          <block wx:elif="{{item === 10}}">推荐</block>
-          <block wx:elif="{{item === 20}}">集中巩固</block>
-          <block wx:elif="{{item === 30}}">深度复习</block>
-        </text>
-        <view wx:if="{{item === 10}}" class="batch-size-badge">推荐</view>
-      </view>
-    </view>
-
-    <view class="batch-sheet-current-hint">当前选择：每组 {{reviewBatchSize}} 道</view>
-
-    <view class="batch-sheet-actions">
-      <button class="batch-sheet-action batch-sheet-cancel" bindtap="closeBatchSizeSheet">取消</button>
-      <button class="batch-sheet-action batch-sheet-confirm" bindtap="confirmBatchSize">确认使用</button>
-    </view>
-  </view>
+<view class="batch-size-option-top">
+<text class="batch-size-num">{{item}}</text>
+<text class="batch-size-unit">道</text>
+<view wx:if="{{item === pendingBatchSize}}" class="batch-size-check">✓</view>
+</view>
+<text class="batch-size-label">
+<block wx:if="{{item === 5}}">快速复习</block>
+<block wx:elif="{{item === 10}}">推荐</block>
+<block wx:elif="{{item === 20}}">集中巩固</block>
+<block wx:elif="{{item === 30}}">深度复习</block>
+</text>
+<view wx:if="{{item === 10}}" class="batch-size-badge">推荐</view>
+</view>
+</view>
+<view class="batch-sheet-current-hint">当前选择：每组 {{reviewBatchSize}} 道</view>
+<view class="batch-sheet-actions">
+<button class="batch-sheet-action batch-sheet-cancel" bindtap="closeBatchSizeSheet">取消</button>
+<button class="batch-sheet-action batch-sheet-confirm" bindtap="confirmBatchSize">确认使用</button>
+</view>
+</view>
 </view>

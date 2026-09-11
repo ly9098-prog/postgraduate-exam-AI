@@ -619,7 +619,9 @@ Parser.prototype.popNode = function () {
       }
       const name = config.svgDict[node.name] || node.name
       if (name === 'foreignObject') {
-        for (const child of (node.children || [])) {
+        const foreignChildren = node.children || []
+        for (let childIndex = 0; childIndex < foreignChildren.length; childIndex++) {
+          const child = foreignChildren[childIndex]
           if (child.attrs && !child.attrs.xmlns) {
             child.attrs.xmlns = 'http://www.w3.org/1999/xhtml'
             break
@@ -790,7 +792,9 @@ Parser.prototype.popNode = function () {
             trList.push(nodes[i])
           } else if (nodes[i].name === 'colgroup') {
             let colI = 1
-            for (const col of (nodes[i].children || [])) {
+            const colgroupChildren = nodes[i].children || []
+            for (let colIndex = 0; colIndex < colgroupChildren.length; colIndex++) {
+              const col = colgroupChildren[colIndex]
               if (col.name === 'col') {
                 const style = col.attrs.style || ''
                 const start = style.indexOf('width') ? style.indexOf(';width') : 0
@@ -941,7 +945,9 @@ Parser.prototype.popNode = function () {
       for (let i = 0; i < nodes.length; i++) {
         if (nodes[i].name === 'td') {
           // 颜色样式设置给单元格避免丢失
-          for (const style of ['color', 'background', 'background-color']) {
+          const inheritedCellStyles = ['color', 'background', 'background-color']
+          for (let styleIndex = 0; styleIndex < inheritedCellStyles.length; styleIndex++) {
+            const style = inheritedCellStyles[styleIndex]
             if (styleObj[style]) {
               nodes[i].attrs.style = style + ':' + styleObj[style] + ';' + (nodes[i].attrs.style || '')
             }

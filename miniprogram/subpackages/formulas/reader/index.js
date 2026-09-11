@@ -293,7 +293,7 @@ Page({
       this._excludeIds = this._excludeIds || []
       this._excludeIds.push(normalizeId(card.id))
 
-      let cards = append ? [...this.data.displayCards, card] : [card]
+      let cards = append ? (this.data.displayCards || []).concat([card]) : [card]
       if (cards.length > MAX_RANDOM_HISTORY) cards = cards.slice(-MAX_RANDOM_HISTORY)
       const currentIndex = append ? cards.length - 1 : 0
       const patch = { displayCards: cards, currentIndex }
@@ -489,7 +489,7 @@ Page({
       this._favoriteIds = this._favoriteIds || []
       this._favoriteIds = wasFavorited
         ? this._favoriteIds.filter((id) => !sameId(id, cardId))
-        : [...this._favoriteIds.filter((id) => !sameId(id, cardId)), cardId]
+        : this._favoriteIds.filter((id) => !sameId(id, cardId)).concat([cardId])
 
       this.setData({
         displayCards: cards,

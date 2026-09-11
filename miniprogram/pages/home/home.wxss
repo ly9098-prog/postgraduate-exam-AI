@@ -4781,9 +4781,15 @@ page {
   color: #91A096;
 }
 
-.mastery-hex-rail,
-.mastery-track-tech {
+/* Keep the outer progress wrapper transparent.
+ * The clipped rail owns the gray background; painting the wrapper gray fills
+ * the chamfered corners and makes the slanted ends look like they are leaking. */
+.mastery-hex-rail {
   background: #E2ECE3;
+}
+
+.mastery-track-tech {
+  background: transparent;
 }
 
 .mastery-hex-gradient,

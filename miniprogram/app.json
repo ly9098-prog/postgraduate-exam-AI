@@ -1,12 +1,7 @@
 {
   "pages": [
     "pages/login/login",
-    "pages/agreement/user",
-    "pages/agreement/privacy",
-    "pages/agreement/ai",
-    "pages/home/home",
-    "pages/dashboard/dashboard",
-    "pages/pomodoro/pomodoro"
+    "pages/home/home"
   ],
   "window": {
     "navigationBarBackgroundColor": "#F4F4EE",
@@ -17,6 +12,32 @@
     "backgroundColorBottom": "#F4F4EE"
   },
   "subPackages": [
+    {
+      "root": "pages/agreement",
+      "name": "agreement",
+      "independent": false,
+      "pages": [
+        "user",
+        "privacy",
+        "ai"
+      ]
+    },
+    {
+      "root": "pages/dashboard",
+      "name": "dashboard",
+      "independent": false,
+      "pages": [
+        "dashboard"
+      ]
+    },
+    {
+      "root": "pages/pomodoro",
+      "name": "pomodoro",
+      "independent": false,
+      "pages": [
+        "pomodoro"
+      ]
+    },
     {
       "root": "subpackages/animation",
       "name": "animation",
