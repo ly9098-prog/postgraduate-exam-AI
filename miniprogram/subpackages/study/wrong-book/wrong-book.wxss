@@ -17,6 +17,15 @@ page {
   padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
 }
 
+/* 空状态固定在一屏内：扣除自定义导航栏占位，禁止页面产生纵向溢出 */
+.page.page-empty {
+  height: calc(100vh - 176rpx);
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-bottom: 24rpx;
+}
+
 /* ===== 顶部 ===== */
 .topbar {
   display: flex;
@@ -1511,44 +1520,43 @@ page {
 }
 
 .empty-state {
-  min-height: 380rpx;
-  padding: 70rpx 40rpx;
+  min-height: 0;
+  margin: 0;
+  padding: 38rpx 24rpx 24rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  border: 1rpx solid rgba(30, 56, 40, 0.07);
-  border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.84);
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   text-align: center;
 }
 
-.empty-mark {
-  width: 90rpx;
-  height: 90rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #E8F8ED;
-  color: #27B860;
-  font-size: 42rpx;
-  font-weight: 800;
+.empty-image {
+  width: 430rpx;
+  height: auto;
+  display: block;
 }
 
 .empty-title {
-  margin-top: 24rpx;
-  color: #1B271F;
-  font-size: 30rpx;
-  font-weight: 850;
+  margin-top: 56rpx;
+  color: #27343F;
+  font-size: 44rpx;
+  font-weight: 800;
+  line-height: 1.28;
 }
 
 .empty-desc {
-  max-width: 500rpx;
-  margin-top: 12rpx;
-  color: #8B948E;
-  font-size: 22rpx;
-  line-height: 1.65;
+  margin-top: 18rpx;
+  color: #89949E;
+  font-size: 28rpx;
+  line-height: 1.7;
+}
+
+.empty-desc-line {
+  display: block;
 }
 
 /* ===== 极简悬浮胶囊按钮组 ===== */

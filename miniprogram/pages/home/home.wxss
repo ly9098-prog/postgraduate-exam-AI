@@ -4542,3 +4542,345 @@ page {
     right: -18rpx;
   }
 }
+
+/* Round 5.2 — unify the complete Home page with the hero card's white/mint
+ * palette. Keep hierarchy through density and borders instead of unrelated
+ * beige / blue / yellow section accents. */
+page {
+  background: #F3F8F2;
+  background-color: #F3F8F2;
+  color: #13251A;
+}
+
+.home-page {
+  background:
+    radial-gradient(circle at 92% 2%, rgba(126, 228, 137, .10), transparent 360rpx),
+    radial-gradient(circle at 5% 40%, rgba(196, 239, 199, .11), transparent 420rpx),
+    linear-gradient(180deg, #F8FBF7 0%, #F2F7F1 54%, #EFF5EE 100%);
+}
+
+.home-nav-inner {
+  border-bottom: 1rpx solid rgba(185, 220, 188, .32);
+}
+
+.brand-mark {
+  background: linear-gradient(145deg, #2FBC55 0%, #3FD665 100%);
+  box-shadow: 0 9rpx 22rpx rgba(56, 188, 84, .16);
+}
+
+.brand-mark-line.line-two,
+.brand-mark-dot {
+  background: #D8FFD8;
+}
+
+.brand-mark-dot {
+  box-shadow: 0 0 0 6rpx rgba(120, 232, 139, .16);
+}
+
+.brand-name,
+.editorial-title,
+.section-title {
+  color: #12241A;
+}
+
+.brand-caption,
+.editorial-date,
+.section-kicker,
+.route-eyebrow,
+.growth-note-label {
+  color: #6F8375;
+}
+
+.profile-chip {
+  border-color: #CFE5D1;
+  background: rgba(255, 255, 255, .80);
+  box-shadow: 0 7rpx 18rpx rgba(75, 125, 82, .055);
+}
+
+.profile-avatar {
+  background: linear-gradient(145deg, #E8F8E8, #D9F0DB);
+  color: #245A31;
+}
+
+.profile-level {
+  color: #42604A;
+}
+
+.editorial-rule {
+  background: linear-gradient(90deg, #CDE2CF, rgba(205, 226, 207, 0));
+}
+
+.editorial-subtitle {
+  color: #647668;
+}
+
+.content-section {
+  margin-top: 48rpx;
+}
+
+.section-heading {
+  margin-bottom: 19rpx;
+}
+
+.section-kicker {
+  color: #73877A;
+}
+
+.section-title {
+  color: #14261B;
+}
+
+.section-note {
+  color: #7A8D80;
+}
+
+.section-quick-action {
+  min-height: 58rpx;
+  padding: 0 15rpx;
+  border: 1rpx solid #D4E8D5;
+  background: rgba(255, 255, 255, .66);
+  color: #3A6945;
+  box-shadow: 0 7rpx 18rpx rgba(69, 121, 77, .045);
+}
+
+.section-quick-action-pressed {
+  background: #EAF7EB;
+}
+
+.section-quick-arrow {
+  color: #65A870;
+}
+
+/* Today's study routes */
+.route-stack {
+  overflow: hidden;
+  border: 1rpx solid #CFE6D1;
+  border-radius: 32rpx;
+  background: rgba(252, 255, 251, .92);
+  box-shadow:
+    0 16rpx 38rpx rgba(59, 107, 67, .06),
+    inset 0 1rpx 0 rgba(255,255,255,.98);
+}
+
+.route-card,
+.route-review,
+.route-practice,
+.route-wrong,
+.route-exam,
+.wrongbook-tool-card,
+.hub-task-completed {
+  background: linear-gradient(90deg, rgba(235, 249, 236, .72) 0%, rgba(255, 255, 255, .76) 64%, rgba(247, 253, 247, .82) 100%);
+  border-color: transparent;
+}
+
+.route-card + .route-card {
+  border-top: 1rpx solid #DFEEE0;
+}
+
+.hub-task-stack {
+  gap: 0;
+}
+
+.wrongbook-tool-card {
+  margin-top: 0;
+}
+
+.card-pressed {
+  background-color: #EAF7EB;
+}
+
+.route-index,
+.route-practice .route-index,
+.route-wrong .route-index,
+.route-exam .route-index,
+.hub-task-index {
+  border: 1rpx solid #C9E4CC;
+  background: linear-gradient(145deg, #EAF8EA 0%, #DDF2DF 100%);
+  color: #2B6B39;
+  box-shadow:
+    inset 0 1rpx 0 rgba(255,255,255,.96),
+    0 6rpx 14rpx rgba(58, 117, 67, .07);
+}
+
+.route-icon-image {
+  filter: none;
+}
+
+.route-title,
+.wrongbook-tool-card .route-title {
+  color: #17301F;
+}
+
+.route-desc,
+.wrongbook-tool-card .route-desc,
+.hub-task-meta {
+  color: #718176;
+}
+
+.route-arrow {
+  border-color: #CAE3CD;
+  background: rgba(247, 253, 247, .92);
+  color: #2F7940;
+}
+
+/* Mastery cards */
+.mastery-section {
+  margin-top: 48rpx;
+}
+
+.mastery-heading .section-kicker {
+  color: #73877A;
+}
+
+.mastery-heading .section-title {
+  color: #14281C;
+}
+
+.mastery-card-tech {
+  border-color: #CEE5D0;
+  background: linear-gradient(145deg, #FFFFFF 0%, #FBFFFA 52%, #F2FAF2 100%);
+  box-shadow:
+    0 14rpx 34rpx rgba(58, 108, 67, .065),
+    inset 0 1rpx 0 rgba(255,255,255,.98);
+}
+
+.mastery-card-tech::before {
+  background:
+    radial-gradient(circle at 8% 5%, rgba(255,255,255,.98) 0 23%, transparent 54%),
+    radial-gradient(circle at 100% 100%, rgba(116, 221, 126, .07), transparent 42%);
+}
+
+.mastery-icon,
+.mastery-icon-data,
+.mastery-icon-chip,
+.mastery-icon-code,
+.mastery-icon-network {
+  border-color: #C8E2CB;
+  background: linear-gradient(145deg, #F1FAF1 0%, #E3F3E5 100%);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255,255,255,.98),
+    0 5rpx 13rpx rgba(54, 111, 63, .07),
+    0 0 0 5rpx rgba(76, 203, 96, .035);
+}
+
+.mastery-icon::before {
+  border-color: rgba(69, 146, 80, .10);
+}
+
+.mastery-more view {
+  background: #7C9481;
+}
+
+.mastery-card-tech .mastery-subject,
+.mastery-card-tech .mastery-score {
+  color: #183021;
+}
+
+.mastery-card-tech.no-data .mastery-score,
+.mastery-card-tech .mastery-score.is-empty {
+  color: #91A096;
+}
+
+.mastery-hex-rail,
+.mastery-track-tech {
+  background: #E2ECE3;
+}
+
+.mastery-hex-gradient,
+.mastery-fill-tech {
+  background: linear-gradient(90deg, #3CCB58 0%, #63DC71 54%, #91ED7A 100%);
+}
+
+.mastery-fill-tech::after {
+  background: #76E275;
+}
+
+.mastery-foot-tech,
+.mastery-foot-tech .mastery-status,
+.mastery-sample-copy {
+  color: #687A6D;
+}
+
+/* Learning workbench */
+.tool-panel {
+  border-color: #CFE5D1;
+  background: rgba(252, 255, 251, .92);
+  box-shadow: 0 14rpx 34rpx rgba(60, 108, 68, .055);
+}
+
+.tool-divider {
+  background: #DCECDD;
+}
+
+.tool-pressed {
+  background: #EAF7EB;
+}
+
+.tool-icon {
+  border: 1rpx solid #CBE3CE;
+  background: linear-gradient(145deg, #ECF8ED, #DFF2E1);
+  color: #245F32;
+}
+
+.chart-icon .bar {
+  background: #2A743A;
+}
+
+.chart-icon .bar-b {
+  background: #42C85A;
+}
+
+.chart-icon .bar-c {
+  background: #70DD72;
+}
+
+.clock-icon::before {
+  border-color: #286B36;
+}
+
+.clock-hand {
+  background: #4CCB5F;
+}
+
+.tool-title {
+  color: #193022;
+}
+
+.tool-desc {
+  color: #77867B;
+}
+
+/* Closing note */
+.growth-note {
+  margin-top: 38rpx;
+  padding: 25rpx 22rpx;
+  border: 1rpx solid #D4E7D5;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, rgba(251,255,250,.94), rgba(237,248,238,.90));
+  box-shadow: 0 10rpx 26rpx rgba(63, 111, 70, .045);
+}
+
+.growth-note-line {
+  background: linear-gradient(180deg, #43D75D, #8BE47D);
+}
+
+.growth-note-label {
+  color: #6F8575;
+}
+
+.growth-note-text {
+  color: #536758;
+}
+
+@media (max-width: 360px) {
+  .route-stack,
+  .tool-panel {
+    border-radius: 28rpx;
+  }
+
+  .growth-note {
+    margin-left: 24rpx;
+    margin-right: 24rpx;
+    border-radius: 25rpx;
+  }
+}

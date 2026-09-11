@@ -1,7 +1,9 @@
+<page-meta page-style="{{!loading && list.length === 0 ? 'height: 100vh; overflow: hidden;' : ''}}" />
+
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
 <app-dialog id="appDialog" />
-<view class="page {{batchMode ? 'page-batch-padding' : ''}}" bindtouchstart="onPageInteraction">
+<view class="page {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
   <!-- 顶部视图切换与编辑模式 -->
   <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
     <block wx:if="{{!batchMode}}">
@@ -234,9 +236,17 @@
     <loading-lottie text="正在整理错题任务..." size="large" />
   </view>
   <view wx:if="{{!loading && list.length === 0}}" class="empty-state">
-    <view class="empty-mark">✓</view>
+    <image
+      class="empty-image"
+      src="/assets/images/wrong-book-empty.png"
+      mode="widthFix"
+      aria-label="暂无错题"
+    />
     <text class="empty-title">这里暂时没有错题</text>
-    <text class="empty-desc">新产生的错题会自动进入任务流，并按照复习时间排序</text>
+    <view class="empty-desc">
+      <text class="empty-desc-line">新产生的错题会自动进入任务流，</text>
+      <text class="empty-desc-line">并按照复习时间排序</text>
+    </view>
   </view>
 
   <!-- 任务流视图 -->

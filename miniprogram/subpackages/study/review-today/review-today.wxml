@@ -1,4 +1,4 @@
-<page-meta page-style="{{phase === 'overview' ? 'height: 100vh; overflow: hidden;' : ''}}" />
+<page-meta page-style="{{phase === 'overview' || phase === 'empty' ? 'height: 100vh; overflow: hidden;' : ''}}" />
 
 <premium-nav
   title="今日复习"
@@ -294,27 +294,29 @@
 
 <!-- ==================== 空状态 ==================== -->
 <view wx:elif="{{phase === 'empty'}}" class="page state-page empty-page">
-  <view class="page-ambient ambient-one"></view>
-  <view class="page-ambient ambient-two"></view>
-  <view class="state-shell motion-page-enter">
-    <view class="state-visual clear-visual">
-      <view class="clear-ring ring-one"></view>
-      <view class="clear-ring ring-two"></view>
-      <view class="clear-check">✓</view>
-      <view class="clear-line cl-1"></view><view class="clear-line cl-2"></view><view class="clear-line cl-3"></view>
+  <view class="empty-page-orb empty-page-orb-bottom" aria-hidden="true"></view>
+  <view class="state-shell empty-state-shell motion-page-enter">
+    <view class="empty-visual">
+      <view class="empty-visual-halo"></view>
+      <image
+        class="empty-image"
+        src="/assets/images/review-today-empty.png"
+        mode="widthFix"
+        aria-label="今日复习已清空"
+      />
     </view>
-    <text class="state-kicker">MEMORY CLEAR</text>
-    <text class="state-title">今天没有待复习的题目。</text>
-    <text class="state-desc">记忆计划暂时清空，可以放松一下，也可以继续练几道新题。</text>
+    <text class="state-kicker empty-kicker">MEMORY CLEAR</text>
+    <text class="state-title empty-title">今天没有待复习的题目。</text>
+    <text class="state-desc empty-desc">记忆计划暂时清空，可以放松一下，也可以继续练几道新题。</text>
 
     <view class="empty-status-row">
-      <view><text>今日复习</text><text class="empty-status-value">已清空</text></view>
+      <view class="empty-status-item"><text class="empty-status-label">今日复习</text><text class="empty-status-value">已清空</text></view>
       <view class="empty-status-divider"></view>
-      <view><text>下一步</text><text class="empty-status-value">自由练习</text></view>
+      <view class="empty-status-item"><text class="empty-status-label">下一步</text><text class="empty-status-value">自由练习</text></view>
     </view>
 
-    <button class="primary-action" bindtap="goPractice" hover-class="primary-action-pressed"><text>去练习新题</text><text class="primary-action-arrow">↗</text></button>
-    <button class="secondary-action" bindtap="goWrongBook" hover-class="secondary-action-pressed">查看错题本</button>
+    <button class="primary-action empty-primary-action" bindtap="goPractice" hover-class="primary-action-pressed"><text>去练习新题</text><text class="primary-action-arrow empty-primary-arrow">↗</text></button>
+    <button class="secondary-action empty-secondary-action" bindtap="goWrongBook" hover-class="secondary-action-pressed">查看错题本</button>
   </view>
 </view>
 

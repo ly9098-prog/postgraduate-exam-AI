@@ -142,7 +142,7 @@
 
       <!-- Wrong-book is a permanent Home tool, never hidden by recommendation availability. -->
       <view class="route-card route-wrong wrongbook-tool-card" bindtap="goWrongBook" hover-class="card-pressed">
-        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/book-x.svg" mode="aspectFit" /></view>
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/wrong-book.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">常用工具</text>
           <text class="route-title">错题本</text>
@@ -174,7 +174,7 @@
       </view>
 
       <view class="route-card route-wrong" bindtap="goWrongBook" hover-class="card-pressed">
-        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/book-x.svg" mode="aspectFit" /></view>
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/wrong-book.svg" mode="aspectFit" /></view>
         <view class="route-copy">
           <text class="route-eyebrow">薄弱项管理</text>
           <text class="route-title">错题本</text>
