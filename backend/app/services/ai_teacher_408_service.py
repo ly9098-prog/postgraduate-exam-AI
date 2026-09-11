@@ -136,7 +136,9 @@ def _sanitize_user_text(value: object, limit: int = 1200) -> str:
     text = _METRIC_ASSIGNMENT_RE.sub(replace_metric, text)
     # 关系枚举只有在呈现为键值/箭头格式时才替换，避免误伤如 "parent process" 这类学科术语。
     text = _replace_relation_tokens(text, include_colon=True)
-    text = re.sub(r"(?i)(?<![A-Za-z0-9_])mastery_score(?![A-Za-z0-9_])", "掌握情况", text)
+    text = re.sub(
+        r"(?i)(?<![A-Za-z0-9_])mastery_score(?![A-Za-z0-9_])", "掌握情况", text
+    )
     text = re.sub(r"(?i)(?<![A-Za-z0-9_])mastery(?![A-Za-z0-9_])", "掌握情况", text)
     text = re.sub(r"(?i)(?<![A-Za-z0-9_])confidence(?![A-Za-z0-9_])", "评估依据", text)
     text = re.sub(r"\s*([,，;；])\s*[,，;；]+\s*", r"\1", text)
@@ -150,7 +152,9 @@ def _sanitize_relation_text(value: object, limit: int = 320) -> str:
         return ""
     text = _replace_relation_tokens(text, include_colon=True)
     for raw_key, label in _RELATION_LABELS.items():
-        pattern = re.compile(rf"(?i)(?<![A-Za-z0-9_]){re.escape(raw_key)}(?![A-Za-z0-9_])")
+        pattern = re.compile(
+            rf"(?i)(?<![A-Za-z0-9_]){re.escape(raw_key)}(?![A-Za-z0-9_])"
+        )
         text = pattern.sub(label, text)
     text = _sanitize_user_text(text, limit)
     return text.replace(";", "；")
@@ -176,21 +180,28 @@ def _prompt_knowledge_context(knowledge_context: dict[str, Any]) -> dict[str, An
     """生成仅供 AI 教学使用的去内部参数上下文。"""
     current_points: list[dict[str, Any]] = []
     for item in knowledge_context.get("knowledge_points") or []:
-        current_points.append({
-            "名称": str(item.get("name") or ""),
-            "学习状态": _mastery_status(item.get("mastery_score")) or "暂无稳定判断",
-            "评估依据": _evidence_status(item.get("confidence"), item.get("attempt_count")),
-            "练习次数": int(item.get("attempt_count") or 0),
-            "近期错题次数": int(item.get("recent_wrong_count") or 0),
-        })
+        current_points.append(
+            {
+                "名称": str(item.get("name") or ""),
+                "学习状态": _mastery_status(item.get("mastery_score"))
+                or "暂无稳定判断",
+                "评估依据": _evidence_status(
+                    item.get("confidence"), item.get("attempt_count")
+                ),
+                "练习次数": int(item.get("attempt_count") or 0),
+                "近期错题次数": int(item.get("recent_wrong_count") or 0),
+            }
+        )
 
     weak_points: list[dict[str, Any]] = []
     for item in knowledge_context.get("weak_points") or []:
-        weak_points.append({
-            "名称": str(item.get("name") or ""),
-            "学习状态": _mastery_status(item.get("mastery_score")) or "还需巩固",
-            "累计错题次数": int(item.get("wrong_count") or 0),
-        })
+        weak_points.append(
+            {
+                "名称": str(item.get("name") or ""),
+                "学习状态": _mastery_status(item.get("mastery_score")) or "还需巩固",
+                "累计错题次数": int(item.get("wrong_count") or 0),
+            }
+        )
 
     recent_errors = [
         {
@@ -203,7 +214,9 @@ def _prompt_knowledge_context(knowledge_context: dict[str, Any]) -> dict[str, An
     graph_neighbors = [
         {
             "起点": str(item.get("source") or ""),
-            "关系": _RELATION_LABELS.get(str(item.get("relation") or "").lower(), "相关知识"),
+            "关系": _RELATION_LABELS.get(
+                str(item.get("relation") or "").lower(), "相关知识"
+            ),
             "终点": str(item.get("target") or ""),
         }
         for item in knowledge_context.get("knowledge_graph_neighbors") or []
@@ -283,7 +296,9 @@ def _clean_str(value: object, limit: int = 1200) -> str:
     return str(value or "").strip()[:limit]
 
 
-def _clean_points(value: object, *, max_items: int = 5, item_limit: int = 500) -> list[str]:
+def _clean_points(
+    value: object, *, max_items: int = 5, item_limit: int = 500
+) -> list[str]:
     if not isinstance(value, list):
         return []
     result: list[str] = []
@@ -296,12 +311,19 @@ def _clean_points(value: object, *, max_items: int = 5, item_limit: int = 500) -
     return result
 
 
-def _analysis_text_points(value: object, *, max_items: int = 5, item_limit: int = 800) -> list[str]:
+def _analysis_text_points(
+    value: object, *, max_items: int = 5, item_limit: int = 800
+) -> list[str]:
     if isinstance(value, list):
         result: list[str] = []
         for raw in value:
             if isinstance(raw, dict):
-                preferred = raw.get("text") or raw.get("content") or raw.get("point") or raw.get("description")
+                preferred = (
+                    raw.get("text")
+                    or raw.get("content")
+                    or raw.get("point")
+                    or raw.get("description")
+                )
                 text = _clean_str(preferred, item_limit) if preferred else ""
             else:
                 text = _clean_str(raw, item_limit)
@@ -312,8 +334,11 @@ def _analysis_text_points(value: object, *, max_items: int = 5, item_limit: int 
         return result
     if isinstance(value, dict):
         preferred = (
-            value.get("text") or value.get("content") or value.get("summary")
-            or value.get("description") or value.get("reason")
+            value.get("text")
+            or value.get("content")
+            or value.get("summary")
+            or value.get("description")
+            or value.get("reason")
         )
         if preferred:
             return [_clean_str(preferred, item_limit)]
@@ -339,10 +364,49 @@ def _structured_analysis_sections(value: object) -> list[dict[str, Any]]:
         return []
 
     groups = (
-        (("mistake_diagnosis", "mistakeDiagnosis", "error_analysis", "diagnosis", "错因诊断"), "错因诊断"),
-        (("knowledge_patch", "knowledgePatch", "knowledge_weakness", "knowledgeGap", "知识补漏", "补漏重点"), "知识补漏"),
-        (("review_task", "reviewTask", "review_plan", "suggestion", "复练任务", "复习建议"), "复练建议"),
-        (("analysis", "explanation", "solution", "answer_analysis", "题目解析", "解析"), "题目解析"),
+        (
+            (
+                "mistake_diagnosis",
+                "mistakeDiagnosis",
+                "error_analysis",
+                "diagnosis",
+                "错因诊断",
+            ),
+            "错因诊断",
+        ),
+        (
+            (
+                "knowledge_patch",
+                "knowledgePatch",
+                "knowledge_weakness",
+                "knowledgeGap",
+                "知识补漏",
+                "补漏重点",
+            ),
+            "知识补漏",
+        ),
+        (
+            (
+                "review_task",
+                "reviewTask",
+                "review_plan",
+                "suggestion",
+                "复练任务",
+                "复习建议",
+            ),
+            "复练建议",
+        ),
+        (
+            (
+                "analysis",
+                "explanation",
+                "solution",
+                "answer_analysis",
+                "题目解析",
+                "解析",
+            ),
+            "题目解析",
+        ),
     )
     sections: list[dict[str, Any]] = []
     for keys, heading in groups:
@@ -359,7 +423,12 @@ def _structured_analysis_sections(value: object) -> list[dict[str, Any]]:
         for key, raw_value in list(parsed.items())[:4]:
             points = _analysis_text_points(raw_value)
             if points:
-                sections.append({"heading": _clean_str(key, 120).replace("_", " "), "points": points})
+                sections.append(
+                    {
+                        "heading": _clean_str(key, 120).replace("_", " "),
+                        "points": points,
+                    }
+                )
     return sections[:8]
 
 
@@ -382,7 +451,9 @@ def _normalize_generated_question(value: object, action: str) -> dict[str, Any] 
     if not stem or len(options) < 2 or not answer:
         return None
     try:
-        difficulty_delta = int(value.get("difficulty_delta", 1 if action == "harder_question" else 0))
+        difficulty_delta = int(
+            value.get("difficulty_delta", 1 if action == "harder_question" else 0)
+        )
     except (TypeError, ValueError):
         difficulty_delta = 1 if action == "harder_question" else 0
     difficulty_delta = max(0, min(1, difficulty_delta))
@@ -427,7 +498,9 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
         heading = _sanitize_user_text(section.get("heading"), 120)
         points = [
             _sanitize_user_text(point, 500)
-            for point in _analysis_text_points(section.get("points"), max_items=5, item_limit=500)
+            for point in _analysis_text_points(
+                section.get("points"), max_items=5, item_limit=500
+            )
         ]
         points = [point for point in points if point]
         if not points:
@@ -457,11 +530,15 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
         if len(knowledge_points) >= 8:
             break
 
-    next_raw = value.get("next_action") if isinstance(value.get("next_action"), dict) else {}
+    next_raw = (
+        value.get("next_action") if isinstance(value.get("next_action"), dict) else {}
+    )
     next_action = {
         "type": _clean_str(next_raw.get("type"), 64) or "none",
         "label": _sanitize_user_text(next_raw.get("label"), 128),
-        "params": next_raw.get("params") if isinstance(next_raw.get("params"), dict) else {},
+        "params": next_raw.get("params")
+        if isinstance(next_raw.get("params"), dict)
+        else {},
     }
     summary = _sanitize_user_text(value.get("summary"), 1200)
     if summary_sections:
@@ -473,7 +550,9 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
         "summary": summary,
         "sections": deduped_sections,
         "knowledge_points": knowledge_points,
-        "practice_question": _normalize_generated_question(value.get("practice_question"), action),
+        "practice_question": _normalize_generated_question(
+            value.get("practice_question"), action
+        ),
         "next_action": next_action,
     }
 
@@ -523,7 +602,9 @@ async def assert_ai_answer_access_allowed(
         question_ids=[question_id],
     )
     if int(question_id) in blocked:
-        raise AIExamInProgressError("考试进行中禁止调用会泄露答案或解析的 AI 能力，请交卷后再使用。")
+        raise AIExamInProgressError(
+            "考试进行中禁止调用会泄露答案或解析的 AI 能力，请交卷后再使用。"
+        )
 
 
 async def _resolve_exam_context(
@@ -534,7 +615,9 @@ async def _resolve_exam_context(
     exam_attempt_id: int | None,
 ) -> dict[str, Any]:
     if not exam_attempt_id:
-        await assert_ai_answer_access_allowed(db, user_id=user_id, question_id=question_id)
+        await assert_ai_answer_access_allowed(
+            db, user_id=user_id, question_id=question_id
+        )
         return {}
 
     attempt = await db.scalar(
@@ -554,9 +637,13 @@ async def _resolve_exam_context(
     if item is None:
         raise AITeacher408AccessError("该题不属于指定考试记录")
     if attempt.status == "in_progress":
-        raise AIExamInProgressError("考试进行中禁止调用会泄露答案或解析的 AI 能力，请交卷后再使用。")
+        raise AIExamInProgressError(
+            "考试进行中禁止调用会泄露答案或解析的 AI 能力，请交卷后再使用。"
+        )
     if attempt.status == "abandoned":
-        raise AITeacher408AccessError("该考试尚未形成可复盘的交卷结果，暂不开放 AI 讲解。")
+        raise AITeacher408AccessError(
+            "该考试尚未形成可复盘的交卷结果，暂不开放 AI 讲解。"
+        )
 
     answer = await db.scalar(
         select(ExamAnswer).where(
@@ -587,7 +674,9 @@ async def _resolve_revision_and_diagnosis(
 
     diagnosis = None
     if diagnosis_id:
-        diagnosis = await error_diagnosis_service.get_diagnosis_by_id(db, user_id, diagnosis_id)
+        diagnosis = await error_diagnosis_service.get_diagnosis_by_id(
+            db, user_id, diagnosis_id
+        )
         if diagnosis is None or int(diagnosis.question_id) != question_id:
             raise AITeacher408AccessError("错因记录不存在或与题目不匹配")
 
@@ -597,11 +686,13 @@ async def _resolve_revision_and_diagnosis(
     has_owned_history = bool(exam_context) or diagnosis is not None
     if not question.is_active and not has_owned_history and requested_version_id:
         practice_fact = await db.scalar(
-            select(PracticeRecord.id).where(
+            select(PracticeRecord.id)
+            .where(
                 PracticeRecord.user_id == user_id,
                 PracticeRecord.question_id == question_id,
                 PracticeRecord.question_version_id == requested_version_id,
-            ).limit(1)
+            )
+            .limit(1)
         )
         has_owned_history = practice_fact is not None
     if not question.is_active and not has_owned_history:
@@ -610,8 +701,12 @@ async def _resolve_revision_and_diagnosis(
     allowed_subject_ids = await _active_408_subject_ids(db)
 
     exam_version_id = exam_context.get("question_version_id")
-    diagnosis_version_id = int(diagnosis.question_version_id) if diagnosis is not None else None
-    current_version_id = int(question.current_version_id) if question.current_version_id else None
+    diagnosis_version_id = (
+        int(diagnosis.question_version_id) if diagnosis is not None else None
+    )
+    current_version_id = (
+        int(question.current_version_id) if question.current_version_id else None
+    )
 
     # An explicit version from the client is only a consistency assertion unless
     # the user can prove that exact historical revision belongs to one of their
@@ -621,7 +716,11 @@ async def _resolve_revision_and_diagnosis(
         (int(item) for item in (exam_version_id, diagnosis_version_id) if item),
         None,
     )
-    if authoritative and requested_version_id and int(requested_version_id) != authoritative:
+    if (
+        authoritative
+        and requested_version_id
+        and int(requested_version_id) != authoritative
+    ):
         raise AITeacher408AccessError("题目版本与当前复盘事实不一致")
 
     if authoritative is not None:
@@ -641,7 +740,9 @@ async def _resolve_revision_and_diagnosis(
                 .limit(1)
             )
             if owned_practice_record_id is None:
-                raise AITeacher408AccessError("该历史题目版本不属于当前用户的可复盘记录")
+                raise AITeacher408AccessError(
+                    "该历史题目版本不属于当前用户的可复盘记录"
+                )
             version_id = requested
     else:
         version_id = current_version_id
@@ -670,46 +771,67 @@ async def _load_knowledge_context(
     revision: QuestionVersion,
 ) -> dict[str, Any]:
     kp_rows = (
-        await db.execute(
-            select(KnowledgePoint)
-            .join(
-                QuestionVersionKnowledgePoint,
-                QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        (
+            await db.execute(
+                select(KnowledgePoint)
+                .join(
+                    QuestionVersionKnowledgePoint,
+                    QuestionVersionKnowledgePoint.knowledge_point_id
+                    == KnowledgePoint.id,
+                )
+                .where(QuestionVersionKnowledgePoint.question_version_id == revision.id)
+                .order_by(
+                    QuestionVersionKnowledgePoint.position.asc(),
+                    KnowledgePoint.id.asc(),
+                )
             )
-            .where(QuestionVersionKnowledgePoint.question_version_id == revision.id)
-            .order_by(QuestionVersionKnowledgePoint.position.asc(), KnowledgePoint.id.asc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     kp_ids = [int(item.id) for item in kp_rows]
 
     mastery_rows = []
     if kp_ids:
-        mastery_rows = list((await db.execute(
-            select(UserKnowledgeState).where(
-                UserKnowledgeState.user_id == user_id,
-                UserKnowledgeState.knowledge_point_id.in_(kp_ids),
+        mastery_rows = list(
+            (
+                await db.execute(
+                    select(UserKnowledgeState).where(
+                        UserKnowledgeState.user_id == user_id,
+                        UserKnowledgeState.knowledge_point_id.in_(kp_ids),
+                    )
+                )
             )
-        )).scalars().all())
+            .scalars()
+            .all()
+        )
     mastery_by_kp = {int(item.knowledge_point_id): item for item in mastery_rows}
     current_kps = []
     for kp in kp_rows:
         state = mastery_by_kp.get(int(kp.id))
-        current_kps.append({
-            "id": int(kp.id),
-            "name": str(kp.name),
-            "mastery_score": round(float(state.mastery_score), 2) if state else None,
-            "confidence": round(float(state.confidence), 4) if state else None,
-            "attempt_count": int(state.attempt_count) if state else 0,
-            "recent_wrong_count": int(state.recent_wrong_count) if state else 0,
-            "weakness_level": str(state.weakness_level) if state else "unknown",
-        })
+        current_kps.append(
+            {
+                "id": int(kp.id),
+                "name": str(kp.name),
+                "mastery_score": round(float(state.mastery_score), 2)
+                if state
+                else None,
+                "confidence": round(float(state.confidence), 4) if state else None,
+                "attempt_count": int(state.attempt_count) if state else 0,
+                "recent_wrong_count": int(state.recent_wrong_count) if state else 0,
+                "weakness_level": str(state.weakness_level) if state else "unknown",
+            }
+        )
 
     weak_points = []
     if revision.subject_id is not None:
         weak_rows = (
             await db.execute(
                 select(UserKnowledgeState, KnowledgePoint)
-                .join(KnowledgePoint, KnowledgePoint.id == UserKnowledgeState.knowledge_point_id)
+                .join(
+                    KnowledgePoint,
+                    KnowledgePoint.id == UserKnowledgeState.knowledge_point_id,
+                )
                 .where(
                     UserKnowledgeState.user_id == user_id,
                     UserKnowledgeState.subject_id == int(revision.subject_id),
@@ -738,24 +860,28 @@ async def _load_knowledge_context(
     recent_errors: list[dict[str, Any]] = []
     if kp_ids:
         rows = (
-            await db.execute(
-                select(WrongQuestionErrorDiagnosis)
-                .join(
-                    QuestionVersionKnowledgePoint,
-                    QuestionVersionKnowledgePoint.question_version_id
-                    == WrongQuestionErrorDiagnosis.question_version_id,
+            (
+                await db.execute(
+                    select(WrongQuestionErrorDiagnosis)
+                    .join(
+                        QuestionVersionKnowledgePoint,
+                        QuestionVersionKnowledgePoint.question_version_id
+                        == WrongQuestionErrorDiagnosis.question_version_id,
+                    )
+                    .where(
+                        WrongQuestionErrorDiagnosis.user_id == user_id,
+                        QuestionVersionKnowledgePoint.knowledge_point_id.in_(kp_ids),
+                    )
+                    .order_by(
+                        WrongQuestionErrorDiagnosis.occurred_at.desc(),
+                        WrongQuestionErrorDiagnosis.id.desc(),
+                    )
+                    .limit(12)
                 )
-                .where(
-                    WrongQuestionErrorDiagnosis.user_id == user_id,
-                    QuestionVersionKnowledgePoint.knowledge_point_id.in_(kp_ids),
-                )
-                .order_by(
-                    WrongQuestionErrorDiagnosis.occurred_at.desc(),
-                    WrongQuestionErrorDiagnosis.id.desc(),
-                )
-                .limit(12)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         deduped: OrderedDict[int, WrongQuestionErrorDiagnosis] = OrderedDict()
         for row in rows:
             deduped.setdefault(int(row.id), row)
@@ -763,37 +889,54 @@ async def _load_knowledge_context(
                 break
         for row in deduped.values():
             primary = error_diagnosis_service.effective_primary(row)
-            recent_errors.append({
-                "diagnosis_id": int(row.id),
-                "question_id": int(row.question_id),
-                "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
-                "error_type": primary,
-                "error_label": error_diagnosis_service.ERROR_LABELS.get(primary, "暂未分类"),
-                "source_context": str(row.source_context),
-            })
+            recent_errors.append(
+                {
+                    "diagnosis_id": int(row.id),
+                    "question_id": int(row.question_id),
+                    "occurred_at": row.occurred_at.isoformat()
+                    if row.occurred_at
+                    else None,
+                    "error_type": primary,
+                    "error_label": error_diagnosis_service.ERROR_LABELS.get(
+                        primary, "暂未分类"
+                    ),
+                    "source_context": str(row.source_context),
+                }
+            )
 
     graph_neighbors: list[dict[str, Any]] = []
     if kp_ids:
-        edges = list((await db.execute(
-            select(KnowledgeEdge).where(
-                KnowledgeEdge.is_active,
-                or_(
-                    KnowledgeEdge.source_knowledge_point_id.in_(kp_ids),
-                    KnowledgeEdge.target_knowledge_point_id.in_(kp_ids),
-                ),
-            ).order_by(KnowledgeEdge.weight.desc(), KnowledgeEdge.id.asc()).limit(20)
-        )).scalars().all())
+        edges = list(
+            (
+                await db.execute(
+                    select(KnowledgeEdge)
+                    .where(
+                        KnowledgeEdge.is_active,
+                        or_(
+                            KnowledgeEdge.source_knowledge_point_id.in_(kp_ids),
+                            KnowledgeEdge.target_knowledge_point_id.in_(kp_ids),
+                        ),
+                    )
+                    .order_by(KnowledgeEdge.weight.desc(), KnowledgeEdge.id.asc())
+                    .limit(20)
+                )
+            )
+            .scalars()
+            .all()
+        )
         for edge in edges:
             source = edge.source_kp
             target = edge.target_kp
             if source is None or target is None:
                 continue
-            graph_neighbors.append({
-                "source": str(source.name),
-                "relation": str(edge.relation_type),
-                "target": str(target.name),
-                "weight": round(float(edge.weight or 0), 3),
-            })
+            graph_neighbors.append(
+                {
+                    "source": str(source.name),
+                    "relation": str(edge.relation_type),
+                    "target": str(target.name),
+                    "weight": round(float(edge.weight or 0), 3),
+                }
+            )
             if len(graph_neighbors) >= 12:
                 break
 
@@ -840,7 +983,11 @@ def _fallback_payload(
     reason: str,
 ) -> dict[str, Any]:
     meta = ACTION_DEFINITIONS[action]
-    kp_names = [str(item.get("name")) for item in knowledge_context.get("knowledge_points", []) if item.get("name")]
+    kp_names = [
+        str(item.get("name"))
+        for item in knowledge_context.get("knowledge_points", [])
+        if item.get("name")
+    ]
     # 降级内容也必须遵守动作边界：不能因为专项动作失败，就把完整的
     # “错因/补漏/复练”报告再次塞回弹层。只有讲解类动作可引用一段题库
     # 解析；生成题与陷阱总结在没有可靠生成结果时明确告知不可用。
@@ -848,7 +995,9 @@ def _fallback_payload(
     summary = reason
     if action in explanation_actions and revision.analysis:
         structured = _structured_analysis_sections(revision.analysis)
-        preferred = next((item for item in structured if item.get("heading") == "题目解析"), None)
+        preferred = next(
+            (item for item in structured if item.get("heading") == "题目解析"), None
+        )
         if preferred is None and structured:
             preferred = structured[0]
         if preferred and preferred.get("points"):
@@ -862,7 +1011,9 @@ def _fallback_payload(
         "knowledge_points": [
             {"name": name, "relation": "本题知识点", "mastery_hint": ""}
             for name in kp_names[:6]
-        ] if action == "connect_knowledge" else [],
+        ]
+        if action == "connect_knowledge"
+        else [],
         "practice_question": None,
         "next_action": {"type": "none", "label": "", "params": {}},
     }
@@ -896,7 +1047,9 @@ async def run_teacher_action(
         diagnosis_id=diagnosis_id,
         exam_context=exam_context,
     )
-    knowledge_context = await _load_knowledge_context(db, user_id=user_id, revision=revision)
+    knowledge_context = await _load_knowledge_context(
+        db, user_id=user_id, revision=revision
+    )
 
     exam_answer = exam_context.get("answer")
     practice_context = await _latest_practice_context(
@@ -942,7 +1095,9 @@ async def run_teacher_action(
             "question_id": int(question.id),
             "question_version_id": int(revision.id),
             "subject_id": int(revision.subject_id or question.subject_id),
-            "question_type": str(revision.question_type or question.question_type or ""),
+            "question_type": str(
+                revision.question_type or question.question_type or ""
+            ),
             "difficulty": int(revision.difficulty or question.difficulty or 0),
             "stem": _bounded(_stem_text(revision.content), 5000),
             "options": _bounded(revision.options or {}, 4000),
@@ -960,11 +1115,20 @@ async def run_teacher_action(
     messages = build_408_teacher_prompt(action=action, context=context)
 
     personalization = {
-        "used_mastery": any(item.get("mastery_score") is not None for item in knowledge_context.get("knowledge_points", [])),
+        "used_mastery": any(
+            item.get("mastery_score") is not None
+            for item in knowledge_context.get("knowledge_points", [])
+        ),
         "used_recent_errors": bool(knowledge_context.get("recent_same_kp_errors")),
         "used_error_diagnosis": bool(diagnosis_context),
-        "used_knowledge_graph": bool(knowledge_context.get("knowledge_graph_neighbors")),
-        "weak_point_names": [str(item.get("name")) for item in knowledge_context.get("weak_points", []) if item.get("name")][:5],
+        "used_knowledge_graph": bool(
+            knowledge_context.get("knowledge_graph_neighbors")
+        ),
+        "weak_point_names": [
+            str(item.get("name"))
+            for item in knowledge_context.get("weak_points", [])
+            if item.get("name")
+        ][:5],
     }
 
     base = {
@@ -1045,7 +1209,10 @@ async def run_teacher_action(
     normalized = _normalize_ai_payload(parsed, action)
     # Generated-question actions must not pretend success when the structured
     # question is invalid; fail back to a truthful, non-generated response.
-    if action in {"similar_question", "harder_question"} and normalized["practice_question"] is None:
+    if (
+        action in {"similar_question", "harder_question"}
+        and normalized["practice_question"] is None
+    ):
         fallback = _fallback_payload(
             action=action,
             revision=revision,

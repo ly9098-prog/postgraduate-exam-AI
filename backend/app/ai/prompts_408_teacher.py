@@ -64,7 +64,9 @@ def _bounded_json(value: Any, max_chars: int) -> str:
     return raw[:max_chars]
 
 
-def build_408_teacher_prompt(*, action: str, context: dict[str, Any]) -> list[dict[str, str]]:
+def build_408_teacher_prompt(
+    *, action: str, context: dict[str, Any]
+) -> list[dict[str, str]]:
     meta = ACTION_DEFINITIONS[action]
     system = (
         "你是 MemoGrad 的专项 AI 老师，只服务计算机专业课学习。"
@@ -93,7 +95,6 @@ def build_408_teacher_prompt(*, action: str, context: dict[str, Any]) -> list[di
     )
     user = (
         f"固定动作={action}\n动作说明={meta['instruction']}\n"
-        "上下文（仅可使用以下事实）：\n"
-        + _bounded_json(context, 18000)
+        "上下文（仅可使用以下事实）：\n" + _bounded_json(context, 18000)
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
