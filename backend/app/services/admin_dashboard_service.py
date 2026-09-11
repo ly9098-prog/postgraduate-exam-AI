@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import Date, cast, func, select, text

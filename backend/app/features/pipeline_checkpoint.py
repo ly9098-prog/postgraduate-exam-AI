@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow, serialize_utc_datetime
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
 
 logger = logging.getLogger(__name__)

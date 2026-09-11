@@ -8,14 +8,16 @@ from app.models.user import User
 from app.schemas.review_scheduler import (
     BatchGradeRequest,
     BatchGradeResponse,
+    MasterUnmasterResponse,
     NextBatchRequest,
     NextBatchResponse,
-    MasterUnmasterResponse,
     ReviewHistoryResponse,
-    ReviewStatsResponse as ScheduleStatsResponse,
     TodayReviewOverviewResponse,
     TodayReviewResponse,
     TodayReviewResultResponse,
+)
+from app.schemas.review_scheduler import (
+    ReviewStatsResponse as ScheduleStatsResponse,
 )
 from app.services import review_scheduler
 

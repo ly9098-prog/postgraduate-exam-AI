@@ -7,9 +7,10 @@ contract so generated frontend types cannot accidentally encourage leaking them.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import ConfigDict, Field
+
 from app.schemas.base import BaseModel
 
 HealthSeverity = Literal["ok", "warning", "error"]

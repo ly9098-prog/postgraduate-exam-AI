@@ -358,8 +358,8 @@ async def run_prewarm_worker(
     global _worker_running
     _worker_running = True
 
-    from app.services.ai_service import PrewarmAnalysisError
     from app.core.worker_concurrency import get_worker_semaphore
+    from app.services.ai_service import PrewarmAnalysisError
 
     semaphore = await get_worker_semaphore()
 

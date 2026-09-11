@@ -2,16 +2,16 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
-    BigInteger,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
-    Index,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column

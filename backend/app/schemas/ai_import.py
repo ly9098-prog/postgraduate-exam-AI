@@ -1,9 +1,9 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
 
 from pydantic import ConfigDict, Field
 
 from app.features.question_type import QT_SINGLE_CHOICE
+from app.schemas.base import BaseModel
 
 
 class EnrichResponse(BaseModel):

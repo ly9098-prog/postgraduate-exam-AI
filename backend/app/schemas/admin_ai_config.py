@@ -1,9 +1,9 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
 
 from pydantic import ConfigDict, Field, SecretStr
 
 from app.core.secret_crypto import is_mask_placeholder
+from app.schemas.base import BaseModel
 
 
 class AdminAiModelConfigResponse(BaseModel):

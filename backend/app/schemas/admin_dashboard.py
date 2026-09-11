@@ -1,5 +1,6 @@
-from app.schemas.base import BaseModel
 from datetime import date
+
+from app.schemas.base import BaseModel
 
 
 class AdminDashboardOverview(BaseModel):

@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.core.ai_runtime_guard import AIResourceRejected, ai_runtime_guard
+from app.core.ai_runtime_guard import AIResourceRejectedError, ai_runtime_guard
 from app.core.config import settings
 from app.core.log_context import get_trace_headers, log_event
 from app.services.safe_remote_fetch import request_remote_bytes
@@ -788,7 +788,7 @@ class OpenAICompatibleClient:
                     "compatibility_retries": compatibility_retries,
                     "compatibility_profile": compatibility_profile,
                 }
-            except AIResourceRejected as exc:
+            except AIResourceRejectedError as exc:
                 log_event(
                     _ai_logger,
                     "ai.chat.rejected",

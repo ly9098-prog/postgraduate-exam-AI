@@ -12,10 +12,6 @@ Features:
 
 from __future__ import annotations
 
-from app.core.document_ir import DocumentIR
-from app.core.time_utils import serialize_utc_datetime, utcnow
-
-
 import asyncio
 import logging
 import os
@@ -25,7 +21,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from app.core.document_ir import DocumentIR
 from app.core.log_context import bind_log_context, log_event, safe_text_preview
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
 from app.features.ocr_alert_rules import evaluate_alerts as _evaluate_alerts
 from app.features.ocr_correction_common import (

@@ -33,10 +33,10 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import serialize_utc_datetime
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.log_context import safe_text_preview
+from app.core.time_utils import serialize_utc_datetime
 from app.models.import_batch_job import (
     BatchJobTraceEvent,
     ImportBatchJob,
@@ -650,9 +650,8 @@ async def _merge_image_texts(
 
     try:
         async with async_session() as pdb:
-            from app.features.pipeline_coordinator_entry import run_pipeline
-
             from app.features.import_ai_policy import apply_image_single_pass_policy
+            from app.features.pipeline_coordinator_entry import run_pipeline
 
             merge_opts = {
                 key: value

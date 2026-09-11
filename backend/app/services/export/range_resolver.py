@@ -16,10 +16,10 @@ import logging
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.wrong_question import WrongQuestion
-from app.schemas.export_task import ExportRangeType
 from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint
 from app.models.knowledge_point import KnowledgePoint
+from app.models.wrong_question import WrongQuestion
+from app.schemas.export_task import ExportRangeType
 from app.services.knowledge_point_service import normalize_knowledge_name
 
 logger = logging.getLogger(__name__)

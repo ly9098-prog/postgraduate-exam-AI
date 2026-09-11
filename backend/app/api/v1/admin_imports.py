@@ -20,10 +20,10 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.admin_security import require_permissions
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features import question_publish_service as publish_svc
 from app.features.import_mode import ImportMode
 from app.features.pipeline_orchestrator import (
@@ -227,7 +227,6 @@ async def admin_resume_pipeline(
 
     P4-3: 自动检测 artifact 实现真断点恢复（从可恢复 stage 继续而非全部重跑）。
     """
-    from datetime import datetime
 
     # 检查当前状态 — use pipeline_store directly for non-DB pipelines
     from app.features.pipeline_orchestrator import _get_pipeline_store as _get_ps

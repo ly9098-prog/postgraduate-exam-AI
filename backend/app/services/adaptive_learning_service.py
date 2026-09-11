@@ -16,7 +16,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.time_utils import utcnow, serialize_utc_datetime
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord

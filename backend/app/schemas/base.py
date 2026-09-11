@@ -9,7 +9,8 @@ models that carry datetimes inherit this base so a DB value such as
 
 from datetime import datetime
 
-from pydantic import BaseModel as PydanticBaseModel, ConfigDict
+from pydantic import BaseModel as PydanticBaseModel
+from pydantic import ConfigDict
 
 from app.core.time_utils import serialize_utc_datetime
 

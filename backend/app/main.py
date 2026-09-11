@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import api_router
-from app.core.ai_runtime_guard import AIResourceRejected
+from app.core.ai_runtime_guard import AIResourceRejectedError
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.deployment_profile import is_restricted_environment
@@ -1259,8 +1259,8 @@ def _api_error_status(code: ErrorCode) -> int:
     return 500
 
 
-@app.exception_handler(AIResourceRejected)
-async def ai_resource_rejected_handler(request: Request, exc: AIResourceRejected):
+@app.exception_handler(AIResourceRejectedError)
+async def ai_resource_rejected_handler(request: Request, exc: AIResourceRejectedError):
     """Translate AI admission failures into the same safe public error contract."""
     if exc.reason == "ai_rate_limited":
         code = ErrorCode.AI_RATE_LIMIT

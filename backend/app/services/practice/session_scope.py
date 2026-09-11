@@ -16,7 +16,6 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 _SCOPE_SNAPSHOT_VERSION = 1
 _SCOPE_TYPES = frozenset({"knowledge_point", "knowledge_chapter"})
 

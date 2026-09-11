@@ -1,7 +1,7 @@
 from pydantic import ConfigDict, field_validator
 
-from app.schemas.base import BaseModel
 from app.features.question_type import QT_SINGLE_CHOICE, validate_question_type
+from app.schemas.base import BaseModel
 
 
 class QuestionCreate(BaseModel):

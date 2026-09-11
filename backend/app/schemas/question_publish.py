@@ -1,5 +1,6 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
+
+from app.schemas.base import BaseModel
 
 
 class PublishRequest(BaseModel):

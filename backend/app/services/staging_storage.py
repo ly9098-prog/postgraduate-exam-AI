@@ -25,8 +25,8 @@ import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
-from threading import Lock
 from pathlib import Path
+from threading import Lock
 
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile

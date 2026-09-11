@@ -13,8 +13,8 @@ import re
 from typing import Any
 
 from app.core.config import settings
-from app.core.time_utils import shanghai_now
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+from app.core.time_utils import shanghai_now
 
 logger = logging.getLogger(__name__)
 

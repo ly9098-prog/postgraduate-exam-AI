@@ -692,13 +692,12 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
        so only ``PROCESS_ROLE=all`` (or same-process) works fully.
     """
     try:
+        from app.core.log_context import get_log_context
         from app.services.export.push_service import (
             build_status_event,
             publish_via_redis,
             send_to_user,
         )
-
-        from app.core.log_context import get_log_context
 
         event = build_status_event(
             {

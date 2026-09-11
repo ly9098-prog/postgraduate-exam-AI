@@ -6,7 +6,8 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import Date as SQLDate, case, cast, func, select, text
+from sqlalchemy import Date as SQLDate
+from sqlalchemy import case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import (

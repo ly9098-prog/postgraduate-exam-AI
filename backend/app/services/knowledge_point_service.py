@@ -11,14 +11,16 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.tag import Tag
-
 from app.services.knowledge_point_resolution import (
     build_resolution_indexes as _build_resolution_indexes,
+)
+from app.services.knowledge_point_resolution import (
     normalize_knowledge_name,
     normalize_kp_input,
+)
+from app.services.knowledge_point_resolution import (
     resolve_from_indexes as _resolve_from_indexes,
 )
-
 
 logger = logging.getLogger(__name__)
 

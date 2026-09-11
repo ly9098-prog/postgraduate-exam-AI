@@ -46,8 +46,8 @@ from docx.text.paragraph import Paragraph
 
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
-from app.services.export.exporter_base import Exporter, ExportResult
 from app.services.export.analysis_content import split_analysis_sections
+from app.services.export.exporter_base import Exporter, ExportResult
 from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
 from app.services.export.question_content import (

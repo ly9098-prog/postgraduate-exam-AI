@@ -15,9 +15,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import llm
-from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
 from app.ai.context import build_error_context
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
+from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
 from app.ai.prompts import (
     AI_ANALYSIS_PROMPT_VERSION,
     build_error_analysis,

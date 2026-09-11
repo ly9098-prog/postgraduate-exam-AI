@@ -1,10 +1,10 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import ConfigDict, field_serializer
 
 from app.core.time_utils import serialize_utc_datetime
+from app.schemas.base import BaseModel
 
 
 class AdminAuditLogListItem(BaseModel):

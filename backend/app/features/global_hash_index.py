@@ -37,12 +37,13 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
-from app.core.time_utils import utcnow
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 

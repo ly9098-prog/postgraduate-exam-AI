@@ -25,7 +25,7 @@ from app.core.log_context import get_log_context
 logger = logging.getLogger("postgraduate-ai.ai_guard")
 
 
-class AIResourceRejected(RuntimeError):
+class AIResourceRejectedError(RuntimeError):
     """Raised when an AI call is rejected before contacting the provider."""
 
     def __init__(self, reason: str, *, retry_after_sec: int | None = None) -> None:
@@ -143,7 +143,7 @@ class AIRuntimeGuard:
                 self._metrics["rejected_overload"] = (
                     int(self._metrics["rejected_overload"]) + 1
                 )
-            raise AIResourceRejected(
+            raise AIResourceRejectedError(
                 "ai_overloaded",
                 retry_after_sec=max(1, int(settings.AI_QUEUE_WAIT_TIMEOUT_SEC)),
             ) from exc
@@ -206,7 +206,9 @@ class AIRuntimeGuard:
                 self._metrics["rejected_rate_limit"] = (
                     int(self._metrics["rejected_rate_limit"]) + 1
                 )
-            raise AIResourceRejected("ai_rate_limit_unavailable", retry_after_sec=5)
+            raise AIResourceRejectedError(
+                "ai_rate_limit_unavailable", retry_after_sec=5
+            )
 
         if client is not None:
             window = int(now // 60)
@@ -225,8 +227,10 @@ class AIRuntimeGuard:
                     self._metrics["rejected_rate_limit"] = (
                         int(self._metrics["rejected_rate_limit"]) + 1
                     )
-                raise AIResourceRejected("ai_rate_limited", retry_after_sec=retry_after)
-            except AIResourceRejected:
+                raise AIResourceRejectedError(
+                    "ai_rate_limited", retry_after_sec=retry_after
+                )
+            except AIResourceRejectedError:
                 raise
             except Exception as exc:
                 if self._restricted() and settings.AI_RATE_LIMIT_FAIL_CLOSED:
@@ -234,7 +238,7 @@ class AIRuntimeGuard:
                         self._metrics["rejected_rate_limit"] = (
                             int(self._metrics["rejected_rate_limit"]) + 1
                         )
-                    raise AIResourceRejected(
+                    raise AIResourceRejectedError(
                         "ai_rate_limit_unavailable", retry_after_sec=5
                     ) from exc
                 logger.debug(
@@ -247,7 +251,9 @@ class AIRuntimeGuard:
                 self._metrics["rejected_rate_limit"] = (
                     int(self._metrics["rejected_rate_limit"]) + 1
                 )
-            raise AIResourceRejected("ai_rate_limited", retry_after_sec=retry_after)
+            raise AIResourceRejectedError(
+                "ai_rate_limited", retry_after_sec=retry_after
+            )
 
     # ------------------------------------------------------------------
     # Circuit breaker
@@ -270,7 +276,7 @@ class AIRuntimeGuard:
             self._metrics["rejected_circuit"] = (
                 int(self._metrics["rejected_circuit"]) + 1
             )
-        raise AIResourceRejected(
+        raise AIResourceRejectedError(
             "ai_circuit_open",
             retry_after_sec=max(1, int(recovery)),
         )
@@ -319,7 +325,7 @@ class AIRuntimeGuard:
                 self._metrics["rejected_prompt_too_large"] = (
                     int(self._metrics["rejected_prompt_too_large"]) + 1
                 )
-            raise AIResourceRejected("ai_prompt_too_large")
+            raise AIResourceRejectedError("ai_prompt_too_large")
 
     def bounded_max_tokens(self, requested: int | None) -> int | None:
         cap = max(0, int(settings.AI_SINGLE_MAX_TOKENS))

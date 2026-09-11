@@ -1,6 +1,7 @@
 """AI 学习引擎相关 Pydantic 模型。"""
 
 from pydantic import ConfigDict, Field
+
 from app.schemas.base import BaseModel
 
 # ============================================================

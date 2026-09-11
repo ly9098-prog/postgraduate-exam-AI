@@ -1,8 +1,9 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
 from typing import Literal
 
 from pydantic import Field
+
+from app.schemas.base import BaseModel
 
 
 class PomodoroStartRequest(BaseModel):

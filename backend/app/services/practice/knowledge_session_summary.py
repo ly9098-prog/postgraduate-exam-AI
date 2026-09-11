@@ -24,7 +24,6 @@ from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.user_knowledge_state import UserKnowledgeState
 
-
 _CONTEXT_VERSION = 2
 _MAX_SUMMARY_POINTS = 24
 _MAX_BASELINE_POINTS = 96

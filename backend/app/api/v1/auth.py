@@ -1,5 +1,4 @@
 import hashlib
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
@@ -8,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.time_utils import normalize_to_naive_utc, utcnow_aware
 from app.core.security import get_current_user, issue_user_token, set_user_nbf
+from app.core.time_utils import normalize_to_naive_utc, utcnow_aware
 from app.models.user import User
 from app.schemas.user import (
     DeletionResponse,
