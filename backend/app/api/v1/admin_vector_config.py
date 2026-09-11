@@ -26,20 +26,24 @@ from app.services.vector_config_service import (
 
 router = APIRouter(prefix="/api/admin/v1", tags=["admin-vector-config"])
 
-VECTOR_KEYS = frozenset({
-    "vector_enabled",
-    "vector_cache_ttl_sec",
-    "vector_top_k",
-    "vector_similarity_threshold",
-    "embedding_model_config_id",
-    "embedding_dim",
-    "embedding_timeout",
-    "embedding_batch_size",
-})
+VECTOR_KEYS = frozenset(
+    {
+        "vector_enabled",
+        "vector_cache_ttl_sec",
+        "vector_top_k",
+        "vector_similarity_threshold",
+        "embedding_model_config_id",
+        "embedding_dim",
+        "embedding_timeout",
+        "embedding_batch_size",
+    }
+)
 
 
 async def _read_vector_rows(db: AsyncSession) -> dict[str, str]:
-    result = await db.execute(select(AdminAiConfig).where(AdminAiConfig.config_key.in_(VECTOR_KEYS)))
+    result = await db.execute(
+        select(AdminAiConfig).where(AdminAiConfig.config_key.in_(VECTOR_KEYS))
+    )
     return {r.config_key: r.config_value for r in result.scalars().all()}
 
 
@@ -69,9 +73,14 @@ async def update_vector_config(
 ):
     payload = data.model_dump(exclude_unset=True)
 
-    if "embedding_model_config_id" in data.model_fields_set and data.embedding_model_config_id is not None:
+    if (
+        "embedding_model_config_id" in data.model_fields_set
+        and data.embedding_model_config_id is not None
+    ):
         # 显式验证：只能选择启用且声明 embedding capability 的模型。
-        await resolve_embedding_model(db, requested_model_config_id=data.embedding_model_config_id)
+        await resolve_embedding_model(
+            db, requested_model_config_id=data.embedding_model_config_id
+        )
 
     changed: list[str] = []
     for key, value in payload.items():
@@ -89,6 +98,7 @@ async def update_vector_config(
 
     await db.flush()
     from app.services.admin_audit_service import write_admin_audit
+
     await write_admin_audit(
         db,
         current_admin,
@@ -103,6 +113,7 @@ async def update_vector_config(
     # 配置变更后清理 vector service 的短 TTL 缓存。
     try:
         from app.services.vector_retrieval_service import _reset_vector_enabled_cache
+
         _reset_vector_enabled_cache()
     except Exception:
         pass

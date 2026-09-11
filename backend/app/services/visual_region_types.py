@@ -50,6 +50,7 @@ class SegmentType(StrEnum):
 
 class AssignmentMethod(StrEnum):
     """How a visual region is assigned to a question/option."""
+
     BETWEEN_QUESTIONS = "between_questions"
     BBOX_OVERLAP = "bbox_overlap"
     OPTION_REGION = "option_region"
@@ -70,6 +71,7 @@ class VisualRegion:
     This is the page-level detection result, not attached to any question yet.
     Assignment happens in a later pipeline stage (visual_region_assign).
     """
+
     region_id: str
     region_type: VisualRegionType
     source_page: int
@@ -145,7 +147,9 @@ class VisualRegion:
             "confidence": self.confidence,
             "requires_review": self.requires_review,
             "option_key": self.option_key,
-            "assignment_method": self.assignment_method.value if self.assignment_method else None,
+            "assignment_method": self.assignment_method.value
+            if self.assignment_method
+            else None,
             "assignment_confidence": self.assignment_confidence,
             "risk_flags": self.risk_flags,
             "crop_failed": self.crop_failed,
@@ -158,16 +162,57 @@ class VisualRegion:
 def _bounded_table_source(raw: dict) -> dict:
     """Keep only table-recovery fields and cap provider payload size."""
     allowed = {
-        "type", "label", "category", "text", "markdown", "html",
-        "table_html", "table_markdown", "content", "value", "alt", "url", "src",
-        "bbox", "cell_bbox", "polygon", "confidence", "width", "height",
-        "rows", "headers", "header", "cells", "tokens", "ocr_tokens",
-        "row_span", "rowspan", "col_span", "colspan", "is_header",
-        "alignment", "align", "style", "caption", "column_widths",
-        "source_page", "source_pages", "page", "page_num", "coordinate_space",
-        "region_id", "table_id", "schema_version", "source_format",
-        "signals", "continuation", "table", "data", "structure",
-        "raw_block", "raw_data",
+        "type",
+        "label",
+        "category",
+        "text",
+        "markdown",
+        "html",
+        "table_html",
+        "table_markdown",
+        "content",
+        "value",
+        "alt",
+        "url",
+        "src",
+        "bbox",
+        "cell_bbox",
+        "polygon",
+        "confidence",
+        "width",
+        "height",
+        "rows",
+        "headers",
+        "header",
+        "cells",
+        "tokens",
+        "ocr_tokens",
+        "row_span",
+        "rowspan",
+        "col_span",
+        "colspan",
+        "is_header",
+        "alignment",
+        "align",
+        "style",
+        "caption",
+        "column_widths",
+        "source_page",
+        "source_pages",
+        "page",
+        "page_num",
+        "coordinate_space",
+        "region_id",
+        "table_id",
+        "schema_version",
+        "source_format",
+        "signals",
+        "continuation",
+        "table",
+        "data",
+        "structure",
+        "raw_block",
+        "raw_data",
     }
 
     def sanitize(value, depth: int = 0):
@@ -200,6 +245,7 @@ class SourceSnapshot:
     Used as source_snapshot_url on QuestionImport and Question.
     Never inserted into content.segments.
     """
+
     url: str | None = None
     page: int = 0
     bbox: tuple[float, float, float, float] | None = None
@@ -213,11 +259,27 @@ class SourceSnapshot:
 # ---------------------------------------------------------------------------
 
 _VISUAL_REFERENCE_PATTERNS = [
-    "如图", "如下图", "图中", "见图", "如图所示",
-    "根据图示", "如下表", "如下所示", "观察下列结构",
-    "上图", "下图", "表", "表格", "示意图",
-    "从图中", "由图中", "由图可知", "由表可知",
-    "根据图", "根据下表", "根据上表",
+    "如图",
+    "如下图",
+    "图中",
+    "见图",
+    "如图所示",
+    "根据图示",
+    "如下表",
+    "如下所示",
+    "观察下列结构",
+    "上图",
+    "下图",
+    "表",
+    "表格",
+    "示意图",
+    "从图中",
+    "由图中",
+    "由图可知",
+    "由表可知",
+    "根据图",
+    "根据下表",
+    "根据上表",
 ]
 
 
@@ -235,29 +297,33 @@ def contains_visual_reference(text: str | None) -> bool:
 # Risk flags for visual content
 # ---------------------------------------------------------------------------
 
-VISUAL_RISK_FLAGS = frozenset({
-    "visual_reference_but_image_missing",
-    "visual_region_bbox_missing",
-    "visual_crop_failed",
-    "visual_region_ambiguous",
-    "visual_insert_position_uncertain",
-    "option_image_requires_review",
-    "visual_region_unassigned",
-    "source_snapshot_failed",
-    "math_image_bbox_missing",
-    "math_image_crop_failed",
-})
+VISUAL_RISK_FLAGS = frozenset(
+    {
+        "visual_reference_but_image_missing",
+        "visual_region_bbox_missing",
+        "visual_crop_failed",
+        "visual_region_ambiguous",
+        "visual_insert_position_uncertain",
+        "option_image_requires_review",
+        "visual_region_unassigned",
+        "source_snapshot_failed",
+        "math_image_bbox_missing",
+        "math_image_crop_failed",
+    }
+)
 
-VISUAL_BLOCKING_FLAGS = frozenset({
-    "visual_reference_but_image_missing",
-    "visual_region_bbox_missing",
-    "visual_crop_failed",
-    "visual_region_ambiguous",
-    "visual_region_unassigned",
-    "math_image_bbox_missing",
-    "math_image_crop_failed",
-    "option_image_requires_review",
-})
+VISUAL_BLOCKING_FLAGS = frozenset(
+    {
+        "visual_reference_but_image_missing",
+        "visual_region_bbox_missing",
+        "visual_crop_failed",
+        "visual_region_ambiguous",
+        "visual_region_unassigned",
+        "math_image_bbox_missing",
+        "math_image_crop_failed",
+        "option_image_requires_review",
+    }
+)
 
 
 def get_blocking_risk_flags(risk_flags: list[str]) -> list[str]:

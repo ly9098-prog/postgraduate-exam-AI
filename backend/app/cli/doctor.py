@@ -44,14 +44,18 @@ async def _main() -> int:
     ok = _check("APP_ENV", True, settings.APP_ENV)
     if not ok:
         failures += 1
-    ok = _check("PROCESS_ROLE", settings.PROCESS_ROLE in ("web", "worker", "scheduler", "all"),
-                 settings.PROCESS_ROLE)
+    ok = _check(
+        "PROCESS_ROLE",
+        settings.PROCESS_ROLE in ("web", "worker", "scheduler", "all"),
+        settings.PROCESS_ROLE,
+    )
     if not ok:
         failures += 1
 
     # Deployment profile
     try:
         from app.core.deployment_profile import detect_deployment_profile
+
         profile = detect_deployment_profile()
         ok = _check("Deployment Profile", True, str(profile))
     except Exception as e:
@@ -65,11 +69,18 @@ async def _main() -> int:
         from sqlalchemy import text
 
         from app.core.database import async_session
+
         async with async_session() as db:
             result = await db.execute(text("SELECT 1"))
             row = result.one()
             if row[0] == 1:
-                _check("PostgreSQL connectivity", True, settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL[:50])
+                _check(
+                    "PostgreSQL connectivity",
+                    True,
+                    settings.DATABASE_URL.split("@")[-1]
+                    if "@" in settings.DATABASE_URL
+                    else settings.DATABASE_URL[:50],
+                )
             else:
                 _check("PostgreSQL connectivity", False)
                 failures += 1
@@ -86,7 +97,9 @@ async def _main() -> int:
         from sqlalchemy import text as sa_text
 
         # Resolve alembic.ini path relative to backend/
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        backend_dir = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         alembic_ini = os.path.join(backend_dir, "alembic.ini")
 
         heads: list[str] = []
@@ -101,16 +114,25 @@ async def _main() -> int:
                 conn = await db.connection()
                 await conn.execute(sa_text("SET lock_timeout = '2s'"))
                 _mc = MigrationContext.configure(conn)
-                rows = await conn.execute(sa_text("SELECT version_num FROM alembic_version"))
+                rows = await conn.execute(
+                    sa_text("SELECT version_num FROM alembic_version")
+                )
                 row = rows.one_or_none()
                 current_rev = row._mapping["version_num"] if row else "(none)"
                 head_rev = heads[0] if heads else "(none)"
                 at_head = current_rev == head_rev
 
-            _check("Alembic current", bool(current_rev and current_rev != "(none)"), current_rev[:12] if current_rev else "(none)")
+            _check(
+                "Alembic current",
+                bool(current_rev and current_rev != "(none)"),
+                current_rev[:12] if current_rev else "(none)",
+            )
             _check("Alembic head", bool(heads), heads[0][:12] if heads else "(none)")
-            ok = _check("Alembic current=head", at_head,
-                        f"current={current_rev[:12]} head={head_rev[:12]}")
+            ok = _check(
+                "Alembic current=head",
+                at_head,
+                f"current={current_rev[:12]} head={head_rev[:12]}",
+            )
             if not ok:
                 failures += 1
         else:
@@ -125,14 +147,22 @@ async def _main() -> int:
     if settings.REDIS_URL:
         try:
             import redis.asyncio as aioredis
+
             r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
             await r.ping()
             await r.aclose()
-            _check("Redis connectivity", True, settings.REDIS_URL.split("@")[-1] if "@" in settings.REDIS_URL else settings.REDIS_URL)
+            _check(
+                "Redis connectivity",
+                True,
+                settings.REDIS_URL.split("@")[-1]
+                if "@" in settings.REDIS_URL
+                else settings.REDIS_URL,
+            )
 
             # Queue namespace check
             try:
                 from app.services.task_queue_service import task_queue
+
                 ns_client = await task_queue._get_client()
                 if ns_client is not None:
                     keys = await ns_client.keys("taskq:v2:*")
@@ -154,6 +184,7 @@ async def _main() -> int:
     print("\n─ Staging")
     try:
         from app.services.staging_storage import _STAGING_DIR
+
         ok = _check("Staging dir exists", _STAGING_DIR.exists(), str(_STAGING_DIR))
         if not ok:
             failures += 1
@@ -163,8 +194,9 @@ async def _main() -> int:
 
         # Disk space
         import shutil
+
         usage = shutil.disk_usage(str(_STAGING_DIR))
-        free_gb = usage.free / (1024 ** 3)
+        free_gb = usage.free / (1024**3)
         ok = _check("Staging disk free", free_gb > 1.0, f"{free_gb:.1f} GB free")
         if not ok:
             failures += 1
@@ -180,18 +212,23 @@ async def _main() -> int:
 
         # Check paddle not loaded (cloud safety)
         import sys as _sys
+
         paddle_in_modules = "paddleocr" in _sys.modules or "paddle" in _sys.modules
         if paddle_in_modules:
             from app.core.deployment_profile import detect_deployment_profile as _dp
+
             prof = _dp()
-            if hasattr(prof, 'value'):
+            if hasattr(prof, "value"):
                 prof_val = str(prof)
             else:
                 prof_val = str(prof)
             is_cloud = "cloud" in prof_val.lower()
             if is_cloud:
-                _check("PaddleOCR not loaded in cloud", False,
-                       "PaddleOCR module loaded in cloud profile — potential memory issue")
+                _check(
+                    "PaddleOCR not loaded in cloud",
+                    False,
+                    "PaddleOCR module loaded in cloud profile — potential memory issue",
+                )
                 failures += 1
             else:
                 _check("PaddleOCR loaded", True, "local profile, paddle expected")
@@ -201,9 +238,13 @@ async def _main() -> int:
         # OCR remote connectivity check
         if settings.OCR_ENABLED and settings.OCR_EXECUTION_BACKEND == "paddlex_http":
             from app.main import _check_ocr_remote_connectivity
+
             remote_ok = await _check_ocr_remote_connectivity()
-            _check("OCR remote connectivity", remote_ok,
-                   "reachable" if remote_ok else "unreachable")
+            _check(
+                "OCR remote connectivity",
+                remote_ok,
+                "reachable" if remote_ok else "unreachable",
+            )
             if not remote_ok:
                 failures += 1
     except Exception as e:
@@ -234,8 +275,9 @@ async def _main() -> int:
     print("\n─ DB Connection Budget")
     try:
         from app.core.database import engine
+
         pool = engine.pool
-        if hasattr(pool, 'size'):
+        if hasattr(pool, "size"):
             _check("Pool size", True, str(pool.size()))
         else:
             _check("Pool size", True, "using default")
@@ -244,7 +286,7 @@ async def _main() -> int:
         failures += 1
 
     # ── Summary ──
-    print(f"\n{'='*30}")
+    print(f"\n{'=' * 30}")
     if failures == 0:
         print(_green("All checks passed."))
         return 0

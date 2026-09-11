@@ -44,6 +44,7 @@ logger = logging.getLogger("postgraduate-ai.distributed-lock")
 
 class LeaseLostError(Exception):
     """Raised when the distributed lock is lost mid-lease (e.g., Redis failure)."""
+
     pass
 
 
@@ -86,6 +87,7 @@ class LeaseHandle:
     @property
     def owner_token(self) -> str:
         return self._lock._owner_token
+
 
 # Lua: ACQUIRE — SET NX (atomically set if not exist)
 # KEYS: [lock_key]
@@ -155,7 +157,9 @@ class DistributedLock:
         instance_id: str | None = None,
     ) -> None:
         self._name = name
-        self._redis_url = redis_url or (settings.REDIS_URL if settings.REDIS_URL else None)
+        self._redis_url = redis_url or (
+            settings.REDIS_URL if settings.REDIS_URL else None
+        )
         self._redis_enabled = bool(self._redis_url)
         self._client: redis_async.Redis | None = None
         self._instance_id = instance_id or f"{os.getpid()}-{uuid.uuid4().hex[:6]}"
@@ -183,7 +187,9 @@ class DistributedLock:
                     decode_responses=True,
                 )
             except Exception as e:
-                logger.error("distlock %s: failed to create Redis client: %s", self._name, e)
+                logger.error(
+                    "distlock %s: failed to create Redis client: %s", self._name, e
+                )
                 return None
         return self._client
 
@@ -211,7 +217,9 @@ class DistributedLock:
         by another instance or on Redis failure.
         """
         if not self._redis_enabled:
-            logger.warning("distlock %s: Redis not configured, lock always fails", self._name)
+            logger.warning(
+                "distlock %s: Redis not configured, lock always fails", self._name
+            )
             self.failed += 1
             return False
 
@@ -223,24 +231,34 @@ class DistributedLock:
 
         try:
             await self._load_scripts(client)
-            result = await client.evalsha(self._lua_acquire_sha, 1, self._lock_key, self._value(), str(ttl))
+            result = await client.evalsha(
+                self._lua_acquire_sha, 1, self._lock_key, self._value(), str(ttl)
+            )
             if result == 1:
                 self.acquired += 1
-                logger.debug("distlock %s: acquired (token=%s)", self._name, self._owner_token[:8])
+                logger.debug(
+                    "distlock %s: acquired (token=%s)",
+                    self._name,
+                    self._owner_token[:8],
+                )
                 return True
             self.skipped += 1
             return False
         except redis_exc.NoScriptError:
             try:
                 await self._reload_scripts(client)
-                result = await client.evalsha(self._lua_acquire_sha, 1, self._lock_key, self._value(), str(ttl))
+                result = await client.evalsha(
+                    self._lua_acquire_sha, 1, self._lock_key, self._value(), str(ttl)
+                )
                 if result == 1:
                     self.acquired += 1
                     return True
                 self.skipped += 1
                 return False
             except Exception as e:
-                logger.error("distlock %s: acquire (after reload) error: %s", self._name, e)
+                logger.error(
+                    "distlock %s: acquire (after reload) error: %s", self._name, e
+                )
                 self.failed += 1
                 return False
         except Exception as e:
@@ -263,18 +281,28 @@ class DistributedLock:
             return False
 
         try:
-            result = await client.evalsha(self._lua_renew_sha, 1, self._lock_key, self._value(), str(ttl))
+            result = await client.evalsha(
+                self._lua_renew_sha, 1, self._lock_key, self._value(), str(ttl)
+            )
             if result == 1:
                 return True
-            logger.warning("distlock %s: renew failed — lock lost (token=%s)", self._name, self._owner_token[:8])
+            logger.warning(
+                "distlock %s: renew failed — lock lost (token=%s)",
+                self._name,
+                self._owner_token[:8],
+            )
             return False
         except redis_exc.NoScriptError:
             try:
                 await self._reload_scripts(client)
-                result = await client.evalsha(self._lua_renew_sha, 1, self._lock_key, self._value(), str(ttl))
+                result = await client.evalsha(
+                    self._lua_renew_sha, 1, self._lock_key, self._value(), str(ttl)
+                )
                 return result == 1
             except Exception as e:
-                logger.error("distlock %s: renew (after reload) error: %s", self._name, e)
+                logger.error(
+                    "distlock %s: renew (after reload) error: %s", self._name, e
+                )
                 return False
         except Exception as e:
             logger.error("distlock %s: renew error: %s", self._name, e)
@@ -294,19 +322,29 @@ class DistributedLock:
             return False
 
         try:
-            result = await client.evalsha(self._lua_release_sha, 1, self._lock_key, self._value())
+            result = await client.evalsha(
+                self._lua_release_sha, 1, self._lock_key, self._value()
+            )
             if result == 1:
-                logger.debug("distlock %s: released (token=%s)", self._name, self._owner_token[:8])
+                logger.debug(
+                    "distlock %s: released (token=%s)",
+                    self._name,
+                    self._owner_token[:8],
+                )
             self._owner_token = ""
             return result == 1
         except redis_exc.NoScriptError:
             try:
                 await self._reload_scripts(client)
-                result = await client.evalsha(self._lua_release_sha, 1, self._lock_key, self._value())
+                result = await client.evalsha(
+                    self._lua_release_sha, 1, self._lock_key, self._value()
+                )
                 self._owner_token = ""
                 return result == 1
             except Exception as e:
-                logger.error("distlock %s: release (after reload) error: %s", self._name, e)
+                logger.error(
+                    "distlock %s: release (after reload) error: %s", self._name, e
+                )
                 self._owner_token = ""
                 return False
         except Exception as e:
@@ -339,7 +377,8 @@ class DistributedLock:
                 if not await self.renew(ttl=ttl):
                     logger.error(
                         "distlock %s: renewal failed, lock lost after %s",
-                        self._name, self._owner_token[:8],
+                        self._name,
+                        self._owner_token[:8],
                     )
                     handle.mark_lost()
                     return

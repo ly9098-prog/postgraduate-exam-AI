@@ -42,9 +42,7 @@ def _signing_key() -> bytes:
 
 def _question_ids_digest(question_ids: str | None) -> str:
     raw = ",".join(
-        part.strip()
-        for part in str(question_ids or "").split(",")
-        if part.strip()
+        part.strip() for part in str(question_ids or "").split(",") if part.strip()
     )
     if not raw:
         return ""
@@ -99,7 +97,10 @@ def _decode_plan_task_token(token: str) -> dict[str, Any] | None:
         payload = json.loads(_urlsafe_b64decode(body).decode("utf-8"))
     except Exception:
         return None
-    if not isinstance(payload, dict) or int(payload.get("v") or 0) != _PLAN_TOKEN_VERSION:
+    if (
+        not isinstance(payload, dict)
+        or int(payload.get("v") or 0) != _PLAN_TOKEN_VERSION
+    ):
         return None
     now = int(time.time())
     if int(payload.get("exp") or 0) < now or int(payload.get("iat") or 0) > now + 300:

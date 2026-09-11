@@ -6,6 +6,7 @@ V6.3: 根据知识点前置关系，为 smart 推荐提供路径感知评分。
 
 所有函数均为 best-effort：出错只记日志，不抛异常，不影响主流程。
 """
+
 from __future__ import annotations
 
 import logging
@@ -79,7 +80,12 @@ def calculate_personalized_interval_days(
     max_days: int = 180,
 ) -> int:
     """基础间隔 × 用户倍率 × 知识点倍率 × 难度倍率，clamp 到 [min_days, max_days]。"""
-    raw = base_interval_days * user_interval_factor * knowledge_interval_factor * difficulty_factor
+    raw = (
+        base_interval_days
+        * user_interval_factor
+        * knowledge_interval_factor
+        * difficulty_factor
+    )
     return max(min_days, min(int(round(raw)), max_days))
 
 
@@ -189,7 +195,12 @@ async def update_user_interval_factor(
     if abs(factor - old_factor) > 0.001:
         logger.info(
             "adaptive_interval_adjusted user=%d old=%.4f new=%.4f due=%s correct=%s overdue=%s",
-            user_id, old_factor, factor, is_due_review, is_correct, is_overdue_review,
+            user_id,
+            old_factor,
+            factor,
+            is_due_review,
+            is_correct,
+            is_overdue_review,
         )
 
     return factor
@@ -224,7 +235,8 @@ async def update_knowledge_interval_factor(
     for kp_id in knowledge_point_ids:
         if kp_id not in state_map:
             state = UserKnowledgeAdaptiveState(
-                user_id=user_id, knowledge_point_id=kp_id,
+                user_id=user_id,
+                knowledge_point_id=kp_id,
             )
             db.add(state)
             state_map[kp_id] = state
@@ -285,7 +297,11 @@ async def update_question_difficulty_state(
         delta += 8
 
     # 耗时修正
-    if answer_time_seconds is not None and expected_time_seconds is not None and expected_time_seconds > 0:
+    if (
+        answer_time_seconds is not None
+        and expected_time_seconds is not None
+        and expected_time_seconds > 0
+    ):
         if is_correct and answer_time_seconds > expected_time_seconds * 1.5:
             delta += 3  # 答对但很慢
         if not is_correct and answer_time_seconds > expected_time_seconds * 1.5:
@@ -308,7 +324,11 @@ async def update_question_difficulty_state(
     else:
         state.wrong_count += 1
 
-    if answer_time_seconds is not None and expected_time_seconds is not None and expected_time_seconds > 0:
+    if (
+        answer_time_seconds is not None
+        and expected_time_seconds is not None
+        and expected_time_seconds > 0
+    ):
         if is_correct and answer_time_seconds < expected_time_seconds * 0.6:
             state.fast_correct_count += 1
         if answer_time_seconds > expected_time_seconds * 1.5:
@@ -336,7 +356,11 @@ async def update_question_difficulty_state(
     if abs(new_score - old_score) > 0.01:
         logger.info(
             "question_difficulty_updated user=%d q=%d old=%.1f new=%.1f label=%s",
-            user_id, question_id, old_score, new_score, state.difficulty_label,
+            user_id,
+            question_id,
+            old_score,
+            new_score,
+            state.difficulty_label,
         )
 
     return state
@@ -368,8 +392,9 @@ async def apply_personalized_interval(
     # 知识点倍率（取该题所有知识点的平均值）
     kp_rows = (
         await db.execute(
-            select(QuestionKnowledgePoint.knowledge_point_id)
-            .where(QuestionKnowledgePoint.question_id == question_id)
+            select(QuestionKnowledgePoint.knowledge_point_id).where(
+                QuestionKnowledgePoint.question_id == question_id
+            )
         )
     ).all()
     kp_ids = [r.knowledge_point_id for r in kp_rows]
@@ -397,7 +422,9 @@ async def apply_personalized_interval(
         )
     )
     diff_state = diff_result.scalar_one_or_none()
-    difficulty_factor = get_difficulty_factor(diff_state.difficulty_label) if diff_state else 1.0
+    difficulty_factor = (
+        get_difficulty_factor(diff_state.difficulty_label) if diff_state else 1.0
+    )
 
     # 计算最终间隔
     final_days = calculate_personalized_interval_days(
@@ -423,8 +450,13 @@ async def apply_personalized_interval(
         logger.info(
             "adaptive_interval_applied user=%d q=%d base=%d final=%d "
             "user_f=%.3f kp_f=%.3f diff_f=%.3f",
-            user_id, question_id, base_interval_days, final_days,
-            user_factor, knowledge_factor, difficulty_factor,
+            user_id,
+            question_id,
+            base_interval_days,
+            final_days,
+            user_factor,
+            knowledge_factor,
+            difficulty_factor,
         )
 
     return final_days
@@ -473,22 +505,29 @@ async def update_adaptive_state_after_answer(
     # V6.1: 更新用户间隔倍率
     if settings.ADAPTIVE_INTERVAL_ENABLED and is_due_review:
         await update_user_interval_factor(
-            db, user_id, is_due_review=True,
-            is_correct=is_correct, is_overdue_review=is_overdue_review,
+            db,
+            user_id,
+            is_due_review=True,
+            is_correct=is_correct,
+            is_overdue_review=is_overdue_review,
         )
 
         # 知识点级倍率
         kp_rows = (
             await db.execute(
-                select(QuestionKnowledgePoint.knowledge_point_id)
-                .where(QuestionKnowledgePoint.question_id == question_id)
+                select(QuestionKnowledgePoint.knowledge_point_id).where(
+                    QuestionKnowledgePoint.question_id == question_id
+                )
             )
         ).all()
         kp_ids = [r.knowledge_point_id for r in kp_rows]
         if kp_ids:
             await update_knowledge_interval_factor(
-                db, user_id, kp_ids,
-                is_due_review=True, is_correct=is_correct,
+                db,
+                user_id,
+                kp_ids,
+                is_due_review=True,
+                is_correct=is_correct,
                 is_overdue_review=is_overdue_review,
             )
 
@@ -501,7 +540,9 @@ async def update_adaptive_state_after_answer(
         expected_time = _estimate_expected_time(q_difficulty or 3)
 
         await update_question_difficulty_state(
-            db, user_id, question_id,
+            db,
+            user_id,
+            question_id,
             is_correct=is_correct,
             answer_time_seconds=answer_time_seconds,
             expected_time_seconds=expected_time,
@@ -511,6 +552,7 @@ async def update_adaptive_state_after_answer(
     # 个性化间隔覆盖（仅在 dry_run=False 时生效）
     if not settings.ADAPTIVE_DRY_RUN and uqs is not None:
         from app.services.question_review_service import LEITNER_INTERVAL_DAYS
+
         base_days = LEITNER_INTERVAL_DAYS.get(uqs.box_level, 1)
         await apply_personalized_interval(db, user_id, question_id, base_days)
 
@@ -543,9 +585,7 @@ async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
 
     # 遗忘较快的知识点数
     fast_forgetting_result = await db.execute(
-        select(
-            func.count(UserKnowledgeAdaptiveState.id)
-        ).where(
+        select(func.count(UserKnowledgeAdaptiveState.id)).where(
             UserKnowledgeAdaptiveState.user_id == user_id,
             UserKnowledgeAdaptiveState.interval_factor < 0.9,
         )
@@ -554,9 +594,7 @@ async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
 
     # 个人难题数
     hard_result = await db.execute(
-        select(
-            func.count(UserQuestionDifficultyState.id)
-        ).where(
+        select(func.count(UserQuestionDifficultyState.id)).where(
             UserQuestionDifficultyState.user_id == user_id,
             UserQuestionDifficultyState.difficulty_label == "hard",
         )
@@ -569,15 +607,20 @@ async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
         if settings.ADAPTIVE_PATH_ENABLED:
             # 查所有有 prerequisite 边的 target KP
             targets_result = await db.execute(
-                select(KnowledgeEdge.target_knowledge_point_id).where(
+                select(KnowledgeEdge.target_knowledge_point_id)
+                .where(
                     KnowledgeEdge.relation_type == "prerequisite",
                     KnowledgeEdge.is_active == True,  # noqa: E712
-                ).distinct()
+                )
+                .distinct()
             )
             all_target_ids = [r[0] for r in targets_result.all()]
             if all_target_ids:
                 blocked = await get_blocked_knowledge_points(
-                    db, user_id, all_target_ids, "",
+                    db,
+                    user_id,
+                    all_target_ids,
+                    "",
                 )
                 path_blocked_count = len(blocked)
     except Exception:
@@ -622,21 +665,28 @@ async def get_adaptive_overview(db: AsyncSession, user_id: int) -> dict:
 
 
 async def get_hard_questions(
-    db: AsyncSession, user_id: int, limit: int = 20,
+    db: AsyncSession,
+    user_id: int,
+    limit: int = 20,
 ) -> dict:
     """返回用户个人难题列表。"""
-    q = select(
-        UserQuestionDifficultyState.question_id,
-        UserQuestionDifficultyState.personal_difficulty_score,
-        UserQuestionDifficultyState.difficulty_label,
-        UserQuestionDifficultyState.wrong_count,
-        UserQuestionDifficultyState.avg_answer_time_seconds,
-    ).where(
-        UserQuestionDifficultyState.user_id == user_id,
-        UserQuestionDifficultyState.difficulty_label == "hard",
-    ).order_by(
-        UserQuestionDifficultyState.personal_difficulty_score.desc(),
-    ).limit(limit)
+    q = (
+        select(
+            UserQuestionDifficultyState.question_id,
+            UserQuestionDifficultyState.personal_difficulty_score,
+            UserQuestionDifficultyState.difficulty_label,
+            UserQuestionDifficultyState.wrong_count,
+            UserQuestionDifficultyState.avg_answer_time_seconds,
+        )
+        .where(
+            UserQuestionDifficultyState.user_id == user_id,
+            UserQuestionDifficultyState.difficulty_label == "hard",
+        )
+        .order_by(
+            UserQuestionDifficultyState.personal_difficulty_score.desc(),
+        )
+        .limit(limit)
+    )
 
     rows = (await db.execute(q)).all()
 
@@ -646,29 +696,36 @@ async def get_hard_questions(
     review_map: dict[int, str | None] = {}
 
     if q_ids:
-        kp_rows = (await db.execute(
-            select(
-                QuestionKnowledgePoint.question_id,
-                QuestionKnowledgePoint.knowledge_point_id,
-                KnowledgePoint.name,
+        kp_rows = (
+            await db.execute(
+                select(
+                    QuestionKnowledgePoint.question_id,
+                    QuestionKnowledgePoint.knowledge_point_id,
+                    KnowledgePoint.name,
+                )
+                .join(
+                    KnowledgePoint,
+                    QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+                )
+                .where(QuestionKnowledgePoint.question_id.in_(q_ids))
+                .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
             )
-            .join(KnowledgePoint, QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-            .where(QuestionKnowledgePoint.question_id.in_(q_ids))
-            .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
-        )).all()
+        ).all()
         for r in kp_rows:
             if r.question_id not in kp_map:
                 kp_map[r.question_id] = (r.knowledge_point_id, r.name)
 
-        uqs_rows = (await db.execute(
-            select(
-                UserQuestionState.question_id,
-                UserQuestionState.next_review_at,
-            ).where(
-                UserQuestionState.user_id == user_id,
-                UserQuestionState.question_id.in_(q_ids),
+        uqs_rows = (
+            await db.execute(
+                select(
+                    UserQuestionState.question_id,
+                    UserQuestionState.next_review_at,
+                ).where(
+                    UserQuestionState.user_id == user_id,
+                    UserQuestionState.question_id.in_(q_ids),
+                )
             )
-        )).all()
+        ).all()
         for r in uqs_rows:
             review_map[r.question_id] = (
                 serialize_utc_datetime(r.next_review_at) if r.next_review_at else None
@@ -677,32 +734,40 @@ async def get_hard_questions(
     items = []
     for r in rows:
         kp = kp_map.get(r.question_id)
-        items.append({
-            "question_id": r.question_id,
-            "knowledge_point_id": kp[0] if kp else None,
-            "knowledge_point_name": kp[1] if kp else None,
-            "personal_difficulty_score": round(r.personal_difficulty_score, 1),
-            "difficulty_label": r.difficulty_label,
-            "wrong_count": r.wrong_count,
-            "avg_answer_time_seconds": (
-                round(r.avg_answer_time_seconds, 1) if r.avg_answer_time_seconds else None
-            ),
-            "next_review_at": review_map.get(r.question_id),
-        })
+        items.append(
+            {
+                "question_id": r.question_id,
+                "knowledge_point_id": kp[0] if kp else None,
+                "knowledge_point_name": kp[1] if kp else None,
+                "personal_difficulty_score": round(r.personal_difficulty_score, 1),
+                "difficulty_label": r.difficulty_label,
+                "wrong_count": r.wrong_count,
+                "avg_answer_time_seconds": (
+                    round(r.avg_answer_time_seconds, 1)
+                    if r.avg_answer_time_seconds
+                    else None
+                ),
+                "next_review_at": review_map.get(r.question_id),
+            }
+        )
 
     return {"total": len(items), "items": items}
 
 
 async def get_knowledge_path_adaptive(
-    db: AsyncSession, user_id: int, limit: int = 20,
+    db: AsyncSession,
+    user_id: int,
+    limit: int = 20,
 ) -> dict:
     """返回知识点路径阻塞建议。"""
     # 查所有有 prerequisite 边的 target KP
     targets_result = await db.execute(
-        select(KnowledgeEdge.target_knowledge_point_id).where(
+        select(KnowledgeEdge.target_knowledge_point_id)
+        .where(
             KnowledgeEdge.relation_type == "prerequisite",
             KnowledgeEdge.is_active == True,  # noqa: E712
-        ).distinct()
+        )
+        .distinct()
     )
     all_target_ids = [r[0] for r in targets_result.all()]
     if not all_target_ids:
@@ -723,13 +788,15 @@ async def get_knowledge_path_adaptive(
 
     items = []
     for kp_id, weak_prereqs in blocked.items():
-        items.append({
-            "knowledge_point_id": kp_id,
-            "knowledge_point_name": kp_names.get(kp_id, ""),
-            "status": "blocked",
-            "reason": "前置知识点掌握度不足",
-            "blocked_by": weak_prereqs,
-        })
+        items.append(
+            {
+                "knowledge_point_id": kp_id,
+                "knowledge_point_name": kp_names.get(kp_id, ""),
+                "status": "blocked",
+                "reason": "前置知识点掌握度不足",
+                "blocked_by": weak_prereqs,
+            }
+        )
 
     items.sort(key=lambda x: len(x["blocked_by"]), reverse=True)
     return {"total": len(items), "items": items[:limit]}
@@ -778,8 +845,7 @@ async def get_recommendation_graph_context(
     # state[(current_node, origin_target)] = cumulative path quality before the
     # next edge.  Start each origin at quality 1.0.
     frontier: dict[tuple[int, int], dict[str, float]] = {
-        (origin, origin): {"weight": 1.0, "confidence": 1.0}
-        for origin in origin_ids
+        (origin, origin): {"weight": 1.0, "confidence": 1.0} for origin in origin_ids
     }
     visited: set[tuple[int, int]] = set(frontier)
     relations: list[dict] = []
@@ -800,11 +866,13 @@ async def get_recommendation_graph_context(
                 KnowledgePoint.is_active == True,  # noqa: E712
                 KnowledgePoint.subject_id.in_(scope_ids),
             )
-            edge_conditions.extend([
-                KnowledgeEdge.subject_id.in_(scope_ids),
-                KnowledgeEdge.source_knowledge_point_id.in_(scoped_kps),
-                KnowledgeEdge.target_knowledge_point_id.in_(scoped_kps),
-            ])
+            edge_conditions.extend(
+                [
+                    KnowledgeEdge.subject_id.in_(scope_ids),
+                    KnowledgeEdge.source_knowledge_point_id.in_(scoped_kps),
+                    KnowledgeEdge.target_knowledge_point_id.in_(scoped_kps),
+                ]
+            )
 
         edge_result = await db.execute(
             select(
@@ -835,16 +903,18 @@ async def get_recommendation_graph_context(
                 depth_decay = 1.0 if depth == 1 else 0.65
                 path_quality = cumulative_weight * cumulative_confidence * depth_decay
 
-                relations.append({
-                    "knowledge_point_id": prereq_id,
-                    "origin_knowledge_point_id": origin_id,
-                    "depth": depth,
-                    "edge_id": edge.id,
-                    "edge_weight": edge_weight,
-                    "edge_confidence": edge_confidence,
-                    "edge_source": edge.source,
-                    "path_quality": max(0.0, min(path_quality, 1.0)),
-                })
+                relations.append(
+                    {
+                        "knowledge_point_id": prereq_id,
+                        "origin_knowledge_point_id": origin_id,
+                        "depth": depth,
+                        "edge_id": edge.id,
+                        "edge_weight": edge_weight,
+                        "edge_confidence": edge_confidence,
+                        "edge_source": edge.source,
+                        "path_quality": max(0.0, min(path_quality, 1.0)),
+                    }
+                )
                 visited.add(pair)
                 if len(relations) >= max_nodes:
                     break
@@ -864,10 +934,12 @@ async def get_recommendation_graph_context(
             "prerequisites_by_target": {},
         }
 
-    all_kp_ids = list({
-        *origin_ids,
-        *(r["knowledge_point_id"] for r in relations),
-    })
+    all_kp_ids = list(
+        {
+            *origin_ids,
+            *(r["knowledge_point_id"] for r in relations),
+        }
+    )
 
     name_result = await db.execute(
         select(KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.subject_id).where(
@@ -1005,7 +1077,10 @@ def can_recommend_advanced_knowledge(
     if not prerequisite_states:
         return True
     for state in prerequisite_states:
-        if state["confidence"] >= min_confidence and state["mastery_score"] < min_mastery_score:
+        if (
+            state["confidence"] >= min_confidence
+            and state["mastery_score"] < min_mastery_score
+        ):
             return False
     return True
 
@@ -1054,7 +1129,8 @@ async def get_recommend_weights(
 
 
 async def _get_or_create_preference(
-    db: AsyncSession, user_id: int,
+    db: AsyncSession,
+    user_id: int,
 ) -> UserRecommendPreference:
     result = await db.execute(
         select(UserRecommendPreference).where(
@@ -1102,7 +1178,8 @@ async def adjust_recommend_weights(
         select(
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0  # noqa: E712
+                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)),  # noqa: E712
+                0,  # noqa: E712
             ),
         ).where(
             PracticeRecord.user_id == user_id,
@@ -1124,7 +1201,8 @@ async def adjust_recommend_weights(
         select(
             func.count(UserQuestionState.id),
             func.coalesce(
-                func.sum(case((UserQuestionState.last_is_correct == True, 1), else_=0)), 0  # noqa: E712
+                func.sum(case((UserQuestionState.last_is_correct == True, 1), else_=0)),  # noqa: E712
+                0,  # noqa: E712
             ),
         ).where(
             UserQuestionState.user_id == user_id,

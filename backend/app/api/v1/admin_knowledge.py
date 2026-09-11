@@ -1,4 +1,5 @@
 """管理端知识点 backfill + 状态 + 知识图谱边 API。"""
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -47,7 +48,9 @@ async def list_knowledge_graph_subjects(
     from app.models.knowledge_point import KnowledgePoint
 
     subject_result = await db.execute(
-        select(Subject).where(Subject.is_active).order_by(Subject.sort_order.asc(), Subject.id.asc())
+        select(Subject)
+        .where(Subject.is_active)
+        .order_by(Subject.sort_order.asc(), Subject.id.asc())
     )
     subjects = subject_result.scalars().all()
 
@@ -63,7 +66,9 @@ async def list_knowledge_graph_subjects(
         .where(KnowledgeEdge.is_active)
         .group_by(KnowledgeEdge.subject_id)
     )
-    edge_counts = {int(subject_id): int(count) for subject_id, count in edge_result.all()}
+    edge_counts = {
+        int(subject_id): int(count) for subject_id, count in edge_result.all()
+    }
 
     return [
         {
@@ -129,11 +134,20 @@ async def get_knowledge_graph(
         return {
             "subject": {"id": subject.id, "code": subject.code, "name": subject.name},
             "summary": {
-                "total_nodes": 0, "total_edges": 0, "visible_nodes": 0, "visible_edges": 0,
-                "isolated_nodes": 0, "avg_confidence": 0.0, "relation_counts": {},
-                "source_counts": {}, "relation_confidence": {},
+                "total_nodes": 0,
+                "total_edges": 0,
+                "visible_nodes": 0,
+                "visible_edges": 0,
+                "isolated_nodes": 0,
+                "avg_confidence": 0.0,
+                "relation_counts": {},
+                "source_counts": {},
+                "relation_confidence": {},
             },
-            "nodes": [], "edges": [], "hot_nodes": [], "focus_id": None,
+            "nodes": [],
+            "edges": [],
+            "hot_nodes": [],
+            "focus_id": None,
         }
 
     qcount_result = await db.execute(
@@ -157,11 +171,15 @@ async def get_knowledge_graph(
         )
     )
     all_edges = [
-        edge for edge in edge_result.scalars().all()
-        if edge.source_knowledge_point_id in kp_ids and edge.target_knowledge_point_id in kp_ids
+        edge
+        for edge in edge_result.scalars().all()
+        if edge.source_knowledge_point_id in kp_ids
+        and edge.target_knowledge_point_id in kp_ids
     ]
     filtered_edges = [
-        edge for edge in all_edges if not relation_type or edge.relation_type == relation_type
+        edge
+        for edge in all_edges
+        if not relation_type or edge.relation_type == relation_type
     ]
 
     relation_counts = Counter(edge.relation_type for edge in all_edges)
@@ -169,8 +187,12 @@ async def get_knowledge_graph(
     confidence_sums: dict[str, float] = {}
     confidence_counts: dict[str, int] = {}
     for edge in all_edges:
-        confidence_sums[edge.relation_type] = confidence_sums.get(edge.relation_type, 0.0) + float(edge.confidence or 0.0)
-        confidence_counts[edge.relation_type] = confidence_counts.get(edge.relation_type, 0) + 1
+        confidence_sums[edge.relation_type] = confidence_sums.get(
+            edge.relation_type, 0.0
+        ) + float(edge.confidence or 0.0)
+        confidence_counts[edge.relation_type] = (
+            confidence_counts.get(edge.relation_type, 0) + 1
+        )
 
     all_degree = Counter()
     filtered_degree = Counter()
@@ -192,7 +214,9 @@ async def get_knowledge_graph(
         ranked_matches: list[tuple[int, int, int]] = []
         for kp in knowledge_points:
             aliases = kp.aliases if isinstance(kp.aliases, list) else []
-            alias_values = [str(alias).strip().casefold() for alias in aliases if str(alias).strip()]
+            alias_values = [
+                str(alias).strip().casefold() for alias in aliases if str(alias).strip()
+            ]
             name = (kp.name or "").casefold()
             normalized_name = (kp.normalized_name or "").casefold()
 
@@ -203,7 +227,9 @@ async def get_knowledge_graph(
                 rank = 1
             elif any(normalized_search == alias for alias in alias_values):
                 rank = 2
-            elif name.startswith(normalized_search) or normalized_name.startswith(normalized_search):
+            elif name.startswith(normalized_search) or normalized_name.startswith(
+                normalized_search
+            ):
                 rank = 3
             elif any(alias.startswith(normalized_search) for alias in alias_values):
                 rank = 4
@@ -223,7 +249,9 @@ async def get_knowledge_graph(
     # 显式传入中心知识点时应 fail-fast。旧行为在 ID 不属于当前科目时静默
     # 回退到总览，会让管理员误以为定位成功。
     if knowledge_point_id is not None and knowledge_point_id not in kp_map:
-        raise HTTPException(status_code=404, detail="知识点不存在、已停用或不属于当前科目")
+        raise HTTPException(
+            status_code=404, detail="知识点不存在、已停用或不属于当前科目"
+        )
 
     focus_id: int | None = None
     if knowledge_point_id is not None:
@@ -244,7 +272,11 @@ async def get_knowledge_graph(
                 continue
             neighbors = sorted(
                 set(adjacency.get(current_id, [])),
-                key=lambda kp_id: (-filtered_degree[kp_id], -question_counts.get(kp_id, 0), kp_id),
+                key=lambda kp_id: (
+                    -filtered_degree[kp_id],
+                    -question_counts.get(kp_id, 0),
+                    kp_id,
+                ),
             )
             for neighbor_id in neighbors:
                 if neighbor_id in selected_set:
@@ -262,15 +294,22 @@ async def get_knowledge_graph(
     else:
         ranked_ids = sorted(
             kp_ids,
-            key=lambda kp_id: (-filtered_degree[kp_id], -all_degree[kp_id], -question_counts.get(kp_id, 0), kp_id),
+            key=lambda kp_id: (
+                -filtered_degree[kp_id],
+                -all_degree[kp_id],
+                -question_counts.get(kp_id, 0),
+                kp_id,
+            ),
         )
         selected_ids = ranked_ids[:max_nodes]
         selected_set = set(selected_ids)
         focus_id = selected_ids[0] if selected_ids else None
 
     visible_edges = [
-        edge for edge in filtered_edges
-        if edge.source_knowledge_point_id in selected_set and edge.target_knowledge_point_id in selected_set
+        edge
+        for edge in filtered_edges
+        if edge.source_knowledge_point_id in selected_set
+        and edge.target_knowledge_point_id in selected_set
     ]
 
     incoming_counts = Counter(edge.target_knowledge_point_id for edge in all_edges)
@@ -284,20 +323,26 @@ async def get_knowledge_graph(
     for kp_id in selected_ids:
         kp = kp_map[kp_id]
         relation_breakdown = node_relation_counts[kp_id]
-        nodes.append({
-            "id": kp.id,
-            "name": kp.name,
-            "normalized_name": kp.normalized_name,
-            "aliases": [str(alias) for alias in (kp.aliases or []) if str(alias).strip()] if isinstance(kp.aliases, list) else [],
-            "description": kp.description,
-            "difficulty_level": kp.difficulty_level,
-            "subject_id": kp.subject_id,
-            "question_count": question_counts.get(kp.id, 0),
-            "in_degree": incoming_counts[kp.id],
-            "out_degree": outgoing_counts[kp.id],
-            "degree": all_degree[kp.id],
-            "relation_counts": dict(relation_breakdown),
-        })
+        nodes.append(
+            {
+                "id": kp.id,
+                "name": kp.name,
+                "normalized_name": kp.normalized_name,
+                "aliases": [
+                    str(alias) for alias in (kp.aliases or []) if str(alias).strip()
+                ]
+                if isinstance(kp.aliases, list)
+                else [],
+                "description": kp.description,
+                "difficulty_level": kp.difficulty_level,
+                "subject_id": kp.subject_id,
+                "question_count": question_counts.get(kp.id, 0),
+                "in_degree": incoming_counts[kp.id],
+                "out_degree": outgoing_counts[kp.id],
+                "degree": all_degree[kp.id],
+                "relation_counts": dict(relation_breakdown),
+            }
+        )
 
     edge_payload = [
         {
@@ -333,11 +378,15 @@ async def get_knowledge_graph(
             "visible_nodes": len(nodes),
             "visible_edges": len(edge_payload),
             "isolated_nodes": sum(1 for kp_id in kp_ids if all_degree[kp_id] == 0),
-            "avg_confidence": round(total_confidence / len(all_edges), 4) if all_edges else 0.0,
+            "avg_confidence": round(total_confidence / len(all_edges), 4)
+            if all_edges
+            else 0.0,
             "relation_counts": dict(relation_counts),
             "source_counts": dict(source_counts),
             "relation_confidence": {
-                relation: round(confidence_sums[relation] / confidence_counts[relation], 4)
+                relation: round(
+                    confidence_sums[relation] / confidence_counts[relation], 4
+                )
                 for relation in confidence_sums
                 if confidence_counts.get(relation)
             },
@@ -365,8 +414,11 @@ async def create_knowledge_edge(
     # 需要先查 subject_id（从 source_kp 获取）
     from app.models.knowledge_point import KnowledgePoint
     from app.services import knowledge_graph_service
+
     kp_result = await db.execute(
-        select(KnowledgePoint).where(KnowledgePoint.id == data.source_knowledge_point_id)
+        select(KnowledgePoint).where(
+            KnowledgePoint.id == data.source_knowledge_point_id
+        )
     )
     source_kp = kp_result.scalar_one_or_none()
     if not source_kp:
@@ -383,9 +435,17 @@ async def create_knowledge_edge(
         source=data.source,
     )
     await write_admin_audit(
-        db, current_admin, "knowledge.create_edge", "knowledge_edge",
-        None, severity="normal",
-        detail={"source_kp_id": data.source_knowledge_point_id, "target_kp_id": data.target_knowledge_point_id, "relation_type": data.relation_type},
+        db,
+        current_admin,
+        "knowledge.create_edge",
+        "knowledge_edge",
+        None,
+        severity="normal",
+        detail={
+            "source_kp_id": data.source_knowledge_point_id,
+            "target_kp_id": data.target_knowledge_point_id,
+            "relation_type": data.relation_type,
+        },
         request=request,
     )
     await db.commit()
@@ -424,9 +484,18 @@ async def infer_knowledge_edges(
         force_rebuild=data.force_rebuild,
     )
     await write_admin_audit(
-        db, current_admin, "knowledge.infer_edges", "knowledge_edge",
-        None, severity="normal",
-        detail={"subject_id": data.subject_id, "limit": data.limit, "force_rebuild": data.force_rebuild, **result},
+        db,
+        current_admin,
+        "knowledge.infer_edges",
+        "knowledge_edge",
+        None,
+        severity="normal",
+        detail={
+            "subject_id": data.subject_id,
+            "limit": data.limit,
+            "force_rebuild": data.force_rebuild,
+            **result,
+        },
         request=request,
     )
     await db.commit()

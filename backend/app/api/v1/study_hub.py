@@ -35,5 +35,7 @@ async def get_knowledge_diagnosis(
         db, current_user.id, subject_id, days=days
     )
     if data is None:
-        raise HTTPException(status_code=404, detail="408 科目不存在、已停用或当前大纲不可用")
+        raise HTTPException(
+            status_code=404, detail="408 科目不存在、已停用或当前大纲不可用"
+        )
     return KnowledgeDiagnosisResponse(**data)

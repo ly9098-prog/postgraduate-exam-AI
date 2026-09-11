@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportGroupBy
-from app.services.question_revision_service import load_revision_kp_names, load_revision_views
+from app.services.question_revision_service import (
+    load_revision_kp_names,
+    load_revision_views,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GroupSection:
     """A named group within the export."""
+
     title: str
     wq_ids: list[int] = field(default_factory=list)
 
@@ -42,9 +46,11 @@ async def group_questions(
         return [GroupSection(title="", wq_ids=list(wq_ids))]
 
     # Group from immutable revisions so exports remain stable after later edits.
-    rows = list((await db.scalars(
-        select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids))
-    )).all())
+    rows = list(
+        (
+            await db.scalars(select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids)))
+        ).all()
+    )
     revision_ids = [int(wq.question_version_id) for wq in rows]
     views = await load_revision_views(db, revision_ids)
     kp_map = await load_revision_kp_names(db, revision_ids)
@@ -75,7 +81,9 @@ async def group_questions(
     ]
 
 
-def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q, kps: list[str] | None = None) -> tuple[str, str]:
+def _group_key_title(
+    group_by: ExportGroupBy, wq: WrongQuestion, q, kps: list[str] | None = None
+) -> tuple[str, str]:
     """Return (sort_key, display_title) for the question."""
     if group_by == ExportGroupBy.SUBJECT:
         subject = _get_subject_label(q)
@@ -101,6 +109,7 @@ def _get_subject_label(q) -> str | None:
     try:
         if q.subject_ref:
             from app.models.admin import Subject
+
             if isinstance(q.subject_ref, Subject):
                 return q.subject_ref.name
     except Exception:
@@ -126,6 +135,7 @@ def _get_primary_knowledge_point(kps: list[str] | None) -> str | None:
 def _get_question_type_label(q) -> str | None:
     """Return the Chinese label for the question type."""
     from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
+
     if q.question_type:
         try:
             return QUESTION_TYPE_LABELS.get(QuestionType(q.question_type))

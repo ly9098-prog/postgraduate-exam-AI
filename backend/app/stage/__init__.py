@@ -1,4 +1,5 @@
 """Stage management for Sprint 4D: Stage 1A (CPU Worker) / Stage 1B (GPU Worker) split."""
+
 from __future__ import annotations
 
 from enum import StrEnum

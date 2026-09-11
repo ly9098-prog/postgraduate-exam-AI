@@ -4,6 +4,7 @@
 ``system_task_service.execute_scheduled_task`` 统一处理，确保定时执行与管理端
 “立即执行”走完全相同的生产代码路径。
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,9 @@ class RecommendationMetricsScheduler:
 
         hour = settings.RECOMMENDATION_METRICS_AGG_HOUR_UTC
         if not 0 <= hour <= 23:
-            logger.warning("RECOMMENDATION_METRICS_AGG_HOUR_UTC=%d 无效，使用默认值 4", hour)
+            logger.warning(
+                "RECOMMENDATION_METRICS_AGG_HOUR_UTC=%d 无效，使用默认值 4", hour
+            )
             hour = 4
 
         self._scheduler = AsyncIOScheduler(timezone="UTC")
@@ -47,6 +50,7 @@ class RecommendationMetricsScheduler:
         self._scheduler.start()
         self._running = True
         from app.services.system_task_service import register_scheduler_task
+
         register_scheduler_task("recommendation_metrics_daily")
         logger.info(
             "推荐指标聚合调度器已启动: 每天 %02d:00 UTC, 日志保留 %d 天",
@@ -59,6 +63,7 @@ class RecommendationMetricsScheduler:
             self._scheduler.shutdown(wait=False)
             self._running = False
             from app.services.system_task_service import unregister_scheduler_task
+
             unregister_scheduler_task("recommendation_metrics_daily")
             logger.info("推荐指标聚合调度器已停止")
 
@@ -66,7 +71,9 @@ class RecommendationMetricsScheduler:
         from app.services.system_task_service import execute_scheduled_task
 
         try:
-            outcome = await execute_scheduled_task("recommendation_metrics_daily", source="scheduler")
+            outcome = await execute_scheduled_task(
+                "recommendation_metrics_daily", source="scheduler"
+            )
             if outcome.status == "failed":
                 logger.error("推荐指标聚合失败: %s", outcome.message)
             elif outcome.status == "skipped":

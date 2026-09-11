@@ -157,7 +157,8 @@ async def correct_ocr_blocks(
             else:
                 logger.warning(
                     "ocr_correction safety rejected block %d: %s",
-                    idx, safety_trace.rollback_reason,
+                    idx,
+                    safety_trace.rollback_reason,
                 )
 
         corrected_blocks[idx] = new_block

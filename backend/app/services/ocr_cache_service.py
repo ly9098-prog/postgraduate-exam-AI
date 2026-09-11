@@ -10,6 +10,7 @@
 - 预处理策略版本（prep_v1）
 - 输出 schema 版本（schema_v1）
 """
+
 import hashlib
 import json
 import logging
@@ -24,7 +25,9 @@ from app.core.time_utils import serialize_utc_datetime, utcnow
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = os.environ.get("OCR_CACHE_DIR", os.path.join(os.getcwd(), ".backend_cache", "ocr"))
+_CACHE_DIR = os.environ.get(
+    "OCR_CACHE_DIR", os.path.join(os.getcwd(), ".backend_cache", "ocr")
+)
 _ENABLED = os.environ.get("OCR_CACHE_ENABLED", "true").lower() == "true"
 _TTL_SECONDS = 86400 * 14  # 14 天
 
@@ -69,18 +72,20 @@ def _build_engine_fingerprint() -> str:
     - Cache schema version
     - Python version (minor ABI changes may affect preprocessing)
     """
-    raw = "|".join([
-        settings.OCR_LANGUAGE or "ch",
-        str(settings.OCR_DET_DB_THRESH),
-        str(settings.OCR_DET_DB_BOX_THRESH),
-        str(settings.OCR_DET_DB_UNCLIP_RATIO),
-        str(settings.OCR_DROP_SCORE),
-        str(os.environ.get("OCR_LOW_CONF_THRESHOLD", "0.55")),
-        "engine:ppocrv4",
-        "prep:v1",
-        f"schema:{_CACHE_SCHEMA_VERSION}",
-        f"py:{sys.version_info.major}.{sys.version_info.minor}",
-    ])
+    raw = "|".join(
+        [
+            settings.OCR_LANGUAGE or "ch",
+            str(settings.OCR_DET_DB_THRESH),
+            str(settings.OCR_DET_DB_BOX_THRESH),
+            str(settings.OCR_DET_DB_UNCLIP_RATIO),
+            str(settings.OCR_DROP_SCORE),
+            str(os.environ.get("OCR_LOW_CONF_THRESHOLD", "0.55")),
+            "engine:ppocrv4",
+            "prep:v1",
+            f"schema:{_CACHE_SCHEMA_VERSION}",
+            f"py:{sys.version_info.major}.{sys.version_info.minor}",
+        ]
+    )
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
@@ -128,11 +133,18 @@ def _load_entry(path: str) -> OcrCacheEntry | None:
         if entry.schema_version != _CACHE_SCHEMA_VERSION:
             logger.debug(
                 "OCR cache schema mismatch: cached=%s current=%s",
-                entry.schema_version, _CACHE_SCHEMA_VERSION,
+                entry.schema_version,
+                _CACHE_SCHEMA_VERSION,
             )
             return None
         return entry
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as e:
         logger.debug("OCR cache load failed for %s: %s", path, e)
         return None
 
@@ -184,7 +196,8 @@ def get_cached(
         if entry is not None:
             logger.debug(
                 "OCR cache fingerprint mismatch: cached=%s current=%s",
-                entry.config_hash, fingerprint,
+                entry.config_hash,
+                fingerprint,
             )
     except Exception as e:
         logger.warning("OCR cache lookup failed, falling through: %s", e)
@@ -282,8 +295,15 @@ def cleanup_expired_entries(
         }
     """
     if not os.path.isdir(_CACHE_DIR):
-        logger.info("OCR cache directory %s does not exist, nothing to clean", _CACHE_DIR)
-        return {"scanned_count": 0, "deleted_count": 0, "freed_bytes": 0, "skipped_count": 0}
+        logger.info(
+            "OCR cache directory %s does not exist, nothing to clean", _CACHE_DIR
+        )
+        return {
+            "scanned_count": 0,
+            "deleted_count": 0,
+            "freed_bytes": 0,
+            "skipped_count": 0,
+        }
 
     ttl = ttl or _TTL_SECONDS
     now = time.time()
@@ -321,7 +341,9 @@ def cleanup_expired_entries(
                         deleted += 1
                         freed += size
                     except OSError as exc:
-                        logger.warning("Failed to remove expired cache entry %s: %s", path, exc)
+                        logger.warning(
+                            "Failed to remove expired cache entry %s: %s", path, exc
+                        )
                 else:
                     deleted += 1
                     freed += size
@@ -348,7 +370,11 @@ def cleanup_expired_entries(
 
     logger.info(
         "OCR cache cleanup: scanned=%d, deleted=%d, freed=%d bytes, skipped=%d (dry_run=%s)",
-        scanned, deleted, freed, skipped, dry_run,
+        scanned,
+        deleted,
+        freed,
+        skipped,
+        dry_run,
     )
     return {
         "scanned_count": scanned,

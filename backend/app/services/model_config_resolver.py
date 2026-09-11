@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 try:
     from app.core.log_context import log_event
 except ImportError:  # pragma: no cover
+
     def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
         pass
 
@@ -50,8 +51,10 @@ except ImportError:  # pragma: no cover
 # Capability constants
 # ---------------------------------------------------------------------------
 
+
 class AICapability(StrEnum):
     """AI capability identifiers for model config resolution."""
+
     OCR_LIGHTWEIGHT = "ocr_lightweight"
     OCR_VL = "ocr_vl"
     OCR_FIX = "ocr_fix"
@@ -79,8 +82,10 @@ AICapability.ANALYSIS = _LegacyCapabilityValue("analysis")  # type: ignore[attr-
 # Stable error codes
 # ---------------------------------------------------------------------------
 
+
 class AIConfigErrorCode(StrEnum):
     """Stable error codes for AI configuration failures."""
+
     AI_CONFIG_NOT_FOUND = "AI_CONFIG_NOT_FOUND"
     AI_CONFIG_DISABLED = "AI_CONFIG_DISABLED"
     AI_MODEL_CONFIG_NOT_FOUND = "AI_MODEL_CONFIG_NOT_FOUND"
@@ -108,6 +113,7 @@ class ResolvedAIModelConfig:
 
     Contains all fields needed to configure an adapter, without secrets.
     """
+
     config_id: int | str
     model_config_id: int | str
 
@@ -137,6 +143,7 @@ class AIModelConfigSnapshot:
     Only non-sensitive fields — never contains api_key, token, or
     any secrets. Frozen at pipeline start for resume safety.
     """
+
     config_id: int | str
     model_config_id: int | str
 
@@ -257,7 +264,11 @@ class AIModelConfigResolver:
 
         Raises ``ValueError`` with an ``AIConfigErrorCode`` on failure.
         """
-        capability = capability.value if isinstance(capability, AICapability) else str(capability)
+        capability = (
+            capability.value
+            if isinstance(capability, AICapability)
+            else str(capability)
+        )
 
         excluded_ids = frozenset(int(item) for item in (excluded_config_ids or set()))
 
@@ -325,7 +336,9 @@ class AIModelConfigResolver:
                     AIConfigErrorCode.AI_MODEL_DISABLED.value,
                     f"Model config id={requested_config_id} is excluded for this resolution",
                 )
-            return await self._resolve_by_id(requested_config_id, db_features, capability=capability)
+            return await self._resolve_by_id(
+                requested_config_id, db_features, capability=capability
+            )
 
         # Query all enabled models
         result = await self._db.execute(
@@ -337,7 +350,8 @@ class AIModelConfigResolver:
             )
         )
         all_enabled = [
-            model for model in result.scalars().all()
+            model
+            for model in result.scalars().all()
             if int(model.id) not in excluded_config_ids
         ]
 
@@ -348,16 +362,25 @@ class AIModelConfigResolver:
             )
 
         all_enabled = [
-            model for model in all_enabled
+            model
+            for model in all_enabled
             if self._provider_matches_capability(model.provider, capability)
         ]
         # Endpoint-type isolation: Embedding models must never become a generic
         # Chat/OCR fallback, and embedding resolution must only consider models
         # explicitly registered with the embedding capability.
         if capability == AICapability.EMBEDDING.value:
-            all_enabled = [model for model in all_enabled if "embedding" in _get_model_features(model)]
+            all_enabled = [
+                model
+                for model in all_enabled
+                if "embedding" in _get_model_features(model)
+            ]
         else:
-            all_enabled = [model for model in all_enabled if "embedding" not in _get_model_features(model)]
+            all_enabled = [
+                model
+                for model in all_enabled
+                if "embedding" not in _get_model_features(model)
+            ]
         if not all_enabled:
             raise ValueError(
                 AIConfigErrorCode.AI_CONFIG_PROVIDER_UNSUPPORTED.value,
@@ -380,8 +403,11 @@ class AIModelConfigResolver:
         # 3. Any enabled model (last resort)
         for model in all_enabled:
             log_event(
-                logger, "ai.model.resolve.fallback", "info",
-                capability=capability, model_name=model.name,
+                logger,
+                "ai.model.resolve.fallback",
+                "info",
+                capability=capability,
+                model_name=model.name,
                 provider=model.provider,
             )
             return self._to_resolved(model, capability)
@@ -437,16 +463,19 @@ class AIModelConfigResolver:
             str(model.api_key_encrypted or "").encode("utf-8")
         ).hexdigest()[:16]
         fp = hashlib.sha256(
-            json.dumps({
-                "id": model.id,
-                "name": model.name,
-                "provider": model.provider,
-                "base_url": model.api_base_url,
-                "features": sorted(str(f) for f in model_features),
-                "is_enabled": model.is_enabled,
-                "is_default": model.is_default,
-                "secret_revision": secret_revision,
-            }, sort_keys=True).encode()
+            json.dumps(
+                {
+                    "id": model.id,
+                    "name": model.name,
+                    "provider": model.provider,
+                    "base_url": model.api_base_url,
+                    "features": sorted(str(f) for f in model_features),
+                    "is_enabled": model.is_enabled,
+                    "is_default": model.is_default,
+                    "secret_revision": secret_revision,
+                },
+                sort_keys=True,
+            ).encode()
         ).hexdigest()[:16]
 
         return ResolvedAIModelConfig(
@@ -538,7 +567,6 @@ class AIModelConfigResolver:
         return mapping.get(capability, (capability,) if capability else ())
 
 
-
 # ---------------------------------------------------------------------------
 # Pipeline config resolution helper
 # ---------------------------------------------------------------------------
@@ -591,14 +619,20 @@ async def resolve_pipeline_ai_configs(
             }
             result[cap] = snapshot_dict
             log_event(
-                logger, "ai.model.resolve.pipeline", "info",
-                capability=cap, model_name=resolved.model_name,
+                logger,
+                "ai.model.resolve.pipeline",
+                "info",
+                capability=cap,
+                model_name=resolved.model_name,
                 provider=resolved.provider,
             )
         except ValueError:
             log_event(
-                logger, "ai.model.resolve.skipped", "info",
-                capability=cap, reason="no_enabled_model",
+                logger,
+                "ai.model.resolve.skipped",
+                "info",
+                capability=cap,
+                reason="no_enabled_model",
             )
             continue
 
@@ -632,7 +666,9 @@ def _get_model_features(model: AdminAiModelConfig) -> list[str]:
     return []
 
 
-async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> dict | None:
+async def resolve_active_model(
+    db: AsyncSession, feature: str | None = None
+) -> dict | None:
     """Return the first enabled model matching *feature*.
 
     Resolution order:
@@ -657,9 +693,15 @@ async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> 
     all_enabled = result.scalars().all()
 
     if feature == "embedding":
-        all_enabled = [model for model in all_enabled if "embedding" in _get_model_features(model)]
+        all_enabled = [
+            model for model in all_enabled if "embedding" in _get_model_features(model)
+        ]
     else:
-        all_enabled = [model for model in all_enabled if "embedding" not in _get_model_features(model)]
+        all_enabled = [
+            model
+            for model in all_enabled
+            if "embedding" not in _get_model_features(model)
+        ]
 
     if feature:
         for model in all_enabled:
@@ -674,24 +716,39 @@ async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> 
     # Last resort: any enabled model
     for model in all_enabled:
         log_event(
-            logger, "ai.model.resolve.fallback", "info",
-            feature=feature, model_name=model.name, provider=model.provider,
+            logger,
+            "ai.model.resolve.fallback",
+            "info",
+            feature=feature,
+            model_name=model.name,
+            provider=model.provider,
         )
         return _decrypt_model(model)
 
-    log_event(logger, "ai.model.resolve.fallback", "info", feature=feature, reason="no_enabled_model")
+    log_event(
+        logger,
+        "ai.model.resolve.fallback",
+        "info",
+        feature=feature,
+        reason="no_enabled_model",
+    )
     return None
 
 
 def _decrypt_model(model: AdminAiModelConfig) -> dict | None:
     try:
-        api_key = decrypt_secret(model.api_key_encrypted) if model.api_key_encrypted else ""
+        api_key = (
+            decrypt_secret(model.api_key_encrypted) if model.api_key_encrypted else ""
+        )
     except (SecretDecryptionError, SecretEncryptionError):
         api_key = ""
     if not api_key:
         log_event(
-            logger, "ai.model.resolve.error", "warning",
-            model_name=model.name, provider=model.provider,
+            logger,
+            "ai.model.resolve.error",
+            "warning",
+            model_name=model.name,
+            provider=model.provider,
             reason="no_decryptable_api_key",
         )
         return None
@@ -708,7 +765,8 @@ def _decrypt_model(model: AdminAiModelConfig) -> dict | None:
 
 
 async def ensure_db_model_configured(
-    db: AsyncSession, feature: str | None = None,
+    db: AsyncSession,
+    feature: str | None = None,
 ) -> tuple[str, str, str] | None:
     """Read the enabled model matching *feature* from DB and return credentials.
 
@@ -721,13 +779,18 @@ async def ensure_db_model_configured(
     config = await resolve_active_model(db, feature=feature)
     if config:
         log_event(
-            logger, "ai.model.resolve.finish", "info",
-            feature=feature, model_name=config["model_name"],
+            logger,
+            "ai.model.resolve.finish",
+            "info",
+            feature=feature,
+            model_name=config["model_name"],
             display_name=config.get("display_name", ""),
             provider=config.get("provider", ""),
             source="db",
         )
         return (config["api_key"], config["api_base_url"], config["model_name"])
 
-    log_event(logger, "ai.model.resolve.fallback", "info", feature=feature, source="env_vars")
+    log_event(
+        logger, "ai.model.resolve.fallback", "info", feature=feature, source="env_vars"
+    )
     return None

@@ -41,6 +41,7 @@ _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 # ── Auth dependency ───────────────────────────────────────
 
+
 async def verify_worker_api_key(
     worker_api_key: Annotated[str | None, Header(alias="Worker-API-Key")] = None,
     db: AsyncSession = Depends(get_db),
@@ -99,8 +100,10 @@ WorkerAuth = Annotated[str, Depends(verify_worker_api_key)]
 
 # ── Helper ────────────────────────────────────────────────
 
+
 def _ok(data: object, status_code: int = 200):
     from fastapi.responses import JSONResponse
+
     return JSONResponse(content={"ok": True, "data": data}, status_code=status_code)
 
 
@@ -109,6 +112,7 @@ def _err(detail: str, status_code: int = 400):
 
 
 # ── Endpoints ─────────────────────────────────────────────
+
 
 @router.post("/jobs/claim")
 async def claim_job(
@@ -166,7 +170,9 @@ async def start_job(
     """Mark job as running (downloading → running)."""
     try:
         job = await svc.start_job(
-            db, job_id, body.lease_token,
+            db,
+            job_id,
+            body.lease_token,
             worker_fingerprint=body.worker_fingerprint,
             model_fingerprint=body.model_fingerprint,
         )
@@ -187,7 +193,9 @@ async def complete_job(
     """Mark job as completed with output artifact."""
     try:
         job = await svc.complete_job(
-            db, job_id, body.lease_token,
+            db,
+            job_id,
+            body.lease_token,
             output_artifact_key=body.output_artifact_key,
             output_sha256=body.output_sha256,
             worker_fingerprint=body.worker_fingerprint,
@@ -211,7 +219,9 @@ async def fail_job(
     """Report a job failure."""
     try:
         job = await svc.fail_job(
-            db, job_id, body.lease_token,
+            db,
+            job_id,
+            body.lease_token,
             error_code=body.error_code,
             error_message=body.error_message,
             is_retryable=body.is_retryable,
@@ -267,7 +277,9 @@ async def list_jobs(
     jobs, total = await svc.list_jobs(
         db, status=status_filter, limit=min(limit, 200), offset=offset
     )
-    return _ok(OCRJobListResponse(
-        items=[OCRJobResponse.model_validate(j) for j in jobs],
-        total=total,
-    ).model_dump(mode="json"))
+    return _ok(
+        OCRJobListResponse(
+            items=[OCRJobResponse.model_validate(j) for j in jobs],
+            total=total,
+        ).model_dump(mode="json")
+    )

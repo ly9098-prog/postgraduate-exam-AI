@@ -62,10 +62,12 @@ def _compute_delta(inp: Any, out: Any) -> dict:
         elif op == "delete":
             delta["removed_tokens"].extend(in_tokens[i1:i2])
         elif op == "replace":
-            delta["modified_regions"].append({
-                "before": " ".join(in_tokens[i1:i2]),
-                "after": " ".join(out_tokens[j1:j2]),
-            })
+            delta["modified_regions"].append(
+                {
+                    "before": " ".join(in_tokens[i1:i2]),
+                    "after": " ".join(out_tokens[j1:j2]),
+                }
+            )
 
     # Remove duplicates while preserving order
     delta["added_tokens"] = list(dict.fromkeys(delta["added_tokens"]))
@@ -97,18 +99,25 @@ class StageTracer:
         self._corruption_registry: dict[str, dict] = {}
 
         if raw_text:
-            self.entries.append({
-                "stage": "ocr_raw_input",
-                "strategy": "passthrough",
-                "input_source": "raw_ocr",
-                "parent_stage": None,
-                "input_preview": _preview(raw_text),
-                "output_preview": _preview(raw_text),
-                "status": "observed",
-                "duration_ms": 0,
-                "delta": {"added_tokens": [], "removed_tokens": [], "modified_regions": [], "has_changed": False},
-                "notes": f"raw_text length={len(raw_text)}",
-            })
+            self.entries.append(
+                {
+                    "stage": "ocr_raw_input",
+                    "strategy": "passthrough",
+                    "input_source": "raw_ocr",
+                    "parent_stage": None,
+                    "input_preview": _preview(raw_text),
+                    "output_preview": _preview(raw_text),
+                    "status": "observed",
+                    "duration_ms": 0,
+                    "delta": {
+                        "added_tokens": [],
+                        "removed_tokens": [],
+                        "modified_regions": [],
+                        "has_changed": False,
+                    },
+                    "notes": f"raw_text length={len(raw_text)}",
+                }
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -138,7 +147,9 @@ class StageTracer:
         Returns:
             Whatever func returns (pass-through, no modification).
         """
-        entry = self._make_entry(stage, strategy, input_source, parent_stage, input_data)
+        entry = self._make_entry(
+            stage, strategy, input_source, parent_stage, input_data
+        )
         start = time.monotonic()
         try:
             output = func(input_data, **kwargs) if kwargs else func(input_data)
@@ -163,18 +174,25 @@ class StageTracer:
         strategy: str = "observation",
     ) -> None:
         """Record an observation about a stage without wrapping a function call."""
-        self.entries.append({
-            "stage": stage,
-            "strategy": strategy,
-            "input_source": input_source,
-            "parent_stage": parent_stage,
-            "input_preview": "",
-            "output_preview": "",
-            "status": "info",
-            "duration_ms": 0,
-            "delta": {"added_tokens": [], "removed_tokens": [], "modified_regions": [], "has_changed": False},
-            "notes": notes,
-        })
+        self.entries.append(
+            {
+                "stage": stage,
+                "strategy": strategy,
+                "input_source": input_source,
+                "parent_stage": parent_stage,
+                "input_preview": "",
+                "output_preview": "",
+                "status": "info",
+                "duration_ms": 0,
+                "delta": {
+                    "added_tokens": [],
+                    "removed_tokens": [],
+                    "modified_regions": [],
+                    "has_changed": False,
+                },
+                "notes": notes,
+            }
+        )
 
     def mark_corruption(
         self,
@@ -221,7 +239,12 @@ class StageTracer:
             "output_preview": "",
             "status": "corruption",
             "duration_ms": 0,
-            "delta": {"added_tokens": [], "removed_tokens": [], "modified_regions": [], "has_changed": False},
+            "delta": {
+                "added_tokens": [],
+                "removed_tokens": [],
+                "modified_regions": [],
+                "has_changed": False,
+            },
             "corruption_type": corruption_type,
             "origin_stage": registry["origin_stage"],
             "propagation_path": list(registry["propagation_path"]),
@@ -253,23 +276,31 @@ class StageTracer:
             registry["resolved_at"] = stage
             registry["resolved_by"] = resolved_by
 
-        self.entries.append({
-            "stage": stage,
-            "strategy": "detection",
-            "input_source": "intermediate",
-            "parent_stage": None,
-            "input_preview": "",
-            "output_preview": "",
-            "status": "resolved",
-            "duration_ms": 0,
-            "delta": {"added_tokens": [], "removed_tokens": [], "modified_regions": [], "has_changed": False},
-            "corruption_type": corruption_type,
-            "origin_stage": registry["origin_stage"],
-            "propagation_path": list(registry["propagation_path"]),
-            "resolved_at": stage,
-            "resolved_by": resolved_by,
-            "notes": detail or f"Corruption '{corruption_type}' resolved by {resolved_by}",
-        })
+        self.entries.append(
+            {
+                "stage": stage,
+                "strategy": "detection",
+                "input_source": "intermediate",
+                "parent_stage": None,
+                "input_preview": "",
+                "output_preview": "",
+                "status": "resolved",
+                "duration_ms": 0,
+                "delta": {
+                    "added_tokens": [],
+                    "removed_tokens": [],
+                    "modified_regions": [],
+                    "has_changed": False,
+                },
+                "corruption_type": corruption_type,
+                "origin_stage": registry["origin_stage"],
+                "propagation_path": list(registry["propagation_path"]),
+                "resolved_at": stage,
+                "resolved_by": resolved_by,
+                "notes": detail
+                or f"Corruption '{corruption_type}' resolved by {resolved_by}",
+            }
+        )
 
     def mark_options_recovery(
         self,
@@ -288,22 +319,29 @@ class StageTracer:
             confidence: Confidence in the recovery (0.0-1.0).
             failure_reason: Why primary strategy failed (e.g. "missing_option_D"), or None.
         """
-        self.entries.append({
-            "stage": stage,
-            "strategy": "options_trace",
-            "input_source": "intermediate",
-            "parent_stage": None,
-            "input_preview": "",
-            "output_preview": "",
-            "status": "info",
-            "duration_ms": 0,
-            "delta": {"added_tokens": [], "removed_tokens": [], "modified_regions": [], "has_changed": False},
-            "options_found_in": origin,
-            "options_origin": origin,
-            "options_confidence": round(confidence, 2),
-            "options_failure_reason": failure_reason,
-            "note": f"option_count={option_count}",
-        })
+        self.entries.append(
+            {
+                "stage": stage,
+                "strategy": "options_trace",
+                "input_source": "intermediate",
+                "parent_stage": None,
+                "input_preview": "",
+                "output_preview": "",
+                "status": "info",
+                "duration_ms": 0,
+                "delta": {
+                    "added_tokens": [],
+                    "removed_tokens": [],
+                    "modified_regions": [],
+                    "has_changed": False,
+                },
+                "options_found_in": origin,
+                "options_origin": origin,
+                "options_confidence": round(confidence, 2),
+                "options_failure_reason": failure_reason,
+                "note": f"option_count={option_count}",
+            }
+        )
 
     def scan_text_corruptions(self, text: str, source_label: str) -> list[dict]:
         """Scan text for known corruption patterns.
@@ -317,19 +355,23 @@ class StageTracer:
         # Standalone C/B/A/D tokens (potential noise)
         for match in _RE_STANDALONE_TOKEN.finditer(text):
             token = match.group(1)
-            findings.append({
-                "type": f"{token.lower()}_token_noise",
-                "detail": f"Standalone '{token}' token at pos {match.start()}",
-                "source": source_label,
-            })
+            findings.append(
+                {
+                    "type": f"{token.lower()}_token_noise",
+                    "detail": f"Standalone '{token}' token at pos {match.start()}",
+                    "source": source_label,
+                }
+            )
 
         # Broken -> arrow (dash variants like − > or – >)
         if _RE_BROKEN_ARROW_DASH.search(text):
-            findings.append({
-                "type": "broken_arrow_dash",
-                "detail": "Arrow '->' appears as dash variant (e.g., '− >')",
-                "source": source_label,
-            })
+            findings.append(
+                {
+                    "type": "broken_arrow_dash",
+                    "detail": "Arrow '->' appears as dash variant (e.g., '− >')",
+                    "source": source_label,
+                }
+            )
 
         return findings
 
@@ -376,6 +418,11 @@ class StageTracer:
             "output_preview": "",
             "status": "running",
             "duration_ms": 0,
-            "delta": {"added_tokens": [], "removed_tokens": [], "modified_regions": [], "has_changed": False},
+            "delta": {
+                "added_tokens": [],
+                "removed_tokens": [],
+                "modified_regions": [],
+                "has_changed": False,
+            },
             "notes": "",
         }

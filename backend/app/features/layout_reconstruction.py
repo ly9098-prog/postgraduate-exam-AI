@@ -24,12 +24,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # ── 选项行模式 ──────────────────────────────────────────────
-_OPTION_PATTERN = re.compile(
-    r"^\s*([A-Da-d])\s*[.．、:：)）]\s*(.*)"
-)
-_QUESTION_NUM_PATTERN = re.compile(
-    r"^\s*(\d+)\s*[.．、)）]"
-)
+_OPTION_PATTERN = re.compile(r"^\s*([A-Da-d])\s*[.．、:：)）]\s*(.*)")
+_QUESTION_NUM_PATTERN = re.compile(r"^\s*(\d+)\s*[.．、)）]")
 _PAREN_QUESTION_PATTERN = re.compile(r"^\s*[（(](\d+)[）)]")
 # 列检测阈值：x坐标间隙超过页面宽度 × 此比例视为双栏
 _COLUMN_GAP_RATIO = 0.08
@@ -37,7 +33,8 @@ _COLUMN_GAP_RATIO = 0.08
 
 @dataclass
 class LayoutLine:
-    """带 bbox 的单行文本. """
+    """带 bbox 的单行文本."""
+
     text: str
     page: int
     block_index: int
@@ -51,24 +48,31 @@ class LayoutLine:
     @property
     def x0(self) -> float:
         return self.bbox[0]
+
     @property
     def y0(self) -> float:
         return self.bbox[1]
+
     @property
     def x1(self) -> float:
         return self.bbox[2]
+
     @property
     def y1(self) -> float:
         return self.bbox[3]
+
     @property
     def cx(self) -> float:
         return (self.bbox[0] + self.bbox[2]) / 2
+
     @property
     def cy(self) -> float:
         return (self.bbox[1] + self.bbox[3]) / 2
+
     @property
     def height(self) -> float:
         return self.bbox[3] - self.bbox[1]
+
     @property
     def width(self) -> float:
         return self.bbox[2] - self.bbox[0]
@@ -101,6 +105,7 @@ class LayoutLine:
 @dataclass
 class ColumnLayout:
     """单列版面。"""
+
     lines: list[LayoutLine] = field(default_factory=list)
     option_groups: dict[str, str] = field(default_factory=dict)
     option_confidence: float = 0.0
@@ -110,6 +115,7 @@ class ColumnLayout:
 @dataclass
 class PageLayout:
     """单页版面分析结果。"""
+
     page: int
     columns: list[ColumnLayout] = field(default_factory=list)
     is_multicolumn: bool = False
@@ -154,16 +160,18 @@ def _collect_lines_from_blocks(
                 bbox = [0, base + i * 20, pw, base + i * 20 + 15]
                 conf = 0.0
 
-            page_lines.append(LayoutLine(
-                text=line_text,
-                page=page,
-                block_index=block_idx,
-                line_index=len(page_lines),
-                bbox=bbox,
-                conf=conf,
-                page_width=pw,
-                page_height=ph,
-            ))
+            page_lines.append(
+                LayoutLine(
+                    text=line_text,
+                    page=page,
+                    block_index=block_idx,
+                    line_index=len(page_lines),
+                    bbox=bbox,
+                    conf=conf,
+                    page_width=pw,
+                    page_height=ph,
+                )
+            )
 
         block_line_offset[page] = base + len(lines)
 
@@ -223,7 +231,9 @@ def _compute_confidence(
     found_keys = set(option_groups.keys())
     expected = {"A", "B", "C", "D"}
     has_all_four = expected.issubset(found_keys)
-    has_three = {"A", "B", "C"}.issubset(found_keys) or {"B", "C", "D"}.issubset(found_keys)
+    has_three = {"A", "B", "C"}.issubset(found_keys) or {"B", "C", "D"}.issubset(
+        found_keys
+    )
 
     option_score = 0.0
     if has_all_four:
@@ -236,9 +246,7 @@ def _compute_confidence(
         option_score = 0.3
 
     # 选项行密度
-    option_line_count = sum(
-        1 for l in lines if l.is_option() is not None
-    )
+    option_line_count = sum(1 for l in lines if l.is_option() is not None)
     option_density = min(1.0, option_line_count / max(len(lines), 1) * 4)
 
     # 多列加分（结构清晰）
@@ -292,17 +300,17 @@ def _analyze_page(
         elif found:
             opt_conf = 0.3
 
-        col_layouts.append(ColumnLayout(
-            lines=col_lines,
-            option_groups=col_options,
-            option_confidence=opt_conf,
-            question_starts=q_starts,
-        ))
+        col_layouts.append(
+            ColumnLayout(
+                lines=col_lines,
+                option_groups=col_options,
+                option_confidence=opt_conf,
+                question_starts=q_starts,
+            )
+        )
 
     if is_multi:
-        warnings.append(
-            f"page {page}: {len(columns_data)} columns detected"
-        )
+        warnings.append(f"page {page}: {len(columns_data)} columns detected")
 
     confidence = _compute_confidence(lines, columns_data, all_option_groups)
 
@@ -325,13 +333,15 @@ def _build_reading_order(
         for col_idx, col in enumerate(pl.columns):
             sorted_in_col = sorted(col.lines, key=lambda l: (l.y0, l.y1))
             for line in sorted_in_col:
-                order.append({
-                    "page": page,
-                    "block_index": line.block_index,
-                    "line_index": line.line_index,
-                    "column": col_idx,
-                    "text": line.text[:80],
-                })
+                order.append(
+                    {
+                        "page": page,
+                        "block_index": line.block_index,
+                        "line_index": line.line_index,
+                        "column": col_idx,
+                        "text": line.text[:80],
+                    }
+                )
     return order
 
 
@@ -427,9 +437,9 @@ def reconstruct_layout(
 
     # 4. 计算整体置信度
     if pages_layout:
-        layout_confidence = sum(
-            pl.confidence for pl in pages_layout.values()
-        ) / len(pages_layout)
+        layout_confidence = sum(pl.confidence for pl in pages_layout.values()) / len(
+            pages_layout
+        )
     else:
         layout_confidence = 1.0
 
@@ -516,9 +526,7 @@ def needs_fallback(layout_result: dict[str, Any]) -> bool:
         return True
 
     if opt_failed:
-        logger.info(
-            "Layout fallback triggered: option_detection_failed=True"
-        )
+        logger.info("Layout fallback triggered: option_detection_failed=True")
         return True
 
     return False

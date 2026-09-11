@@ -4,6 +4,7 @@ V3: 增量更新模型。mastery_score 范围 0-100，初始 50（未知状态�
 答对加分、答错扣分，结合难度修正和连续错误修正。
 confidence 随 answer_count 增加，低置信度时不做过强判断。
 """
+
 import logging
 from datetime import timedelta
 
@@ -167,19 +168,27 @@ async def update_user_knowledge_state_after_answer(
     )
     mappings = result.all()
     difficulty = await db.scalar(
-        select(QuestionVersion.difficulty).where(QuestionVersion.id == question_version_id)
+        select(QuestionVersion.difficulty).where(
+            QuestionVersion.id == question_version_id
+        )
     )
 
     if not mappings:
         return {
-            "updated": 0, "created": 0,
-            "mastery_before": None, "mastery_after": None, "mastery_delta": None,
+            "updated": 0,
+            "created": 0,
+            "mastery_before": None,
+            "mastery_after": None,
+            "mastery_delta": None,
         }
 
     if difficulty is None:
         return {
-            "updated": 0, "created": 0,
-            "mastery_before": None, "mastery_after": None, "mastery_delta": None,
+            "updated": 0,
+            "created": 0,
+            "mastery_before": None,
+            "mastery_after": None,
+            "mastery_delta": None,
         }
 
     # 批量查询现有 UserKnowledgeState（替代每 KP 一次 SELECT）
@@ -190,9 +199,7 @@ async def update_user_knowledge_state_after_answer(
             UserKnowledgeState.knowledge_point_id.in_(kp_ids),
         )
     )
-    existing_states = {
-        s.knowledge_point_id: s for s in states_result.scalars().all()
-    }
+    existing_states = {s.knowledge_point_id: s for s in states_result.scalars().all()}
 
     updated = 0
     created = 0
@@ -222,7 +229,9 @@ async def update_user_knowledge_state_after_answer(
             created += 1
 
         mastery_before = float(
-            state.mastery_score if state.mastery_score is not None else MASTERY_INITIAL_SCORE
+            state.mastery_score
+            if state.mastery_score is not None
+            else MASTERY_INITIAL_SCORE
         )
         mastery_before_values.append(mastery_before)
 
@@ -274,11 +283,13 @@ async def update_user_knowledge_state_after_answer(
 
     mastery_before_avg = (
         sum(mastery_before_values) / len(mastery_before_values)
-        if mastery_before_values else None
+        if mastery_before_values
+        else None
     )
     mastery_after_avg = (
         sum(mastery_after_values) / len(mastery_after_values)
-        if mastery_after_values else None
+        if mastery_after_values
+        else None
     )
     mastery_delta_avg = (
         mastery_after_avg - mastery_before_avg
@@ -288,9 +299,15 @@ async def update_user_knowledge_state_after_answer(
     return {
         "updated": updated,
         "created": created,
-        "mastery_before": round(mastery_before_avg, 4) if mastery_before_avg is not None else None,
-        "mastery_after": round(mastery_after_avg, 4) if mastery_after_avg is not None else None,
-        "mastery_delta": round(mastery_delta_avg, 4) if mastery_delta_avg is not None else None,
+        "mastery_before": round(mastery_before_avg, 4)
+        if mastery_before_avg is not None
+        else None,
+        "mastery_after": round(mastery_after_avg, 4)
+        if mastery_after_avg is not None
+        else None,
+        "mastery_delta": round(mastery_delta_avg, 4)
+        if mastery_delta_avg is not None
+        else None,
     }
 
 
@@ -313,7 +330,9 @@ async def get_user_weak_knowledge_points(
         return []
     result = await db.execute(
         select(UserKnowledgeState, KnowledgePoint.name)
-        .join(KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id)
+        .join(
+            KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id
+        )
         .where(
             UserKnowledgeState.user_id == user_id,
             UserKnowledgeState.subject_id.in_(subject_ids),
@@ -331,16 +350,18 @@ async def get_user_weak_knowledge_points(
     for state, kp_name in rows:
         # V3: 使用新阈值判断薄弱（mastery_score < 70 即 weak 或 normal）
         if state.mastery_score < MASTERY_NORMAL_THRESHOLD:
-            weak_points.append({
-                "knowledge_point_id": state.knowledge_point_id,
-                "name": kp_name,
-                "subject_id": state.subject_id,
-                "mastery_score": state.mastery_score,
-                "confidence": state.confidence,
-                "accuracy": state.accuracy,
-                "attempt_count": state.attempt_count,
-                "weakness_level": state.weakness_level,
-            })
+            weak_points.append(
+                {
+                    "knowledge_point_id": state.knowledge_point_id,
+                    "name": kp_name,
+                    "subject_id": state.subject_id,
+                    "mastery_score": state.mastery_score,
+                    "confidence": state.confidence,
+                    "accuracy": state.accuracy,
+                    "attempt_count": state.attempt_count,
+                    "weakness_level": state.weakness_level,
+                }
+            )
         if len(weak_points) >= limit:
             break
 
@@ -372,7 +393,8 @@ async def _fallback_weak_kps(
         )
         .join(
             QuestionVersionKnowledgePoint,
-            QuestionVersionKnowledgePoint.question_version_id == PracticeRecord.question_version_id,
+            QuestionVersionKnowledgePoint.question_version_id
+            == PracticeRecord.question_version_id,
         )
         .join(
             KnowledgePoint,
@@ -380,7 +402,8 @@ async def _fallback_weak_kps(
         )
         .outerjoin(
             SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+            SyllabusKnowledgePoint.id
+            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .where(
             PracticeRecord.user_id == user_id,
@@ -410,15 +433,17 @@ async def _fallback_weak_kps(
         if total >= 2:
             accuracy = correct / total
             if accuracy < 0.65:
-                weak.append({
-                    "knowledge_point_id": kp_id,
-                    "name": kp_name,
-                    "mastery_score": round(accuracy * 100, 2),
-                    "confidence": round(min(1.0, total / 10.0), 2),
-                    "accuracy": round(accuracy, 4),
-                    "attempt_count": total,
-                    "weakness_level": "weak" if accuracy < 0.45 else "normal",
-                })
+                weak.append(
+                    {
+                        "knowledge_point_id": kp_id,
+                        "name": kp_name,
+                        "mastery_score": round(accuracy * 100, 2),
+                        "confidence": round(min(1.0, total / 10.0), 2),
+                        "accuracy": round(accuracy, 4),
+                        "attempt_count": total,
+                        "weakness_level": "weak" if accuracy < 0.45 else "normal",
+                    }
+                )
 
     weak.sort(key=lambda x: (x["accuracy"], -x["attempt_count"]))
     return weak[:limit]
@@ -435,7 +460,9 @@ async def get_user_knowledge_states(
         return []
     result = await db.execute(
         select(UserKnowledgeState, KnowledgePoint.name)
-        .join(KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id)
+        .join(
+            KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id
+        )
         .where(
             UserKnowledgeState.user_id == user_id,
             UserKnowledgeState.subject_id.in_(subject_ids),
@@ -456,20 +483,26 @@ async def get_user_knowledge_states(
     items = []
     for state, kp_name in rows:
         subj = subject_map.get(state.subject_id)
-        items.append({
-            "knowledge_point_id": state.knowledge_point_id,
-            "name": kp_name,
-            "subject_id": state.subject_id,
-            "subject_name": subj.name if subj else "",
-            "attempt_count": state.attempt_count,
-            "correct_count": state.correct_count,
-            "wrong_count": state.wrong_count,
-            "accuracy": round(state.accuracy, 4),
-            "mastery_score": round(state.mastery_score, 2),
-            "confidence": round(state.confidence, 2),
-            "weakness_level": state.weakness_level,
-            "recent_wrong_count": state.recent_wrong_count,
-            "last_practiced_at": serialize_utc_datetime(state.last_practiced_at) if state.last_practiced_at else None,
-            "last_wrong_at": serialize_utc_datetime(state.last_wrong_at) if state.last_wrong_at else None,
-        })
+        items.append(
+            {
+                "knowledge_point_id": state.knowledge_point_id,
+                "name": kp_name,
+                "subject_id": state.subject_id,
+                "subject_name": subj.name if subj else "",
+                "attempt_count": state.attempt_count,
+                "correct_count": state.correct_count,
+                "wrong_count": state.wrong_count,
+                "accuracy": round(state.accuracy, 4),
+                "mastery_score": round(state.mastery_score, 2),
+                "confidence": round(state.confidence, 2),
+                "weakness_level": state.weakness_level,
+                "recent_wrong_count": state.recent_wrong_count,
+                "last_practiced_at": serialize_utc_datetime(state.last_practiced_at)
+                if state.last_practiced_at
+                else None,
+                "last_wrong_at": serialize_utc_datetime(state.last_wrong_at)
+                if state.last_wrong_at
+                else None,
+            }
+        )
     return items

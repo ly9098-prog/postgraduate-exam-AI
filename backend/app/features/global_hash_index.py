@@ -61,7 +61,11 @@ def _resolve_recent_days(override: int | None) -> int:
     try:
         return max(0, int(raw))
     except ValueError:
-        logger.warning("Invalid HASH_INDEX_RECENT_DAYS=%r, using default %d", raw, _DEFAULT_RECENT_DAYS)
+        logger.warning(
+            "Invalid HASH_INDEX_RECENT_DAYS=%r, using default %d",
+            raw,
+            _DEFAULT_RECENT_DAYS,
+        )
         return _DEFAULT_RECENT_DAYS
 
 
@@ -73,7 +77,9 @@ def _resolve_max_size() -> int:
         value = int(raw)
         return value if value > 0 else _DEFAULT_MAX_SIZE
     except ValueError:
-        logger.warning("Invalid HASH_INDEX_MAX_SIZE=%r, using default %d", raw, _DEFAULT_MAX_SIZE)
+        logger.warning(
+            "Invalid HASH_INDEX_MAX_SIZE=%r, using default %d", raw, _DEFAULT_MAX_SIZE
+        )
         return _DEFAULT_MAX_SIZE
 
 
@@ -140,6 +146,7 @@ class GlobalHashIndex:
         # 阈值检查（只 count，不真的取行）。SQL fallback 下两个 index 都
         # 留空，lookup 自动走单条查询。
         from sqlalchemy import func as sa_func
+
         count_stmt = select(sa_func.count(Question.id)).where(*question_filter)
         count = (await db.execute(count_stmt)).scalar() or 0
 
@@ -150,7 +157,8 @@ class GlobalHashIndex:
             self._loaded = True
             logger.info(
                 "GlobalHashIndex falling back to SQL (count=%d > max_size=%d)",
-                count, self._max_size,
+                count,
+                self._max_size,
             )
             return
 
@@ -175,6 +183,7 @@ class GlobalHashIndex:
 
         if ids:
             from app.models.question_import import QuestionImport
+
             import_rows = (
                 await db.execute(
                     select(

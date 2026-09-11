@@ -3,19 +3,42 @@
 只做规则替换，不引入新依赖。
 调用点：question_pipeline._extract_pdf_text 和 ocr_service.clean_ocr_text 之后。
 """
+
 import re
 
 # ── 希腊字母 Unicode → LaTeX ──────────────────────────────────────────────────
 
 _GREEK = {
-    "α": r"\alpha", "β": r"\beta", "γ": r"\gamma", "δ": r"\delta",
-    "ε": r"\varepsilon", "ζ": r"\zeta", "η": r"\eta", "θ": r"\theta",
-    "λ": r"\lambda", "μ": r"\mu", "ν": r"\nu", "ξ": r"\xi",
-    "π": r"\pi", "ρ": r"\rho", "σ": r"\sigma", "τ": r"\tau",
-    "φ": r"\varphi", "χ": r"\chi", "ψ": r"\psi", "ω": r"\omega",
-    "Γ": r"\Gamma", "Δ": r"\Delta", "Θ": r"\Theta", "Λ": r"\Lambda",
-    "Ξ": r"\Xi", "Π": r"\Pi", "Σ": r"\Sigma", "Φ": r"\Phi",
-    "Ψ": r"\Psi", "Ω": r"\Omega",
+    "α": r"\alpha",
+    "β": r"\beta",
+    "γ": r"\gamma",
+    "δ": r"\delta",
+    "ε": r"\varepsilon",
+    "ζ": r"\zeta",
+    "η": r"\eta",
+    "θ": r"\theta",
+    "λ": r"\lambda",
+    "μ": r"\mu",
+    "ν": r"\nu",
+    "ξ": r"\xi",
+    "π": r"\pi",
+    "ρ": r"\rho",
+    "σ": r"\sigma",
+    "τ": r"\tau",
+    "φ": r"\varphi",
+    "χ": r"\chi",
+    "ψ": r"\psi",
+    "ω": r"\omega",
+    "Γ": r"\Gamma",
+    "Δ": r"\Delta",
+    "Θ": r"\Theta",
+    "Λ": r"\Lambda",
+    "Ξ": r"\Xi",
+    "Π": r"\Pi",
+    "Σ": r"\Sigma",
+    "Φ": r"\Phi",
+    "Ψ": r"\Psi",
+    "Ω": r"\Omega",
 }
 
 # ── 数学运算符 Unicode → LaTeX ────────────────────────────────────────────────
@@ -88,14 +111,20 @@ def _replace_symbols(text: str) -> str:
 _OCR_FIXES: list[tuple[re.Pattern, str]] = [
     # "x2" / "x3" 裸上标（字母后直接接数字，且不在已有 ^ 之后）
     # 排除单数字 1（常见标识符后缀，如 P1/A1/B1）；排除后接 ( 的函数调用
-    (re.compile(r"(?<![_^{])\b([a-zA-Z])[ \t]*((?:[2-9]\d*|\d{2,}))\b(?!\s*[_^}(])"), r"\1^{\2}"),
+    (
+        re.compile(r"(?<![_^{])\b([a-zA-Z])[ \t]*((?:[2-9]\d*|\d{2,}))\b(?!\s*[_^}(])"),
+        r"\1^{\2}",
+    ),
     # "1 /2"、"1/2" 孤立分数 → \frac{1}{2}
     (re.compile(r"\b(\d+)\s*/\s*(\d+)\b"), r"\\frac{\1}{\2}"),
     # √x / √(expr) → \sqrt{x} / \sqrt{expr}
     (re.compile(r"\\sqrt\s*\(([^)]+)\)"), r"\\sqrt{\1}"),
     (re.compile(r"\\sqrt\s+([^\s{\\]+)"), r"\\sqrt{\1}"),
     # lim x→0 → \lim_{x \to 0}，または lim x\to0 → \lim_{x \to 0}
-    (re.compile(r"\blim\s+([a-zA-Z])\s*(?:→|\\to)\s*([^\s,，。]+)"), r"\\lim_{\1 \\to \2}"),
+    (
+        re.compile(r"\blim\s+([a-zA-Z])\s*(?:→|\\to)\s*([^\s,，。]+)"),
+        r"\\lim_{\1 \\to \2}",
+    ),
     # ∫0^1 → \int_0^1（OCR 漏掉 _ ）
     (re.compile(r"\\int\s*([^_^{\s\\]+)\s*\^\s*([^_^{\s\\]+)"), r"\\int_{\1}^{\2}"),
     # 清理 LaTeX 命令后多余空格：\frac { → \frac{
@@ -136,7 +165,10 @@ def _map_outside_code_fences(text: str, transform) -> str:
     as code too, which is safer than rewriting possible C/SQL/shell content.
     """
     chunks = text.split("```")
-    return "```".join(transform(chunk) if index % 2 == 0 else chunk for index, chunk in enumerate(chunks))
+    return "```".join(
+        transform(chunk) if index % 2 == 0 else chunk
+        for index, chunk in enumerate(chunks)
+    )
 
 
 def _strip_outside_code_fence_boundaries(text: str) -> str:
@@ -220,7 +252,9 @@ def normalize_text_import_math(text: str, *, compact: bool = False) -> str:
     # Text imports may contain C/Java/SQL snippets.  Formula cleanup must never
     # turn tokens such as ``log`` inside a fenced code block into LaTeX or
     # collapse code spacing, so all normalization stays outside ``` fences.
-    return _strip_outside_code_fence_boundaries(_map_outside_code_fences(text, _normalize))
+    return _strip_outside_code_fence_boundaries(
+        _map_outside_code_fences(text, _normalize)
+    )
 
 
 def _collapse_latex_escapes(text: str) -> str:
@@ -246,7 +280,9 @@ def _normalize_common_math_notation(text: str) -> str:
         base = match.group(2)
         return rf"\{name}_{base}"
 
-    text = re.sub(r"(?<!\\)(log|ln|sin|cos|tan)\s*_?\{?([0-9]+)\}?", repl_named_with_base, text)
+    text = re.sub(
+        r"(?<!\\)(log|ln|sin|cos|tan)\s*_?\{?([0-9]+)\}?", repl_named_with_base, text
+    )
     text = re.sub(r"(?<!\\)\b(log|ln|sin|cos|tan|sqrt|frac)\b", r"\\\1", text)
     return text
 
@@ -270,7 +306,10 @@ def is_math_subject(subject: str | None) -> bool:
     if not subject:
         return False
     s = subject.lower().replace("-", "").replace("_", "")
-    return any(s.startswith(p.lower().replace("-", "").replace("_", "")) for p in _MATH_SUBJECT_PREFIXES)
+    return any(
+        s.startswith(p.lower().replace("-", "").replace("_", ""))
+        for p in _MATH_SUBJECT_PREFIXES
+    )
 
 
 def safe_fix_ocr_formula(text: str, subject: str | None = None) -> str:
@@ -300,7 +339,9 @@ def wrap_inline_math(text: str) -> str:
     """
     if not text:
         return text
-    parts = re.split(r"(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])", text)
+    parts = re.split(
+        r"(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])", text
+    )
     result = []
     for i, part in enumerate(parts):
         if i % 2 == 1:
@@ -418,7 +459,9 @@ def parse_latex_table(text: str) -> list[dict]:
             m = _RE_STAR_COLSPEC.search(_expanded_spec)
             if not m:
                 break
-            _expanded_spec = _expanded_spec.replace(m.group(0), m.group(2) * int(m.group(1)))
+            _expanded_spec = _expanded_spec.replace(
+                m.group(0), m.group(2) * int(m.group(1))
+            )
         col_count = sum(1 for c in _expanded_spec if c in "lcrp")
 
         rows: list[list[str]] = []
@@ -433,11 +476,13 @@ def parse_latex_table(text: str) -> list[dict]:
                 rows.append(cells)
 
         if rows:
-            tables.append({
-                "columns": col_count or max(len(r) for r in rows),
-                "rows": rows,
-                "raw": match.group(0),
-            })
+            tables.append(
+                {
+                    "columns": col_count or max(len(r) for r in rows),
+                    "rows": rows,
+                    "raw": match.group(0),
+                }
+            )
 
     return tables
 

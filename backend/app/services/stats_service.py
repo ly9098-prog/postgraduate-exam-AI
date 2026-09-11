@@ -47,13 +47,13 @@ def _extract_json_object(content: object) -> dict | None:
     if text_value.startswith("```"):
         first_newline = text_value.find("\n")
         if first_newline >= 0:
-            text_value = text_value[first_newline + 1:]
+            text_value = text_value[first_newline + 1 :]
         if text_value.endswith("```"):
             text_value = text_value[:-3].rstrip()
     left = text_value.find("{")
     right = text_value.rfind("}")
     if left >= 0 and right > left:
-        text_value = text_value[left:right + 1]
+        text_value = text_value[left : right + 1]
     try:
         parsed = json.loads(text_value)
     except (json.JSONDecodeError, ValueError, TypeError):
@@ -61,7 +61,9 @@ def _extract_json_object(content: object) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _normalize_text_list(value: object, *, limit: int, max_chars: int = 240) -> list[str]:
+def _normalize_text_list(
+    value: object, *, limit: int, max_chars: int = 240
+) -> list[str]:
     if not isinstance(value, list):
         return []
     result: list[str] = []
@@ -95,11 +97,13 @@ def _normalize_dashboard_actions(value: object, *, limit: int = 4) -> list[dict]
         desc = raw_desc.strip() if isinstance(raw_desc, str) else ""
         if not title:
             continue
-        result.append({
-            "type": action_type,
-            "title": title[:80],
-            "desc": desc[:220],
-        })
+        result.append(
+            {
+                "type": action_type,
+                "title": title[:80],
+                "desc": desc[:220],
+            }
+        )
         if len(result) >= limit:
             break
     return result
@@ -144,12 +148,8 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     pr_result = await db.execute(
         select(
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
-            func.coalesce(
-                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         ).where(PracticeRecord.user_id == user_id)
     )
@@ -159,9 +159,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     today_result = await db.execute(
         select(
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         ).where(
             PracticeRecord.user_id == user_id,
@@ -175,9 +173,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     wq_result = await db.execute(
         select(
             func.count(WrongQuestion.id),
-            func.coalesce(
-                func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0),
         ).where(WrongQuestion.user_id == user_id, WrongQuestion.is_active)
     )
     total_wq, mastered_count = wq_result.one()
@@ -205,7 +201,9 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         "total_questions": total_questions,
         "total_correct": total_correct,
         "total_wrong": total_wrong,
-        "accuracy": round(total_correct / total_questions, 4) if total_questions > 0 else 0.0,
+        "accuracy": round(total_correct / total_questions, 4)
+        if total_questions > 0
+        else 0.0,
         "total_duration_sec": total_duration or 0,
         "consecutive_days": consecutive_days,
         "today_questions": today_count,
@@ -254,12 +252,8 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
             Subject.code.label("subject_code"),
             Subject.name.label("subject_name"),
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
-            func.coalesce(
-                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
         .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
@@ -280,14 +274,18 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
                 "wrong_count": r[5],
                 "accuracy": round(correct / total_q, 4) if total_q > 0 else 0.0,
                 "total_duration_sec": r[6] or 0,
-                "avg_duration_sec": round((r[6] or 0) / total_q, 1) if total_q > 0 else 0.0,
+                "avg_duration_sec": round((r[6] or 0) / total_q, 1)
+                if total_q > 0
+                else 0.0,
             }
         )
     return rows
 
 
 async def get_trends(
-    db: AsyncSession, user_id: int, days: int = 7,
+    db: AsyncSession,
+    user_id: int,
+    days: int = 7,
     start_date: date | None = None,
 ) -> list[dict]:
     """学习趋势（按天聚合）
@@ -305,12 +303,8 @@ async def get_trends(
         select(
             day_expr,
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
-            func.coalesce(
-                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
         )
         .where(
             PracticeRecord.user_id == user_id,
@@ -320,8 +314,7 @@ async def get_trends(
         .order_by(day_expr)
     )
     data = {
-        str(r[0]): {"count": r[1], "correct": r[2], "wrong": r[3]}
-        for r in result.all()
+        str(r[0]): {"count": r[1], "correct": r[2], "wrong": r[3]} for r in result.all()
     }
 
     points = []
@@ -347,9 +340,7 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
             func.coalesce(func.avg(AnswerBehavior.time_spent_sec), 0),
             func.count(AnswerBehavior.id),
             func.coalesce(func.sum(AnswerBehavior.view_answer_count), 0),
-            func.coalesce(
-                func.sum(case((AnswerBehavior.is_abandoned, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((AnswerBehavior.is_abandoned, 1), else_=0)), 0),
         ).where(
             AnswerBehavior.user_id == user_id,
             AnswerBehavior.time_spent_sec > 0,
@@ -430,9 +421,8 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             WrongQuestion.mastered,
             ReviewSchedule.is_active,
             WrongQuestion.review_count >= 1,
-            ReviewSchedule.next_review_at <= shanghai_date_utc_range(
-                today + timedelta(days=3)
-            )[0],
+            ReviewSchedule.next_review_at
+            <= shanghai_date_utc_range(today + timedelta(days=3))[0],
         )
         .order_by(ReviewSchedule.next_review_at)
         .limit(10)
@@ -455,16 +445,17 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at <= shanghai_date_utc_range(
-                today - timedelta(days=7)
-            )[0],
+            ReviewSchedule.next_review_at
+            <= shanghai_date_utc_range(today - timedelta(days=7))[0],
         )
     )
 
     # Aggregate forgotten topics from the immutable revision the user actually
     # got wrong.  Historical attribution must not move when Question's current
     # knowledge-point mapping is later edited.
-    frozen_name = func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name)
+    frozen_name = func.coalesce(
+        SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name
+    )
     kp_result = await db.execute(
         select(frozen_name, func.count(func.distinct(WrongQuestion.id)))
         .select_from(QuestionVersionKnowledgePoint)
@@ -474,7 +465,8 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         )
         .outerjoin(
             SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+            SyllabusKnowledgePoint.id
+            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .join(
             WrongQuestion,
@@ -487,7 +479,9 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             ~WrongQuestion.mastered,
         )
         .group_by(KnowledgePoint.id, frozen_name)
-        .order_by(func.count(func.distinct(WrongQuestion.id)).desc(), KnowledgePoint.id.asc())
+        .order_by(
+            func.count(func.distinct(WrongQuestion.id)).desc(), KnowledgePoint.id.asc()
+        )
         .limit(8)
     )
     top_forgotten_topics = [
@@ -504,7 +498,9 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
 
 
 async def get_growth_profile(
-    db: AsyncSession, user_id: int, overview: dict | None = None,
+    db: AsyncSession,
+    user_id: int,
+    overview: dict | None = None,
 ) -> dict:
     """成长体系：经验值、等级、徽章，全部基于真实统计数据。"""
     if overview is None:
@@ -562,15 +558,78 @@ async def get_growth_profile(
         daily_boost = "完成第一道题，开启成长之旅"
 
     badges = [
-        {"key": "first_learn", "title": "首次学习", "desc": "完成第一道题", "unlocked": total_q > 0, "progress": 100 if total_q > 0 else 0, "progress_text": "已解锁" if total_q > 0 else "0/1"},
-        {"key": "streak_7", "title": "连续7天", "desc": "保持一周学习节奏", "unlocked": streak >= 7, "progress": min(100, round(streak / 7 * 100)), "progress_text": f"{min(streak, 7)}/7天"},
-        {"key": "streak_30", "title": "连续30天", "desc": "形成长期学习习惯", "unlocked": streak >= 30, "progress": min(100, round(streak / 30 * 100)), "progress_text": f"{min(streak, 30)}/30天"},
-        {"key": "hundred", "title": "百题积累", "desc": "累计完成100题", "unlocked": total_q >= 100, "progress": min(100, round(total_q / 100 * 100)), "progress_text": f"{min(total_q, 100)}/100题"},
-        {"key": "five_hundred", "title": "500题达人", "desc": "累计完成500题", "unlocked": total_q >= 500, "progress": min(100, round(total_q / 500 * 100)), "progress_text": f"{min(total_q, 500)}/500题"},
-        {"key": "thousand", "title": "千题斩", "desc": "累计完成1000题", "unlocked": total_q >= 1000, "progress": min(100, round(total_q / 1000 * 100)), "progress_text": f"{min(total_q, 1000)}/1000题"},
-        {"key": "accuracy_90", "title": "正确率90%", "desc": "稳定高质量输出", "unlocked": accuracy >= 0.9 and total_q >= 30, "progress": min(100, round(accuracy / 0.9 * 100)) if total_q >= 10 else 0, "progress_text": f"{round(accuracy * 100)}%"},
-        {"key": "master_50", "title": "掌握50题", "desc": "错题转化为能力", "unlocked": mastered >= 50, "progress": min(100, round(mastered / 50 * 100)), "progress_text": f"{min(mastered, 50)}/50题"},
-        {"key": "master_100", "title": "掌握100题", "desc": "突破核心知识点", "unlocked": mastered >= 100, "progress": min(100, round(mastered / 100 * 100)), "progress_text": f"{min(mastered, 100)}/100题"},
+        {
+            "key": "first_learn",
+            "title": "首次学习",
+            "desc": "完成第一道题",
+            "unlocked": total_q > 0,
+            "progress": 100 if total_q > 0 else 0,
+            "progress_text": "已解锁" if total_q > 0 else "0/1",
+        },
+        {
+            "key": "streak_7",
+            "title": "连续7天",
+            "desc": "保持一周学习节奏",
+            "unlocked": streak >= 7,
+            "progress": min(100, round(streak / 7 * 100)),
+            "progress_text": f"{min(streak, 7)}/7天",
+        },
+        {
+            "key": "streak_30",
+            "title": "连续30天",
+            "desc": "形成长期学习习惯",
+            "unlocked": streak >= 30,
+            "progress": min(100, round(streak / 30 * 100)),
+            "progress_text": f"{min(streak, 30)}/30天",
+        },
+        {
+            "key": "hundred",
+            "title": "百题积累",
+            "desc": "累计完成100题",
+            "unlocked": total_q >= 100,
+            "progress": min(100, round(total_q / 100 * 100)),
+            "progress_text": f"{min(total_q, 100)}/100题",
+        },
+        {
+            "key": "five_hundred",
+            "title": "500题达人",
+            "desc": "累计完成500题",
+            "unlocked": total_q >= 500,
+            "progress": min(100, round(total_q / 500 * 100)),
+            "progress_text": f"{min(total_q, 500)}/500题",
+        },
+        {
+            "key": "thousand",
+            "title": "千题斩",
+            "desc": "累计完成1000题",
+            "unlocked": total_q >= 1000,
+            "progress": min(100, round(total_q / 1000 * 100)),
+            "progress_text": f"{min(total_q, 1000)}/1000题",
+        },
+        {
+            "key": "accuracy_90",
+            "title": "正确率90%",
+            "desc": "稳定高质量输出",
+            "unlocked": accuracy >= 0.9 and total_q >= 30,
+            "progress": min(100, round(accuracy / 0.9 * 100)) if total_q >= 10 else 0,
+            "progress_text": f"{round(accuracy * 100)}%",
+        },
+        {
+            "key": "master_50",
+            "title": "掌握50题",
+            "desc": "错题转化为能力",
+            "unlocked": mastered >= 50,
+            "progress": min(100, round(mastered / 50 * 100)),
+            "progress_text": f"{min(mastered, 50)}/50题",
+        },
+        {
+            "key": "master_100",
+            "title": "掌握100题",
+            "desc": "突破核心知识点",
+            "unlocked": mastered >= 100,
+            "progress": min(100, round(mastered / 100 * 100)),
+            "progress_text": f"{min(mastered, 100)}/100题",
+        },
     ]
 
     return {
@@ -588,7 +647,9 @@ async def get_growth_profile(
 
 
 async def get_dashboard_v2(
-    db: AsyncSession, user_id: int, *,
+    db: AsyncSession,
+    user_id: int,
+    *,
     trend_days: int = 7,
     include_yearly_summary: bool = True,
     include_growth: bool = True,
@@ -613,13 +674,19 @@ async def get_dashboard_v2(
         "accuracy": overview["accuracy"],
         "today_questions": overview["today_questions"],
         "today_correct": overview["today_correct"],
-        "today_accuracy": round(overview["today_correct"] / max(1, overview["today_questions"]), 4) if overview["today_questions"] > 0 else 0.0,
+        "today_accuracy": round(
+            overview["today_correct"] / max(1, overview["today_questions"]), 4
+        )
+        if overview["today_questions"] > 0
+        else 0.0,
         "today_duration_sec": overview["today_duration_sec"],
         "consecutive_days": overview["consecutive_days"],
         "due_review_count": overview["due_review_count"],
         "wrong_question_count": wrong_count,
         "mastered_wrong_count": mastered_count,
-        "mastery_rate": round(mastered_count / wrong_count, 4) if wrong_count > 0 else 0.0,
+        "mastery_rate": round(mastered_count / wrong_count, 4)
+        if wrong_count > 0
+        else 0.0,
     }
 
     # 2. Recommendation
@@ -634,7 +701,9 @@ async def get_dashboard_v2(
     trend_points = await get_trends(db, user_id, trend_days)
     today = shanghai_today()
     previous_start = today - timedelta(days=2 * trend_days - 1)
-    previous_points = await get_trends(db, user_id, trend_days, start_date=previous_start)
+    previous_points = await get_trends(
+        db, user_id, trend_days, start_date=previous_start
+    )
 
     trend_total = sum(t.get("questions", 0) for t in trend_points)
     trend_correct = sum(t.get("correct", 0) for t in trend_points)
@@ -685,16 +754,29 @@ async def get_dashboard_v2(
             g = await get_growth_profile(db, user_id, overview=overview)
             badges = g.get("badges", [])
             unlocked = [b for b in badges if b.get("unlocked")]
-            locked_sorted = sorted([b for b in badges if not b.get("unlocked")], key=lambda b: b.get("progress", 0), reverse=True)
-            featured = (unlocked[-3:] if len(unlocked) >= 3 else unlocked + locked_sorted[:3 - len(unlocked)])[:3]
+            locked_sorted = sorted(
+                [b for b in badges if not b.get("unlocked")],
+                key=lambda b: b.get("progress", 0),
+                reverse=True,
+            )
+            featured = (
+                unlocked[-3:]
+                if len(unlocked) >= 3
+                else unlocked + locked_sorted[: 3 - len(unlocked)]
+            )[:3]
             growth_data = {
                 "level": g.get("level", 1),
                 "level_title": g.get("level_title", ""),
                 "level_progress_pct": g.get("level_progress_pct", 0),
                 "streak_title": g.get("streak_title", ""),
                 "featured_badges": [
-                    {"key": b["key"], "title": b["title"], "desc": b["desc"],
-                     "unlocked": b.get("unlocked", False), "progress_text": b.get("progress_text", "")}
+                    {
+                        "key": b["key"],
+                        "title": b["title"],
+                        "desc": b["desc"],
+                        "unlocked": b.get("unlocked", False),
+                        "progress_text": b.get("progress_text", ""),
+                    }
                     for b in featured
                 ],
             }
@@ -706,6 +788,7 @@ async def get_dashboard_v2(
     if include_adaptive:
         try:
             from app.services.adaptive_learning_service import get_adaptive_overview
+
             a = await get_adaptive_overview(db, user_id)
             if a:
                 status_map = {
@@ -719,7 +802,8 @@ async def get_dashboard_v2(
                 recall_rate = a.get("recent_due_recall_rate", 0)
                 target = a.get("target_recall_rate", 0.8)
                 adaptive_data = {
-                    "visible": (a.get("interval_factor") != 1.0) or (a.get("hard_question_count", 0) > 0),
+                    "visible": (a.get("interval_factor") != 1.0)
+                    or (a.get("hard_question_count", 0) > 0),
                     "interval_status": status,
                     "interval_status_label": label,
                     "recent_due_recall_rate": recall_rate,
@@ -736,8 +820,16 @@ async def get_dashboard_v2(
             yearly_trends = await get_trends(db, user_id, 365)
             active_days = sum(1 for t in yearly_trends if t.get("questions", 0) > 0)
             total_q = sum(t.get("questions", 0) for t in yearly_trends)
-            best = max(yearly_trends, key=lambda t: t.get("questions", 0)) if yearly_trends else {}
-            best_text = f"{best.get('date', '')[-5:]} · {best.get('questions', 0)}题" if best.get("questions", 0) else "暂无记录"
+            best = (
+                max(yearly_trends, key=lambda t: t.get("questions", 0))
+                if yearly_trends
+                else {}
+            )
+            best_text = (
+                f"{best.get('date', '')[-5:]} · {best.get('questions', 0)}题"
+                if best.get("questions", 0)
+                else "暂无记录"
+            )
             yearly_data = {
                 "active_days": active_days,
                 "total_questions": total_q,
@@ -766,17 +858,19 @@ def _subject_items_with_label(subjects_raw: list[dict]) -> list[dict]:
     items = []
     for s in subjects_raw:
         subject_name = s.get("subject_name", "")
-        items.append({
-            "subject_id": s.get("subject_id"),
-            "subject_code": s.get("subject_code", ""),
-            "subject_name": subject_name,
-            "label": subject_name,
-            "total_questions": s.get("total_questions", 0),
-            "correct_count": s.get("correct_count", 0),
-            "wrong_count": s.get("wrong_count", 0),
-            "accuracy": s.get("accuracy", 0.0),
-            "total_duration_sec": s.get("total_duration_sec", 0),
-        })
+        items.append(
+            {
+                "subject_id": s.get("subject_id"),
+                "subject_code": s.get("subject_code", ""),
+                "subject_name": subject_name,
+                "label": subject_name,
+                "total_questions": s.get("total_questions", 0),
+                "correct_count": s.get("correct_count", 0),
+                "wrong_count": s.get("wrong_count", 0),
+                "accuracy": s.get("accuracy", 0.0),
+                "total_duration_sec": s.get("total_duration_sec", 0),
+            }
+        )
     return items
 
 
@@ -871,9 +965,7 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
         select(
             Subject.code,
             func.count(WrongQuestion.id),
-            func.coalesce(
-                func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0),
         )
         .join(Question, WrongQuestion.question_id == Question.id)
         .join(Subject, Question.subject_id == Subject.id)
@@ -903,12 +995,14 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
         total = int(row[1] or 0)
         mastered = int(row[2] or 0)
         mastery_rate = round(mastered / total, 2) if total > 0 else 0.0
-        knowledge_point_stats.append({
-            "knowledge_point": subj,
-            "mastery_rate": mastery_rate,
-            "mastered": mastered,
-            "total_wrong": total,
-        })
+        knowledge_point_stats.append(
+            {
+                "knowledge_point": subj,
+                "mastery_rate": mastery_rate,
+                "mastered": mastered,
+                "total_wrong": total,
+            }
+        )
 
     def local_diagnosis(*, provider_failed: bool = False) -> dict:
         weak = sorted(
@@ -925,7 +1019,9 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
                 f"优先复盘{weak[0]['knowledge_point']}错题，当前错题掌握率约{int(weak[0]['mastery_rate'] * 100)}%"
             )
         if len(weak) > 1:
-            suggestions.append(f"其次巩固{weak[1]['knowledge_point']}，建议集中完成一轮错题复盘")
+            suggestions.append(
+                f"其次巩固{weak[1]['knowledge_point']}，建议集中完成一轮错题复盘"
+            )
         if total_q < 50:
             suggestions.append("当前练习样本较少，累计到 50 题以上后洞察会更稳定")
         suggestions.append("优先处理重复出错且尚未掌握的题目，并按复习计划回看")
@@ -1022,7 +1118,9 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
                 if not isinstance(raw_name, str):
                     continue
                 name = raw_name.strip()
-                suggestion = raw_suggestion.strip() if isinstance(raw_suggestion, str) else ""
+                suggestion = (
+                    raw_suggestion.strip() if isinstance(raw_suggestion, str) else ""
+                )
                 if not name:
                     continue
                 try:
@@ -1032,11 +1130,13 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
                 if score > 1:
                     score = score / 100.0
                 score = max(0.0, min(1.0, score))
-                normalized.append({
-                    "knowledge_point": name[:80],
-                    "accuracy": round(score, 4),
-                    "suggestion": suggestion[:240],
-                })
+                normalized.append(
+                    {
+                        "knowledge_point": name[:80],
+                        "accuracy": round(score, 4),
+                        "suggestion": suggestion[:240],
+                    }
+                )
                 if len(normalized) >= limit:
                     break
             return normalized
@@ -1101,7 +1201,9 @@ async def get_dashboard_llm_analysis(
             "today_questions": overview["today_questions"],
             "today_accuracy": round(
                 overview["today_correct"] / max(1, overview["today_questions"]), 4
-            ) if overview["today_questions"] > 0 else 0.0,
+            )
+            if overview["today_questions"] > 0
+            else 0.0,
             "due_review_count": overview["due_review_count"],
             "consecutive_days": overview["consecutive_days"],
             "total_questions": overview["total_questions"],
@@ -1111,7 +1213,9 @@ async def get_dashboard_llm_analysis(
             "days": trend_days,
             "total_questions": trend_total,
             "active_days": trend_active,
-            "avg_accuracy": round(trend_correct / trend_total, 4) if trend_total > 0 else 0.0,
+            "avg_accuracy": round(trend_correct / trend_total, 4)
+            if trend_total > 0
+            else 0.0,
         },
         "subjects": {
             "strongest": strong_subj["label"] if strong_subj else None,
@@ -1232,7 +1336,13 @@ def _rule_based_dashboard_analysis(payload: dict, trend_days: int) -> dict:
             "summary": "数据不足，无法生成分析。",
             "findings": findings,
             "risks": [],
-            "actions": [{"type": "practice", "title": "开始第一次练习", "desc": "完成练习后回来查看分析。"}],
+            "actions": [
+                {
+                    "type": "practice",
+                    "title": "开始第一次练习",
+                    "desc": "完成练习后回来查看分析。",
+                }
+            ],
             "generated_at": serialize_utc_datetime(utcnow()),
             "model": "rule-based",
             "generated": False,
@@ -1259,31 +1369,65 @@ def _rule_based_dashboard_analysis(payload: dict, trend_days: int) -> dict:
     )
     top_topics = rr.get("top_topics", [])
 
-    findings.append(f"近{trend_days}天完成{trend_total}题，活跃{active_days}天，平均正确率{round(avg_acc * 100)}%。")
+    findings.append(
+        f"近{trend_days}天完成{trend_total}题，活跃{active_days}天，平均正确率{round(avg_acc * 100)}%。"
+    )
     if today_q > 0:
         findings.append(f"今日完成{today_q}题，连续学习{streak}天。")
     if total_q > 0:
-        findings.append(f"累计做题{total_q}题，总正确率{round(ov.get('total_accuracy', 0) * 100)}%。")
+        findings.append(
+            f"累计做题{total_q}题，总正确率{round(ov.get('total_accuracy', 0) * 100)}%。"
+        )
 
     if due > 0:
         findings.append(f"当前有{due}道到期复习。")
-        actions.append({"type": "review", "title": f"先完成{due}道到期复习", "desc": "建议优先处理复习任务。"})
+        actions.append(
+            {
+                "type": "review",
+                "title": f"先完成{due}道到期复习",
+                "desc": "建议优先处理复习任务。",
+            }
+        )
     if hf > 0:
         risks.append(f"反复出错题目{hf}道，建议集中复盘。")
-        actions.append({"type": "wrong", "title": f"复盘{hf}道高频遗忘错题", "desc": "针对高频遗忘点做专项巩固。"})
+        actions.append(
+            {
+                "type": "wrong",
+                "title": f"复盘{hf}道高频遗忘错题",
+                "desc": "针对高频遗忘点做专项巩固。",
+            }
+        )
     if stuck > 0:
         risks.append(f"长期未掌握题目{stuck}道，建议优先突破反复卡住的内容。")
         if not any(action.get("type") == "wrong" for action in actions):
-            actions.append({"type": "wrong", "title": f"处理{stuck}道长期未掌握题", "desc": "先复盘长期未掌握内容，再继续扩展新题。"})
+            actions.append(
+                {
+                    "type": "wrong",
+                    "title": f"处理{stuck}道长期未掌握题",
+                    "desc": "先复盘长期未掌握内容，再继续扩展新题。",
+                }
+            )
     if weak_label:
         findings.append(f"薄弱学科：{weak_label}。")
-        actions.append({"type": "subject", "title": f"重点看{weak_label}错题", "desc": "该学科正确率偏低，建议优先复盘。"})
+        actions.append(
+            {
+                "type": "subject",
+                "title": f"重点看{weak_label}错题",
+                "desc": "该学科正确率偏低，建议优先复盘。",
+            }
+        )
     if top_topics:
         topics_str = "、".join(t["topic"] for t in top_topics[:3])
         risks.append(f"高频遗忘知识点：{topics_str}。")
 
     if not actions:
-        actions.append({"type": "practice", "title": "保持练习节奏", "desc": "当前状态良好，继续每日练习。"})
+        actions.append(
+            {
+                "type": "practice",
+                "title": "保持练习节奏",
+                "desc": "当前状态良好，继续每日练习。",
+            }
+        )
 
     if due == 0 and hf == 0 and stuck == 0 and not weak_label:
         summary = f"学习节奏稳定，累计{total_q}题，连续{streak}天。继续保持！"
@@ -1292,7 +1436,9 @@ def _rule_based_dashboard_analysis(payload: dict, trend_days: int) -> dict:
     elif stuck > 0:
         summary = f"当前有{stuck}道长期未掌握题目，建议先集中突破再扩展新题。"
     else:
-        summary = f"近{trend_days}天平均正确率{round(avg_acc * 100)}%，建议关注薄弱环节。"
+        summary = (
+            f"近{trend_days}天平均正确率{round(avg_acc * 100)}%，建议关注薄弱环节。"
+        )
 
     return {
         "summary": summary,

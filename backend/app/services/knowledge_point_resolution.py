@@ -3,6 +3,7 @@
 This module deliberately has no database/ORM imports so the matching policy can be
 unit-tested without bootstrapping the application database driver.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,13 +12,35 @@ import unicodedata
 from collections import defaultdict
 
 _FULLWIDTH_MAP = {
-    "（": "(", "）": ")", "【": "[", "】": "]",
-    "｛": "{", "｝": "}", "，": ",", "。": ".",
-    "；": ";", "：": ":", "！": "!", "？": "?",
-    "＋": "+", "－": "-", "＊": "*", "／": "/",
-    "＝": "=", "＜": "<", "＞": ">",
-    "０": "0", "１": "1", "２": "2", "３": "3", "４": "4",
-    "５": "5", "６": "6", "７": "7", "８": "8", "９": "9",
+    "（": "(",
+    "）": ")",
+    "【": "[",
+    "】": "]",
+    "｛": "{",
+    "｝": "}",
+    "，": ",",
+    "。": ".",
+    "；": ";",
+    "：": ":",
+    "！": "!",
+    "？": "?",
+    "＋": "+",
+    "－": "-",
+    "＊": "*",
+    "／": "/",
+    "＝": "=",
+    "＜": "<",
+    "＞": ">",
+    "０": "0",
+    "１": "1",
+    "２": "2",
+    "３": "3",
+    "４": "4",
+    "５": "5",
+    "６": "6",
+    "７": "7",
+    "８": "8",
+    "９": "9",
 }
 
 
@@ -76,7 +99,9 @@ def alias_values(point) -> list[str]:
     return out
 
 
-def build_resolution_indexes(points) -> tuple[dict[str, object], dict[str, list[object]], set[str]]:
+def build_resolution_indexes(
+    points,
+) -> tuple[dict[str, object], dict[str, list[object]], set[str]]:
     """Build canonical-name, active-alias and inactive-tombstone indexes."""
     active_names: dict[str, object] = {}
     active_aliases: dict[str, list[object]] = defaultdict(list)

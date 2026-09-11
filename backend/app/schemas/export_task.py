@@ -54,6 +54,7 @@ class ExportSortBy(StrEnum):
 
 class ExportErrorCode(StrEnum):
     """Structured error codes for export API responses."""
+
     DOCX_DISABLED = "docx_disabled"
     TOO_MANY_QUESTIONS = "too_many_questions"
     NO_QUESTIONS = "no_questions"
@@ -123,6 +124,7 @@ class ExportConfigRequest(BaseModel):
         # Simple YYYY-MM-DD format check
         if v:
             import re
+
             if not re.match(r"^\d{4}-\d{2}-\d{2}$", v.strip()):
                 raise ValueError("日期格式必须为 YYYY-MM-DD")
         return v.strip() if v else ""
@@ -141,6 +143,7 @@ class PreviewCountRequest(ExportConfigRequest):
 
 class CreateExportTaskRequest(ExportConfigRequest):
     """Extended with format selection for task creation."""
+
     file_format: str = "pdf"
 
     @field_validator("file_format")
@@ -206,6 +209,7 @@ class ExportTaskResponse(BaseModel):
 
 class DownloadInfoResponse(BaseModel):
     """Download information — abstracts local streaming vs COS signed URL."""
+
     url: str | None = None
     method: str = "stream"  # "stream" | "signed_url"
     file_name: str
@@ -215,6 +219,7 @@ class DownloadInfoResponse(BaseModel):
 
 class ExportRecordListItem(BaseModel):
     """Compact view for the records list."""
+
     id: int
     status: str
     file_format: str
@@ -238,6 +243,7 @@ class ExportRecordListItem(BaseModel):
 
 class ExportCapabilityResponse(BaseModel):
     """Global export capability returned to authenticated users."""
+
     export_enabled: bool = True
     pdf_enabled: bool = True
     docx_enabled: bool = False

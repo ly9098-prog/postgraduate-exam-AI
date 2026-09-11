@@ -58,7 +58,6 @@ _RETRY_MAX_DELAY: float = 30.0
 _RETRY_JITTER: float = 0.1
 
 
-
 def _is_retryable_status(status_code: int) -> bool:
     return status_code in _RETRYABLE_HTTP_STATUSES
 
@@ -90,7 +89,7 @@ def _compute_backoff(
     """
     if retry_after is not None and retry_after > 0:
         return min(retry_after, max_delay)
-    delay = min(base_delay * (2 ** attempt), max_delay)
+    delay = min(base_delay * (2**attempt), max_delay)
     jitter_amount = delay * jitter
     return delay + random.uniform(-jitter_amount, jitter_amount)
 
@@ -146,7 +145,6 @@ def _compute_engine_fingerprint(config: OcrRuntimeConfig) -> str:
         f"drop={config.drop_score}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
 
 
 def _encode_base64_ascii(data: bytes) -> str:
@@ -289,7 +287,8 @@ class PaddleXHttpOcrWorkerClient:
         """Recognise a single page."""
         if self._closed:
             return self._make_error(
-                page_index, STABLE_ERROR_CODES["REMOTE_CLOSED"],
+                page_index,
+                STABLE_ERROR_CODES["REMOTE_CLOSED"],
                 "Client is shut down",
             )
 
@@ -327,7 +326,8 @@ class PaddleXHttpOcrWorkerClient:
                 self._metrics["failed"] += 1
                 self._metrics["circuit_breaker_rejected"] += 1
                 return self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_CIRCUIT_OPEN"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_CIRCUIT_OPEN"],
                     f"OCR circuit breaker open "
                     f"(failures={self._circuit_failures}, "
                     f"recovery in {max(0.0, self._circuit_recovery_timeout - (time.time() - self._circuit_last_failure)):.0f}s)",
@@ -369,9 +369,7 @@ class PaddleXHttpOcrWorkerClient:
                         "Global OCR concurrency is at capacity",
                     )
                 else:
-                    remaining = self._config.total_deadline - (
-                        time.monotonic() - start
-                    )
+                    remaining = self._config.total_deadline - (time.monotonic() - start)
                     if remaining <= 0:
                         raise TimeoutError
                     backend_attempted = True
@@ -477,7 +475,10 @@ class PaddleXHttpOcrWorkerClient:
                 idx, png = images[pos]
                 try:
                     resolved[pos] = await self.recognize(
-                        png, page_index=idx, mode=mode, options=options,
+                        png,
+                        page_index=idx,
+                        mode=mode,
+                        options=options,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -495,8 +496,11 @@ class PaddleXHttpOcrWorkerClient:
         await asyncio.gather(*workers)
 
         final = [
-            r if isinstance(r, WorkerResult) else self._make_error(
-                images[i][0], STABLE_ERROR_CODES["ENGINE_ERROR"],
+            r
+            if isinstance(r, WorkerResult)
+            else self._make_error(
+                images[i][0],
+                STABLE_ERROR_CODES["ENGINE_ERROR"],
                 "Missing batch result",
             )
             for i, r in enumerate(resolved)
@@ -548,7 +552,10 @@ class PaddleXHttpOcrWorkerClient:
                 return True
 
             if self._circuit_state == "open":
-                if time.time() - self._circuit_last_failure >= self._circuit_recovery_timeout:
+                if (
+                    time.time() - self._circuit_last_failure
+                    >= self._circuit_recovery_timeout
+                ):
                     self._circuit_state = "half-open"
                     self._half_open_probe_in_flight = True  # this request IS the probe
                     self._circuit_failures = 0
@@ -599,8 +606,7 @@ class PaddleXHttpOcrWorkerClient:
                 self._half_open_probe_in_flight = False
                 self._metrics["circuit_state"] = "open"
                 logger.warning(
-                    "OCR circuit re-OPEN after probe failure "
-                    "(recovery in %.0fs)",
+                    "OCR circuit re-OPEN after probe failure (recovery in %.0fs)",
                     self._circuit_recovery_timeout,
                 )
                 return
@@ -616,7 +622,8 @@ class PaddleXHttpOcrWorkerClient:
                     logger.warning(
                         "OCR circuit OPEN after %d consecutive failures "
                         "(recovery in %.0fs)",
-                        self._circuit_failures, self._circuit_recovery_timeout,
+                        self._circuit_failures,
+                        self._circuit_recovery_timeout,
                     )
 
     # ── Request execution ──
@@ -723,7 +730,11 @@ class PaddleXHttpOcrWorkerClient:
 
             try:
                 result, status_code = await self._do_http_request(
-                    image_bytes, page_index, request_id, options, headers,
+                    image_bytes,
+                    page_index,
+                    request_id,
+                    options,
+                    headers,
                 )
                 self._metrics["retry_count"] = retry_count
                 return result
@@ -775,7 +786,9 @@ class PaddleXHttpOcrWorkerClient:
         return self._make_error(
             page_index,
             last_error_code,
-            f"All retries exhausted (HTTP {last_status})" if last_status else "All retries exhausted",
+            f"All retries exhausted (HTTP {last_status})"
+            if last_status
+            else "All retries exhausted",
         )
 
     async def _do_http_request(
@@ -842,7 +855,9 @@ class PaddleXHttpOcrWorkerClient:
                     retry_after = _parse_retry_after(response)
                     raise _RetryableError(
                         f"Retryable HTTP {status_code}"
-                        + (f" (Retry-After: {retry_after:.0f}s)" if retry_after else ""),
+                        + (
+                            f" (Retry-After: {retry_after:.0f}s)" if retry_after else ""
+                        ),
                         status_code=status_code,
                         retry_after=retry_after,
                     )
@@ -853,19 +868,20 @@ class PaddleXHttpOcrWorkerClient:
                         body_bytes, truncated = await _read_limited_response(
                             response, 4096
                         )
-                        body_text = body_bytes[:500].decode(
-                            "utf-8", errors="replace"
-                        )
+                        body_text = body_bytes[:500].decode("utf-8", errors="replace")
                         if truncated:
                             body_text += " …(truncated)"
                     except Exception:
                         body_text = f"HTTP {status_code} (body unreadable)"
 
                     self._metrics["http_errors"] += 1
-                    self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_HTTP_ERROR"]
+                    self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                        "REMOTE_HTTP_ERROR"
+                    ]
                     return (
                         self._make_error(
-                            page_index, STABLE_ERROR_CODES["REMOTE_HTTP_ERROR"],
+                            page_index,
+                            STABLE_ERROR_CODES["REMOTE_HTTP_ERROR"],
                             f"HTTP {status_code}: {body_text}",
                         ),
                         status_code,
@@ -881,7 +897,8 @@ class PaddleXHttpOcrWorkerClient:
                     self._metrics["response_aborted"] += 1
                     return (
                         self._make_error(
-                            page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                            page_index,
+                            STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
                             f"Response exceeded {max_resp_bytes} byte limit",
                         ),
                         status_code,
@@ -889,7 +906,9 @@ class PaddleXHttpOcrWorkerClient:
 
         except httpx.ConnectError as exc:
             self._metrics["connection_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_CONNECT_ERROR"
+            ]
             raise _RetryableError(
                 "Connection refused",
                 error_code=STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
@@ -903,21 +922,27 @@ class PaddleXHttpOcrWorkerClient:
             ) from exc
         except httpx.ReadError as exc:
             self._metrics["connection_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_CONNECT_ERROR"
+            ]
             raise _RetryableError(
                 "Connection reset",
                 error_code=STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
             ) from exc
         except (httpx.WriteError, httpx.RemoteProtocolError) as exc:
             self._metrics["protocol_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_PROTOCOL_ERROR"
+            ]
             raise _RetryableError(
                 "Connection error",
                 error_code=STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
             ) from exc
         except httpx.RequestError as exc:
             self._metrics["connection_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_CONNECT_ERROR"
+            ]
             raise _RetryableError(
                 "HTTP request failed",
                 error_code=STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
@@ -927,10 +952,13 @@ class PaddleXHttpOcrWorkerClient:
         except Exception as exc:
             # Non-retryable exception
             self._metrics["connection_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_CONNECT_ERROR"
+            ]
             return (
                 self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
                     f"HTTP request failed: {exc}",
                 ),
                 0,
@@ -941,10 +969,13 @@ class PaddleXHttpOcrWorkerClient:
             body = await asyncio.to_thread(json.loads, body_bytes)
         except Exception as exc:
             self._metrics["protocol_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_PROTOCOL_ERROR"
+            ]
             return (
                 self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
                     f"Non-JSON response: {exc}",
                 ),
                 status_code,
@@ -953,10 +984,13 @@ class PaddleXHttpOcrWorkerClient:
         # Validate top-level structure
         if not isinstance(body, dict):
             self._metrics["protocol_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_PROTOCOL_ERROR"
+            ]
             return (
                 self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
                     "Response is not a JSON object",
                 ),
                 status_code,
@@ -965,11 +999,14 @@ class PaddleXHttpOcrWorkerClient:
         error_code = body.get("errorCode", -1)
         if error_code != 0:
             self._metrics["service_errors"] += 1
-            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_SERVICE_ERROR"]
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES[
+                "REMOTE_SERVICE_ERROR"
+            ]
             error_msg = str(body.get("errorMsg", ""))[:500]
             return (
                 self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_SERVICE_ERROR"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_SERVICE_ERROR"],
                     f"Service error (code={error_code}): {error_msg}",
                 ),
                 status_code,
@@ -980,7 +1017,8 @@ class PaddleXHttpOcrWorkerClient:
             self._metrics["protocol_errors"] += 1
             return (
                 self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
                     "result is missing or not an object",
                 ),
                 status_code,
@@ -994,7 +1032,8 @@ class PaddleXHttpOcrWorkerClient:
             self._metrics["protocol_errors"] += 1
             return (
                 self._make_error(
-                    page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
                     "ocrResults is not a list",
                 ),
                 status_code,
@@ -1002,7 +1041,10 @@ class PaddleXHttpOcrWorkerClient:
 
         # Map the first (and typically only) ocrResult to WorkerResult result dict
         mapped_result = _map_pruned_result(
-            ocr_results, page_index, request_id, self._fingerprint,
+            ocr_results,
+            page_index,
+            request_id,
+            self._fingerprint,
         )
 
         result = WorkerResult(
@@ -1040,7 +1082,9 @@ class PaddleXHttpOcrWorkerClient:
                 "error": error_message[:1000],
             },
             stable_error_code=stable_error_code,
-            error_type=stable_error_code.rsplit(".", 1)[-1] if "." in stable_error_code else stable_error_code.lower(),
+            error_type=stable_error_code.rsplit(".", 1)[-1]
+            if "." in stable_error_code
+            else stable_error_code.lower(),
         )
 
 
@@ -1168,7 +1212,16 @@ def _map_pruned_result(
             bbox = [min(xs), min(ys), max(xs), max(ys)]
         elif bbox is not None and polygon is None:
             # Generate polygon from bbox
-            polygon = [bbox[0], bbox[1], bbox[2], bbox[1], bbox[2], bbox[3], bbox[0], bbox[3]]
+            polygon = [
+                bbox[0],
+                bbox[1],
+                bbox[2],
+                bbox[1],
+                bbox[2],
+                bbox[3],
+                bbox[0],
+                bbox[3],
+            ]
 
         line: dict[str, Any] = {
             "text": raw_text,
@@ -1179,17 +1232,23 @@ def _map_pruned_result(
         lines.append(line)
 
         if bbox is not None:
-            boxes.append({
-                "bbox": bbox,
-                "conf": raw_score if raw_score is not None else 0.0,
-            })
+            boxes.append(
+                {
+                    "bbox": bbox,
+                    "conf": raw_score if raw_score is not None else 0.0,
+                }
+            )
 
-    avg_confidence = round(confidence_sum / valid_conf_count, 6) if valid_conf_count > 0 else 0.0
+    avg_confidence = (
+        round(confidence_sum / valid_conf_count, 6) if valid_conf_count > 0 else 0.0
+    )
 
     if degraded_count > 0:
         logger.debug(
             "Page %d: %d/%d lines have degraded geometry",
-            page_index, degraded_count, n,
+            page_index,
+            degraded_count,
+            n,
         )
 
     return {
@@ -1241,6 +1300,7 @@ def _safe_score(value: Any) -> float | None:
 
 def _isfinite(v: float) -> bool:
     import math
+
     return math.isfinite(v)
 
 

@@ -92,10 +92,21 @@ def _detect_noise(block: dict) -> float:
     # integrity check finds garbled content, raise noise score to trigger
     # OCR correction (VL rebuild or AI repair).
     _has_code_keywords = any(
-        kw in text for kw in ["struct", "typedef", "InitStack", "Push(", "Pop(", "GetTop", "BiTNode", "BiTree"]
+        kw in text
+        for kw in [
+            "struct",
+            "typedef",
+            "InitStack",
+            "Push(",
+            "Pop(",
+            "GetTop",
+            "BiTNode",
+            "BiTree",
+        ]
     )
     if _has_code_keywords:
         from app.features.code_integrity import detect_garbled_code_block
+
         garbled_result = detect_garbled_code_block(text)
         if garbled_result.is_garbled:
             score += min(0.5, garbled_result.score)
@@ -179,13 +190,13 @@ def _detect_structure_abnormal(text: str) -> float:
     # 检查短 ASCII 行：如果存在大量短 ASCII 行但都不像选项标记
     lines = text.split("\n")
     ascii_short = [
-        ln.strip() for ln in lines
+        ln.strip()
+        for ln in lines
         if 1 < len(ln.strip()) < 15 and not re.search(r"[一-鿿]", ln)
     ]
     if len(ascii_short) >= 3:
         option_like = sum(
-            1 for ln in ascii_short
-            if re.match(r"^[A-Da-d][.、．）)\s]", ln)
+            1 for ln in ascii_short if re.match(r"^[A-Da-d][.、．）)\s]", ln)
         )
         if option_like < len(ascii_short) * 0.3:
             score += 0.20
@@ -198,7 +209,11 @@ def _detect_structure_abnormal(text: str) -> float:
         # 序列跳缺：A→C 跳过 B，或 A→D 缺少 B/C，或 B→D 跳过 C
         if "A" in present and "C" in present and "B" not in present:
             score += 0.30
-        if "A" in present and "D" in present and ("B" not in present or "C" not in present):
+        if (
+            "A" in present
+            and "D" in present
+            and ("B" not in present or "C" not in present)
+        ):
             score += 0.30
         if "B" in present and "D" in present and "C" not in present:
             score += 0.25
@@ -257,14 +272,15 @@ def _should_correct(
 # ---------------------------------------------------------------------------
 
 _SENSITIVE_PATTERNS = [
-    (re.compile(r"1[3-9]\d{9}"), "[phone]"),                     # 手机号
-    (re.compile(r"\b\d{17}[\dXx]\b"), "[id-number]"),             # 身份证号
+    (re.compile(r"1[3-9]\d{9}"), "[phone]"),  # 手机号
+    (re.compile(r"\b\d{17}[\dXx]\b"), "[id-number]"),  # 身份证号
     (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[email]"),
     (re.compile(r"(?:(?:https?|ftp)://|www\.)[^\s，。、；：)]+"), "[url]"),
 ]
 
 _SENSITIVE_CJK_TERMS: list[re.Pattern] = [
-    re.compile(term) for term in [
+    re.compile(term)
+    for term in [
         r"代[考写发作]",
         r"助考",
         r"作弊",

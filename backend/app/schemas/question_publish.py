@@ -2,7 +2,6 @@ from app.schemas.base import BaseModel
 from datetime import datetime
 
 
-
 class PublishRequest(BaseModel):
     question_ids: list[int] | None = None
     batch_id: str | None = None

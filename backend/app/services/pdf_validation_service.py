@@ -10,6 +10,7 @@ Extended checks (requires PyMuPDF, runs in executor):
 
 Limits vary by deployment profile (cloud vs local).
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,7 +26,9 @@ logger = logging.getLogger(__name__)
 class PdfValidationError(ValueError):
     """Raised when a PDF fails validation."""
 
-    def __init__(self, message: str, *, code: str = "", details: dict | None = None) -> None:
+    def __init__(
+        self, message: str, *, code: str = "", details: dict | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.details = details or {}
@@ -40,8 +43,12 @@ def _effective_limits() -> dict[str, int]:
     is_cloud = profile == DeploymentProfile.CLOUD_API
 
     return {
-        "max_file_bytes": settings.PDF_MAX_FILE_BYTES if is_cloud else settings.PDF_MAX_FILE_SIZE_BYTES,
-        "max_pages": settings.PDF_MAX_PAGES if not is_cloud else min(settings.PDF_MAX_PAGES, 30),
+        "max_file_bytes": settings.PDF_MAX_FILE_BYTES
+        if is_cloud
+        else settings.PDF_MAX_FILE_SIZE_BYTES,
+        "max_pages": settings.PDF_MAX_PAGES
+        if not is_cloud
+        else min(settings.PDF_MAX_PAGES, 30),
         "max_page_pixels": settings.PDF_MAX_PAGE_PIXELS,
         "total_pixel_budget": settings.PDF_TOTAL_PIXEL_BUDGET,
         "page_window": 1 if is_cloud else max(1, settings.PDF_RENDER_PAGE_WINDOW),
@@ -51,7 +58,9 @@ def _effective_limits() -> dict[str, int]:
 # ── Level 1: Basic checks (no PyMuPDF) ──────────────────────────────────────
 
 
-def validate_pdf_basic(pdf_source: bytes | str, is_path: bool = False) -> dict[str, int]:
+def validate_pdf_basic(
+    pdf_source: bytes | str, is_path: bool = False
+) -> dict[str, int]:
     """Validate PDF without opening it — magic bytes, file size, returns size.
 
     Returns:
@@ -65,7 +74,8 @@ def validate_pdf_basic(pdf_source: bytes | str, is_path: bool = False) -> dict[s
     if is_path:
         if not os.path.isfile(pdf_source):
             raise PdfValidationError(
-                f"PDF file not found: {pdf_source}", code="not_found",
+                f"PDF file not found: {pdf_source}",
+                code="not_found",
             )
         size = os.path.getsize(pdf_source)
         if size > limits["max_file_bytes"]:
@@ -156,8 +166,11 @@ def validate_pdf_deep(pdf_source: bytes | str, is_path: bool = False) -> dict[st
                     f"{limits['max_page_pixels']}",
                     code="page_pixel_limit",
                     details={
-                        "page": i + 1, "width": w, "height": h,
-                        "actual_pixels": pixels, "limit": limits["max_page_pixels"],
+                        "page": i + 1,
+                        "width": w,
+                        "height": h,
+                        "actual_pixels": pixels,
+                        "limit": limits["max_page_pixels"],
                     },
                 )
             total_pixels += pixels
@@ -167,7 +180,10 @@ def validate_pdf_deep(pdf_source: bytes | str, is_path: bool = False) -> dict[st
                 f"Total pixel budget exceeded: {total_pixels} "
                 f"(上限 {limits['total_pixel_budget']})",
                 code="total_pixel_budget",
-                details={"actual_pixels": total_pixels, "limit": limits["total_pixel_budget"]},
+                details={
+                    "actual_pixels": total_pixels,
+                    "limit": limits["total_pixel_budget"],
+                },
             )
 
         # Compression ratio sanity: compare file size to raw pixel estimate
@@ -178,7 +194,9 @@ def validate_pdf_deep(pdf_source: bytes | str, is_path: bool = False) -> dict[st
             logger.warning(
                 "PDF compression ratio suspiciously low: file=%d bytes, "
                 "raw_estimate=%d bytes, ratio=%.2f",
-                file_bytes, raw_estimate, ratio,
+                file_bytes,
+                raw_estimate,
+                ratio,
             )
 
         return {

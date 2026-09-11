@@ -24,14 +24,16 @@ async def get_coverage_report(
     if year_from is not None and year_to is not None and year_from > year_to:
         raise HTTPException(status_code=422, detail="year_from 不能大于 year_to")
     try:
-        return CoverageReportResponse(**await coverage_service.build_coverage_report(
-            db,
-            syllabus_version_id=syllabus_version_id,
-            subject_id=subject_id,
-            min_questions=min_questions,
-            year_from=year_from,
-            year_to=year_to,
-        ))
+        return CoverageReportResponse(
+            **await coverage_service.build_coverage_report(
+                db,
+                syllabus_version_id=syllabus_version_id,
+                subject_id=subject_id,
+                min_questions=min_questions,
+                year_from=year_from,
+                year_to=year_to,
+            )
+        )
     except coverage_service.CoverageError as exc:
         message = str(exc)
         raise HTTPException(

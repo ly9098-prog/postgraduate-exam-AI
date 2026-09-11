@@ -16,15 +16,17 @@ class PdfResourceLimitError(RuntimeError):
         details: Arbitrary metadata (page number, actual size, limit, etc.).
     """
 
-    ERROR_CODES = frozenset({
-        "file_too_large",
-        "too_many_pages",
-        "page_pixel_limit",
-        "decoded_memory_limit",
-        "renderer_queue_full",
-        "staging_quota_exceeded",
-        "pipeline_timeout",
-    })
+    ERROR_CODES = frozenset(
+        {
+            "file_too_large",
+            "too_many_pages",
+            "page_pixel_limit",
+            "decoded_memory_limit",
+            "renderer_queue_full",
+            "staging_quota_exceeded",
+            "pipeline_timeout",
+        }
+    )
 
     def __init__(
         self,

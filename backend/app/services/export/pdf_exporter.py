@@ -101,12 +101,15 @@ _LOCAL_ASSET_ROOTS = (
 )
 
 # Thread pool for blocking image downloads
-_image_executor = ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_DOWNLOADS, thread_name_prefix="pdf-img")
+_image_executor = ThreadPoolExecutor(
+    max_workers=_MAX_CONCURRENT_DOWNLOADS, thread_name_prefix="pdf-img"
+)
 
 
 @dataclass
 class PdfContext:
     """Per-task context for resource accounting and cleanup."""
+
     temp_dir: str
     downloaded: dict[str, str]  # cache: url -> local path
     total_image_bytes: int = 0
@@ -119,10 +122,14 @@ class PdfExporter(Exporter):
         configured_body = getattr(settings, "EXPORT_PDF_BODY_FONT", "")
         configured_heading = getattr(settings, "EXPORT_PDF_HEADING_FONT", "")
         self._body_font_path = self._first_existing_font(
-            font_path, configured_body, *_BODY_FONT_CANDIDATES,
+            font_path,
+            configured_body,
+            *_BODY_FONT_CANDIDATES,
         )
         self._heading_font_path = self._first_existing_font(
-            configured_heading, *_HEADING_FONT_CANDIDATES, self._body_font_path,
+            configured_heading,
+            *_HEADING_FONT_CANDIDATES,
+            self._body_font_path,
         )
 
     @property
@@ -149,7 +156,11 @@ class PdfExporter(Exporter):
 
         try:
             pdf_bytes = await asyncio.get_running_loop().run_in_executor(
-                None, self._generate_sync, questions, config, ctx,
+                None,
+                self._generate_sync,
+                questions,
+                config,
+                ctx,
             )
             return ExportResult(
                 success=True,
@@ -197,7 +208,9 @@ class PdfExporter(Exporter):
         for idx, q in enumerate(questions):
             question_num = idx + 1
             q_group = q.get("_group_title", "")
-            new_group = bool(group_by != "none" and q_group and q_group != current_group)
+            new_group = bool(
+                group_by != "none" and q_group and q_group != current_group
+            )
             estimated = self._estimate_question_height(pdf, q, config, group_by)
             group_height = 13 if new_group else 0
             usable_height = PAGE_H - MARGIN_T - MARGIN_B
@@ -213,13 +226,21 @@ class PdfExporter(Exporter):
             if new_group:
                 current_group = q_group
                 group_index += 1
-                self._write_group_header(pdf, q_group, group_index, group_counts.get(q_group, 0))
+                self._write_group_header(
+                    pdf, q_group, group_index, group_counts.get(q_group, 0)
+                )
 
             qt_label = self._get_question_type_label(q.get("question_type", ""))
             content_text = self._get_question_text(q)
             show_type = group_by != "question_type"
             self._write_question_stem(
-                pdf, question_num, qt_label, content_text, q, ctx, show_type,
+                pdf,
+                question_num,
+                qt_label,
+                content_text,
+                q,
+                ctx,
+                show_type,
             )
 
             options = q.get("options") or {}
@@ -239,25 +260,37 @@ class PdfExporter(Exporter):
                 self._write_answer_space(pdf, space_mm)
 
             if config.get("answer_position") == "after_question":
-                ans = latex_to_plain_text(self._sanitize_text(format_question_answer(q)))
+                ans = latex_to_plain_text(
+                    self._sanitize_text(format_question_answer(q))
+                )
                 if ans:
                     self._write_labeled_paragraph(pdf, "答案", ans)
 
             if config.get("analysis_position") == "after_question":
-                analysis_text = latex_to_plain_text(self._sanitize_text(q.get("analysis", "")))
+                analysis_text = latex_to_plain_text(
+                    self._sanitize_text(q.get("analysis", ""))
+                )
                 if analysis_text:
                     self._write_analysis_after_question(pdf, analysis_text)
 
             if config.get("answer_position") == "at_end":
-                answer_section.append({
-                    "num": question_num,
-                    "answer": latex_to_plain_text(self._sanitize_text(format_question_answer(q))),
-                })
+                answer_section.append(
+                    {
+                        "num": question_num,
+                        "answer": latex_to_plain_text(
+                            self._sanitize_text(format_question_answer(q))
+                        ),
+                    }
+                )
             if config.get("analysis_position") == "at_end":
-                analysis_section.append({
-                    "num": question_num,
-                    "analysis": latex_to_plain_text(self._sanitize_text(q.get("analysis", ""))),
-                })
+                analysis_section.append(
+                    {
+                        "num": question_num,
+                        "analysis": latex_to_plain_text(
+                            self._sanitize_text(q.get("analysis", ""))
+                        ),
+                    }
+                )
 
             # Traditional exam layout uses whitespace rather than decorative
             # cards or horizontal separators between questions.
@@ -294,8 +327,27 @@ class PdfExporter(Exporter):
     @staticmethod
     def _chinese_section_number(value: int) -> str:
         numerals = [
-            "零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
-            "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+            "零",
+            "一",
+            "二",
+            "三",
+            "四",
+            "五",
+            "六",
+            "七",
+            "八",
+            "九",
+            "十",
+            "十一",
+            "十二",
+            "十三",
+            "十四",
+            "十五",
+            "十六",
+            "十七",
+            "十八",
+            "十九",
+            "二十",
         ]
         if 0 <= value < len(numerals):
             return numerals[value]
@@ -312,12 +364,19 @@ class PdfExporter(Exporter):
 
     def _add_header(self, pdf, config: dict) -> None:
         """Render a clean, centered first-page title like a printed exam."""
-        title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        title = (
+            self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        )
         pdf.set_text_color(*_COLOR_TEXT)
         pdf.set_font(_HEADING_FONT_NAME, "", 16)
         pdf.multi_cell(
-            BODY_W, 8.8, text=title, new_x="LMARGIN", new_y="NEXT",
-            align="C", wrapmode="CHAR",
+            BODY_W,
+            8.8,
+            text=title,
+            new_x="LMARGIN",
+            new_y="NEXT",
+            align="C",
+            wrapmode="CHAR",
         )
         # No date, total-count strip, brand line, or decorative rule. The first
         # section heading carries the useful question count instead.
@@ -330,7 +389,9 @@ class PdfExporter(Exporter):
         text = f"{self._chinese_section_number(index)}、{formal}{suffix}"
         pdf.set_text_color(*_COLOR_TEXT)
         pdf.set_font(_HEADING_FONT_NAME, "", 11)
-        pdf.multi_cell(BODY_W, 6.5, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+        pdf.multi_cell(
+            BODY_W, 6.5, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR"
+        )
         pdf.ln(2.6)
 
     def _write_question_stem(
@@ -347,7 +408,9 @@ class PdfExporter(Exporter):
         if show_type and qt_label:
             prefix += f"[{self._formal_group_title(qt_label)}]"
 
-        content = question.get("content") if isinstance(question.get("content"), dict) else {}
+        content = (
+            question.get("content") if isinstance(question.get("content"), dict) else {}
+        )
         segments = (content or {}).get("segments") or []
         stem = self._sanitize_text(content_text).strip()
 
@@ -356,40 +419,69 @@ class PdfExporter(Exporter):
 
         if stem and not has_latex(stem):
             pdf.multi_cell(
-                BODY_W, 5.9, text=f"{prefix}{stem}",
-                new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                BODY_W,
+                5.9,
+                text=f"{prefix}{stem}",
+                new_x="LMARGIN",
+                new_y="NEXT",
+                wrapmode="CHAR",
             )
             # Some records store the textual stem separately and only put
             # figures/tables in segments. Render those supplemental elements
             # without discarding or duplicating the stem.
             visual_segments = [
-                seg for seg in segments
-                if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table", "table_markdown")
+                seg
+                for seg in segments
+                if seg.get("type")
+                in (
+                    "code_image",
+                    "math_image",
+                    "table_image",
+                    "image",
+                    "table",
+                    "table_markdown",
+                )
             ]
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
         elif stem:
             self._write_latex_content(pdf, f"{prefix}{stem}", ctx)
             visual_segments = [
-                seg for seg in segments
-                if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table", "table_markdown")
+                seg
+                for seg in segments
+                if seg.get("type")
+                in (
+                    "code_image",
+                    "math_image",
+                    "table_image",
+                    "image",
+                    "table",
+                    "table_markdown",
+                )
             ]
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
         elif segments:
-            pdf.multi_cell(BODY_W, 5.9, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+            pdf.multi_cell(
+                BODY_W, 5.9, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR"
+            )
             self._write_segments(pdf, segments, ctx)
         else:
             pdf.set_text_color(*_COLOR_MUTED)
             pdf.multi_cell(
-                BODY_W, 5.9, text=f"{prefix}（题干内容未提供）",
-                new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                BODY_W,
+                5.9,
+                text=f"{prefix}（题干内容未提供）",
+                new_x="LMARGIN",
+                new_y="NEXT",
+                wrapmode="CHAR",
             )
             pdf.set_text_color(*_COLOR_TEXT)
 
         segment_urls = {
             str(seg.get("url") or seg.get("src"))
-            for seg in segments if seg.get("url") or seg.get("src")
+            for seg in segments
+            if seg.get("url") or seg.get("src")
         }
         for url in question.get("image_urls") or []:
             if url and str(url) not in segment_urls:
@@ -412,7 +504,10 @@ class PdfExporter(Exporter):
         return 1
 
     def _write_options(self, pdf, options: dict) -> None:
-        items = [(str(key), extract_option_text(options[key])) for key in sorted(options.keys())]
+        items = [
+            (str(key), extract_option_text(options[key]))
+            for key in sorted(options.keys())
+        ]
         columns = self._choose_option_columns(pdf, items)
         indent = 7.0
         gap = 4.0
@@ -422,12 +517,15 @@ class PdfExporter(Exporter):
         pdf.set_text_color(*_COLOR_TEXT)
 
         for row_start in range(0, len(items), columns):
-            row = items[row_start:row_start + columns]
+            row = items[row_start : row_start + columns]
             texts = [
                 f"{key}．{latex_to_plain_text(self._sanitize_text(text))}"
                 for key, text in row
             ]
-            heights = [self._estimate_wrapped_height(pdf, text, cell_w, line_h) for text in texts]
+            heights = [
+                self._estimate_wrapped_height(pdf, text, cell_w, line_h)
+                for text in texts
+            ]
             row_h = max(heights or [line_h])
             self._check_page_break(pdf, row_h + 1.2)
             y = pdf.get_y()
@@ -435,7 +533,12 @@ class PdfExporter(Exporter):
                 x = MARGIN_L + indent + col * (cell_w + gap)
                 pdf.set_xy(x, y)
                 pdf.multi_cell(
-                    cell_w, line_h, text=text, new_x="RIGHT", new_y="TOP", wrapmode="CHAR",
+                    cell_w,
+                    line_h,
+                    text=text,
+                    new_x="RIGHT",
+                    new_y="TOP",
+                    wrapmode="CHAR",
                 )
             pdf.set_xy(MARGIN_L, y + row_h + 0.7)
 
@@ -456,7 +559,9 @@ class PdfExporter(Exporter):
                 pdf.set_text_color(*_COLOR_TEXT)
                 pdf.set_font(_BODY_FONT_NAME, "", 9.5)
                 pdf.set_x(MARGIN_L + 7.0)
-                pdf.cell(BODY_W - 7.0, 5.2, text=f"{label}：", new_x="LMARGIN", new_y="NEXT")
+                pdf.cell(
+                    BODY_W - 7.0, 5.2, text=f"{label}：", new_x="LMARGIN", new_y="NEXT"
+                )
             self._write_options(pdf, options)
             pdf.ln(0.8)
 
@@ -475,8 +580,12 @@ class PdfExporter(Exporter):
         pdf.set_text_color(*_COLOR_TEXT)
         pdf.set_font(_BODY_FONT_NAME, "", 10)
         pdf.multi_cell(
-            BODY_W, 6, text=f"{label}：{text}",
-            new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+            BODY_W,
+            6,
+            text=f"{label}：{text}",
+            new_x="LMARGIN",
+            new_y="NEXT",
+            wrapmode="CHAR",
         )
 
     def _write_analysis_after_question(self, pdf, text: str) -> None:
@@ -514,8 +623,12 @@ class PdfExporter(Exporter):
             pdf.set_text_color(*_COLOR_TEXT)
             pdf.set_font(_HEADING_FONT_NAME, "", 10)
             pdf.multi_cell(
-                width, 5.8, text=heading,
-                new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                width,
+                5.8,
+                text=heading,
+                new_x="LMARGIN",
+                new_y="NEXT",
+                wrapmode="CHAR",
             )
             if body:
                 self._write_analysis_body(pdf, body, indent_mm=8)
@@ -523,14 +636,19 @@ class PdfExporter(Exporter):
             first = False
         pdf.ln(2.5)
 
-    def _write_analysis_subsection(self, pdf, label: str, body: str, indent_mm: float = 6) -> None:
+    def _write_analysis_subsection(
+        self, pdf, label: str, body: str, indent_mm: float = 6
+    ) -> None:
         self._check_page_break(pdf, 11)
         pdf.set_x(MARGIN_L + indent_mm)
         pdf.set_text_color(*_COLOR_TEXT)
         pdf.set_font(_HEADING_FONT_NAME, "", 9.8)
         pdf.cell(
-            BODY_W - indent_mm, 5.6, text=label,
-            new_x="LMARGIN", new_y="NEXT",
+            BODY_W - indent_mm,
+            5.6,
+            text=label,
+            new_x="LMARGIN",
+            new_y="NEXT",
         )
         if body:
             self._write_analysis_body(pdf, body, indent_mm=indent_mm + 2)
@@ -541,8 +659,12 @@ class PdfExporter(Exporter):
         pdf.set_text_color(*_COLOR_TEXT)
         pdf.set_font(_BODY_FONT_NAME, "", 10)
         pdf.multi_cell(
-            BODY_W - indent_mm, 6.1, text=body,
-            new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+            BODY_W - indent_mm,
+            6.1,
+            text=body,
+            new_x="LMARGIN",
+            new_y="NEXT",
+            wrapmode="CHAR",
         )
 
     def _write_end_section_title(self, pdf, title: str) -> None:
@@ -584,7 +706,10 @@ class PdfExporter(Exporter):
         # narrow cell width and the whole table is centered instead of
         # stretching across the full printable page width.
         max_units = max(
-            (self._display_units(self._sanitize_text(item.get("answer")) or "—") for item in items),
+            (
+                self._display_units(self._sanitize_text(item.get("answer")) or "—")
+                for item in items
+            ),
             default=1,
         )
         base_cell_w = 15.0 if columns >= 4 else 24.0 if columns == 2 else 56.0
@@ -604,7 +729,7 @@ class PdfExporter(Exporter):
         answer_font_size = 11.5 if columns >= 4 else 10.5
 
         for row_start in range(0, len(items), columns):
-            row = items[row_start:row_start + columns]
+            row = items[row_start : row_start + columns]
             answers = [self._sanitize_text(item.get("answer")) or "—" for item in row]
             pdf.set_font(_BODY_FONT_NAME, "", answer_font_size)
             text_heights = [
@@ -634,8 +759,13 @@ class PdfExporter(Exporter):
                     text_y = y + num_h + max((answer_h - text_h) / 2, 0.35)
                     pdf.set_xy(x + 0.5, text_y)
                     pdf.multi_cell(
-                        cell_w - 1.0, line_h, text=answer, align="C",
-                        new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                        cell_w - 1.0,
+                        line_h,
+                        text=answer,
+                        align="C",
+                        new_x="LMARGIN",
+                        new_y="NEXT",
+                        wrapmode="CHAR",
                     )
 
             pdf.set_xy(MARGIN_L, y + block_h + 1.8)
@@ -653,7 +783,9 @@ class PdfExporter(Exporter):
         )
         pdf.ln(2.5 if compact else 4)
 
-    def _estimate_wrapped_height(self, pdf, text: str, width: float, line_height: float) -> float:
+    def _estimate_wrapped_height(
+        self, pdf, text: str, width: float, line_height: float
+    ) -> float:
         """Conservative character-level line-wrap estimate for page planning."""
         if not text:
             return line_height
@@ -673,7 +805,10 @@ class PdfExporter(Exporter):
         return lines * line_height
 
     def _estimate_options_height(self, pdf, options: dict) -> float:
-        items = [(str(key), extract_option_text(options[key])) for key in sorted(options.keys())]
+        items = [
+            (str(key), extract_option_text(options[key]))
+            for key in sorted(options.keys())
+        ]
         if not items:
             return 0.0
         columns = self._choose_option_columns(pdf, items)
@@ -681,24 +816,36 @@ class PdfExporter(Exporter):
         cell_w = (BODY_W - 7.0 - gap * (columns - 1)) / columns
         height = 1.5
         for row_start in range(0, len(items), columns):
-            row = items[row_start:row_start + columns]
-            height += max(
-                self._estimate_wrapped_height(
-                    pdf,
-                    f"{key}．{latex_to_plain_text(self._sanitize_text(text))}",
-                    cell_w,
-                    5.8,
+            row = items[row_start : row_start + columns]
+            height += (
+                max(
+                    self._estimate_wrapped_height(
+                        pdf,
+                        f"{key}．{latex_to_plain_text(self._sanitize_text(text))}",
+                        cell_w,
+                        5.8,
+                    )
+                    for key, text in row
                 )
-                for key, text in row
-            ) + 0.7
+                + 0.7
+            )
         return height
 
-    def _estimate_question_height(self, pdf, q: dict, config: dict, group_by: str) -> float:
+    def _estimate_question_height(
+        self, pdf, q: dict, config: dict, group_by: str
+    ) -> float:
         qt_label = self._get_question_type_label(q.get("question_type", ""))
-        prefix = "1．" + (f"[{self._formal_group_title(qt_label)}]" if group_by != "question_type" and qt_label else "")
+        prefix = "1．" + (
+            f"[{self._formal_group_title(qt_label)}]"
+            if group_by != "question_type" and qt_label
+            else ""
+        )
         content = self._get_question_text(q)
         height = self._estimate_wrapped_height(
-            pdf, prefix + latex_to_plain_text(content), BODY_W, 6.2,
+            pdf,
+            prefix + latex_to_plain_text(content),
+            BODY_W,
+            6.2,
         )
 
         segments = (
@@ -722,39 +869,61 @@ class PdfExporter(Exporter):
                 for group in blank_option_groups:
                     group_options = group.get("options") or {}
                     if group_options:
-                        height += 5.2 + self._estimate_options_height(pdf, group_options) + 0.8
+                        height += (
+                            5.2
+                            + self._estimate_options_height(pdf, group_options)
+                            + 0.8
+                        )
         elif options:
             height += self._estimate_options_height(pdf, options)
 
-        height += max(0, float(get_answer_space_mm(
-            config.get("space_style", "standard"), q.get("question_type"),
-        )))
+        height += max(
+            0,
+            float(
+                get_answer_space_mm(
+                    config.get("space_style", "standard"),
+                    q.get("question_type"),
+                )
+            ),
+        )
         if config.get("answer_position") == "after_question" and q.get("answer"):
-            height += self._estimate_wrapped_height(
-                pdf,
-                f"答案：{latex_to_plain_text(self._sanitize_text(format_question_answer(q)))}",
-                BODY_W,
-                6,
-            ) + 2
+            height += (
+                self._estimate_wrapped_height(
+                    pdf,
+                    f"答案：{latex_to_plain_text(self._sanitize_text(format_question_answer(q)))}",
+                    BODY_W,
+                    6,
+                )
+                + 2
+            )
         if config.get("analysis_position") == "after_question" and q.get("analysis"):
-            height += self._estimate_wrapped_height(
-                pdf,
-                f"解析：{latex_to_plain_text(self._sanitize_text(q.get('analysis')))}",
-                BODY_W,
-                6,
-            ) + 2
+            height += (
+                self._estimate_wrapped_height(
+                    pdf,
+                    f"解析：{latex_to_plain_text(self._sanitize_text(q.get('analysis')))}",
+                    BODY_W,
+                    6,
+                )
+                + 2
+            )
         return height + 6
 
     def _write_content(self, pdf, text: str, question: dict, ctx: PdfContext):
         """Write question content, handling segments, images, and LaTeX."""
-        segments = question.get("content", {}).get("segments") if isinstance(question.get("content"), dict) else None
+        segments = (
+            question.get("content", {}).get("segments")
+            if isinstance(question.get("content"), dict)
+            else None
+        )
 
         if segments:
             self._write_segments(pdf, segments, ctx)
         elif has_latex(text):
             self._write_latex_content(pdf, text, ctx)
         else:
-            pdf.multi_cell(BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+            pdf.multi_cell(
+                BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR"
+            )
 
     def _write_segments(self, pdf, segments: list[dict], ctx: PdfContext):
         """Render a ``segments`` content array."""
@@ -767,7 +936,14 @@ class PdfExporter(Exporter):
                     if has_latex(text):
                         self._write_latex_content(pdf, text, ctx)
                     else:
-                        pdf.multi_cell(BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+                        pdf.multi_cell(
+                            BODY_W,
+                            5.9,
+                            text=text,
+                            new_x="LMARGIN",
+                            new_y="NEXT",
+                            wrapmode="CHAR",
+                        )
 
             elif seg_type == "newline":
                 pdf.ln(2)
@@ -801,8 +977,12 @@ class PdfExporter(Exporter):
             inline_parts.clear()
             if content:
                 pdf.multi_cell(
-                    BODY_W, 5.9, text=content,
-                    new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                    BODY_W,
+                    5.9,
+                    text=content,
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                    wrapmode="CHAR",
                 )
 
         for seg in segments:
@@ -819,12 +999,23 @@ class PdfExporter(Exporter):
                         self._place_latex_image(pdf, img_path)
                     except Exception:
                         fallback = latex_expression_to_text(seg["content"])
-                        pdf.multi_cell(BODY_W, 5.9, text=fallback, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+                        pdf.multi_cell(
+                            BODY_W,
+                            5.9,
+                            text=fallback,
+                            new_x="LMARGIN",
+                            new_y="NEXT",
+                            wrapmode="CHAR",
+                        )
                 else:
                     fallback = latex_expression_to_text(seg["content"])
                     pdf.multi_cell(
-                        BODY_W, 5.9, text=fallback,
-                        new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                        BODY_W,
+                        5.9,
+                        text=fallback,
+                        new_x="LMARGIN",
+                        new_y="NEXT",
+                        wrapmode="CHAR",
                     )
 
         flush_inline()
@@ -871,7 +1062,14 @@ class PdfExporter(Exporter):
         # Fallback
         pdf.set_font(_FONT_NAME, "", 8)
         pdf.set_text_color(128, 128, 128)
-        pdf.multi_cell(BODY_W, 4, text="图片加载失败", new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+        pdf.multi_cell(
+            BODY_W,
+            4,
+            text="图片加载失败",
+            new_x="LMARGIN",
+            new_y="NEXT",
+            wrapmode="CHAR",
+        )
         pdf.set_text_color(0, 0, 0)
         return False
 
@@ -902,6 +1100,7 @@ class PdfExporter(Exporter):
     def _download_image_sync(self, url: str, ctx: PdfContext) -> str | None:
         """Download an image to the temp directory with safety checks."""
         import hashlib
+
         filename = hashlib.md5(url.encode()).hexdigest() + ".png"
         dest = os.path.join(ctx.temp_dir, filename)
 
@@ -952,8 +1151,7 @@ class PdfExporter(Exporter):
             return None
         candidate = os.path.abspath(os.path.join(_BACKEND_ROOT, path.lstrip("/")))
         if not any(
-            os.path.commonpath((candidate, root)) == root
-            for root in _LOCAL_ASSET_ROOTS
+            os.path.commonpath((candidate, root)) == root for root in _LOCAL_ASSET_ROOTS
         ):
             return None
         return candidate if os.path.isfile(candidate) else None
@@ -971,7 +1169,9 @@ class PdfExporter(Exporter):
         return urllib.parse.urljoin(base.rstrip("/") + "/", str(url).lstrip("/"))
 
     @staticmethod
-    def _save_normalized_image(data: bytes, dest: str, source: str, ctx: PdfContext) -> str | None:
+    def _save_normalized_image(
+        data: bytes, dest: str, source: str, ctx: PdfContext
+    ) -> str | None:
         from PIL import Image as PILImage
 
         try:
@@ -982,10 +1182,14 @@ class PdfExporter(Exporter):
                     return None
                 image.load()
                 if max(image.size) > _MAX_IMAGE_DIMENSION:
-                    logger.info("Resizing oversized image %s (%dpx)", source, max(image.size))
+                    logger.info(
+                        "Resizing oversized image %s (%dpx)", source, max(image.size)
+                    )
                     image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION))
                 if image.mode not in ("RGB", "RGBA"):
-                    image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                    image = image.convert(
+                        "RGBA" if "transparency" in image.info else "RGB"
+                    )
                 image.save(dest, format="PNG", optimize=True)
         except Exception as exc:
             logger.warning("Invalid image data from %s: %s", source, exc)
@@ -1008,6 +1212,7 @@ class PdfExporter(Exporter):
     @staticmethod
     def _save_temp_image(ctx: PdfContext, data: bytes, prefix: str) -> str:
         import hashlib
+
         filename = f"{prefix}_{hashlib.md5(data).hexdigest()[:12]}.png"
         dest = os.path.join(ctx.temp_dir, filename)
         with open(dest, "wb") as f:
@@ -1041,7 +1246,9 @@ class PdfExporter(Exporter):
 
     def _add_running_headers(self, pdf, config: dict) -> None:
         """Add the compact paper title to pages after the first."""
-        title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        title = (
+            self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        )
         total = pdf.page_no()
         pdf.set_auto_page_break(False)
         for page_num in range(2, total + 1):
@@ -1066,8 +1273,12 @@ class PdfExporter(Exporter):
             pdf.set_font(_BODY_FONT_NAME, "", 8)
             pdf.set_text_color(*_COLOR_MUTED)
             pdf.cell(
-                BODY_W, 4.5, text=f"· {page_num} ·",
-                align="C", new_x="LMARGIN", new_y="NEXT",
+                BODY_W,
+                4.5,
+                text=f"· {page_num} ·",
+                align="C",
+                new_x="LMARGIN",
+                new_y="NEXT",
             )
         pdf.page = total
         pdf.set_auto_page_break(True, margin=MARGIN_B)

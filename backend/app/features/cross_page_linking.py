@@ -42,6 +42,7 @@ class CrossPageLink:
     ``confidence``: 0.0 – 1.0
     ``reason_codes``: list of stable reason codes.
     """
+
     source_page_id: str
     target_page_id: str
     source_region_ids: list[str] = field(default_factory=list)
@@ -77,6 +78,7 @@ class CrossPageMergeResult:
     ``link_confidence``: confidence of the strongest link applied.
     ``reason_codes``: all reason codes from applied links.
     """
+
     merged_block_id: str = ""
     source_block_ids: list[str] = field(default_factory=list)
     source_page_ids: list[str] = field(default_factory=list)
@@ -121,9 +123,7 @@ _EXPLICIT_CONT_RE = re.compile(
     r"(?:接上页|\(续\)|（续）|contin|上页|续表)",
     re.IGNORECASE,
 )
-_OPTION_START_RE = re.compile(
-    r"^\s*[A-Da-d]\s*[.、:：)）\s]"
-)
+_OPTION_START_RE = re.compile(r"^\s*[A-Da-d]\s*[.、:：)）\s]")
 _SENTENCE_END_RE = re.compile(r"[。；!！?？：:]$")
 _LOWERCASE_START_RE = re.compile(r"^\s*[a-z][a-z]")
 
@@ -149,7 +149,8 @@ def _get_last_region_text(page: Any) -> str:
     if not hasattr(page, "regions") or not page.regions:
         return ""
     body_regions = [
-        r for r in page.regions
+        r
+        for r in page.regions
         if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
     ]
     if not body_regions:
@@ -163,7 +164,8 @@ def _get_first_region_text(page: Any) -> str:
     if not hasattr(page, "regions") or not page.regions:
         return ""
     body_regions = [
-        r for r in page.regions
+        r
+        for r in page.regions
         if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
     ]
     if not body_regions:
@@ -178,7 +180,8 @@ def _is_near_bottom(page: Any) -> bool:
         return False
     page_h = getattr(page, "height", 1000) or 1000
     body_regions = [
-        r for r in page.regions
+        r
+        for r in page.regions
         if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
     ]
     if not body_regions:
@@ -274,8 +277,12 @@ def _evaluate_page_pair(
     Returns a ``CrossPageLink`` if a continuation is detected,
     ``None`` otherwise.
     """
-    current_page_id = getattr(current_page, "page_id", f"p{getattr(current_page, 'page_index', 0)}")
-    next_page_id = getattr(next_page, "page_id", f"p{getattr(next_page, 'page_index', 0)}")
+    current_page_id = getattr(
+        current_page, "page_id", f"p{getattr(current_page, 'page_index', 0)}"
+    )
+    next_page_id = getattr(
+        next_page, "page_id", f"p{getattr(next_page, 'page_index', 0)}"
+    )
 
     current_last_text = _get_last_region_text(current_page)
     next_first_text = _get_first_region_text(next_page)
@@ -300,7 +307,11 @@ def _evaluate_page_pair(
     next_has_new_qn = _has_new_question_number(next_text)
     if not next_has_new_qn and confidence > 0:
         reasons.append(REASON_NO_QN_ON_FIRST_REGION)
-    elif not next_has_new_qn and (prev_near_bottom or _starts_with_option(next_first_text) or _starts_with_lowercase(next_first_text)):
+    elif not next_has_new_qn and (
+        prev_near_bottom
+        or _starts_with_option(next_first_text)
+        or _starts_with_lowercase(next_first_text)
+    ):
         # No explicit marker but no new QN AND some continuation signal → weak link
         confidence = max(confidence, 0.3)
         reasons.append(REASON_NO_QN_ON_FIRST_REGION)
@@ -331,12 +342,14 @@ def _evaluate_page_pair(
     target_region_ids: list[str] = []
     if hasattr(current_page, "regions"):
         source_region_ids = [
-            getattr(r, "region_id", "") for r in current_page.regions
+            getattr(r, "region_id", "")
+            for r in current_page.regions
             if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
         ]
     if hasattr(next_page, "regions"):
         target_region_ids = [
-            getattr(r, "region_id", "") for r in next_page.regions
+            getattr(r, "region_id", "")
+            for r in next_page.regions
             if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
         ]
 
@@ -420,7 +433,9 @@ def apply_cross_page_links_to_pipeline(
             continue
 
         # Get target region text from DocumentIR
-        target_text = _get_region_texts(doc_ir, link.target_page_id, link.target_region_ids)
+        target_text = _get_region_texts(
+            doc_ir, link.target_page_id, link.target_region_ids
+        )
 
         if not target_text:
             continue

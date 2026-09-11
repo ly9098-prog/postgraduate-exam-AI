@@ -22,8 +22,16 @@ from app.features.question_numbering import (
 
 # Legacy exports for backward compatibility
 _CN_NUM = {
-    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
 }
 
 # Compatibility patterns used by heuristic helpers below
@@ -61,11 +69,18 @@ _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 
 _INLINE_QUESTION_PATTERN = re.compile(r"(?<![\d（(])(\d{1,3})\s*[.、)）]\s*\S")
 _INLINE_OPTION_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])" + _OPTION_MARKER +
-    r"\s*(.+?)(?=[、，,，\s]+" + _OPTION_MARKER + r"\s*|$)"
+    r"(?<![A-Za-z0-9])"
+    + _OPTION_MARKER
+    + r"\s*(.+?)(?=[、，,，\s]+"
+    + _OPTION_MARKER
+    + r"\s*|$)"
 )
 _LEADING_SPACE_OPTION_PATTERN = re.compile(
-    r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s+(.+?)(?=[、，,，\s]+" + _OPTION_MARKER + r"\s*|$)"
+    r"^"
+    + _OPTION_PREFIX_MARKER
+    + r"([A-Da-d])\s+(.+?)(?=[、，,，\s]+"
+    + _OPTION_MARKER
+    + r"\s*|$)"
 )
 _ANSWER_EXPLANATION_MARKER = re.compile(
     r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
@@ -75,13 +90,15 @@ _ANSWER_EXPLANATION_LINE = re.compile(
 )
 
 _OCR_OPTION_PATTERN = re.compile(
-    r"^" + _OPTION_PREFIX_MARKER + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+    r"^"
+    + _OPTION_PREFIX_MARKER
+    + r"(["
+    + "".join(_OCR_OPTION_MAP.keys())
+    + r"])\s*[.、:：)）]\s*(.+)"
 )
 
 # 章节号模式：X.X 或 X.X.X 格式（非题号）
-_SECTION_NUMBER_PATTERN = re.compile(
-    r"^\d+\.\d+(\.\d+)?\s*\S"
-)
+_SECTION_NUMBER_PATTERN = re.compile(r"^\d+\.\d+(\.\d+)?\s*\S")
 
 # 正文标题特征：数字后跟纯中文标题（允许年份标注）
 _CONTENT_TITLE_PATTERN = re.compile(
@@ -122,7 +139,9 @@ _BOOK_SOFT_QUESTION_SIGNAL_RE = re.compile(
     r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|试述|简述|回答|为什么|求|问|\?|？"
 )
 _BOOK_SOFT_INLINE_OPTION_RE = re.compile(r"(?:^|\n|\s)[A-D]\s*[.．、:：)）]")
-_BOOK_EXERCISE_MARKER_RE = re.compile(r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题")
+_BOOK_EXERCISE_MARKER_RE = re.compile(
+    r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题"
+)
 _BOOK_ANSWER_ONLY_RE = re.compile(r"答案与解析|参考答案|正确答案")
 
 
@@ -130,11 +149,11 @@ def _trim_book_text_before_exercises(text: str) -> str:
     marker = _BOOK_EXERCISE_MARKER_RE.search(text)
     if not marker:
         return text
-    tail = text[marker.end():]
+    tail = text[marker.end() :]
     question = re.search(r"\d+\s*[.．、)）]", tail)
     if not question:
         return text
-    return tail[question.start():].lstrip()
+    return tail[question.start() :].lstrip()
 
 
 def _looks_like_book_non_question_segment(question: dict) -> bool:
@@ -152,7 +171,9 @@ def _looks_like_book_non_question_segment(question: dict) -> bool:
     marker_count = len(_BOOK_SOFT_PROSE_MARKER_RE.findall(text))
     if marker_count == 0:
         return False
-    if re.search(r"(?:^|\n)\s*(?:证明|证毕|例题解析|解法)[：:]", text) and not question.get("has_options"):
+    if re.search(
+        r"(?:^|\n)\s*(?:证明|证毕|例题解析|解法)[：:]", text
+    ) and not question.get("has_options"):
         return True
     if _BOOK_SOFT_QUESTION_SIGNAL_RE.search(text):
         return marker_count >= 2 and len(text) >= 90
@@ -199,13 +220,15 @@ _ANSWER_EXPLANATION_LINE = re.compile(
 )
 
 _OCR_OPTION_PATTERN = re.compile(
-    r"^" + _OPTION_PREFIX_MARKER + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+    r"^"
+    + _OPTION_PREFIX_MARKER
+    + r"(["
+    + "".join(_OCR_OPTION_MAP.keys())
+    + r"])\s*[.、:：)）]\s*(.+)"
 )
 
 # 章节号模式：X.X 或 X.X.X 格式（非题号）
-_SECTION_NUMBER_PATTERN = re.compile(
-    r"^\d+\.\d+(\.\d+)?\s*\S"
-)
+_SECTION_NUMBER_PATTERN = re.compile(r"^\d+\.\d+(\.\d+)?\s*\S")
 
 # 正文标题特征：数字后跟纯中文标题（允许年份标注）
 _CONTENT_TITLE_PATTERN = re.compile(
@@ -238,7 +261,9 @@ def _iter_lines_with_pos(text: str):
         start += len(line) + 1
 
 
-def _has_exam_section_before(pos: int, section_positions: set[int], full_text: str) -> bool:
+def _has_exam_section_before(
+    pos: int, section_positions: set[int], full_text: str
+) -> bool:
     """Check if there's an exam section header between the previous question and pos."""
     if not section_positions:
         return False
@@ -287,7 +312,10 @@ def strip_frozen_options_from_stem(stem: str, frozen_options: dict[str, str]) ->
             for prefix_sep in [". ", "．", ".", "、", ": ", "：", ") ", ")", "） "]:
                 pattern_no_space = f"{key}{prefix_sep}{value}"
                 pattern_with_space = f"{key}{prefix_sep} {value}"
-                if stripped == pattern_no_space.strip() or stripped == pattern_with_space.strip():
+                if (
+                    stripped == pattern_no_space.strip()
+                    or stripped == pattern_with_space.strip()
+                ):
                     is_option_line = True
                     break
                 # Also check if stripped equals just the option prefix + value
@@ -312,7 +340,12 @@ def strip_frozen_options_from_stem(stem: str, frozen_options: dict[str, str]) ->
             for prefix_sep in [".", "．", "、", ":", "："]:
                 # Match "key.value" or "key. value" patterns
                 pat = re.compile(
-                    r"\s*" + re.escape(key) + re.escape(prefix_sep) + r"\s*" + re.escape(value) + r"\s*"
+                    r"\s*"
+                    + re.escape(key)
+                    + re.escape(prefix_sep)
+                    + r"\s*"
+                    + re.escape(value)
+                    + r"\s*"
                 )
                 remaining = pat.sub(" ", remaining).strip()
 
@@ -328,7 +361,9 @@ def strip_frozen_options_from_stem(stem: str, frozen_options: dict[str, str]) ->
     return "\n".join(cleaned_lines).strip()
 
 
-def _is_section_number(line: str, page: int | None = None, content_pages: set | None = None) -> bool:
+def _is_section_number(
+    line: str, page: int | None = None, content_pages: set | None = None
+) -> bool:
     """判断一行是否为章节号（而非题号）。"""
     stripped = line.strip()
     # X.X.X 格式一定是章节号
@@ -341,7 +376,9 @@ def _is_section_number(line: str, page: int | None = None, content_pages: set | 
             return True
     # 含年份标注的知识点编号行（如 "3. 快重传算法（2019）"）
     if content_pages and page in content_pages:
-        if re.match(r"^\d+\s*[.．、]", stripped) and _YEAR_ANNOTATION_RE.search(stripped):
+        if re.match(r"^\d+\s*[.．、]", stripped) and _YEAR_ANNOTATION_RE.search(
+            stripped
+        ):
             if not re.search(r"[A-D]\s*[.．、:：)）]", stripped):
                 return True
     return False
@@ -398,7 +435,7 @@ def _detect_question_number(line: str) -> tuple[int, int] | None:
         return None
 
     # Legacy: keep paren heuristics for specific edge cases
-    after_text = line[result.end:].lstrip()
+    after_text = line[result.end :].lstrip()
     if result.numbering_type is NumberingType.SUB_QUESTION:
         # Check if (N) looks like a grouped option marker (not a sub-question)
         if _looks_like_grouped_option_marker(line, result.end):
@@ -438,6 +475,7 @@ def _is_false_question_number(num: int, line: str) -> bool:
     from app.features.question_numbering import (
         _is_false_question_number as _qn_is_false,
     )
+
     return _qn_is_false(num, line)
 
 
@@ -462,31 +500,39 @@ def _has_option_marker_before_question(text: str) -> bool:
     if len(keys) >= 2:
         return True
     marker = markers[-1]
-    tail = text[marker.end():].strip()
+    tail = text[marker.end() :].strip()
     return bool(tail)
 
 
 def _is_probable_inline_question_text(text: str) -> bool:
-    return bool(re.search(r"[（(][^）)]{0,8}[）)]|下列|以下|正确|错误|问|求|计算|证明|已知|若", text))
+    return bool(
+        re.search(
+            r"[（(][^）)]{0,8}[）)]|下列|以下|正确|错误|问|求|计算|证明|已知|若", text
+        )
+    )
 
 
-def _looks_like_inline_question(line: str, match: re.Match, previous_num: int | None) -> bool:
+def _looks_like_inline_question(
+    line: str, match: re.Match, previous_num: int | None
+) -> bool:
     num = int(match.group(1))
-    if _is_false_question_number(num, line[match.start():]):
+    if _is_false_question_number(num, line[match.start() :]):
         return False
     if previous_num is not None and num != previous_num + 1:
         return False
-    before = line[:match.start()].rstrip()
+    before = line[: match.start()].rstrip()
     if not before:
         return False
     if _has_option_marker_before_question(before):
         return True
-    if _is_probable_inline_question_text(line[match.end():]):
+    if _is_probable_inline_question_text(line[match.end() :]):
         return True
     return before[-1] in _SENTENCE_END
 
 
-def _find_inline_question_boundaries(line: str, previous_num: int | None) -> list[tuple[int, int]]:
+def _find_inline_question_boundaries(
+    line: str, previous_num: int | None
+) -> list[tuple[int, int]]:
     boundaries: list[tuple[int, int]] = []
     expected = previous_num
     for match in _INLINE_QUESTION_PATTERN.finditer(line):
@@ -497,7 +543,9 @@ def _find_inline_question_boundaries(line: str, previous_num: int | None) -> lis
     return boundaries
 
 
-def _is_sub_question_line(line: str, num: int, previous_num: int | None, in_subquestion: bool) -> bool:
+def _is_sub_question_line(
+    line: str, num: int, previous_num: int | None, in_subquestion: bool
+) -> bool:
     if not re.match(r"^\d+\s*[)）]", line):
         return False
     if previous_num is None:
@@ -557,13 +605,17 @@ def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
                 boundaries.append((num, line_start))
                 previous_num = num
                 in_subquestion = False
-                for inline_num, inline_start in _find_inline_question_boundaries(stripped, previous_num):
+                for inline_num, inline_start in _find_inline_question_boundaries(
+                    stripped, previous_num
+                ):
                     if inline_start == 0:
                         continue
                     boundaries.append((inline_num, char_pos + indent + inline_start))
                     previous_num = inline_num
         elif previous_num is not None:
-            for num, inline_start in _find_inline_question_boundaries(stripped, previous_num):
+            for num, inline_start in _find_inline_question_boundaries(
+                stripped, previous_num
+            ):
                 if inline_start == 0:
                     continue
                 boundaries.append((num, char_pos + indent + inline_start))
@@ -577,7 +629,7 @@ def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
 def _truncate_answer_explanation_tail(text: str) -> str:
     match = _ANSWER_EXPLANATION_MARKER.search(text)
     if match:
-        return text[:match.start()].strip()
+        return text[: match.start()].strip()
     return text.strip()
 
 
@@ -741,12 +793,14 @@ def _has_numbered_blank_markers(text: str, grouped_options: list[dict]) -> bool:
     ]
     stem_part = text
     if marker_positions:
-        stem_part = text[:min(marker_positions)]
+        stem_part = text[: min(marker_positions)]
     marker_count = 0
     for marker in markers:
         if not marker:
             continue
-        if any(re.search(pattern, stem_part) for pattern in _blank_marker_patterns(marker)):
+        if any(
+            re.search(pattern, stem_part) for pattern in _blank_marker_patterns(marker)
+        ):
             marker_count += 1
     return marker_count >= 2
 
@@ -795,7 +849,9 @@ def _split_option_blocks_by_repeated_keys(text: str) -> list[dict[str, str]]:
     return blocks
 
 
-def _repair_repeated_degraded_groups(blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+def _repair_repeated_degraded_groups(
+    blocks: list[dict[str, str]],
+) -> list[dict[str, str]]:
     if len(blocks) < 2:
         return blocks
 
@@ -828,7 +884,9 @@ def _extract_degraded_blank_groups(text: str) -> list[dict]:
     if plain_blank_count < 2:
         return []
 
-    blocks = _repair_repeated_degraded_groups(_split_option_blocks_by_repeated_keys(text))
+    blocks = _repair_repeated_degraded_groups(
+        _split_option_blocks_by_repeated_keys(text)
+    )
     if len(blocks) < plain_blank_count:
         return []
 
@@ -869,6 +927,7 @@ def scan_entire_block_including_surrounding_lines(text: str) -> dict[str, str]:
         {key: text} 字典，至少包含 2 个选项。
     """
     from app.features.question_type_classifier import extract_options_from_text
+
     return extract_options_from_text(text)
 
 
@@ -883,9 +942,7 @@ _RE_CODE_FUNC_CALL = re.compile(
     r"EnQueue|DeQueue|malloc|free|printf|scanf|sort|swap)\s*\("
 )
 # C struct/typedef patterns
-_RE_CODE_STRUCT_DEF = re.compile(
-    r"\b(?:typedef|struct|union|enum)\b"
-)
+_RE_CODE_STRUCT_DEF = re.compile(r"\b(?:typedef|struct|union|enum)\b")
 # C keyword lines
 _RE_CODE_C_KEYWORD = re.compile(
     r"\b(?:int|char|void|float|double|long|short|unsigned|signed|"
@@ -982,9 +1039,11 @@ def _reconstruct_code_lines(text: str) -> str:
 
         # Check if line ends with a comma or open paren (code continuation)
         # e.g. "Push(st," or "InitStack(st); Push(st,"
-        if stripped and (stripped.rstrip().endswith(",") or
-                         stripped.rstrip().endswith("(") or
-                         re.search(r"\w+\([^)]*$", stripped.rstrip())):
+        if stripped and (
+            stripped.rstrip().endswith(",")
+            or stripped.rstrip().endswith("(")
+            or re.search(r"\w+\([^)]*$", stripped.rstrip())
+        ):
             # Look ahead: merge subsequent lines until we find closing paren
             merged = stripped
             j = i + 1
@@ -1054,7 +1113,9 @@ def _quarantine_code_regions(text: str) -> tuple[str, list[tuple[int, int, str]]
     trailing_code = code_lines
     if in_code:
         if len(trailing_code) >= 2:
-            code_regions.append((region_start, len(lines) - 1, "\n".join(trailing_code)))
+            code_regions.append(
+                (region_start, len(lines) - 1, "\n".join(trailing_code))
+            )
         elif len(trailing_code) == 1 and trailing_code[0].count(";") >= 2:
             code_regions.append((region_start, len(lines) - 1, trailing_code[0]))
 
@@ -1085,11 +1146,11 @@ def _is_ocr_garbage_line(line: str) -> bool:
         cp = ord(ch)
         if cp > 127:
             # Allow common CJK ranges
-            if 0x3000 <= cp <= 0x303F:   # CJK symbols and punctuation
+            if 0x3000 <= cp <= 0x303F:  # CJK symbols and punctuation
                 continue
-            if 0x4E00 <= cp <= 0x9FFF:   # CJK unified ideographs
+            if 0x4E00 <= cp <= 0x9FFF:  # CJK unified ideographs
                 continue
-            if 0xFF00 <= cp <= 0xFFEF:   # Fullwidth forms
+            if 0xFF00 <= cp <= 0xFFEF:  # Fullwidth forms
                 continue
             # Any other non-ASCII (Greek, Cyrillic, arrows, etc.) → signal
             return True
@@ -1155,15 +1216,14 @@ def _extract_options(text: str) -> dict[str, str]:
         from app.features.question_type_classifier import (
             extract_options_from_text as _ssot_extract,
         )
+
         fallback_opts = _ssot_extract(cleaned_text)
         if len(fallback_opts) >= len(options):
             options = fallback_opts
     return options
 
 
-def _pos_to_page(
-    pos: int, page_map: list[tuple[int, int, int]]
-) -> int:
+def _pos_to_page(pos: int, page_map: list[tuple[int, int, int]]) -> int:
     """将字符位置映射到页码。"""
     last_page = 1
     for offset, page, _ in page_map:
@@ -1298,7 +1358,11 @@ def split_questions(
 
         # Content page prose detection: numbered paragraphs of explanatory text
         if book_mode and content_pages and page in content_pages:
-            next_pos = boundaries[bound_idx + 1][1] if bound_idx + 1 < len(boundaries) else len(full_text)
+            next_pos = (
+                boundaries[bound_idx + 1][1]
+                if bound_idx + 1 < len(boundaries)
+                else len(full_text)
+            )
             segment = full_text[start_pos:next_pos]
             if _is_content_prose(segment):
                 continue
@@ -1309,7 +1373,9 @@ def split_questions(
 
         # Allow number resets after exam section headers
         if previous_valid_num is not None and num < previous_valid_num:
-            if num == 1 and _has_exam_section_before(start_pos, exam_section_positions, full_text):
+            if num == 1 and _has_exam_section_before(
+                start_pos, exam_section_positions, full_text
+            ):
                 previous_valid_num = None
 
         # Large gap check: if number jumps by more than expected, lower trust
@@ -1336,7 +1402,11 @@ def split_questions(
                 pass
 
     for i, (num, start_pos) in enumerate(filtered_boundaries):
-        end_pos = filtered_boundaries[i + 1][1] if i + 1 < len(filtered_boundaries) else len(full_text)
+        end_pos = (
+            filtered_boundaries[i + 1][1]
+            if i + 1 < len(filtered_boundaries)
+            else len(full_text)
+        )
         raw_text = full_text[start_pos:end_pos].strip()
 
         page_start = _pos_to_page(start_pos, page_map)
@@ -1391,7 +1461,8 @@ def split_questions(
                     logger.info(
                         "split: stripped frozen options from stem for q%d "
                         "(removed %d chars, frozen_opts=%s)",
-                        num, len(raw_text) - len(stripped_raw),
+                        num,
+                        len(raw_text) - len(stripped_raw),
                         sorted(q_frozen_opts.keys()),
                     )
                     raw_text = stripped_raw
@@ -1432,7 +1503,11 @@ def split_questions(
                     logger.info(
                         "split: layout_enhanced merged options for q%d "
                         "(page=%s, text=%d, layout=%d, merged=%d)",
-                        num, page_key, len(options), len(layout_page_opts), len(merged),
+                        num,
+                        page_key,
+                        len(options),
+                        len(layout_page_opts),
+                        len(merged),
                     )
                     options = merged
             elif len(options) < 2:
@@ -1442,7 +1517,10 @@ def split_questions(
                     logger.info(
                         "split: injected layout options for q%d "
                         "(page=%s, text_found=%d, layout_found=%d)",
-                        num, page_key, len(options), len(layout_page_opts),
+                        num,
+                        page_key,
+                        len(options),
+                        len(layout_page_opts),
                     )
 
         # 置信度：基于题号格式清晰度 + 选项完整度
@@ -1484,26 +1562,30 @@ def split_questions(
                     section_type = marker_type
                     break
 
-        questions.append({
-            "number": num,
-            "raw_question_text": raw_text,
-            # Preserve original text (before frozen-option stripping) so
-            # match_answers can extract explicit answers from it.
-            "_original_raw_text": original_raw if freeze_has_page_data and q_frozen_opts else None,
-            "page_start": page_start,
-            "page_end": page_end,
-            "has_options": len(options) > 0,
-            "option_lines": options,
-            "blank_option_groups": grouped_options if has_grouped_options else [],
-            "has_grouped_options": has_grouped_options,
-            "is_frozen": freeze_has_page_data,
-            "confidence": round(max(0.0, min(1.0, conf)), 2),
-            "section_type": section_type,
-            "risk_flags": risk_flags,
-            # ── 原题定位信息 ──
-            "source_question_no": source_question_no,
-            "source_question_label": source_question_label,
-        })
+        questions.append(
+            {
+                "number": num,
+                "raw_question_text": raw_text,
+                # Preserve original text (before frozen-option stripping) so
+                # match_answers can extract explicit answers from it.
+                "_original_raw_text": original_raw
+                if freeze_has_page_data and q_frozen_opts
+                else None,
+                "page_start": page_start,
+                "page_end": page_end,
+                "has_options": len(options) > 0,
+                "option_lines": options,
+                "blank_option_groups": grouped_options if has_grouped_options else [],
+                "has_grouped_options": has_grouped_options,
+                "is_frozen": freeze_has_page_data,
+                "confidence": round(max(0.0, min(1.0, conf)), 2),
+                "section_type": section_type,
+                "risk_flags": risk_flags,
+                # ── 原题定位信息 ──
+                "source_question_no": source_question_no,
+                "source_question_label": source_question_label,
+            }
+        )
 
     questions = _recover_cross_page_options(questions)
 
@@ -1515,11 +1597,15 @@ def split_questions(
     # 仅打 risk_flags 不丢弃，让人工最终裁决。orchestrator `_run_split`
     # 已把 import_mode 透传过来；其它模式（exam/image/txt/None）无影响。
     if book_mode:
-        questions = [q for q in questions if not _looks_like_book_non_question_segment(q)]
+        questions = [
+            q for q in questions if not _looks_like_book_non_question_segment(q)
+        ]
         for q in questions:
             if _looks_like_book_soft_prose(q):
                 existing = q.get("risk_flags") or []
-                q["risk_flags"] = list(dict.fromkeys([*existing, "book_pdf_prose_like"]))
+                q["risk_flags"] = list(
+                    dict.fromkeys([*existing, "book_pdf_prose_like"])
+                )
                 q["confidence"] = min(q.get("confidence", 0.4), 0.4)
 
     return questions
@@ -1573,14 +1659,18 @@ def split_by_visual_boundaries(
                 for mid_idx in range(blk_idx + 1, next_bound["block_index"]):
                     mid_block = block_map.get(mid_idx)
                     if mid_block:
-                        mid_text = mid_block.get("normalized_text") or mid_block.get("text", "")
+                        mid_text = mid_block.get("normalized_text") or mid_block.get(
+                            "text", ""
+                        )
                         segment_lines.extend(mid_text.split("\n"))
                 # 下一个边界 block 的前几行
                 next_block = block_map.get(next_bound["block_index"])
                 if next_block:
-                    next_text = next_block.get("normalized_text") or next_block.get("text", "")
+                    next_text = next_block.get("normalized_text") or next_block.get(
+                        "text", ""
+                    )
                     next_lines = next_text.split("\n")
-                    segment_lines.extend(next_lines[:next_bound["line_index"]])
+                    segment_lines.extend(next_lines[: next_bound["line_index"]])
         else:
             # 最后一个边界：取当前 block 剩余 + 后续所有 blocks
             segment_lines = lines[line_idx:]
@@ -1588,18 +1678,22 @@ def split_by_visual_boundaries(
             for tail_idx in range(blk_idx + 1, max_blk_idx + 1):
                 tail_block = block_map.get(tail_idx)
                 if tail_block:
-                    tail_text = tail_block.get("normalized_text") or tail_block.get("text", "")
+                    tail_text = tail_block.get("normalized_text") or tail_block.get(
+                        "text", ""
+                    )
                     segment_lines.extend(tail_text.split("\n"))
 
         raw_text = "\n".join(segment_lines).strip()
         if not raw_text:
             continue
 
-        segments.append({
-            "raw_text": raw_text,
-            "page": page,
-            "signal": bound.get("signal", ""),
-        })
+        segments.append(
+            {
+                "raw_text": raw_text,
+                "page": page,
+                "signal": bound.get("signal", ""),
+            }
+        )
 
     # 转为标准 raw_question 格式
     questions: list[dict] = []
@@ -1626,18 +1720,20 @@ def split_by_visual_boundaries(
         if seg["signal"] == "large_gap":
             conf = 0.4
 
-        questions.append({
-            "number": number,
-            "raw_question_text": raw_text,
-            "page_start": seg["page"],
-            "page_end": seg["page"],
-            "has_options": len(options) > 0,
-            "option_lines": options,
-            "blank_option_groups": grouped_options if has_grouped_options else [],
-            "has_grouped_options": has_grouped_options,
-            "confidence": conf,
-            "detection_method": "visual_boundary",
-        })
+        questions.append(
+            {
+                "number": number,
+                "raw_question_text": raw_text,
+                "page_start": seg["page"],
+                "page_end": seg["page"],
+                "has_options": len(options) > 0,
+                "option_lines": options,
+                "blank_option_groups": grouped_options if has_grouped_options else [],
+                "has_grouped_options": has_grouped_options,
+                "confidence": conf,
+                "detection_method": "visual_boundary",
+            }
+        )
 
     return questions
 
@@ -1648,14 +1744,10 @@ def split_by_visual_boundaries(
 # ---------------------------------------------------------------------------
 
 # Pattern: option text that contains a second question stem (ends with （） or ())
-_RE_EMBEDDED_QUESTION = re.compile(
-    r"[；;]\s*.{2,30}?[（(]\s*[）)]\s*$"
-)
+_RE_EMBEDDED_QUESTION = re.compile(r"[；;]\s*.{2,30}?[（(]\s*[）)]\s*$")
 
 # Pattern to find the second group's first option marker in raw text
-_RE_SECOND_GROUP_A = re.compile(
-    r"\n\s*A\s*[.、:：)）]"
-)
+_RE_SECOND_GROUP_A = re.compile(r"\n\s*A\s*[.、:：)）]")
 
 
 def _split_merged_two_column_questions(questions: list[dict]) -> list[dict]:
@@ -1717,45 +1809,41 @@ def _split_merged_two_column_questions(questions: list[dict]) -> list[dict]:
         else:
             # Fallback: reconstruct from groups
             q1_raw = raw_text
-            q2_opts_raw = "\n".join(
-                f"{k}. {v}" for k, v in sorted(g2_opts.items())
-            )
+            q2_opts_raw = "\n".join(f"{k}. {v}" for k, v in sorted(g2_opts.items()))
 
         # Create Q1 (with cleaned-up options)
-        q1_options = {
-            k: v for k, v in sorted(g1_opts.items())
-        }
+        q1_options = {k: v for k, v in sorted(g1_opts.items())}
         q1_new = dict(q)
         q1_new["raw_question_text"] = q1_raw
         q1_new["option_lines"] = q1_options
         q1_new["blank_option_groups"] = []
         q1_new["has_grouped_options"] = False
         q1_new["has_options"] = len(q1_options) > 0
-        q1_new["risk_flags"] = list(dict.fromkeys(
-            (q.get("risk_flags") or []) + ["two_column_merge_split"]
-        ))
+        q1_new["risk_flags"] = list(
+            dict.fromkeys((q.get("risk_flags") or []) + ["two_column_merge_split"])
+        )
         q1_new["confidence"] = min(q.get("confidence", 0.5), 0.5)
         result.append(q1_new)
 
         # Create Q2 (new question from the split-off content)
         q2_stem = q2_stem_suffix.strip()
         q2_raw = f"{q2_stem}\n{q2_opts_raw}"
-        q2_options = {
-            k: v for k, v in sorted(g2_opts.items())
-        }
-        result.append({
-            "number": q.get("number", 0) + 0.5,  # fractional → signals auto-split
-            "raw_question_text": q2_raw,
-            "page_start": q.get("page_start", 1),
-            "page_end": q.get("page_end", q.get("page_start", 1)),
-            "has_options": True,
-            "option_lines": q2_options,
-            "blank_option_groups": [],
-            "has_grouped_options": False,
-            "confidence": 0.4,
-            "section_type": q.get("section_type"),
-            "risk_flags": ["two_column_merge_split"],
-        })
+        q2_options = {k: v for k, v in sorted(g2_opts.items())}
+        result.append(
+            {
+                "number": q.get("number", 0) + 0.5,  # fractional → signals auto-split
+                "raw_question_text": q2_raw,
+                "page_start": q.get("page_start", 1),
+                "page_end": q.get("page_end", q.get("page_start", 1)),
+                "has_options": True,
+                "option_lines": q2_options,
+                "blank_option_groups": [],
+                "has_grouped_options": False,
+                "confidence": 0.4,
+                "section_type": q.get("section_type"),
+                "risk_flags": ["two_column_merge_split"],
+            }
+        )
 
     return result
 
@@ -1868,7 +1956,9 @@ def _recover_cross_page_options(questions: list[dict]) -> list[dict]:
             continue
 
         orphan_text = next_q["raw_question_text"][:chars_consumed]
-        current["raw_question_text"] = current["raw_question_text"].rstrip() + "\n" + orphan_text.strip()
+        current["raw_question_text"] = (
+            current["raw_question_text"].rstrip() + "\n" + orphan_text.strip()
+        )
         current["option_lines"].update(orphan_opts)
         current["has_options"] = True
         current["page_end"] = next_q.get("page_start", current.get("page_end", 1))

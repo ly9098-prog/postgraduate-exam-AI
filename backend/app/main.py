@@ -47,7 +47,9 @@ async def _run_registered_periodic_task(task_id: str, label: str) -> None:
 
 async def _periodic_token_cleanup() -> None:
     """Clean up expired refresh tokens on deterministic 6-hour UTC slots."""
-    await _run_registered_periodic_task("refresh_token_cleanup", "Refresh token cleanup")
+    await _run_registered_periodic_task(
+        "refresh_token_cleanup", "Refresh token cleanup"
+    )
 
 
 async def _periodic_staging_cleanup() -> None:
@@ -59,6 +61,7 @@ async def _periodic_export_processor():
     """Background task: process pending export tasks (scheduler role only)."""
     try:
         from app.services.export.processor import run_export_processor
+
         await run_export_processor()
     except Exception as e:
         logger.warning("Export processor exited: %s", e)
@@ -75,6 +78,7 @@ def _report_startup_failure(component: str, exc: Exception) -> None:
     In production, any core component startup failure is fatal.
     """
     from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+
     try:
         is_prod = (
             detect_deployment_profile() == DeploymentProfile.CLOUD_API
@@ -133,11 +137,9 @@ async def lifespan(app: FastAPI):
     # processor available locally; otherwise export tasks remain pending forever
     # unless developers also start a separate scheduler process. Production
     # keeps the existing web/scheduler split.
-    _local_web_export_processor = (
-        role == "web"
-        and (settings.APP_ENV or "").strip().lower()
-        in {"development", "dev", "local", "test", "testing"}
-    )
+    _local_web_export_processor = role == "web" and (
+        settings.APP_ENV or ""
+    ).strip().lower() in {"development", "dev", "local", "test", "testing"}
 
     # ── Common startup (all roles) ──
     validate_production_config()
@@ -149,6 +151,7 @@ async def lifespan(app: FastAPI):
             DeploymentProfile,
             detect_deployment_profile,
         )
+
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             loaded = loaded_local_ocr_modules()
             if loaded:
@@ -167,12 +170,14 @@ async def lifespan(app: FastAPI):
         logger.warning("OCR module isolation check failed: %s", e)
 
     from app.core.ocr_profile import get_ocr_profile
+
     profile = get_ocr_profile()
 
     # Staging storage: sweep stale temp files on startup
     try:
         from app.core.log_context import log_event
         from app.services.staging_storage import async_sweep_temp_files
+
         swept = await async_sweep_temp_files()
         if swept:
             log_event(logger, "staging.sweep", count=swept)
@@ -180,16 +185,24 @@ async def lifespan(app: FastAPI):
         logger.warning("Staging temp sweep failed (non-fatal)", exc_info=True)
     logger.info(
         "Starting 2240AI — env=%s role=%s ocr_profile=%s (gpu=%s, workers=%d, max_pdf_pages=%d)",
-        settings.APP_ENV, role, profile.name, profile.use_gpu,
-        profile.max_workers, profile.max_pdf_pages,
+        settings.APP_ENV,
+        role,
+        profile.name,
+        profile.use_gpu,
+        profile.max_workers,
+        profile.max_pdf_pages,
     )
     # Explicitly log which components are active per role. Keep ``all`` as a
     # separate branch so diagnostics never claim that its worker/scheduler are
     # disabled when they are actually running.
     if role == "web":
-        logger.info("Role=%s: API serving, OCR gateway active (no worker/dispatcher)", role)
+        logger.info(
+            "Role=%s: API serving, OCR gateway active (no worker/dispatcher)", role
+        )
     elif role == "worker":
-        logger.info("Role=%s: pipeline dispatcher, reaper, AI prewarm active (no API)", role)
+        logger.info(
+            "Role=%s: pipeline dispatcher, reaper, AI prewarm active (no API)", role
+        )
     elif role == "scheduler":
         logger.info(
             "Role=%s: periodic tasks (token, staging, audit, recommendation metrics, "
@@ -206,6 +219,7 @@ async def lifespan(app: FastAPI):
     # Log export access config
     try:
         from app.services.export.capability import log_export_config_on_startup
+
         log_export_config_on_startup()
     except Exception:
         logger.warning("Export config logging failed (non-fatal)", exc_info=True)
@@ -214,7 +228,11 @@ async def lifespan(app: FastAPI):
     _has_processor = role in ("scheduler", "all")
     _has_redis = bool(settings.REDIS_URL)
     if _has_processor:
-        logger.info("export_processor_enabled=true process_role=%s redis_available=%s", role, _has_redis)
+        logger.info(
+            "export_processor_enabled=true process_role=%s redis_available=%s",
+            role,
+            _has_redis,
+        )
     elif role == "web":
         logger.warning(
             "process_role=web export_processor_enabled=false export_processor_mode=external "
@@ -234,6 +252,7 @@ async def lifespan(app: FastAPI):
     # IntegrityError handler in the create_export endpoint.
     try:
         from app.core.database import engine as _db_engine
+
         _dialect = _db_engine.dialect.name
         if _dialect == "sqlite":
             from sqlalchemy import inspect as _sa_inspect
@@ -246,12 +265,14 @@ async def lifespan(app: FastAPI):
                 _ix_list = _inspector.get_indexes("export_tasks")
                 _unique_constraints = _inspector.get_unique_constraints("export_tasks")
                 _unique_indexes = [
-                    _ix for _ix in _ix_list
+                    _ix
+                    for _ix in _ix_list
                     if _ix.get("column_names", []) == ["idempotency_key"]
                     and _ix.get("unique")
                 ]
                 _matching_constraints = [
-                    _constraint for _constraint in _unique_constraints
+                    _constraint
+                    for _constraint in _unique_constraints
                     if _constraint.get("column_names", []) == ["idempotency_key"]
                 ]
                 _has_plain_index = any(
@@ -300,16 +321,22 @@ async def lifespan(app: FastAPI):
                     _repair_export_idempotency_index
                 )
             if _sqlite_index_repaired:
-                logger.info("Fixed residual UNIQUE constraint on export_tasks.idempotency_key (SQLite)")
+                logger.info(
+                    "Fixed residual UNIQUE constraint on export_tasks.idempotency_key (SQLite)"
+                )
         elif _dialect == "postgresql":
             # PostgreSQL: drop the UNIQUE constraint if it exists and replace with index
             async with async_session() as _s:
-                _row = (await _s.execute(text("""
+                _row = (
+                    await _s.execute(
+                        text("""
                     SELECT conname FROM pg_constraint
                     WHERE conrelid = 'export_tasks'::regclass
                     AND conname LIKE '%idempotency_key%'
                     AND contype = 'u'
-                """))).scalar_one_or_none()
+                """)
+                    )
+                ).scalar_one_or_none()
                 if _row:
                     # Constraint names come from PostgreSQL metadata, but still
                     # escape identifier quotes before interpolating into DDL.
@@ -319,40 +346,54 @@ async def lifespan(app: FastAPI):
                             f'ALTER TABLE export_tasks DROP CONSTRAINT "{_quoted_constraint}"'
                         )
                     )
-                    await _s.execute(text(
-                        'CREATE INDEX IF NOT EXISTS ix_export_tasks_idempotency_key '
-                        'ON export_tasks (idempotency_key)'
-                    ))
+                    await _s.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS ix_export_tasks_idempotency_key "
+                            "ON export_tasks (idempotency_key)"
+                        )
+                    )
                     await _s.commit()
-                    logger.info("Fixed residual UNIQUE constraint on export_tasks.idempotency_key (PostgreSQL)")
+                    logger.info(
+                        "Fixed residual UNIQUE constraint on export_tasks.idempotency_key (PostgreSQL)"
+                    )
     except Exception as _exc:
         logger.warning(
             "Failed to fix idempotency_key UNIQUE constraint (%s: %s) "
             "(non-fatal, application-level fallback active)",
-            type(_exc).__name__, _exc,
+            type(_exc).__name__,
+            _exc,
         )
 
     # Schema divergence diagnostic: detect missing runtime-DDL columns on PostgreSQL.
     # Lightweight startup check — warns if known columns are absent.
     try:
         from app.core.database import engine
+
         _sync_engine = engine.sync_engine
         if _sync_engine.dialect.name == "postgresql":
             _runtime_ddl_checks: dict[str, list[str]] = {
                 "questions": ["question_hash", "sync_uuid", "sync_version"],
-                "question_imports": ["question_hash", "duplicate_status",
-                                   "duplicate_of_question_id", "duplicate_of_import_id"],
+                "question_imports": [
+                    "question_hash",
+                    "duplicate_status",
+                    "duplicate_of_question_id",
+                    "duplicate_of_import_id",
+                ],
                 "users": ["is_banned", "deleted_at"],
             }
             _divergence: list[str] = []
             async with async_session() as _s:
                 for _tbl, _cols in _runtime_ddl_checks.items():
                     try:
-                        _row = (await _s.execute(
-                            text("SELECT column_name FROM information_schema.columns "
-                                 "WHERE table_name=:tbl AND column_name=ANY(:cols)"),
-                            {"tbl": _tbl, "cols": _cols},
-                        )).all()
+                        _row = (
+                            await _s.execute(
+                                text(
+                                    "SELECT column_name FROM information_schema.columns "
+                                    "WHERE table_name=:tbl AND column_name=ANY(:cols)"
+                                ),
+                                {"tbl": _tbl, "cols": _cols},
+                            )
+                        ).all()
                         _found = {r[0] for r in _row}
                         for _c in _cols:
                             if _c not in _found:
@@ -389,7 +430,8 @@ async def lifespan(app: FastAPI):
             if any(v for v in seed_result.values()):
                 logger.info(
                     "Recommendation strategies seeded: created=%s updated=%s skipped=%s",
-                    seed_result.get("created"), seed_result.get("updated"),
+                    seed_result.get("created"),
+                    seed_result.get("updated"),
                     seed_result.get("skipped"),
                 )
     except Exception as e:
@@ -410,16 +452,22 @@ async def lifespan(app: FastAPI):
                 logger.warning(
                     "AI_MODEL_DEFAULT_MISSING: enabled AI models exist (%d) but no default model is configured; "
                     "providers=%s features=%s",
-                    ai_check.enabled_count, ai_check.providers, ai_check.features,
+                    ai_check.enabled_count,
+                    ai_check.providers,
+                    ai_check.features,
                 )
             else:
                 logger.info(
                     "AI model config healthy: enabled_count=%d default_count=%d providers=%s features=%s",
-                    ai_check.enabled_count, ai_check.default_count,
-                    ai_check.providers, ai_check.features,
+                    ai_check.enabled_count,
+                    ai_check.default_count,
+                    ai_check.providers,
+                    ai_check.features,
                 )
     except Exception as e:
-        logger.warning("AI model config self-check failed (non-fatal, DB may not be ready): %s", e)
+        logger.warning(
+            "AI model config self-check failed (non-fatal, DB may not be ready): %s", e
+        )
 
     # ── Resource references populated by role ──
     _ocr_gateway = None
@@ -441,7 +489,8 @@ async def lifespan(app: FastAPI):
         init_executor_registry(_executors)
         logger.info(
             "Executors initialized for role=%s: %s",
-            role, {k: v.name for k, v in _executors.items()},
+            role,
+            {k: v.name for k, v in _executors.items()},
         )
     except Exception as e:
         _report_startup_failure("Executors", e)
@@ -484,19 +533,25 @@ async def lifespan(app: FastAPI):
                     ),
                 )
                 worker_client = create_ocr_worker_client(
-                    cfg, http_client=_ocr_shared_http_client,
+                    cfg,
+                    http_client=_ocr_shared_http_client,
                 )
                 from app.core.deployment_profile import detect_deployment_profile
+
                 _ocr_gateway = OCRGateway(
                     mode="gateway",
                     profile=detect_deployment_profile(),
                     worker_client=worker_client,
                 )
                 from app.services.ocr_service import set_gateway
+
                 set_gateway(_ocr_gateway)
                 logger.info(
                     "OCR Gateway initialized (role=%s mode=gateway exec_backend=%s profile=%s env=%s)",
-                    role, cfg.execution_backend, cfg.profile, cfg.environment,
+                    role,
+                    cfg.execution_backend,
+                    cfg.profile,
+                    cfg.environment,
                 )
             else:
                 logger.info("OCR not enabled, skipping Gateway initialization")
@@ -516,6 +571,7 @@ async def lifespan(app: FastAPI):
     if role in ("worker", "all"):
         try:
             from app.services.task_queue_worker import run_dispatcher_v2
+
             _pipeline_worker_task = asyncio.create_task(
                 run_dispatcher_v2(), name="pipeline-dispatcher-v2"
             )
@@ -524,6 +580,7 @@ async def lifespan(app: FastAPI):
 
         try:
             from app.services.task_queue_worker import run_reaper_loop_v2
+
             _reaper_task = asyncio.create_task(
                 run_reaper_loop_v2(), name="task-reaper-v2"
             )
@@ -533,6 +590,7 @@ async def lifespan(app: FastAPI):
         # AI prewarm worker — uses DurableTaskQueue (moved from scheduler per P0-2)
         try:
             from app.services.ai_prewarm_worker import start_worker
+
             await start_worker()
             logger.info("AI prewarm worker started")
         except Exception as e:
@@ -542,6 +600,7 @@ async def lifespan(app: FastAPI):
     if role in ("scheduler", "all"):
         try:
             from app.services.system_task_service import run_scheduler_heartbeat
+
             _scheduler_heartbeat_task = asyncio.create_task(
                 run_scheduler_heartbeat(), name="scheduler-heartbeat"
             )
@@ -550,6 +609,7 @@ async def lifespan(app: FastAPI):
 
         try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+
             await audit_log_cleanup_scheduler.start()
             logger.info("Audit log cleanup scheduler started")
         except Exception as e:
@@ -559,13 +619,16 @@ async def lifespan(app: FastAPI):
             from app.services.recommendation_metrics_scheduler import (
                 recommendation_metrics_scheduler,
             )
+
             await recommendation_metrics_scheduler.start()
             logger.info("Recommendation metrics scheduler started")
         except Exception as e:
             _report_startup_failure("Recommendation metrics scheduler", e)
 
         # Periodic cleanup tasks belong in the scheduler role only
-        cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
+        cleanup_task = asyncio.create_task(
+            _periodic_token_cleanup(), name="token-cleanup"
+        )
         _staging_cleanup_task = asyncio.create_task(
             _periodic_staging_cleanup(), name="staging-cleanup"
         )
@@ -613,6 +676,7 @@ async def lifespan(app: FastAPI):
     # Start resource reservation orphan reconciler (all roles)
     try:
         from app.core.resource_guard import resource_guard
+
         await resource_guard.start_orphan_reconciler()
     except Exception as e:
         logger.warning("Orphan reconciler start failed (non-fatal): %s", e)
@@ -630,12 +694,14 @@ async def lifespan(app: FastAPI):
         if role in ("worker", "all"):
             try:
                 from app.services.task_queue_worker import graceful_shutdown_v2
+
                 await graceful_shutdown_v2()
             except Exception as e:
                 logger.warning("v2 Graceful shutdown failed: %s", e)
 
             try:
                 from app.services.task_queue_worker import stop_reaper_v2
+
                 await stop_reaper_v2()
             except Exception as e:
                 logger.warning("Reaper v2 stop failed: %s", e)
@@ -643,6 +709,7 @@ async def lifespan(app: FastAPI):
             # Non-worker roles still drain if any v1 tasks are active
             try:
                 from app.services.task_queue_worker import set_draining_v2
+
                 await set_draining_v2()
             except Exception as e:
                 logger.warning("set_draining_v2 failed: %s", e)
@@ -659,6 +726,7 @@ async def lifespan(app: FastAPI):
         if _export_processor_task is not None:
             try:
                 from app.services.export.processor import stop_processor
+
                 await stop_processor()
                 logger.info("export_processor_stopped role=%s", role)
             except Exception as e:
@@ -724,6 +792,7 @@ async def lifespan(app: FastAPI):
                 from app.services.audit_cleanup_scheduler import (
                     audit_log_cleanup_scheduler,
                 )
+
                 await audit_log_cleanup_scheduler.stop()
                 logger.info("Audit log cleanup scheduler stopped")
             except Exception as e:
@@ -733,6 +802,7 @@ async def lifespan(app: FastAPI):
                 from app.services.recommendation_metrics_scheduler import (
                     recommendation_metrics_scheduler,
                 )
+
                 await recommendation_metrics_scheduler.stop()
                 logger.info("Recommendation metrics scheduler stopped")
             except Exception as e:
@@ -742,6 +812,7 @@ async def lifespan(app: FastAPI):
         if role in ("worker", "all"):
             try:
                 from app.services.ai_prewarm_worker import stop_worker
+
                 await stop_worker()
                 logger.info("AI prewarm worker stopped")
             except Exception as e:
@@ -752,6 +823,7 @@ async def lifespan(app: FastAPI):
             from app.services.formula_graph_spec_renderer import (
                 shutdown_formula_render_pool,
             )
+
             await asyncio.wait_for(
                 asyncio.to_thread(
                     shutdown_formula_render_pool,
@@ -762,7 +834,9 @@ async def lifespan(app: FastAPI):
             )
             logger.info("Formula render pool shut down")
         except TimeoutError:
-            logger.warning("Formula render pool shutdown timed out, forcing non-blocking")
+            logger.warning(
+                "Formula render pool shutdown timed out, forcing non-blocking"
+            )
             try:
                 shutdown_formula_render_pool(wait=False, cancel_futures=True)
             except Exception as exc2:
@@ -778,8 +852,10 @@ async def lifespan(app: FastAPI):
                     DeploymentProfile,
                     detect_deployment_profile,
                 )
+
                 if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
                     from app.services.ocr_executor_service import ocr_executor
+
                     await asyncio.wait_for(
                         ocr_executor.shutdown(wait=True),
                         timeout=30,
@@ -794,6 +870,7 @@ async def lifespan(app: FastAPI):
 
             try:
                 from app.features.ocr_gateway import OCRGateway
+
                 if _ocr_gateway is not None:
                     await _ocr_gateway.shutdown()
                     logger.info("OCR Gateway shut down")
@@ -817,6 +894,7 @@ async def lifespan(app: FastAPI):
                 get_all_executors,
             )
             from app.core.executors import shutdown_executors
+
             await shutdown_executors(get_all_executors())
             clear_executor_registry()
             logger.info("BoundedExecutors shut down")
@@ -826,6 +904,7 @@ async def lifespan(app: FastAPI):
         # 8. PDF renderer shutdown (common)
         try:
             from app.services.pdf_renderer_service import pdf_renderer
+
             await pdf_renderer.shutdown()
             logger.info("PDF renderer shut down")
         except Exception as e:
@@ -834,6 +913,7 @@ async def lifespan(app: FastAPI):
         # 8. Close Redis client from task queue (common)
         try:
             from app.services.task_queue_service import task_queue
+
             await task_queue.close()
             logger.info("Task queue Redis client closed")
         except Exception as e:
@@ -842,8 +922,10 @@ async def lifespan(app: FastAPI):
         # 8b. Close AI resource-governance Redis pools.
         try:
             from app.core.ai_runtime_guard import ai_runtime_guard
+
             await ai_runtime_guard.close()
             from app.features.token_budget import close_token_budget
+
             await close_token_budget()
             logger.info("AI runtime resource pools closed")
         except Exception as e:
@@ -852,6 +934,7 @@ async def lifespan(app: FastAPI):
         # 9. Dispose SQLAlchemy engine
         try:
             from app.core.database import engine
+
             await engine.dispose()
             logger.info("SQLAlchemy engine disposed")
         except Exception as e:
@@ -861,6 +944,7 @@ async def lifespan(app: FastAPI):
         # Stop resource reservation orphan reconciler
         try:
             from app.core.resource_guard import resource_guard
+
             await resource_guard.stop_orphan_reconciler()
         except Exception as e:
             logger.warning("Orphan reconciler stop error: %s", e)
@@ -868,6 +952,7 @@ async def lifespan(app: FastAPI):
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)
         try:
             import multiprocessing
+
             children = multiprocessing.active_children()
             if children:
                 logger.warning(
@@ -954,7 +1039,9 @@ async def log_requests(request: Request, call_next):
 
         # Extract safe request metadata (no Authorization, no full query values)
         try:
-            query_keys = list(request.query_params.keys()) if request.query_params else []
+            query_keys = (
+                list(request.query_params.keys()) if request.query_params else []
+            )
         except Exception:
             query_keys = []
         client_ip = request.client.host if request.client else "-"
@@ -1006,8 +1093,6 @@ async def log_requests(request: Request, call_next):
         raise
     finally:
         clear_log_context()
-
-
 
 
 _PUBLIC_HTTP_MESSAGES: dict[int, str] = {
@@ -1063,7 +1148,9 @@ def _request_error_ids(request: Request) -> tuple[str, str]:
         context = get_log_context()
     except Exception:
         context = {}
-    request_id = str(context.get("request_id") or request.headers.get("x-request-id") or "")
+    request_id = str(
+        context.get("request_id") or request.headers.get("x-request-id") or ""
+    )
     trace_id = str(context.get("trace_id") or request.headers.get("x-trace-id") or "")
     return request_id, trace_id
 
@@ -1230,7 +1317,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         log_event(
             logging.getLogger("app.access"),
             "http.expected_error",
-            level=("info" if exc.status_code == 404 else "warning" if exc.status_code < 500 else "error"),
+            level=(
+                "info"
+                if exc.status_code == 404
+                else "warning"
+                if exc.status_code < 500
+                else "error"
+            ),
             method=request.method,
             path=request.url.path,
             status_code=exc.status_code,
@@ -1285,6 +1378,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     request_id, trace_id = _request_error_ids(request)
     try:
         from app.core.log_context import bind_log_context, log_event
+
         if trace_id or request_id:
             bind_log_context(trace_id=trace_id, request_id=request_id)
         log_event(
@@ -1331,7 +1425,9 @@ async def _event_loop_lag_monitor(interval: float = 1.0) -> None:
         scheduled = time.perf_counter()
         await asyncio.sleep(interval)
         actual = time.perf_counter()
-        _elapsed_monitor_event_loop_lag_ms = round((actual - scheduled - interval) * 1000, 2)
+        _elapsed_monitor_event_loop_lag_ms = round(
+            (actual - scheduled - interval) * 1000, 2
+        )
 
 
 def _get_db_pool_metrics() -> dict:
@@ -1407,6 +1503,7 @@ async def ready_health():
     # Draining is critical — stop the load balancer from sending requests
     try:
         from app.services.task_queue_worker import is_draining_v2
+
         draining = is_draining_v2()
     except Exception:
         draining = False
@@ -1430,9 +1527,17 @@ async def ready_health():
         checks["staging_space"] = staging_space
 
     critical_failures = [
-        k for k, v in checks.items()
-        if v == "unavailable" and k in (
-            "database", "redis", "alembic", "staging", "role_deps", "ocr",
+        k
+        for k, v in checks.items()
+        if v == "unavailable"
+        and k
+        in (
+            "database",
+            "redis",
+            "alembic",
+            "staging",
+            "role_deps",
+            "ocr",
         )
     ]
     # Draining is also critical — produces 503 even though value is "draining"
@@ -1474,14 +1579,19 @@ async def _check_redis() -> bool:
             DeploymentProfile,
             detect_deployment_profile,
         )
+
         try:
-            if detect_deployment_profile() == DeploymentProfile.CLOUD_API or _production_mode:
+            if (
+                detect_deployment_profile() == DeploymentProfile.CLOUD_API
+                or _production_mode
+            ):
                 return False
         except Exception:
             return False
         return True  # Not configured in dev — not a failure
     try:
         from app.core.cache import cache
+
         await cache.set("health:ping", "pong", ttl=10)
         pong = await cache.get("health:ping")
         return pong == "pong"
@@ -1496,9 +1606,9 @@ async def _check_alembic_head() -> bool:
         from alembic.script import ScriptDirectory
 
         async with async_session() as session:
-            row = (await session.execute(
-                text("SELECT version_num FROM alembic_version")
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar_one_or_none()
             db_revision = row or ""
 
         alembic_cfg = Config()
@@ -1517,6 +1627,7 @@ async def _check_alembic_head() -> bool:
 async def _check_staging() -> bool:
     """Check the staging directory is writable."""
     from app.services.staging_storage import _STAGING_DIR
+
     try:
         path = _STAGING_DIR
         path.mkdir(parents=True, exist_ok=True)
@@ -1531,11 +1642,14 @@ async def _check_staging_space() -> dict:
     Returns empty dict on failure (non-critical, informational only).
     """
     from app.services.staging_storage import _STAGING_DIR
+
     try:
         st = os.statvfs(str(_STAGING_DIR))
         free_bytes = st.f_frsize * st.f_bavail
         total_bytes = st.f_frsize * st.f_blocks
-        used_percent = ((total_bytes - free_bytes) / total_bytes * 100) if total_bytes > 0 else 0
+        used_percent = (
+            ((total_bytes - free_bytes) / total_bytes * 100) if total_bytes > 0 else 0
+        )
         return {
             "staging_free_bytes": free_bytes,
             "staging_total_bytes": total_bytes,
@@ -1575,6 +1689,7 @@ async def _check_role_deps() -> bool:
         # Draining check
         try:
             from app.services.task_queue_worker import is_draining_v2
+
             if is_draining_v2():
                 logger.warning("role_deps: worker is draining")
                 return False
@@ -1595,7 +1710,11 @@ async def _check_role_deps() -> bool:
         # Check audit log cleanup scheduler running (if enabled)
         try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-            if settings.AUDIT_LOG_CLEANUP_ENABLED and not audit_log_cleanup_scheduler._running:
+
+            if (
+                settings.AUDIT_LOG_CLEANUP_ENABLED
+                and not audit_log_cleanup_scheduler._running
+            ):
                 logger.warning("role_deps: audit log cleanup scheduler not running")
                 return False
         except ImportError:
@@ -1609,17 +1728,22 @@ async def _check_role_deps() -> bool:
             from app.services.recommendation_metrics_scheduler import (
                 recommendation_metrics_scheduler,
             )
+
             if (
                 settings.RECOMMENDATION_METRICS_AGG_ENABLED
                 and not recommendation_metrics_scheduler._running
             ):
-                logger.warning("role_deps: recommendation metrics scheduler not running")
+                logger.warning(
+                    "role_deps: recommendation metrics scheduler not running"
+                )
                 return False
         except ImportError:
             logger.warning("role_deps: recommendation_metrics_scheduler import failed")
             return False
         except Exception as e:
-            logger.warning("role_deps: recommendation metrics scheduler check error: %s", e)
+            logger.warning(
+                "role_deps: recommendation metrics scheduler check error: %s", e
+            )
             return False
 
         return True
@@ -1693,6 +1817,7 @@ async def _check_ocr_remote_connectivity() -> bool:
         return True
     try:
         import httpx
+
         url = settings.OCR_REMOTE_URL
         timeout = httpx.Timeout(settings.OCR_REMOTE_HEALTH_TIMEOUT_SEC)
         from app.core.log_context import get_trace_headers
@@ -1721,6 +1846,7 @@ async def _check_queue() -> str | None:
         return None
     try:
         from app.services.task_queue_service import task_queue
+
         total = 0
         for tt in ("import_pipeline", "image_pipeline", "excel_pipeline"):
             total += await task_queue.ready_length_v2(tt)
@@ -1778,14 +1904,21 @@ async def metrics_endpoint(request: Request):
 
     # ── Task queue metrics ──
     task_types = [
-        "import_pipeline", "image_pipeline", "excel_pipeline",
-        "resume_pipeline", "admin_resume", "batch_image",
-        "formula_batch", "prewarm_analysis", "export_mistakes",
+        "import_pipeline",
+        "image_pipeline",
+        "excel_pipeline",
+        "resume_pipeline",
+        "admin_resume",
+        "batch_image",
+        "formula_batch",
+        "prewarm_analysis",
+        "export_mistakes",
         "answer_projection",
         "error_diagnosis",
     ]
     try:
         from app.services.task_queue_service import task_queue
+
         for tt in task_types:
             ready = await task_queue.ready_length_v2(tt)
             processing = await task_queue.processing_length_v2(tt)
@@ -1809,105 +1942,133 @@ async def metrics_endpoint(request: Request):
             _append(f'task_queue_oldest_ready_age_seconds{{type="{tt}"}} 0')
 
     # Cumulative counters from queue_metrics dict
-    for key in ("lease_renewal_failure", "duplicate_enqueue_prevented",
-                "reaper_reclaimed", "owner_fencing_rejected",
-                "enqueue_rejected", "dead_purge_count", "corrupt_cleaned"):
-        _append(f'task_queue_{key} {queue_metrics.get(key, 0)}')
+    for key in (
+        "lease_renewal_failure",
+        "duplicate_enqueue_prevented",
+        "reaper_reclaimed",
+        "owner_fencing_rejected",
+        "enqueue_rejected",
+        "dead_purge_count",
+        "corrupt_cleaned",
+    ):
+        _append(f"task_queue_{key} {queue_metrics.get(key, 0)}")
 
     # ── System resource metrics ──
     sys_metrics = resource_guard.get_system_metrics()
-    _append(f'system_rss_mb {sys_metrics.rss_mb:.1f}')
-    _append(f'system_available_memory_mb {sys_metrics.available_memory_mb:.1f}')
-    _append(f'system_active_pipelines {sys_metrics.active_pipelines}')
-    _append(f'system_event_loop_lag_ms {_elapsed_monitor_event_loop_lag_ms:.2f}')
+    _append(f"system_rss_mb {sys_metrics.rss_mb:.1f}")
+    _append(f"system_available_memory_mb {sys_metrics.available_memory_mb:.1f}")
+    _append(f"system_active_pipelines {sys_metrics.active_pipelines}")
+    _append(f"system_event_loop_lag_ms {_elapsed_monitor_event_loop_lag_ms:.2f}")
 
     # ── OCR Gateway / circuit breaker metrics ──
     try:
         from app.services.ocr_service import get_gateway
+
         gateway = get_gateway()
         if gateway is not None:
             wm = gateway.worker_metrics
-            _append(f'ocr_circuit_state{{backend="{wm.get("backend","?")}"}} 1')
+            _append(f'ocr_circuit_state{{backend="{wm.get("backend", "?")}"}} 1')
             state = wm.get("circuit_state", "unknown")
-            _append(f'ocr_circuit{{backend="{wm.get("backend","?")}",state="{state}"}} 1')
-            _append(f'ocr_circuit_breaker_rejected_total '
-                    f'{wm.get("circuit_breaker_rejected", 0)}')
-            _append(f'ocr_circuit_breaker_trips_total '
-                    f'{wm.get("circuit_breaker_trips", 0)}')
-            _append(f'ocr_accepted_total {wm.get("accepted", 0)}')
-            _append(f'ocr_failed_total {wm.get("failed", 0)}')
-            _append(f'ocr_timed_out_total {wm.get("timed_out", 0)}')
-            _append(f'ocr_connection_errors_total {wm.get("connection_errors", 0)}')
+            _append(
+                f'ocr_circuit{{backend="{wm.get("backend", "?")}",state="{state}"}} 1'
+            )
+            _append(
+                f"ocr_circuit_breaker_rejected_total "
+                f"{wm.get('circuit_breaker_rejected', 0)}"
+            )
+            _append(
+                f"ocr_circuit_breaker_trips_total {wm.get('circuit_breaker_trips', 0)}"
+            )
+            _append(f"ocr_accepted_total {wm.get('accepted', 0)}")
+            _append(f"ocr_failed_total {wm.get('failed', 0)}")
+            _append(f"ocr_timed_out_total {wm.get('timed_out', 0)}")
+            _append(f"ocr_connection_errors_total {wm.get('connection_errors', 0)}")
     except Exception:
-        _append('ocr_circuit 0')
+        _append("ocr_circuit 0")
 
     # ── AI runtime / cost guard metrics ──
     try:
         from app.core.ai_runtime_guard import ai_runtime_guard
+
         am = ai_runtime_guard.metrics_snapshot()
-        _append(f'ai_requests_total {am.get("requests", 0)}')
-        _append(f'ai_success_total {am.get("success", 0)}')
-        _append(f'ai_failures_total {am.get("failures", 0)}')
-        _append(f'ai_tokens_total {am.get("tokens", 0)}')
-        _append(f'ai_in_flight {am.get("in_flight", 0)}')
-        _append(f'ai_queue_wait_ms_total {am.get("queue_wait_ms_total", 0)}')
-        _append(f'ai_queue_wait_ms_avg {am.get("queue_wait_ms_avg", 0)}')
-        _append(f'ai_rejected_total{{reason="rate_limit"}} {am.get("rejected_rate_limit", 0)}')
-        _append(f'ai_rejected_total{{reason="overload"}} {am.get("rejected_overload", 0)}')
-        _append(f'ai_rejected_total{{reason="circuit"}} {am.get("rejected_circuit", 0)}')
-        _append(f'ai_rejected_total{{reason="prompt_too_large"}} {am.get("rejected_prompt_too_large", 0)}')
-        _append(f'ai_circuit_trips_total {am.get("circuit_trips", 0)}')
-        _append(f'ai_open_circuits {am.get("open_circuits", 0)}')
+        _append(f"ai_requests_total {am.get('requests', 0)}")
+        _append(f"ai_success_total {am.get('success', 0)}")
+        _append(f"ai_failures_total {am.get('failures', 0)}")
+        _append(f"ai_tokens_total {am.get('tokens', 0)}")
+        _append(f"ai_in_flight {am.get('in_flight', 0)}")
+        _append(f"ai_queue_wait_ms_total {am.get('queue_wait_ms_total', 0)}")
+        _append(f"ai_queue_wait_ms_avg {am.get('queue_wait_ms_avg', 0)}")
+        _append(
+            f'ai_rejected_total{{reason="rate_limit"}} {am.get("rejected_rate_limit", 0)}'
+        )
+        _append(
+            f'ai_rejected_total{{reason="overload"}} {am.get("rejected_overload", 0)}'
+        )
+        _append(
+            f'ai_rejected_total{{reason="circuit"}} {am.get("rejected_circuit", 0)}'
+        )
+        _append(
+            f'ai_rejected_total{{reason="prompt_too_large"}} {am.get("rejected_prompt_too_large", 0)}'
+        )
+        _append(f"ai_circuit_trips_total {am.get('circuit_trips', 0)}")
+        _append(f"ai_open_circuits {am.get('open_circuits', 0)}")
         from app.features.token_budget import get_shared_token_usage_snapshot
+
         budget = await get_shared_token_usage_snapshot()
-        _append(f'ai_pipeline_tokens_daily {budget.get("daily", 0)}')
-        _append(f'ai_pipeline_tokens_monthly {budget.get("monthly", 0)}')
-        _append(f'ai_pipeline_token_budget_shared {1 if budget.get("shared") else 0}')
+        _append(f"ai_pipeline_tokens_daily {budget.get('daily', 0)}")
+        _append(f"ai_pipeline_tokens_monthly {budget.get('monthly', 0)}")
+        _append(f"ai_pipeline_token_budget_shared {1 if budget.get('shared') else 0}")
     except Exception:
-        _append('ai_runtime_metrics_available 0')
+        _append("ai_runtime_metrics_available 0")
 
     # ── Staging storage metrics ──
     try:
         from app.services.staging_storage import get_metrics
+
         sm = get_metrics()
-        _append(f'staging_disk_usage_bytes {sm.get("disk_usage_bytes", 0)}')
-        _append(f'staging_object_count {sm.get("object_count", 0)}')
-        _append(f'staging_leased_count {sm.get("leased_count", 0)}')
+        _append(f"staging_disk_usage_bytes {sm.get('disk_usage_bytes', 0)}")
+        _append(f"staging_object_count {sm.get('object_count', 0)}")
+        _append(f"staging_leased_count {sm.get('leased_count', 0)}")
     except Exception:
-        _append('staging_disk_usage_bytes 0')
+        _append("staging_disk_usage_bytes 0")
 
     # ── DB pool metrics ──
     pool_stats = _get_db_pool_metrics()
     for k, v in pool_stats.items():
         if isinstance(v, (int, float)):
-            _append(f'db_pool_{k} {v}')
+            _append(f"db_pool_{k} {v}")
 
     # ── DB query performance metrics ──
     try:
         from app.core.database import get_db_query_metrics
+
         qm = get_db_query_metrics()
-        _append(f'db_query_total {qm.get("total", 0)}')
-        _append(f'db_slow_query_total {qm.get("slow", 0)}')
-        _append(f'db_query_duration_ms_total {qm.get("duration_ms_total", 0)}')
-        _append(f'db_query_duration_ms_avg {qm.get("duration_ms_avg", 0)}')
-        _append(f'db_query_duration_ms_max {qm.get("duration_ms_max", 0)}')
+        _append(f"db_query_total {qm.get('total', 0)}")
+        _append(f"db_slow_query_total {qm.get('slow', 0)}")
+        _append(f"db_query_duration_ms_total {qm.get('duration_ms_total', 0)}")
+        _append(f"db_query_duration_ms_avg {qm.get('duration_ms_avg', 0)}")
+        _append(f"db_query_duration_ms_max {qm.get('duration_ms_max', 0)}")
     except Exception:
-        _append('db_query_metrics_available 0')
+        _append("db_query_metrics_available 0")
 
     # ── Process info ──
-    _append(f'process_info{{role="{settings.PROCESS_ROLE}",env="{settings.APP_ENV}"}} 1')
-    _append(f'process_uptime_seconds {time.time() - _startup_ts:.0f}')
+    _append(
+        f'process_info{{role="{settings.PROCESS_ROLE}",env="{settings.APP_ENV}"}} 1'
+    )
+    _append(f"process_uptime_seconds {time.time() - _startup_ts:.0f}")
 
     # ── SSE connections ──
     # ── SSE connections ──
     try:
         from app.services.sse_pubsub import check_health as _sse_health
+
         _sse_ok = await _sse_health()
         _append(f"sse_healthy {1 if _sse_ok else 0}")
     except Exception:
         _append("sse_healthy 0")
     try:
         from app.features import batch_image_import_service as _batch_svc_mod
+
         _active_sse = getattr(_batch_svc_mod, "_active_sse_connections", {})
         _total_sse = sum(_active_sse.values()) if isinstance(_active_sse, dict) else 0
         _append(f"sse_active_connections {_total_sse}")
@@ -1915,6 +2076,7 @@ async def metrics_endpoint(request: Request):
         _append("sse_active_connections 0")
     try:
         from app.api.v1.admin_imports import _sse_metrics as _sse_m
+
         if isinstance(_sse_m, dict):
             for _sk, _sv in _sse_m.items():
                 _append(f"sse_{_sk} {_sv}")
@@ -1924,23 +2086,28 @@ async def metrics_endpoint(request: Request):
     # ── Draining status ──
     try:
         from app.services.task_queue_worker import is_draining_v2
-        _append(f'worker_draining {1 if is_draining_v2() else 0}')
+
+        _append(f"worker_draining {1 if is_draining_v2() else 0}")
     except Exception:
         _append("worker_draining 0")
 
     # ── Scheduler running state ──
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-        _append(f'scheduler_running{{name="audit_cleanup"}} {1 if audit_log_cleanup_scheduler._running else 0}')
+
+        _append(
+            f'scheduler_running{{name="audit_cleanup"}} {1 if audit_log_cleanup_scheduler._running else 0}'
+        )
     except Exception:
         _append('scheduler_running{name="audit_cleanup"} 0')
     try:
         from app.services.recommendation_metrics_scheduler import (
             recommendation_metrics_scheduler,
         )
+
         _append(
             f'scheduler_running{{name="recommendation_metrics"}} '
-            f'{1 if recommendation_metrics_scheduler._running else 0}'
+            f"{1 if recommendation_metrics_scheduler._running else 0}"
         )
     except Exception:
         _append('scheduler_running{name="recommendation_metrics"} 0')
@@ -1948,10 +2115,11 @@ async def metrics_endpoint(request: Request):
     # ── Staging cleanup stats ──
     try:
         from app.services.staging_storage import get_metrics as _staging_metrics
+
         _sm = _staging_metrics()
-        _append(f'staging_orphan_count {_sm.get("orphan_count", 0)}')
+        _append(f"staging_orphan_count {_sm.get('orphan_count', 0)}")
     except Exception:
-        _append('staging_orphan_count 0')
+        _append("staging_orphan_count 0")
 
     # Prometheus text format requires trailing newline
     lines.append("")
@@ -1970,6 +2138,18 @@ os.makedirs("static/avatars", exist_ok=True)
 import mimetypes
 
 mimetypes.add_type("image/webp", ".webp")
-app.mount("/static/formulas", StaticFiles(directory="static/formulas", html=False), name="static_formulas")
-app.mount("/static/question-assets", StaticFiles(directory="static/question-assets", html=False), name="static_question_assets")
-app.mount("/static/avatars", StaticFiles(directory="static/avatars", html=False), name="static_avatars")
+app.mount(
+    "/static/formulas",
+    StaticFiles(directory="static/formulas", html=False),
+    name="static_formulas",
+)
+app.mount(
+    "/static/question-assets",
+    StaticFiles(directory="static/question-assets", html=False),
+    name="static_question_assets",
+)
+app.mount(
+    "/static/avatars",
+    StaticFiles(directory="static/avatars", html=False),
+    name="static_avatars",
+)

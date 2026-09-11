@@ -41,7 +41,13 @@ class ExamPaper(Base):
             name="ck_exam_papers_duration_positive",
         ),
         Index("ix_exam_papers_status_active_year", "status", "is_active", "year"),
-        Index("ix_exam_papers_coverage_type_year_status", "paper_type", "year", "status", "is_active"),
+        Index(
+            "ix_exam_papers_coverage_type_year_status",
+            "paper_type",
+            "year",
+            "status",
+            "is_active",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -50,14 +56,26 @@ class ExamPaper(Base):
     year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True, index=True)
     source: Mapped[str | None] = mapped_column(String(128), nullable=True)
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft", server_default="draft")
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="draft", server_default="draft"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
-    updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id"), nullable=True
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
     items: Mapped[list["ExamPaperQuestion"]] = relationship(
         back_populates="paper",
@@ -75,9 +93,15 @@ class ExamPaper(Base):
 class ExamPaperQuestion(Base):
     __tablename__ = "exam_paper_questions"
     __table_args__ = (
-        UniqueConstraint("paper_id", "position", name="uq_exam_paper_questions_position"),
-        UniqueConstraint("paper_id", "question_id", name="uq_exam_paper_questions_question"),
-        CheckConstraint("position > 0", name="ck_exam_paper_questions_position_positive"),
+        UniqueConstraint(
+            "paper_id", "position", name="uq_exam_paper_questions_position"
+        ),
+        UniqueConstraint(
+            "paper_id", "question_id", name="uq_exam_paper_questions_question"
+        ),
+        CheckConstraint(
+            "position > 0", name="ck_exam_paper_questions_position_positive"
+        ),
         CheckConstraint("score > 0", name="ck_exam_paper_questions_score_positive"),
         Index("ix_exam_paper_questions_paper_position", "paper_id", "position"),
     )
@@ -122,10 +146,18 @@ class ExamAttempt(Base):
             "status IN ('in_progress','submitted','expired','abandoned')",
             name="ck_exam_attempts_status",
         ),
-        CheckConstraint("paper_version >= 1", name="ck_exam_attempts_paper_version_positive"),
-        CheckConstraint("duration_sec >= 0", name="ck_exam_attempts_duration_nonnegative"),
-        CheckConstraint("answered_count >= 0", name="ck_exam_attempts_answered_nonnegative"),
-        CheckConstraint("correct_count >= 0", name="ck_exam_attempts_correct_nonnegative"),
+        CheckConstraint(
+            "paper_version >= 1", name="ck_exam_attempts_paper_version_positive"
+        ),
+        CheckConstraint(
+            "duration_sec >= 0", name="ck_exam_attempts_duration_nonnegative"
+        ),
+        CheckConstraint(
+            "answered_count >= 0", name="ck_exam_attempts_answered_nonnegative"
+        ),
+        CheckConstraint(
+            "correct_count >= 0", name="ck_exam_attempts_correct_nonnegative"
+        ),
         CheckConstraint("score >= 0", name="ck_exam_attempts_score_nonnegative"),
         UniqueConstraint("user_id", "request_id", name="uq_exam_attempts_user_request"),
         Index(
@@ -136,8 +168,12 @@ class ExamAttempt(Base):
             postgresql_where=text("status = 'in_progress'"),
             sqlite_where=text("status = 'in_progress'"),
         ),
-        Index("ix_exam_attempts_user_status_started", "user_id", "status", "started_at"),
-        Index("ix_exam_attempts_user_paper_started", "user_id", "paper_id", "started_at"),
+        Index(
+            "ix_exam_attempts_user_status_started", "user_id", "status", "started_at"
+        ),
+        Index(
+            "ix_exam_attempts_user_paper_started", "user_id", "paper_id", "started_at"
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -156,17 +192,31 @@ class ExamAttempt(Base):
         nullable=False,
         index=True,
     )
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="in_progress", server_default="in_progress")
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="in_progress", server_default="in_progress"
+    )
     request_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    answered_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    correct_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    score: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False, default=0, server_default="0")
+    duration_sec: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    answered_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    correct_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    score: Mapped[Decimal] = mapped_column(
+        Numeric(8, 2), nullable=False, default=0, server_default="0"
+    )
     result_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
     paper: Mapped[ExamPaper] = relationship(back_populates="attempts", lazy="noload")
     answers: Mapped[list["ExamAnswer"]] = relationship(
@@ -186,7 +236,9 @@ class ExamAnswer(Base):
             name="uq_exam_answers_attempt_item",
         ),
         CheckConstraint("used_time >= 0", name="ck_exam_answers_used_time_nonnegative"),
-        CheckConstraint("score IS NULL OR score >= 0", name="ck_exam_answers_score_nonnegative"),
+        CheckConstraint(
+            "score IS NULL OR score >= 0", name="ck_exam_answers_score_nonnegative"
+        ),
         Index("ix_exam_answers_attempt_item", "attempt_id", "exam_paper_question_id"),
         Index("ix_exam_answers_revision", "id", "answer_revision"),
     )
@@ -220,11 +272,17 @@ class ExamAnswer(Base):
         index=True,
     )
     selected_answer: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    answer_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    answer_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     score: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
-    used_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    marked_for_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    used_time: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    marked_for_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     practice_record_id: Mapped[int | None] = mapped_column(
         ForeignKey("practice_records.id", ondelete="SET NULL"),
@@ -233,6 +291,8 @@ class ExamAnswer(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
     attempt: Mapped[ExamAttempt] = relationship(back_populates="answers", lazy="noload")

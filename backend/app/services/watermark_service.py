@@ -115,7 +115,11 @@ async def create_rule(
     await db.flush()
     await db.refresh(rule)
     await write_admin_audit(
-        db, operator, "watermark_rule.create", "watermark_rule", rule.id,
+        db,
+        operator,
+        "watermark_rule.create",
+        "watermark_rule",
+        rule.id,
         detail={"pattern": rule.pattern, "rule_type": rule.rule_type},
         request=request,
     )
@@ -141,7 +145,12 @@ async def update_rule(
     if not rule:
         return None
 
-    before = {"pattern": rule.pattern, "rule_type": rule.rule_type, "description": rule.description, "is_active": rule.is_active}
+    before = {
+        "pattern": rule.pattern,
+        "rule_type": rule.rule_type,
+        "description": rule.description,
+        "is_active": rule.is_active,
+    }
 
     if pattern is not None:
         if (rule_type or rule.rule_type) == "regex":
@@ -154,16 +163,30 @@ async def update_rule(
     if is_active is not None:
         rule.is_active = is_active
 
-    after = {"pattern": rule.pattern, "rule_type": rule.rule_type, "description": rule.description, "is_active": rule.is_active}
+    after = {
+        "pattern": rule.pattern,
+        "rule_type": rule.rule_type,
+        "description": rule.description,
+        "is_active": rule.is_active,
+    }
 
     await write_admin_audit(
-        db, operator, "watermark_rule.update", "watermark_rule", rule.id,
+        db,
+        operator,
+        "watermark_rule.update",
+        "watermark_rule",
+        rule.id,
         detail={"before": before, "after": after},
         request=request,
     )
     await db.commit()
     invalidate_cache()
-    return {"id": rule.id, "pattern": rule.pattern, "rule_type": rule.rule_type, "is_active": rule.is_active}
+    return {
+        "id": rule.id,
+        "pattern": rule.pattern,
+        "rule_type": rule.rule_type,
+        "is_active": rule.is_active,
+    }
 
 
 async def delete_rule(
@@ -180,7 +203,11 @@ async def delete_rule(
         return False
 
     await write_admin_audit(
-        db, operator, "watermark_rule.delete", "watermark_rule", rule.id,
+        db,
+        operator,
+        "watermark_rule.delete",
+        "watermark_rule",
+        rule.id,
         detail={"pattern": rule.pattern, "rule_type": rule.rule_type},
         request=request,
     )

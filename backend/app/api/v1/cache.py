@@ -16,7 +16,9 @@ async def cache_stats(
 
 @router.delete("/clear")
 async def cache_clear(
-    pattern: str = Query("app:", description="缓存 key 模式（限制应用命名空间，默认 app:）"),
+    pattern: str = Query(
+        "app:", description="缓存 key 模式（限制应用命名空间，默认 app:）"
+    ),
     _=Depends(require_permissions("cache:write")),
 ):
     """清除指定模式的应用缓存。

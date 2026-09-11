@@ -2,7 +2,6 @@ from app.schemas.base import BaseModel
 from datetime import datetime
 
 
-
 class TagCreate(BaseModel):
     name: str
     subject_id: int

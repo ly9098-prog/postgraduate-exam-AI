@@ -9,6 +9,7 @@ from app.core.database import Base
 
 class Tag(Base):
     """轻量标签。保留 parent_id 供后续扩展层级，MVP 暂不使用。"""
+
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

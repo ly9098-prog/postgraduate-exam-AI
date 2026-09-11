@@ -56,7 +56,9 @@ def _get_retention_days() -> int:
 
 
 def raise_export_error(
-    status_code: int, error_code: ExportErrorCode, message: str,
+    status_code: int,
+    error_code: ExportErrorCode,
+    message: str,
 ):
     """Raise a structured ``ExportDomainError``.
 
@@ -78,7 +80,9 @@ def ensure_format_allowed(file_format: str):
         from app.core.config import settings
 
         if file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
-            raise_export_error(403, ExportErrorCode.DOCX_DISABLED, "Word 导出功能已关闭")
+            raise_export_error(
+                403, ExportErrorCode.DOCX_DISABLED, "Word 导出功能已关闭"
+            )
 
 
 def log_export_config_on_startup():
@@ -98,7 +102,9 @@ def log_export_config_on_startup():
     )
 
 
-def validate_export_range(range_type: str, selected_ids: list[int] | None, count: int) -> None:
+def validate_export_range(
+    range_type: str, selected_ids: list[int] | None, count: int
+) -> None:
     """Validate the export range before creating a task.
 
     Raises ``HTTPException`` if the range is invalid:

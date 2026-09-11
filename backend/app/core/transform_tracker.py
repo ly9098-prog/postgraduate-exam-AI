@@ -47,11 +47,14 @@ def _rotate_matrix(angle_deg: float, cx: float = 0, cy: float = 0) -> np.ndarray
     sin_a = np.sin(rad)
     # Translate to origin, rotate, translate back
     t1 = _translate_matrix(-cx, -cy)
-    r = np.array([
-        [cos_a, -sin_a, 0],
-        [sin_a, cos_a, 0],
-        [0, 0, 1],
-    ], dtype=np.float64)
+    r = np.array(
+        [
+            [cos_a, -sin_a, 0],
+            [sin_a, cos_a, 0],
+            [0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
     t2 = _translate_matrix(cx, cy)
     return t2 @ r @ t1
 
@@ -124,21 +127,24 @@ class TransformTracker:
     def record_crop(self, left: float, top: float, **_kw: Any) -> None:
         """Record a crop operation (origin shift by -left, -top)."""
         self.record(
-            "crop", _translate_matrix(-left, -top),
+            "crop",
+            _translate_matrix(-left, -top),
             description=f"crop offset ({left}, {top})",
         )
 
     def record_resize(self, scale_x: float, scale_y: float, **_kw: Any) -> None:
         """Record a resize operation."""
         self.record(
-            "resize", _scale_matrix(scale_x, scale_y),
+            "resize",
+            _scale_matrix(scale_x, scale_y),
             description=f"resize ({scale_x:.4f}, {scale_y:.4f})",
         )
 
     def record_rotate(self, angle_deg: float, cx: float = 0, cy: float = 0) -> None:
         """Record a rotation operation."""
         self.record(
-            "rotate", _rotate_matrix(angle_deg, cx, cy),
+            "rotate",
+            _rotate_matrix(angle_deg, cx, cy),
             description=f"rotate {angle_deg:.1f}deg around ({cx}, {cy})",
         )
 
@@ -153,7 +159,9 @@ class TransformTracker:
         pt = inv @ np.array([x, y, 1], dtype=np.float64)
         return (float(pt[0] / pt[2]), float(pt[1] / pt[2]))
 
-    def map_bbox_back(self, bbox: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    def map_bbox_back(
+        self, bbox: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float]:
         """Map a BBox (x0, y0, x1, y1) back to original coordinates."""
         x0, y0 = self.map_back(bbox[0], bbox[1])
         x1, y1 = self.map_back(bbox[2], bbox[3])

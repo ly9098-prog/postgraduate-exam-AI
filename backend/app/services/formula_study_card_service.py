@@ -17,7 +17,11 @@ STUDY_CARD_TYPE_META: dict[str, dict[str, str]] = {
     "formula": {"name": "公式", "short_name": "公式", "template": "standard"},
     "definition": {"name": "定义", "short_name": "定义", "template": "memory"},
     "complexity": {"name": "算法复杂度", "short_name": "复杂度", "template": "rule"},
-    "protocol_rule": {"name": "协议字段 / 规则", "short_name": "协议规则", "template": "rule"},
+    "protocol_rule": {
+        "name": "协议字段 / 规则",
+        "short_name": "协议规则",
+        "template": "rule",
+    },
     "key_conclusion": {"name": "高频结论", "short_name": "结论", "template": "memory"},
     "confusable": {"name": "易混概念", "short_name": "易混", "template": "contrast"},
     "trap": {"name": "典型陷阱", "short_name": "陷阱", "template": "trap"},

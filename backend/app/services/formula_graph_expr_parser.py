@@ -17,41 +17,45 @@ MAX_AST_NODES = 100
 MAX_AST_DEPTH = 20
 
 # ── Allowed AST node types ──
-ALLOWED_AST_TYPES = frozenset({
-    ast.Expression,
-    ast.Name,
-    ast.Constant,
-    ast.UnaryOp,
-    ast.BinOp,
-    ast.Add,
-    ast.Sub,
-    ast.Mult,
-    ast.Div,
-    ast.Pow,
-    ast.Mod,
-    ast.USub,
-    ast.UAdd,
-    ast.Call,
-    ast.Load,
-})
+ALLOWED_AST_TYPES = frozenset(
+    {
+        ast.Expression,
+        ast.Name,
+        ast.Constant,
+        ast.UnaryOp,
+        ast.BinOp,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.Pow,
+        ast.Mod,
+        ast.USub,
+        ast.UAdd,
+        ast.Call,
+        ast.Load,
+    }
+)
 
 # ── Forbidden AST node types (explicit check) ──
-FORBIDDEN_AST_TYPES = frozenset({
-    ast.Attribute,
-    ast.Subscript,
-    ast.Lambda,
-    ast.List,
-    ast.Dict,
-    ast.Set,
-    ast.Tuple,
-    ast.ListComp,
-    ast.SetComp,
-    ast.DictComp,
-    ast.Starred,
-    ast.Yield,
-    ast.YieldFrom,
-    ast.Await,
-})
+FORBIDDEN_AST_TYPES = frozenset(
+    {
+        ast.Attribute,
+        ast.Subscript,
+        ast.Lambda,
+        ast.List,
+        ast.Dict,
+        ast.Set,
+        ast.Tuple,
+        ast.ListComp,
+        ast.SetComp,
+        ast.DictComp,
+        ast.Starred,
+        ast.Yield,
+        ast.YieldFrom,
+        ast.Await,
+    }
+)
 
 # ── Allowed symbols for sympy ──
 SAFE_SYMPY_NAMESPACE = {
@@ -115,14 +119,10 @@ def validate_expression(expr_str: str) -> None:
         node_count += 1
 
         if node_count > MAX_AST_NODES:
-            raise ValueError(
-                f"Expression too complex (>{MAX_AST_NODES} AST nodes)"
-            )
+            raise ValueError(f"Expression too complex (>{MAX_AST_NODES} AST nodes)")
 
         if depth > MAX_AST_DEPTH:
-            raise ValueError(
-                f"Expression nesting too deep (>{MAX_AST_DEPTH} levels)"
-            )
+            raise ValueError(f"Expression nesting too deep (>{MAX_AST_DEPTH} levels)")
 
         node_type = type(node)
 
@@ -151,7 +151,9 @@ def validate_expression(expr_str: str) -> None:
             if isinstance(node.value, str):
                 raise ValueError("String literals are not allowed")
             if isinstance(node.value, (complex, bytes)):
-                raise ValueError(f"Unsupported constant type: {type(node.value).__name__}")
+                raise ValueError(
+                    f"Unsupported constant type: {type(node.value).__name__}"
+                )
             if isinstance(node.value, float) and (node.value != node.value):
                 raise ValueError("NaN is not allowed in expressions")
 
@@ -193,7 +195,9 @@ def parse_expression(expr_str: str) -> sp.Expr:
         raise ValueError(f"Cannot parse expression '{expr_str}': {e}")
 
     if not isinstance(expr, sp.Expr):
-        raise ValueError(f"Expression '{expr_str}' did not produce a valid symbolic expression")
+        raise ValueError(
+            f"Expression '{expr_str}' did not produce a valid symbolic expression"
+        )
 
     return expr
 

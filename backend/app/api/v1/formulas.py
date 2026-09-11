@@ -56,12 +56,14 @@ def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
             roots.append(cat_dict)
         elif parent_id in cat_map:
             cat_map[parent_id]["children"].append(cat_dict)
+
     # Sort children at each level
     def _sort_tree(nodes):
         nodes.sort(key=lambda n: n["sort_order"])
         for node in nodes:
             _sort_tree(node["children"])
         return nodes
+
     return _sort_tree(roots)
 
 
@@ -120,6 +122,7 @@ async def _card_to_response(
         from app.services.formula_graph_asset_service import (
             get_effective_graph_asset_for_card,
         )
+
         effective = await get_effective_graph_asset_for_card(db, card.id)
         if effective:
             graph_asset_resp = FormulaGraphAssetResponse.model_validate(effective)
@@ -128,9 +131,9 @@ async def _card_to_response(
     graph_specs = (specs_map or {}).get(card.id)
     if graph_specs is None:
         specs_result = await db.execute(
-            select(FormulaGraphSpec).where(
-                FormulaGraphSpec.formula_card_id == card.id
-            ).order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
+            select(FormulaGraphSpec)
+            .where(FormulaGraphSpec.formula_card_id == card.id)
+            .order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
         )
         graph_specs = [_graph_spec_to_dict(s) for s in specs_result.scalars().all()]
 
@@ -156,14 +159,22 @@ async def _card_to_response(
         "graph_asset": graph_asset_resp,
         # Flat legacy fields for miniprogram compatibility
         "graph_image_url": graph_asset_resp.image_url if graph_asset_resp else None,
-        "graph_thumbnail_url": graph_asset_resp.thumbnail_url if graph_asset_resp else None,
+        "graph_thumbnail_url": graph_asset_resp.thumbnail_url
+        if graph_asset_resp
+        else None,
         "sort_order": card.sort_order,
         "status": card.status,
         "tags": tags,
-        "published_at": serialize_utc_datetime(card.published_at) if card.published_at else None,
+        "published_at": serialize_utc_datetime(card.published_at)
+        if card.published_at
+        else None,
         "version": card.version,
-        "created_at": serialize_utc_datetime(card.created_at) if card.created_at else None,
-        "updated_at": serialize_utc_datetime(card.updated_at) if card.updated_at else None,
+        "created_at": serialize_utc_datetime(card.created_at)
+        if card.created_at
+        else None,
+        "updated_at": serialize_utc_datetime(card.updated_at)
+        if card.updated_at
+        else None,
         # Multi-graph support: stable graph specs with independent assets
         "graph_specs": graph_specs,
     }
@@ -207,8 +218,7 @@ def _apply_library_type_filter(query, library_type: str | None):
 
     if library_type == "function_graph":
         exists_subq = (
-            select(FormulaGraphAsset.id)
-            .where(
+            select(FormulaGraphAsset.id).where(
                 FormulaGraphAsset.formula_card_id == FormulaCard.id,
                 FormulaGraphAsset.image_url.isnot(None),
             )
@@ -231,6 +241,7 @@ def _apply_library_type_filter(query, library_type: str | None):
 
 # ── Catalog ──
 
+
 @router.get("/catalog")
 async def get_formula_catalog(
     library_type: str | None = Query(None),
@@ -249,15 +260,12 @@ async def get_formula_catalog(
     tree = _build_category_tree(categories)
 
     # Count published + non-deleted cards per category_id
-    count_query = (
-        select(
-            FormulaCard.category_id,
-            func.count(FormulaCard.id).label("cnt"),
-        )
-        .where(
-            FormulaCard.status == "published",
-            FormulaCard.deleted_at.is_(None),
-        )
+    count_query = select(
+        FormulaCard.category_id,
+        func.count(FormulaCard.id).label("cnt"),
+    ).where(
+        FormulaCard.status == "published",
+        FormulaCard.deleted_at.is_(None),
     )
 
     scope_values = _exam_scope_values(exam_scope)
@@ -269,9 +277,8 @@ async def get_formula_catalog(
     count_query = _apply_study_card_type_filter(count_query, study_card_type)
 
     if favorite_only and current_user:
-        fav_subq = (
-            select(UserFormulaFavorite.formula_card_id)
-            .where(UserFormulaFavorite.user_id == current_user.id)
+        fav_subq = select(UserFormulaFavorite.formula_card_id).where(
+            UserFormulaFavorite.user_id == current_user.id
         )
         count_query = count_query.where(FormulaCard.id.in_(fav_subq))
 
@@ -296,8 +303,7 @@ async def get_formula_catalog(
     for subject in tree:
         if subject.get("children"):
             subject["children"] = [
-                ch for ch in subject["children"]
-                if ch.get("available_count", 0) > 0
+                ch for ch in subject["children"] if ch.get("available_count", 0) > 0
             ]
 
     return {"items": tree}
@@ -306,12 +312,20 @@ async def get_formula_catalog(
 # ── Batch loading helpers (eliminate N+1) ──
 
 
-async def _batch_load_tags(db: AsyncSession, card_ids: list[int]) -> dict[int, list[dict]]:
+async def _batch_load_tags(
+    db: AsyncSession, card_ids: list[int]
+) -> dict[int, list[dict]]:
     """Load tags for all card_ids at once. Returns {card_id: [tag_dict, ...]}."""
     if not card_ids:
         return {}
     result = await db.execute(
-        select(FormulaCardTag.formula_card_id, FormulaTag.id, FormulaTag.code, FormulaTag.name, FormulaTag.sort_order)
+        select(
+            FormulaCardTag.formula_card_id,
+            FormulaTag.id,
+            FormulaTag.code,
+            FormulaTag.name,
+            FormulaTag.sort_order,
+        )
         .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
         .where(FormulaCardTag.formula_card_id.in_(card_ids))
     )
@@ -320,13 +334,20 @@ async def _batch_load_tags(db: AsyncSession, card_ids: list[int]) -> dict[int, l
         cid = row.formula_card_id
         if cid not in tags_by_card:
             tags_by_card[cid] = []
-        tags_by_card[cid].append({
-            "id": row.id, "code": row.code, "name": row.name, "sort_order": row.sort_order,
-        })
+        tags_by_card[cid].append(
+            {
+                "id": row.id,
+                "code": row.code,
+                "name": row.name,
+                "sort_order": row.sort_order,
+            }
+        )
     return tags_by_card
 
 
-async def _batch_load_specs(db: AsyncSession, card_ids: list[int]) -> dict[int, list[dict]]:
+async def _batch_load_specs(
+    db: AsyncSession, card_ids: list[int]
+) -> dict[int, list[dict]]:
     """Load graph specs for all card_ids at once. Returns {card_id: [spec_dict, ...]}."""
     if not card_ids:
         return {}
@@ -346,6 +367,7 @@ async def _batch_load_specs(db: AsyncSession, card_ids: list[int]) -> dict[int, 
 
 # ── 408 study-card types ──
 
+
 @router.get("/card-types")
 async def get_formula_card_types():
     """Stable content taxonomy for 408 memory/confusable cards."""
@@ -354,14 +376,13 @@ async def get_formula_card_types():
 
 # ── Tags ──
 
+
 @router.get("/tags")
 async def get_formula_tags(
     db: AsyncSession = Depends(get_db),
 ):
     """Get available fixed tags."""
-    result = await db.execute(
-        select(FormulaTag).order_by(FormulaTag.sort_order.asc())
-    )
+    result = await db.execute(select(FormulaTag).order_by(FormulaTag.sort_order.asc()))
     tags = result.scalars().all()
     return {
         "items": [
@@ -374,7 +395,9 @@ async def get_formula_tags(
 # ── List ──
 
 
-async def _validate_chapter(db: AsyncSession, chapter_id: int, subject_code: str | None) -> None:
+async def _validate_chapter(
+    db: AsyncSession, chapter_id: int, subject_code: str | None
+) -> None:
     """Validate that chapter_id is a valid chapter node and belongs to the specified subject."""
     result = await db.execute(
         select(FormulaCategory).where(
@@ -430,22 +453,16 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
             )
             .cte("list_chapters_cte")
         )
-        group_ids_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == chapters_subq.c.id,
-                FormulaCategory.is_active,
-            )
+        group_ids_subq = select(FormulaCategory.id).where(
+            FormulaCategory.parent_id == chapters_subq.c.id,
+            FormulaCategory.is_active,
         )
         query = query.where(FormulaCard.category_id.in_(group_ids_subq))
 
     if chapter_id:
-        group_ids_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == chapter_id,
-                FormulaCategory.is_active,
-            )
+        group_ids_subq = select(FormulaCategory.id).where(
+            FormulaCategory.parent_id == chapter_id,
+            FormulaCategory.is_active,
         )
         query = query.where(FormulaCard.category_id.in_(group_ids_subq))
 
@@ -506,13 +523,14 @@ async def list_formulas(
 
     base_query = _apply_library_type_filter(base_query, library_type)
     base_query = _apply_study_card_type_filter(base_query, study_card_type)
-    base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
+    base_query = _apply_list_filters(
+        base_query, subject_code, chapter_id, category_id, tags, q
+    )
 
     # Favorite only
     if favorite_only and current_user:
-        fav_card_ids = (
-            select(UserFormulaFavorite.formula_card_id)
-            .where(UserFormulaFavorite.user_id == current_user.id)
+        fav_card_ids = select(UserFormulaFavorite.formula_card_id).where(
+            UserFormulaFavorite.user_id == current_user.id
         )
         base_query = base_query.where(FormulaCard.id.in_(fav_card_ids))
 
@@ -537,10 +555,15 @@ async def list_formulas(
     items = []
     for card in cards:
         effective = choose_effective_graph_asset(assets_map.get(card.id, []))
-        items.append(await _card_to_response(
-            db, card, graph_asset=effective,
-            tags_map=tags_map, specs_map=specs_map,
-        ))
+        items.append(
+            await _card_to_response(
+                db,
+                card,
+                graph_asset=effective,
+                tags_map=tags_map,
+                specs_map=specs_map,
+            )
+        )
 
     return paginated_response(items, total, page, page_size)
 
@@ -570,6 +593,7 @@ async def get_formula_detail(
 
 # ── Favorites ──
 
+
 @router.get("/favorites/list")
 async def list_favorite_formulas(
     subject_code: str | None = Query(None, alias="subject_code"),
@@ -589,9 +613,8 @@ async def list_favorite_formulas(
 
     Supports the same filters as /formulas but implicitly scoped to favorites.
     """
-    fav_q = (
-        select(UserFormulaFavorite.formula_card_id)
-        .where(UserFormulaFavorite.user_id == current_user.id)
+    fav_q = select(UserFormulaFavorite.formula_card_id).where(
+        UserFormulaFavorite.user_id == current_user.id
     )
 
     base_query = select(FormulaCard).where(
@@ -607,7 +630,9 @@ async def list_favorite_formulas(
     base_query = _apply_study_card_type_filter(base_query, study_card_type)
 
     # Reuse shared filter logic via _apply_list_filters
-    base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
+    base_query = _apply_list_filters(
+        base_query, subject_code, chapter_id, category_id, tags, q
+    )
 
     count_q = select(func.count()).select_from(base_query.subquery())
     total_result = await db.execute(count_q)
@@ -628,15 +653,21 @@ async def list_favorite_formulas(
     items = []
     for card in cards:
         effective = choose_effective_graph_asset(assets_map.get(card.id, []))
-        items.append(await _card_to_response(
-            db, card, graph_asset=effective,
-            tags_map=tags_map, specs_map=specs_map,
-        ))
+        items.append(
+            await _card_to_response(
+                db,
+                card,
+                graph_asset=effective,
+                tags_map=tags_map,
+                specs_map=specs_map,
+            )
+        )
 
     return paginated_response(items, total, page, page_size)
 
 
 # ── Random ──
+
 
 @router.get("/random/next")
 async def get_random_formula(
@@ -685,22 +716,16 @@ async def get_random_formula(
             )
             .cte("random_chapters_cte")
         )
-        group_ids_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == chapters_subq.c.id,
-                FormulaCategory.is_active,
-            )
+        group_ids_subq = select(FormulaCategory.id).where(
+            FormulaCategory.parent_id == chapters_subq.c.id,
+            FormulaCategory.is_active,
         )
         base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
 
     if chapter_id:
-        group_ids_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == chapter_id,
-                FormulaCategory.is_active,
-            )
+        group_ids_subq = select(FormulaCategory.id).where(
+            FormulaCategory.parent_id == chapter_id,
+            FormulaCategory.is_active,
         )
         base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
 
@@ -751,7 +776,9 @@ async def get_random_formula(
         raise HTTPException(status_code=404, detail="No formulas available")
 
     random_card = (
-        base_query.order_by(FormulaCard.id.asc()).offset(random.randint(0, total - 1)).limit(1)
+        base_query.order_by(FormulaCard.id.asc())
+        .offset(random.randint(0, total - 1))
+        .limit(1)
     )
     result = await db.execute(random_card)
     card = result.scalar_one_or_none()
@@ -762,6 +789,7 @@ async def get_random_formula(
 
 
 # ── Favorite Toggle ──
+
 
 @router.put("/{formula_id}/favorite")
 async def add_formula_favorite(
@@ -790,9 +818,7 @@ async def add_formula_favorite(
         )
     )
     if not existing.scalar_one_or_none():
-        fav = UserFormulaFavorite(
-            user_id=current_user.id, formula_card_id=formula_id
-        )
+        fav = UserFormulaFavorite(user_id=current_user.id, formula_card_id=formula_id)
         db.add(fav)
         await db.commit()
 

@@ -28,6 +28,7 @@ logger = logging.getLogger("postgraduate-ai.services.ocr_result_validation")
 @dataclass
 class ValidationResult:
     """Result of OCR job output validation."""
+
     valid: bool
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -206,6 +207,7 @@ def _validate_bbox(
         # Check NaN/Infinity
         if isinstance(val, float):
             import math
+
             if math.isnan(val) or math.isinf(val):
                 result.errors.append(f"Element {element_id} bbox.{key} is NaN/Infinity")
                 result.valid = False

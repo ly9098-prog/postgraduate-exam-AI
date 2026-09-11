@@ -1,8 +1,10 @@
 """Phase 3 — 知识图谱边 + 知识路径推荐 Schema。"""
+
 from pydantic import Field
 from app.schemas.base import BaseModel
 
 # ── 知识图谱边 ──
+
 
 class KnowledgeEdgeCreate(BaseModel):
     source_knowledge_point_id: int
@@ -51,6 +53,7 @@ class KnowledgeEdgeStatusResponse(BaseModel):
 
 
 # ── 知识路径推荐 ──
+
 
 class KnowledgePathNode(BaseModel):
     knowledge_point_id: int

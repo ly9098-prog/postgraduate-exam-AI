@@ -39,9 +39,13 @@ class QuestionKnowledgePoint(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    question = relationship("Question", back_populates="knowledge_point_links", lazy="noload")
+    question = relationship(
+        "Question", back_populates="knowledge_point_links", lazy="noload"
+    )
     knowledge_point = relationship("KnowledgePoint", lazy="noload")
 
     __table_args__ = (
-        UniqueConstraint("question_id", "knowledge_point_id", name="uq_qkp_question_kp"),
+        UniqueConstraint(
+            "question_id", "knowledge_point_id", name="uq_qkp_question_kp"
+        ),
     )

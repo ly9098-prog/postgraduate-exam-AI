@@ -74,9 +74,7 @@ def evaluate_split_quality(
     # ── Overall quality score ──
     # 40 % option recovery, 30 % confidence, 30 % order accuracy
     split_quality_score = round(
-        option_recovery_rate * 0.4
-        + avg_confidence * 0.3
-        + order_accuracy * 0.3,
+        option_recovery_rate * 0.4 + avg_confidence * 0.3 + order_accuracy * 0.3,
         3,
     )
 
@@ -86,13 +84,9 @@ def evaluate_split_quality(
             f"split_quality: low option recovery rate {option_recovery_rate:.1%}"
         )
     if order_accuracy < 0.8:
-        warnings.append(
-            f"split_quality: order issue, accuracy={order_accuracy:.1%}"
-        )
+        warnings.append(f"split_quality: order issue, accuracy={order_accuracy:.1%}")
     if avg_confidence < 0.5:
-        warnings.append(
-            f"split_quality: low avg confidence {avg_confidence:.2f}"
-        )
+        warnings.append(f"split_quality: low avg confidence {avg_confidence:.2f}")
 
     result: dict[str, Any] = {
         "split_quality_score": split_quality_score,

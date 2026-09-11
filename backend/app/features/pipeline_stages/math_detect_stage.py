@@ -82,7 +82,10 @@ async def run_math_detect_stage(
                 "requires_review": True,
             }
             segments.append(math_segment)
-            if diagnosis["has_complex_formula"] and "complex_formula_requires_review" not in flags:
+            if (
+                diagnosis["has_complex_formula"]
+                and "complex_formula_requires_review" not in flags
+            ):
                 flags.append("complex_formula_requires_review")
 
         if segments:
@@ -153,7 +156,9 @@ async def run_math_detect_stage(
 
                     content_hash = hashlib.md5(png_bytes).hexdigest()[:12]
                     month = datetime.now().strftime("%Y%m")
-                    virtual_import_id = hashlib.md5(pipeline_id.encode()).hexdigest()[:8]
+                    virtual_import_id = hashlib.md5(pipeline_id.encode()).hexdigest()[
+                        :8
+                    ]
                     filename = f"{virtual_import_id}_p{source_page}_{content_hash}.png"
 
                     storage = get_storage()
@@ -169,7 +174,9 @@ async def run_math_detect_stage(
                 except Exception as e:
                     logger.warning(
                         "公式截图裁剪失败 import=%s page=%s: %s",
-                        pipeline_id, source_page, e,
+                        pipeline_id,
+                        source_page,
+                        e,
                     )
                     seg["crop_failed"] = True
                     seg["alt"] = "公式截图裁剪失败"
@@ -189,7 +196,9 @@ async def run_math_detect_stage(
                 }
 
         if crop_warnings:
-            warnings.append(f"math_image: {len(crop_warnings)} formula screenshots generated")
+            warnings.append(
+                f"math_image: {len(crop_warnings)} formula screenshots generated"
+            )
 
     return {
         "questions": questions,

@@ -10,6 +10,7 @@ All code that mutates a published Question must call :func:`ensure_question_revi
 after its scalar fields and knowledge-point links have reached their final state.
 The function is idempotent and serializes revisions per question with a row lock.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +31,9 @@ from app.models.syllabus import SyllabusKnowledgePoint
 from app.services import syllabus_service
 
 
-def _canonical_state_payload(question: Question, kp_links: list[tuple[int, int, str, float, str]]) -> dict:
+def _canonical_state_payload(
+    question: Question, kp_links: list[tuple[int, int, str, float, str]]
+) -> dict:
     return {
         "question_id": int(question.id),
         "subject_id": int(question.subject_id),
@@ -54,7 +57,9 @@ def _canonical_state_payload(question: Question, kp_links: list[tuple[int, int, 
     }
 
 
-def compute_question_state_hash(question: Question, kp_links: list[tuple[int, int, str, float, str]]) -> str:
+def compute_question_state_hash(
+    question: Question, kp_links: list[tuple[int, int, str, float, str]]
+) -> str:
     payload = _canonical_state_payload(question, kp_links)
     canonical = json.dumps(
         payload,
@@ -233,7 +238,9 @@ def latest_question_revision_scope_condition(
     consistency check.
     """
     ids = [int(sid) for sid in dict.fromkeys(subject_ids or []) if sid is not None]
-    types = [str(value) for value in dict.fromkeys(answerable_question_types or []) if value]
+    types = [
+        str(value) for value in dict.fromkeys(answerable_question_types or []) if value
+    ]
     if not ids or not types:
         return Question.id == -1
 
@@ -244,17 +251,21 @@ def latest_question_revision_scope_condition(
         .correlate(Question)
         .scalar_subquery()
     )
-    return select(QuestionVersion.id).where(
-        QuestionVersion.question_id == Question.id,
-        QuestionVersion.version == latest_version_number,
-        QuestionVersion.subject_id == Question.subject_id,
-        QuestionVersion.subject_id.in_(ids),
-        QuestionVersion.question_type == Question.question_type,
-        QuestionVersion.question_type.in_(types),
-        QuestionVersion.is_active.is_(True),
-        Question.is_active.is_(True),
-        Question.review_status == "approved",
-    ).exists()
+    return (
+        select(QuestionVersion.id)
+        .where(
+            QuestionVersion.question_id == Question.id,
+            QuestionVersion.version == latest_version_number,
+            QuestionVersion.subject_id == Question.subject_id,
+            QuestionVersion.subject_id.in_(ids),
+            QuestionVersion.question_type == Question.question_type,
+            QuestionVersion.question_type.in_(types),
+            QuestionVersion.is_active.is_(True),
+            Question.is_active.is_(True),
+            Question.review_status == "approved",
+        )
+        .exists()
+    )
 
 
 async def load_latest_question_revision_ids(
@@ -281,8 +292,7 @@ async def load_latest_question_revision_ids(
         .subquery()
     )
     rows = await db.execute(
-        select(QuestionVersion.question_id, QuestionVersion.id)
-        .join(
+        select(QuestionVersion.question_id, QuestionVersion.id).join(
             latest,
             and_(
                 latest.c.question_id == QuestionVersion.question_id,
@@ -333,7 +343,9 @@ async def load_revision_views(
             question_id=int(revision.question_id),
             question_version_id=int(revision.id),
             version=int(revision.version),
-            subject_id=int(revision.subject_id) if revision.subject_id is not None else None,
+            subject_id=int(revision.subject_id)
+            if revision.subject_id is not None
+            else None,
             subject_ref=subject,
             question_type=str(revision.question_type or ""),
             content=revision.content,
@@ -423,7 +435,9 @@ async def load_revision_kp_names(
     ids = list(dict.fromkeys(int(v) for v in revision_ids if v))
     if not ids:
         return {}
-    frozen_name = func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name)
+    frozen_name = func.coalesce(
+        SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name
+    )
     rows = await db.execute(
         select(
             QuestionVersionKnowledgePoint.question_version_id,
@@ -435,7 +449,8 @@ async def load_revision_kp_names(
         )
         .outerjoin(
             SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+            SyllabusKnowledgePoint.id
+            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .where(QuestionVersionKnowledgePoint.question_version_id.in_(ids))
         .order_by(

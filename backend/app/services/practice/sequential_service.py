@@ -4,6 +4,7 @@ This module is intentionally isolated from recommendation/Leitner code.  A
 sequential session means deterministic coverage of one leaf subject; learning
 state may be updated after answers, but it never changes which question is next.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,16 +44,21 @@ SEQUENTIAL_RESERVATION_TTL_SEC = 24 * 60 * 60
 
 # Keep sequential mode aligned with the controls provided by quiz-runner.
 # Free-text/subjective revisions remain in the bank but are not issuable here.
-SEQUENTIAL_ANSWERABLE_QUESTION_TYPES = frozenset({
-    QT_SINGLE_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_TRUE_FALSE,
-    QT_MULTI_BLANK_CHOICE,
-})
+SEQUENTIAL_ANSWERABLE_QUESTION_TYPES = frozenset(
+    {
+        QT_SINGLE_CHOICE,
+        QT_MULTIPLE_CHOICE,
+        QT_TRUE_FALSE,
+        QT_MULTI_BLANK_CHOICE,
+    }
+)
 
 
 async def _get_reset_at(
-    db: AsyncSession, *, user_id: int, subject_id: int,
+    db: AsyncSession,
+    *,
+    user_id: int,
+    subject_id: int,
 ) -> datetime | None:
     return await db.scalar(
         select(func.max(PracticeSession.finished_at)).where(
@@ -76,7 +82,9 @@ def _answered_ids_query(*, user_id: int, subject_id: int, reset_at: datetime | N
 
 
 def _sequential_scope_key(knowledge_points: list[str] | None) -> str:
-    values = sorted({str(value).strip() for value in (knowledge_points or []) if str(value).strip()})
+    values = sorted(
+        {str(value).strip() for value in (knowledge_points or []) if str(value).strip()}
+    )
     payload = json.dumps(values, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -157,7 +165,15 @@ async def _reserve_sequential_questions(
         ).where(*source_conditions)
         source = source.order_by(Question.id.asc()).limit(remaining)
         stmt = insert_factory(SequentialReservation).from_select(
-            ["user_id", "subject_id", "question_id", "scope_key", "start_request_id", "created_at", "expires_at"],
+            [
+                "user_id",
+                "subject_id",
+                "question_id",
+                "scope_key",
+                "start_request_id",
+                "created_at",
+                "expires_at",
+            ],
             source,
         )
         if dialect == "postgresql":
@@ -236,22 +252,32 @@ async def get_sequential_practice_questions(
 
     reset_at = await _get_reset_at(db, user_id=user_id, subject_id=subject_id)
     answered_ids = _answered_ids_query(
-        user_id=user_id, subject_id=subject_id, reset_at=reset_at,
+        user_id=user_id,
+        subject_id=subject_id,
+        reset_at=reset_at,
     )
-    start_request_id = str(reservation_request_id or f"seqstart:{user_id}:{uuid4().hex}").strip()
+    start_request_id = str(
+        reservation_request_id or f"seqstart:{user_id}:{uuid4().hex}"
+    ).strip()
     if not start_request_id or len(start_request_id) > 128:
         raise ValueError("顺序练习 start_request_id 无效")
     scope_key = _sequential_scope_key(knowledge_points)
     now = utcnow()
 
-    total_questions = int((await db.scalar(
-        select(func.count(Question.id)).where(and_(*conditions))
-    )) or 0)
-    completed_questions = int((await db.scalar(
-        select(func.count(Question.id)).where(
-            and_(*conditions), Question.id.in_(answered_ids),
+    total_questions = int(
+        (await db.scalar(select(func.count(Question.id)).where(and_(*conditions)))) or 0
+    )
+    completed_questions = int(
+        (
+            await db.scalar(
+                select(func.count(Question.id)).where(
+                    and_(*conditions),
+                    Question.id.in_(answered_ids),
+                )
+            )
         )
-    )) or 0)
+        or 0
+    )
 
     reserved_ids = await _reserve_sequential_questions(
         db,
@@ -286,29 +312,41 @@ async def get_sequential_practice_questions(
     }
     logger.info(
         "[Sequential Query] uid=%d subject_id=%d total=%d completed=%d remaining=%d returned=%d",
-        user_id, subject_id, total_questions, completed_questions, remaining, len(questions),
+        user_id,
+        subject_id,
+        total_questions,
+        completed_questions,
+        remaining,
+        len(questions),
     )
     return questions, progress
 
 
 async def reset_sequential_progress(
-    db: AsyncSession, *, user_id: int, subject_id: int,
+    db: AsyncSession,
+    *,
+    user_id: int,
+    subject_id: int,
 ) -> None:
     """Start a new round without deleting answer history or polluting stats."""
     now = utcnow()
-    db.add(PracticeSession(
-        user_id=user_id,
-        subject_id=subject_id,
-        request_id=f"seqreset:{user_id}:{subject_id}:{uuid4().hex}",
-        mode=SEQUENTIAL_RESET_MODE,
-        started_at=now,
-        finished_at=now,
-        duration_sec=0,
-        question_count=0,
-        answered_count=0,
-        correct_count=0,
-        wrong_count=0,
-        status=SEQUENTIAL_RESET_STATUS,
-    ))
+    db.add(
+        PracticeSession(
+            user_id=user_id,
+            subject_id=subject_id,
+            request_id=f"seqreset:{user_id}:{subject_id}:{uuid4().hex}",
+            mode=SEQUENTIAL_RESET_MODE,
+            started_at=now,
+            finished_at=now,
+            duration_sec=0,
+            question_count=0,
+            answered_count=0,
+            correct_count=0,
+            wrong_count=0,
+            status=SEQUENTIAL_RESET_STATUS,
+        )
+    )
     await db.commit()
-    logger.info("[Sequential Reset] uid=%d subject_id=%d reset_at=%s", user_id, subject_id, now)
+    logger.info(
+        "[Sequential Reset] uid=%d subject_id=%d reset_at=%s", user_id, subject_id, now
+    )

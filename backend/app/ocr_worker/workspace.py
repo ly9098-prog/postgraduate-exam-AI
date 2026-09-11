@@ -80,7 +80,9 @@ class JobWorkspace:
             self.result_dir.mkdir(exist_ok=True)
             self.logs_dir.mkdir(exist_ok=True)
         except OSError as e:
-            raise WorkspaceError(f"Failed to create workspace for {self._job_id}: {e}") from e
+            raise WorkspaceError(
+                f"Failed to create workspace for {self._job_id}: {e}"
+            ) from e
 
     async def cleanup(self) -> None:
         """Remove the entire workspace directory."""
@@ -166,7 +168,6 @@ class JobWorkspace:
                         except OSError:
                             pass
         return total
-
 
     @staticmethod
     def prune(
@@ -271,7 +272,12 @@ class JobWorkspace:
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text())
-                if manifest.get("status") in ("running", "downloading", "uploading", "leased"):
+                if manifest.get("status") in (
+                    "running",
+                    "downloading",
+                    "uploading",
+                    "leased",
+                ):
                     incomplete.append(manifest)
             except (json.JSONDecodeError, OSError):
                 pass

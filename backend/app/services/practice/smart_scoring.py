@@ -3,6 +3,7 @@
 Kept free of database access so scoring policy can be unit-tested independently
 of candidate recall, vector search and fallback orchestration.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.question import Question
 else:
     Question = Any
+
 
 def _pick_graph_target_kps(
     kp_mastery: dict[int, tuple],
@@ -58,7 +60,11 @@ def _get_observed_weak_kp_ids(
         mastery, _confidence = kp_mastery.get(kp_id, (50.0, 0.0))
         attempt_count, wrong_count = kp_observations.get(kp_id, (0, 0))
         mastery_value = 50.0 if mastery is None else float(mastery)
-        if int(attempt_count or 0) >= 2 and int(wrong_count or 0) >= 2 and mastery_value <= 40.0:
+        if (
+            int(attempt_count or 0) >= 2
+            and int(wrong_count or 0) >= 2
+            and mastery_value <= 40.0
+        ):
             observed.append(kp_id)
     return observed
 
@@ -180,7 +186,9 @@ def _build_smart_recommendation_reason(
 
     if is_long_unpracticed:
         if is_diverse:
-            return "这个知识点已有一段时间没有练习，同时近期覆盖较少，适合现在做一次巩固。"
+            return (
+                "这个知识点已有一段时间没有练习，同时近期覆盖较少，适合现在做一次巩固。"
+            )
         return "这个知识点已有一段时间没有练习，适合现在做一次巩固。"
 
     if is_diverse:
@@ -191,12 +199,13 @@ def _build_smart_recommendation_reason(
 
 def calculate_smart_score(
     question: Question,
-    q_state,          # UserQuestionState | None
+    q_state,  # UserQuestionState | None
     kp_ids: list[int],
-    kp_mastery: dict[int, tuple],   # kp_id -> (mastery_score, confidence)
+    kp_mastery: dict[int, tuple],  # kp_id -> (mastery_score, confidence)
     recent_kp_ids: set[int],
     now: datetime,
-    kp_observations: dict[int, tuple[int, int]] | None = None,  # kp_id -> (attempt_count, wrong_count)
+    kp_observations: dict[int, tuple[int, int]]
+    | None = None,  # kp_id -> (attempt_count, wrong_count)
     blocked_kps: dict[int, list[dict]] | None = None,  # V6.3: kp_id -> [weak prereqs]
     graph_candidates: dict[int, dict] | None = None,  # V6.5: prereq kp -> graph context
     prerequisites_by_target: dict[int, list[dict]] | None = None,
@@ -326,19 +335,45 @@ def calculate_smart_score(
             raw_origin_conf = graph.get("origin_mastery_confidence")
             raw_prereq_mastery = graph.get("mastery_score")
             raw_prereq_conf = graph.get("mastery_confidence")
-            origin_mastery = max(0.0, min(float(50.0 if raw_origin_mastery is None else raw_origin_mastery), 100.0))
-            origin_conf = max(0.0, min(float(0.0 if raw_origin_conf is None else raw_origin_conf), 1.0))
-            prereq_mastery = max(0.0, min(float(50.0 if raw_prereq_mastery is None else raw_prereq_mastery), 100.0))
-            prereq_conf = max(0.0, min(float(0.0 if raw_prereq_conf is None else raw_prereq_conf), 1.0))
+            origin_mastery = max(
+                0.0,
+                min(
+                    float(50.0 if raw_origin_mastery is None else raw_origin_mastery),
+                    100.0,
+                ),
+            )
+            origin_conf = max(
+                0.0,
+                min(float(0.0 if raw_origin_conf is None else raw_origin_conf), 1.0),
+            )
+            prereq_mastery = max(
+                0.0,
+                min(
+                    float(50.0 if raw_prereq_mastery is None else raw_prereq_mastery),
+                    100.0,
+                ),
+            )
+            prereq_conf = max(
+                0.0,
+                min(float(0.0 if raw_prereq_conf is None else raw_prereq_conf), 1.0),
+            )
 
             origin_need = ((100.0 - origin_mastery) / 100.0) * origin_conf
             if graph.get("confirmed_gap"):
-                prereq_gap = max(
-                    0.0,
-                    (prerequisite_mastery_threshold - prereq_mastery)
-                    / prerequisite_mastery_threshold,
-                ) * prereq_conf
-                bonus = 45.0 * (0.55 + 0.45 * origin_need) * (0.65 + 0.35 * prereq_gap) * path_quality
+                prereq_gap = (
+                    max(
+                        0.0,
+                        (prerequisite_mastery_threshold - prereq_mastery)
+                        / prerequisite_mastery_threshold,
+                    )
+                    * prereq_conf
+                )
+                bonus = (
+                    45.0
+                    * (0.55 + 0.45 * origin_need)
+                    * (0.65 + 0.35 * prereq_gap)
+                    * path_quality
+                )
             else:
                 # Unknown prerequisite: diagnostic exploration only.  Never let
                 # it dominate a confirmed weakness.
@@ -349,19 +384,26 @@ def calculate_smart_score(
             path_total += best_bonus
             reasons.append("prerequisite_need")
 
-    if prerequisites_by_target and kp_ids and not any(k in (blocked_kps or {}) for k in kp_ids):
+    if (
+        prerequisites_by_target
+        and kp_ids
+        and not any(k in (blocked_kps or {}) for k in kp_ids)
+    ):
         # Only award "ready to progress" when the KP has direct prerequisites
         # and every one is sufficiently observed + mastered.  Unknown prereqs
         # are diagnostic candidates, not proof that the path is unlocked.
         for kid in kp_ids:
             direct_prereqs = [
-                p for p in (prerequisites_by_target.get(kid) or [])
+                p
+                for p in (prerequisites_by_target.get(kid) or [])
                 if int(p.get("depth") or 0) == 1
             ]
             if direct_prereqs and all(
                 not p.get("unknown_gap")
-                and float(p.get("mastery_score") or 0.0) >= prerequisite_mastery_threshold
-                and float(p.get("mastery_confidence") or 0.0) >= prerequisite_confidence_threshold
+                and float(p.get("mastery_score") or 0.0)
+                >= prerequisite_mastery_threshold
+                and float(p.get("mastery_confidence") or 0.0)
+                >= prerequisite_confidence_threshold
                 for p in direct_prereqs
             ):
                 path_total += 8
@@ -379,7 +421,13 @@ def calculate_smart_score(
             + path_total * weights.get("path_weight", 1.0)
         )
     else:
-        score = due_total + weakness_total + wrong_total + new_total + diversity_total + path_total
+        score = (
+            due_total
+            + weakness_total
+            + wrong_total
+            + new_total
+            + diversity_total
+            + path_total
+        )
 
     return score, reasons
-

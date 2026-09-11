@@ -68,9 +68,21 @@ async def get_app_user_detail(db: AsyncSession, user_id: int) -> dict:
     if not user:
         raise ValueError("用户不存在")
 
-    practice_count = await db.scalar(select(func.count()).select_from(PracticeRecord).where(PracticeRecord.user_id == user_id))
-    wrong_count = await db.scalar(select(func.count()).select_from(WrongQuestion).where(WrongQuestion.user_id == user_id))
-    recent_active_at = await db.scalar(select(func.max(PracticeRecord.answered_at)).where(PracticeRecord.user_id == user_id))
+    practice_count = await db.scalar(
+        select(func.count())
+        .select_from(PracticeRecord)
+        .where(PracticeRecord.user_id == user_id)
+    )
+    wrong_count = await db.scalar(
+        select(func.count())
+        .select_from(WrongQuestion)
+        .where(WrongQuestion.user_id == user_id)
+    )
+    recent_active_at = await db.scalar(
+        select(func.max(PracticeRecord.answered_at)).where(
+            PracticeRecord.user_id == user_id
+        )
+    )
 
     return {
         "id": user.id,
@@ -221,12 +233,16 @@ async def bind_app_user_admin(
     if existing_user_binding:
         raise ValueError("该小程序用户已绑定管理员账号")
     existing_admin_binding = await db.scalar(
-        select(AppUserAdminBinding).where(AppUserAdminBinding.admin_user_id == admin_user_id)
+        select(AppUserAdminBinding).where(
+            AppUserAdminBinding.admin_user_id == admin_user_id
+        )
     )
     if existing_admin_binding:
         raise ValueError("该管理员账号已绑定小程序用户")
 
-    binding = AppUserAdminBinding(user_id=user_id, admin_user_id=admin_user_id, created_by=operator.id)
+    binding = AppUserAdminBinding(
+        user_id=user_id, admin_user_id=admin_user_id, created_by=operator.id
+    )
     db.add(binding)
     await write_admin_audit(
         db,

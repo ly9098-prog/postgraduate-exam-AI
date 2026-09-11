@@ -4,6 +4,7 @@ These models intentionally describe only fields exposed to the admin frontend.
 Internal exception payloads and queue task bodies remain outside the OpenAPI
 contract so generated frontend types cannot accidentally encourage leaking them.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal

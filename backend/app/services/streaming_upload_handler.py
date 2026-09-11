@@ -53,6 +53,7 @@ class TempFile:
 
     Automatically cleaned up when ``close()`` is called or used as context manager.
     """
+
     path: str
     size: int = 0
     original_name: str = ""
@@ -125,7 +126,7 @@ async def stream_to_temp(
             if total > max_size:
                 await loop.run_in_executor(None, _close_and_unlink, fd, path)
                 raise ValueError(
-                    f"文件超过大小限制（{max_size // (1024*1024)}MB）",
+                    f"文件超过大小限制（{max_size // (1024 * 1024)}MB）",
                 )
             await loop.run_in_executor(None, os.write, fd, chunk)
         await loop.run_in_executor(None, os.close, fd)
@@ -188,7 +189,9 @@ async def stream_to_temp_batch(
     try:
         for upload in uploads:
             tmp = await stream_to_temp(
-                upload, max_size=max_per_file, suffix=suffix,
+                upload,
+                max_size=max_per_file,
+                suffix=suffix,
             )
             total_bytes += tmp.size
             if total_bytes > max_total:
@@ -197,7 +200,7 @@ async def stream_to_temp_batch(
                     t.close()
                 tmp.close()
                 raise ValueError(
-                    f"上传文件总量超过限制（{max_total // (1024*1024)}MB）",
+                    f"上传文件总量超过限制（{max_total // (1024 * 1024)}MB）",
                 )
             temps.append(tmp)
         return temps
@@ -261,7 +264,7 @@ def quick_validate_image(path: str) -> tuple[int, int] | None:
                         return None
                     if marker[0:2] != b"\xff":
                         return None
-                    if marker[1] == 0xc0 or marker[1] == 0xc2:
+                    if marker[1] == 0xC0 or marker[1] == 0xC2:
                         # SOF0 or SOF2
                         data = f.read(5)
                         if len(data) >= 5:
@@ -334,6 +337,7 @@ def validate_image(
 
 
 # ── Convenience: read temp file content in chunks ──
+
 
 def read_temp_chunks(path: str, chunk_size: int = 65536):
     """Generator that yields chunks from a temp file.

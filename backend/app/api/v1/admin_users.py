@@ -57,7 +57,12 @@ async def list_users(
         normalized_from,
         normalized_to,
     )
-    return paginated_response([AdminUserListItem.model_validate(user) for user in users], total, page, page_size)
+    return paginated_response(
+        [AdminUserListItem.model_validate(user) for user in users],
+        total,
+        page,
+        page_size,
+    )
 
 
 @router.get("/{admin_user_id}", response_model=AdminUserDetail)
@@ -98,14 +103,18 @@ async def patch_user(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        admin_user = await update_admin_user(db, admin_user_id, data, current_admin, request)
+        admin_user = await update_admin_user(
+            db, admin_user_id, data, current_admin, request
+        )
         await db.commit()
         return await get_admin_user_detail(db, admin_user.id)
     except ValueError as exc:
         await db.rollback()
         if str(exc) == "管理员不存在":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
     except PermissionError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
@@ -126,7 +135,9 @@ async def delete_user(
         await db.rollback()
         if str(exc) == "管理员不存在":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
     except PermissionError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
@@ -147,7 +158,9 @@ async def force_logout_user(
         await db.rollback()
         if str(exc) == "管理员不存在":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
     except PermissionError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
@@ -169,7 +182,9 @@ async def reset_password(
         await db.rollback()
         if str(exc) == "管理员不存在":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
     except PermissionError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))

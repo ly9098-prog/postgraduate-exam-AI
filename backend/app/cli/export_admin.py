@@ -31,16 +31,24 @@ def _parse_args(argv: list[str] | None = None):
 
     # list
     list_p = sub.add_parser("list", help="List tasks by status")
-    list_p.add_argument("status", choices=["pending", "processing", "completed", "failed", "expired", "zombie"], help="Task status to list")
+    list_p.add_argument(
+        "status",
+        choices=["pending", "processing", "completed", "failed", "expired", "zombie"],
+        help="Task status to list",
+    )
 
     # metrics
     sub.add_parser("metrics", help="Show export metrics")
 
     # cleanup
     clean_p = sub.add_parser("cleanup", help="Cleanup expired tasks")
-    clean_p.add_argument("--dry-run", action="store_true", default=True, help="Report only (default)")
+    clean_p.add_argument(
+        "--dry-run", action="store_true", default=True, help="Report only (default)"
+    )
     clean_p.add_argument("--execute", action="store_true", help="Actually run cleanup")
-    clean_p.add_argument("--confirm", action="store_true", help="Confirm destructive action")
+    clean_p.add_argument(
+        "--confirm", action="store_true", help="Confirm destructive action"
+    )
 
     # orphan-scan
     sub.add_parser("orphan-scan", help="Scan for orphan files and missing files")
@@ -77,16 +85,21 @@ async def _list_tasks(status: str):
         if status == "zombie":
             cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=900)
             from sqlalchemy import func as sa_func
+
             result = await db.execute(
                 select(ExportTask).where(
                     ExportTask.status == ExportTaskStatus.PROCESSING,
                     ExportTask.processing_started_at.isnot(None),
-                    sa_func.coalesce(ExportTask.heartbeat_at, ExportTask.processing_started_at) < cutoff,
+                    sa_func.coalesce(
+                        ExportTask.heartbeat_at, ExportTask.processing_started_at
+                    )
+                    < cutoff,
                 )
             )
         else:
             result = await db.execute(
-                select(ExportTask).where(ExportTask.status == target_status)
+                select(ExportTask)
+                .where(ExportTask.status == target_status)
                 .order_by(ExportTask.created_at.desc())
                 .limit(50)
             )
@@ -96,15 +109,20 @@ async def _list_tasks(status: str):
             print(f"No tasks with status '{status}'")
             return
 
-        print(f"{'ID':<8} {'User':<8} {'Status':<12} {'Format':<6} {'Count':<6} {'Size':<8} {'Error':<30}")
+        print(
+            f"{'ID':<8} {'User':<8} {'Status':<12} {'Format':<6} {'Count':<6} {'Size':<8} {'Error':<30}"
+        )
         print("-" * 80)
         for t in tasks:
             err = (t.error_message or "")[:30]
-            print(f"{t.id:<8} {t.user_id:<8} {t.status:<12} {t.file_format:<6} {t.total_count:<6} {t.file_size or 0:<8} {err:<30}")
+            print(
+                f"{t.id:<8} {t.user_id:<8} {t.status:<12} {t.file_format:<6} {t.total_count:<6} {t.file_size or 0:<8} {err:<30}"
+            )
 
 
 async def _show_metrics():
     from app.services.export.export_metrics import get_metrics
+
     # Pretty print
     m = get_metrics()
     for k, v in m.items():
@@ -130,27 +148,39 @@ async def _do_cleanup(dry_run: bool, confirmed: bool):
         print("[DRY RUN] Would clean up expired tasks")
         async with async_session() as db:
             now = datetime.now(UTC).replace(tzinfo=None)
-            retention_cutoff = now - timedelta(days=max(1, int(settings.EXPORT_RETENTION_DAYS)))
+            retention_cutoff = now - timedelta(
+                days=max(1, int(settings.EXPORT_RETENTION_DAYS))
+            )
             result = await db.execute(
-                select(ExportTask).where(
-                    ExportTask.status.in_([ExportTaskStatus.COMPLETED, ExportTaskStatus.FAILED]),
+                select(ExportTask)
+                .where(
+                    ExportTask.status.in_(
+                        [ExportTaskStatus.COMPLETED, ExportTaskStatus.FAILED]
+                    ),
                     or_(
-                        and_(ExportTask.expires_at.isnot(None), ExportTask.expires_at < now),
+                        and_(
+                            ExportTask.expires_at.isnot(None),
+                            ExportTask.expires_at < now,
+                        ),
                         and_(
                             ExportTask.expires_at.is_(None),
                             func.coalesce(
                                 ExportTask.completed_at,
                                 ExportTask.updated_at,
                                 ExportTask.created_at,
-                            ) < retention_cutoff,
+                            )
+                            < retention_cutoff,
                         ),
                     ),
-                ).limit(50)
+                )
+                .limit(50)
             )
             expired = result.scalars().all()
             print(f"Found {len(expired)} expired tasks:")
             for t in expired:
-                print(f"  Task {t.id}: {t.status}, expires={t.expires_at}, key={t.file_key}")
+                print(
+                    f"  Task {t.id}: {t.status}, expires={t.expires_at}, key={t.file_key}"
+                )
     else:
         async with async_session() as db:
             stats = await cleanup_expired(db)
@@ -183,7 +213,9 @@ async def _orphan_scan():
         for t in completed:
             exists = await storage.exists(t.file_key)
             if not exists:
-                print(f"MISSING: Task {t.id} completed but storage file '{t.file_key}' not found")
+                print(
+                    f"MISSING: Task {t.id} completed but storage file '{t.file_key}' not found"
+                )
                 missing += 1
 
         if missing:
@@ -264,6 +296,7 @@ async def main():
 
     # Initialize app context
     from app.core.config import settings
+
     _ = settings  # ensure config loaded
 
     if args.command == "list":

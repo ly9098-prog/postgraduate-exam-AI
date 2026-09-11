@@ -64,7 +64,9 @@ class ImportPipeline(Base):
     alerts: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # P0-1 fencing: execution generation prevents stale workers from writing
-    execution_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    execution_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     current_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     current_owner_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     execution_status: Mapped[str | None] = mapped_column(String(16), nullable=True)

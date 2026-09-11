@@ -1,4 +1,5 @@
 """Phase 3 — 知识图谱边模型。"""
+
 from sqlalchemy import (
     Boolean,
     Column,
@@ -20,8 +21,15 @@ class KnowledgeEdge(Base):
     __tablename__ = "knowledge_edges"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True)
-    subject_ref = relationship("Subject", back_populates="knowledge_edges", lazy="noload")
+    subject_id = Column(
+        Integer,
+        ForeignKey("subjects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    subject_ref = relationship(
+        "Subject", back_populates="knowledge_edges", lazy="noload"
+    )
 
     source_knowledge_point_id = Column(
         Integer,

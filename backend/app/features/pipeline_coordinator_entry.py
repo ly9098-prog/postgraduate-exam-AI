@@ -73,23 +73,34 @@ async def run_coordinator_pipeline_shadow(
 
     plan.add_stage("input", {"planned": True, "profile": profile})
     plan.ocr_route = "gateway" if pipeline.is_cloud else "local"
-    plan.add_stage("page_stream", {
-        "planned": True,
-        "window_size": 1 if pipeline.is_cloud else 3,
-    })
-    plan.add_stage("ocr", {
-        "planned": True,
-        "route": plan.ocr_route,
-        "forbidden_fallback": pipeline.is_cloud,
-    })
+    plan.add_stage(
+        "page_stream",
+        {
+            "planned": True,
+            "window_size": 1 if pipeline.is_cloud else 3,
+        },
+    )
+    plan.add_stage(
+        "ocr",
+        {
+            "planned": True,
+            "route": plan.ocr_route,
+            "forbidden_fallback": pipeline.is_cloud,
+        },
+    )
     plan.add_stage("doc_structure", {"planned": True})
     plan.add_stage("domain_parsing", {"planned": True})
     plan.add_stage("correction", {"planned": True})
     plan.add_stage("validation", {"planned": True})
     plan.add_stage("review", {"planned": True})
-    plan.add_stage("persistence", {"planned": True, "mode": "lightweight" if pipeline.is_cloud else "full"})
+    plan.add_stage(
+        "persistence",
+        {"planned": True, "mode": "lightweight" if pipeline.is_cloud else "full"},
+    )
 
-    logger.info("CoordinatorPipeline[shadow]: profile=%s stages=%d", profile, len(plan.stages))
+    logger.info(
+        "CoordinatorPipeline[shadow]: profile=%s stages=%d", profile, len(plan.stages)
+    )
     return plan
 
 
@@ -111,14 +122,17 @@ async def run_coordinator_pipeline(
         mime = getattr(request, "mime", "") or ""
     else:
         source = kwargs.get("file_content", b"") or b""
-        filename = kwargs.get("filename", "") or kwargs.get("original_filename", "") or ""
+        filename = (
+            kwargs.get("filename", "") or kwargs.get("original_filename", "") or ""
+        )
         mime = kwargs.get("mime", "") or ""
 
     result = await pipeline.run_all(source, filename=filename, mime=mime)
 
     logger.info(
         "CoordinatorPipeline[coordinator]: profile=%s status=%s",
-        pipeline.profile, result.get("status"),
+        pipeline.profile,
+        result.get("status"),
     )
     return result
 
@@ -134,6 +148,7 @@ def _import_legacy_orchestrator():
     global _LEGACY_ORCHESTRATOR_IMPORTED
     try:
         from app.features import pipeline_orchestrator  # noqa: F401
+
         _LEGACY_ORCHESTRATOR_IMPORTED = True
     except ImportError:
         logger.warning("Legacy orchestrator not available for rollback")
@@ -181,24 +196,34 @@ async def run_pipeline(
         try:
             context.ai_model_configs = ai_model_configs
         except Exception:
-            logger.debug("UnifiedPipeline: could not freeze ai_model_configs into context")
+            logger.debug(
+                "UnifiedPipeline: could not freeze ai_model_configs into context"
+            )
 
     # Shadow mode: old orchestrator runs, coordinator plans only
     if mode == "shadow":
         # Create shadow plan
         shadow_plan = await run_coordinator_pipeline_shadow(
-            request=request, context=context, policy=policy,
+            request=request,
+            context=context,
+            policy=policy,
         )
         logger.info(
             "UnifiedPipeline[shadow]: plan complete stages=%d route=%s",
-            len(shadow_plan.stages), shadow_plan.ocr_route,
+            len(shadow_plan.stages),
+            shadow_plan.ocr_route,
         )
-        return await _run_legacy_pipeline(request, context=context, policy=policy, **kwargs)
+        return await _run_legacy_pipeline(
+            request, context=context, policy=policy, **kwargs
+        )
 
     # Coordinator mode: CoordinatorPipeline is primary
     if mode == "coordinator":
         result = await run_coordinator_pipeline(
-            request=request, context=context, policy=policy, **kwargs,
+            request=request,
+            context=context,
+            policy=policy,
+            **kwargs,
         )
         return result
 
@@ -221,6 +246,7 @@ async def _run_legacy_pipeline(
         run_pipeline(file_content=..., source_type="pdf", ...)
     """
     from app.features.pipeline_orchestrator import run_import_pipeline
+
     if request is not None:
         return await run_import_pipeline(request)
     return await run_import_pipeline(**kwargs)

@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 def _build_repair_diffs(
-    repaired: list[dict], unrepaired: list[dict], skipped: list[dict],
+    repaired: list[dict],
+    unrepaired: list[dict],
+    skipped: list[dict],
 ) -> list[dict]:
     """Build per-question repair diff records for diagnostics stage_diffs."""
     diffs: list[dict] = []
@@ -27,36 +29,40 @@ def _build_repair_diffs(
         before = r.get("before") or {}
         after = r.get("after") or {}
         safety = r.get("safety") or {}
-        diffs.append({
-            "question_index": r.get("question_index"),
-            "actions": r.get("repair_actions", []),
-            "confidence": r.get("confidence"),
-            "tokens_used": r.get("token_used", 0),
-            "before_stem": str(before.get("stem", ""))[:200],
-            "after_stem": str(after.get("stem", ""))[:200],
-            "options_changed": (
-                str(before.get("options", "")) != str(after.get("options", ""))
-            ),
-            "answer_changed": (
-                str(before.get("answer", "")) != str(after.get("answer", ""))
-            ),
-            "safety": safety,
-        })
+        diffs.append(
+            {
+                "question_index": r.get("question_index"),
+                "actions": r.get("repair_actions", []),
+                "confidence": r.get("confidence"),
+                "tokens_used": r.get("token_used", 0),
+                "before_stem": str(before.get("stem", ""))[:200],
+                "after_stem": str(after.get("stem", ""))[:200],
+                "options_changed": (
+                    str(before.get("options", "")) != str(after.get("options", ""))
+                ),
+                "answer_changed": (
+                    str(before.get("answer", "")) != str(after.get("answer", ""))
+                ),
+                "safety": safety,
+            }
+        )
     for u in unrepaired:
-        diffs.append({
-            "question_index": u.get("question_index"),
-            "actions": [],
-            "reason": u.get("reason", "unrepaired"),
-        })
+        diffs.append(
+            {
+                "question_index": u.get("question_index"),
+                "actions": [],
+                "reason": u.get("reason", "unrepaired"),
+            }
+        )
     for s in skipped:
-        diffs.append({
-            "question_index": s.get("question_index"),
-            "actions": [],
-            "reason": s.get("reason", "skipped"),
-        })
+        diffs.append(
+            {
+                "question_index": s.get("question_index"),
+                "actions": [],
+                "reason": s.get("reason", "skipped"),
+            }
+        )
     return diffs
-
-
 
 
 def should_send_to_llm(code_integrity_score: float) -> bool:
@@ -111,7 +117,9 @@ async def run_repair_stage(
     }
     roman_anomalies = (batch_validation_diagnostics or {}).get("roman_anomalies", [])
     result = await repair_questions(
-        to_repair, repair_config, db=db,
+        to_repair,
+        repair_config,
+        db=db,
         roman_diagnostics=roman_anomalies,
     )
 
@@ -171,7 +179,9 @@ async def run_repair_stage(
             reason_summary = ", ".join(
                 f"{reason}={count}" for reason, count in sorted(reason_counts.items())
             )
-            warnings.append(f"{len(skipped)} questions skipped repair ({reason_summary})")
+            warnings.append(
+                f"{len(skipped)} questions skipped repair ({reason_summary})"
+            )
 
     # Repair stats
     repair_total = len(to_repair)
@@ -179,9 +189,9 @@ async def run_repair_stage(
     repair_called = len(repaired)
     skip_rate = round(repair_skipped / repair_total, 4) if repair_total > 0 else 0.0
     if repaired:
-        avg_tokens_per_repair = int(round(
-            sum(r.get("token_used", 0) for r in repaired) / len(repaired)
-        ))
+        avg_tokens_per_repair = int(
+            round(sum(r.get("token_used", 0) for r in repaired) / len(repaired))
+        )
         estimated_tokens_saved = avg_tokens_per_repair * repair_skipped
     else:
         avg_tokens_per_repair = 0

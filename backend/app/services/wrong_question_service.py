@@ -74,7 +74,11 @@ async def record_wrong(
 
     # 错题自动进入复习调度（SM-2 由 ReviewSchedule 管理）
     await review_scheduler.auto_schedule_wrong_question(
-        db, user_id, question_id, int(question_version_id), commit=commit,
+        db,
+        user_id,
+        question_id,
+        int(question_version_id),
+        commit=commit,
     )
 
     if not commit:
@@ -131,7 +135,9 @@ async def update_wrong(
     return wq
 
 
-async def get_stats(db: AsyncSession, user_id: int, allowed_subject_ids: set[int] | None = None) -> dict:
+async def get_stats(
+    db: AsyncSession, user_id: int, allowed_subject_ids: set[int] | None = None
+) -> dict:
     conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     if allowed_subject_ids is not None:
         conditions.append(
@@ -240,7 +246,6 @@ async def get_stats(db: AsyncSession, user_id: int, allowed_subject_ids: set[int
         "by_subject": by_subject,
         "by_error_type": by_error_type,
     }
-
 
 
 # ── Enhanced list query with correlated subqueries ──
@@ -367,7 +372,9 @@ async def list_wrong_enriched(
 
     # Stable pagination: many imported/updated rows can share the same DB
     # timestamp. Without an id tie-breaker, OFFSET pages may duplicate/skip rows.
-    base_query = base_query.order_by(WrongQuestion.updated_at.desc(), WrongQuestion.id.desc())
+    base_query = base_query.order_by(
+        WrongQuestion.updated_at.desc(), WrongQuestion.id.desc()
+    )
 
     # Count after filters
     total_q = select(func.count()).select_from(base_query.subquery())
@@ -390,40 +397,46 @@ async def list_wrong_enriched(
         last_reviewed = row[5]
         mastery_pct = row[6]
 
-        items.append({
-            "id": wq.id,
-            "question_id": wq.question_id,
-            "wrong_answer": wq.wrong_answer,
-            "error_type": wq.error_type,
-            "review_count": wq.review_count or 0,
-            "review_record_count": review_count_val or 0,
-            "wrong_count": wq.review_count or 0,
-            # WrongQuestion.mastered is the canonical wrong-book state.  Keep
-            # the API contract consistent even when a legacy/incomplete row has
-            # no matching ReviewSchedule: a mastered item must never serialize
-            # as 20% and rely on one specific client to repair the display.
-            "mastery_percent": 1.0 if wq.mastered else round(
-                float(mastery_pct if mastery_pct is not None else 0.20), 4
-            ),
-            "is_mastered": bool(wq.mastered),
-            "next_review_at": next_review_val,
-            "last_reviewed_at": last_reviewed,
-            "last_wrong_at": wq.last_review_at,
-            "created_at": wq.created_at,
-            "updated_at": wq.updated_at,
-            "subject_id": question.subject_id if question else None,
-            "subject_code": subject.code if subject else None,
-            "subject_name": subject.name if subject else None,
-            "question_type": question.question_type if question else None,
-            "content": question.content if question else None,
-            "options": question.options if question else None,
-            "answer": question.answer if question else None,
-            "analysis": question.analysis if question else None,
-            "knowledge_points": kp_map.get(int(question.id), []) if question else None,
-            "image_url": question.image_url if question else None,
-            "ai_analysis": wq.ai_analysis,
-            "ai_analysis_status": "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty",
-        })
+        items.append(
+            {
+                "id": wq.id,
+                "question_id": wq.question_id,
+                "wrong_answer": wq.wrong_answer,
+                "error_type": wq.error_type,
+                "review_count": wq.review_count or 0,
+                "review_record_count": review_count_val or 0,
+                "wrong_count": wq.review_count or 0,
+                # WrongQuestion.mastered is the canonical wrong-book state.  Keep
+                # the API contract consistent even when a legacy/incomplete row has
+                # no matching ReviewSchedule: a mastered item must never serialize
+                # as 20% and rely on one specific client to repair the display.
+                "mastery_percent": 1.0
+                if wq.mastered
+                else round(float(mastery_pct if mastery_pct is not None else 0.20), 4),
+                "is_mastered": bool(wq.mastered),
+                "next_review_at": next_review_val,
+                "last_reviewed_at": last_reviewed,
+                "last_wrong_at": wq.last_review_at,
+                "created_at": wq.created_at,
+                "updated_at": wq.updated_at,
+                "subject_id": question.subject_id if question else None,
+                "subject_code": subject.code if subject else None,
+                "subject_name": subject.name if subject else None,
+                "question_type": question.question_type if question else None,
+                "content": question.content if question else None,
+                "options": question.options if question else None,
+                "answer": question.answer if question else None,
+                "analysis": question.analysis if question else None,
+                "knowledge_points": kp_map.get(int(question.id), [])
+                if question
+                else None,
+                "image_url": question.image_url if question else None,
+                "ai_analysis": wq.ai_analysis,
+                "ai_analysis_status": "ready"
+                if isinstance(wq.ai_analysis, dict) and wq.ai_analysis
+                else "empty",
+            }
+        )
 
     return items, total
 
@@ -431,7 +444,9 @@ async def list_wrong_enriched(
 # ── Batch operations ──
 
 
-BATCH_ACTIONS = frozenset({"add_to_review", "mark_mastered", "unmark_mastered", "remove_from_book", "delete"})
+BATCH_ACTIONS = frozenset(
+    {"add_to_review", "mark_mastered", "unmark_mastered", "remove_from_book", "delete"}
+)
 
 
 async def batch_operate(
@@ -473,9 +488,7 @@ async def batch_operate(
     # Batch operations share transaction-scoped per-question locks.  Process them
     # in a stable order so two overlapping batches cannot deadlock by taking the
     # same advisory locks in opposite order.
-    ordered_wqs = sorted(
-        wqs.items(), key=lambda pair: (pair[1].question_id, pair[0])
-    )
+    ordered_wqs = sorted(wqs.items(), key=lambda pair: (pair[1].question_id, pair[0]))
 
     if action == "add_to_review":
         from app.services import review_scheduler
@@ -507,12 +520,15 @@ async def batch_operate(
                         )
                     )
                     rebound = False
-                    if (
-                        schedule is None
-                        or int(schedule.question_version_id) != int(wq.question_version_id)
+                    if schedule is None or int(schedule.question_version_id) != int(
+                        wq.question_version_id
                     ):
                         schedule = await review_scheduler.auto_schedule_wrong_question(
-                            db, user_id, wq.question_id, int(wq.question_version_id), commit=False,
+                            db,
+                            user_id,
+                            wq.question_id,
+                            int(wq.question_version_id),
+                            commit=False,
                         )
                         rebound = True
                         changed = True
@@ -529,7 +545,9 @@ async def batch_operate(
                         if not rebound:
                             # Forcing a future occurrence into the queue invalidates any
                             # stale client task issued for the previous schedule state.
-                            schedule.occurrence_seq = int(schedule.occurrence_seq or 0) + 1
+                            schedule.occurrence_seq = (
+                                int(schedule.occurrence_seq or 0) + 1
+                            )
                         changed = True
                     item_changed = changed
 
@@ -542,7 +560,8 @@ async def batch_operate(
 
     elif action in ("mark_mastered", "unmark_mastered"):
         from app.services import review_scheduler
-        mastered = (action == "mark_mastered")
+
+        mastered = action == "mark_mastered"
         for wq_id, wq in ordered_wqs:
             # Mastery actions are wrong-book actions and must only apply to rows
             # that are still active in the book. A stale page can race a remove
@@ -554,7 +573,10 @@ async def batch_operate(
                 skipped_ids.append(wq_id)
                 continue
             changed = await review_scheduler.set_mastered_state(
-                db, user_id=user_id, question_id=wq.question_id, mastered=mastered,
+                db,
+                user_id=user_id,
+                question_id=wq.question_id,
+                mastered=mastered,
             )
             if changed:
                 updated_count += 1
@@ -607,9 +629,7 @@ async def batch_operate(
                     ReviewSchedule.question_id == wq.question_id,
                 )
             )
-            await db.execute(
-                delete(WrongQuestion).where(WrongQuestion.id == wq.id)
-            )
+            await db.execute(delete(WrongQuestion).where(WrongQuestion.id == wq.id))
             updated_count += 1
 
     skipped_ids.extend(not_found_ids)
@@ -652,8 +672,14 @@ async def get_task_flow(
     page_size = 500
     while True:
         page_items, total_count = await list_wrong_enriched(
-            db, user_id, subject_id=subject_id, error_type=error_type, topic=topic,
-            page=page, page_size=page_size, allowed_subject_ids=allowed_subject_ids,
+            db,
+            user_id,
+            subject_id=subject_id,
+            error_type=error_type,
+            topic=topic,
+            page=page,
+            page_size=page_size,
+            allowed_subject_ids=allowed_subject_ids,
         )
         all_items.extend(page_items)
         if not page_items or len(all_items) >= total_count:
@@ -667,11 +693,19 @@ async def get_task_flow(
     mastered: list[dict] = []
 
     for item in all_items:
-        if item["next_review_at"] and item["next_review_at"] <= today_end and not item["is_mastered"]:
+        if (
+            item["next_review_at"]
+            and item["next_review_at"] <= today_end
+            and not item["is_mastered"]
+        ):
             today_due.append(item)
         elif item["wrong_count"] >= 3 and not item["is_mastered"]:
             high_freq.append(item)
-        elif item["created_at"] and item["created_at"] >= fourteen_days_ago and not item["is_mastered"]:
+        elif (
+            item["created_at"]
+            and item["created_at"] >= fourteen_days_ago
+            and not item["is_mastered"]
+        ):
             recent_added.append(item)
         elif not item["is_mastered"]:
             to_consolidate.append(item)
@@ -679,11 +713,36 @@ async def get_task_flow(
             mastered.append(item)
 
     groups = [
-        {"key": "today_due", "title": "今日应复习", "total": len(today_due), "items": today_due[:preview_size]},
-        {"key": "high_frequency", "title": "高频错题", "total": len(high_freq), "items": high_freq[:preview_size]},
-        {"key": "recent_added", "title": "最近新增", "total": len(recent_added), "items": recent_added[:preview_size]},
-        {"key": "to_consolidate", "title": "待巩固", "total": len(to_consolidate), "items": to_consolidate[:preview_size]},
-        {"key": "mastered", "title": "已经掌握", "total": len(mastered), "items": mastered[:preview_size]},
+        {
+            "key": "today_due",
+            "title": "今日应复习",
+            "total": len(today_due),
+            "items": today_due[:preview_size],
+        },
+        {
+            "key": "high_frequency",
+            "title": "高频错题",
+            "total": len(high_freq),
+            "items": high_freq[:preview_size],
+        },
+        {
+            "key": "recent_added",
+            "title": "最近新增",
+            "total": len(recent_added),
+            "items": recent_added[:preview_size],
+        },
+        {
+            "key": "to_consolidate",
+            "title": "待巩固",
+            "total": len(to_consolidate),
+            "items": to_consolidate[:preview_size],
+        },
+        {
+            "key": "mastered",
+            "title": "已经掌握",
+            "total": len(mastered),
+            "items": mastered[:preview_size],
+        },
     ]
 
     # Summary counters are non-exclusive headline metrics.  Group buckets below
@@ -693,7 +752,8 @@ async def get_task_flow(
         "total_count": total_count,
         "mastered_count": sum(1 for item in all_items if item["is_mastered"]),
         "high_frequency_count": sum(
-            1 for item in all_items
+            1
+            for item in all_items
             if item["wrong_count"] >= 3 and not item["is_mastered"]
         ),
         "today_due_count": len(today_due),

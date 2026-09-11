@@ -147,7 +147,8 @@ async def get_dashboard_v2(
 ):
     """聚合学习看板 V2 — 一次请求包含总览、推荐、趋势、学科、遗忘、成长、自适应、年度摘要。"""
     data = await svc.get_dashboard_v2(
-        db, current_user.id,
+        db,
+        current_user.id,
         trend_days=trend_days,
         include_yearly_summary=include_yearly_summary,
         include_growth=include_growth,

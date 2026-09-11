@@ -301,7 +301,10 @@ def has_visual_question_content(question: Any) -> bool:
                 if not isinstance(segment, dict):
                     continue
                 seg_type = str(segment.get("type") or "").lower()
-                if seg_type in _IMAGE_SEGMENT_TYPES or seg_type in {"table", "table_markdown"}:
+                if seg_type in _IMAGE_SEGMENT_TYPES or seg_type in {
+                    "table",
+                    "table_markdown",
+                }:
                     return True
     return bool(iter_question_image_urls(question))
 
@@ -358,13 +361,17 @@ def _normalize_option_collection(options: Any) -> dict[str, str]:
         if isinstance(item, dict):
             # Canonical: {key: "A", text: "..."}.  Some old imports used
             # label/id/option for the key and content/value for the text.
-            key = str(
-                item.get("key")
-                or item.get("label")
-                or item.get("option")
-                or item.get("id")
-                or ""
-            ).strip().upper()
+            key = (
+                str(
+                    item.get("key")
+                    or item.get("label")
+                    or item.get("option")
+                    or item.get("id")
+                    or ""
+                )
+                .strip()
+                .upper()
+            )
             text = extract_option_text(item)
             if not text and len(item) == 1:
                 only_key, only_value = next(iter(item.items()))
@@ -393,7 +400,11 @@ def _normalize_option_collection(options: Any) -> dict[str, str]:
 def _normalize_blank_groups(groups: Any) -> list[dict[str, Any]]:
     """Normalize known blank-group shapes without guessing slot semantics."""
     if isinstance(groups, dict):
-        nested = groups.get("blank_option_groups") or groups.get("blank_groups") or groups.get("groups")
+        nested = (
+            groups.get("blank_option_groups")
+            or groups.get("blank_groups")
+            or groups.get("groups")
+        )
         if nested is not None:
             return _normalize_blank_groups(nested)
 
@@ -491,15 +502,24 @@ def extract_blank_option_groups(question: Any) -> list[dict[str, Any]]:
         for key in ("blank_ids", "blank_markers"):
             values = content.get(key)
             if isinstance(values, list):
-                slot_ids = [str(value or "").strip() for value in values if str(value or "").strip()]
+                slot_ids = [
+                    str(value or "").strip()
+                    for value in values
+                    if str(value or "").strip()
+                ]
                 if slot_ids:
                     break
 
     # Answer ids are more explicit than anonymous ``（ ）`` stem blanks.
     try:
-        from app.features.multi_blank_choice import extract_blank_slots, parse_multi_blank_answer
+        from app.features.multi_blank_choice import (
+            extract_blank_slots,
+            parse_multi_blank_answer,
+        )
 
-        parsed_answer, _ = parse_multi_blank_answer(_value(question, "answer"), allow_positional=False)
+        parsed_answer, _ = parse_multi_blank_answer(
+            _value(question, "answer"), allow_positional=False
+        )
         if len(parsed_answer) >= 2:
             slot_ids = list(parsed_answer.keys())
         if not slot_ids:
@@ -509,10 +529,7 @@ def extract_blank_option_groups(question: Any) -> list[dict[str, Any]]:
 
     if len(slot_ids) < 2:
         return []
-    return [
-        {"id": slot_id, "options": dict(shared_options)}
-        for slot_id in slot_ids
-    ]
+    return [{"id": slot_id, "options": dict(shared_options)} for slot_id in slot_ids]
 
 
 def get_shared_blank_options(groups: Any) -> dict[str, str] | None:
@@ -568,4 +585,6 @@ def format_question_answer(question: Any) -> str:
             return f"({slot_id})"
         return slot_id
 
-    return "；".join(f"{display_slot(slot_id)}{parsed[slot_id]}" for slot_id in ordered_ids)
+    return "；".join(
+        f"{display_slot(slot_id)}{parsed[slot_id]}" for slot_id in ordered_ids
+    )

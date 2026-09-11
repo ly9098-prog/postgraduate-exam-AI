@@ -67,11 +67,13 @@ class AdminAiModelConfigCreateRequest(BaseModel):
 
 class AdminAiConfigsResponse(BaseModel):
     """扁平映射: config_key → config_value (自动 JSON 反序列化)"""
+
     configs: dict
 
 
 class AdminAiConfigsPatchRequest(BaseModel):
     """只提交要修改的配置项。不存在的 key 静默忽略。"""
+
     configs: dict = Field(default_factory=dict)
 
 

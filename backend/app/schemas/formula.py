@@ -9,6 +9,7 @@ from app.schemas.base import BaseModel
 
 # ── Category ──
 
+
 class FormulaCategoryCreate(BaseModel):
     parent_id: int | None = None
     exam_scope: str = "exam408"
@@ -54,6 +55,7 @@ class FormulaCategoryResponse(BaseModel):
 
 # ── Tags ──
 
+
 class FormulaTagResponse(BaseModel):
     id: int
     code: str
@@ -64,6 +66,7 @@ class FormulaTagResponse(BaseModel):
 
 
 # ── Formula Card ──
+
 
 class FormulaBlock(BaseModel):
     label: str | None = None
@@ -105,7 +108,16 @@ class FormulaCardCreate(BaseModel):
     @classmethod
     def _validate_study_card_type(cls, value: str) -> str:
         normalized = str(value or "formula").strip().lower()
-        allowed = {"formula", "definition", "complexity", "protocol_rule", "key_conclusion", "confusable", "trap", "comparison"}
+        allowed = {
+            "formula",
+            "definition",
+            "complexity",
+            "protocol_rule",
+            "key_conclusion",
+            "confusable",
+            "trap",
+            "comparison",
+        }
         if normalized not in allowed:
             raise ValueError("study_card_type 不在允许范围")
         return normalized
@@ -147,7 +159,16 @@ class FormulaCardUpdate(BaseModel):
         if value is None:
             return None
         normalized = str(value).strip().lower()
-        if normalized not in {"formula", "definition", "complexity", "protocol_rule", "key_conclusion", "confusable", "trap", "comparison"}:
+        if normalized not in {
+            "formula",
+            "definition",
+            "complexity",
+            "protocol_rule",
+            "key_conclusion",
+            "confusable",
+            "trap",
+            "comparison",
+        }:
             raise ValueError("study_card_type 不在允许范围")
         return normalized
 
@@ -164,8 +185,10 @@ class FormulaCardUpdate(BaseModel):
 
 # ── Graph Asset ──
 
+
 class FormulaGraphAssetResponse(BaseModel):
     """Full graph asset response model for admin and user-facing APIs."""
+
     id: int
     formula_card_id: int
     source_type: str
@@ -264,7 +287,9 @@ class GraphPreviewResponse(BaseModel):
     width: int = 1600
     height: int = 1000
     mime_type: str = "image/png"
-    quality: QualityCheckResult = Field(default_factory=lambda: QualityCheckResult(passed=True))
+    quality: QualityCheckResult = Field(
+        default_factory=lambda: QualityCheckResult(passed=True)
+    )
     expires_at: datetime
 
 
@@ -309,6 +334,7 @@ class GraphBatchJobStatus(BaseModel):
 
 # ── Formula Card (updated response) ──
 
+
 class FormulaCardResponse(BaseModel):
     id: int
     exam_scope: str
@@ -350,11 +376,13 @@ class FormulaCardResponse(BaseModel):
 
 # ── Favorites ──
 
+
 class FormulaFavoriteToggle(BaseModel):
     pass  # Just the auth context
 
 
 # ── Random ──
+
 
 class FormulaRandomQuery(BaseModel):
     subject_code: str | None = None
@@ -365,6 +393,7 @@ class FormulaRandomQuery(BaseModel):
 
 
 # ── User API query params ──
+
 
 class FormulaListQuery(BaseModel):
     subject_code: str | None = None
@@ -394,6 +423,7 @@ class FormulaBatchReview(BaseModel):
 
 
 # ── Import job ──
+
 
 class FormulaImportJobResponse(BaseModel):
     id: int

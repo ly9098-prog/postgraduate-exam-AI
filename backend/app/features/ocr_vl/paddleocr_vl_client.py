@@ -139,13 +139,12 @@ def _extract_result_url(job_data: dict) -> str:
             return url
 
     raise ResultDownloadError(
-        f"No result URL in job data: "
-        f"{json.dumps(job_data, ensure_ascii=False)[:300]}"
+        f"No result URL in job data: {json.dumps(job_data, ensure_ascii=False)[:300]}"
     )
 
 
 _DEFAULT_BASE_URL = "https://paddleocr.aistudio-app.com"
-_OCR_VL_API_PATH = "/api/v2/ocr/jobs"   # endpoint path used by urljoin
+_OCR_VL_API_PATH = "/api/v2/ocr/jobs"  # endpoint path used by urljoin
 _DEFAULT_POLL_INTERVAL = 5.0  # seconds between polls (官方建议 ≥5s)
 _DEFAULT_POLL_TIMEOUT = 120  # max total poll time
 _MAX_RETRIES = 3
@@ -155,9 +154,11 @@ _OCR_VL_SEM_MAX = 2  # max concurrent remote OCR calls across all processes
 
 # SSRF and size limits for result URL download
 _MAX_CONTENT_LENGTH_HEADER_BYTES = 50 * 1024 * 1024  # 50 MB (wire / Content-Length)
-_MAX_DECODED_DOWNLOAD_BYTES = 100 * 1024 * 1024     # 100 MB after decoding
+_MAX_DECODED_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MB after decoding
 _MAX_JSONL_LINES = 50_000
-_MAX_JSONL_LINE_LENGTH = 200_000  # 200 KB per line — any longer line rejects the download
+_MAX_JSONL_LINE_LENGTH = (
+    200_000  # 200 KB per line — any longer line rejects the download
+)
 _RESULT_DOWNLOAD_TIMEOUT = 60  # seconds
 
 
@@ -176,7 +177,11 @@ def _extract_from_entry(
     result_data = entry.get("result")
     if not isinstance(result_data, dict):
         result_data = entry
-    layout_results = result_data.get("layoutParsingResults") if isinstance(result_data, dict) else None
+    layout_results = (
+        result_data.get("layoutParsingResults")
+        if isinstance(result_data, dict)
+        else None
+    )
     if isinstance(layout_results, list):
         for lr in layout_results:
             if not isinstance(lr, dict):
@@ -201,10 +206,7 @@ def _extract_from_entry(
 
     # Fallback: top-level text/ocr_text/content fields
     entry_text = (
-        entry.get("text")
-        or entry.get("ocr_text")
-        or entry.get("content")
-        or ""
+        entry.get("text") or entry.get("ocr_text") or entry.get("content") or ""
     )
     if entry_text:
         text_parts.append(str(entry_text))
@@ -244,9 +246,7 @@ def _validate_result_url_sync(url: str) -> str:
     parsed = urlparse(url)
 
     if parsed.scheme not in ("https",):
-        raise ResultDownloadError(
-            f"Result URL must use https, got {parsed.scheme!r}"
-        )
+        raise ResultDownloadError(f"Result URL must use https, got {parsed.scheme!r}")
 
     hostname = parsed.hostname
     if not hostname:
@@ -374,7 +374,8 @@ def _contains_table_markup(text: str) -> bool:
         separator = lines[index + 1].strip().strip("|")
         parts = [part.strip() for part in separator.split("|")]
         if len(parts) >= 2 and all(
-            part and set(part.replace(":", "").replace(" ", "")) <= {"-"}
+            part
+            and set(part.replace(":", "").replace(" ", "")) <= {"-"}
             and part.count("-") >= 3
             for part in parts
         ):
@@ -462,7 +463,8 @@ class _CircuitBreaker:
         if self._failure_count >= self._failure_threshold:
             logger.warning(
                 "Circuit breaker %s: opened after %d failures",
-                self._name, self._failure_count,
+                self._name,
+                self._failure_count,
             )
             self._state = self.OPEN
 
@@ -473,7 +475,9 @@ class _CircuitBreaker:
         if self._state == self.OPEN:
             elapsed = time.monotonic() - self._last_failure_time
             if elapsed >= self._recovery_timeout:
-                logger.info("Circuit breaker %s: open → half_open (recovery)", self._name)
+                logger.info(
+                    "Circuit breaker %s: open → half_open (recovery)", self._name
+                )
                 self._state = self.HALF_OPEN
                 return
             raise CircuitBreakerOpenError(
@@ -508,7 +512,11 @@ class PaddleOCRVLResult:
 
     def get_blocks_by_type(self, block_type: str) -> list[dict]:
         """Return layout blocks matching a given type."""
-        return [b for b in self.layout_blocks if b.get("type") == block_type or b.get("label") == block_type]
+        return [
+            b
+            for b in self.layout_blocks
+            if b.get("type") == block_type or b.get("label") == block_type
+        ]
 
     def get_blocks_by_category(self, category: str) -> list[dict]:
         """Return layout blocks matching a given category."""
@@ -569,6 +577,7 @@ class PaddleOCRVLClient:
         ttl = int(max(600, self._poll_timeout + _RESULT_DOWNLOAD_TIMEOUT + 180))
         try:
             from app.core.cache import cache
+
             client = await cache._ensure_client()
             if client is None:
                 return None
@@ -605,6 +614,7 @@ class PaddleOCRVLClient:
             return
         try:
             from app.core.cache import cache
+
             client = await cache._ensure_client()
             if client is None:
                 return
@@ -629,7 +639,7 @@ class PaddleOCRVLClient:
     @staticmethod
     def _jitter_delay(base: float, attempt: int, max_delay: float = 30.0) -> float:
         """Exponential backoff with jitter: base * 2^attempt + random(0, 1)."""
-        delay = min(base * (2 ** attempt) + random.random(), max_delay)
+        delay = min(base * (2**attempt) + random.random(), max_delay)
         return delay
 
     def _get_client(self) -> httpx.AsyncClient:
@@ -674,9 +684,8 @@ class PaddleOCRVLClient:
             from app.services.model_config_resolver import (
                 AICapability,
             )
-            resolved = await resolver.resolve_for_capability(
-                AICapability.OCR_VL
-            )
+
+            resolved = await resolver.resolve_for_capability(AICapability.OCR_VL)
             api_token = await resolver.resolve_secret(resolved)
             base_url = resolved.endpoint or fallback_base_url or _DEFAULT_BASE_URL
             model = resolved.model_name or "PaddleOCR-VL-1.6"
@@ -763,7 +772,9 @@ class PaddleOCRVLClient:
                 except Exception as exc:
                     logger.warning(
                         "[PaddleOCR-VL] batch image %d/%d failed: %s",
-                        idx + 1, len(images), exc,
+                        idx + 1,
+                        len(images),
+                        exc,
                     )
                 finally:
                     completed += 1
@@ -904,7 +915,10 @@ class PaddleOCRVLClient:
 
                 logger.warning(
                     "PaddleOCR-VL %s attempt %d/%d failed: %s",
-                    desc, attempt + 1, self._max_retries, exc,
+                    desc,
+                    attempt + 1,
+                    self._max_retries,
+                    exc,
                 )
 
                 if attempt < self._max_retries - 1:
@@ -918,14 +932,19 @@ class PaddleOCRVLClient:
                 last_error = exc
                 logger.warning(
                     "PaddleOCR-VL %s attempt %d/%d network error: %s",
-                    desc, attempt + 1, self._max_retries, exc,
+                    desc,
+                    attempt + 1,
+                    self._max_retries,
+                    exc,
                 )
                 if attempt < self._max_retries - 1:
                     await asyncio.sleep(self._jitter_delay(_RETRY_DELAY, attempt))
 
         logger.error(
             "PaddleOCR-VL %s exhausted retries=%d last_error=%s",
-            desc, self._max_retries, last_error,
+            desc,
+            self._max_retries,
+            last_error,
         )
         raise JobSubmissionError(
             f"All {self._max_retries} {desc} attempts failed: {last_error}"
@@ -955,17 +974,14 @@ class PaddleOCRVLClient:
         code = body.get("code", -1)
         if code != 0:
             msg = body.get("msg") or body.get("message") or "unknown"
-            raise JobPollingError(
-                f"Job {job_id} poll API error: code={code} msg={msg}"
-            )
+            raise JobPollingError(f"Job {job_id} poll API error: code={code} msg={msg}")
         data = body.get("data")
         if not isinstance(data, dict):
-            raise JobPollingError(
-                f"Job {job_id} poll response missing 'data'"
-            )
+            raise JobPollingError(f"Job {job_id} poll response missing 'data'")
         logger.info(
             "[PaddleOCR-VL] poll job=%s state=%s",
-            job_id, data.get("state", "unknown"),
+            job_id,
+            data.get("state", "unknown"),
         )
         return data
 
@@ -989,7 +1005,11 @@ class PaddleOCRVLClient:
 
             try:
                 body = await self._poll_job_status(job_id)
-            except (JobPollingError, httpx.TimeoutException, httpx.TransportError) as exc:
+            except (
+                JobPollingError,
+                httpx.TimeoutException,
+                httpx.TransportError,
+            ) as exc:
                 logger.warning("Poll job %s failed, retrying: %s", job_id, exc)
                 self._circuit_breaker.record_failure()
                 # Cap sleep to remaining deadline
@@ -1005,7 +1025,12 @@ class PaddleOCRVLClient:
             if status in ("done", "completed", "success", "finished"):
                 return body
             if status in ("failed", "error"):
-                error_msg = body.get("errorMsg") or body.get("error") or body.get("message") or "unknown error"
+                error_msg = (
+                    body.get("errorMsg")
+                    or body.get("error")
+                    or body.get("message")
+                    or "unknown error"
+                )
                 raise JobPollingError(f"Job {job_id} failed: {error_msg}")
 
             # still pending/running — wait, capped to remaining deadline
@@ -1021,9 +1046,9 @@ class PaddleOCRVLClient:
         try:
             url = urljoin(self._base_url, f"{_OCR_VL_API_PATH}/{job_id}")
             headers = {
-            **get_trace_headers(),
-            "Authorization": f"Bearer {self._api_token}",
-        }
+                **get_trace_headers(),
+                "Authorization": f"Bearer {self._api_token}",
+            }
             client = self._get_client()
             await client.delete(url, headers=headers)
             logger.info("[PaddleOCR-VL] cancel job=%s", job_id)
@@ -1034,7 +1059,9 @@ class PaddleOCRVLClient:
     # Result parsing
     # ------------------------------------------------------------------
 
-    async def _download_and_parse_jsonl(self, url: str) -> tuple[str, float, list[dict], list[dict]]:
+    async def _download_and_parse_jsonl(
+        self, url: str
+    ) -> tuple[str, float, list[dict], list[dict]]:
         """Download JSONL from url and extract text, confidence, layout blocks, and raw entries.
 
         Uses bounded streaming to enforce size/line limits mid-read — never buffers
@@ -1057,19 +1084,32 @@ class PaddleOCRVLClient:
                 # Resolve relative redirects, then validate DNS off the event loop.
                 redirect_url = urljoin(str(response.url), location)
                 redirect_url = await _validate_result_url(redirect_url)
-                async with client.stream("GET", redirect_url, follow_redirects=False) as final_resp:
+                async with client.stream(
+                    "GET", redirect_url, follow_redirects=False
+                ) as final_resp:
                     final_resp.raise_for_status()
                     # Content-Length pre-check on final response too
                     _check_content_length(final_resp)
-                    raw_text, confidence, layout_blocks, raw_entries = await self._stream_and_parse(final_resp)
+                    (
+                        raw_text,
+                        confidence,
+                        layout_blocks,
+                        raw_entries,
+                    ) = await self._stream_and_parse(final_resp)
             else:
                 response.raise_for_status()
-                raw_text, confidence, layout_blocks, raw_entries = await self._stream_and_parse(response)
+                (
+                    raw_text,
+                    confidence,
+                    layout_blocks,
+                    raw_entries,
+                ) = await self._stream_and_parse(response)
 
         return raw_text, confidence, layout_blocks, raw_entries
 
     async def _stream_and_parse(
-        self, response: httpx.Response,
+        self,
+        response: httpx.Response,
     ) -> tuple[str, float, list[dict], list[dict]]:
         """Bounded streaming parse of JSONL response.
 
@@ -1212,7 +1252,12 @@ class PaddleOCRVLClient:
         """Download and parse the OCR result from resultUrl.jsonUrl."""
         json_url = _extract_result_url(job_data)
 
-        raw_text, confidence, layout_blocks, raw_entries = await self._download_and_parse_jsonl(json_url)
+        (
+            raw_text,
+            confidence,
+            layout_blocks,
+            raw_entries,
+        ) = await self._download_and_parse_jsonl(json_url)
         return PaddleOCRVLResult(
             text=raw_text,
             confidence=confidence,

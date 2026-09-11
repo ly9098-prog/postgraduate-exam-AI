@@ -20,7 +20,9 @@ def _raise_exam_error(exc: ValueError) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, admin_exam_service.ExamPaperStateError):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+    )
 
 
 @router.get("/papers", response_model=list[AdminExamPaperListItem])
@@ -47,7 +49,9 @@ async def create_paper(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        paper = await admin_exam_service.create_exam_paper(db, data, current_admin, request)
+        paper = await admin_exam_service.create_exam_paper(
+            db, data, current_admin, request
+        )
         await db.commit()
         return await admin_exam_service.get_exam_paper_detail(db, int(paper.id))
     except ValueError as exc:
@@ -76,7 +80,9 @@ async def update_paper(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await admin_exam_service.update_exam_paper(db, paper_id, data, current_admin, request)
+        await admin_exam_service.update_exam_paper(
+            db, paper_id, data, current_admin, request
+        )
         await db.commit()
         return await admin_exam_service.get_exam_paper_detail(db, paper_id)
     except ValueError as exc:
@@ -93,7 +99,9 @@ async def replace_items(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await admin_exam_service.replace_exam_paper_items(db, paper_id, data, current_admin, request)
+        await admin_exam_service.replace_exam_paper_items(
+            db, paper_id, data, current_admin, request
+        )
         await db.commit()
         return await admin_exam_service.get_exam_paper_detail(db, paper_id)
     except ValueError as exc:
@@ -109,7 +117,9 @@ async def publish_paper(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await admin_exam_service.publish_exam_paper(db, paper_id, current_admin, request)
+        await admin_exam_service.publish_exam_paper(
+            db, paper_id, current_admin, request
+        )
         await db.commit()
         return await admin_exam_service.get_exam_paper_detail(db, paper_id)
     except ValueError as exc:
@@ -125,7 +135,9 @@ async def archive_paper(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await admin_exam_service.archive_exam_paper(db, paper_id, current_admin, request)
+        await admin_exam_service.archive_exam_paper(
+            db, paper_id, current_admin, request
+        )
         await db.commit()
         return await admin_exam_service.get_exam_paper_detail(db, paper_id)
     except ValueError as exc:

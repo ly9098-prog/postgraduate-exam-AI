@@ -72,7 +72,9 @@ class PaddleOCRVLAdapter:
             )
 
         if not image:
-            logger.warning("PaddleOCR-VL requires an image — no image provided, using fallback text")
+            logger.warning(
+                "PaddleOCR-VL requires an image — no image provided, using fallback text"
+            )
             return OCRFixResult(
                 fixed_text=ocr_text,
                 confidence=0.0,
@@ -98,7 +100,10 @@ class PaddleOCRVLAdapter:
             duration_ms = round((time.monotonic() - start) * 1000)
             logger.info(
                 "PaddleOCR-VL succeeded (entry=%s, %.2fs, conf=%.2f, text_len=%d)",
-                entry_point, duration_ms / 1000, result.confidence, len(result.text),
+                entry_point,
+                duration_ms / 1000,
+                result.confidence,
+                len(result.text),
             )
             return OCRFixResult(
                 fixed_text=result.text or ocr_text,
@@ -115,7 +120,9 @@ class PaddleOCRVLAdapter:
             duration_ms = round((time.monotonic() - start) * 1000)
             logger.warning(
                 "PaddleOCR-VL failed (entry=%s, %.2fs): %s — falling through",
-                entry_point, duration_ms / 1000, exc,
+                entry_point,
+                duration_ms / 1000,
+                exc,
             )
             return OCRFixResult(
                 fixed_text=ocr_text,

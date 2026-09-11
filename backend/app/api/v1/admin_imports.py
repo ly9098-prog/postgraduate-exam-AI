@@ -106,7 +106,9 @@ router = APIRouter(prefix="/api/admin/v1/imports", tags=["admin-imports"])
 def _raise_import_error(exc: ValueError) -> None:
     if str(exc) in {"导入批次不存在", "导入题目不存在", "AI任务不存在"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+    )
 
 
 @router.post("/upload", response_model=PipelineUploadResponse)
@@ -134,7 +136,9 @@ async def upload_import_file(
             content_type=file.content_type,
             subject=subject,
             subject_id=subject_id,
-            import_mode=import_mode.value if isinstance(import_mode, ImportMode) else import_mode,
+            import_mode=import_mode.value
+            if isinstance(import_mode, ImportMode)
+            else import_mode,
             enable_ai_repair=enable_ai_repair,
             confidence_threshold=confidence_threshold,
             image_fast_mode=image_fast_mode,
@@ -154,7 +158,7 @@ async def upload_segment_image(
     file: UploadFile,
     _=Depends(require_permissions("import:write")),
 ):
-    """"上传segment编辑器中的替换图片，压缩后保存到存储后端并返回URL。"""
+    """ "上传segment编辑器中的替换图片，压缩后保存到存储后端并返回URL。"""
     from app.services.storage_backend import compress_image, get_storage
 
     ctype = (file.content_type or "").lower()
@@ -228,10 +232,12 @@ async def admin_resume_pipeline(
     # 检查当前状态 — use pipeline_store directly for non-DB pipelines
     from app.features.pipeline_orchestrator import _get_pipeline_store as _get_ps
     from app.features.pipeline_orchestrator import _pipeline_store
+
     status_data = await _get_ps(pipeline_id)
     if status_data is None:
         # check image pipeline store
         from app.services.import_pipeline_service import _get_image_pipeline_status
+
         status_data = await _get_image_pipeline_status(pipeline_id)
 
     if status_data is None:
@@ -247,22 +253,29 @@ async def admin_resume_pipeline(
     # 读取 checkpoint
     ckpt = await _get_stage_checkpoint(pipeline_id)
     if not ckpt:
-        logger.warning("No stage checkpoint found for pipeline %s; will run full pipeline", pipeline_id)
+        logger.warning(
+            "No stage checkpoint found for pipeline %s; will run full pipeline",
+            pipeline_id,
+        )
     else:
         logger.info(
             "Pipeline %s resume with checkpoint: %d stages completed, failed_stage=%s",
-            pipeline_id, len(ckpt.get("completed_stages") or []), ckpt.get("failed_stage"),
+            pipeline_id,
+            len(ckpt.get("completed_stages") or []),
+            ckpt.get("failed_stage"),
         )
 
     # P4-3: 检查 artifact 状态，记录哪些 stage 可通过 artifact 恢复
     artifact_stages: list[str] = []
     try:
         from app.features.pipeline_artifacts import list_artifacts
+
         artifact_stages = list_artifacts(pipeline_id)
         if artifact_stages:
             logger.info(
                 "Pipeline %s has artifacts for stages: %s — will use true resume",
-                pipeline_id, artifact_stages,
+                pipeline_id,
+                artifact_stages,
             )
     except Exception:
         pass
@@ -290,20 +303,24 @@ async def admin_resume_pipeline(
 
     # 设置 pipeline store 为 processing
     existing_store = _pipeline_store.get(pipeline_id, {})
-    await _set_pipeline_store(pipeline_id, {
-        "pipeline_id": pipeline_id,
-        "status": "processing",
-        "source_type": source_type,
-        "current_stage": "extract",
-        "stages": {},
-        "stats": {},
-        "errors": [],
-        "started_at": serialize_utc_datetime(utcnow()),
-        "page_range": existing_store.get("page_range"),
-    })
+    await _set_pipeline_store(
+        pipeline_id,
+        {
+            "pipeline_id": pipeline_id,
+            "status": "processing",
+            "source_type": source_type,
+            "current_stage": "extract",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": serialize_utc_datetime(utcnow()),
+            "page_range": existing_store.get("page_range"),
+        },
+    )
 
     # Stage the re-uploaded file to persistent storage
     from app.services.staging_storage import async_store_file
+
     resume_staging = await async_store_file(
         tmp_path,
         original_name=file.filename or f"resume_{pipeline_id}",
@@ -312,6 +329,7 @@ async def admin_resume_pipeline(
 
     # Enqueue via durable queue — replaces asyncio.create_task(_run_resume)
     from app.services.task_queue_worker import enqueue_admin_resume
+
     result = await enqueue_admin_resume(
         pipeline_id=pipeline_id,
         staging_object_id=resume_staging.object_id,
@@ -323,11 +341,15 @@ async def admin_resume_pipeline(
     )
     if not result:
         # Enqueue rejected — set pipeline to failed so it doesn't hang forever
-        await _set_pipeline_store(pipeline_id, {
-            **existing_store,
-            "status": "failed",
-            "errors": existing_store.get("errors", []) + [f"Queue rejected: {result.reason}"],
-        })
+        await _set_pipeline_store(
+            pipeline_id,
+            {
+                **existing_store,
+                "status": "failed",
+                "errors": existing_store.get("errors", [])
+                + [f"Queue rejected: {result.reason}"],
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"任务队列已满，请稍后重试: {result.reason}",
@@ -361,16 +383,31 @@ async def get_import_review_queue(
     source_type: str | None = None,
     keyword: str | None = None,
     risk_level: str | None = Query(None, pattern="^(high|medium|low)$"),
-    answer_status: str | None = Query(None, pattern="^(missing|imported|ai_filled|manual_filled|manual_verified|abnormal)$"),
+    answer_status: str | None = Query(
+        None,
+        pattern="^(missing|imported|ai_filled|manual_filled|manual_verified|abnormal)$",
+    ),
     question_type: str | None = None,
-    sort: str | None = Query(None, pattern="^(source_order|created_desc|risk_desc|answer_priority)$"),
+    sort: str | None = Query(
+        None, pattern="^(source_order|created_desc|risk_desc|answer_priority)$"
+    ),
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await list_review_queue(
-        db, page, page_size, status, batch_id, subject, source_type, keyword,
-        risk_level=risk_level, subject_id=subject_id,
-        answer_status=answer_status, question_type=question_type, sort=sort,
+        db,
+        page,
+        page_size,
+        status,
+        batch_id,
+        subject,
+        source_type,
+        keyword,
+        risk_level=risk_level,
+        subject_id=subject_id,
+        answer_status=answer_status,
+        question_type=question_type,
+        sort=sort,
     )
     return paginated_response(items, total, page, page_size)
 
@@ -415,7 +452,9 @@ async def update_import_question_item(
         _raise_import_error(exc)
 
 
-@router.post("/questions/{import_id}/complete", response_model=AdminImportCompleteResponse)
+@router.post(
+    "/questions/{import_id}/complete", response_model=AdminImportCompleteResponse
+)
 async def complete_import_question_item(
     import_id: int,
     request: Request,
@@ -434,7 +473,9 @@ async def complete_import_question_item(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
 
-@router.post("/questions/batch-complete", response_model=AdminImportBatchCompleteResponse)
+@router.post(
+    "/questions/batch-complete", response_model=AdminImportBatchCompleteResponse
+)
 async def batch_complete_import_questions_item(
     data: AdminImportBatchCompleteRequest,
     request: Request,
@@ -443,7 +484,12 @@ async def batch_complete_import_questions_item(
 ):
     try:
         result = await batch_complete_import_questions(
-            db, data.import_ids, data.fields, data.strategy, current_admin, request,
+            db,
+            data.import_ids,
+            data.fields,
+            data.strategy,
+            current_admin,
+            request,
         )
         return result
     except ValueError as exc:
@@ -461,7 +507,9 @@ async def approve_import_question_item(
     try:
         item = await approve_import_question(db, import_id, current_admin.id)
         await db.commit()
-        return AdminImportActionResponse(id=item.id, status=item.status, affected_count=1)
+        return AdminImportActionResponse(
+            id=item.id, status=item.status, affected_count=1
+        )
     except ValueError as exc:
         await db.rollback()
         _raise_import_error(exc)
@@ -475,9 +523,13 @@ async def reject_import_question_item(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        item = await reject_import_question(db, import_id, current_admin.id, data.reason if data else None)
+        item = await reject_import_question(
+            db, import_id, current_admin.id, data.reason if data else None
+        )
         await db.commit()
-        return AdminImportActionResponse(id=item.id, status=item.status, affected_count=1)
+        return AdminImportActionResponse(
+            id=item.id, status=item.status, affected_count=1
+        )
     except ValueError as exc:
         await db.rollback()
         _raise_import_error(exc)
@@ -492,7 +544,9 @@ async def approve_import_batch_items(
     try:
         count = await approve_import_batch(db, batch_id, current_admin.id)
         await db.commit()
-        return AdminImportActionResponse(batch_id=batch_id, status="approved", affected_count=count)
+        return AdminImportActionResponse(
+            batch_id=batch_id, status="approved", affected_count=count
+        )
     except ValueError as exc:
         await db.rollback()
         _raise_import_error(exc)
@@ -521,9 +575,13 @@ async def reject_import_batch_items(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        count = await reject_import_batch(db, batch_id, current_admin.id, data.reason if data else None)
+        count = await reject_import_batch(
+            db, batch_id, current_admin.id, data.reason if data else None
+        )
         await db.commit()
-        return AdminImportActionResponse(batch_id=batch_id, status="rejected", affected_count=count)
+        return AdminImportActionResponse(
+            batch_id=batch_id, status="rejected", affected_count=count
+        )
     except ValueError as exc:
         await db.rollback()
         _raise_import_error(exc)
@@ -581,8 +639,15 @@ async def list_imports(
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    batches, total = await list_import_batches(db, page, page_size, status, source_type, keyword)
-    return paginated_response([AdminImportBatchListItem.model_validate(item) for item in batches], total, page, page_size)
+    batches, total = await list_import_batches(
+        db, page, page_size, status, source_type, keyword
+    )
+    return paginated_response(
+        [AdminImportBatchListItem.model_validate(item) for item in batches],
+        total,
+        page,
+        page_size,
+    )
 
 
 @router.get("/{batch_id}", response_model=AdminImportBatchDetail)
@@ -648,7 +713,9 @@ async def import_text_questions(
         process_question_pipeline,
     )
 
-    batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
     items: list[TextImportResultItem] = []
     succeeded = 0
     failed = 0
@@ -679,11 +746,13 @@ async def import_text_questions(
             )
 
             if not result["is_valid"]:
-                items.append(TextImportResultItem(
-                    block_index=i,
-                    status="fail",
-                    error=f"校验失败: {', '.join(result['errors'])}",
-                ))
+                items.append(
+                    TextImportResultItem(
+                        block_index=i,
+                        status="fail",
+                        error=f"校验失败: {', '.join(result['errors'])}",
+                    )
+                )
                 failed += 1
                 continue
 
@@ -698,25 +767,31 @@ async def import_text_questions(
                     skip_existing=True,
                 )
             if qi is None:
-                items.append(TextImportResultItem(
-                    block_index=i,
-                    status="duplicate",
-                    error="题库中已存在相同题目",
-                ))
+                items.append(
+                    TextImportResultItem(
+                        block_index=i,
+                        status="duplicate",
+                        error="题库中已存在相同题目",
+                    )
+                )
                 duplicates_filtered += 1
                 continue
-            items.append(TextImportResultItem(
-                block_index=i,
-                import_id=qi.id,
-                status="ok",
-            ))
+            items.append(
+                TextImportResultItem(
+                    block_index=i,
+                    import_id=qi.id,
+                    status="ok",
+                )
+            )
             succeeded += 1
         except Exception as exc:
-            items.append(TextImportResultItem(
-                block_index=i,
-                status="fail",
-                error=str(exc),
-            ))
+            items.append(
+                TextImportResultItem(
+                    block_index=i,
+                    status="fail",
+                    error=str(exc),
+                )
+            )
             failed += 1
 
     await db.commit()
@@ -748,19 +823,39 @@ async def batch_answer_preview(
     from app.services.batch_answer_service import BusinessError, generate_preview
 
     if len(data.raw_text) > _MAX_RAW_TEXT_LENGTH:
-        raise HTTPException(status_code=422, detail={"error_code": "TEXT_TOO_LONG", "detail": "答案文本过长"})
+        raise HTTPException(
+            status_code=422,
+            detail={"error_code": "TEXT_TOO_LONG", "detail": "答案文本过长"},
+        )
 
     try:
         return await generate_preview(
-            db, batch_id, data.raw_text,
+            db,
+            batch_id,
+            data.raw_text,
             admin_id=current_admin.id,
         )
     except BusinessError as exc:
-        logger.warning("batch_answer_preview failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": exc.code, "detail": exc.message})
+        logger.warning(
+            "batch_answer_preview failed: batch_id=%s error_code=%s message=%s",
+            batch_id,
+            exc.code,
+            exc.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.code, "detail": exc.message},
+        )
     except ValueError as exc:
-        logger.warning("batch_answer_preview invalid input: batch_id=%s error=%s", batch_id, str(exc))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": "INVALID_INPUT", "detail": str(exc)})
+        logger.warning(
+            "batch_answer_preview invalid input: batch_id=%s error=%s",
+            batch_id,
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": "INVALID_INPUT", "detail": str(exc)},
+        )
 
 
 @router.post("/{batch_id}/answers/apply", response_model=BatchAnswerApplyResponse)
@@ -775,18 +870,34 @@ async def batch_answer_apply(
     from app.services.batch_answer_service import BusinessError, apply_preview
 
     try:
-        result = await apply_preview(db, batch_id, data.preview_token, current_admin, request=request)
+        result = await apply_preview(
+            db, batch_id, data.preview_token, current_admin, request=request
+        )
         return result
     except HTTPException:
         raise
     except BusinessError as exc:
-        logger.warning("batch_answer_apply failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": exc.code, "detail": exc.message})
+        logger.warning(
+            "batch_answer_apply failed: batch_id=%s error_code=%s message=%s",
+            batch_id,
+            exc.code,
+            exc.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.code, "detail": exc.message},
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": "INVALID_INPUT", "detail": str(exc)})
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": "INVALID_INPUT", "detail": str(exc)},
+        )
     except Exception as exc:
         logger.exception("Batch answer apply failed: %s", exc)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"error_code": "INTERNAL_ERROR", "detail": "写入失败，请稍后重试"})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error_code": "INTERNAL_ERROR", "detail": "写入失败，请稍后重试"},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -802,10 +913,13 @@ _IMAGE_MAX_TOTAL_BYTES = 50 * 1024 * 1024
 def _get_image_max_bytes() -> int:
     """Return image max bytes from settings (Pydantic default is 5 MB)."""
     from app.core.config import settings
+
     return settings.IMAGE_IMPORT_MAX_BYTES
 
 
-def _validate_answer_image(filename: str, content: bytes, content_type: str | None) -> str | None:
+def _validate_answer_image(
+    filename: str, content: bytes, content_type: str | None
+) -> str | None:
     """校验单张答案/解析图片，返回错误原因（None 表示通过）。"""
     max_bytes = _get_image_max_bytes()
     if not filename:
@@ -817,7 +931,7 @@ def _validate_answer_image(filename: str, content: bytes, content_type: str | No
     if not content:
         return "图片内容为空"
     if len(content) > max_bytes:
-        return f"图片过大（最大 {max_bytes // (1024*1024)}MB）"
+        return f"图片过大（最大 {max_bytes // (1024 * 1024)}MB）"
     return None
 
 
@@ -825,7 +939,9 @@ def _validate_answer_image(filename: str, content: bytes, content_type: str | No
 async def batch_answer_image_preview(
     batch_id: str,
     files: list[UploadFile] = File(..., description="答案/解析图片（多张）"),
-    mode: str = Form("answer_only", description="导入模式：answer_only | answer_analysis"),
+    mode: str = Form(
+        "answer_only", description="导入模式：answer_only | answer_analysis"
+    ),
     current_admin=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -842,17 +958,26 @@ async def batch_answer_image_preview(
     )
 
     if not files:
-        raise HTTPException(status_code=400, detail={"error_code": "NO_FILES", "detail": "未上传任何图片"})
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "NO_FILES", "detail": "未上传任何图片"},
+        )
     if len(files) > _IMAGE_MAX_FILES:
         raise HTTPException(
             status_code=400,
-            detail={"error_code": "TOO_MANY_FILES", "detail": f"单次最多上传 {_IMAGE_MAX_FILES} 张图片"},
+            detail={
+                "error_code": "TOO_MANY_FILES",
+                "detail": f"单次最多上传 {_IMAGE_MAX_FILES} 张图片",
+            },
         )
 
     if mode not in ("answer_only", "answer_analysis"):
         raise HTTPException(
             status_code=422,
-            detail={"error_code": "INVALID_MODE", "detail": "mode 必须是 answer_only 或 answer_analysis"},
+            detail={
+                "error_code": "INVALID_MODE",
+                "detail": "mode 必须是 answer_only 或 answer_analysis",
+            },
         )
 
     # 读取并校验图片
@@ -864,7 +989,9 @@ async def batch_answer_image_preview(
         suffix = os.path.splitext(filename)[1] or ".png"
         try:
             tmp = await stream_to_temp(
-                f, max_size=_get_image_max_bytes(), suffix=suffix,
+                f,
+                max_size=_get_image_max_bytes(),
+                suffix=suffix,
             )
         except ValueError as exc:
             rejected.append(f"{filename}: {exc}")
@@ -878,7 +1005,7 @@ async def batch_answer_image_preview(
             if total_bytes > _IMAGE_MAX_TOTAL_BYTES:
                 raise HTTPException(
                     status_code=413,
-                    detail=f"上传图片总量超过 {_IMAGE_MAX_TOTAL_BYTES // (1024*1024)}MB 限制",
+                    detail=f"上传图片总量超过 {_IMAGE_MAX_TOTAL_BYTES // (1024 * 1024)}MB 限制",
                 )
             with open(tmp.path, "rb") as fh:
                 content = fh.read(_get_image_max_bytes() + 1)
@@ -895,24 +1022,42 @@ async def batch_answer_image_preview(
     if not images_data:
         raise HTTPException(
             status_code=400,
-            detail={"error_code": "ALL_FILES_REJECTED", "detail": f"所有图片均未通过校验: {'; '.join(rejected)}"},
+            detail={
+                "error_code": "ALL_FILES_REJECTED",
+                "detail": f"所有图片均未通过校验: {'; '.join(rejected)}",
+            },
         )
 
     try:
         result = await generate_image_preview(
-            db, batch_id, images_data, mode=mode, admin_id=current_admin.id,
+            db,
+            batch_id,
+            images_data,
+            mode=mode,
+            admin_id=current_admin.id,
         )
         if rejected:
-            result.setdefault("warnings", []).append(f"{len(rejected)} 张图片未通过校验: {'; '.join(rejected)}")
+            result.setdefault("warnings", []).append(
+                f"{len(rejected)} 张图片未通过校验: {'; '.join(rejected)}"
+            )
         return result
     except BusinessError as exc:
-        logger.warning("batch_answer_image_preview failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
+        logger.warning(
+            "batch_answer_image_preview failed: batch_id=%s error_code=%s message=%s",
+            batch_id,
+            exc.code,
+            exc.message,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": exc.code, "detail": exc.message},
         )
     except ValueError as exc:
-        logger.warning("batch_answer_image_preview invalid input: batch_id=%s error=%s", batch_id, str(exc))
+        logger.warning(
+            "batch_answer_image_preview invalid input: batch_id=%s error=%s",
+            batch_id,
+            str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": "INVALID_INPUT", "detail": str(exc)},
@@ -935,13 +1080,22 @@ async def batch_answer_image_apply(
 
     try:
         result = await apply_image_preview(
-            db, batch_id, data.preview_token, current_admin, request=request,
+            db,
+            batch_id,
+            data.preview_token,
+            current_admin,
+            request=request,
         )
         return result
     except HTTPException:
         raise
     except BusinessError as exc:
-        logger.warning("batch_answer_image_apply failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
+        logger.warning(
+            "batch_answer_image_apply failed: batch_id=%s error_code=%s message=%s",
+            batch_id,
+            exc.code,
+            exc.message,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": exc.code, "detail": exc.message},
@@ -993,9 +1147,18 @@ async def batch_image_upload(
     ocr_mode: str = Query("local", alias="ocr_mode"),
     # Idempotency / trace identifiers
     batch_id: str | None = Query(None, description="前端生成的 batch 标识"),
-    image_id: str | None = Query(None, description="前端生成的 image 标识（单图）。对多图，传 image_ids[] 或自动生成派生 ID"),
-    image_ids: list[str] = Query([], alias="image_ids", description="各图片 image_import_id（可选，长度与 files 一致）"),
-    request_id: str | None = Query(None, description="前端生成的 request 标识（幂等键）"),
+    image_id: str | None = Query(
+        None,
+        description="前端生成的 image 标识（单图）。对多图，传 image_ids[] 或自动生成派生 ID",
+    ),
+    image_ids: list[str] = Query(
+        [],
+        alias="image_ids",
+        description="各图片 image_import_id（可选，长度与 files 一致）",
+    ),
+    request_id: str | None = Query(
+        None, description="前端生成的 request 标识（幂等键）"
+    ),
     current_admin=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1019,6 +1182,7 @@ async def batch_image_upload(
 
     # P0-3: only validate dependencies matching the requested ocr_mode
     from app.features.ocr_mode import resolve_ocr_mode, validate_ocr_mode_dependencies
+
     try:
         resolved_mode = resolve_ocr_mode(ocr_mode)
         validate_ocr_mode_dependencies(resolved_mode)
@@ -1040,7 +1204,8 @@ async def batch_image_upload(
             "Deprecated: single image_id=%s used for %d files. "
             "Each file will get a derived ID (image_id:seq). "
             "Use image_ids[] for per-file IDs.",
-            image_id, len(files),
+            image_id,
+            len(files),
         )
 
     import hashlib as _hashlib
@@ -1057,14 +1222,21 @@ async def batch_image_upload(
             if not filename.lower().endswith(_BATCH_IMAGE_EXTENSIONS):
                 rejected_files.append(f"{filename}: 仅支持 .jpg / .jpeg / .png / .webp")
                 continue
-            if upload.content_type and upload.content_type not in _BATCH_IMAGE_CONTENT_TYPES:
-                rejected_files.append(f"{filename}: Content-Type 不支持: {upload.content_type}")
+            if (
+                upload.content_type
+                and upload.content_type not in _BATCH_IMAGE_CONTENT_TYPES
+            ):
+                rejected_files.append(
+                    f"{filename}: Content-Type 不支持: {upload.content_type}"
+                )
                 continue
 
             # Stream to temp file
             suffix = os.path.splitext(filename)[1] or ".png"
             try:
-                tmp = await stream_to_temp(upload, max_size=settings.IMAGE_IMPORT_MAX_BYTES or 0, suffix=suffix)
+                tmp = await stream_to_temp(
+                    upload, max_size=settings.IMAGE_IMPORT_MAX_BYTES or 0, suffix=suffix
+                )
             except ValueError as exc:
                 rejected_files.append(f"{filename}: {exc}")
                 continue
@@ -1099,7 +1271,9 @@ async def batch_image_upload(
                 per_image_id = f"auto_{seq}"
 
             source_obj = batch_svc.BatchImageSource(
-                seq=seq, source_file=filename, temp_path=tmp.path,
+                seq=seq,
+                source_file=filename,
+                temp_path=tmp.path,
             )
             sources.append(source_obj)
             sources_with_sha.append((source_obj, source_sha256_hex, per_image_id))
@@ -1109,6 +1283,7 @@ async def batch_image_upload(
 
         # Stage all source files to persistent storage for cross-process access
         from app.services.staging_storage import async_store_file
+
         staging_object_ids: list[str] = []
         for src in sources:
             try:
@@ -1120,7 +1295,8 @@ async def batch_image_upload(
                 staging_object_ids.append(staging_obj.object_id)
             except Exception:
                 logger.warning(
-                    "Failed to stage batch image %s, marking as failed", src.source_file,
+                    "Failed to stage batch image %s, marking as failed",
+                    src.source_file,
                 )
                 staging_object_ids.append("")
     except Exception:
@@ -1136,7 +1312,8 @@ async def batch_image_upload(
     if not sources:
         raise HTTPException(
             status_code=400,
-            detail="没有可处理的图片" + (f"（{rejected_files[0]}）" if rejected_files else ""),
+            detail="没有可处理的图片"
+            + (f"（{rejected_files[0]}）" if rejected_files else ""),
         )
 
     concurrency = batch_svc.clamp_concurrency(concurrency)
@@ -1169,7 +1346,9 @@ async def batch_image_upload(
     # Idempotency: duplicate submission returns existing job_id
     is_duplicate = job.status == "duplicate"
     if is_duplicate:
-        logger.info("Duplicate batch image upload, returning existing job_id=%s", job.job_id)
+        logger.info(
+            "Duplicate batch image upload, returning existing job_id=%s", job.job_id
+        )
         return BatchImageUploadResponse(
             job_id=job.job_id,
             status="queued",
@@ -1182,6 +1361,7 @@ async def batch_image_upload(
 
     # Enqueue via durable queue — replaces BackgroundTasks (P0-3)
     from app.services.task_queue_worker import enqueue_batch_image_job
+
     result = await enqueue_batch_image_job(
         job_id=job_id,
         staging_object_ids=staging_object_ids,
@@ -1253,14 +1433,19 @@ async def stream_batch_image_job(
     if not hasattr(batch_svc, "_active_sse_connections"):
         batch_svc._active_sse_connections = {}
     active_conns = batch_svc._active_sse_connections
-    current_user_id = admin_user.get("id") if isinstance(admin_user, dict) else getattr(admin_user, "id", 0)
+    current_user_id = (
+        admin_user.get("id")
+        if isinstance(admin_user, dict)
+        else getattr(admin_user, "id", 0)
+    )
 
     # Global connection limit
     total_active = sum(active_conns.values())
     if total_active >= _SSE_MAX_GLOBAL_CONNECTIONS:
         _sse_metrics["global_rejected"] += 1
         logger.warning(
-            "SSE global connection limit reached: %d active", total_active,
+            "SSE global connection limit reached: %d active",
+            total_active,
         )
         return JSONResponse(
             status_code=503,
@@ -1273,7 +1458,8 @@ async def stream_batch_image_job(
         _sse_metrics["per_user_rejected"] += 1
         logger.warning(
             "SSE per-user limit reached for user %s: %d active",
-            current_user_id, user_count,
+            current_user_id,
+            user_count,
         )
         return JSONResponse(
             status_code=429,
@@ -1337,13 +1523,16 @@ async def stream_batch_image_job(
                 payloads = [{"type": "trace", "data": ev} for ev in events]
                 summary = await batch_svc.poll_job_summary(db, job_id)
                 if summary and summary.get("status") in {
-                    "completed", "completed_with_warnings", "failed"
+                    "completed",
+                    "completed_with_warnings",
+                    "failed",
                 }:
                     payloads.append({"type": "done", "data": summary})
                 return payloads
 
         # Try Redis Pub/Sub subscription with DB polling fallback
         from app.core.background_tasks import create_background_task
+
         sub_task = create_background_task(
             _run_sse_subscribe(job_id, on_event, on_done, poll_db),
             name=f"sse-sub-{job_id}",
@@ -1371,9 +1560,7 @@ async def stream_batch_image_job(
                     return
 
                 try:
-                    event_type, data = await asyncio.wait_for(
-                        queue.get(), timeout=2.0
-                    )
+                    event_type, data = await asyncio.wait_for(queue.get(), timeout=2.0)
                     if event_type == "done":
                         yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
                         return
@@ -1390,14 +1577,20 @@ async def stream_batch_image_job(
                     yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
                     return
                 finally:
-                    if subscribed and sub_task.done() and sub_task.exception() is not None:
+                    if (
+                        subscribed
+                        and sub_task.done()
+                        and sub_task.exception() is not None
+                    ):
                         sub_task = create_background_task(
                             _run_sse_subscribe(job_id, on_event, on_done, poll_db),
                             name=f"sse-sub-{job_id}",
                         )
         finally:
             # Cleanup: decrement active connection count, cancel subscription
-            active_conns[current_user_id] = max(0, active_conns.get(current_user_id, 0) - 1)
+            active_conns[current_user_id] = max(
+                0, active_conns.get(current_user_id, 0) - 1
+            )
             if subscribed and not sub_task.done():
                 sub_task.cancel()
                 try:
@@ -1425,6 +1618,7 @@ async def _run_sse_subscribe(
     """Run Pub/Sub subscription with DB polling fallback in background."""
     try:
         from app.services.sse_pubsub import subscribe_job
+
         await subscribe_job(
             job_id=job_id,
             on_event=on_event,
@@ -1437,7 +1631,9 @@ async def _run_sse_subscribe(
         logger.warning("SSE subscribe failed for job %s, using direct poll", job_id)
 
 
-@router.post("/batch-image/items/{item_id}/reparse", response_model=BatchImageReparseResponse)
+@router.post(
+    "/batch-image/items/{item_id}/reparse", response_model=BatchImageReparseResponse
+)
 async def reparse_batch_image_item(
     item_id: int,
     subject: str | None = None,
@@ -1449,7 +1645,9 @@ async def reparse_batch_image_item(
     from app.features import batch_image_import_service as batch_svc
 
     try:
-        return await batch_svc.reparse_item_from_cache(db, item_id, subject=subject, subject_id=subject_id)
+        return await batch_svc.reparse_item_from_cache(
+            db, item_id, subject=subject, subject_id=subject_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
@@ -1529,7 +1727,14 @@ async def list_pipelines(
     from app.models.import_pipeline import ImportPipeline
 
     # Whitelist sort_by to avoid getattr on arbitrary model attributes
-    _ALLOWED_SORT = {"started_at", "finished_at", "status", "source_type", "total_pages", "pipeline_id"}
+    _ALLOWED_SORT = {
+        "started_at",
+        "finished_at",
+        "status",
+        "source_type",
+        "total_pages",
+        "pipeline_id",
+    }
     if sort_by not in _ALLOWED_SORT:
         sort_by = "started_at"
 
@@ -1566,8 +1771,12 @@ async def list_pipelines(
             "status": row.status,
             "total_pages": row.total_pages,
             "error_message": row.error_message,
-            "started_at": serialize_utc_datetime(row.started_at) if row.started_at else None,
-            "finished_at": serialize_utc_datetime(row.finished_at) if row.finished_at else None,
+            "started_at": serialize_utc_datetime(row.started_at)
+            if row.started_at
+            else None,
+            "finished_at": serialize_utc_datetime(row.finished_at)
+            if row.finished_at
+            else None,
         }
         # Merge quality_report from in-memory store if available, else DB
         store_data = _pipeline_store.get(row.pipeline_id)
@@ -1688,9 +1897,9 @@ async def admin_export_failure_case(
     from app.features.ocr_case_exporter import export_failure_case
     from app.models.question_import import QuestionImport
 
-    row = (await db.execute(
-        select(QuestionImport).where(QuestionImport.id == import_id)
-    )).scalar_one_or_none()
+    row = (
+        await db.execute(select(QuestionImport).where(QuestionImport.id == import_id))
+    ).scalar_one_or_none()
 
     if not row:
         raise HTTPException(status_code=404, detail="导入题目不存在")
@@ -1739,11 +1948,17 @@ async def admin_export_batch_failure_cases(
     from app.features.ocr_case_exporter import export_failure_cases_batch
     from app.models.question_import import QuestionImport
 
-    rows = (await db.execute(
-        select(QuestionImport)
-        .where(QuestionImport.batch_id == batch_id)
-        .order_by(QuestionImport.id)
-    )).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(QuestionImport)
+                .where(QuestionImport.batch_id == batch_id)
+                .order_by(QuestionImport.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     if not rows:
         raise HTTPException(status_code=404, detail="批次不存在或没有题目")
@@ -1751,21 +1966,23 @@ async def admin_export_batch_failure_cases(
     items = []
     for row in rows:
         pc = row.parsed_content if isinstance(row.parsed_content, dict) else {}
-        items.append({
-            "id": row.id,
-            "source_file": row.source_file,
-            "source_page": None,
-            "subject_id": row.subject_id,
-            "subject": row.subject_ref.code if row.subject_ref else None,
-            "question_type": row.question_type,
-            "raw_data": row.raw_data or {},
-            "stem": pc.get("stem"),
-            "options": pc.get("options"),
-            "answer": pc.get("answer"),
-            "analysis": pc.get("analysis"),
-            "risk_flags": row.risk_flags or [],
-            "failure_types": [],
-        })
+        items.append(
+            {
+                "id": row.id,
+                "source_file": row.source_file,
+                "source_page": None,
+                "subject_id": row.subject_id,
+                "subject": row.subject_ref.code if row.subject_ref else None,
+                "question_type": row.question_type,
+                "raw_data": row.raw_data or {},
+                "stem": pc.get("stem"),
+                "options": pc.get("options"),
+                "answer": pc.get("answer"),
+                "analysis": pc.get("analysis"),
+                "risk_flags": row.risk_flags or [],
+                "failure_types": [],
+            }
+        )
 
     cases = export_failure_cases_batch(items, failure_type_filter=failure_type)
     return {

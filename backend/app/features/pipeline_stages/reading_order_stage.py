@@ -1,4 +1,5 @@
 """Reading Order Stage — integrates ReadingOrderResolver into the pipeline."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -31,13 +32,17 @@ def run_reading_order_stage(
     if v2_result.is_success:
         return {
             "doc_ir": v2_result.data,
-            "page_results": v2_result.data if hasattr(v2_result.data, "__iter__") else [],
+            "page_results": v2_result.data
+            if hasattr(v2_result.data, "__iter__")
+            else [],
             "warnings": v2_result.warnings or [],
         }
     return {
         "doc_ir": doc_ir,
         "page_results": [],
-        "warnings": [str(v2_result.error.message) if v2_result.error else "unknown error"],
+        "warnings": [
+            str(v2_result.error.message) if v2_result.error else "unknown error"
+        ],
     }
 
 
@@ -74,7 +79,6 @@ def run_reading_order_stage_v2(
             backend="reading_order",
             latency_ms=0.0,
         )
-
 
     for page in doc_ir.pages:
         result = apply_reading_order(page, resolver=resolver)

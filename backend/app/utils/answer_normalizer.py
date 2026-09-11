@@ -71,7 +71,9 @@ def normalize_blank_answer(answer: str, slot_ids: list[str] | None = None) -> di
     return parsed
 
 
-def extract_multi_blank_slot_ids(content: dict | None, options: object | None = None) -> list[str]:
+def extract_multi_blank_slot_ids(
+    content: dict | None, options: object | None = None
+) -> list[str]:
     """Resolve trusted multi-blank slot ids from immutable question content.
 
     Legacy imports may store the standard answer as positional ``A,B``/``AB``.
@@ -131,7 +133,10 @@ def extract_multi_blank_slot_ids(content: dict | None, options: object | None = 
                 if not isinstance(group, dict):
                     continue
                 slot_id = str(
-                    group.get("id") or group.get("marker") or group.get("blank_id") or ""
+                    group.get("id")
+                    or group.get("marker")
+                    or group.get("blank_id")
+                    or ""
                 ).strip()
                 if slot_id and slot_id not in ids:
                     ids.append(slot_id)
@@ -140,8 +145,7 @@ def extract_multi_blank_slot_ids(content: dict | None, options: object | None = 
         keys = [str(key).strip() for key in options.keys()]
         if keys and not all(re.fullmatch(r"[A-Za-z]", key or "") for key in keys):
             group_like = all(
-                isinstance(options.get(key), (dict, list))
-                for key in options.keys()
+                isinstance(options.get(key), (dict, list)) for key in options.keys()
             )
             if group_like:
                 return [key for key in keys if key]
@@ -169,7 +173,9 @@ def is_answer_correct(
 
     if is_multi_blank_type(question_type):
         # Parse both answers using the unified module
-        correct_map, _c_err = parse_multi_blank_answer(correct_answer, slot_ids=slot_ids)
+        correct_map, _c_err = parse_multi_blank_answer(
+            correct_answer, slot_ids=slot_ids
+        )
         user_map, _u_err = parse_multi_blank_answer(user_answer, slot_ids=slot_ids)
         if not correct_map:
             return False
@@ -185,12 +191,22 @@ def is_answer_correct(
     if is_true_false_type(question_type):
         ua = user_answer.strip().lower()
         ca = correct_answer.strip().lower()
-        u = "A" if ua in _TRUE_FALSE_TRUE else ("B" if ua in _TRUE_FALSE_FALSE else ua.upper())
-        c = "A" if ca in _TRUE_FALSE_TRUE else ("B" if ca in _TRUE_FALSE_FALSE else ca.upper())
+        u = (
+            "A"
+            if ua in _TRUE_FALSE_TRUE
+            else ("B" if ua in _TRUE_FALSE_FALSE else ua.upper())
+        )
+        c = (
+            "A"
+            if ca in _TRUE_FALSE_TRUE
+            else ("B" if ca in _TRUE_FALSE_FALSE else ca.upper())
+        )
         return u == c
 
     if is_multiple_choice_type(question_type):
-        return serialize_choice_answer(user_answer) == serialize_choice_answer(correct_answer)
+        return serialize_choice_answer(user_answer) == serialize_choice_answer(
+            correct_answer
+        )
 
     # single_choice or fallback: case-insensitive, whitespace-trimmed
     return user_answer.strip().upper() == correct_answer.strip().upper()

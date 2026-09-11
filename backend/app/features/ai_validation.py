@@ -20,10 +20,11 @@ def _detect_duplicate_stem(stem: str, raw_text: str = "") -> str | None:
     # Method 1: Check if stem is approximately doubled
     half = len(stem) // 2
     first_half = stem[:half]
-    second_half = stem[half:half + len(first_half)]
+    second_half = stem[half : half + len(first_half)]
 
     # Use ratio comparison for halves
     import difflib
+
     ratio = difflib.SequenceMatcher(None, first_half, second_half).ratio()
     if ratio >= 0.85:
         return "stem_duplicated"
@@ -32,8 +33,8 @@ def _detect_duplicate_stem(stem: str, raw_text: str = "") -> str | None:
     check_len = min(40, len(stem) // 2)
     for length in range(check_len, 14, -1):
         for start in range(0, len(stem) - length * 2 + 1, 5):
-            fragment = stem[start:start + length]
-            rest = stem[start + length:]
+            fragment = stem[start : start + length]
+            rest = stem[start + length :]
             if fragment in rest:
                 return "stem_repeated_fragment"
 
@@ -108,7 +109,10 @@ def _detect_structure_anomalies(question: dict) -> list[str]:
 
 
 def _detect_length_anomaly(
-    stem: str, raw_text: str, max_ratio: float = 2.0, min_ratio: float = 0.2,
+    stem: str,
+    raw_text: str,
+    max_ratio: float = 2.0,
+    min_ratio: float = 0.2,
 ) -> str | None:
     """检测修复后 stem 长度相对原文的异常膨胀或缩短。"""
     if not raw_text or not stem:
@@ -131,6 +135,7 @@ def _detect_post_repair_code_integrity(question: dict) -> list[str]:
     if not stem:
         return []
     from app.features.code_integrity import detect_code_block_integrity
+
     result = detect_code_block_integrity(stem)
     return [f"post_repair_code_integrity:{flag}" for flag in result.get("flags", [])]
 
@@ -179,12 +184,14 @@ def validate_ai_result(question: dict) -> dict:
 
     # Determine severity
     error_issues = {
-        "stem_not_string", "options_invalid_type", "answer_not_string",
-        "confidence_not_numeric", "stem_duplicated",
+        "stem_not_string",
+        "options_invalid_type",
+        "answer_not_string",
+        "confidence_not_numeric",
+        "stem_duplicated",
     }
     has_error = any(
-        i in error_issues or i.startswith("post_repair_code_integrity:")
-        for i in issues
+        i in error_issues or i.startswith("post_repair_code_integrity:") for i in issues
     )
 
     if has_error:

@@ -29,7 +29,6 @@ class WrongQuestionUpdate(BaseModel):
     error_type: str | None = None
 
 
-
 # ── 响应 ──
 
 
@@ -54,13 +53,15 @@ class WrongQuestionResponse(BaseModel):
     image_url: list | None = None
     # AI 分析（已持久化的结果）
     ai_analysis: dict | None = None
-    ai_analysis_status: str | None = None  # "ready" | "empty" | "stale" | "fallback" | "generating"
+    ai_analysis_status: str | None = (
+        None  # "ready" | "empty" | "stale" | "fallback" | "generating"
+    )
     # Opaque marker only; internal AI _meta remains hidden. Used by the client to
     # tell a newly regenerated result from an old cache after HTTP timeout.
     ai_analysis_generated_at: str | None = None
     # 扩展字段
     wrong_count: int = 0
-    review_record_count: int = 0            # 真实复习次数（from ReviewRecord）
+    review_record_count: int = 0  # 真实复习次数（from ReviewRecord）
     mastery_percent: float = 0.0
     is_mastered: bool = False
     next_review_at: datetime | None = None

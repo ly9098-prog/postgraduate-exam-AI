@@ -4,6 +4,7 @@ DB outbox is authoritative. Redis is only a delivery/execution layer.
 This module intentionally performs repair planning only; callers execute
 Redis operations with their own infrastructure transaction boundaries.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import select

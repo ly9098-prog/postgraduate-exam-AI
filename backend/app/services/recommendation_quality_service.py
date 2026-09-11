@@ -1,4 +1,5 @@
 """Phase 4 — 推荐质量 + 知识图谱质量报告服务。"""
+
 import logging
 from datetime import timedelta
 
@@ -69,7 +70,9 @@ async def build_recommendation_quality_report(
     # 热门题目附题干文本（管理端「题目名称」列 + 点击查看完整题干）
     hot_q_ids = [h["question_id"] for h in hot_questions]
     if hot_q_ids:
-        hot_q_rows = await db.execute(select(Question).where(Question.id.in_(hot_q_ids)))
+        hot_q_rows = await db.execute(
+            select(Question).where(Question.id.in_(hot_q_ids))
+        )
         hot_q_map = {q.id: q for q in hot_q_rows.scalars().all()}
         for h in hot_questions:
             q = hot_q_map.get(h["question_id"])
@@ -100,10 +103,12 @@ async def build_recommendation_quality_report(
         fallback_ratio = fallback_logs / total_logs
         if fallback_ratio > 0.7:
             warnings.append(f"fallback/random 策略比例 {fallback_ratio:.1%}，过高")
-            high_fallback_scenes.append({
-                "scene": "all",
-                "fallback_ratio": round(fallback_ratio, 4),
-            })
+            high_fallback_scenes.append(
+                {
+                    "scene": "all",
+                    "fallback_ratio": round(fallback_ratio, 4),
+                }
+            )
 
     # 4. 平均 similarity
     avg_sim_result = await db.execute(
@@ -120,19 +125,24 @@ async def build_recommendation_quality_report(
                 RecommendationLog.question_id,
                 RecommendationLog.similarity,
                 RecommendationLog.strategy,
-            ).where(
+            )
+            .where(
                 *conditions,
                 RecommendationLog.similarity.isnot(None),
                 RecommendationLog.similarity < 0.3,
-            ).order_by(RecommendationLog.similarity.asc()).limit(10)
+            )
+            .order_by(RecommendationLog.similarity.asc())
+            .limit(10)
         )
         for row in low_sim_result.all():
-            low_similarity_samples.append({
-                "log_id": row[0],
-                "question_id": row[1],
-                "similarity": round(row[2], 4) if row[2] is not None else None,
-                "strategy": row[3],
-            })
+            low_similarity_samples.append(
+                {
+                    "log_id": row[0],
+                    "question_id": row[1],
+                    "similarity": round(row[2], 4) if row[2] is not None else None,
+                    "strategy": row[3],
+                }
+            )
 
     # 5. 推荐日志总量
     total_result = await db.execute(
@@ -144,8 +154,12 @@ async def build_recommendation_quality_report(
         "total_logs_30d": total_count,
         "recent_logs_7d": recent_count,
         "hot_question_count": len(hot_questions),
-        "fallback_ratio": round(fallback_logs / total_logs, 4) if total_logs > 0 else None,
-        "avg_similarity": round(avg_similarity, 4) if avg_similarity is not None else None,
+        "fallback_ratio": round(fallback_logs / total_logs, 4)
+        if total_logs > 0
+        else None,
+        "avg_similarity": round(avg_similarity, 4)
+        if avg_similarity is not None
+        else None,
     }
 
     return {
@@ -178,7 +192,9 @@ async def build_knowledge_quality_report(
     if subject_id:
         kp_conditions.append(KnowledgePoint.subject_id == subject_id)
     if knowledge_point_ids is not None:
-        normalized_kp_ids = list(dict.fromkeys(int(item) for item in knowledge_point_ids))
+        normalized_kp_ids = list(
+            dict.fromkeys(int(item) for item in knowledge_point_ids)
+        )
         if not normalized_kp_ids:
             return {
                 "summary": {"total_knowledge_points": 0},
@@ -190,19 +206,19 @@ async def build_knowledge_quality_report(
         kp_conditions.append(KnowledgePoint.id.in_(normalized_kp_ids))
 
     # 1. 获取所有知识点
-    kp_result = await db.execute(
-        select(KnowledgePoint).where(*kp_conditions)
-    )
+    kp_result = await db.execute(select(KnowledgePoint).where(*kp_conditions))
     all_kps = kp_result.scalars().all()
     kp_ids = {kp.id for kp in all_kps}
     edge_scope = [KnowledgeEdge.is_active == True]  # noqa: E712
     if subject_id:
         edge_scope.append(KnowledgeEdge.subject_id == subject_id)
     if knowledge_point_ids is not None:
-        edge_scope.extend([
-            KnowledgeEdge.source_knowledge_point_id.in_(kp_ids),
-            KnowledgeEdge.target_knowledge_point_id.in_(kp_ids),
-        ])
+        edge_scope.extend(
+            [
+                KnowledgeEdge.source_knowledge_point_id.in_(kp_ids),
+                KnowledgeEdge.target_knowledge_point_id.in_(kp_ids),
+            ]
+        )
 
     # 批量加载知识点科目标签（单次查询，避免 N+1）
     from app.models.admin import Subject
@@ -240,22 +256,26 @@ async def build_knowledge_quality_report(
         q_count = kp_question_count.get(kp.id, 0)
         code, name = subj_labels.get(kp.subject_id, (None, None))
         if q_count == 0:
-            no_question_kps.append({
-                "knowledge_point_id": kp.id,
-                "name": kp.name,
-                "subject_id": kp.subject_id,
-                "subject_code": code,
-                "subject_name": name,
-            })
+            no_question_kps.append(
+                {
+                    "knowledge_point_id": kp.id,
+                    "name": kp.name,
+                    "subject_id": kp.subject_id,
+                    "subject_code": code,
+                    "subject_name": name,
+                }
+            )
         elif q_count < 3:
-            low_question_kps.append({
-                "knowledge_point_id": kp.id,
-                "name": kp.name,
-                "subject_id": kp.subject_id,
-                "subject_code": code,
-                "subject_name": name,
-                "question_count": q_count,
-            })
+            low_question_kps.append(
+                {
+                    "knowledge_point_id": kp.id,
+                    "name": kp.name,
+                    "subject_id": kp.subject_id,
+                    "subject_code": code,
+                    "subject_name": name,
+                    "question_count": q_count,
+                }
+            )
 
     if no_question_kps:
         warnings.append(f"{len(no_question_kps)} 个知识点没有任何题目映射")
@@ -276,13 +296,15 @@ async def build_knowledge_quality_report(
     for kp in all_kps:
         if kp.id not in connected_kp_ids:
             code, name = subj_labels.get(kp.subject_id, (None, None))
-            isolated_kps.append({
-                "knowledge_point_id": kp.id,
-                "name": kp.name,
-                "subject_id": kp.subject_id,
-                "subject_code": code,
-                "subject_name": name,
-            })
+            isolated_kps.append(
+                {
+                    "knowledge_point_id": kp.id,
+                    "name": kp.name,
+                    "subject_id": kp.subject_id,
+                    "subject_code": code,
+                    "subject_name": name,
+                }
+            )
 
     if isolated_kps:
         warnings.append(f"{len(isolated_kps)} 个知识点没有任何边连接（孤立）")
@@ -315,7 +337,7 @@ async def build_knowledge_quality_report(
             )
         )
         prereq_edges = {(row[0], row[1]) for row in cycle_result.all()}
-        for (s, t) in prereq_edges:
+        for s, t in prereq_edges:
             if (t, s) in prereq_edges:
                 cycles.append([s, t])
 

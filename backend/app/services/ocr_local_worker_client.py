@@ -43,7 +43,10 @@ class LocalOcrWorkerClient:
     ) -> WorkerResult:
         """Single page OCR."""
         return await self._pool.submit(
-            image_bytes, page_index, mode=mode, options=options,
+            image_bytes,
+            page_index,
+            mode=mode,
+            options=options,
         )
 
     async def recognize_batch(
@@ -77,7 +80,10 @@ class LocalOcrWorkerClient:
                 idx, png = images[pos]
                 try:
                     resolved[pos] = await self._pool.submit(
-                        png, idx, mode=mode, options=options,
+                        png,
+                        idx,
+                        mode=mode,
+                        options=options,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -97,7 +103,9 @@ class LocalOcrWorkerClient:
         await asyncio.gather(*workers)
 
         final = [
-            r if isinstance(r, WorkerResult) else WorkerResult(
+            r
+            if isinstance(r, WorkerResult)
+            else WorkerResult(
                 request_id="",
                 page_index=images[i][0],
                 status="failed",

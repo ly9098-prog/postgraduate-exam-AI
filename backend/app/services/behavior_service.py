@@ -37,7 +37,11 @@ async def record_answer_behavior(
             # 更新已有记录
             existing.question_version_id = question_version_id
             existing.time_spent_sec = time_spent_sec
-            existing.is_first_correct = is_first_correct if is_first_correct is not None else existing.is_first_correct
+            existing.is_first_correct = (
+                is_first_correct
+                if is_first_correct is not None
+                else existing.is_first_correct
+            )
             existing.is_final_correct = is_final_correct
             existing.view_answer_count = view_answer_count
             existing.switch_count = switch_count
@@ -77,9 +81,7 @@ async def record_answer_behavior(
     return behavior
 
 
-async def get_behavior_stats(
-    db: AsyncSession, user_id: int
-) -> dict:
+async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
     """获取用户答题行为统计"""
     from sqlalchemy import func, select
 
@@ -108,22 +110,28 @@ async def get_behavior_stats(
 
     from app.models.admin import Subject
 
-    subject_q = sa_select(
-        AnswerBehavior.subject_id,
-        func.count(AnswerBehavior.id).label("count"),
-        func.avg(AnswerBehavior.time_spent_sec).label("avg_time"),
-    ).where(
-        AnswerBehavior.user_id == user_id,
-        AnswerBehavior.subject_id.isnot(None),
-    ).group_by(AnswerBehavior.subject_id)
+    subject_q = (
+        sa_select(
+            AnswerBehavior.subject_id,
+            func.count(AnswerBehavior.id).label("count"),
+            func.avg(AnswerBehavior.time_spent_sec).label("avg_time"),
+        )
+        .where(
+            AnswerBehavior.user_id == user_id,
+            AnswerBehavior.subject_id.isnot(None),
+        )
+        .group_by(AnswerBehavior.subject_id)
+    )
     subject_result = await db.execute(subject_q)
     rows = subject_result.all()
     subject_ids = [r.subject_id for r in rows]
     code_name = {}
     if subject_ids:
-        subs = (await db.execute(
-            sa_select(Subject).where(Subject.id.in_(subject_ids))
-        )).scalars().all()
+        subs = (
+            (await db.execute(sa_select(Subject).where(Subject.id.in_(subject_ids))))
+            .scalars()
+            .all()
+        )
         code_name = {s.id: (s.code, s.name) for s in subs}
     by_subject = [
         {

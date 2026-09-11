@@ -74,7 +74,9 @@ class _VectorSettings:
                 allowlist=configs.get("vector_allowlist", ""),
                 cache_ttl_sec=int(configs.get("vector_cache_ttl_sec", 300)),
                 top_k=int(configs.get("vector_top_k", 100)),
-                similarity_threshold=float(configs.get("vector_similarity_threshold", "0.15")),
+                similarity_threshold=float(
+                    configs.get("vector_similarity_threshold", "0.15")
+                ),
             )
             emb = await resolve_embedding_config(db)
             self._cached = {"vec": vec, "emb": emb}
@@ -147,7 +149,8 @@ def _parse_vector_dimension(type_name: object) -> int | None:
 
 async def _get_vector_column_dimension(db: AsyncSession) -> int | None:
     """读取当前 schema 中 question_embeddings.embedding 的物理维度。"""
-    result = await db.execute(text("""
+    result = await db.execute(
+        text("""
         SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
         FROM pg_catalog.pg_attribute a
         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
@@ -158,7 +161,8 @@ async def _get_vector_column_dimension(db: AsyncSession) -> int | None:
           AND a.attnum > 0
           AND NOT a.attisdropped
         LIMIT 1
-    """))
+    """)
+    )
     return _parse_vector_dimension(result.scalar())
 
 
@@ -177,9 +181,7 @@ async def _resolve_question_subject_code(
 
     from app.models.admin import Subject
 
-    result = await db.execute(
-        select(Subject.code).where(Subject.id == subject_id)
-    )
+    result = await db.execute(select(Subject.code).where(Subject.id == subject_id))
     return str(result.scalar() or "")
 
 
@@ -235,6 +237,7 @@ class VectorDecision:
         mode: 当前解析后的 VECTOR_MODE。
         reason: 决策原因（用于日志/可观测性）。
     """
+
     enabled: bool
     execute: bool
     use_result: bool
@@ -254,13 +257,19 @@ def decide_vector_access(
     """
     if not infra_available:
         return VectorDecision(
-            enabled=False, execute=False, use_result=False,
-            mode="all", reason="infra_unavailable",
+            enabled=False,
+            execute=False,
+            use_result=False,
+            mode="all",
+            reason="infra_unavailable",
         )
 
     return VectorDecision(
-        enabled=True, execute=True, use_result=True,
-        mode="all", reason="mode_all",
+        enabled=True,
+        execute=True,
+        use_result=True,
+        mode="all",
+        reason="mode_all",
     )
 
 
@@ -282,11 +291,7 @@ async def is_vector_enabled(db: AsyncSession) -> bool:
     if not _vs.vec.enabled:
         return False
 
-    if not (
-        _vs.emb.api_key
-        and _vs.emb.base_url
-        and _vs.emb.model
-    ):
+    if not (_vs.emb.api_key and _vs.emb.base_url and _vs.emb.model):
         return False
 
     config_key = (
@@ -404,21 +409,33 @@ async def upsert_question_embedding(
         existing = result.first()
 
         if existing and existing[1] == content_hash and not force:
-            return {"question_id": qid, "status": "skipped", "reason": "content unchanged"}
+            return {
+                "question_id": qid,
+                "status": "skipped",
+                "reason": "content unchanged",
+            }
 
         embedding = await embedding_service.get_embedding(
             content_text,
             config=_vs.emb,
         )
         if embedding is None:
-            return {"question_id": qid, "status": "failed", "reason": "embedding api failed"}
+            return {
+                "question_id": qid,
+                "status": "failed",
+                "reason": "embedding api failed",
+            }
 
         # 校验 embedding
         try:
             validated = validate_embedding(embedding, _vs.emb.dim)
         except ValueError as ve:
             logger.warning("embedding 校验失败 question_id=%d: %s", qid, ve)
-            return {"question_id": qid, "status": "failed", "reason": f"invalid_embedding: {ve}"}
+            return {
+                "question_id": qid,
+                "status": "failed",
+                "reason": f"invalid_embedding: {ve}",
+            }
 
         pg_literal = embedding_service.vector_to_pg_literal(validated)
         dim = _vs.emb.dim
@@ -478,7 +495,9 @@ async def upsert_question_embedding(
         )
         raise
     except Exception as exc:
-        logger.warning("upsert embedding failed for question_id=%d: %s", qid, exc, exc_info=True)
+        logger.warning(
+            "upsert embedding failed for question_id=%d: %s", qid, exc, exc_info=True
+        )
         return {"question_id": qid, "status": "failed", "reason": str(exc)[:200]}
 
 
@@ -502,9 +521,15 @@ async def backfill_question_embeddings(
     """
     if not await is_vector_enabled(db):
         return {
-            "total": 0, "created": 0, "updated": 0, "skipped": 0,
-            "failed": 0, "enabled": False, "errors": [],
-            "next_cursor": None, "has_more": False,
+            "total": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "failed": 0,
+            "enabled": False,
+            "errors": [],
+            "next_cursor": None,
+            "has_more": False,
         }
 
     limit = min(max(1, limit), 1000)
@@ -525,7 +550,9 @@ async def backfill_question_embeddings(
         # 因 subject_ref 未预加载写入空 subject，也必须自动进入修复批次。
         conditions.append(
             ~Question.id.in_(
-                select(text("question_id")).select_from(text("question_embeddings")).where(
+                select(text("question_id"))
+                .select_from(text("question_embeddings"))
+                .where(
                     text(
                         "embedding_model = :embedding_model "
                         "AND embedding_dim = :embedding_dim "
@@ -557,8 +584,11 @@ async def backfill_question_embeddings(
     questions = fetched_questions[:limit]
 
     stats = {
-        "total": len(questions), "created": 0, "updated": 0,
-        "skipped": 0, "failed": 0,
+        "total": len(questions),
+        "created": 0,
+        "updated": 0,
+        "skipped": 0,
+        "failed": 0,
     }
     errors: list[dict] = []
 
@@ -571,17 +601,23 @@ async def backfill_question_embeddings(
                 if status in stats:
                     stats[status] += 1
                 if status == "failed" and res.get("reason"):
-                    errors.append({
-                        "question_id": q.id,
-                        "reason": res["reason"][:200],
-                    })
+                    errors.append(
+                        {
+                            "question_id": q.id,
+                            "reason": res["reason"][:200],
+                        }
+                    )
         except Exception as exc:
             stats["failed"] += 1
-            errors.append({
-                "question_id": q.id,
-                "reason": str(exc)[:200],
-            })
-            logger.warning("backfill savepoint 回滚 question_id=%d", q.id, exc_info=True)
+            errors.append(
+                {
+                    "question_id": q.id,
+                    "reason": str(exc)[:200],
+                }
+            )
+            logger.warning(
+                "backfill savepoint 回滚 question_id=%d", q.id, exc_info=True
+            )
 
     # 计算游标
     last_qid = questions[-1].id if questions else after_id
@@ -748,7 +784,10 @@ async def search_similar_questions(
     if not decision.execute:
         logger.info(
             "[VectorDecision] search_similar mode=%s reason=%s uid=%s qid=%d → skip",
-            decision.mode, decision.reason, user_id, question_id,
+            decision.mode,
+            decision.reason,
+            user_id,
+            question_id,
         )
         return base_result
 
@@ -810,6 +849,7 @@ async def search_similar_questions(
                 from datetime import timedelta
 
                 from app.core.time_utils import utcnow
+
                 cutoff = utcnow() - timedelta(days=no_repeat_days)
                 sql = text("""
                     SELECT qe.question_id, s.code AS subject, qe.question_type, qe.content_hash,
@@ -903,7 +943,10 @@ async def search_similar_questions(
     elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
     logger.info(
         "[VectorRecall] search_similar mode=%s use_result=%s candidates=%d elapsed=%.1fms",
-        decision.mode, decision.use_result, len(candidates), elapsed_ms,
+        decision.mode,
+        decision.use_result,
+        len(candidates),
+        elapsed_ms,
     )
 
     # shadow 模式：执行了查询但不使用结果
@@ -931,7 +974,13 @@ async def search_similar_questions(
     # 二次排序
     scored = []
     for row in candidates:
-        cid, c_subject, c_type, _c_hash, similarity = row[0], row[1], row[2], row[3], row[4]
+        cid, c_subject, c_type, _c_hash, similarity = (
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            row[4],
+        )
         q = questions_map.get(cid)
         if not q:
             continue
@@ -941,7 +990,11 @@ async def search_similar_questions(
 
         c_kps = set(kp_map.get(cid, []))
         kp_overlap = 1.0 if (source_kps & c_kps) else 0.0
-        diff_match = 1.0 if q.difficulty == source_q.difficulty else (0.5 if abs(q.difficulty - source_q.difficulty) == 1 else 0.0)
+        diff_match = (
+            1.0
+            if q.difficulty == source_q.difficulty
+            else (0.5 if abs(q.difficulty - source_q.difficulty) == 1 else 0.0)
+        )
         type_match = 1.0 if q.question_type == source_q.question_type else 0.0
 
         recommend_score = (
@@ -967,17 +1020,19 @@ async def search_similar_questions(
         if isinstance(q.content, dict):
             stem = q.content.get("text", "") or q.content.get("stem", "") or ""
 
-        scored.append({
-            "question_id": cid,
-            "subject": c_subject,
-            "question_type": c_type,
-            "stem": stem[:200],
-            "knowledge_points": kp_map.get(cid, []),
-            "difficulty": q.difficulty,
-            "similarity": round(float(similarity), 4),
-            "recommend_score": round(float(recommend_score), 4),
-            "match_reason": " + ".join(reasons),
-        })
+        scored.append(
+            {
+                "question_id": cid,
+                "subject": c_subject,
+                "question_type": c_type,
+                "stem": stem[:200],
+                "knowledge_points": kp_map.get(cid, []),
+                "difficulty": q.difficulty,
+                "similarity": round(float(similarity), 4),
+                "recommend_score": round(float(recommend_score), 4),
+                "match_reason": " + ".join(reasons),
+            }
+        )
 
     scored.sort(key=lambda x: x["recommend_score"], reverse=True)
     recommendations = scored[:count]
@@ -1022,7 +1077,10 @@ async def vector_recall_by_text(
     if not decision.execute:
         logger.info(
             "[VectorDecision] vector_recall_by_text mode=%s reason=%s uid=%s subject=%s → skip",
-            decision.mode, decision.reason, user_id, subject,
+            decision.mode,
+            decision.reason,
+            user_id,
+            subject,
         )
         return []
 
@@ -1068,6 +1126,7 @@ async def vector_recall_by_text(
                 from datetime import timedelta
 
                 from app.core.time_utils import utcnow
+
                 cutoff = utcnow() - timedelta(days=no_repeat_days)
                 sql = text("""
                     SELECT qe.question_id, s.code AS subject, qe.question_type,
@@ -1155,7 +1214,10 @@ async def vector_recall_by_text(
     elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
     logger.info(
         "[VectorRecall] vector_recall_by_text mode=%s use_result=%s candidates=%d elapsed=%.1fms",
-        decision.mode, decision.use_result, len(candidates), elapsed_ms,
+        decision.mode,
+        decision.use_result,
+        len(candidates),
+        elapsed_ms,
     )
 
     # shadow 模式：执行了查询但不使用结果
@@ -1168,14 +1230,16 @@ async def vector_recall_by_text(
         if similarity < _vs.vec.similarity_threshold:
             continue
 
-        results.append({
-            "question_id": cid,
-            "subject": c_subject,
-            "question_type": c_type,
-            "similarity": round(float(similarity), 4),
-            "recommend_score": round(float(similarity), 4),
-            "match_reason": "智能推荐",
-        })
+        results.append(
+            {
+                "question_id": cid,
+                "subject": c_subject,
+                "question_type": c_type,
+                "similarity": round(float(similarity), 4),
+                "recommend_score": round(float(similarity), 4),
+                "match_reason": "智能推荐",
+            }
+        )
 
     results = results[:count]
 
@@ -1254,7 +1318,7 @@ async def get_embedding_status(db: AsyncSession) -> dict:
             try:
                 database_dim = await _get_vector_column_dimension(db)
                 info["database_dimension"] = database_dim
-                info["dimension_matches"] = (database_dim == _vs.emb.dim)
+                info["dimension_matches"] = database_dim == _vs.emb.dim
                 if not info["dimension_matches"]:
                     issues.append(
                         f"dimension mismatch: configured={_vs.emb.dim}, "
@@ -1274,12 +1338,14 @@ async def get_embedding_status(db: AsyncSession) -> dict:
 
             # 检查 HNSW 索引
             try:
-                idx_result = await db.execute(text(
-                    "SELECT 1 FROM pg_indexes "
-                    "WHERE schemaname = current_schema() "
-                    "AND tablename = 'question_embeddings' "
-                    "AND indexname LIKE '%hnsw%'"
-                ))
+                idx_result = await db.execute(
+                    text(
+                        "SELECT 1 FROM pg_indexes "
+                        "WHERE schemaname = current_schema() "
+                        "AND tablename = 'question_embeddings' "
+                        "AND indexname LIKE '%hnsw%'"
+                    )
+                )
                 if idx_result.scalar() is not None:
                     info["index_exists"] = True
                 else:

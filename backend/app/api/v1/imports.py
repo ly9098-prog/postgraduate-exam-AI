@@ -91,7 +91,10 @@ async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
             ttl=_IMAGE_PIPELINE_STATUS_TTL_SECONDS,
         )
     except Exception:
-        logger.warning("image pipeline status cache write failed: pipeline_id=%s", image_pipeline_id)
+        logger.warning(
+            "image pipeline status cache write failed: pipeline_id=%s",
+            image_pipeline_id,
+        )
     return status
 
 
@@ -99,7 +102,9 @@ async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
     try:
         cached = await cache.get(_image_pipeline_key(pipeline_id))
     except Exception:
-        logger.warning("image pipeline status cache read failed: pipeline_id=%s", pipeline_id)
+        logger.warning(
+            "image pipeline status cache read failed: pipeline_id=%s", pipeline_id
+        )
         cached = None
     if cached is not None:
         _image_pipeline_store[pipeline_id] = cached
@@ -163,7 +168,11 @@ def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | No
     if split.get("failure_reason") == "text_present_but_no_question_boundary":
         return "text_present_but_split_failed"
     schema_errors = result.get("diagnostics", {}).get("schema_errors", [])
-    if any("missing_options" in item.get("errors", []) for item in schema_errors if isinstance(item, dict)):
+    if any(
+        "missing_options" in item.get("errors", [])
+        for item in schema_errors
+        if isinstance(item, dict)
+    ):
         return "missing_options"
     if result.get("status") != "completed":
         return "pipeline_failed"
@@ -185,7 +194,11 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
             None,
         )
         if active_stage:
-            stages[active_stage] = {**stages[active_stage], "status": "failed", "error": error}
+            stages[active_stage] = {
+                **stages[active_stage],
+                "status": "failed",
+                "error": error,
+            }
     await _set_image_pipeline_status(
         pipeline_id,
         status="failed",
@@ -293,7 +306,9 @@ async def pipeline_upload(
             content_type=file.content_type,
             subject=subject,
             subject_id=subject_id,
-            import_mode=import_mode.value if isinstance(import_mode, ImportMode) else import_mode,
+            import_mode=import_mode.value
+            if isinstance(import_mode, ImportMode)
+            else import_mode,
             enable_ai_repair=enable_ai_repair,
             confidence_threshold=confidence_threshold,
             page_start=page_start,
@@ -385,9 +400,7 @@ async def resume_pipeline(
 
     pipeline_row = (
         await db.execute(
-            sa_select(ImportPipeline).where(
-                ImportPipeline.pipeline_id == pipeline_id
-            )
+            sa_select(ImportPipeline).where(ImportPipeline.pipeline_id == pipeline_id)
         )
     ).scalar_one_or_none()
     if pipeline_row is None:
@@ -439,7 +452,9 @@ async def resume_pipeline(
         if pipeline_row.source_sha256 is None:
             logger.warning(
                 "legacy pipeline without source_sha256, skipping content identity check "
-                "(pipeline_id=%s, uploaded_sha256=%s)", pipeline_id, uploaded_sha256_hex,
+                "(pipeline_id=%s, uploaded_sha256=%s)",
+                pipeline_id,
+                uploaded_sha256_hex,
             )
         elif uploaded_sha256_hex != pipeline_row.source_sha256:
             raise HTTPException(
@@ -455,7 +470,9 @@ async def resume_pipeline(
         if not resumed_chunks:
             tmp.close()
             return PipelineResumeResponse(
-                pipeline_id=pipeline_id, status=pipeline_row.status, resumed_chunks=[],
+                pipeline_id=pipeline_id,
+                status=pipeline_row.status,
+                resumed_chunks=[],
             )
 
         options = {
@@ -469,10 +486,16 @@ async def resume_pipeline(
         options["_trace_id"] = _resume_ctx.get("trace_id")
         options["_request_id"] = _resume_ctx.get("request_id")
 
-        log_event(logger, "import.resume.accepted", pipeline_id=pipeline_id, resumed_chunks=resumed_chunks)
+        log_event(
+            logger,
+            "import.resume.accepted",
+            pipeline_id=pipeline_id,
+            resumed_chunks=resumed_chunks,
+        )
 
         # Stage the file to persistent storage before enqueuing
         from app.services.staging_storage import async_store_file
+
         _resume_staging = await async_store_file(
             tmp.path,
             original_name=f"resume_{pipeline_id}",
@@ -496,7 +519,9 @@ async def resume_pipeline(
         # Detach — the background worker (run_resume_background) takes ownership
         tmp.detach()
         return PipelineResumeResponse(
-            pipeline_id=pipeline_id, status="running", resumed_chunks=resumed_chunks,
+            pipeline_id=pipeline_id,
+            status="running",
+            resumed_chunks=resumed_chunks,
         )
     except ValueError as exc:
         tmp.close()
@@ -506,6 +531,7 @@ async def resume_pipeline(
 # ---------------------------------------------------------------------------
 # Math preview (app-side read-only utility)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/math-preview/{import_id}")
 async def math_preview(

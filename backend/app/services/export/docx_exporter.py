@@ -111,6 +111,7 @@ _INLINE_FORMAT_RE = re.compile(
 @dataclass
 class DocxContext:
     """Per-task context for resource accounting and cleanup."""
+
     temp_dir: str
     downloaded: dict[str, str] = field(default_factory=dict)
     total_image_bytes: int = 0
@@ -140,7 +141,11 @@ class DocxExporter(Exporter):
 
         try:
             docx_bytes = await asyncio.get_running_loop().run_in_executor(
-                None, self._generate_sync, questions, config, ctx,
+                None,
+                self._generate_sync,
+                questions,
+                config,
+                ctx,
             )
             return ExportResult(
                 success=True,
@@ -211,7 +216,9 @@ class DocxExporter(Exporter):
             if group_by != "none" and q_group and q_group != current_group:
                 current_group = q_group
                 group_index += 1
-                self._add_group_header(doc, q_group, group_index, group_counts.get(q_group, 0))
+                self._add_group_header(
+                    doc, q_group, group_index, group_counts.get(q_group, 0)
+                )
 
             question_num = idx + 1
             qt_label = self._get_question_type_label(q.get("question_type", ""))
@@ -237,8 +244,7 @@ class DocxExporter(Exporter):
             segments = (content or {}).get("segments") or []
             cleaned_stem = self._sanitize_text(content_text).strip()
             text_segments = [
-                seg for seg in segments
-                if seg.get("type") in ("text", "newline")
+                seg for seg in segments if seg.get("type") in ("text", "newline")
             ]
             if text_segments:
                 # Segments carry the authoritative layout (multi-line, mixed
@@ -253,8 +259,17 @@ class DocxExporter(Exporter):
                     run.font.name = _BODY_FONT
                     self._set_east_asian_font(run, _BODY_FONT_EA)
                 visual_segments = [
-                    seg for seg in segments
-                    if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table", "table_markdown")
+                    seg
+                    for seg in segments
+                    if seg.get("type")
+                    in (
+                        "code_image",
+                        "math_image",
+                        "table_image",
+                        "image",
+                        "table",
+                        "table_markdown",
+                    )
                 ]
                 if visual_segments:
                     self._write_segments_to_doc(stem_p, visual_segments, ctx, doc)
@@ -269,7 +284,8 @@ class DocxExporter(Exporter):
 
             segment_urls = {
                 str(seg.get("url") or seg.get("src"))
-                for seg in segments if seg.get("url") or seg.get("src")
+                for seg in segments
+                if seg.get("url") or seg.get("src")
             }
             for url in q.get("image_urls") or []:
                 if url and str(url) not in segment_urls:
@@ -309,15 +325,19 @@ class DocxExporter(Exporter):
                     )
 
             if config.get("answer_position") == "at_end":
-                answer_section.append({
-                    "num": question_num,
-                    "answer": self._sanitize_text(format_question_answer(q)),
-                })
+                answer_section.append(
+                    {
+                        "num": question_num,
+                        "answer": self._sanitize_text(format_question_answer(q)),
+                    }
+                )
             if config.get("analysis_position") == "at_end":
-                analysis_section.append({
-                    "num": question_num,
-                    "analysis": self._sanitize_text(q.get("analysis", "")),
-                })
+                analysis_section.append(
+                    {
+                        "num": question_num,
+                        "analysis": self._sanitize_text(q.get("analysis", "")),
+                    }
+                )
 
             self._keep_question_together(question_paragraphs)
             if options_table is not None:
@@ -350,7 +370,9 @@ class DocxExporter(Exporter):
 
     def _add_header(self, doc: Document, config: dict) -> None:
         """Add a clean first-page exam title without metadata or rules."""
-        title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        title = (
+            self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        )
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
@@ -368,7 +390,9 @@ class DocxExporter(Exporter):
         section.different_first_page_header_footer = True
         section.header_distance = Cm(0.65)
         section.footer_distance = Cm(0.65)
-        title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        title = (
+            self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
+        )
 
         first_header = section.first_page_header
         first_header.is_linked_to_previous = False
@@ -445,7 +469,12 @@ class DocxExporter(Exporter):
         return Paragraph(new_element, paragraph._parent)
 
     def _write_content_to_paragraph(
-        self, paragraph, text: str, question: dict, ctx: DocxContext, doc: Document,
+        self,
+        paragraph,
+        text: str,
+        question: dict,
+        ctx: DocxContext,
+        doc: Document,
     ):
         """Write question content, handling segments, images, and LaTeX."""
         segments = (
@@ -467,7 +496,11 @@ class DocxExporter(Exporter):
             self._set_east_asian_font(run, _BODY_FONT_EA)
 
     def _write_segments_to_doc(
-        self, parent_paragraph, segments: list[dict], ctx: DocxContext, doc: Document,
+        self,
+        parent_paragraph,
+        segments: list[dict],
+        ctx: DocxContext,
+        doc: Document,
     ):
         """Render segments array. Returns the last modified paragraph."""
 
@@ -507,7 +540,10 @@ class DocxExporter(Exporter):
                         parent_paragraph.paragraph_format.space_after = Pt(4)
 
     def _write_latex_content_to_doc(
-        self, paragraph, text: str, ctx: DocxContext,
+        self,
+        paragraph,
+        text: str,
+        ctx: DocxContext,
     ):
         """Split text into plain + LaTeX segments and render each.
 
@@ -530,7 +566,9 @@ class DocxExporter(Exporter):
                 latex = seg["content"]
                 display = seg.get("display", False)
                 if not render_latex_as_omml_or_fallback(
-                    latex, display, paragraph,
+                    latex,
+                    display,
+                    paragraph,
                     fallback_png=True,
                     body_width_cm=BODY_W_CM,
                 ):
@@ -582,7 +620,11 @@ class DocxExporter(Exporter):
             dpi = image.info.get("dpi") or (96, 96)
         natural_w = max(0.8, px_w * 2.54 / float(dpi[0] or 96))
         natural_h = max(0.8, px_h * 2.54 / float(dpi[1] or 96))
-        scale = min(1.0, (BODY_W_CM * _QUESTION_IMAGE_MAX_WIDTH_RATIO) / natural_w, 20.0 / natural_h)
+        scale = min(
+            1.0,
+            (BODY_W_CM * _QUESTION_IMAGE_MAX_WIDTH_RATIO) / natural_w,
+            20.0 / natural_h,
+        )
         return max(0.8, natural_w * scale)
 
     def _download_image_sync(self, url: str, ctx: DocxContext) -> str | None:
@@ -639,8 +681,7 @@ class DocxExporter(Exporter):
             return None
         candidate = os.path.abspath(os.path.join(_BACKEND_ROOT, path.lstrip("/")))
         if not any(
-            os.path.commonpath((candidate, root)) == root
-            for root in _LOCAL_ASSET_ROOTS
+            os.path.commonpath((candidate, root)) == root for root in _LOCAL_ASSET_ROOTS
         ):
             return None
         return candidate if os.path.isfile(candidate) else None
@@ -657,7 +698,9 @@ class DocxExporter(Exporter):
         return urljoin(base.rstrip("/") + "/", str(url).lstrip("/"))
 
     @staticmethod
-    def _save_normalized_image(data: bytes, dest: str, source: str, ctx: DocxContext) -> str | None:
+    def _save_normalized_image(
+        data: bytes, dest: str, source: str, ctx: DocxContext
+    ) -> str | None:
         from PIL import Image as PILImage
 
         try:
@@ -670,7 +713,9 @@ class DocxExporter(Exporter):
                 if max(image.size) > _MAX_IMAGE_DIMENSION:
                     image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION))
                 if image.mode not in ("RGB", "RGBA"):
-                    image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                    image = image.convert(
+                        "RGBA" if "transparency" in image.info else "RGB"
+                    )
                 image.save(dest, format="PNG", optimize=True)
         except Exception as exc:
             logger.warning("Invalid image data from %s: %s", source, exc)
@@ -696,7 +741,10 @@ class DocxExporter(Exporter):
         return 1
 
     def _add_options_table(self, doc: Document, options: dict):
-        items = [(str(key), extract_option_text(options[key])) for key in sorted(options.keys())]
+        items = [
+            (str(key), extract_option_text(options[key]))
+            for key in sorted(options.keys())
+        ]
         columns = self._choose_option_columns(items)
         rows = (len(items) + columns - 1) // columns
         table = doc.add_table(rows=rows, cols=columns)
@@ -776,7 +824,10 @@ class DocxExporter(Exporter):
         self._set_table_indent(table, 0)
 
         max_units = max(
-            (self._display_units(self._sanitize_text(item.get("answer")) or "—") for item in items),
+            (
+                self._display_units(self._sanitize_text(item.get("answer")) or "—")
+                for item in items
+            ),
             default=1,
         )
         base_cell_cm = 1.5 if columns >= 4 else 2.4 if columns == 2 else 5.6
@@ -796,7 +847,7 @@ class DocxExporter(Exporter):
             self._set_row_height_exact(number_row, 0.52)
             self._set_row_height_at_least(answer_row, 0.78)
             start = block_index * columns
-            row_items = items[start:start + columns]
+            row_items = items[start : start + columns]
 
             for col_index in range(columns):
                 num_cell = number_row.cells[col_index]
@@ -805,8 +856,12 @@ class DocxExporter(Exporter):
                 ans_cell.width = cell_width
                 num_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
                 ans_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-                self._set_cell_margins(num_cell, top=0.0, left=0.02, bottom=0.0, right=0.02)
-                self._set_cell_margins(ans_cell, top=0.01, left=0.02, bottom=0.01, right=0.02)
+                self._set_cell_margins(
+                    num_cell, top=0.0, left=0.02, bottom=0.0, right=0.02
+                )
+                self._set_cell_margins(
+                    ans_cell, top=0.01, left=0.02, bottom=0.01, right=0.02
+                )
 
                 num_p = num_cell.paragraphs[0]
                 ans_p = ans_cell.paragraphs[0]
@@ -904,7 +959,12 @@ class DocxExporter(Exporter):
         if tc_mar is None:
             tc_mar = OxmlElement("w:tcMar")
             tc_pr.append(tc_mar)
-        for m, value in (("top", top), ("left", left), ("bottom", bottom), ("right", right)):
+        for m, value in (
+            ("top", top),
+            ("left", left),
+            ("bottom", bottom),
+            ("right", right),
+        ):
             node = tc_mar.find(qn(f"w:{m}"))
             if node is None:
                 node = OxmlElement(f"w:{m}")
@@ -920,7 +980,9 @@ class DocxExporter(Exporter):
 
     # ── Answer space ──
 
-    def _add_answer_space(self, doc: Document, space_mm: float, question_type: str) -> list:
+    def _add_answer_space(
+        self, doc: Document, space_mm: float, question_type: str
+    ) -> list:
         """Reserve unruled writing space and return its paragraphs."""
         height_pt = max(1.0, float(space_mm)) / 0.352778
         line_height = 14.0
@@ -936,14 +998,19 @@ class DocxExporter(Exporter):
             paragraphs.append(p)
         return paragraphs
 
-    def _add_group_header(self, doc: Document, title: str, index: int, count: int) -> None:
+    def _add_group_header(
+        self, doc: Document, title: str, index: int, count: int
+    ) -> None:
         """Add a numbered, monochrome section heading."""
         p = doc.add_paragraph()
         p.paragraph_format.keep_with_next = True
         p.paragraph_format.keep_together = True
         p.paragraph_format.space_before = Pt(9)
         p.paragraph_format.space_after = Pt(4)
-        text = f"{self._chinese_section_number(index)}、{self._formal_group_title(title)}" + (f"（共{count}题）" if count else "")
+        text = (
+            f"{self._chinese_section_number(index)}、{self._formal_group_title(title)}"
+            + (f"（共{count}题）" if count else "")
+        )
         run = p.add_run(text)
         run.bold = True
         run.font.size = Pt(11)
@@ -971,10 +1038,14 @@ class DocxExporter(Exporter):
         paragraphs.append(title)
 
         for label, body in sections:
-            paragraphs.extend(self._add_analysis_subsection(doc, label, body, indent_cm=0.55))
+            paragraphs.extend(
+                self._add_analysis_subsection(doc, label, body, indent_cm=0.55)
+            )
         return paragraphs
 
-    def _add_analysis_item(self, doc: Document, number: int, text: str) -> list[Paragraph]:
+    def _add_analysis_item(
+        self, doc: Document, number: int, text: str
+    ) -> list[Paragraph]:
         """Render an end-section item with bold labels and indented body text."""
         sections = split_analysis_sections(text)
         if not sections or not any(label for label, _ in sections):
@@ -1085,7 +1156,9 @@ class DocxExporter(Exporter):
         paragraphs[-1].paragraph_format.space_after = Pt(8)
 
     @staticmethod
-    def _set_paragraph_bottom_border(paragraph, color: str, size: str, space: str) -> None:
+    def _set_paragraph_bottom_border(
+        paragraph, color: str, size: str, space: str
+    ) -> None:
         p_pr = paragraph._p.get_or_add_pPr()
         p_bdr = p_pr.find(qn("w:pBdr"))
         if p_bdr is None:
@@ -1101,8 +1174,27 @@ class DocxExporter(Exporter):
     @staticmethod
     def _chinese_section_number(value: int) -> str:
         numerals = [
-            "零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
-            "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+            "零",
+            "一",
+            "二",
+            "三",
+            "四",
+            "五",
+            "六",
+            "七",
+            "八",
+            "九",
+            "十",
+            "十一",
+            "十二",
+            "十三",
+            "十四",
+            "十五",
+            "十六",
+            "十七",
+            "十八",
+            "十九",
+            "二十",
         ]
         if 0 <= value < len(numerals):
             return numerals[value]

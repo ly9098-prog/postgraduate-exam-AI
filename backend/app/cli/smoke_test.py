@@ -56,7 +56,10 @@ async def _main() -> int:
     print("2. Ready check...", end=" ")
     try:
         from app.core.config import settings
-        results.append(("ready", True, f"APP_ENV={settings.APP_ENV} ROLE={settings.PROCESS_ROLE}"))
+
+        results.append(
+            ("ready", True, f"APP_ENV={settings.APP_ENV} ROLE={settings.PROCESS_ROLE}")
+        )
         print(_CHECK_MARK)
     except Exception as e:
         results.append(("ready", False, str(e)))
@@ -87,6 +90,7 @@ async def _main() -> int:
     else:
         try:
             import redis.asyncio as aioredis
+
             r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
             await r.ping()
             await r.aclose()
@@ -105,6 +109,7 @@ async def _main() -> int:
     print("5. Staging...", end=" ")
     try:
         from app.services.staging_storage import _STAGING_DIR
+
         assert _STAGING_DIR.exists(), "staging dir missing"
         assert _STAGING_DIR.is_dir(), "staging path is not a directory"
         results.append(("staging", True, str(_STAGING_DIR)))
@@ -171,6 +176,7 @@ async def _main() -> int:
     print("9. Queue health...", end=" ")
     try:
         from app.services.task_queue_service import task_queue as tq2
+
         _metrics = await tq2.get_metrics_v2(task_types=[test_task_type])
         results.append(("queue_health", True, "metrics OK"))
         print(_CHECK_MARK)
@@ -182,6 +188,7 @@ async def _main() -> int:
     print("\nCleaning up test namespace...", end=" ")
     try:
         import redis.asyncio as aioredis
+
         r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         cursor = 0
         pattern = f"taskq:v2:*:{test_task_type}*"
@@ -208,7 +215,7 @@ def _print_summary(results: list[tuple[str, bool, str]]) -> int:
     failed = sum(1 for _, ok, _ in results if not ok)
     total = len(results)
 
-    print(f"\n{'='*40}")
+    print(f"\n{'=' * 40}")
     print(f"Results: {passed}/{total} passed")
 
     for name, ok, detail in results:

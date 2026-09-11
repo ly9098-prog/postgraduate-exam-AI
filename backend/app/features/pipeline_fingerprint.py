@@ -68,9 +68,9 @@ class PipelineRunFingerprint:
     stage_definition_hash: str = ""
 
     # Source content
-    source_sha256: str = ""          # SHA-256 of the source file(s)
-    source_page_range: str = ""      # e.g. "1-10"
-    immutable_options_hash: str = "" # hash of frozen pipeline options
+    source_sha256: str = ""  # SHA-256 of the source file(s)
+    source_page_range: str = ""  # e.g. "1-10"
+    immutable_options_hash: str = ""  # hash of frozen pipeline options
 
     # Git state
     git_commit: str = ""
@@ -79,7 +79,7 @@ class PipelineRunFingerprint:
     # Python / dependency environment
     python_version: str = ""
     python_executable: str = ""
-    dependency_lock_hash: str = ""   # SHA-256 of requirements*.txt / lock file
+    dependency_lock_hash: str = ""  # SHA-256 of requirements*.txt / lock file
 
     # OCR configuration
     ocr_backend: str = ""
@@ -91,8 +91,8 @@ class PipelineRunFingerprint:
 
     # Adapter & evaluator versions
     adapter_config_version: str = ""
-    adapter_secret_hmac: str = ""    # HMAC of secret (not the secret itself)
-    evaluator_version: str = ""      # CandidateEvaluator version
+    adapter_secret_hmac: str = ""  # HMAC of secret (not the secret itself)
+    evaluator_version: str = ""  # CandidateEvaluator version
     quality_gate_versions: dict[str, str] = field(default_factory=dict)
     rule_versions: dict[str, str] = field(default_factory=dict)
 
@@ -103,8 +103,8 @@ class PipelineRunFingerprint:
     preprocess_config_hash: str = ""
 
     # Deployment
-    deployment_backend: str = ""     # e.g. "local_process", "paddlex_http", "docker"
-    runtime_platform: str = ""       # e.g. "linux/amd64"
+    deployment_backend: str = ""  # e.g. "local_process", "paddlex_http", "docker"
+    runtime_platform: str = ""  # e.g. "linux/amd64"
 
     # Additional metadata
     extra: dict[str, str] = field(default_factory=dict)
@@ -114,10 +114,14 @@ class PipelineRunFingerprint:
 
     def compute_hash(self) -> str:
         """Deterministic hash of all fingerprint fields."""
-        raw = json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=False, default=str)
+        raw = json.dumps(
+            self.to_dict(), sort_keys=True, ensure_ascii=False, default=str
+        )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
-    def is_compatible_with(self, other: PipelineRunFingerprint) -> tuple[bool, list[str]]:
+    def is_compatible_with(
+        self, other: PipelineRunFingerprint
+    ) -> tuple[bool, list[str]]:
         """Check compatibility with another fingerprint.
 
         Returns (compatible, reasons) where reasons lists incompatible fields.
@@ -127,12 +131,28 @@ class PipelineRunFingerprint:
 
         _pairs = [
             ("pipeline_version", self.pipeline_version, other.pipeline_version),
-            ("document_ir_schema", self.document_ir_schema_version, other.document_ir_schema_version),
-            ("artifact_schema", self.artifact_schema_version, other.artifact_schema_version),
-            ("stage_definition", self.stage_definition_hash, other.stage_definition_hash),
+            (
+                "document_ir_schema",
+                self.document_ir_schema_version,
+                other.document_ir_schema_version,
+            ),
+            (
+                "artifact_schema",
+                self.artifact_schema_version,
+                other.artifact_schema_version,
+            ),
+            (
+                "stage_definition",
+                self.stage_definition_hash,
+                other.stage_definition_hash,
+            ),
             ("ocr_model", self.ocr_model_fingerprint, other.ocr_model_fingerprint),
             ("config_hash", self.config_hash, other.config_hash),
-            ("preprocess_config", self.preprocess_config_hash, other.preprocess_config_hash),
+            (
+                "preprocess_config",
+                self.preprocess_config_hash,
+                other.preprocess_config_hash,
+            ),
             ("evaluator_version", self.evaluator_version, other.evaluator_version),
             ("dependency_lock", self.dependency_lock_hash, other.dependency_lock_hash),
         ]
@@ -144,7 +164,9 @@ class PipelineRunFingerprint:
 
     def to_json(self) -> str:
         """JSON serialization with sorted keys for deterministic output."""
-        return json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=False, indent=2, default=str)
+        return json.dumps(
+            self.to_dict(), sort_keys=True, ensure_ascii=False, indent=2, default=str
+        )
 
     @classmethod
     def from_json(cls, raw: str) -> PipelineRunFingerprint:
@@ -168,25 +190,31 @@ class ArtifactManifest:
 
     # Identity
     artifact_id: str = ""
-    run_fingerprint_hash: str = ""       # PipelineRunFingerprint.compute_hash()
+    run_fingerprint_hash: str = ""  # PipelineRunFingerprint.compute_hash()
     stage_name: str = ""
     stage_version: str = ""
 
     # Payload integrity
-    payload_checksum_sha256: str = ""    # SHA-256 of the artifact payload
+    payload_checksum_sha256: str = ""  # SHA-256 of the artifact payload
     payload_size_bytes: int = 0
     payload_schema_version: str = ""
 
     # Provenance
-    created_at: str = ""                 # ISO 8601 timestamp
+    created_at: str = ""  # ISO 8601 timestamp
     upstream_artifact_ids: list[str] = field(default_factory=list)
 
     # Idempotency
-    completion_key: str = ""             # Enables idempotent writes
+    completion_key: str = ""  # Enables idempotent writes
     is_complete: bool = False
 
     def to_json(self) -> str:
-        return json.dumps(dataclasses.asdict(self), sort_keys=True, ensure_ascii=False, indent=2, default=str)
+        return json.dumps(
+            dataclasses.asdict(self),
+            sort_keys=True,
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
 
     @classmethod
     def from_json(cls, raw: str) -> ArtifactManifest:
@@ -222,7 +250,7 @@ def atomic_write(path: str | Path, content: str | bytes, *, mode: int = 0o700) -
         fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
         try:
             os.write(fd, content_bytes)
-            os.fsync(fd)      # flush kernel buffer to disk
+            os.fsync(fd)  # flush kernel buffer to disk
         finally:
             os.close(fd)
 
@@ -289,15 +317,20 @@ def build_pipeline_fingerprint(
     git_dirty = False
     try:
         import subprocess
+
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_commit = result.stdout.strip()
         result2 = subprocess.run(
             ["git", "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         git_dirty = bool(result2.stdout.strip())
     except Exception:
@@ -306,7 +339,9 @@ def build_pipeline_fingerprint(
     config_hash = ""
     try:
         config_hash = hashlib.sha256(
-            json.dumps(_config_hash_input(), sort_keys=True, ensure_ascii=False).encode()
+            json.dumps(
+                _config_hash_input(), sort_keys=True, ensure_ascii=False
+            ).encode()
         ).hexdigest()[:16]
     except Exception:
         pass
@@ -321,6 +356,7 @@ def build_pipeline_fingerprint(
     numbering_parser_version = ""
     try:
         from app.features import question_numbering
+
         numbering_parser_version = getattr(question_numbering, "__version__", "1.0")
     except Exception:
         pass
@@ -378,7 +414,9 @@ def component_fingerprint(
     if not config_hash:
         try:
             config_hash = hashlib.sha256(
-                json.dumps(_config_hash_input(), sort_keys=True, ensure_ascii=False).encode()
+                json.dumps(
+                    _config_hash_input(), sort_keys=True, ensure_ascii=False
+                ).encode()
             ).hexdigest()[:16]
         except Exception:
             config_hash = "unknown"

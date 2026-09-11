@@ -104,9 +104,7 @@ def evaluate_alerts(
     diag = diagnostics or {}
 
     # Compute derived fields from available data
-    high_risk_ratio = _safe_ratio(
-        qr.get("high_risk"), qr.get("total_questions")
-    )
+    high_risk_ratio = _safe_ratio(qr.get("high_risk"), qr.get("total_questions"))
     # requires_manual_review is expected to equal medium_risk + high_risk
     # (invariant maintained by _build_quality_report in pipeline_orchestrator)
     manual_review_rate = _safe_ratio(
@@ -121,14 +119,18 @@ def evaluate_alerts(
     ocr_cache_hit_rate = _safe_ratio(ocr_cache_hit, ocr_cache_hit + ocr_cache_miss)
 
     # Count OCR-failed pages from diagnostics
-    total_failed_pages = len(set(
-        (diag.get("ocr_boxes_failed_pages") or [])
-        + (diag.get("ocr_runtime_failed_pages") or [])
-    ))
+    total_failed_pages = len(
+        set(
+            (diag.get("ocr_boxes_failed_pages") or [])
+            + (diag.get("ocr_runtime_failed_pages") or [])
+        )
+    )
     total_pages = (diag.get("structure") or {}).get("total_pages") or len(
         diag.get("page_classifications") or []
     )
-    ocr_failed_page_ratio = _safe_ratio(total_failed_pages, total_pages) if total_pages else 0
+    ocr_failed_page_ratio = (
+        _safe_ratio(total_failed_pages, total_pages) if total_pages else 0
+    )
 
     # Field map for rule evaluation
     field_values: dict[str, float | int | str | None] = {

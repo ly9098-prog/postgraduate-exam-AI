@@ -51,13 +51,18 @@ async def _paper_aggregates(db: AsyncSession, paper_ids: list[int]) -> dict[int,
         .group_by(ExamAttempt.paper_id)
     )
     result = {
-        int(pid): {"question_count": int(count), "total_choice_score": _money(score), "attempt_count": 0}
+        int(pid): {
+            "question_count": int(count),
+            "total_choice_score": _money(score),
+            "attempt_count": 0,
+        }
         for pid, count, score in item_rows.all()
     }
     for pid, count in attempt_rows.all():
-        result.setdefault(int(pid), {"question_count": 0, "total_choice_score": 0.0, "attempt_count": 0})[
-            "attempt_count"
-        ] = int(count)
+        result.setdefault(
+            int(pid),
+            {"question_count": 0, "total_choice_score": 0.0, "attempt_count": 0},
+        )["attempt_count"] = int(count)
     return result
 
 
@@ -96,15 +101,25 @@ async def list_exam_papers(
         query = query.where(ExamPaper.paper_type == paper_type)
     if year is not None:
         query = query.where(ExamPaper.year == year)
-    query = query.order_by(ExamPaper.year.desc().nullslast(), ExamPaper.created_at.desc(), ExamPaper.id.desc())
+    query = query.order_by(
+        ExamPaper.year.desc().nullslast(),
+        ExamPaper.created_at.desc(),
+        ExamPaper.id.desc(),
+    )
     papers = list((await db.execute(query)).scalars().all())
     aggregates = await _paper_aggregates(db, [int(p.id) for p in papers])
     return [_paper_payload(p, aggregates.get(int(p.id))) for p in papers]
 
 
-async def _get_paper(db: AsyncSession, paper_id: int, *, lock: bool = False) -> ExamPaper:
+async def _get_paper(
+    db: AsyncSession, paper_id: int, *, lock: bool = False
+) -> ExamPaper:
     stmt = select(ExamPaper).where(ExamPaper.id == paper_id)
-    if lock and db.get_bind() is not None and db.get_bind().dialect.name == "postgresql":
+    if (
+        lock
+        and db.get_bind() is not None
+        and db.get_bind().dialect.name == "postgresql"
+    ):
         stmt = stmt.with_for_update()
     paper = await db.scalar(stmt)
     if paper is None:
@@ -116,33 +131,42 @@ async def _load_paper_items(db: AsyncSession, paper_id: int) -> list[dict]:
     rows = await db.execute(
         select(ExamPaperQuestion, Question, QuestionVersion, Subject)
         .join(Question, Question.id == ExamPaperQuestion.question_id)
-        .join(QuestionVersion, QuestionVersion.id == ExamPaperQuestion.question_version_id)
+        .join(
+            QuestionVersion, QuestionVersion.id == ExamPaperQuestion.question_version_id
+        )
         .join(Subject, Subject.id == ExamPaperQuestion.section_subject_id)
         .where(ExamPaperQuestion.paper_id == paper_id)
         .order_by(ExamPaperQuestion.position.asc(), ExamPaperQuestion.id.asc())
     )
     result: list[dict] = []
     for item, question, revision, subject in rows.all():
-        result.append({
-            "id": int(item.id),
-            "question_id": int(item.question_id),
-            "question_version_id": int(item.question_version_id),
-            "position": int(item.position),
-            "score": _money(item.score),
-            "subject_id": int(item.section_subject_id),
-            "subject_code": subject.code,
-            "subject_name": subject.name,
-            "question_type": str(revision.question_type or question.question_type or ""),
-            "content": revision.content,
-            "options": revision.options,
-            "year": revision.year,
-            "source": revision.source,
-            "difficulty": int(revision.difficulty or 3),
-            "review_status": question.review_status,
-            "is_active": bool(question.is_active and revision.is_active),
-            "current_version_id": int(question.current_version_id) if question.current_version_id else None,
-            "version_is_current": int(question.current_version_id or 0) == int(item.question_version_id),
-        })
+        result.append(
+            {
+                "id": int(item.id),
+                "question_id": int(item.question_id),
+                "question_version_id": int(item.question_version_id),
+                "position": int(item.position),
+                "score": _money(item.score),
+                "subject_id": int(item.section_subject_id),
+                "subject_code": subject.code,
+                "subject_name": subject.name,
+                "question_type": str(
+                    revision.question_type or question.question_type or ""
+                ),
+                "content": revision.content,
+                "options": revision.options,
+                "year": revision.year,
+                "source": revision.source,
+                "difficulty": int(revision.difficulty or 3),
+                "review_status": question.review_status,
+                "is_active": bool(question.is_active and revision.is_active),
+                "current_version_id": int(question.current_version_id)
+                if question.current_version_id
+                else None,
+                "version_is_current": int(question.current_version_id or 0)
+                == int(item.question_version_id),
+            }
+        )
     return result
 
 
@@ -164,12 +188,18 @@ async def validate_exam_paper(db: AsyncSession, paper_id: int) -> list[str]:
         prefix = f"第 {item['position']} 题"
         if item["question_type"] != QT_SINGLE_CHOICE:
             errors.append(f"{prefix} 不是 single_choice，V1 仅允许单选题")
-        if not item["options"] or not isinstance(item["options"], dict) or len(item["options"]) < 2:
+        if (
+            not item["options"]
+            or not isinstance(item["options"], dict)
+            or len(item["options"]) < 2
+        ):
             errors.append(f"{prefix} 缺少有效选项")
         # Draft papers are validated against current publishability.
         # Published/archived papers are historical snapshots and must not fail
         # only because the source question was later disabled or reviewed again.
-        if paper.status == "draft" and (not item["is_active"] or item["review_status"] != "approved"):
+        if paper.status == "draft" and (
+            not item["is_active"] or item["review_status"] != "approved"
+        ):
             errors.append(f"{prefix} 当前不是 approved + active 可发布题目")
         # Draft validation protects against accidentally publishing against a
         # superseded mutable question projection. Published/archived papers are
@@ -223,7 +253,11 @@ async def create_exam_paper(
         "exam.paper.create",
         "exam_paper",
         paper.id,
-        detail={"title": paper.title, "paper_type": paper.paper_type, "year": paper.year},
+        detail={
+            "title": paper.title,
+            "paper_type": paper.paper_type,
+            "year": paper.year,
+        },
         request=request,
     )
     return paper
@@ -299,16 +333,32 @@ async def replace_exam_paper_items(
     new_rows: list[ExamPaperQuestion] = []
     for position, input_item in enumerate(data.items, start=1):
         question, revision, subject = by_id[input_item.question_id]
-        if question.review_status != "approved" or not question.is_active or not revision.is_active:
-            raise ValueError(f"question_id={question.id} 不是 approved + active 可组卷题目")
-        if str(question.question_type or "") != QT_SINGLE_CHOICE or str(revision.question_type or "") != QT_SINGLE_CHOICE:
-            raise ValueError(f"question_id={question.id} 不是 single_choice，V1 仅允许单选题")
+        if (
+            question.review_status != "approved"
+            or not question.is_active
+            or not revision.is_active
+        ):
+            raise ValueError(
+                f"question_id={question.id} 不是 approved + active 可组卷题目"
+            )
+        if (
+            str(question.question_type or "") != QT_SINGLE_CHOICE
+            or str(revision.question_type or "") != QT_SINGLE_CHOICE
+        ):
+            raise ValueError(
+                f"question_id={question.id} 不是 single_choice，V1 仅允许单选题"
+            )
         if int(revision.question_id) != int(question.id):
             raise ValueError(f"question_id={question.id} current revision 绑定异常")
         if int(revision.subject_id or 0) != int(question.subject_id):
             raise ValueError(f"question_id={question.id} current revision 科目不一致")
-        if canonical_408_code(subject.code) not in EXAM408_CORE_CODES or not subject.is_active:
-            raise ValueError(f"question_id={question.id} 不属于启用的 canonical 408 四科")
+        if (
+            canonical_408_code(subject.code) not in EXAM408_CORE_CODES
+            or not subject.is_active
+        ):
+            raise ValueError(
+                f"question_id={question.id} 不属于启用的 canonical 408 四科"
+            )
         if not isinstance(revision.options, dict) or len(revision.options) < 2:
             raise ValueError(f"question_id={question.id} 缺少有效选择题选项")
         new_rows.append(
@@ -322,7 +372,9 @@ async def replace_exam_paper_items(
             )
         )
 
-    await db.execute(delete(ExamPaperQuestion).where(ExamPaperQuestion.paper_id == paper.id))
+    await db.execute(
+        delete(ExamPaperQuestion).where(ExamPaperQuestion.paper_id == paper.id)
+    )
     db.add_all(new_rows)
     paper.updated_by = operator.id
     await db.flush()

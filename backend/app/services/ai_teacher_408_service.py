@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import OrderedDict
 from typing import Any
 
@@ -34,6 +35,186 @@ from app.services import error_diagnosis_service
 from app.services.ai_learning_service import check_token_limit, record_token_usage
 
 logger = logging.getLogger(__name__)
+
+
+_RELATION_LABELS = {
+    "prerequisite": "前置知识",
+    "prerequisites": "前置知识",
+    "prereq": "前置知识",
+    "parent": "所属主题",
+    "parent_node": "所属主题",
+    "parent_topic": "所属主题",
+    "next": "后续知识",
+    "next_node": "后续知识",
+    "next_nodes": "后续知识",
+    "child": "下级知识",
+    "children": "下级知识",
+    "related": "相关知识",
+    "related_node": "相关知识",
+    "related_nodes": "相关知识",
+    "sibling": "同层知识",
+}
+
+_METRIC_ASSIGNMENT_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9_])(mastery(?:_score)?|confidence)\s*[:=]\s*(-?\d+(?:\.\d+)?%?)"
+)
+
+
+def _mastery_percent(raw_value: object) -> int | None:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    try:
+        value = float(text[:-1] if text.endswith("%") else text)
+    except (TypeError, ValueError):
+        return None
+    # UserKnowledgeState.mastery_score 的后端定义范围固定为 0-100。
+    # 不把 0~1 猜成比例，避免 mastery_score=1 被误判成 100%。
+    return max(0, min(100, round(value)))
+
+
+def _mastery_status(raw_value: object) -> str:
+    percent = _mastery_percent(raw_value)
+    if percent is None:
+        return ""
+    if percent >= 85:
+        return "掌握较好"
+    if percent >= 60:
+        return "基本掌握"
+    if percent >= 40:
+        return "还需巩固"
+    return "建议优先复习"
+
+
+def _evidence_status(confidence: object, attempt_count: object = 0) -> str:
+    """把模型评估置信度转成教学语义，避免把原始 confidence 暴露给模型。"""
+    try:
+        value = float(confidence)
+    except (TypeError, ValueError):
+        value = -1.0
+    try:
+        attempts = max(0, int(attempt_count or 0))
+    except (TypeError, ValueError):
+        attempts = 0
+    if value < 0 or attempts <= 0:
+        return "暂无足够练习记录"
+    if value < 0.3 or attempts < 2:
+        return "评估依据较少"
+    if value < 0.6 or attempts < 4:
+        return "评估依据一般"
+    return "评估依据较充分"
+
+
+def _strip_edge_punctuation(text: str) -> str:
+    return re.sub(r"^[\s,，;；|·:：-]+|[\s,，;；|·:：-]+$", "", text).strip()
+
+
+def _replace_relation_tokens(text: str, *, include_colon: bool = True) -> str:
+    separators = r"(?:→|->|=>|=|:|：)" if include_colon else r"(?:→|->|=>|=)"
+    result = text
+    for raw_key, label in _RELATION_LABELS.items():
+        pattern = re.compile(
+            rf"(?i)(?<![A-Za-z0-9_]){re.escape(raw_key)}(?![A-Za-z0-9_])\s*{separators}\s*"
+        )
+        result = pattern.sub(f"{label}：", result)
+    return result
+
+
+def _sanitize_user_text(value: object, limit: int = 1200) -> str:
+    """清洗模型可见文本中的内部字段表达，同时尽量不碰正常学科术语。"""
+    text = _clean_str(value, limit)
+    if not text:
+        return ""
+
+    def replace_metric(match: re.Match[str]) -> str:
+        key = match.group(1).lower()
+        if key.startswith("mastery"):
+            status = _mastery_status(match.group(2))
+            return f"掌握情况：{status}" if status else "掌握情况"
+        return ""
+
+    text = _METRIC_ASSIGNMENT_RE.sub(replace_metric, text)
+    # 关系枚举只有在呈现为键值/箭头格式时才替换，避免误伤如 "parent process" 这类学科术语。
+    text = _replace_relation_tokens(text, include_colon=True)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9_])mastery_score(?![A-Za-z0-9_])", "掌握情况", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9_])mastery(?![A-Za-z0-9_])", "掌握情况", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9_])confidence(?![A-Za-z0-9_])", "评估依据", text)
+    text = re.sub(r"\s*([,，;；])\s*[,，;；]+\s*", r"\1", text)
+    text = re.sub(r"(?:^|[，,；;]\s*)评估依据\s*(?=$|[，,；;。])", "", text)
+    return _strip_edge_punctuation(text)[:limit]
+
+
+def _sanitize_relation_text(value: object, limit: int = 320) -> str:
+    text = _clean_str(value, limit)
+    if not text:
+        return ""
+    text = _replace_relation_tokens(text, include_colon=True)
+    for raw_key, label in _RELATION_LABELS.items():
+        pattern = re.compile(rf"(?i)(?<![A-Za-z0-9_]){re.escape(raw_key)}(?![A-Za-z0-9_])")
+        text = pattern.sub(label, text)
+    text = _sanitize_user_text(text, limit)
+    return text.replace(";", "；")
+
+
+def _sanitize_mastery_hint(value: object, limit: int = 320) -> str:
+    text = _clean_str(value, limit)
+    if not text:
+        return ""
+    mastery_status = ""
+    for match in _METRIC_ASSIGNMENT_RE.finditer(text):
+        if match.group(1).lower().startswith("mastery"):
+            mastery_status = _mastery_status(match.group(2))
+            break
+    text = _METRIC_ASSIGNMENT_RE.sub("", text)
+    text = _sanitize_user_text(text, limit)
+    if mastery_status and mastery_status not in text:
+        text = f"{mastery_status}；{text}" if text else mastery_status
+    return _strip_edge_punctuation(text)[:limit]
+
+
+def _prompt_knowledge_context(knowledge_context: dict[str, Any]) -> dict[str, Any]:
+    """生成仅供 AI 教学使用的去内部参数上下文。"""
+    current_points: list[dict[str, Any]] = []
+    for item in knowledge_context.get("knowledge_points") or []:
+        current_points.append({
+            "名称": str(item.get("name") or ""),
+            "学习状态": _mastery_status(item.get("mastery_score")) or "暂无稳定判断",
+            "评估依据": _evidence_status(item.get("confidence"), item.get("attempt_count")),
+            "练习次数": int(item.get("attempt_count") or 0),
+            "近期错题次数": int(item.get("recent_wrong_count") or 0),
+        })
+
+    weak_points: list[dict[str, Any]] = []
+    for item in knowledge_context.get("weak_points") or []:
+        weak_points.append({
+            "名称": str(item.get("name") or ""),
+            "学习状态": _mastery_status(item.get("mastery_score")) or "还需巩固",
+            "累计错题次数": int(item.get("wrong_count") or 0),
+        })
+
+    recent_errors = [
+        {
+            "错因": str(item.get("error_label") or "暂未分类"),
+            "发生时间": item.get("occurred_at"),
+        }
+        for item in knowledge_context.get("recent_same_kp_errors") or []
+    ]
+
+    graph_neighbors = [
+        {
+            "起点": str(item.get("source") or ""),
+            "关系": _RELATION_LABELS.get(str(item.get("relation") or "").lower(), "相关知识"),
+            "终点": str(item.get("target") or ""),
+        }
+        for item in knowledge_context.get("knowledge_graph_neighbors") or []
+    ]
+
+    return {
+        "本题知识点": current_points,
+        "同科目薄弱知识": weak_points,
+        "近期同知识点错因": recent_errors,
+        "知识图谱邻居": graph_neighbors,
+    }
 
 
 class AIExamInProgressError(RuntimeError):
@@ -191,13 +372,13 @@ def _normalize_generated_question(value: object, action: str) -> dict[str, Any] 
     options: dict[str, str] = {}
     if isinstance(options_raw, dict):
         for key in ("A", "B", "C", "D"):
-            text = _clean_str(options_raw.get(key), 800)
+            text = _sanitize_user_text(options_raw.get(key), 800)
             if text:
                 options[key] = text
     answer = _clean_str(value.get("answer"), 16).upper()
     if answer not in options:
         answer = ""
-    stem = _clean_str(value.get("stem"), 3000)
+    stem = _sanitize_user_text(value.get("stem"), 3000)
     if not stem or len(options) < 2 or not answer:
         return None
     try:
@@ -209,7 +390,7 @@ def _normalize_generated_question(value: object, action: str) -> dict[str, Any] 
         "stem": stem,
         "options": options,
         "answer": answer,
-        "analysis": _clean_str(value.get("analysis"), 3000),
+        "analysis": _sanitize_user_text(value.get("analysis"), 3000),
         "difficulty_delta": difficulty_delta,
     }
 
@@ -222,14 +403,14 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
     for raw in value.get("sections") or []:
         if not isinstance(raw, dict):
             continue
-        heading = _clean_str(raw.get("heading"), 120)
+        heading = _sanitize_user_text(raw.get("heading"), 120)
         points: list[str] = []
         for point in raw.get("points") or []:
             nested = _structured_analysis_sections(point)
             if nested:
                 sections.extend(nested)
                 continue
-            text = _clean_str(point, 500)
+            text = _sanitize_user_text(point, 500)
             if text:
                 points.append(text)
             if len(points) >= 5:
@@ -243,8 +424,12 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
     deduped_sections: list[dict[str, Any]] = []
     seen: set[tuple[str, tuple[str, ...]]] = set()
     for section in sections:
-        heading = _clean_str(section.get("heading"), 120)
-        points = _analysis_text_points(section.get("points"), max_items=5, item_limit=500)
+        heading = _sanitize_user_text(section.get("heading"), 120)
+        points = [
+            _sanitize_user_text(point, 500)
+            for point in _analysis_text_points(section.get("points"), max_items=5, item_limit=500)
+        ]
+        points = [point for point in points if point]
         if not points:
             continue
         key = (heading, tuple(points))
@@ -259,14 +444,14 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
     for raw in value.get("knowledge_points") or []:
         if not isinstance(raw, dict):
             continue
-        name = _clean_str(raw.get("name"), 128)
+        name = _sanitize_user_text(raw.get("name"), 128)
         if not name:
             continue
         knowledge_points.append(
             {
                 "name": name,
-                "relation": _clean_str(raw.get("relation"), 128),
-                "mastery_hint": _clean_str(raw.get("mastery_hint"), 320),
+                "relation": _sanitize_relation_text(raw.get("relation"), 320),
+                "mastery_hint": _sanitize_mastery_hint(raw.get("mastery_hint"), 320),
             }
         )
         if len(knowledge_points) >= 8:
@@ -275,16 +460,16 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
     next_raw = value.get("next_action") if isinstance(value.get("next_action"), dict) else {}
     next_action = {
         "type": _clean_str(next_raw.get("type"), 64) or "none",
-        "label": _clean_str(next_raw.get("label"), 128),
+        "label": _sanitize_user_text(next_raw.get("label"), 128),
         "params": next_raw.get("params") if isinstance(next_raw.get("params"), dict) else {},
     }
-    summary = _clean_str(value.get("summary"), 1200)
+    summary = _sanitize_user_text(value.get("summary"), 1200)
     if summary_sections:
-        summary = _clean_str(summary_sections[0].get("points", [""])[0], 1200)
+        summary = _sanitize_user_text(summary_sections[0].get("points", [""])[0], 1200)
     elif _parse_json_object(summary):
         summary = deduped_sections[0]["points"][0] if deduped_sections else ""
     return {
-        "title": _clean_str(value.get("title"), 160),
+        "title": _sanitize_user_text(value.get("title"), 160),
         "summary": summary,
         "sections": deduped_sections,
         "knowledge_points": knowledge_points,
@@ -672,7 +857,7 @@ def _fallback_payload(
             summary = _clean_str(revision.analysis, 1200) or reason
     return {
         "title": meta["label"],
-        "summary": summary,
+        "summary": _sanitize_user_text(summary, 1200),
         "sections": [],
         "knowledge_points": [
             {"name": name, "relation": "本题知识点", "mastery_hint": ""}
@@ -770,7 +955,7 @@ async def run_teacher_action(
             "source": answer_source,
         },
         "error_diagnosis": diagnosis_context,
-        "knowledge": knowledge_context,
+        "knowledge": _prompt_knowledge_context(knowledge_context),
     }
     messages = build_408_teacher_prompt(action=action, context=context)
 

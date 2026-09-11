@@ -66,8 +66,12 @@ async def get_admin_me_response(db: AsyncSession, admin_user: AdminUser) -> dict
     }
 
 
-async def refresh_admin_access_token(db: AsyncSession, user_id: int) -> tuple[str, AdminUser, Role, list[str]]:
-    result = await db.execute(select(AdminUser).where(AdminUser.id == user_id, AdminUser.is_active.is_(True)))
+async def refresh_admin_access_token(
+    db: AsyncSession, user_id: int
+) -> tuple[str, AdminUser, Role, list[str]]:
+    result = await db.execute(
+        select(AdminUser).where(AdminUser.id == user_id, AdminUser.is_active.is_(True))
+    )
     admin_user = result.scalar_one_or_none()
     if not admin_user:
         raise ValueError("Invalid or expired token")
@@ -91,7 +95,9 @@ async def update_role_permissions(
     if role.name == "super_admin":
         raise PermissionError("不能修改 super_admin 权限")
 
-    existing_permissions = await db.execute(select(Permission.id).where(Permission.id.in_(permission_ids)))
+    existing_permissions = await db.execute(
+        select(Permission.id).where(Permission.id.in_(permission_ids))
+    )
     valid_ids = set(existing_permissions.scalars().all())
     if len(valid_ids) != len(set(permission_ids)):
         raise ValueError("权限不存在")
@@ -111,7 +117,11 @@ async def update_role_permissions(
 
     await db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
     for permission_id in sorted(valid_ids):
-        db.add(RolePermission(role_id=role_id, permission_id=permission_id, granted_by=operator_id))
+        db.add(
+            RolePermission(
+                role_id=role_id, permission_id=permission_id, granted_by=operator_id
+            )
+        )
     await db.flush()
 
     await write_admin_audit(
@@ -153,8 +163,13 @@ async def change_admin_password(
         invalid_after = int(operator.token_payload.get("iat", 0)) + 1
     await set_admin_user_nbf(admin_user.id, invalid_after)
     await write_admin_audit(
-        db, operator, "admin_user.change_password", "admin_user", admin_user.id,
-        severity="critical", detail={"username": admin_user.username},
+        db,
+        operator,
+        "admin_user.change_password",
+        "admin_user",
+        admin_user.id,
+        severity="critical",
+        detail={"username": admin_user.username},
         request=request,
     )
     await db.commit()

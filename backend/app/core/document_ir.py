@@ -82,6 +82,7 @@ class Point:
 @dataclass(frozen=True)
 class BBox:
     """Axis-aligned bounding box in page coordinates (pixels)."""
+
     x0: float
     y0: float
     x1: float
@@ -106,6 +107,7 @@ class BBox:
 @dataclass(frozen=True)
 class Polygon:
     """Variable-length polygon (4+ points) in page coordinates (pixels)."""
+
     points: tuple[Point, ...]
 
     @property
@@ -136,15 +138,16 @@ class Provenance:
 
     ``original_text`` 和 ``diff`` 仅在 AI 修改时填写。
     """
-    engine: str = ""               # "paddleocr" | "paddleocr-vl" | "deepseek" | "rule_fallback"
-    model_version: str = ""        # 模型版本或权重 digest
-    adapter: str = ""              # "ocr_correction" | "structure_fix" | "manual"
+
+    engine: str = ""  # "paddleocr" | "paddleocr-vl" | "deepseek" | "rule_fallback"
+    model_version: str = ""  # 模型版本或权重 digest
+    adapter: str = ""  # "ocr_correction" | "structure_fix" | "manual"
     ai_modified: bool = False
-    original_text: str = ""        # AI 修改前的文本（仅 ai_modified=True 时）
-    diff: str = ""                 # 文本级 diff 摘要
-    rule_version: str = ""         # 应用规则的版本
-    trace_id: str = ""             # 请求 trace ID
-    timestamp: float = 0.0         # 处理时间戳
+    original_text: str = ""  # AI 修改前的文本（仅 ai_modified=True 时）
+    diff: str = ""  # 文本级 diff 摘要
+    rule_version: str = ""  # 应用规则的版本
+    trace_id: str = ""  # 请求 trace ID
+    timestamp: float = 0.0  # 处理时间戳
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +158,7 @@ class Provenance:
 @dataclass
 class TokenIR:
     """单个 token（字符或子词）。"""
+
     text: str
     polygon: Polygon | None = None
     confidence: float = 1.0
@@ -172,6 +176,7 @@ class LineIR:
     ``line_id`` 是稳定的内容寻址 ID，基于初始 OCR 输出生成。
     文本清洗或 AI 修复后 ID 不变，只递增 ``revision``。
     """
+
     line_id: str = ""
     text: str = ""
     polygon: Polygon | None = None
@@ -187,9 +192,17 @@ class LineIR:
 
 
 RegionType = Literal[
-    "text", "code", "formula", "table",
-    "figure", "header", "footer", "page_number",
-    "option", "question_stem", "unknown",
+    "text",
+    "code",
+    "formula",
+    "table",
+    "figure",
+    "header",
+    "footer",
+    "page_number",
+    "option",
+    "question_stem",
+    "unknown",
 ]
 
 
@@ -205,6 +218,7 @@ class RegionIR:
     ``parent_region_id`` 用于嵌套区域层次结构。
     ``revision`` 在区域内容变更时递增，ID 不变。
     """
+
     region_id: str = ""
     region_type: RegionType = "unknown"
     polygon: Polygon | None = None
@@ -231,7 +245,8 @@ class TransformRecord:
     ``matrix`` 是 3×3 仿射变换矩阵（展平为 9 元素 list），
     用于将变换后坐标映射回原图坐标。
     """
-    name: str = ""                 # "crop" | "deskew" | "resize" | "rotate"
+
+    name: str = ""  # "crop" | "deskew" | "resize" | "rotate"
     matrix: list[float] | None = None  # 3x3 affine matrix, row-major
     description: str = ""
 
@@ -244,11 +259,12 @@ class PageIR:
     ``transforms`` 列出预处理阶段的所有几何变换。
     ``page_id`` 是稳定的内容寻址 ID = hash(document_id, page_index)。
     """
+
     page_id: str = ""
     page_index: int = 0
     width: float = 0.0
     height: float = 0.0
-    original_image_ref: str = ""   # local path or URL
+    original_image_ref: str = ""  # local path or URL
     transforms: list[TransformRecord] = field(default_factory=list)
     regions: list[RegionIR] = field(default_factory=list)
     reading_order: list[str] = field(default_factory=list)
@@ -265,8 +281,10 @@ class PageIR:
 
     @property
     def text(self) -> str:
-        return "\n".join(region.text for region in
-                         sorted(self.regions, key=lambda r: r.reading_order))
+        return "\n".join(
+            region.text
+            for region in sorted(self.regions, key=lambda r: r.reading_order)
+        )
 
 
 @dataclass
@@ -277,8 +295,9 @@ class DocumentIR:
     ``schema_version`` 标记 IR 数据结构的版本（用于 artifact 兼容性检查）。
     ``cross_page_links`` 存储跨页链接，由 cross_page_linking 模块填充。
     """
+
     document_id: str = ""
-    source_hash: str = ""          # SHA256 of source PDF/image
+    source_hash: str = ""  # SHA256 of source PDF/image
     pages: list[PageIR] = field(default_factory=list)
     pipeline_fingerprint: str = ""
     created_at: float = 0.0
@@ -435,6 +454,7 @@ class RegionReplacement:
     当 VL rebuild、reading order 调整或人工编辑导致区域变更时，
     旧 region_id 可以通过此映射追溯到新 region 的 ID。
     """
+
     old_region_id: str
     new_region_ids: list[str]  # 一个被拆分为多个时
     reason: str = ""  # "merge" | "split" | "replaced" | "reassigned"
@@ -450,6 +470,7 @@ class ReplacementMap:
     - 拆分：一个 old_region_id → 多个 new_region_ids
     - 替换：old_region_id → new_region_id (1:1)
     """
+
     replacements: list[RegionReplacement] = field(default_factory=list)
 
     def add(
@@ -458,12 +479,14 @@ class ReplacementMap:
         new_ids: list[str],
         reason: str = "",
     ) -> None:
-        self.replacements.append(RegionReplacement(
-            old_region_id=old_id,
-            new_region_ids=new_ids,
-            reason=reason,
-            revision=len(self.replacements) + 1,
-        ))
+        self.replacements.append(
+            RegionReplacement(
+                old_region_id=old_id,
+                new_region_ids=new_ids,
+                reason=reason,
+                revision=len(self.replacements) + 1,
+            )
+        )
 
     def lookup(self, old_id: str) -> list[str] | None:
         """查找旧 region_id 对应的新 region_id 列表。"""
@@ -498,6 +521,7 @@ class _SerializableBBox(BBox):
 @_register
 class _SerializablePoint:
     """Replacement for frozen Point — serializable version."""
+
     def __init__(self, x: float, y: float):
         self.x = x
         self.y = y
@@ -513,6 +537,7 @@ class _SerializablePoint:
 @_register
 class _SerializablePolygon:
     """Replacement for frozen Polygon — serializable version."""
+
     def __init__(self, points: list[dict] | None = None):
         self._points: list[dict] = points or []
 
@@ -521,11 +546,18 @@ class _SerializablePolygon:
         return self._points
 
     def to_dict(self) -> dict:
-        return {"points": [p.to_dict() if hasattr(p, "to_dict") else p for p in self._points]}
+        return {
+            "points": [
+                p.to_dict() if hasattr(p, "to_dict") else p for p in self._points
+            ]
+        }
 
     @staticmethod
     def from_dict(d: dict) -> _SerializablePolygon:
-        pts = [_SerializablePoint.from_dict(p) if isinstance(p, dict) else p for p in d.get("points", [])]
+        pts = [
+            _SerializablePoint.from_dict(p) if isinstance(p, dict) else p
+            for p in d.get("points", [])
+        ]
         return _SerializablePolygon(pts)
 
 
@@ -612,8 +644,12 @@ def _reconstruct_field(raw: Any, ftype: Any) -> Any:
         return raw
 
     # Handle ForwardRef / string annotations
-    type_name = ftype if isinstance(ftype, str) else getattr(ftype, "__name__", str(ftype))
-    cls = _SERIALIZABLE_TYPES.get(type_name) or _SERIALIZABLE_TYPES.get(ftype.__name__ if hasattr(ftype, "__name__") else "")
+    type_name = (
+        ftype if isinstance(ftype, str) else getattr(ftype, "__name__", str(ftype))
+    )
+    cls = _SERIALIZABLE_TYPES.get(type_name) or _SERIALIZABLE_TYPES.get(
+        ftype.__name__ if hasattr(ftype, "__name__") else ""
+    )
 
     if cls and isinstance(raw, dict):
         return _from_dict(cls, raw)
@@ -638,41 +674,53 @@ def document_ir_from_dict(data: dict) -> DocumentIR:
             lines: list[Any] = []
             for ld in lines_data:
                 provenance_data = ld.get("provenance", {})
-                prov = Provenance(**provenance_data) if provenance_data else Provenance()
-                lines.append(LineIR(
-                    line_id=ld.get("line_id", ""),
-                    text=ld.get("text", ""),
-                    bbox=_SerializableBBox.from_dict(ld["bbox"]) if ld.get("bbox") else None,
-                    confidence=ld.get("confidence", 1.0),
-                    reading_order=ld.get("reading_order", 0),
-                    provenance=prov,
-                    flags=set(ld.get("flags", [])),
-                    revision=ld.get("revision", 0),
-                ))
-            regions.append(RegionIR(
-                region_id=rd.get("region_id", ""),
-                region_type=rd.get("region_type", "unknown"),
-                bbox=_SerializableBBox.from_dict(rd["bbox"]) if rd.get("bbox") else None,
-                confidence=rd.get("confidence", 1.0),
-                reading_order=rd.get("reading_order", 0),
-                lines=lines,
-                provenance=Provenance(**(rd.get("provenance", {}))),
-                flags=set(rd.get("flags", [])),
-                revision=rd.get("revision", 0),
-                source_region_ids=rd.get("source_region_ids", []),
-                parent_region_id=rd.get("parent_region_id", ""),
-            ))
-        pages.append(PageIR(
-            page_id=pd.get("page_id", ""),
-            page_index=pd.get("page_index", 0),
-            width=pd.get("width", 0.0),
-            height=pd.get("height", 0.0),
-            original_image_ref=pd.get("original_image_ref", ""),
-            regions=regions,
-            reading_order=pd.get("reading_order", []),
-            reading_order_confidence=pd.get("reading_order_confidence"),
-            reading_order_flags=pd.get("reading_order_flags", []),
-        ))
+                prov = (
+                    Provenance(**provenance_data) if provenance_data else Provenance()
+                )
+                lines.append(
+                    LineIR(
+                        line_id=ld.get("line_id", ""),
+                        text=ld.get("text", ""),
+                        bbox=_SerializableBBox.from_dict(ld["bbox"])
+                        if ld.get("bbox")
+                        else None,
+                        confidence=ld.get("confidence", 1.0),
+                        reading_order=ld.get("reading_order", 0),
+                        provenance=prov,
+                        flags=set(ld.get("flags", [])),
+                        revision=ld.get("revision", 0),
+                    )
+                )
+            regions.append(
+                RegionIR(
+                    region_id=rd.get("region_id", ""),
+                    region_type=rd.get("region_type", "unknown"),
+                    bbox=_SerializableBBox.from_dict(rd["bbox"])
+                    if rd.get("bbox")
+                    else None,
+                    confidence=rd.get("confidence", 1.0),
+                    reading_order=rd.get("reading_order", 0),
+                    lines=lines,
+                    provenance=Provenance(**(rd.get("provenance", {}))),
+                    flags=set(rd.get("flags", [])),
+                    revision=rd.get("revision", 0),
+                    source_region_ids=rd.get("source_region_ids", []),
+                    parent_region_id=rd.get("parent_region_id", ""),
+                )
+            )
+        pages.append(
+            PageIR(
+                page_id=pd.get("page_id", ""),
+                page_index=pd.get("page_index", 0),
+                width=pd.get("width", 0.0),
+                height=pd.get("height", 0.0),
+                original_image_ref=pd.get("original_image_ref", ""),
+                regions=regions,
+                reading_order=pd.get("reading_order", []),
+                reading_order_confidence=pd.get("reading_order_confidence"),
+                reading_order_flags=pd.get("reading_order_flags", []),
+            )
+        )
     return DocumentIR(
         document_id=data.get("document_id", ""),
         source_hash=data.get("source_hash", ""),
@@ -702,6 +750,7 @@ _VALIDATION_FLOAT_FIELDS = {
 def _has_nan_or_inf(value: float) -> bool:
     """Check if a float is NaN or Infinity."""
     import math
+
     return math.isnan(value) or math.isinf(value)
 
 
@@ -739,7 +788,9 @@ def validate_document_ir(doc: DocumentIR) -> list[str]:
         if page.width < 0:
             violations.append(f"Page {page.page_index}: negative width ({page.width})")
         if page.height < 0:
-            violations.append(f"Page {page.page_index}: negative height ({page.height})")
+            violations.append(
+                f"Page {page.page_index}: negative height ({page.height})"
+            )
 
         # Collect region IDs on this page
         page_region_ids: set[str] = set()
@@ -754,19 +805,29 @@ def validate_document_ir(doc: DocumentIR) -> list[str]:
             if _has_nan_or_inf(region.confidence):
                 violations.append(f"Region {region.region_id}: confidence is NaN/Inf")
             if not (0.0 <= region.confidence <= 1.0):
-                violations.append(f"Region {region.region_id}: confidence out of range ({region.confidence})")
+                violations.append(
+                    f"Region {region.region_id}: confidence out of range ({region.confidence})"
+                )
 
             # Region coordinates
             if region.bbox is not None:
                 x0, y0, x1, y1 = region.bbox.as_tuple()
                 if any(_has_nan_or_inf(v) for v in (x0, y0, x1, y1)):
-                    violations.append(f"Region {region.region_id}: bbox contains NaN/Inf")
+                    violations.append(
+                        f"Region {region.region_id}: bbox contains NaN/Inf"
+                    )
                 if x0 < 0 or y0 < 0:
-                    violations.append(f"Region {region.region_id}: bbox starts negative ({x0}, {y0})")
+                    violations.append(
+                        f"Region {region.region_id}: bbox starts negative ({x0}, {y0})"
+                    )
                 if x1 > page.width + 1 or y1 > page.height + 1:
-                    violations.append(f"Region {region.region_id}: bbox exceeds page ({x1}, {y1}) vs ({page.width}, {page.height})")
+                    violations.append(
+                        f"Region {region.region_id}: bbox exceeds page ({x1}, {y1}) vs ({page.width}, {page.height})"
+                    )
                 if x0 >= x1 or y0 >= y1:
-                    violations.append(f"Region {region.region_id}: bbox zero/negative area ({x0}, {y0}, {x1}, {y1})")
+                    violations.append(
+                        f"Region {region.region_id}: bbox zero/negative area ({x0}, {y0}, {x1}, {y1})"
+                    )
 
             # Lines
             for line in region.lines:
@@ -779,7 +840,9 @@ def validate_document_ir(doc: DocumentIR) -> list[str]:
                 if _has_nan_or_inf(line.confidence):
                     violations.append(f"Line {line.line_id}: confidence is NaN/Inf")
                 if not (0.0 <= line.confidence <= 1.0):
-                    violations.append(f"Line {line.line_id}: confidence out of range ({line.confidence})")
+                    violations.append(
+                        f"Line {line.line_id}: confidence out of range ({line.confidence})"
+                    )
 
                 # Line coordinates
                 if line.bbox is not None:
@@ -787,7 +850,9 @@ def validate_document_ir(doc: DocumentIR) -> list[str]:
                     if any(_has_nan_or_inf(v) for v in (lx0, ly0, lx1, ly1)):
                         violations.append(f"Line {line.line_id}: bbox contains NaN/Inf")
                     if lx0 >= lx1 or ly0 >= ly1:
-                        violations.append(f"Line {line.line_id}: bbox zero/negative area ({lx0}, {ly0}, {lx1}, {ly1})")
+                        violations.append(
+                            f"Line {line.line_id}: bbox zero/negative area ({lx0}, {ly0}, {lx1}, {ly1})"
+                        )
 
         # Reading order validation
         for region_id in page.reading_order:
@@ -799,12 +864,28 @@ def validate_document_ir(doc: DocumentIR) -> list[str]:
 
     # Cross-page link validation
     for link_idx, link in enumerate(doc.cross_page_links):
-        source_page = link.get("source_page_id", "") or link.get("source_page_index", -1)
-        target_page = link.get("target_page_id", "") or link.get("target_page_index", -1)
-        if isinstance(source_page, str) and source_page and source_page not in all_page_ids:
-            violations.append(f"Cross-page link [{link_idx}]: source_page_id '{source_page}' not found")
-        if isinstance(target_page, str) and target_page and target_page not in all_page_ids:
-            violations.append(f"Cross-page link [{link_idx}]: target_page_id '{target_page}' not found")
+        source_page = link.get("source_page_id", "") or link.get(
+            "source_page_index", -1
+        )
+        target_page = link.get("target_page_id", "") or link.get(
+            "target_page_index", -1
+        )
+        if (
+            isinstance(source_page, str)
+            and source_page
+            and source_page not in all_page_ids
+        ):
+            violations.append(
+                f"Cross-page link [{link_idx}]: source_page_id '{source_page}' not found"
+            )
+        if (
+            isinstance(target_page, str)
+            and target_page
+            and target_page not in all_page_ids
+        ):
+            violations.append(
+                f"Cross-page link [{link_idx}]: target_page_id '{target_page}' not found"
+            )
 
     # Schema version check
     if doc.schema_version != _SCHEMA_VERSION:
@@ -845,16 +926,18 @@ def document_ir_to_blocks(doc: DocumentIR) -> list[dict]:
                     box_entry["low_conf"] = "low_conf" in flags
                     boxes.append(box_entry)
 
-        blocks.append({
-            "page": page.page_index + 1,
-            "text": all_text,
-            "normalized_text": all_text,
-            "boxes": boxes,
-            "page_width": page.width,
-            "page_height": page.height,
-            "source": "document_ir",
-            "has_boxes": bool(boxes),
-        })
+        blocks.append(
+            {
+                "page": page.page_index + 1,
+                "text": all_text,
+                "normalized_text": all_text,
+                "boxes": boxes,
+                "page_width": page.width,
+                "page_height": page.height,
+                "source": "document_ir",
+                "has_boxes": bool(boxes),
+            }
+        )
     return blocks
 
 
@@ -872,4 +955,3 @@ try:
     )
 except ImportError:
     pass
-

@@ -1,4 +1,5 @@
 """Phase 3 — 知识路径推荐 + 知识点关系查询 API。"""
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query

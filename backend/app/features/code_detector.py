@@ -48,9 +48,11 @@ _RE_COLON_END = re.compile(r":\s*$")
 _RE_ANGLE_BRACKETS = re.compile(r"</?[a-zA-Z_]\w*\b")
 
 # SQL 行首大写关键词（强结构约定）
-_RE_SQL_LINE_START = re.compile(r"^\s*(?:SELECT|FROM|WHERE|INSERT|UPDATE|DELETE"
+_RE_SQL_LINE_START = re.compile(
+    r"^\s*(?:SELECT|FROM|WHERE|INSERT|UPDATE|DELETE"
     r"|CREATE|DROP|ALTER|ORDER\s+BY|GROUP\s+BY|HAVING|JOIN"
-    r"|LEFT\s+JOIN|INNER\s+JOIN|UNION|DISTINCT)\b")
+    r"|LEFT\s+JOIN|INNER\s+JOIN|UNION|DISTINCT)\b"
+)
 
 # ============================================================
 # 关键词信号 — 分语言
@@ -108,9 +110,25 @@ _RE_CJK = re.compile(r"[一-鿿]")
 
 # 中文题干常见模式（即使含英文关键词也不应触发）
 _CN_QUESTION_PATTERNS = (
-    "下列", "以下", "正确", "错误", "的是", "哪一", "选择",
-    "判断", "计算", "已知", "设", "若", "求", "问",
-    "根据", "按照", "关于", "对于", "下列选项",
+    "下列",
+    "以下",
+    "正确",
+    "错误",
+    "的是",
+    "哪一",
+    "选择",
+    "判断",
+    "计算",
+    "已知",
+    "设",
+    "若",
+    "求",
+    "问",
+    "根据",
+    "按照",
+    "关于",
+    "对于",
+    "下列选项",
 )
 
 
@@ -118,9 +136,11 @@ _CN_QUESTION_PATTERNS = (
 # 检测统计
 # ============================================================
 
+
 @dataclass
 class CodeDetectStats:
     """代码检测统计"""
+
     question_count: int = 0
     block_count: int = 0
     total_code_lines: int = 0
@@ -133,7 +153,9 @@ class CodeDetectStats:
         return self.total_code_lines / self.block_count
 
     def to_log(self, trace_id: str = "") -> str:
-        langs = ",".join(f"{k}:{v}" for k, v in sorted(self.languages.items())) or "none"
+        langs = (
+            ",".join(f"{k}:{v}" for k, v in sorted(self.languages.items())) or "none"
+        )
         return (
             f"[CodeDetector] trace_id={trace_id} "
             f"questions={self.question_count} blocks={self.block_count} "
@@ -319,7 +341,9 @@ def _score_line(line: str) -> int:
 
     # ── Python 冒号结尾特殊处理 ──
     # def/class 定义行的冒号是强信号
-    if _RE_COLON_END.search(stripped) and (_RE_PYTHON_DEF.search(stripped) or _RE_CLASS_DEF.search(stripped)):
+    if _RE_COLON_END.search(stripped) and (
+        _RE_PYTHON_DEF.search(stripped) or _RE_CLASS_DEF.search(stripped)
+    ):
         return 2
 
     return 0

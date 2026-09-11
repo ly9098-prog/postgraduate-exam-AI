@@ -30,18 +30,10 @@ _CIRCLED_NUM_RE = re.compile(r"[①-⑳]")
 _UNDERSCORE_BLANK_RE = re.compile(r"_{3,}")
 
 # Answer patterns (in priority order)
-_RE_CANONICAL = re.compile(
-    r"([^:：;；]+?)\s*[:：]\s*([A-Ha-h])\s*(?:[;；]|$)"
-)
-_RE_CHINESE_COMMA = re.compile(
-    r"([^，,、]+?)\s*[，,、]\s*([A-Ha-h])\s*(?:[，,、]|$)"
-)
-_RE_CIRCLED_ANSWER = re.compile(
-    r"([①-⑳])\s*([A-Ha-h])(?:[、，,，\s]|$)"
-)
-_RE_PAREN_ANSWER = re.compile(
-    r"[（(]\s*(\d+)\s*[）)]\s*([A-Ha-h])(?:[、，,，\s]|$)"
-)
+_RE_CANONICAL = re.compile(r"([^:：;；]+?)\s*[:：]\s*([A-Ha-h])\s*(?:[;；]|$)")
+_RE_CHINESE_COMMA = re.compile(r"([^，,、]+?)\s*[，,、]\s*([A-Ha-h])\s*(?:[，,、]|$)")
+_RE_CIRCLED_ANSWER = re.compile(r"([①-⑳])\s*([A-Ha-h])(?:[、，,，\s]|$)")
+_RE_PAREN_ANSWER = re.compile(r"[（(]\s*(\d+)\s*[）)]\s*([A-Ha-h])(?:[、，,，\s]|$)")
 _RE_DIGIT_SLOT_ANSWER = re.compile(
     r"(?:^|\s|第)(\d+)\s*(?:空|个|题)?\s*[：:是为]?\s*([A-Ha-h])(?:[、，,，};\s]|$)"
 )
@@ -68,9 +60,7 @@ def extract_blank_slots(stem: str) -> list[str]:
     slots: list[str] = []
 
     # Priority 1: Named circled markers (① ② etc.) with explicit parentheses
-    circled_with_paren = list(
-        _CIRCLED_BLANK_RE.finditer(stem)
-    )
+    circled_with_paren = list(_CIRCLED_BLANK_RE.finditer(stem))
     if circled_with_paren:
         slots = [m.group(1) for m in circled_with_paren]
         return slots
@@ -156,7 +146,11 @@ def parse_multi_blank_answer(
         items = [str(item).strip().upper() for item in answer if str(item).strip()]
         if not items:
             return {}, errors
-        if slot_ids and len(items) == len(slot_ids) and all(re.match(r"^[A-H]$", i) for i in items):
+        if (
+            slot_ids
+            and len(items) == len(slot_ids)
+            and all(re.match(r"^[A-H]$", i) for i in items)
+        ):
             return dict(zip(slot_ids, items)), errors
         # Single element? Try parsing it as string
         if len(items) == 1:
@@ -177,10 +171,12 @@ def parse_multi_blank_answer(
     #
     # Match: "slot:value" pairs — slot is any non-empty text up to :, value is A-H
     # Pairs can be separated by ; or ,
-    all_pairs = list(re.finditer(
-        r"([^:：;；,，]+?)\s*[:：]\s*([A-Za-z])\s*(?:[;；,，]|$)",
-        text,
-    ))
+    all_pairs = list(
+        re.finditer(
+            r"([^:：;；,，]+?)\s*[:：]\s*([A-Za-z])\s*(?:[;；,，]|$)",
+            text,
+        )
+    )
     if len(all_pairs) >= 2:
         for m in all_pairs:
             slot = m.group(1).strip()
@@ -276,7 +272,12 @@ def parse_multi_blank_answer(
 
     # -- Strategy 9: Just letters — "AB" or "A" —
     letters_only = [ch for ch in text.upper() if "A" <= ch <= "H"]
-    if len(letters_only) >= 2 and slot_ids and allow_positional and len(letters_only) == len(slot_ids):
+    if (
+        len(letters_only) >= 2
+        and slot_ids
+        and allow_positional
+        and len(letters_only) == len(slot_ids)
+    ):
         return dict(zip(slot_ids, letters_only)), errors
 
     errors.append(f"unparseable_answer: {text}")
@@ -284,8 +285,16 @@ def parse_multi_blank_answer(
 
 
 _CN_TO_INT: dict[str, str] = {
-    "一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
-    "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
+    "一": "1",
+    "二": "2",
+    "三": "3",
+    "四": "4",
+    "五": "5",
+    "六": "6",
+    "七": "7",
+    "八": "8",
+    "九": "9",
+    "十": "10",
 }
 
 
@@ -433,7 +442,9 @@ def validate_multi_blank_question(
         return False, errors
 
     if isinstance(answer, str):
-        answer_map, parse_errors = parse_multi_blank_answer(answer, slot_ids=group_ids, allow_positional=False)
+        answer_map, parse_errors = parse_multi_blank_answer(
+            answer, slot_ids=group_ids, allow_positional=False
+        )
         errors.extend(parse_errors)
     elif isinstance(answer, dict):
         answer_map = answer
@@ -460,8 +471,7 @@ def validate_multi_blank_question(
     for group in groups:
         gid = str(group.get("id") or "").strip()
         group_opts_map[gid] = {
-            str(o.get("key") or "").upper()
-            for o in (group.get("options") or [])
+            str(o.get("key") or "").upper() for o in (group.get("options") or [])
         }
 
     for gid, val in answer_map.items():
@@ -469,7 +479,9 @@ def validate_multi_blank_question(
             continue
         valid_keys = group_opts_map[gid]
         if val not in valid_keys:
-            errors.append(f"answer_{gid}={val}_not_in_group_options_{sorted(valid_keys)}")
+            errors.append(
+                f"answer_{gid}={val}_not_in_group_options_{sorted(valid_keys)}"
+            )
 
     return len(errors) == 0, errors
 
@@ -565,7 +577,9 @@ def detect_shared_option_multi_blank(
 
     # Check if answer parses to at least 2 slots
     if answer:
-        parsed, _parse_errors = parse_multi_blank_answer(answer, slot_ids=slot_ids, allow_positional=True)
+        parsed, _parse_errors = parse_multi_blank_answer(
+            answer, slot_ids=slot_ids, allow_positional=True
+        )
 
         # If parsed slot IDs don't match stem-extracted slot IDs, reconcile.
         # This handles the case where stem has anonymous "（ ）" → ["1", "2"]

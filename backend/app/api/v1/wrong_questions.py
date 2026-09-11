@@ -41,26 +41,68 @@ from app.utils.question_content import (
 )
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
-_CODE_OP_SPLIT_RE = re.compile(
-    r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
-)
+_CODE_OP_SPLIT_RE = re.compile(r"(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$")
 
 _CODE_SIGNALS = [
-    'return', 'printf', 'scanf', 'malloc', 'free', 'NULL',
-    'struct', 'typedef', 'enum', 'union',
-    'int ', 'void ', 'char ', 'float ', 'double ',
-    'bool', 'const', 'static', 'sizeof',
-    '->', '::', '{', '}', ';',
-    '++', '--', '+=', '-=', '*=', '/=',
-    '#include', '#define',
+    "return",
+    "printf",
+    "scanf",
+    "malloc",
+    "free",
+    "NULL",
+    "struct",
+    "typedef",
+    "enum",
+    "union",
+    "int ",
+    "void ",
+    "char ",
+    "float ",
+    "double ",
+    "bool",
+    "const",
+    "static",
+    "sizeof",
+    "->",
+    "::",
+    "{",
+    "}",
+    ";",
+    "++",
+    "--",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "#include",
+    "#define",
 ]
 _CONTROL_KW = [
-    'for', 'while', 'if', 'else if', 'else', 'switch',
-    'return', 'break', 'continue', 'case', 'do',
+    "for",
+    "while",
+    "if",
+    "else if",
+    "else",
+    "switch",
+    "return",
+    "break",
+    "continue",
+    "case",
+    "do",
 ]
 _DS_KW = [
-    'LNode', 'TNode', 'BiTNode', 'BiTree', 'BSTNode', 'LinkList',
-    'SqList', 'Stack', 'Queue', 'SqStack', 'ElemType', 'Status',
+    "LNode",
+    "TNode",
+    "BiTNode",
+    "BiTree",
+    "BSTNode",
+    "LinkList",
+    "SqList",
+    "Stack",
+    "Queue",
+    "SqStack",
+    "ElemType",
+    "Status",
 ]
 
 
@@ -70,10 +112,10 @@ def _contains_code(text: str) -> bool:
     score = sum(1 for sig in _CODE_SIGNALS if sig in text)
     score += sum(2 for kw in _DS_KW if kw in text)
     score += sum(
-        1 for kw in _CONTROL_KW
-        if re.search(r'\b' + re.escape(kw) + r'\b', text)
+        1 for kw in _CONTROL_KW if re.search(r"\b" + re.escape(kw) + r"\b", text)
     )
     return score >= 3
+
 
 router = APIRouter(prefix="/api/v1/wrong-questions")
 
@@ -166,9 +208,15 @@ def _sanitize_options(options: dict | None) -> dict | None:
 
 
 def enrich_wq(wq, question, knowledge_points=None, **extra):
-    ai_analysis = extra["ai_analysis_override"] if "ai_analysis_override" in extra else wq.ai_analysis
+    ai_analysis = (
+        extra["ai_analysis_override"]
+        if "ai_analysis_override" in extra
+        else wq.ai_analysis
+    )
     raw_ai_analysis = wq.ai_analysis if isinstance(wq.ai_analysis, dict) else {}
-    raw_ai_meta = raw_ai_analysis.get("_meta") if isinstance(raw_ai_analysis, dict) else None
+    raw_ai_meta = (
+        raw_ai_analysis.get("_meta") if isinstance(raw_ai_analysis, dict) else None
+    )
     raw_generated_at = (
         str(raw_ai_meta.get("generated_at") or "").strip()
         if isinstance(raw_ai_meta, dict)
@@ -176,7 +224,9 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
     )
     ai_status = extra.get("ai_analysis_status_override")
     if ai_status is None:
-        ai_status = "ready" if isinstance(ai_analysis, dict) and ai_analysis else "empty"
+        ai_status = (
+            "ready" if isinstance(ai_analysis, dict) and ai_analysis else "empty"
+        )
     # 硬删除的题（question 为 None）→ knowledge_points 应为 None 而非 []；
     # 存活但无知识点的题 → []。不依赖调用方是否传默认值。
     if question is None:
@@ -192,8 +242,12 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
         created_at=wq.created_at,
         updated_at=wq.updated_at,
         subject_id=question.subject_id if question else None,
-        subject_code=question.subject_ref.code if question and question.subject_ref else None,
-        subject_name=question.subject_ref.name if question and question.subject_ref else None,
+        subject_code=question.subject_ref.code
+        if question and question.subject_ref
+        else None,
+        subject_name=question.subject_ref.name
+        if question and question.subject_ref
+        else None,
         question_type=question.question_type if question else None,
         content=_sanitize_content(question.content) if question else None,
         options=_sanitize_options(question.options) if question else None,
@@ -292,9 +346,9 @@ async def _enrich_single_wq_extra(
             select(
                 review_record_count_subquery.label("review_record_count"),
                 func.max(ReviewSchedule.repetitions).label("repetitions"),
-                func.max(
-                    case((ReviewSchedule.mastered, 1), else_=0)
-                ).label("schedule_mastered"),
+                func.max(case((ReviewSchedule.mastered, 1), else_=0)).label(
+                    "schedule_mastered"
+                ),
                 func.max(ReviewSchedule.next_review_at).label("next_review_at"),
                 func.max(ReviewSchedule.last_reviewed_at).label("last_reviewed_at"),
             ).where(
@@ -310,8 +364,8 @@ async def _enrich_single_wq_extra(
     review_record_count = int(detail.review_record_count or 0)
     repetitions = int(detail.repetitions or 0)
     is_mastered = bool(wq.mastered or detail.schedule_mastered)
-    mastery_percent = 1.0 if is_mastered else round(
-        review_mastery_percent(repetitions) / 100, 4
+    mastery_percent = (
+        1.0 if is_mastered else round(review_mastery_percent(repetitions) / 100, 4)
     )
     return {
         "review_record_count": review_record_count,
@@ -334,7 +388,13 @@ async def list_wrong(
 ):
     allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
     items, total = await svc.list_wrong_enriched(
-        db, current_user.id, subject_id, error_type, topic, page, page_size,
+        db,
+        current_user.id,
+        subject_id,
+        error_type,
+        topic,
+        page,
+        page_size,
         allowed_subject_ids=allowed_subject_ids,
     )
 
@@ -358,7 +418,9 @@ async def get_stats(
     current_user: User = Depends(get_current_user),
 ):
     allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
-    stats = await svc.get_stats(db, current_user.id, allowed_subject_ids=allowed_subject_ids)
+    stats = await svc.get_stats(
+        db, current_user.id, allowed_subject_ids=allowed_subject_ids
+    )
     return WrongQuestionStats(**stats)
 
 
@@ -375,7 +437,12 @@ async def get_task_flow(
     """错题任务流分组：今日应复习 → 高频错题 → 最近新增 → 待巩固 → 已掌握."""
     allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
     result = await svc.get_task_flow(
-        db, current_user.id, subject_id, error_type, topic, preview_size,
+        db,
+        current_user.id,
+        subject_id,
+        error_type,
+        topic,
+        preview_size,
         allowed_subject_ids=allowed_subject_ids,
     )
     # Keep task-flow preview rows byte-for-byte compatible with the ordinary
@@ -433,7 +500,9 @@ async def get_wrong(
         db, current_user.id, wq.id
     )
     if diagnosis is not None:
-        extra["error_diagnosis"] = error_diagnosis_service.serialize_diagnosis(diagnosis)
+        extra["error_diagnosis"] = error_diagnosis_service.serialize_diagnosis(
+            diagnosis
+        )
     if question is not None:
         from app.services import ai_service
 
@@ -482,7 +551,11 @@ async def confirm_wrong_error_diagnosis(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="错题记录不存在")
-    for pattern in (f"wrong_questions:*:{current_user.id}*", f"stats:*:{current_user.id}*", f"stats:dashboard*:{current_user.id}*"):
+    for pattern in (
+        f"wrong_questions:*:{current_user.id}*",
+        f"stats:*:{current_user.id}*",
+        f"stats:dashboard*:{current_user.id}*",
+    ):
         await cache.delete(pattern)
     return error_diagnosis_service.serialize_diagnosis(row)
 
@@ -498,7 +571,10 @@ async def suggest_wrong_error_diagnosis(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="错题记录不存在")
-    return {"queued": queued, "diagnosis": error_diagnosis_service.serialize_diagnosis(row)}
+    return {
+        "queued": queued,
+        "diagnosis": error_diagnosis_service.serialize_diagnosis(row),
+    }
 
 
 @router.put("/{wq_id}", response_model=WrongQuestionResponse)
@@ -508,16 +584,13 @@ async def update_wrong(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    wq = await svc.update_wrong(
-        db, current_user.id, wq_id, data.error_type
-    )
+    wq = await svc.update_wrong(db, current_user.id, wq_id, data.error_type)
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
     question, knowledge_points = await _load_current_question_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
     return enrich_wq(wq, question, knowledge_points=knowledge_points, **extra)
-
 
 
 @router.post("/batch", response_model=WrongQuestionBatchResponse)

@@ -32,7 +32,9 @@ def _user_login_rate_key(request: Request) -> str:
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(data: WechatLogin, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(
+    data: WechatLogin, request: Request, db: AsyncSession = Depends(get_db)
+):
     rate_key = _user_login_rate_key(request)
     try:
         failures = int(await cache.get_strict(rate_key) or 0)

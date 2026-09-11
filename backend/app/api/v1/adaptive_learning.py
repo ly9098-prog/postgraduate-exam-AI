@@ -1,4 +1,5 @@
 """V6 个性化调度 API 路由"""
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 

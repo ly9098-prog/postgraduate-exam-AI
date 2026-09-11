@@ -88,6 +88,7 @@ def _apply_export_failure(
     task.processing_started_at = None
     task.heartbeat_at = None
 
+
 # ── Exporter registry ──
 _EXPORTERS: dict[str, type[Exporter]] = {}
 
@@ -127,14 +128,20 @@ def _sanitize_filename(title: str) -> str:
     if not cleaned:
         cleaned = "错题巩固练习"
     # Limit byte length
-    cleaned = cleaned.encode("utf-8", errors="ignore")[:_MAX_FILENAME_BYTES].decode("utf-8", errors="ignore")
+    cleaned = cleaned.encode("utf-8", errors="ignore")[:_MAX_FILENAME_BYTES].decode(
+        "utf-8", errors="ignore"
+    )
     return cleaned
 
 
 def _build_filename(title: str, date_str: str, ext: str = "pdf") -> str:
     """Build the export filename: {title}_{yyyyMMdd_HHmm}.{ext}"""
     safe_title = _sanitize_filename(title)
-    ts = date_str.replace("-", "") if date_str else shanghai_now().strftime("%Y%m%d_%H%M")
+    ts = (
+        date_str.replace("-", "")
+        if date_str
+        else shanghai_now().strftime("%Y%m%d_%H%M")
+    )
     return f"{safe_title}_{ts}.{ext}"
 
 
@@ -147,7 +154,11 @@ def _build_title(subjects: list[dict]) -> str:
     - 2-3 subjects: "{name1、name2}错题巩固练习"
     - 4+ subjects: "{name1、name2、name3等}错题巩固练习"
     """
-    names = [s.get("label", "") or s.get("name", "") for s in subjects if s.get("label") or s.get("name")]
+    names = [
+        s.get("label", "") or s.get("name", "")
+        for s in subjects
+        if s.get("label") or s.get("name")
+    ]
     names = [n for n in names if n]
 
     if not names:
@@ -281,15 +292,24 @@ async def process_task(
             snapshot_data = await load_snapshot(db, task.snapshot_id, task.user_id)
             if snapshot_data is None:
                 # Snapshot missing — fall through to rebuild
-                logger.warning("Snapshot %s for task %d not found, rebuilding", task.snapshot_id, task.id)
+                logger.warning(
+                    "Snapshot %s for task %d not found, rebuilding",
+                    task.snapshot_id,
+                    task.id,
+                )
                 task.snapshot_id = None
             else:
-                logger.info("Reusing existing snapshot %s for task %d", task.snapshot_id, task.id)
+                logger.info(
+                    "Reusing existing snapshot %s for task %d",
+                    task.snapshot_id,
+                    task.id,
+                )
 
         if not task.snapshot_id:
             # 1. Resolve range
             wq_ids = await resolve_range(
-                db, task.user_id,
+                db,
+                task.user_id,
                 ExportRangeType(task.range_type),
                 task.filters,
                 task.selected_ids,
@@ -297,7 +317,9 @@ async def process_task(
 
             # 2. Sort (if random, uses deterministic seed)
             sorted_ids = await sort_questions(
-                db, task.user_id, wq_ids,
+                db,
+                task.user_id,
+                wq_ids,
                 ExportSortBy(task.sort_by),
             )
 
@@ -325,7 +347,11 @@ async def process_task(
 
             # 4. Build snapshot data
             snapshot_data = await build_snapshot_data(
-                db, task.user_id, sorted_ids, wq_order_map, config_for_snapshot,
+                db,
+                task.user_id,
+                sorted_ids,
+                wq_order_map,
+                config_for_snapshot,
             )
 
             snapshot_data["config"]["total_count"] = snapshot_data.get(
@@ -353,7 +379,11 @@ async def process_task(
 
             if not result.success or not result.file_bytes:
                 was_reexport = _is_reexport_with_old_file(task)
-                target = ExportTaskStatus.COMPLETED if was_reexport else ExportTaskStatus.FAILED
+                target = (
+                    ExportTaskStatus.COMPLETED
+                    if was_reexport
+                    else ExportTaskStatus.FAILED
+                )
                 validate_transition(ExportTaskStatus.PROCESSING, target, task.id)
                 _apply_export_failure(
                     task,
@@ -377,11 +407,14 @@ async def process_task(
 
             # 9. Store the file
             from app.services.storage_backend import get_export_storage
+
             storage = get_export_storage()
             file_key = f"{task.id}/{task.file_name}"
             _file_url = await storage.upload(file_key, result.file_bytes)
 
-            validate_transition(ExportTaskStatus.PROCESSING, ExportTaskStatus.COMPLETED, task.id)
+            validate_transition(
+                ExportTaskStatus.PROCESSING, ExportTaskStatus.COMPLETED, task.id
+            )
             processing_started_at = task.processing_started_at
             task.status = ExportTaskStatus.COMPLETED
             task.file_key = file_key
@@ -393,7 +426,9 @@ async def process_task(
             task.skip_count = result.skip_count
             task.skip_reasons = result.skip_reasons
             task.completed_at = utcnow()
-            task.expires_at = utcnow() + dt.timedelta(days=settings.EXPORT_RETENTION_DAYS)
+            task.expires_at = utcnow() + dt.timedelta(
+                days=settings.EXPORT_RETENTION_DAYS
+            )
             task.error_code = None
             task.error_message = None
             task.processing_started_at = None
@@ -409,7 +444,10 @@ async def process_task(
 
             logger.info(
                 "Export task %d completed: %d questions, %d skipped, %d bytes",
-                task.id, task.success_count, task.skip_count, task.file_size,
+                task.id,
+                task.success_count,
+                task.skip_count,
+                task.file_size,
             )
 
     except ExportDomainError as e:
@@ -494,9 +532,12 @@ async def find_task_by_idempotency_key(
     if not idempotency_key:
         return None
     result = await db.execute(
-        select(ExportTask).where(
+        select(ExportTask)
+        .where(
             ExportTask.user_id == user_id,
             ExportTask.idempotency_key == idempotency_key,
-        ).order_by(ExportTask.created_at.desc()).limit(1)
+        )
+        .order_by(ExportTask.created_at.desc())
+        .limit(1)
     )
     return result.scalar_one_or_none()

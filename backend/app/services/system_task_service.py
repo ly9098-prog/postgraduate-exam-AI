@@ -5,6 +5,7 @@ HTTP admin service.  The catalog is deterministic, scheduler/manual execution
 shares one code path, and lightweight telemetry is stored in Redis so the admin
 UI reports *current executor health* instead of only the last result.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +30,9 @@ from app.core.time_utils import (
 logger = logging.getLogger(__name__)
 
 RunStatus = Literal["success", "failed", "skipped"]
-TaskStatus = Literal["idle", "running", "failed", "disabled", "unavailable", "unobservable"]
+TaskStatus = Literal[
+    "idle", "running", "failed", "disabled", "unavailable", "unobservable"
+]
 
 _TELEMETRY_PREFIX = "admin:system-task"
 _TELEMETRY_TTL_SEC = 30 * 86400
@@ -248,12 +251,18 @@ async def run_scheduler_heartbeat() -> None:
                         "updated_at": serialize_utc_datetime(utcnow()),
                         "database_available": "1" if db_ok else "0",
                         "database_note": db_note or "",
-                        "task_capabilities": json.dumps(task_capabilities, ensure_ascii=False),
+                        "task_capabilities": json.dumps(
+                            task_capabilities, ensure_ascii=False
+                        ),
                         "task_notes": json.dumps(task_notes, ensure_ascii=False),
-                        "registered_tasks": json.dumps(sorted(_SCHEDULER_REGISTERED_TASKS)),
+                        "registered_tasks": json.dumps(
+                            sorted(_SCHEDULER_REGISTERED_TASKS)
+                        ),
                     },
                 )
-                await client.expire(_SCHEDULER_HEARTBEAT_KEY, _SCHEDULER_HEARTBEAT_TTL_SEC)
+                await client.expire(
+                    _SCHEDULER_HEARTBEAT_KEY, _SCHEDULER_HEARTBEAT_TTL_SEC
+                )
             except Exception:
                 # Jobs themselves fail closed on Redis. Telemetry must not
                 # crash the scheduler; the next heartbeat retries automatically.
@@ -357,7 +366,9 @@ async def _read_all_telemetry(task_ids: list[str]) -> dict[str, dict[str, str]]:
         for task_id in task_ids:
             pipe.hgetall(_telemetry_key(task_id))
         rows = await pipe.execute()
-        return {task_id: row or {} for task_id, row in zip(task_ids, rows, strict=False)}
+        return {
+            task_id: row or {} for task_id, row in zip(task_ids, rows, strict=False)
+        }
     except Exception:
         return {}
     finally:
@@ -400,8 +411,10 @@ async def record_system_task_execution(
 
     try:
         raw = await runner()
-        outcome = raw if isinstance(raw, TaskRunOutcome) else TaskRunOutcome(
-            status="success", message=_serialize_value(raw)
+        outcome = (
+            raw
+            if isinstance(raw, TaskRunOutcome)
+            else TaskRunOutcome(status="success", message=_serialize_value(raw))
         )
     except Exception as exc:
         finished = utcnow()
@@ -437,12 +450,16 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return normalize_to_naive_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        return normalize_to_naive_utc(
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        )
     except ValueError:
         return None
 
 
-def _next_run_datetime(definition: ScheduledTaskDefinition, now: datetime) -> datetime | None:
+def _next_run_datetime(
+    definition: ScheduledTaskDefinition, now: datetime
+) -> datetime | None:
     """Return the next deterministic UTC fire time for one catalogued task."""
     if not definition.enabled:
         return None
@@ -562,8 +579,14 @@ async def _task_capability(
     if not definition.enabled:
         return TaskCapability(
             can_run_now=False,
-            executor_available=(scheduler_health.available if definition.executor == "scheduler" else None),
-            executor_state=(scheduler_health.state if definition.executor == "scheduler" else None),
+            executor_available=(
+                scheduler_health.available
+                if definition.executor == "scheduler"
+                else None
+            ),
+            executor_state=(
+                scheduler_health.state if definition.executor == "scheduler" else None
+            ),
             note="任务已在配置中停用",
         )
 
@@ -573,7 +596,9 @@ async def _task_capability(
         else await _task_local_prerequisite(definition.task_id)
     )
     manual_db_ok = database_available or not definition.requires_database
-    can_run_now = bool(definition.can_run_now and redis_available and local_ok and manual_db_ok)
+    can_run_now = bool(
+        definition.can_run_now and redis_available and local_ok and manual_db_ok
+    )
 
     scheduler_local_ok = True
     scheduler_local_note: str | None = None
@@ -590,11 +615,10 @@ async def _task_capability(
             scheduler_local_note = "scheduler 未上报该任务的运行条件"
 
     scheduler_db_ok = (
-        not definition.requires_database
-        or scheduler_health.database_available is True
+        not definition.requires_database or scheduler_health.database_available is True
     )
-    scheduler_registered = (
-        definition.task_id in (scheduler_health.registered_tasks or set())
+    scheduler_registered = definition.task_id in (
+        scheduler_health.registered_tasks or set()
     )
     executor_available = bool(
         scheduler_health.available
@@ -644,7 +668,9 @@ async def _task_capability(
 
     return TaskCapability(
         can_run_now=can_run_now,
-        executor_available=(executor_available if definition.executor == "scheduler" else None),
+        executor_available=(
+            executor_available if definition.executor == "scheduler" else None
+        ),
         executor_state=(executor_state if definition.executor == "scheduler" else None),
         note="；".join(dict.fromkeys(notes_out)) or None,
     )
@@ -730,7 +756,8 @@ async def list_system_scheduled_tasks() -> list[dict]:
         can_run_now = capability.can_run_now
         next_run_at = (
             _next_run_at(definition, telemetry, now)
-            if definition.executor != "scheduler" or capability.executor_available is True
+            if definition.executor != "scheduler"
+            or capability.executor_available is True
             else None
         )
         extra: dict = {}
@@ -774,7 +801,10 @@ async def list_system_scheduled_tasks() -> list[dict]:
                 if not redis_available:
                     backup_note = "；".join(
                         part
-                        for part in (backup_note, "Redis 不可用，无法获取手动备份分布式锁")
+                        for part in (
+                            backup_note,
+                            "Redis 不可用，无法获取手动备份分布式锁",
+                        )
                         if part
                     )
                 timer_active = backup_info.get("timer_active")
@@ -811,7 +841,9 @@ async def list_system_scheduled_tasks() -> list[dict]:
                 "executor_available": capability.executor_available,
                 "executor_state": capability.executor_state,
                 "next_run_label": (
-                    None if capability.executor_available is True else "定时执行当前不可用"
+                    None
+                    if capability.executor_available is True
+                    else "定时执行当前不可用"
                 ),
                 "note": capability.note,
             }
@@ -833,11 +865,19 @@ async def list_system_scheduled_tasks() -> list[dict]:
             status = "running"
         elif state == "stale":
             status = "unavailable"
-        elif definition.executor == "scheduler" and capability.executor_available is False:
+        elif (
+            definition.executor == "scheduler"
+            and capability.executor_available is False
+        ):
             status = "unavailable"
-        elif definition.executor == "systemd" and extra.get("executor_available") is False:
+        elif (
+            definition.executor == "systemd"
+            and extra.get("executor_available") is False
+        ):
             status = "unavailable"
-        elif definition.executor == "systemd" and extra.get("executor_available") is None:
+        elif (
+            definition.executor == "systemd" and extra.get("executor_available") is None
+        ):
             status = "unobservable"
         elif last_status == "failed":
             status = "failed"
@@ -905,7 +945,9 @@ async def _run_with_lock(
                         status="failed",
                         message=redis_note or "Redis 不可用，无法获取分布式锁",
                     )
-                return TaskRunOutcome(status="skipped", message="已有实例正在执行，本次已跳过")
+                return TaskRunOutcome(
+                    status="skipped", message="已有实例正在执行，本次已跳过"
+                )
 
             async def locked_work() -> TaskRunOutcome:
                 value = await work()
@@ -966,16 +1008,18 @@ async def _run_audit_cleanup(source: str) -> TaskRunOutcome:
             )
         return f"删除 {deleted} 条过期审计日志"
 
-    return await _run_with_lock(
-        "audit_log_cleanup", source, "audit:cleanup", work
-    )
+    return await _run_with_lock("audit_log_cleanup", source, "audit:cleanup", work)
 
 
 async def _run_recommendation_metrics(source: str) -> TaskRunOutcome:
     async def work():
         from app.core.database import async_session
-        from app.services.recommendation_log_service import cleanup_expired_recommendation_logs
-        from app.services.recommendation_metrics_service import aggregate_recommendation_metrics_daily
+        from app.services.recommendation_log_service import (
+            cleanup_expired_recommendation_logs,
+        )
+        from app.services.recommendation_metrics_service import (
+            aggregate_recommendation_metrics_daily,
+        )
 
         retention_days = max(7, settings.RECOMMENDATION_LOG_RETENTION_DAYS)
         # Recompute a short rolling window instead of only "yesterday". The
@@ -993,7 +1037,9 @@ async def _run_recommendation_metrics(source: str) -> TaskRunOutcome:
                         db, target_date=target_date
                     )
                     await db.commit()
-                    aggregate_rows += int(aggregate_result.get("aggregated_rows", 0) or 0)
+                    aggregate_rows += int(
+                        aggregate_result.get("aggregated_rows", 0) or 0
+                    )
                 except Exception:
                     failed_dates.append(str(target_date))
                     await db.rollback()
@@ -1051,7 +1097,9 @@ async def _run_export_cleanup(source: str) -> TaskRunOutcome:
             details = [f"失败 {failures} 项"]
             if stats.get("limit_reached"):
                 details.append("本轮达到处理上限，剩余任务将在下轮继续")
-            return TaskRunOutcome(status="failed", message=f"{message}；{'；'.join(details)}")
+            return TaskRunOutcome(
+                status="failed", message=f"{message}；{'；'.join(details)}"
+            )
         if stats.get("limit_reached"):
             message = f"{message}；本轮达到处理上限，剩余任务将在下轮继续"
         return TaskRunOutcome(status="success", message=message)
@@ -1106,7 +1154,9 @@ async def execute_scheduled_task(task_id: str, *, source: str) -> TaskRunOutcome
 
     if task_id == "postgres_backup":
         if source != "manual":
-            return TaskRunOutcome(status="skipped", message="PostgreSQL 周期备份由 systemd 负责")
+            return TaskRunOutcome(
+                status="skipped", message="PostgreSQL 周期备份由 systemd 负责"
+            )
         from app.services.database_backup_service import inspect_database_backup
 
         info = await inspect_database_backup()
@@ -1118,7 +1168,8 @@ async def execute_scheduled_task(task_id: str, *, source: str) -> TaskRunOutcome
         if not info.get("can_run_now"):
             return TaskRunOutcome(
                 status="skipped",
-                message=info.get("note") or "当前没有可验证的 PostgreSQL 手动备份执行路径",
+                message=info.get("note")
+                or "当前没有可验证的 PostgreSQL 手动备份执行路径",
             )
 
     redis_ok, redis_note = await _probe_redis()
@@ -1133,7 +1184,9 @@ async def execute_scheduled_task(task_id: str, *, source: str) -> TaskRunOutcome
         if not db_ok:
             return TaskRunOutcome(status="failed", message=db_note or "数据库不可用")
     if not local_ok:
-        return TaskRunOutcome(status="failed", message=local_note or "任务运行条件不满足")
+        return TaskRunOutcome(
+            status="failed", message=local_note or "任务运行条件不满足"
+        )
     return await runner(source)
 
 

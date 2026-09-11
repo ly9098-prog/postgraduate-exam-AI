@@ -40,12 +40,16 @@ async def patch_ai_settings(
         return result
     except ValueError as exc:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
 
 
 @router.get("/usage", response_model=AdminAIUsageMonthlyResponse)
 async def read_ai_usage(
-    year_month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$", alias="yearMonth"),
+    year_month: str | None = Query(
+        default=None, pattern=r"^\d{4}-\d{2}$", alias="yearMonth"
+    ),
     _=Depends(require_permissions("ai_setting:read")),
     db: AsyncSession = Depends(get_db),
 ):

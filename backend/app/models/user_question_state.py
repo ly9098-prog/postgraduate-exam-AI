@@ -18,10 +18,16 @@ class UserQuestionState(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=False, index=True,
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
     )
     question_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("questions.id"), nullable=False, index=True,
+        Integer,
+        ForeignKey("questions.id"),
+        nullable=False,
+        index=True,
     )
 
     # Leitner 盒子等级：0=很不熟/刚做错，5=稳定掌握
@@ -42,12 +48,15 @@ class UserQuestionState(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(),
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "question_id",
+            "user_id",
+            "question_id",
             name="uq_user_question_state_user_question",
         ),
     )

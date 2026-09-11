@@ -21,6 +21,7 @@ def validate_image_target(v: str) -> str:
         raise ValueError("target 必须是 'stem' 或 'option:A'-'option:Z'")
     return v
 
+
 from app.features.question_type import validate_question_type
 
 

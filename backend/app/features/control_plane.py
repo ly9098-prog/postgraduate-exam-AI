@@ -40,6 +40,7 @@ class ExecutionQuota:
     All values are inclusive maximums. Exceeding any limit returns
     a clearly typed error code (not silent truncation).
     """
+
     max_pages: int = 200
     max_input_bytes: int = 100 * 1024 * 1024  # 100 MB
     max_render_pixels: int = 4000 * 4000  # 16 MP
@@ -71,6 +72,7 @@ class QuotaExceededError(ValueError):
 @dataclass(frozen=True)
 class QuotaLease:
     """Result of claiming quota. ``accepted``=False means limit hit."""
+
     accepted: bool
     quota_name: str = ""
     remaining: int = 0
@@ -96,6 +98,7 @@ class ExecutionPolicy:
     Controls how this specific pipeline run behaves —
     feature flags, canary bucket, structure freeze mode, etc.
     """
+
     canary_enabled: bool = False
     canary_bucket: str = ""
     structure_freeze_mode: str = "legacy"
@@ -117,6 +120,7 @@ class ExecutionPolicy:
 @dataclass(frozen=True)
 class ResourceDemand:
     """Resource demand for quota claiming."""
+
     estimated_pages: int = 0
     estimated_input_bytes: int = 0
     estimated_render_pixels: int = 0
@@ -129,6 +133,7 @@ class ResourceDemand:
 @dataclass(frozen=True)
 class RolloutDecision:
     """Canary/rollout decision for this job."""
+
     canary: bool = False
     bucket: str = ""
     variant: str = "control"
@@ -142,6 +147,7 @@ class RolloutDecision:
 @dataclass
 class _StageRecord:
     """Record of a single pipeline stage execution."""
+
     stage_name: str
     status: str = "pending"
     started_at: float = 0.0
@@ -163,16 +169,19 @@ class TraceCollector:
         self._pipeline_id = pipeline_id
         self._events: list[dict[str, Any]] = []
 
-    def record(self, step: str, status: str, message: str = "",
-               duration_ms: int = 0) -> None:
-        self._events.append({
-            "pipeline_id": self._pipeline_id,
-            "step": step,
-            "status": status,
-            "message": message,
-            "duration_ms": duration_ms,
-            "timestamp": time.time(),
-        })
+    def record(
+        self, step: str, status: str, message: str = "", duration_ms: int = 0
+    ) -> None:
+        self._events.append(
+            {
+                "pipeline_id": self._pipeline_id,
+                "step": step,
+                "status": status,
+                "message": message,
+                "duration_ms": duration_ms,
+                "timestamp": time.time(),
+            }
+        )
         logger.debug("Trace [%s] %s=%s %s", self._pipeline_id, step, status, message)
 
     def drain(self) -> list[dict[str, Any]]:
@@ -210,6 +219,7 @@ class CancellationContext:
     Stages should periodically check ``is_cancelled()`` and raise
     ``asyncio.CancelledError`` when True.
     """
+
     _cancelled: bool = False
 
     def cancel(self) -> None:
@@ -233,6 +243,7 @@ class ArtifactWorkspace:
       - ``pipeline_artifacts.save_artifact()`` for structured data
       - Filesystem paths for rendered page images
     """
+
     pipeline_id: str = ""
     workspace_root: str = ""
     page_image_dir: str = ""
@@ -254,6 +265,7 @@ def _compute_config_fingerprint() -> str:
     """Compute a hash of the current settings for context freezing."""
     try:
         from app.core.config import settings
+
         d = {k: str(v) for k, v in sorted(settings.model_dump().items())}
         raw = json.dumps(d, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
@@ -290,6 +302,7 @@ class PipelineExecutionContext:
     - Resume uses original context, not current env/state
     - Deployment profile is frozen at creation, not re-detected on resume
     """
+
     # Identity
     pipeline_id: str = ""
     import_id: int | None = None
@@ -312,7 +325,9 @@ class PipelineExecutionContext:
     model_fingerprints: dict[str, str] = field(default_factory=dict)
 
     # Feature flags (frozen at start)
-    feature_flags: dict[str, bool | str | float] = field(default_factory=_load_feature_flags)
+    feature_flags: dict[str, bool | str | float] = field(
+        default_factory=_load_feature_flags
+    )
 
     # Budget
     quota: ExecutionQuota = field(default_factory=ExecutionQuota)
@@ -454,6 +469,7 @@ class OCRControlPlane:
         pipeline_fp = ""
         try:
             from app.features.pipeline_fingerprint import build_pipeline_fingerprint
+
             fp = build_pipeline_fingerprint(
                 pipeline_version="sprint4a",
                 ocr_backend="paddleocr",
@@ -478,7 +494,9 @@ class OCRControlPlane:
             quota=ExecutionQuota(),
             artifact_workspace=ArtifactWorkspace(
                 pipeline_id=pipeline_id,
-                workspace_root=os.environ.get("ARTIFACT_ROOT", "/tmp/pipeline_artifacts"),
+                workspace_root=os.environ.get(
+                    "ARTIFACT_ROOT", "/tmp/pipeline_artifacts"
+                ),
             ),
         )
         ctx.trace.record("job_created", "success", f"mode={self._mode}")
@@ -513,9 +531,13 @@ class OCRControlPlane:
         if demand.estimated_pages > q.max_pages:
             return QuotaLease(False, "pages", q.max_pages, "PAGE_LIMIT_EXCEEDED")
         if demand.estimated_input_bytes > q.max_input_bytes:
-            return QuotaLease(False, "input_bytes", q.max_input_bytes, "INPUT_TOO_LARGE")
+            return QuotaLease(
+                False, "input_bytes", q.max_input_bytes, "INPUT_TOO_LARGE"
+            )
         if demand.estimated_render_pixels > q.max_render_pixels:
-            return QuotaLease(False, "render_pixels", q.max_render_pixels, "PIXEL_BUDGET_EXCEEDED")
+            return QuotaLease(
+                False, "render_pixels", q.max_render_pixels, "PIXEL_BUDGET_EXCEEDED"
+            )
         return QuotaLease(True, "all", 999999, "")
 
     async def record_stage_result(
@@ -534,7 +556,9 @@ class OCRControlPlane:
             context.metrics.increment(f"stage.{stage_name}.errors")
         logger.info(
             "ControlPlane: stage=%s status=%s duration=%.0fms%s",
-            stage_name, status, duration_ms,
+            stage_name,
+            status,
+            duration_ms,
             f" error={error_code}" if error_code else "",
         )
 
@@ -545,8 +569,11 @@ class OCRControlPlane:
     ) -> None:
         """Finalize the pipeline run — record outcome and metrics."""
         context.trace.record("job_finalized", outcome.value)
-        context.metrics.gauge("job.outcome", 1.0 if outcome == PipelineOutcome.SUCCESS else 0.0)
+        context.metrics.gauge(
+            "job.outcome", 1.0 if outcome == PipelineOutcome.SUCCESS else 0.0
+        )
         logger.info(
             "ControlPlane: finalize pipeline=%s outcome=%s",
-            context.pipeline_id, outcome.value,
+            context.pipeline_id,
+            outcome.value,
         )

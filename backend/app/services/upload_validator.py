@@ -18,7 +18,9 @@ class UploadValidator:
     def __init__(self, profile: OCRProfile):
         self._profile = profile
 
-    def validate_file(self, filename: str, size: int, content_type: str | None = None) -> None:
+    def validate_file(
+        self, filename: str, size: int, content_type: str | None = None
+    ) -> None:
         ext = Path(filename).suffix.lower()
         source_type = _EXT_TO_SOURCE_TYPE.get(ext)
 

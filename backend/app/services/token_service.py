@@ -104,7 +104,10 @@ async def cleanup_expired_tokens(db: AsyncSession) -> int:
     result = await db.execute(
         delete(RefreshToken).where(
             (RefreshToken.expires_at < now)
-            | ((RefreshToken.revoked_at.isnot(None)) & (RefreshToken.revoked_at < now - timedelta(hours=24)))
+            | (
+                (RefreshToken.revoked_at.isnot(None))
+                & (RefreshToken.revoked_at < now - timedelta(hours=24))
+            )
         )
     )
     await db.commit()

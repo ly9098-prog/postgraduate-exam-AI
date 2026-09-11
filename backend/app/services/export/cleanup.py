@@ -120,11 +120,20 @@ async def cleanup_expired(
                         ExportTask.completed_at,
                         ExportTask.updated_at,
                         ExportTask.created_at,
-                    ) < retention_cutoff,
+                    )
+                    < retention_cutoff,
                 ),
             ),
         )
-        .order_by(func.coalesce(ExportTask.expires_at, ExportTask.completed_at, ExportTask.updated_at, ExportTask.created_at).asc(), ExportTask.id.asc())
+        .order_by(
+            func.coalesce(
+                ExportTask.expires_at,
+                ExportTask.completed_at,
+                ExportTask.updated_at,
+                ExportTask.created_at,
+            ).asc(),
+            ExportTask.id.asc(),
+        )
         .limit(batch_size + 1)
     )
     candidate_ids = list(result.scalars().all())
@@ -142,9 +151,7 @@ async def cleanup_expired(
         snapshot_id: str | None = None
         try:
             locked = await db.execute(
-                select(ExportTask)
-                .where(ExportTask.id == task_id)
-                .with_for_update()
+                select(ExportTask).where(ExportTask.id == task_id).with_for_update()
             )
             task = locked.scalar_one_or_none()
             if task is None:
@@ -160,9 +167,8 @@ async def cleanup_expired(
                 and terminal_at is not None
                 and terminal_at < retention_cutoff
             )
-            if (
-                task.status not in _TERMINAL_EXPIRABLE
-                or not (expired_by_deadline or expired_by_invariant_repair)
+            if task.status not in _TERMINAL_EXPIRABLE or not (
+                expired_by_deadline or expired_by_invariant_repair
             ):
                 await db.rollback()
                 continue

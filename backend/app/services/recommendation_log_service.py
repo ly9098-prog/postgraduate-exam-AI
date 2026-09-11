@@ -1,4 +1,5 @@
 """推荐日志服务 — 记录推荐→作答反馈闭环。"""
+
 import logging
 from datetime import timedelta
 
@@ -55,15 +56,18 @@ async def create_recommendation_logs(
         if sid is None:
             qid = rec.get("question_id")
             if isinstance(qid, int) and qid not in qid_sid_cache:
-                qid_sid_cache[qid] = (await db.execute(
-                    select(Question.subject_id).where(Question.id == qid)
-                )).scalar_one_or_none()
+                qid_sid_cache[qid] = (
+                    await db.execute(
+                        select(Question.subject_id).where(Question.id == qid)
+                    )
+                ).scalar_one_or_none()
             if isinstance(qid, int):
                 sid = qid_sid_cache[qid]
 
         if sid is None:
             logger.warning(
-                "推荐日志缺少可解析的 subject_id，跳过 question_id=%s", rec.get("question_id"),
+                "推荐日志缺少可解析的 subject_id，跳过 question_id=%s",
+                rec.get("question_id"),
             )
             continue
 
@@ -144,13 +148,17 @@ async def retain_recommendation_logs_for_questions(
     # failed DELETE/COMMIT must never poison the request session used to load the
     # immutable revisions and issue the signed practice batch.
     async with async_session() as isolated_db:
-        result = await isolated_db.execute(sa_delete(RecommendationLog).where(*conditions))
+        result = await isolated_db.execute(
+            sa_delete(RecommendationLog).where(*conditions)
+        )
         await isolated_db.commit()
     deleted = int(getattr(result, "rowcount", 0) or 0)
     if deleted:
         logger.info(
             "pruned %d unissued recommendation logs user_id=%s request_id=%s",
-            deleted, user_id, normalized_request_id,
+            deleted,
+            user_id,
+            normalized_request_id,
         )
     return deleted
 
@@ -247,18 +255,24 @@ async def cleanup_expired_recommendation_logs(
 
     while True:
         batch_ids = (
-            await db.execute(
-                select(RecommendationLog.id)
-                .where(RecommendationLog.shown_at < cutoff)
-                .order_by(RecommendationLog.id)
-                .limit(batch_size)
+            (
+                await db.execute(
+                    select(RecommendationLog.id)
+                    .where(RecommendationLog.shown_at < cutoff)
+                    .order_by(RecommendationLog.id)
+                    .limit(batch_size)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         if not batch_ids:
             break
 
-        await db.execute(sa_delete(RecommendationLog).where(RecommendationLog.id.in_(batch_ids)))
+        await db.execute(
+            sa_delete(RecommendationLog).where(RecommendationLog.id.in_(batch_ids))
+        )
         await db.commit()
         total_deleted += len(batch_ids)
 

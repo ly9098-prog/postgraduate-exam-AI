@@ -16,7 +16,10 @@ from app.services.export.question_content import (
     has_visual_question_content,
     iter_question_image_urls,
 )
-from app.services.question_revision_service import load_revision_kp_names, load_revision_views
+from app.services.question_revision_service import (
+    load_revision_kp_names,
+    load_revision_views,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +42,11 @@ async def build_snapshot_data(
         - ``user_id``: int
         - ``total_count``: int
     """
-    rows = list((await db.scalars(
-        select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids))
-    )).all())
+    rows = list(
+        (
+            await db.scalars(select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids)))
+        ).all()
+    )
     revision_ids = [int(wq.question_version_id) for wq in rows]
     views = await load_revision_views(db, revision_ids)
 
@@ -91,7 +96,9 @@ async def build_snapshot_data(
         is_standard_choice = q.question_type in ("single_choice", "multiple_choice")
         is_multi_blank_choice = q.question_type == "multi_blank_choice"
         options = _normalize_options(q.options)
-        blank_option_groups = extract_blank_option_groups(q) if is_multi_blank_choice else []
+        blank_option_groups = (
+            extract_blank_option_groups(q) if is_multi_blank_choice else []
+        )
         if is_standard_choice and not options:
             skip_count += 1
             skip_reasons.setdefault("选择题缺少选项", 0)
@@ -102,7 +109,9 @@ async def build_snapshot_data(
             skip_reasons.setdefault("多空选择题缺少选项", 0)
             skip_reasons["多空选择题缺少选项"] += 1
             continue
-        if blank_option_groups and not (content.get("blank_option_groups") or content.get("blank_groups")):
+        if blank_option_groups and not (
+            content.get("blank_option_groups") or content.get("blank_groups")
+        ):
             # Freeze the recovered legacy shape into the export snapshot so
             # later re-export does not depend on mutable compatibility logic.
             content["blank_option_groups"] = blank_option_groups
@@ -124,7 +133,9 @@ async def build_snapshot_data(
             # questions.analysis, and turn structured JSON into readable
             # sections instead of printing the raw payload into the file.
             "analysis": resolve_preferred_analysis(wq.ai_analysis, q.analysis),
-            "subject": {"id": q.subject_id, "label": subject_label} if subject_label else {"id": q.subject_id},
+            "subject": {"id": q.subject_id, "label": subject_label}
+            if subject_label
+            else {"id": q.subject_id},
             "knowledge_points": kps,
             "primary_knowledge_point": _get_primary_kp(kps),
             "image_urls": iter_question_image_urls(q),
@@ -152,7 +163,6 @@ async def build_snapshot_data(
         "skip_count": skip_count,
         "skip_reasons": skip_reasons if skip_reasons else None,
     }
-
 
 
 def _normalize_options(options) -> dict[str, str]:
@@ -199,6 +209,7 @@ def _get_group_title(q_data: dict, group_by: str) -> str:
         return q_data.get("primary_knowledge_point", "") or "其他知识点"
     if group_by == "question_type":
         from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
+
         qt = q_data.get("question_type", "")
         try:
             return QUESTION_TYPE_LABELS.get(QuestionType(qt), qt) or "其他"

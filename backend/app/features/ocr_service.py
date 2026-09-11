@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MIN_TEXT_LENGTH = 100  # 扫描版检测阈值（字符数）
-_OCR_DPI = 200          # PDF 渲染 DPI
+_OCR_DPI = 200  # PDF 渲染 DPI
 
 
 def is_ocr_enabled() -> bool:
@@ -80,14 +80,14 @@ def is_scanned_pdf(content: bytes, min_text_length: int = _MIN_TEXT_LENGTH) -> b
 # ---------------------------------------------------------------------------
 
 
-
-
 # ---------------------------------------------------------------------------
 # OCR fallback — 已废弃，PaddleOCR-VL 调用收敛至 ocr_fix/router.py
 # ---------------------------------------------------------------------------
 
 
-def ocr_fallback(content: bytes, source_file: str = "", config: dict | None = None) -> list[dict]:
+def ocr_fallback(
+    content: bytes, source_file: str = "", config: dict | None = None
+) -> list[dict]:
     """扫描版 PDF OCR 识别（已废弃）。
 
     PaddleOCR-VL 调用已统一收敛至 ``ocr_fix/router.py``（通过 ocr_correction stage）。

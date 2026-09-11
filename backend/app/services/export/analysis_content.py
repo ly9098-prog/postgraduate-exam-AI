@@ -16,16 +16,29 @@ _MAX_DEPTH = 6
 _WRAPPER_KEYS = ("content", "data", "result", "analysis", "ai_analysis", "payload")
 _TEXT_KEYS = ("text", "content", "value", "description")
 _DIAGNOSIS_KEYS = (
-    "mistake_diagnosis", "error_analysis", "diagnosis",
-    "mistakeDiagnosis", "mistakediagnosis", "错因诊断",
+    "mistake_diagnosis",
+    "error_analysis",
+    "diagnosis",
+    "mistakeDiagnosis",
+    "mistakediagnosis",
+    "错因诊断",
 )
 _KNOWLEDGE_KEYS = (
-    "knowledge_patch", "knowledge_weakness", "knowledge",
-    "knowledgePatch", "knowledgepatch", "补漏重点",
+    "knowledge_patch",
+    "knowledge_weakness",
+    "knowledge",
+    "knowledgePatch",
+    "knowledgepatch",
+    "补漏重点",
 )
 _TASK_KEYS = (
-    "review_task", "suggestion", "task",
-    "reviewTask", "reviewtask", "reviewask", "复练任务",
+    "review_task",
+    "suggestion",
+    "task",
+    "reviewTask",
+    "reviewtask",
+    "reviewask",
+    "复练任务",
 )
 _LABELS = (
     ("mistake_diagnosis", "错因诊断"),
@@ -49,7 +62,9 @@ _STRUCTURED_HINT_RE = re.compile(
 
 
 def _strip_fence(text: str) -> str:
-    match = re.search(r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+    match = re.search(
+        r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE
+    )
     return match.group(1).strip() if match else text.strip()
 
 
@@ -125,10 +140,14 @@ def _parse_titled_text(text: str) -> dict[str, str]:
         return {"mistake_diagnosis": stripped, "knowledge_patch": "", "review_task": ""}
 
     result = dict(_EMPTY)
-    key_map = {"错因诊断": "mistake_diagnosis", "补漏重点": "knowledge_patch", "复练任务": "review_task"}
+    key_map = {
+        "错因诊断": "mistake_diagnosis",
+        "补漏重点": "knowledge_patch",
+        "复练任务": "review_task",
+    }
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(stripped)
-        result[key_map[match.group(1)]] = stripped[match.end():end].strip()
+        result[key_map[match.group(1)]] = stripped[match.end() : end].strip()
     return result
 
 
@@ -142,7 +161,9 @@ def normalize_analysis_payload(value: Any, depth: int = 0) -> dict[str, str]:
         if not text or _INVALID_LITERAL_RE.fullmatch(text):
             return dict(_EMPTY)
         decoded = _decode_structured(text)
-        if decoded is not None and not (isinstance(decoded, str) and decoded.strip() == text):
+        if decoded is not None and not (
+            isinstance(decoded, str) and decoded.strip() == text
+        ):
             return normalize_analysis_payload(decoded, depth + 1)
         return _parse_titled_text(text)
 
@@ -210,7 +231,9 @@ def _looks_structured(raw: Any, normalized: dict[str, str]) -> bool:
         return False
     if text.startswith(("{", "[", "```")) or _STRUCTURED_HINT_RE.search(text):
         return True
-    return sum(bool(str(normalized.get(key, "") or "").strip()) for key, _ in _LABELS) > 1
+    return (
+        sum(bool(str(normalized.get(key, "") or "").strip()) for key, _ in _LABELS) > 1
+    )
 
 
 def format_analysis_for_export(raw: Any) -> str:
@@ -229,7 +252,6 @@ def format_analysis_for_export(raw: Any) -> str:
         if text:
             parts.append(f"{label}：{text}" if structured else text)
     return "\n".join(parts).strip()
-
 
 
 def split_analysis_sections(text: Any) -> list[tuple[str, str]]:
@@ -276,6 +298,7 @@ def split_analysis_sections(text: Any) -> list[tuple[str, str]]:
     if not found_heading:
         return [("", raw)]
     return [(label, body) for label, body in sections if label or body]
+
 
 def resolve_preferred_analysis(ai_analysis: Any, question_analysis: Any) -> str:
     """Match wrong-detail source priority: cached AI first, question analysis second."""
@@ -331,7 +354,9 @@ def split_analysis_paragraphs(body: Any, max_chars: int = 110) -> list[str]:
     if not text:
         return []
 
-    explicit = [re.sub(r"\s+", " ", part).strip() for part in re.split(r"\n\s*\n|\n", text)]
+    explicit = [
+        re.sub(r"\s+", " ", part).strip() for part in re.split(r"\n\s*\n|\n", text)
+    ]
     explicit = [part for part in explicit if part]
     result: list[str] = []
     for block in explicit:
@@ -406,7 +431,11 @@ def split_analysis_list_items(label: str, body: Any) -> list[str]:
     cleaned: list[str] = []
     for item in items:
         value = _LIST_PREFIX_RE.sub("", item, count=1).strip()
-        value = _SECTION_BODY_PREFIX_RE.get(label, re.compile(r"$^" )).sub("", value, count=1).strip()
+        value = (
+            _SECTION_BODY_PREFIX_RE.get(label, re.compile(r"$^"))
+            .sub("", value, count=1)
+            .strip()
+        )
         if value and value not in cleaned:
             cleaned.append(value)
     return cleaned or [text]

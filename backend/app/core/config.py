@@ -91,16 +91,18 @@ class Settings(BaseSettings):
     DEPLOY_PROFILE: str = ""  # "local" | "production"
 
     # Deployment Profile (explicit override for dual-environment)
-    DEPLOYMENT_PROFILE: str = ""  # "local_import" | "cloud_api" — overrides DEPLOY_PROFILE & APP_ENV
+    DEPLOYMENT_PROFILE: str = (
+        ""  # "local_import" | "cloud_api" — overrides DEPLOY_PROFILE & APP_ENV
+    )
 
     # OCR
     OCR_ENABLED: bool = False
     OCR_MAX_WORKERS: int = 2
     # OCR executor service — bounded thread pool with concurrency control
-    OCR_EXECUTOR_WORKERS: int = 2       # ThreadPoolExecutor max_workers
-    OCR_MAX_CONCURRENCY: int = 2        # asyncio.Semaphore limit
-    OCR_MAX_QUEUE_SIZE: int = 10        # max waiting tasks before fast-fail
-    OCR_TASK_TIMEOUT_SEC: int = 600     # per-task timeout
+    OCR_EXECUTOR_WORKERS: int = 2  # ThreadPoolExecutor max_workers
+    OCR_MAX_CONCURRENCY: int = 2  # asyncio.Semaphore limit
+    OCR_MAX_QUEUE_SIZE: int = 10  # max waiting tasks before fast-fail
+    OCR_TASK_TIMEOUT_SEC: int = 600  # per-task timeout
     OCR_LANGUAGE: str = "ch"
     OCR_USE_GPU: bool = True
     OCR_DET_DB_THRESH: float = 0.2
@@ -117,7 +119,9 @@ class Settings(BaseSettings):
     CODE_DETECTOR_ENABLED: bool = True
 
     # --- PaddleX Remote OCR ---
-    OCR_EXECUTION_BACKEND: str = "paddlex_http"  # "local_process" | "paddlex_http" | "disabled"
+    OCR_EXECUTION_BACKEND: str = (
+        "paddlex_http"  # "local_process" | "paddlex_http" | "disabled"
+    )
     OCR_REMOTE_URL: str = "http://127.0.0.1:8080/ocr"
     OCR_REMOTE_CONNECT_TIMEOUT_SEC: float = 5.0
     OCR_REMOTE_READ_TIMEOUT_SEC: float = 600.0
@@ -133,25 +137,27 @@ class Settings(BaseSettings):
     OCR_REMOTE_TOKEN: str = ""
     OCR_REMOTE_AUTH_HEADER: str = "Authorization"  # header name for auth token
     OCR_REMOTE_AUTH_SCHEME: str = "Bearer"  # scheme prefix (e.g. "Bearer", "Basic")
-    OCR_ALLOW_HTTP: bool = False  # allow HTTP (not HTTPS) for remote OCR in trusted network
+    OCR_ALLOW_HTTP: bool = (
+        False  # allow HTTP (not HTTPS) for remote OCR in trusted network
+    )
 
     # Artifact migration
     REJECT_LEGACY_ARTIFACTS: bool = False  # reject artifacts without metadata wrapper
 
     # 批量导题（多图片）
-    BATCH_IMAGE_MAX_FILES: int = 100        # 单次最多上传图片数
+    BATCH_IMAGE_MAX_FILES: int = 100  # 单次最多上传图片数
     BATCH_IMAGE_DEFAULT_CONCURRENCY: int = 2  # 默认并发（仍被 clamp 到 1~4）
 
     # PDF 导入限制
-    PDF_MAX_FILE_SIZE_BYTES: int = 200 * 1024 * 1024   # 200MB
+    PDF_MAX_FILE_SIZE_BYTES: int = 200 * 1024 * 1024  # 200MB
     PDF_MAX_FILE_BYTES: int = 5 * 1024 * 1024  # cloud default: 5MB
     PDF_MAX_PAGES: int = 600
-    PDF_MAX_PAGE_PIXELS: int = 4096 * 4096              # max width*height per page
-    PDF_MAX_DECODED_BYTES: int = 50 * 1024 * 1024       # 50MB per-page decoded memory budget
+    PDF_MAX_PAGE_PIXELS: int = 4096 * 4096  # max width*height per page
+    PDF_MAX_DECODED_BYTES: int = 50 * 1024 * 1024  # 50MB per-page decoded memory budget
     PDF_RENDER_DPI: int = 150
-    PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5            # pages rendered per batch
-    PDF_RENDER_PAGE_WINDOW: int = 0                      # 0 = all, N = max pages held in memory at once
-    PDF_TOTAL_PIXEL_BUDGET: int = 4000 * 4000 * 30       # cloud default: 30 pages at 4k
+    PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5  # pages rendered per batch
+    PDF_RENDER_PAGE_WINDOW: int = 0  # 0 = all, N = max pages held in memory at once
+    PDF_TOTAL_PIXEL_BUDGET: int = 4000 * 4000 * 30  # cloud default: 30 pages at 4k
 
     # Exercise Region Detection
     EXERCISE_DETECTION_ENABLED: bool = True
@@ -164,7 +170,9 @@ class Settings(BaseSettings):
 
     # Domain Quality Gate
     DOMAIN_QUALITY_GATE_MODE: str = "off"  # "off" | "shadow" | "enforce"
-    QUALITY_GATE_ENFORCE_ENABLED: bool = False  # sentinel: must be True to allow enforce mode
+    QUALITY_GATE_ENFORCE_ENABLED: bool = (
+        False  # sentinel: must be True to allow enforce mode
+    )
 
     # Structure Freeze mode
     STRUCTURE_FREEZE_MODE: str = "legacy"  # "legacy" | "dual" | "ir"
@@ -293,7 +301,9 @@ class Settings(BaseSettings):
     # ── Vector Search (pgvector) ──
     VECTOR_ENABLED: bool = False
     VECTOR_MODE: str = "off"  # off | shadow | allowlist | all
-    VECTOR_ALLOWLIST: str = ""  # JSON list: '["data_structure","operating_system"]' or user ids '[1,2,3]'
+    VECTOR_ALLOWLIST: str = (
+        ""  # JSON list: '["data_structure","operating_system"]' or user ids '[1,2,3]'
+    )
     VECTOR_CACHE_TTL_SEC: int = 300
     VECTOR_TOP_K: int = 100
     VECTOR_SIMILARITY_THRESHOLD: float = 0.15
@@ -320,11 +330,11 @@ class Settings(BaseSettings):
     # ── Export / PDF ──
     EXPORT_POLL_INTERVAL_SEC: int = 5
     EXPORT_PROCESSING_TIMEOUT_SEC: int = 900  # zombie recovery threshold
-    EXPORT_TASK_TIMEOUT_SEC: int = 600        # per-task wall-clock timeout
+    EXPORT_TASK_TIMEOUT_SEC: int = 600  # per-task wall-clock timeout
     EXPORT_HEARTBEAT_INTERVAL_SEC: int = 30
-    EXPORT_MAX_CONCURRENT: int = 2            # global task concurrency
-    EXPORT_MAX_PER_USER: int = 2              # pending/processing per user
-    EXPORT_MAX_QUESTIONS: int = 100           # per-task question cap
+    EXPORT_MAX_CONCURRENT: int = 2  # global task concurrency
+    EXPORT_MAX_PER_USER: int = 2  # pending/processing per user
+    EXPORT_MAX_QUESTIONS: int = 100  # per-task question cap
     EXPORT_PDF_CONCURRENCY: int = 1
     EXPORT_DOCX_CONCURRENCY: int = 1
     EXPORT_IMAGE_DOWNLOAD_CONCURRENCY: int = 4
@@ -356,7 +366,6 @@ class Settings(BaseSettings):
     ADAPTIVE_PATH_ENABLED: bool = True
     ADAPTIVE_WEIGHT_ENABLED: bool = True
     ADAPTIVE_DRY_RUN: bool = False
-
 
     def warn_deprecated_env_vars(self) -> list[str]:
         """Log warnings for deprecated env var names. Returns list of conflicts."""

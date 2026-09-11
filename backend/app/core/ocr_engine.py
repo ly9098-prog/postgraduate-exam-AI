@@ -21,9 +21,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # ── 低置信度行过滤阈值 ─────────────────────────────────────────────────────
-_LOW_CONF_THRESHOLD: float = float(
-    os.environ.get("OCR_LOW_CONF_THRESHOLD", "0.55")
-)
+_LOW_CONF_THRESHOLD: float = float(os.environ.get("OCR_LOW_CONF_THRESHOLD", "0.55"))
 
 _OCR_MAX_SIDE = 3000
 
@@ -49,7 +47,9 @@ class OcrEngine:
         self._fingerprint = self._compute_fingerprint()
         logger.info(
             "OcrEngine initialized: use_gpu=%s lang=%s fingerprint=%s",
-            config.use_gpu, config.language, self._fingerprint,
+            config.use_gpu,
+            config.language,
+            self._fingerprint,
         )
 
     # ── Public API ──────────────────────────────────────────────────────────
@@ -132,6 +132,7 @@ class OcrEngine:
         )
         # Health check
         import numpy as np
+
         _ = ocr.ocr(np.zeros((100, 100, 3), dtype=np.uint8), cls=True)
         logger.info("PaddleOCR health check passed")
         return ocr
@@ -177,12 +178,14 @@ class OcrEngine:
                 y1 = max(p[1] for p in pts)
                 text_parts.append(text)
                 conf_sum += conf
-                all_lines.append({
-                    "text": text,
-                    "polygon": [c for p in pts for c in p],
-                    "bbox": [x0, y0, x1, y1],
-                    "confidence": conf,
-                })
+                all_lines.append(
+                    {
+                        "text": text,
+                        "polygon": [c for p in pts for c in p],
+                        "bbox": [x0, y0, x1, y1],
+                        "confidence": conf,
+                    }
+                )
                 all_boxes.append({"bbox": [x0, y0, x1, y1], "conf": conf})
 
         joined = "\n".join(text_parts)
@@ -202,7 +205,10 @@ class OcrEngine:
     # ── Full pipeline mode ──────────────────────────────────────────────────
 
     def _recognize_with_boxes(
-        self, image_bytes: bytes, page_index: int, skip_rotation: bool,
+        self,
+        image_bytes: bytes,
+        page_index: int,
+        skip_rotation: bool,
     ) -> dict:
         """Full OCR pipeline: preprocess → infer → postprocess."""
         from app.core.transform_tracker import TransformTracker
@@ -237,21 +243,25 @@ class OcrEngine:
             boxes.append(box_entry)
 
             if is_low_conf:
-                has_content = bool(re.search(
-                    r"[A-Za-z0-9一-鿿{}()\[\]<>+\-*/%=&|^~!@#$,.;:\\\"'`_]",
-                    text,
-                ))
+                has_content = bool(
+                    re.search(
+                        r"[A-Za-z0-9一-鿿{}()\[\]<>+\-*/%=&|^~!@#$,.;:\\\"'`_]",
+                        text,
+                    )
+                )
                 if len(text) <= 2 and not has_content:
                     continue
 
             text_lines.append(text)
             conf_sum += conf
-            ocr_lines.append({
-                "text": text,
-                "polygon": line.get("polygon", []),
-                "bbox": line["bbox"],
-                "confidence": conf,
-            })
+            ocr_lines.append(
+                {
+                    "text": text,
+                    "polygon": line.get("polygon", []),
+                    "bbox": line["bbox"],
+                    "confidence": conf,
+                }
+            )
 
         result_text = "\n".join(text_lines)
         avg_conf = conf_sum / max(len(text_lines), 1) if text_lines else 0.0
@@ -276,6 +286,7 @@ class OcrEngine:
     def _infer(self, img) -> Any:
         """Run PaddleOCR inference with serialization lock."""
         import numpy as np
+
         with self._lock:
             return self._ocr.ocr(np.array(img), cls=True)
 
@@ -321,7 +332,9 @@ class OcrEngine:
             pad_y = max(12, int(before[1] * 0.02))
             crop_left = (before[0] - img.size[0]) // 2
             crop_top = (before[1] - img.size[1]) // 2
-            tracker.record_crop(left=max(0, crop_left - pad_x), top=max(0, crop_top - pad_y))
+            tracker.record_crop(
+                left=max(0, crop_left - pad_x), top=max(0, crop_top - pad_y)
+            )
 
         # Deskew
         angle = self._estimate_skew(img)
@@ -329,8 +342,9 @@ class OcrEngine:
             cx, cy = img.size[0] / 2, img.size[1] / 2
             tracker.record_rotate(angle, cx=cx, cy=cy)
         if angle:
-            img = img.rotate(angle, resample=Image.Resampling.BICUBIC,
-                             expand=True, fillcolor="white")
+            img = img.rotate(
+                angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor="white"
+            )
             img = self._crop_margins(img)
 
         # Resize
@@ -353,9 +367,10 @@ class OcrEngine:
 
     def _load_image(self, image_bytes: bytes):
         from PIL import Image, ImageOps
-        return ImageOps.exif_transpose(
-            Image.open(io.BytesIO(image_bytes))
-        ).convert("RGB")
+
+        return ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert(
+            "RGB"
+        )
 
     def _resize(self, img):
         from PIL import Image
@@ -396,7 +411,9 @@ class OcrEngine:
             min(width, right + pad_x),
             min(height, bottom + pad_y),
         )
-        if (crop_box[2] - crop_box[0]) * (crop_box[3] - crop_box[1]) > width * height * 0.95:
+        if (crop_box[2] - crop_box[0]) * (
+            crop_box[3] - crop_box[1]
+        ) > width * height * 0.95:
             return img
         return img.crop(crop_box)
 
@@ -433,7 +450,9 @@ class OcrEngine:
         max_side = 1200
         scale = min(1.0, max_side / max(width, height))
         if scale < 1:
-            gray = gray.resize((max(1, int(width * scale)), max(1, int(height * scale))))
+            gray = gray.resize(
+                (max(1, int(width * scale)), max(1, int(height * scale)))
+            )
         arr = np.asarray(gray, dtype=np.float32)
         if arr.size == 0:
             return arr.astype(bool), scale
@@ -458,8 +477,9 @@ class OcrEngine:
         zero_score = best_score
 
         for angle in [x * 0.5 for x in range(-10, 11) if x != 0]:
-            rotated = base_img.rotate(angle, resample=Image.Resampling.BILINEAR,
-                                      expand=True, fillcolor=0)
+            rotated = base_img.rotate(
+                angle, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=0
+            )
             score = self._projection_score(np.asarray(rotated, dtype=np.uint8) > 0)
             if score > best_score:
                 best_angle = angle
@@ -481,8 +501,10 @@ class OcrEngine:
 
     def _rotate_image(self, img, degrees: int):
         from PIL import Image
-        return img.rotate(degrees, resample=Image.Resampling.BICUBIC,
-                          expand=True, fillcolor="white")
+
+        return img.rotate(
+            degrees, resample=Image.Resampling.BICUBIC, expand=True, fillcolor="white"
+        )
 
     def _estimate_quality(self, img) -> dict[str, float]:
         import numpy as np
@@ -491,8 +513,15 @@ class OcrEngine:
         gray = img.convert("L")
         arr = np.asarray(gray, dtype=np.float32)
         if arr.size == 0:
-            return {"brightness": 255.0, "contrast": 0.0, "noise": 0.0, "sharpness": 0.0}
-        median = np.asarray(gray.filter(ImageFilter.MedianFilter(size=3)), dtype=np.float32)
+            return {
+                "brightness": 255.0,
+                "contrast": 0.0,
+                "noise": 0.0,
+                "sharpness": 0.0,
+            }
+        median = np.asarray(
+            gray.filter(ImageFilter.MedianFilter(size=3)), dtype=np.float32
+        )
         gy = np.abs(arr[1:, :] - arr[:-1, :]).mean() if arr.shape[0] > 1 else 0.0
         gx = np.abs(arr[:, 1:] - arr[:, :-1]).mean() if arr.shape[1] > 1 else 0.0
         return {
@@ -516,7 +545,9 @@ class OcrEngine:
         if "denoise" in strategy:
             img = img.filter(ImageFilter.MedianFilter(size=3))
         if "sharpen" in strategy:
-            img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=120, threshold=3))
+            img = img.filter(
+                ImageFilter.UnsharpMask(radius=1, percent=120, threshold=3)
+            )
         if "autocontrast" in strategy:
             img = ImageOps.autocontrast(img.convert("L"), cutoff=1).convert("RGB")
         return img
@@ -535,16 +566,18 @@ class OcrEngine:
             y1 = max(p[1] for p in pts)
             text = str(line[1][0] or "")
             conf = float(line[1][1]) if len(line[1]) > 1 else 1.0
-            extracted.append({
-                "text": text,
-                "conf": conf,
-                "bbox": [x0, y0, x1, y1],
-                "polygon": [c for p in pts for c in p],
-                "cx": (x0 + x1) / 2,
-                "cy": (y0 + y1) / 2,
-                "width": x1 - x0,
-                "height": y1 - y0,
-            })
+            extracted.append(
+                {
+                    "text": text,
+                    "conf": conf,
+                    "bbox": [x0, y0, x1, y1],
+                    "polygon": [c for p in pts for c in p],
+                    "cx": (x0 + x1) / 2,
+                    "cy": (y0 + y1) / 2,
+                    "width": x1 - x0,
+                    "height": y1 - y0,
+                }
+            )
         return extracted
 
     def _normalize(self, result: Any) -> list:
@@ -572,7 +605,11 @@ class OcrEngine:
         meaningful = len(re.findall(r"[A-Za-z0-9一-鿿∀-⋿]", joined))
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
         garbage_ratio = 1 - (meaningful / max(1, len(joined)))
-        return (len(texts) * 2.0 + meaningful * 0.15) * avg_conf * max(0.2, 1 - garbage_ratio)
+        return (
+            (len(texts) * 2.0 + meaningful * 0.15)
+            * avg_conf
+            * max(0.2, 1 - garbage_ratio)
+        )
 
     def _order_lines(self, lines: list[dict], img_w: int, img_h: int) -> list[dict]:
         if len(lines) < 2:
@@ -641,4 +678,5 @@ def create_engine_for_child(config=None) -> OcrEngine:
     and CUDA context in the main process, which is NOT allowed.
     """
     from app.core.ocr_runtime_config import get_runtime_config
+
     return OcrEngine(config or get_runtime_config())

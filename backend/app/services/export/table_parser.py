@@ -15,14 +15,16 @@ from app.services.export.table_model import TableBlock, TableCell, TableRow, Tex
 
 def parse_markdown_table(md_text: str) -> list[TableBlock]:
     return [
-        block for segment in restore_tables_from_source(md_text, source_format="markdown")
+        block
+        for segment in restore_tables_from_source(md_text, source_format="markdown")
         if (block := _block_from_structured_segment(segment)) is not None
     ]
 
 
 def parse_html_table(html_text: str) -> list[TableBlock]:
     return [
-        block for segment in restore_tables_from_source(html_text, source_format="html")
+        block
+        for segment in restore_tables_from_source(html_text, source_format="html")
         if (block := _block_from_structured_segment(segment)) is not None
     ]
 
@@ -37,7 +39,12 @@ def parse_segment_table(seg_data: dict) -> TableBlock | None:
 
     # Legacy segment.  The old detector wrote ``markdown`` while exporters
     # incorrectly read only ``text``; support both during migration.
-    raw: Any = seg_data.get("markdown") or seg_data.get("text") or seg_data.get("content") or ""
+    raw: Any = (
+        seg_data.get("markdown")
+        or seg_data.get("text")
+        or seg_data.get("content")
+        or ""
+    )
     if isinstance(raw, dict):
         restored = restore_tables_from_source(raw, source_format="auto")
     else:
@@ -65,9 +72,12 @@ def parse_table(source: str | dict, source_type: str = "auto") -> list[TableBloc
             return [block] if block else []
         restored = restore_tables_from_source(source, source_format=source_type)
     else:
-        restored = restore_tables_from_source(str(source or ""), source_format=source_type)
+        restored = restore_tables_from_source(
+            str(source or ""), source_format=source_type
+        )
     return [
-        block for segment in restored
+        block
+        for segment in restored
         if (block := _block_from_structured_segment(segment)) is not None
     ]
 
@@ -86,19 +96,35 @@ def _block_from_structured_segment(segment: dict) -> TableBlock | None:
             if isinstance(raw_cell, dict):
                 content = raw_cell.get("content")
                 if not isinstance(content, list):
-                    content = [{"type": "text", "text": str(raw_cell.get("text") or "")}]
-                alignment = _text_align(raw_cell.get("alignment") or raw_cell.get("align"))
-                cells.append(TableCell(
-                    content=[dict(item) for item in content if isinstance(item, dict)],
-                    row_span=_safe_int(raw_cell.get("row_span") or raw_cell.get("rowspan"), 1),
-                    col_span=_safe_int(raw_cell.get("col_span") or raw_cell.get("colspan"), 1),
-                    is_header=bool(raw_cell.get("is_header")),
-                    alignment=alignment,
-                    bbox=list(raw_cell.get("bbox")) if isinstance(raw_cell.get("bbox"), (list, tuple)) else None,
-                    confidence=_safe_float(raw_cell.get("confidence"), 1.0),
-                ))
+                    content = [
+                        {"type": "text", "text": str(raw_cell.get("text") or "")}
+                    ]
+                alignment = _text_align(
+                    raw_cell.get("alignment") or raw_cell.get("align")
+                )
+                cells.append(
+                    TableCell(
+                        content=[
+                            dict(item) for item in content if isinstance(item, dict)
+                        ],
+                        row_span=_safe_int(
+                            raw_cell.get("row_span") or raw_cell.get("rowspan"), 1
+                        ),
+                        col_span=_safe_int(
+                            raw_cell.get("col_span") or raw_cell.get("colspan"), 1
+                        ),
+                        is_header=bool(raw_cell.get("is_header")),
+                        alignment=alignment,
+                        bbox=list(raw_cell.get("bbox"))
+                        if isinstance(raw_cell.get("bbox"), (list, tuple))
+                        else None,
+                        confidence=_safe_float(raw_cell.get("confidence"), 1.0),
+                    )
+                )
             else:
-                cells.append(TableCell(content=[{"type": "text", "text": str(raw_cell or "")}]))
+                cells.append(
+                    TableCell(content=[{"type": "text", "text": str(raw_cell or "")}])
+                )
         # Empty logical rows can be covered by a rowspan anchored above.
         rows.append(TableRow(cells=cells))
     if not rows:
@@ -109,9 +135,17 @@ def _block_from_structured_segment(segment: dict) -> TableBlock | None:
         source_format=str(segment.get("source_format") or "structured"),
         confidence=_safe_float(segment.get("confidence"), 1.0),
         requires_review=bool(segment.get("requires_review")),
-        source_pages=[int(page) for page in (segment.get("source_pages") or []) if str(page).isdigit()],
+        source_pages=[
+            int(page)
+            for page in (segment.get("source_pages") or [])
+            if str(page).isdigit()
+        ],
         table_id=str(segment.get("table_id") or ""),
-        column_widths=[float(v) for v in (segment.get("column_widths") or []) if isinstance(v, (int, float))],
+        column_widths=[
+            float(v)
+            for v in (segment.get("column_widths") or [])
+            if isinstance(v, (int, float))
+        ],
     )
 
 

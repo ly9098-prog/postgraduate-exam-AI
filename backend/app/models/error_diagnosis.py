@@ -122,7 +122,9 @@ class WrongQuestionErrorDiagnosis(Base):
     user_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
-    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    is_current: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     taxonomy_version: Mapped[str] = mapped_column(
         String(32),

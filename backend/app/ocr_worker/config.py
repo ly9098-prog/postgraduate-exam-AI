@@ -18,24 +18,34 @@ class OCRWorkerConfig:
     CONCURRENCY: int = 1
 
     # Polling / lease
-    POLL_INTERVAL_SECONDS: int = int(os.environ.get("OCR_WORKER_POLL_INTERVAL_SECONDS", "5"))
+    POLL_INTERVAL_SECONDS: int = int(
+        os.environ.get("OCR_WORKER_POLL_INTERVAL_SECONDS", "5")
+    )
     LEASE_SECONDS: int = int(os.environ.get("OCR_WORKER_LEASE_SECONDS", "300"))
     HEARTBEAT_SECONDS: int = int(os.environ.get("OCR_WORKER_HEARTBEAT_SECONDS", "45"))
 
     # Process management
-    MAX_TASKS_PER_CHILD: int = int(os.environ.get("OCR_WORKER_MAX_TASKS_PER_CHILD", "20"))
+    MAX_TASKS_PER_CHILD: int = int(
+        os.environ.get("OCR_WORKER_MAX_TASKS_PER_CHILD", "20")
+    )
 
     # Workspace
-    WORKSPACE_ROOT: str = os.environ.get(
-        "OCR_WORKER_WORKSPACE", "/data/ocr-worker"
-    )
+    WORKSPACE_ROOT: str = os.environ.get("OCR_WORKER_WORKSPACE", "/data/ocr-worker")
     MAX_WORKSPACE_GB: int = int(os.environ.get("OCR_WORKER_MAX_WORKSPACE_GB", "20"))
-    RESULT_RETENTION_HOURS: int = int(os.environ.get("OCR_WORKER_RESULT_RETENTION_HOURS", "72"))
+    RESULT_RETENTION_HOURS: int = int(
+        os.environ.get("OCR_WORKER_RESULT_RETENTION_HOURS", "72")
+    )
 
     # GPU / resource limits
-    GPU_MEMORY_LIMIT_MB: int = int(os.environ.get("OCR_WORKER_GPU_MEMORY_LIMIT_MB", "3600"))
-    CPU_FALLBACK: bool = os.environ.get("OCR_WORKER_CPU_FALLBACK", "false").lower() == "true"
-    OCR_TIMEOUT_SECONDS: int = int(os.environ.get("OCR_WORKER_OCR_TIMEOUT_SECONDS", "600"))
+    GPU_MEMORY_LIMIT_MB: int = int(
+        os.environ.get("OCR_WORKER_GPU_MEMORY_LIMIT_MB", "3600")
+    )
+    CPU_FALLBACK: bool = (
+        os.environ.get("OCR_WORKER_CPU_FALLBACK", "false").lower() == "true"
+    )
+    OCR_TIMEOUT_SECONDS: int = int(
+        os.environ.get("OCR_WORKER_OCR_TIMEOUT_SECONDS", "600")
+    )
 
     # Production server
     SERVER_URL: str = os.environ.get("OCR_WORKER_SERVER_URL", "")

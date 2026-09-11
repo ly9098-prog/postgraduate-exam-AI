@@ -9,6 +9,7 @@ from dataclasses import dataclass
 @dataclass
 class ExportResult:
     """Result of an export operation."""
+
     success: bool
     file_bytes: bytes | None = None
     file_name: str = ""

@@ -67,7 +67,8 @@ class RestoredTable:
             "column_count": column_count,
             "has_header": any(
                 bool(cell.get("is_header"))
-                for row in rows for cell in row.get("cells", [])
+                for row in rows
+                for cell in row.get("cells", [])
             ),
             "source_format": self.source_format,
             "source_page": source_pages[0] if source_pages else self.source_page,
@@ -161,18 +162,32 @@ def _restore_from_mapping(
     if data.get("type") == TABLE_SEGMENT_TYPE and isinstance(data.get("rows"), list):
         rows, column_count, issues = normalize_table_rows(data.get("rows") or [])
         result = dict(data)
-        result.update({
-            "type": TABLE_SEGMENT_TYPE,
-            "schema_version": TABLE_SCHEMA_VERSION,
-            "rows": rows,
-            "row_count": len(rows),
-            "column_count": column_count,
-            "has_header": any(c.get("is_header") for r in rows for c in r.get("cells", [])),
-            "markdown": rows_to_markdown(rows),
-            "requires_review": bool(data.get("requires_review") or issues),
-            "signals": list(dict.fromkeys(list(data.get("signals") or []) + issues)),
-        })
-        result.setdefault("table_id", _table_id(rows, result.get("source_pages") or [source_page], result.get("bbox"), result.get("region_id")))
+        result.update(
+            {
+                "type": TABLE_SEGMENT_TYPE,
+                "schema_version": TABLE_SCHEMA_VERSION,
+                "rows": rows,
+                "row_count": len(rows),
+                "column_count": column_count,
+                "has_header": any(
+                    c.get("is_header") for r in rows for c in r.get("cells", [])
+                ),
+                "markdown": rows_to_markdown(rows),
+                "requires_review": bool(data.get("requires_review") or issues),
+                "signals": list(
+                    dict.fromkeys(list(data.get("signals") or []) + issues)
+                ),
+            }
+        )
+        result.setdefault(
+            "table_id",
+            _table_id(
+                rows,
+                result.get("source_pages") or [source_page],
+                result.get("bbox"),
+                result.get("region_id"),
+            ),
+        )
         return [result]
 
     # Structured provider response: {rows:[{cells:[...]}]} or {headers, rows}.
@@ -182,8 +197,14 @@ def _restore_from_mapping(
             table = RestoredTable(
                 rows=rows_value,
                 caption=str(data.get("caption") or ""),
-                confidence=float(confidence if confidence is not None else data.get("confidence") or 0.9),
-                source_format=source_format if source_format != "auto" else "structured",
+                confidence=float(
+                    confidence
+                    if confidence is not None
+                    else data.get("confidence") or 0.9
+                ),
+                source_format=source_format
+                if source_format != "auto"
+                else "structured",
                 source_text=json.dumps(data, ensure_ascii=False)[:_MAX_SOURCE_CHARS],
                 source_page=source_page,
                 source_pages=list(data.get("source_pages") or [source_page]),
@@ -196,17 +217,23 @@ def _restore_from_mapping(
         headers = data.get("headers") or []
         rows = _rows_from_matrix(headers, rows_value)
         if rows:
-            return [RestoredTable(
-                rows=rows,
-                confidence=float(confidence if confidence is not None else data.get("confidence") or 0.85),
-                source_format="structured_matrix",
-                source_page=source_page,
-                source_pages=[source_page],
-                bbox=_coerce_bbox(bbox or data.get("bbox")),
-                coordinate_space=coordinate_space or data.get("coordinate_space"),
-                region_id=region_id or data.get("region_id"),
-                signals=["headers_rows"],
-            ).to_segment()]
+            return [
+                RestoredTable(
+                    rows=rows,
+                    confidence=float(
+                        confidence
+                        if confidence is not None
+                        else data.get("confidence") or 0.85
+                    ),
+                    source_format="structured_matrix",
+                    source_page=source_page,
+                    source_pages=[source_page],
+                    bbox=_coerce_bbox(bbox or data.get("bbox")),
+                    coordinate_space=coordinate_space or data.get("coordinate_space"),
+                    region_id=region_id or data.get("region_id"),
+                    signals=["headers_rows"],
+                ).to_segment()
+            ]
 
     # Paddle/VL mappings can expose text under several keys and tokens/boxes.
     tokens = data.get("tokens") or data.get("cells") or data.get("ocr_tokens")
@@ -237,7 +264,9 @@ def _restore_from_mapping(
                 source_page=source_page,
                 bbox=bbox or data.get("bbox"),
                 coordinate_space=coordinate_space or data.get("coordinate_space"),
-                confidence=confidence if confidence is not None else data.get("confidence"),
+                confidence=confidence
+                if confidence is not None
+                else data.get("confidence"),
                 region_id=region_id or data.get("region_id"),
                 source_format=fmt if source_format == "auto" else source_format,
             )
@@ -252,7 +281,9 @@ def _restore_from_mapping(
                 source_page=source_page,
                 bbox=bbox or data.get("bbox"),
                 coordinate_space=coordinate_space or data.get("coordinate_space"),
-                confidence=confidence if confidence is not None else data.get("confidence"),
+                confidence=confidence
+                if confidence is not None
+                else data.get("confidence"),
                 region_id=region_id or data.get("region_id"),
                 source_format=source_format,
             )
@@ -298,7 +329,9 @@ class _HTMLTableParser(HTMLParser):
                 "row_span": _safe_span(attrs_dict.get("rowspan")),
                 "col_span": _safe_span(attrs_dict.get("colspan")),
                 "is_header": tag == "th",
-                "alignment": _alignment(attrs_dict.get("align") or attrs_dict.get("style")),
+                "alignment": _alignment(
+                    attrs_dict.get("align") or attrs_dict.get("style")
+                ),
             }
         elif tag == "br" and self._cell is not None:
             self._cell["text_parts"].append("\n")
@@ -315,13 +348,15 @@ class _HTMLTableParser(HTMLParser):
             row = self._stack[-1].get("current_row")
             if isinstance(row, list):
                 text = _clean_cell_text("".join(self._cell.pop("text_parts", [])))
-                row.append(_make_cell(
-                    text,
-                    row_span=self._cell.get("row_span", 1),
-                    col_span=self._cell.get("col_span", 1),
-                    is_header=self._cell.get("is_header", False),
-                    alignment=self._cell.get("alignment", "left"),
-                ))
+                row.append(
+                    _make_cell(
+                        text,
+                        row_span=self._cell.get("row_span", 1),
+                        col_span=self._cell.get("col_span", 1),
+                        is_header=self._cell.get("is_header", False),
+                        alignment=self._cell.get("alignment", "left"),
+                    )
+                )
             self._cell = None
         elif tag == "tr":
             row = self._stack[-1].get("current_row")
@@ -356,14 +391,19 @@ def _parse_html_tables(text: str) -> list[RestoredTable]:
         rows = data.get("rows") or []
         if not rows:
             continue
-        result.append(RestoredTable(
-            rows=rows,
-            caption=_clean_cell_text(data.get("caption") or ""),
-            confidence=0.97,
-            source_format="html",
-            source_text=text,
-            signals=["html_table", "span_attributes" if _has_spans(rows) else "html_grid"],
-        ))
+        result.append(
+            RestoredTable(
+                rows=rows,
+                caption=_clean_cell_text(data.get("caption") or ""),
+                confidence=0.97,
+                source_format="html",
+                source_text=text,
+                signals=[
+                    "html_table",
+                    "span_attributes" if _has_spans(rows) else "html_grid",
+                ],
+            )
+        )
     return result
 
 
@@ -386,22 +426,41 @@ def _parse_markdown_tables(text: str) -> list[RestoredTable]:
         # Single-column markdown tables are valid (e.g. label/value lists); the
         # separator regex already filters out non-table pipe lines.
         if target >= 1:
-            rows: list[dict] = [{"cells": [
-                _make_cell(value, is_header=True, alignment=alignments[i] if i < len(alignments) else "left")
-                for i, value in enumerate(_pad_row(header, target))
-            ]}]
+            rows: list[dict] = [
+                {
+                    "cells": [
+                        _make_cell(
+                            value,
+                            is_header=True,
+                            alignment=alignments[i] if i < len(alignments) else "left",
+                        )
+                        for i, value in enumerate(_pad_row(header, target))
+                    ]
+                }
+            ]
             for row in body:
-                rows.append({"cells": [
-                    _make_cell(value, alignment=alignments[i] if i < len(alignments) else "left")
-                    for i, value in enumerate(_pad_row(row, target))
-                ]})
-            result.append(RestoredTable(
-                rows=rows,
-                confidence=0.94,
-                source_format="markdown",
-                source_text="\n".join(lines[index:end]),
-                signals=["markdown_separator", f"columns:{target}"],
-            ))
+                rows.append(
+                    {
+                        "cells": [
+                            _make_cell(
+                                value,
+                                alignment=alignments[i]
+                                if i < len(alignments)
+                                else "left",
+                            )
+                            for i, value in enumerate(_pad_row(row, target))
+                        ]
+                    }
+                )
+            result.append(
+                RestoredTable(
+                    rows=rows,
+                    confidence=0.94,
+                    source_format="markdown",
+                    source_text="\n".join(lines[index:end]),
+                    signals=["markdown_separator", f"columns:{target}"],
+                )
+            )
         index = max(end, index + 1)
     return result
 
@@ -439,7 +498,8 @@ def _parse_plain_text_tables(text: str) -> list[RestoredTable]:
         if len(kept) < 2:
             continue
         numeric_rows = sum(
-            1 for _, cells, _ in kept
+            1
+            for _, cells, _ in kept
             if sum(bool(_NUMERIC_RE.match(cell.strip())) for cell in cells) >= 1
         )
         header_hits = len(_HEADER_RE.findall(" ".join(kept[0][1])))
@@ -457,28 +517,36 @@ def _parse_plain_text_tables(text: str) -> list[RestoredTable]:
         if confidence < 0.50:
             continue
 
-        has_header = bool(header_hits or _infer_header(kept[0][1], [row[1] for row in kept[1:]]))
+        has_header = bool(
+            header_hits or _infer_header(kept[0][1], [row[1] for row in kept[1:]])
+        )
         rows: list[dict] = []
         for row_idx, (_, cells, _) in enumerate(kept):
             padded = _pad_row(cells, target)
-            rows.append({"cells": [
-                _make_cell(value, is_header=has_header and row_idx == 0)
-                for value in padded
-            ]})
+            rows.append(
+                {
+                    "cells": [
+                        _make_cell(value, is_header=has_header and row_idx == 0)
+                        for value in padded
+                    ]
+                }
+            )
         source_text = "\n".join(item[2] for item in kept)
-        restored.append(RestoredTable(
-            rows=rows,
-            confidence=confidence,
-            source_format="ocr_text",
-            source_text=source_text,
-            signals=[
-                f"stable_columns:{target}",
-                f"rows:{len(rows)}",
-                f"numeric_rows:{numeric_rows}",
-                f"header_hits:{header_hits}",
-            ],
-            requires_review=confidence < 0.72,
-        ))
+        restored.append(
+            RestoredTable(
+                rows=rows,
+                confidence=confidence,
+                source_format="ocr_text",
+                source_text=source_text,
+                signals=[
+                    f"stable_columns:{target}",
+                    f"rows:{len(rows)}",
+                    f"numeric_rows:{numeric_rows}",
+                    f"header_hits:{header_hits}",
+                ],
+                requires_review=confidence < 0.72,
+            )
+        )
     return restored
 
 
@@ -495,18 +563,24 @@ def _table_from_tokens(
     for item in tokens:
         if not isinstance(item, dict):
             continue
-        text = str(item.get("text") or item.get("value") or item.get("content") or "").strip()
+        text = str(
+            item.get("text") or item.get("value") or item.get("content") or ""
+        ).strip()
         box = _coerce_bbox(item.get("bbox") or item.get("box") or item.get("rect"))
         if not text or not box:
             continue
-        normalized.append({
-            "text": text,
-            "bbox": box,
-            "confidence": _safe_float(item.get("confidence") or item.get("score"), 0.5),
-            "cx": (box[0] + box[2]) / 2,
-            "cy": (box[1] + box[3]) / 2,
-            "height": max(1.0, box[3] - box[1]),
-        })
+        normalized.append(
+            {
+                "text": text,
+                "bbox": box,
+                "confidence": _safe_float(
+                    item.get("confidence") or item.get("score"), 0.5
+                ),
+                "cx": (box[0] + box[2]) / 2,
+                "cy": (box[1] + box[3]) / 2,
+                "height": max(1.0, box[3] - box[1]),
+            }
+        )
     if len(normalized) < 4:
         return None
 
@@ -523,7 +597,11 @@ def _table_from_tokens(
             row_groups[-1].append(token)
         else:
             row_groups.append([token])
-    row_groups = [sorted(group, key=lambda token: token["cx"]) for group in row_groups if len(group) >= 2]
+    row_groups = [
+        sorted(group, key=lambda token: token["cx"])
+        for group in row_groups
+        if len(group) >= 2
+    ]
     if len(row_groups) < 2:
         return None
 
@@ -540,17 +618,21 @@ def _table_from_tokens(
     for row_idx, group in enumerate(row_groups):
         cells = []
         for token in group:
-            cells.append(_make_cell(
-                token["text"],
-                is_header=has_header and row_idx == 0,
-                bbox=token["bbox"],
-                confidence=token["confidence"],
-            ))
+            cells.append(
+                _make_cell(
+                    token["text"],
+                    is_header=has_header and row_idx == 0,
+                    bbox=token["bbox"],
+                    confidence=token["confidence"],
+                )
+            )
         while len(cells) < target:
             cells.append(_make_cell(""))
         rows.append({"cells": cells[:target]})
 
-    avg_conf = sum(token["confidence"] for group in row_groups for token in group) / sum(len(group) for group in row_groups)
+    avg_conf = sum(
+        token["confidence"] for group in row_groups for token in group
+    ) / sum(len(group) for group in row_groups)
     return RestoredTable(
         rows=rows,
         confidence=min(0.95, float(confidence) if confidence is not None else avg_conf),
@@ -615,7 +697,10 @@ def normalize_table_rows(rows: list[dict]) -> tuple[list[dict], int, list[str]]:
     if len(rows or []) > _MAX_ROWS:
         issues.append("row_limit_truncated")
     if max_col == 0 and normalized_rows:
-        max_col = max(sum(cell.get("col_span", 1) for cell in row["cells"]) for row in normalized_rows)
+        max_col = max(
+            sum(cell.get("col_span", 1) for cell in row["cells"])
+            for row in normalized_rows
+        )
     return normalized_rows, max_col, list(dict.fromkeys(issues))
 
 
@@ -650,9 +735,11 @@ def rows_to_markdown(rows: list[dict]) -> str:
         # canonical table's header semantics.
         grid = [[""] * column_count] + grid
         header_index = 0
-    lines = ["| " + " | ".join(_escape_markdown_cell(v) for v in grid[header_index]) + " |"]
+    lines = [
+        "| " + " | ".join(_escape_markdown_cell(v) for v in grid[header_index]) + " |"
+    ]
     lines.append("| " + " | ".join(["---"] * column_count) + " |")
-    for row in grid[header_index + 1:]:
+    for row in grid[header_index + 1 :]:
         lines.append("| " + " | ".join(_escape_markdown_cell(v) for v in row) + " |")
     return "\n".join(lines)
 
@@ -675,7 +762,9 @@ def table_fingerprint(segment: dict) -> str:
         "source_pages": segment.get("source_pages") or [segment.get("source_page")],
         "region_id": segment.get("region_id"),
     }
-    return sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()[:20]
+    return sha1(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()
+    ).hexdigest()[:20]
 
 
 def merge_continued_table_segments(segments: list[dict]) -> list[dict]:
@@ -696,17 +785,31 @@ def merge_continued_table_segments(segments: list[dict]) -> list[dict]:
         if _same_header(prev_rows, next_rows):
             next_rows = next_rows[1:]
         previous["rows"] = prev_rows + next_rows
-        pages = sorted(set((previous.get("source_pages") or []) + (table.get("source_pages") or [])))
+        pages = sorted(
+            set(
+                (previous.get("source_pages") or []) + (table.get("source_pages") or [])
+            )
+        )
         previous["source_pages"] = pages
         previous["row_count"] = len(previous["rows"])
-        previous["confidence"] = round(min(float(previous.get("confidence") or 0), float(table.get("confidence") or 0)), 3)
-        previous["requires_review"] = bool(previous.get("requires_review") or table.get("requires_review"))
+        previous["confidence"] = round(
+            min(
+                float(previous.get("confidence") or 0),
+                float(table.get("confidence") or 0),
+            ),
+            3,
+        )
+        previous["requires_review"] = bool(
+            previous.get("requires_review") or table.get("requires_review")
+        )
         previous["continuation"] = {
             "merged": True,
             "parts": int((previous.get("continuation") or {}).get("parts", 1)) + 1,
         }
         previous["markdown"] = rows_to_markdown(previous["rows"])
-        previous["table_id"] = _table_id(previous["rows"], pages, previous.get("bbox"), previous.get("region_id"))
+        previous["table_id"] = _table_id(
+            previous["rows"], pages, previous.get("bbox"), previous.get("region_id")
+        )
     return others + merged
 
 
@@ -755,8 +858,12 @@ def _rows_to_text_grid(rows: list[dict], column_count: int) -> list[list[str]]:
         for cell in row.get("cells", []):
             col = int(cell.get("grid_col", 0))
             text = _cell_text(cell)
-            for rr in range(row_idx, min(len(rows), row_idx + int(cell.get("row_span", 1)))):
-                for cc in range(col, min(column_count, col + int(cell.get("col_span", 1)))):
+            for rr in range(
+                row_idx, min(len(rows), row_idx + int(cell.get("row_span", 1)))
+            ):
+                for cc in range(
+                    col, min(column_count, col + int(cell.get("col_span", 1)))
+                ):
                     if rr == row_idx and cc == col:
                         grid[rr][cc] = text
     return grid
@@ -815,15 +922,30 @@ def _rows_from_matrix(headers: list, data: list) -> list[dict]:
     # Explicit structured tables ({headers, rows}) may legitimately have a
     # single column — the width >= 2 guard belongs to auto-detection (text/markdown),
     # not this structured-provider path. Only reject a fully empty matrix.
-    width = max([len(headers) if isinstance(headers, list) else 0, *[len(row) for row in data if isinstance(row, list)]] or [0])
+    width = max(
+        [
+            len(headers) if isinstance(headers, list) else 0,
+            *[len(row) for row in data if isinstance(row, list)],
+        ]
+        or [0]
+    )
     if width < 1:
         return []
     rows: list[dict] = []
     if headers:
-        rows.append({"cells": [_make_cell(str(value), is_header=True) for value in _pad_row(list(headers), width)]})
+        rows.append(
+            {
+                "cells": [
+                    _make_cell(str(value), is_header=True)
+                    for value in _pad_row(list(headers), width)
+                ]
+            }
+        )
     for row in data:
         if isinstance(row, list):
-            rows.append({"cells": [_make_cell(str(value)) for value in _pad_row(row, width)]})
+            rows.append(
+                {"cells": [_make_cell(str(value)) for value in _pad_row(row, width)]}
+            )
     return rows
 
 
@@ -832,14 +954,16 @@ def _split_plain_row(line: str) -> list[str]:
         return _split_markdown_row(line)
     if "\t" in line:
         # Tabs are explicit delimiters; preserve interior empty cells.
-        return _trim_outer_empty_cells([_clean_cell_text(part) for part in line.split("\t")])
+        return _trim_outer_empty_cells(
+            [_clean_cell_text(part) for part in line.split("\t")]
+        )
     if re.search(r" {2,}", line):
         return [_clean_cell_text(part) for part in re.split(r" {2,}", line.strip())]
     # Unicode/ASCII box separators are high-confidence table delimiters.
     if any(sep in line for sep in ("│", "┃", "｜")):
-        return _trim_outer_empty_cells([
-            _clean_cell_text(part) for part in re.split(r"[│┃｜]", line)
-        ])
+        return _trim_outer_empty_cells(
+            [_clean_cell_text(part) for part in re.split(r"[│┃｜]", line)]
+        )
     return []
 
 
@@ -896,19 +1020,27 @@ def _infer_header(first: list[str], following: list[list[str]]) -> bool:
     if _HEADER_RE.search(" ".join(first)):
         return True
     first_numeric = sum(bool(_NUMERIC_RE.match(value)) for value in first)
-    later_numeric = sum(bool(_NUMERIC_RE.match(value)) for row in following[:3] for value in row)
+    later_numeric = sum(
+        bool(_NUMERIC_RE.match(value)) for row in following[:3] for value in row
+    )
     return first_numeric == 0 and later_numeric >= max(2, len(first))
 
 
 def _has_spans(rows: list[dict]) -> bool:
     return any(
         int(cell.get("row_span", 1)) > 1 or int(cell.get("col_span", 1)) > 1
-        for row in rows for cell in row.get("cells", [])
+        for row in rows
+        for cell in row.get("cells", [])
     )
 
 
 def _table_id(rows: list[dict], pages: list, bbox: Any, region_id: Any) -> str:
-    payload = json.dumps({"rows": rows, "pages": pages, "bbox": bbox, "region": region_id}, ensure_ascii=False, sort_keys=True, default=str)
+    payload = json.dumps(
+        {"rows": rows, "pages": pages, "bbox": bbox, "region": region_id},
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
     return f"tbl_{sha1(payload.encode()).hexdigest()[:16]}"
 
 
@@ -986,7 +1118,10 @@ def _looks_like_html_table(text: str) -> bool:
 
 def _looks_like_markdown_table(text: str) -> bool:
     lines = text.splitlines()
-    return any(index + 1 < len(lines) and "|" in line and _SEPARATOR_RE.match(lines[index + 1]) for index, line in enumerate(lines))
+    return any(
+        index + 1 < len(lines) and "|" in line and _SEPARATOR_RE.match(lines[index + 1])
+        for index, line in enumerate(lines)
+    )
 
 
 def _pad_row(row: list, width: int) -> list[str]:
@@ -995,4 +1130,6 @@ def _pad_row(row: list, width: int) -> list[str]:
 
 
 def _escape_markdown_cell(value: str) -> str:
-    return str(value or "").replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
+    return (
+        str(value or "").replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
+    )

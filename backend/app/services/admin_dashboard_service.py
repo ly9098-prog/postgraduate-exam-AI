@@ -17,7 +17,9 @@ def _day_bounds(day: date) -> tuple[datetime, datetime]:
     return shanghai_date_utc_range(day)
 
 
-def _normalize_daily_range(created_from: date | None, created_to: date | None) -> tuple[date, date]:
+def _normalize_daily_range(
+    created_from: date | None, created_to: date | None
+) -> tuple[date, date]:
     end = created_to or shanghai_today()
     start = created_from or end - timedelta(days=6)
     if start > end:
@@ -30,13 +32,51 @@ def _normalize_daily_range(created_from: date | None, created_to: date | None) -
 async def compute_dashboard_overview(db: AsyncSession) -> dict:
     today_start, tomorrow_start = _day_bounds(shanghai_today())
     return {
-        "users_total": int(await db.scalar(select(func.count()).select_from(User)) or 0),
-        "users_new_today": int(await db.scalar(select(func.count()).select_from(User).where(User.created_at >= today_start, User.created_at < tomorrow_start)) or 0),
-        "questions_total": int(await db.scalar(select(func.count()).select_from(Question)) or 0),
-        "questions_pending_review": int(await db.scalar(select(func.count()).select_from(Question).where(Question.review_status == "pending")) or 0),
-        "imports_total": int(await db.scalar(select(func.count()).select_from(QuestionImport)) or 0),
-        "imports_pending": int(await db.scalar(select(func.count()).select_from(QuestionImport).where(QuestionImport.status == "pending")) or 0),
-        "audit_critical_today": int(await db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.severity == "critical", AuditLog.created_at >= today_start, AuditLog.created_at < tomorrow_start)) or 0),
+        "users_total": int(
+            await db.scalar(select(func.count()).select_from(User)) or 0
+        ),
+        "users_new_today": int(
+            await db.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(User.created_at >= today_start, User.created_at < tomorrow_start)
+            )
+            or 0
+        ),
+        "questions_total": int(
+            await db.scalar(select(func.count()).select_from(Question)) or 0
+        ),
+        "questions_pending_review": int(
+            await db.scalar(
+                select(func.count())
+                .select_from(Question)
+                .where(Question.review_status == "pending")
+            )
+            or 0
+        ),
+        "imports_total": int(
+            await db.scalar(select(func.count()).select_from(QuestionImport)) or 0
+        ),
+        "imports_pending": int(
+            await db.scalar(
+                select(func.count())
+                .select_from(QuestionImport)
+                .where(QuestionImport.status == "pending")
+            )
+            or 0
+        ),
+        "audit_critical_today": int(
+            await db.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(
+                    AuditLog.severity == "critical",
+                    AuditLog.created_at >= today_start,
+                    AuditLog.created_at < tomorrow_start,
+                )
+            )
+            or 0
+        ),
         "cache": cache.get_stats(),
     }
 
@@ -65,7 +105,9 @@ async def get_dashboard_overview(db: AsyncSession) -> dict:
         await cache.release_lock(lock_key, lock_value)
 
 
-async def get_dashboard_daily(db: AsyncSession, created_from: date | None, created_to: date | None) -> list[dict]:
+async def get_dashboard_daily(
+    db: AsyncSession, created_from: date | None, created_to: date | None
+) -> list[dict]:
     start, end = _normalize_daily_range(created_from, created_to)
     start_dt = shanghai_date_utc_range(start)[0]
     end_dt = shanghai_date_utc_range(end + timedelta(days=1))[0]
@@ -82,7 +124,12 @@ async def get_dashboard_daily(db: AsyncSession, created_from: date | None, creat
             .where(model.created_at >= start_dt, model.created_at < end_dt)
             .group_by(bucket)
         )
-        return {date.fromisoformat(row[0]) if isinstance(row[0], str) else row[0]: int(row[1]) for row in result.all()}
+        return {
+            date.fromisoformat(row[0]) if isinstance(row[0], str) else row[0]: int(
+                row[1]
+            )
+            for row in result.all()
+        }
 
     users = await grouped(User)
     questions = await grouped(Question)
@@ -92,21 +139,31 @@ async def get_dashboard_daily(db: AsyncSession, created_from: date | None, creat
     items = []
     current = start
     while current <= end:
-        items.append({
-            "date": current,
-            "users_new": users.get(current, 0),
-            "questions_new": questions.get(current, 0),
-            "imports_new": imports.get(current, 0),
-            "audits_total": audits.get(current, 0),
-        })
+        items.append(
+            {
+                "date": current,
+                "users_new": users.get(current, 0),
+                "questions_new": questions.get(current, 0),
+                "imports_new": imports.get(current, 0),
+                "audits_total": audits.get(current, 0),
+            }
+        )
         current += timedelta(days=1)
     return items
 
 
 async def get_dashboard_question_stats(db: AsyncSession) -> dict:
     async def grouped(column):
-        result = await db.execute(select(column, func.count()).select_from(Question).group_by(column).order_by(func.count().desc()))
-        return [{"name": row[0] if row[0] is not None else "unknown", "count": int(row[1])} for row in result.all()]
+        result = await db.execute(
+            select(column, func.count())
+            .select_from(Question)
+            .group_by(column)
+            .order_by(func.count().desc())
+        )
+        return [
+            {"name": row[0] if row[0] is not None else "unknown", "count": int(row[1])}
+            for row in result.all()
+        ]
 
     return {
         "by_subject": await grouped(Question.subject_id),

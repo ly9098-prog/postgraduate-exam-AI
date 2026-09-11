@@ -15,6 +15,7 @@ async def search(
 ):
     """检索最相关的前端+后端模块。"""
     from rag.retriever import retrieve
+
     results = retrieve(query, top_k=top_k)
     if not results:
         raise HTTPException(status_code=404, detail="无匹配模块")

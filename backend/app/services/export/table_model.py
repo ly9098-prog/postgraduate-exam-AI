@@ -118,15 +118,26 @@ class TableBlock:
     def from_rows(headers: list[str], data: list[list[str]]) -> "TableBlock":
         block = TableBlock()
         if headers:
-            block.rows.append(TableRow(cells=[
-                TableCell(content=[{"type": "text", "text": str(value)}], is_header=True)
-                for value in headers
-            ]))
+            block.rows.append(
+                TableRow(
+                    cells=[
+                        TableCell(
+                            content=[{"type": "text", "text": str(value)}],
+                            is_header=True,
+                        )
+                        for value in headers
+                    ]
+                )
+            )
         for row_data in data:
-            block.rows.append(TableRow(cells=[
-                TableCell(content=[{"type": "text", "text": str(value)}])
-                for value in row_data
-            ]))
+            block.rows.append(
+                TableRow(
+                    cells=[
+                        TableCell(content=[{"type": "text", "text": str(value)}])
+                        for value in row_data
+                    ]
+                )
+            )
         return block
 
     def to_dict(self) -> dict[str, Any]:

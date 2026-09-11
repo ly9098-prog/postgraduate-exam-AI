@@ -93,12 +93,12 @@ def shanghai_today_boundaries() -> tuple[datetime, datetime]:
     """
     now_shanghai = datetime.now(_SHANGHAI_TZ)
     start_shanghai = now_shanghai.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_shanghai = now_shanghai.replace(hour=23, minute=59, second=59, microsecond=999999)
+    end_shanghai = now_shanghai.replace(
+        hour=23, minute=59, second=59, microsecond=999999
+    )
     start_utc = (start_shanghai - timedelta(hours=8)).replace(tzinfo=None)
     end_utc = (end_shanghai - timedelta(hours=8)).replace(tzinfo=None)
     return start_utc, end_utc
-
-
 
 
 def shanghai_now() -> datetime:
@@ -152,14 +152,18 @@ def shanghai_date_for_utc(value: datetime) -> date:
 _SHANGHAI_OFFSET = timedelta(hours=8)
 
 
-def study_day_utc_range(target_date: date, day_start_minute: int = 0) -> tuple[datetime, datetime]:
+def study_day_utc_range(
+    target_date: date, day_start_minute: int = 0
+) -> tuple[datetime, datetime]:
     """Return the half-open naive-UTC range [start_utc, end_utc) of a China study day.
 
     ``target_date`` is the China calendar date whose study day begins at
     ``day_start_minute`` minutes past its midnight.  Example: day_start_minute=360,
     target_date=2026-08-07 -> (2026-08-06 22:00, 2026-08-07 22:00) UTC.
     """
-    local_start = datetime.combine(target_date, time.min) + timedelta(minutes=day_start_minute)
+    local_start = datetime.combine(target_date, time.min) + timedelta(
+        minutes=day_start_minute
+    )
     start_utc = local_start - _SHANGHAI_OFFSET
     return start_utc, start_utc + timedelta(days=1)
 

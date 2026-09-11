@@ -12,6 +12,7 @@
 
 所有 LLM 输出字段必须能在原文中找到（反幻觉守门），否则强制置 null。
 """
+
 from __future__ import annotations
 
 import json
@@ -99,7 +100,11 @@ def should_call_llm(block_text: str, parsed: dict[str, Any]) -> tuple[bool, str]
 
     # 触发 5: 多空题特征 ≥ 2 处但识别为非多空题
     blank_count = len(_BLANK_MARK_RE.findall(block_text))
-    if blank_count >= 2 and qt not in ("multi_blank_choice", "fill_blank", "subjective"):
+    if blank_count >= 2 and qt not in (
+        "multi_blank_choice",
+        "fill_blank",
+        "subjective",
+    ):
         # 仅当当前题型识别为单选/多选时兜底
         if qt in ("single_choice", "multiple_choice") and len(options) < 2:
             return True, "multi_blank_misdetected"
@@ -116,6 +121,7 @@ def should_call_llm(block_text: str, parsed: dict[str, Any]) -> tuple[bool, str]
 def _reset_budget_for_test() -> None:
     """测试钩子：清零共享预算计数。"""
     import app.features.token_budget as _tb
+
     _tb._token_usage["daily"] = 0
     _tb._token_usage["daily_date"] = ""
 
@@ -170,7 +176,9 @@ def _normalize_for_match(text: str) -> str:
     return text.lower()
 
 
-def _appears_in(needle: str, haystack_norm: str, *, ratio_threshold: float = 0.85) -> bool:
+def _appears_in(
+    needle: str, haystack_norm: str, *, ratio_threshold: float = 0.85
+) -> bool:
     if not needle:
         return True
     needle_norm = _normalize_for_match(needle)
@@ -183,7 +191,10 @@ def _appears_in(needle: str, haystack_norm: str, *, ratio_threshold: float = 0.8
         ratio = SequenceMatcher(None, needle_norm, haystack_norm).quick_ratio()
         if ratio >= ratio_threshold:
             # quick_ratio 是上界，再次精确确认
-            return SequenceMatcher(None, needle_norm, haystack_norm).ratio() >= ratio_threshold
+            return (
+                SequenceMatcher(None, needle_norm, haystack_norm).ratio()
+                >= ratio_threshold
+            )
     return False
 
 
@@ -305,12 +316,17 @@ def _validate_no_hallucination(
                 ans_letters = {c for c in ans_upper}
                 if ans_letters and ans_letters.issubset(source_letters):
                     cleaned["answer"] = (
-                        ans_upper if len(ans_letters) == 1
+                        ans_upper
+                        if len(ans_letters) == 1
                         else ",".join(sorted(ans_letters))
                     )
                 else:
                     dropped.append("answer")
-            elif ans.lower() in _TF_TRUE_TOKENS or ans.lower() in _TF_FALSE_TOKENS or ans in {"√", "×"}:
+            elif (
+                ans.lower() in _TF_TRUE_TOKENS
+                or ans.lower() in _TF_FALSE_TOKENS
+                or ans in {"√", "×"}
+            ):
                 # 判断题答案：原文必须有 T/F 信号
                 if source_has_tf:
                     cleaned["answer"] = ans
@@ -389,9 +405,12 @@ async def structure_text_block(
     # 走 admin_ai_configs, batch_complete/enrich 走配置）不同，这里用
     # TEXT_IMPORT_LLM_DAILY_TOKEN 环境变量控制本模块的预算上限。
     # 如需全系统统一的单一日限值，后续可引入全局配置项。
-    if not await check_token_limit(estimated, {
-        "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
-    }):
+    if not await check_token_limit(
+        estimated,
+        {
+            "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
+        },
+    ):
         logger.info("text_structure: daily token budget exhausted")
         return None
 
@@ -418,13 +437,18 @@ async def structure_text_block(
     cleaned, dropped = _validate_no_hallucination(structured, block_text)
 
     # 全部字段被守门移除 → 视为无效输出
-    if not cleaned.get("stem") and not cleaned.get("options") and not cleaned.get("answer"):
+    if (
+        not cleaned.get("stem")
+        and not cleaned.get("options")
+        and not cleaned.get("answer")
+    ):
         logger.warning("text_structure: all fields dropped by hallucination guard")
         return None
 
     cleaned["_dropped"] = dropped
     cleaned["_tokens"] = int(result.get("tokens_used") or 0)
     return cleaned
+
 
 async def structure_text_blocks(
     candidates: list[dict[str, Any]],
@@ -444,9 +468,12 @@ async def structure_text_blocks(
 
     messages = build_text_structure_batch(candidates)
     estimated = estimate_tokens(json.dumps(messages, ensure_ascii=False))
-    if not await check_token_limit(estimated, {
-        "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
-    }):
+    if not await check_token_limit(
+        estimated,
+        {
+            "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
+        },
+    ):
         logger.info("text_structure_batch: daily token budget exhausted")
         return {}
 
@@ -476,7 +503,11 @@ async def structure_text_blocks(
         for item in candidates
         if isinstance(item.get("index"), int)
     }
-    valid_items = [item for item in items if isinstance(item, dict) and isinstance(item.get("index"), int)]
+    valid_items = [
+        item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("index"), int)
+    ]
     token_share = total_tokens // max(1, len(valid_items))
     outputs: dict[int, dict[str, Any]] = {}
     for item in valid_items:
@@ -486,7 +517,11 @@ async def structure_text_blocks(
             continue
         structured = {k: v for k, v in item.items() if k != "index"}
         cleaned, dropped = _validate_no_hallucination(structured, original)
-        if not cleaned.get("stem") and not cleaned.get("options") and not cleaned.get("answer"):
+        if (
+            not cleaned.get("stem")
+            and not cleaned.get("options")
+            and not cleaned.get("answer")
+        ):
             continue
         cleaned["_dropped"] = dropped
         cleaned["_tokens"] = token_share

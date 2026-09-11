@@ -26,18 +26,41 @@ logger = logging.getLogger(__name__)
 
 
 # Block types from PaddleOCR-VL that indicate visual content worth preserving
-_VISUAL_BLOCK_TYPES = frozenset({
-    "figure", "fig", "diagram", "chart", "graph", "illustration",
-    "table", "table_image", "photo", "image", "picture",
-    "figure_caption", "table_caption",
-})
+_VISUAL_BLOCK_TYPES = frozenset(
+    {
+        "figure",
+        "fig",
+        "diagram",
+        "chart",
+        "graph",
+        "illustration",
+        "table",
+        "table_image",
+        "photo",
+        "image",
+        "picture",
+        "figure_caption",
+        "table_caption",
+    }
+)
 
 # Block types that should be filtered (noise)
-_NOISE_BLOCK_TYPES = frozenset({
-    "header", "footer", "page_number", "page_num",
-    "watermark", "logo", "stamp", "decoration", "separator",
-    "line", "shape", "advertisement",
-})
+_NOISE_BLOCK_TYPES = frozenset(
+    {
+        "header",
+        "footer",
+        "page_number",
+        "page_num",
+        "watermark",
+        "logo",
+        "stamp",
+        "decoration",
+        "separator",
+        "line",
+        "shape",
+        "advertisement",
+    }
+)
 
 # Page area ratio threshold for "full-page" detection (region covers > 80% of page)
 _FULL_PAGE_RATIO = 0.80
@@ -81,7 +104,11 @@ def run_visual_region_detect_stage(
     # Page-level detection: process all layout blocks and create VisualRegions
     all_regions: list[VisualRegion] = []
     for page_idx, blocks in layout_blocks_by_page.items():
-        page_w, page_h = page_dimensions.get(page_idx, (1000, 1000)) if page_dimensions else (1000, 1000)
+        page_w, page_h = (
+            page_dimensions.get(page_idx, (1000, 1000))
+            if page_dimensions
+            else (1000, 1000)
+        )
         page_regions = _detect_page_regions(blocks, page_idx, page_w, page_h)
         all_regions.extend(page_regions)
 
@@ -97,7 +124,8 @@ def run_visual_region_detect_stage(
     region_count = len(all_regions)
     logger.info(
         "visual_region_detect: %d regions detected across %d pages",
-        region_count, len(layout_blocks_by_page),
+        region_count,
+        len(layout_blocks_by_page),
     )
 
     # Attach unassigned regions to question dicts for downstream assignment
@@ -202,7 +230,9 @@ def _detect_page_regions(
             f"vl_{block_type}_{block_index}_"
             f"{str(block.get('text') or block.get('markdown') or block.get('html') or '')[:80]}"
         )
-        region_id = VisualRegion.generate_region_id(page_idx, bbox_tuple, source=source_key)
+        region_id = VisualRegion.generate_region_id(
+            page_idx, bbox_tuple, source=source_key
+        )
 
         vr = VisualRegion(
             region_id=region_id,

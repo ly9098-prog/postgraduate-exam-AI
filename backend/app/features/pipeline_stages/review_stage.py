@@ -45,7 +45,9 @@ async def run_review_stage(
         "subject_id": subject_id,
         "pipeline_id": pipeline_id,
     }
-    _log_multi_blank_stage("review_input", questions, source_type=source_type, source_file=source_file)
+    _log_multi_blank_stage(
+        "review_input", questions, source_type=source_type, source_file=source_file
+    )
     result = await submit_to_review(db, questions, batch_meta, skip_existing=True)
 
     warnings: list[str] = []
@@ -66,14 +68,21 @@ async def run_review_stage(
         iid = item.get("id")
         if not qhash or not iid:
             continue
-        qsubject_code = subject or (question_subjects[idx] if idx < len(question_subjects) else None) or ""
+        qsubject_code = (
+            subject
+            or (question_subjects[idx] if idx < len(question_subjects) else None)
+            or ""
+        )
         if qsubject_code:
             new_hashes.append((qsubject_code, qhash, iid))
 
     logger.info(
         "【OCR-8】数据库入库结果 | batch=%s source=%s total=%d written=%d skipped=%d dup=%d",
-        result["batch_id"], source_file,
-        result["total"], result["written"], result["skipped"],
+        result["batch_id"],
+        source_file,
+        result["total"],
+        result["written"],
+        result["skipped"],
         result.get("duplicates_filtered", 0),
     )
     for idx, item in enumerate(items):
@@ -82,9 +91,12 @@ async def run_review_stage(
         opt_count = len(opts) if isinstance(opts, (dict, list)) else 0
         logger.info(
             "  ▶ import_id=%s hash=%s status=%s type=%s options=%d conf=%.2f answer=%s",
-            item.get("id", "?"), item.get("question_hash", "?")[:12],
-            item.get("status", "?"), q.get("question_type", "?"),
-            opt_count, q.get("confidence_score", 0),
+            item.get("id", "?"),
+            item.get("question_hash", "?")[:12],
+            item.get("status", "?"),
+            q.get("question_type", "?"),
+            opt_count,
+            q.get("confidence_score", 0),
             q.get("answer") or "❌",
         )
 

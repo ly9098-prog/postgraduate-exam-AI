@@ -93,17 +93,21 @@ _V2_HEARTBEAT_PREFIX = "taskq:v2:heartbeat"
 _V2_FENCING_PREFIX = "taskq:v2:fencing"  # HINCRBY monotonic counter — NEVER deleted
 
 # Defaults
-_DEFAULT_LEASE_SEC = 300       # 5 minutes
+_DEFAULT_LEASE_SEC = 300  # 5 minutes
 _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_RETRY_BASE_DELAY = 10  # seconds
 _REAPER_INTERVAL_SEC = 60
-_LOCAL_TASK_MAX = 100           # bounded local fallback (dev only)
-_DEAD_MAX = 1000                # max dead-letter entries
-_CORRUPT_MAX = 100              # max corrupt entries
-_IDEMPOTENT_TTL = 86400 * 8      # 8d — deliberately outlives 7d Outbox/dead retention boundary
-_COMPLETED_TTL = 86400            # 24h retention for completed task hashes
-_DEAD_HASH_TTL = 86400 * 7        # 7d retention for dead task hashes
-_FENCING_TOMBSTONE_TTL = 86400 * 7  # 7d — covers max task time + lease + retry window + late writes
+_LOCAL_TASK_MAX = 100  # bounded local fallback (dev only)
+_DEAD_MAX = 1000  # max dead-letter entries
+_CORRUPT_MAX = 100  # max corrupt entries
+_IDEMPOTENT_TTL = (
+    86400 * 8
+)  # 8d — deliberately outlives 7d Outbox/dead retention boundary
+_COMPLETED_TTL = 86400  # 24h retention for completed task hashes
+_DEAD_HASH_TTL = 86400 * 7  # 7d retention for dead task hashes
+_FENCING_TOMBSTONE_TTL = (
+    86400 * 7
+)  # 7d — covers max task time + lease + retry window + late writes
 
 
 class TaskStatus(StrEnum):
@@ -127,6 +131,7 @@ class EnqueueResult:
         reason: Machine-readable reason code for rejection.
         retry_after: Recommended seconds before the caller should retry.
     """
+
     accepted: bool = True
     task_id: str | None = None
     reason: str = ""
@@ -175,6 +180,7 @@ def _minimum_worker_version_for_task(task_type: str, schema_version: int) -> int
 @dataclass
 class Task:
     """A task in the durable queue."""
+
     task_id: str
     task_type: str
     payload: dict[str, Any]
@@ -1050,26 +1056,34 @@ return 0
 
 # ── Helpers ──
 
+
 def _task_hash_key(task_id: str) -> str:
     return f"{_TASK_PREFIX}:{task_id}"
+
 
 def _heartbeat_key(task_id: str) -> str:
     return f"{_HEARTBEAT_PREFIX}:{task_id}"
 
+
 def _idempotent_key(task_id: str) -> str:
     return f"{_IDEMPOTENCY_PREFIX}:{task_id}"
+
 
 def _q_key(task_type: str) -> str:
     return f"{_QUEUE_PREFIX}:{task_type}"
 
+
 def _p_key(task_type: str) -> str:
     return f"{_PROCESSING_PREFIX}:{task_type}"
+
 
 def _dead_key(task_type: str) -> str:
     return f"{_DEAD_PREFIX}:{task_type}"
 
+
 def _retry_key(task_type: str) -> str:
     return f"{_RETRY_PREFIX}:{task_type}"
+
 
 def _corrupt_key(task_type: str) -> str:
     return f"{_CORRUPT_PREFIX}:{task_type}"
@@ -1185,7 +1199,9 @@ class DurableTaskQueue:
         )
         self._local_tasks: dict[str, Task] = {}
         self._redis = None  # lazy persistent connection for dequeue
-        self._pool: redis_async.ConnectionPool | None = None  # shared pool for script ops
+        self._pool: redis_async.ConnectionPool | None = (
+            None  # shared pool for script ops
+        )
         self._lua_enqueue = None
         self._lua_enqueue_non_idempotent = None
         self._lua_claim = None
@@ -1216,7 +1232,11 @@ class DurableTaskQueue:
         """
         if self._is_restricted:
             return False
-        return settings.ALLOW_IN_MEMORY_TASK_QUEUE if hasattr(settings, "ALLOW_IN_MEMORY_TASK_QUEUE") else False
+        return (
+            settings.ALLOW_IN_MEMORY_TASK_QUEUE
+            if hasattr(settings, "ALLOW_IN_MEMORY_TASK_QUEUE")
+            else False
+        )
 
     async def _get_client(self):
         """Get persistent Redis connection (reused for blocking dequeue)."""
@@ -1257,7 +1277,9 @@ class DurableTaskQueue:
         if self._lua_enqueue is not None and self._lua_enqueue_v2 is not None:
             return
         self._lua_enqueue = await client.script_load(_LUA_ENQUEUE)
-        self._lua_enqueue_non_idempotent = await client.script_load(_LUA_ENQUEUE_NON_IDEMPOTENT)
+        self._lua_enqueue_non_idempotent = await client.script_load(
+            _LUA_ENQUEUE_NON_IDEMPOTENT
+        )
         self._lua_claim = await client.script_load(_LUA_CLAIM)
         self._lua_heartbeat = await client.script_load(_LUA_HEARTBEAT)
         self._lua_complete = await client.script_load(_LUA_COMPLETE)
@@ -1267,7 +1289,9 @@ class DurableTaskQueue:
         self._lua_retry_claim = await client.script_load(_LUA_RETRY_CLAIM)
         # v2 scripts
         self._lua_enqueue_v2 = await client.script_load(_LUA_ENQUEUE_V2)
-        self._lua_enqueue_non_idempotent_v2 = await client.script_load(_LUA_ENQUEUE_NON_IDEMPOTENT_V2)
+        self._lua_enqueue_non_idempotent_v2 = await client.script_load(
+            _LUA_ENQUEUE_NON_IDEMPOTENT_V2
+        )
         self._lua_claim_v2 = await client.script_load(_LUA_CLAIM_V2)
         self._lua_heartbeat_v2 = await client.script_load(_LUA_HEARTBEAT_V2)
         self._lua_complete_v2 = await client.script_load(_LUA_COMPLETE_V2)
@@ -1295,7 +1319,9 @@ class DurableTaskQueue:
 
     # ── NOSCRIPT recovery ──
 
-    async def _evalsha_or_reload(self, client, sha_name: str, num_keys: int, *args) -> Any:
+    async def _evalsha_or_reload(
+        self, client, sha_name: str, num_keys: int, *args
+    ) -> Any:
         """Call evalsha, reloading the script on NOSCRIPT error."""
         sha = getattr(self, sha_name, None)
         if sha is None:
@@ -1355,7 +1381,8 @@ class DurableTaskQueue:
                 "v1 enqueue() called in restricted environment — "
                 "tasks go to v1 keys not consumed by v2 dispatcher. "
                 "Call enqueue_v2() instead. task_id=%s type=%s",
-                task_id or "?", task_type,
+                task_id or "?",
+                task_type,
             )
         tid = task_id or f"task_{uuid.uuid4().hex}"
 
@@ -1376,28 +1403,37 @@ class DurableTaskQueue:
             try:
                 client = await self._get_script_client()
                 if client is None:
-                    return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+                    return EnqueueResult(
+                        accepted=False,
+                        task_id=None,
+                        reason="redis_unavailable",
+                        retry_after=30,
+                    )
                 await self._load_scripts(client)
 
                 if task_id is not None:
                     result = await self._evalsha_or_reload(
-                        client, "_lua_enqueue", 3,
-                        _q_key(task_type),        # KEYS[1]: queue_key
-                        _TASK_PREFIX,              # KEYS[2]: task_hash_prefix
-                        _IDEMPOTENCY_PREFIX,       # KEYS[3]: idempotent_prefix
-                        tid,                       # ARGV[1]: task_id
-                        task_json,                 # ARGV[2]: task_json
-                        str(_IDEMPOTENT_TTL),      # ARGV[3]: idempotent_ttl
-                        str(max_ready),            # ARGV[4]: max_ready
+                        client,
+                        "_lua_enqueue",
+                        3,
+                        _q_key(task_type),  # KEYS[1]: queue_key
+                        _TASK_PREFIX,  # KEYS[2]: task_hash_prefix
+                        _IDEMPOTENCY_PREFIX,  # KEYS[3]: idempotent_prefix
+                        tid,  # ARGV[1]: task_id
+                        task_json,  # ARGV[2]: task_json
+                        str(_IDEMPOTENT_TTL),  # ARGV[3]: idempotent_ttl
+                        str(max_ready),  # ARGV[4]: max_ready
                     )
                 else:
                     result = await self._evalsha_or_reload(
-                        client, "_lua_enqueue_non_idempotent", 2,
-                        _q_key(task_type),        # KEYS[1]: queue_key
-                        _TASK_PREFIX,              # KEYS[2]: task_hash_prefix
-                        tid,                       # ARGV[1]: task_id
-                        task_json,                 # ARGV[2]: task_json
-                        str(max_ready),            # ARGV[3]: max_ready
+                        client,
+                        "_lua_enqueue_non_idempotent",
+                        2,
+                        _q_key(task_type),  # KEYS[1]: queue_key
+                        _TASK_PREFIX,  # KEYS[2]: task_hash_prefix
+                        tid,  # ARGV[1]: task_id
+                        task_json,  # ARGV[2]: task_json
+                        str(max_ready),  # ARGV[3]: max_ready
                     )
 
                 await client.aclose()
@@ -1408,30 +1444,60 @@ class DurableTaskQueue:
                     return EnqueueResult(accepted=True, task_id=tid, reason="duplicate")
 
                 if result == "__queue_full__":
-                    logger.warning("Queue full, rejected: task_id=%s type=%s", tid, task_type)
+                    logger.warning(
+                        "Queue full, rejected: task_id=%s type=%s", tid, task_type
+                    )
                     queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(accepted=False, task_id=None, reason="queue_full", retry_after=30)
+                    return EnqueueResult(
+                        accepted=False,
+                        task_id=None,
+                        reason="queue_full",
+                        retry_after=30,
+                    )
 
                 if result is None:
-                    logger.error("Enqueue failed (nil result): task_id=%s type=%s", tid, task_type)
+                    logger.error(
+                        "Enqueue failed (nil result): task_id=%s type=%s",
+                        tid,
+                        task_type,
+                    )
                     queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(accepted=False, task_id=None, reason="internal_error", retry_after=30)
+                    return EnqueueResult(
+                        accepted=False,
+                        task_id=None,
+                        reason="internal_error",
+                        retry_after=30,
+                    )
 
                 logger.info("Task enqueued: task_id=%s type=%s", tid, task_type)
                 return EnqueueResult(accepted=True, task_id=tid)
 
             except redis_exc.ConnectionError:
                 if not self._allow_local_fallback:
-                    logger.error("Redis connection error, rejecting enqueue task_id=%s", tid)
+                    logger.error(
+                        "Redis connection error, rejecting enqueue task_id=%s", tid
+                    )
                     queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
-                logger.warning("Redis enqueue failed, fallen back to local: task_id=%s", tid)
+                    return EnqueueResult(
+                        accepted=False,
+                        task_id=None,
+                        reason="redis_unavailable",
+                        retry_after=30,
+                    )
+                logger.warning(
+                    "Redis enqueue failed, fallen back to local: task_id=%s", tid
+                )
 
             except Exception as e:
                 if not self._allow_local_fallback:
                     logger.error("Redis enqueue failed (no fallback): %s", e)
                     queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(accepted=False, task_id=None, reason="enqueue_failed", retry_after=30)
+                    return EnqueueResult(
+                        accepted=False,
+                        task_id=None,
+                        reason="enqueue_failed",
+                        retry_after=30,
+                    )
                 logger.warning("Redis enqueue failed, falling back to local: %s", e)
 
         # Local fallback (dev only, bounded)
@@ -1441,7 +1507,9 @@ class DurableTaskQueue:
             if len(self._local_tasks) >= _LOCAL_TASK_MAX:
                 logger.error("Local task queue full, rejected task_id=%s", tid)
                 queue_metrics["enqueue_rejected"] += 1
-                return EnqueueResult(accepted=False, task_id=None, reason="queue_full", retry_after=30)
+                return EnqueueResult(
+                    accepted=False, task_id=None, reason="queue_full", retry_after=30
+                )
             self._local_tasks[tid] = task
             return EnqueueResult(accepted=True, task_id=tid)
 
@@ -1477,15 +1545,17 @@ class DurableTaskQueue:
                 generation = int(time.time() * 1000)  # monotonic generation
 
                 result = await self._evalsha_or_reload(
-                    client, "_lua_claim", 4,
-                    q_key,                    # KEYS[1]: queue_key
-                    p_key,                    # KEYS[2]: processing_key
-                    _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
-                    _TASK_PREFIX,             # KEYS[4]: task_hash_prefix
-                    str(lease_expiry),        # ARGV[1]: lease_expiry
-                    str(lease_sec),           # ARGV[2]: lease_ttl
-                    owner_token,              # ARGV[3]: owner_token
-                    str(generation),          # ARGV[4]: execution_generation
+                    client,
+                    "_lua_claim",
+                    4,
+                    q_key,  # KEYS[1]: queue_key
+                    p_key,  # KEYS[2]: processing_key
+                    _HEARTBEAT_PREFIX,  # KEYS[3]: heartbeat_prefix
+                    _TASK_PREFIX,  # KEYS[4]: task_hash_prefix
+                    str(lease_expiry),  # ARGV[1]: lease_expiry
+                    str(lease_sec),  # ARGV[2]: lease_ttl
+                    owner_token,  # ARGV[3]: owner_token
+                    str(generation),  # ARGV[4]: execution_generation
                 )
 
                 if result is not None:
@@ -1498,13 +1568,19 @@ class DurableTaskQueue:
                     task.updated_at = time.time()
                     logger.info(
                         "Task dequeued: task_id=%s type=%s lease=%ds gen=%d",
-                        task.task_id, task_type, lease_sec, task.generation,
+                        task.task_id,
+                        task_type,
+                        lease_sec,
+                        task.generation,
                     )
                     return task
 
                 # 2. Retry ZSET (payload returned inline from Lua)
                 retry_data = await self._dequeue_retry(
-                    client, task_type, lease_sec, generation,
+                    client,
+                    task_type,
+                    lease_sec,
+                    generation,
                 )
                 if retry_data is None:
                     return None
@@ -1519,12 +1595,17 @@ class DurableTaskQueue:
 
                 logger.info(
                     "Task dequeued (retry): task_id=%s type=%s lease=%ds gen=%d",
-                    task.task_id, task_type, lease_sec, task.generation,
+                    task.task_id,
+                    task_type,
+                    lease_sec,
+                    task.generation,
                 )
                 return task
 
             except redis_exc.ConnectionError:
-                logger.warning("Redis dequeue failed (connection): task_type=%s", task_type)
+                logger.warning(
+                    "Redis dequeue failed (connection): task_type=%s", task_type
+                )
                 return None
             except Exception as e:
                 logger.warning("Redis dequeue failed: %s", e)
@@ -1541,7 +1622,11 @@ class DurableTaskQueue:
         return None
 
     async def _dequeue_retry(
-        self, client, task_type: str, lease_sec: int, generation: int,
+        self,
+        client,
+        task_type: str,
+        lease_sec: int,
+        generation: int,
     ) -> tuple[str, str, str, str] | None:
         """Atomically claim from retry ZSET.
 
@@ -1553,16 +1638,18 @@ class DurableTaskQueue:
         owner_token = uuid.uuid4().hex
 
         result = await self._evalsha_or_reload(
-            client, "_lua_retry_claim", 4,
-            _retry_key(task_type),      # KEYS[1]: retry ZSET
-            _p_key(task_type),           # KEYS[2]: processing ZSET
-            _HEARTBEAT_PREFIX,           # KEYS[3]: heartbeat_prefix
-            _TASK_PREFIX,               # KEYS[4]: task_hash_prefix
-            str(now),                    # ARGV[1]: now
-            str(lease_expiry),           # ARGV[2]: lease_expiry
-            str(lease_sec),              # ARGV[3]: lease_ttl
-            owner_token,                 # ARGV[4]: owner_token
-            str(generation),             # ARGV[5]: execution_generation
+            client,
+            "_lua_retry_claim",
+            4,
+            _retry_key(task_type),  # KEYS[1]: retry ZSET
+            _p_key(task_type),  # KEYS[2]: processing ZSET
+            _HEARTBEAT_PREFIX,  # KEYS[3]: heartbeat_prefix
+            _TASK_PREFIX,  # KEYS[4]: task_hash_prefix
+            str(now),  # ARGV[1]: now
+            str(lease_expiry),  # ARGV[2]: lease_expiry
+            str(lease_sec),  # ARGV[3]: lease_ttl
+            owner_token,  # ARGV[4]: owner_token
+            str(generation),  # ARGV[5]: execution_generation
         )
 
         if result is not None:
@@ -1615,19 +1702,22 @@ class DurableTaskQueue:
                 if token:
                     new_expiry = time.time() + lease_sec
                     result = await self._evalsha_or_reload(
-                        client, "_lua_heartbeat", 2,
-                        _p_key(task_type or ""),   # KEYS[1]: processing_key
-                        _HEARTBEAT_PREFIX,          # KEYS[2]: heartbeat_prefix
-                        task_id,                    # ARGV[1]: task_id
-                        str(new_expiry),             # ARGV[2]: new_lease_expiry
-                        str(lease_sec),              # ARGV[3]: lease_ttl
-                        token,                       # ARGV[4]: owner_token
+                        client,
+                        "_lua_heartbeat",
+                        2,
+                        _p_key(task_type or ""),  # KEYS[1]: processing_key
+                        _HEARTBEAT_PREFIX,  # KEYS[2]: heartbeat_prefix
+                        task_id,  # ARGV[1]: task_id
+                        str(new_expiry),  # ARGV[2]: new_lease_expiry
+                        str(lease_sec),  # ARGV[3]: lease_ttl
+                        token,  # ARGV[4]: owner_token
                     )
                     await client.aclose()
 
                     if result == 0:
                         logger.warning(
-                            "Heartbeat rejected (owner mismatch): task_id=%s", task_id,
+                            "Heartbeat rejected (owner mismatch): task_id=%s",
+                            task_id,
                         )
                         queue_metrics["lease_renewal_failure"] += 1
                         queue_metrics["owner_fencing_rejected"] += 1
@@ -1689,20 +1779,23 @@ class DurableTaskQueue:
                 p_key = _p_key(tt)
                 r_key = _retry_key(tt)
                 result = await self._evalsha_or_reload(
-                    client, "_lua_complete", 4,
-                    p_key,                    # KEYS[1]: processing_key
-                    r_key,                    # KEYS[2]: retry_key
-                    _TASK_PREFIX,             # KEYS[3]: task_hash_prefix
-                    _HEARTBEAT_PREFIX,        # KEYS[4]: heartbeat_prefix
-                    task_id,                  # ARGV[1]: task_id
-                    token,                    # ARGV[2]: owner_token
-                    str(_COMPLETED_TTL),      # ARGV[3]: completed_ttl
+                    client,
+                    "_lua_complete",
+                    4,
+                    p_key,  # KEYS[1]: processing_key
+                    r_key,  # KEYS[2]: retry_key
+                    _TASK_PREFIX,  # KEYS[3]: task_hash_prefix
+                    _HEARTBEAT_PREFIX,  # KEYS[4]: heartbeat_prefix
+                    task_id,  # ARGV[1]: task_id
+                    token,  # ARGV[2]: owner_token
+                    str(_COMPLETED_TTL),  # ARGV[3]: completed_ttl
                 )
                 await client.aclose()
 
                 if result == 0:
                     logger.warning(
-                        "Complete rejected (owner mismatch, fencing): task_id=%s", task_id,
+                        "Complete rejected (owner mismatch, fencing): task_id=%s",
+                        task_id,
                     )
                     queue_metrics["owner_fencing_rejected"] += 1
                     return False
@@ -1771,23 +1864,26 @@ class DurableTaskQueue:
                     task_json = json.dumps(task.to_dict(), default=str)
 
                     result = await self._evalsha_or_reload(
-                        client, "_lua_fail_retry", 4,
-                        p_key,                    # KEYS[1]: processing_key
-                        _retry_key(tt),           # KEYS[2]: retry_key
-                        _TASK_PREFIX,             # KEYS[3]: task_hash_prefix
-                        _HEARTBEAT_PREFIX,        # KEYS[4]: heartbeat_prefix
-                        task_id,                  # ARGV[1]: task_id
-                        str(retry_at),            # ARGV[2]: retry_at
-                        task_json,                # ARGV[3]: task_json
-                        token,                    # ARGV[4]: owner_token
-                        str(task.retry_count),    # ARGV[5]: retry_count
-                        error[:200],              # ARGV[6]: error
+                        client,
+                        "_lua_fail_retry",
+                        4,
+                        p_key,  # KEYS[1]: processing_key
+                        _retry_key(tt),  # KEYS[2]: retry_key
+                        _TASK_PREFIX,  # KEYS[3]: task_hash_prefix
+                        _HEARTBEAT_PREFIX,  # KEYS[4]: heartbeat_prefix
+                        task_id,  # ARGV[1]: task_id
+                        str(retry_at),  # ARGV[2]: retry_at
+                        task_json,  # ARGV[3]: task_json
+                        token,  # ARGV[4]: owner_token
+                        str(task.retry_count),  # ARGV[5]: retry_count
+                        error[:200],  # ARGV[6]: error
                     )
                     await client.aclose()
 
                     if result == 0:
                         logger.warning(
-                            "Fail/retry rejected (owner mismatch): task_id=%s", task_id,
+                            "Fail/retry rejected (owner mismatch): task_id=%s",
+                            task_id,
                         )
                         queue_metrics["owner_fencing_rejected"] += 1
                         return False
@@ -1802,8 +1898,11 @@ class DurableTaskQueue:
 
             logger.warning(
                 "Task failed (retry %d/%d, +%ds): task_id=%s error=%s",
-                task.retry_count, task.max_retries, delay,
-                task_id, error[:200],
+                task.retry_count,
+                task.max_retries,
+                delay,
+                task_id,
+                error[:200],
             )
             return True
 
@@ -1817,26 +1916,31 @@ class DurableTaskQueue:
 
                 p_key = _p_key(tt)
                 task_json = json.dumps(
-                    task.to_dict() if isinstance(task_or_id, Task) else {"task_id": task_id},
+                    task.to_dict()
+                    if isinstance(task_or_id, Task)
+                    else {"task_id": task_id},
                     default=str,
                 )
 
                 result = await self._evalsha_or_reload(
-                    client, "_lua_fail_dead", 4,
-                    p_key,                    # KEYS[1]: processing_key
-                    _dead_key(tt),            # KEYS[2]: dead_key
-                    _TASK_PREFIX,             # KEYS[3]: task_hash_prefix
-                    _HEARTBEAT_PREFIX,        # KEYS[4]: heartbeat_prefix
-                    task_id,                  # ARGV[1]: task_id
-                    task_json,                # ARGV[2]: task_json
-                    token,                    # ARGV[3]: owner_token
-                    str(_DEAD_MAX),           # ARGV[4]: dead_max
+                    client,
+                    "_lua_fail_dead",
+                    4,
+                    p_key,  # KEYS[1]: processing_key
+                    _dead_key(tt),  # KEYS[2]: dead_key
+                    _TASK_PREFIX,  # KEYS[3]: task_hash_prefix
+                    _HEARTBEAT_PREFIX,  # KEYS[4]: heartbeat_prefix
+                    task_id,  # ARGV[1]: task_id
+                    task_json,  # ARGV[2]: task_json
+                    token,  # ARGV[3]: owner_token
+                    str(_DEAD_MAX),  # ARGV[4]: dead_max
                 )
                 await client.aclose()
 
                 if result == 0:
                     logger.warning(
-                        "Fail/dead rejected (owner mismatch): task_id=%s", task_id,
+                        "Fail/dead rejected (owner mismatch): task_id=%s",
+                        task_id,
                     )
                     queue_metrics["owner_fencing_rejected"] += 1
                     return False
@@ -1850,7 +1954,9 @@ class DurableTaskQueue:
 
         logger.error(
             "Task moved to dead-letter: task_id=%s type=%s error=%s",
-            task_id, tt, error[:200],
+            task_id,
+            tt,
+            error[:200],
         )
         return True
 
@@ -1876,15 +1982,20 @@ class DurableTaskQueue:
             q_key = _q_key(task_type)
             now = time.time()
 
-            reclaimed = await self._evalsha_or_reload(
-                client, "_lua_reaper", 4,
-                p_key,                    # KEYS[1]: processing_key
-                q_key,                    # KEYS[2]: queue_key
-                _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
-                _TASK_PREFIX,             # KEYS[4]: task_hash_prefix
-                str(now),                 # ARGV[1]: now
-                "100",                    # ARGV[2]: batch_size
-            ) or 0
+            reclaimed = (
+                await self._evalsha_or_reload(
+                    client,
+                    "_lua_reaper",
+                    4,
+                    p_key,  # KEYS[1]: processing_key
+                    q_key,  # KEYS[2]: queue_key
+                    _HEARTBEAT_PREFIX,  # KEYS[3]: heartbeat_prefix
+                    _TASK_PREFIX,  # KEYS[4]: task_hash_prefix
+                    str(now),  # ARGV[1]: now
+                    "100",  # ARGV[2]: batch_size
+                )
+                or 0
+            )
             reclaimed = int(reclaimed)
 
             await client.aclose()
@@ -1921,8 +2032,17 @@ class DurableTaskQueue:
                 return length
             except Exception:
                 pass
-        return len([t for t in self._local_tasks.values()
-                     if t.task_type == task_type and t.status == TaskStatus.PENDING]) if self._allow_local_fallback else 0
+        return (
+            len(
+                [
+                    t
+                    for t in self._local_tasks.values()
+                    if t.task_type == task_type and t.status == TaskStatus.PENDING
+                ]
+            )
+            if self._allow_local_fallback
+            else 0
+        )
 
     async def processing_length(self, task_type: str) -> int:
         if self._redis_enabled:
@@ -1935,8 +2055,17 @@ class DurableTaskQueue:
                 return length
             except Exception:
                 pass
-        return len([t for t in self._local_tasks.values()
-                     if t.task_type == task_type and t.status == TaskStatus.PROCESSING]) if self._allow_local_fallback else 0
+        return (
+            len(
+                [
+                    t
+                    for t in self._local_tasks.values()
+                    if t.task_type == task_type and t.status == TaskStatus.PROCESSING
+                ]
+            )
+            if self._allow_local_fallback
+            else 0
+        )
 
     async def dead_length(self, task_type: str) -> int:
         if self._redis_enabled:
@@ -2092,8 +2221,6 @@ class DurableTaskQueue:
             logger.warning("Failed to purge dead tasks: %s", e)
             return 0
 
-
-
     # ══════════════════════════════════════════════════════════════════════════
     # v2 Fencing Methods (HINCRBY-based generation)
     # ══════════════════════════════════════════════════════════════════════════
@@ -2150,17 +2277,26 @@ class DurableTaskQueue:
         max_ready = _get_max_ready(task_type)
 
         if not self._redis_enabled:
-            return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+            return EnqueueResult(
+                accepted=False, task_id=None, reason="redis_unavailable", retry_after=30
+            )
         client = None
         try:
             client = await self._get_script_client()
             if client is None:
-                return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+                return EnqueueResult(
+                    accepted=False,
+                    task_id=None,
+                    reason="redis_unavailable",
+                    retry_after=30,
+                )
             await self._load_scripts(client)
 
             if task_id is not None:
                 result = await self._evalsha_or_reload(
-                    client, "_lua_enqueue_v2", 3,
+                    client,
+                    "_lua_enqueue_v2",
+                    3,
                     _v2_q_key(task_type),
                     _V2_TASK_PREFIX,
                     _V2_IDEMPOTENCY_PREFIX,
@@ -2171,7 +2307,9 @@ class DurableTaskQueue:
                 )
             else:
                 result = await self._evalsha_or_reload(
-                    client, "_lua_enqueue_non_idempotent_v2", 2,
+                    client,
+                    "_lua_enqueue_non_idempotent_v2",
+                    2,
                     _v2_q_key(task_type),
                     _V2_TASK_PREFIX,
                     tid,
@@ -2186,10 +2324,17 @@ class DurableTaskQueue:
             if result == "__queue_full__":
                 logger.warning("v2 Queue full: task_id=%s type=%s", tid, task_type)
                 queue_metrics["enqueue_rejected"] += 1
-                return EnqueueResult(accepted=False, task_id=None, reason="queue_full", retry_after=30)
+                return EnqueueResult(
+                    accepted=False, task_id=None, reason="queue_full", retry_after=30
+                )
             if result is None:
                 logger.error("v2 Enqueue nil: task_id=%s type=%s", tid, task_type)
-                return EnqueueResult(accepted=False, task_id=None, reason="internal_error", retry_after=30)
+                return EnqueueResult(
+                    accepted=False,
+                    task_id=None,
+                    reason="internal_error",
+                    retry_after=30,
+                )
 
             return EnqueueResult(accepted=True, task_id=tid)
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:
@@ -2197,7 +2342,9 @@ class DurableTaskQueue:
             # Outbox dispatcher owns outage-level pause/resume logging, so do
             # not emit one ERROR per enqueue attempt here.
             logger.debug("v2 Enqueue Redis unavailable: %s", e)
-            return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+            return EnqueueResult(
+                accepted=False, task_id=None, reason="redis_unavailable", retry_after=30
+            )
         finally:
             # Redis failures can occur while loading/evaluating scripts. Always
             # release the wrapper back to the shared pool so an outage cannot
@@ -2225,7 +2372,9 @@ class DurableTaskQueue:
             owner_token = uuid.uuid4().hex
 
             result = await self._evalsha_or_reload(
-                client, "_lua_claim_v2", 6,
+                client,
+                "_lua_claim_v2",
+                6,
                 _v2_q_key(task_type),
                 _v2_p_key(task_type),
                 _V2_HEARTBEAT_PREFIX,
@@ -2253,7 +2402,9 @@ class DurableTaskQueue:
                     )
             except Exception as exc:
                 await self.mark_corrupt_v2(task_id, task_type, str(exc)[:200])
-                logger.error("v2 Claimed corrupt task: task_id=%s error=%s", task_id, exc)
+                logger.error(
+                    "v2 Claimed corrupt task: task_id=%s error=%s", task_id, exc
+                )
                 return None
 
             task.status = TaskStatus.PROCESSING
@@ -2263,27 +2414,36 @@ class DurableTaskQueue:
             task.updated_at = time.time()
             logger.info(
                 "v2 Dequeued: task_id=%s type=%s gen=%d",
-                task.task_id, task_type, task.generation,
+                task.task_id,
+                task_type,
+                task.generation,
             )
             return task
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as exc:
             logger.error("v2 Dequeue Redis unavailable: %s", exc)
             raise TaskQueueUnavailableError(
-                f"Redis unavailable during dequeue: {exc}", retry_after=30,
+                f"Redis unavailable during dequeue: {exc}",
+                retry_after=30,
             ) from exc
         except redis_exc.ResponseError as exc:
             logger.error("v2 Dequeue Redis protocol error: %s", exc)
             raise TaskQueueUnavailableError(
-                f"Redis protocol error during dequeue: {exc}", retry_after=30,
+                f"Redis protocol error during dequeue: {exc}",
+                retry_after=30,
             ) from exc
 
     async def _dequeue_retry_v2(
-        self, client, task_type: str, lease_sec: int,
+        self,
+        client,
+        task_type: str,
+        lease_sec: int,
     ) -> list[str] | None:
         """Claim one due retry task using the same fenced state transition."""
         owner_token = uuid.uuid4().hex
         return await self._evalsha_or_reload(
-            client, "_lua_retry_claim_v2", 6,
+            client,
+            "_lua_retry_claim_v2",
+            6,
             _v2_retry_key(task_type),
             _v2_p_key(task_type),
             _V2_HEARTBEAT_PREFIX,
@@ -2335,7 +2495,9 @@ class DurableTaskQueue:
 
             # Note: Lua uses Redis TIME internally for lease expiry, not client time
             result = await self._evalsha_or_reload(
-                client, "_lua_heartbeat_v2", 4,
+                client,
+                "_lua_heartbeat_v2",
+                4,
                 _v2_p_key(task_type),
                 _V2_HEARTBEAT_PREFIX,
                 _V2_TASK_PREFIX,
@@ -2349,12 +2511,14 @@ class DurableTaskQueue:
             result = int(result) if result is not None else 0
             if result == 0:
                 logger.warning(
-                    "v2 Heartbeat owner mismatch: task_id=%s", task_id,
+                    "v2 Heartbeat owner mismatch: task_id=%s",
+                    task_id,
                 )
                 queue_metrics["owner_fencing_rejected"] += 1
             elif result == -1:
                 logger.warning(
-                    "v2 Heartbeat generation mismatch: task_id=%s", task_id,
+                    "v2 Heartbeat generation mismatch: task_id=%s",
+                    task_id,
                 )
                 queue_metrics["owner_fencing_rejected"] += 1
             elif result == 1 and isinstance(task_or_id, Task):
@@ -2402,28 +2566,38 @@ class DurableTaskQueue:
 
             if isinstance(task_or_id, Task):
                 task_data = task_or_id.to_dict()
-                task_data.update({
-                    "status": TaskStatus.COMPLETED.value,
-                    "updated_at": time.time(),
-                    "lease_expires_at": 0.0,
-                    "owner_token": "",
-                    "error": "",
-                })
+                task_data.update(
+                    {
+                        "status": TaskStatus.COMPLETED.value,
+                        "updated_at": time.time(),
+                        "lease_expires_at": 0.0,
+                        "owner_token": "",
+                        "error": "",
+                    }
+                )
                 task_json = json.dumps(task_data, default=str)
             else:
                 current = await client.hget(_v2_task_hash_key(task_id), "data")
-                data = json.loads(current) if current else {"task_id": task_id, "task_type": tt, "payload": {}}
-                data.update({
-                    "status": "completed",
-                    "updated_at": time.time(),
-                    "lease_expires_at": 0.0,
-                    "owner_token": "",
-                    "error": "",
-                })
+                data = (
+                    json.loads(current)
+                    if current
+                    else {"task_id": task_id, "task_type": tt, "payload": {}}
+                )
+                data.update(
+                    {
+                        "status": "completed",
+                        "updated_at": time.time(),
+                        "lease_expires_at": 0.0,
+                        "owner_token": "",
+                        "error": "",
+                    }
+                )
                 task_json = json.dumps(data, default=str)
 
             result = await self._evalsha_or_reload(
-                client, "_lua_complete_v2", 5,
+                client,
+                "_lua_complete_v2",
+                5,
                 _v2_p_key(tt),
                 _v2_retry_key(tt),
                 _V2_TASK_PREFIX,
@@ -2454,9 +2628,14 @@ class DurableTaskQueue:
 
             return result
 
-        except (redis_exc.ConnectionError, redis_exc.TimeoutError, redis_exc.ResponseError) as exc:
+        except (
+            redis_exc.ConnectionError,
+            redis_exc.TimeoutError,
+            redis_exc.ResponseError,
+        ) as exc:
             raise TaskQueueUnavailableError(
-                f"Redis unavailable during complete: {exc}", retry_after=2,
+                f"Redis unavailable during complete: {exc}",
+                retry_after=2,
             ) from exc
         except Exception as e:
             logger.warning("v2 Complete error: %s", e)
@@ -2513,18 +2692,22 @@ class DurableTaskQueue:
             if isinstance(task_or_id, Task) and retry_count < max_retries:
                 delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (retry_count - 1))
                 task_data = task.to_dict()
-                task_data.update({
-                    "status": TaskStatus.FAILED.value,
-                    "retry_count": retry_count,
-                    "error": error,
-                    "updated_at": updated_at,
-                    "lease_expires_at": 0.0,
-                    "owner_token": "",
-                })
+                task_data.update(
+                    {
+                        "status": TaskStatus.FAILED.value,
+                        "retry_count": retry_count,
+                        "error": error,
+                        "updated_at": updated_at,
+                        "lease_expires_at": 0.0,
+                        "owner_token": "",
+                    }
+                )
                 task_json = json.dumps(task_data, default=str)
 
                 result = await self._evalsha_or_reload(
-                    client, "_lua_fail_retry_v2", 6,
+                    client,
+                    "_lua_fail_retry_v2",
+                    6,
                     _v2_p_key(tt),
                     _v2_retry_key(tt),
                     _v2_dead_key(tt),
@@ -2552,7 +2735,10 @@ class DurableTaskQueue:
                     task.lease_expires_at = 0.0
                     logger.warning(
                         "v2 Fail/retry (%d/%d, +%ds): task_id=%s",
-                        retry_count, max_retries, delay, task_id,
+                        retry_count,
+                        max_retries,
+                        delay,
+                        task_id,
                     )
                 elif result == 2:
                     task.retry_count = retry_count
@@ -2561,7 +2747,8 @@ class DurableTaskQueue:
                     task.status = TaskStatus.DEAD
                     task.lease_expires_at = 0.0
                     logger.warning(
-                        "v2 Fail/retry-full dead: task_id=%s (retry ZSET full)", task_id,
+                        "v2 Fail/retry-full dead: task_id=%s (retry ZSET full)",
+                        task_id,
                     )
                 elif result == 0:
                     logger.warning("v2 Fail/retry owner mismatch: task_id=%s", task_id)
@@ -2574,22 +2761,31 @@ class DurableTaskQueue:
             # Dead-letter path
             if isinstance(task_or_id, Task):
                 task_data = task.to_dict()
-                task_data.update({
-                    "status": TaskStatus.DEAD.value,
-                    "retry_count": retry_count,
-                    "error": error,
-                    "lease_expires_at": 0.0,
-                    "owner_token": "",
-                    "updated_at": updated_at,
-                })
+                task_data.update(
+                    {
+                        "status": TaskStatus.DEAD.value,
+                        "retry_count": retry_count,
+                        "error": error,
+                        "lease_expires_at": 0.0,
+                        "owner_token": "",
+                        "updated_at": updated_at,
+                    }
+                )
                 task_json = json.dumps(task_data, default=str)
             else:
                 task_json = json.dumps(
-                    {"task_id": task_id, "task_type": tt, "payload": {}, "status": "dead"},
+                    {
+                        "task_id": task_id,
+                        "task_type": tt,
+                        "payload": {},
+                        "status": "dead",
+                    },
                     default=str,
                 )
             result = await self._evalsha_or_reload(
-                client, "_lua_fail_dead_v2", 5,
+                client,
+                "_lua_fail_dead_v2",
+                5,
                 _v2_p_key(tt),
                 _v2_dead_key(tt),
                 _V2_TASK_PREFIX,
@@ -2620,9 +2816,14 @@ class DurableTaskQueue:
                 queue_metrics["owner_fencing_rejected"] += 1
             return result
 
-        except (redis_exc.ConnectionError, redis_exc.TimeoutError, redis_exc.ResponseError) as exc:
+        except (
+            redis_exc.ConnectionError,
+            redis_exc.TimeoutError,
+            redis_exc.ResponseError,
+        ) as exc:
             raise TaskQueueUnavailableError(
-                f"Redis unavailable during fail transition: {exc}", retry_after=2,
+                f"Redis unavailable during fail transition: {exc}",
+                retry_after=2,
             ) from exc
         except Exception as e:
             logger.warning("v2 Fail error: %s", e)
@@ -2645,7 +2846,9 @@ class DurableTaskQueue:
             await self._load_scripts(client)
 
             result = await self._evalsha_or_reload(
-                client, "_lua_mark_corrupt_v2", 5,
+                client,
+                "_lua_mark_corrupt_v2",
+                5,
                 _v2_p_key(task_type),
                 _v2_corrupt_key(task_type),
                 _V2_TASK_PREFIX,
@@ -2696,7 +2899,9 @@ class DurableTaskQueue:
             await self._load_scripts(client)
 
             result = await self._evalsha_or_reload(
-                client, "_lua_cancel_v2", 7,
+                client,
+                "_lua_cancel_v2",
+                7,
                 _v2_q_key(task_type),
                 _v2_p_key(task_type),
                 _v2_retry_key(task_type),
@@ -2713,7 +2918,10 @@ class DurableTaskQueue:
             result = int(result) if result is not None else 0
             if result > 0:
                 logger.info(
-                    "v2 Cancel (code=%d): task_id=%s type=%s", result, task_id, task_type,
+                    "v2 Cancel (code=%d): task_id=%s type=%s",
+                    result,
+                    task_id,
+                    task_type,
                 )
             return result
 
@@ -2732,24 +2940,31 @@ class DurableTaskQueue:
                 return 0
 
             await self._load_scripts(client)
-            reclaimed = await self._evalsha_or_reload(
-                client, "_lua_reaper_v2", 6,
-                _v2_p_key(task_type),
-                _v2_q_key(task_type),
-                _V2_HEARTBEAT_PREFIX,
-                _V2_TASK_PREFIX,
-                _v2_corrupt_key(task_type),
-                _V2_FENCING_PREFIX,
-                "100",
-                str(_get_max_ready(task_type)),
-                str(settings.TASK_QUEUE_CORRUPT_MAX),
-                str(_DEAD_HASH_TTL),
-            ) or 0
+            reclaimed = (
+                await self._evalsha_or_reload(
+                    client,
+                    "_lua_reaper_v2",
+                    6,
+                    _v2_p_key(task_type),
+                    _v2_q_key(task_type),
+                    _V2_HEARTBEAT_PREFIX,
+                    _V2_TASK_PREFIX,
+                    _v2_corrupt_key(task_type),
+                    _V2_FENCING_PREFIX,
+                    "100",
+                    str(_get_max_ready(task_type)),
+                    str(settings.TASK_QUEUE_CORRUPT_MAX),
+                    str(_DEAD_HASH_TTL),
+                )
+                or 0
+            )
             reclaimed = int(reclaimed)
             await client.aclose()
 
             if reclaimed:
-                logger.info("v2 Reclaimed %d expired tasks for %s", reclaimed, task_type)
+                logger.info(
+                    "v2 Reclaimed %d expired tasks for %s", reclaimed, task_type
+                )
                 queue_metrics["reaper_reclaimed"] += reclaimed
 
             return reclaimed
@@ -2860,7 +3075,9 @@ class DurableTaskQueue:
         finally:
             await client.aclose()
 
-    async def get_metrics_v2(self, task_types: list[str] | None = None) -> dict[str, Any]:
+    async def get_metrics_v2(
+        self, task_types: list[str] | None = None
+    ) -> dict[str, Any]:
         """v2 queue metrics. Raises QueueHealthError on Redis error."""
         results = dict(queue_metrics)
         types = task_types or []
@@ -2956,8 +3173,11 @@ class DurableTaskQueue:
             if client is None:
                 return []
             members = await client.zrange(
-                _v2_corrupt_key(task_type), 0, limit - 1,
-                desc=True, withscores=True,
+                _v2_corrupt_key(task_type),
+                0,
+                limit - 1,
+                desc=True,
+                withscores=True,
             )
             result = []
             for tid, score in members:
@@ -3025,15 +3245,25 @@ class DurableTaskQueue:
             try:
                 task_data = json.loads(raw)
             except (TypeError, json.JSONDecodeError) as exc:
-                logger.warning("v2 Dead task payload is corrupt: task_id=%s error=%s", task_id, exc)
+                logger.warning(
+                    "v2 Dead task payload is corrupt: task_id=%s error=%s", task_id, exc
+                )
                 return False
             if not isinstance(task_data, dict):
-                logger.warning("v2 Dead task payload is not an object: task_id=%s", task_id)
+                logger.warning(
+                    "v2 Dead task payload is not an object: task_id=%s", task_id
+                )
                 return False
-            if task_data.get("task_id") != task_id or task_data.get("task_type") != task_type:
+            if (
+                task_data.get("task_id") != task_id
+                or task_data.get("task_type") != task_type
+            ):
                 logger.warning(
                     "v2 Dead task identity mismatch: expected=%s/%s actual=%s/%s",
-                    task_id, task_type, task_data.get("task_id"), task_data.get("task_type"),
+                    task_id,
+                    task_type,
+                    task_data.get("task_id"),
+                    task_data.get("task_type"),
                 )
                 return False
 
@@ -3045,22 +3275,26 @@ class DurableTaskQueue:
             )
             if task_type == ANSWER_PROJECTION_TASK_TYPE:
                 parse_answer_projection_payload(task_data.get("payload"))
-            required_worker = _minimum_worker_version_for_task(task_type, schema_version)
-            task_data.update({
-                "status": TaskStatus.PENDING.value,
-                "retry_count": 0,
-                "error": "",
-                "updated_at": now,
-                "lease_expires_at": 0.0,
-                "owner_token": "",
-                # Re-evaluate the worker floor for a fresh retry cycle. The
-                # schema itself was validated above and is never auto-upgraded.
-                "schema_version": schema_version,
-                "minimum_worker_version": max(
-                    int(task_data.get("minimum_worker_version", 1) or 1),
-                    required_worker,
-                ),
-            })
+            required_worker = _minimum_worker_version_for_task(
+                task_type, schema_version
+            )
+            task_data.update(
+                {
+                    "status": TaskStatus.PENDING.value,
+                    "retry_count": 0,
+                    "error": "",
+                    "updated_at": now,
+                    "lease_expires_at": 0.0,
+                    "owner_token": "",
+                    # Re-evaluate the worker floor for a fresh retry cycle. The
+                    # schema itself was validated above and is never auto-upgraded.
+                    "schema_version": schema_version,
+                    "minimum_worker_version": max(
+                        int(task_data.get("minimum_worker_version", 1) or 1),
+                        required_worker,
+                    ),
+                }
+            )
             task_json = json.dumps(task_data, default=str)
 
             # Keep the hash and embedded JSON metadata consistent.  LREM count=0
@@ -3080,7 +3314,9 @@ class DurableTaskQueue:
             )
             pipe.rpush(_v2_q_key(task_type), task_id)
             await pipe.execute()
-            logger.info("v2 Retried from dead with fresh retry budget: task_id=%s", task_id)
+            logger.info(
+                "v2 Retried from dead with fresh retry budget: task_id=%s", task_id
+            )
             return True
 
         except Exception as e:
@@ -3153,7 +3389,6 @@ class DurableTaskQueue:
                 except Exception:
                     pass
 
-
     async def has_idempotency_v2(self, task_id: str) -> bool:
         """Return whether Redis still remembers an accepted v2 task id.
 
@@ -3225,13 +3460,17 @@ class DurableTaskQueue:
 
                 raw = await client.hget(_task_hash_key(task_id), "data")
                 if not raw:
-                    logger.warning("v1→v2 drain: task %s has no payload, skipping", task_id)
+                    logger.warning(
+                        "v1→v2 drain: task %s has no payload, skipping", task_id
+                    )
                     continue
 
                 # Re-enqueue into v2
                 max_ready = _get_max_ready(task_type)
                 result = await self._evalsha_or_reload(
-                    client, "_lua_enqueue_v2", 3,
+                    client,
+                    "_lua_enqueue_v2",
+                    3,
                     _v2_q_key(task_type),
                     _V2_TASK_PREFIX,
                     _V2_IDEMPOTENCY_PREFIX,
@@ -3245,13 +3484,17 @@ class DurableTaskQueue:
 
             await client.aclose()
             if migrated:
-                logger.info("v1→v2 drain: migrated %d tasks for %s", migrated, task_type)
+                logger.info(
+                    "v1→v2 drain: migrated %d tasks for %s", migrated, task_type
+                )
             return migrated
         except Exception as e:
             logger.warning("v1→v2 drain failed for %s: %s", task_type, e)
             return migrated
 
-    async def drain_all_v1_to_v2(self, task_types: list[str] | None = None) -> dict[str, int]:
+    async def drain_all_v1_to_v2(
+        self, task_types: list[str] | None = None
+    ) -> dict[str, int]:
         """Drain all v1 queues into v2. Returns {task_type: count_migrated}."""
         types = task_types or []
         results: dict[str, int] = {}
@@ -3286,6 +3529,7 @@ class DurableTaskQueue:
         except Exception as e:
             logger.warning("v1 key deletion failed for %s: %s", task_type, e)
             return deleted
+
 
 # Process-wide singleton
 task_queue = DurableTaskQueue()

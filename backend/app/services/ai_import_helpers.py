@@ -1,13 +1,18 @@
 """AI 辅助导题用到的纯函数辅助逻辑（解析、规整、缺失检测）。"""
+
 import json
 import re
 
 from app.models.question_import import QuestionImport
 
 SUBJECT_VALUES = {
-    "math2", "exam408", "english",
-    "data_structure", "computer_organization",
-    "operating_system", "computer_network",
+    "math2",
+    "exam408",
+    "english",
+    "data_structure",
+    "computer_organization",
+    "operating_system",
+    "computer_network",
 }
 TYPE_VALUES = {"choice", "fill", "subjective"}
 

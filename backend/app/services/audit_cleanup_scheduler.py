@@ -4,6 +4,7 @@
 ``system_task_service.execute_scheduled_task`` 统一处理，确保定时执行与管理端
 “立即执行”走完全相同的生产代码路径。
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,6 +48,7 @@ class AuditLogCleanupScheduler:
         self._scheduler.start()
         self._running = True
         from app.services.system_task_service import register_scheduler_task
+
         register_scheduler_task("audit_log_cleanup")
         logger.info(
             "审计日志清理调度器已启动: 每天 %02d:00 UTC, 保留 %d 天, 批次 %d 条",
@@ -60,6 +62,7 @@ class AuditLogCleanupScheduler:
             self._scheduler.shutdown(wait=False)
             self._running = False
             from app.services.system_task_service import unregister_scheduler_task
+
             unregister_scheduler_task("audit_log_cleanup")
             logger.info("审计日志清理调度器已停止")
 
@@ -67,7 +70,9 @@ class AuditLogCleanupScheduler:
         from app.services.system_task_service import execute_scheduled_task
 
         try:
-            outcome = await execute_scheduled_task("audit_log_cleanup", source="scheduler")
+            outcome = await execute_scheduled_task(
+                "audit_log_cleanup", source="scheduler"
+            )
             if outcome.status == "failed":
                 logger.error("审计日志清理失败: %s", outcome.message)
             elif outcome.status == "skipped":

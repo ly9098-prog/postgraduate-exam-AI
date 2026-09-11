@@ -32,7 +32,9 @@ def _parse_study_date(value: str | None) -> date | None:
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
+        raise HTTPException(
+            status_code=400, detail="date must use YYYY-MM-DD format"
+        ) from exc
 
 
 @router.post("/start", response_model=PomodoroSessionResponse)
@@ -78,11 +80,17 @@ async def complete_session(
             db, session_id, current_user.id, client_action_at=req.client_action_at
         )
     except svc.PomodoroStaleActionError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"}
+        )
     except svc.PomodoroClockSkewError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"}
+        )
     except svc.PomodoroNotReadyError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_NOT_READY"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_NOT_READY"}
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not session:
@@ -103,16 +111,19 @@ async def interrupt_session(
             db, session_id, current_user.id, client_action_at=req.client_action_at
         )
     except svc.PomodoroStaleActionError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"}
+        )
     except svc.PomodoroClockSkewError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"}
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not session:
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
-
 
 
 @router.post("/{session_id}/resume", response_model=PomodoroSessionResponse)
@@ -127,9 +138,13 @@ async def resume_session(
             db, session_id, current_user.id, client_action_at=req.client_action_at
         )
     except svc.PomodoroStaleActionError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"}
+        )
     except svc.PomodoroClockSkewError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"}
+        )
     if not session:
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
@@ -148,14 +163,17 @@ async def pause_session(
             db, session_id, current_user.id, client_action_at=req.client_action_at
         )
     except svc.PomodoroStaleActionError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"}
+        )
     except svc.PomodoroClockSkewError:
-        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
+        raise HTTPException(
+            status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"}
+        )
     if not session:
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
-
 
 
 @router.get("/active", response_model=PomodoroSessionResponse | None)
@@ -199,7 +217,10 @@ async def get_stats(
 
 @router.get("/statistics-overview", response_model=PomodoroStatisticsOverviewResponse)
 async def get_statistics_overview(
-    date: str | None = Query(None, description="Study day (YYYY-MM-DD) for the daily summary, defaults to the current study day"),
+    date: str | None = Query(
+        None,
+        description="Study day (YYYY-MM-DD) for the daily summary, defaults to the current study day",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -218,8 +239,12 @@ async def get_statistics_overview(
 
 @router.get("/range-summary", response_model=PomodoroRangeSummaryResponse)
 async def get_range_summary(
-    start_date: str = Query(..., description="Inclusive study-day range start (YYYY-MM-DD)"),
-    end_date: str = Query(..., description="Inclusive study-day range end (YYYY-MM-DD)"),
+    start_date: str = Query(
+        ..., description="Inclusive study-day range start (YYYY-MM-DD)"
+    ),
+    end_date: str = Query(
+        ..., description="Inclusive study-day range end (YYYY-MM-DD)"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -227,9 +252,13 @@ async def get_range_summary(
     start = _parse_study_date(start_date)
     end = _parse_study_date(end_date)
     if start is None or end is None:
-        raise HTTPException(status_code=400, detail="start_date and end_date are required")
+        raise HTTPException(
+            status_code=400, detail="start_date and end_date are required"
+        )
     if end < start:
-        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+        raise HTTPException(
+            status_code=400, detail="end_date must be on or after start_date"
+        )
     if (end - start).days > 365:
         raise HTTPException(status_code=400, detail="date range cannot exceed 366 days")
     return await svc.get_range_summary(db, current_user.id, start, end)
@@ -237,7 +266,9 @@ async def get_range_summary(
 
 @router.get("/daily-summary", response_model=PomodoroDailySummaryResponse)
 async def get_daily_summary(
-    date: str | None = Query(None, description="Study day (YYYY-MM-DD), defaults to the current study day"),
+    date: str | None = Query(
+        None, description="Study day (YYYY-MM-DD), defaults to the current study day"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

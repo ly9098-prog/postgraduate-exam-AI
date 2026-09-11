@@ -3,6 +3,7 @@
 职责：将 PDF / OCR 提取的视觉换行文本恢复为语义连续段落。
 仅处理文本；不做任何题目解析逻辑。
 """
+
 import re
 
 from app.features.roman_schema import _ROMAN_SUBITEM_TOKEN
@@ -12,7 +13,7 @@ _STRUCTURE_LINE_RE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
     r"|[A-D]\s*[.、:：]"
-    r"|[（(]\s*[A-D]\s*[）)]"                          # （A）(A)（A ）( A )
+    r"|[（(]\s*[A-D]\s*[）)]"  # （A）(A)（A ）( A )
     r"|" + _ROMAN_SUBITEM_TOKEN + r"\s*[.、)）]"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]"
     r"|(?:【)?(?:解析|解答)(?:】)?\s*[：:]"
@@ -24,7 +25,7 @@ _STRUCTURE_LINE_RE = re.compile(
 _PREV_STRUCTURE_LINE_RE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
-    r"|[A-D]\s*[.、:：\s].+"      # 选项行（A. xxx 格式，后面必须有内容）
+    r"|[A-D]\s*[.、:：\s].+"  # 选项行（A. xxx 格式，后面必须有内容）
     r"|[（(]\s*[A-D]\s*[）)].+"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:].+"
     r"|(?:【)?(?:解析|解答)(?:】)?\s*[：:].+"
@@ -34,9 +35,9 @@ _PREV_STRUCTURE_LINE_RE = re.compile(
 # 独立数学表达式行：以运算符/函数/极限符号打头，不向上合并（避免粘连加剧）
 _MATH_LINE_RE = re.compile(
     r"^("
-    r"[+\-×÷=≥≤≠∞∫∑∏√]"        # 运算符打头
+    r"[+\-×÷=≥≤≠∞∫∑∏√]"  # 运算符打头
     r"|lim\b|sin\b|cos\b|tan\b|ln\b|log\b"  # 数学函数
-    r"|\\[a-zA-Z]"                              # LaTeX 命令
+    r"|\\[a-zA-Z]"  # LaTeX 命令
     r")"
 )
 
@@ -162,7 +163,7 @@ def deduplicate_repeated_text(text: str) -> str:
                     # 归一化比较（去空白、去标点）
                     left_norm = re.sub(r"\s+", "", left)
                     right_norm = re.sub(r"\s+", "", right)
-                    for ch in "，。、；：！？,.;:!?…—·\"''\"\"（）()【】《》<>":
+                    for ch in '，。、；：！？,.;:!?…—·"\'\'""（）()【】《》<>':
                         left_norm = left_norm.replace(ch, "")
                         right_norm = right_norm.replace(ch, "")
                     if left_norm and left_norm == right_norm:

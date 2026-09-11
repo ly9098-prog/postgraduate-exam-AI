@@ -99,7 +99,11 @@ def convert_bbox(
         (x0, y0, x1, y1) in image pixel coordinates, clamped to image bounds
     """
     x0, y0, x1, y1 = bbox
-    source = source_space.value if isinstance(source_space, CoordinateSpace) else source_space
+    source = (
+        source_space.value
+        if isinstance(source_space, CoordinateSpace)
+        else source_space
+    )
 
     if source == "image_pixels":
         # Already in image pixel space — use as-is
@@ -114,7 +118,9 @@ def convert_bbox(
             # Fallback: assume standard render DPI
             scale_x = page_image_width / (page_image_width * 72 / _PAGE_RENDER_DPI)
             scale_y = page_image_height / (page_image_height * 72 / _PAGE_RENDER_DPI)
-            logger.warning("convert_bbox: pdf_points without page_pdf dims — using fallback scale")
+            logger.warning(
+                "convert_bbox: pdf_points without page_pdf dims — using fallback scale"
+            )
 
     elif source == "normalized_1000":
         # 0-1000 normalized → image pixels
@@ -143,8 +149,12 @@ def convert_bbox(
 
 
 def _clamp_bbox(
-    x0: int, y0: int, x1: int, y1: int,
-    max_w: int, max_h: int,
+    x0: int,
+    y0: int,
+    x1: int,
+    y1: int,
+    max_w: int,
+    max_h: int,
 ) -> tuple[int, int, int, int]:
     """Clamp bbox to image bounds and ensure minimum size."""
     x0 = max(0, x0)
@@ -200,7 +210,11 @@ def crop_region(
     ph = page_image_height or actual_h
 
     # ── Compute coordinate-space-aware padding ──
-    source = coordinate_space.value if isinstance(coordinate_space, CoordinateSpace) else coordinate_space
+    source = (
+        coordinate_space.value
+        if isinstance(coordinate_space, CoordinateSpace)
+        else coordinate_space
+    )
 
     if source == "pdf_points":
         pad_x = pad_y = padding_pt
@@ -239,8 +253,10 @@ def crop_region(
     converted = convert_bbox(
         padded_bbox,
         coordinate_space,
-        pw, ph,
-        page_pdf_width, page_pdf_height,
+        pw,
+        ph,
+        page_pdf_width,
+        page_pdf_height,
     )
 
     x0, y0, x1, y1 = converted
@@ -297,7 +313,8 @@ async def crop_and_upload_region(
     if not page_path:
         logger.warning(
             "crop_and_upload: no page image for page %d (import=%s)",
-            region.source_page, import_id,
+            region.source_page,
+            import_id,
         )
         region.crop_failed = True
         region.risk_flags.append("visual_crop_failed")
@@ -306,13 +323,13 @@ async def crop_and_upload_region(
     if region.bbox is None:
         logger.warning(
             "crop_and_upload: bbox is None for region %s (import=%s)",
-            region.region_id, import_id,
+            region.region_id,
+            import_id,
         )
         region.crop_failed = True
         region.requires_review = True
         region.risk_flags.append("visual_region_bbox_missing")
         return region
-
 
     try:
         png_bytes = await get_executor("image").run(
@@ -336,7 +353,10 @@ async def crop_and_upload_region(
     except (CropError, Exception) as e:
         logger.warning(
             "crop failed import=%s region=%s page=%s: %s",
-            import_id, region.region_id, region.source_page, e,
+            import_id,
+            region.region_id,
+            region.source_page,
+            e,
         )
         region.crop_failed = True
         region.requires_review = True
@@ -358,7 +378,9 @@ async def crop_and_upload_regions(
     result: list[VisualRegion] = []
     for region in regions:
         cropped = await crop_and_upload_region(
-            page_image_refs, region, import_id,
+            page_image_refs,
+            region,
+            import_id,
             page_pdf_width=page_pdf_width,
             page_pdf_height=page_pdf_height,
         )

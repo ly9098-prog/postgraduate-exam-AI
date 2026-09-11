@@ -31,7 +31,9 @@ def _blank_option_group_summary(groups: Any) -> list[dict]:
             continue
         options = group.get("options") or {}
         if isinstance(options, dict):
-            option_keys = sorted(str(key).upper() for key in options.keys() if str(key).strip())
+            option_keys = sorted(
+                str(key).upper() for key in options.keys() if str(key).strip()
+            )
             first_a_preview = str(options.get("A") or options.get("a") or "")[:40]
         elif isinstance(options, list):
             option_keys = sorted(
@@ -41,18 +43,26 @@ def _blank_option_group_summary(groups: Any) -> list[dict]:
             )
             first_a_preview = ""
             for option in options:
-                if isinstance(option, dict) and str(option.get("key") or "").upper() == "A":
+                if (
+                    isinstance(option, dict)
+                    and str(option.get("key") or "").upper() == "A"
+                ):
                     first_a_preview = str(option.get("text") or "")[:40]
                     break
         else:
             option_keys = []
             first_a_preview = ""
-        summary.append({
-            "id": group.get("id") or group.get("blank_id") or group.get("label") or index + 1,
-            "option_keys": option_keys,
-            "has_a": "A" in option_keys,
-            "first_a_preview": first_a_preview,
-        })
+        summary.append(
+            {
+                "id": group.get("id")
+                or group.get("blank_id")
+                or group.get("label")
+                or index + 1,
+                "option_keys": option_keys,
+                "has_a": "A" in option_keys,
+                "first_a_preview": first_a_preview,
+            }
+        )
     return summary
 
 
@@ -75,7 +85,9 @@ def _log_multi_blank_stage(stage: str, questions: list[dict], **context: Any) ->
                 "stage": stage,
                 "question_index": index,
                 "question_type": question.get("question_type"),
-                "stem_preview": str(question.get("stem") or question.get("raw_question_text") or "")[:80],
+                "stem_preview": str(
+                    question.get("stem") or question.get("raw_question_text") or ""
+                )[:80],
                 "blank_option_group_count": len(summary),
                 "blank_option_groups": summary,
                 **context,

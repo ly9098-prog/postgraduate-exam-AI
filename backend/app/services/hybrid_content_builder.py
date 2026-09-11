@@ -1,4 +1,5 @@
 """混合题内容构建器：将题文本 + MathRegion 列表组合为 segments 结构。"""
+
 from app.services.math_region_detector import MathRegion, MathRegionType
 
 
@@ -52,21 +53,25 @@ def _build_segments(text: str, regions: list[MathRegion]) -> list[dict]:
             if before:
                 segments.append({"type": "text", "text": before})
             # 公式 segment
-            segments.append({
-                "type": "math_image",
-                "url": region.image_url,
-                "alt": alt,
-                "display": display,
-            })
-            remaining = remaining[pos + len(alt):]
+            segments.append(
+                {
+                    "type": "math_image",
+                    "url": region.image_url,
+                    "alt": alt,
+                    "display": display,
+                }
+            )
+            remaining = remaining[pos + len(alt) :]
         else:
             # 无法定位：追加为行内公式（不切割文本）
-            segments.append({
-                "type": "math_image",
-                "url": region.image_url,
-                "alt": alt,
-                "display": display,
-            })
+            segments.append(
+                {
+                    "type": "math_image",
+                    "url": region.image_url,
+                    "alt": alt,
+                    "display": display,
+                }
+            )
 
     # 剩余文本
     if remaining:

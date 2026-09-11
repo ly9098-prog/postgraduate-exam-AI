@@ -2,6 +2,7 @@
 
 Redis 不可用时静默降级，不影响主流程。
 """
+
 import logging
 
 from app.core.cache import cache

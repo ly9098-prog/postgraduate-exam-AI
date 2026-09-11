@@ -58,7 +58,9 @@ def init_sentry():
         )
         logger.info(
             "Sentry initialized: env=%s, traces_sample_rate=%s, profiles_sample_rate=%s",
-            env, traces_sample_rate, profiles_sample_rate,
+            env,
+            traces_sample_rate,
+            profiles_sample_rate,
         )
     except ImportError:
         logger.warning("Sentry skipped: sentry-sdk not installed")

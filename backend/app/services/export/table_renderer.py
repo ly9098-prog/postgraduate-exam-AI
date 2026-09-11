@@ -23,7 +23,9 @@ _TABLE_FONT_SIZE = Pt(9)
 _TABLE_HEADER_FONT_SIZE = Pt(9)
 
 
-def render_table_to_docx(doc: Document, block: TableBlock, body_width_cm: float = 17.0) -> Table:
+def render_table_to_docx(
+    doc: Document, block: TableBlock, body_width_cm: float = 17.0
+) -> Table:
     """Render a ``TableBlock`` with rowspan/colspan preserved."""
     if not block.rows or block.column_count <= 0:
         return _empty_table(doc)

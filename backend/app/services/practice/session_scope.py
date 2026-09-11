@@ -85,12 +85,16 @@ def build_practice_session_scope(
     if practice_mode not in _SCOPE_TYPES:
         return None
 
-    subject_id = _positive_int(context.get("subject_id")) or _positive_int(fallback_subject_id)
+    subject_id = _positive_int(context.get("subject_id")) or _positive_int(
+        fallback_subject_id
+    )
     syllabus_version_id = _positive_int(context.get("syllabus_version_id"))
 
     resolved_ids = _ordered_positive_ids(context.get("scope_ids"))
     declared_resolved_count = _positive_int(context.get("scope_count")) or 1
-    resolved_ids_complete = bool(resolved_ids) and len(resolved_ids) == declared_resolved_count
+    resolved_ids_complete = (
+        bool(resolved_ids) and len(resolved_ids) == declared_resolved_count
+    )
     if resolved_ids and root_id not in resolved_ids:
         # A server-issued exact scope must always include its root.  Treat a malformed
         # context as partial rather than inventing membership.
@@ -99,7 +103,9 @@ def build_practice_session_scope(
     served_ids = _ordered_positive_ids(context.get("served_ids"))
     if not served_ids:
         served_ids = _legacy_served_ids(context)
-    served_ids_complete = bool(context.get("served_ids") is not None) or bool(served_ids)
+    served_ids_complete = bool(context.get("served_ids") is not None) or bool(
+        served_ids
+    )
 
     if resolved_ids_complete:
         resolved_set = set(resolved_ids)
@@ -147,7 +153,9 @@ def public_practice_session_scope(snapshot: dict | None) -> dict | None:
         "served_knowledge_point_ids": served_ids,
         "resolved_knowledge_point_count": max(
             1,
-            int(snapshot.get("resolved_knowledge_point_count") or len(resolved_ids) or 1),
+            int(
+                snapshot.get("resolved_knowledge_point_count") or len(resolved_ids) or 1
+            ),
         ),
         "served_knowledge_point_count": max(
             0,
@@ -171,16 +179,18 @@ async def get_practice_session_scope(
 
     from app.models.practice_session import PracticeSession
 
-    row = (await db.execute(
-        select(
-            PracticeSession.scope_type,
-            PracticeSession.scope_root_knowledge_point_id,
-            PracticeSession.scope_snapshot,
-        ).where(
-            PracticeSession.user_id == int(user_id),
-            PracticeSession.request_id == normalized_request_id,
+    row = (
+        await db.execute(
+            select(
+                PracticeSession.scope_type,
+                PracticeSession.scope_root_knowledge_point_id,
+                PracticeSession.scope_snapshot,
+            ).where(
+                PracticeSession.user_id == int(user_id),
+                PracticeSession.request_id == normalized_request_id,
+            )
         )
-    )).one_or_none()
+    ).one_or_none()
     if row is None:
         return False, None
 
@@ -192,6 +202,8 @@ async def get_practice_session_scope(
     # longer agree with the immutable JSON snapshot.
     if str(row.scope_type or "") != str(scope["practice_mode"]):
         return True, None
-    if int(row.scope_root_knowledge_point_id or 0) != int(scope["root_knowledge_point_id"]):
+    if int(row.scope_root_knowledge_point_id or 0) != int(
+        scope["root_knowledge_point_id"]
+    ):
         return True, None
     return True, scope

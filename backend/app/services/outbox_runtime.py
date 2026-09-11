@@ -3,6 +3,7 @@
 Kept separate from ``outbox_service`` so role/backoff policy can be unit-tested
 without importing SQLAlchemy models or initializing the database engine.
 """
+
 from __future__ import annotations
 
 from app.core.config import settings

@@ -1,4 +1,5 @@
 from app.schemas.base import BaseModel
+
 """pgvector / Embedding 运行配置 schemas。
 
 Embedding 的 Provider / API Key / Base URL / Model ID 统一来自
@@ -27,8 +28,12 @@ def _configs_to_response(configs: dict[str, str]) -> "VectorConfigResponse":
         vector_enabled=configs.get("vector_enabled", "false").lower() == "true",
         vector_cache_ttl_sec=int(configs.get("vector_cache_ttl_sec", 300)),
         vector_top_k=int(configs.get("vector_top_k", 100)),
-        vector_similarity_threshold=float(configs.get("vector_similarity_threshold", "0.15")),
-        embedding_model_config_id=_parse_optional_int(configs.get("embedding_model_config_id")),
+        vector_similarity_threshold=float(
+            configs.get("vector_similarity_threshold", "0.15")
+        ),
+        embedding_model_config_id=_parse_optional_int(
+            configs.get("embedding_model_config_id")
+        ),
         embedding_dim=int(configs.get("embedding_dim", 1024)),
         embedding_timeout=int(configs.get("embedding_timeout", 30)),
         embedding_batch_size=int(configs.get("embedding_batch_size", 16)),

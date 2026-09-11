@@ -1,4 +1,5 @@
 """Phase 4 — 推荐指标每日聚合。"""
+
 from sqlalchemy import (
     Date,
     DateTime,
@@ -25,7 +26,9 @@ class RecommendationMetricsDaily(Base):
     subject_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("subjects.id"), nullable=False, index=True
     )
-    subject_ref = relationship("Subject", back_populates="recommendation_metrics_daily", lazy="noload")
+    subject_ref = relationship(
+        "Subject", back_populates="recommendation_metrics_daily", lazy="noload"
+    )
 
     # practice_smart / similar / knowledge_path
     scene: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -33,7 +36,9 @@ class RecommendationMetricsDaily(Base):
     # random / weakness_vector / knowledge_path / smart_vector / ...
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
 
-    variant_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    variant_key: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, index=True
+    )
 
     # 曝光 / 点击 / 答题
     exposure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -43,7 +48,9 @@ class RecommendationMetricsDaily(Base):
     wrong_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # 平均分 / 相似度 / 掌握度
-    avg_recommend_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    avg_recommend_score: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
     avg_similarity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     avg_mastery_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     avg_mastery_after: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -55,11 +62,17 @@ class RecommendationMetricsDaily(Base):
     ctr: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
     created_at = mapped_column(DateTime, nullable=False, default=utcnow)
-    updated_at = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    updated_at = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
     __table_args__ = (
         UniqueConstraint(
-            "date", "subject_id", "scene", "strategy", "variant_key",
+            "date",
+            "subject_id",
+            "scene",
+            "strategy",
+            "variant_key",
             name="uq_rmd_date_subject_id_scene_strategy_variant",
         ),
     )

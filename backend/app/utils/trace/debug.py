@@ -39,13 +39,18 @@ def _sanitize_debug_value(value: Any, depth: int = 0) -> Any:
                 sanitized[str(key)] = _sanitize_debug_value(item, depth + 1)
         return sanitized
     if isinstance(value, (list, tuple)):
-        items = [_sanitize_debug_value(item, depth + 1) for item in value[:MAX_LIST_ITEMS]]
+        items = [
+            _sanitize_debug_value(item, depth + 1) for item in value[:MAX_LIST_ITEMS]
+        ]
         if len(value) > MAX_LIST_ITEMS:
             items.append({"_truncated_items": len(value) - MAX_LIST_ITEMS})
         return items
     if isinstance(value, str):
         if len(value) > MAX_STRING_LENGTH:
-            return value[:MAX_STRING_LENGTH] + f"...[truncated:{len(value) - MAX_STRING_LENGTH}]"
+            return (
+                value[:MAX_STRING_LENGTH]
+                + f"...[truncated:{len(value) - MAX_STRING_LENGTH}]"
+            )
         return value
     return value
 
@@ -92,10 +97,16 @@ def debug_log(trace_id: str | None, stage: str, data: dict | None = None) -> Non
     logger.info("[TRACE:%s][%s] %s", trace_id or "NO_TRACE", stage, data or {})
 
 
-def save_debug_snapshot(trace_id: str | None, stage: str, data: dict | None = None) -> None:
+def save_debug_snapshot(
+    trace_id: str | None, stage: str, data: dict | None = None
+) -> None:
     if not debug_enabled() or not trace_id:
         return
-    snapshot_dir = Path.cwd().parent / "debug_snapshots" if Path.cwd().name == "backend" else Path.cwd() / "debug_snapshots"
+    snapshot_dir = (
+        Path.cwd().parent / "debug_snapshots"
+        if Path.cwd().name == "backend"
+        else Path.cwd() / "debug_snapshots"
+    )
     try:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         filename = f"{trace_id}_{stage}_{datetime.now():%Y%m%d%H%M%S%f}.json"

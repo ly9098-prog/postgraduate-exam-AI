@@ -49,7 +49,10 @@ def run_visual_region_assign_stage(
         dict with ``questions``, ``warnings``, ``risk_flag_counts`` keys.
     """
     if not questions:
-        return {"questions": questions, "warnings": ["visual_region_assign: empty questions"]}
+        return {
+            "questions": questions,
+            "warnings": ["visual_region_assign: empty questions"],
+        }
 
     warnings: list[str] = []
     assigned_count = 0
@@ -62,10 +65,16 @@ def run_visual_region_assign_stage(
 
     if not page_regions:
         warnings.append("visual_region_assign: no visual regions to assign")
-        return {"questions": questions, "warnings": warnings, "risk_flag_counts": _count_risk_flags(questions)}
+        return {
+            "questions": questions,
+            "warnings": warnings,
+            "risk_flag_counts": _count_risk_flags(questions),
+        }
 
     # Build spatial index of questions by page
-    questions_by_page: dict[int, list[tuple[int, dict]]] = {}  # page → [(question_index, question_dict)]
+    questions_by_page: dict[
+        int, list[tuple[int, dict]]
+    ] = {}  # page → [(question_index, question_dict)]
     for idx, q in enumerate(questions):
         page = q.get("page_start") or 1
         questions_by_page.setdefault(page, []).append((idx, q))
@@ -142,7 +151,7 @@ def _collect_page_regions(questions: list[dict]) -> dict[int, list[dict]]:
     page_regions: dict[int, list[dict]] = {}
     seen: set[str] = set()
     for q in questions:
-        for vr in (q.get("visual_regions") or []):
+        for vr in q.get("visual_regions") or []:
             if isinstance(vr, dict):
                 region_id = str(vr.get("region_id") or "")
                 if region_id and region_id in seen:
@@ -184,7 +193,9 @@ def _assign_region_to_question(
             return text_match
         return {
             "question_index": 0 if len(questions_on_page) == 1 else -1,
-            "method": AssignmentMethod.UNASSIGNED if len(questions_on_page) > 1 else AssignmentMethod.BBOX_OVERLAP,
+            "method": AssignmentMethod.UNASSIGNED
+            if len(questions_on_page) > 1
+            else AssignmentMethod.BBOX_OVERLAP,
             "ambiguous": len(questions_on_page) > 1,
             "assignment_confidence": 0.1,
             "option_key": None,
@@ -331,7 +342,16 @@ def _collect_distinctive_strings(value, depth: int = 0) -> list[str]:
                 results.append(text)
         return list(dict.fromkeys(results))[:40]
     if isinstance(value, dict):
-        for key in ("text", "content", "markdown", "html", "caption", "headers", "rows", "cells"):
+        for key in (
+            "text",
+            "content",
+            "markdown",
+            "html",
+            "caption",
+            "headers",
+            "rows",
+            "cells",
+        ):
             if key in value:
                 results.extend(_collect_distinctive_strings(value[key], depth + 1))
     elif isinstance(value, (list, tuple)):
@@ -347,13 +367,18 @@ def _attach_region_to_question(
 ) -> None:
     """Attach a visual region to a question as a segment and visual_regions entry."""
     vr = dict(region)
-    vr["assignment_method"] = assignment["method"].value if hasattr(assignment["method"], "value") else str(assignment["method"])
+    vr["assignment_method"] = (
+        assignment["method"].value
+        if hasattr(assignment["method"], "value")
+        else str(assignment["method"])
+    )
     vr["assignment_confidence"] = assignment["assignment_confidence"]
     vr["option_key"] = assignment.get("option_key")
     vr["requires_review"] = bool(
         assignment.get("ambiguous")
         or assignment["assignment_confidence"] < 0.65
-        or assignment["method"] in {AssignmentMethod.UNCERTAIN, AssignmentMethod.PAGE_CROSS}
+        or assignment["method"]
+        in {AssignmentMethod.UNCERTAIN, AssignmentMethod.PAGE_CROSS}
     )
 
     # Store in visual_regions list

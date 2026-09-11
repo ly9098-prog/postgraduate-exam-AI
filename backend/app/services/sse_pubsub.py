@@ -56,10 +56,14 @@ async def publish_event(job_id: str | int, event_type: str, data: dict) -> None:
             return
 
         channel = f"{_CHANNEL_PREFIX}{job_id}"
-        payload = json.dumps({"type": event_type, "data": data}, ensure_ascii=False, default=str)
+        payload = json.dumps(
+            {"type": event_type, "data": data}, ensure_ascii=False, default=str
+        )
         await client.publish(channel, payload)
     except Exception:
-        logger.debug("Pub/Sub publish_event failed for job %s: best-effort, skipping", job_id)
+        logger.debug(
+            "Pub/Sub publish_event failed for job %s: best-effort, skipping", job_id
+        )
 
 
 async def subscribe_job(
@@ -117,11 +121,15 @@ async def subscribe_job(
                             logger.warning("Invalid PubSub message for job %s", job_id)
                         get_msg_timeout = 0.05  # reset after message
                     else:
-                        get_msg_timeout = min(get_msg_timeout * 1.5, max_get_msg_timeout)
+                        get_msg_timeout = min(
+                            get_msg_timeout * 1.5, max_get_msg_timeout
+                        )
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    logger.warning("PubSub error for job %s, falling back to poll", job_id)
+                    logger.warning(
+                        "PubSub error for job %s, falling back to poll", job_id
+                    )
                     break
 
             await pubsub.unsubscribe(channel)

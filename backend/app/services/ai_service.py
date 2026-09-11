@@ -43,7 +43,11 @@ logger = logging.getLogger(__name__)
 # switches to persistence polling/recovery before the platform request ceiling.
 _CONFIGURED_AI_TIMEOUT_SECONDS = max(
     10,
-    int(getattr(settings, "AI_ERROR_ANALYSIS_TIMEOUT_SEC", 0) or settings.AI_TIMEOUT or 150),
+    int(
+        getattr(settings, "AI_ERROR_ANALYSIS_TIMEOUT_SEC", 0)
+        or settings.AI_TIMEOUT
+        or 150
+    ),
 )
 ERROR_ANALYSIS_TIMEOUT_SECONDS = _CONFIGURED_AI_TIMEOUT_SECONDS
 ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = _CONFIGURED_AI_TIMEOUT_SECONDS
@@ -117,7 +121,9 @@ async def _resolve_healthy_analysis_runtime(
         excluded.add(int(model_id))
         logger.info(
             "ai.error_analysis.model_skipped model_config_id=%s provider=%s model=%s reason=auth_quarantined",
-            model_id, runtime.provider, runtime.model_name,
+            model_id,
+            runtime.provider,
+            runtime.model_name,
         )
     return None
 
@@ -133,11 +139,40 @@ def _pick_field(d: dict, candidates: list[str]) -> str:
     return ""
 
 
-_ANALYSIS_WRAPPER_KEYS = ("content", "data", "result", "analysis", "ai_analysis", "payload")
+_ANALYSIS_WRAPPER_KEYS = (
+    "content",
+    "data",
+    "result",
+    "analysis",
+    "ai_analysis",
+    "payload",
+)
 _ANALYSIS_TEXT_KEYS = ("text", "content", "value", "description")
-_DIAGNOSIS_KEYS = ("mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断")
-_KNOWLEDGE_KEYS = ("knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点")
-_TASK_KEYS = ("review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务")
+_DIAGNOSIS_KEYS = (
+    "mistake_diagnosis",
+    "error_analysis",
+    "diagnosis",
+    "mistakeDiagnosis",
+    "mistakediagnosis",
+    "错因诊断",
+)
+_KNOWLEDGE_KEYS = (
+    "knowledge_patch",
+    "knowledge_weakness",
+    "knowledge",
+    "knowledgePatch",
+    "knowledgepatch",
+    "补漏重点",
+)
+_TASK_KEYS = (
+    "review_task",
+    "suggestion",
+    "task",
+    "reviewTask",
+    "reviewtask",
+    "reviewask",
+    "复练任务",
+)
 _EMPTY_ANALYSIS = {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
 
 # Vision context is deliberately bounded to control upload/token cost. The model
@@ -182,11 +217,15 @@ class PrewarmAnalysisError(RuntimeError):
         self.retryable = bool(retryable)
         self.model = str(model or "fallback")
         self.detail = str(detail or "")
-        message = self.error_code if not self.detail else f"{self.error_code}: {self.detail}"
+        message = (
+            self.error_code if not self.detail else f"{self.error_code}: {self.detail}"
+        )
         super().__init__(message)
 
 
-def _classify_ai_provider_exception(exc: Exception, *, visual: bool) -> tuple[str, bool, str]:
+def _classify_ai_provider_exception(
+    exc: Exception, *, visual: bool
+) -> tuple[str, bool, str]:
     """Map provider/client failures to stable API + prewarm semantics.
 
     The OpenAI-compatible client exposes only a typed status plus a small safe
@@ -201,23 +240,50 @@ def _classify_ai_provider_exception(exc: Exception, *, visual: bool) -> tuple[st
     except (TypeError, ValueError):
         status = None
     if status is None:
-        status_match = re.search(r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text)
+        status_match = re.search(
+            r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text
+        )
         status = int(status_match.group(1)) if status_match else None
 
-    if error_kind == "auth" or status in {401, 403} or any(
-        token in text
-        for token in ("invalid_api_key", "invalid api-key", "authentication", "unauthorized", "forbidden")
+    if (
+        error_kind == "auth"
+        or status in {401, 403}
+        or any(
+            token in text
+            for token in (
+                "invalid_api_key",
+                "invalid api-key",
+                "authentication",
+                "unauthorized",
+                "forbidden",
+            )
+        )
     ):
         return "ai_provider_auth_failed", False, "fallback"
 
-    if error_kind == "rate_limit" or status == 429 or any(
-        token in text for token in ("rate limit", "rate_limit", "too many requests", "quota")
+    if (
+        error_kind == "rate_limit"
+        or status == 429
+        or any(
+            token in text
+            for token in ("rate limit", "rate_limit", "too many requests", "quota")
+        )
     ):
         return "ai_provider_rate_limited", True, "fallback"
 
-    if error_kind == "transient" or status in {408, 425, 500, 502, 503, 504} or any(
-        token in text
-        for token in ("timeout", "timed out", "temporarily unavailable", "connection reset", "connection error")
+    if (
+        error_kind == "transient"
+        or status in {408, 425, 500, 502, 503, 504}
+        or any(
+            token in text
+            for token in (
+                "timeout",
+                "timed out",
+                "temporarily unavailable",
+                "connection reset",
+                "connection error",
+            )
+        )
     ):
         return "ai_provider_transient", True, "fallback"
 
@@ -259,7 +325,9 @@ def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
             "parse_failed": ("ai_response_parse_failed", True),
             "fallback": ("ai_analysis_failed", True),
         }
-        error_code, default_retryable = defaults.get(model, ("ai_analysis_failed", True))
+        error_code, default_retryable = defaults.get(
+            model, ("ai_analysis_failed", True)
+        )
         if retryable is None:
             retryable = default_retryable
 
@@ -500,7 +568,10 @@ async def _prepare_visual_inputs(question: Question) -> tuple[list[str], dict]:
 
     if sources:
         resolved = await asyncio.gather(
-            *(_visual_source_to_data_url(source) for source in sources[:_MAX_VISUAL_IMAGES]),
+            *(
+                _visual_source_to_data_url(source)
+                for source in sources[:_MAX_VISUAL_IMAGES]
+            ),
             return_exceptions=False,
         )
         for data_url in resolved:
@@ -514,6 +585,7 @@ async def _prepare_visual_inputs(question: Question) -> tuple[list[str], dict]:
         "loaded_count": len(data_urls),
         "structured_visual": _extract_structured_visual(question.content),
     }
+
 
 def _extract_visual_evidence(raw: str) -> str:
     decoded = _decode_structured_content(raw or "")
@@ -546,8 +618,16 @@ def _visual_evidence_is_valid(value: str) -> bool:
         return False
     compact = re.sub(r"[\s_\-]+", "", text)
     return compact not in {
-        "unreadable", "cannotread", "unabletoread", "novisualinput", "noimage",
-        "无法读取", "无法识别", "图片无法读取", "图片无法识别", "未收到图片",
+        "unreadable",
+        "cannotread",
+        "unabletoread",
+        "novisualinput",
+        "noimage",
+        "无法读取",
+        "无法识别",
+        "图片无法读取",
+        "图片无法识别",
+        "未收到图片",
     }
 
 
@@ -622,10 +702,14 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
     embedded_score = 0
     for key in _DIAGNOSIS_KEYS + _KNOWLEDGE_KEYS + _TASK_KEYS:
         nested = value.get(key)
-        if not isinstance(nested, str) or not _looks_like_structured_analysis_text(_strip_code_fence(nested)):
+        if not isinstance(nested, str) or not _looks_like_structured_analysis_text(
+            _strip_code_fence(nested)
+        ):
             continue
         decoded = _decode_structured_content(nested)
-        if decoded is None or (isinstance(decoded, str) and decoded.strip() == nested.strip()):
+        if decoded is None or (
+            isinstance(decoded, str) and decoded.strip() == nested.strip()
+        ):
             continue
         candidate = _extract_analysis_fields(decoded, depth + 1)
         score = sum(bool(candidate.get(k)) for k in _EMPTY_ANALYSIS)
@@ -637,14 +721,22 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
 
     if is_valid_ai_analysis(direct):
         # A malformed JSON fragment must not be treated as user-facing prose.
-        if any(_looks_like_structured_analysis_text(text) for text in direct.values() if text):
+        if any(
+            _looks_like_structured_analysis_text(text)
+            for text in direct.values()
+            if text
+        ):
             direct = dict(_EMPTY_ANALYSIS)
         else:
             return direct
 
     # 优先解包常见响应包装层，再兜底搜索其余嵌套对象。
     nested_values = [value[key] for key in _ANALYSIS_WRAPPER_KEYS if key in value]
-    nested_values.extend(v for k, v in value.items() if k not in _ANALYSIS_WRAPPER_KEYS and isinstance(v, (dict, list, str)))
+    nested_values.extend(
+        v
+        for k, v in value.items()
+        if k not in _ANALYSIS_WRAPPER_KEYS and isinstance(v, (dict, list, str))
+    )
     best = direct
     best_score = 0
     for nested in nested_values:
@@ -666,7 +758,9 @@ def _strip_code_fence(text: str) -> str:
     otherwise defensive text fallback render raw JSON to the client.
     """
     value = str(text or "").strip()
-    match = re.search(r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", value, re.IGNORECASE)
+    match = re.search(
+        r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", value, re.IGNORECASE
+    )
     if match:
         return match.group(1).strip()
     value = re.sub(r"^```(?:json|javascript|js)?\s*", "", value, flags=re.IGNORECASE)
@@ -683,7 +777,10 @@ def _looks_like_structured_analysis_text(text: str) -> bool:
     keys = _DIAGNOSIS_KEYS + _KNOWLEDGE_KEYS + _TASK_KEYS
     # Require quoted field names unless the payload already starts with {/[.
     # Words such as "task" and "knowledge" can legitimately occur in prose.
-    return any(re.search(rf'(["\']){re.escape(key)}\1\s*:', value, re.IGNORECASE) for key in keys)
+    return any(
+        re.search(rf'(["\']){re.escape(key)}\1\s*:', value, re.IGNORECASE)
+        for key in keys
+    )
 
 
 def _decode_structured_content(raw: str):
@@ -728,10 +825,14 @@ def _parse_titled_analysis_text(text: str) -> dict:
         return {"mistake_diagnosis": stripped, "knowledge_patch": "", "review_task": ""}
 
     result = dict(_EMPTY_ANALYSIS)
-    key_map = {"错因诊断": "mistake_diagnosis", "补漏重点": "knowledge_patch", "复练任务": "review_task"}
+    key_map = {
+        "错因诊断": "mistake_diagnosis",
+        "补漏重点": "knowledge_patch",
+        "复练任务": "review_task",
+    }
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(stripped)
-        result[key_map[match.group(1)]] = stripped[match.end():end].strip()
+        result[key_map[match.group(1)]] = stripped[match.end() : end].strip()
     return result
 
 
@@ -746,7 +847,7 @@ def parse_error_analysis_content(raw: str) -> dict:
     6. 非 JSON 但包含三段式中文文本
     返回结构：{mistake_diagnosis, knowledge_patch, review_task}
     """
-    text = (raw or '').strip()
+    text = (raw or "").strip()
     if not text:
         return dict(_EMPTY_ANALYSIS)
     decoded = _decode_structured_content(text)
@@ -754,7 +855,10 @@ def parse_error_analysis_content(raw: str) -> dict:
 
 
 def is_valid_ai_analysis(content: dict) -> bool:
-    return any(str(content.get(k, "")).strip() for k in ["mistake_diagnosis", "knowledge_patch", "review_task"])
+    return any(
+        str(content.get(k, "")).strip()
+        for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]
+    )
 
 
 def _normalize_ai_analysis(cached: dict) -> dict:
@@ -789,13 +893,17 @@ def _analysis_input_signature(
         "content": q.content,
         "options": q.options,
         "answer": q.answer,
-        "image_sources": visual_sources if visual_sources is not None else _collect_question_visual_sources(q),
+        "image_sources": visual_sources
+        if visual_sources is not None
+        else _collect_question_visual_sources(q),
         "knowledge_points": list(knowledge_points or []),
         "wrong_answer": wq.wrong_answer,
         "error_type": wq.error_type,
         "review_count": int(wq.review_count or 0),
     }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    raw = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -809,7 +917,9 @@ def _analysis_model_signature(runtime) -> str | None:
         "model_name": runtime.model_name,
         "base_url": runtime.base_url,
     }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    raw = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -824,7 +934,10 @@ def _analysis_cache_age_ms(ai_analysis: dict | None) -> int | None:
         generated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         if generated.tzinfo is None:
             generated = generated.replace(tzinfo=UTC)
-        return max(0, int((datetime.now(UTC) - generated.astimezone(UTC)).total_seconds() * 1000))
+        return max(
+            0,
+            int((datetime.now(UTC) - generated.astimezone(UTC)).total_seconds() * 1000),
+        )
     except (TypeError, ValueError):
         return None
 
@@ -848,9 +961,15 @@ def _analysis_cache_stale_reason(
             return "visual_input"
         if not _visual_evidence_is_valid(str(meta.get("visual_evidence") or "")):
             return "visual_evidence"
-    if expected_input_signature is not None and meta.get("input_signature") != expected_input_signature:
+    if (
+        expected_input_signature is not None
+        and meta.get("input_signature") != expected_input_signature
+    ):
         return "input_signature"
-    if expected_model_signature is not None and meta.get("model_signature") != expected_model_signature:
+    if (
+        expected_model_signature is not None
+        and meta.get("model_signature") != expected_model_signature
+    ):
         return "model_signature"
     return None
 
@@ -868,12 +987,15 @@ def is_ai_analysis_fresh(
     visual dependency.  Pure text questions intentionally cache with
     ``visual_input_count == 0``.
     """
-    return _analysis_cache_stale_reason(
-        ai_analysis,
-        requires_visual=requires_visual,
-        expected_input_signature=expected_input_signature,
-        expected_model_signature=expected_model_signature,
-    ) is None
+    return (
+        _analysis_cache_stale_reason(
+            ai_analysis,
+            requires_visual=requires_visual,
+            expected_input_signature=expected_input_signature,
+            expected_model_signature=expected_model_signature,
+        )
+        is None
+    )
 
 
 def ai_analysis_generated_at(ai_analysis: dict | None) -> str | None:
@@ -989,13 +1111,17 @@ async def evaluate_cached_error_analysis(
     if reason is not None:
         logger.info(
             "ai.error_analysis.detail_cache_stale wq_id=%d user_id=%d reason=%s",
-            wq.id, wq.user_id, reason,
+            wq.id,
+            wq.user_id,
+            reason,
         )
         return {"status": "stale", "analysis": None, "reason": reason}
     age_ms = _analysis_cache_age_ms(wq.ai_analysis)
     logger.info(
         "ai.error_analysis.detail_cache_hit wq_id=%d user_id=%d age_ms=%s model=%s",
-        wq.id, wq.user_id, age_ms,
+        wq.id,
+        wq.user_id,
+        age_ms,
         ((wq.ai_analysis or {}).get("_meta") or {}).get("model") or "unknown",
     )
     return {
@@ -1025,22 +1151,23 @@ async def analyze_error(
     # AI advice is rendered next to wrong-book detail, so analyze the same
     # current question-bank projection that the learner sees. The immutable
     # wrong-attempt revision remains available to review/history flows only.
-    q_result = await db.execute(
-        select(Question).where(Question.id == wq.question_id)
-    )
+    q_result = await db.execute(select(Question).where(Question.id == wq.question_id))
     q = q_result.scalar_one_or_none()
     if q is None:
         raise ValueError("题目不存在")
 
     stored_visual_sources = _collect_question_visual_sources(q)
-    requires_visual = bool(stored_visual_sources) or _question_has_unresolved_visual_slot(q)
+    requires_visual = bool(
+        stored_visual_sources
+    ) or _question_has_unresolved_visual_slot(q)
     # Pure text questions are valid and continue through the normal analysis
     # path.  Fail fast only when the question schema explicitly declares a
     # visual element but the persisted asset URL is missing.
     if requires_visual and not stored_visual_sources:
         logger.info(
             "ai.error_analysis.image_missing wq_id=%d question_id=%d reason=declared_visual_without_source",
-            wq.id, q.id,
+            wq.id,
+            q.id,
         )
         return {
             "content": get_fallback_analysis(),
@@ -1079,7 +1206,9 @@ async def analyze_error(
         if cached is not None:
             logger.info(
                 "ai.error_analysis.cache_hit wq_id=%d user_id=%d age_ms=%s model=%s",
-                wq.id, user_id, _analysis_cache_age_ms(wq.ai_analysis),
+                wq.id,
+                user_id,
+                _analysis_cache_age_ms(wq.ai_analysis),
                 ((wq.ai_analysis or {}).get("_meta") or {}).get("model") or "unknown",
             )
             return cached
@@ -1091,23 +1220,31 @@ async def analyze_error(
         )
         logger.info(
             "ai.error_analysis.cache_miss wq_id=%d user_id=%d reason=%s",
-            wq.id, user_id, stale_reason or "unknown",
+            wq.id,
+            user_id,
+            stale_reason or "unknown",
         )
     else:
         logger.info(
             "force regenerate error analysis wq_id=%d user_id=%d",
-            wq.id, user_id,
+            wq.id,
+            user_id,
         )
 
     timeout_sec = (
         ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS
-        if effective_force else ERROR_ANALYSIS_TIMEOUT_SECONDS
+        if effective_force
+        else ERROR_ANALYSIS_TIMEOUT_SECONDS
     )
 
     wq_pk = wq.id
     if wq_pk in _generating:
         return {
-            "content": {"mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看", "knowledge_patch": "", "review_task": ""},
+            "content": {
+                "mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看",
+                "knowledge_patch": "",
+                "review_task": "",
+            },
             "from_cache": False,
             "from_fallback": True,
             "tokens_used": 0,
@@ -1119,6 +1256,7 @@ async def analyze_error(
     _generating.add(wq_pk)
 
     from app.core.cache import cache
+
     lock_key = f"ai:error_analysis:{wq_pk}"
     lock_value = f"{user_id}:{uuid.uuid4().hex}"
     lock_ttl = timeout_sec + ERROR_ANALYSIS_LOCK_GRACE_SECONDS
@@ -1130,7 +1268,11 @@ async def analyze_error(
     if not have_lock and cache.is_enabled:
         _generating.discard(wq_pk)
         return {
-            "content": {"mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看", "knowledge_patch": "", "review_task": ""},
+            "content": {
+                "mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看",
+                "knowledge_patch": "",
+                "review_task": "",
+            },
             "from_cache": False,
             "from_fallback": True,
             "tokens_used": 0,
@@ -1158,7 +1300,9 @@ async def analyze_error(
             if cached is not None:
                 logger.info(
                     "ai.error_analysis.cache_hit_after_lock wq_id=%d user_id=%d age_ms=%s",
-                    wq.id, user_id, _analysis_cache_age_ms(wq.ai_analysis),
+                    wq.id,
+                    user_id,
+                    _analysis_cache_age_ms(wq.ai_analysis),
                 )
                 return cached
 
@@ -1171,7 +1315,9 @@ async def analyze_error(
         if requires_visual and not image_data_urls:
             logger.info(
                 "ai.error_analysis.image_load_failed wq_id=%d question_id=%d declared_sources=%d",
-                wq.id, q.id, int(visual_meta.get("declared_source_count") or 0),
+                wq.id,
+                q.id,
+                int(visual_meta.get("declared_source_count") or 0),
             )
             return {
                 "content": get_fallback_analysis(),
@@ -1278,7 +1424,10 @@ async def analyze_error(
             elapsed_timeout_ms = int((time.monotonic() - invoke_started) * 1000)
             logger.warning(
                 "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s elapsed_ms=%s",
-                wq.id, effective_force, bool(image_data_urls), model_timeout_sec,
+                wq.id,
+                effective_force,
+                bool(image_data_urls),
+                model_timeout_sec,
                 elapsed_timeout_ms,
             )
             return _failure_response(
@@ -1307,8 +1456,11 @@ async def analyze_error(
                     logger.warning(
                         "ai.error_analysis.auth_failover wq_id=%s from_model_config_id=%s "
                         "to_model_config_id=%s from_model=%s to_model=%s",
-                        wq.id, runtime.model_config_id, fallback_runtime.model_config_id,
-                        runtime.model_name, fallback_runtime.model_name,
+                        wq.id,
+                        runtime.model_config_id,
+                        fallback_runtime.model_config_id,
+                        runtime.model_name,
+                        fallback_runtime.model_name,
                     )
                     runtime = fallback_runtime
                     model_signature = _analysis_model_signature(runtime)
@@ -1318,11 +1470,16 @@ async def analyze_error(
                     try:
                         result = await _invoke_runtime(runtime)
                     except TimeoutError:
-                        elapsed_timeout_ms = int((time.monotonic() - failover_started) * 1000)
+                        elapsed_timeout_ms = int(
+                            (time.monotonic() - failover_started) * 1000
+                        )
                         logger.warning(
                             "ai.error_analysis.failover_timeout wq_id=%s model_config_id=%s "
                             "timeout_sec=%s elapsed_ms=%s",
-                            wq.id, runtime.model_config_id, model_timeout_sec, elapsed_timeout_ms,
+                            wq.id,
+                            runtime.model_config_id,
+                            model_timeout_sec,
+                            elapsed_timeout_ms,
                         )
                         return _failure_response(
                             error_code="ai_provider_timeout",
@@ -1331,16 +1488,23 @@ async def analyze_error(
                             duration_ms=elapsed_timeout_ms,
                         )
                     except Exception as fallback_exc:
-                        error_code, retryable, failure_model = _classify_ai_provider_exception(
-                            fallback_exc, visual=bool(image_data_urls)
+                        error_code, retryable, failure_model = (
+                            _classify_ai_provider_exception(
+                                fallback_exc, visual=bool(image_data_urls)
+                            )
                         )
                         if error_code == "ai_provider_auth_failed":
                             await _quarantine_analysis_runtime_auth(runtime)
                         logger.warning(
                             "ai.error_analysis.failover_failed wq_id=%s force=%s visual=%s "
                             "model_config_id=%s error_code=%s retryable=%s err_type=%s",
-                            wq.id, effective_force, bool(image_data_urls), runtime.model_config_id,
-                            error_code, retryable, type(fallback_exc).__name__,
+                            wq.id,
+                            effective_force,
+                            bool(image_data_urls),
+                            runtime.model_config_id,
+                            error_code,
+                            retryable,
+                            type(fallback_exc).__name__,
                         )
                         return _failure_response(
                             error_code=error_code,
@@ -1351,8 +1515,12 @@ async def analyze_error(
                     logger.warning(
                         "ai.error_analysis.auth_failed wq_id=%s force=%s visual=%s "
                         "model_config_id=%s provider=%s model=%s fallback_model=none",
-                        wq.id, effective_force, bool(image_data_urls), runtime.model_config_id,
-                        runtime.provider, runtime.model_name,
+                        wq.id,
+                        effective_force,
+                        bool(image_data_urls),
+                        runtime.model_config_id,
+                        runtime.provider,
+                        runtime.model_name,
                     )
                     return _failure_response(
                         error_code=error_code,
@@ -1363,8 +1531,13 @@ async def analyze_error(
                 logger.warning(
                     "ai.error_analysis.provider_failed wq_id=%s force=%s visual=%s "
                     "model_config_id=%s error_code=%s retryable=%s err_type=%s",
-                    wq.id, effective_force, bool(image_data_urls), runtime.model_config_id,
-                    error_code, retryable, type(exc).__name__,
+                    wq.id,
+                    effective_force,
+                    bool(image_data_urls),
+                    runtime.model_config_id,
+                    error_code,
+                    retryable,
+                    type(exc).__name__,
                 )
                 return _failure_response(
                     error_code=error_code,
@@ -1375,7 +1548,9 @@ async def analyze_error(
         raw_content = result.get("content", "")
         parsed = parse_error_analysis_content(raw_content)
         parsed_valid = is_valid_ai_analysis(parsed)
-        visual_evidence = _extract_visual_evidence(raw_content) if image_data_urls else ""
+        visual_evidence = (
+            _extract_visual_evidence(raw_content) if image_data_urls else ""
+        )
         visual_ack_retried = False
         visual_ack_retry_ms = 0
         total_tokens_used = int(result.get("tokens_used") or 0)
@@ -1395,7 +1570,9 @@ async def analyze_error(
                 visual_ack_retried = True
                 probe_messages = build_visual_evidence_probe(image_data_urls)
                 try:
-                    async with asyncio.timeout(_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS + 1):
+                    async with asyncio.timeout(
+                        _ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS + 1
+                    ):
                         probe = await llm.chat(
                             probe_messages,
                             temperature=0.0,
@@ -1416,7 +1593,9 @@ async def analyze_error(
                         logger.info(
                             "ai.error_analysis.visual_ack_recovered wq_id=%s model=%s "
                             "retry_ms=%s evidence=%r",
-                            wq.id, result.get("model"), visual_ack_retry_ms,
+                            wq.id,
+                            result.get("model"),
+                            visual_ack_retry_ms,
                             visual_evidence[:120],
                         )
                     else:
@@ -1427,7 +1606,9 @@ async def analyze_error(
                 except Exception as exc:
                     logger.warning(
                         "ai.error_analysis.visual_ack_retry_failed wq_id=%s model=%s err=%s",
-                        wq.id, result.get("model"), type(exc).__name__,
+                        wq.id,
+                        result.get("model"),
+                        type(exc).__name__,
                     )
 
         if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
@@ -1438,8 +1619,12 @@ async def analyze_error(
             logger.info(
                 "ai.error_analysis.visual_ack_failed wq_id=%s model=%s evidence=%r "
                 "retried=%s error_code=%s retryable=%s",
-                wq.id, result.get("model"), evidence_text[:120],
-                visual_ack_retried, error_code, retryable,
+                wq.id,
+                result.get("model"),
+                evidence_text[:120],
+                visual_ack_retried,
+                error_code,
+                retryable,
             )
             return {
                 "content": get_fallback_analysis(),
@@ -1472,7 +1657,8 @@ async def analyze_error(
                 resp["cache_preserved"] = False
             logger.info(
                 "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
-                wq.id, effective_force,
+                wq.id,
+                effective_force,
             )
             return resp
 
@@ -1502,16 +1688,18 @@ async def analyze_error(
         context_snapshot["visual_ack_retried"] = visual_ack_retried
         context_snapshot["visual_ack_retry_ms"] = visual_ack_retry_ms
         # Never persist base64 image payloads in chat logs/context snapshots.
-        db.add(AiChat(
-            user_id=user_id,
-            session_type="error_analysis",
-            user_message=str(context["question"]),
-            ai_response=result["content"],
-            context_snapshot=context_snapshot,
-            tokens_used=total_tokens_used,
-            model=result["model"],
-            duration_ms=total_duration_ms,
-        ))
+        db.add(
+            AiChat(
+                user_id=user_id,
+                session_type="error_analysis",
+                user_message=str(context["question"]),
+                ai_response=result["content"],
+                context_snapshot=context_snapshot,
+                tokens_used=total_tokens_used,
+                model=result["model"],
+                duration_ms=total_duration_ms,
+            )
+        )
         await db.commit()
 
         logger.info(
@@ -1519,12 +1707,21 @@ async def analyze_error(
             "visual_evidence_valid=%s parsed_valid=%s compatibility=%s max_tokens=%s "
             "visual_ack_retried=%s visual_ack_retry_ms=%s "
             "fields=%s duration_ms=%s",
-            wq.id, effective_force, result.get("model"),
-            "vision" if image_data_urls else "text", len(image_data_urls),
+            wq.id,
+            effective_force,
+            result.get("model"),
+            "vision" if image_data_urls else "text",
+            len(image_data_urls),
             _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
-            parsed_valid, result.get("compatibility_profile") or "default",
-            _ERROR_ANALYSIS_MAX_TOKENS, visual_ack_retried, visual_ack_retry_ms,
-            {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},
+            parsed_valid,
+            result.get("compatibility_profile") or "default",
+            _ERROR_ANALYSIS_MAX_TOKENS,
+            visual_ack_retried,
+            visual_ack_retry_ms,
+            {
+                k: bool(parsed.get(k))
+                for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]
+            },
             total_duration_ms,
         )
 
@@ -1582,7 +1779,8 @@ async def prewarm_wrong_question_analysis(
         if not wq:
             logger.info(
                 "[prewarm] skipped_not_found id=%d uid=%d",
-                wrong_question_id, user_id,
+                wrong_question_id,
+                user_id,
             )
             return {
                 "status": "skipped",
@@ -1600,7 +1798,10 @@ async def prewarm_wrong_question_analysis(
             if current_revision != expected_revision:
                 logger.info(
                     "[prewarm] superseded id=%d uid=%d expected_revision=%s current_revision=%s",
-                    wrong_question_id, user_id, expected_revision, current_revision,
+                    wrong_question_id,
+                    user_id,
+                    expected_revision,
+                    current_revision,
                 )
                 return {
                     "status": "superseded",
@@ -1618,7 +1819,9 @@ async def prewarm_wrong_question_analysis(
             if current_generated_at != str(baseline_generated_at or ""):
                 logger.info(
                     "[prewarm] recovery_superseded id=%d uid=%d baseline=%s current=%s",
-                    wrong_question_id, user_id, baseline_generated_at or "empty",
+                    wrong_question_id,
+                    user_id,
+                    baseline_generated_at or "empty",
                     current_generated_at or "empty",
                 )
                 return {
@@ -1644,25 +1847,37 @@ async def prewarm_wrong_question_analysis(
             failure = _prewarm_failure_from_result(result)
             category = (
                 "failed_input"
-                if failure.error_code in {
+                if failure.error_code
+                in {
                     "vision_input_missing",
                     "vision_parse_failed",
                     "vision_unavailable",
                 }
-                else "retry" if failure.retryable else "failed_permanent"
+                else "retry"
+                if failure.retryable
+                else "failed_permanent"
             )
             logger.warning(
                 "[prewarm] %s id=%d uid=%d revision=%s error_code=%s retryable=%s model=%s",
-                category, wrong_question_id, user_id, expected_revision or "legacy",
-                failure.error_code, failure.retryable, failure.model,
+                category,
+                wrong_question_id,
+                user_id,
+                expected_revision or "legacy",
+                failure.error_code,
+                failure.retryable,
+                failure.model,
             )
             raise failure
 
         status = "cache_hit" if result.get("from_cache") else "success"
         logger.info(
             "[prewarm] %s id=%d uid=%d revision=%s model=%s duration_ms=%s",
-            status, wrong_question_id, user_id, expected_revision or "legacy",
-            result.get("model"), result.get("duration_ms"),
+            status,
+            wrong_question_id,
+            user_id,
+            expected_revision or "legacy",
+            result.get("model"),
+            result.get("duration_ms"),
         )
         return {
             "status": status,
@@ -1673,7 +1888,9 @@ async def prewarm_wrong_question_analysis(
         }
 
 
-async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None = None) -> dict:
+async def generate_advice(
+    db: AsyncSession, user_id: int, subject_id: int | None = None
+) -> dict:
     runtime = await resolve_llm_runtime_config(db, feature="analysis")
 
     if runtime is None:
@@ -1688,14 +1905,14 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
 
     # Collect user's wrong question stats
     conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
-    result = await db.execute(
-        select(WrongQuestion).where(*conditions).limit(10)
-    )
+    result = await db.execute(select(WrongQuestion).where(*conditions).limit(10))
     wrong_list = result.scalars().all()
 
     question_ids = [int(w.question_id) for w in wrong_list if w.question_id]
     if question_ids:
-        q_result = await db.execute(select(Question).where(Question.id.in_(question_ids)))
+        q_result = await db.execute(
+            select(Question).where(Question.id.in_(question_ids))
+        )
         questions = {int(q.id): q for q in q_result.scalars().all()}
     else:
         questions = {}
@@ -1710,12 +1927,14 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
             weak_points.update(kp_map.get(int(q.id), []))
             subj_label = str(q.subject_id)
             subject_stats[subj_label] = subject_stats.get(subj_label, 0) + 1
-            recent_wrong.append({
-                "subject_id": q.subject_id,
-                "error_type": w.error_type,
-                "wrong_answer": w.wrong_answer,
-                "correct_answer": q.answer,
-            })
+            recent_wrong.append(
+                {
+                    "subject_id": q.subject_id,
+                    "error_type": w.error_type,
+                    "wrong_answer": w.wrong_answer,
+                    "correct_answer": q.answer,
+                }
+            )
 
     messages = build_study_advice(
         [{"subject": k, "count": v} for k, v in subject_stats.items()],
@@ -1743,15 +1962,17 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
     except (json.JSONDecodeError, KeyError):
         parsed = {"overall_assessment": result["content"]}
 
-    db.add(AiChat(
-        user_id=user_id,
-        session_type="study_advice",
-        user_message=str(subject_stats),
-        ai_response=result["content"],
-        tokens_used=result["tokens_used"],
-        model=result["model"],
-        duration_ms=result["duration_ms"],
-    ))
+    db.add(
+        AiChat(
+            user_id=user_id,
+            session_type="study_advice",
+            user_message=str(subject_stats),
+            ai_response=result["content"],
+            tokens_used=result["tokens_used"],
+            model=result["model"],
+            duration_ms=result["duration_ms"],
+        )
+    )
     await db.commit()
 
     return {

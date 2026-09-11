@@ -27,15 +27,18 @@ _UNIFIED_SAFETY_MODE = ""
 # module-load time.  Access via UnifiedSafetyEvaluator.mode or the
 # get_unified_safety_mode() helper.
 
+
 def get_unified_safety_mode() -> str:
     """Return the current UNIFIED_SAFETY_MODE from app settings."""
     if _UNIFIED_SAFETY_MODE:
         return _UNIFIED_SAFETY_MODE
     try:
         from app.core.config import settings
+
         return getattr(settings, "UNIFIED_SAFETY_MODE", "shadow")
     except Exception:
         return "shadow"
+
 
 # Allowed safety actions
 SAFETY_ACCEPT = "ACCEPT"
@@ -52,6 +55,7 @@ SAFETY_REVIEW = "REVIEW"
 @dataclass
 class SafetyEvidence:
     """Evidence from a single safety provider."""
+
     provider: str
     severity: str = "info"  # info | warning | error | critical
     reason_codes: list[str] = field(default_factory=list)
@@ -64,6 +68,7 @@ class SafetyEvidence:
 @dataclass
 class UnifiedSafetyDecision:
     """Unified safety decision aggregating all evidence."""
+
     accepted: bool = False
     action: str = SAFETY_REVIEW
     confidence: float = 0.0
@@ -75,6 +80,7 @@ class UnifiedSafetyDecision:
 @dataclass
 class CandidateContext:
     """Context for candidate evaluation."""
+
     candidate_id: str = ""
     source_engine: str = ""
     page_indices: list[int] = field(default_factory=list)
@@ -173,6 +179,7 @@ class UnifiedSafetyEvaluator:
         reason_codes: list[str] = []
         try:
             from app.core.document_ir import validate_document_ir
+
             violations = validate_document_ir(doc_ir)
             if violations:
                 reason_codes.append("DOC_IR_INVALID")
@@ -192,6 +199,7 @@ class UnifiedSafetyEvaluator:
         reason_codes: list[str] = []
         try:
             from app.features.code_integrity import check_code_region_integrity
+
             violations = check_code_region_integrity(doc_ir)
             if violations:
                 reason_codes.append("CODE_INTEGRITY_VIOLATION")
@@ -211,6 +219,7 @@ class UnifiedSafetyEvaluator:
         reason_codes: list[str] = []
         try:
             from app.features.quality_gate import evaluate_structure_freezing_quality
+
             qg_result = evaluate_structure_freezing_quality(doc_ir)
             if qg_result and not qg_result.passed:
                 reason_codes.append("QUALITY_GATE_FAILED")
@@ -261,7 +270,8 @@ class UnifiedSafetyEvaluator:
         return False
 
     def _compute_decision(
-        self, evidence: list[SafetyEvidence],
+        self,
+        evidence: list[SafetyEvidence],
     ) -> tuple[bool, str, float]:
         """Compute final decision from all evidence."""
         critical = any(e.severity == "critical" for e in evidence)

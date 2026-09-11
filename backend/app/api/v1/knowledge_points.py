@@ -28,11 +28,16 @@ async def list_knowledge_points(
     groups: dict[int, list[TagResponse]] = {}
     for t in tags:
         subj = subject_map.get(t.subject_id)
-        groups.setdefault(t.subject_id, []).append(TagResponse(
-            id=t.id, name=t.name, subject_id=t.subject_id,
-            subject_name=subj.name if subj else "",
-            parent_id=t.parent_id, sort_order=t.sort_order,
-        ))
+        groups.setdefault(t.subject_id, []).append(
+            TagResponse(
+                id=t.id,
+                name=t.name,
+                subject_id=t.subject_id,
+                subject_name=subj.name if subj else "",
+                parent_id=t.parent_id,
+                sort_order=t.sort_order,
+            )
+        )
     result = [
         TagSubjectGroup(
             subject_id=sid,
@@ -72,9 +77,12 @@ async def create_knowledge_point(
     tag = await svc.create_tag(db, data.name, data.subject_id, data.parent_id)
     subj = await db.get(Subject, data.subject_id) if data.subject_id else None
     return TagResponse(
-        id=tag.id, name=tag.name, subject_id=tag.subject_id,
+        id=tag.id,
+        name=tag.name,
+        subject_id=tag.subject_id,
         subject_name=subj.name if subj else "",
-        parent_id=tag.parent_id, sort_order=tag.sort_order,
+        parent_id=tag.parent_id,
+        sort_order=tag.sort_order,
     )
 
 

@@ -24,9 +24,9 @@ class ErrorCode(StrEnum):
     """Unified error codes for all API error responses."""
 
     # ── Queue ──
-    QUEUE_EMPTY = "QUEUE_EMPTY"                 # internal only, not an HTTP error
-    QUEUE_UNAVAILABLE = "QUEUE_UNAVAILABLE"     # Redis down / unreachable
-    QUEUE_FULL = "QUEUE_FULL"                   # capacity limit reached
+    QUEUE_EMPTY = "QUEUE_EMPTY"  # internal only, not an HTTP error
+    QUEUE_UNAVAILABLE = "QUEUE_UNAVAILABLE"  # Redis down / unreachable
+    QUEUE_FULL = "QUEUE_FULL"  # capacity limit reached
 
     # ── Task ──
     TASK_NOT_FOUND = "TASK_NOT_FOUND"
@@ -112,7 +112,9 @@ class ApiError(Exception):
 # ── Convenience constructors ──
 
 
-def queue_unavailable(message: str = "任务队列暂时不可用", retry_after: int = 30) -> ApiError:
+def queue_unavailable(
+    message: str = "任务队列暂时不可用", retry_after: int = 30
+) -> ApiError:
     return ApiError(
         ErrorCode.QUEUE_UNAVAILABLE,
         message=message,

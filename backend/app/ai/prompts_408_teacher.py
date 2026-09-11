@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-PROMPT_VERSION = "408-teacher-v2"
+PROMPT_VERSION = "408-teacher-v3"
 
 ACTION_DEFINITIONS: dict[str, dict[str, str]] = {
     "explain_correct": {
@@ -71,7 +71,12 @@ def build_408_teacher_prompt(*, action: str, context: dict[str, Any]) -> list[di
         "你不是自由聊天机器人；本次只能完成指定固定动作。"
         "必须优先依据题目固定版本、官方题库解析、知识点、用户当前掌握状态、近期同知识点错误、已确认错因和知识图谱关系。"
         "不得引用其他用户数据。没有证据时明确说明证据不足，不要杜撰知识图谱关系、用户弱点或题库事实。"
-        "个性化建议要根据 mastery/confidence/近期错因调整：低 mastery 时先补基础，高 mastery 但反复错时强调边界、审题或推理。"
+        "个性化建议要根据上下文中的掌握状态、评估依据和近期错因调整：掌握较弱时先补基础，掌握较好但反复错时强调边界、审题或推理。"
+        "上下文中的结构化字段只用于内部推理，绝不能把后端字段名、英文关系枚举或键值表达直接写给用户。"
+        "尤其不要输出 prerequisite、parent、related、next、mastery、mastery_score、confidence 等内部标识，"
+        "也不要出现类似 key=value、key:数字、英文关系名→知识点 的原始数据格式。"
+        "知识关系必须改写成自然中文，例如‘前置知识’‘所属主题’‘相关知识’‘后续知识’；"
+        "学习状态使用自然中文描述，不展示置信度原始数值。"
         "本能力是完整错题复盘之后的按需深入讲解，不得重新输出通用的‘错因诊断、知识补漏、复练建议’三段式报告。"
         "只完成本次 fixed action：讲解类动作的 sections 标题必须紧扣所选动作；"
         "similar_question/harder_question 只生成题目和必要说明；connect_knowledge 重点填写 knowledge_points；"

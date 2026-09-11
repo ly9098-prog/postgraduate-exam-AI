@@ -43,7 +43,9 @@ _local_fallback_semaphore: asyncio.Semaphore | None = None
 # ── Public API ──
 
 
-def build_prewarm_revision(*, review_count: int | None, wrong_answer: str | None) -> str:
+def build_prewarm_revision(
+    *, review_count: int | None, wrong_answer: str | None
+) -> str:
     """Stable, non-sensitive revision for one wrong-question state.
 
     The durable queue keeps idempotency keys for seven days. A fixed task id such
@@ -97,12 +99,17 @@ def _schedule_local_fallback(
     if len(_local_fallback_tasks) >= _LOCAL_FALLBACK_MAX_TASKS:
         logger.warning(
             "[prewarm] local fallback full wq_id=%d uid=%d backlog=%d",
-            wq_id, user_id, len(_local_fallback_tasks),
+            wq_id,
+            user_id,
+            len(_local_fallback_tasks),
         )
         return False
 
     async def runner() -> None:
-        from app.services.ai_service import PrewarmAnalysisError, prewarm_wrong_question_analysis
+        from app.services.ai_service import (
+            PrewarmAnalysisError,
+            prewarm_wrong_question_analysis,
+        )
 
         try:
             if delay_seconds > 0:
@@ -118,7 +125,10 @@ def _schedule_local_fallback(
                 while True:
                     logger.info(
                         "[prewarm] local start wq_id=%d uid=%d revision=%s attempt=%d",
-                        wq_id, user_id, revision or "legacy", attempt + 1,
+                        wq_id,
+                        user_id,
+                        revision or "legacy",
+                        attempt + 1,
                     )
                     try:
                         outcome = await prewarm_wrong_question_analysis(
@@ -131,18 +141,26 @@ def _schedule_local_fallback(
                         status = str(outcome.get("status") or "success")
                         logger.info(
                             "[prewarm] local %s wq_id=%d uid=%d duration_ms=%d",
-                            status, wq_id, user_id, int((time.monotonic() - started) * 1000),
+                            status,
+                            wq_id,
+                            user_id,
+                            int((time.monotonic() - started) * 1000),
                         )
                         break
                     except PrewarmAnalysisError as exc:
                         if exc.retryable and attempt < max_local_retries:
                             attempt += 1
-                            backoff = min(2 ** attempt, 30)
+                            backoff = min(2**attempt, 30)
                             logger.warning(
                                 "[prewarm] local retry wq_id=%d uid=%d attempt=%d/%d "
                                 "delay_sec=%d error_code=%s recovery=%s",
-                                wq_id, user_id, attempt, max_local_retries,
-                                backoff, exc.error_code, recovery_mode,
+                                wq_id,
+                                user_id,
+                                attempt,
+                                max_local_retries,
+                                backoff,
+                                exc.error_code,
+                                recovery_mode,
                             )
                             await asyncio.sleep(backoff)
                             continue
@@ -157,8 +175,13 @@ def _schedule_local_fallback(
                         logger.warning(
                             "[prewarm] local %s wq_id=%d uid=%d error_code=%s "
                             "retryable=%s attempts=%d duration_ms=%d",
-                            category, wq_id, user_id, exc.error_code, exc.retryable,
-                            attempt + 1, int((time.monotonic() - started) * 1000),
+                            category,
+                            wq_id,
+                            user_id,
+                            exc.error_code,
+                            exc.retryable,
+                            attempt + 1,
+                            int((time.monotonic() - started) * 1000),
                         )
                         break
         except asyncio.CancelledError:
@@ -166,7 +189,9 @@ def _schedule_local_fallback(
         except Exception:
             logger.warning(
                 "[prewarm] local failed_unexpected wq_id=%d uid=%d",
-                wq_id, user_id, exc_info=True,
+                wq_id,
+                user_id,
+                exc_info=True,
             )
         finally:
             _local_fallback_tasks.pop(task_id, None)
@@ -178,7 +203,9 @@ def _schedule_local_fallback(
     _local_fallback_tasks[task_id] = task
     logger.info(
         "[prewarm] local fallback scheduled wq_id=%d uid=%d task_id=%s",
-        wq_id, user_id, task_id,
+        wq_id,
+        user_id,
+        task_id,
     )
     return True
 
@@ -249,18 +276,27 @@ async def enqueue_prewarm(
             )
             logger.warning(
                 "[prewarm] Redis unavailable; local_fallback=%s wq_id=%d uid=%d retries=%d",
-                accepted_local, wq_id, user_id, retries,
+                accepted_local,
+                wq_id,
+                user_id,
+                retries,
             )
             return accepted_local
         logger.warning(
             "[prewarm] queue rejected wq_id=%d uid=%d retries=%d reason=%s",
-            wq_id, user_id, retries, result.reason or "unknown",
+            wq_id,
+            user_id,
+            retries,
+            result.reason or "unknown",
         )
         return False
 
     logger.info(
         "[prewarm] enqueued wq_id=%d uid=%d retries=%d task_id=%s",
-        wq_id, user_id, retries, task_id,
+        wq_id,
+        user_id,
+        retries,
+        task_id,
     )
     return True
 
@@ -277,7 +313,9 @@ async def enqueue_prewarm_batch(
     order. Queue writes remain independent, so one unavailable item never
     prevents the remaining analyses from being scheduled.
     """
-    unique_ids = list(dict.fromkeys(int(wq_id) for wq_id in wrong_question_ids if wq_id))
+    unique_ids = list(
+        dict.fromkeys(int(wq_id) for wq_id in wrong_question_ids if wq_id)
+    )
     queued: list[int] = []
     skipped: list[int] = []
 
@@ -289,14 +327,18 @@ async def enqueue_prewarm_batch(
         except Exception:
             logger.warning(
                 "[prewarm] batch enqueue failed wq_id=%d uid=%d",
-                wq_id, user_id, exc_info=True,
+                wq_id,
+                user_id,
+                exc_info=True,
             )
             accepted = False
         (queued if accepted else skipped).append(wq_id)
 
     logger.info(
         "[prewarm] practice batch scheduled uid=%d queued=%d skipped=%d",
-        user_id, len(queued), len(skipped),
+        user_id,
+        len(queued),
+        len(skipped),
     )
     return {"queued": queued, "skipped": skipped}
 
@@ -318,9 +360,12 @@ async def run_prewarm_worker(
 
     from app.services.ai_service import PrewarmAnalysisError
     from app.core.worker_concurrency import get_worker_semaphore
+
     semaphore = await get_worker_semaphore()
 
-    logger.info("[prewarm] worker started (poll=%ss lease=%ds)", poll_interval, lease_sec)
+    logger.info(
+        "[prewarm] worker started (poll=%ss lease=%ds)", poll_interval, lease_sec
+    )
 
     _redis_failure_count = 0
 
@@ -329,13 +374,19 @@ async def run_prewarm_worker(
             # Acquire shared worker concurrency slot before claiming
             await semaphore.acquire()
             try:
-                task = await task_queue.dequeue_v2(TASK_TYPE_PREWARM, lease_sec=lease_sec)
+                task = await task_queue.dequeue_v2(
+                    TASK_TYPE_PREWARM, lease_sec=lease_sec
+                )
             except TaskQueueUnavailableError as e:
                 _redis_failure_count += 1
-                backoff = min(e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300)
+                backoff = min(
+                    e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300
+                )
                 logger.error(
                     "[prewarm] Redis unavailable (failure #%d): %s — backing off %ds",
-                    _redis_failure_count, e, backoff,
+                    _redis_failure_count,
+                    e,
+                    backoff,
                 )
                 semaphore.release()
                 await asyncio.sleep(backoff)
@@ -367,9 +418,7 @@ async def run_prewarm_worker(
                 user_id=task.payload.get("user_id"),
             )
             try:
-                heartbeat_task = asyncio.create_task(
-                    _heartbeat_loop(task, lease_sec)
-                )
+                heartbeat_task = asyncio.create_task(_heartbeat_loop(task, lease_sec))
 
                 try:
                     outcome = await _process_task(task)
@@ -383,7 +432,8 @@ async def run_prewarm_worker(
                         logger.info(
                             "[prewarm] %s wq_id=%s uid=%s",
                             str(outcome.get("status") or "success"),
-                            task.payload.get("wq_id"), task.payload.get("user_id"),
+                            task.payload.get("wq_id"),
+                            task.payload.get("user_id"),
                         )
                 except PrewarmAnalysisError as exc:
                     if not exc.retryable:
@@ -407,26 +457,36 @@ async def run_prewarm_worker(
                         if dead_lettered:
                             logger.warning(
                                 "[prewarm] %s wq_id=%s uid=%s error_code=%s retryable=false",
-                                category, task.payload.get("wq_id"),
-                                task.payload.get("user_id"), exc.error_code,
+                                category,
+                                task.payload.get("wq_id"),
+                                task.payload.get("user_id"),
+                                exc.error_code,
                             )
                         else:
                             logger.warning(
                                 "[prewarm] permanent fail rejected task_id=%s result=%s status=%s error_code=%s",
-                                task.task_id, fail_result, task_status, exc.error_code,
+                                task.task_id,
+                                fail_result,
+                                task_status,
+                                exc.error_code,
                             )
                     elif dead_lettered:
                         logger.warning(
                             "[prewarm] failed_transient_exhausted wq_id=%s uid=%s "
                             "error_code=%s retry_count=%d",
-                            task.payload.get("wq_id"), task.payload.get("user_id"),
-                            exc.error_code, task.retry_count,
+                            task.payload.get("wq_id"),
+                            task.payload.get("user_id"),
+                            exc.error_code,
+                            task.retry_count,
                         )
                     elif fail_result == 1:
                         logger.warning(
                             "[prewarm] retry wq_id=%s uid=%s error_code=%s retry_count=%d/%d",
-                            task.payload.get("wq_id"), task.payload.get("user_id"),
-                            exc.error_code, task.retry_count, task.max_retries,
+                            task.payload.get("wq_id"),
+                            task.payload.get("user_id"),
+                            exc.error_code,
+                            task.retry_count,
+                            task.max_retries,
                         )
                     else:
                         logger.warning(
@@ -435,18 +495,22 @@ async def run_prewarm_worker(
                         )
                 except Exception as e:
                     logger.exception(
-                        "[prewarm] failed_unexpected task_id=%s", task.task_id,
+                        "[prewarm] failed_unexpected task_id=%s",
+                        task.task_id,
                     )
                     fail_result = await task_queue.fail_v2(task, str(e))
                     task_status = str(getattr(task.status, "value", task.status or ""))
                     if fail_result == 2 or task_status == "dead":
                         logger.warning(
-                            "[prewarm] failed_unexpected_exhausted task_id=%s", task.task_id,
+                            "[prewarm] failed_unexpected_exhausted task_id=%s",
+                            task.task_id,
                         )
                     elif fail_result == 1:
                         logger.warning(
                             "[prewarm] retry_unexpected task_id=%s retry_count=%d/%d",
-                            task.task_id, task.retry_count, task.max_retries,
+                            task.task_id,
+                            task.retry_count,
+                            task.max_retries,
                         )
                     elif not fail_result:
                         logger.warning(
@@ -501,7 +565,9 @@ async def _process_task(task: Task) -> dict:
         logger.warning("[prewarm] invalid task payload: %s", task.payload)
         return {"status": "skipped", "reason": "invalid_payload"}
 
-    queue_wait_ms = max(0, int((time.time() - float(task.created_at or time.time())) * 1000))
+    queue_wait_ms = max(
+        0, int((time.time() - float(task.created_at or time.time())) * 1000)
+    )
     logger.info(
         "[prewarm] start wq_id=%d uid=%d revision=%s queue_wait_ms=%d",
         wq_id,

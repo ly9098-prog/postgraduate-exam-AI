@@ -49,8 +49,12 @@ async def list_audit_logs(
     action: str | None = None,
     resource_type: str | None = Query(default=None, alias="resourceType"),
     resource_id: str | None = Query(default=None, alias="resourceId"),
-    severity: str | None = Query(default=None, pattern="^(critical|important|normal|low)$"),
-    log_status: str | None = Query(default=None, alias="status", pattern="^(success|failed)$"),
+    severity: str | None = Query(
+        default=None, pattern="^(critical|important|normal|low)$"
+    ),
+    log_status: str | None = Query(
+        default=None, alias="status", pattern="^(success|failed)$"
+    ),
     created_from: datetime | None = Query(default=None, alias="from"),
     created_to: datetime | None = Query(default=None, alias="to"),
     keyword: str | None = Query(default=None),
@@ -83,7 +87,9 @@ async def list_audit_logs(
             keyword=safe_keyword,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
     items = []
     for log in logs:
         item = AdminAuditLogListItem.model_validate(log)

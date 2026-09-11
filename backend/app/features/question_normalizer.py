@@ -35,7 +35,9 @@ from app.features.question_type import (
     QT_TRUE_FALSE,
 )
 
-_OPTION_LINE_RE = re.compile(r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]")
+_OPTION_LINE_RE = re.compile(
+    r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]"
+)
 # 增强选项检测模式：A. A) ①. (A) 等，用于从 raw_text 中二次检测选项
 _OPTION_PATTERN = re.compile(r"^\s*([A-D]|[①②③④]|\(\s*[A-D]\s*\))\s*[.、\)]")
 _STRUCTURAL_CODE_FENCE = re.compile(r"```")
@@ -67,15 +69,27 @@ _OCR_CONTAMINATION_THRESHOLD = 0.30
 _OPTION_LETTERS = frozenset({"A", "B", "C", "D"})
 
 _TRUE_FALSE_MAP = {
-    "T": "T", "F": "F", "TRUE": "T", "FALSE": "F",
-    "正确": "T", "错误": "F", "√": "T", "×": "F", "对": "T", "错": "F",
+    "T": "T",
+    "F": "F",
+    "TRUE": "T",
+    "FALSE": "F",
+    "正确": "T",
+    "错误": "F",
+    "√": "T",
+    "×": "F",
+    "对": "T",
+    "错": "F",
 }
 _TRUE_FALSE_VALUES = frozenset(_TRUE_FALSE_MAP.keys())
 
 # 题干中需要剥离的答案/解析标签行
 _STRIP_PATTERNS = [
-    re.compile(r"^(?:【答案】|答案[：:]|参考答案[：:]|正确答案[：:]|KEY\s*[：:]|Answer\s*[：:]).*$"),
-    re.compile(r"^(?:【解析】|解析[：:]|解答[：:]|讲解[：:]|分析[：:]|Explanation\s*[：:]).*$"),
+    re.compile(
+        r"^(?:【答案】|答案[：:]|参考答案[：:]|正确答案[：:]|KEY\s*[：:]|Answer\s*[：:]).*$"
+    ),
+    re.compile(
+        r"^(?:【解析】|解析[：:]|解答[：:]|讲解[：:]|分析[：:]|Explanation\s*[：:]).*$"
+    ),
 ]
 
 # 题干清洗规则（按顺序应用）
@@ -167,17 +181,26 @@ def _break_before_number_markers(text: str) -> str:
         line = re.sub(r"(?<=[^\sA-Za-z0-9_])[　 ]*([（][0-9]+[）])", r"\n\1", line)
         # 1) 2) 数字+括号：同样禁止从 ASCII 标识符内部切开。
         # 旧规则会把 "(v1,v2)10" 误处理成 "(v1,v\n2)10"，导致刷题页异常换行。
-        line = re.sub(r"(?<=[^\s\dA-Za-z_,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", line)
+        line = re.sub(
+            r"(?<=[^\s\dA-Za-z_,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", line
+        )
         result.append(line)
     return "\n".join(result)
 
 
-def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_groups: list[dict] | None = None) -> str:
+def _extract_stem(
+    raw_text: str,
+    option_lines: dict[str, str],
+    blank_option_groups: list[dict] | None = None,
+) -> str:
     """从原始题目文本中提取题干（去除选项行和答案/解析行）。"""
     lines = raw_text.split("\n")
     stem_lines: list[str] = []
     in_options = False
-    blank_markers = {str(group.get("id") or group.get("marker") or "").strip() for group in (blank_option_groups or [])}
+    blank_markers = {
+        str(group.get("id") or group.get("marker") or "").strip()
+        for group in (blank_option_groups or [])
+    }
 
     for line in lines:
         stripped = line.strip()
@@ -189,7 +212,10 @@ def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_grou
 
         if blank_markers:
             for marker in blank_markers:
-                if marker and re.match(rf"^(?:{re.escape(marker)}|[（(]\s*{re.escape(marker)}\s*[）)])(?:\s*$|\s*(?:[?？]\s*)?[A-Ha-h][.、:：)）\s])", stripped):
+                if marker and re.match(
+                    rf"^(?:{re.escape(marker)}|[（(]\s*{re.escape(marker)}\s*[）)])(?:\s*$|\s*(?:[?？]\s*)?[A-Ha-h][.、:：)）\s])",
+                    stripped,
+                ):
                     in_options = True
                     break
             if in_options:
@@ -252,7 +278,6 @@ def _normalize_blank_option_groups(groups: list[dict] | None) -> list[dict]:
     return normalized
 
 
-
 def _normalize_answer(answer: str | None, question_type: str) -> str:
     """标准化答案格式。"""
     if answer is None:
@@ -265,7 +290,11 @@ def _normalize_answer(answer: str | None, question_type: str) -> str:
 
     if question_type == QT_MULTIPLE_CHOICE:
         cleaned = answer.upper().replace(" ", "").replace("，", ",")
-        if "," not in cleaned and len(cleaned) > 1 and all(c in "ABCDEFGH" for c in cleaned):
+        if (
+            "," not in cleaned
+            and len(cleaned) > 1
+            and all(c in "ABCDEFGH" for c in cleaned)
+        ):
             cleaned = ",".join(cleaned)
         return cleaned
 
@@ -410,7 +439,11 @@ def _compute_confidence(
             score += 0.2
     elif question_type == QT_MULTIPLE_CHOICE and options and answer:
         valid_keys = {o["key"] for o in options}
-        parts = [p for p in answer.upper().replace(" ", "").replace("，", ",").split(",") if p]
+        parts = [
+            p
+            for p in answer.upper().replace(" ", "").replace("，", ",").split(",")
+            if p
+        ]
         if parts and all(p in valid_keys for p in parts):
             score += 0.2
     elif question_type == QT_TRUE_FALSE:
@@ -423,7 +456,8 @@ def _compute_confidence(
 
 
 def check_option_completeness(
-    question_type: str, options: list[dict],
+    question_type: str,
+    options: list[dict],
 ) -> tuple[bool, list[str]]:
     """检查选择题选项完整性。
 
@@ -454,6 +488,7 @@ _check_option_completeness = check_option_completeness  # 向后兼容
 @dataclass
 class OptionValidationResult:
     """Result of option set validation."""
+
     is_complete: bool
     is_usable: bool
     count: int
@@ -472,8 +507,11 @@ def validate_option_set(options: dict[str, str]) -> OptionValidationResult:
     """
     if not options:
         return OptionValidationResult(
-            is_complete=False, is_usable=False, count=0,
-            missing_keys=[], suspicious_reasons=["empty_options"],
+            is_complete=False,
+            is_usable=False,
+            count=0,
+            missing_keys=[],
+            suspicious_reasons=["empty_options"],
         )
 
     count = len(options)
@@ -531,7 +569,9 @@ def has_objective_question_signals(
         signals.append("explicit_choice_answer")
 
     # Choice-related keywords
-    kw_matches = re.findall(r"下列|选项|单选|多选|选择|哪些|正确的是|错误的是|下列说法", text)
+    kw_matches = re.findall(
+        r"下列|选项|单选|多选|选择|哪些|正确的是|错误的是|下列说法", text
+    )
     if kw_matches:
         signals.append(f"choice_keywords:{len(kw_matches)}")
 
@@ -557,7 +597,9 @@ def run_ocr_quality_gate(raw_text: str) -> dict:
     if not passed:
         logger.warning(
             "OCR quality gate REJECTED: score=%.2f flags=%s raw_preview=%.100s",
-            score, flags, raw_text,
+            score,
+            flags,
+            raw_text,
         )
 
     return {
@@ -570,7 +612,9 @@ def run_ocr_quality_gate(raw_text: str) -> dict:
 _run_ocr_quality_gate = run_ocr_quality_gate  # 向后兼容
 
 
-def _run_consistency_cross_check(raw_text: str, question_type: str, parsed_options: list[dict]) -> dict:
+def _run_consistency_cross_check(
+    raw_text: str, question_type: str, parsed_options: list[dict]
+) -> dict:
     """校验 raw_text 选项与 parsed_options 的一致性。
 
     Returns:
@@ -589,7 +633,9 @@ def _run_consistency_cross_check(raw_text: str, question_type: str, parsed_optio
     if not result["is_consistent"]:
         logger.warning(
             "Consistency cross-check FAILED: raw=%s parsed=%s missing=%s",
-            result["raw_options"], result["parsed_options"], result["missing_in_parsed"],
+            result["raw_options"],
+            result["parsed_options"],
+            result["missing_in_parsed"],
         )
 
     return {
@@ -626,7 +672,9 @@ def normalize_question(
     logger.info(
         "[TRACE] stage=raw_input qnum=%s raw_text_len=%d has_option_lines=%s "
         "has_blank_groups=%s upstream_has_options=%s raw_text_preview=%.120s",
-        qnum, len(raw_text), bool(option_lines),
+        qnum,
+        len(raw_text),
+        bool(option_lines),
         bool(raw_question.get("blank_option_groups")),
         raw_question.get("has_options", False),
         raw_text.replace("\n", "\\n")[:120],
@@ -635,8 +683,11 @@ def normalize_question(
     # === Structure freeze: detect frozen questions ===
     is_frozen = bool(raw_question.get("is_frozen", False))
     if is_frozen:
-        logger.info("[FREEZE] normalize_question(q%s): frozen options=%s",
-                     qnum, sorted(option_lines.keys()) if option_lines else "none")
+        logger.info(
+            "[FREEZE] normalize_question(q%s): frozen options=%s",
+            qnum,
+            sorted(option_lines.keys()) if option_lines else "none",
+        )
 
     # NOTE: Layer 0 — Input Clean only. Option order is preserved as-is from
     # the upstream (freeze stage or splitter). No reordering, no padding,
@@ -657,7 +708,9 @@ def normalize_question(
         "has_options": raw_question.get("has_options", False),
     }
     _cache_key_raw = "|".join(f"{k}={v}" for k, v in _cache_inputs.items())
-    _pre_cache_key = hashlib.sha256(_cache_key_raw.encode()).hexdigest() if raw_text else ""
+    _pre_cache_key = (
+        hashlib.sha256(_cache_key_raw.encode()).hexdigest() if raw_text else ""
+    )
     if _pre_cache_key:
         _cached = parse_cache_get(_cache_key_raw, _pre_cache_key)
         if _cached is not None:
@@ -668,12 +721,22 @@ def normalize_question(
                 "source_question_no": raw_question.get("source_question_no"),
                 "source_question_label": raw_question.get("source_question_label"),
                 "question_bbox": raw_question.get("question_bbox"),
-                "question_bbox_coordinate_space": raw_question.get("question_bbox_coordinate_space"),
-                "question_bbox_page_width": raw_question.get("question_bbox_page_width"),
-                "question_bbox_page_height": raw_question.get("question_bbox_page_height"),
-                "question_bbox_confidence": raw_question.get("question_bbox_confidence"),
+                "question_bbox_coordinate_space": raw_question.get(
+                    "question_bbox_coordinate_space"
+                ),
+                "question_bbox_page_width": raw_question.get(
+                    "question_bbox_page_width"
+                ),
+                "question_bbox_page_height": raw_question.get(
+                    "question_bbox_page_height"
+                ),
+                "question_bbox_confidence": raw_question.get(
+                    "question_bbox_confidence"
+                ),
                 "question_bbox_strategy": raw_question.get("question_bbox_strategy"),
-                "question_bbox_diagnostics": raw_question.get("question_bbox_diagnostics"),
+                "question_bbox_diagnostics": raw_question.get(
+                    "question_bbox_diagnostics"
+                ),
             }
             for _k, _v in _bbox_fields.items():
                 if _v is not None:
@@ -681,23 +744,31 @@ def normalize_question(
                     if _cached_v is not None and _cached_v != _v:
                         logger.debug(
                             "normalize cache: bbox field %s differs (cached=%s raw=%s), overwriting",
-                            _k, _cached_v, _v,
+                            _k,
+                            _cached_v,
+                            _v,
                         )
                     _cached[_k] = _v
             return _cached
 
-    blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
+    blank_option_groups = _normalize_blank_option_groups(
+        raw_question.get("blank_option_groups")
+    )
     page = raw_question.get("page_start", source_info.get("page", 1))
 
     # === Execution Trace: initialize per-question tracer ===
     tracer = StageTracer(raw_text)
 
     # === OCR Quality Gate: 在解析前检测污染 ===
-    quality_gate = tracer.run("ocr_quality_gate", "rule", "raw_ocr", None, _run_ocr_quality_gate, raw_text)
+    quality_gate = tracer.run(
+        "ocr_quality_gate", "rule", "raw_ocr", None, _run_ocr_quality_gate, raw_text
+    )
     has_structural_markers = _has_structural_markers(raw_text)
     logger.info(
         "[OPTIONS-DETECT] quality_gate_passed=%s score=%.2f has_structural_markers=%s",
-        quality_gate["passed"], quality_gate["ocr_contamination_score"], has_structural_markers,
+        quality_gate["passed"],
+        quality_gate["ocr_contamination_score"],
+        has_structural_markers,
     )
     # 结构完整性优先：当文本含选项/代码围栏时，即使检测到污染也降低阻断等级
     ocr_critical_corruption = (
@@ -711,21 +782,36 @@ def normalize_question(
     logger.info(
         "[TRACE] stage=text_detection qnum=%s detect_result=%s "
         "quality_gate_passed=%s quality_score=%.2f has_structural_markers=%s",
-        qnum, _text_detect_before,
-        quality_gate["passed"], quality_gate["ocr_contamination_score"],
+        qnum,
+        _text_detect_before,
+        quality_gate["passed"],
+        quality_gate["ocr_contamination_score"],
         has_structural_markers,
     )
 
     stem = _extract_stem(raw_text, option_lines, blank_option_groups)
-    tracer.add_note("stem_extraction", f"stem length={len(stem)}", "raw_ocr", "ocr_quality_gate")
+    tracer.add_note(
+        "stem_extraction", f"stem length={len(stem)}", "raw_ocr", "ocr_quality_gate"
+    )
     # Scan stem for corruption patterns
     for c in tracer.scan_text_corruptions(stem, "stem"):
         tracer.mark_corruption("stem_extraction", c["type"], c["detail"])
 
     # === Filter isolated single-letter noise tokens from stem ===
-    stem = tracer.run("noise_filtering", "rule", "stem", "stem_extraction",
-                      lambda s: filter_isolated_tokens(s, {"has_options": raw_question.get("has_options"), "option_lines": option_lines}),
-                      stem)
+    stem = tracer.run(
+        "noise_filtering",
+        "rule",
+        "stem",
+        "stem_extraction",
+        lambda s: filter_isolated_tokens(
+            s,
+            {
+                "has_options": raw_question.get("has_options"),
+                "option_lines": option_lines,
+            },
+        ),
+        stem,
+    )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Layer 1: Question Type Classification — strict has_options gatekeeper
@@ -734,7 +820,8 @@ def normalize_question(
     # no downstream stage may create or modify options.
 
     classification = _classify_type(
-        raw_text, option_lines,
+        raw_text,
+        option_lines,
         splitter_has_options=raw_question.get("has_options", False),
         is_frozen=is_frozen,
     )
@@ -744,7 +831,9 @@ def normalize_question(
     logger.info(
         "[TRACE] stage=classifier_result qnum=%s has_options=%s reason=%s "
         "detect_before=%s type_override=%s confidence=%.1f",
-        qnum, _has_options_classified, _classify_reason,
+        qnum,
+        _has_options_classified,
+        _classify_reason,
         _text_detect_before,
         _classify_question_type or "none",
         classification.get("confidence", 0),
@@ -757,16 +846,22 @@ def normalize_question(
     # No AI generation, no padding, no guessing. Options order from upstream
     # (freeze stage or splitter) is preserved as-is.
     _options_branch = (
-        "blank_groups" if blank_option_groups and _has_options_classified else
-        "option_lines" if option_lines and _has_options_classified else
-        "fallback_extract" if _has_options_classified else
-        "no_options_classified"
+        "blank_groups"
+        if blank_option_groups and _has_options_classified
+        else "option_lines"
+        if option_lines and _has_options_classified
+        else "fallback_extract"
+        if _has_options_classified
+        else "no_options_classified"
     )
     logger.info(
         "[TRACE] stage=options_branch qnum=%s branch=%s "
         "has_options_classified=%s blank_groups=%s option_lines=%s",
-        qnum, _options_branch, _has_options_classified,
-        bool(blank_option_groups), bool(option_lines),
+        qnum,
+        _options_branch,
+        _has_options_classified,
+        bool(blank_option_groups),
+        bool(option_lines),
     )
     if _has_options_classified:
         if blank_option_groups:
@@ -775,8 +870,14 @@ def normalize_question(
             # ABCD patterns from grouped option lines.
             options = []
         elif option_lines:
-            options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
-                                 _normalize_options, option_lines)
+            options = tracer.run(
+                "options_extraction",
+                "rule",
+                "raw_ocr",
+                "stem_extraction",
+                _normalize_options,
+                option_lines,
+            )
         else:
             # STEP 4 FALLBACK: classifier says has_options=True but option_lines is empty.
             # Try to extract options directly from raw_text as last resort.
@@ -785,10 +886,13 @@ def normalize_question(
                 logger.info(
                     "[OPTIONS-FALLBACK] q%s: extracted %d options from raw_text "
                     "(option_lines was empty, classifier said has_options=True)",
-                    raw_question.get("number", "?"), len(fallback_opts),
+                    raw_question.get("number", "?"),
+                    len(fallback_opts),
                 )
                 options = _normalize_options(fallback_opts)
-                tracer.mark_options_recovery("options_extraction", "fallback_from_raw_text", len(options), 0.8)
+                tracer.mark_options_recovery(
+                    "options_extraction", "fallback_from_raw_text", len(options), 0.8
+                )
             else:
                 options = []
     else:
@@ -796,7 +900,9 @@ def normalize_question(
     logger.info(
         "[TRACE] stage=final_options qnum=%s options_count=%d options_keys=%s "
         "branch=%s question_type=%s fallback_used=%s",
-        qnum, len(options), [o["key"] for o in options] if options else "none",
+        qnum,
+        len(options),
+        [o["key"] for o in options] if options else "none",
         _options_branch,
         blank_option_groups and "multi_blank_choice" or "pending",
         bool(option_lines) is False and bool(options) is True,
@@ -805,9 +911,13 @@ def normalize_question(
     # Layer 1/3: options come from the classifier gate (has_options) and
     # the option engine (normalization). No re-detection/recovery is performed.
     if blank_option_groups:
-        tracer.mark_options_recovery("options_extraction", "blank_groups", len(options), 1.0)
+        tracer.mark_options_recovery(
+            "options_extraction", "blank_groups", len(options), 1.0
+        )
     elif _has_options_classified and options:
-        tracer.mark_options_recovery("options_extraction", "classifier_gate", len(options), 1.0)
+        tracer.mark_options_recovery(
+            "options_extraction", "classifier_gate", len(options), 1.0
+        )
 
     # ── Stem re-strip guard ────────────────────────────────────────────
     # When the splitter didn't extract option_lines (e.g. VL_REBUILD path)
@@ -821,35 +931,49 @@ def normalize_question(
             logger.info(
                 "[OPTIONS-STRIP] q%s: re-stripped stem (option_lines was empty, "
                 "fallback found %d options), removed %d chars",
-                qnum, len(options), len(stem) - len(clean_stem),
+                qnum,
+                len(options),
+                len(stem) - len(clean_stem),
             )
             stem = clean_stem
 
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
-    question_type = QT_MULTI_BLANK_CHOICE if blank_option_groups else _detect_question_type(stem, options, answer_raw, section_type=section_type)
+    question_type = (
+        QT_MULTI_BLANK_CHOICE
+        if blank_option_groups
+        else _detect_question_type(stem, options, answer_raw, section_type=section_type)
+    )
     # Layer 1 classifier override: when detect_options_from_text finds options,
     # force question_type to single_choice (even if _detect_question_type returned subjective)
     if _classify_question_type and question_type == QT_SUBJECTIVE:
         question_type = _classify_question_type
         logger.info(
             "[CLASSIFY] q%s: question_type override: subjective→%s (detect_options_from_text=True)",
-            raw_question.get("number", "?"), _classify_question_type,
+            raw_question.get("number", "?"),
+            _classify_question_type,
         )
     # P0: Objective signals guard — prevent false downgrade to subjective
     # when raw text contains option labels, explicit answers, or choice keywords.
     _has_obj_signals, _obj_signal_list = has_objective_question_signals(
-        raw_text or "", stem or "", answer_raw,
+        raw_text or "",
+        stem or "",
+        answer_raw,
     )
     if _has_obj_signals and question_type == QT_SUBJECTIVE:
         question_type = QT_SINGLE_CHOICE
         logger.info(
-            "[OBJECTIVE-SIGNALS] q%s: subjective→single_choice override "
-            "(signals=%s)",
-            raw_question.get("number", "?"), _obj_signal_list,
+            "[OBJECTIVE-SIGNALS] q%s: subjective→single_choice override (signals=%s)",
+            raw_question.get("number", "?"),
+            _obj_signal_list,
         )
-    tracer.add_note("question_type_detection", f"type={question_type}", "intermediate", "options_extraction")
+    tracer.add_note(
+        "question_type_detection",
+        f"type={question_type}",
+        "intermediate",
+        "options_extraction",
+    )
     # 多空选择题除外：在题号标记（①、（1）、1) 等）前插入换行
     if question_type != QT_MULTI_BLANK_CHOICE:
         stem = _break_before_number_markers(stem)
@@ -860,7 +984,12 @@ def normalize_question(
 
     # === Consistency cross-check: raw_text vs parsed ===
     consistency = _run_consistency_cross_check(raw_text, question_type, options)
-    tracer.add_note("consistency_check", f"consistent={consistency.get('consistent')}", "intermediate", "question_type_detection")
+    tracer.add_note(
+        "consistency_check",
+        f"consistent={consistency.get('consistent')}",
+        "intermediate",
+        "question_type_detection",
+    )
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -877,7 +1006,9 @@ def normalize_question(
             errors.append("missing_options")
             failure_reasons.append("options_empty")
         else:
-            opts_complete, opt_errors = _check_option_completeness(question_type, options)
+            opts_complete, opt_errors = _check_option_completeness(
+                question_type, options
+            )
             if not opts_complete:
                 for e in opt_errors:
                     errors.append(e)
@@ -902,7 +1033,10 @@ def normalize_question(
         errors.append("missing_blank_option_groups")
         failure_reasons.append("missing_blank_option_groups")
 
-    if question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE, QT_TRUE_FALSE) and not answer:
+    if (
+        question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE, QT_TRUE_FALSE)
+        and not answer
+    ):
         errors.append("missing_answer")
         failure_reasons.append("missing_answer_for_objective_question")
 
@@ -913,7 +1047,8 @@ def normalize_question(
             warnings.append(f"ocr_quality:{flag}")
         logger.info(
             "[OPTIONS-DETECT] rejected_by_gate=%s has_structural_markers=%s",
-            quality_gate["passed"], has_structural_markers,
+            quality_gate["passed"],
+            has_structural_markers,
         )
         if ocr_critical_corruption:
             errors.append("ocr_critical_corruption")
@@ -922,13 +1057,19 @@ def normalize_question(
             confidence_score = min(confidence_score, 0.30)
             if options:
                 if is_frozen:
-                    logger.info("[FREEZE] quality_gate: frozen options preserved despite corruption")
+                    logger.info(
+                        "[FREEZE] quality_gate: frozen options preserved despite corruption"
+                    )
                 else:
                     options = []
-                    logger.info("[OPTIONS-DETECT] quality_gate: options cleared (no structural markers)")
+                    logger.info(
+                        "[OPTIONS-DETECT] quality_gate: options cleared (no structural markers)"
+                    )
         elif has_structural_markers:
             # 有结构标记时降级为 warning，不阻断
-            logger.info("[OPTIONS-DETECT] quality_gate downgraded: has structural markers, preserving options")
+            logger.info(
+                "[OPTIONS-DETECT] quality_gate downgraded: has structural markers, preserving options"
+            )
 
     # --- 一致性校验阻断 (Goal 3) ---
     if not consistency["consistent"]:
@@ -946,32 +1087,46 @@ def normalize_question(
         detect_code_block_integrity,
         detect_code_regression,
     )
+
     code_risk_flags: list[str] = []
-    stem_has_code = tracer.run("code_detection", "rule", "stem", "noise_filtering",
-                               contains_code, stem)
+    stem_has_code = tracer.run(
+        "code_detection", "rule", "stem", "noise_filtering", contains_code, stem
+    )
     if stem_has_code:
         code_result = detect_code_block_integrity(stem)
-        tracer.add_note("code_integrity_check", f"flags={code_result.get('flags')} score={code_result.get('score')}",
-                        "stem", "code_detection")
+        tracer.add_note(
+            "code_integrity_check",
+            f"flags={code_result.get('flags')} score={code_result.get('score')}",
+            "stem",
+            "code_detection",
+        )
         if code_result["flags"]:
             for flag in code_result["flags"]:
                 code_risk_flags.append(flag)
                 warnings.append(f"code_integrity:{flag}")
-                tracer.mark_corruption("code_integrity_check", flag, f"Code integrity issue: {flag}")
+                tracer.mark_corruption(
+                    "code_integrity_check", flag, f"Code integrity issue: {flag}"
+                )
             # 代码完整性损坏：拉低置信度、禁止通过
             confidence_score = min(confidence_score, 0.35)
             failure_reasons.extend(code_result["flags"])
             code_risk_flags.append("code_block_incomplete")
         # --- 代码结构退化检测: raw_text vs stem (BUGS Task 4) ---
         regression = detect_code_regression(raw_text, stem)
-        tracer.add_note("code_regression_check", f"has_regression={regression.get('has_regression')} flags={regression.get('flags')}",
-                        "intermediate", "code_integrity_check")
+        tracer.add_note(
+            "code_regression_check",
+            f"has_regression={regression.get('has_regression')} flags={regression.get('flags')}",
+            "intermediate",
+            "code_integrity_check",
+        )
         if regression["has_regression"]:
             for flag in regression["flags"]:
                 if flag not in code_risk_flags:
                     code_risk_flags.append(flag)
                 warnings.append(f"code_integrity:{flag}")
-                tracer.mark_corruption("code_regression_check", flag, f"Code regression: {flag}")
+                tracer.mark_corruption(
+                    "code_regression_check", flag, f"Code regression: {flag}"
+                )
             confidence_score = min(confidence_score, 0.30)
             failure_reasons.extend(regression["flags"])
 
@@ -992,7 +1147,14 @@ def normalize_question(
         and no_critical_corruption
         and no_parse_loss
         and no_code_integrity_issues
-        and len([e for e in errors if e not in ("missing_answer", "missing_answer_for_objective_question")]) == 0
+        and len(
+            [
+                e
+                for e in errors
+                if e not in ("missing_answer", "missing_answer_for_objective_question")
+            ]
+        )
+        == 0
     )
 
     # === Quality status derivation (P0: Problem E) ===
@@ -1003,7 +1165,11 @@ def normalize_question(
     # Fatal blockers - these prevent high-confidence pass-through
     if "code_garbled_text" in code_risk_flags:
         quality_blockers.append("ocr_garbled_code")
-    _answer_missing = not answer and question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE, QT_TRUE_FALSE)
+    _answer_missing = not answer and question_type in (
+        QT_SINGLE_CHOICE,
+        QT_MULTIPLE_CHOICE,
+        QT_TRUE_FALSE,
+    )
     if _answer_missing:
         quality_blockers.append("missing_answer_for_objective_question")
     if confidence_score < 0.5:
@@ -1028,14 +1194,11 @@ def normalize_question(
 
     # === 失败追踪 (Goal 6) ===
     validation_status = "passed" if is_valid else "failed"
-    retry_recommended = (
-        not is_valid
-        and (
-            "missing_option_" in " ".join(errors)
-            or "ocr_corruption_detected" in failure_reasons
-            or "parse_option_loss" in " ".join(failure_reasons)
-            or any(f.startswith("code_") for f in failure_reasons)
-        )
+    retry_recommended = not is_valid and (
+        "missing_option_" in " ".join(errors)
+        or "ocr_corruption_detected" in failure_reasons
+        or "parse_option_loss" in " ".join(failure_reasons)
+        or any(f.startswith("code_") for f in failure_reasons)
     )
 
     result = {
@@ -1071,9 +1234,19 @@ def normalize_question(
         # Goal 2: OCR 质量标记
         "ocr_quality_flags": quality_gate["ocr_quality_flags"],
         # 代码完整性风险标记
-        "risk_flags": (code_risk_flags[:] +
-                       [r for r in failure_reasons if r.startswith("objective_signals_") or r.startswith("suspicious_")] +
-                       [w[len("suspicious_options:"):] for w in warnings if w.startswith("suspicious_options:")]),
+        "risk_flags": (
+            code_risk_flags[:]
+            + [
+                r
+                for r in failure_reasons
+                if r.startswith("objective_signals_") or r.startswith("suspicious_")
+            ]
+            + [
+                w[len("suspicious_options:") :]
+                for w in warnings
+                if w.startswith("suspicious_options:")
+            ]
+        ),
         # P0: Quality status (monotonic - can't be upgraded without evidence)
         "quality_status": quality_status,
         "quality_blockers": quality_blockers,
@@ -1113,7 +1286,8 @@ def normalize_question(
                         result = vl_result
                         logger.info(
                             "Vision fallback improved: flags %s → %s",
-                            code_risk_flags, post_flags,
+                            code_risk_flags,
+                            post_flags,
                         )
                     else:
                         result["vision_fallback_attempted"] = True
@@ -1125,6 +1299,7 @@ def normalize_question(
                         from app.features.code_integrity import (
                             detect_code_block_integrity as _detect_code,
                         )
+
                         result["post_fallback_code_flags"] = list(
                             _detect_code(vl_text).get("flags", [])
                         )
@@ -1145,13 +1320,20 @@ def normalize_question(
             result["post_fallback_code_flags"] = list(code_risk_flags)
 
     # === Execution Trace: record vision fallback note ===
-    tracer.add_note("vision_fallback",
-                    f"attempted={result.get('vision_fallback_attempted')} status={result.get('vision_fallback_status')}",
-                    "fallback", "code_integrity_check")
+    tracer.add_note(
+        "vision_fallback",
+        f"attempted={result.get('vision_fallback_attempted')} status={result.get('vision_fallback_status')}",
+        "fallback",
+        "code_integrity_check",
+    )
 
     # === 决策可观测性: decision_trace 初始化 ===
     result["decision_trace"] = _build_decision_trace(
-        quality_gate, code_risk_flags, stem_has_code, is_valid, failure_reasons,
+        quality_gate,
+        code_risk_flags,
+        stem_has_code,
+        is_valid,
+        failure_reasons,
     )
 
     # === Execution Trace: attach per-question trace ===
@@ -1159,11 +1341,16 @@ def normalize_question(
 
     # ── 透传定位/bbox 字段（从 raw_question 复制到 result）──
     _POSITIONING_FIELDS = [
-        "page_start", "page_end",
-        "source_question_no", "source_question_label",
-        "question_bbox", "question_bbox_coordinate_space",
-        "question_bbox_page_width", "question_bbox_page_height",
-        "question_bbox_confidence", "question_bbox_strategy",
+        "page_start",
+        "page_end",
+        "source_question_no",
+        "source_question_label",
+        "question_bbox",
+        "question_bbox_coordinate_space",
+        "question_bbox_page_width",
+        "question_bbox_page_height",
+        "question_bbox_confidence",
+        "question_bbox_strategy",
         "question_bbox_diagnostics",
     ]
     for _field in _POSITIONING_FIELDS:
@@ -1172,8 +1359,14 @@ def normalize_question(
             result[_field] = _val
 
     # === 最终 Schema 强制统一 ===
-    result = tracer.run("output_normalization", "pipeline", "final", "vision_fallback",
-                        normalize_output, result)
+    result = tracer.run(
+        "output_normalization",
+        "pipeline",
+        "final",
+        "vision_fallback",
+        normalize_output,
+        result,
+    )
 
     # === Goal 5: 写入缓存 ===
     if _pre_cache_key:
@@ -1238,12 +1431,16 @@ def normalize_questions(
             if result["errors"]:
                 errors.append({"question_number": qnum, "errors": result["errors"]})
             if result["warnings"]:
-                warnings.append({"question_number": qnum, "warnings": result["warnings"]})
+                warnings.append(
+                    {"question_number": qnum, "warnings": result["warnings"]}
+                )
         except Exception as e:
-            errors.append({
-                "question_number": qnum,
-                "errors": [f"normalization_failed: {e}"],
-            })
+            errors.append(
+                {
+                    "question_number": qnum,
+                    "errors": [f"normalization_failed: {e}"],
+                }
+            )
 
     return {"questions": questions, "errors": errors, "warnings": warnings}
 
@@ -1265,7 +1462,9 @@ def dedup_batch(questions: list[dict]) -> dict:
         else:
             seen[h] = i
 
-    duplicate_indices = [i for i, q in enumerate(questions) if q.get("is_batch_duplicate")]
+    duplicate_indices = [
+        i for i, q in enumerate(questions) if q.get("is_batch_duplicate")
+    ]
     return {
         "questions": questions,
         "unique_count": len(questions) - len(duplicate_indices),
@@ -1383,22 +1582,30 @@ def normalize_output(question: dict) -> dict:
                     "[FROZEN] non-ABCD option keys dropped: %s",
                     sorted(unexpected_keys),
                 )
-            options_list = [{"key": k, "text": raw_options[k]}
-                            for k in raw_options if k in _OPTION_LETTERS]
+            options_list = [
+                {"key": k, "text": raw_options[k]}
+                for k in raw_options
+                if k in _OPTION_LETTERS
+            ]
         else:
             options_list = []
     elif isinstance(raw_options, list):
         # Preserve insertion order, no sorting, no padding
-        options_list = [{"key": o["key"], "text": o["text"]}
-                        for o in raw_options
-                        if isinstance(o, dict) and o.get("key")]
+        options_list = [
+            {"key": o["key"], "text": o["text"]}
+            for o in raw_options
+            if isinstance(o, dict) and o.get("key")
+        ]
         # Always normalize keys to uppercase
         for opt in options_list:
             opt["key"] = opt["key"].upper()
     elif isinstance(raw_options, dict):
         # Preserve dict insertion order, no sorting
-        options_list = [{"key": k.upper(), "text": raw_options[k]}
-                        for k in raw_options if k.upper() in _OPTION_LETTERS]
+        options_list = [
+            {"key": k.upper(), "text": raw_options[k]}
+            for k in raw_options
+            if k.upper() in _OPTION_LETTERS
+        ]
     else:
         options_list = []
 
@@ -1413,25 +1620,50 @@ def normalize_output(question: dict) -> dict:
 
     # Preserve other useful keys
     preserve_keys = [
-        "subject", "subject_id", "question_type", "raw_text", "knowledge_points",
-        "difficulty", "source", "is_valid", "errors", "warnings",
-        "stem_hash", "confidence_score", "validation_status",
-        "failure_reason", "retry_recommended", "ocr_quality_flags",
-        "risk_flags", "decision_trace", "trace", "blank_option_groups",
+        "subject",
+        "subject_id",
+        "question_type",
+        "raw_text",
+        "knowledge_points",
+        "difficulty",
+        "source",
+        "is_valid",
+        "errors",
+        "warnings",
+        "stem_hash",
+        "confidence_score",
+        "validation_status",
+        "failure_reason",
+        "retry_recommended",
+        "ocr_quality_flags",
+        "risk_flags",
+        "decision_trace",
+        "trace",
+        "blank_option_groups",
         "is_frozen",
-        "options_classified", "options_classify_reason",
-        "vision_fallback_attempted", "vision_fallback_used",
-        "vision_fallback_status", "vision_fallback_engine",
+        "options_classified",
+        "options_classify_reason",
+        "vision_fallback_attempted",
+        "vision_fallback_used",
+        "vision_fallback_status",
+        "vision_fallback_engine",
         "vision_fallback_reason",
-        "pre_fallback_code_flags", "post_fallback_code_flags",
+        "pre_fallback_code_flags",
+        "post_fallback_code_flags",
         "schema_version",
-        "quality_status", "quality_blockers",
+        "quality_status",
+        "quality_blockers",
         # ── Positioning & bbox fields ──
-        "page_start", "page_end",
-        "source_question_no", "source_question_label",
-        "question_bbox", "question_bbox_coordinate_space",
-        "question_bbox_page_width", "question_bbox_page_height",
-        "question_bbox_confidence", "question_bbox_strategy",
+        "page_start",
+        "page_end",
+        "source_question_no",
+        "source_question_label",
+        "question_bbox",
+        "question_bbox_coordinate_space",
+        "question_bbox_page_width",
+        "question_bbox_page_height",
+        "question_bbox_confidence",
+        "question_bbox_strategy",
         "question_bbox_diagnostics",
     ]
     for key in preserve_keys:
@@ -1461,42 +1693,52 @@ def _build_decision_trace(
 
     # OCR 质量门禁
     if quality_gate.get("passed", True):
-        trace.append({
-            "stage": "ocr_quality_gate",
-            "result": "pass",
-            "reason": f"score={quality_gate.get('ocr_contamination_score', 0):.2f}",
-        })
+        trace.append(
+            {
+                "stage": "ocr_quality_gate",
+                "result": "pass",
+                "reason": f"score={quality_gate.get('ocr_contamination_score', 0):.2f}",
+            }
+        )
     else:
-        trace.append({
-            "stage": "ocr_quality_gate",
-            "result": "blocked",
-            "reason": (
-                f"score={quality_gate.get('ocr_contamination_score', 0):.2f} "
-                f"flags={quality_gate.get('ocr_quality_flags', [])}"
-            ),
-        })
+        trace.append(
+            {
+                "stage": "ocr_quality_gate",
+                "result": "blocked",
+                "reason": (
+                    f"score={quality_gate.get('ocr_contamination_score', 0):.2f} "
+                    f"flags={quality_gate.get('ocr_quality_flags', [])}"
+                ),
+            }
+        )
 
     # 代码完整性门禁
     if code_risk_flags:
-        trace.append({
-            "stage": "code_gate",
-            "result": "blocked",
-            "reason": ";".join(code_risk_flags),
-        })
+        trace.append(
+            {
+                "stage": "code_gate",
+                "result": "blocked",
+                "reason": ";".join(code_risk_flags),
+            }
+        )
     elif stem_has_code:
-        trace.append({
-            "stage": "code_gate",
-            "result": "pass",
-            "reason": "code_integrity_ok",
-        })
+        trace.append(
+            {
+                "stage": "code_gate",
+                "result": "pass",
+                "reason": "code_integrity_ok",
+            }
+        )
 
     # 最终验证
-    trace.append({
-        "stage": "validation",
-        "result": "pass" if is_valid else "failed",
-        "reason": ";".join(failure_reasons) if failure_reasons else (
-            "all_checks_passed" if is_valid else "validation_failed"
-        ),
-    })
+    trace.append(
+        {
+            "stage": "validation",
+            "result": "pass" if is_valid else "failed",
+            "reason": ";".join(failure_reasons)
+            if failure_reasons
+            else ("all_checks_passed" if is_valid else "validation_failed"),
+        }
+    )
 
     return trace

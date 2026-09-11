@@ -3,6 +3,7 @@
 所有 AI 输出仅写入 question_imports 暂存区，不直接进入 questions 正式表。
 每次调用记录到 ai_generation_logs，便于追溯。
 """
+
 import json
 import uuid
 from datetime import datetime
@@ -79,15 +80,20 @@ async def _call_or_fallback(
         return (resp, resp["content"], resp)
     except (OSError, ValueError, RuntimeError, TimeoutError) as e:
         return (
-            {"content": "", "tokens_used": 0, "model": "fallback", "duration_ms": 0,
-             "fallback_value": fallback_value, "error": str(e)},
-            None, None,
+            {
+                "content": "",
+                "tokens_used": 0,
+                "model": "fallback",
+                "duration_ms": 0,
+                "fallback_value": fallback_value,
+                "error": str(e),
+            },
+            None,
+            None,
         )
 
 
-async def enrich_import(
-    db: AsyncSession, user_id: int, import_id: int
-) -> dict:
+async def enrich_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
     """对单条 question_imports 记录补全 AI 字段。不覆盖人工已填写的字段。"""
     result = await db.execute(
         select(QuestionImport).where(QuestionImport.id == import_id)
@@ -104,20 +110,31 @@ async def enrich_import(
 
     if raw is None:
         parsed = resp["fallback_value"]
-        db.add(_build_log(
-            user_id=user_id, action="enrich", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=parsed,
-            confidence=parsed.get("confidence"),
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="enrich",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=parsed,
+                confidence=parsed.get("confidence"),
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
         await db.commit()
         return {"from_fallback": True, "ai_metadata": parsed}
 
     normalized = normalize_enrich(extract_json(raw) or {})
     if normalized.get("subject") and not qi.subject_id:
         from app.services.admin_subject_service import resolve_subject_id
+
         resolved = await resolve_subject_id(db, normalized["subject"])
         if resolved is not None:
             qi.subject_id = resolved
@@ -130,14 +147,23 @@ async def enrich_import(
     qi.ai_metadata = normalized
     qi.ai_raw_response = raw
 
-    db.add(_build_log(
-        user_id=user_id, action="enrich", target_type="import",
-        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result=normalized,
-        confidence=normalized.get("confidence"),
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="enrich",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result=normalized,
+            confidence=normalized.get("confidence"),
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     await db.commit()
     return {
         "from_fallback": False,
@@ -200,11 +226,14 @@ async def generate_drafts(
     count = max(1, min(10, count))
 
     from app.services.admin_subject_service import resolve_subject_id
+
     resolved_subject_id = await resolve_subject_id(db, subject_code)
     if resolved_subject_id is None:
         raise ValueError(f"无法解析科目 code {subject_code!r} 到 subject_id")
 
-    batch_id = f"AIGEN_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"AIGEN_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
     messages = build_generate_questions(
         subject_code, knowledge_points, difficulty, count, question_type, extra_hint
     )
@@ -214,14 +243,24 @@ async def generate_drafts(
         db, messages, fallback.get_fallback_generation(count)
     )
     if raw is None:
-        db.add(_build_log(
-            user_id=user_id, action="generate", target_type="batch",
-            target_id=None, batch_id=batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=resp["fallback_value"],
-            confidence=0.0,
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="generate",
+                target_type="batch",
+                target_id=None,
+                batch_id=batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=resp["fallback_value"],
+                confidence=0.0,
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
         await db.commit()
         return {"batch_id": batch_id, "generated": 0, "from_fallback": True}
 
@@ -235,43 +274,54 @@ async def generate_drafts(
         norm = normalize_generated_question(q) if isinstance(q, dict) else None
         if not norm:
             continue
-        db.add(QuestionImport(
-            batch_id=batch_id,
-            source_type="ai_generated",
-            source_file=None,
-            subject_id=resolved_subject_id,
-            question_type=norm["question_type"],
-            raw_data=q,
-            parsed_content=norm["parsed_content"],
-            parsed_options=norm["parsed_options"],
-            parsed_answer=norm["parsed_answer"],
-            parsed_analysis=norm["parsed_analysis"],
-            status="pending",
-            ai_generated=True,
-            ai_source="generate",
-            ai_metadata={
-                "knowledge_points": norm["knowledge_points"],
-                "difficulty": norm["difficulty"],
-                "request": {
-                    "subject": subject_code,
-                    "knowledge_points": knowledge_points,
-                    "difficulty": difficulty,
-                    "question_type": question_type,
+        db.add(
+            QuestionImport(
+                batch_id=batch_id,
+                source_type="ai_generated",
+                source_file=None,
+                subject_id=resolved_subject_id,
+                question_type=norm["question_type"],
+                raw_data=q,
+                parsed_content=norm["parsed_content"],
+                parsed_options=norm["parsed_options"],
+                parsed_answer=norm["parsed_answer"],
+                parsed_analysis=norm["parsed_analysis"],
+                status="pending",
+                ai_generated=True,
+                ai_source="generate",
+                ai_metadata={
+                    "knowledge_points": norm["knowledge_points"],
+                    "difficulty": norm["difficulty"],
+                    "request": {
+                        "subject": subject_code,
+                        "knowledge_points": knowledge_points,
+                        "difficulty": difficulty,
+                        "question_type": question_type,
+                    },
                 },
-            },
-            ai_raw_response=raw,
-            ai_answer_flag=bool(norm["parsed_answer"]),
-        ))
+                ai_raw_response=raw,
+                ai_answer_flag=bool(norm["parsed_answer"]),
+            )
+        )
         generated_count += 1
 
-    db.add(_build_log(
-        user_id=user_id, action="generate", target_type="batch",
-        target_id=None, batch_id=batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result={"count": generated_count},
-        confidence=None,
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="generate",
+            target_type="batch",
+            target_id=None,
+            batch_id=batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result={"count": generated_count},
+            confidence=None,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     await db.commit()
     return {
         "batch_id": batch_id,
@@ -282,9 +332,7 @@ async def generate_drafts(
     }
 
 
-async def complete_import(
-    db: AsyncSession, user_id: int, import_id: int
-) -> dict:
+async def complete_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
     """AI 补全单条 import 记录的缺失字段。
     AI 给出的 answer 不会自动写入 parsed_answer，仅放在 ai_metadata 待人工确认。
     """
@@ -309,13 +357,24 @@ async def complete_import(
 
     if raw is None:
         parsed = resp["fallback_value"]
-        db.add(_build_log(
-            user_id=user_id, action="complete", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=parsed, confidence=0.0,
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="complete",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=parsed,
+                confidence=0.0,
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
         await db.commit()
         return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
@@ -336,14 +395,23 @@ async def complete_import(
     }
     qi.ai_raw_response = raw
 
-    db.add(_build_log(
-        user_id=user_id, action="complete", target_type="import",
-        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result=qi.ai_metadata,
-        confidence=confidence,
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="complete",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result=qi.ai_metadata,
+            confidence=confidence,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     await db.commit()
     return {
         "missing": missing,
@@ -361,7 +429,9 @@ def _coerce_confidence(value: Any) -> float | None:
 
 
 async def _apply_complete_suggestion(
-    qi: QuestionImport, parsed: dict, missing: list[str],
+    qi: QuestionImport,
+    parsed: dict,
+    missing: list[str],
     db: AsyncSession | None = None,
 ) -> dict:
     """将 AI 补全结果有选择地写回 qi。answer 永远不直接写入 parsed_answer。"""
@@ -369,6 +439,7 @@ async def _apply_complete_suggestion(
     if "subject_id" in missing and parsed.get("subject") in SUBJECT_VALUES:
         if db is not None:
             from app.services.admin_subject_service import resolve_subject_id
+
             resolved = await resolve_subject_id(db, parsed["subject"])
         else:
             resolved = None

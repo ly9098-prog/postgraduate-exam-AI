@@ -47,6 +47,7 @@ class ContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
         try:
             from app.core.log_context import get_log_context
+
             ctx = get_log_context()
         except Exception:
             ctx = {}
@@ -73,10 +74,27 @@ class _JsonFormatter(logging.Formatter):
     # Keys that are part of the standard LogRecord and should not be
     # duplicated in the JSON "extra" section.
     _STANDARD_KEYS = {
-        "name", "msg", "args", "created", "filename", "funcName",
-        "levelname", "levelno", "lineno", "module", "msecs",
-        "message", "pathname", "process", "processName", "relativeCreated",
-        "stack_info", "exc_info", "exc_text", "thread", "threadName",
+        "name",
+        "msg",
+        "args",
+        "created",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "message",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "exc_info",
+        "exc_text",
+        "thread",
+        "threadName",
         "taskName",
     }
 
@@ -109,7 +127,11 @@ class _JsonFormatter(logging.Formatter):
 
         # Non-standard extra keys
         for key, value in record.__dict__.items():
-            if key not in self._STANDARD_KEYS and key not in output and not key.startswith("_"):
+            if (
+                key not in self._STANDARD_KEYS
+                and key not in output
+                and not key.startswith("_")
+            ):
                 try:
                     json.dumps(value)  # verify serializable
                     output[key] = value
@@ -157,7 +179,9 @@ class _TerminalColoredFormatter(logging.Formatter):
                     "name": {"color": "blue"},
                 },
             )
-        self._use_colors = bool(stream is not None and hasattr(stream, "isatty") and stream.isatty())
+        self._use_colors = bool(
+            stream is not None and hasattr(stream, "isatty") and stream.isatty()
+        )
 
     def format(self, record):
         if self._use_colors and self._colored_formatter is not None:
@@ -169,6 +193,7 @@ class _TerminalColoredFormatter(logging.Formatter):
                 rendered = rendered.replace(level_text, colored_level, 1)
             return rendered
         return self._plain_formatter.format(record)
+
 
 LOGGING_CONFIG: dict = {
     "version": 1,
@@ -198,16 +223,40 @@ LOGGING_CONFIG: dict = {
     },
     "loggers": {
         "uvicorn": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
-        "uvicorn.access": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
-        "sqlalchemy.engine": {"level": "WARNING", "handlers": ["console"], "propagate": False},
-        "sqlalchemy.pool": {"level": "WARNING", "handlers": ["console"], "propagate": False},
-        "sqlalchemy.dialects": {"level": "WARNING", "handlers": ["console"], "propagate": False},
+        "uvicorn.access": {
+            "level": LOG_LEVEL,
+            "handlers": ["console"],
+            "propagate": False,
+        },
+        "sqlalchemy.engine": {
+            "level": "WARNING",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+        "sqlalchemy.pool": {
+            "level": "WARNING",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+        "sqlalchemy.dialects": {
+            "level": "WARNING",
+            "handlers": ["console"],
+            "propagate": False,
+        },
         # Application-specific loggers
         "app.access": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
-        "app.pipeline": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
+        "app.pipeline": {
+            "level": LOG_LEVEL,
+            "handlers": ["console"],
+            "propagate": False,
+        },
         "app.ai": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
         "app.ocr": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
-        "app.db.slow_query": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
+        "app.db.slow_query": {
+            "level": LOG_LEVEL,
+            "handlers": ["console"],
+            "propagate": False,
+        },
         "app.audit": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
     },
 }

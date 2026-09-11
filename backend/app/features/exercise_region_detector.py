@@ -64,7 +64,9 @@ _TRAD_TO_SIMP = str.maketrans(
     "习题练选综测总结节课后训区点讲义体书章答案解析参考标准资料",
 )
 
-_PUNCTUATION_RE = re.compile(r"[：:；;，,。.！!？?【】\[\]()（）「」『』“”‘’《》〈〉\s]")
+_PUNCTUATION_RE = re.compile(
+    r"[：:；;，,。.！!？?【】\[\]()（）「」『』“”‘’《》〈〉\s]"
+)
 
 
 def _normalize_for_matching(text: str) -> str:
@@ -110,7 +112,7 @@ def _match_exercise_keyword(
                 if norm_line == norm_kw:
                     return kw, 1.0
                 continue
-            dist = _levenshtein(norm_line[:len(norm_kw) + max_distance], norm_kw)
+            dist = _levenshtein(norm_line[: len(norm_kw) + max_distance], norm_kw)
             if dist == 0:
                 return kw, 1.0
             elif dist <= 1:
@@ -130,7 +132,9 @@ _OPTION_RE = re.compile(r"(?:^|\s)[A-Da-d]\s*[.．、:：)）]", re.MULTILINE)
 _FILL_BLANK_RE = re.compile(r"_{2,}|（\s*）|\(\s*\)")
 _SCORE_MARKER_RE = re.compile(r"[（(]\s*\d+\s*分\s*[)）]")
 _CIRCLED_NUMBER_RE = re.compile(r"[①②③④⑤⑥⑦⑧⑨⑩]")
-_KNOWLEDGE_NEGATIVE_RE = re.compile(r"定义|定理|概念|原理|性质|公式|证明[：:]|引理|推论")
+_KNOWLEDGE_NEGATIVE_RE = re.compile(
+    r"定义|定理|概念|原理|性质|公式|证明[：:]|引理|推论"
+)
 _EXAMPLE_NEGATIVE_RE = re.compile(r"^例\s*\d+|例题|解法|证明如下|解\s*[:：]")
 
 
@@ -189,6 +193,7 @@ def _has_question_pattern(text: str) -> bool:
 # Phase 4: Exercise End Detection
 # ---------------------------------------------------------------------------
 
+
 def _match_end_keyword(text: str) -> str | None:
     normalized = _normalize_for_matching(text)
     for kw in EXERCISE_END_KEYWORDS:
@@ -201,6 +206,7 @@ def _match_end_keyword(text: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Phase 6: AI-assisted judgment (placeholder)
 # ---------------------------------------------------------------------------
+
 
 async def _ai_classify_page(text: str) -> str | None:
     return None
@@ -269,7 +275,11 @@ def detect_exercise_regions(
             start_score = _compute_exercise_page_score(start_text)
 
             combined_score = max(score, start_score)
-            if combined_score >= 0.2 or _has_question_pattern(text) or _has_question_pattern(start_text):
+            if (
+                combined_score >= 0.2
+                or _has_question_pattern(text)
+                or _has_question_pattern(start_text)
+            ):
                 state = _EXPANDING
                 empty_streak = 0
                 last_valid_page = page
@@ -282,12 +292,14 @@ def detect_exercise_regions(
         elif state == _EXPANDING:
             end_kw = _match_end_keyword(text)
             if end_kw:
-                regions.append(ExerciseRegion(
-                    start_page=current_start,
-                    end_page=page,
-                    confidence=current_confidence,
-                    matched_keyword=current_keyword,
-                ))
+                regions.append(
+                    ExerciseRegion(
+                        start_page=current_start,
+                        end_page=page,
+                        confidence=current_confidence,
+                        matched_keyword=current_keyword,
+                    )
+                )
                 state = _SEEKING_START
                 empty_streak = 0
                 continue
@@ -301,33 +313,42 @@ def detect_exercise_regions(
             else:
                 empty_streak += 1
                 if empty_streak >= max_empty:
-                    regions.append(ExerciseRegion(
-                        start_page=current_start,
-                        end_page=last_valid_page,
-                        confidence=current_confidence,
-                        matched_keyword=current_keyword,
-                    ))
+                    regions.append(
+                        ExerciseRegion(
+                            start_page=current_start,
+                            end_page=last_valid_page,
+                            confidence=current_confidence,
+                            matched_keyword=current_keyword,
+                        )
+                    )
                     state = _SEEKING_START
                     empty_streak = 0
 
     if state == _EXPANDING:
         end_page = last_valid_page if last_valid_page > current_start else pages[-1]
-        regions.append(ExerciseRegion(
-            start_page=current_start,
-            end_page=end_page,
-            confidence=current_confidence,
-            matched_keyword=current_keyword,
-        ))
+        regions.append(
+            ExerciseRegion(
+                start_page=current_start,
+                end_page=end_page,
+                confidence=current_confidence,
+                matched_keyword=current_keyword,
+            )
+        )
 
     if state == _VALIDATING:
         start_text = page_texts.get(current_start, "")
-        if _has_question_pattern(start_text) or _compute_exercise_page_score(start_text) >= 0.25:
-            regions.append(ExerciseRegion(
-                start_page=current_start,
-                end_page=current_start,
-                confidence=current_confidence * 0.7,
-                matched_keyword=current_keyword,
-            ))
+        if (
+            _has_question_pattern(start_text)
+            or _compute_exercise_page_score(start_text) >= 0.25
+        ):
+            regions.append(
+                ExerciseRegion(
+                    start_page=current_start,
+                    end_page=current_start,
+                    confidence=current_confidence * 0.7,
+                    matched_keyword=current_keyword,
+                )
+            )
 
     return regions
 
@@ -336,8 +357,11 @@ def detect_exercise_regions(
 # Lightweight OCR scan
 # ---------------------------------------------------------------------------
 
+
 def _lightweight_page_ocr(
-    source: bytes | str, dpi: int = 72, sample_step: int = 1,
+    source: bytes | str,
+    dpi: int = 72,
+    sample_step: int = 1,
 ) -> dict[int, str]:
     """Render PDF pages at low DPI and run PaddleOCR for quick text extraction.
 
@@ -387,7 +411,9 @@ def _lightweight_page_ocr(
             try:
                 # Run lightweight OCR in child process via process pool
                 text = ocr_process_pool.get_lightweight_text(
-                    png_bytes, page_no, timeout=120,
+                    png_bytes,
+                    page_no,
+                    timeout=120,
                 )
                 page_texts[page_no] = text
             except Exception as e:
@@ -405,6 +431,7 @@ def _lightweight_page_ocr(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def _expand_regions_for_sampling(
     regions: list[ExerciseRegion],
@@ -427,12 +454,14 @@ def _expand_regions_for_sampling(
         new_end = r.end_page + pad
         if total_pages:
             new_end = min(total_pages, new_end)
-        expanded.append(ExerciseRegion(
-            start_page=new_start,
-            end_page=new_end,
-            confidence=r.confidence,
-            matched_keyword=r.matched_keyword,
-        ))
+        expanded.append(
+            ExerciseRegion(
+                start_page=new_start,
+                end_page=new_end,
+                confidence=r.confidence,
+                matched_keyword=r.matched_keyword,
+            )
+        )
 
     # Merge overlapping/adjacent regions
     expanded.sort(key=lambda r: r.start_page)
@@ -504,6 +533,8 @@ def detect_exercise_regions_from_pdf(
             [(r.start_page, r.end_page) for r in regions],
         )
     else:
-        logger.info("Exercise region detection found no regions, will fall back to full OCR")
+        logger.info(
+            "Exercise region detection found no regions, will fall back to full OCR"
+        )
 
     return regions

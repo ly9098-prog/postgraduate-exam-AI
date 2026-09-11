@@ -38,8 +38,15 @@ async def list_users(
     _=Depends(require_permissions("app-user:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    users, total = await list_app_users(db, page, page_size, keyword, is_banned, created_from, created_to)
-    return paginated_response([AdminAppUserListItem.model_validate(user) for user in users], total, page, page_size)
+    users, total = await list_app_users(
+        db, page, page_size, keyword, is_banned, created_from, created_to
+    )
+    return paginated_response(
+        [AdminAppUserListItem.model_validate(user) for user in users],
+        total,
+        page,
+        page_size,
+    )
 
 
 @router.get("/{user_id}", response_model=AdminAppUserDetail)
@@ -81,7 +88,9 @@ async def bind_admin(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        binding = await bind_app_user_admin(db, user_id, data.admin_user_id, current_admin, request)
+        binding = await bind_app_user_admin(
+            db, user_id, data.admin_user_id, current_admin, request
+        )
         await db.commit()
         await db.refresh(binding)
         return binding

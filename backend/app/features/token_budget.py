@@ -128,9 +128,15 @@ async def check_token_limit(estimated_tokens: int, config: dict) -> bool:
 
     async with _lock:
         _reset_counters_if_needed()
-        if daily_limit > 0 and int(_token_usage["daily"]) + estimated_tokens > daily_limit:
+        if (
+            daily_limit > 0
+            and int(_token_usage["daily"]) + estimated_tokens > daily_limit
+        ):
             return False
-        if monthly_limit > 0 and int(_token_usage["monthly"]) + estimated_tokens > monthly_limit:
+        if (
+            monthly_limit > 0
+            and int(_token_usage["monthly"]) + estimated_tokens > monthly_limit
+        ):
             return False
         return True
 

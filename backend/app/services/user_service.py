@@ -41,8 +41,7 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
     openid: str | None = None
 
     has_app_id = bool(
-        settings.WECHAT_APP_ID
-        and settings.WECHAT_APP_ID != "your-app-id-here"
+        settings.WECHAT_APP_ID and settings.WECHAT_APP_ID != "your-app-id-here"
     )
     has_app_secret = bool(
         settings.WECHAT_APP_SECRET
@@ -106,7 +105,11 @@ async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
     AppUser identity remains WeChat-openid based.  A miniprogram user receives
     admin-like metadata only through an explicit app_user_admin_bindings row.
     """
-    if settings.APP_ENV.lower() in {"development", "local", "test"} and user.openid.startswith("dev_"):
+    if settings.APP_ENV.lower() in {
+        "development",
+        "local",
+        "test",
+    } and user.openid.startswith("dev_"):
         return UserResponse(
             id=user.id,
             nickname=user.nickname,
@@ -152,7 +155,6 @@ async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
         role_name=role_name,
         permissions=permissions,
     )
-
 
 
 async def update_user(
@@ -227,9 +229,7 @@ async def replace_user_avatar(db: AsyncSession, user: User, data: bytes) -> User
     return user
 
 
-async def delete_user_avatar_file(
-    avatar_url: str | None, *, storage=None
-) -> None:
+async def delete_user_avatar_file(avatar_url: str | None, *, storage=None) -> None:
     """Best-effort removal of a persisted profile avatar.
 
     Avatars created before the dedicated namespace fix live below
@@ -241,7 +241,9 @@ async def delete_user_avatar_file(
         return
     normalized_url = str(avatar_url).replace("\\", "/")
     legacy_marker = f"/{LEGACY_USER_AVATAR_PREFIX.strip('/')}/"
-    if legacy_marker in normalized_url or normalized_url.startswith(LEGACY_USER_AVATAR_PREFIX + "/"):
+    if legacy_marker in normalized_url or normalized_url.startswith(
+        LEGACY_USER_AVATAR_PREFIX + "/"
+    ):
         backend = get_legacy_user_avatar_storage()
     else:
         backend = storage or get_user_avatar_storage()

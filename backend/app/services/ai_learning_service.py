@@ -34,7 +34,9 @@ from app.services.knowledge_point_service import load_question_kps
 # ============================================================
 
 
-async def check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int = 0) -> bool:
+async def check_token_limit(
+    db: AsyncSession, user_id: int, tokens_needed: int = 0
+) -> bool:
     """检查用户是否超出 token 限额（日 + 月）。返回 True 表示可以继续调用。"""
     daily_limit = settings.AI_DAILY_TOKEN_LIMIT
     monthly_limit = settings.AI_MONTHLY_TOKEN_LIMIT
@@ -52,7 +54,9 @@ async def check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int =
     result = await db.execute(
         select(
             func.coalesce(
-                func.sum(case((AiChat.created_at >= today, AiChat.tokens_used), else_=0)),
+                func.sum(
+                    case((AiChat.created_at >= today, AiChat.tokens_used), else_=0)
+                ),
                 0,
             ),
             func.coalesce(func.sum(AiChat.tokens_used), 0),
@@ -155,7 +159,11 @@ async def ai_explain(
     q_kps = kp_map.get(q.id, [])
 
     # 构造 context
-    stem = q.content.get("text", "") if isinstance(q.content, dict) else str(q.content or "")
+    stem = (
+        q.content.get("text", "")
+        if isinstance(q.content, dict)
+        else str(q.content or "")
+    )
 
     messages = build_explain_prompt(
         stem=stem,
@@ -196,12 +204,20 @@ async def ai_explain(
 
     parsed = _parse_json_response(result["content"])
     if parsed is None:
-        parsed = {"explanation": result["content"], "solution_steps": [], "key_knowledge_points": [], "common_mistakes": []}
+        parsed = {
+            "explanation": result["content"],
+            "solution_steps": [],
+            "key_knowledge_points": [],
+            "common_mistakes": [],
+        }
 
     await record_token_usage(
-        db, user_id, "ai_explain",
+        db,
+        user_id,
+        "ai_explain",
         f"question_id={question_id} focus={focus}",
-        result["content"], result,
+        result["content"],
+        result,
     )
 
     return {
@@ -236,7 +252,11 @@ async def ai_analyze_mistake(
     if not q:
         raise ValueError("题目不存在")
 
-    stem = q.content.get("text", "") if isinstance(q.content, dict) else str(q.content or "")
+    stem = (
+        q.content.get("text", "")
+        if isinstance(q.content, dict)
+        else str(q.content or "")
+    )
 
     messages = build_mistake_analysis_prompt(
         stem=stem,
@@ -271,7 +291,11 @@ async def ai_analyze_mistake(
 
     parsed = _parse_json_response(result["content"])
     if parsed is None:
-        parsed = {"error_type": "unknown", "analysis": result["content"], "suggestion": ""}
+        parsed = {
+            "error_type": "unknown",
+            "analysis": result["content"],
+            "suggestion": "",
+        }
 
     error_type = parsed.get("error_type", "unknown")
     label_map = {
@@ -286,9 +310,12 @@ async def ai_analyze_mistake(
     }
 
     await record_token_usage(
-        db, user_id, "mistake_analysis",
+        db,
+        user_id,
+        "mistake_analysis",
         f"question_id={question_id}",
-        result["content"], result,
+        result["content"],
+        result,
     )
 
     return {
@@ -394,18 +421,24 @@ async def recommend_similar_questions(
         if not match_reasons:
             match_reasons.append("同科目")
 
-        stem = c.content.get("text", "") if isinstance(c.content, dict) else str(c.content or "")
+        stem = (
+            c.content.get("text", "")
+            if isinstance(c.content, dict)
+            else str(c.content or "")
+        )
 
-        recommendations.append({
-            "question_id": c.id,
-            "subject_id": c.subject_id,
-            "subject_code": c.subject_ref.code if c.subject_ref else "",
-            "subject_name": c.subject_ref.name if c.subject_ref else "",
-            "question_type": c.question_type,
-            "stem": stem[:200],
-            "knowledge_points": kps,
-            "match_reason": " + ".join(match_reasons),
-        })
+        recommendations.append(
+            {
+                "question_id": c.id,
+                "subject_id": c.subject_id,
+                "subject_code": c.subject_ref.code if c.subject_ref else "",
+                "subject_name": c.subject_ref.name if c.subject_ref else "",
+                "question_type": c.question_type,
+                "stem": stem[:200],
+                "knowledge_points": kps,
+                "match_reason": " + ".join(match_reasons),
+            }
+        )
 
     return {
         "source_question_id": question_id,
@@ -445,11 +478,13 @@ async def generate_learning_report(
         select(
             PracticeRecord.question_id,
             PracticeRecord.is_correct,
-        ).where(
+        )
+        .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.subject_id == subject_id,
             PracticeRecord.answered_at >= since,
-        ).order_by(PracticeRecord.answered_at.desc())
+        )
+        .order_by(PracticeRecord.answered_at.desc())
     )
     # Read only the per-answer fields used by the report.  Full ORM hydration is
     # intentionally avoided so retired PracticeRecord batch columns can never
@@ -490,26 +525,36 @@ async def generate_learning_report(
 
     kp_list = []
     for kp, stats in kp_stats.items():
-        kp_list.append({
-            "knowledge_point": kp,
-            "accuracy": stats["correct"] / stats["total"] if stats["total"] > 0 else 0,
-            "correct": stats["correct"],
-            "total": stats["total"],
-        })
+        kp_list.append(
+            {
+                "knowledge_point": kp,
+                "accuracy": stats["correct"] / stats["total"]
+                if stats["total"] > 0
+                else 0,
+                "correct": stats["correct"],
+                "total": stats["total"],
+            }
+        )
     kp_list.sort(key=lambda x: x["accuracy"])
 
     # 数据太少时不调用 AI
     if total < 5:
-        weak = [{
-            "knowledge_point": kp["knowledge_point"],
-            "accuracy": kp["accuracy"],
-            "suggestion": "数据不足，继续练习以获取更准确的建议",
-        } for kp in [k for k in kp_list if k["accuracy"] < 0.6][:3]]
-        strong = [{
-            "knowledge_point": kp["knowledge_point"],
-            "accuracy": kp["accuracy"],
-            "suggestion": "继续保持",
-        } for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]]
+        weak = [
+            {
+                "knowledge_point": kp["knowledge_point"],
+                "accuracy": kp["accuracy"],
+                "suggestion": "数据不足，继续练习以获取更准确的建议",
+            }
+            for kp in [k for k in kp_list if k["accuracy"] < 0.6][:3]
+        ]
+        strong = [
+            {
+                "knowledge_point": kp["knowledge_point"],
+                "accuracy": kp["accuracy"],
+                "suggestion": "继续保持",
+            }
+            for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]
+        ]
         return {
             "subject_id": subject_id,
             "subject_code": subject_code,
@@ -519,7 +564,9 @@ async def generate_learning_report(
             "accuracy": accuracy,
             "weak_points": weak,
             "strong_points": strong,
-            "learning_suggestions": ["数据较少，建议积累更多练习记录后再查看 AI 报告。"],
+            "learning_suggestions": [
+                "数据较少，建议积累更多练习记录后再查看 AI 报告。"
+            ],
             "tokens_used": 0,
             "from_fallback": False,
         }
@@ -529,16 +576,22 @@ async def generate_learning_report(
 
     if not await check_token_limit(db, user_id, 1000):
         # 限额内用规则生成
-        weak = [{
-            "knowledge_point": kp["knowledge_point"],
-            "accuracy": kp["accuracy"],
-            "suggestion": "建议重点复习该知识点",
-        } for kp in [k for k in kp_list if k["accuracy"] < 0.6][:5]]
-        strong = [{
-            "knowledge_point": kp["knowledge_point"],
-            "accuracy": kp["accuracy"],
-            "suggestion": "继续保持",
-        } for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]]
+        weak = [
+            {
+                "knowledge_point": kp["knowledge_point"],
+                "accuracy": kp["accuracy"],
+                "suggestion": "建议重点复习该知识点",
+            }
+            for kp in [k for k in kp_list if k["accuracy"] < 0.6][:5]
+        ]
+        strong = [
+            {
+                "knowledge_point": kp["knowledge_point"],
+                "accuracy": kp["accuracy"],
+                "suggestion": "继续保持",
+            }
+            for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]
+        ]
         return {
             "subject_id": subject_id,
             "subject_code": subject_code,
@@ -576,29 +629,40 @@ async def generate_learning_report(
 
     parsed = _parse_json_response(result["content"])
     if parsed is None:
-        parsed = {"weak_points": [], "strong_points": [], "learning_suggestions": [result["content"]]}
+        parsed = {
+            "weak_points": [],
+            "strong_points": [],
+            "learning_suggestions": [result["content"]],
+        }
 
     await record_token_usage(
-        db, user_id, "learning_report",
+        db,
+        user_id,
+        "learning_report",
         f"subject_id={subject_id} days={days}",
-        result["content"], result,
+        result["content"],
+        result,
     )
 
     weak_points = []
     for wp in parsed.get("weak_points", []):
-        weak_points.append({
-            "knowledge_point": wp.get("knowledge_point", ""),
-            "accuracy": float(wp.get("accuracy", 0)),
-            "suggestion": wp.get("suggestion", ""),
-        })
+        weak_points.append(
+            {
+                "knowledge_point": wp.get("knowledge_point", ""),
+                "accuracy": float(wp.get("accuracy", 0)),
+                "suggestion": wp.get("suggestion", ""),
+            }
+        )
 
     strong_points = []
     for sp in parsed.get("strong_points", []):
-        strong_points.append({
-            "knowledge_point": sp.get("knowledge_point", ""),
-            "accuracy": float(sp.get("accuracy", 0)),
-            "suggestion": sp.get("suggestion", ""),
-        })
+        strong_points.append(
+            {
+                "knowledge_point": sp.get("knowledge_point", ""),
+                "accuracy": float(sp.get("accuracy", 0)),
+                "suggestion": sp.get("suggestion", ""),
+            }
+        )
 
     return {
         "subject_id": subject_id,

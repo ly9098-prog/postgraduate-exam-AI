@@ -24,9 +24,13 @@ class AdminAiModelConfig(Base):
     # 旧字段（单个 feature，向后兼容）
     feature: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     # 新字段（多 feature 支持，JSON 数组如 ["ocr","vision"]）
-    features: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=None)
+    features: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AdminAiConfig(Base):
@@ -35,4 +39,6 @@ class AdminAiConfig(Base):
     config_key: Mapped[str] = mapped_column(String(64), primary_key=True)
     config_value: Mapped[str] = mapped_column(Text, nullable=False, default="")
     updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

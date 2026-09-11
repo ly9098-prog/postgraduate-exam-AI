@@ -117,7 +117,9 @@ def latex_expression_to_text(latex: str) -> str:
     if not value:
         return ""
 
-    value = re.sub(r"\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\b", "", value)
+    value = re.sub(
+        r"\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\b", "", value
+    )
     value = re.sub(r"\\(?:left|right)\b", "", value)
     value = re.sub(r"\\(?:,|;|:|!)", " ", value)
     value = re.sub(r"\\(?:quad|qquad)\b", " ", value)
@@ -132,7 +134,16 @@ def latex_expression_to_text(latex: str) -> str:
         value = fraction_re.sub(lambda m: f"({m.group(1)})/({m.group(2)})", value)
         value = root_re.sub(lambda m: f"√({m.group(1)})", value)
 
-    for command in ("text", "textrm", "textit", "textbf", "mathrm", "mathbf", "mathit", "operatorname"):
+    for command in (
+        "text",
+        "textrm",
+        "textit",
+        "textbf",
+        "mathrm",
+        "mathbf",
+        "mathit",
+        "operatorname",
+    ):
         value = _replace_braced_command(value, command)
 
     # Replace longest commands first (e.g. \subseteq before \subset).
@@ -219,6 +230,7 @@ def render_latex_to_png(latex: str, display: bool = False) -> bytes | None:
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         from matplotlib import rcParams
@@ -232,23 +244,31 @@ def render_latex_to_png(latex: str, display: bool = False) -> bytes | None:
 
         text_str = f"${latex}$" if not latex.startswith("$") else latex
         ax.text(
-            0, 0, text_str,
+            0,
+            0,
+            text_str,
             fontsize=rcParams["font.size"],
-            va="bottom", ha="left",
+            va="bottom",
+            ha="left",
             usetex=False,
         )
 
         # Render to PNG
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight",
-                    pad_inches=0.02, transparent=True)
+        fig.savefig(
+            buf,
+            format="png",
+            dpi=150,
+            bbox_inches="tight",
+            pad_inches=0.02,
+            transparent=True,
+        )
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
 
     except Exception as e:
-        logger.warning("LaTeX rendering failed for '%s': %s",
-                       latex[:80], e)
+        logger.warning("LaTeX rendering failed for '%s': %s", latex[:80], e)
         return None
 
 

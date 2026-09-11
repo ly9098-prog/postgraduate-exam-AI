@@ -30,7 +30,14 @@ def render_table_to_pdf(pdf, block: TableBlock) -> None:
 
         if block.caption:
             pdf.set_font_size(8)
-            pdf.multi_cell(table_width, 4.5, text=block.caption, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+            pdf.multi_cell(
+                table_width,
+                4.5,
+                text=block.caption,
+                new_x="LMARGIN",
+                new_y="NEXT",
+                wrapmode="CHAR",
+            )
             pdf.ln(1)
 
         header_end = _header_row_end(block)
@@ -38,14 +45,25 @@ def render_table_to_pdf(pdf, block: TableBlock) -> None:
         first_group = True
         for start, end in groups:
             group_height = sum(row_heights[start:end])
-            page_bottom = float(getattr(pdf, "page_break_trigger", pdf.h - pdf.b_margin))
+            page_bottom = float(
+                getattr(pdf, "page_break_trigger", pdf.h - pdf.b_margin)
+            )
             remaining = page_bottom - pdf.get_y()
             repeat_header = not first_group and header_end > 0 and start >= header_end
             header_height = sum(row_heights[:header_end]) if repeat_header else 0.0
             if remaining < group_height + header_height:
                 pdf.add_page()
             if repeat_header:
-                _draw_rows(pdf, block, 0, header_end, left, pdf.get_y(), col_widths, row_heights)
+                _draw_rows(
+                    pdf,
+                    block,
+                    0,
+                    header_end,
+                    left,
+                    pdf.get_y(),
+                    col_widths,
+                    row_heights,
+                )
                 pdf.set_y(pdf.get_y() + sum(row_heights[:header_end]))
             y = pdf.get_y()
             _draw_rows(pdf, block, start, end, left, y, col_widths, row_heights)
@@ -53,7 +71,9 @@ def render_table_to_pdf(pdf, block: TableBlock) -> None:
             first_group = False
         pdf.ln(2)
     except Exception:
-        logger.warning("PDF structured-table rendering failed; using text fallback", exc_info=True)
+        logger.warning(
+            "PDF structured-table rendering failed; using text fallback", exc_info=True
+        )
         _render_fallback(pdf, block)
 
 
@@ -76,7 +96,7 @@ def _draw_rows(
             cell_end = end
         x = left + sum(col_widths[:col])
         y = top + sum(row_heights[start:row])
-        width = sum(col_widths[col:min(block.column_count, col + cell.col_span)])
+        width = sum(col_widths[col : min(block.column_count, col + cell.col_span)])
         height = sum(row_heights[row:cell_end])
 
         if cell.is_header:
@@ -116,7 +136,10 @@ def _column_widths(block: TableBlock, table_width: float) -> list[float]:
         # Estimate from content while keeping columns within a practical range.
         weights = [1.0] * block.column_count
         for _row, col, cell in block.iter_anchors():
-            per_col = max(1.0, min(8.0, math.sqrt(max(1, len(_cell_text(cell)))))) / cell.col_span
+            per_col = (
+                max(1.0, min(8.0, math.sqrt(max(1, len(_cell_text(cell))))))
+                / cell.col_span
+            )
             for index in range(col, min(block.column_count, col + cell.col_span)):
                 weights[index] = max(weights[index], per_col)
     total = sum(weights)
@@ -127,8 +150,11 @@ def _row_heights(pdf, block: TableBlock, col_widths: list[float]) -> list[float]
     heights = [_MIN_ROW_H for _ in range(block.row_count)]
     spanning: list[tuple[int, int, float]] = []
     for row, col, cell in block.iter_anchors():
-        width = sum(col_widths[col:min(block.column_count, col + cell.col_span)])
-        needed = _text_height(pdf, _cell_text(cell), max(1.0, width - 2 * _CELL_PADDING)) + 2 * _CELL_PADDING
+        width = sum(col_widths[col : min(block.column_count, col + cell.col_span)])
+        needed = (
+            _text_height(pdf, _cell_text(cell), max(1.0, width - 2 * _CELL_PADDING))
+            + 2 * _CELL_PADDING
+        )
         needed = max(_MIN_ROW_H, needed)
         if cell.row_span <= 1:
             heights[row] = max(heights[row], needed)

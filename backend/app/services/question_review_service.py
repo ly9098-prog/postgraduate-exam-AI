@@ -83,7 +83,9 @@ class ReviewTransition(NamedTuple):
     is_overdue_review: bool
 
 
-def compute_next_review_at(box_level: int, base_time: datetime | None = None) -> datetime:
+def compute_next_review_at(
+    box_level: int, base_time: datetime | None = None
+) -> datetime:
     """根据盒子等级计算下次复习时间。
 
     ``base_time`` 由答题记录时间传入时，可保证批量提交的复习时间与实际

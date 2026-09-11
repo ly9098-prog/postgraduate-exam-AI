@@ -15,10 +15,18 @@ import statistics
 
 _QUESTION_NUMBER_PATTERN = re.compile(r"^\d+\s*[.．、)）]")
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
-_OPTION_PATTERN = re.compile(r"^(?:[" + _CIRCLED_OPTION_CHARS + r"]\s*)?[A-D]\s*[.．、:：)）]")
-_EXERCISE_MARKER_PATTERN = re.compile(r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题")
-_QUESTION_SIGNAL_PATTERN = re.compile(r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|求|问|？|\?")
-_PROSE_MARKER_PATTERN = re.compile(r"定义|定理|知识点|证明|证毕|解法|例题|性质|推论|本节|本章")
+_OPTION_PATTERN = re.compile(
+    r"^(?:[" + _CIRCLED_OPTION_CHARS + r"]\s*)?[A-D]\s*[.．、:：)）]"
+)
+_EXERCISE_MARKER_PATTERN = re.compile(
+    r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题"
+)
+_QUESTION_SIGNAL_PATTERN = re.compile(
+    r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|求|问|？|\?"
+)
+_PROSE_MARKER_PATTERN = re.compile(
+    r"定义|定理|知识点|证明|证毕|解法|例题|性质|推论|本节|本章"
+)
 
 
 def _percentile(data: list[float], p: float) -> float:
@@ -66,7 +74,9 @@ def filter_book_layout_blocks(normalized_blocks: list[dict]) -> tuple[list[dict]
             if _EXERCISE_MARKER_PATTERN.search(line):
                 for j in range(i + 1, line_count):
                     candidate = lines[j].strip()
-                    if _QUESTION_NUMBER_PATTERN.match(candidate) and _QUESTION_SIGNAL_PATTERN.search(candidate):
+                    if _QUESTION_NUMBER_PATTERN.match(
+                        candidate
+                    ) and _QUESTION_SIGNAL_PATTERN.search(candidate):
                         keep_start = j
                         signal = "exercise_marker+question"
                         break
@@ -115,13 +125,15 @@ def filter_book_layout_blocks(normalized_blocks: list[dict]) -> tuple[list[dict]
         kept_boxes = list(boxes[keep_start:line_count])
         diagnostics["filtered_line_count"] += keep_start
         diagnostics["kept_line_count"] += len(kept_lines)
-        diagnostics["region_signals"].append({
-            "page": block.get("page", 1),
-            "block_index": block.get("block_index", 0),
-            "line_index": keep_start,
-            "signal": signal,
-            "preview": "".join(kept_lines[:2])[:80],
-        })
+        diagnostics["region_signals"].append(
+            {
+                "page": block.get("page", 1),
+                "block_index": block.get("block_index", 0),
+                "line_index": keep_start,
+                "signal": signal,
+                "preview": "".join(kept_lines[:2])[:80],
+            }
+        )
         new_block = dict(block)
         new_text = "\n".join(kept_lines).strip()
         new_block["normalized_text"] = new_text
@@ -210,19 +222,23 @@ def detect_visual_boundaries(normalized_blocks: list[dict]) -> list[dict]:
             has_number = bool(_QUESTION_NUMBER_PATTERN.match(line_text))
 
             if has_number and (is_large_gap or is_indent_reset):
-                boundaries.append({
-                    "block_index": block_idx,
-                    "line_index": i,
-                    "page": page,
-                    "signal": "gap+number" if is_large_gap else "indent+number",
-                })
+                boundaries.append(
+                    {
+                        "block_index": block_idx,
+                        "line_index": i,
+                        "page": page,
+                        "signal": "gap+number" if is_large_gap else "indent+number",
+                    }
+                )
             elif is_very_large_gap and not has_number:
-                boundaries.append({
-                    "block_index": block_idx,
-                    "line_index": i,
-                    "page": page,
-                    "signal": "large_gap",
-                })
+                boundaries.append(
+                    {
+                        "block_index": block_idx,
+                        "line_index": i,
+                        "page": page,
+                        "signal": "large_gap",
+                    }
+                )
 
     boundaries.sort(key=lambda b: (b["block_index"], b["line_index"]))
     return boundaries
@@ -235,6 +251,7 @@ def filter_book_layout_blocks_from_ir(doc: "DocumentIR") -> tuple[list[dict], di
     legacy implementation. Returns blocks-format result for upstream stages.
     """
     from app.core.document_ir import document_ir_to_blocks
+
     blocks = document_ir_to_blocks(doc)
     return filter_book_layout_blocks(blocks)
 
@@ -246,5 +263,6 @@ def detect_visual_boundaries_from_ir(doc: "DocumentIR") -> list[dict]:  # noqa: 
     legacy implementation.
     """
     from app.core.document_ir import document_ir_to_blocks
+
     blocks = document_ir_to_blocks(doc)
     return detect_visual_boundaries(blocks)

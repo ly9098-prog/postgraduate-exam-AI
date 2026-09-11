@@ -61,7 +61,9 @@ class PracticeSession(Base):
     subject_id: Mapped[int] = mapped_column(
         ForeignKey("subjects.id"), nullable=False, index=True
     )
-    subject_ref = relationship("Subject", back_populates="practice_sessions", lazy="noload")
+    subject_ref = relationship(
+        "Subject", back_populates="practice_sessions", lazy="noload"
+    )
 
     # 幂等 key；服务层强制非空并限制长度。
     request_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -69,7 +71,9 @@ class PracticeSession(Base):
     # Canonical idempotency state for batch-submit.  These fields belong to the
     # session rather than an arbitrary PracticeRecord so all-skipped batches and
     # future answer-history cleanup remain recoverable.
-    submission_payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    submission_payload_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     submission_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Durable semantic scope of the issued batch. ``mode`` below still describes
@@ -78,7 +82,9 @@ class PracticeSession(Base):
     # intentionally has no FK: historical sessions remain auditable even if a
     # knowledge-point row is retired or physically removed in a future migration.
     scope_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    scope_root_knowledge_point_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scope_root_knowledge_point_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     scope_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="random")

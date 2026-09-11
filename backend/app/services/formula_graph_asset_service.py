@@ -57,7 +57,9 @@ def choose_effective_graph_asset(
     return None
 
 
-def is_function_graph(card: FormulaCard, effective_asset: FormulaGraphAsset | None = None) -> bool:
+def is_function_graph(
+    card: FormulaCard, effective_asset: FormulaGraphAsset | None = None
+) -> bool:
     """Unified classification: determine if a formula card is a function graph.
 
     Priority:
@@ -142,7 +144,9 @@ def _validate_image(data: bytes, filename: str) -> tuple[Image.Image, str]:
 
     width, height = img.size
     if width > MAX_WIDTH or height > MAX_HEIGHT:
-        raise ValueError(f"图片尺寸过大 ({width}x{height})，最大支持 {MAX_WIDTH}x{MAX_HEIGHT}")
+        raise ValueError(
+            f"图片尺寸过大 ({width}x{height})，最大支持 {MAX_WIDTH}x{MAX_HEIGHT}"
+        )
 
     return img, mime_type
 
@@ -194,7 +198,7 @@ def _safe_delete_file(file_url: str) -> None:
         # Extract relative path from URL
         prefix = f"{settings.PUBLIC_BASE_URL}/static/"
         if file_url.startswith(prefix):
-            rel_path = file_url[len(prefix):]
+            rel_path = file_url[len(prefix) :]
         elif "/static/" in file_url:
             rel_path = file_url.split("/static/", 1)[1]
         else:
@@ -219,9 +223,7 @@ async def get_graph_assets_for_card(
 ) -> list[FormulaGraphAsset]:
     """Get all graph assets for a card."""
     result = await db.execute(
-        select(FormulaGraphAsset).where(
-            FormulaGraphAsset.formula_card_id == card_id
-        )
+        select(FormulaGraphAsset).where(FormulaGraphAsset.formula_card_id == card_id)
     )
     return list(result.scalars().all())
 
@@ -251,17 +253,25 @@ async def upload_graph_asset(
 
     # Validate and process image in executor (off event loop)
     img, mime_type = await loop.run_in_executor(
-        _image_executor, _validate_image, file_data, filename,
+        _image_executor,
+        _validate_image,
+        file_data,
+        filename,
     )
     image_bytes = await loop.run_in_executor(
-        _image_executor, _process_image, img,
+        _image_executor,
+        _process_image,
+        img,
     )
     thumbnail_bytes = await loop.run_in_executor(
-        _image_executor, _create_thumbnail, img,
+        _image_executor,
+        _create_thumbnail,
+        img,
     )
 
     # Compute checksum
     import hashlib
+
     checksum = hashlib.sha256(image_bytes).hexdigest()
 
     # Re-open for dimension reading

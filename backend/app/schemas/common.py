@@ -16,6 +16,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class RawPaginatedResponse(BaseModel):
     """Pagination envelope without item-type validation (for dict-based list endpoints)."""
+
     items: list[dict]
     total: int
     page: int

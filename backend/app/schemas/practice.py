@@ -9,8 +9,10 @@ PracticeMode = Literal["random", "smart", "similar", "sequential"]
 
 # --- GET /practice/questions ---
 
+
 class PracticeQuestion(BaseModel):
     """刷题用题目（不含答案）"""
+
     id: int
     question_version_id: int
     question_version: int
@@ -32,6 +34,7 @@ class PracticeQuestion(BaseModel):
 
 class SequentialPracticeProgress(BaseModel):
     """顺序刷题当前轮次进度。"""
+
     subject_id: int
     total_questions: int
     completed_questions: int
@@ -89,12 +92,14 @@ class AnswerResult(BaseModel):
 
 # --- POST /practice/batch-submit ---
 
+
 class PracticeSessionMeta(BaseModel):
     """一次完整刷题会话的元数据。
 
     新版 batch-submit 必须携带 session，并与服务器签发的 batch_token 共同
     绑定科目、模式、request_id、题目集合和提交时序。
     """
+
     request_id: str = Field(min_length=1, max_length=128)
     subject_id: int = Field(gt=0)
     mode: PracticeMode = "random"
@@ -114,16 +119,12 @@ class BatchSubmitRequest(BaseModel):
     session: PracticeSessionMeta
 
 
-
-
 class PracticeKnowledgeSession(BaseModel):
     practice_mode: Literal["knowledge_chapter", "knowledge_point"]
     root_knowledge_point_id: int
     root_name: str
     include_descendants: bool = False
     knowledge_point_count: int = 1
-
-
 
 
 class PracticeSessionScopeSnapshot(BaseModel):
@@ -177,12 +178,15 @@ class PracticeChapterProgress(BaseModel):
 class PracticeKnowledgeSummaryResponse(BaseModel):
     request_id: str
     status: Literal["processing", "ready", "unavailable"]
-    practice_mode: Literal["knowledge_chapter", "knowledge_point", "general"] = "general"
+    practice_mode: Literal["knowledge_chapter", "knowledge_point", "general"] = (
+        "general"
+    )
     projection_pending_count: int = 0
     scope: PracticeKnowledgeScope | None = None
     chapter: PracticeChapterProgress | None = None
     touched_knowledge_point_count: int = 0
     points: list[PracticeKnowledgePointChange] = Field(default_factory=list)
+
 
 class BatchSubmitResponse(BaseModel):
     results: list[AnswerResult]
@@ -194,6 +198,7 @@ class BatchSubmitResponse(BaseModel):
 
 
 # --- GET /practice/stats ---
+
 
 class DailyStats(BaseModel):
     date: str
@@ -221,6 +226,7 @@ class PracticeStatsResponse(BaseModel):
 
 # --- GET /questions/{id}/detail ---
 
+
 class QuestionDetailResponse(BaseModel):
     id: int
     subject_id: int
@@ -238,6 +244,7 @@ class QuestionDetailResponse(BaseModel):
 
 
 # --- GET /practice/records (history) ---
+
 
 class PracticeRecordItem(BaseModel):
     id: int

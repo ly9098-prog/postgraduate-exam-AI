@@ -22,24 +22,49 @@ _RE_ROMAN_SUBITEM_MARKER = re.compile(
 )
 
 _ROMAN_TO_VALUE: dict[str, int] = {
-    "Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5,
-    "Ⅵ": 6, "Ⅶ": 7, "Ⅷ": 8, "Ⅸ": 9, "Ⅹ": 10,
-    "IⅡ": 2, "IⅢ": 3, "IⅣ": 4, "IⅤ": 5,
-    "IⅥ": 6, "IⅦ": 7, "IⅧ": 8, "IⅨ": 9, "IⅩ": 10,
-    "VIII": 8, "VII": 7, "III": 3, "VI": 6, "IV": 4, "IX": 9,
-    "II": 2, "V": 5, "X": 10, "I": 1,
+    "Ⅰ": 1,
+    "Ⅱ": 2,
+    "Ⅲ": 3,
+    "Ⅳ": 4,
+    "Ⅴ": 5,
+    "Ⅵ": 6,
+    "Ⅶ": 7,
+    "Ⅷ": 8,
+    "Ⅸ": 9,
+    "Ⅹ": 10,
+    "IⅡ": 2,
+    "IⅢ": 3,
+    "IⅣ": 4,
+    "IⅤ": 5,
+    "IⅥ": 6,
+    "IⅦ": 7,
+    "IⅧ": 8,
+    "IⅨ": 9,
+    "IⅩ": 10,
+    "VIII": 8,
+    "VII": 7,
+    "III": 3,
+    "VI": 6,
+    "IV": 4,
+    "IX": 9,
+    "II": 2,
+    "V": 5,
+    "X": 10,
+    "I": 1,
 }
 
-_VALUE_TO_ROMAN: dict[int, str] = {v: k for k, v in _ROMAN_TO_VALUE.items() if k.isascii()}
+_VALUE_TO_ROMAN: dict[int, str] = {
+    v: k for k, v in _ROMAN_TO_VALUE.items() if k.isascii()
+}
 
 # ---------------------------------------------------------------------------
 # Anomaly type constants
 # ---------------------------------------------------------------------------
 
-DUPLICATE = "duplicate"              # I,II,II,IV → position 2 should be III
-GAP = "gap"                           # I,II,IV → missing III
+DUPLICATE = "duplicate"  # I,II,II,IV → position 2 should be III
+GAP = "gap"  # I,II,IV → missing III
 OCR_DIGIT_CONFUSION = "ocr_digit_confusion"  # "1、" where "I、" belongs
-SEQUENCE_BREAK = "sequence_break"     # non-monotonic, not a simple dup/gap
+SEQUENCE_BREAK = "sequence_break"  # non-monotonic, not a simple dup/gap
 
 # ---------------------------------------------------------------------------
 # Utility
@@ -93,9 +118,7 @@ def classify_roman_issue(tokens: list[str], values: list[int]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def generate_duplicate_candidates(
-    tokens: list[str], values: list[int]
-) -> list[dict]:
+def generate_duplicate_candidates(tokens: list[str], values: list[int]) -> list[dict]:
     """Generate flat candidate fixes for duplicate Roman numeral sequences.
 
     Each candidate is a self-contained fix choice that AI can select by index.
@@ -109,25 +132,27 @@ def generate_duplicate_candidates(
             expected = values[j - 1] + 1
             new_token = _VALUE_TO_ROMAN.get(expected)
             if new_token:
-                candidates.append({
-                    "position": j,
-                    "current_token": tokens[j],
-                    "action": "replace_token",
-                    "token": new_token,
-                    "rationale": f"递增序列，{tokens[j-1]}后应为{new_token}",
-                })
-                candidates.append({
-                    "position": j,
-                    "current_token": tokens[j],
-                    "action": "keep_as_is",
-                    "rationale": "保留不变（若重复是有意的）",
-                })
+                candidates.append(
+                    {
+                        "position": j,
+                        "current_token": tokens[j],
+                        "action": "replace_token",
+                        "token": new_token,
+                        "rationale": f"递增序列，{tokens[j - 1]}后应为{new_token}",
+                    }
+                )
+                candidates.append(
+                    {
+                        "position": j,
+                        "current_token": tokens[j],
+                        "action": "keep_as_is",
+                        "rationale": "保留不变（若重复是有意的）",
+                    }
+                )
     return candidates
 
 
-def generate_gap_candidates(
-    tokens: list[str], values: list[int]
-) -> list[dict]:
+def generate_gap_candidates(tokens: list[str], values: list[int]) -> list[dict]:
     """Generate flat candidate fixes for gap (missing item) in Roman numeral sequence.
 
     Each candidate is a self-contained fix choice that AI can select by index.
@@ -146,39 +171,47 @@ def generate_gap_candidates(
             current_token = tokens[j]
 
             # Candidate: insert missing tokens (gap is real)
-            candidates.append({
-                "position": j,
-                "current_token": current_token,
-                "action": "insert_token",
-                "token": missing_tokens[0] if missing_tokens else "",
-                "rationale": f"缺少 {', '.join(missing_tokens)}，应在 {prev_token} 和 {current_token} 之间插入",
-            })
+            candidates.append(
+                {
+                    "position": j,
+                    "current_token": current_token,
+                    "action": "insert_token",
+                    "token": missing_tokens[0] if missing_tokens else "",
+                    "rationale": f"缺少 {', '.join(missing_tokens)}，应在 {prev_token} 和 {current_token} 之间插入",
+                }
+            )
 
             # Candidate: renumber subsequent (gap is OCR error on subsequent)
             if missing_tokens:
-                candidates.append({
-                    "position": j,
-                    "current_token": current_token,
-                    "action": "replace_token_at_position",
-                    "token": missing_tokens[0],
-                    "rationale": f"{current_token} 可能是 {missing_tokens[0]} 的 OCR 识别错误，修正当前位置",
-                })
+                candidates.append(
+                    {
+                        "position": j,
+                        "current_token": current_token,
+                        "action": "replace_token_at_position",
+                        "token": missing_tokens[0],
+                        "rationale": f"{current_token} 可能是 {missing_tokens[0]} 的 OCR 识别错误，修正当前位置",
+                    }
+                )
 
             # Candidate: keep as-is
-            candidates.append({
-                "position": j,
-                "current_token": current_token,
-                "action": "keep_as_is",
-                "rationale": "保留不变（若跳号是有意的）",
-            })
+            candidates.append(
+                {
+                    "position": j,
+                    "current_token": current_token,
+                    "action": "keep_as_is",
+                    "rationale": "保留不变（若跳号是有意的）",
+                }
+            )
         elif diff < 1 and diff != 0:
             # Sequence break (reverse or non-monotonic)
-            candidates.append({
-                "position": j,
-                "current_token": tokens[j],
-                "action": "keep_as_is",
-                "rationale": "保留不变（无法推断正确序列）",
-            })
+            candidates.append(
+                {
+                    "position": j,
+                    "current_token": tokens[j],
+                    "action": "keep_as_is",
+                    "rationale": "保留不变（无法推断正确序列）",
+                }
+            )
 
     return candidates
 
@@ -259,6 +292,7 @@ def apply_roman_fix(question: dict, decision: dict) -> dict:
     Returns a shallow copy of question with fixes applied.
     """
     import copy
+
     q = copy.copy(question)
     action = decision.get("action", "")
 
@@ -319,9 +353,7 @@ def _replace_nth_roman_token(
     nth is 0-indexed: 0 = first occurrence, 1 = second, etc.
     If nth exceeds available occurrences, replaces the last one found.
     """
-    pattern = re.compile(
-        r"(?<![A-Za-z])" + re.escape(from_token) + r"(?![A-Za-z])"
-    )
+    pattern = re.compile(r"(?<![A-Za-z])" + re.escape(from_token) + r"(?![A-Za-z])")
     matches = list(pattern.finditer(text))
     if not matches:
         return text
@@ -330,7 +362,7 @@ def _replace_nth_roman_token(
     target_idx = min(nth, len(matches) - 1)
     m = matches[target_idx]
 
-    return text[: m.start()] + to_token + text[m.end():]
+    return text[: m.start()] + to_token + text[m.end() :]
 
 
 def _apply_digit_fix(question: dict, source: str, decision: dict) -> dict:

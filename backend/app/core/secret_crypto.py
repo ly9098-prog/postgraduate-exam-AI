@@ -59,6 +59,7 @@ class SecretEnvelopeVersionError(RuntimeError):
 @dataclasses.dataclass(frozen=True)
 class SecretEnvelope:
     """Parsed secret envelope."""
+
     raw: str
     version: str  # "v1"
     token: str  # payload inside envelope
@@ -79,9 +80,7 @@ def _require_fernet() -> Fernet:
     try:
         return Fernet(key.encode())
     except Exception as exc:
-        raise SecretEncryptionError(
-            f"AI_CONFIG_ENCRYPT_KEY is invalid: {exc}"
-        ) from exc
+        raise SecretEncryptionError(f"AI_CONFIG_ENCRYPT_KEY is invalid: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +129,7 @@ def decrypt_secret(ciphertext: str) -> str:
         )
 
     if not envelope.token:
-        raise SecretDecryptionError(
-            "Encrypted secret envelope is empty or malformed."
-        )
+        raise SecretDecryptionError("Encrypted secret envelope is empty or malformed.")
 
     f = _require_fernet()
     try:
@@ -184,8 +181,7 @@ def parse_secret_envelope(value: str) -> SecretEnvelope:
 
     if version not in ("v1",):  # extend here when new versions are added
         raise SecretEnvelopeVersionError(
-            f"Unsupported encryption version '{version}' — "
-            "supported versions: v1"
+            f"Unsupported encryption version '{version}' — supported versions: v1"
         )
 
     return SecretEnvelope(raw=value, version=version, token=token)

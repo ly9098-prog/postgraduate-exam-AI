@@ -12,6 +12,7 @@ logger = logging.getLogger("postgraduate-ai.sentry_utils")
 def _is_sentry_available() -> bool:
     try:
         import sentry_sdk  # noqa: F401
+
         return sentry_sdk.is_initialized()  # type: ignore[no-any-return]
     except ImportError:
         return False
@@ -30,7 +31,9 @@ def capture_exception(exc: BaseException, tags: dict[str, Any] | None = None) ->
         sentry_sdk.capture_exception(exc)
 
 
-def capture_message(msg: str, level: str = "info", tags: dict[str, Any] | None = None) -> None:
+def capture_message(
+    msg: str, level: str = "info", tags: dict[str, Any] | None = None
+) -> None:
     """上报消息到 Sentry，可选指定级别和标签。"""
     if not _is_sentry_available():
         return

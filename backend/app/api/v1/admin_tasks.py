@@ -28,10 +28,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/v1/tasks", tags=["admin-tasks"])
 
 TASK_TYPES = [
-    "import_pipeline", "image_pipeline", "excel_pipeline",
-    "resume_pipeline", "admin_resume", "batch_image",
-    "formula_batch", "prewarm_analysis", "export_mistakes",
-    "answer_projection", "error_diagnosis", "ocr_pipeline",
+    "import_pipeline",
+    "image_pipeline",
+    "excel_pipeline",
+    "resume_pipeline",
+    "admin_resume",
+    "batch_image",
+    "formula_batch",
+    "prewarm_analysis",
+    "export_mistakes",
+    "answer_projection",
+    "error_diagnosis",
+    "ocr_pipeline",
 ]
 
 
@@ -154,7 +162,9 @@ async def _get_redis_client():
         raise ApiError(ErrorCode.QUEUE_UNAVAILABLE, str(e), retryable=True) from e
 
     if client is None:
-        raise ApiError(ErrorCode.QUEUE_UNAVAILABLE, "Redis not configured", retryable=False)
+        raise ApiError(
+            ErrorCode.QUEUE_UNAVAILABLE, "Redis not configured", retryable=False
+        )
     return client
 
 
@@ -214,7 +224,9 @@ def _format_task_timestamp(value) -> str | None:
     if value in (None, ""):
         return None
     try:
-        return datetime.fromtimestamp(float(value), UTC).isoformat().replace("+00:00", "Z")
+        return (
+            datetime.fromtimestamp(float(value), UTC).isoformat().replace("+00:00", "Z")
+        )
     except (TypeError, ValueError, OSError):
         return str(value)[:64]
 
@@ -228,8 +240,16 @@ def _safe_int(value, default: int = 0) -> int:
 
 
 _SENSITIVE_PAYLOAD_KEY_PARTS = (
-    "password", "passwd", "secret", "token", "authorization", "cookie",
-    "api_key", "apikey", "file_content", "credential",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "authorization",
+    "cookie",
+    "api_key",
+    "apikey",
+    "file_content",
+    "credential",
 )
 
 
@@ -252,8 +272,7 @@ def _sanitize_payload_summary(value, *, depth: int = 0):
         return result
     if isinstance(value, (list, tuple)):
         items = [
-            _sanitize_payload_summary(item, depth=depth + 1)
-            for item in value[:20]
+            _sanitize_payload_summary(item, depth=depth + 1) for item in value[:20]
         ]
         if len(value) > 20:
             items.append(f"<{len(value) - 20} more items>")
@@ -306,7 +325,13 @@ async def get_queue_status(
     from app.services.task_queue_service import task_queue
 
     queues: list[QueueStatus] = []
-    totals: dict[str, int] = {"ready": 0, "processing": 0, "retry": 0, "dead": 0, "corrupt": 0}
+    totals: dict[str, int] = {
+        "ready": 0,
+        "processing": 0,
+        "retry": 0,
+        "dead": 0,
+        "corrupt": 0,
+    }
 
     try:
         for tt in TASK_TYPES:
@@ -323,10 +348,16 @@ async def get_queue_status(
             totals["corrupt"] += corrupt
 
             if ready + proc + retry + dead + corrupt > 0:
-                queues.append(QueueStatus(
-                    task_type=tt, ready=ready, processing=proc,
-                    retry=retry, dead=dead, corrupt=corrupt,
-                ))
+                queues.append(
+                    QueueStatus(
+                        task_type=tt,
+                        ready=ready,
+                        processing=proc,
+                        retry=retry,
+                        dead=dead,
+                        corrupt=corrupt,
+                    )
+                )
     except Exception as e:
         raise ApiError(ErrorCode.QUEUE_UNAVAILABLE, str(e), retryable=True) from e
 
@@ -348,7 +379,9 @@ async def list_scheduled_tasks(
     )
 
 
-@router.get("/system/postgres-backup/history", response_model=DatabaseBackupHistoryResponse)
+@router.get(
+    "/system/postgres-backup/history", response_model=DatabaseBackupHistoryResponse
+)
 async def postgres_backup_history(
     limit: int = Query(10, ge=1, le=50),
     _=Depends(require_permissions("system:backup")),
@@ -400,7 +433,9 @@ async def run_scheduled_task(
     try:
         outcome = await run_scheduled_task_now(task_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown scheduled task: {task_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Unknown scheduled task: {task_id}"
+        )
     except Exception as exc:
         logger.exception("Admin scheduled task run failed: task_id=%s", task_id)
         raise HTTPException(status_code=500, detail=str(exc)[:300]) from exc
@@ -416,7 +451,9 @@ async def run_scheduled_task(
 @router.get("", response_model=TaskListResponse)
 async def list_tasks(
     task_type: str | None = Query(None, description="Filter by task type"),
-    status: str | None = Query(None, description="Filter by task status or queue location"),
+    status: str | None = Query(
+        None, description="Filter by task status or queue location"
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     _=Depends(require_permissions("system:read")),
@@ -449,20 +486,24 @@ async def list_tasks(
                 task_status = data.get("status") or location
                 if status and status not in (task_status, location):
                     continue
-                result_tasks.append(TaskSummary(
-                    task_id=task_id,
-                    task_type=parsed.get("task_type", tt),
-                    status=task_status,
-                    queue_location=location,
-                    retry_count=_safe_int(data.get("retry_count", 0)),
-                    max_retries=_safe_int(parsed.get("max_retries", 0)),
-                    generation=_safe_int(data.get("generation", 0)),
-                    trace_id=str(parsed.get("trace_id") or "") or None,
-                    request_id=str(parsed.get("request_id") or "") or None,
-                    last_error=data.get("error", "")[:200] if data.get("error") else None,
-                    created_at=_format_task_timestamp(parsed.get("created_at")),
-                    updated_at=_format_task_timestamp(parsed.get("updated_at")),
-                ))
+                result_tasks.append(
+                    TaskSummary(
+                        task_id=task_id,
+                        task_type=parsed.get("task_type", tt),
+                        status=task_status,
+                        queue_location=location,
+                        retry_count=_safe_int(data.get("retry_count", 0)),
+                        max_retries=_safe_int(parsed.get("max_retries", 0)),
+                        generation=_safe_int(data.get("generation", 0)),
+                        trace_id=str(parsed.get("trace_id") or "") or None,
+                        request_id=str(parsed.get("request_id") or "") or None,
+                        last_error=data.get("error", "")[:200]
+                        if data.get("error")
+                        else None,
+                        created_at=_format_task_timestamp(parsed.get("created_at")),
+                        updated_at=_format_task_timestamp(parsed.get("updated_at")),
+                    )
+                )
 
         for tt in types_to_search:
             ready_ids = await client.lrange(_v2_q_key(tt), 0, -1)
@@ -481,7 +522,9 @@ async def list_tasks(
 
         result_tasks.sort(key=sort_key, reverse=True)
         total = len(result_tasks)
-        return TaskListResponse(tasks=result_tasks[offset:offset + limit], total=total)
+        return TaskListResponse(
+            tasks=result_tasks[offset : offset + limit], total=total
+        )
     finally:
         await client.aclose()
 
@@ -504,7 +547,6 @@ async def inspect_task(
 
     client = await _get_redis_client()
     try:
-
         hash_key = _v2_task_hash_key(task_id)
         data = await client.hgetall(hash_key)
 
@@ -604,7 +646,6 @@ async def retry_task(
 
     client = await _get_redis_client()
     try:
-
         hash_key = _v2_task_hash_key(task_id)
         data = await client.hgetall(hash_key)
 
@@ -693,7 +734,9 @@ async def cancel_task(
     await client.aclose()
 
     if not task_type:
-        raise HTTPException(status_code=400, detail=f"Cannot determine task_type for {task_id}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot determine task_type for {task_id}"
+        )
 
     reason = "cancelled by admin"
     result = await task_queue.cancel_v2(task_id, task_type, reason=reason)
@@ -705,7 +748,9 @@ async def cancel_task(
         4: f"Task {task_id} cancelled (was in dead-letter).",
     }
     if result in messages:
-        logger.info("Admin cancel: task_id=%s type=%s code=%d", task_id, task_type, result)
+        logger.info(
+            "Admin cancel: task_id=%s type=%s code=%d", task_id, task_type, result
+        )
         return TaskOperationResult(
             task_id=task_id,
             operation="cancel",

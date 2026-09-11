@@ -9,6 +9,7 @@ ai_import_service、ai_import_helpers。所有入口（Excel / PDF / OCR / AI）
 - 不改数据库结构，只改 Python 层。
 - AI 生成结果只进 question_imports 暂存区，不直接进 questions。
 """
+
 from __future__ import annotations
 
 import difflib
@@ -54,8 +55,14 @@ class QuestionNormalizer:
     """把任意来源的题目统一为标准 Question Schema 并校验。"""
 
     VALID_SUBJECTS = {
-        "math2", "math2-calculus", "math2-linalg",
-        "exam408", "data_structure", "operating_system", "computer_organization", "computer_network",
+        "math2",
+        "math2-calculus",
+        "math2-linalg",
+        "exam408",
+        "data_structure",
+        "operating_system",
+        "computer_organization",
+        "computer_network",
         "english",
     }
     CANONICAL_TYPES = CANONICAL_TYPES
@@ -144,7 +151,9 @@ class QuestionNormalizer:
 
         plain_math = bool(raw.get("preserve_plain_math"))
         subject_code = self.normalize_subject(raw.get("subject") or raw.get("科目"))
-        subject_id = self.normalize_subject_id(raw.get("subject_id") or raw.get("科目ID"))
+        subject_id = self.normalize_subject_id(
+            raw.get("subject_id") or raw.get("科目ID")
+        )
         allow_subjectless = bool(raw.get("allow_subjectless"))
         previous_plain_math = getattr(self, "_plain_math_options", False)
         self._plain_math_options = plain_math
@@ -155,7 +164,9 @@ class QuestionNormalizer:
         finally:
             self._plain_math_options = previous_plain_math
         blank_option_groups = self.normalize_blank_option_groups(
-            raw.get("blank_option_groups") or (raw.get("parsed_content") or {}).get("blank_option_groups") or []
+            raw.get("blank_option_groups")
+            or (raw.get("parsed_content") or {}).get("blank_option_groups")
+            or []
         )
         if blank_option_groups:
             options = []
@@ -172,7 +183,9 @@ class QuestionNormalizer:
             or (raw.get("parsed_content") or {}).get("text")
             or ""
         )
-        stem = normalize_text_import_math(stem) if plain_math else wrap_inline_math(stem)
+        stem = (
+            normalize_text_import_math(stem) if plain_math else wrap_inline_math(stem)
+        )
         # Capture raw answer before normalization for detection
         answer_raw = (
             raw.get("answer") or raw.get("答案") or raw.get("parsed_answer") or ""
@@ -184,6 +197,7 @@ class QuestionNormalizer:
             from app.features.multi_blank_choice import (
                 detect_shared_option_multi_blank,
             )
+
             detect = detect_shared_option_multi_blank(
                 stem,
                 options,
@@ -229,7 +243,9 @@ class QuestionNormalizer:
             "difficulty": difficulty,
             "source": self.normalize_source(source or raw.get("source")),
             "stem_hash": self.stem_hash(stem),
-            "question_hash": self.build_question_hash(stem, options, answer, blank_option_groups=blank_option_groups),
+            "question_hash": self.build_question_hash(
+                stem, options, answer, blank_option_groups=blank_option_groups
+            ),
             "is_valid": True,
             "errors": [],
             "warnings": [],
@@ -244,10 +260,13 @@ class QuestionNormalizer:
             )
             if raw_seg_check:
                 normalized["_has_option_group"] = any(
-                    isinstance(s, dict) and "option_group" in str(s.get("region_type", ""))
+                    isinstance(s, dict)
+                    and "option_group" in str(s.get("region_type", ""))
                     for s in raw_seg_check
                 )
-        normalized.update(self.validate(normalized, allow_subjectless=allow_subjectless))
+        normalized.update(
+            self.validate(normalized, allow_subjectless=allow_subjectless)
+        )
 
         # Preserve segments and visual region metadata from the raw input
         raw_segments = (
@@ -263,18 +282,21 @@ class QuestionNormalizer:
             if raw_parsed_content.get("render_mode"):
                 normalized["render_mode"] = raw_parsed_content["render_mode"]
             if raw_parsed_content.get("source_snapshot_url"):
-                normalized["source_snapshot_url"] = raw_parsed_content["source_snapshot_url"]
+                normalized["source_snapshot_url"] = raw_parsed_content[
+                    "source_snapshot_url"
+                ]
             if raw_parsed_content.get("source_snapshot_full_page"):
-                normalized["source_snapshot_full_page"] = raw_parsed_content["source_snapshot_full_page"]
+                normalized["source_snapshot_full_page"] = raw_parsed_content[
+                    "source_snapshot_full_page"
+                ]
 
         # 统一验证字段 (Goal: 所有导题入口输出一致)
         is_valid = normalized["is_valid"]
         errors = normalized["errors"]
         normalized["validation_status"] = "passed" if is_valid else "failed"
         normalized["failure_reason"] = list(errors) if errors else None
-        normalized["retry_recommended"] = (
-            not is_valid
-            and any("missing_option_" in e for e in errors)
+        normalized["retry_recommended"] = not is_valid and any(
+            "missing_option_" in e for e in errors
         )
         normalized["ocr_quality_flags"] = _ocr_gate_result["ocr_quality_flags"]
         if not _ocr_gate_result["passed"]:
@@ -328,9 +350,12 @@ class QuestionNormalizer:
                     parse_multi_blank_answer,
                     serialize_multi_blank_answer,
                 )
+
                 slot_ids = extract_blank_slots(text)
                 if slot_ids:
-                    parsed, _ = parse_multi_blank_answer(text, slot_ids=slot_ids, allow_positional=True)
+                    parsed, _ = parse_multi_blank_answer(
+                        text, slot_ids=slot_ids, allow_positional=True
+                    )
                     if parsed:
                         return serialize_multi_blank_answer(parsed, slot_ids)
                 return text
@@ -367,21 +392,29 @@ class QuestionNormalizer:
                 if isinstance(v, dict):
                     # Rich format: {"A": {"text": "...", "segments": [...]}}
                     text_val = str(v.get("text") or v.get("value") or "")
-                    items.append((key, {"text": text_val, "segments": v.get("segments")}))
+                    items.append(
+                        (key, {"text": text_val, "segments": v.get("segments")})
+                    )
                 else:
                     items.append((key, str(v).strip()))
         elif isinstance(options, list):
             for item in options:
                 if isinstance(item, dict):
                     key = item.get("key") or item.get("label") or item.get("option")
-                    text = item.get("text") or item.get("value") or item.get("content") or ""
+                    text = (
+                        item.get("text")
+                        or item.get("value")
+                        or item.get("content")
+                        or ""
+                    )
                     if isinstance(text, dict):
-                        items.append(
-                            (str(key).strip().upper() if key else None, text)
-                        )
+                        items.append((str(key).strip().upper() if key else None, text))
                     else:
                         items.append(
-                            (str(key).strip().upper() if key else None, str(text).strip())
+                            (
+                                str(key).strip().upper() if key else None,
+                                str(text).strip(),
+                            )
                         )
                 else:
                     items.append((None, str(item).strip()))
@@ -402,7 +435,11 @@ class QuestionNormalizer:
                 # Rich option — preserve structure, clean text inside
                 text_val = value.get("text", "")
                 cleaned_text = self.clean_text(text_val)
-                cleaned_text = normalize_text_import_math(cleaned_text, compact=plain_math) if plain_math else wrap_inline_math(cleaned_text)
+                cleaned_text = (
+                    normalize_text_import_math(cleaned_text, compact=plain_math)
+                    if plain_math
+                    else wrap_inline_math(cleaned_text)
+                )
                 if not cleaned_text:
                     continue
                 if not key or not re.fullmatch(r"[A-Z]", key):
@@ -418,7 +455,11 @@ class QuestionNormalizer:
                 normalized.append(entry)
             else:
                 text = self.clean_text(value)
-                text = normalize_text_import_math(text, compact=plain_math) if plain_math else wrap_inline_math(text)
+                text = (
+                    normalize_text_import_math(text, compact=plain_math)
+                    if plain_math
+                    else wrap_inline_math(text)
+                )
                 if not text:
                     continue
                 if not key or not re.fullmatch(r"[A-Z]", key):
@@ -446,6 +487,7 @@ class QuestionNormalizer:
 
     def clean_text(self, text: Any) -> str:
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
         text = str(text or "")
         text = text.replace("\xa0", " ").replace("　", " ")
         text = re.sub(r"[​﻿]", "", text)
@@ -502,7 +544,11 @@ class QuestionNormalizer:
             line = re.sub(r"(?<=[^\sA-Za-z0-9_])[　 ]*([（][0-9]+[）])", r"\n\1", line)
             # 1) 2) 数字+括号：同样禁止从 ASCII 标识符内部切开。
             # 旧规则会把 "(v1,v2)10" 误处理成 "(v1,v\n2)10"，导致刷题页异常换行。
-            line = re.sub(r"(?<=[^\s\dA-Za-z_,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", line)
+            line = re.sub(
+                r"(?<=[^\s\dA-Za-z_,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])",
+                r"\n\1",
+                line,
+            )
             result.append(line)
         return "\n".join(result)
 
@@ -516,7 +562,10 @@ class QuestionNormalizer:
         warnings: list[str] = []
         if not question.get("stem"):
             errors.append("stem_empty")
-        if not question.get("answer") and question.get("question_type") != "multi_blank_choice":
+        if (
+            not question.get("answer")
+            and question.get("question_type") != "multi_blank_choice"
+        ):
             errors.append("answer_empty")
         if question.get("question_type") in {"single_choice", "multiple_choice"}:
             # Image-type options (option_group) have intentionally empty
@@ -533,6 +582,7 @@ class QuestionNormalizer:
                 from app.features.question_normalizer import (
                     check_option_completeness as _check_opts,
                 )
+
                 _, opt_errors = _check_opts(question.get("question_type"), options)
                 errors.extend(opt_errors)
         if question.get("question_type") == "multi_blank_choice":
@@ -561,10 +611,15 @@ class QuestionNormalizer:
                         seen_keys.add(key)
             # P2-7: Validate answer against blank_option_groups
             from app.features.multi_blank_choice import validate_multi_blank_question
+
             answer = question.get("answer")
             _, answer_errors = validate_multi_blank_question(groups, answer)
             errors.extend(answer_errors)
-        if not question.get("subject") and not question.get("subject_id") and not allow_subjectless:
+        if (
+            not question.get("subject")
+            and not question.get("subject_id")
+            and not allow_subjectless
+        ):
             errors.append("subject_empty")
         return {"is_valid": not errors, "errors": errors, "warnings": warnings}
 
@@ -593,7 +648,12 @@ class QuestionNormalizer:
             for item in options:
                 if isinstance(item, dict):
                     key = item.get("key") or item.get("label") or item.get("option")
-                    text = item.get("text") or item.get("value") or item.get("content") or ""
+                    text = (
+                        item.get("text")
+                        or item.get("value")
+                        or item.get("content")
+                        or ""
+                    )
                     if key:
                         items.append((str(key).strip().upper(), str(text)))
                 else:
@@ -645,7 +705,10 @@ class QuestionNormalizer:
         return "||".join(parts)
 
     def build_question_hash(
-        self, stem: Any, options: Any, answer: Any,
+        self,
+        stem: Any,
+        options: Any,
+        answer: Any,
         blank_option_groups: list[dict] | None = None,
     ) -> str:
         payload = "||".join(
@@ -670,8 +733,14 @@ class QuestionNormalizer:
         if question.get("blank_option_groups"):
             parsed_content["blank_option_groups"] = question["blank_option_groups"]
         # Preserve segments and render_mode from upstream pipeline stages
-        segments = question.get("segments") or (question.get("parsed_content") or {}).get("segments")
-        render_mode = question.get("parsed_content", {}).get("render_mode") if isinstance(question.get("parsed_content"), dict) else None
+        segments = question.get("segments") or (
+            question.get("parsed_content") or {}
+        ).get("segments")
+        render_mode = (
+            question.get("parsed_content", {}).get("render_mode")
+            if isinstance(question.get("parsed_content"), dict)
+            else None
+        )
         if segments:
             parsed_content["render_mode"] = render_mode or "segments"
             parsed_content["segments"] = segments
@@ -679,7 +748,9 @@ class QuestionNormalizer:
         if question.get("source_snapshot_url"):
             parsed_content["source_snapshot_url"] = question["source_snapshot_url"]
         if question.get("source_snapshot_full_page"):
-            parsed_content["source_snapshot_full_page"] = question["source_snapshot_full_page"]
+            parsed_content["source_snapshot_full_page"] = question[
+                "source_snapshot_full_page"
+            ]
         # Preserve visual_regions if present
         if question.get("visual_regions"):
             parsed_content["visual_regions"] = question["visual_regions"]
@@ -710,7 +781,9 @@ class QuestionNormalizer:
         }
         # to_import_fields now preserves segments, so content already has them.
         # If the original question dict has additional segment fields, ensure they survive.
-        q_segments = question.get("segments") or (question.get("parsed_content") or {}).get("segments")
+        q_segments = question.get("segments") or (
+            question.get("parsed_content") or {}
+        ).get("segments")
         if q_segments and not result["content"].get("segments"):
             result["content"]["render_mode"] = "segments"
             result["content"]["segments"] = q_segments
@@ -841,43 +914,42 @@ class QuestionNormalizer:
     # Patterns: code lines that end mid-expression because the next line
     # starts with an operator (case 2: `x < n\n/ 2`) or the line itself
     # ends with a trailing operator (case 3: `n <=\n1`).
-    _TRAILING_OP_RE = re.compile(
-        r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
-    )
+    _TRAILING_OP_RE = re.compile(r"(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$")
     # Operator + word at line end → operand was split from its continuation
     #  while (x < n\n/ 2) → merge n/2 back
-    _OP_THEN_WORD_END_RE = re.compile(r'[<>=!+\-*/%&|^]\s+\w+\s*$')
+    _OP_THEN_WORD_END_RE = re.compile(r"[<>=!+\-*/%&|^]\s+\w+\s*$")
 
     # Next-line patterns that are clearly NOT operands (statement boundaries).
     _CODE_KW_RE = re.compile(
-        r'^\s*(?:if|else|while|for|do|switch|case|return|break|continue|'
-        r'int|float|double|char|void|long|short|struct|enum|typedef|'
-        r'public|private|protected|class|static|const|virtual)\b'
+        r"^\s*(?:if|else|while|for|do|switch|case|return|break|continue|"
+        r"int|float|double|char|void|long|short|struct|enum|typedef|"
+        r"public|private|protected|class|static|const|virtual)\b"
     )
 
     def _line_ends_broken(self, line: str) -> bool:
         stripped = line.rstrip()
         if not stripped:
             return False
-        if not re.search(r'[{};=()[\]<>!&|]', stripped):
+        if not re.search(r"[{};=()[\]<>!&|]", stripped):
             return False
         return bool(
-            self._TRAILING_OP_RE.search(stripped) or self._OP_THEN_WORD_END_RE.search(stripped)
+            self._TRAILING_OP_RE.search(stripped)
+            or self._OP_THEN_WORD_END_RE.search(stripped)
         )
 
     def _line_starts_continuation(self, line: str) -> bool:
         stripped = line.lstrip()
         if not stripped:
             return False
-        if stripped[0] in '{};':
+        if stripped[0] in "{};":
             return False
         if self._CODE_KW_RE.match(stripped):
             return False
         # Starts with an operator character → continuation of broken expression
-        if stripped[0] in '+*/%&|^<>!=~':
+        if stripped[0] in "+*/%&|^<>!=~":
             return True
         # Contains code operators/separators but not a new statement
-        return bool(re.search(r'[+\-*/%<>=!&|(){};\[\]]', stripped))
+        return bool(re.search(r"[+\-*/%<>=!&|(){};\[\]]", stripped))
 
     def _normalize_code_newlines(self, text: str) -> str:
         """Merge code lines that were split inside expressions by AI normalization.
@@ -885,21 +957,25 @@ class QuestionNormalizer:
         Detects patterns like ``while (x < n\\n/ 2)`` where the newline sits
         between an operator and its operand, and rejoins them with a space.
         """
-        if '\n' not in text:
+        if "\n" not in text:
             return text
-        lines = text.split('\n')
+        lines = text.split("\n")
         result: list[str] = []
         i = 0
         while i < len(lines):
             line = lines[i]
-            if i + 1 < len(lines) and self._line_ends_broken(line) and self._line_starts_continuation(lines[i + 1]):
-                merged = line.rstrip() + ' ' + lines[i + 1].lstrip()
+            if (
+                i + 1 < len(lines)
+                and self._line_ends_broken(line)
+                and self._line_starts_continuation(lines[i + 1])
+            ):
+                merged = line.rstrip() + " " + lines[i + 1].lstrip()
                 result.append(merged)
                 i += 2
             else:
                 result.append(line)
                 i += 1
-        return '\n'.join(result)
+        return "\n".join(result)
 
     def _is_noise_line(self, line: str) -> bool:
         if re.fullmatch(r"第?\s*\d+\s*页\s*(?:/\s*共?\s*\d+\s*页?)?", line):
@@ -915,7 +991,9 @@ class QuestionNormalizer:
         # 当噪声丢弃（如“①、②所花费的时间之比”中的“①、”）。
         # 比较/关系运算符（<>≥≤≠）也须计入：单字符数学符号可作为多空选项
         # （如 1266 ② 组选项 < > ≥ ≤），否则整组被误判为噪声而丢弃。
-        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()①-⑳<>≥≤≠≈±×÷·]", line):
+        if len(line) <= 2 and not re.search(
+            r"[一-鿿A-Za-z0-9{}\[\]()①-⑳<>≥≤≠≈±×÷·]", line
+        ):
             return True
         return False
 
@@ -952,7 +1030,11 @@ def process_question_pipeline(
     debug_log(
         trace_id,
         "BEFORE_NORMALIZE",
-        {"source_type": source_type, "source": source, "raw_keys": list(raw_input.keys())},
+        {
+            "source_type": source_type,
+            "source": source,
+            "raw_keys": list(raw_input.keys()),
+        },
     )
     save_debug_snapshot(
         trace_id,
@@ -969,7 +1051,9 @@ def process_question_pipeline(
         "stem_hash": normalized["stem_hash"],
         "import_fields": normalizer.to_import_fields(normalized),
         "question_fields": (
-            normalizer.to_question_fields(normalized) if normalized["is_valid"] else None
+            normalizer.to_question_fields(normalized)
+            if normalized["is_valid"]
+            else None
         ),
     }
     debug_log(
@@ -1019,6 +1103,7 @@ async def _find_duplicate_by_hash(
         conditions.append(Question.subject_id == subject_id)
     elif subject_code:
         from app.services.admin_subject_service import resolve_subject_id
+
         resolved = await resolve_subject_id(db, subject_code)
         if resolved is not None:
             conditions.append(Question.subject_id == resolved)
@@ -1046,6 +1131,7 @@ async def _find_import_duplicate_by_hash(
         conditions.append(QuestionImport.subject_id == subject_id)
     elif subject_code:
         from app.services.admin_subject_service import resolve_subject_id
+
         resolved = await resolve_subject_id(db, subject_code)
         if resolved is not None:
             conditions.append(QuestionImport.subject_id == resolved)
@@ -1053,9 +1139,7 @@ async def _find_import_duplicate_by_hash(
             return None
     else:
         return None
-    result = await db.execute(
-        select(QuestionImport).where(*conditions)
-    )
+    result = await db.execute(select(QuestionImport).where(*conditions))
     existing = result.scalars().first()
     if existing is None:
         return None
@@ -1074,13 +1158,12 @@ async def find_duplicate_question(
     if not subject_code or not stem:
         return None
     from app.services.admin_subject_service import resolve_subject_id
+
     resolved_id = await resolve_subject_id(db, subject_code)
     if resolved_id is None:
         return None
     result = await db.execute(
-        select(Question).where(
-            Question.subject_id == resolved_id, Question.is_active
-        )
+        select(Question).where(Question.subject_id == resolved_id, Question.is_active)
     )
     target_hash = normalizer.stem_hash(stem)
     for question in result.scalars().all():
@@ -1097,7 +1180,6 @@ async def find_duplicate_question(
     return None
 
 
-
 # ============================================================
 # 三、Excel / PDF 解析
 # ============================================================
@@ -1106,6 +1188,7 @@ async def find_duplicate_question(
 def _parse_excel_row(row: list, headers: list) -> dict | None:
     """Moved to question_import_writer.py (P5-3)."""
     from app.features.question_import_writer import _parse_excel_row as _impl
+
     return _impl(row, headers)
 
 
@@ -1128,46 +1211,146 @@ def _parse_excel(content: bytes, filename: str) -> list[dict]:
 
 _PDF_SUBJECT_KEYWORDS = {
     "data_structure": [
-        "数据结构", "二叉树", "栈", "队列", "排序", "查找", "链表", "图论",
-        "哈夫曼", "邻接矩阵", "邻接表", "散列", "hash", "深度优先", "广度优先",
-        "二分查找", "插入排序", "归并排序", "快速排序", "堆排序",
+        "数据结构",
+        "二叉树",
+        "栈",
+        "队列",
+        "排序",
+        "查找",
+        "链表",
+        "图论",
+        "哈夫曼",
+        "邻接矩阵",
+        "邻接表",
+        "散列",
+        "hash",
+        "深度优先",
+        "广度优先",
+        "二分查找",
+        "插入排序",
+        "归并排序",
+        "快速排序",
+        "堆排序",
     ],
     "operating_system": [
-        "操作系统", "进程", "线程", "信号量", "死锁", "调度算法",
-        "页表", "虚拟内存", "缺页", "tlb", "文件系统", "i/o",
-        "互斥", "同步", "管程", "临界区", "时间片", "fcfs", "rr",
+        "操作系统",
+        "进程",
+        "线程",
+        "信号量",
+        "死锁",
+        "调度算法",
+        "页表",
+        "虚拟内存",
+        "缺页",
+        "tlb",
+        "文件系统",
+        "i/o",
+        "互斥",
+        "同步",
+        "管程",
+        "临界区",
+        "时间片",
+        "fcfs",
+        "rr",
     ],
     "computer_organization": [
-        "cpu", "存储器", "主存", "指令", "中断", "dma", "cache", "流水线",
-        "微指令", "寻址", "补码", "原码", "浮点", "运算器", "控制器",
-        "总线", "字长", "定长指令", "条件转移",
+        "cpu",
+        "存储器",
+        "主存",
+        "指令",
+        "中断",
+        "dma",
+        "cache",
+        "流水线",
+        "微指令",
+        "寻址",
+        "补码",
+        "原码",
+        "浮点",
+        "运算器",
+        "控制器",
+        "总线",
+        "字长",
+        "定长指令",
+        "条件转移",
     ],
     "computer_network": [
-        "网络层", "tcp", "ip地址", "路由", "码分", "频分", "csma",
-        "局域网", "以太网", "传输层", "应用层", "数据链路",
-        "拥塞", "三次握手", "udp", "http", "dns", "子网掩码",
+        "网络层",
+        "tcp",
+        "ip地址",
+        "路由",
+        "码分",
+        "频分",
+        "csma",
+        "局域网",
+        "以太网",
+        "传输层",
+        "应用层",
+        "数据链路",
+        "拥塞",
+        "三次握手",
+        "udp",
+        "http",
+        "dns",
+        "子网掩码",
     ],
     "exam408": [
-        "算法", "计算机", "时间复杂度", "空间复杂度",
+        "算法",
+        "计算机",
+        "时间复杂度",
+        "空间复杂度",
     ],
     "math2-calculus": [
-        "极限", "导数", "积分", "微分方程", "lim",
-        "连续", "可导", "定积分", "不定积分", "偏导",
-        "极大值", "极小值", "拐点", "渐近线", "曲率",
-        "泰勒", "罗尔", "拉格朗日", "中值定理",
+        "极限",
+        "导数",
+        "积分",
+        "微分方程",
+        "lim",
+        "连续",
+        "可导",
+        "定积分",
+        "不定积分",
+        "偏导",
+        "极大值",
+        "极小值",
+        "拐点",
+        "渐近线",
+        "曲率",
+        "泰勒",
+        "罗尔",
+        "拉格朗日",
+        "中值定理",
     ],
     "math2-linalg": [
-        "矩阵", "向量", "行列式", "特征值", "二次型",
-        "线性代数", "相似矩阵", "正交", "秩", "线性方程组",
-        "线性相关", "线性无关", "特征向量",
+        "矩阵",
+        "向量",
+        "行列式",
+        "特征值",
+        "二次型",
+        "线性代数",
+        "相似矩阵",
+        "正交",
+        "秩",
+        "线性方程组",
+        "线性相关",
+        "线性无关",
+        "特征向量",
     ],
     "math2": [
-        "函数", "微积分",
+        "函数",
+        "微积分",
     ],
     "english": [
-        "reading comprehension", "passage", "paragraph", "translate",
-        "词汇", "完形填空", "阅读理解", "写作",
-        "according to the passage", "which of the following",
+        "reading comprehension",
+        "passage",
+        "paragraph",
+        "translate",
+        "词汇",
+        "完形填空",
+        "阅读理解",
+        "写作",
+        "according to the passage",
+        "which of the following",
     ],
 }
 
@@ -1221,6 +1404,7 @@ def _extract_pdf_text(content: bytes) -> str:
     if ocr_targets:
         ocr_results = ocr_pages(ocr_targets)
         from app.services.formula_normalizer import fix_ocr_formula
+
         for idx, raw_text in ocr_results.items():
             page_texts[idx] = fix_ocr_formula(clean_ocr_text(raw_text))
 
@@ -1229,9 +1413,7 @@ def _extract_pdf_text(content: bytes) -> str:
 
 _ANSWER_RE = re.compile(r"^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:](.*)$")
 _ANALYSIS_RE = re.compile(r"^(?:【)?(?:解析|解答)(?:】)?\s*[：:](.*)")
-_OPT_INLINE_RE = re.compile(
-    r"([A-D])[.、:：）]\s*([^A-D]*?)(?=\s+[A-D][.、:：）]|$)"
-)
+_OPT_INLINE_RE = re.compile(r"([A-D])[.、:：）]\s*([^A-D]*?)(?=\s+[A-D][.、:：）]|$)")
 
 
 def _parse_option_line(line: str) -> dict | None:
@@ -1342,17 +1524,27 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
         per_question_subject_code = (
             _guess_subject(stem + " " + analysis, min_score=1) or default_subject
         )
-        results.append({
-            "subject": per_question_subject_code,
-            "stem": stem,
-            "options": "" if blank_option_groups else options_str,
-            "blank_option_groups": blank_option_groups,
-            "answer": answer,
-            "explanation": analysis,
-            "question_type": "multi_blank_choice" if blank_option_groups else (QT_SINGLE_CHOICE if options else (
-                QT_TRUE_FALSE if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else QT_FILL_BLANK
-            )),
-        })
+        results.append(
+            {
+                "subject": per_question_subject_code,
+                "stem": stem,
+                "options": "" if blank_option_groups else options_str,
+                "blank_option_groups": blank_option_groups,
+                "answer": answer,
+                "explanation": analysis,
+                "question_type": "multi_blank_choice"
+                if blank_option_groups
+                else (
+                    QT_SINGLE_CHOICE
+                    if options
+                    else (
+                        QT_TRUE_FALSE
+                        if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem)
+                        else QT_FILL_BLANK
+                    )
+                ),
+            }
+        )
 
     if not results:
         raise ValueError("未能从 PDF 中解析出有效题目，请检查文件格式")
@@ -1375,9 +1567,7 @@ _QI_PARSED_FIELDS = (
 
 
 async def _get_qi(db: AsyncSession, import_id: int) -> QuestionImport:
-    res = await db.execute(
-        select(QuestionImport).where(QuestionImport.id == import_id)
-    )
+    res = await db.execute(select(QuestionImport).where(QuestionImport.id == import_id))
     qi = res.scalar_one_or_none()
     if not qi:
         raise ValueError("导入记录不存在")
@@ -1498,12 +1688,18 @@ def _build_log(
 
 
 async def _call_or_fallback(
-    messages: list, fallback_value: dict, db: AsyncSession | None = None,
-    *, api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
+    messages: list,
+    fallback_value: dict,
+    db: AsyncSession | None = None,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model_name: str | None = None,
 ) -> tuple[dict, str | None, dict | None]:
     provider: str | None = None
     if api_key is None and db is not None:
         from app.ai.gateway import resolve_llm_runtime_config
+
         runtime = await resolve_llm_runtime_config(db, feature="completion")
         if runtime is not None:
             api_key = runtime.api_key
@@ -1514,14 +1710,24 @@ async def _call_or_fallback(
     if not api_key:
         return (
             {
-                "content": "", "tokens_used": 0, "model": "fallback",
-                "duration_ms": 0, "fallback_value": fallback_value,
+                "content": "",
+                "tokens_used": 0,
+                "model": "fallback",
+                "duration_ms": 0,
+                "fallback_value": fallback_value,
                 "error": "AI模型API Key未配置",
             },
-            None, None,
+            None,
+            None,
         )
     try:
-        resp = await llm.chat(messages, model=model_name, api_key=api_key, base_url=base_url, provider=provider)
+        resp = await llm.chat(
+            messages,
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            provider=provider,
+        )
         return (resp, resp["content"], resp)
     except (OSError, ValueError, RuntimeError, TimeoutError) as e:
         # 网络/超时/URL 校验类故障 → 降级（UnsafeRemoteURLError 是 ValueError）。
@@ -1529,11 +1735,15 @@ async def _call_or_fallback(
         # AI 降级静默吞掉。
         return (
             {
-                "content": "", "tokens_used": 0, "model": "fallback",
-                "duration_ms": 0, "fallback_value": fallback_value,
+                "content": "",
+                "tokens_used": 0,
+                "model": "fallback",
+                "duration_ms": 0,
+                "fallback_value": fallback_value,
                 "error": str(e),
             },
-            None, None,
+            None,
+            None,
         )
 
 

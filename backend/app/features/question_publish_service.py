@@ -90,7 +90,8 @@ async def _migrate_old_approved(db: AsyncSession) -> int:
     if migrated_status or published_orphans:
         logger.info(
             "Migrated old approved records: status_only=%d, orphans_published=%d",
-            migrated_status, published_orphans,
+            migrated_status,
+            published_orphans,
         )
     return migrated_status + published_orphans
 
@@ -151,7 +152,9 @@ def _clean_import_content(qi: QuestionImport) -> dict:
                 continue
             for key in ("text", "markdown"):
                 if isinstance(segment.get(key), str) and segment[key].strip():
-                    segment[key] = _strip_source_question_prefix(segment[key], label, number)
+                    segment[key] = _strip_source_question_prefix(
+                        segment[key], label, number
+                    )
                     return content
     return content
 
@@ -173,8 +176,12 @@ def _normalize_dedupe_options(options: Any) -> tuple[tuple[str, str], ...]:
         iterator = []
         for index, item in enumerate(options):
             if isinstance(item, dict):
-                key = item.get("key") or item.get("label") or item.get("option") or index
-                value = item.get("text") or item.get("value") or item.get("content") or ""
+                key = (
+                    item.get("key") or item.get("label") or item.get("option") or index
+                )
+                value = (
+                    item.get("text") or item.get("value") or item.get("content") or ""
+                )
             else:
                 key, value = index, item
             iterator.append((key, value))
@@ -183,7 +190,9 @@ def _normalize_dedupe_options(options: Any) -> tuple[tuple[str, str], ...]:
 
     for key, value in iterator:
         if isinstance(value, dict):
-            value = value.get("text") or value.get("value") or value.get("content") or ""
+            value = (
+                value.get("text") or value.get("value") or value.get("content") or ""
+            )
         normalized = _normalize_dedupe_text(value)
         if normalized:
             items.append((str(key).strip().upper(), normalized))
@@ -213,7 +222,9 @@ async def _find_duplicate_questions(
     matches: list[Question] = []
     for question in result.scalars().all():
         content = question.content if isinstance(question.content, dict) else {}
-        existing_stem = _normalize_dedupe_text(content.get("text") or content.get("stem"))
+        existing_stem = _normalize_dedupe_text(
+            content.get("text") or content.get("stem")
+        )
         if existing_stem != target_stem:
             continue
 
@@ -245,7 +256,10 @@ async def _duplicate_import_ranks(
         .group_by(QuestionImport.question_id)
     )
     return {
-        int(question_id): (created_at, int(import_id) if import_id is not None else None)
+        int(question_id): (
+            created_at,
+            int(import_id) if import_id is not None else None,
+        )
         for question_id, created_at, import_id in result.all()
         if question_id is not None
     }
@@ -282,7 +296,9 @@ async def _retain_latest_duplicate(
             retained_created_at or retained.created_at
         )
 
-    obsolete_ids = [question.id for question in duplicates if question.id != retained.id]
+    obsolete_ids = [
+        question.id for question in duplicates if question.id != retained.id
+    ]
     if obsolete_ids:
         from app.services.question_revision_service import ensure_question_revision
 
@@ -290,7 +306,10 @@ async def _retain_latest_duplicate(
             if question.id in obsolete_ids:
                 question.is_active = False
                 await ensure_question_revision(
-                    db, question, change_source="import_dedupe", edit_reason="duplicate superseded"
+                    db,
+                    question,
+                    change_source="import_dedupe",
+                    edit_reason="duplicate superseded",
                 )
         await db.execute(
             update(QuestionImport)
@@ -324,7 +343,10 @@ async def _retain_latest_duplicate(
         from app.services.question_revision_service import ensure_question_revision
 
         await ensure_question_revision(
-            db, retained, change_source="import_dedupe", edit_reason="retained duplicate updated"
+            db,
+            retained,
+            change_source="import_dedupe",
+            edit_reason="retained duplicate updated",
         )
 
     qi.status = "published"
@@ -360,6 +382,7 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
     elif qi.subject_id:
         # subject_ref not loaded, look up
         from app.models.admin import Subject
+
         subj = await db.get(Subject, qi.subject_id)
         if subj:
             subject_code = subj.code
@@ -434,7 +457,8 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
         if current_is_latest:
             logger.info(
                 "[DuplicateReplace] importId=%s retainedQuestionId=%s replacedByLaterImport=true",
-                qi.id, retained.id,
+                qi.id,
+                retained.id,
             )
             return {
                 "id": qi.id,
@@ -444,7 +468,8 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
             }
         logger.info(
             "[DuplicateKeepLatest] importId=%s retainedQuestionId=%s newerImportAlreadyPublished=true",
-            qi.id, retained.id,
+            qi.id,
+            retained.id,
         )
         return {
             "id": qi.id,
@@ -473,7 +498,9 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
         await sync_question_knowledge_points(db, q, kp_names, source="imported")
     from app.services.question_revision_service import ensure_question_revision
 
-    await ensure_question_revision(db, q, change_source="import_publish", edit_reason="initial publish")
+    await ensure_question_revision(
+        db, q, change_source="import_publish", edit_reason="initial publish"
+    )
     await db.refresh(q)
 
     qi.status = "published"
@@ -556,13 +583,23 @@ async def approve_and_publish(
     for qi in records:
         if qi.status == "published":
             details.append(
-                {"id": qi.id, "status": "failed", "question_id": qi.question_id, "reason": "已发布"}
+                {
+                    "id": qi.id,
+                    "status": "failed",
+                    "question_id": qi.question_id,
+                    "reason": "已发布",
+                }
             )
             stats["failed"] += 1
             continue
         if qi.status == "rejected":
             details.append(
-                {"id": qi.id, "status": "failed", "question_id": None, "reason": "已拒绝"}
+                {
+                    "id": qi.id,
+                    "status": "failed",
+                    "question_id": None,
+                    "reason": "已拒绝",
+                }
             )
             stats["failed"] += 1
             continue
@@ -577,6 +614,7 @@ async def approve_and_publish(
                 subject_code = qi.subject_ref.code
             elif qi.subject_id:
                 from app.models.admin import Subject
+
                 subj = await db.get(Subject, qi.subject_id)
                 if subj:
                     subject_code = subj.code
@@ -700,13 +738,17 @@ async def get_publish_history(
     for row in batch_rows:
         bid = row.batch_id
         s = stats_map.get(bid, {})
-        items.append(PublishHistoryItem(
-            batch_id=bid,
-            published_at=row.published_at,
-            total=int(row.total),
-            published=s.get("published", 0),
-            duplicates=s.get("duplicate", 0),
-            failed=s.get("failed", 0),
-        ))
+        items.append(
+            PublishHistoryItem(
+                batch_id=bid,
+                published_at=row.published_at,
+                total=int(row.total),
+                published=s.get("published", 0),
+                duplicates=s.get("duplicate", 0),
+                failed=s.get("failed", 0),
+            )
+        )
 
-    return PublishHistoryResponse(total=total, page=page, page_size=page_size, items=items)
+    return PublishHistoryResponse(
+        total=total, page=page, page_size=page_size, items=items
+    )

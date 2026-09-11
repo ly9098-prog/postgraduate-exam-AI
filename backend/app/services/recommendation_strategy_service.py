@@ -1,4 +1,5 @@
 """Phase 4 — 推荐策略配置服务。"""
+
 import logging
 
 from sqlalchemy import select, update
@@ -20,8 +21,14 @@ _DEFAULT_WEIGHTS = {
 
 # Phase 4.5: 允许的策略类型
 ALLOWED_STRATEGY_TYPES = {
-    "weakness_vector", "knowledge_path", "scored", "hybrid_graph", "similar_vector",
-    "rule_based", "fallback_random", "fallback",
+    "weakness_vector",
+    "knowledge_path",
+    "scored",
+    "hybrid_graph",
+    "similar_vector",
+    "rule_based",
+    "fallback_random",
+    "fallback",
 }
 
 
@@ -49,9 +56,12 @@ SCORED_WEIGHT_FIELDS = tuple(DEFAULT_SCORED_RUNTIME_WEIGHTS)
 
 # 属于权重值的字段
 WEIGHT_FIELDS = [
-    "weight_vector_similarity", "weight_knowledge_overlap",
-    "weight_difficulty_match", "weight_mastery_gap",
-    "weight_path_priority", "exploration_ratio",
+    "weight_vector_similarity",
+    "weight_knowledge_overlap",
+    "weight_difficulty_match",
+    "weight_mastery_gap",
+    "weight_path_priority",
+    "exploration_ratio",
 ]
 
 
@@ -63,7 +73,9 @@ def validate_strategy_config(payload: dict) -> list[str]:
         errors.append("默认策略必须处于启用状态")
 
     config_json = payload.get("config_json")
-    nested_strategy_type = config_json.get("strategy_type") if isinstance(config_json, dict) else None
+    nested_strategy_type = (
+        config_json.get("strategy_type") if isinstance(config_json, dict) else None
+    )
     strategy_type = payload.get("strategy_type") or nested_strategy_type
     if strategy_type is not None and strategy_type not in ALLOWED_STRATEGY_TYPES:
         errors.append(
@@ -170,7 +182,10 @@ async def get_strategy_config(
         )
         # 兼容历史上可能已经存在的多默认脏数据，避免 scalar_one_or_none
         # 直接抛 MultipleResultsFound。新的写入路径会主动清理同 scene 其他默认。
-        .order_by(RecommendationStrategyConfig.updated_at.desc(), RecommendationStrategyConfig.id.desc())
+        .order_by(
+            RecommendationStrategyConfig.updated_at.desc(),
+            RecommendationStrategyConfig.id.desc(),
+        )
         .limit(1)
     )
     config = result.scalar_one_or_none()
@@ -243,7 +258,9 @@ async def list_strategy_configs(
     q = select(RecommendationStrategyConfig)
     if scene:
         q = q.where(RecommendationStrategyConfig.scene == scene)
-    q = q.order_by(RecommendationStrategyConfig.scene, RecommendationStrategyConfig.name)
+    q = q.order_by(
+        RecommendationStrategyConfig.scene, RecommendationStrategyConfig.name
+    )
 
     result = await db.execute(q)
     configs = result.scalars().all()
@@ -277,7 +294,9 @@ async def get_scored_runtime_config(
     config = result.scalar_one_or_none()
     raw = config.config_json if config and isinstance(config.config_json, dict) else {}
 
-    raw_weights = raw.get("scored_weights") if isinstance(raw.get("scored_weights"), dict) else {}
+    raw_weights = (
+        raw.get("scored_weights") if isinstance(raw.get("scored_weights"), dict) else {}
+    )
     weights = {
         field: _clamp_number(raw_weights.get(field), default, 0.0, 2.0)
         for field, default in DEFAULT_SCORED_RUNTIME_WEIGHTS.items()
@@ -285,15 +304,30 @@ async def get_scored_runtime_config(
 
     raw_graph = raw.get("graph") if isinstance(raw.get("graph"), dict) else {}
     graph = {
-        "weak_target_limit": int(_clamp_number(
-            raw_graph.get("weak_target_limit"), DEFAULT_SCORED_GRAPH_CONFIG["weak_target_limit"], 1, 20
-        )),
-        "max_depth": int(_clamp_number(
-            raw_graph.get("max_depth"), DEFAULT_SCORED_GRAPH_CONFIG["max_depth"], 1, 2
-        )),
-        "max_nodes": int(_clamp_number(
-            raw_graph.get("max_nodes"), DEFAULT_SCORED_GRAPH_CONFIG["max_nodes"], 1, 100
-        )),
+        "weak_target_limit": int(
+            _clamp_number(
+                raw_graph.get("weak_target_limit"),
+                DEFAULT_SCORED_GRAPH_CONFIG["weak_target_limit"],
+                1,
+                20,
+            )
+        ),
+        "max_depth": int(
+            _clamp_number(
+                raw_graph.get("max_depth"),
+                DEFAULT_SCORED_GRAPH_CONFIG["max_depth"],
+                1,
+                2,
+            )
+        ),
+        "max_nodes": int(
+            _clamp_number(
+                raw_graph.get("max_nodes"),
+                DEFAULT_SCORED_GRAPH_CONFIG["max_nodes"],
+                1,
+                100,
+            )
+        ),
         "prerequisite_mastery_threshold": _clamp_number(
             raw_graph.get("prerequisite_mastery_threshold"),
             DEFAULT_SCORED_GRAPH_CONFIG["prerequisite_mastery_threshold"],
@@ -331,11 +365,21 @@ def apply_strategy_weights(base_scores: dict, config: dict) -> float:
     返回: 加权分数，clamp 到 0~1。
     """
     weight_map = {
-        "vector_similarity": config.get("weight_vector_similarity", _DEFAULT_WEIGHTS["weight_vector_similarity"]),
-        "knowledge_overlap": config.get("weight_knowledge_overlap", _DEFAULT_WEIGHTS["weight_knowledge_overlap"]),
-        "difficulty_match": config.get("weight_difficulty_match", _DEFAULT_WEIGHTS["weight_difficulty_match"]),
-        "mastery_gap": config.get("weight_mastery_gap", _DEFAULT_WEIGHTS["weight_mastery_gap"]),
-        "path_priority": config.get("weight_path_priority", _DEFAULT_WEIGHTS["weight_path_priority"]),
+        "vector_similarity": config.get(
+            "weight_vector_similarity", _DEFAULT_WEIGHTS["weight_vector_similarity"]
+        ),
+        "knowledge_overlap": config.get(
+            "weight_knowledge_overlap", _DEFAULT_WEIGHTS["weight_knowledge_overlap"]
+        ),
+        "difficulty_match": config.get(
+            "weight_difficulty_match", _DEFAULT_WEIGHTS["weight_difficulty_match"]
+        ),
+        "mastery_gap": config.get(
+            "weight_mastery_gap", _DEFAULT_WEIGHTS["weight_mastery_gap"]
+        ),
+        "path_priority": config.get(
+            "weight_path_priority", _DEFAULT_WEIGHTS["weight_path_priority"]
+        ),
     }
 
     total_weight = sum(weight_map.values()) or 1.0

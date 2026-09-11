@@ -19,14 +19,18 @@ from dataclasses import dataclass, field
 # Supported source types and MIME types
 # ---------------------------------------------------------------------------
 
-SUPPORTED_SOURCE_TYPES: frozenset[str] = frozenset({"pdf", "png", "jpeg", "jpg", "tiff", "bmp"})
-SUPPORTED_MIME_TYPES: frozenset[str] = frozenset({
-    "application/pdf",
-    "image/png",
-    "image/jpeg",
-    "image/tiff",
-    "image/bmp",
-})
+SUPPORTED_SOURCE_TYPES: frozenset[str] = frozenset(
+    {"pdf", "png", "jpeg", "jpg", "tiff", "bmp"}
+)
+SUPPORTED_MIME_TYPES: frozenset[str] = frozenset(
+    {
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/tiff",
+        "image/bmp",
+    }
+)
 
 MIME_FROM_TYPE: dict[str, str] = {
     "pdf": "application/pdf",
@@ -59,6 +63,7 @@ class OCRRequest:
     Raises:
         ValueError: 输入无效时（空数据、超限、不支持的 type）
     """
+
     source: bytes
     source_type: str
     mime: str = ""
@@ -100,7 +105,11 @@ class OCRRequest:
 
         # MIME type
         if not self.mime:
-            object.__setattr__(self, "mime", MIME_FROM_TYPE.get(self.source_type, "application/octet-stream"))
+            object.__setattr__(
+                self,
+                "mime",
+                MIME_FROM_TYPE.get(self.source_type, "application/octet-stream"),
+            )
         elif self.mime not in SUPPORTED_MIME_TYPES:
             raise ValueError(
                 f"OCRRequest.mime must be one of {sorted(SUPPORTED_MIME_TYPES)}, "
@@ -109,7 +118,9 @@ class OCRRequest:
 
         # Page range validation
         if self.page_start < 1:
-            raise ValueError(f"OCRRequest.page_start must be >= 1, got {self.page_start}")
+            raise ValueError(
+                f"OCRRequest.page_start must be >= 1, got {self.page_start}"
+            )
         if self.page_end is not None and self.page_end < self.page_start:
             raise ValueError(
                 f"OCRRequest.page_end ({self.page_end}) must be >= page_start ({self.page_start})"
@@ -124,7 +135,9 @@ class OCRRequest:
                 )
 
         # Compute source SHA256
-        object.__setattr__(self, "source_sha256", hashlib.sha256(self.source).hexdigest())
+        object.__setattr__(
+            self, "source_sha256", hashlib.sha256(self.source).hexdigest()
+        )
 
     def estimated_pages(self) -> int:
         """Return the number of pages in the requested range."""

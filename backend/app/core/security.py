@@ -181,6 +181,7 @@ async def authenticate_user_token(
     # Bind user identity to log context for trace correlation
     try:
         from app.core.log_context import bind_log_context
+
         bind_log_context(user_id=str(user.id))
     except Exception:
         pass
@@ -189,7 +190,13 @@ async def authenticate_user_token(
 
 
 def _is_local_dev_user(user) -> bool:
-    if settings.APP_ENV.lower() not in {"development", "dev", "local", "test", "testing"}:
+    if settings.APP_ENV.lower() not in {
+        "development",
+        "dev",
+        "local",
+        "test",
+        "testing",
+    }:
         return False
     try:
         if detect_deployment_profile() != DeploymentProfile.LOCAL_IMPORT:
@@ -212,7 +219,9 @@ def require_app_permission(permission_name: str):
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(AdminUser, AdminUser.role_id == RolePermission.role_id)
-            .join(AppUserAdminBinding, AppUserAdminBinding.admin_user_id == AdminUser.id)
+            .join(
+                AppUserAdminBinding, AppUserAdminBinding.admin_user_id == AdminUser.id
+            )
             .where(AppUserAdminBinding.user_id == current_user.id)
             .where(AdminUser.is_active.is_(True))
             .where(Permission.name == permission_name)

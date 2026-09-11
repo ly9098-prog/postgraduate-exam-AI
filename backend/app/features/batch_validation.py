@@ -63,11 +63,13 @@ def _check_number_continuity(questions: list[dict]) -> list[dict]:
             # Gap detection
             if num > prev_num + 1:
                 for missing in range(prev_num + 1, num):
-                    gaps.append({
-                        "expected": missing,
-                        "actual": num,
-                        "after_index": i - 1,
-                    })
+                    gaps.append(
+                        {
+                            "expected": missing,
+                            "actual": num,
+                            "after_index": i - 1,
+                        }
+                    )
 
         prev_num = num
 
@@ -127,6 +129,7 @@ def _check_roman_numeral_sequence(questions: list[dict]) -> list[dict]:
     以及 I→II→III→V 这类跳号（缺失项），
     标记具体断裂位置供下游 AI repair 和前端审核参考。
     """
+
     def _scan_text(text: str, index: int, source: str = "stem") -> list[dict]:
         """扫描单段文本中的罗马数字序列完整性。"""
         if not text:
@@ -145,12 +148,14 @@ def _check_roman_numeral_sequence(questions: list[dict]) -> list[dict]:
         if len(values) < 3:
             return []
         if any(values[j] - values[j - 1] != 1 for j in range(1, len(values))):
-            return [{
-                "index": index,
-                "source": source,
-                "found_tokens": tokens,
-                "found_values": values,
-            }]
+            return [
+                {
+                    "index": index,
+                    "source": source,
+                    "found_tokens": tokens,
+                    "found_values": values,
+                }
+            ]
         return []
 
     issues: list[dict] = []
@@ -181,7 +186,9 @@ def _check_option_roman_digit_confusion(questions: list[dict]) -> list[dict]:
         has_roman = bool(_RE_ROMAN_SUBITEM_MARKER.search(stem))
         if not has_roman:
             for opt in options:
-                if isinstance(opt, dict) and _RE_ROMAN_SUBITEM_MARKER.search(opt.get("text", "")):
+                if isinstance(opt, dict) and _RE_ROMAN_SUBITEM_MARKER.search(
+                    opt.get("text", "")
+                ):
                     has_roman = True
                     break
 
@@ -192,12 +199,14 @@ def _check_option_roman_digit_confusion(questions: list[dict]) -> list[dict]:
             if isinstance(opt, dict):
                 opt_text = opt.get("text", "")
                 opt_key = opt.get("key", "")
-                if '1' in opt_text:
-                    issues.append({
-                        "index": i,
-                        "option_key": opt_key,
-                        "option_text": opt_text,
-                    })
+                if "1" in opt_text:
+                    issues.append(
+                        {
+                            "index": i,
+                            "option_key": opt_key,
+                            "option_text": opt_text,
+                        }
+                    )
 
     return issues
 
@@ -240,22 +249,26 @@ def _build_structured_roman_anomalies(
         elif issue_type == GAP:
             candidates = generate_gap_candidates(tokens, values)
         elif issue_type == SEQUENCE_BREAK:
-            candidates = [{
-                "position": 0,
-                "current_token": tokens[0] if tokens else "",
-                "action": "keep_as_is",
-                "rationale": "序列不单调，无法推断正确顺序",
-            }]
+            candidates = [
+                {
+                    "position": 0,
+                    "current_token": tokens[0] if tokens else "",
+                    "action": "keep_as_is",
+                    "rationale": "序列不单调，无法推断正确顺序",
+                }
+            ]
 
-        anomalies.append(build_roman_anomaly(
-            index=idx,
-            source=source,
-            issue_type=issue_type,
-            tokens=tokens,
-            values=values,
-            text_snippet=text_snippet,
-            candidates=candidates,
-        ))
+        anomalies.append(
+            build_roman_anomaly(
+                index=idx,
+                source=source,
+                issue_type=issue_type,
+                tokens=tokens,
+                values=values,
+                text_snippet=text_snippet,
+                candidates=candidates,
+            )
+        )
 
     for raw in roman_digit_issues:
         idx = raw["index"]
@@ -268,15 +281,17 @@ def _build_structured_roman_anomalies(
 
         candidates = generate_digit_confusion_candidates(opt_key, opt_text)
 
-        anomalies.append(build_roman_anomaly(
-            index=idx,
-            source=source,
-            issue_type=OCR_DIGIT_CONFUSION,
-            tokens=[],
-            values=[],
-            text_snippet=text_snippet,
-            candidates=candidates,
-        ))
+        anomalies.append(
+            build_roman_anomaly(
+                index=idx,
+                source=source,
+                issue_type=OCR_DIGIT_CONFUSION,
+                tokens=[],
+                values=[],
+                text_snippet=text_snippet,
+                candidates=candidates,
+            )
+        )
 
     return anomalies
 
@@ -296,7 +311,9 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     roman_issues = _check_roman_numeral_sequence(questions)
     roman_digit_issues = _check_option_roman_digit_confusion(questions)
     roman_anomalies = _build_structured_roman_anomalies(
-        roman_issues, roman_digit_issues, questions,
+        roman_issues,
+        roman_digit_issues,
+        questions,
     )
 
     for i, q in enumerate(questions):
@@ -343,7 +360,11 @@ def validate_batch_structure(questions: list[dict]) -> dict:
         if i in missing_ans_indices:
             warnings.append("missing_answer_for_objective_question")
             # PENDING_FIX: objective question missing answer → invalid
-            if new_q.get("question_type") in ("single_choice", "multiple_choice", "true_false"):
+            if new_q.get("question_type") in (
+                "single_choice",
+                "multiple_choice",
+                "true_false",
+            ):
                 if "missing_answer" not in errors:
                     errors.append("missing_answer_for_objective_question")
                 new_q["is_valid"] = False

@@ -26,7 +26,10 @@ from app.features.question_type import (
 )
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportSortBy
-from app.services.question_revision_service import load_revision_kp_names, load_revision_views
+from app.services.question_revision_service import (
+    load_revision_kp_names,
+    load_revision_views,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +52,11 @@ async def sort_questions(
         return _sort_random(wq_ids)
 
     # Sort from immutable wrong-question revisions.
-    rows = list((await db.scalars(
-        select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids))
-    )).all())
+    rows = list(
+        (
+            await db.scalars(select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids)))
+        ).all()
+    )
     revision_ids = [int(wq.question_version_id) for wq in rows]
     views = await load_revision_views(db, revision_ids)
     kp_map = await load_revision_kp_names(db, revision_ids)
@@ -64,9 +69,7 @@ async def sort_questions(
         if q is None:
             continue
         tiebreaker = wq.id  # stable tiebreaker
-        key = _sort_key(
-            sort_by, wq, q, kp_map.get(int(wq.question_version_id), [])
-        )
+        key = _sort_key(sort_by, wq, q, kp_map.get(int(wq.question_version_id), []))
         sort_keys[wq.id] = (key, tiebreaker)
 
     # Items not in sort_keys (shouldn't happen) sort last
@@ -79,7 +82,9 @@ async def sort_questions(
     return [i for i, _ in known] + missing
 
 
-def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q, kps: list[str] | None = None):
+def _sort_key(
+    sort_by: ExportSortBy, wq: WrongQuestion, q, kps: list[str] | None = None
+):
     """Return a comparable sort key."""
     if sort_by == ExportSortBy.NEWEST:
         timestamp = _datetime_timestamp(wq.created_at)

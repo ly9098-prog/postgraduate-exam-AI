@@ -22,10 +22,12 @@ logger = logging.getLogger("postgraduate-ai.embedding")
 # Lazy import to avoid circular dependency at module load time
 # ---------------------------------------------------------------------------
 
+
 def _get_embedding_config():
     """同步获取 Embedding 配置。"""
     from app.core.config import settings
     from app.services.vector_config_service import EmbeddingConfig
+
     return EmbeddingConfig(
         api_key="",
         base_url=settings.EMBEDDING_BASE_URL,
@@ -152,21 +154,17 @@ def build_embeddings_url(base_url: str) -> str:
     # Workspace-specific Model Studio domains are also commonly pasted as a
     # bare host. Give them the provider's OpenAI-compatible root instead of the
     # generic /v1 root used by OpenAI/vLLM-style servers.
-    is_alibaba_model_studio = (
-        host.endswith(".maas.aliyuncs.com")
-        or host in {
-            "dashscope.aliyuncs.com",
-            "dashscope-intl.aliyuncs.com",
-            "cn-hongkong.dashscope.aliyuncs.com",
-        }
-    )
+    is_alibaba_model_studio = host.endswith(".maas.aliyuncs.com") or host in {
+        "dashscope.aliyuncs.com",
+        "dashscope-intl.aliyuncs.com",
+        "cn-hongkong.dashscope.aliyuncs.com",
+    }
     if not path and is_alibaba_model_studio:
         return f"{normalized}/compatible-mode/v1/embeddings"
 
     if not path:
         return f"{normalized}/v1/embeddings"
     return f"{normalized}/embeddings"
-
 
 
 def _is_embedding_configured(cfg=None) -> bool:
@@ -178,7 +176,9 @@ def _is_embedding_configured(cfg=None) -> bool:
 
 
 async def _request_embeddings(url: str, payload: dict, cfg) -> tuple[int, dict]:
-    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
     response = await asyncio.to_thread(
         request_remote_bytes,
         url,
@@ -250,7 +250,9 @@ async def get_embedding(text: str, *, config=None) -> list[float] | None:
     return embedding
 
 
-async def get_embeddings_batch(texts: list[str], *, config=None) -> list[list[float] | None]:
+async def get_embeddings_batch(
+    texts: list[str], *, config=None
+) -> list[list[float] | None]:
     """批量获取 embedding。按 batch_size 分批调用 API。
 
     如果供应商不支持批量 input，自动逐条 fallback。

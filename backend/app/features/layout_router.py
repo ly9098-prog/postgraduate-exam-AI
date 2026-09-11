@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 SplitMode = Literal["standard", "layout_enhanced", "vl_rebuild"]
 
 # ── 路由阈值（已固化，禁止修改）───────────────────────────
-_CONFIDENCE_HIGH = 0.75       # ≥ 此值 = 结构清晰 → standard
-_CONFIDENCE_LOW = 0.5         # < 此值 = 结构失败 → vl_rebuild
+_CONFIDENCE_HIGH = 0.75  # ≥ 此值 = 结构清晰 → standard
+_CONFIDENCE_LOW = 0.5  # < 此值 = 结构失败 → vl_rebuild
 
 
 def evaluate_routing(layout_result: dict) -> SplitMode:
@@ -56,7 +56,8 @@ def evaluate_routing(layout_result: dict) -> SplitMode:
     if confidence >= _CONFIDENCE_HIGH:
         logger.info(
             "Route: standard (confidence=%.2f >= %.2f)",
-            confidence, _CONFIDENCE_HIGH,
+            confidence,
+            _CONFIDENCE_HIGH,
         )
         return "standard"
 
@@ -64,13 +65,16 @@ def evaluate_routing(layout_result: dict) -> SplitMode:
     if confidence < _CONFIDENCE_LOW:
         logger.info(
             "Route: vl_rebuild (confidence=%.2f < %.2f)",
-            confidence, _CONFIDENCE_LOW,
+            confidence,
+            _CONFIDENCE_LOW,
         )
         return "vl_rebuild"
 
     # ── 中等置信度 → layout_enhanced（主路径）──
     logger.info(
         "Route: layout_enhanced (confidence=%.2f, threshold=[%.2f, %.2f))",
-        confidence, _CONFIDENCE_LOW, _CONFIDENCE_HIGH,
+        confidence,
+        _CONFIDENCE_LOW,
+        _CONFIDENCE_HIGH,
     )
     return "layout_enhanced"

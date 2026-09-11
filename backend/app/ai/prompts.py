@@ -15,6 +15,7 @@ def _clip_text(value, limit=1200):
     text = str(value)
     return text if len(text) <= limit else text[:limit] + "..."
 
+
 SYSTEM_PROMPTS = {
     "error_analysis": (
         "你是一个考研错题复盘教练。你的任务是结合题目、用户答案和正确答案，"
@@ -103,16 +104,16 @@ SYSTEM_PROMPTS = {
         "你是考研题库修复助手。根据 OCR 或规则解析的原始题目文本，"
         "将其修复为标准化的题目结构。\n"
         "规则：\n"
-        "1. 提取题干：去除题号前缀（如\"01.\"\"1)\"）、题型标签（如\"单选题\"\"选择\"），"
+        '1. 提取题干：去除题号前缀（如"01.""1)"）、题型标签（如"单选题""选择"），'
         "仅删除行首行尾多余空白，保留所有结构换行\n"
-        "2. 结构化选项：若原文有 A. B. C. D. 等选项，整理为 {\"A\": \"...\", \"B\": \"...\"}\n"
-        "3. 标准化答案：单选大写单字母（如 \"A\"），多选逗号分隔大写（如 \"A,C\"），"
+        '2. 结构化选项：若原文有 A. B. C. D. 等选项，整理为 {"A": "...", "B": "..."}\n'
+        '3. 标准化答案：单选大写单字母（如 "A"），多选逗号分隔大写（如 "A,C"），'
         "判断映射为 T/F，填空/主观保留原文本\n"
         "4. 识别题型：single_choice / multiple_choice / true_false / fill_blank / subjective\n"
-        "5. 提取解析：若有解析内容，去除\"解析：\"等标签前缀\n"
+        '5. 提取解析：若有解析内容，去除"解析："等标签前缀\n'
         "6. 若某字段确实无法确定，填空字符串而不要编造\n"
         "7. 修复 OCR 罗马数字混淆：选项文本中若数字 1 出现在罗马数字上下文"
-        "（如选项 \"1、II\" 明显应为 \"I、II\"），将 1 修正为 I；\n"
+        '（如选项 "1、II" 明显应为 "I、II"），将 1 修正为 I；\n'
         "   同时检查题干和选项中的罗马数字序列（I/II/III/IV/V）是否连续递增，"
         "若发现重复或缺失项则按上下文修正\n"
         "8. 保留列举项的换行结构：题干中 I/II/III/IV、①②③、(1)(2)(3) 等"
@@ -120,7 +121,7 @@ SYSTEM_PROMPTS = {
         "9. 保护代码块：原文中的 ``` 代码围栏是结构标记，必须原样保留；"
         "围栏内的所有缩进、换行、空格不得修改，代码语句不要合并为单行；"
         "不要在围栏外新增围栏（代码块边界由预处理管线决定）；"
-        "围栏内 C/Java 代码中 printf(\"\\n\") 等字符串字面量中的 \\n 是转义序列，"
+        '围栏内 C/Java 代码中 printf("\\n") 等字符串字面量中的 \\n 是转义序列，'
         "不应被解释为文本换行符，保留原始写法\n"
         "数学公式输出规则：所有数学内容用 LaTeX（行内 $...$，块级 $$...$$），"
         "禁止使用 Unicode 数学符号。\n"
@@ -130,7 +131,7 @@ SYSTEM_PROMPTS = {
         "    不得重新解题。\n"
         "    不得根据题意推理答案。\n"
         "    不得擅自修改答案字段。\n"
-        "    如果原文没有明确答案，请保持答案为空，并设置 \"answer_uncertain\": true。\n"
+        '    如果原文没有明确答案，请保持答案为空，并设置 "answer_uncertain": true。\n'
         "    不得改写数学公式、LaTeX、积分、极限、矩阵、分式、上下标。\n"
         "    对于不确定的公式，不要猜测，保留原文。\n"
         "    不得改写 C 语言/伪代码/SQL 的逻辑。\n"
@@ -138,9 +139,9 @@ SYSTEM_PROMPTS = {
         "    如果代码或公式无法确认，请保留原文，并添加风险标记。\n"
         "11. 如果 AI 输出中某些字段（尤其是公式或代码）存在不确定性，"
         "请在输出 JSON 中的 risk_flags 数组中添加对应标记：\n"
-        "    \"formula_uncertain\" — 数学公式部分无法确认\n"
-        "    \"code_uncertain\" — 代码部分无法确认\n"
-        "    \"answer_uncertain\" — 答案不确定\n"
+        '    "formula_uncertain" — 数学公式部分无法确认\n'
+        '    "code_uncertain" — 代码部分无法确认\n'
+        '    "answer_uncertain" — 答案不确定\n'
         "12. 禁止在 answer 字段中填入 AI 推理产生的答案。\n"
         "    仅当原文中明确标注了答案时才填入。\n"
         "    如果没有明确答案，answer 输出空字符串。\n"
@@ -226,14 +227,14 @@ SYSTEM_PROMPTS = {
         "9. 保护代码块：原文中的 ``` 代码围栏是结构标记，必须原样保留；"
         "围栏内的所有缩进、换行、空格不得修改；"
         "不要在围栏外新增围栏（代码块边界由预处理管线决定）；"
-        "围栏内 printf(\"\\n\") 等字符串字面量的 \\n 是转义序列，不要解释为换行\n\n"
+        '围栏内 printf("\\n") 等字符串字面量的 \\n 是转义序列，不要解释为换行\n\n'
         "禁止规则：\n"
         "- 禁止添加原文中不存在的内容（不要补充答案、解析等）\n"
         "- 禁止修改题目实质含义\n"
         "- 禁止重新排版或添加格式标记\n"
         "- 如果文本质量已经很好，原样返回即可\n"
         "- 禁止删除原文中的任何行：保留题干、选项、答案行等所有内容，只修复字符错误\n"
-        "- 特别重要：如果原文包含题号（如\"06.\"或\"1.\"）和题干文本，必须在输出中完整保留\n"
+        '- 特别重要：如果原文包含题号（如"06."或"1."）和题干文本，必须在输出中完整保留\n'
         "- 不允许只输出选项而不保留题干\n"
         "- 禁止删除或修改 ``` 代码围栏及其内部内容\n\n"
         "输出格式：直接返回纠错后的完整纯文本，不要包含任何 JSON、代码块或其他标记。"
@@ -335,9 +336,9 @@ def build_error_analysis(
     image_data_urls: list[str] | None = None,
     image_max_pixels: int | None = None,
 ) -> list:
-    stem = _clip_text(question.get('content', {}).get('text', ''), 1200)
-    options_text = _clip_text(question.get('options', {}), 800)
-    structured_visual = _clip_text(question.get('structured_visual', ''), 1800)
+    stem = _clip_text(question.get("content", {}).get("text", ""), 1200)
+    options_text = _clip_text(question.get("options", {}), 800)
+    structured_visual = _clip_text(question.get("structured_visual", ""), 1800)
     image_data_urls = [str(url) for url in (image_data_urls or []) if url]
 
     visual_note = ""
@@ -406,17 +407,19 @@ def build_visual_evidence_probe(
     redo the pedagogical analysis, it only proves that the configured analysis
     LLM can actually read the persisted question image.
     """
-    content = [{
-        "type": "text",
-        "text": (
-            "请只检查随消息附带的题目图片，不要解题。输出严格 JSON："
-            '{"visual_evidence":"..."}。'
-            "visual_evidence 必须是一条只能从图片直接看到的具体事实，例如节点名称与连边、"
-            "表头与数值、图形标注或条件；不要复述任何题干文字。"
-            "若图片确实无法读取或无法辨认，只输出 "
-            '{"visual_evidence":"unreadable"}。'
-        ),
-    }]
+    content = [
+        {
+            "type": "text",
+            "text": (
+                "请只检查随消息附带的题目图片，不要解题。输出严格 JSON："
+                '{"visual_evidence":"..."}。'
+                "visual_evidence 必须是一条只能从图片直接看到的具体事实，例如节点名称与连边、"
+                "表头与数值、图形标注或条件；不要复述任何题干文字。"
+                "若图片确实无法读取或无法辨认，只输出 "
+                '{"visual_evidence":"unreadable"}。'
+            ),
+        }
+    ]
     for data_url in [str(url) for url in (image_data_urls or []) if url]:
         image_item = {
             "type": "image_url",
@@ -558,11 +561,7 @@ def build_batch_repair_prompt(candidates: list[tuple[int, dict, str]]) -> list:
             f"【规则解析解析】{q.get('analysis', '')}\n"
             f"【已知错误】{q.get('errors', [])}\n"
         )
-        parts.append(
-            f"【题目{idx}】\n"
-            f"【原始文本】\n{raw_text}\n\n"
-            f"{existing}"
-        )
+        parts.append(f"【题目{idx}】\n【原始文本】\n{raw_text}\n\n{existing}")
 
     return [
         {"role": "system", "content": SYSTEM_PROMPTS["question_repair"]},
@@ -578,7 +577,13 @@ def build_batch_repair_prompt(candidates: list[tuple[int, dict, str]]) -> list:
     ]
 
 
-def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str, system_prompt: str | None = None, subject_list: list[dict] | None = None) -> list:
+def build_batch_complete_question(
+    qi: dict,
+    target_fields: list[str],
+    strategy: str,
+    system_prompt: str | None = None,
+    subject_list: list[dict] | None = None,
+) -> list:
     """对一条 question_imports 记录批量补全指定字段。
 
     strategy: fill_empty | force_overwrite
@@ -614,13 +619,19 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
     analysis_instruction = (
         "\n若需补全 analysis：必须在 JSON 中返回 analysis 键，内容应为可供学生阅读的完整题目解析；"
         "不要只把解题过程写入 reason/reasoning/explanation。无法可靠解析时 analysis 返回空字符串。"
-        if "analysis" in target_fields else ""
+        if "analysis" in target_fields
+        else ""
     )
     subject_list_text = ""
     if subject_list:
-        subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
+        subject_list_text = (
+            "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
+        )
     return [
-        {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
+        {
+            "role": "system",
+            "content": system_prompt or SYSTEM_PROMPTS["complete_question"],
+        },
         {
             "role": "user",
             "content": (
@@ -640,7 +651,12 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
     ]
 
 
-def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: str | None = None, subject_list: list[dict] | None = None) -> list:
+def build_complete_question(
+    qi: dict,
+    missing_fields: list[str],
+    system_prompt: str | None = None,
+    subject_list: list[dict] | None = None,
+) -> list:
     stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
     options = qi.get("parsed_options") or {}
     answer = qi.get("parsed_answer") or ""
@@ -648,14 +664,20 @@ def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: 
     subject_code = qi.get("subject_code") or ""
     subject_list_text = ""
     if subject_list:
-        subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
+        subject_list_text = (
+            "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
+        )
     analysis_instruction = (
         "\n若缺失字段包含 analysis：必须在 JSON 中返回 analysis 键，内容应为可供学生阅读的完整题目解析；"
         "不要只把解题过程写入 reason/reasoning/explanation。无法可靠解析时 analysis 返回空字符串。"
-        if "analysis" in missing_fields else ""
+        if "analysis" in missing_fields
+        else ""
     )
     return [
-        {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
+        {
+            "role": "system",
+            "content": system_prompt or SYSTEM_PROMPTS["complete_question"],
+        },
         {
             "role": "user",
             "content": (
@@ -704,30 +726,33 @@ def build_text_structure_batch(items: list[dict]) -> list:
     payload = []
     for item in items:
         hint = item.get("rule_hint") or {}
-        payload.append({
-            "index": item.get("index"),
-            "text": item.get("text") or "",
-            "rule_hint": {
-                "stem_length": len(hint.get("stem") or ""),
-                "option_count": len(hint.get("options") or []),
-                "answer_empty": not hint.get("answer"),
-                "analysis_empty": not hint.get("analysis"),
-            },
-        })
+        payload.append(
+            {
+                "index": item.get("index"),
+                "text": item.get("text") or "",
+                "rule_hint": {
+                    "stem_length": len(hint.get("stem") or ""),
+                    "option_count": len(hint.get("options") or []),
+                    "answer_empty": not hint.get("answer"),
+                    "analysis_empty": not hint.get("analysis"),
+                },
+            }
+        )
     return [
         {
             "role": "system",
             "content": (
                 SYSTEM_PROMPTS["text_structure"]
                 + "\n\n批量模式补充约束：每个输入 item 必须独立处理，不得跨 item 合并、拆分或借用内容。"
-                "返回严格 JSON 对象：{\"items\":[{\"index\":0,\"stem\":...,\"question_type\":...,"
-                "\"options\":[],\"answer\":null,\"analysis\":null}, ...]}。"
+                '返回严格 JSON 对象：{"items":[{"index":0,"stem":...,"question_type":...,'
+                '"options":[],"answer":null,"analysis":null}, ...]}。'
                 "index 必须原样返回，且只返回输入中存在的 index。"
             ),
         },
         {
             "role": "user",
-            "content": "请一次性结构化以下文本块：\n" + json.dumps(payload, ensure_ascii=False),
+            "content": "请一次性结构化以下文本块：\n"
+            + json.dumps(payload, ensure_ascii=False),
         },
     ]
 
@@ -738,13 +763,13 @@ def build_ocr_correction(block_text: str, system_prompt: str | None = None) -> l
     system_prompt: 来自 DB admin_ai_configs 的自定义 prompt，为 None 时使用默认值。
     """
     return [
-        {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["ocr_correction"]},
+        {
+            "role": "system",
+            "content": system_prompt or SYSTEM_PROMPTS["ocr_correction"],
+        },
         {
             "role": "user",
-            "content": (
-                "请纠错以下 OCR 识别文本：\n\n"
-                f"{block_text}"
-            ),
+            "content": (f"请纠错以下 OCR 识别文本：\n\n{block_text}"),
         },
     ]
 
@@ -828,9 +853,6 @@ def build_code_structure_reconstruct(stem: str) -> list:
         {"role": "system", "content": SYSTEM_PROMPTS["code_structure_reconstruct"]},
         {
             "role": "user",
-            "content": (
-                "请修复以下文本中的代码结构问题，输出标准 JSON：\n\n"
-                f"{stem}"
-            ),
+            "content": (f"请修复以下文本中的代码结构问题，输出标准 JSON：\n\n{stem}"),
         },
     ]

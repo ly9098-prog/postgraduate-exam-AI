@@ -72,14 +72,14 @@ def _build_pipeline_fingerprint() -> str:
     - Schema version (explicit bump for format changes)
     - Python major.minor version (serialization stability)
     """
-    stage_hash = hashlib.md5(
-        "|".join(CANONICAL_STAGE_ORDER).encode()
-    ).hexdigest()[:8]
-    raw = "|".join([
-        stage_hash,
-        f"schema:{_PIPELINE_SCHEMA_VERSION}",
-        f"py:{sys.version_info.major}.{sys.version_info.minor}",
-    ])
+    stage_hash = hashlib.md5("|".join(CANONICAL_STAGE_ORDER).encode()).hexdigest()[:8]
+    raw = "|".join(
+        [
+            stage_hash,
+            f"schema:{_PIPELINE_SCHEMA_VERSION}",
+            f"py:{sys.version_info.major}.{sys.version_info.minor}",
+        ]
+    )
     return f"p{_PIPELINE_SCHEMA_VERSION}_s{hashlib.md5(raw.encode()).hexdigest()[:12]}"
 
 
@@ -94,20 +94,23 @@ def _build_config_fingerprint() -> str:
     """
     try:
         from app.core.ocr_runtime_config import get_runtime_config
+
         cfg = get_runtime_config()
-        key_fields = "|".join([
-            str(cfg.use_gpu),
-            cfg.language,
-            str(cfg.det_db_thresh),
-            str(cfg.det_db_box_thresh),
-            str(cfg.det_db_unclip_ratio),
-            str(cfg.drop_score),
-            str(cfg.min_image_width),
-            str(cfg.enable_rotation),
-            str(cfg.enable_ai_correction),
-            str(cfg.worker_count),
-            str(cfg.gpu_shards),
-        ])
+        key_fields = "|".join(
+            [
+                str(cfg.use_gpu),
+                cfg.language,
+                str(cfg.det_db_thresh),
+                str(cfg.det_db_box_thresh),
+                str(cfg.det_db_unclip_ratio),
+                str(cfg.drop_score),
+                str(cfg.min_image_width),
+                str(cfg.enable_rotation),
+                str(cfg.enable_ai_correction),
+                str(cfg.worker_count),
+                str(cfg.gpu_shards),
+            ]
+        )
         return hashlib.md5(key_fields.encode()).hexdigest()[:12]
     except Exception:
         return "default"
@@ -127,7 +130,22 @@ def current_pipeline_version() -> str:
 # Using ``str()`` as a fallback (the previous default) silently loses type
 # information and can produce irreversible results — only explicit types are
 # safe to serialize.
-_ALLOWED_SERIAL_TYPES = (str, int, float, bool, type(None), list, tuple, dict, bytes, datetime, date, dtime, Decimal, uuid.UUID)
+_ALLOWED_SERIAL_TYPES = (
+    str,
+    int,
+    float,
+    bool,
+    type(None),
+    list,
+    tuple,
+    dict,
+    bytes,
+    datetime,
+    date,
+    dtime,
+    Decimal,
+    uuid.UUID,
+)
 
 
 def stage_index(stage_name: str) -> int:
@@ -150,9 +168,11 @@ def is_stage_before(a: str, b: str) -> bool:
     """Return True if stage A appears before stage B in canonical order."""
     return stage_index(a) < stage_index(b)
 
+
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_artifact_root() -> str:
     """Return the artifact root directory (resolved at call time for testability)."""
@@ -161,10 +181,11 @@ def _get_artifact_root() -> str:
         os.path.join(os.getcwd(), ".backend_cache", "pipeline_artifacts"),
     )
 
+
 # Default TTLs (seconds)
-_COMPLETED_TTL = 86400       # 24h for completed pipelines
-_FAILED_TTL = 604800         # 7d for failed pipelines
-_RUNNING_TTL = 604800        # 7d for running (keep while active)
+_COMPLETED_TTL = 86400  # 24h for completed pipelines
+_FAILED_TTL = 604800  # 7d for failed pipelines
+_RUNNING_TTL = 604800  # 7d for running (keep while active)
 
 # Stage artifacts considered "resumable" — reading one allows skipping
 # all prior stages.  The dict maps stage_name → artifact_filename.
@@ -257,7 +278,9 @@ def save_artifact(
     except Exception as exc:
         logger.warning(
             "Failed to save artifact for stage=%s pipeline=%s: %s",
-            stage_name, pipeline_id, exc,
+            stage_name,
+            pipeline_id,
+            exc,
         )
         return None
 
@@ -285,6 +308,7 @@ def _unwrap_artifact(
     # Legacy artifact — reject if configured, otherwise warn and accept
     try:
         from app.core.config import settings
+
         if settings.REJECT_LEGACY_ARTIFACTS:
             raise ValueError("Legacy artifact rejected (REJECT_LEGACY_ARTIFACTS=True)")
     except ImportError:
@@ -322,7 +346,9 @@ def load_artifact(
     except Exception as exc:
         logger.warning(
             "Corrupted artifact for stage=%s pipeline=%s (will fallback): %s",
-            stage_name, pipeline_id, exc,
+            stage_name,
+            pipeline_id,
+            exc,
         )
         _safe_remove(path)
         return None
@@ -349,6 +375,7 @@ def check_artifact_compatibility(pipeline_id: str, stage_name: str) -> tuple[boo
         # Legacy artifact (pre-metadata)
         try:
             from app.core.config import settings
+
             if settings.REJECT_LEGACY_ARTIFACTS:
                 return False, (
                     f"Legacy artifact for stage {stage_name} rejected "
@@ -359,7 +386,8 @@ def check_artifact_compatibility(pipeline_id: str, stage_name: str) -> tuple[boo
         logger.warning(
             "Legacy artifact for stage=%s pipeline=%s (no metadata) — "
             "compatibility check passed but consider re-running pipeline",
-            stage_name, pipeline_id,
+            stage_name,
+            pipeline_id,
         )
         return True, ""
     if not version:
@@ -461,7 +489,10 @@ def cleanup_artifacts(
             raw_path = os.path.join(artifact_dir, entry)
             # Resolve each entry and verify it stays within the safe directory
             resolved = os.path.realpath(raw_path)
-            if not resolved.startswith(resolved_root + os.sep) and resolved != resolved_root:
+            if (
+                not resolved.startswith(resolved_root + os.sep)
+                and resolved != resolved_root
+            ):
                 logger.warning("Skipping path traversal attempt: %s", raw_path)
                 continue
             if os.path.isfile(resolved) and os.path.getmtime(resolved) < cutoff:
@@ -509,8 +540,13 @@ def cleanup_expired(
     failed_ttl = failed_ttl or _FAILED_TTL
 
     if not os.path.isdir(_get_artifact_root()):
-        return {"scanned_count": 0, "deleted_count": 0, "freed_bytes": 0,
-                "skipped_running_count": 0, "pipeline_results": {}}
+        return {
+            "scanned_count": 0,
+            "deleted_count": 0,
+            "freed_bytes": 0,
+            "skipped_running_count": 0,
+            "pipeline_results": {},
+        }
 
     results: dict[str, int] = {}
     now = time.time()
@@ -527,8 +563,13 @@ def cleanup_expired(
 
         # Resolve and validate to prevent symlink traversal
         resolved = os.path.realpath(pipeline_dir)
-        if not resolved.startswith(resolved_root + os.sep) and resolved != resolved_root:
-            logger.warning("Skipping path traversal attempt during cleanup: %s", pipeline_dir)
+        if (
+            not resolved.startswith(resolved_root + os.sep)
+            and resolved != resolved_root
+        ):
+            logger.warning(
+                "Skipping path traversal attempt during cleanup: %s", pipeline_dir
+            )
             continue
 
         total_dirs += 1
@@ -605,8 +646,11 @@ def _count_artifact_files(pipeline_dir: str) -> int:
     if not os.path.isdir(pipeline_dir):
         return 0
     try:
-        return sum(1 for f in os.listdir(pipeline_dir)
-                    if os.path.isfile(os.path.join(pipeline_dir, f)))
+        return sum(
+            1
+            for f in os.listdir(pipeline_dir)
+            if os.path.isfile(os.path.join(pipeline_dir, f))
+        )
     except OSError:
         return 0
 

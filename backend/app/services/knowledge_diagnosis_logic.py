@@ -90,14 +90,20 @@ def _priority_score(node: dict, chapter_stat: dict, *, now: datetime) -> float:
     return round(max(0.0, score), 2)
 
 
-def _recommendation_copy(kind: str, node: dict, chapter_stat: dict, *, now: datetime) -> tuple[str, str, str]:
+def _recommendation_copy(
+    kind: str, node: dict, chapter_stat: dict, *, now: datetime
+) -> tuple[str, str, str]:
     name = str(node.get("name") or "知识章节")
-    coverage = round(max(0.0, min(1.0, _float(node.get("subtree_coverage_ratio")))) * 100)
+    coverage = round(
+        max(0.0, min(1.0, _float(node.get("subtree_coverage_ratio")))) * 100
+    )
     reliable = _int(node.get("subtree_reliable_knowledge_points"))
     trainable = _int(node.get("subtree_trainable_knowledge_points"))
     weak = _int(node.get("subtree_weak_knowledge_points"))
     mastery = node.get("subtree_mastery_score")
-    mastery_text = f"{round(_float(mastery))}%" if mastery is not None else "尚未形成可靠判断"
+    mastery_text = (
+        f"{round(_float(mastery))}%" if mastery is not None else "尚未形成可靠判断"
+    )
     days = _days_since(chapter_stat.get("last_practiced_at"), now=now)
 
     if kind == "build":
@@ -114,7 +120,11 @@ def _recommendation_copy(kind: str, node: dict, chapter_stat: dict, *, now: date
             "开始弱项强化",
         )
     if kind == "review":
-        day_text = f"最近一次章节练习已过去 {days} 天" if days is not None else "近期没有章节专项记录"
+        day_text = (
+            f"最近一次章节练习已过去 {days} 天"
+            if days is not None
+            else "近期没有章节专项记录"
+        )
         return (
             f"复习「{name}」保持稳定",
             f"当前章节掌握度约 {mastery_text}，{day_text}，建议用一组题恢复提取强度。",
@@ -154,11 +164,13 @@ def rank_chapter_recommendations(
             continue
         kp_id = _int(node.get("knowledge_point_id"))
         stat = chapter_stats.get(kp_id, {})
-        candidates.append({
-            **node,
-            "_priority_score": _priority_score(node, stat, now=now),
-            "_chapter_stat": stat,
-        })
+        candidates.append(
+            {
+                **node,
+                "_priority_score": _priority_score(node, stat, now=now),
+                "_chapter_stat": stat,
+            }
+        )
 
     candidates.sort(
         key=lambda item: (
@@ -193,36 +205,50 @@ def rank_chapter_recommendations(
         title, reason, action_label = _recommendation_copy(kind, node, stat, now=now)
         mastery = node.get("subtree_mastery_score")
         last_at = stat.get("last_practiced_at")
-        result.append({
-            "rank": rank,
-            "kind": kind,
-            "knowledge_point_id": kp_id,
-            "knowledge_point_name": str(node.get("name") or ""),
-            "depth": _int(node.get("depth")),
-            "priority_score": _float(node.get("_priority_score")),
-            "title": title,
-            "reason": reason,
-            "action_label": action_label,
-            "mastery_score": round(_float(mastery), 1) if mastery is not None else None,
-            "coverage_ratio": round(max(0.0, min(1.0, _float(node.get("subtree_coverage_ratio")))), 4),
-            "weak_knowledge_points": _int(node.get("subtree_weak_knowledge_points")),
-            "trainable_knowledge_points": _int(node.get("subtree_trainable_knowledge_points")),
-            "reliable_knowledge_points": _int(node.get("subtree_reliable_knowledge_points")),
-            "last_chapter_practiced_at": last_at.isoformat() + "Z" if isinstance(last_at, datetime) else None,
-            "chapter_session_count": _int(stat.get("session_count")),
-            "route": "practice",
-            "route_params": {
-                "subject_id": int(subject_id),
-                "mode": "random",
-                "count": _DEFAULT_QUESTION_COUNT,
+        result.append(
+            {
+                "rank": rank,
+                "kind": kind,
                 "knowledge_point_id": kp_id,
-                "include_descendants": 1,
-                "include_children": 1,
-                "allow_repeat": 1,
-                "autostart": 1,
-                "source": "knowledge_diagnosis",
-            },
-        })
+                "knowledge_point_name": str(node.get("name") or ""),
+                "depth": _int(node.get("depth")),
+                "priority_score": _float(node.get("_priority_score")),
+                "title": title,
+                "reason": reason,
+                "action_label": action_label,
+                "mastery_score": round(_float(mastery), 1)
+                if mastery is not None
+                else None,
+                "coverage_ratio": round(
+                    max(0.0, min(1.0, _float(node.get("subtree_coverage_ratio")))), 4
+                ),
+                "weak_knowledge_points": _int(
+                    node.get("subtree_weak_knowledge_points")
+                ),
+                "trainable_knowledge_points": _int(
+                    node.get("subtree_trainable_knowledge_points")
+                ),
+                "reliable_knowledge_points": _int(
+                    node.get("subtree_reliable_knowledge_points")
+                ),
+                "last_chapter_practiced_at": last_at.isoformat() + "Z"
+                if isinstance(last_at, datetime)
+                else None,
+                "chapter_session_count": _int(stat.get("session_count")),
+                "route": "practice",
+                "route_params": {
+                    "subject_id": int(subject_id),
+                    "mode": "random",
+                    "count": _DEFAULT_QUESTION_COUNT,
+                    "knowledge_point_id": kp_id,
+                    "include_descendants": 1,
+                    "include_children": 1,
+                    "allow_repeat": 1,
+                    "autostart": 1,
+                    "source": "knowledge_diagnosis",
+                },
+            }
+        )
     return result
 
 
@@ -273,7 +299,9 @@ def aggregate_session_stats(
         root_node = node_by_id.get(root_id)
         target_ids = [root_id]
         if root_node is not None:
-            target_ids.extend(_int(value) for value in root_node.get("ancestor_ids") or [])
+            target_ids.extend(
+                _int(value) for value in root_node.get("ancestor_ids") or []
+            )
         question_count = _int(session.get("question_count"))
         correct_count = _int(session.get("correct_count"))
         finished_at = session.get("finished_at")
@@ -307,7 +335,8 @@ def aggregate_session_stats(
             stat["scope_served_count"] += served_count
             stat["scope_resolved_count"] += resolved_count
             if isinstance(finished_at, datetime) and (
-                stat["last_practiced_at"] is None or finished_at > stat["last_practiced_at"]
+                stat["last_practiced_at"] is None
+                or finished_at > stat["last_practiced_at"]
             ):
                 stat["last_practiced_at"] = finished_at
 
@@ -320,5 +349,7 @@ def aggregate_session_stats(
         "resolved_ids": unique_resolved,
         "scope_served_count": scope_served_count,
         "scope_resolved_count": scope_resolved_count,
-        "scope_coverage_ratio": _scope_coverage(scope_served_count, scope_resolved_count),
+        "scope_coverage_ratio": _scope_coverage(
+            scope_served_count, scope_resolved_count
+        ),
     }

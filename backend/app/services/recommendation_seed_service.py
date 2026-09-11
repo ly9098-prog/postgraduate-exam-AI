@@ -1,4 +1,5 @@
 """Phase 4.5 — 默认推荐策略种子服务。"""
+
 import logging
 
 from sqlalchemy import select
@@ -214,11 +215,16 @@ async def seed_default_recommendation_strategies(
         )
         defaults = list(result.scalars().all())
         custom_defaults = [
-            item for item in defaults
+            item
+            for item in defaults
             if item.name not in {"default_scored", "default_weakness_vector"}
         ]
-        scored = next((item for item in defaults if item.name == "default_scored"), None)
-        weakness = next((item for item in defaults if item.name == "default_weakness_vector"), None)
+        scored = next(
+            (item for item in defaults if item.name == "default_scored"), None
+        )
+        weakness = next(
+            (item for item in defaults if item.name == "default_weakness_vector"), None
+        )
         if custom_defaults:
             # 尊重管理员已有自定义默认策略；同时清掉旧内置 weakness 默认标记，
             # 避免同一 scene 出现多个 is_default=True 导致查询歧义。

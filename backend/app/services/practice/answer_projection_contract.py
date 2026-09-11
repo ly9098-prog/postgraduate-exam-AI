@@ -6,6 +6,7 @@ its original design are retired permanently; batch/session aggregates live in
 deployment cannot silently route a new per-answer projection task to a worker
 that still assumes the retired batch schema.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,33 +21,37 @@ ANSWER_PROJECTION_MINIMUM_WORKER_VERSION = 2
 # must not be mapped by the ORM, queried by services, or present in the final DB
 # schema.  ``mode`` is intentionally absent: it was retained with new per-answer
 # semantics and is still consumed by behavior analytics.
-RETIRED_PRACTICE_BATCH_COLUMNS = frozenset({
-    "question_ids",
-    "answers",
-    "correct_count",
-    "wrong_count",
-    "duration_sec",
-    "started_at",
-    "finished_at",
-})
+RETIRED_PRACTICE_BATCH_COLUMNS = frozenset(
+    {
+        "question_ids",
+        "answers",
+        "correct_count",
+        "wrong_count",
+        "duration_sec",
+        "started_at",
+        "finished_at",
+    }
+)
 
 # Minimal durable event contract required by answer projection.  Keeping this
 # list explicit makes accidental schema drift visible at the worker boundary.
-REQUIRED_PROJECTION_COLUMNS = frozenset({
-    "id",
-    "user_id",
-    "question_id",
-    "question_version_id",
-    "subject_id",
-    "question_type",
-    "user_answer",
-    "is_correct",
-    "used_time",
-    "answered_at",
-    "created_at",
-    "projection_state",
-    "mode",
-})
+REQUIRED_PROJECTION_COLUMNS = frozenset(
+    {
+        "id",
+        "user_id",
+        "question_id",
+        "question_version_id",
+        "subject_id",
+        "question_type",
+        "user_answer",
+        "is_correct",
+        "used_time",
+        "answered_at",
+        "created_at",
+        "projection_state",
+        "mode",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +80,9 @@ def parse_answer_projection_payload(payload: Any) -> AnswerProjectionTaskPayload
     try:
         practice_record_id = int(payload.get("practice_record_id") or 0)
     except (TypeError, ValueError) as exc:
-        raise ValueError("answer_projection practice_record_id must be an integer") from exc
+        raise ValueError(
+            "answer_projection practice_record_id must be an integer"
+        ) from exc
     if practice_record_id <= 0:
         raise ValueError("answer_projection practice_record_id must be positive")
 

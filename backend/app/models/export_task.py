@@ -83,10 +83,14 @@ class ExportTask(Base):
 
     # ── Processing metadata ──
     retry_count: Mapped[int] = mapped_column(SmallInteger, default=0)
-    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     generator_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    version: Mapped[int] = mapped_column(Integer, default=1)  # monotonic, for stale-event detection
+    version: Mapped[int] = mapped_column(
+        Integer, default=1
+    )  # monotonic, for stale-event detection
 
     # ── Timestamps ──
     created_at: Mapped[datetime] = mapped_column(
@@ -94,7 +98,9 @@ class ExportTask(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -111,7 +117,9 @@ class ExportSnapshot(Base):
 
     __tablename__ = "export_snapshots"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )

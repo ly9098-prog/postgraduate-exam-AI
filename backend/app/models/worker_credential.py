@@ -5,6 +5,7 @@ Design:
 - Each worker has its own credential with is_active flag.
 - Rotation: old key is disabled (not deleted), new key is created.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -19,9 +20,7 @@ class WorkerCredential(Base):
     __tablename__ = "worker_credentials"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    worker_id: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )
+    worker_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(

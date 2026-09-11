@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SafetyResult:
     """Result of input safety validation."""
+
     passed: bool = True
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -60,7 +61,7 @@ _MALICIOUS_FILENAME_RE = re.compile(
 )
 
 # Path traversal patterns
-_PATH_TRAVERSAL_RE = re.compile(r'(\.\./|\.\\.|~/)')
+_PATH_TRAVERSAL_RE = re.compile(r"(\.\./|\.\\.|~/)")
 
 # Maximum values
 _MAX_PAGE_COUNT = 500
@@ -121,14 +122,12 @@ class InputSafetyValidator:
         if page_count <= 0:
             errors.append(f"Invalid page count: {page_count}")
         if page_count > _MAX_PAGE_COUNT:
-            errors.append(
-                f"Page count {page_count} exceeds maximum {_MAX_PAGE_COUNT}"
-            )
-        return SafetyResult(passed=len(errors) == 0, errors=errors, page_count=page_count)
+            errors.append(f"Page count {page_count} exceeds maximum {_MAX_PAGE_COUNT}")
+        return SafetyResult(
+            passed=len(errors) == 0, errors=errors, page_count=page_count
+        )
 
-    def validate_image_dimensions(
-        self, width: int, height: int
-    ) -> SafetyResult:
+    def validate_image_dimensions(self, width: int, height: int) -> SafetyResult:
         """Validate image dimensions and pixel budget."""
         errors: list[str] = []
         if width < _MIN_IMAGE_DIMENSION or height < _MIN_IMAGE_DIMENSION:
@@ -154,9 +153,7 @@ class InputSafetyValidator:
 
     # ── Private helpers ──
 
-    def _check_magic_bytes(
-        self, source: bytes, mime: str, errors: list[str]
-    ) -> None:
+    def _check_magic_bytes(self, source: bytes, mime: str, errors: list[str]) -> None:
         """Check file magic bytes match declared MIME type."""
         if not mime or mime == "application/octet-stream":
             return  # Skip if MIME unknown
@@ -177,9 +174,7 @@ class InputSafetyValidator:
                     f"expected {expected_magic[:4]}, got {source[:4]}"
                 )
 
-    def _check_filename_safety(
-        self, filename: str, errors: list[str]
-    ) -> None:
+    def _check_filename_safety(self, filename: str, errors: list[str]) -> None:
         """Check filename for malicious patterns."""
         if _MALICIOUS_FILENAME_RE.search(filename):
             errors.append(f"Malicious characters in filename: {filename!r}")

@@ -35,7 +35,11 @@ def run_table_detect_stage(questions: list[dict]) -> dict:
     low_confidence_count = 0
 
     for question in questions:
-        stem = str(question.get("stem") or (question.get("parsed_content") or {}).get("text") or "")
+        stem = str(
+            question.get("stem")
+            or (question.get("parsed_content") or {}).get("text")
+            or ""
+        )
         existing_segments = list(
             question.get("segments")
             or (question.get("parsed_content") or {}).get("segments")
@@ -57,10 +61,16 @@ def run_table_detect_stage(questions: list[dict]) -> dict:
             # Still remove no legacy content; this is a pass-through question.
             continue
 
-        tables = [table for table in tables if not validate_table_segment(table) or table.get("rows")]
+        tables = [
+            table
+            for table in tables
+            if not validate_table_segment(table) or table.get("rows")
+        ]
         tables = merge_continued_table_segments(tables)
         table_count += len(tables)
-        low_confidence_count += sum(bool(table.get("requires_review")) for table in tables)
+        low_confidence_count += sum(
+            bool(table.get("requires_review")) for table in tables
+        )
 
         # Rebuild textual layout only when table text was inferred from the stem.
         rebuilt = _segments_with_tables_in_text(stem, tables)
@@ -69,13 +79,19 @@ def run_table_detect_stage(questions: list[dict]) -> dict:
             # text/newline segments would duplicate the stem.  Preserve only
             # non-text visual segments from earlier stages.
             retained_visual = [
-                segment for segment in retained
+                segment
+                for segment in retained
                 if str(segment.get("type") or "").lower() not in {"text", "newline"}
             ]
             segments = rebuilt + retained_visual
-            existing_table_fingerprints = {table_fingerprint(seg) for seg in rebuilt if seg.get("type") == TABLE_SEGMENT_TYPE}
+            existing_table_fingerprints = {
+                table_fingerprint(seg)
+                for seg in rebuilt
+                if seg.get("type") == TABLE_SEGMENT_TYPE
+            }
             segments.extend(
-                table for table in tables
+                table
+                for table in tables
                 if table_fingerprint(table) not in existing_table_fingerprints
             )
         else:
@@ -124,7 +140,9 @@ def run_table_detect_stage(questions: list[dict]) -> dict:
     }
 
 
-def _migrate_existing_segments(segments: list[dict], question: dict) -> tuple[list[dict], list[dict]]:
+def _migrate_existing_segments(
+    segments: list[dict], question: dict
+) -> tuple[list[dict], list[dict]]:
     tables: list[dict] = []
     retained: list[dict] = []
     page = int(question.get("page_start") or 1)
@@ -136,15 +154,17 @@ def _migrate_existing_segments(segments: list[dict], question: dict) -> tuple[li
             tables.extend(restore_tables_from_source(segment, source_page=page))
         elif seg_type == "table_markdown":
             raw = segment.get("markdown") or segment.get("text") or ""
-            tables.extend(restore_tables_from_source(
-                raw,
-                source_page=int(segment.get("source_page") or page),
-                bbox=segment.get("bbox"),
-                coordinate_space=segment.get("coordinate_space"),
-                confidence=segment.get("confidence"),
-                region_id=segment.get("region_id"),
-                source_format="markdown",
-            ))
+            tables.extend(
+                restore_tables_from_source(
+                    raw,
+                    source_page=int(segment.get("source_page") or page),
+                    bbox=segment.get("bbox"),
+                    coordinate_space=segment.get("coordinate_space"),
+                    confidence=segment.get("confidence"),
+                    region_id=segment.get("region_id"),
+                    source_format="markdown",
+                )
+            )
         else:
             retained.append(segment)
     return tables, retained
@@ -188,15 +208,19 @@ def _restore_provider_tables(question: dict) -> list[dict]:
             block_type = str(block.get("type") or block.get("label") or "").lower()
             if block_type and block_type not in _TABLE_REGION_TYPES:
                 continue
-            tables.extend(restore_tables_from_source(
-                block,
-                source_page=int(block.get("page") or block.get("source_page") or page),
-                bbox=block.get("bbox"),
-                coordinate_space=block.get("coordinate_space"),
-                confidence=block.get("confidence"),
-                region_id=block.get("region_id"),
-                source_format="auto",
-            ))
+            tables.extend(
+                restore_tables_from_source(
+                    block,
+                    source_page=int(
+                        block.get("page") or block.get("source_page") or page
+                    ),
+                    bbox=block.get("bbox"),
+                    coordinate_space=block.get("coordinate_space"),
+                    confidence=block.get("confidence"),
+                    region_id=block.get("region_id"),
+                    source_format="auto",
+                )
+            )
     return tables
 
 

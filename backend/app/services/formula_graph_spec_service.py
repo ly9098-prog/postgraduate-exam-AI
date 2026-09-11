@@ -81,6 +81,7 @@ def _release_card_lock(card_id: int, lock: asyncio.Lock) -> None:
 # Preview
 # ═══════════════════════════════════════════════════════════════
 
+
 async def generate_preview(
     db: AsyncSession,
     card: FormulaCard,
@@ -160,8 +161,12 @@ async def generate_preview(
 
         # Resize to canvas dimensions
         from app.core.executor_registry import get_executor
+
         png_final = await get_executor("image").run(
-            _resize_to_canvas, png_bytes, GRAPH_THEME["width"], GRAPH_THEME["height"],
+            _resize_to_canvas,
+            png_bytes,
+            GRAPH_THEME["width"],
+            GRAPH_THEME["height"],
         )
         thumb_bytes = await get_executor("image").run(_create_thumbnail, png_bytes)
 
@@ -235,14 +240,19 @@ def _preview_to_dict(preview: FormulaGraphPreview, quality: dict | None = None) 
             "errors": preview.quality_errors or [],
             "warnings": preview.quality_warnings or [],
             "passed": len(preview.quality_errors or []) == 0,
-        } if quality is None else quality,
-        "expires_at": serialize_utc_datetime(preview.expires_at) if preview.expires_at else None,
+        }
+        if quality is None
+        else quality,
+        "expires_at": serialize_utc_datetime(preview.expires_at)
+        if preview.expires_at
+        else None,
     }
 
 
 def _safe_delete_preview_files(preview: FormulaGraphPreview) -> None:
     """Best-effort delete preview files from storage."""
     from app.services.formula_graph_asset_service import _safe_delete_file
+
     if preview.preview_url:
         _safe_delete_file(preview.preview_url)
     if preview.thumbnail_url:
@@ -252,6 +262,7 @@ def _safe_delete_preview_files(preview: FormulaGraphPreview) -> None:
 # ═══════════════════════════════════════════════════════════════
 # Confirm
 # ═══════════════════════════════════════════════════════════════
+
 
 async def confirm_preview(
     db: AsyncSession,
@@ -272,7 +283,9 @@ async def confirm_preview(
     """
     # Verify card state
     if card.graph_status != "draft":
-        raise ValueError(f"Card status must be 'draft', got '{card.graph_status}'", "422")
+        raise ValueError(
+            f"Card status must be 'draft', got '{card.graph_status}'", "422"
+        )
 
     if card.version != card_version:
         raise ValueError(
@@ -305,7 +318,8 @@ async def confirm_preview(
     if warnings and not accept_warnings:
         raise ValueError(
             f"Quality warnings present; set accept_warnings=true to confirm: "
-            f"{'; '.join(warnings)}", "422"
+            f"{'; '.join(warnings)}",
+            "422",
         )
 
     # Atomic confirm
@@ -336,8 +350,16 @@ async def confirm_preview(
         preview_data = await _read_local_file(preview.preview_url)
         thumb_data = await _read_local_file(preview.thumbnail_url)
 
-        new_image_url = await storage.upload(main_path, preview_data) if preview_data else (preview.preview_url or "")
-        new_thumbnail_url = await storage.upload(thumb_path, thumb_data) if thumb_data else (preview.thumbnail_url or "")
+        new_image_url = (
+            await storage.upload(main_path, preview_data)
+            if preview_data
+            else (preview.preview_url or "")
+        )
+        new_thumbnail_url = (
+            await storage.upload(thumb_path, thumb_data)
+            if thumb_data
+            else (preview.thumbnail_url or "")
+        )
 
         # 3. Create new generated asset
         now = utcnow()
@@ -358,8 +380,12 @@ async def confirm_preview(
         )
 
         # Auto-generate alt_text and description (allow overrides)
-        asset.alt_text = alt_text if alt_text is not None else _auto_alt_text(card, preview)
-        asset.description = description if description is not None else _auto_description(card, preview)
+        asset.alt_text = (
+            alt_text if alt_text is not None else _auto_alt_text(card, preview)
+        )
+        asset.description = (
+            description if description is not None else _auto_description(card, preview)
+        )
 
         db.add(asset)
 
@@ -398,7 +424,7 @@ async def _read_local_file(file_url: str | None) -> bytes | None:
     prefix = f"{settings.PUBLIC_BASE_URL}/static/formulas/"
     if not file_url.startswith(prefix):
         return None
-    rel_path = file_url[len(prefix):]
+    rel_path = file_url[len(prefix) :]
     abs_path = os.path.normpath(os.path.join("static/formulas", rel_path))
     if not abs_path.startswith(os.path.normpath("static/formulas/")):
         return None
@@ -418,6 +444,7 @@ def _safe_delete_file_later(file_url: str | None) -> None:
     if not file_url:
         return
     from app.services.formula_graph_asset_service import _safe_delete_file
+
     try:
         _safe_delete_file(file_url)
     except Exception:
@@ -429,6 +456,7 @@ async def _safe_delete_file_async(file_url: str | None) -> None:
     if not file_url:
         return
     from app.services.formula_graph_asset_service import _safe_delete_file
+
     try:
         await get_executor("file_io").run(_safe_delete_file, file_url)
     except Exception:
@@ -449,13 +477,14 @@ def _auto_description(card: FormulaCard, preview: FormulaGraphPreview) -> str | 
     for i, panel in enumerate(panels):
         exprs = [e.get("expression", "") for e in panel.get("expressions", [])]
         if exprs:
-            parts.append(f"面板{i+1}: {', '.join(exprs)}")
+            parts.append(f"面板{i + 1}: {', '.join(exprs)}")
     return " | ".join(parts) if parts else None
 
 
 # ═══════════════════════════════════════════════════════════════
 # Regenerate
 # ═══════════════════════════════════════════════════════════════
+
 
 async def regenerate_asset(
     db: AsyncSession,
@@ -476,7 +505,9 @@ async def regenerate_asset(
     card_version = card.version  # capture before potential flush changes
 
     asset = await confirm_preview(
-        db, card, preview_data["preview_token"],
+        db,
+        card,
+        preview_data["preview_token"],
         card_version=card_version,
         accept_warnings=True,
         admin_id=admin_id,
@@ -487,6 +518,7 @@ async def regenerate_asset(
 # ═══════════════════════════════════════════════════════════════
 # Delete
 # ═══════════════════════════════════════════════════════════════
+
 
 async def delete_generated_asset(
     db: AsyncSession,
@@ -544,11 +576,13 @@ async def start_batch_generate(
 
     # Query cards
     result = await db.execute(
-        select(FormulaCard).where(
+        select(FormulaCard)
+        .where(
             FormulaCard.graph_spec.isnot(None),
             FormulaCard.graph_status.in_(["missing", "failed"]),
             FormulaCard.deleted_at.is_(None),
-        ).limit(batch_size)
+        )
+        .limit(batch_size)
     )
     cards = list(result.scalars().all())
 
@@ -618,10 +652,14 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
                     while retries <= MAX_RETRIES:
                         try:
                             preview = await generate_preview(
-                                session, card_reload, spec, admin_id,
+                                session,
+                                card_reload,
+                                spec,
+                                admin_id,
                             )
                             await confirm_preview(
-                                session, card_reload,
+                                session,
+                                card_reload,
                                 preview["preview_token"],
                                 card_version=card_reload.version,
                                 accept_warnings=True,
@@ -638,13 +676,16 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
 
         except Exception as e:
             job["failed"] += 1
-            job["errors"].append({
-                "card_id": card.id,
-                "title": card.title,
-                "error": str(e)[:200],
-            })
-            logger.warning("Batch card %d failed after %d retries: %s",
-                           card.id, MAX_RETRIES, e)
+            job["errors"].append(
+                {
+                    "card_id": card.id,
+                    "title": card.title,
+                    "error": str(e)[:200],
+                }
+            )
+            logger.warning(
+                "Batch card %d failed after %d retries: %s", card.id, MAX_RETRIES, e
+            )
 
         job["processed"] += 1
         job["progress"] = (idx + 1) / len(cards) if cards else 1.0
@@ -666,9 +707,12 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
 
 def _cleanup_old_jobs(max_keep: int = 10) -> None:
     """Remove oldest completed jobs beyond max_keep."""
-    completed = [(jid, j) for jid, j in _batch_jobs.items()
-                 if j.get("status") in ("completed", "partial_failed", "failed")]
+    completed = [
+        (jid, j)
+        for jid, j in _batch_jobs.items()
+        if j.get("status") in ("completed", "partial_failed", "failed")
+    ]
     if len(completed) > max_keep:
         completed.sort(key=lambda x: x[1].get("finished_at", ""))
-        for jid, _ in completed[:len(completed) - max_keep]:
+        for jid, _ in completed[: len(completed) - max_keep]:
             _batch_jobs.pop(jid, None)

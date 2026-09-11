@@ -53,7 +53,9 @@ def compress_image(data: bytes, max_dimension: int = MAX_IMAGE_DIMENSION) -> byt
 
     if fmt == "PNG":
         # Convert to RGB if no transparency, keep RGBA otherwise
-        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        if img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        ):
             img.save(buf, format="PNG", optimize=PNG_OPTIMIZE)
         else:
             img = img.convert("RGB")
@@ -105,7 +107,9 @@ class StorageBackend(ABC):
         ...
 
     @abstractmethod
-    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+    async def get_download_url(
+        self, url_or_key: str, expiry_sec: int = 3600
+    ) -> str | None:
         """获取下载 URL。
 
         LocalFileStorage: 返回 None（通过鉴权接口流式读取）。
@@ -130,7 +134,10 @@ class LocalFileStorage(StorageBackend):
             raise ValueError("storage path traversal is not allowed")
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            _storage_executor, self._sync_upload, filepath, data,
+            _storage_executor,
+            self._sync_upload,
+            filepath,
+            data,
         )
         url_prefix = self._prefix.rstrip("/")
         if os.path.isabs(url_prefix):
@@ -171,10 +178,14 @@ class LocalFileStorage(StorageBackend):
         filepath = os.path.join(_BACKEND_ROOT, rel)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _storage_executor, self._sync_delete, filepath,
+            _storage_executor,
+            self._sync_delete,
+            filepath,
         )
 
-    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+    async def get_download_url(
+        self, url_or_key: str, expiry_sec: int = 3600
+    ) -> str | None:
         """Local storage: no public URL — stream through auth endpoint."""
         return None
 
@@ -186,7 +197,9 @@ class LocalFileStorage(StorageBackend):
         filepath = os.path.join(_BACKEND_ROOT, rel)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _storage_executor, os.path.exists, filepath,
+            _storage_executor,
+            os.path.exists,
+            filepath,
         )
 
     def _resolve_delete_path(self, url_or_key: str) -> str | None:
@@ -202,12 +215,16 @@ class LocalFileStorage(StorageBackend):
         ``_BACKEND_ROOT``.
         """
         if url_or_key.startswith("http"):
-            if settings.PUBLIC_BASE_URL and url_or_key.startswith(settings.PUBLIC_BASE_URL):
-                rel = url_or_key[len(settings.PUBLIC_BASE_URL):].lstrip("/")
+            if settings.PUBLIC_BASE_URL and url_or_key.startswith(
+                settings.PUBLIC_BASE_URL
+            ):
+                rel = url_or_key[len(settings.PUBLIC_BASE_URL) :].lstrip("/")
             elif "/static/" in url_or_key:
                 rel = url_or_key.split("/static/", 1)[1]
             else:
-                logger.warning("Cannot extract path from URL outside public base: %s", url_or_key)
+                logger.warning(
+                    "Cannot extract path from URL outside public base: %s", url_or_key
+                )
                 return None
         else:
             rel = url_or_key
@@ -224,7 +241,9 @@ class LocalFileStorage(StorageBackend):
             real_prefix = os.path.realpath(self._prefix)
             real_path = os.path.realpath(filepath)
             if not real_path.startswith(real_prefix + os.sep):
-                logger.warning("Path traversal blocked: %s -> %s", url_or_key, real_path)
+                logger.warning(
+                    "Path traversal blocked: %s -> %s", url_or_key, real_path
+                )
                 return None
             return filepath
 
@@ -232,7 +251,11 @@ class LocalFileStorage(StorageBackend):
             normalized = normalized.lstrip("/")
             prefix_normalized = self._prefix.lstrip("/")
             if not normalized.startswith(prefix_normalized + "/"):
-                logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
+                logger.warning(
+                    "Delete rejected: path %s outside prefix %s",
+                    normalized,
+                    self._prefix,
+                )
                 return None
             return normalized
         else:
@@ -314,9 +337,13 @@ class COSStorage(StorageBackend):
         client = self._get_client()
         if client is None:
             if settings.COS_ALLOW_LOCAL_FALLBACK:
-                logger.error("COS backend not configured, falling back to local storage")
+                logger.error(
+                    "COS backend not configured, falling back to local storage"
+                )
                 return await LocalFileStorage(self._prefix).upload(filename, data)
-            raise RuntimeError("COS backend not configured and local fallback is disabled")
+            raise RuntimeError(
+                "COS backend not configured and local fallback is disabled"
+            )
 
         key = self._build_key(filename)
         try:
@@ -377,7 +404,9 @@ class COSStorage(StorageBackend):
                     return False
         return True
 
-    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+    async def get_download_url(
+        self, url_or_key: str, expiry_sec: int = 3600
+    ) -> str | None:
         """Generate a short-lived signed URL for a real COS object.
 
         Presigning alone does not prove that an object exists.  When local

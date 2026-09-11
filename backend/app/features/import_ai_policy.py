@@ -6,6 +6,7 @@ question-level repair pass.  The fast policy keeps semantic repair at the
 question boundary so an ordinary single-question image needs at most one
 AI-repair request after OCR.
 """
+
 from __future__ import annotations
 
 from typing import Any

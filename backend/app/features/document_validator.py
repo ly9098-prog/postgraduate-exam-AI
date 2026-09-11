@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QuestionLevelResult:
     """Per-question validation result."""
+
     question_index: int = 0
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -47,6 +48,7 @@ class QuestionLevelResult:
 @dataclass
 class DocumentValidationResult:
     """Document-level validation result."""
+
     passed: bool = True
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -61,7 +63,7 @@ class DocumentValidationResult:
 
 
 # Question number patterns (Chinese + Arabic)
-_NUMBER_PATTERN = re.compile(r'^(\d+|[一二三四五六七八九十百千]+)[.、)）\s]')
+_NUMBER_PATTERN = re.compile(r"^(\d+|[一二三四五六七八九十百千]+)[.、)）\s]")
 
 # Option key patterns
 _OPTION_KEYS = frozenset({"A", "B", "C", "D", "E", "F", "G"})
@@ -148,7 +150,9 @@ class DocumentValidator:
     # ── Rules ──
 
     def _check_number_uniqueness(
-        self, questions: list[Any], errors: list[str],
+        self,
+        questions: list[Any],
+        errors: list[str],
     ) -> None:
         """Rule 1: Each question number should be unique."""
         seen: dict[str, list[int]] = {}
@@ -162,12 +166,13 @@ class DocumentValidator:
         for num, indices in seen.items():
             if len(indices) > 1:
                 errors.append(
-                    f"DUPLICATE_QUESTION_NUMBER: {num} appears at "
-                    f"indices {indices}"
+                    f"DUPLICATE_QUESTION_NUMBER: {num} appears at indices {indices}"
                 )
 
     def _check_number_continuity(
-        self, questions: list[Any], warnings: list[str],
+        self,
+        questions: list[Any],
+        warnings: list[str],
     ) -> None:
         """Rule 2: Question numbers should be continuous."""
         numbers: list[int] = []
@@ -183,13 +188,16 @@ class DocumentValidator:
             for i in range(1, len(numbers)):
                 if numbers[i] != numbers[i - 1] + 1:
                     warnings.append(
-                        f"NUMBER_GAP: {numbers[i-1]} → {numbers[i]} "
-                        f"(expected {numbers[i-1] + 1})"
+                        f"NUMBER_GAP: {numbers[i - 1]} → {numbers[i]} "
+                        f"(expected {numbers[i - 1] + 1})"
                     )
 
     def _check_option_keys(
-        self, questions: list[Any], errors: list[str],
-        warnings: list[str], question_results: list[QuestionLevelResult],
+        self,
+        questions: list[Any],
+        errors: list[str],
+        warnings: list[str],
+        question_results: list[QuestionLevelResult],
     ) -> None:
         """Rule 3: Multiple-choice questions must have complete option keys."""
         for i, q in enumerate(questions):
@@ -199,9 +207,7 @@ class DocumentValidator:
 
             if "choice" in q_type.lower() or "单选" in q_type or "多选" in q_type:
                 if not options:
-                    errors.append(
-                        f"MISSING_OPTIONS: Question {q_num} has no options"
-                    )
+                    errors.append(f"MISSING_OPTIONS: Question {q_num} has no options")
                     continue
 
                 # Check option keys are A/B/C/D...
@@ -217,7 +223,9 @@ class DocumentValidator:
                     )
 
     def _check_empty_stems(
-        self, questions: list[Any], errors: list[str],
+        self,
+        questions: list[Any],
+        errors: list[str],
         question_results: list[QuestionLevelResult],
     ) -> None:
         """Rule 4: Questions must have non-empty stems."""
@@ -225,10 +233,14 @@ class DocumentValidator:
             stem = getattr(q, "stem", getattr(q, "content", "")) or ""
             q_num = str(getattr(q, "number", getattr(q, "question_number", i)))
             if len(stem.strip()) < _MIN_STEM_CHARS:
-                errors.append(f"EMPTY_STEM: Question {q_num} has empty or near-empty stem")
+                errors.append(
+                    f"EMPTY_STEM: Question {q_num} has empty or near-empty stem"
+                )
 
     def _check_large_stems(
-        self, questions: list[Any], warnings: list[str],
+        self,
+        questions: list[Any],
+        warnings: list[str],
         question_results: list[QuestionLevelResult],
     ) -> None:
         """Rule 5: Flag abnormally large stems."""
@@ -236,10 +248,14 @@ class DocumentValidator:
             stem = getattr(q, "stem", getattr(q, "content", "")) or ""
             q_num = str(getattr(q, "number", getattr(q, "question_number", i)))
             if len(stem) > _MAX_STEM_CHARS:
-                warnings.append(f"LARGE_STEM: Question {q_num} stem has {len(stem)} chars")
+                warnings.append(
+                    f"LARGE_STEM: Question {q_num} stem has {len(stem)} chars"
+                )
 
     def _check_answer_references(
-        self, questions: list[Any], warnings: list[str],
+        self,
+        questions: list[Any],
+        warnings: list[str],
         question_results: list[QuestionLevelResult],
     ) -> None:
         """Rule 6: Answer references should point to valid option keys."""
@@ -249,7 +265,10 @@ class DocumentValidator:
             options = getattr(q, "options", []) or []
 
             if answer and options:
-                keys = [str(getattr(o, "key", getattr(o, "option_key", ""))) for o in options]
+                keys = [
+                    str(getattr(o, "key", getattr(o, "option_key", "")))
+                    for o in options
+                ]
                 # Simple check: answer should be a subset of option keys
                 answer_chars = set(answer.upper())
                 valid_keys = set(keys)
@@ -261,7 +280,9 @@ class DocumentValidator:
                     )
 
     def _check_cross_page_links(
-        self, doc_ir: Any, warnings: list[str],
+        self,
+        doc_ir: Any,
+        warnings: list[str],
     ) -> None:
         """Rule 7: Cross-page links should be complete."""
         try:

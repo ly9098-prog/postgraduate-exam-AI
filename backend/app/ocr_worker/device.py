@@ -1,4 +1,5 @@
 """OCR Device Resolver — determine and verify GPU/CPU device for OCR execution."""
+
 from __future__ import annotations
 
 import enum
@@ -26,6 +27,7 @@ class DeviceResolutionError(RuntimeError):
 @dataclass(frozen=True)
 class OCRDeviceResolution:
     """Immutable result of OCR device resolution."""
+
     requested_device: str
     resolved_device: str
     device_id: int | None
@@ -73,7 +75,10 @@ def resolve_ocr_device(
     if not requested_device:
         requested_device = os.environ.get("OCR_WORKER_DEVICE", "auto")
     if not require_gpu:
-        require_gpu = os.environ.get("OCR_WORKER_REQUIRE_GPU", "").lower() in ("true", "1")
+        require_gpu = os.environ.get("OCR_WORKER_REQUIRE_GPU", "").lower() in (
+            "true",
+            "1",
+        )
     if gpu_device_id == 0:
         try:
             gpu_device_id = int(os.environ.get("OCR_WORKER_GPU_DEVICE_ID", "0"))
@@ -87,8 +92,7 @@ def resolve_ocr_device(
         reason_codes.append("PADDLE_NOT_INSTALLED")
         if require_gpu and requested_device == OCRDevice.GPU.value:
             raise DeviceResolutionError(
-                f"GPU required but Paddle is not installed "
-                f"(require_gpu={require_gpu})"
+                f"GPU required but Paddle is not installed (require_gpu={require_gpu})"
             )
         return OCRDeviceResolution(
             requested_device=requested_device,
@@ -151,8 +155,7 @@ def resolve_ocr_device(
             reason_codes.append("GPU_DEVICE_NOT_FOUND")
             if require_gpu:
                 raise DeviceResolutionError(
-                    f"GPU required but cuda_device_count=0 "
-                    f"(require_gpu={require_gpu})"
+                    f"GPU required but cuda_device_count=0 (require_gpu={require_gpu})"
                 )
             return OCRDeviceResolution(
                 requested_device=requested_device,

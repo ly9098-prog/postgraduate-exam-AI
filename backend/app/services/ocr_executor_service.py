@@ -66,7 +66,11 @@ class _OcrExecutorService:
         loop = asyncio.get_event_loop()
         text = await asyncio.wait_for(
             loop.run_in_executor(
-                None, ocr_process_pool.get_text, image_bytes, 0, effective_timeout,
+                None,
+                ocr_process_pool.get_text,
+                image_bytes,
+                0,
+                effective_timeout,
             ),
             timeout=effective_timeout + 10,
         )
@@ -90,7 +94,11 @@ class _OcrExecutorService:
             try:
                 text = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
-                        None, ocr_process_pool.get_text, png, idx, effective_timeout,
+                        None,
+                        ocr_process_pool.get_text,
+                        png,
+                        idx,
+                        effective_timeout,
                     ),
                     timeout=effective_timeout + 10,
                 )
@@ -119,8 +127,12 @@ class _OcrExecutorService:
             try:
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
-                        None, ocr_process_pool.get_text_with_boxes,
-                        png, idx, skip_rotation, effective_timeout,
+                        None,
+                        ocr_process_pool.get_text_with_boxes,
+                        png,
+                        idx,
+                        skip_rotation,
+                        effective_timeout,
                     ),
                     timeout=effective_timeout + 10,
                 )
@@ -128,8 +140,11 @@ class _OcrExecutorService:
             except Exception as exc:
                 logger.warning("OCR process-pool boxed page %d failed: %s", idx, exc)
                 results[idx] = {
-                    "page_index": idx, "text": "", "boxes": [],
-                    "failed": True, "error": str(exc),
+                    "page_index": idx,
+                    "text": "",
+                    "boxes": [],
+                    "failed": True,
+                    "error": str(exc),
                 }
         return results
 
@@ -149,7 +164,9 @@ class _OcrExecutorService:
         timeout: int | None = None,
     ) -> dict:
         return await self.run_ocr_pages_with_boxes(
-            page_images, skip_rotation=skip_rotation, timeout=timeout,
+            page_images,
+            skip_rotation=skip_rotation,
+            timeout=timeout,
         )
 
     # --- lifecycle ---
@@ -169,6 +186,7 @@ class _OcrExecutorService:
             DeploymentProfile,
             detect_deployment_profile,
         )
+
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             self._shutdown = True
             logger.info("OCR executor shutdown skipped (cloud profile — no local pool)")

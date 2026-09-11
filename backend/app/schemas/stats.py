@@ -1,7 +1,6 @@
 from app.schemas.base import BaseModel
 
 
-
 class OverviewStats(BaseModel):
     total_questions: int = 0
     total_correct: int = 0

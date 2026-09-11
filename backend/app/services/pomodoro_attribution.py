@@ -18,6 +18,7 @@ there is no legacy path.  In both cases the raw overlaps are used as weights and
 final integer seconds are assigned proportionally to ``actual_duration`` with a
 largest-remainder pass, so ``sum(contribution_sec) == actual_duration`` always holds.
 """
+
 from __future__ import annotations
 
 import logging

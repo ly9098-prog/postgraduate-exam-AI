@@ -78,7 +78,9 @@ async def _cmd_check() -> int:
                     hash_key = _v2_task_hash_key(task_id)
                     exists = await r.exists(hash_key)
                     if not exists:
-                        print(f"  {_red('ISSUE')}: {tt} — {task_id} in processing ZSET but hash missing")
+                        print(
+                            f"  {_red('ISSUE')}: {tt} — {task_id} in processing ZSET but hash missing"
+                        )
                         issues += 1
 
                     # Check heartbeat
@@ -87,21 +89,27 @@ async def _cmd_check() -> int:
                     if not hb:
                         score = await r.zscore(p_key, task_id)
                         if score is not None and score < time.time():
-                            print(f"  {_yellow('WARN')}: {tt} — {task_id} expired lease, no heartbeat (stale)")
+                            print(
+                                f"  {_yellow('WARN')}: {tt} — {task_id} expired lease, no heartbeat (stale)"
+                            )
                             warnings += 1
 
                     # Verify not also in ready queue
                     q_key = _v2_q_key(tt)
                     pos = await r.lpos(q_key, task_id)
                     if pos is not None:
-                        print(f"  {_red('ISSUE')}: {tt} — {task_id} in BOTH processing AND ready")
+                        print(
+                            f"  {_red('ISSUE')}: {tt} — {task_id} in BOTH processing AND ready"
+                        )
                         issues += 1
 
                     # Verify not also in retry
                     retry_key = _v2_retry_key(tt)
                     in_retry = await r.zscore(retry_key, task_id)
                     if in_retry is not None:
-                        print(f"  {_red('ISSUE')}: {tt} — {task_id} in BOTH processing AND retry")
+                        print(
+                            f"  {_red('ISSUE')}: {tt} — {task_id} in BOTH processing AND retry"
+                        )
                         issues += 1
             except Exception as e:
                 print(f"  {_yellow('WARN')}: {tt} — error scanning processing: {e}")
@@ -117,7 +125,9 @@ async def _cmd_check() -> int:
                     hash_key = _v2_task_hash_key(task_id)
                     status = await r.hget(hash_key, "status")
                     if status in ("completed", "dead", "failed"):
-                        print(f"  {_red('ISSUE')}: {tt} — {task_id} status={status} but still in processing ZSET")
+                        print(
+                            f"  {_red('ISSUE')}: {tt} — {task_id} status={status} but still in processing ZSET"
+                        )
                         issues += 1
             except Exception:
                 pass  # Already reported above
@@ -132,7 +142,9 @@ async def _cmd_check() -> int:
                     hash_key = _v2_task_hash_key(task_id)
                     status = await r.hget(hash_key, "status")
                     if status not in ("retry", "failed"):
-                        print(f"  {_red('ISSUE')}: {tt} — {task_id} in retry ZSET but status={status}")
+                        print(
+                            f"  {_red('ISSUE')}: {tt} — {task_id} in retry ZSET but status={status}"
+                        )
                         issues += 1
             except Exception:
                 pass
@@ -147,7 +159,9 @@ async def _cmd_check() -> int:
                     hash_key = _v2_task_hash_key(task_id)
                     exists = await r.exists(hash_key)
                     if not exists:
-                        print(f"  {_yellow('WARN')}: {tt} — {task_id} in dead list but hash missing")
+                        print(
+                            f"  {_yellow('WARN')}: {tt} — {task_id} in dead list but hash missing"
+                        )
                         warnings += 1
             except Exception:
                 pass
@@ -163,7 +177,9 @@ async def _cmd_check() -> int:
                     for task_id in members:
                         hash_key = _v2_task_hash_key(task_id)
                         reason = await r.hget(hash_key, "last_error")
-                        print(f"    {task_id}: {reason[:80] if reason else 'no reason'}")
+                        print(
+                            f"    {task_id}: {reason[:80] if reason else 'no reason'}"
+                        )
             except Exception:
                 pass
 
@@ -173,7 +189,9 @@ async def _cmd_check() -> int:
             cursor = 0
             neg_count = 0
             while True:
-                cursor, keys = await r.scan(cursor=cursor, match="staging:ref:*", count=200)
+                cursor, keys = await r.scan(
+                    cursor=cursor, match="staging:ref:*", count=200
+                )
                 for key in keys:
                     val = await r.get(key)
                     if val is not None:
@@ -182,7 +200,9 @@ async def _cmd_check() -> int:
                             neg_count += 1
                             if neg_count <= 5:
                                 obj_id = key.replace("staging:ref:", "")
-                                print(f"  {_red('ISSUE')}: negative refcount ({v}) for {obj_id}")
+                                print(
+                                    f"  {_red('ISSUE')}: negative refcount ({v}) for {obj_id}"
+                                )
                 if cursor == 0:
                     break
             if neg_count > 5:
@@ -201,7 +221,9 @@ async def _cmd_check() -> int:
             cursor = 0
             orphan_hb = 0
             while True:
-                cursor, keys = await r.scan(cursor=cursor, match="taskq:v2:heartbeat:*", count=200)
+                cursor, keys = await r.scan(
+                    cursor=cursor, match="taskq:v2:heartbeat:*", count=200
+                )
                 for key in keys:
                     task_id = key.replace("taskq:v2:heartbeat:", "")
                     hash_key = _v2_task_hash_key(task_id)
@@ -211,7 +233,9 @@ async def _cmd_check() -> int:
                 if cursor == 0:
                     break
             if orphan_hb > 0:
-                print(f"  {_yellow('WARN')}: {orphan_hb} orphan heartbeat keys (no task hash)")
+                print(
+                    f"  {_yellow('WARN')}: {orphan_hb} orphan heartbeat keys (no task hash)"
+                )
                 warnings += orphan_hb
             else:
                 print(f"  {_green('OK')}: no orphan heartbeats")
@@ -232,15 +256,22 @@ async def _cmd_check() -> int:
 
         async with async_session() as db:
             result = await db.execute(
-                select(ImportPipeline.pipeline_id, ImportPipeline.status,
-                       ImportPipeline.execution_generation, ImportPipeline.current_task_id)
-                .where(ImportPipeline.status == "processing")
+                select(
+                    ImportPipeline.pipeline_id,
+                    ImportPipeline.status,
+                    ImportPipeline.execution_generation,
+                    ImportPipeline.current_task_id,
+                ).where(ImportPipeline.status == "processing")
             )
             stale = result.all()
             if len(stale) > 0:
-                print(f"  {_yellow('WARN')}: {len(stale)} pipelines stuck in 'processing' status:")
+                print(
+                    f"  {_yellow('WARN')}: {len(stale)} pipelines stuck in 'processing' status:"
+                )
                 for row in stale[:10]:
-                    print(f"    {row.pipeline_id} gen={row.execution_generation} task={row.current_task_id}")
+                    print(
+                        f"    {row.pipeline_id} gen={row.execution_generation} task={row.current_task_id}"
+                    )
                 if len(stale) > 10:
                     print(f"    ... and {len(stale) - 10} more")
                 warnings += len(stale)
@@ -251,7 +282,7 @@ async def _cmd_check() -> int:
         warnings += 1
 
     # ═══ Summary ═══
-    print(f"\n{'='*40}")
+    print(f"\n{'=' * 40}")
     print(f"Issues:   {issues if issues > 0 else _green('0')}")
     print(f"Warnings: {warnings if warnings > 0 else _green('0')}")
 

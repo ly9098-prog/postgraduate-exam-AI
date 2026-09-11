@@ -15,6 +15,7 @@ class CandidateDecision(enum.StrEnum):
     ``REJECT_STOP`` — candidate is dangerously bad, stop the chain
     and return original/rule text instead.
     """
+
     ACCEPT = "accept"
     REJECT_CONTINUE = "reject_continue"
     REJECT_STOP = "reject_stop"
@@ -23,6 +24,7 @@ class CandidateDecision(enum.StrEnum):
 @dataclass(frozen=True)
 class CandidateEvaluation:
     """Result of evaluating a single adapter candidate through the safety gate."""
+
     decision: CandidateDecision
     reason: str
     risk_flags: tuple[str, ...] = ()

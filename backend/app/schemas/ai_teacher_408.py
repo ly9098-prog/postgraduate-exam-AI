@@ -84,6 +84,8 @@ class AITeacher408Response(BaseModel):
     knowledge_points: list[AITeacher408KnowledgePoint] = Field(default_factory=list)
     practice_question: AITeacher408PracticeQuestion | None = None
     next_action: AITeacher408NextAction = Field(default_factory=AITeacher408NextAction)
-    personalization: AITeacher408Personalization = Field(default_factory=AITeacher408Personalization)
+    personalization: AITeacher408Personalization = Field(
+        default_factory=AITeacher408Personalization
+    )
     tokens_used: int = 0
     from_fallback: bool = False

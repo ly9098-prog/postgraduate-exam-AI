@@ -5,6 +5,7 @@ from app.schemas.base import BaseModel
 
 # ── 用户知识点掌握状态 ──
 
+
 class KnowledgeStateItem(BaseModel):
     knowledge_point_id: int
     name: str
@@ -31,6 +32,7 @@ class WeakKnowledgePointItem(BaseModel):
 
 # ── 推荐反馈 ──
 
+
 class RecommendationFeedbackRequest(BaseModel):
     question_id: int
     request_id: str | None = None
@@ -44,6 +46,7 @@ class RecommendationFeedbackResponse(BaseModel):
 
 
 # ── 管理端知识点状态 ──
+
 
 class KnowledgeStatusResponse(BaseModel):
     total_knowledge_points: int

@@ -40,40 +40,42 @@ def build_ocr_dag(
     Returns:
         可执行的 DAGPipeline 实例。
     """
-    return DAGPipeline(stages=[
-        StageNode(
-            name="p0_noise_filter",
-            fn=preprocess_ocr_noise,
-            description="移除孤立A/B/C/D、修复断裂箭头",
-        ),
-        StageNode(
-            name="p1_code_fence",
-            fn=wrap_code_fences,
-            description="代码检测+```围栏包裹",
-        ),
-        StageNode(
-            name="p1_5_repair_fence",
-            fn=repair_unclosed_fences,
-            description="未闭合围栏修复",
-        ),
-        StageNode(
-            name="p2_text_cleaning",
-            fn=partial(
-                _clean_text_regions,
-                enabled_strategies=enabled_strategies,
-                extra_watermark_patterns=extra_watermark_patterns,
+    return DAGPipeline(
+        stages=[
+            StageNode(
+                name="p0_noise_filter",
+                fn=preprocess_ocr_noise,
+                description="移除孤立A/B/C/D、修复断裂箭头",
             ),
-            input_type=IOType.STR,
-            output_type=IOType.STR,
-            guard=True,
-            description="区域化清洗(text只读, mutation_guard保护)",
-        ),
-        StageNode(
-            name="p3_global_fixes",
-            fn=_apply_global_arrow_fixes,
-            description="全局箭头修复+尾部strip",
-        ),
-    ])
+            StageNode(
+                name="p1_code_fence",
+                fn=wrap_code_fences,
+                description="代码检测+```围栏包裹",
+            ),
+            StageNode(
+                name="p1_5_repair_fence",
+                fn=repair_unclosed_fences,
+                description="未闭合围栏修复",
+            ),
+            StageNode(
+                name="p2_text_cleaning",
+                fn=partial(
+                    _clean_text_regions,
+                    enabled_strategies=enabled_strategies,
+                    extra_watermark_patterns=extra_watermark_patterns,
+                ),
+                input_type=IOType.STR,
+                output_type=IOType.STR,
+                guard=True,
+                description="区域化清洗(text只读, mutation_guard保护)",
+            ),
+            StageNode(
+                name="p3_global_fixes",
+                fn=_apply_global_arrow_fixes,
+                description="全局箭头修复+尾部strip",
+            ),
+        ]
+    )
 
 
 def run_ocr_dag(

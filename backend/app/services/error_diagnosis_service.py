@@ -134,7 +134,9 @@ def effective_secondary(row: WrongQuestionErrorDiagnosis) -> list[str]:
 def serialize_diagnosis(row: WrongQuestionErrorDiagnosis) -> dict:
     primary = effective_primary(row)
     secondary = effective_secondary(row)
-    ai_primary = normalize_error_type(row.ai_primary_type) if row.ai_primary_type else None
+    ai_primary = (
+        normalize_error_type(row.ai_primary_type) if row.ai_primary_type else None
+    )
     ai_secondary = normalize_secondary_types(row.ai_secondary_types, ai_primary)
     if row.user_confirmed_at and row.user_primary_type:
         source = "user"
@@ -147,7 +149,9 @@ def serialize_diagnosis(row: WrongQuestionErrorDiagnosis) -> dict:
         "wrong_question_id": int(row.wrong_question_id),
         "question_id": int(row.question_id),
         "question_version_id": int(row.question_version_id),
-        "practice_record_id": int(row.practice_record_id) if row.practice_record_id else None,
+        "practice_record_id": int(row.practice_record_id)
+        if row.practice_record_id
+        else None,
         "exam_answer_id": int(row.exam_answer_id) if row.exam_answer_id else None,
         "source_context": str(row.source_context),
         "occurred_at": row.occurred_at,
@@ -165,7 +169,9 @@ def serialize_diagnosis(row: WrongQuestionErrorDiagnosis) -> dict:
         "ai_primary_label": ERROR_LABELS.get(ai_primary) if ai_primary else None,
         "ai_secondary_types": ai_secondary,
         "ai_secondary_labels": [ERROR_LABELS[item] for item in ai_secondary],
-        "ai_confidence": round(float(row.ai_confidence), 4) if row.ai_confidence is not None else None,
+        "ai_confidence": round(float(row.ai_confidence), 4)
+        if row.ai_confidence is not None
+        else None,
         "ai_reason": row.ai_reason,
         "ai_model": row.ai_model,
         "ai_suggested_at": row.ai_suggested_at,
@@ -480,10 +486,9 @@ async def generate_ai_suggestion(
     row = await get_diagnosis_by_id(db, user_id, diagnosis_id)
     if row is None:
         return {"processed": False, "missing": True}
-    if (
-        expected_classification_version is not None
-        and int(row.classification_version or 1) != int(expected_classification_version)
-    ):
+    if expected_classification_version is not None and int(
+        row.classification_version or 1
+    ) != int(expected_classification_version):
         return {"processed": False, "stale": True}
 
     revision = await db.scalar(
@@ -549,7 +554,11 @@ async def generate_ai_suggestion(
             row.ai_reason = "AI 分析模型未配置。"
             row.ai_model = None
             await db.commit()
-            return {"processed": True, "suggested": False, "reason": "model_unconfigured"}
+            return {
+                "processed": True,
+                "suggested": False,
+                "reason": "model_unconfigured",
+            }
 
         parsed = _extract_json_object(response.get("content"))
         if parsed is None:
@@ -561,10 +570,9 @@ async def generate_ai_suggestion(
         if current is None:
             return {"processed": False, "missing": True}
         row = current
-        if (
-            expected_classification_version is not None
-            and int(row.classification_version or 1) != int(expected_classification_version)
-        ):
+        if expected_classification_version is not None and int(
+            row.classification_version or 1
+        ) != int(expected_classification_version):
             return {"processed": False, "stale": True}
         primary = normalize_error_type(parsed.get("primary_type"))
         secondary = normalize_secondary_types(parsed.get("secondary_types"), primary)
@@ -598,10 +606,9 @@ async def generate_ai_suggestion(
         current = await get_diagnosis_by_id(db, user_id, diagnosis_id, lock=True)
         if current is None:
             return {"processed": False, "missing": True}
-        if (
-            expected_classification_version is not None
-            and int(current.classification_version or 1) != int(expected_classification_version)
-        ):
+        if expected_classification_version is not None and int(
+            current.classification_version or 1
+        ) != int(expected_classification_version):
             return {"processed": False, "stale": True}
         current.ai_status = "failed"
         current.ai_reason = "AI 分类暂不可用，可直接由用户手动确认错因。"
@@ -643,7 +650,9 @@ def _effective_type_count_stmt(conditions):
         .where(*conditions)
         .subquery()
     )
-    return select(source.c.effective_type, func.count()).group_by(source.c.effective_type)
+    return select(source.c.effective_type, func.count()).group_by(
+        source.c.effective_type
+    )
 
 
 async def get_stats(
@@ -672,7 +681,8 @@ async def get_stats(
         base_conditions.append(
             WrongQuestionErrorDiagnosis.question_version_id.in_(
                 select(QuestionVersionKnowledgePoint.question_version_id).where(
-                    QuestionVersionKnowledgePoint.knowledge_point_id == knowledge_point_id
+                    QuestionVersionKnowledgePoint.knowledge_point_id
+                    == knowledge_point_id
                 )
             )
         )
@@ -714,8 +724,14 @@ async def get_stats(
     subject_rows = []
     if subject_totals:
         subjects = (
-            await db.execute(select(Subject).where(Subject.id.in_(subject_totals.keys())))
-        ).scalars().all()
+            (
+                await db.execute(
+                    select(Subject).where(Subject.id.in_(subject_totals.keys()))
+                )
+            )
+            .scalars()
+            .all()
+        )
         subject_map = {int(item.id): item for item in subjects}
         for sid, count in subject_totals.most_common():
             top_type, top_count = subject_type_counts[sid].most_common(1)[0]
@@ -739,17 +755,25 @@ async def get_stats(
                 select(
                     QuestionVersionKnowledgePoint.question_version_id,
                     KnowledgePoint.id,
-                    func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
+                    func.coalesce(
+                        SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name
+                    ),
                 )
                 .join(
                     KnowledgePoint,
-                    KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+                    KnowledgePoint.id
+                    == QuestionVersionKnowledgePoint.knowledge_point_id,
                 )
                 .outerjoin(
                     SyllabusKnowledgePoint,
-                    SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+                    SyllabusKnowledgePoint.id
+                    == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
                 )
-                .where(QuestionVersionKnowledgePoint.question_version_id.in_(set(revision_ids)))
+                .where(
+                    QuestionVersionKnowledgePoint.question_version_id.in_(
+                        set(revision_ids)
+                    )
+                )
             )
         ).all()
         row_by_revision: dict[int, list[str]] = defaultdict(list)
@@ -762,7 +786,9 @@ async def get_stats(
         # for that occurrence, which is the useful interpretation for a KP view.
         seen_pairs: set[tuple[int, int, int]] = set()
         for revision_id, kp_id, kp_name in kp_data:
-            for ordinal, error_type in enumerate(row_by_revision.get(int(revision_id), [])):
+            for ordinal, error_type in enumerate(
+                row_by_revision.get(int(revision_id), [])
+            ):
                 key = (int(revision_id), int(kp_id), ordinal)
                 if key in seen_pairs:
                     continue
@@ -797,7 +823,8 @@ async def get_stats(
         previous_conditions.append(
             WrongQuestionErrorDiagnosis.question_version_id.in_(
                 select(QuestionVersionKnowledgePoint.question_version_id).where(
-                    QuestionVersionKnowledgePoint.knowledge_point_id == knowledge_point_id
+                    QuestionVersionKnowledgePoint.knowledge_point_id
+                    == knowledge_point_id
                 )
             )
         )
@@ -805,7 +832,10 @@ async def get_stats(
         await db.execute(_effective_type_count_stmt(previous_conditions))
     ).all()
     previous_counts = Counter(
-        {normalize_error_type(error_type): int(count) for error_type, count in previous_rows}
+        {
+            normalize_error_type(error_type): int(count)
+            for error_type, count in previous_rows
+        }
     )
 
     by_type = []
@@ -834,7 +864,9 @@ async def get_stats(
                 "delta": current_count - previous_count,
             }
         )
-    changes.sort(key=lambda item: (abs(item["delta"]), item["current_count"]), reverse=True)
+    changes.sort(
+        key=lambda item: (abs(item["delta"]), item["current_count"]), reverse=True
+    )
 
     confirmed_count = sum(type_confirmed.values())
     unknown_count = int(type_counts["unknown"])

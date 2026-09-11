@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class CandidateDecision(Enum):
     ACCEPT = "accept"
     REJECT_CONTINUE = "reject_continue"  # rejected, try next adapter
-    REJECT_STOP = "reject_stop"          # catastrophic failure, return original
+    REJECT_STOP = "reject_stop"  # catastrophic failure, return original
 
 
 # ---------------------------------------------------------------------------
@@ -203,12 +203,14 @@ def _has_watermark(text: str) -> bool:
 
 
 def _build_diff(before: str, after: str) -> str:
-    differ = list(difflib.unified_diff(
-        before.splitlines(keepends=True),
-        after.splitlines(keepends=True),
-        lineterm="",
-        n=1,
-    ))
+    differ = list(
+        difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            lineterm="",
+            n=1,
+        )
+    )
     if not differ:
         return "(no change)"
     return "\n".join(differ[:20])
@@ -222,6 +224,7 @@ def _build_diff(before: str, after: str) -> str:
 @dataclass
 class CandidateEvaluation:
     """单一候选的完整评估结果。"""
+
     decision: CandidateDecision = CandidateDecision.REJECT_CONTINUE
     reason_code: str = ""
     accepted_text: str = ""
@@ -339,20 +342,27 @@ class CandidateEvaluator:
             if ratio < 0.5:
                 return self._reject(
                     f"length_collapse({len_before}->{len_after})",
-                    original_text, candidate_text,
-                    q_before, q_after, provenance,
+                    original_text,
+                    candidate_text,
+                    q_before,
+                    q_after,
+                    provenance,
                 )
             if ratio > 2.0:
                 return self._reject(
                     f"length_explosion({len_before}->{len_after})",
-                    original_text, candidate_text,
-                    q_before, q_after, provenance,
+                    original_text,
+                    candidate_text,
+                    q_before,
+                    q_after,
+                    provenance,
                 )
 
         # 3. Code symbol drift
         is_code = ctx.get("is_code_context", False) or bool(
-            re.search(r"[{};]|int\s|void\s|#include|printf|malloc|struct\s",
-                      original_text)
+            re.search(
+                r"[{};]|int\s|void\s|#include|printf|malloc|struct\s", original_text
+            )
         )
         if is_code:
             before_syms = q_before.get("code_symbols", {})
@@ -362,11 +372,12 @@ class CandidateEvaluator:
                 if before_syms[name] > 0 and delta >= before_syms[name]:
                     return self._reject(
                         f"code_symbol_lost:{name}",
-                        original_text, candidate_text,
-                        q_before, q_after, provenance,
-                        risk_flags=(
-                            risk_flags + [f"code_symbol_drift:{name}"]
-                        ),
+                        original_text,
+                        candidate_text,
+                        q_before,
+                        q_after,
+                        provenance,
+                        risk_flags=(risk_flags + [f"code_symbol_drift:{name}"]),
                     )
                 elif before_syms[name] > 0 and delta > before_syms[name] * 0.5:
                     risk_flags.append(f"code_symbol_drift:{name}")
@@ -379,8 +390,11 @@ class CandidateEvaluator:
             if stem_chinese > 5 and after_chinese < stem_chinese * 0.3:
                 return self._reject(
                     f"stem_lost({stem_chinese}->{after_chinese})",
-                    original_text, candidate_text,
-                    q_before, q_after, provenance,
+                    original_text,
+                    candidate_text,
+                    q_before,
+                    q_after,
+                    provenance,
                 )
 
         # 5. Option drop
@@ -390,8 +404,11 @@ class CandidateEvaluator:
             if before_opts >= 3 and after_opts < before_opts:
                 return self._reject(
                     f"options_dropped({before_opts}->{after_opts})",
-                    original_text, candidate_text,
-                    q_before, q_after, provenance,
+                    original_text,
+                    candidate_text,
+                    q_before,
+                    q_after,
+                    provenance,
                 )
 
         # 6. Answer modified
@@ -401,8 +418,11 @@ class CandidateEvaluator:
             if after_answer and after_answer != expected:
                 return self._reject(
                     ReasonCode.ANSWER_MODIFIED,
-                    original_text, candidate_text,
-                    q_before, q_after, provenance,
+                    original_text,
+                    candidate_text,
+                    q_before,
+                    q_after,
+                    provenance,
                     risk_flags=[ReasonCode.ANSWER_MODIFIED_RISK],
                 )
 
@@ -415,8 +435,11 @@ class CandidateEvaluator:
                 if ratio < 0.5:
                     return self._reject(
                         f"{ReasonCode.MATH_FORMULA_BROKEN}(braces:{before_braces}->{after_braces})",
-                        original_text, candidate_text,
-                        q_before, q_after, provenance,
+                        original_text,
+                        candidate_text,
+                        q_before,
+                        q_after,
+                        provenance,
                     )
             if not _balanced_braces(candidate_text):
                 risk_flags.append("unbalanced_latex_braces")
@@ -427,8 +450,11 @@ class CandidateEvaluator:
             if hallucination_issues:
                 return self._reject(
                     f"{ReasonCode.HALLUCINATION}:{hallucination_issues[0][:40]}",
-                    original_text, candidate_text,
-                    q_before, q_after, provenance,
+                    original_text,
+                    candidate_text,
+                    q_before,
+                    q_after,
+                    provenance,
                 )
 
         # 9. Table structure lost
@@ -437,8 +463,11 @@ class CandidateEvaluator:
         if before_rows > 2 and after_rows < before_rows:
             return self._reject(
                 f"{ReasonCode.TABLE_STRUCTURE_LOST}(rows:{before_rows}->{after_rows})",
-                original_text, candidate_text,
-                q_before, q_after, provenance,
+                original_text,
+                candidate_text,
+                q_before,
+                q_after,
+                provenance,
             )
 
         # 10. Watermark retained by AI
@@ -456,7 +485,9 @@ class CandidateEvaluator:
         diff = _build_diff(original_text, candidate_text)
         return CandidateEvaluation(
             decision=CandidateDecision.ACCEPT,
-            reason_code=ReasonCode.ACCEPTED if not risk_flags else ReasonCode.ACCEPTED_WITH_RISK,
+            reason_code=ReasonCode.ACCEPTED
+            if not risk_flags
+            else ReasonCode.ACCEPTED_WITH_RISK,
             accepted_text=candidate_text,
             diff=diff,
             quality_before=q_before,
@@ -479,7 +510,9 @@ class CandidateEvaluator:
         stop: bool = False,
     ) -> CandidateEvaluation:
         return CandidateEvaluation(
-            decision=CandidateDecision.REJECT_STOP if stop else CandidateDecision.REJECT_CONTINUE,
+            decision=CandidateDecision.REJECT_STOP
+            if stop
+            else CandidateDecision.REJECT_CONTINUE,
             reason_code=reason,
             accepted_text="",
             diff=_build_diff(original_text, candidate_text),
@@ -516,7 +549,8 @@ def evaluate_candidate(
 ) -> CandidateEvaluation:
     """Evaluate a single AI correction candidate using the singleton evaluator."""
     return get_evaluator().evaluate(
-        original_text, candidate_text,
+        original_text,
+        candidate_text,
         context=context,
         quality_report=quality_report,
         provenance=provenance,

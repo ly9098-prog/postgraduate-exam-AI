@@ -109,7 +109,9 @@ async def create_outbox(
             record already exists for this task_id.
     """
     effective_schema_version = _normalize_outbox_contract(
-        task_type, payload, schema_version,
+        task_type,
+        payload,
+        schema_version,
     )
 
     # Idempotent check: skip if already published
@@ -125,7 +127,8 @@ async def create_outbox(
     if existing_row is not None:
         if existing_row.status == "published":
             logger.debug(
-                "Outbox already published, skipping: task_id=%s", task_id,
+                "Outbox already published, skipping: task_id=%s",
+                task_id,
             )
             return existing_row
         raise ValueError(
@@ -160,7 +163,9 @@ async def create_outbox(
     )
     db.add(outbox)
     await db.flush()  # Get the ID assigned but caller still controls commit
-    logger.info("Outbox created: task_id=%s type=%s id=%d", task_id, task_type, outbox.id)
+    logger.info(
+        "Outbox created: task_id=%s type=%s id=%d", task_id, task_type, outbox.id
+    )
     return outbox
 
 
@@ -289,7 +294,8 @@ async def mark_published(
     else:
         logger.info(
             "Outbox publish result ignored after lease loss: id=%d task_id=%s",
-            outbox_id, task_id,
+            outbox_id,
+            task_id,
         )
     return updated
 
@@ -324,12 +330,15 @@ async def mark_failed(
     if updated:
         logger.warning(
             "Outbox failed: id=%d task_id=%s error=%s",
-            outbox_id, task_id, error[:200],
+            outbox_id,
+            task_id,
+            error[:200],
         )
     else:
         logger.info(
             "Outbox failure result ignored after lease loss: id=%d task_id=%s",
-            outbox_id, task_id,
+            outbox_id,
+            task_id,
         )
     return updated
 
@@ -362,7 +371,8 @@ async def mark_retryable(
         await db.rollback()
         logger.info(
             "Outbox retry result ignored after lease loss: id=%d task_id=%s",
-            outbox_id, task_id,
+            outbox_id,
+            task_id,
         )
         return False
 
@@ -378,12 +388,19 @@ async def mark_retryable(
     if retryable:
         logger.warning(
             "Outbox publish retry scheduled: id=%d task_id=%s retry=%d/%d error=%s",
-            outbox_id, task_id, row.retry_count, _OUTBOX_MAX_RETRIES, error[:200],
+            outbox_id,
+            task_id,
+            row.retry_count,
+            _OUTBOX_MAX_RETRIES,
+            error[:200],
         )
     else:
         logger.error(
             "Outbox publish retries exhausted: id=%d task_id=%s retries=%d error=%s",
-            outbox_id, task_id, row.retry_count, error[:200],
+            outbox_id,
+            task_id,
+            row.retry_count,
+            error[:200],
         )
     return retryable
 
@@ -439,9 +456,7 @@ async def retry_failed_outbox(db: AsyncSession, outbox_id: int) -> TaskOutbox | 
     Redis idempotency and infrastructure backoff semantics remain unchanged.
     """
     row = await db.scalar(
-        select(TaskOutbox)
-        .where(TaskOutbox.id == outbox_id)
-        .with_for_update()
+        select(TaskOutbox).where(TaskOutbox.id == outbox_id).with_for_update()
     )
     if row is None or row.status != "failed":
         await db.rollback()
@@ -496,30 +511,36 @@ async def recover_legacy_answer_projection_outbox(
     payloads remain terminal and are regenerated from ``practice_records`` by the
     business projection reconciler instead of being guessed.
     """
-    rows = list((await db.execute(
-        select(TaskOutbox)
-        .where(
-            TaskOutbox.task_type == "answer_projection",
-            TaskOutbox.schema_version.in_([1, 2]),
-            or_(
-                TaskOutbox.status.in_(["failed", "pending"]),
-                and_(
-                    TaskOutbox.status == "leased",
+    rows = list(
+        (
+            await db.execute(
+                select(TaskOutbox)
+                .where(
+                    TaskOutbox.task_type == "answer_projection",
+                    TaskOutbox.schema_version.in_([1, 2]),
                     or_(
-                        TaskOutbox.lease_expires_at.is_(None),
-                        TaskOutbox.lease_expires_at < utcnow(),
+                        TaskOutbox.status.in_(["failed", "pending"]),
+                        and_(
+                            TaskOutbox.status == "leased",
+                            or_(
+                                TaskOutbox.lease_expires_at.is_(None),
+                                TaskOutbox.lease_expires_at < utcnow(),
+                            ),
+                        ),
                     ),
-                ),
-            ),
-            TaskOutbox.error_message.is_not(None),
-            func.lower(TaskOutbox.error_message).like(
-                "%unsupported answer_projection schema_version=%"
-            ),
+                    TaskOutbox.error_message.is_not(None),
+                    func.lower(TaskOutbox.error_message).like(
+                        "%unsupported answer_projection schema_version=%"
+                    ),
+                )
+                .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
+                .limit(max(1, int(limit)))
+                .with_for_update(skip_locked=True)
+            )
         )
-        .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
-        .limit(max(1, int(limit)))
-        .with_for_update(skip_locked=True)
-    )).scalars().all())
+        .scalars()
+        .all()
+    )
 
     if not rows:
         await db.rollback()
@@ -530,12 +551,15 @@ async def recover_legacy_answer_projection_outbox(
     for row in rows:
         try:
             schema_version = _normalize_outbox_contract(
-                row.task_type, row.payload, int(row.schema_version or 1),
+                row.task_type,
+                row.payload,
+                int(row.schema_version or 1),
             )
         except OutboxContractError:
             logger.error(
                 "Legacy answer_projection Outbox payload is not upgradeable: id=%d task_id=%s",
-                row.id, row.task_id,
+                row.id,
+                row.task_id,
             )
             continue
         # Reset the poisoned state even when the durable row was already
@@ -572,25 +596,31 @@ async def finalize_exhausted_nonterminal_outbox(
     them, but without this invariant repair they remain permanently
     *unpublished* and keep the task health monitor in a stalled state forever.
     """
-    rows = list((await db.execute(
-        select(TaskOutbox)
-        .where(
-            or_(
-                TaskOutbox.status == "pending",
-                and_(
-                    TaskOutbox.status == "leased",
+    rows = list(
+        (
+            await db.execute(
+                select(TaskOutbox)
+                .where(
                     or_(
-                        TaskOutbox.lease_expires_at.is_(None),
-                        TaskOutbox.lease_expires_at < utcnow(),
+                        TaskOutbox.status == "pending",
+                        and_(
+                            TaskOutbox.status == "leased",
+                            or_(
+                                TaskOutbox.lease_expires_at.is_(None),
+                                TaskOutbox.lease_expires_at < utcnow(),
+                            ),
+                        ),
                     ),
-                ),
-            ),
-            TaskOutbox.retry_count >= _OUTBOX_MAX_RETRIES,
+                    TaskOutbox.retry_count >= _OUTBOX_MAX_RETRIES,
+                )
+                .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
+                .limit(max(1, int(limit)))
+                .with_for_update(skip_locked=True)
+            )
         )
-        .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
-        .limit(max(1, int(limit)))
-        .with_for_update(skip_locked=True)
-    )).scalars().all())
+        .scalars()
+        .all()
+    )
 
     if not rows:
         await db.rollback()
@@ -633,20 +663,30 @@ async def recover_infrastructure_failed_outbox(
 
     The caller must only invoke this after a successful Redis health probe.
     """
-    rows = list((await db.execute(
-        select(TaskOutbox)
-        .where(
-            TaskOutbox.status == "failed",
-            TaskOutbox.error_message.is_not(None),
-            or_(
-                func.lower(TaskOutbox.error_message).like("%redis_unavailable%"),
-                func.lower(TaskOutbox.error_message).like("%redis unavailable%"),
-            ),
+    rows = list(
+        (
+            await db.execute(
+                select(TaskOutbox)
+                .where(
+                    TaskOutbox.status == "failed",
+                    TaskOutbox.error_message.is_not(None),
+                    or_(
+                        func.lower(TaskOutbox.error_message).like(
+                            "%redis_unavailable%"
+                        ),
+                        func.lower(TaskOutbox.error_message).like(
+                            "%redis unavailable%"
+                        ),
+                    ),
+                )
+                .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
+                .limit(max(1, int(limit)))
+                .with_for_update(skip_locked=True)
+            )
         )
-        .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
-        .limit(max(1, int(limit)))
-        .with_for_update(skip_locked=True)
-    )).scalars().all())
+        .scalars()
+        .all()
+    )
 
     if not rows:
         await db.rollback()
@@ -670,7 +710,8 @@ async def recover_infrastructure_failed_outbox(
 
 
 async def mark_cancelled(
-    db: AsyncSession, task_id: str,
+    db: AsyncSession,
+    task_id: str,
 ) -> bool:
     """Mark an outbox record as cancelled.
 
@@ -697,7 +738,9 @@ async def mark_cancelled(
     return updated > 0
 
 
-async def purge_old(db: AsyncSession, retention_days: int = _OUTBOX_RETENTION_DAYS) -> int:
+async def purge_old(
+    db: AsyncSession, retention_days: int = _OUTBOX_RETENTION_DAYS
+) -> int:
     """Delete published/failed/cancelled outbox records older than retention."""
     cutoff = utcnow() - timedelta(days=retention_days)
     result = await db.execute(
@@ -711,11 +754,17 @@ async def purge_old(db: AsyncSession, retention_days: int = _OUTBOX_RETENTION_DA
     await db.commit()
     deleted = result.rowcount or 0
     if deleted:
-        logger.info("Outbox purge: removed %d records older than %d days", deleted, retention_days)
+        logger.info(
+            "Outbox purge: removed %d records older than %d days",
+            deleted,
+            retention_days,
+        )
     return deleted
 
 
-async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONCILE_BATCH_SIZE) -> dict[str, int]:
+async def reconcile(
+    db: AsyncSession, task_queue: Any, batch_size: int = _RECONCILE_BATCH_SIZE
+) -> dict[str, int]:
     """Reconcile DB outbox state with Redis task state.
 
     Redis task hashes can expire before the Outbox retention window.  A
@@ -736,8 +785,11 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
 
     # PostgreSQL-only repairs remain safe even when Redis is unavailable.
     try:
-        stats["recovered_contract_failed"] = await recover_legacy_answer_projection_outbox(
-            db, limit=batch_size,
+        stats[
+            "recovered_contract_failed"
+        ] = await recover_legacy_answer_projection_outbox(
+            db,
+            limit=batch_size,
         )
     except Exception as exc:
         stats["errors"] += 1
@@ -745,7 +797,8 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
 
     try:
         stats["finalized_exhausted"] = await finalize_exhausted_nonterminal_outbox(
-            db, limit=batch_size,
+            db,
+            limit=batch_size,
         )
     except Exception as exc:
         stats["errors"] += 1
@@ -760,7 +813,8 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
 
     try:
         stats["recovered_infra_failed"] = await recover_infrastructure_failed_outbox(
-            db, limit=batch_size,
+            db,
+            limit=batch_size,
         )
     except Exception as exc:
         stats["errors"] += 1
@@ -796,7 +850,8 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
             stats["errors"] += 1
             logger.debug(
                 "Outbox reconcile Redis lookup unavailable: task_id=%s error=%s",
-                row.task_id, exc,
+                row.task_id,
+                exc,
             )
             continue
 
@@ -844,12 +899,15 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
                 # idempotency guard survives much longer.  That is normal and
                 # must not cause permanent published↔pending churn.
                 try:
-                    idempotency_exists = await task_queue.has_idempotency_v2(row.task_id)
+                    idempotency_exists = await task_queue.has_idempotency_v2(
+                        row.task_id
+                    )
                 except Exception as exc:
                     stats["errors"] += 1
                     logger.debug(
                         "Outbox reconcile idempotency lookup unavailable: task_id=%s error=%s",
-                        row.task_id, exc,
+                        row.task_id,
+                        exc,
                     )
                     continue
                 if idempotency_exists:
@@ -910,7 +968,13 @@ async def get_outbox_metrics(db: AsyncSession) -> dict[str, int]:
             func.count(TaskOutbox.id).label("count"),
         ).group_by(TaskOutbox.status)
     )
-    counts: dict[str, int] = {"pending": 0, "leased": 0, "published": 0, "failed": 0, "cancelled": 0}
+    counts: dict[str, int] = {
+        "pending": 0,
+        "leased": 0,
+        "published": 0,
+        "failed": 0,
+        "cancelled": 0,
+    }
     for row in result:
         counts[row.status] = row.count
     return counts
@@ -949,7 +1013,11 @@ async def run_outbox_dispatcher(
 
     from app.core.database import async_session
 
-    logger.info("Outbox dispatcher started: poll_interval=%ss batch_size=%d", poll_interval, batch_size)
+    logger.info(
+        "Outbox dispatcher started: poll_interval=%ss batch_size=%d",
+        poll_interval,
+        batch_size,
+    )
     redis_backoff = REDIS_BACKOFF_INITIAL_SEC
     redis_paused = False
     redis_pause_started = None
@@ -959,7 +1027,9 @@ async def run_outbox_dispatcher(
             try:
                 async with async_session() as db:
                     claimed = await claim_pending(
-                        db, batch_size=batch_size, lease_sec=lease_sec,
+                        db,
+                        batch_size=batch_size,
+                        lease_sec=lease_sec,
                     )
 
                 retry_pause = 0.0
@@ -1009,13 +1079,19 @@ async def run_outbox_dispatcher(
                             )
                             if result and result.accepted:
                                 await mark_published(
-                                    publish_db, outbox.id, outbox.task_id,
+                                    publish_db,
+                                    outbox.id,
+                                    outbox.task_id,
                                     str(outbox.lease_token or ""),
                                 )
                                 if redis_paused:
                                     paused_for = 0.0
                                     if redis_pause_started is not None:
-                                        paused_for = max(0.0, asyncio.get_running_loop().time() - redis_pause_started)
+                                        paused_for = max(
+                                            0.0,
+                                            asyncio.get_running_loop().time()
+                                            - redis_pause_started,
+                                        )
                                     logger.info(
                                         "Outbox dispatcher resumed after Redis recovery: paused_for=%.1fs",
                                         paused_for,
@@ -1025,7 +1101,8 @@ async def run_outbox_dispatcher(
                                     redis_backoff = REDIS_BACKOFF_INITIAL_SEC
                                 logger.debug(
                                     "Outbox dispatched: task_id=%s type=%s reason=%s",
-                                    outbox.task_id, outbox.task_type,
+                                    outbox.task_id,
+                                    outbox.task_type,
                                     getattr(result, "reason", ""),
                                 )
                                 continue
@@ -1039,11 +1116,15 @@ async def run_outbox_dispatcher(
                                 ]
                                 async with async_session() as infra_db:
                                     released = await release_infrastructure_failure(
-                                        infra_db, remaining_claims, error,
+                                        infra_db,
+                                        remaining_claims,
+                                        error,
                                     )
                                 if not redis_paused:
                                     redis_paused = True
-                                    redis_pause_started = asyncio.get_running_loop().time()
+                                    redis_pause_started = (
+                                        asyncio.get_running_loop().time()
+                                    )
                                     logger.warning(
                                         "Outbox dispatcher paused: reason=redis_unavailable "
                                         "released=%d backoff=%.1fs (retry budget preserved)",
@@ -1061,16 +1142,25 @@ async def run_outbox_dispatcher(
 
                             if reason in transient_reasons:
                                 await mark_retryable(
-                                    publish_db, outbox.id, outbox.task_id, error,
+                                    publish_db,
+                                    outbox.id,
+                                    outbox.task_id,
+                                    error,
                                     str(outbox.lease_token or ""),
                                 )
                                 retry_pause = max(
                                     retry_pause,
-                                    float(getattr(result, "retry_after", 0) or poll_interval),
+                                    float(
+                                        getattr(result, "retry_after", 0)
+                                        or poll_interval
+                                    ),
                                 )
                             else:
                                 await mark_failed(
-                                    publish_db, outbox.id, outbox.task_id, error,
+                                    publish_db,
+                                    outbox.id,
+                                    outbox.task_id,
+                                    error,
                                     str(outbox.lease_token or ""),
                                 )
                     except (OutboxContractError, ValueError) as e:
@@ -1079,7 +1169,8 @@ async def run_outbox_dispatcher(
                         # retry budget and flooding diagnostics.
                         logger.error(
                             "Outbox permanent contract error: task_id=%s error=%s",
-                            outbox.task_id, e,
+                            outbox.task_id,
+                            e,
                         )
                         try:
                             async with async_session() as invalid_db:
@@ -1105,11 +1196,15 @@ async def run_outbox_dispatcher(
                             try:
                                 async with async_session() as infra_db:
                                     released = await release_infrastructure_failure(
-                                        infra_db, remaining_claims, error,
+                                        infra_db,
+                                        remaining_claims,
+                                        error,
                                     )
                                 if not redis_paused:
                                     redis_paused = True
-                                    redis_pause_started = asyncio.get_running_loop().time()
+                                    redis_pause_started = (
+                                        asyncio.get_running_loop().time()
+                                    )
                                     logger.warning(
                                         "Outbox dispatcher paused: reason=redis_unavailable "
                                         "released=%d backoff=%.1fs (retry budget preserved)",
@@ -1131,12 +1226,15 @@ async def run_outbox_dispatcher(
 
                         logger.warning(
                             "Outbox dispatch error: task_id=%s error=%s",
-                            outbox.task_id, e,
+                            outbox.task_id,
+                            e,
                         )
                         try:
                             async with async_session() as retry_db:
                                 await mark_retryable(
-                                    retry_db, outbox.id, outbox.task_id,
+                                    retry_db,
+                                    outbox.id,
+                                    outbox.task_id,
                                     f"dispatcher exception: {type(e).__name__}: {e}",
                                     str(outbox.lease_token or ""),
                                 )

@@ -7,7 +7,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.core.subject_scope import is_study_subject_enabled, select_study_subject_records
+from app.core.subject_scope import (
+    is_study_subject_enabled,
+    select_study_subject_records,
+)
 from app.core.time_utils import (
     current_study_day,
     minute_to_time_text,
@@ -107,7 +110,9 @@ def _close_open_pause_interval(session, now) -> PomodoroPauseInterval | None:
     session with ``paused_at`` set but no open interval is a data anomaly — logged
     loudly and never silently repaired at runtime.
     """
-    open_interval = next((i for i in session.pause_intervals if i.ended_at is None), None)
+    open_interval = next(
+        (i for i in session.pause_intervals if i.ended_at is None), None
+    )
     if open_interval is None:
         if session.paused_at is not None:
             logger.warning(
@@ -141,7 +146,11 @@ def _closing_action_floor(session) -> datetime:
     """Timeline floor for an action that may close an open pause interval."""
     floor = _latest_session_event_time(session)
     open_interval = next(
-        (i for i in getattr(session, "pause_intervals", ()) or () if i.ended_at is None),
+        (
+            i
+            for i in getattr(session, "pause_intervals", ()) or ()
+            if i.ended_at is None
+        ),
         None,
     )
     if open_interval is not None:
@@ -174,15 +183,13 @@ def _resolve_client_action_time(
             candidate = server_now
             explicit_client_time = False
 
-    if (
-        explicit_client_time
-        and candidate > server_now + timedelta(seconds=CLIENT_ACTION_FUTURE_TOLERANCE_SEC)
+    if explicit_client_time and candidate > server_now + timedelta(
+        seconds=CLIENT_ACTION_FUTURE_TOLERANCE_SEC
     ):
         raise PomodoroClockSkewError("POMODORO_CLOCK_SKEW")
 
-    if (
-        explicit_client_time
-        and candidate < session.start_time - timedelta(seconds=CLIENT_ACTION_PAST_TOLERANCE_SEC)
+    if explicit_client_time and candidate < session.start_time - timedelta(
+        seconds=CLIENT_ACTION_PAST_TOLERANCE_SEC
     ):
         raise PomodoroClockSkewError("POMODORO_CLOCK_SKEW")
 
@@ -292,7 +299,9 @@ async def start_session(
         raise ValueError("非自由计时模式需要设置学习时长")
 
     start = utcnow()
-    expected_end = start + timedelta(minutes=max(0, work_duration)) if work_duration > 0 else None
+    expected_end = (
+        start + timedelta(minutes=max(0, work_duration)) if work_duration > 0 else None
+    )
 
     # Validate subject_id
     subj = await db.get(Subject, subject_id)
@@ -302,7 +311,11 @@ async def start_session(
         raise ValueError(f"科目不可用: {subj.name}")
     all_subjects = list((await db.execute(select(Subject))).scalars().all())
     enabled_ids = {item.id for item in select_study_subject_records(all_subjects)}
-    child_count = sum(1 for item in all_subjects if item.parent_id == subject_id and item.id in enabled_ids)
+    child_count = sum(
+        1
+        for item in all_subjects
+        if item.parent_id == subject_id and item.id in enabled_ids
+    )
     if child_count and child_count > 0:
         raise ValueError(f"请选择具体子科目，不能选择父级科目: {subj.name}")
 
@@ -400,7 +413,8 @@ def _apply_terminal_state(
         if actual_duration >= FREE_TIMER_MAX_DURATION_SEC:
             effective_end = min(
                 action_time,
-                session.start_time + timedelta(seconds=paused_sec + FREE_TIMER_MAX_DURATION_SEC),
+                session.start_time
+                + timedelta(seconds=paused_sec + FREE_TIMER_MAX_DURATION_SEC),
             )
     else:
         work_cap_sec = max(0, int(session.work_duration or 0) * 60)
@@ -459,7 +473,9 @@ async def complete_session(
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused", "completed", "interrupted"]),
+            PomodoroSession.status.in_(
+                ["running", "paused", "completed", "interrupted"]
+            ),
         )
         .with_for_update(of=PomodoroSession)
     )
@@ -514,7 +530,9 @@ async def interrupt_session(
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused", "interrupted", "completed"]),
+            PomodoroSession.status.in_(
+                ["running", "paused", "interrupted", "completed"]
+            ),
         )
         .with_for_update(of=PomodoroSession)
     )
@@ -575,7 +593,9 @@ async def pause_session(
         # State-idempotent is not timeline-idempotent. If an earlier pause from
         # another device arrives after a later pause already committed, move the
         # open interval back so those seconds are not falsely counted as focus.
-        open_interval = next((i for i in session.pause_intervals if i.ended_at is None), None)
+        open_interval = next(
+            (i for i in session.pause_intervals if i.ended_at is None), None
+        )
         if client_action_at is None or open_interval is None:
             await db.refresh(session)
             return session
@@ -612,7 +632,9 @@ async def pause_session(
     )
     if not any(i.ended_at is None for i in session.pause_intervals):
         session.pause_intervals.append(
-            PomodoroPauseInterval(session_id=session.id, started_at=action_time, ended_at=None)
+            PomodoroPauseInterval(
+                session_id=session.id, started_at=action_time, ended_at=None
+            )
         )
     session.paused_at = action_time
     session.status = "paused"
@@ -624,7 +646,9 @@ async def pause_session(
             "pomodoro pause_session: concurrent open pause interval for session %s; treating as idempotent",
             session.id,
         )
-        session.pause_intervals[:] = [i for i in session.pause_intervals if i.id is not None]
+        session.pause_intervals[:] = [
+            i for i in session.pause_intervals if i.id is not None
+        ]
         session.paused_at = None
         session.status = "running"
         await db.refresh(session)
@@ -655,7 +679,9 @@ async def resume_session(
         return None
 
     now = utcnow()
-    open_interval = next((i for i in session.pause_intervals if i.ended_at is None), None)
+    open_interval = next(
+        (i for i in session.pause_intervals if i.ended_at is None), None
+    )
 
     if session.status == "running" and open_interval is None:
         # Symmetric timeline idempotency for a delayed resume: when the most recent
@@ -675,7 +701,9 @@ async def resume_session(
                     prior_latest = max(prior_latest, interval.started_at)
                 if interval is not latest_closed and interval.ended_at is not None:
                     prior_latest = max(prior_latest, interval.ended_at)
-            floor = max(prior_latest, latest_closed.started_at + timedelta(microseconds=1))
+            floor = max(
+                prior_latest, latest_closed.started_at + timedelta(microseconds=1)
+            )
             action_time = _resolve_client_action_time(
                 session,
                 client_action_at,
@@ -750,6 +778,7 @@ async def get_active_session(db: AsyncSession, user_id: int) -> PomodoroSession 
 
 # ── Settings ─────────────────────────────────────────────────────────────
 
+
 async def get_pomodoro_settings(db: AsyncSession, user_id: int) -> dict:
     row = await db.get(UserPomodoroSettings, user_id)
     day_start_minute = row.day_start_minute if row is not None else 0
@@ -760,7 +789,9 @@ async def get_pomodoro_settings(db: AsyncSession, user_id: int) -> dict:
     }
 
 
-async def update_pomodoro_settings(db: AsyncSession, user_id: int, day_start_minute: int) -> dict:
+async def update_pomodoro_settings(
+    db: AsyncSession, user_id: int, day_start_minute: int
+) -> dict:
     if day_start_minute < 0 or day_start_minute > 1439:
         raise ValueError("day_start_minute must be in range 0..1439")
     row = await db.get(UserPomodoroSettings, user_id)
@@ -774,6 +805,7 @@ async def update_pomodoro_settings(db: AsyncSession, user_id: int, day_start_min
 
 # ── Statistics ───────────────────────────────────────────────────────────
 
+
 class _LiteSession:
     """Duck-typed session row for attribution; keeps ``pomodoro_attribution`` untouched.
 
@@ -784,7 +816,14 @@ class _LiteSession:
     is materialised, so stats/trends never drag in the whole session row.
     """
 
-    __slots__ = ("start_time", "end_time", "actual_duration", "subject_id", "subject_ref", "pause_intervals")
+    __slots__ = (
+        "start_time",
+        "end_time",
+        "actual_duration",
+        "subject_id",
+        "subject_ref",
+        "pause_intervals",
+    )
 
     def __init__(
         self,
@@ -849,7 +888,11 @@ async def _load_overlapping_sessions(
                     actual_duration=s.actual_duration,
                     subject_id=s.subject_id,
                     subject_ref=(
-                        SimpleNamespace(code=ref.code or "", name=ref.name or "", is_active=ref.is_active)
+                        SimpleNamespace(
+                            code=ref.code or "",
+                            name=ref.name or "",
+                            is_active=ref.is_active,
+                        )
                         if ref is not None
                         else None
                     ),
@@ -939,7 +982,11 @@ async def _load_overlapping_practice_sessions(
         )
         out: list[_LiteSession] = []
         for row in result.all():
-            has_subject = row.code is not None or row.name is not None or row.is_active is not None
+            has_subject = (
+                row.code is not None
+                or row.name is not None
+                or row.is_active is not None
+            )
             out.append(
                 _LiteSession(
                     start_time=row.started_at,
@@ -986,7 +1033,11 @@ def _resolve_subject(session) -> tuple[int | None, str, str]:
     no duplicate 未分类 slices are produced.
     """
     ref = session.subject_ref
-    if session.subject_id is not None and ref is not None and is_study_subject_enabled(ref):
+    if (
+        session.subject_id is not None
+        and ref is not None
+        and is_study_subject_enabled(ref)
+    ):
         return session.subject_id, ref.code or "", ref.name or ""
     return None, "", "未分类"
 
@@ -1025,7 +1076,9 @@ async def build_pomodoro_statistics_snapshot(
         week_start, week_end = study_week_utc_range(dsm)
         ranges.append((min(today_start, week_start), max(today_end, week_end)))
     if need_trends:
-        trend_start, _ = study_day_utc_range(today - timedelta(days=trends_days - 1), dsm)
+        trend_start, _ = study_day_utc_range(
+            today - timedelta(days=trends_days - 1), dsm
+        )
         _, trend_end = study_day_utc_range(today, dsm)
         ranges.append((trend_start, trend_end))
     if need_daily_summary:
@@ -1048,14 +1101,18 @@ async def build_pomodoro_statistics_snapshot(
         user_id,
         period_start,
         period_end,
-        with_subject=(need_daily_summary or (need_range_summary and range_include_subjects)),
+        with_subject=(
+            need_daily_summary or (need_range_summary and range_include_subjects)
+        ),
     )
     practice_sessions = await _load_overlapping_practice_sessions(
         db,
         user_id,
         period_start,
         period_end,
-        with_subject=(need_daily_summary or (need_range_summary and range_include_subjects)),
+        with_subject=(
+            need_daily_summary or (need_range_summary and range_include_subjects)
+        ),
     )
 
     week_start_date = study_day_for_utc(study_week_utc_range(dsm)[0], dsm)
@@ -1068,7 +1125,10 @@ async def build_pomodoro_statistics_snapshot(
         week_duration = 0
     if need_trends:
         trend_agg = {
-            today - timedelta(days=trends_days - 1 - i): {"sessions": 0, "duration_sec": 0}
+            today - timedelta(days=trends_days - 1 - i): {
+                "sessions": 0,
+                "duration_sec": 0,
+            }
             for i in range(trends_days)
         }
     if need_daily_summary:
@@ -1116,10 +1176,16 @@ async def build_pomodoro_statistics_snapshot(
                         range_active_day_set.add(day)
             if range_include_subjects and range_contrib > 0:
                 key, code, name = _resolve_subject(s)
-                g = range_groups.setdefault(key, {
-                    "subject_id": key, "subject_code": code, "subject_name": name,
-                    "duration_sec": 0, "sessions": 0,
-                })
+                g = range_groups.setdefault(
+                    key,
+                    {
+                        "subject_id": key,
+                        "subject_code": code,
+                        "subject_name": name,
+                        "duration_sec": 0,
+                        "sessions": 0,
+                    },
+                )
                 g["duration_sec"] += range_contrib
                 if range_start <= start_day <= range_end:
                     g["sessions"] += 1
@@ -1140,10 +1206,16 @@ async def build_pomodoro_statistics_snapshot(
                 # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
                 continue
             key, code, name = _resolve_subject(s)
-            g = target_groups.setdefault(key, {
-                "subject_id": key, "subject_code": code, "subject_name": name,
-                "duration_sec": 0, "sessions": 0,
-            })
+            g = target_groups.setdefault(
+                key,
+                {
+                    "subject_id": key,
+                    "subject_code": code,
+                    "subject_name": name,
+                    "duration_sec": 0,
+                    "sessions": 0,
+                },
+            )
             g["duration_sec"] += day_contrib
             if start_day == target:
                 g["sessions"] += 1
@@ -1155,7 +1227,11 @@ async def build_pomodoro_statistics_snapshot(
     for s in practice_sessions:
         start_day = study_day_for_utc(s.start_time, dsm)
         split = split_duration_excluding_intervals(
-            s.start_time, s.end_time, s.actual_duration, counted_spans, dsm,
+            s.start_time,
+            s.end_time,
+            s.actual_duration,
+            counted_spans,
+            dsm,
         )
         if need_stats:
             for day, sec in split.items():
@@ -1173,10 +1249,16 @@ async def build_pomodoro_statistics_snapshot(
                         range_active_day_set.add(day)
             if range_include_subjects and range_contrib > 0:
                 key, code, name = _resolve_subject(s)
-                g = range_groups.setdefault(key, {
-                    "subject_id": key, "subject_code": code, "subject_name": name,
-                    "duration_sec": 0, "sessions": 0,
-                })
+                g = range_groups.setdefault(
+                    key,
+                    {
+                        "subject_id": key,
+                        "subject_code": code,
+                        "subject_name": name,
+                        "duration_sec": 0,
+                        "sessions": 0,
+                    },
+                )
                 g["duration_sec"] += range_contrib
                 if range_start <= start_day <= range_end:
                     g["sessions"] += 1
@@ -1191,10 +1273,16 @@ async def build_pomodoro_statistics_snapshot(
                 continue
             target_duration += day_contrib
             key, code, name = _resolve_subject(s)
-            g = target_groups.setdefault(key, {
-                "subject_id": key, "subject_code": code, "subject_name": name,
-                "duration_sec": 0, "sessions": 0,
-            })
+            g = target_groups.setdefault(
+                key,
+                {
+                    "subject_id": key,
+                    "subject_code": code,
+                    "subject_name": name,
+                    "duration_sec": 0,
+                    "sessions": 0,
+                },
+            )
             g["duration_sec"] += day_contrib
             if start_day == target:
                 g["sessions"] += 1
@@ -1340,8 +1428,12 @@ async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
             PracticeSession.status == "completed",
         )
     )
-    first_candidates = [value for value in (pomo_first, practice_first) if value is not None]
-    start_date = study_day_for_utc(min(first_candidates), dsm) if first_candidates else today
+    first_candidates = [
+        value for value in (pomo_first, practice_first) if value is not None
+    ]
+    start_date = (
+        study_day_for_utc(min(first_candidates), dsm) if first_candidates else today
+    )
 
     snapshot = await build_pomodoro_statistics_snapshot(
         db,
@@ -1362,7 +1454,10 @@ async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
 
 
 async def get_history(
-    db: AsyncSession, user_id: int, page: int = 1, page_size: int = 20,
+    db: AsyncSession,
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
     filter_date: date | None = None,
 ) -> tuple[list[dict], int]:
     """统计页统一学习记录 history — PomodoroSession + PracticeSession 混排。
@@ -1383,14 +1478,18 @@ async def get_history(
     if filter_date is not None:
         dsm = (await get_pomodoro_settings(db, user_id))["day_start_minute"]
         start_utc, end_utc = study_day_utc_range(filter_date, dsm)
-        pomo_where.extend([
-            PomodoroSession.start_time >= start_utc,
-            PomodoroSession.start_time < end_utc,
-        ])
-        practice_where.extend([
-            PracticeSession.started_at >= start_utc,
-            PracticeSession.started_at < end_utc,
-        ])
+        pomo_where.extend(
+            [
+                PomodoroSession.start_time >= start_utc,
+                PomodoroSession.start_time < end_utc,
+            ]
+        )
+        practice_where.extend(
+            [
+                PracticeSession.started_at >= start_utc,
+                PracticeSession.started_at < end_utc,
+            ]
+        )
 
     pomo_cols = select(
         literal("pomodoro").label("record_type"),
@@ -1418,9 +1517,7 @@ async def get_history(
 
     merged = pomo_cols.union_all(practice_cols).subquery()
 
-    total = (await db.execute(
-        select(func.count()).select_from(merged)
-    )).scalar() or 0
+    total = (await db.execute(select(func.count()).select_from(merged))).scalar() or 0
 
     rows = (
         await db.execute(
@@ -1446,18 +1543,20 @@ async def get_history(
     items: list[dict] = []
     for r in rows:
         subj = subject_map.get(r.subject_id) if r.subject_id is not None else None
-        items.append({
-            "record_key": f"{r.record_type}:{r.id}",
-            "record_type": r.record_type,
-            "id": r.id,
-            "user_id": r.user_id,
-            "subject_id": r.subject_id,
-            "subject_code": subj.code if subj else "",
-            "subject_name": subj.name if subj else "未分类",
-            "start_time": r.start_time,
-            "end_time": r.end_time,
-            "actual_duration": r.actual_duration,
-            "status": r.status,
-            "preset": r.preset,
-        })
+        items.append(
+            {
+                "record_key": f"{r.record_type}:{r.id}",
+                "record_type": r.record_type,
+                "id": r.id,
+                "user_id": r.user_id,
+                "subject_id": r.subject_id,
+                "subject_code": subj.code if subj else "",
+                "subject_name": subj.name if subj else "未分类",
+                "start_time": r.start_time,
+                "end_time": r.end_time,
+                "actual_duration": r.actual_duration,
+                "status": r.status,
+                "preset": r.preset,
+            }
+        )
     return items, total

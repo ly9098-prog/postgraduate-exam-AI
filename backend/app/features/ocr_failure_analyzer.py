@@ -152,7 +152,9 @@ def _check_ocr_text_missing(
     fallback_unavailable = diag.get("ocr_text_fallback_unavailable_pages") or []
     runtime_failed = diag.get("ocr_runtime_failed_pages") or []
 
-    total_failed_pages = len(set(failed_boxes) | set(fallback_unavailable) | set(runtime_failed))
+    total_failed_pages = len(
+        set(failed_boxes) | set(fallback_unavailable) | set(runtime_failed)
+    )
 
     if total_failed_pages == 0:
         return failures
@@ -200,29 +202,44 @@ def _check_question_count(
     ratio = actual / max(expected_count, 1)
 
     if ratio < 0.5:
-        failures.append(_make_failure("question_count_mismatch", {
-            "actual": actual,
-            "expected": expected_count,
-            "ratio": round(ratio, 2),
-            "reason": "实际题目数不足预期的 50%，可能存在严重的题号识别或分段问题",
-        }))
+        failures.append(
+            _make_failure(
+                "question_count_mismatch",
+                {
+                    "actual": actual,
+                    "expected": expected_count,
+                    "ratio": round(ratio, 2),
+                    "reason": "实际题目数不足预期的 50%，可能存在严重的题号识别或分段问题",
+                },
+            )
+        )
     elif ratio < 0.8:
         # Still flag but with lower urgency context
-        failures.append(_make_failure("question_count_mismatch", {
-            "actual": actual,
-            "expected": expected_count,
-            "ratio": round(ratio, 2),
-            "reason": "实际题目数不足预期的 80%，请确认题号识别和分段阈值",
-        }))
+        failures.append(
+            _make_failure(
+                "question_count_mismatch",
+                {
+                    "actual": actual,
+                    "expected": expected_count,
+                    "ratio": round(ratio, 2),
+                    "reason": "实际题目数不足预期的 80%，请确认题号识别和分段阈值",
+                },
+            )
+        )
 
     # Check for too many questions (oversplitting)
     if ratio > 1.5:
-        failures.append(_make_failure("question_count_mismatch", {
-            "actual": actual,
-            "expected": expected_count,
-            "ratio": round(ratio, 2),
-            "reason": "实际题目数超过预期的 150%，可能存在过度分段",
-        }))
+        failures.append(
+            _make_failure(
+                "question_count_mismatch",
+                {
+                    "actual": actual,
+                    "expected": expected_count,
+                    "ratio": round(ratio, 2),
+                    "reason": "实际题目数超过预期的 150%，可能存在过度分段",
+                },
+            )
+        )
 
     return failures
 
@@ -236,30 +253,48 @@ def _check_options(
     risk_counts = (diagnostics or {}).get("risk_flag_counts") or {}
 
     if risk_counts.get("options_anomaly", 0) > 0:
-        failures.append(_make_failure("option_count_mismatch", {
-            "options_anomaly_count": risk_counts["options_anomaly"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "option_count_mismatch",
+                {
+                    "options_anomaly_count": risk_counts["options_anomaly"],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     if risk_counts.get("option_structure_corrupted", 0) > 0:
-        failures.append(_make_failure("option_count_mismatch", {
-            "option_structure_corrupted_count": risk_counts["option_structure_corrupted"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "option_count_mismatch",
+                {
+                    "option_structure_corrupted_count": risk_counts[
+                        "option_structure_corrupted"
+                    ],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Check schema_errors for option-related issues
     schema_errors = (diagnostics or {}).get("schema_errors") or []
     option_errors = [
-        e for e in schema_errors
+        e
+        for e in schema_errors
         if isinstance(e, dict) and "option" in str(e.get("message", "")).lower()
     ]
     if option_errors:
         existing = {f["type"] for f in failures}
         if "option_count_mismatch" not in existing:
-            failures.append(_make_failure("option_count_mismatch", {
-                "schema_error_count": len(option_errors),
-                "first_errors": option_errors[:3],
-            }))
+            failures.append(
+                _make_failure(
+                    "option_count_mismatch",
+                    {
+                        "schema_error_count": len(option_errors),
+                        "first_errors": option_errors[:3],
+                    },
+                )
+            )
 
     return failures
 
@@ -276,27 +311,42 @@ def _check_answers(
     ai_answer_count = (quality_report or {}).get("ai_answer_count", 0)
     if ai_answer_count > 0:
         total = (quality_report or {}).get("total_questions", 1) or 1
-        failures.append(_make_failure("ai_answer_generated", {
-            "ai_answer_count": ai_answer_count,
-            "total_questions": total,
-            "ai_answer_rate": round(ai_answer_count / total, 2),
-        }))
+        failures.append(
+            _make_failure(
+                "ai_answer_generated",
+                {
+                    "ai_answer_count": ai_answer_count,
+                    "total_questions": total,
+                    "ai_answer_rate": round(ai_answer_count / total, 2),
+                },
+            )
+        )
 
     # Missing answers
     missing = risk_counts.get("answer_missing", 0)
     if missing > 0:
-        failures.append(_make_failure("answer_missing", {
-            "answer_missing_count": missing,
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "answer_missing",
+                {
+                    "answer_missing_count": missing,
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Answer mismatch: if answer_missing rate is high relative to total
     total = (quality_report or {}).get("total_questions", 1) or 1
     if missing > 0 and missing / total > 0.3:
-        failures.append(_make_failure("answer_mismatch", {
-            "answer_missing_ratio": round(missing / total, 2),
-            "reason": "超过 30% 的题目答案缺失，可能答案匹配逻辑有问题",
-        }))
+        failures.append(
+            _make_failure(
+                "answer_mismatch",
+                {
+                    "answer_missing_ratio": round(missing / total, 2),
+                    "reason": "超过 30% 的题目答案缺失，可能答案匹配逻辑有问题",
+                },
+            )
+        )
 
     return failures
 
@@ -312,34 +362,58 @@ def _check_math(
 
     # Math formula uncertainty
     if risk_counts.get("formula_uncertain", 0) > 0:
-        failures.append(_make_failure("math_formula_uncertain", {
-            "formula_uncertain_count": risk_counts["formula_uncertain"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "math_formula_uncertain",
+                {
+                    "formula_uncertain_count": risk_counts["formula_uncertain"],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     if risk_counts.get("complex_formula_requires_review", 0) > 0:
-        failures.append(_make_failure("math_formula_uncertain", {
-            "complex_formula_count": risk_counts["complex_formula_requires_review"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "math_formula_uncertain",
+                {
+                    "complex_formula_count": risk_counts[
+                        "complex_formula_requires_review"
+                    ],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Math image/screenshot missing
     if risk_counts.get("math_image_crop_failed", 0) > 0:
-        failures.append(_make_failure("math_image_missing", {
-            "math_image_crop_failed_count": risk_counts["math_image_crop_failed"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "math_image_missing",
+                {
+                    "math_image_crop_failed_count": risk_counts[
+                        "math_image_crop_failed"
+                    ],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Check if math_image_count is zero but expected non-zero
     math_img_count = (quality_report or {}).get("math_image_count")
     expected_math = (expected or {}).get("expected_math_image_count")
     if expected_math is not None and expected_math > 0:
         if math_img_count is None or math_img_count == 0:
-            failures.append(_make_failure("math_image_missing", {
-                "math_image_count": 0,
-                "expected_math_image_count": expected_math,
-                "reason": "预期有数学公式截图但实际为 0",
-            }))
+            failures.append(
+                _make_failure(
+                    "math_image_missing",
+                    {
+                        "math_image_count": 0,
+                        "expected_math_image_count": expected_math,
+                        "reason": "预期有数学公式截图但实际为 0",
+                    },
+                )
+            )
 
     return failures
 
@@ -354,10 +428,15 @@ def _check_tables(
     risk_counts = (diagnostics or {}).get("risk_flag_counts") or {}
 
     if risk_counts.get("table_low_confidence", 0) > 0:
-        failures.append(_make_failure("table_structure_lost", {
-            "table_low_confidence_count": risk_counts["table_low_confidence"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "table_structure_lost",
+                {
+                    "table_low_confidence_count": risk_counts["table_low_confidence"],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Prefer the canonical structured-table count while retaining the legacy
     # Markdown metric for old reports.
@@ -368,11 +447,16 @@ def _check_tables(
     expected_tables = (expected or {}).get("expected_table_count")
     if expected_tables is not None and expected_tables > 0:
         if table_count < expected_tables * 0.5:
-            failures.append(_make_failure("table_structure_lost", {
-                "table_structured_count": table_count,
-                "expected_table_count": expected_tables,
-                "reason": "实际表格数不足预期的 50%",
-            }))
+            failures.append(
+                _make_failure(
+                    "table_structure_lost",
+                    {
+                        "table_structured_count": table_count,
+                        "expected_table_count": expected_tables,
+                        "reason": "实际表格数不足预期的 50%",
+                    },
+                )
+            )
 
     return failures
 
@@ -386,19 +470,31 @@ def _check_code(
     risk_counts = (diagnostics or {}).get("risk_flag_counts") or {}
 
     if risk_counts.get("code_uncertain", 0) > 0:
-        failures.append(_make_failure("code_symbol_changed", {
-            "code_uncertain_count": risk_counts["code_uncertain"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "code_symbol_changed",
+                {
+                    "code_uncertain_count": risk_counts["code_uncertain"],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # symbol_substitution_detected is also code-related
     if risk_counts.get("symbol_substitution_detected", 0) > 0:
         existing = {f["type"] for f in failures}
         if "code_symbol_changed" not in existing:
-            failures.append(_make_failure("code_symbol_changed", {
-                "symbol_substitution_count": risk_counts["symbol_substitution_detected"],
-                "source": "risk_flag_counts",
-            }))
+            failures.append(
+                _make_failure(
+                    "code_symbol_changed",
+                    {
+                        "symbol_substitution_count": risk_counts[
+                            "symbol_substitution_detected"
+                        ],
+                        "source": "risk_flag_counts",
+                    },
+                )
+            )
 
     return failures
 
@@ -419,27 +515,42 @@ def _check_multi_column(
     lf = split_diag.get("layout_filter") or {}
     region_signals = lf.get("region_signals") or []
     multi_col_signals = [
-        s for s in region_signals
-        if isinstance(s, dict) and s.get("layout_type") in ("multi_column", "two_column", "split")
+        s
+        for s in region_signals
+        if isinstance(s, dict)
+        and s.get("layout_type") in ("multi_column", "two_column", "split")
     ]
     if multi_col_signals:
-        failures.append(_make_failure("multi_column_order_uncertain", {
-            "multi_column_regions": len(multi_col_signals),
-            "region_previews": [
+        failures.append(
+            _make_failure(
+                "multi_column_order_uncertain",
                 {
-                    "page": s.get("page"),
-                    "layout_type": s.get("layout_type"),
-                }
-                for s in multi_col_signals[:5]
-            ],
-        }))
+                    "multi_column_regions": len(multi_col_signals),
+                    "region_previews": [
+                        {
+                            "page": s.get("page"),
+                            "layout_type": s.get("layout_type"),
+                        }
+                        for s in multi_col_signals[:5]
+                    ],
+                },
+            )
+        )
 
     # Also check structure for multi-column indicators
     structure = (diagnostics or {}).get("structure") or {}
-    if structure.get("layout_note") and "column" in str(structure["layout_note"]).lower():
-        failures.append(_make_failure("multi_column_order_uncertain", {
-            "structure_layout_note": structure["layout_note"],
-        }))
+    if (
+        structure.get("layout_note")
+        and "column" in str(structure["layout_note"]).lower()
+    ):
+        failures.append(
+            _make_failure(
+                "multi_column_order_uncertain",
+                {
+                    "structure_layout_note": structure["layout_note"],
+                },
+            )
+        )
 
     return failures
 
@@ -453,20 +564,30 @@ def _check_watermark(
     risk_counts = (diagnostics or {}).get("risk_flag_counts") or {}
 
     if risk_counts.get("watermark_noise_detected", 0) > 0:
-        failures.append(_make_failure("watermark_noise_remaining", {
-            "watermark_noise_count": risk_counts["watermark_noise_detected"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "watermark_noise_remaining",
+                {
+                    "watermark_noise_count": risk_counts["watermark_noise_detected"],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Garbled text from quality gate can also indicate watermark noise
     if risk_counts.get("garbled_text_detected", 0) > 0:
         existing = {f["type"] for f in failures}
         if "watermark_noise_remaining" not in existing:
-            failures.append(_make_failure("watermark_noise_remaining", {
-                "garbled_text_count": risk_counts["garbled_text_detected"],
-                "source": "risk_flag_counts",
-                "note": "乱码文本可能与水印/噪声未清除有关",
-            }))
+            failures.append(
+                _make_failure(
+                    "watermark_noise_remaining",
+                    {
+                        "garbled_text_count": risk_counts["garbled_text_detected"],
+                        "source": "risk_flag_counts",
+                        "note": "乱码文本可能与水印/噪声未清除有关",
+                    },
+                )
+            )
 
     return failures
 
@@ -481,10 +602,15 @@ def _check_ai_intervention(
 
     # AI major edits (safety gate rejections / sensitive field modifications)
     if risk_counts.get("ai_major_edit", 0) > 0:
-        failures.append(_make_failure("ai_modified_sensitive_field", {
-            "ai_major_edit_count": risk_counts["ai_major_edit"],
-            "source": "risk_flag_counts",
-        }))
+        failures.append(
+            _make_failure(
+                "ai_modified_sensitive_field",
+                {
+                    "ai_major_edit_count": risk_counts["ai_major_edit"],
+                    "source": "risk_flag_counts",
+                },
+            )
+        )
 
     # Repair stats
     repair_called = (quality_report or {}).get("repair_called", 0)
@@ -494,12 +620,17 @@ def _check_ai_intervention(
         # If repair was called a lot but only for minor issues, add context
         repair_invoked = repair_called + repair_skipped
         if repair_invoked > total * 0.5:
-            failures.append(_make_failure("ai_modified_sensitive_field", {
-                "repair_called": repair_called,
-                "repair_skipped": repair_skipped,
-                "repair_rate": round(repair_invoked / total, 2),
-                "reason": "AI repair 调用率过高，可能存在系统性 OCR 问题",
-            }))
+            failures.append(
+                _make_failure(
+                    "ai_modified_sensitive_field",
+                    {
+                        "repair_called": repair_called,
+                        "repair_skipped": repair_skipped,
+                        "repair_rate": round(repair_invoked / total, 2),
+                        "reason": "AI repair 调用率过高，可能存在系统性 OCR 问题",
+                    },
+                )
+            )
 
     # AI answer generation (duplicate check — may be covered by _check_answers)
     qr_ai_count = (quality_report or {}).get("ai_answer_count", 0)
@@ -507,10 +638,15 @@ def _check_ai_intervention(
     if qr_ai_count > 0 or risk_ai_count > 0:
         existing = {f["type"] for f in failures}
         if "ai_answer_generated" not in existing:
-            failures.append(_make_failure("ai_answer_generated", {
-                "quality_report_ai_count": qr_ai_count,
-                "risk_flag_ai_count": risk_ai_count,
-            }))
+            failures.append(
+                _make_failure(
+                    "ai_answer_generated",
+                    {
+                        "quality_report_ai_count": qr_ai_count,
+                        "risk_flag_ai_count": risk_ai_count,
+                    },
+                )
+            )
 
     return failures
 
@@ -529,9 +665,14 @@ def _check_artifact(
     # Look for patterns in diagnostics that suggest artifact issues
     batch_validation = (diagnostics or {}).get("batch_validation") or {}
     if batch_validation.get("artifact_error"):
-        failures.append(_make_failure("artifact_restore_failed", {
-            "artifact_error": batch_validation["artifact_error"],
-        }))
+        failures.append(
+            _make_failure(
+                "artifact_restore_failed",
+                {
+                    "artifact_error": batch_validation["artifact_error"],
+                },
+            )
+        )
 
     # OCR cache corruption: if cache metrics show anomaly
     qr = quality_report or {}
@@ -540,22 +681,35 @@ def _check_artifact(
     total_cache = ocr_cache_hit + ocr_cache_miss
     if total_cache > 0:
         # Suspicious pattern: many hits but poor quality
-        if ocr_cache_hit > 10 and qr.get("high_risk", 0) > qr.get("total_questions", 1) * 0.5:
-            failures.append(_make_failure("ocr_cache_corrupted", {
-                "ocr_cache_hit": ocr_cache_hit,
-                "ocr_cache_miss": ocr_cache_miss,
-                "high_risk_count": qr.get("high_risk", 0),
-                "reason": "OCR 缓存命中率高但质量差，可能缓存数据已损坏",
-            }))
+        if (
+            ocr_cache_hit > 10
+            and qr.get("high_risk", 0) > qr.get("total_questions", 1) * 0.5
+        ):
+            failures.append(
+                _make_failure(
+                    "ocr_cache_corrupted",
+                    {
+                        "ocr_cache_hit": ocr_cache_hit,
+                        "ocr_cache_miss": ocr_cache_miss,
+                        "high_risk_count": qr.get("high_risk", 0),
+                        "reason": "OCR 缓存命中率高但质量差，可能缓存数据已损坏",
+                    },
+                )
+            )
 
     # Resume duplicate: check review_commit for duplicates
     review_commit = (diagnostics or {}).get("review_commit") or {}
     dupes = review_commit.get("duplicates_filtered", 0)
     if dupes > 0:
-        failures.append(_make_failure("resume_duplicate_detected", {
-            "duplicates_filtered": dupes,
-            "source": "review_commit",
-        }))
+        failures.append(
+            _make_failure(
+                "resume_duplicate_detected",
+                {
+                    "duplicates_filtered": dupes,
+                    "source": "review_commit",
+                },
+            )
+        )
 
     return failures
 
@@ -672,15 +826,17 @@ def analyze_failures(
     if status == "pass":
         parts.append("导入质量检查通过，未发现明显问题。")
     else:
-        fmt = "导入质量检查{}：检测到 {} 个高危、{} 个中危、{} 个低危问题。" if status == "fail" else "导入质量检查{}：检测到 {} 个中危、{} 个低危问题。"
+        fmt = (
+            "导入质量检查{}：检测到 {} 个高危、{} 个中危、{} 个低危问题。"
+            if status == "fail"
+            else "导入质量检查{}：检测到 {} 个中危、{} 个低危问题。"
+        )
         warning_word = "未通过" if status == "fail" else "有问题"
         parts.append(fmt.format(warning_word, high_count, medium_count, low_count))
 
     if deduped:
         top_failures = deduped[:3]
-        parts.append("主要问题：" + "；".join(
-            f["label"] for f in top_failures
-        ) + "。")
+        parts.append("主要问题：" + "；".join(f["label"] for f in top_failures) + "。")
 
     summary = "".join(parts)
 
@@ -688,7 +844,9 @@ def analyze_failures(
         "status": status,
         "failures": deduped,
         "failure_type_counts": failure_type_counts,
-        "affected_questions": sorted(set(affected_questions)) if affected_questions else [],
+        "affected_questions": sorted(set(affected_questions))
+        if affected_questions
+        else [],
         "summary": summary,
     }
 
@@ -715,11 +873,16 @@ def analyze_failures_from_risk_flags(
             continue
         ftype = _RISK_FLAG_TO_FAILURE_TYPE.get(flag)
         if ftype:
-            all_failures.append(_make_failure(ftype, {
-                "risk_flag": flag,
-                "count": count,
-                "source": "risk_flag_counts",
-            }))
+            all_failures.append(
+                _make_failure(
+                    ftype,
+                    {
+                        "risk_flag": flag,
+                        "count": count,
+                        "source": "risk_flag_counts",
+                    },
+                )
+            )
 
     # Deduplicate and sort
     seen: dict[str, dict] = {}
@@ -736,9 +899,7 @@ def analyze_failures_from_risk_flags(
             existing_flag = existing_detail.get("risk_flag", "")
             new_flag = new_detail.get("risk_flag", "")
             if existing_flag and new_flag and existing_flag != new_flag:
-                merged["risk_flags"] = list(set(
-                    [existing_flag, new_flag]
-                ))
+                merged["risk_flags"] = list(set([existing_flag, new_flag]))
             seen[ftype]["detail"] = merged
 
     deduped = list(seen.values())
@@ -761,10 +922,9 @@ def analyze_failures_from_risk_flags(
         failure_type_counts[f["type"]] = failure_type_counts.get(f["type"], 0) + 1
 
     summary = (
-        f"风险标记分析：{len(deduped)} 类问题，"
-        f"高危 {high_count}、中危 {medium_count}。"
-        if deduped else
-        "风险标记分析：未发现明显问题。"
+        f"风险标记分析：{len(deduped)} 类问题，高危 {high_count}、中危 {medium_count}。"
+        if deduped
+        else "风险标记分析：未发现明显问题。"
     )
 
     return {

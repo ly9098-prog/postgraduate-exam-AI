@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 try:
     from app.core.log_context import log_event
 except ImportError:  # pragma: no cover
+
     def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
         pass
 
@@ -54,7 +55,9 @@ class OpenAICompatibleFixer:
         context: dict[str, Any] | None = None,
     ) -> ocr_fix_interfaces.OCRFixResult:
         if not ocr_text.strip():
-            return ocr_fix_interfaces.OCRFixResult(fixed_text=ocr_text, model_used=self.model_name)
+            return ocr_fix_interfaces.OCRFixResult(
+                fixed_text=ocr_text, model_used=self.model_name
+            )
 
         if not self.is_available:
             return ocr_fix_interfaces.OCRFixResult(
@@ -111,10 +114,9 @@ class OpenAICompatibleFixer:
 
                 original_code = detect_code_block_integrity(ocr_text)
                 fixed_code = detect_code_block_integrity(corrected)
-                if (
-                    "code_garbled_text" in original_code.get("flags", [])
-                    and "code_garbled_text" in fixed_code.get("flags", [])
-                ):
+                if "code_garbled_text" in original_code.get(
+                    "flags", []
+                ) and "code_garbled_text" in fixed_code.get("flags", []):
                     original_score = original_code.get("score", 1.0)
                     fixed_score = fixed_code.get("score", 1.0)
                     if fixed_score >= original_score * 0.8:
@@ -136,7 +138,9 @@ class OpenAICompatibleFixer:
                 re.search(r"^\s*\d+\s*[.．、]", ocr_text, re.MULTILINE)
             )
             first_line = corrected.split("\n")[0].strip()
-            starts_with_option = bool(re.match(r"^[A-D]\s*[.．、:：)）]\s*", first_line))
+            starts_with_option = bool(
+                re.match(r"^[A-D]\s*[.．、:：)）]\s*", first_line)
+            )
             if (
                 has_question_number
                 and starts_with_option

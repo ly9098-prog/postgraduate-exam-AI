@@ -30,6 +30,7 @@ _COS_ASSET_RE = re.compile(r"https://[^.]+\.cos\.[^/]+\.myqcloud\.com/[^\s\"'<>]
 
 # ── Enums ──────────────────────────────────────────────────────────
 
+
 class DeletionMode(Enum):
     DRY_RUN = "dry-run"
     DETACH_ONLY = "detach-only"
@@ -50,20 +51,23 @@ class DeletionState(Enum):
 
 # ── Data types ─────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class AssetReference:
     """A single reference to an asset in the database."""
-    entity_type: str       # "question" | "question_import" | "pipeline_artifact" | ...
-    entity_id: str         # primary key value
-    field_name: str        # "content" | "parsed_content" | "source_snapshot_url" | ...
+
+    entity_type: str  # "question" | "question_import" | "pipeline_artifact" | ...
+    entity_id: str  # primary key value
+    field_name: str  # "content" | "parsed_content" | "source_snapshot_url" | ...
     json_path: str | None  # JSON path within the field, e.g. "segments[0].url"
-    asset_url: str         # the URL as stored in the DB
-    storage_key: str       # normalized key for file-system lookup
+    asset_url: str  # the URL as stored in the DB
+    storage_key: str  # normalized key for file-system lookup
 
 
 @dataclass
 class AssetReferenceReport:
     """Aggregate report for one storage key."""
+
     storage_key: str
     references: list[AssetReference] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -91,6 +95,7 @@ class AssetReferenceReport:
 
 
 # ── Storage key helpers ───────────────────────────────────────────
+
 
 def url_to_storage_key(url: str) -> str:
     """Convert an asset URL to a normalized storage key.
@@ -138,6 +143,7 @@ def extract_asset_urls(obj: Any, field_name: str = "") -> list[dict]:
 
 # ── Asset Reference Service ────────────────────────────────────────
 
+
 class AssetReferenceService:
     """Scans all DB tables for asset URL references.
 
@@ -160,13 +166,23 @@ class AssetReferenceService:
     # Tables and columns to scan for asset URLs
     _SCAN_TARGETS: list[dict] = [
         # entity_type, table, columns, id_column
-        {"type": "question", "table": "questions",
-         "columns": ["content", "image_url", "options"],
-         "id_col": "id"},
-        {"type": "question_import", "table": "question_imports",
-         "columns": ["parsed_content", "raw_data", "parsed_options",
-                     "source_image_name"],
-         "id_col": "id"},
+        {
+            "type": "question",
+            "table": "questions",
+            "columns": ["content", "image_url", "options"],
+            "id_col": "id",
+        },
+        {
+            "type": "question_import",
+            "table": "question_imports",
+            "columns": [
+                "parsed_content",
+                "raw_data",
+                "parsed_options",
+                "source_image_name",
+            ],
+            "id_col": "id",
+        },
     ]
 
     def __init__(self, db: AsyncSession):
@@ -189,13 +205,15 @@ class AssetReferenceService:
             for col in columns:
                 try:
                     refs = await self._scan_column(
-                        entity_type, table, col, id_col, storage_key,
+                        entity_type,
+                        table,
+                        col,
+                        id_col,
+                        storage_key,
                     )
                     report.references.extend(refs)
                 except Exception as e:
-                    report.errors.append(
-                        f"scan {table}.{col}: {e}"
-                    )
+                    report.errors.append(f"scan {table}.{col}: {e}")
 
         try:
             report.references.extend(
@@ -234,46 +252,54 @@ class AssetReferenceService:
                 urls = _STATIC_ASSET_RE.findall(value) + _COS_ASSET_RE.findall(value)
                 for url in dict.fromkeys(urls):
                     if target_key in url or target_key in url_to_storage_key(url):
-                        references.append(AssetReference(
-                            entity_type=entity_type,
-                            entity_id=entity_id,
-                            field_name=column,
-                            json_path=None,
-                            asset_url=url,
-                            storage_key=url_to_storage_key(url),
-                        ))
+                        references.append(
+                            AssetReference(
+                                entity_type=entity_type,
+                                entity_id=entity_id,
+                                field_name=column,
+                                json_path=None,
+                                asset_url=url,
+                                storage_key=url_to_storage_key(url),
+                            )
+                        )
                 # ``source_image_name`` can be a storage key/path rather than a
                 # full URL. The generic URL regex branch above would otherwise
                 # never see it because this value is still a string.
                 if column == "source_image_name" and not urls:
                     candidate_key = url_to_storage_key(value)
                     if target_key in value or target_key in candidate_key:
-                        references.append(AssetReference(
-                            entity_type=entity_type,
-                            entity_id=entity_id,
-                            field_name=column,
-                            json_path=None,
-                            asset_url=value,
-                            storage_key=candidate_key,
-                        ))
+                        references.append(
+                            AssetReference(
+                                entity_type=entity_type,
+                                entity_id=entity_id,
+                                field_name=column,
+                                json_path=None,
+                                asset_url=value,
+                                storage_key=candidate_key,
+                            )
+                        )
             elif isinstance(value, (dict, list)):
                 # Structured JSON
                 extracted = extract_asset_urls(value, column)
                 for ex in extracted:
                     url = ex["url"]
                     if target_key in url or target_key in url_to_storage_key(url):
-                        references.append(AssetReference(
-                            entity_type=entity_type,
-                            entity_id=entity_id,
-                            field_name=column,
-                            json_path=ex.get("json_path"),
-                            asset_url=url,
-                            storage_key=url_to_storage_key(url),
-                        ))
+                        references.append(
+                            AssetReference(
+                                entity_type=entity_type,
+                                entity_id=entity_id,
+                                field_name=column,
+                                json_path=ex.get("json_path"),
+                                asset_url=url,
+                                storage_key=url_to_storage_key(url),
+                            )
+                        )
 
         return references
 
-    async def _scan_pinned_question_versions(self, target_key: str) -> list[AssetReference]:
+    async def _scan_pinned_question_versions(
+        self, target_key: str
+    ) -> list[AssetReference]:
         """Find asset refs in immutable revisions that still back durable facts.
 
         A superseded revision with no downstream reference may be cleaned up, but
@@ -281,7 +307,8 @@ class AssetReferenceService:
         entry or review record must keep its media so its frozen semantics remain
         renderable after the current Question is edited.
         """
-        raw = await self._db.execute(text("""
+        raw = await self._db.execute(
+            text("""
             SELECT DISTINCT qv.id, qv.content, qv.image_url, qv.options
             FROM question_versions AS qv
             WHERE (
@@ -311,7 +338,9 @@ class AssetReferenceService:
                 OR COALESCE(qv.image_url, '') LIKE :needle
                 OR CAST(qv.options AS TEXT) LIKE :needle
             )
-        """), {"needle": f"%{target_key}%"})
+        """),
+            {"needle": f"%{target_key}%"},
+        )
         references: list[AssetReference] = []
         for revision_id, content, image_url, options in raw.fetchall():
             for field_name, value in (
@@ -322,34 +351,42 @@ class AssetReferenceService:
                 if value is None:
                     continue
                 if isinstance(value, str):
-                    urls = _STATIC_ASSET_RE.findall(value) + _COS_ASSET_RE.findall(value)
+                    urls = _STATIC_ASSET_RE.findall(value) + _COS_ASSET_RE.findall(
+                        value
+                    )
                     for url in urls:
                         key = url_to_storage_key(url)
                         if target_key in url or target_key in key:
-                            references.append(AssetReference(
-                                entity_type="question_version",
-                                entity_id=str(revision_id),
-                                field_name=field_name,
-                                json_path=None,
-                                asset_url=url,
-                                storage_key=key,
-                            ))
+                            references.append(
+                                AssetReference(
+                                    entity_type="question_version",
+                                    entity_id=str(revision_id),
+                                    field_name=field_name,
+                                    json_path=None,
+                                    asset_url=url,
+                                    storage_key=key,
+                                )
+                            )
                 elif isinstance(value, (dict, list)):
                     for extracted in extract_asset_urls(value, field_name):
                         url = extracted["url"]
                         key = url_to_storage_key(url)
                         if target_key in url or target_key in key:
-                            references.append(AssetReference(
-                                entity_type="question_version",
-                                entity_id=str(revision_id),
-                                field_name=field_name,
-                                json_path=extracted.get("json_path"),
-                                asset_url=url,
-                                storage_key=key,
-                            ))
+                            references.append(
+                                AssetReference(
+                                    entity_type="question_version",
+                                    entity_id=str(revision_id),
+                                    field_name=field_name,
+                                    json_path=extracted.get("json_path"),
+                                    asset_url=url,
+                                    storage_key=key,
+                                )
+                            )
         return references
 
-    async def resolve_all(self, storage_keys: list[str]) -> dict[str, AssetReferenceReport]:
+    async def resolve_all(
+        self, storage_keys: list[str]
+    ) -> dict[str, AssetReferenceReport]:
         """Resolve references for multiple storage keys at once."""
         results = {}
         for key in storage_keys:
@@ -359,12 +396,14 @@ class AssetReferenceService:
 
 # ── Deletion Outbox ───────────────────────────────────────────────
 
+
 @dataclass
 class DeletionOutboxEntry:
     """A record in the asset deletion outbox.
 
     Created inside the DB transaction, processed after commit.
     """
+
     outbox_id: str
     storage_key: str
     request_id: str
@@ -378,6 +417,7 @@ class DeletionOutboxEntry:
 
 
 # ── Safe Delete State Machine ──────────────────────────────────────
+
 
 class SafeDeleteMachine:
     """Finite state machine for safe asset deletion.
@@ -397,19 +437,27 @@ class SafeDeleteMachine:
 
     VALID_TRANSITIONS: dict[DeletionState, set[DeletionState]] = {
         DeletionState.PLANNED: {
-            DeletionState.REFERENCE_CHECKED, DeletionState.CANCELLED,
+            DeletionState.REFERENCE_CHECKED,
+            DeletionState.CANCELLED,
         },
         DeletionState.REFERENCE_CHECKED: {
-            DeletionState.DETACHED, DeletionState.RETAINED, DeletionState.CANCELLED,
+            DeletionState.DETACHED,
+            DeletionState.RETAINED,
+            DeletionState.CANCELLED,
         },
         DeletionState.DETACHED: {
-            DeletionState.GRACE_PERIOD, DeletionState.RETAINED, DeletionState.CANCELLED,
+            DeletionState.GRACE_PERIOD,
+            DeletionState.RETAINED,
+            DeletionState.CANCELLED,
         },
         DeletionState.GRACE_PERIOD: {
-            DeletionState.DELETING, DeletionState.RETAINED, DeletionState.CANCELLED,
+            DeletionState.DELETING,
+            DeletionState.RETAINED,
+            DeletionState.CANCELLED,
         },
         DeletionState.DELETING: {
-            DeletionState.DELETED, DeletionState.FAILED,
+            DeletionState.DELETED,
+            DeletionState.FAILED,
         },
         DeletionState.DELETED: set(),
         DeletionState.RETAINED: set(),

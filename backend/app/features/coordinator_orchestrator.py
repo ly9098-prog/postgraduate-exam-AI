@@ -91,9 +91,14 @@ class CoordinatorPipeline:
     ) -> ModuleResult:
         """Stage 1: Input."""
         result = await InputCoordinator().run(
-            source, filename=filename, mime=mime, page_count=page_count,
+            source,
+            filename=filename,
+            mime=mime,
+            page_count=page_count,
         )
-        self._results.append({"stage": "input", "status": "ok" if result.is_success else "failed"})
+        self._results.append(
+            {"stage": "input", "status": "ok" if result.is_success else "failed"}
+        )
         return result
 
     async def run_page_stream(
@@ -104,7 +109,9 @@ class CoordinatorPipeline:
         profile_caps = {}
         if self._context and hasattr(self._context, "runtime_capabilities"):
             profile_caps = self._context.runtime_capabilities
-        window_size = profile_caps.get("page_stream_window_size", 3 if not self.is_cloud else 1)
+        window_size = profile_caps.get(
+            "page_stream_window_size", 3 if not self.is_cloud else 1
+        )
         overlap = profile_caps.get("page_stream_overlap", 1 if not self.is_cloud else 0)
 
         stream = PageStream.for_profile(
@@ -139,11 +146,13 @@ class CoordinatorPipeline:
             # exists) is shared for the whole page batch and closed once.
             await coordinator.close()
 
-        self._results.append({
-            "stage": "ocr",
-            "pages": len(pages),
-            "success": sum(1 for r in results if r.is_success),
-        })
+        self._results.append(
+            {
+                "stage": "ocr",
+                "pages": len(pages),
+                "success": sum(1 for r in results if r.is_success),
+            }
+        )
         return results
 
     async def run_doc_structure_stage(
@@ -154,7 +163,12 @@ class CoordinatorPipeline:
     ) -> ModuleResult:
         """Stage 4: Document structure analysis."""
         result = await DocumentStructureCoordinator().run(doc_ir, trace_id=trace_id)
-        self._results.append({"stage": "doc_structure", "status": "ok" if result.is_success else "failed"})
+        self._results.append(
+            {
+                "stage": "doc_structure",
+                "status": "ok" if result.is_success else "failed",
+            }
+        )
         return result
 
     async def run_domain_parsing_stage(
@@ -165,7 +179,12 @@ class CoordinatorPipeline:
     ) -> ModuleResult:
         """Stage 5: Domain parsing."""
         result = await DomainParsingCoordinator().run(doc_ir, trace_id=trace_id)
-        self._results.append({"stage": "domain_parsing", "status": "ok" if result.is_success else "failed"})
+        self._results.append(
+            {
+                "stage": "domain_parsing",
+                "status": "ok" if result.is_success else "failed",
+            }
+        )
         return result
 
     async def run_correction_stage(
@@ -176,8 +195,12 @@ class CoordinatorPipeline:
         trace_id: str = "",
     ) -> ModuleResult:
         """Stage 6: OCR correction / AI repair."""
-        result = await CorrectionCoordinator().run(doc_ir, questions=questions, trace_id=trace_id)
-        self._results.append({"stage": "correction", "status": "ok" if result.is_success else "failed"})
+        result = await CorrectionCoordinator().run(
+            doc_ir, questions=questions, trace_id=trace_id
+        )
+        self._results.append(
+            {"stage": "correction", "status": "ok" if result.is_success else "failed"}
+        )
         return result
 
     async def run_validation_stage(
@@ -188,7 +211,9 @@ class CoordinatorPipeline:
     ) -> ModuleResult:
         """Stage 7: Validation."""
         result = await ValidationCoordinator().run(doc_ir, trace_id=trace_id)
-        self._results.append({"stage": "validation", "status": "ok" if result.is_success else "failed"})
+        self._results.append(
+            {"stage": "validation", "status": "ok" if result.is_success else "failed"}
+        )
         return result
 
     async def run_review_stage(
@@ -199,8 +224,12 @@ class CoordinatorPipeline:
         trace_id: str = "",
     ) -> ModuleResult:
         """Stage 8: Review artifact."""
-        result = await ReviewCoordinator().run(doc_ir, questions=questions, trace_id=trace_id)
-        self._results.append({"stage": "review", "status": "ok" if result.is_success else "failed"})
+        result = await ReviewCoordinator().run(
+            doc_ir, questions=questions, trace_id=trace_id
+        )
+        self._results.append(
+            {"stage": "review", "status": "ok" if result.is_success else "failed"}
+        )
         return result
 
     async def run_persistence_stage(
@@ -215,7 +244,9 @@ class CoordinatorPipeline:
         For local_import, this delegates to the existing question import writer.
         """
         if self.is_cloud:
-            logger.info("CoordinatorPipeline[cloud_api]: persistence not yet implemented")
+            logger.info(
+                "CoordinatorPipeline[cloud_api]: persistence not yet implemented"
+            )
             return ModuleResult.failure(
                 ModuleError(
                     code="NOT_IMPLEMENTED",
@@ -227,7 +258,9 @@ class CoordinatorPipeline:
             )
 
         result = await PersistenceCoordinator().run(doc_ir, trace_id=trace_id)
-        self._results.append({"stage": "persistence", "status": "ok" if result.is_success else "failed"})
+        self._results.append(
+            {"stage": "persistence", "status": "ok" if result.is_success else "failed"}
+        )
         return result
 
     async def run_all(
@@ -248,7 +281,9 @@ class CoordinatorPipeline:
         overall_status = "success"
 
         # Stage 1: Input
-        input_result = await self.run_input_stage(source, filename=filename, mime=mime, page_count=page_count)
+        input_result = await self.run_input_stage(
+            source, filename=filename, mime=mime, page_count=page_count
+        )
         stages_summary["input"] = "ok" if input_result.is_success else "failed"
         if not input_result.is_success:
             return self._finalize(start, stages_summary, "input_failed")
@@ -276,15 +311,27 @@ class CoordinatorPipeline:
             ("review", self.run_review_stage),
         ]:
             result = await stage_fn(None, trace_id=trace_id)
-            stages_summary[stage_name] = "not_implemented" if (
-                result.is_failure and result.error and "NOT_IMPLEMENTED" in result.error.code
-            ) else ("ok" if result.is_success else "failed")
+            stages_summary[stage_name] = (
+                "not_implemented"
+                if (
+                    result.is_failure
+                    and result.error
+                    and "NOT_IMPLEMENTED" in result.error.code
+                )
+                else ("ok" if result.is_success else "failed")
+            )
 
         # Stage 9: Persistence
         persist = await self.run_persistence_stage(None, trace_id=trace_id)
-        stages_summary["persistence"] = "not_implemented" if (
-            persist.is_failure and persist.error and "NOT_IMPLEMENTED" in persist.error.code
-        ) else ("ok" if persist.is_success else "failed")
+        stages_summary["persistence"] = (
+            "not_implemented"
+            if (
+                persist.is_failure
+                and persist.error
+                and "NOT_IMPLEMENTED" in persist.error.code
+            )
+            else ("ok" if persist.is_success else "failed")
+        )
 
         return self._finalize(start, stages_summary, overall_status)
 

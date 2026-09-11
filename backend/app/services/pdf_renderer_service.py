@@ -26,7 +26,7 @@ from app.core.pdf_error import PdfResourceLimitError
 logger = logging.getLogger("postgraduate-ai.pdf-renderer")
 
 # Limits — pulled from settings, hard-coded as safety caps
-_MAX_FILE_SIZE = settings.PDF_MAX_FILE_BYTES or 5 * 1024 * 1024   # 5MB cloud default
+_MAX_FILE_SIZE = settings.PDF_MAX_FILE_BYTES or 5 * 1024 * 1024  # 5MB cloud default
 _MAX_PAGES = settings.PDF_MAX_PAGES or 30
 _MAX_PAGE_PIXELS = settings.PDF_MAX_PAGE_PIXELS or 4096 * 4096
 _MAX_DECODED_BYTES = settings.PDF_MAX_DECODED_BYTES or 50 * 1024 * 1024
@@ -43,12 +43,13 @@ class PdfRenderResult:
 
     Deprecated: prefer ``iter_pages()`` for streaming access.
     """
+
     page_images: dict[int, bytes] = field(default_factory=dict)
     page_file_refs: dict[int, str] = field(default_factory=dict)
     total_pages: int = 0
     rendered_count: int = 0
     temp_dir: str | None = None
-    accumulated_bytes: int = 0     # total bytes of all page_images
+    accumulated_bytes: int = 0  # total bytes of all page_images
 
 
 @dataclass
@@ -58,10 +59,11 @@ class RenderedPage:
     Callers **must** call ``aclose()`` after processing to release the
     underlying PNG bytes and allow memory reclamation before the next page.
     """
+
     page_number: int
     width: int
     height: int
-    decoded_bytes: int           # w × h × 4 (RGBA) — raw pixmap estimate
+    decoded_bytes: int  # w × h × 4 (RGBA) — raw pixmap estimate
     png_bytes: bytes
 
     async def aclose(self) -> None:
@@ -78,9 +80,7 @@ def _validate_pdf(pdf_source: bytes | str, is_path: bool) -> None:
     if is_path:
         size = os.path.getsize(pdf_source)
         if size > _MAX_FILE_SIZE:
-            raise ValueError(
-                f"PDF 文件过大: {size} 字节 (上限 {_MAX_FILE_SIZE})"
-            )
+            raise ValueError(f"PDF 文件过大: {size} 字节 (上限 {_MAX_FILE_SIZE})")
     else:
         if len(pdf_source) > _MAX_FILE_SIZE:
             raise ValueError(
@@ -189,7 +189,9 @@ def _render_sync(
                     if temp_dir or is_path:
                         filepath = temp_dir or ""
                         if temp_dir:
-                            filepath = os.path.join(temp_dir, f"page_{page_num:04d}.png")
+                            filepath = os.path.join(
+                                temp_dir, f"page_{page_num:04d}.png"
+                            )
                         with open(filepath, "wb") as f:
                             f.write(png)
                         result.page_file_refs[page_num] = filepath
@@ -220,6 +222,7 @@ def _render_sync(
     except Exception:
         if temp_dir:
             import shutil
+
             shutil.rmtree(temp_dir, ignore_errors=True)
         doc.close()
         raise
@@ -231,7 +234,12 @@ def _render_sync(
 def _count_pdf_pages(pdf_source: bytes | str, is_path: bool) -> int:
     """Open a PDF and return page count. Runs in executor."""
     import fitz
-    doc = fitz.open(pdf_source) if is_path else fitz.open(stream=pdf_source, filetype="pdf")
+
+    doc = (
+        fitz.open(pdf_source)
+        if is_path
+        else fitz.open(stream=pdf_source, filetype="pdf")
+    )
     count = len(doc)
     doc.close()
     return count
@@ -249,7 +257,12 @@ def _render_one_page(
     Raises PdfResourceLimitError on resource violations.
     """
     import fitz
-    doc = fitz.open(pdf_source) if is_path else fitz.open(stream=pdf_source, filetype="pdf")
+
+    doc = (
+        fitz.open(pdf_source)
+        if is_path
+        else fitz.open(stream=pdf_source, filetype="pdf")
+    )
     try:
         if page_num < 1 or page_num > len(doc):
             raise PdfResourceLimitError(
@@ -300,11 +313,21 @@ def _guess_png_size(png_bytes: bytes) -> tuple[int, int] | None:
     IHDR: 4 bytes length (always \\x00\\x00\\x00\\x0d), 4 bytes 'IHDR',
     4 bytes width (big-endian), 4 bytes height (big-endian).
     """
-    if len(png_bytes) < 33 or png_bytes[:8] != b'\x89PNG\r\n\x1a\n':
+    if len(png_bytes) < 33 or png_bytes[:8] != b"\x89PNG\r\n\x1a\n":
         return None
     try:
-        w = (png_bytes[16] << 24) | (png_bytes[17] << 16) | (png_bytes[18] << 8) | png_bytes[19]
-        h = (png_bytes[20] << 24) | (png_bytes[21] << 16) | (png_bytes[22] << 8) | png_bytes[23]
+        w = (
+            (png_bytes[16] << 24)
+            | (png_bytes[17] << 16)
+            | (png_bytes[18] << 8)
+            | png_bytes[19]
+        )
+        h = (
+            (png_bytes[20] << 24)
+            | (png_bytes[21] << 16)
+            | (png_bytes[22] << 8)
+            | png_bytes[23]
+        )
         return w, h
     except (IndexError, ValueError):
         return None
@@ -324,9 +347,7 @@ class _PdfRenderer:
             max_workers=settings.PDF_MAX_RENDER_PAGES_CONCURRENT,
             thread_name_prefix="pdf_render",
         )
-        self._semaphore = asyncio.Semaphore(
-            settings.PDF_MAX_RENDER_PAGES_CONCURRENT
-        )
+        self._semaphore = asyncio.Semaphore(settings.PDF_MAX_RENDER_PAGES_CONCURRENT)
 
     async def render_pages(
         self,
@@ -357,7 +378,9 @@ class _PdfRenderer:
             raise PdfResourceLimitError(
                 "decoded_memory_limit",
                 retryable=False,
-                details={"message": "render_pages() is forbidden in cloud_api. Use iter_pages() for streaming."},
+                details={
+                    "message": "render_pages() is forbidden in cloud_api. Use iter_pages() for streaming."
+                },
             )
 
         warnings.warn(
@@ -424,7 +447,10 @@ class _PdfRenderer:
         async with self._semaphore:
             loop = asyncio.get_running_loop()
             total_pages = await loop.run_in_executor(
-                self._executor, _count_pdf_pages, pdf_source, is_path,
+                self._executor,
+                _count_pdf_pages,
+                pdf_source,
+                is_path,
             )
             if total_pages == 0:
                 return
@@ -440,7 +466,12 @@ class _PdfRenderer:
             for page_num in range(start_idx + 1, end_idx + 1):
                 png_bytes = await loop.run_in_executor(
                     self._executor,
-                    _render_one_page, pdf_source, is_path, page_num, max_dimension, effective_dpi,
+                    _render_one_page,
+                    pdf_source,
+                    is_path,
+                    page_num,
+                    max_dimension,
+                    effective_dpi,
                 )
                 # Estimate decoded bytes from PNG size (conservative: PNG is
                 # typically 10-30% of raw RGBA, multiply by 4 as a safe factor).
@@ -458,9 +489,12 @@ class _PdfRenderer:
         """Remove temporary files created by a render operation."""
         if result.temp_dir and os.path.isdir(result.temp_dir):
             import shutil
+
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(
-                self._executor, shutil.rmtree, result.temp_dir,
+                self._executor,
+                shutil.rmtree,
+                result.temp_dir,
             )
 
     async def shutdown(self) -> None:

@@ -41,6 +41,7 @@ async def _get_active_subjects(db: AsyncSession) -> list[dict]:
     from sqlalchemy import select
 
     from app.models.admin import Subject
+
     try:
         result = await db.execute(
             select(Subject.id, Subject.code, Subject.name)
@@ -62,7 +63,11 @@ def _meaningful_string(value: Any) -> str:
     if not isinstance(value, str):
         return ""
     text = value.strip()
-    if not text or text.lower() in {"null", "none", "unknown", "n/a"} or text in {"未知", "无", "暂无"}:
+    if (
+        not text
+        or text.lower() in {"null", "none", "unknown", "n/a"}
+        or text in {"未知", "无", "暂无"}
+    ):
         return ""
     return text
 
@@ -106,7 +111,9 @@ def _normalize_completion_payload(parsed: Any) -> dict:
             candidate = _meaningful_string(normalized.get(alias))
             if candidate:
                 normalized["analysis"] = candidate
-                logger.info("AI completion normalized analysis alias: %s -> analysis", alias)
+                logger.info(
+                    "AI completion normalized analysis alias: %s -> analysis", alias
+                )
                 break
 
     if not _meaningful_string(normalized.get("answer")):
@@ -123,10 +130,13 @@ def _snapshot_options(opts: Any) -> str:
     if isinstance(opts, dict):
         return str(sorted(opts.items()))
     if isinstance(opts, list):
-        return str(sorted(
-            (str(o.get("key", "")), str(o.get("text", "")))
-            for o in opts if isinstance(o, dict)
-        ))
+        return str(
+            sorted(
+                (str(o.get("key", "")), str(o.get("text", "")))
+                for o in opts
+                if isinstance(o, dict)
+            )
+        )
     return str(opts)
 
 
@@ -169,7 +179,9 @@ def _has_complete_answer_risk(ai_metadata: dict | None) -> bool:
     if not ai_metadata:
         return False
     risk_flags = ai_metadata.get("_complete_risk_flags") or []
-    return bool(set(risk_flags) & {"complete_changed_answer", "complete_generated_answer"})
+    return bool(
+        set(risk_flags) & {"complete_changed_answer", "complete_generated_answer"}
+    )
 
 
 def _apply_complete_suggestion(
@@ -233,16 +245,14 @@ def _get_disabled_completion_fields(configs: dict) -> set[str]:
 
 
 async def _complete_import_repair(
-    db: AsyncSession, user_id: int, qi: QuestionImport,
+    db: AsyncSession,
+    user_id: int,
+    qi: QuestionImport,
     system_prompt: str | None = None,
 ) -> dict:
     """AI 修复模式：使用 question_repair prompt 重建题目结构。"""
     raw_data = dict(qi.raw_data or {})
-    raw_text = (
-        raw_data.get("raw_text")
-        or raw_data.get("text")
-        or str(raw_data)
-    )
+    raw_text = raw_data.get("raw_text") or raw_data.get("text") or str(raw_data)
     existing = _qi_to_dict(qi)
 
     messages = build_repair_question(raw_text, existing)
@@ -251,24 +261,58 @@ async def _complete_import_repair(
 
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
-        messages, {"error": "AI 修复不可用"}, db,
+        messages,
+        {"error": "AI 修复不可用"},
+        db,
     )
 
     if raw is None:
-        db.add(_build_log(
-            user_id=user_id, action="complete", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=resp.get("fallback_value", {}),
-            confidence=0.0, model="fallback", tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error") or "AI 修复不可用",
-        ))
-        return {"missing": [], "from_fallback": True, "ai_metadata": {}, "repair_mode": True}
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="complete",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=resp.get("fallback_value", {}),
+                confidence=0.0,
+                model="fallback",
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error") or "AI 修复不可用",
+            )
+        )
+        return {
+            "missing": [],
+            "from_fallback": True,
+            "ai_metadata": {},
+            "repair_mode": True,
+        }
 
     parsed_raw = _normalize_completion_payload(_extract_json(raw) or {})
-    repair_fields = [f for f in ("stem", "options", "answer", "analysis", "subject_id", "question_type")
-                     if f in parsed_raw or f in existing or
-                     (f == "subject_id" and ("subject" in parsed_raw or "subject_id" in parsed_raw))]
-    completed = await _apply_batch_complete_result(qi, parsed_raw, repair_fields, "force_overwrite", db=db)
+    repair_fields = [
+        f
+        for f in (
+            "stem",
+            "options",
+            "answer",
+            "analysis",
+            "subject_id",
+            "question_type",
+        )
+        if f in parsed_raw
+        or f in existing
+        or (
+            f == "subject_id"
+            and ("subject" in parsed_raw or "subject_id" in parsed_raw)
+        )
+    ]
+    completed = await _apply_batch_complete_result(
+        qi, parsed_raw, repair_fields, "force_overwrite", db=db
+    )
     confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
     qi.ai_generated = True
@@ -276,20 +320,31 @@ async def _complete_import_repair(
     qi.ai_confidence = confidence
     qi.ai_metadata = {
         **(qi.ai_metadata or {}),
-        "repair_suggestion": {f: parsed_raw.get(f) for f in repair_fields if f in parsed_raw},
+        "repair_suggestion": {
+            f: parsed_raw.get(f) for f in repair_fields if f in parsed_raw
+        },
         "repair_mode": True,
         "missing_fields": [],
     }
     qi.ai_raw_response = raw
 
-    db.add(_build_log(
-        user_id=user_id, action="complete", target_type="import",
-        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result=qi.ai_metadata,
-        confidence=confidence,
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="complete",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result=qi.ai_metadata,
+            confidence=confidence,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     return {
         "missing": [],
         "from_fallback": False,
@@ -301,9 +356,7 @@ async def _complete_import_repair(
     }
 
 
-async def complete_import(
-    db: AsyncSession, user_id: int, import_id: int
-) -> dict:
+async def complete_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
         raise ValueError("仅支持对 pending 记录使用 AI 补全")
@@ -314,8 +367,13 @@ async def complete_import(
     repair_mode: bool = False
     try:
         from app.services.admin_ai_config_service import get_all_configs as _get_cfg
+
         _cfg = await _get_cfg(db)
-        system_prompt = str(_cfg.get("completion_prompt")) if _cfg.get("completion_prompt") else None
+        system_prompt = (
+            str(_cfg.get("completion_prompt"))
+            if _cfg.get("completion_prompt")
+            else None
+        )
         repair_mode = bool(_cfg.get("completion_repair_structure", False))
         if not repair_mode:
             _disabled = _get_disabled_completion_fields(_cfg)
@@ -330,7 +388,9 @@ async def complete_import(
         return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
     subject_list = await _get_active_subjects(db)
-    messages = build_complete_question(_qi_to_dict(qi), missing, system_prompt=system_prompt, subject_list=subject_list)
+    messages = build_complete_question(
+        _qi_to_dict(qi), missing, system_prompt=system_prompt, subject_list=subject_list
+    )
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
         messages, fallback.get_fallback_complete(missing), db
@@ -338,13 +398,24 @@ async def complete_import(
 
     if raw is None:
         parsed = resp["fallback_value"]
-        db.add(_build_log(
-            user_id=user_id, action="complete", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=parsed, confidence=0.0,
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="complete",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=parsed,
+                confidence=0.0,
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
         return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
     parsed_raw = _normalize_completion_payload(_extract_json(raw) or {})
@@ -355,7 +426,9 @@ async def complete_import(
     complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
     if complete_risk_flags:
         logger.info(
-            "P3-5: complete_import %d risk flags: %s", import_id, complete_risk_flags,
+            "P3-5: complete_import %d risk flags: %s",
+            import_id,
+            complete_risk_flags,
         )
 
     answer_uncertain = bool(parsed_raw.get("answer_uncertain"))
@@ -385,6 +458,7 @@ async def complete_import(
         qi.ai_metadata["difficulty"] = suggestion["difficulty"]
 
     from app.core.ai_trace import AIEditTrace
+
     complete_trace = AIEditTrace(
         stage="ai_complete",
         model=resp.get("model", "unknown"),
@@ -395,14 +469,23 @@ async def complete_import(
     )
     qi.ai_metadata["_trace"] = complete_trace.to_dict()
 
-    db.add(_build_log(
-        user_id=user_id, action="complete", target_type="import",
-        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result=qi.ai_metadata,
-        confidence=confidence,
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="complete",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result=qi.ai_metadata,
+            confidence=confidence,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     return {
         "missing": missing,
         "from_fallback": False,
@@ -418,7 +501,9 @@ async def complete_import(
 
 
 def _detect_fields_to_complete(
-    qi: QuestionImport, target_fields: list[str], strategy: str,
+    qi: QuestionImport,
+    target_fields: list[str],
+    strategy: str,
     disabled_fields: set[str] | None = None,
 ) -> list[str]:
     # Normalize legacy "subject" → "subject_id" regardless of strategy
@@ -437,7 +522,9 @@ def _detect_fields_to_complete(
             need.append("subject_id")
         elif field == "question_type" and not qi.question_type:
             need.append("question_type")
-        elif field == "stem" and not (qi.parsed_content and qi.parsed_content.get("text")):
+        elif field == "stem" and not (
+            qi.parsed_content and qi.parsed_content.get("text")
+        ):
             need.append("stem")
         elif field == "answer" and not qi.parsed_answer:
             need.append("answer")
@@ -461,7 +548,10 @@ def _detect_fields_to_complete(
 
 
 async def _apply_batch_complete_result(
-    qi: QuestionImport, parsed: dict, fields: list[str], strategy: str,
+    qi: QuestionImport,
+    parsed: dict,
+    fields: list[str],
+    strategy: str,
     db: AsyncSession | None = None,
 ) -> list[str]:
     completed: list[str] = []
@@ -479,6 +569,7 @@ async def _apply_batch_complete_result(
         elif parsed.get("subject") in SUBJECT_VALUES and db is not None:
             # Backward compat: AI returned old-style subject string → resolve to subject_id
             from app.services.admin_subject_service import resolve_subject_id
+
             resolved = await resolve_subject_id(db, parsed["subject"])
             if resolved is not None:
                 qi.subject_id = resolved
@@ -510,9 +601,12 @@ async def _apply_batch_complete_result(
             completed.append("answer")
 
     if "stem" in fields:
-        stem_val = parsed.get("stem") or (parsed.get("parsed_content") or {}).get("text")
+        stem_val = parsed.get("stem") or (parsed.get("parsed_content") or {}).get(
+            "text"
+        )
         if isinstance(stem_val, str) and stem_val.strip():
             from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
             content = dict(qi.parsed_content or {})
             content["text"] = deduplicate_repeated_text(stem_val.strip())
             qi.parsed_content = content
@@ -534,7 +628,9 @@ async def _apply_batch_complete_result(
     if "knowledge_points" in fields:
         kps = parsed.get("knowledge_points")
         if isinstance(kps, list) and kps:
-            ai_meta["knowledge_points"] = [str(k).strip() for k in kps if str(k).strip()]
+            ai_meta["knowledge_points"] = [
+                str(k).strip() for k in kps if str(k).strip()
+            ]
             completed.append("knowledge_points")
 
     if "difficulty" in fields:
@@ -596,14 +692,27 @@ async def complete_import_with_strategy(
     """带字段选择和策略的 AI 补全。不提交事务，供 batch 调用。"""
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
-        return {"completed": [], "from_fallback": False, "ai_metadata": {}, "error": f"非 pending 状态: {qi.status}"}
+        return {
+            "completed": [],
+            "from_fallback": False,
+            "ai_metadata": {},
+            "error": f"非 pending 状态: {qi.status}",
+        }
 
-    to_complete = _detect_fields_to_complete(qi, target_fields, strategy, disabled_fields)
+    to_complete = _detect_fields_to_complete(
+        qi, target_fields, strategy, disabled_fields
+    )
     if not to_complete:
         return {"completed": [], "from_fallback": False, "ai_metadata": {}}
 
     subject_list = await _get_active_subjects(db)
-    messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt, subject_list=subject_list)
+    messages = build_batch_complete_question(
+        _qi_to_dict(qi),
+        to_complete,
+        strategy,
+        system_prompt=system_prompt,
+        subject_list=subject_list,
+    )
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
         messages, fallback.get_fallback_complete(to_complete), db
@@ -611,25 +720,44 @@ async def complete_import_with_strategy(
 
     if raw is None:
         parsed = resp["fallback_value"]
-        db.add(_build_log(
-            user_id=user_id, action="batch_complete", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=parsed, confidence=0.0,
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
-        return {"completed": [], "from_fallback": True, "ai_metadata": parsed, "error": resp.get("error")}
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="batch_complete",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=parsed,
+                confidence=0.0,
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
+        return {
+            "completed": [],
+            "from_fallback": True,
+            "ai_metadata": parsed,
+            "error": resp.get("error"),
+        }
 
     parsed_raw = _normalize_completion_payload(_extract_json(raw) or {})
 
     before_snapshot = _capture_qi_snapshot(qi)
-    completed = await _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy, db=db)
+    completed = await _apply_batch_complete_result(
+        qi, parsed_raw, to_complete, strategy, db=db
+    )
 
     complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
     if complete_risk_flags:
         logger.info(
             "P3-5: complete_import_with_strategy %d risk flags: %s",
-            import_id, complete_risk_flags,
+            import_id,
+            complete_risk_flags,
         )
 
     confidence = _coerce_confidence(parsed_raw.get("confidence"))
@@ -641,14 +769,23 @@ async def complete_import_with_strategy(
     existing_meta["_complete_before_snapshot"] = before_snapshot
     qi.ai_metadata = existing_meta
 
-    db.add(_build_log(
-        user_id=user_id, action="batch_complete", target_type="import",
-        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result=qi.ai_metadata,
-        confidence=confidence,
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="batch_complete",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result=qi.ai_metadata,
+            confidence=confidence,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     return {
         "completed": completed,
         "from_fallback": False,
@@ -676,9 +813,12 @@ async def batch_complete_questions(
     _start_time = datetime.now()
     system_prompt: str | None = None
     from app.services.admin_ai_config_service import get_all_configs
+
     try:
         cfg = await get_all_configs(db)
-        system_prompt = str(cfg.get("completion_prompt")) if cfg.get("completion_prompt") else None
+        system_prompt = (
+            str(cfg.get("completion_prompt")) if cfg.get("completion_prompt") else None
+        )
     except Exception:
         pass
 
@@ -698,35 +838,57 @@ async def batch_complete_questions(
         try:
             qi = await _get_qi(db, import_id)
             if qi.status != "pending":
-                prepared.append(dict(
-                    import_id=import_id, status="failed",
-                    error=f"非 pending 状态: {qi.status}", completed_fields=[],
-                ))
+                prepared.append(
+                    dict(
+                        import_id=import_id,
+                        status="failed",
+                        error=f"非 pending 状态: {qi.status}",
+                        completed_fields=[],
+                    )
+                )
                 continue
 
-            to_complete = _detect_fields_to_complete(qi, target_fields, strategy, explicit_disabled_fields)
+            to_complete = _detect_fields_to_complete(
+                qi, target_fields, strategy, explicit_disabled_fields
+            )
             if not to_complete:
-                prepared.append(dict(
-                    import_id=import_id, status="skipped",
-                    error=None, completed=[],
-                ))
+                prepared.append(
+                    dict(
+                        import_id=import_id,
+                        status="skipped",
+                        error=None,
+                        completed=[],
+                    )
+                )
                 continue
 
             messages = build_batch_complete_question(
-                _qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt,
+                _qi_to_dict(qi),
+                to_complete,
+                strategy,
+                system_prompt=system_prompt,
                 subject_list=subject_list,
             )
             prompt_text = json.dumps(messages, ensure_ascii=False)
-            prepared.append(dict(
-                import_id=import_id, qi=qi, to_complete=to_complete,
-                messages=messages, prompt_text=prompt_text,
-                fallback_value=fallback.get_fallback_complete(to_complete),
-            ))
+            prepared.append(
+                dict(
+                    import_id=import_id,
+                    qi=qi,
+                    to_complete=to_complete,
+                    messages=messages,
+                    prompt_text=prompt_text,
+                    fallback_value=fallback.get_fallback_complete(to_complete),
+                )
+            )
         except Exception as e:
-            prepared.append(dict(
-                import_id=import_id, status="failed",
-                error=str(e), completed_fields=[],
-            ))
+            prepared.append(
+                dict(
+                    import_id=import_id,
+                    status="failed",
+                    error=str(e),
+                    completed_fields=[],
+                )
+            )
 
     # Step 2: 并发调用 AI
     sem = asyncio.Semaphore(max_concurrency or 3)
@@ -743,11 +905,18 @@ async def batch_complete_questions(
             if not skip_budget_check:
                 from app.core.config import settings
                 from app.features.token_budget import check_token_limit, estimate_tokens
-                _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
-                if not await check_token_limit(_estimated, {
-                    "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
-                    "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
-                }):
+
+                _estimated = (
+                    estimate_tokens(json.dumps(item["messages"], ensure_ascii=False))
+                    * 3
+                )
+                if not await check_token_limit(
+                    _estimated,
+                    {
+                        "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
+                        "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
+                    },
+                ):
                     item["resp_raw"] = None
                     item["parsed_raw"] = item["fallback_value"]
                     item["error"] = "token_budget_exhausted"
@@ -761,7 +930,9 @@ async def batch_complete_questions(
                     provider=runtime.provider,
                 )
                 item["resp_raw"] = resp["content"]
-                item["parsed_raw"] = _normalize_completion_payload(_extract_json(resp["content"]) or {})
+                item["parsed_raw"] = _normalize_completion_payload(
+                    _extract_json(resp["content"]) or {}
+                )
                 item["tokens_used"] = resp["tokens_used"]
                 item["duration_ms"] = resp["duration_ms"]
                 item["model"] = resp["model"]
@@ -776,7 +947,8 @@ async def batch_complete_questions(
             return item
 
     ai_results = await asyncio.gather(
-        *[_do_ai_call(item) for item in prepared], return_exceptions=True,
+        *[_do_ai_call(item) for item in prepared],
+        return_exceptions=True,
     )
 
     # Step 3: 顺序应用结果到 DB
@@ -788,38 +960,68 @@ async def batch_complete_questions(
     for item in ai_results:
         if not isinstance(item, dict):
             skipped += 1
-            results.append(dict(import_id=-1, status="failed", error=str(item), completed_fields=[]))
+            results.append(
+                dict(
+                    import_id=-1, status="failed", error=str(item), completed_fields=[]
+                )
+            )
             continue
 
         import_id = item["import_id"]
 
         if item.get("status") == "failed":
             failed += 1
-            results.append(dict(
-                import_id=import_id, status="failed",
-                error=item.get("error"), completed_fields=[],
-            ))
+            results.append(
+                dict(
+                    import_id=import_id,
+                    status="failed",
+                    error=item.get("error"),
+                    completed_fields=[],
+                )
+            )
             continue
         if item.get("status") == "skipped":
             skipped += 1
-            results.append(dict(
-                import_id=import_id, status="skipped",
-                error=None, completed_fields=[],
-            ))
+            results.append(
+                dict(
+                    import_id=import_id,
+                    status="skipped",
+                    error=None,
+                    completed_fields=[],
+                )
+            )
             continue
 
         if item.get("resp_raw") is None:
             qi = item["qi"]
             fbv = item["parsed_raw"]
-            db.add(_build_log(
-                user_id=user_id, action="batch_complete", target_type="import",
-                target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
-                raw_response=None, parsed_result=fbv, confidence=0.0,
-                model="fallback", tokens_used=0, duration_ms=0,
-                success=False, error_message=item.get("error"),
-            ))
+            db.add(
+                _build_log(
+                    user_id=user_id,
+                    action="batch_complete",
+                    target_type="import",
+                    target_id=qi.id,
+                    batch_id=qi.batch_id,
+                    prompt_text=item["prompt_text"],
+                    raw_response=None,
+                    parsed_result=fbv,
+                    confidence=0.0,
+                    model="fallback",
+                    tokens_used=0,
+                    duration_ms=0,
+                    success=False,
+                    error_message=item.get("error"),
+                )
+            )
             failed += 1
-            results.append(dict(import_id=import_id, status="failed", error=item.get("error"), completed_fields=[]))
+            results.append(
+                dict(
+                    import_id=import_id,
+                    status="failed",
+                    error=item.get("error"),
+                    completed_fields=[],
+                )
+            )
             continue
 
         qi = item["qi"]
@@ -827,11 +1029,15 @@ async def batch_complete_questions(
         to_complete = item["to_complete"]
 
         before_snapshot = _capture_qi_snapshot(qi)
-        completed = await _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy, db=db)
+        completed = await _apply_batch_complete_result(
+            qi, parsed_raw, to_complete, strategy, db=db
+        )
 
         complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
         if complete_risk_flags:
-            logger.info("P3-5: batch_complete %d risk flags: %s", import_id, complete_risk_flags)
+            logger.info(
+                "P3-5: batch_complete %d risk flags: %s", import_id, complete_risk_flags
+            )
 
         confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
@@ -842,31 +1048,43 @@ async def batch_complete_questions(
         existing_meta["_complete_before_snapshot"] = before_snapshot
         qi.ai_metadata = existing_meta
 
-        db.add(_build_log(
-            user_id=user_id, action="batch_complete", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
-            raw_response=item["resp_raw"], parsed_result=qi.ai_metadata,
-            confidence=confidence,
-            model=item.get("model", "fallback"),
-            tokens_used=item.get("tokens_used", 0),
-            duration_ms=item.get("duration_ms", 0), success=True,
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="batch_complete",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=item["prompt_text"],
+                raw_response=item["resp_raw"],
+                parsed_result=qi.ai_metadata,
+                confidence=confidence,
+                model=item.get("model", "fallback"),
+                tokens_used=item.get("tokens_used", 0),
+                duration_ms=item.get("duration_ms", 0),
+                success=True,
+            )
+        )
 
         if completed:
             succeeded += 1
         else:
             skipped += 1
-        results.append(dict(
-            import_id=import_id,
-            status="success" if completed else "skipped",
-            error=None, completed_fields=completed,
-        ))
+        results.append(
+            dict(
+                import_id=import_id,
+                status="success" if completed else "skipped",
+                error=None,
+                completed_fields=completed,
+            )
+        )
 
     total_tokens = sum(
         item.get("tokens_used", 0) for item in ai_results if isinstance(item, dict)
     )
     if total_tokens:
         from app.features.token_budget import record_token_usage
+
         await record_token_usage(total_tokens)
 
     _duration_ms = int((datetime.now() - _start_time).total_seconds() * 1000)

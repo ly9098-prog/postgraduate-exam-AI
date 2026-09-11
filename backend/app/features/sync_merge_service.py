@@ -22,10 +22,23 @@ MAX_QUESTIONS_PER_SYNC = 5000
 MAX_TAGS_PER_SYNC = 1000
 
 _QUESTION_FIELDS = (
-    "subject_id", "question_type", "content", "options", "answer",
-    "question_hash", "analysis", "difficulty",
-    "source", "source_type", "source_file", "import_batch_id",
-    "raw_content", "image_url", "year", "review_status", "is_active",
+    "subject_id",
+    "question_type",
+    "content",
+    "options",
+    "answer",
+    "question_hash",
+    "analysis",
+    "difficulty",
+    "source",
+    "source_type",
+    "source_file",
+    "import_batch_id",
+    "raw_content",
+    "image_url",
+    "year",
+    "review_status",
+    "is_active",
 )
 
 _TAG_FIELDS = ("name", "subject_id", "parent_id", "sort_order")
@@ -106,8 +119,10 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
     existing_questions: dict[str, Question] = {}
     if q_uuids:
         for i in range(0, len(q_uuids), 500):
-            batch = q_uuids[i:i + 500]
-            result = await db.execute(select(Question).where(Question.sync_uuid.in_(batch)))
+            batch = q_uuids[i : i + 500]
+            result = await db.execute(
+                select(Question).where(Question.sync_uuid.in_(batch))
+            )
             for q in result.scalars().all():
                 existing_questions[q.sync_uuid] = q
 
@@ -123,9 +138,11 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
     if incoming_hashes:
         all_hashes = list({h for _, h in incoming_hashes})
         for i in range(0, len(all_hashes), 500):
-            batch = all_hashes[i:i + 500]
+            batch = all_hashes[i : i + 500]
             result = await db.execute(
-                select(Question.subject_id, Question.question_hash, Question.sync_uuid).where(
+                select(
+                    Question.subject_id, Question.question_hash, Question.sync_uuid
+                ).where(
                     Question.question_hash.in_(batch),
                     Question.is_active == True,  # noqa: E712
                 )
@@ -197,12 +214,14 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                 report.questions_updated += 1
             elif local_updated and cloud_updated and local_updated < cloud_updated:
                 report.questions_conflict += 1
-                report.conflicts.append({
-                    "sync_uuid": sync_uuid,
-                    "reason": "cloud_newer",
-                    "cloud_updated_at": serialize_utc_datetime(existing.updated_at),
-                    "local_updated_at": q_data.get("updated_at"),
-                })
+                report.conflicts.append(
+                    {
+                        "sync_uuid": sync_uuid,
+                        "reason": "cloud_newer",
+                        "cloud_updated_at": serialize_utc_datetime(existing.updated_at),
+                        "local_updated_at": q_data.get("updated_at"),
+                    }
+                )
             else:
                 report.questions_skipped += 1
 

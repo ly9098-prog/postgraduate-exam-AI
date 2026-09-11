@@ -3,6 +3,7 @@
 This module never imports, probes, or initializes local OCR packages in a
 restricted deployment. Profile parsing failures are treated as restricted.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -31,7 +32,10 @@ def loaded_local_ocr_modules(
     return sorted(
         name
         for name in names
-        if any(name == root or name.startswith(f"{root}.") for root in LOCAL_OCR_MODULE_ROOTS)
+        if any(
+            name == root or name.startswith(f"{root}.")
+            for root in LOCAL_OCR_MODULE_ROOTS
+        )
     )
 
 

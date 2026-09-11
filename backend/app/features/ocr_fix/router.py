@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 try:
     from app.core.log_context import log_event
 except ImportError:  # pragma: no cover
+
     def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
         pass
+
 
 # Default fallback chain for "auto" strategy
 _AUTO_CHAIN = ["paddleocr-vl", "openai-compatible", "rule_fallback"]
@@ -47,6 +49,7 @@ _REASON_CODES = {
 @dataclass
 class _AdapterAttempt:
     """Audit trail for a single adapter attempt in the chain."""
+
     adapter_name: str
     candidate_non_empty: bool = False
     validator_decision: str = ""
@@ -82,12 +85,12 @@ def _evaluate_adapter_output(
     # garbled result is worse than keeping the original.
     try:
         from app.features.code_integrity import detect_code_block_integrity
+
         _orig_code = detect_code_block_integrity(original_text)
         _fixed_code = detect_code_block_integrity(result.fixed_text)
-        if (
-            "code_garbled_text" in _orig_code.get("flags", [])
-            and "code_garbled_text" in _fixed_code.get("flags", [])
-        ):
+        if "code_garbled_text" in _orig_code.get(
+            "flags", []
+        ) and "code_garbled_text" in _fixed_code.get("flags", []):
             # Garbled text persisted — reject. Don't trust model self-reported
             # confidence; rule-based detection is authoritative.
             _orig_score = _orig_code.get("score", 1.0)
@@ -96,7 +99,8 @@ def _evaluate_adapter_output(
                 # Garbled score didn't significantly improve → reject
                 logger.info(
                     "Garbled code persisted: score %.2f->%.2f, rejecting",
-                    _orig_score, _fixed_score,
+                    _orig_score,
+                    _fixed_score,
                 )
                 return CandidateEvaluation(
                     decision=CandidateDecision.REJECT_CONTINUE,
@@ -194,6 +198,7 @@ class OCRFixRouter:
     def _build_config_fingerprint(self) -> str:
         """Build a fingerprint of the current config for adapter cache validation."""
         import hashlib
+
         relevant_keys = [
             "llm_api_key",
             "llm_base_url",
@@ -219,13 +224,18 @@ class OCRFixRouter:
 
         if old_fingerprint and self._config_fingerprint != old_fingerprint:
             # 配置 fingerprint 变化 → 清除惰性创建的 adapter
-            lazy_adapters = {"rule_fallback", "openai-compatible", "deepseek", "paddleocr-vl"}
+            lazy_adapters = {
+                "rule_fallback",
+                "openai-compatible",
+                "deepseek",
+                "paddleocr-vl",
+            }
             for name in lazy_adapters:
                 self._adapters.pop(name, None)
             logger.info(
-                "OCR fix config fingerprint changed (%s->%s), "
-                "rebuilt lazy adapters",
-                old_fingerprint, self._config_fingerprint,
+                "OCR fix config fingerprint changed (%s->%s), rebuilt lazy adapters",
+                old_fingerprint,
+                self._config_fingerprint,
             )
 
     def register(self, name: str, fixer: Any) -> None:
@@ -240,18 +250,31 @@ class OCRFixRouter:
         # 惰性创建
         if name == "rule_fallback":
             from app.features.ocr_fix.rule_adapter import RuleFixer
+
             self._adapters[name] = RuleFixer(config=self._config)
             return self._adapters[name]
 
         if name in {"openai-compatible", "openai_compatible", "deepseek"}:
-            from app.features.ocr_fix.openai_compatible_adapter import OpenAICompatibleFixer
-            api_key = self._config.get("llm_api_key") or self._config.get("deepseek_api_key")
-            base_url = self._config.get("llm_base_url") or self._config.get("deepseek_base_url")
+            from app.features.ocr_fix.openai_compatible_adapter import (
+                OpenAICompatibleFixer,
+            )
+
+            api_key = self._config.get("llm_api_key") or self._config.get(
+                "deepseek_api_key"
+            )
+            base_url = self._config.get("llm_base_url") or self._config.get(
+                "deepseek_base_url"
+            )
             model_name = self._config.get("llm_model_name")
-            provider = self._config.get("llm_provider") or ("deepseek" if name == "deepseek" else "openai_compatible")
+            provider = self._config.get("llm_provider") or (
+                "deepseek" if name == "deepseek" else "openai_compatible"
+            )
             adapter = OpenAICompatibleFixer(
-                api_key=api_key, base_url=base_url, model_name=model_name,
-                provider=provider, config=self._config,
+                api_key=api_key,
+                base_url=base_url,
+                model_name=model_name,
+                provider=provider,
+                config=self._config,
             )
             # Cache under canonical and requested alias so legacy manual configs work.
             self._adapters["openai-compatible"] = adapter
@@ -260,11 +283,15 @@ class OCRFixRouter:
 
         if name == "paddleocr-vl":
             from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
+
             api_token = self._config.get("paddleocr_vl_api_token")
             base_url = self._config.get("paddleocr_vl_base_url")
             model = self._config.get("paddleocr_vl_model", "PaddleOCR-VL-1.6")
             self._adapters[name] = PaddleOCRVLAdapter(
-                api_token=api_token, base_url=base_url, model=model, config=self._config,
+                api_token=api_token,
+                base_url=base_url,
+                model=model,
+                config=self._config,
             )
             return self._adapters[name]
 
@@ -334,7 +361,9 @@ class OCRFixRouter:
                     else:
                         call_stats["llm_calls"] += 1
                 result = await adapter.fix(
-                    image=image, ocr_text=ocr_text, context=context,
+                    image=image,
+                    ocr_text=ocr_text,
+                    context=context,
                 )
                 if result.tokens_used:
                     call_stats["tokens_used"] += int(result.tokens_used)
@@ -352,7 +381,9 @@ class OCRFixRouter:
 
                     # ── Safety evaluation ──
                     evaluation = _evaluate_adapter_output(
-                        result, ocr_text, context,
+                        result,
+                        ocr_text,
+                        context,
                     )
                     attempt.validator_decision = evaluation.decision.value
                     attempt.reject_reason = evaluation.reason
@@ -361,12 +392,15 @@ class OCRFixRouter:
                     if evaluation.decision == CandidateDecision.ACCEPT:
                         logger.info(
                             "OCR fix accepted from '%s' (conf=%.2f, flags=%s): %s",
-                            model_name, result.confidence or 0,
+                            model_name,
+                            result.confidence or 0,
                             list(evaluation.risk_flags),
                             evaluation.reason,
                         )
                         log_event(
-                            logger, "ocr.fix.router.accept", "info",
+                            logger,
+                            "ocr.fix.router.accept",
+                            "info",
                             adapter=model_name,
                             confidence=result.confidence or 0,
                             risk_flags=list(evaluation.risk_flags),
@@ -386,10 +420,14 @@ class OCRFixRouter:
                         logger.warning(
                             "OCR fix REJECT_STOP from '%s': %s (flags=%s) — "
                             "returning original text",
-                            model_name, evaluation.reason, list(evaluation.risk_flags),
+                            model_name,
+                            evaluation.reason,
+                            list(evaluation.risk_flags),
                         )
                         log_event(
-                            logger, "ocr.fix.router.reject", "warning",
+                            logger,
+                            "ocr.fix.router.reject",
+                            "warning",
                             adapter=model_name,
                             decision="reject_stop",
                             reason=evaluation.reason[:200],
@@ -397,24 +435,27 @@ class OCRFixRouter:
                         )
                         attempts.append(attempt)
                         self._log_audit_trail(attempts, final_decision="reject_stop")
-                        return _attach_call_stats(OCRFixResult(
-                            fixed_text=ocr_text,
-                            confidence=0.0,
-                            model_used=f"rejected_{model_name}",
-                            raw_response=f"rejected:{evaluation.reason}",
-                            risk_flags=list(evaluation.risk_flags),
-                            safety={
-                                "accepted": False,
-                                "rejected": True,
-                                "reason": evaluation.reason,
-                                "risk_flags": list(evaluation.risk_flags),
-                            },
-                        ))
+                        return _attach_call_stats(
+                            OCRFixResult(
+                                fixed_text=ocr_text,
+                                confidence=0.0,
+                                model_used=f"rejected_{model_name}",
+                                raw_response=f"rejected:{evaluation.reason}",
+                                risk_flags=list(evaluation.risk_flags),
+                                safety={
+                                    "accepted": False,
+                                    "rejected": True,
+                                    "reason": evaluation.reason,
+                                    "risk_flags": list(evaluation.risk_flags),
+                                },
+                            )
+                        )
 
                     # REJECT_CONTINUE
                     logger.info(
                         "OCR fix REJECT_CONTINUE from '%s': %s — trying next adapter",
-                        model_name, evaluation.reason,
+                        model_name,
+                        evaluation.reason,
                     )
                     attempts.append(attempt)
                     last_error = evaluation.reason
@@ -424,7 +465,8 @@ class OCRFixRouter:
                 error_msg = result.raw_response or "empty result"
                 logger.warning(
                     "OCR fix '%s' returned no usable result, degrading: %s",
-                    model_name, error_msg,
+                    model_name,
+                    error_msg,
                 )
                 last_error = error_msg
                 attempt.error = error_msg
@@ -443,29 +485,33 @@ class OCRFixRouter:
             " -> ".join(chain),
         )
         log_event(
-            logger, "ocr.fix.router.all_failed", "warning",
+            logger,
+            "ocr.fix.router.all_failed",
+            "warning",
             chain=" -> ".join(chain),
             attempt_count=len(attempts),
             last_error=last_error[:200] if last_error else None,
         )
-        return _attach_call_stats(OCRFixResult(
-            fixed_text=ocr_text,
-            confidence=0.0,
-            model_used="degraded_all_adapters",
-            safety={
-                "accepted": False,
-                "all_failed": True,
-                "last_error": last_error,
-                "attempts": [
-                    {
-                        "adapter": a.adapter_name,
-                        "decision": a.validator_decision,
-                        "reason": a.reject_reason or a.error,
-                    }
-                    for a in attempts
-                ],
-            },
-        ))
+        return _attach_call_stats(
+            OCRFixResult(
+                fixed_text=ocr_text,
+                confidence=0.0,
+                model_used="degraded_all_adapters",
+                safety={
+                    "accepted": False,
+                    "all_failed": True,
+                    "last_error": last_error,
+                    "attempts": [
+                        {
+                            "adapter": a.adapter_name,
+                            "decision": a.validator_decision,
+                            "reason": a.reject_reason or a.error,
+                        }
+                        for a in attempts
+                    ],
+                },
+            )
+        )
 
     def _log_audit_trail(
         self,
@@ -494,5 +540,6 @@ class OCRFixRouter:
             audit.append(entry)
         logger.info(
             "OCRFixRouter audit: final=%s attempts=%s",
-            final_decision, audit,
+            final_decision,
+            audit,
         )

@@ -102,37 +102,93 @@ class ParsedNumbering:
 # ===================================================================
 
 _CN_NUM_MAP: dict[str, int] = {
-    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
 }
 
 _CN_UPPER_MAP: dict[str, int] = {
-    "壹": 1, "贰": 2, "叁": 3, "肆": 4, "伍": 5,
-    "陆": 6, "柒": 7, "捌": 8, "玖": 9, "拾": 10,
+    "壹": 1,
+    "贰": 2,
+    "叁": 3,
+    "肆": 4,
+    "伍": 5,
+    "陆": 6,
+    "柒": 7,
+    "捌": 8,
+    "玖": 9,
+    "拾": 10,
 }
 
 _HEAVENLY_STEMS_MAP: dict[str, int] = {
-    "甲": 1, "乙": 2, "丙": 3, "丁": 4, "戊": 5,
-    "己": 6, "庚": 7, "辛": 8, "壬": 9, "癸": 10,
+    "甲": 1,
+    "乙": 2,
+    "丙": 3,
+    "丁": 4,
+    "戊": 5,
+    "己": 6,
+    "庚": 7,
+    "辛": 8,
+    "壬": 9,
+    "癸": 10,
 }
 
 _ROMAN_MAP: dict[str, int] = {
-    "Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5,
-    "Ⅵ": 6, "Ⅶ": 7, "Ⅷ": 8, "Ⅸ": 9, "Ⅹ": 10,
+    "Ⅰ": 1,
+    "Ⅱ": 2,
+    "Ⅲ": 3,
+    "Ⅳ": 4,
+    "Ⅴ": 5,
+    "Ⅵ": 6,
+    "Ⅶ": 7,
+    "Ⅷ": 8,
+    "Ⅸ": 9,
+    "Ⅹ": 10,
 }
 _ROMAN_LOWER_MAP: dict[str, int] = {
-    "ⅰ": 1, "ⅱ": 2, "ⅲ": 3, "ⅳ": 4, "ⅴ": 5,
-    "ⅵ": 6, "ⅶ": 7, "ⅷ": 8, "ⅸ": 9, "ⅹ": 10,
+    "ⅰ": 1,
+    "ⅱ": 2,
+    "ⅲ": 3,
+    "ⅳ": 4,
+    "ⅴ": 5,
+    "ⅵ": 6,
+    "ⅶ": 7,
+    "ⅷ": 8,
+    "ⅸ": 9,
+    "ⅹ": 10,
 }
 
 _ROMAN_ASCII_MAP: dict[str, int] = {
-    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
-    "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
+    "I": 1,
+    "II": 2,
+    "III": 3,
+    "IV": 4,
+    "V": 5,
+    "VI": 6,
+    "VII": 7,
+    "VIII": 8,
+    "IX": 9,
+    "X": 10,
 }
 
 _CIRCLED_MAP: dict[str, int] = {
-    "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5,
-    "⑥": 6, "⑦": 7, "⑧": 8, "⑨": 9, "⑩": 10,
+    "①": 1,
+    "②": 2,
+    "③": 3,
+    "④": 4,
+    "⑤": 5,
+    "⑥": 6,
+    "⑦": 7,
+    "⑧": 8,
+    "⑨": 9,
+    "⑩": 10,
 }
 
 _HEAVENLY_STEM_CHARS = "".join(_HEAVENLY_STEMS_MAP.keys())
@@ -210,81 +266,131 @@ def _build_patterns() -> list[tuple[re.Pattern, NumberingType, int, float]]:
 
     # ── Main question: Arabic digits ──
     # "1." "1．" "1、" "1) " "1）"
-    patterns.append((re.compile(r"^(\d+)\s*[.．、]"), NumberingType.MAIN_QUESTION, 0, 0.95))
-    patterns.append((re.compile(r"^(\d+)\s*[)）]"), NumberingType.MAIN_QUESTION, 0, 0.90))
+    patterns.append(
+        (re.compile(r"^(\d+)\s*[.．、]"), NumberingType.MAIN_QUESTION, 0, 0.95)
+    )
+    patterns.append(
+        (re.compile(r"^(\d+)\s*[)）]"), NumberingType.MAIN_QUESTION, 0, 0.90)
+    )
     # "(1)" → ambiguous (could be sub-question), detect by context
     patterns.append((re.compile(r"^\((\d+)\)"), NumberingType.SUB_QUESTION, 1, 0.85))
     patterns.append((re.compile(r"^（(\d+)）"), NumberingType.SUB_QUESTION, 1, 0.85))
     # "【1】"
     patterns.append((re.compile(r"^【(\d+)】"), NumberingType.MAIN_QUESTION, 0, 0.85))
     # "第1题" "第01题"
-    patterns.append((re.compile(r"^第\s*(\d+)\s*题"), NumberingType.MAIN_QUESTION, 0, 0.90))
+    patterns.append(
+        (re.compile(r"^第\s*(\d+)\s*题"), NumberingType.MAIN_QUESTION, 0, 0.90)
+    )
 
     # ── Main question: Chinese numerals ──
     # "第一题" "第二题"
     cn_chars = "".join(_CN_NUM_MAP.keys())
-    patterns.append((
-        re.compile(r"^第\s*([" + cn_chars + r"]+)\s*题"),
-        NumberingType.MAIN_QUESTION, 0, 0.90,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^第\s*([" + cn_chars + r"]+)\s*题"),
+            NumberingType.MAIN_QUESTION,
+            0,
+            0.90,
+        )
+    )
     # "一、" "二、" "三、" at line start (main question in exam papers)
-    patterns.append((
-        re.compile(r"^([" + cn_chars + r"])\s*[、.．]"),
-        NumberingType.MAIN_QUESTION, 0, 0.85,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^([" + cn_chars + r"])\s*[、.．]"),
+            NumberingType.MAIN_QUESTION,
+            0,
+            0.85,
+        )
+    )
     # "（一）" "（二）" (sub-question)
-    patterns.append((
-        re.compile(r"^（([" + cn_chars + r"])）"),
-        NumberingType.SUB_QUESTION, 1, 0.80,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^（([" + cn_chars + r"])）"),
+            NumberingType.SUB_QUESTION,
+            1,
+            0.80,
+        )
+    )
     # "(一)" "(二)" (sub-question)
-    patterns.append((
-        re.compile(r"^\(([" + cn_chars + r"])\)"),
-        NumberingType.SUB_QUESTION, 1, 0.80,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^\(([" + cn_chars + r"])\)"),
+            NumberingType.SUB_QUESTION,
+            1,
+            0.80,
+        )
+    )
 
     # ── Heavenly stems: 甲、乙、丙 (option-like) ──
-    patterns.append((
-        re.compile(r"^([" + _HEAVENLY_STEM_CHARS + r"])\s*[.、)）]"),
-        NumberingType.OPTION, 1, 0.75,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^([" + _HEAVENLY_STEM_CHARS + r"])\s*[.、)）]"),
+            NumberingType.OPTION,
+            1,
+            0.75,
+        )
+    )
 
     # ── Roman numerals ──
     # Unicode Roman: Ⅰ、Ⅱ、Ⅲ
-    patterns.append((
-        re.compile(r"^([" + _ROMAN_CHARS + r"])\s*[.、)）]"),
-        NumberingType.OPTION_ROMAN, 0, 0.80,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^([" + _ROMAN_CHARS + r"])\s*[.、)）]"),
+            NumberingType.OPTION_ROMAN,
+            0,
+            0.80,
+        )
+    )
     # ASCII Roman: I. II. III. (be careful: single "I" alone is common)
     # Match only multi-char Roman or I followed by .、::
-    patterns.append((
-        re.compile(r"^(I{2,3}|IV|VI{0,3})\s*[.、)）:]"),
-        NumberingType.OPTION_ROMAN, 0, 0.75,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^(I{2,3}|IV|VI{0,3})\s*[.、)）:]"),
+            NumberingType.OPTION_ROMAN,
+            0,
+            0.75,
+        )
+    )
     # (I) (II) (III) in parens
-    patterns.append((
-        re.compile(r"^\(((?:[IVX]+|[" + _ROMAN_CHARS + r"]+))\)"),
-        NumberingType.OPTION_ROMAN, 1, 0.70,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^\(((?:[IVX]+|[" + _ROMAN_CHARS + r"]+))\)"),
+            NumberingType.OPTION_ROMAN,
+            1,
+            0.70,
+        )
+    )
 
     # ── Circled numbers ──
     # ① ② ③ (typically sub-question markers)
-    patterns.append((
-        re.compile(r"^([" + _CIRCLED_CHARS + r"])"),
-        NumberingType.OPTION_CIRCLED, 1, 0.85,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^([" + _CIRCLED_CHARS + r"])"),
+            NumberingType.OPTION_CIRCLED,
+            1,
+            0.85,
+        )
+    )
 
     # ── OCR fallback: l/I → 1 ──
-    patterns.append((
-        re.compile(r"^([lI])\s*[.、)）]"),
-        NumberingType.MAIN_QUESTION, 0, 0.50,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^([lI])\s*[.、)）]"),
+            NumberingType.MAIN_QUESTION,
+            0,
+            0.50,
+        )
+    )
 
     # ── Answer markers (not numbering, but useful to identify) ──
-    patterns.append((
-        re.compile(r"^(?:答案|正确答案|参考答案)\s*[：:]"),
-        NumberingType.ANSWER, -1, 1.0,
-    ))
+    patterns.append(
+        (
+            re.compile(r"^(?:答案|正确答案|参考答案)\s*[：:]"),
+            NumberingType.ANSWER,
+            -1,
+            1.0,
+        )
+    )
 
     return patterns
 
@@ -411,22 +517,24 @@ def parse_numbering(
 
             # "1." followed by another digit and dot → section number "1.1"
             if pat.pattern.startswith(r"^(\d+)\s*[.．、]"):
-                after = stripped[m.end():].lstrip()
+                after = stripped[m.end() :].lstrip()
                 if after and (after[0].isdigit() or after[0] in ".．"):
                     return None
 
             # "1)..." pattern: reject if text after doesn't look like a question
             # (e.g., "1)假如" has short num_text, no "题" marker)
             if raw.rstrip().endswith((")", "）")):
-                after_text = stripped[m.end():].strip()
+                after_text = stripped[m.end() :].strip()
                 num_text = raw.rstrip(" )）")
-                if not (len(num_text) >= 2 and after_text) and not _looks_like_question_marker(after_text):
+                if not (
+                    len(num_text) >= 2 and after_text
+                ) and not _looks_like_question_marker(after_text):
                     return None
 
             # Boost for lines with question characteristics
             if not _is_false_question_number(normalized, stripped):
                 # Boost for lines with question characteristics
-                after_text = stripped[m.end():]
+                after_text = stripped[m.end() :]
                 if _HAS_QUESTION_CHARACTERISTICS_RE.search(after_text):
                     confidence = min(1.0, confidence + 0.05)
 
@@ -604,29 +712,35 @@ def validate_question_sequence(
 
     prev = numbers[0]
     if prev != expected_start:
-        diagnostics.append({
-            "type": "unexpected_start",
-            "expected": expected_start,
-            "actual": prev,
-        })
+        diagnostics.append(
+            {
+                "type": "unexpected_start",
+                "expected": expected_start,
+                "actual": prev,
+            }
+        )
 
     for i in range(1, len(numbers)):
         gap = numbers[i] - numbers[i - 1]
         if gap > max_gap + 1:
-            diagnostics.append({
-                "type": "jump",
-                "from_idx": i - 1,
-                "from_num": numbers[i - 1],
-                "to_num": numbers[i],
-                "gap": gap,
-            })
+            diagnostics.append(
+                {
+                    "type": "jump",
+                    "from_idx": i - 1,
+                    "from_num": numbers[i - 1],
+                    "to_num": numbers[i],
+                    "gap": gap,
+                }
+            )
         elif gap <= 0:
-            diagnostics.append({
-                "type": "duplicate_or_decrease",
-                "from_idx": i - 1,
-                "from_num": numbers[i - 1],
-                "to_num": numbers[i],
-            })
+            diagnostics.append(
+                {
+                    "type": "duplicate_or_decrease",
+                    "from_idx": i - 1,
+                    "from_num": numbers[i - 1],
+                    "to_num": numbers[i],
+                }
+            )
         prev = numbers[i]
 
     return diagnostics

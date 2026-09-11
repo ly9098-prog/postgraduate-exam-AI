@@ -22,6 +22,7 @@ def _safe_ttl(ttl: int) -> int:
     """
     return ttl if ttl and ttl > 0 else _DEFAULT_TTL
 
+
 _COMPARE_AND_DELETE_SCRIPT = """
 if redis.call("GET", KEYS[1]) == ARGV[1] then
     return redis.call("DEL", KEYS[1])
@@ -67,17 +68,22 @@ class CacheClient:
         if len(self._local) >= self._local_max_size:
             # 简单清理：清空过期条目
             now = __import__("time").time()
-            stale = [k for k, (exp, _) in self._local.items() if exp is not None and exp < now]
+            stale = [
+                k
+                for k, (exp, _) in self._local.items()
+                if exp is not None and exp < now
+            ]
             for k in stale:
                 self._local.pop(k, None)
             # 如果仍然超出容量，放弃缓存此条目
             if len(self._local) >= self._local_max_size:
                 return
-        expiry = (__import__("time").time() + _safe_ttl(ttl))
+        expiry = __import__("time").time() + _safe_ttl(ttl)
         self._local[key] = (expiry, value)
 
     def _local_delete(self, pattern: str) -> int:
         import fnmatch
+
         removed = 0
         for k in list(self._local.keys()):
             if fnmatch.fnmatch(k, pattern):
@@ -335,7 +341,9 @@ class CacheClient:
         cursor = 0
         while True:
             cursor, keys = await client.scan(
-                cursor=cursor, match=pattern, count=batch_size,
+                cursor=cursor,
+                match=pattern,
+                count=batch_size,
             )
             if keys:
                 total += await client.delete(*keys)

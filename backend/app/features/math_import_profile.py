@@ -42,15 +42,15 @@ _CODE_EXCLUDE_TRIGGERS = re.compile(
 # ── 复杂公式风险检测信号 ──
 
 _COMPLEX_FORMULA_PATTERNS = re.compile(
-    r"\\frac\{[^}]{3,}\}\{[^}]{3,}\}|"        # 复杂分式
-    r"\\begin\{matrix\}|\\begin\{vmatrix\}|"     # 矩阵/行列式
-    r"\\begin\{bmatrix\}|\\begin\{cases\}|"       # 矩阵/分段函数
-    r"\\sum_[^\\]+\\frac|"                       # 求和+分式
-    r"\\int_[^\\]+\\frac|"                       # 积分+分式
-    r"\\lim[^\\]+\\frac|"                        # 极限+分式
-    r"\\sum\{[^}]{2,}\}|\\prod\b|"              # 多符号求和/连乘
-    r"\\overline|\\underline|\\binom|"           # 复杂修饰
-    r"\\begin\{align\}|\\begin\{eqnarray\}"      # 多行公式
+    r"\\frac\{[^}]{3,}\}\{[^}]{3,}\}|"  # 复杂分式
+    r"\\begin\{matrix\}|\\begin\{vmatrix\}|"  # 矩阵/行列式
+    r"\\begin\{bmatrix\}|\\begin\{cases\}|"  # 矩阵/分段函数
+    r"\\sum_[^\\]+\\frac|"  # 求和+分式
+    r"\\int_[^\\]+\\frac|"  # 积分+分式
+    r"\\lim[^\\]+\\frac|"  # 极限+分式
+    r"\\sum\{[^}]{2,}\}|\\prod\b|"  # 多符号求和/连乘
+    r"\\overline|\\underline|\\binom|"  # 复杂修饰
+    r"\\begin\{align\}|\\begin\{eqnarray\}"  # 多行公式
 )
 
 
@@ -67,13 +67,18 @@ def is_math_candidate(question: dict) -> dict:
     requires_review = False
 
     # 1. 排除 408/代码题
-    text_to_check = " ".join(filter(None, [
-        question.get("subject") or "",
-        question.get("category") or "",
-        question.get("stem") or "",
-        question.get("analysis") or "",
-        question.get("raw_text") or "",
-    ]))
+    text_to_check = " ".join(
+        filter(
+            None,
+            [
+                question.get("subject") or "",
+                question.get("category") or "",
+                question.get("stem") or "",
+                question.get("analysis") or "",
+                question.get("raw_text") or "",
+            ],
+        )
+    )
     if _CODE_EXCLUDE_TRIGGERS.search(text_to_check):
         return {
             "is_math": False,

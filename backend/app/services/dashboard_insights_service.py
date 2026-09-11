@@ -46,9 +46,7 @@ async def compute_today_quality(db: AsyncSession, user_id: int) -> dict | None:
     row = await db.execute(
         select(
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
             func.coalesce(func.avg(PracticeRecord.used_time), 0),
         ).where(
             PracticeRecord.user_id == user_id,
@@ -65,8 +63,10 @@ async def compute_today_quality(db: AsyncSession, user_id: int) -> dict | None:
     # Score components (0-100 each)
     acc_score = accuracy * 100  # 正确率分
     vol_score = min(100, (count / 20) * 100)  # 完成量分 (20题=满分)
-    time_score = 100 if avg_time and 20 <= avg_time <= 120 else max(
-        0, 100 - abs((avg_time or 60) - 60) * 0.5
+    time_score = (
+        100
+        if avg_time and 20 <= avg_time <= 120
+        else max(0, 100 - abs((avg_time or 60) - 60) * 0.5)
     )  # 用时稳定性
 
     total = acc_score * 0.4 + vol_score * 0.3 + time_score * 0.3
@@ -107,9 +107,7 @@ async def compute_weekly_consistency(
         select(
             day_expr,
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
         )
         .where(
             PracticeRecord.user_id == user_id,
@@ -147,9 +145,7 @@ async def compute_weekly_consistency(
 
     # Coefficient of variation for daily question counts
     mean_q = sum(q_values) / max(days, 1)
-    var_q = (
-        sum((x - mean_q) ** 2 for x in q_values) / max(days, 1) if days > 0 else 0
-    )
+    var_q = sum((x - mean_q) ** 2 for x in q_values) / max(days, 1) if days > 0 else 0
     cv_q = math.sqrt(var_q) / max(mean_q, 1)
 
     # Accuracy std dev
@@ -211,7 +207,9 @@ async def compute_weak_topic_ranking(
             UserKnowledgeState.recent_wrong_count,
             UserKnowledgeState.last_practiced_at,
         )
-        .join(KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id)
+        .join(
+            KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id
+        )
         .outerjoin(Subject, UserKnowledgeState.subject_id == Subject.id)
         .where(
             UserKnowledgeState.user_id == user_id,
@@ -230,21 +228,23 @@ async def compute_weak_topic_ranking(
         items = []
         for row in items_data:
             kp_id = row[0]
-            items.append({
-                "knowledge_point_id": kp_id,
-                "name": row[1],
-                "subject_id": row[2],
-                "subject_code": row[3] or "",
-                "subject_name": row[4] or "",
-                "mastery_score": round(row[5], 1),
-                "attempt_count": row[6] or 0,
-                "wrong_count": row[7] or 0,
-                "recent_wrong_count": row[8] or 0,
-                "due_review_count": due_counts.get(kp_id, 0),
-                "last_practiced_at": (
-                    serialize_utc_datetime(row[9]) if row[9] else None
-                ),
-            })
+            items.append(
+                {
+                    "knowledge_point_id": kp_id,
+                    "name": row[1],
+                    "subject_id": row[2],
+                    "subject_code": row[3] or "",
+                    "subject_name": row[4] or "",
+                    "mastery_score": round(row[5], 1),
+                    "attempt_count": row[6] or 0,
+                    "wrong_count": row[7] or 0,
+                    "recent_wrong_count": row[8] or 0,
+                    "due_review_count": due_counts.get(kp_id, 0),
+                    "last_practiced_at": (
+                        serialize_utc_datetime(row[9]) if row[9] else None
+                    ),
+                }
+            )
         return {"data_available": True, "items": items}
 
     # Fallback: derive from the immutable revision attached to each wrong row.
@@ -252,7 +252,9 @@ async def compute_weak_topic_ranking(
     # is later edited or remapped to different knowledge points.
     kp_rows = await db.execute(
         select(
-            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name).label("frozen_name"),
+            func.coalesce(
+                SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name
+            ).label("frozen_name"),
             func.count(WrongQuestion.id).label("wrong_count"),
         )
         .join(
@@ -261,7 +263,8 @@ async def compute_weak_topic_ranking(
         )
         .outerjoin(
             SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+            SyllabusKnowledgePoint.id
+            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .join(
             WrongQuestion,
@@ -302,7 +305,9 @@ async def compute_weak_topic_ranking(
     return {"data_available": True, "items": items}
 
 
-async def _compute_kp_due_review_counts(db: AsyncSession, user_id: int) -> dict[int, int]:
+async def _compute_kp_due_review_counts(
+    db: AsyncSession, user_id: int
+) -> dict[int, int]:
     """Count due reviews per knowledge_point_id."""
     now = utcnow()
     rows = await db.execute(
@@ -312,7 +317,8 @@ async def _compute_kp_due_review_counts(db: AsyncSession, user_id: int) -> dict[
         )
         .join(
             ReviewSchedule,
-            ReviewSchedule.question_version_id == QuestionVersionKnowledgePoint.question_version_id,
+            ReviewSchedule.question_version_id
+            == QuestionVersionKnowledgePoint.question_version_id,
         )
         .where(
             ReviewSchedule.user_id == user_id,
@@ -330,14 +336,10 @@ async def _compute_kp_due_review_counts(db: AsyncSession, user_id: int) -> dict[
 # ──────────────────────────────────────────────
 
 
-async def compute_repeat_wrong_analysis(
-    db: AsyncSession, user_id: int
-) -> dict | None:
+async def compute_repeat_wrong_analysis(db: AsyncSession, user_id: int) -> dict | None:
     """错题复发分析：review_count>0 但仍未 mastered 的错题。"""
     total = await db.execute(
-        select(func.count(WrongQuestion.id)).where(
-            WrongQuestion.user_id == user_id
-        )
+        select(func.count(WrongQuestion.id)).where(WrongQuestion.user_id == user_id)
     )
     total_wq = total.scalar() or 0
     if total_wq < 3:
@@ -356,7 +358,9 @@ async def compute_repeat_wrong_analysis(
     # Top repeat topics are attributed to the revision that was actually wrong.
     topic_rows = await db.execute(
         select(
-            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name).label("frozen_name"),
+            func.coalesce(
+                SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name
+            ).label("frozen_name"),
             func.count(WrongQuestion.id).label("wrong_count"),
         )
         .join(
@@ -365,7 +369,8 @@ async def compute_repeat_wrong_analysis(
         )
         .outerjoin(
             SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+            SyllabusKnowledgePoint.id
+            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .join(
             WrongQuestion,
@@ -419,14 +424,18 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
     row = await db.execute(
         select(
             func.coalesce(
-                func.avg(case((PracticeRecord.is_correct == True, PracticeRecord.used_time))), 0  # noqa: E712
+                func.avg(
+                    case((PracticeRecord.is_correct == True, PracticeRecord.used_time))  # noqa: E712
+                ),
+                0,  # noqa: E712
             ),
             func.coalesce(
-                func.avg(case((PracticeRecord.is_correct == False, PracticeRecord.used_time))), 0  # noqa: E712
+                func.avg(
+                    case((PracticeRecord.is_correct == False, PracticeRecord.used_time))  # noqa: E712
+                ),
+                0,  # noqa: E712
             ),
-            func.coalesce(
-                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0),
         ).where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.used_time.isnot(None),
@@ -444,8 +453,12 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
     # Fast wrong (<15s) and slow wrong (>120s) in single query
     fw_sw = await db.execute(
         select(
-            func.coalesce(func.sum(case((PracticeRecord.used_time < 15, 1), else_=0)), 0),
-            func.coalesce(func.sum(case((PracticeRecord.used_time > 120, 1), else_=0)), 0),
+            func.coalesce(
+                func.sum(case((PracticeRecord.used_time < 15, 1), else_=0)), 0
+            ),
+            func.coalesce(
+                func.sum(case((PracticeRecord.used_time > 120, 1), else_=0)), 0
+            ),
         ).where(
             PracticeRecord.user_id == user_id,
             ~PracticeRecord.is_correct,
@@ -477,10 +490,16 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
             Subject.code,
             Subject.name,
             func.coalesce(
-                func.avg(case((PracticeRecord.is_correct == True, PracticeRecord.used_time))), 0  # noqa: E712
+                func.avg(
+                    case((PracticeRecord.is_correct == True, PracticeRecord.used_time))  # noqa: E712
+                ),
+                0,  # noqa: E712
             ),
             func.coalesce(
-                func.avg(case((PracticeRecord.is_correct == False, PracticeRecord.used_time))), 0  # noqa: E712
+                func.avg(
+                    case((PracticeRecord.is_correct == False, PracticeRecord.used_time))  # noqa: E712
+                ),
+                0,  # noqa: E712
             ),
             func.count(PracticeRecord.id),
         )
@@ -489,7 +508,8 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
             PracticeRecord.user_id == user_id,
             PracticeRecord.used_time.isnot(None),
             PracticeRecord.used_time > 0,
-        ).group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
+        )
+        .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
     )
     by_subject = []
     for subj_id, subj_code, subj_name, ac, aw, cnt in subj_rows.all():
@@ -502,15 +522,17 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
             sl = "知识点不熟"
         else:
             sl = "速度正常"
-        by_subject.append({
-            "subject_id": subj_id,
-            "subject_code": subj_code or "",
-            "subject_name": subj_name or "",
-            "avg_time_correct_sec": round(ac, 1),
-            "avg_time_wrong_sec": round(aw, 1),
-            "questions": cnt,
-            "status_label": sl,
-        })
+        by_subject.append(
+            {
+                "subject_id": subj_id,
+                "subject_code": subj_code or "",
+                "subject_name": subj_name or "",
+                "avg_time_correct_sec": round(ac, 1),
+                "avg_time_wrong_sec": round(aw, 1),
+                "questions": cnt,
+                "status_label": sl,
+            }
+        )
 
     return {
         "data_available": True,
@@ -554,9 +576,7 @@ async def compute_new_vs_review(db: AsyncSession, user_id: int) -> dict | None:
                 else_="review",
             ).label("ptype"),
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
         )
         .join(
             first_subq,
@@ -633,9 +653,9 @@ async def compute_input_output(
 
     效率分 = 正确率 / (该科每题均时 / 全局每题均时)
     """
-    since = shanghai_date_utc_range(
-        shanghai_today() - timedelta(days=trend_days - 1)
-    )[0]
+    since = shanghai_date_utc_range(shanghai_today() - timedelta(days=trend_days - 1))[
+        0
+    ]
 
     rows = await db.execute(
         select(
@@ -643,9 +663,7 @@ async def compute_input_output(
             Subject.code,
             Subject.name,
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
         .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
@@ -703,18 +721,20 @@ async def compute_input_output(
         elif accuracy >= 0.85 and efficiency < 0.8:
             suggestion = "耗时较长但正确率尚可，建议优化做题速度"
 
-        items.append({
-            "subject_id": subj_id,
-            "subject_code": sd["subject_code"],
-            "subject_name": sd["subject_name"],
-            "total_questions": sd["questions"],
-            "total_duration_sec": sd["time"],
-            "accuracy": round(accuracy, 4),
-            "time_per_question_sec": round(time_per_q, 1),
-            "efficiency_score": round(efficiency, 2),
-            "efficiency_label": eff_label,
-            "suggestion": suggestion,
-        })
+        items.append(
+            {
+                "subject_id": subj_id,
+                "subject_code": sd["subject_code"],
+                "subject_name": sd["subject_name"],
+                "total_questions": sd["questions"],
+                "total_duration_sec": sd["time"],
+                "accuracy": round(accuracy, 4),
+                "time_per_question_sec": round(time_per_q, 1),
+                "efficiency_score": round(efficiency, 2),
+                "efficiency_label": eff_label,
+                "suggestion": suggestion,
+            }
+        )
 
     items.sort(key=lambda x: x["efficiency_score"])
     return {
@@ -746,69 +766,81 @@ async def compute_action_plan(
         due = overview.get("due_review_count", 0)
         if due > 0:
             priority += 1
-            items.append({
-                "type": "review",
-                "priority": priority,
-                "title": f"完成 {due} 道到期复习",
-                "desc": f"有 {due} 道复习题已到期，建议优先完成",
-                "action_data": {},
-            })
+            items.append(
+                {
+                    "type": "review",
+                    "priority": priority,
+                    "title": f"完成 {due} 道到期复习",
+                    "desc": f"有 {due} 道复习题已到期，建议优先完成",
+                    "action_data": {},
+                }
+            )
 
     # 2. Repeat wrong rate high
     if repeat_wrong and repeat_wrong.get("is_high"):
         priority += 1
         count = repeat_wrong.get("repeat_wrong_count", 0)
-        items.append({
-            "type": "wrong",
-            "priority": priority,
-            "title": f"复盘 {count} 道复发错题",
-            "desc": f"错题复发率 {round(repeat_wrong['repeat_rate'] * 100)}%，建议集中复盘",
-            "action_data": {},
-        })
+        items.append(
+            {
+                "type": "wrong",
+                "priority": priority,
+                "title": f"复盘 {count} 道复发错题",
+                "desc": f"错题复发率 {round(repeat_wrong['repeat_rate'] * 100)}%，建议集中复盘",
+                "action_data": {},
+            }
+        )
 
     # 3. Weak topics exist
     if weak_topics and weak_topics.get("items"):
         top = weak_topics["items"][0]
         priority += 1
-        items.append({
-            "type": "wrong",
-            "priority": priority,
-            "title": f"巩固「{top['name']}」知识点",
-            "desc": f"该知识点掌握度 {top['mastery_score']} 分，错误 {top['wrong_count']} 次",
-            "action_data": {"topic": top["name"]},
-        })
+        items.append(
+            {
+                "type": "wrong",
+                "priority": priority,
+                "title": f"巩固「{top['name']}」知识点",
+                "desc": f"该知识点掌握度 {top['mastery_score']} 分，错误 {top['wrong_count']} 次",
+                "action_data": {"topic": top["name"]},
+            }
+        )
 
     # 4. New vs review imbalance
     if new_vs_review:
         nr_label = new_vs_review.get("label", "")
         if "复习效果较好" in nr_label:
             priority += 1
-            items.append({
-                "type": "practice",
-                "priority": priority,
-                "title": "适当增加新题练习",
-                "desc": "复习效果较好，可以适当推进新题",
-                "action_data": {},
-            })
+            items.append(
+                {
+                    "type": "practice",
+                    "priority": priority,
+                    "title": "适当增加新题练习",
+                    "desc": "复习效果较好，可以适当推进新题",
+                    "action_data": {},
+                }
+            )
         elif "新题表现更佳" in nr_label:
             priority += 1
-            items.append({
-                "type": "review",
-                "priority": priority,
-                "title": "增加复习巩固",
-                "desc": "新题表现好但复习不足，建议平衡练习结构",
-                "action_data": {},
-            })
+            items.append(
+                {
+                    "type": "review",
+                    "priority": priority,
+                    "title": "增加复习巩固",
+                    "desc": "新题表现好但复习不足，建议平衡练习结构",
+                    "action_data": {},
+                }
+            )
 
     # 5. Default: keep practicing
     if not items:
-        items.append({
-            "type": "practice",
-            "priority": 1,
-            "title": "保持练习节奏",
-            "desc": "当前状态良好，继续每日练习",
-            "action_data": {},
-        })
+        items.append(
+            {
+                "type": "practice",
+                "priority": 1,
+                "title": "保持练习节奏",
+                "desc": "当前状态良好，继续每日练习",
+                "action_data": {},
+            }
+        )
 
     return {"data_available": True, "items": items}
 
@@ -877,7 +909,8 @@ async def get_dashboard_insights(
     overview = await get_overview(db, user_id)
 
     action_plan = await compute_action_plan(
-        db, user_id,
+        db,
+        user_id,
         overview=overview,
         repeat_wrong=repeat_wrong,
         weak_topics=weak_topics,

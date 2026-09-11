@@ -57,9 +57,7 @@ class OcrWorkerPool:
         # Active tasks: request_id → (future, worker_id, page_index).
         # Keep page_index here so infrastructure failures (startup/shutdown/
         # timeout) still return a result associated with the correct page.
-        self._active_tasks: dict[
-            str, tuple[asyncio.Future, int, int]
-        ] = {}
+        self._active_tasks: dict[str, tuple[asyncio.Future, int, int]] = {}
 
         # Consumer tasks are started lazily on first submit.  Constructing the
         # pool must not bind it to a possibly non-running/wrong event loop, and
@@ -273,15 +271,18 @@ class OcrWorkerPool:
                 worker.close_process_handle()
                 self._workers[wid] = None
 
-        await asyncio.gather(*(
-            _stop_worker(wid, worker)
-            for wid, worker in enumerate(self._workers)
-            if worker is not None
-        ))
+        await asyncio.gather(
+            *(
+                _stop_worker(wid, worker)
+                for wid, worker in enumerate(self._workers)
+                if worker is not None
+            )
+        )
 
         # Log final metrics
         logger.info(
-            "OcrWorkerPool shut down. metrics=%s", self._metrics.snapshot(),
+            "OcrWorkerPool shut down. metrics=%s",
+            self._metrics.snapshot(),
         )
 
     @property
@@ -363,7 +364,9 @@ class OcrWorkerPool:
                 # results are not discarded as stale.
                 req.worker_generation = worker.generation
                 self._active_tasks[req.request_id] = (
-                    entry[0], worker_id, req.page_index,
+                    entry[0],
+                    worker_id,
+                    req.page_index,
                 )
                 self._metrics.running += 1
 
@@ -378,7 +381,9 @@ class OcrWorkerPool:
                 except Exception as exc:
                     logger.warning("Worker[%d] send failed: %s", worker_id, exc)
                     await self._handle_worker_failure(
-                        worker_id, req.request_id, str(exc),
+                        worker_id,
+                        req.request_id,
+                        str(exc),
                     )
                     self._metrics.running = max(0, self._metrics.running - 1)
                     continue
@@ -396,7 +401,9 @@ class OcrWorkerPool:
                     if result.request_id != req.request_id:
                         logger.error(
                             "Worker[%d] protocol desync: expected request %s, got %s",
-                            worker_id, req.request_id, result.request_id,
+                            worker_id,
+                            req.request_id,
+                            result.request_id,
                         )
                         self._metrics.stale_discarded += 1
                         await self._kill_worker(worker_id, count_crash=True)
@@ -435,7 +442,8 @@ class OcrWorkerPool:
                     self._metrics.timed_out += 1
                     logger.warning(
                         "Worker[%d] execution timeout (%.1fs), killing",
-                        worker_id, execution_budget,
+                        worker_id,
+                        execution_budget,
                     )
                     await self._kill_worker(worker_id, count_crash=True)
                     self._fail_future(
@@ -451,7 +459,9 @@ class OcrWorkerPool:
                 except Exception as exc:
                     logger.warning("Worker[%d] unexpected error: %s", worker_id, exc)
                     await self._handle_worker_failure(
-                        worker_id, req.request_id, str(exc),
+                        worker_id,
+                        req.request_id,
+                        str(exc),
                     )
                 finally:
                     self._metrics.running = max(0, self._metrics.running - 1)
@@ -473,8 +483,7 @@ class OcrWorkerPool:
         # later slots from ever starting.
         if is_restart and not self._allow_restart():
             logger.error(
-                "Worker[%d] restart rate limit exceeded, "
-                "not starting replacement",
+                "Worker[%d] restart rate limit exceeded, not starting replacement",
                 worker_id,
             )
             # Close old worker if still around
@@ -509,7 +518,8 @@ class OcrWorkerPool:
                 except Exception:
                     pass
                 await asyncio.to_thread(
-                    new_worker.ensure_dead, self._config.kill_timeout,
+                    new_worker.ensure_dead,
+                    self._config.kill_timeout,
                 )
                 new_worker.close_pipe()
                 new_worker.close_process_handle()
@@ -530,9 +540,12 @@ class OcrWorkerPool:
             elapsed = time.monotonic() - start_time
             logger.info(
                 "Worker[%d] %s g%d→g%d (pid=%d) in %.1fs",
-                worker_id, "replaced" if is_restart else "started",
+                worker_id,
+                "replaced" if is_restart else "started",
                 worker.generation if worker else -1,
-                self._generation, new_worker.pid, elapsed,
+                self._generation,
+                new_worker.pid,
+                elapsed,
             )
             return new_worker
 
@@ -543,7 +556,8 @@ class OcrWorkerPool:
             logger.error("Worker[%d] start failed: %s", worker_id, exc)
             try:
                 await asyncio.to_thread(
-                    new_worker.ensure_dead, self._config.kill_timeout,
+                    new_worker.ensure_dead,
+                    self._config.kill_timeout,
                 )
             except Exception:
                 pass
@@ -558,9 +572,7 @@ class OcrWorkerPool:
         window = self._config.restart_window_seconds
 
         # Remove entries outside window
-        while self._restart_times and (
-            now - self._restart_times[0] > window
-        ):
+        while self._restart_times and (now - self._restart_times[0] > window):
             self._restart_times.popleft()
 
         limit = self._config.max_restarts_per_window
@@ -572,7 +584,8 @@ class OcrWorkerPool:
         if worker is not None:
             try:
                 await asyncio.to_thread(
-                    worker.ensure_dead, self._config.kill_timeout,
+                    worker.ensure_dead,
+                    self._config.kill_timeout,
                 )
             except Exception as exc:
                 logger.warning("Worker[%d] ensure_dead error: %s", worker_id, exc)
@@ -583,7 +596,10 @@ class OcrWorkerPool:
         self._workers[worker_id] = None
 
     async def _handle_worker_failure(
-        self, worker_id: int, request_id: str, error: str,
+        self,
+        worker_id: int,
+        request_id: str,
+        error: str,
     ) -> None:
         """Handle worker failure and fail the active task."""
         await self._kill_worker(worker_id, count_crash=True)
@@ -599,7 +615,8 @@ class OcrWorkerPool:
         if max_tasks > 0 and worker.tasks_completed >= max_tasks:
             logger.info(
                 "Worker[%d] reached max_tasks_per_worker=%d; recycling",
-                worker.worker_id, max_tasks,
+                worker.worker_id,
+                max_tasks,
             )
             return True
 
@@ -609,7 +626,9 @@ class OcrWorkerPool:
             if rss is not None and rss >= max_rss:
                 logger.warning(
                     "Worker[%d] RSS %.1fMB reached limit %dMB; recycling",
-                    worker.worker_id, rss, max_rss,
+                    worker.worker_id,
+                    rss,
+                    max_rss,
                 )
                 return True
         return False
@@ -633,7 +652,10 @@ class OcrWorkerPool:
             future.set_result(result)
 
     def _fail_future(
-        self, request_id: str, code: str, message: str,
+        self,
+        request_id: str,
+        code: str,
+        message: str,
     ) -> None:
         entry = self._active_tasks.pop(request_id, None)
         if entry is None:

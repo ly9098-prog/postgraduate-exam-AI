@@ -46,7 +46,9 @@ async def list_roles(
 ):
     result = await db.execute(select(Role).order_by(Role.id.asc()))
     roles = result.scalars().all()
-    permission_result = await db.execute(select(RolePermission.role_id, RolePermission.permission_id))
+    permission_result = await db.execute(
+        select(RolePermission.role_id, RolePermission.permission_id)
+    )
     permission_map: dict[int, list[int]] = {}
     for role_id, permission_id in permission_result.all():
         permission_map.setdefault(role_id, []).append(permission_id)
@@ -116,4 +118,6 @@ async def replace_role_permissions(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except ValueError as exc:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )

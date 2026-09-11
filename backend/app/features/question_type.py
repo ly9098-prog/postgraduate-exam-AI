@@ -213,10 +213,7 @@ def validate_question_type(value: str | None) -> str:
         raise ValueError(f"题型不能为空，收到: {value!r}")
     if value in CANONICAL_TYPES:
         return value
-    raise ValueError(
-        f"非标准题型值: {value!r}。"
-        f"标准值: {sorted(CANONICAL_TYPES)}"
-    )
+    raise ValueError(f"非标准题型值: {value!r}。标准值: {sorted(CANONICAL_TYPES)}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

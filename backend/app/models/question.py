@@ -23,7 +23,9 @@ from app.features.question_type import QT_SINGLE_CHOICE
 class Question(Base):
     __tablename__ = "questions"
     __table_args__ = (
-        Index("ix_questions_coverage_scope", "subject_id", "review_status", "is_active"),
+        Index(
+            "ix_questions_coverage_scope", "subject_id", "review_status", "is_active"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -38,7 +40,9 @@ class Question(Base):
     content: Mapped[dict] = mapped_column(JSON, nullable=False)
     options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
-    question_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    question_hash: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[int] = mapped_column(SmallInteger, default=3)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -50,9 +54,7 @@ class Question(Base):
     year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     review_status: Mapped[str] = mapped_column(String(16), default="approved")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

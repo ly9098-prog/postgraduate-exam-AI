@@ -110,12 +110,14 @@ PRACTICE_ALLOWED_MODES = {"random", "smart", "similar", "sequential"}
 # question types.  Text/free-response revisions must not be issued into a batch
 # until the runner has an input path for them, otherwise the user can never mark
 # the question answered and is forced to submit it as skipped.
-PRACTICE_ANSWERABLE_QUESTION_TYPES = frozenset({
-    QT_SINGLE_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_TRUE_FALSE,
-    QT_MULTI_BLANK_CHOICE,
-})
+PRACTICE_ANSWERABLE_QUESTION_TYPES = frozenset(
+    {
+        QT_SINGLE_CHOICE,
+        QT_MULTIPLE_CHOICE,
+        QT_TRUE_FALSE,
+        QT_MULTI_BLANK_CHOICE,
+    }
+)
 _PRACTICE_BATCH_TOKEN_VERSION = 2
 
 
@@ -180,7 +182,9 @@ def create_practice_batch_token(
         revisions[question_id] = int(version_id)
 
     now = int(time.time())
-    submission_request_id = str(submission_request_id or f"practice_{uuid4().hex}").strip()
+    submission_request_id = str(
+        submission_request_id or f"practice_{uuid4().hex}"
+    ).strip()
     if not submission_request_id or len(submission_request_id) > 128:
         raise PracticeBatchTokenError("练习批次 request_id 无效")
     payload = {
@@ -209,7 +213,9 @@ def create_practice_batch_token(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
     signature = _urlsafe_b64encode(
-        hmac.new(_practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256).digest()
+        hmac.new(
+            _practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256
+        ).digest()
     )
     return f"{body}.{signature}", revisions, submission_request_id
 
@@ -218,7 +224,9 @@ def _decode_practice_batch_token(token: str) -> dict:
     try:
         body, signature = str(token or "").split(".", 1)
         expected = _urlsafe_b64encode(
-            hmac.new(_practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256).digest()
+            hmac.new(
+                _practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256
+            ).digest()
         )
         if not hmac.compare_digest(signature, expected):
             raise PracticeBatchTokenError("练习批次签名无效")
@@ -227,7 +235,10 @@ def _decode_practice_batch_token(token: str) -> dict:
         raise
     except Exception as exc:
         raise PracticeBatchTokenError("练习批次 token 格式无效") from exc
-    if not isinstance(payload, dict) or payload.get("v") != _PRACTICE_BATCH_TOKEN_VERSION:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("v") != _PRACTICE_BATCH_TOKEN_VERSION
+    ):
         raise PracticeBatchTokenError("练习批次 token 版本无效")
     if int(payload.get("exp") or 0) < int(time.time()):
         raise PracticeBatchTokenError("练习批次已过期，请重新获取题目")
@@ -247,7 +258,11 @@ def _validate_practice_batch_token(
         raise PracticeBatchTokenError("练习批次不属于当前用户")
 
     raw_questions = payload.get("questions")
-    if not isinstance(raw_questions, list) or not raw_questions or len(raw_questions) > PRACTICE_BATCH_MAX_QUESTIONS:
+    if (
+        not isinstance(raw_questions, list)
+        or not raw_questions
+        or len(raw_questions) > PRACTICE_BATCH_MAX_QUESTIONS
+    ):
         raise PracticeBatchTokenError("练习批次题目列表无效")
     revisions: dict[int, int] = {}
     issued_order: list[int] = []
@@ -265,7 +280,9 @@ def _validate_practice_batch_token(
         raise PracticeBatchTokenError("练习批次题目列表无效") from exc
 
     submitted_ids = [int(qid) for qid in question_ids]
-    if len(submitted_ids) != len(issued_order) or set(submitted_ids) != set(issued_order):
+    if len(submitted_ids) != len(issued_order) or set(submitted_ids) != set(
+        issued_order
+    ):
         raise PracticeBatchTokenError("提交题目与服务器下发批次不一致")
 
     try:
@@ -297,7 +314,9 @@ def _validate_practice_batch_token(
         issued_dt = datetime.utcfromtimestamp(issued_at)
         if started_at < issued_dt - timedelta(seconds=PRACTICE_BATCH_CLOCK_SKEW_SEC):
             raise PracticeBatchTokenError("练习开始时间早于题目下发时间")
-    if finished_at is not None and finished_at > utcnow() + timedelta(seconds=PRACTICE_BATCH_CLOCK_SKEW_SEC):
+    if finished_at is not None and finished_at > utcnow() + timedelta(
+        seconds=PRACTICE_BATCH_CLOCK_SKEW_SEC
+    ):
         raise PracticeBatchTokenError("练习结束时间明显晚于服务器时间")
 
     return revisions, issued_order, payload
@@ -322,7 +341,11 @@ async def _china_date_expr(db: AsyncSession, column):
     if bind.sync_connection.dialect.name == "sqlite":
         return func.date(column, "+8 hours")
     return cast(column + text("INTERVAL '8 hours'"), SQLDate)
-_PRACTICE_DURATION_ROUNDING_TOLERANCE = 2  # 允许 finished-start 与 duration 的少量取整误差
+
+
+_PRACTICE_DURATION_ROUNDING_TOLERANCE = (
+    2  # 允许 finished-start 与 duration 的少量取整误差
+)
 
 
 def _parse_session_datetime(value) -> "datetime | None":
@@ -331,7 +354,9 @@ def _parse_session_datetime(value) -> "datetime | None":
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            logger.warning("practice session datetime 缺少时区信息，按 UTC 处理: %s", value)
+            logger.warning(
+                "practice session datetime 缺少时区信息，按 UTC 处理: %s", value
+            )
         return normalize_to_naive_utc(value)
     text_val = str(value).strip()
     if not text_val:
@@ -389,7 +414,9 @@ def _normalize_practice_session(
     # 不允许明显超过墙钟（保留少量取整误差），异常值直接拒绝，避免
     # fingerprint 与最终落库 duration 不一致。
     if duration_sec > wall_sec + _PRACTICE_DURATION_ROUNDING_TOLERANCE:
-        raise ValueError("session.duration_sec 不得超过 started_at/finished_at 墙钟时长")
+        raise ValueError(
+            "session.duration_sec 不得超过 started_at/finished_at 墙钟时长"
+        )
     if duration_sec > PRACTICE_SESSION_MAX_DURATION_SEC:
         raise ValueError("session.duration_sec 超过允许上限")
 
@@ -415,7 +442,9 @@ def _normalize_practice_session(
 
     question_count = session_meta.get("question_count")
     try:
-        question_count = int(question_count) if question_count is not None else answered_count
+        question_count = (
+            int(question_count) if question_count is not None else answered_count
+        )
     except (TypeError, ValueError):
         question_count = answered_count
     question_count = max(0, question_count)
@@ -479,7 +508,11 @@ def _random_sample_query(query, total_count: int, need: int, id_col=None):
     # Large pool: avoid a full random sort.  A random offset is best-effort but
     # keeps the database work bounded.
     offset = random.randint(0, total_count - need)
-    return query.order_by(id_col.asc() if id_col else func.random()).offset(offset).limit(need)
+    return (
+        query.order_by(id_col.asc() if id_col else func.random())
+        .offset(offset)
+        .limit(need)
+    )
 
 
 async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
@@ -492,7 +525,9 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
     from app.models.admin import Subject
 
     result = await db.execute(
-        select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+        select(Subject).order_by(
+            Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
+        )
     )
     all_subjects = list(result.scalars().all())
     subjects = select_study_subject_records(all_subjects)
@@ -539,7 +574,9 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
     return roots
 
 
-async def resolve_subject_id_to_code(db: AsyncSession, subject_id: int) -> tuple[str, str] | None:
+async def resolve_subject_id_to_code(
+    db: AsyncSession, subject_id: int
+) -> tuple[str, str] | None:
     """将可练习的 408 subject_id 解析为 (subject_code, subject_name)。"""
     from app.models.admin import Subject
 
@@ -575,28 +612,114 @@ def _normalize_true_false_answer(value: str) -> str:
 # not make a valid question disappear from practice.
 _408_CONTENT_ANCHORS: dict[str, tuple[str, ...]] = {
     "data_structure": (
-        "二叉树", "二叉排序树", "平衡二叉树", "红黑树", "b树", "b+树",
-        "线索二叉树", "哈夫曼树", "链表", "顺序表", "邻接表", "邻接矩阵",
-        "最小生成树", "拓扑排序", "关键路径", "散列表", "哈希表", "散列",
-        "二分查找", "折半查找", "快速排序", "归并排序", "堆排序", "希尔排序",
-        "插入排序", "冒泡排序", "深度优先", "广度优先", "dfs", "bfs",
+        "二叉树",
+        "二叉排序树",
+        "平衡二叉树",
+        "红黑树",
+        "b树",
+        "b+树",
+        "线索二叉树",
+        "哈夫曼树",
+        "链表",
+        "顺序表",
+        "邻接表",
+        "邻接矩阵",
+        "最小生成树",
+        "拓扑排序",
+        "关键路径",
+        "散列表",
+        "哈希表",
+        "散列",
+        "二分查找",
+        "折半查找",
+        "快速排序",
+        "归并排序",
+        "堆排序",
+        "希尔排序",
+        "插入排序",
+        "冒泡排序",
+        "深度优先",
+        "广度优先",
+        "dfs",
+        "bfs",
     ),
     "operating_system": (
-        "进程", "线程", "死锁", "信号量", "临界区", "管程", "银行家算法",
-        "页面置换", "缺页", "页表", "页框", "页号", "虚拟内存", "虚拟页",
-        "分段存储", "段表", "段号", "段内地址", "工作集", "驻留集", "抖动",
-        "文件系统", "磁盘调度", "时间片", "pv操作",
+        "进程",
+        "线程",
+        "死锁",
+        "信号量",
+        "临界区",
+        "管程",
+        "银行家算法",
+        "页面置换",
+        "缺页",
+        "页表",
+        "页框",
+        "页号",
+        "虚拟内存",
+        "虚拟页",
+        "分段存储",
+        "段表",
+        "段号",
+        "段内地址",
+        "工作集",
+        "驻留集",
+        "抖动",
+        "文件系统",
+        "磁盘调度",
+        "时间片",
+        "pv操作",
     ),
     "computer_organization": (
-        "cpu", "alu", "cache", "高速缓存", "主存", "存储器层次", "指令周期",
-        "指令字", "微指令", "微程序", "流水线", "控制器", "运算器", "总线",
-        "dma", "中断向量", "寻址方式", "补码", "原码", "浮点数", "ieee754",
-        "ieee 754", "机器字长", "存储字长",
+        "cpu",
+        "alu",
+        "cache",
+        "高速缓存",
+        "主存",
+        "存储器层次",
+        "指令周期",
+        "指令字",
+        "微指令",
+        "微程序",
+        "流水线",
+        "控制器",
+        "运算器",
+        "总线",
+        "dma",
+        "中断向量",
+        "寻址方式",
+        "补码",
+        "原码",
+        "浮点数",
+        "ieee754",
+        "ieee 754",
+        "机器字长",
+        "存储字长",
     ),
     "computer_network": (
-        "tcp", "udp", "ipv4", "ipv6", "ip地址", "子网掩码", "路由表", "路由协议",
-        "ospf", "rip", "bgp", "arp", "dns", "http", "以太网", "csma", "mac地址",
-        "数据链路层", "网络层", "传输层", "应用层", "拥塞窗口", "三次握手",
+        "tcp",
+        "udp",
+        "ipv4",
+        "ipv6",
+        "ip地址",
+        "子网掩码",
+        "路由表",
+        "路由协议",
+        "ospf",
+        "rip",
+        "bgp",
+        "arp",
+        "dns",
+        "http",
+        "以太网",
+        "csma",
+        "mac地址",
+        "数据链路层",
+        "网络层",
+        "传输层",
+        "应用层",
+        "拥塞窗口",
+        "三次握手",
         "四次挥手",
     ),
 }
@@ -698,12 +821,15 @@ async def filter_questions_to_revision_scope(
     resolved_revision_ids = revision_ids or await load_latest_question_revision_ids(
         db, [int(q.id) for q in questions]
     )
-    version_ids = {int(version_id) for version_id in resolved_revision_ids.values() if version_id}
+    version_ids = {
+        int(version_id) for version_id in resolved_revision_ids.values() if version_id
+    }
     if not scope or not version_ids:
         if questions:
             logger.error(
                 "[PRACTICE_REVISION_SCOPE] empty scope/version set scope=%s question_ids=%s",
-                sorted(scope), [int(q.id) for q in questions],
+                sorted(scope),
+                [int(q.id) for q in questions],
             )
         return []
 
@@ -723,6 +849,7 @@ async def filter_questions_to_revision_scope(
     # 数据结构/操作系统/组成原理/计网.  Resolve the live rows once so the semantic
     # guard also works after subject migrations or custom deployments.
     from app.models.admin import Subject
+
     revision_subject_ids = {
         int(row.subject_id) for row in revisions.values() if row.subject_id is not None
     }
@@ -740,7 +867,9 @@ async def filter_questions_to_revision_scope(
     rejected: list[dict] = []
     for question in questions:
         qid = int(question.id)
-        q_subject_id = int(question.subject_id) if question.subject_id is not None else None
+        q_subject_id = (
+            int(question.subject_id) if question.subject_id is not None else None
+        )
         version_id = resolved_revision_ids.get(qid)
         revision = revisions.get(version_id) if version_id else None
         revision_subject_id = (
@@ -776,30 +905,35 @@ async def filter_questions_to_revision_scope(
         if structural_valid and semantic_mismatch is None:
             kept.append(question)
         else:
-            rejected.append({
-                "question_id": qid,
-                "question_subject_id": q_subject_id,
-                "current_version_id": (
-                    int(question.current_version_id)
-                    if getattr(question, "current_version_id", None)
-                    else None
-                ),
-                "issued_latest_version_id": version_id,
-                "revision_subject_id": revision_subject_id,
-                "question_type": q_question_type,
-                "revision_question_type": revision_question_type,
-                "answerable_type": revision_question_type in PRACTICE_ANSWERABLE_QUESTION_TYPES,
-                "question_active": getattr(question, "is_active", None),
-                "review_status": getattr(question, "review_status", None),
-                "revision_active": getattr(revision, "is_active", None),
-                "semantic_mismatch": semantic_mismatch,
-                "semantic_scores": semantic_scores or None,
-            })
+            rejected.append(
+                {
+                    "question_id": qid,
+                    "question_subject_id": q_subject_id,
+                    "current_version_id": (
+                        int(question.current_version_id)
+                        if getattr(question, "current_version_id", None)
+                        else None
+                    ),
+                    "issued_latest_version_id": version_id,
+                    "revision_subject_id": revision_subject_id,
+                    "question_type": q_question_type,
+                    "revision_question_type": revision_question_type,
+                    "answerable_type": revision_question_type
+                    in PRACTICE_ANSWERABLE_QUESTION_TYPES,
+                    "question_active": getattr(question, "is_active", None),
+                    "review_status": getattr(question, "review_status", None),
+                    "revision_active": getattr(revision, "is_active", None),
+                    "semantic_mismatch": semantic_mismatch,
+                    "semantic_scores": semantic_scores or None,
+                }
+            )
 
     if rejected:
         logger.error(
             "[PRACTICE_REVISION_SCOPE] rejected=%d scope_ids=%s rows=%s",
-            len(rejected), sorted(scope), rejected,
+            len(rejected),
+            sorted(scope),
+            rejected,
         )
     return kept
 
@@ -822,10 +956,7 @@ def _build_excluded_question_subquery(
     if not exclude_answered and not no_repeat_days:
         return None
 
-    sub = (
-        select(PracticeRecord.question_id)
-        .where(PracticeRecord.user_id == user_id)
-    )
+    sub = select(PracticeRecord.question_id).where(PracticeRecord.user_id == user_id)
 
     if no_repeat_days:
         cutoff = utcnow() - timedelta(days=no_repeat_days)
@@ -860,7 +991,9 @@ async def resolve_practice_subject_scope(
     # 获取当前学生端可用科目以构建树。额外开放的四个科目即使曾被旧迁移
     # 标记为 inactive，也应在学生端继续可练习。
     all_result = await db.execute(
-        select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+        select(Subject).order_by(
+            Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
+        )
     )
     all_subjects = select_study_subject_records(all_result.scalars().all())
 
@@ -892,7 +1025,6 @@ async def resolve_practice_subject_scope(
     return has_enabled_children, [s.id for s in result]
 
 
-
 async def resolve_practice_knowledge_scope(
     db: AsyncSession,
     *,
@@ -913,17 +1045,21 @@ async def resolve_practice_knowledge_scope(
     from app.models.knowledge_edge import KnowledgeEdge
     from app.services import syllabus_service
 
-    normalized_subject_ids = list(dict.fromkeys(int(value) for value in subject_ids if int(value) > 0))
+    normalized_subject_ids = list(
+        dict.fromkeys(int(value) for value in subject_ids if int(value) > 0)
+    )
     if not normalized_subject_ids:
         return None
 
-    point = (await db.execute(
-        select(KnowledgePoint).where(
-            KnowledgePoint.id == int(knowledge_point_id),
-            KnowledgePoint.subject_id.in_(normalized_subject_ids),
-            KnowledgePoint.is_active.is_(True),
+    point = (
+        await db.execute(
+            select(KnowledgePoint).where(
+                KnowledgePoint.id == int(knowledge_point_id),
+                KnowledgePoint.subject_id.in_(normalized_subject_ids),
+                KnowledgePoint.is_active.is_(True),
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if point is None:
         return None
 
@@ -978,6 +1114,7 @@ async def resolve_practice_knowledge_scope(
             int(memberships[kp_id].sort_order or 0) if kp_id in memberships else 0,
             kp_id,
         )
+
     for child_ids in children.values():
         child_ids.sort(key=sort_key)
 
@@ -1000,7 +1137,6 @@ async def resolve_practice_knowledge_scope(
         "knowledge_point_ids": ordered_ids,
         "include_descendants": True,
     }
-
 
 
 async def get_knowledge_scope_practice_questions(
@@ -1028,7 +1164,9 @@ async def get_knowledge_scope_practice_questions(
     from app.models.question_knowledge_point import QuestionKnowledgePoint
     from app.models.user_knowledge_state import UserKnowledgeState
 
-    target_ids = list(dict.fromkeys(int(value) for value in knowledge_point_ids if int(value) > 0))
+    target_ids = list(
+        dict.fromkeys(int(value) for value in knowledge_point_ids if int(value) > 0)
+    )
     if not target_ids or count <= 0:
         return []
 
@@ -1055,7 +1193,9 @@ async def get_knowledge_scope_practice_questions(
             UserKnowledgeState.knowledge_point_id.in_(target_ids),
         )
     )
-    states = {int(state.knowledge_point_id): state for state in state_rows.scalars().all()}
+    states = {
+        int(state.knowledge_point_id): state for state in state_rows.scalars().all()
+    }
 
     mapping_rows = await db.execute(
         select(
@@ -1075,7 +1215,9 @@ async def get_knowledge_scope_practice_questions(
     for question in candidates:
         kp_ids = q_to_kps.get(int(question.id), [])
         labels = [_chapter_knowledge_bucket(states.get(kp_id)) for kp_id in kp_ids]
-        bucket = min(labels, key=lambda name: bucket_rank[name]) if labels else "unobserved"
+        bucket = (
+            min(labels, key=lambda name: bucket_rank[name]) if labels else "unobserved"
+        )
         buckets[bucket].append(question)
 
     # Preserve the candidate order produced by the Leitner/fallback pipeline.
@@ -1085,7 +1227,7 @@ async def get_knowledge_scope_practice_questions(
     selected: list[Question] = []
     selected_ids: set[int] = set()
     for bucket in ("weak", "unobserved", "developing", "stable"):
-        for question in buckets[bucket][:targets[bucket]]:
+        for question in buckets[bucket][: targets[bucket]]:
             if int(question.id) in selected_ids:
                 continue
             selected.append(question)
@@ -1108,11 +1250,15 @@ async def get_knowledge_scope_practice_questions(
     logger.info(
         "[KNOWLEDGE_SCOPE_PRACTICE] root_scope_size=%d requested=%d candidates=%d "
         "bucket_sizes=%s target_mix=%s returned=%d",
-        len(target_ids), count, len(candidates),
+        len(target_ids),
+        count,
+        len(candidates),
         {name: len(values) for name, values in buckets.items()},
-        targets, len(selected[:count]),
+        targets,
+        len(selected[:count]),
     )
     return selected[:count]
+
 
 def _round_robin_merge(
     buckets: list[list[object]],
@@ -1238,13 +1384,20 @@ async def get_aggregated_random_questions(
 
         if use_leitner:
             candidates = await _get_questions_with_leitner(
-                db, user_id, conds, "random", count,
+                db,
+                user_id,
+                conds,
+                "random",
+                count,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
             )
         else:
             candidates = await _get_questions_v1_fallback(
-                db, conds, "random", count,
+                db,
+                conds,
+                "random",
+                count,
                 user_id=user_id,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
@@ -1262,18 +1415,25 @@ async def get_aggregated_random_questions(
     if not buckets:
         logger.info(
             "[AGG_RANDOM] subject_code=%s subject_ids=%s count=%d no_buckets",
-            subject_code, subject_ids, count,
+            subject_code,
+            subject_ids,
+            count,
         )
         return []
 
     result = _round_robin_merge(buckets, count, randomize_order=True)
     from collections import Counter
+
     per_subject = Counter(q.subject_id for q in result)
     logger.info(
         "[AGG_RANDOM] subject_code=%s subject_ids=%s count=%d "
         "non_empty_buckets=%d returned=%d per_subject=%s",
-        subject_code, subject_ids, count,
-        len(buckets), len(result), dict(per_subject),
+        subject_code,
+        subject_ids,
+        count,
+        len(buckets),
+        len(result),
+        dict(per_subject),
     )
     return result
 
@@ -1306,9 +1466,7 @@ async def get_aggregated_smart_questions(
     from app.models.admin import Subject
 
     # 批量加载子科目 code 映射
-    subj_result = await db.execute(
-        select(Subject).where(Subject.id.in_(subject_ids))
-    )
+    subj_result = await db.execute(select(Subject).where(Subject.id.in_(subject_ids)))
     subj_map: dict[int, str] = {s.id: s.code for s in subj_result.scalars().all()}
 
     all_buckets: list[list[tuple[Question, dict]]] = []
@@ -1319,7 +1477,9 @@ async def get_aggregated_smart_questions(
             continue
 
         qs, meta = await get_smart_practice_questions(
-            db=db, user_id=user_id, subject_code=sid_code,
+            db=db,
+            user_id=user_id,
+            subject_code=sid_code,
             count=count,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
@@ -1335,7 +1495,9 @@ async def get_aggregated_smart_questions(
     if not all_buckets:
         logger.info(
             "[AGG_SMART] subject_code=%s subject_ids=%s count=%d no_buckets",
-            subject_code, subject_ids, count,
+            subject_code,
+            subject_ids,
+            count,
         )
         return [], {}
 
@@ -1345,29 +1507,48 @@ async def get_aggregated_smart_questions(
         merged_meta = {item[0].id: item[1] for item in merged[:count]}
         logger.info(
             "[AGG_SMART] subject_code=%s subject_ids=%s count=%d buckets=%d returned=%d (single)",
-            subject_code, subject_ids, count, len(all_buckets), len(merged_qs),
+            subject_code,
+            subject_ids,
+            count,
+            len(all_buckets),
+            len(merged_qs),
         )
         return await _finalize_smart(
-            merged_qs, merged_meta, db, user_id, subject_code,
+            merged_qs,
+            merged_meta,
+            db,
+            user_id,
+            subject_code,
             request_id=request_id,
         )
 
     merged_qs, merged_meta = _round_robin_merge_with_metadata(
-        all_buckets, count, randomize_order=False,
+        all_buckets,
+        count,
+        randomize_order=False,
     )
 
     from collections import Counter
+
     per_subject = Counter(q.subject_id for q in merged_qs)
     logger.info(
         "[AGG_SMART] subject_code=%s subject_ids=%s count=%d "
         "non_empty_buckets=%d returned=%d per_subject=%s",
-        subject_code, subject_ids, count,
-        len(all_buckets), len(merged_qs), dict(per_subject),
+        subject_code,
+        subject_ids,
+        count,
+        len(all_buckets),
+        len(merged_qs),
+        dict(per_subject),
     )
 
     # 统一写入推荐日志（仅记录最终实际返回的题目）
     return await _finalize_smart(
-        merged_qs, merged_meta, db, user_id, subject_code,
+        merged_qs,
+        merged_meta,
+        db,
+        user_id,
+        subject_code,
         request_id=request_id,
     )
 
@@ -1457,14 +1638,21 @@ async def get_practice_questions(
     # ── V2 Leitner 模式 ──
     if use_leitner:
         return await _get_questions_with_leitner(
-            db, user_id, base_conditions, mode, count,
+            db,
+            user_id,
+            base_conditions,
+            mode,
+            count,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
         )
 
     # ── V1 兼容模式：use_leitner=False ──
     return await _get_questions_v1_fallback(
-        db, base_conditions, mode, count,
+        db,
+        base_conditions,
+        mode,
+        count,
         user_id=user_id,
         exclude_answered=exclude_answered,
         no_repeat_days=no_repeat_days,
@@ -1541,7 +1729,9 @@ async def _get_questions_with_leitner(
                 .where(and_(*conds, due_condition))
                 .subquery()
             )
-            total = int((await db.scalar(select(func.count()).select_from(count_base))) or 0)
+            total = int(
+                (await db.scalar(select(func.count()).select_from(count_base))) or 0
+            )
             q = _random_sample_query(base_q, total, limit_value, Question.id)
         else:
             q = base_q.order_by(Question.id.asc()).limit(limit_value)
@@ -1559,7 +1749,9 @@ async def _get_questions_with_leitner(
     if len(questions) >= count:
         logger.info(
             "[Leitner Query] mode=%s count=%d resultCount=%d (layer: new+due)",
-            mode, count, len(questions),
+            mode,
+            count,
+            len(questions),
         )
         return questions[:count]
 
@@ -1572,14 +1764,18 @@ async def _get_questions_with_leitner(
         UserQuestionState.next_review_at.is_(None),
         UserQuestionState.next_review_at <= soon,
     )
-    more = await _leitner_query(due_soon_cond, exclude_ids=existing_ids, limit=count - len(questions))
+    more = await _leitner_query(
+        due_soon_cond, exclude_ids=existing_ids, limit=count - len(questions)
+    )
     questions.extend(more)
     existing_ids.update(q.id for q in more)
 
     if len(questions) >= count:
         logger.info(
             "[Leitner Query] mode=%s count=%d resultCount=%d (layer: due+1d)",
-            mode, count, len(questions),
+            mode,
+            count,
+            len(questions),
         )
         return questions[:count]
 
@@ -1590,7 +1786,9 @@ async def _get_questions_with_leitner(
         UserQuestionState.next_review_at <= soon + timedelta(days=30),
     )
     more = await _leitner_query(
-        all_cond, exclude_ids=existing_ids, limit=count - len(questions),
+        all_cond,
+        exclude_ids=existing_ids,
+        limit=count - len(questions),
         extra_order=UserQuestionState.last_answered_at.asc().nulls_first(),
     )
     questions.extend(more)
@@ -1599,13 +1797,18 @@ async def _get_questions_with_leitner(
     if len(questions) >= count:
         logger.info(
             "[Leitner Query] mode=%s count=%d resultCount=%d (layer: oldest)",
-            mode, count, len(questions),
+            mode,
+            count,
+            len(questions),
         )
         return questions[:count]
 
     # 第四层：回退到 V1 no_repeat_days fallback
     v1_results = await _get_questions_v1_fallback(
-        db, base_conditions, mode, count - len(questions),
+        db,
+        base_conditions,
+        mode,
+        count - len(questions),
         user_id=user_id,
         exclude_answered=exclude_answered,
         no_repeat_days=no_repeat_days,
@@ -1615,7 +1818,9 @@ async def _get_questions_with_leitner(
 
     logger.info(
         "[Leitner Query] mode=%s count=%d resultCount=%d (layer: v1-fallback)",
-        mode, count, len(questions),
+        mode,
+        count,
+        len(questions),
     )
     return questions[:count]
 
@@ -1631,6 +1836,7 @@ async def _get_questions_v1_fallback(
     exclude_ids: set[int] | None = None,
 ) -> list[Question]:
     """V1 fallback 取题：N天 → 7天 → 1天 → 不排除。"""
+
     async def _query(
         excl_answered: bool,
         excl_days: int | None,
@@ -1653,7 +1859,11 @@ async def _get_questions_v1_fallback(
         if all_excl:
             conds.append(Question.id.notin_(all_excl))
 
-        q = select(Question).where(and_(*conds)).options(selectinload(Question.subject_ref))
+        q = (
+            select(Question)
+            .where(and_(*conds))
+            .options(selectinload(Question.subject_ref))
+        )
         if mode == "random":
             # Use count + random offset instead of ORDER BY random() on large tables
             total_q = select(func.count()).select_from(
@@ -1676,20 +1886,26 @@ async def _get_questions_v1_fallback(
         existing.update(exclude_ids)
 
     if no_repeat_days > 7:
-        more = await _query(True, 7, extra_exclude_ids=existing, limit=count - len(questions))
+        more = await _query(
+            True, 7, extra_exclude_ids=existing, limit=count - len(questions)
+        )
         questions.extend(more)
         existing.update(q.id for q in more)
     if len(questions) >= count:
         return questions[:count]
 
     if no_repeat_days > 1:
-        more = await _query(True, 1, extra_exclude_ids=existing, limit=count - len(questions))
+        more = await _query(
+            True, 1, extra_exclude_ids=existing, limit=count - len(questions)
+        )
         questions.extend(more)
         existing.update(q.id for q in more)
     if len(questions) >= count:
         return questions[:count]
 
-    more = await _query(False, None, extra_exclude_ids=existing, limit=count - len(questions))
+    more = await _query(
+        False, None, extra_exclude_ids=existing, limit=count - len(questions)
+    )
     questions.extend(more)
     return questions[:count]
 
@@ -1714,7 +1930,11 @@ async def get_similar_practice_questions(
     # question_review_service.get_due_question_ids() 做二次过滤，
     # 过滤掉 next_review_at > now 的题目，不足时用 Leitner fallback 补齐。
     metadata: dict[int, dict] = {}
-    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject_code)
+    scope_ids = (
+        subject_ids
+        if subject_ids is not None
+        else await resolve_subject_ids(db, subject_code)
+    )
 
     # 1. 向量召回
     vector_questions: list[Question] = []
@@ -1799,7 +2019,11 @@ async def get_similar_practice_questions(
         select(Question).where(and_(*conditions)).subquery()
     )
     total = (await db.execute(q)).scalar() or 0
-    q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref))
+    q = (
+        select(Question)
+        .where(and_(*conditions))
+        .options(selectinload(Question.subject_ref))
+    )
     q = _random_sample_query(q, total, need, Question.id)
     result = await db.execute(q)
     fill_questions = list(result.scalars().all())
@@ -1842,7 +2066,11 @@ async def _maybe_finalize_smart(
                 meta["variant_key"] = variant_key
         return questions, metadata
     return await _finalize_smart(
-        questions, metadata, db, user_id, subject_code,
+        questions,
+        metadata,
+        db,
+        user_id,
+        subject_code,
         request_id=request_id,
         experiment_id=experiment_id,
         variant_key=variant_key,
@@ -1940,7 +2168,8 @@ async def _apply_strategy_weight_rerank(
                 )
 
             base_scores = {
-                "vector_similarity": (metadata.get(q.id) or {}).get("similarity") or 0.0,
+                "vector_similarity": (metadata.get(q.id) or {}).get("similarity")
+                or 0.0,
                 "knowledge_overlap": overlap,
                 "difficulty_match": difficulty_match,
                 "mastery_gap": mastery_gap,
@@ -2013,13 +2242,20 @@ async def get_smart_practice_questions(
     # aliases for the upgraded scored implementation rather than parallel
     # recommendation engines.
     smart_strategy = normalize_smart_strategy(smart_strategy)
-    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject_code)
+    scope_ids = (
+        subject_ids
+        if subject_ids is not None
+        else await resolve_subject_ids(db, subject_code)
+    )
 
     # V4: 综合打分策略
     if smart_strategy == "scored":
         try:
             scored_qs, scored_meta = await get_smart_scored_questions(
-                db=db, user_id=user_id, subject_code=subject_code, count=count,
+                db=db,
+                user_id=user_id,
+                subject_code=subject_code,
+                count=count,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 request_id=request_id,
@@ -2027,7 +2263,12 @@ async def get_smart_practice_questions(
             )
             if len(scored_qs) >= count:
                 return await _maybe_finalize_smart(
-                    scored_qs[:count], scored_meta, skip_finalize, db, user_id, subject_code,
+                    scored_qs[:count],
+                    scored_meta,
+                    skip_finalize,
+                    db,
+                    user_id,
+                    subject_code,
                     request_id=request_id,
                     experiment_id=experiment_info.get("experiment_id"),
                     variant_key=experiment_info.get("variant_key"),
@@ -2037,7 +2278,8 @@ async def get_smart_practice_questions(
             # 整批丢弃再从 weakness_vector 重做。保留已有结果，仅补齐缺口。
             logger.info(
                 "scored 策略题量不足 (%d/%d)，保留 scored 结果并 fallback 到 weakness_vector 补齐",
-                len(scored_qs), count,
+                len(scored_qs),
+                count,
             )
             remaining = count - len(scored_qs)
             fallback_qs, fallback_meta = await _smart_weakness_vector(
@@ -2052,16 +2294,27 @@ async def get_smart_practice_questions(
                 subject_ids=scope_ids,
             )
             merged_qs, merged_meta = merge_recommendation_results(
-                scored_qs, scored_meta, fallback_qs, fallback_meta, count=count,
+                scored_qs,
+                scored_meta,
+                fallback_qs,
+                fallback_meta,
+                count=count,
             )
             return await _maybe_finalize_smart(
-                merged_qs[:count], merged_meta, skip_finalize, db, user_id, subject_code,
+                merged_qs[:count],
+                merged_meta,
+                skip_finalize,
+                db,
+                user_id,
+                subject_code,
                 request_id=request_id,
                 experiment_id=experiment_info.get("experiment_id"),
                 variant_key=experiment_info.get("variant_key"),
             )
         except Exception:
-            logger.warning("scored 策略失败，fallback 到 weakness_vector", exc_info=True)
+            logger.warning(
+                "scored 策略失败，fallback 到 weakness_vector", exc_info=True
+            )
 
     # Phase 3: 知识路径策略
     if smart_strategy == "path":
@@ -2080,9 +2333,9 @@ async def get_smart_practice_questions(
                 # 获取题目。知识路径服务本身会尽量排除已做题，但最终刷题
                 # 接口仍需在当前 PracticeRecord 快照上强制执行 repeat-window，
                 # 防止缓存/并发写入导致已刚做过的题再次下发。
-                path_candidate_ids = list(dict.fromkeys(
-                    int(qid) for qid in path_qids if qid is not None
-                ))
+                path_candidate_ids = list(
+                    dict.fromkeys(int(qid) for qid in path_qids if qid is not None)
+                )
                 path_conditions = [
                     Question.id.in_(path_candidate_ids),
                     Question.is_active,
@@ -2118,7 +2371,9 @@ async def get_smart_practice_questions(
                 for q in path_questions:
                     node = node_map.get(q.id, {})
                     metadata[q.id] = {
-                        "recommend_reason": node.get("reason", f"知识路径推荐：{node.get('name', '')}"),
+                        "recommend_reason": node.get(
+                            "reason", f"知识路径推荐：{node.get('name', '')}"
+                        ),
                         "recommend_score": node.get("priority"),
                         "strategy": "knowledge_path",
                         "similarity": None,
@@ -2126,18 +2381,29 @@ async def get_smart_practice_questions(
 
                 if len(path_questions) >= count:
                     return await _maybe_finalize_smart(
-                        path_questions[:count], metadata, skip_finalize, db, user_id, subject_code,
+                        path_questions[:count],
+                        metadata,
+                        skip_finalize,
+                        db,
+                        user_id,
+                        subject_code,
                         request_id=request_id,
                         experiment_id=experiment_info.get("experiment_id"),
                         variant_key=experiment_info.get("variant_key"),
                     )
 
                 # 不足时 fallback 到 weakness_vector
-                logger.info("path 策略题量不足 (%d/%d)，fallback 到 weakness_vector",
-                            len(path_questions), count)
+                logger.info(
+                    "path 策略题量不足 (%d/%d)，fallback 到 weakness_vector",
+                    len(path_questions),
+                    count,
+                )
                 remaining = count - len(path_questions)
                 fallback_questions, fallback_meta = await _smart_weakness_vector(
-                    db, user_id, subject_code, count=remaining,
+                    db,
+                    user_id,
+                    subject_code,
+                    count=remaining,
                     exclude_answered=exclude_answered,
                     no_repeat_days=no_repeat_days,
                     use_leitner=use_leitner,
@@ -2145,34 +2411,53 @@ async def get_smart_practice_questions(
                     subject_ids=scope_ids,
                 )
                 path_questions, metadata = merge_recommendation_results(
-                    path_questions, metadata, fallback_questions, fallback_meta, count=count,
+                    path_questions,
+                    metadata,
+                    fallback_questions,
+                    fallback_meta,
+                    count=count,
                 )
                 return await _maybe_finalize_smart(
-                    path_questions[:count], metadata, skip_finalize, db, user_id, subject_code,
+                    path_questions[:count],
+                    metadata,
+                    skip_finalize,
+                    db,
+                    user_id,
+                    subject_code,
                     request_id=request_id,
                     experiment_id=experiment_info.get("experiment_id"),
                     variant_key=experiment_info.get("variant_key"),
                 )
         except Exception:
-            logger.warning("knowledge_path 策略失败，fallback 到 weakness_vector", exc_info=True)
+            logger.warning(
+                "knowledge_path 策略失败，fallback 到 weakness_vector", exc_info=True
+            )
         # path 策略完全失败，继续走 weakness_vector 逻辑
 
     # 1. 获取薄弱知识点（Phase 2 优先使用掌握度画像）
     weak_kps: list[dict] = []
     try:
         from app.services import mastery_service
+
         weak_kps = await mastery_service.get_user_weak_knowledge_points(
-            db, user_id, subject_code, limit=5,
+            db,
+            user_id,
+            subject_code,
+            limit=5,
         )
         if weak_kps:
             pass
     except Exception:
-        logger.warning("mastery_service.get_user_weak_knowledge_points failed, fallback", exc_info=True)
+        logger.warning(
+            "mastery_service.get_user_weak_knowledge_points failed, fallback",
+            exc_info=True,
+        )
 
     if not weak_kps:
         # Fallback: Phase 1 的临时统计
         weak_kps = await _compute_weak_knowledge_points(
-            db, user_id,
+            db,
+            user_id,
             scope_ids,
         )
         if weak_kps:
@@ -2182,8 +2467,12 @@ async def get_smart_practice_questions(
         # 没有足够的做题记录来判断薄弱点，退化为随机
         logger.info("smart 模式: 无足够做题记录，退化为随机")
         questions = await get_practice_questions(
-            db=db, user_id=user_id, subject_code=subject_code, count=count,
-            mode="random", exclude_answered=exclude_answered,
+            db=db,
+            user_id=user_id,
+            subject_code=subject_code,
+            count=count,
+            mode="random",
+            exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
             use_leitner=use_leitner,
             subject_ids=scope_ids,
@@ -2195,10 +2484,17 @@ async def get_smart_practice_questions(
                 "strategy": "random_fallback",
                 "similarity": None,
             }
-        return await _maybe_finalize_smart(questions, metadata, skip_finalize, db, user_id, subject_code,
-                                     request_id=request_id,
-                                     experiment_id=experiment_info.get("experiment_id"),
-                                     variant_key=experiment_info.get("variant_key"))
+        return await _maybe_finalize_smart(
+            questions,
+            metadata,
+            skip_finalize,
+            db,
+            user_id,
+            subject_code,
+            request_id=request_id,
+            experiment_id=experiment_info.get("experiment_id"),
+            variant_key=experiment_info.get("variant_key"),
+        )
 
     # 2. 构造 query_text 并向量召回
     kp_names = [kp["name"] for kp in weak_kps[:5]]
@@ -2262,21 +2558,35 @@ async def get_smart_practice_questions(
         # weakness_vector 的 rerank 必须显式读取自己的配置；practice_smart
         # 的 scene 默认现在是 default_scored，不能误拿 scored 的 legacy 0 权重。
         strategy_config = await recommendation_strategy_service.get_strategy_config(
-            db, "practice_smart", strategy_name="default_weakness_vector",
+            db,
+            "practice_smart",
+            strategy_name="default_weakness_vector",
         )
     except Exception:
         logger.debug("获取推荐策略配置失败，跳过权重重排", exc_info=True)
 
     if strategy_config:
         vector_questions, metadata = await _apply_strategy_weight_rerank(
-            db, user_id, vector_questions, metadata, strategy_config, kp_names,
+            db,
+            user_id,
+            vector_questions,
+            metadata,
+            strategy_config,
+            kp_names,
         )
 
     if len(vector_questions) >= count:
-        return await _maybe_finalize_smart(vector_questions[:count], metadata, skip_finalize, db, user_id, subject_code,
-                                     request_id=request_id,
-                                     experiment_id=experiment_info.get("experiment_id"),
-                                     variant_key=experiment_info.get("variant_key"))
+        return await _maybe_finalize_smart(
+            vector_questions[:count],
+            metadata,
+            skip_finalize,
+            db,
+            user_id,
+            subject_code,
+            request_id=request_id,
+            experiment_id=experiment_info.get("experiment_id"),
+            variant_key=experiment_info.get("variant_key"),
+        )
 
     # 3. 补齐：按薄弱知识点过滤 + 随机
     existing_ids = {q.id for q in vector_questions}
@@ -2306,8 +2616,14 @@ async def get_smart_practice_questions(
         kp_total = (await db.execute(kp_count_q)).scalar() or 0
         kp_remaining = count - len(vector_questions)
         if kp_total > 0 and kp_remaining > 0:
-            kp_q = select(Question).where(and_(*conditions, kp_cond)).options(selectinload(Question.subject_ref))
-            kp_q = _random_sample_query(kp_q, kp_total, min(kp_remaining, kp_total), Question.id)
+            kp_q = (
+                select(Question)
+                .where(and_(*conditions, kp_cond))
+                .options(selectinload(Question.subject_ref))
+            )
+            kp_q = _random_sample_query(
+                kp_q, kp_total, min(kp_remaining, kp_total), Question.id
+            )
             result = await db.execute(kp_q)
             kp_fill = list(result.scalars().all())
 
@@ -2328,7 +2644,9 @@ async def get_smart_practice_questions(
     if len(vector_questions) < count:
         remaining = count - len(vector_questions)
         fill_q = select(func.count()).select_from(
-            select(Question).where(and_(*conditions, Question.id.notin_(existing_ids))).subquery()
+            select(Question)
+            .where(and_(*conditions, Question.id.notin_(existing_ids)))
+            .subquery()
         )
         total = (await db.execute(fill_q)).scalar() or 0
         fill_q = (
@@ -2349,10 +2667,17 @@ async def get_smart_practice_questions(
             }
         vector_questions.extend(random_fill)
 
-    return await _maybe_finalize_smart(vector_questions[:count], metadata, skip_finalize, db, user_id, subject_code,
-                                 request_id=request_id,
-                                 experiment_id=experiment_info.get("experiment_id"),
-                                 variant_key=experiment_info.get("variant_key"))
+    return await _maybe_finalize_smart(
+        vector_questions[:count],
+        metadata,
+        skip_finalize,
+        db,
+        user_id,
+        subject_code,
+        request_id=request_id,
+        experiment_id=experiment_info.get("experiment_id"),
+        variant_key=experiment_info.get("variant_key"),
+    )
 
 
 async def _finalize_smart(
@@ -2377,19 +2702,21 @@ async def _finalize_smart(
         recs: list[dict] = []
         for question in questions:
             meta = metadata.get(question.id, {})
-            recs.append({
-                "question_id": question.id,
-                # 聚合刷题时 subject_code 可能是父科目；题目自身 subject_id 才是
-                # 真实归属，指标必须按这个值记录。
-                "subject_id": question.subject_id,
-                "recommend_score": meta.get("recommend_score"),
-                "similarity": meta.get("similarity"),
-                "reason": meta.get("recommend_reason"),
-                "strategy": meta.get("strategy", "fallback"),
-                "strategy_config_id": meta.get("strategy_config_id"),
-                "experiment_id": meta.get("experiment_id", experiment_id),
-                "variant_key": meta.get("variant_key", variant_key),
-            })
+            recs.append(
+                {
+                    "question_id": question.id,
+                    # 聚合刷题时 subject_code 可能是父科目；题目自身 subject_id 才是
+                    # 真实归属，指标必须按这个值记录。
+                    "subject_id": question.subject_id,
+                    "recommend_score": meta.get("recommend_score"),
+                    "similarity": meta.get("similarity"),
+                    "reason": meta.get("recommend_reason"),
+                    "strategy": meta.get("strategy", "fallback"),
+                    "strategy_config_id": meta.get("strategy_config_id"),
+                    "experiment_id": meta.get("experiment_id", experiment_id),
+                    "variant_key": meta.get("variant_key", variant_key),
+                }
+            )
 
         if recs:
             await recommendation_log_service.create_recommendation_logs_isolated(
@@ -2429,21 +2756,32 @@ async def _smart_weakness_vector(
     """
     exclude_ids = exclude_ids or set()
     metadata: dict[int, dict] = {}
-    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject_code)
+    scope_ids = (
+        subject_ids
+        if subject_ids is not None
+        else await resolve_subject_ids(db, subject_code)
+    )
 
     # 获取薄弱知识点
     weak_kps: list[dict] = []
     try:
         from app.services import mastery_service
+
         weak_kps = await mastery_service.get_user_weak_knowledge_points(
-            db, user_id, subject_code, limit=5,
+            db,
+            user_id,
+            subject_code,
+            limit=5,
         )
     except Exception:
-        logger.warning("mastery_service.get_user_weak_knowledge_points failed", exc_info=True)
+        logger.warning(
+            "mastery_service.get_user_weak_knowledge_points failed", exc_info=True
+        )
 
     if not weak_kps:
         weak_kps = await _compute_weak_knowledge_points(
-            db, user_id,
+            db,
+            user_id,
             scope_ids,
         )
 
@@ -2454,8 +2792,12 @@ async def _smart_weakness_vector(
         # selected question does not unnecessarily reduce the final batch size.
         fallback_fetch_count = count + len(exclude_ids)
         questions = await get_practice_questions(
-            db=db, user_id=user_id, subject_code=subject_code, count=fallback_fetch_count,
-            mode="random", exclude_answered=exclude_answered,
+            db=db,
+            user_id=user_id,
+            subject_code=subject_code,
+            count=fallback_fetch_count,
+            mode="random",
+            exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
             use_leitner=use_leitner,
             subject_ids=scope_ids,
@@ -2484,14 +2826,20 @@ async def _smart_weakness_vector(
     )
     try:
         from app.services import vector_retrieval_service
+
         recalls = await vector_retrieval_service.vector_recall_by_text(
-            db=db, user_id=user_id, subject=subject_code,
-            query_text=query_text, count=count,
+            db=db,
+            user_id=user_id,
+            subject=subject_code,
+            query_text=query_text,
+            count=count,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
         )
         if recalls:
-            rec_ids = [r["question_id"] for r in recalls if r["question_id"] not in exclude_ids]
+            rec_ids = [
+                r["question_id"] for r in recalls if r["question_id"] not in exclude_ids
+            ]
             if rec_ids:
                 vector_conditions = [
                     Question.id.in_(rec_ids),
@@ -2623,7 +2971,10 @@ async def get_smart_scored_questions(
     }
     try:
         from app.services import recommendation_strategy_service
-        scored_runtime = await recommendation_strategy_service.get_scored_runtime_config(db)
+
+        scored_runtime = (
+            await recommendation_strategy_service.get_scored_runtime_config(db)
+        )
     except Exception:
         logger.warning("scored 全局策略配置读取失败，使用内置默认值", exc_info=True)
 
@@ -2632,7 +2983,11 @@ async def get_smart_scored_questions(
 
     # ── 1. 候选题池 ──
     candidate_limit = max(count * 5, 50)
-    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject_code)
+    scope_ids = (
+        subject_ids
+        if subject_ids is not None
+        else await resolve_subject_ids(db, subject_code)
+    )
     subject_cond = Question.subject_id.in_(scope_ids)
     conditions: list = [
         Question.is_active,
@@ -2650,17 +3005,26 @@ async def get_smart_scored_questions(
 
     # 硬性排除 24 h 内做过的题
     recent_cutoff = now - timedelta(hours=24)
-    recent_q_sub = select(PracticeRecord.question_id).where(
-        PracticeRecord.user_id == user_id,
-        PracticeRecord.answered_at >= recent_cutoff,
-    ).distinct()
+    recent_q_sub = (
+        select(PracticeRecord.question_id)
+        .where(
+            PracticeRecord.user_id == user_id,
+            PracticeRecord.answered_at >= recent_cutoff,
+        )
+        .distinct()
+    )
     conditions.append(Question.id.notin_(recent_q_sub))
 
-    candidate_total = int((await db.scalar(
-        select(func.count()).select_from(
-            select(Question.id).where(and_(*conditions)).subquery()
+    candidate_total = int(
+        (
+            await db.scalar(
+                select(func.count()).select_from(
+                    select(Question.id).where(and_(*conditions)).subquery()
+                )
+            )
         )
-    )) or 0)
+        or 0
+    )
     cand_query = (
         select(Question)
         .where(and_(*conditions))
@@ -2678,24 +3042,34 @@ async def get_smart_scored_questions(
         fallback_level = 1
         relaxed = [c for c in conditions if c is not conditions[-1]]
         active_candidate_conditions = relaxed
-        relaxed_total = int((await db.scalar(
-            select(func.count()).select_from(
-                select(Question.id).where(and_(*relaxed)).subquery()
+        relaxed_total = int(
+            (
+                await db.scalar(
+                    select(func.count()).select_from(
+                        select(Question.id).where(and_(*relaxed)).subquery()
+                    )
+                )
             )
-        )) or 0)
+            or 0
+        )
         relaxed_query = (
             select(Question)
             .where(and_(*relaxed))
             .options(selectinload(Question.subject_ref))
         )
         relaxed_query = _random_sample_query(
-            relaxed_query, relaxed_total, min(candidate_limit, relaxed_total), Question.id
+            relaxed_query,
+            relaxed_total,
+            min(candidate_limit, relaxed_total),
+            Question.id,
         )
         relaxed_result = await db.execute(relaxed_query)
         candidates = list(relaxed_result.scalars().all())
 
     if not candidates:
-        logger.warning("[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject_code)
+        logger.warning(
+            "[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject_code
+        )
         return [], metadata
 
     # ── 1.5 用户知识状态 + 图谱候选扩展 (V6.5) ──
@@ -2710,12 +3084,10 @@ async def get_smart_scored_questions(
     )
     knowledge_states = list(ks_result.scalars().all())
     kp_mastery: dict[int, tuple] = {
-        s.knowledge_point_id: (s.mastery_score, s.confidence)
-        for s in knowledge_states
+        s.knowledge_point_id: (s.mastery_score, s.confidence) for s in knowledge_states
     }
     kp_observations: dict[int, tuple[int, int]] = {
-        s.knowledge_point_id: (s.attempt_count, s.wrong_count)
-        for s in knowledge_states
+        s.knowledge_point_id: (s.attempt_count, s.wrong_count) for s in knowledge_states
     }
 
     graph_context: dict = {
@@ -2725,6 +3097,7 @@ async def get_smart_scored_questions(
     }
     try:
         from app.core.config import settings as _settings
+
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
             # 图谱扩展属于可选增强能力。使用 SAVEPOINT 隔离其数据库错误，
             # 避免 PostgreSQL 在任一图谱查询失败后把整个请求事务标记为 aborted。
@@ -2735,6 +3108,7 @@ async def get_smart_scored_questions(
                 )
                 if weak_target_ids:
                     from app.services import adaptive_learning_service
+
                     graph_context = await adaptive_learning_service.get_recommendation_graph_context(
                         db=db,
                         user_id=user_id,
@@ -2742,16 +3116,26 @@ async def get_smart_scored_questions(
                         subject_ids=scope_ids,
                         max_depth=int(graph_runtime.get("max_depth", 2)),
                         max_nodes=int(graph_runtime.get("max_nodes", 24)),
-                        min_mastery=float(graph_runtime.get("prerequisite_mastery_threshold", 60.0)),
-                        min_confidence=float(graph_runtime.get("prerequisite_confidence_threshold", 0.3)),
+                        min_mastery=float(
+                            graph_runtime.get("prerequisite_mastery_threshold", 60.0)
+                        ),
+                        min_confidence=float(
+                            graph_runtime.get("prerequisite_confidence_threshold", 0.3)
+                        ),
                     )
 
-                    graph_candidate_ids = list(graph_context.get("prerequisite_candidates", {}).keys())
+                    graph_candidate_ids = list(
+                        graph_context.get("prerequisite_candidates", {}).keys()
+                    )
                     if graph_candidate_ids:
                         existing_ids = {q.id for q in candidates}
                         graph_limit = max(count * 3, 30)
-                        graph_question_ids = select(QuestionKnowledgePoint.question_id).where(
-                            QuestionKnowledgePoint.knowledge_point_id.in_(graph_candidate_ids)
+                        graph_question_ids = select(
+                            QuestionKnowledgePoint.question_id
+                        ).where(
+                            QuestionKnowledgePoint.knowledge_point_id.in_(
+                                graph_candidate_ids
+                            )
                         )
                         graph_query = (
                             select(Question)
@@ -2778,7 +3162,9 @@ async def get_smart_scored_questions(
                             )
     except Exception:
         # Graph is an enhancement, never a single point of failure.
-        logger.warning("V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True)
+        logger.warning(
+            "V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True
+        )
         graph_context = {
             "blocked_targets": {},
             "prerequisite_candidates": {},
@@ -2803,7 +3189,8 @@ async def get_smart_scored_questions(
         select(QuestionVersionKnowledgePoint.knowledge_point_id)
         .join(
             PracticeRecord,
-            PracticeRecord.question_version_id == QuestionVersionKnowledgePoint.question_version_id,
+            PracticeRecord.question_version_id
+            == QuestionVersionKnowledgePoint.question_version_id,
         )
         .where(
             PracticeRecord.user_id == user_id,
@@ -2828,7 +3215,9 @@ async def get_smart_scored_questions(
     # ── 4.5 图谱上下文 (V6.5) ──
     blocked_kps: dict[int, list[dict]] = graph_context.get("blocked_targets", {})
     graph_candidates: dict[int, dict] = graph_context.get("prerequisite_candidates", {})
-    prerequisites_by_target: dict[int, list[dict]] = graph_context.get("prerequisites_by_target", {})
+    prerequisites_by_target: dict[int, list[dict]] = graph_context.get(
+        "prerequisites_by_target", {}
+    )
 
     # Names are needed only for the user-facing explanation; load them once for
     # all candidate KPs instead of querying while building each reason.
@@ -2836,6 +3225,7 @@ async def get_smart_scored_questions(
     kp_names: dict[int, str] = {}
     if all_candidate_kp_ids:
         from app.models.knowledge_point import KnowledgePoint
+
         kp_name_result = await db.execute(
             select(KnowledgePoint.id, KnowledgePoint.name).where(
                 KnowledgePoint.id.in_(all_candidate_kp_ids),
@@ -2851,15 +3241,25 @@ async def get_smart_scored_questions(
     user_weights: dict[str, float] = {key: 1.0 for key in system_weights}
     try:
         from app.core.config import settings as _settings
+
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_WEIGHT_ENABLED:
             from app.services import adaptive_learning_service
-            user_weights = await adaptive_learning_service.get_recommend_weights(db, user_id)
+
+            user_weights = await adaptive_learning_service.get_recommend_weights(
+                db, user_id
+            )
     except Exception:
-        logger.debug("V6.4 用户权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True)
+        logger.debug(
+            "V6.4 用户权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True
+        )
 
     weight_keys = {
-        "due_weight", "weakness_weight", "wrong_weight",
-        "new_question_weight", "diversity_weight", "path_weight",
+        "due_weight",
+        "weakness_weight",
+        "wrong_weight",
+        "new_question_weight",
+        "diversity_weight",
+        "path_weight",
     }
     rec_weights = {
         key: float(system_weights.get(key, 1.0)) * float(user_weights.get(key, 1.0))
@@ -2872,7 +3272,12 @@ async def get_smart_scored_questions(
         kp_ids = q_kp_map.get(q.id, [])
         qs = q_state_map.get(q.id)
         sc, reasons = calculate_smart_score(
-            q, qs, kp_ids, kp_mastery, recent_kp_ids, now,
+            q,
+            qs,
+            kp_ids,
+            kp_mastery,
+            recent_kp_ids,
+            now,
             kp_observations=kp_observations,
             blocked_kps=blocked_kps,
             graph_candidates=graph_candidates,
@@ -3016,11 +3421,17 @@ async def get_smart_scored_questions(
             _practice_revision_scope_condition(scope_ids),
             Question.id.notin_(selected_ids),
         ]
-        fill_q2_base = select(Question).where(and_(*fill_cond2)).options(selectinload(Question.subject_ref))
+        fill_q2_base = (
+            select(Question)
+            .where(and_(*fill_cond2))
+            .options(selectinload(Question.subject_ref))
+        )
         fill_count2 = (
             await db.execute(select(func.count(Question.id)).where(and_(*fill_cond2)))
         ).scalar() or 0
-        fill_q2 = _random_sample_query(fill_q2_base, total_count=fill_count2, need=remaining, id_col=Question.id)
+        fill_q2 = _random_sample_query(
+            fill_q2_base, total_count=fill_count2, need=remaining, id_col=Question.id
+        )
         fill_result2 = await db.execute(fill_q2)
         for fq in fill_result2.scalars().all():
             if fq.id in selected_ids:
@@ -3068,12 +3479,17 @@ async def _compute_weak_knowledge_points(
         )
         .join(
             QuestionVersionKnowledgePoint,
-            QuestionVersionKnowledgePoint.question_version_id == PracticeRecord.question_version_id,
+            QuestionVersionKnowledgePoint.question_version_id
+            == PracticeRecord.question_version_id,
         )
-        .join(KnowledgePoint, KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id)
+        .join(
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+        )
         .outerjoin(
             SyllabusKnowledgePoint,
-            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+            SyllabusKnowledgePoint.id
+            == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .where(
             PracticeRecord.user_id == user_id,
@@ -3105,12 +3521,14 @@ async def _compute_weak_knowledge_points(
         if total >= 2:
             accuracy = correct / total
             if accuracy < 0.65:
-                weak.append({
-                    "name": kp_name,
-                    "total": total,
-                    "correct": correct,
-                    "accuracy": round(accuracy, 4),
-                })
+                weak.append(
+                    {
+                        "name": kp_name,
+                        "total": total,
+                        "correct": correct,
+                        "accuracy": round(accuracy, 4),
+                    }
+                )
 
     # 按 accuracy 升序、total 降序
     weak.sort(key=lambda x: (x["accuracy"], -x["total"]))
@@ -3148,21 +3566,29 @@ def _practice_submission_fingerprint(
     """Hash the exact immutable submission represented by one request_id."""
     normalized_answers = []
     for answer in answers:
-        normalized_answers.append({
-            "question_id": int(answer.get("question_id")),
-            "user_answer": str(answer.get("user_answer", answer.get("answer", "")) or "").strip(),
-            "used_time": (
-                None if answer.get("used_time") is None else int(answer.get("used_time"))
-            ),
-            "request_id": _normalize_practice_request_id(answer.get("request_id")),
-        })
+        normalized_answers.append(
+            {
+                "question_id": int(answer.get("question_id")),
+                "user_answer": str(
+                    answer.get("user_answer", answer.get("answer", "")) or ""
+                ).strip(),
+                "used_time": (
+                    None
+                    if answer.get("used_time") is None
+                    else int(answer.get("used_time"))
+                ),
+                "request_id": _normalize_practice_request_id(answer.get("request_id")),
+            }
+        )
     normalized_answers.sort(key=lambda item: item["question_id"])
     payload = {
         "v": 3,
         "answers": normalized_answers,
         "skipped_question_ids": sorted(int(qid) for qid in skipped_question_ids),
         "session": {
-            "request_id": _normalize_practice_request_id(session_meta.get("request_id")),
+            "request_id": _normalize_practice_request_id(
+                session_meta.get("request_id")
+            ),
             "subject_id": int(session_meta.get("subject_id")),
             "mode": str(session_meta.get("mode") or "random"),
             "started_at": str(session_meta.get("started_at") or ""),
@@ -3222,7 +3648,9 @@ async def batch_submit_answers(
     if len(answers) > PRACTICE_BATCH_MAX_QUESTIONS:
         raise ValueError(f"answers 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
     if len(skipped_question_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
-        raise ValueError(f"skipped_question_ids 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
+        raise ValueError(
+            f"skipped_question_ids 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题"
+        )
 
     answer_question_ids = [int(a["question_id"]) for a in answers]
     if len(answer_question_ids) != len(set(answer_question_ids)):
@@ -3294,7 +3722,9 @@ async def batch_submit_answers(
     total_wrong = 0
     for answer in answers:
         q = questions[int(answer["question_id"])]
-        user_answer = str(answer.get("user_answer", answer.get("answer", "")) or "").strip()
+        user_answer = str(
+            answer.get("user_answer", answer.get("answer", "")) or ""
+        ).strip()
         if not user_answer:
             # Empty strings used to be graded as a normal wrong answer, which lets
             # stale/malformed clients inflate answered_count and wrong-question
@@ -3303,7 +3733,9 @@ async def batch_submit_answers(
                 f"question_id={int(q.id)} 的 user_answer 不能为空；未作答题请放入 skipped_question_ids"
             )
         used_time = _normalize_answer_used_time(answer.get("used_time"))
-        answer_request_ids[int(q.id)] = _normalize_practice_request_id(answer.get("request_id"))
+        answer_request_ids[int(q.id)] = _normalize_practice_request_id(
+            answer.get("request_id")
+        )
         slot_ids = extract_multi_blank_slot_ids(
             getattr(q, "content", None),
             getattr(q, "options", None),
@@ -3360,15 +3792,21 @@ async def batch_submit_answers(
     )
     if scope_snapshot is not None:
         signed_scope_subject_id = int(scope_snapshot.get("subject_id") or 0)
-        if signed_scope_subject_id and signed_scope_subject_id != int(session_values.get("subject_id") or 0):
+        if signed_scope_subject_id and signed_scope_subject_id != int(
+            session_values.get("subject_id") or 0
+        ):
             raise PracticeBatchTokenError("知识练习范围与练习科目不一致")
 
     session_obj = PracticeSession(
         **session_values,
         submission_payload_hash=payload_hash,
-        scope_type=(str(scope_snapshot["practice_mode"]) if scope_snapshot is not None else None),
+        scope_type=(
+            str(scope_snapshot["practice_mode"]) if scope_snapshot is not None else None
+        ),
         scope_root_knowledge_point_id=(
-            int(scope_snapshot["root_knowledge_point_id"]) if scope_snapshot is not None else None
+            int(scope_snapshot["root_knowledge_point_id"])
+            if scope_snapshot is not None
+            else None
         ),
         scope_snapshot=scope_snapshot,
     )
@@ -3440,7 +3878,11 @@ async def batch_submit_answers(
             )
             prewarm_wrong_questions.append(wrong)
             wrong_question_ids[int(q.id)] = int(wrong.id)
-            setattr(record, "_error_diagnosis_payload", error_diagnosis_service.serialize_diagnosis(diagnosis))
+            setattr(
+                record,
+                "_error_diagnosis_payload",
+                error_diagnosis_service.serialize_diagnosis(diagnosis),
+            )
         await _create_answer_projection_outbox(
             db,
             practice_record_id=int(record.id),
@@ -3478,29 +3920,37 @@ async def batch_submit_answers(
         persisted_knowledge_session,
     )
 
-    response_payload = jsonable_encoder({
-        "results": [response_by_question[qid] for qid in issued_order],
-        "total_correct": total_correct,
-        "total_wrong": total_wrong,
-        "total_skipped": len(skipped_questions),
-        "knowledge_session": persisted_knowledge_session(batch_payload.get("knowledge_context")),
-        "entry_context": (
-            dict(batch_payload.get("entry_context"))
-            if isinstance(batch_payload.get("entry_context"), dict)
-            else None
-        ),
-    })
+    response_payload = jsonable_encoder(
+        {
+            "results": [response_by_question[qid] for qid in issued_order],
+            "total_correct": total_correct,
+            "total_wrong": total_wrong,
+            "total_skipped": len(skipped_questions),
+            "knowledge_session": persisted_knowledge_session(
+                batch_payload.get("knowledge_context")
+            ),
+            "entry_context": (
+                dict(batch_payload.get("entry_context"))
+                if isinstance(batch_payload.get("entry_context"), dict)
+                else None
+            ),
+        }
+    )
     # submission_response is a SQL JSON column and is also the source used for
     # idempotent replay.  Nested diagnostics may contain datetime values, so
     # normalize the entire payload once before both persistence and response.
     session_obj.submission_response = response_payload
     sequential_reservation_request_id = batch_payload.get("seq_reservation_request_id")
-    if sequential_reservation_request_id and str(batch_payload.get("mode")) == "sequential":
+    if (
+        sequential_reservation_request_id
+        and str(batch_payload.get("mode")) == "sequential"
+    ):
         await db.execute(
             delete(SequentialReservation).where(
                 SequentialReservation.user_id == user_id,
                 SequentialReservation.subject_id == int(batch_payload.get("sid") or 0),
-                SequentialReservation.start_request_id == str(sequential_reservation_request_id),
+                SequentialReservation.start_request_id
+                == str(sequential_reservation_request_id),
                 SequentialReservation.question_id.in_(all_question_ids),
             )
         )
@@ -3520,7 +3970,9 @@ async def batch_submit_answers(
                 )
                 await enqueue_prewarm(wrong.id, user_id, revision=revision)
         except Exception:
-            logger.warning("AI prewarm enqueue failed after practice batch", exc_info=True)
+            logger.warning(
+                "AI prewarm enqueue failed after practice batch", exc_info=True
+            )
 
     return response_payload
 
@@ -3532,9 +3984,7 @@ async def get_practice_stats(
 ) -> dict:
     base = select(
         func.count(PracticeRecord.id),
-        func.coalesce(
-            func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-        ),
+        func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
     ).where(PracticeRecord.user_id == user_id)
 
     total_row = (await db.execute(base)).one()
@@ -3544,15 +3994,14 @@ async def get_practice_stats(
 
     # By subject_code
     from app.models.admin import Subject
+
     subject_result = await db.execute(
         select(
             PracticeRecord.subject_id,
             Subject.code,
             Subject.name,
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
         )
         .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
         .where(PracticeRecord.user_id == user_id)
@@ -3562,14 +4011,16 @@ async def get_practice_stats(
     for row in subject_result.all():
         answered = row[3]
         correct = row[4]
-        by_subject.append({
-            "subject_id": row[0],
-            "subject_code": row[1] or "",
-            "subject_name": row[2] or "",
-            "answered": answered,
-            "correct": correct,
-            "accuracy": round(correct / answered, 4) if answered > 0 else 0.0,
-        })
+        by_subject.append(
+            {
+                "subject_id": row[0],
+                "subject_code": row[1] or "",
+                "subject_name": row[2] or "",
+                "answered": answered,
+                "correct": correct,
+                "accuracy": round(correct / answered, 4) if answered > 0 else 0.0,
+            }
+        )
 
     # Daily stats — bucket UTC DB timestamps by China calendar day.
     today = shanghai_today()
@@ -3579,9 +4030,7 @@ async def get_practice_stats(
         select(
             day_expr,
             func.count(PracticeRecord.id),
-            func.coalesce(
-                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
-            ),
+            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
         )
         .where(
             PracticeRecord.user_id == user_id,
@@ -3590,7 +4039,9 @@ async def get_practice_stats(
         .group_by(day_expr)
         .order_by(day_expr)
     )
-    daily_map = {str(r[0]): {"answered": r[1], "correct": r[2]} for r in daily_result.all()}
+    daily_map = {
+        str(r[0]): {"answered": r[1], "correct": r[2]} for r in daily_result.all()
+    }
 
     daily_stats = []
     for i in range(days):
@@ -3623,7 +4074,10 @@ async def _calc_streak(db: AsyncSession, user_id: int) -> int:
         .distinct()
         .order_by(day_expr.desc())
     )
-    dates = {date.fromisoformat(row[0]) if isinstance(row[0], str) else row[0] for row in result.all()}
+    dates = {
+        date.fromisoformat(row[0]) if isinstance(row[0], str) else row[0]
+        for row in result.all()
+    }
 
     streak = 0
     for i in range(365):

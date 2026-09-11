@@ -63,6 +63,7 @@ class OutboxStatus(StrEnum):
 @dataclass
 class OutboxEvent:
     """A single outbox event for deferred asset operations."""
+
     event_id: str = ""
     event_type: str = ""  # "asset_delete" | "asset_confirm" | "storage_cleanup"
     idempotency_key: str = ""
@@ -85,7 +86,11 @@ class OutboxEvent:
 
     def is_ready(self) -> bool:
         """Check if event is ready to be processed."""
-        if self.status in (OutboxStatus.COMPLETED, OutboxStatus.DEAD_LETTER, OutboxStatus.CANCELLED):
+        if self.status in (
+            OutboxStatus.COMPLETED,
+            OutboxStatus.DEAD_LETTER,
+            OutboxStatus.CANCELLED,
+        ):
             return False
         if self.next_retry_at and time.time() < self.next_retry_at:
             return False
@@ -120,7 +125,9 @@ class AssetOutbox:
         return self._mode
 
     def register_handler(
-        self, event_type: str, handler: Callable[[dict], None],
+        self,
+        event_type: str,
+        handler: Callable[[dict], None],
     ) -> None:
         """Register a handler for an event type."""
         self._handlers[event_type] = handler
@@ -133,7 +140,10 @@ class AssetOutbox:
         idempotency_key: str = "",
     ) -> OutboxEvent:
         """Create a new outbox event (not yet ready for processing)."""
-        key = idempotency_key or f"{event_type}:{hash(json.dumps(payload, sort_keys=True))}"
+        key = (
+            idempotency_key
+            or f"{event_type}:{hash(json.dumps(payload, sort_keys=True))}"
+        )
         event = OutboxEvent(
             event_type=event_type,
             idempotency_key=key,
@@ -175,7 +185,10 @@ class AssetOutbox:
             object.__setattr__(event, "updated_at", time.time())
 
     def fail(
-        self, event_id: str, error: str, retryable: bool = True,
+        self,
+        event_id: str,
+        error: str,
+        retryable: bool = True,
     ) -> None:
         """Mark an event as failed. Moves to retry or dead letter."""
         event = self._events.get(event_id)
@@ -191,15 +204,21 @@ class AssetOutbox:
             object.__setattr__(event, "status", OutboxStatus.DEAD_LETTER)
             logger.error(
                 "Outbox: event %s moved to DEAD_LETTER after %d retries: %s",
-                event_id, new_retry_count, error,
+                event_id,
+                new_retry_count,
+                error,
             )
         elif retryable:
-            backoff = _RETRY_BACKOFF_BASE ** new_retry_count
+            backoff = _RETRY_BACKOFF_BASE**new_retry_count
             object.__setattr__(event, "status", OutboxStatus.RETRYABLE)
             object.__setattr__(event, "next_retry_at", time.time() + backoff)
             logger.warning(
                 "Outbox: event %s retry %d/%d in %.1fs: %s",
-                event_id, new_retry_count, _MAX_RETRIES, backoff, error,
+                event_id,
+                new_retry_count,
+                _MAX_RETRIES,
+                backoff,
+                error,
             )
         else:
             object.__setattr__(event, "status", OutboxStatus.DEAD_LETTER)
@@ -239,8 +258,14 @@ class AssetOutbox:
     def pending_count(self) -> int:
         """Count of events not yet completed or dead."""
         return sum(
-            1 for e in self._events.values()
-            if e.status not in (OutboxStatus.COMPLETED, OutboxStatus.DEAD_LETTER, OutboxStatus.CANCELLED)
+            1
+            for e in self._events.values()
+            if e.status
+            not in (
+                OutboxStatus.COMPLETED,
+                OutboxStatus.DEAD_LETTER,
+                OutboxStatus.CANCELLED,
+            )
         )
 
     def cancel(self, event_id: str) -> None:

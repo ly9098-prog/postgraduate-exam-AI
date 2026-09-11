@@ -65,8 +65,7 @@ def run_layout_reconstruction_stage(
 
     # Check if any blocks have bbox data
     has_boxes = any(
-        block.get("boxes") and len(block["boxes"]) > 0
-        for block in normalized_blocks
+        block.get("boxes") and len(block["boxes"]) > 0 for block in normalized_blocks
     )
 
     layout_result = reconstruct_layout(normalized_blocks)
@@ -83,8 +82,7 @@ def run_layout_reconstruction_stage(
 
     if not has_boxes:
         warnings.append(
-            "layout_reconstruction: no bbox data available, "
-            "layout analysis limited"
+            "layout_reconstruction: no bbox data available, layout analysis limited"
         )
 
     return {
@@ -101,5 +99,6 @@ def run_layout_reconstruction_stage_from_ir(
 ) -> dict:
     """DocumentIR entry point for run_layout_reconstruction_stage."""
     from app.core.document_ir import document_ir_to_blocks
+
     blocks = document_ir_to_blocks(doc)
     return run_layout_reconstruction_stage(blocks, **kwargs)

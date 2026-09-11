@@ -69,7 +69,9 @@ Populated at import time by each model that supports fencing.
 """
 
 
-def register_fencing_table(task_type: str, model_class: Any, id_column: str = "id") -> None:
+def register_fencing_table(
+    task_type: str, model_class: Any, id_column: str = "id"
+) -> None:
     """Register a business table for generation fencing.
 
     Args:
@@ -113,7 +115,9 @@ async def verify_fencing_or_raise(
     if row is None:
         logger.warning(
             "Fencing: record not found model=%s id=%s task_id=%s",
-            model_class.__name__, record_id, expected_task_id,
+            model_class.__name__,
+            record_id,
+            expected_task_id,
         )
         raise FencingVerificationError(
             f"Record not found: {model_class.__name__} id={record_id}"
@@ -126,14 +130,21 @@ async def verify_fencing_or_raise(
         mismatches.append(f"task_id ({db_task_id} != {expected_task_id})")
     if db_owner_token is not None and db_owner_token != expected_owner_token:
         mismatches.append("owner_token mismatch")
-    if db_generation is not None and db_generation != 0 and db_generation != expected_generation:
+    if (
+        db_generation is not None
+        and db_generation != 0
+        and db_generation != expected_generation
+    ):
         mismatches.append(f"generation ({db_generation} != {expected_generation})")
 
     if mismatches:
         logger.warning(
             "Fencing FAILED: model=%s id=%s task_id=%s gen=%d — %s",
-            model_class.__name__, record_id, expected_task_id,
-            expected_generation, "; ".join(mismatches),
+            model_class.__name__,
+            record_id,
+            expected_task_id,
+            expected_generation,
+            "; ".join(mismatches),
         )
         raise FencingVerificationError(
             f"Fencing mismatch for {model_class.__name__} id={record_id}: "
@@ -182,8 +193,11 @@ async def conditional_update_with_fencing(
         logger.warning(
             "Fencing conditional UPDATE rejected: model=%s id=%s "
             "task_id=%s gen=%d rowcount=%s",
-            model_class.__name__, record_id, expected_task_id,
-            expected_generation, result.rowcount,
+            model_class.__name__,
+            record_id,
+            expected_task_id,
+            expected_generation,
+            result.rowcount,
         )
     return ok
 
@@ -235,17 +249,20 @@ async def initialize_fencing_fields(
 # ── Fencing table registrations ──
 # Maps task_type → (model_class, id_column) for DB fencing verification.
 
+
 def _register_default_tables() -> None:
     """Register known business models for DB fencing (idempotent)."""
     if FENCING_TABLES:
         return
     try:
         from app.models.import_pipeline import ImportPipeline
+
         register_fencing_table("import_pipeline", ImportPipeline, "pipeline_id")
     except ImportError:
         pass
     try:
         from app.models.import_pipeline import ImportPipeline
+
         register_fencing_table("image_pipeline", ImportPipeline, "pipeline_id")
         register_fencing_table("excel_pipeline", ImportPipeline, "pipeline_id")
         register_fencing_table("resume_pipeline", ImportPipeline, "pipeline_id")
@@ -254,11 +271,13 @@ def _register_default_tables() -> None:
         pass
     try:
         from app.models.import_batch_job import ImportBatchJob
+
         register_fencing_table("batch_image", ImportBatchJob, "job_id")
     except ImportError:
         pass
     try:
         from app.models.formula import FormulaCard
+
         register_fencing_table("formula_batch", FormulaCard, "id")
     except ImportError:
         pass

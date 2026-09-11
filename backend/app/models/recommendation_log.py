@@ -21,19 +21,29 @@ class RecommendationLog(Base):
     subject_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("subjects.id"), nullable=False, index=True
     )
-    subject_ref = relationship("Subject", back_populates="recommendation_logs", lazy="noload")
+    subject_ref = relationship(
+        "Subject", back_populates="recommendation_logs", lazy="noload"
+    )
     scene: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     source_question_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recommend_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
 
     # Phase 4: 实验分组 + 策略配置 + 掌握度变化
-    experiment_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    variant_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
-    strategy_config_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    experiment_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    variant_key: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, index=True
+    )
+    strategy_config_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
     mastery_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     mastery_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     mastery_delta: Mapped[float | None] = mapped_column(Float, nullable=True)

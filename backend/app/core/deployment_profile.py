@@ -30,10 +30,14 @@ def detect_deployment_profile() -> DeploymentProfile:
     of silently selecting a permissive local profile.
     """
     explicit = (
-        os.environ.get("DEPLOYMENT_PROFILE")
-        or app_config.settings.DEPLOYMENT_PROFILE
-        or ""
-    ).strip().lower()
+        (
+            os.environ.get("DEPLOYMENT_PROFILE")
+            or app_config.settings.DEPLOYMENT_PROFILE
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     legacy = (app_config.settings.DEPLOY_PROFILE or "").strip().lower()
     app_env = (app_config.settings.APP_ENV or "").strip().lower()
 
@@ -108,8 +112,16 @@ def is_restricted_environment() -> bool:
 ILLEGAL_COMBINATIONS: list[tuple[str, str, str]] = [
     # (profile, feature_flag, error_message)
     ("cloud_api", "OCR_USE_GPU=true", "cloud_api + GPU required is prohibited"),
-    ("cloud_api", "STRUCTURE_FREEZE_MODE=ir", "cloud_api + full IR freeze is prohibited"),  # local-only capability
-    ("cloud_api", "CONTROL_PLANE_MODE=legacy", "cloud_api must use facade control plane"),
+    (
+        "cloud_api",
+        "STRUCTURE_FREEZE_MODE=ir",
+        "cloud_api + full IR freeze is prohibited",
+    ),  # local-only capability
+    (
+        "cloud_api",
+        "CONTROL_PLANE_MODE=legacy",
+        "cloud_api must use facade control plane",
+    ),
 ]
 
 
@@ -124,7 +136,9 @@ def validate_profile_flags(profile: DeploymentProfile) -> list[str]:
         if profile.value != prof:
             continue
         key, val = flag.split("=", 1)
-        env_val = os.environ.get(key, app_config.settings.model_dump().get(key.split("_")[0].lower(), ""))
+        env_val = os.environ.get(
+            key, app_config.settings.model_dump().get(key.split("_")[0].lower(), "")
+        )
         if str(env_val).lower() == val.lower():
             errors.append(msg)
     return errors

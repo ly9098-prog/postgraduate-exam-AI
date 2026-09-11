@@ -49,7 +49,9 @@ async def _cmd_status() -> int:
     totals = {"ready": 0, "processing": 0, "retry": 0, "dead": 0, "corrupt": 0}
     oldest_ready: dict[str, float] = {}
 
-    print(f"{'Task Type':<24} {'Ready':>6} {'Proc':>6} {'Retry':>6} {'Dead':>6} {'Corrupt':>6}")
+    print(
+        f"{'Task Type':<24} {'Ready':>6} {'Proc':>6} {'Retry':>6} {'Dead':>6} {'Corrupt':>6}"
+    )
     print("-" * 60)
 
     for tt in TASK_TYPES:
@@ -84,8 +86,10 @@ async def _cmd_status() -> int:
             print(f"  {tt:<22} {_red('ERROR'):>6} {'':>6} {'':>6} {'':>6} {'':>6}  {e}")
 
     print("-" * 60)
-    print(f"  {_bold('TOTAL'):<22} {totals['ready']:>6} {totals['processing']:>6} "
-          f"{totals['retry']:>6} {totals['dead']:>6} {totals['corrupt']:>6}")
+    print(
+        f"  {_bold('TOTAL'):<22} {totals['ready']:>6} {totals['processing']:>6} "
+        f"{totals['retry']:>6} {totals['dead']:>6} {totals['corrupt']:>6}"
+    )
 
     # Oldest ages
     if oldest_ready:
@@ -133,7 +137,9 @@ async def _cmd_inspect(task_id: str) -> int:
         print(f"  {_bold('Task Type:')}    {data.get('task_type', 'unknown')}")
         print(f"  {_bold('Status:')}       {data.get('status', 'unknown')}")
         print(f"  {_bold('Generation:')}   {data.get('generation', '0')}")
-        print(f"  {_bold('Retries:')}      {data.get('retry_count', '0')}/{data.get('max_retries', '0')}")
+        print(
+            f"  {_bold('Retries:')}      {data.get('retry_count', '0')}/{data.get('max_retries', '0')}"
+        )
         print(f"  {_bold('Error Count:')}  {data.get('error_count', '0')}")
 
         owner = data.get("owner_token", "")
@@ -149,8 +155,11 @@ async def _cmd_inspect(task_id: str) -> int:
         if payload_raw:
             try:
                 payload = json.loads(payload_raw)
-                safe_payload = {k: v for k, v in payload.items()
-                                if k not in ("file_content", "token", "secret")}
+                safe_payload = {
+                    k: v
+                    for k, v in payload.items()
+                    if k not in ("file_content", "token", "secret")
+                }
                 payload_str = json.dumps(safe_payload, ensure_ascii=False)
                 if len(payload_str) > 300:
                     payload_str = payload_str[:300] + "..."
@@ -171,11 +180,31 @@ async def _cmd_inspect(task_id: str) -> int:
                 _v2_retry_key,
             )
 
-            in_ready = await r.lpos(_v2_q_key(task_type), task_id) is not None if task_type else False
-            in_proc = await r.zscore(_v2_p_key(task_type), task_id) is not None if task_type else False
-            in_retry = await r.zscore(_v2_retry_key(task_type), task_id) is not None if task_type else False
-            in_dead = await r.lpos(_v2_dead_key(task_type), task_id) is not None if task_type else False
-            in_corrupt = await r.zscore(_v2_corrupt_key(task_type), task_id) is not None if task_type else False
+            in_ready = (
+                await r.lpos(_v2_q_key(task_type), task_id) is not None
+                if task_type
+                else False
+            )
+            in_proc = (
+                await r.zscore(_v2_p_key(task_type), task_id) is not None
+                if task_type
+                else False
+            )
+            in_retry = (
+                await r.zscore(_v2_retry_key(task_type), task_id) is not None
+                if task_type
+                else False
+            )
+            in_dead = (
+                await r.lpos(_v2_dead_key(task_type), task_id) is not None
+                if task_type
+                else False
+            )
+            in_corrupt = (
+                await r.zscore(_v2_corrupt_key(task_type), task_id) is not None
+                if task_type
+                else False
+            )
 
             hb = await r.get(_v2_heartbeat_key(task_id))
 
@@ -273,8 +302,12 @@ async def _cmd_cancel(task_id: str) -> int:
         elif status == "processing":
             # Set cancellation requested flag
             await r.hset(hash_key, "cancel_requested", "1")
-            print(_yellow(f"Task {task_id} is processing — cancellation requested. "
-                          f"Worker will check at next safe point."))
+            print(
+                _yellow(
+                    f"Task {task_id} is processing — cancellation requested. "
+                    f"Worker will check at next safe point."
+                )
+            )
             return 0
         else:
             print(_yellow(f"Task {task_id} has status '{status}', cannot cancel."))

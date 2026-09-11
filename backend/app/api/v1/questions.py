@@ -37,11 +37,13 @@ def _public_question(question, kps=None) -> QuestionPublicResponse:
     if kps is not None:
         payload = payload.model_copy(update={"knowledge_points": kps})
     subject = question.subject_ref
-    return payload.model_copy(update={
-        "subject_code": subject.code if subject else "",
-        "subject_name": subject.name if subject else "",
-        "content": _sanitize_content(payload.content),
-    })
+    return payload.model_copy(
+        update={
+            "subject_code": subject.code if subject else "",
+            "subject_name": subject.name if subject else "",
+            "content": _sanitize_content(payload.content),
+        }
+    )
 
 
 @router.post("", response_model=QuestionResponse)
@@ -77,7 +79,9 @@ async def list_questions(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    items, total = await svc.list_questions(db, subject_id, question_type, page, page_size)
+    items, total = await svc.list_questions(
+        db, subject_id, question_type, page, page_size
+    )
     kp_map = await load_question_kps(db, [q.id for q in items])
     return paginated_response(
         items=[_public_question(q, kp_map.get(q.id, [])) for q in items],

@@ -1,4 +1,5 @@
 """知识点服务 — 规范化管理知识点 + 题目映射（关联表为唯一事实源）。"""
+
 import logging
 
 from sqlalchemy import func, or_, select
@@ -56,7 +57,9 @@ async def _create_canonical_knowledge_point(
             # an alias target. Re-resolve the entire subject rather than merely
             # re-selecting normalized_name so alias governance still applies.
             points = await _load_subject_knowledge_points(db, subject_id)
-            active_names, active_aliases, inactive_terms = _build_resolution_indexes(points)
+            active_names, active_aliases, inactive_terms = _build_resolution_indexes(
+                points
+            )
             resolved = _resolve_from_indexes(
                 normalized,
                 active_names,
@@ -148,19 +151,19 @@ async def get_or_create_knowledge_point(
     name: str,
 ) -> KnowledgePoint:
     """Compatibility wrapper: resolve aliases first, create only if truly new."""
-    point = await resolve_knowledge_point(
-        db, subject_id, name, create_if_missing=True
-    )
+    point = await resolve_knowledge_point(db, subject_id, name, create_if_missing=True)
     if point is None:  # Defensive; create_if_missing=True should always resolve.
-        raise RuntimeError(
-            f"知识点解析失败：subject_id={subject_id}, name={name!r}"
-        )
+        raise RuntimeError(f"知识点解析失败：subject_id={subject_id}, name={name!r}")
     return point
 
 
-async def _load_mappings(db: AsyncSession, question_id: int) -> list[QuestionKnowledgePoint]:
+async def _load_mappings(
+    db: AsyncSession, question_id: int
+) -> list[QuestionKnowledgePoint]:
     result = await db.execute(
-        select(QuestionKnowledgePoint).where(QuestionKnowledgePoint.question_id == question_id)
+        select(QuestionKnowledgePoint).where(
+            QuestionKnowledgePoint.question_id == question_id
+        )
     )
     return list(result.scalars().all())
 
@@ -207,10 +210,15 @@ async def sync_question_knowledge_points(
                 await db.delete(m)
             await db.flush()
             return {
-                "changed": True, "created": 0, "updated": 0,
-                "deleted": len(existing), "total": 0,
+                "changed": True,
+                "created": 0,
+                "updated": 0,
+                "deleted": len(existing),
+                "total": 0,
             }
-        logger.warning("sync_question_knowledge_points: qid=%d has no subject, skip", question.id)
+        logger.warning(
+            "sync_question_knowledge_points: qid=%d has no subject, skip", question.id
+        )
         return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
 
     resolved_points = await resolve_knowledge_points(
@@ -320,9 +328,16 @@ async def load_question_kps(
     ids = list(dict.fromkeys(question_ids))
     result = await db.execute(
         select(QuestionKnowledgePoint.question_id, KnowledgePoint.name)
-        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+        )
         .where(QuestionKnowledgePoint.question_id.in_(ids))
-        .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.position, QuestionKnowledgePoint.id)
+        .order_by(
+            QuestionKnowledgePoint.question_id,
+            QuestionKnowledgePoint.position,
+            QuestionKnowledgePoint.id,
+        )
     )
     out: dict[int, list[str]] = {qid: [] for qid in ids}
     for qid, name in result.all():
@@ -340,7 +355,10 @@ def kp_exact_conditions(names) -> list:
         out.append(
             Question.id.in_(
                 select(QuestionKnowledgePoint.question_id)
-                .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+                .join(
+                    KnowledgePoint,
+                    KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+                )
                 .join(Question, Question.id == QuestionKnowledgePoint.question_id)
                 .where(
                     KnowledgePoint.subject_id == Question.subject_id,
@@ -358,7 +376,10 @@ def kp_any_condition(names):
         return None
     return Question.id.in_(
         select(QuestionKnowledgePoint.question_id)
-        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+        )
         .join(Question, Question.id == QuestionKnowledgePoint.question_id)
         .where(
             KnowledgePoint.subject_id == Question.subject_id,
@@ -373,15 +394,21 @@ def kp_id_any_condition(knowledge_point_ids):
     章节专项练习会把父节点解析成 ``父节点 + 全部后代`` ID 集合，
     这里直接匹配关联表而不是再次走名称解析，避免 alias/重命名造成歧义。
     """
-    ids = list(dict.fromkeys(
-        int(value) for value in (knowledge_point_ids or [])
-        if value is not None and int(value) > 0
-    ))
+    ids = list(
+        dict.fromkeys(
+            int(value)
+            for value in (knowledge_point_ids or [])
+            if value is not None and int(value) > 0
+        )
+    )
     if not ids:
         return None
     return Question.id.in_(
         select(QuestionKnowledgePoint.question_id)
-        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+        )
         .join(Question, Question.id == QuestionKnowledgePoint.question_id)
         .where(
             KnowledgePoint.subject_id == Question.subject_id,
@@ -398,7 +425,10 @@ def kp_fuzzy_condition(topic: str):
         return None
     return Question.id.in_(
         select(QuestionKnowledgePoint.question_id)
-        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+        )
         .join(Question, Question.id == QuestionKnowledgePoint.question_id)
         .where(
             KnowledgePoint.subject_id == Question.subject_id,
@@ -417,15 +447,15 @@ async def get_knowledge_status(db: AsyncSession) -> dict:
         await db.execute(select(func.count(QuestionKnowledgePoint.id)))
     ).scalar() or 0
 
-    total_q_all = (
-        await db.execute(select(func.count(Question.id)))
-    ).scalar() or 0
+    total_q_all = (await db.execute(select(func.count(Question.id)))).scalar() or 0
     total_q_active = (
         await db.execute(select(func.count(Question.id)).where(Question.is_active))
     ).scalar() or 0
 
     mapped_q_all = (
-        await db.execute(select(func.count(func.distinct(QuestionKnowledgePoint.question_id))))
+        await db.execute(
+            select(func.count(func.distinct(QuestionKnowledgePoint.question_id)))
+        )
     ).scalar() or 0
     mapped_q_active = (
         await db.execute(

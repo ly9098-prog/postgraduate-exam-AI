@@ -82,9 +82,11 @@ def _practice_params(
 
 
 async def _load_subject_scope(db: AsyncSession) -> tuple[Subject | None, list[Subject]]:
-    rows = list((await db.scalars(
-        select(Subject).where(Subject.code.in_(EXAM408_ALL_CODES))
-    )).all())
+    rows = list(
+        (
+            await db.scalars(select(Subject).where(Subject.code.in_(EXAM408_ALL_CODES)))
+        ).all()
+    )
     selected = select_408_subject_records(rows)
     by_code = {str(row.code): row for row in selected}
     root = by_code.get(EXAM408_ROOT_CODE)
@@ -108,22 +110,26 @@ async def _load_408_practice_counts(
     if not core_subject_ids:
         return 0, 0
 
-    total = (await db.execute(
-        select(func.count(PracticeRecord.id)).where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.subject_id.in_(core_subject_ids),
+    total = (
+        await db.execute(
+            select(func.count(PracticeRecord.id)).where(
+                PracticeRecord.user_id == user_id,
+                PracticeRecord.subject_id.in_(core_subject_ids),
+            )
         )
-    )).scalar_one() or 0
+    ).scalar_one() or 0
 
     today_start, tomorrow_start = shanghai_date_utc_range(shanghai_today())
-    today = (await db.execute(
-        select(func.count(PracticeRecord.id)).where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.subject_id.in_(core_subject_ids),
-            PracticeRecord.answered_at >= today_start,
-            PracticeRecord.answered_at < tomorrow_start,
+    today = (
+        await db.execute(
+            select(func.count(PracticeRecord.id)).where(
+                PracticeRecord.user_id == user_id,
+                PracticeRecord.subject_id.in_(core_subject_ids),
+                PracticeRecord.answered_at >= today_start,
+                PracticeRecord.answered_at < tomorrow_start,
+            )
         )
-    )).scalar_one() or 0
+    ).scalar_one() or 0
     return int(total), int(today)
 
 
@@ -159,29 +165,33 @@ async def _build_subject_mastery(
     for subject in core_subjects:
         row = aggregate.get(int(subject.id))
         if row is None:
-            result.append({
-                "subject_id": int(subject.id),
-                "subject_code": str(subject.code),
-                "subject_name": str(subject.name),
-                "data_available": False,
-                "mastery_score": None,
-                "confidence": 0.0,
-                "attempt_count": 0,
-                "accuracy": None,
-            })
+            result.append(
+                {
+                    "subject_id": int(subject.id),
+                    "subject_code": str(subject.code),
+                    "subject_name": str(subject.name),
+                    "data_available": False,
+                    "mastery_score": None,
+                    "confidence": 0.0,
+                    "attempt_count": 0,
+                    "accuracy": None,
+                }
+            )
             continue
         attempts = int(row[3] or 0)
         correct = int(row[4] or 0)
-        result.append({
-            "subject_id": int(subject.id),
-            "subject_code": str(subject.code),
-            "subject_name": str(subject.name),
-            "data_available": bool(row[6] and attempts > 0),
-            "mastery_score": round(float(row[1] or 0.0), 1),
-            "confidence": round(float(row[2] or 0.0), 3),
-            "attempt_count": attempts,
-            "accuracy": round(correct / attempts, 4) if attempts > 0 else None,
-        })
+        result.append(
+            {
+                "subject_id": int(subject.id),
+                "subject_code": str(subject.code),
+                "subject_name": str(subject.name),
+                "data_available": bool(row[6] and attempts > 0),
+                "mastery_score": round(float(row[1] or 0.0), 1),
+                "confidence": round(float(row[2] or 0.0), 3),
+                "attempt_count": attempts,
+                "accuracy": round(correct / attempts, 4) if attempts > 0 else None,
+            }
+        )
     return result
 
 
@@ -197,14 +207,19 @@ async def _pick_chapter_recommendation(
     projections on every page show while still producing a concrete chapter plan.
     """
     practiced = [
-        item for item in subject_mastery
+        item
+        for item in subject_mastery
         if bool(item.get("data_available")) and int(item.get("attempt_count") or 0) > 0
     ]
     if not practiced:
         return None
     practiced.sort(
         key=lambda item: (
-            float(item.get("mastery_score") if item.get("mastery_score") is not None else 100.0),
+            float(
+                item.get("mastery_score")
+                if item.get("mastery_score") is not None
+                else 100.0
+            ),
             float(item.get("confidence") or 0.0),
             -int(item.get("attempt_count") or 0),
             int(item.get("subject_id") or 0),
@@ -231,14 +246,22 @@ async def _pick_chapter_recommendation(
             continue
         count = min(
             SMART_TASK_COUNT,
-            max(3, int(recommendation.get("trainable_knowledge_points") or SMART_TASK_COUNT)),
+            max(
+                3,
+                int(
+                    recommendation.get("trainable_knowledge_points") or SMART_TASK_COUNT
+                ),
+            ),
         )
         return {
             "key": f"chapter:{subject_id}:{kp_id}",
             "task_type": "knowledge_chapter",
             "priority": 0,
             "title": str(recommendation.get("title") or "进行章节专项"),
-            "reason": str(recommendation.get("reason") or "根据当前知识覆盖和掌握状态安排章节练习。"),
+            "reason": str(
+                recommendation.get("reason")
+                or "根据当前知识覆盖和掌握状态安排章节练习。"
+            ),
             "action_label": str(recommendation.get("action_label") or "开始章节专项"),
             "route": "practice",
             "route_params": _practice_params(
@@ -252,10 +275,16 @@ async def _pick_chapter_recommendation(
             "estimated_question_count": count,
             "estimated_minutes": _minutes_for_questions(count),
             "subject_id": subject_id,
-            "subject_code": str(diagnosis.get("subject_code") or subject.get("subject_code") or ""),
-            "subject_name": str(diagnosis.get("subject_name") or subject.get("subject_name") or ""),
+            "subject_code": str(
+                diagnosis.get("subject_code") or subject.get("subject_code") or ""
+            ),
+            "subject_name": str(
+                diagnosis.get("subject_name") or subject.get("subject_name") or ""
+            ),
             "knowledge_point_id": kp_id,
-            "knowledge_point_name": str(recommendation.get("knowledge_point_name") or ""),
+            "knowledge_point_name": str(
+                recommendation.get("knowledge_point_name") or ""
+            ),
         }
     return None
 
@@ -268,14 +297,20 @@ async def _load_completed_plan_task_keys(
 ) -> set[str]:
     """Load server-attributed Home plan tasks completed on one China calendar day."""
     start, end = shanghai_date_utc_range(plan_date)
-    payloads = (await db.execute(
-        select(PracticeSession.submission_response).where(
-            PracticeSession.user_id == int(user_id),
-            PracticeSession.status == "completed",
-            PracticeSession.finished_at >= start,
-            PracticeSession.finished_at < end,
+    payloads = (
+        (
+            await db.execute(
+                select(PracticeSession.submission_response).where(
+                    PracticeSession.user_id == int(user_id),
+                    PracticeSession.status == "completed",
+                    PracticeSession.finished_at >= start,
+                    PracticeSession.finished_at < end,
+                )
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     keys: set[str] = set()
     for payload in payloads:
         if not isinstance(payload, dict):
@@ -316,7 +351,11 @@ def _attach_plan_token(
         subject_id=subject_id,
         mode=str(params.get("mode") or "random"),
         count=count,
-        knowledge_point_id=(int(params["knowledge_point_id"]) if params.get("knowledge_point_id") else None),
+        knowledge_point_id=(
+            int(params["knowledge_point_id"])
+            if params.get("knowledge_point_id")
+            else None
+        ),
         include_descendants=bool(params.get("include_descendants")),
         question_ids=str(params.get("question_ids") or "") or None,
     )
@@ -337,66 +376,72 @@ async def _pick_weak_point(
     revision agree on the same canonical 408 subject.
     """
     available_count = func.count(func.distinct(Question.id))
-    row = (await db.execute(
-        select(
-            UserKnowledgeState.knowledge_point_id,
-            KnowledgePoint.name,
-            UserKnowledgeState.subject_id,
-            Subject.code,
-            Subject.name,
-            UserKnowledgeState.mastery_score,
-            UserKnowledgeState.confidence,
-            UserKnowledgeState.attempt_count,
-            UserKnowledgeState.wrong_count,
-            UserKnowledgeState.recent_wrong_count,
-            available_count.label("available_question_count"),
+    row = (
+        await db.execute(
+            select(
+                UserKnowledgeState.knowledge_point_id,
+                KnowledgePoint.name,
+                UserKnowledgeState.subject_id,
+                Subject.code,
+                Subject.name,
+                UserKnowledgeState.mastery_score,
+                UserKnowledgeState.confidence,
+                UserKnowledgeState.attempt_count,
+                UserKnowledgeState.wrong_count,
+                UserKnowledgeState.recent_wrong_count,
+                available_count.label("available_question_count"),
+            )
+            .join(
+                KnowledgePoint,
+                KnowledgePoint.id == UserKnowledgeState.knowledge_point_id,
+            )
+            .join(Subject, Subject.id == UserKnowledgeState.subject_id)
+            .join(
+                QuestionKnowledgePoint,
+                QuestionKnowledgePoint.knowledge_point_id
+                == UserKnowledgeState.knowledge_point_id,
+            )
+            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+            .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
+            .where(
+                UserKnowledgeState.user_id == user_id,
+                UserKnowledgeState.subject_id.in_(core_subject_ids),
+                UserKnowledgeState.attempt_count >= 2,
+                UserKnowledgeState.mastery_score < 70,
+                KnowledgePoint.is_active.is_(True),
+                KnowledgePoint.subject_id == UserKnowledgeState.subject_id,
+                Question.subject_id == UserKnowledgeState.subject_id,
+                Question.is_active.is_(True),
+                Question.review_status == "approved",
+                QuestionVersion.question_id == Question.id,
+                QuestionVersion.subject_id == Question.subject_id,
+                QuestionVersion.question_type == Question.question_type,
+                QuestionVersion.question_type.in_(_ANSWERABLE_TYPES),
+                QuestionVersion.is_active.is_(True),
+            )
+            .group_by(
+                UserKnowledgeState.knowledge_point_id,
+                KnowledgePoint.name,
+                UserKnowledgeState.subject_id,
+                Subject.code,
+                Subject.name,
+                UserKnowledgeState.mastery_score,
+                UserKnowledgeState.confidence,
+                UserKnowledgeState.attempt_count,
+                UserKnowledgeState.wrong_count,
+                UserKnowledgeState.recent_wrong_count,
+            )
+            .having(available_count >= 3)
+            .order_by(
+                case((UserKnowledgeState.recent_wrong_count >= 2, 0), else_=1),
+                UserKnowledgeState.recent_wrong_count.desc(),
+                UserKnowledgeState.mastery_score.asc(),
+                UserKnowledgeState.wrong_count.desc(),
+                UserKnowledgeState.knowledge_point_id.asc(),
+            )
+            .limit(1)
         )
-        .join(KnowledgePoint, KnowledgePoint.id == UserKnowledgeState.knowledge_point_id)
-        .join(Subject, Subject.id == UserKnowledgeState.subject_id)
-        .join(
-            QuestionKnowledgePoint,
-            QuestionKnowledgePoint.knowledge_point_id == UserKnowledgeState.knowledge_point_id,
-        )
-        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
-        .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
-        .where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.subject_id.in_(core_subject_ids),
-            UserKnowledgeState.attempt_count >= 2,
-            UserKnowledgeState.mastery_score < 70,
-            KnowledgePoint.is_active.is_(True),
-            KnowledgePoint.subject_id == UserKnowledgeState.subject_id,
-            Question.subject_id == UserKnowledgeState.subject_id,
-            Question.is_active.is_(True),
-            Question.review_status == "approved",
-            QuestionVersion.question_id == Question.id,
-            QuestionVersion.subject_id == Question.subject_id,
-            QuestionVersion.question_type == Question.question_type,
-            QuestionVersion.question_type.in_(_ANSWERABLE_TYPES),
-            QuestionVersion.is_active.is_(True),
-        )
-        .group_by(
-            UserKnowledgeState.knowledge_point_id,
-            KnowledgePoint.name,
-            UserKnowledgeState.subject_id,
-            Subject.code,
-            Subject.name,
-            UserKnowledgeState.mastery_score,
-            UserKnowledgeState.confidence,
-            UserKnowledgeState.attempt_count,
-            UserKnowledgeState.wrong_count,
-            UserKnowledgeState.recent_wrong_count,
-        )
-        .having(available_count >= 3)
-        .order_by(
-            case((UserKnowledgeState.recent_wrong_count >= 2, 0), else_=1),
-            UserKnowledgeState.recent_wrong_count.desc(),
-            UserKnowledgeState.mastery_score.asc(),
-            UserKnowledgeState.wrong_count.desc(),
-            UserKnowledgeState.knowledge_point_id.asc(),
-        )
-        .limit(1)
-    )).first()
+    ).first()
     if row is None:
         return None
     return {
@@ -541,9 +586,9 @@ async def _pick_path_prerequisite(
         if available_count < 3:
             continue
 
-        subject = (await db.execute(
-            select(Subject).where(Subject.id == prereq_subject_id)
-        )).scalar_one_or_none()
+        subject = (
+            await db.execute(select(Subject).where(Subject.id == prereq_subject_id))
+        ).scalar_one_or_none()
         if subject is None:
             continue
         return {
@@ -617,25 +662,28 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
             if overdue > 0
             else "这些题已经进入最佳复习窗口，优先巩固比继续加新题更划算。"
         )
-        tasks.append({
-            "key": "review:due",
-            "task_type": "review",
-            "priority": 0,
-            "title": f"先完成 {remaining_review} 道到期复习",
-            "reason": reason,
-            "action_label": "开始今日复习",
-            "route": "review_today",
-            "route_params": {},
-            "estimated_question_count": remaining_review,
-            "estimated_minutes": int(review_overview.get("estimated_minutes") or 0),
-        })
+        tasks.append(
+            {
+                "key": "review:due",
+                "task_type": "review",
+                "priority": 0,
+                "title": f"先完成 {remaining_review} 道到期复习",
+                "reason": reason,
+                "action_label": "开始今日复习",
+                "route": "review_today",
+                "route_params": {},
+                "estimated_question_count": remaining_review,
+                "estimated_minutes": int(review_overview.get("estimated_minutes") or 0),
+            }
+        )
 
     if chapter_task is not None:
         tasks.append(chapter_task)
 
     if weak_point is not None and (
         chapter_task is None
-        or int(chapter_task.get("subject_id") or 0) != int(weak_point.get("subject_id") or 0)
+        or int(chapter_task.get("subject_id") or 0)
+        != int(weak_point.get("subject_id") or 0)
     ):
         recent_wrong = int(weak_point["recent_wrong_count"])
         if recent_wrong >= 2:
@@ -649,58 +697,65 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
                 f"{round(weak_point['mastery_score'])} 分，适合做一轮小范围强化。"
             )
         weak_count = min(WEAK_TASK_COUNT, int(weak_point["available_question_count"]))
-        tasks.append({
-            "key": f"weak:{weak_point['knowledge_point_id']}",
-            "task_type": "weakness",
-            "priority": 0,
-            "title": f"强化「{weak_point['knowledge_point_name']}」",
-            "reason": reason,
-            "action_label": "开始弱项强化",
-            "route": "practice",
-            "route_params": _practice_params(
-                subject_id=weak_point["subject_id"],
-                mode="random",
-                count=weak_count,
-                knowledge_point_id=weak_point["knowledge_point_id"],
-                allow_repeat=True,
-            ),
-            "estimated_question_count": weak_count,
-            "estimated_minutes": _minutes_for_questions(weak_count),
-            "subject_id": weak_point["subject_id"],
-            "subject_code": weak_point["subject_code"],
-            "subject_name": weak_point["subject_name"],
-            "knowledge_point_id": weak_point["knowledge_point_id"],
-            "knowledge_point_name": weak_point["knowledge_point_name"],
-        })
+        tasks.append(
+            {
+                "key": f"weak:{weak_point['knowledge_point_id']}",
+                "task_type": "weakness",
+                "priority": 0,
+                "title": f"强化「{weak_point['knowledge_point_name']}」",
+                "reason": reason,
+                "action_label": "开始弱项强化",
+                "route": "practice",
+                "route_params": _practice_params(
+                    subject_id=weak_point["subject_id"],
+                    mode="random",
+                    count=weak_count,
+                    knowledge_point_id=weak_point["knowledge_point_id"],
+                    allow_repeat=True,
+                ),
+                "estimated_question_count": weak_count,
+                "estimated_minutes": _minutes_for_questions(weak_count),
+                "subject_id": weak_point["subject_id"],
+                "subject_code": weak_point["subject_code"],
+                "subject_name": weak_point["subject_name"],
+                "knowledge_point_id": weak_point["knowledge_point_id"],
+                "knowledge_point_name": weak_point["knowledge_point_name"],
+            }
+        )
 
     if hard_questions:
         hard_ids = [item["question_id"] for item in hard_questions]
         max_wrong = max(int(item["wrong_count"]) for item in hard_questions)
-        reason = (
-            f"系统识别出 {len(hard_ids)} 道个人高难题"
-            + (f"，其中最高已错 {max_wrong} 次。" if max_wrong > 0 else "，适合重新检验解题稳定性。")
+        reason = f"系统识别出 {len(hard_ids)} 道个人高难题" + (
+            f"，其中最高已错 {max_wrong} 次。"
+            if max_wrong > 0
+            else "，适合重新检验解题稳定性。"
         )
-        tasks.append({
-            "key": "hard:top",
-            "task_type": "hard_questions",
-            "priority": 0,
-            "title": f"重练 {len(hard_ids)} 道个人难题",
-            "reason": reason,
-            "action_label": "开始困难题重练",
-            "route": "practice",
-            "route_params": _practice_params(
-                subject_id=root_id,
-                mode="random",
-                count=len(hard_ids),
-                question_ids=hard_ids,
-            ),
-            "estimated_question_count": len(hard_ids),
-            "estimated_minutes": _minutes_for_questions(len(hard_ids), per_question_sec=120),
-            "subject_id": root_id,
-            "subject_code": str(root.code),
-            "subject_name": str(root.name),
-            "question_ids": hard_ids,
-        })
+        tasks.append(
+            {
+                "key": "hard:top",
+                "task_type": "hard_questions",
+                "priority": 0,
+                "title": f"重练 {len(hard_ids)} 道个人难题",
+                "reason": reason,
+                "action_label": "开始困难题重练",
+                "route": "practice",
+                "route_params": _practice_params(
+                    subject_id=root_id,
+                    mode="random",
+                    count=len(hard_ids),
+                    question_ids=hard_ids,
+                ),
+                "estimated_question_count": len(hard_ids),
+                "estimated_minutes": _minutes_for_questions(
+                    len(hard_ids), per_question_sec=120
+                ),
+                "subject_id": root_id,
+                "subject_code": str(root.code),
+                "subject_name": str(root.name),
+                "question_ids": hard_ids,
+            }
+        )
 
     used_kp_ids = {
         int(task["knowledge_point_id"])
@@ -710,60 +765,64 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
     if path_prereq is not None and path_prereq["knowledge_point_id"] not in used_kp_ids:
         target_name = path_prereq["target_knowledge_point_name"] or "后续知识点"
         path_count = min(PATH_TASK_COUNT, int(path_prereq["available_question_count"]))
-        tasks.append({
-            "key": f"path:{path_prereq['knowledge_point_id']}:{path_prereq['target_knowledge_point_id']}",
-            "task_type": "knowledge_path",
-            "priority": 0,
-            "title": f"先补「{path_prereq['knowledge_point_name']}」",
-            "reason": (
-                f"它是「{target_name}」的前置知识，当前掌握度约 "
-                f"{round(path_prereq['mastery_score'])} 分；先补前置再推进更稳。"
-            ),
-            "action_label": "继续知识路径",
-            "route": "practice",
-            "route_params": _practice_params(
-                subject_id=path_prereq["subject_id"],
-                mode="random",
-                count=path_count,
-                knowledge_point=path_prereq["knowledge_point_name"],
-                allow_repeat=True,
-            ),
-            "estimated_question_count": path_count,
-            "estimated_minutes": _minutes_for_questions(path_count),
-            "subject_id": path_prereq["subject_id"],
-            "subject_code": path_prereq["subject_code"],
-            "subject_name": path_prereq["subject_name"],
-            "knowledge_point_id": path_prereq["knowledge_point_id"],
-            "knowledge_point_name": path_prereq["knowledge_point_name"],
-        })
+        tasks.append(
+            {
+                "key": f"path:{path_prereq['knowledge_point_id']}:{path_prereq['target_knowledge_point_id']}",
+                "task_type": "knowledge_path",
+                "priority": 0,
+                "title": f"先补「{path_prereq['knowledge_point_name']}」",
+                "reason": (
+                    f"它是「{target_name}」的前置知识，当前掌握度约 "
+                    f"{round(path_prereq['mastery_score'])} 分；先补前置再推进更稳。"
+                ),
+                "action_label": "继续知识路径",
+                "route": "practice",
+                "route_params": _practice_params(
+                    subject_id=path_prereq["subject_id"],
+                    mode="random",
+                    count=path_count,
+                    knowledge_point=path_prereq["knowledge_point_name"],
+                    allow_repeat=True,
+                ),
+                "estimated_question_count": path_count,
+                "estimated_minutes": _minutes_for_questions(path_count),
+                "subject_id": path_prereq["subject_id"],
+                "subject_code": path_prereq["subject_code"],
+                "subject_name": path_prereq["subject_name"],
+                "knowledge_point_id": path_prereq["knowledge_point_id"],
+                "knowledge_point_name": path_prereq["knowledge_point_name"],
+            }
+        )
 
     # 无历史数据时明确回退随机；有数据时进入现有 smart 推荐链，后续的题目级
     # exposure/click/answer 继续沿用 recommendation_log/feedback 机制。
     is_new_user = total_practice_count <= 0
     smart_mode = "random" if is_new_user else "smart"
-    tasks.append({
-        "key": "practice:fallback" if is_new_user else "practice:smart",
-        "task_type": "smart_practice",
-        "priority": 0,
-        "title": "完成第一组练习" if is_new_user else "继续智能新题",
-        "reason": (
-            "当前学习数据还不足，先完成一组四科练习建立个性化推荐基线。"
-            if is_new_user
-            else "结合当前知识状态与近期表现继续推进新题，避免只在旧错题里循环。"
-        ),
-        "action_label": "开始练习" if is_new_user else "开始智能练习",
-        "route": "practice",
-        "route_params": _practice_params(
-            subject_id=root_id,
-            mode=smart_mode,
-            count=SMART_TASK_COUNT,
-        ),
-        "estimated_question_count": SMART_TASK_COUNT,
-        "estimated_minutes": _minutes_for_questions(SMART_TASK_COUNT),
-        "subject_id": root_id,
-        "subject_code": str(root.code),
-        "subject_name": str(root.name),
-    })
+    tasks.append(
+        {
+            "key": "practice:fallback" if is_new_user else "practice:smart",
+            "task_type": "smart_practice",
+            "priority": 0,
+            "title": "完成第一组练习" if is_new_user else "继续智能新题",
+            "reason": (
+                "当前学习数据还不足，先完成一组四科练习建立个性化推荐基线。"
+                if is_new_user
+                else "结合当前知识状态与近期表现继续推进新题，避免只在旧错题里循环。"
+            ),
+            "action_label": "开始练习" if is_new_user else "开始智能练习",
+            "route": "practice",
+            "route_params": _practice_params(
+                subject_id=root_id,
+                mode=smart_mode,
+                count=SMART_TASK_COUNT,
+            ),
+            "estimated_question_count": SMART_TASK_COUNT,
+            "estimated_minutes": _minutes_for_questions(SMART_TASK_COUNT),
+            "subject_id": root_id,
+            "subject_code": str(root.code),
+            "subject_name": str(root.name),
+        }
+    )
 
     # 决策顺序是产品规则本身，保持确定性。完成复习后 review 会自然消失，
     # 其他任务只有学习状态真实变化时才会重新排序。
@@ -788,11 +847,13 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
     for task in tasks:
         task["completed_today"] = str(task.get("key") or "") in completed_key_set
 
-    tasks.sort(key=lambda task: (
-        1 if task.get("completed_today") else 0,
-        task_order[task["task_type"]],
-        task["key"],
-    ))
+    tasks.sort(
+        key=lambda task: (
+            1 if task.get("completed_today") else 0,
+            task_order[task["task_type"]],
+            task["key"],
+        )
+    )
 
     # Home exposes three recommendation slots in total:
     # one focus-card primary task plus up to two supplementary recommendation

@@ -116,7 +116,11 @@ def build_source_locator(
         parts.append(source_image_name)
     elif source_file:
         parts.append(source_file)
-    if source_page_start is not None and source_page_end is not None and source_page_end != source_page_start:
+    if (
+        source_page_start is not None
+        and source_page_end is not None
+        and source_page_end != source_page_start
+    ):
         parts.append(f"第{source_page_start}-{source_page_end}页")
     elif source_page_start is not None:
         parts.append(f"第{source_page_start}页")
@@ -220,11 +224,22 @@ def derive_import_risk(
             has_visual_segment = False
             if segments and isinstance(segments, list):
                 has_visual_segment = any(
-                    s.get("type") in ("image", "math_image", "table_image", "code_image", "diagram", "chart")
+                    s.get("type")
+                    in (
+                        "image",
+                        "math_image",
+                        "table_image",
+                        "code_image",
+                        "diagram",
+                        "chart",
+                    )
                     for s in segments
                     if isinstance(s, dict) and s.get("url")
                 )
-            if not has_visual_segment and "visual_reference_but_image_missing" not in risk_flags:
+            if (
+                not has_visual_segment
+                and "visual_reference_but_image_missing" not in risk_flags
+            ):
                 risk_flags.append("visual_reference_but_image_missing")
 
     risk_reasons = _build_risk_reasons(risk_flags)
@@ -240,11 +255,17 @@ def derive_import_risk(
 def _compute_risk_level(risk_flags: list[str]) -> str:
     flag_set = set(risk_flags)
     high_flags = {
-        "answer_ai_generated", "code_uncertain", "formula_uncertain",
-        "options_anomaly", "answer_missing", "ai_major_edit",
-        "math_image_crop_failed", "math_image_upload_failed",
+        "answer_ai_generated",
+        "code_uncertain",
+        "formula_uncertain",
+        "options_anomaly",
+        "answer_missing",
+        "ai_major_edit",
+        "math_image_crop_failed",
+        "math_image_upload_failed",
         "source_image_upload_failed",
-        "table_low_confidence", "complex_formula_requires_review",
+        "table_low_confidence",
+        "complex_formula_requires_review",
         # Visual content blocking flags
         "visual_reference_but_image_missing",
         "visual_region_bbox_missing",
@@ -255,11 +276,17 @@ def _compute_risk_level(risk_flags: list[str]) -> str:
         "option_image_requires_review",
     }
     medium_flags = {
-        "ai_repair", "ai_complete", "ai_enrich",
-        "low_confidence", "contains_code", "contains_formula",
+        "ai_repair",
+        "ai_complete",
+        "ai_enrich",
+        "low_confidence",
+        "contains_code",
+        "contains_formula",
         "answer_uncertain",
-        "math_region_detected", "math_image_attached",
-        "table_detected", "table_requires_review",
+        "math_region_detected",
+        "math_image_attached",
+        "table_detected",
+        "table_requires_review",
         "source_region_available",
         # Visual content medium flags
         "visual_reference_detected",
@@ -343,14 +370,16 @@ _OPTION_PLACEHOLDER_PATTERNS: list[re.Pattern] = [
 
 _VALID_OPTION_KEYS = frozenset({"A", "B", "C", "D", "E", "F"})
 
-_OPTION_VISUAL_BLOCKING_FLAGS = frozenset({
-    "placeholder_missing",
-    "missing_option_image_asset",
-    "invalid_option_count",
-    "unreachable_image_url",
-    "unresolved_option_mapping",
-    "option_image_requires_review",
-})
+_OPTION_VISUAL_BLOCKING_FLAGS = frozenset(
+    {
+        "placeholder_missing",
+        "missing_option_image_asset",
+        "invalid_option_count",
+        "unreachable_image_url",
+        "unresolved_option_mapping",
+        "option_image_requires_review",
+    }
+)
 
 
 def _is_image_option_placeholder(text: object) -> bool:
@@ -398,7 +427,13 @@ def _check_option_visual_blocking(
         if rt == "option_group":
             expected = seg.get("expected_option_count")
             detected = seg.get("detected_option_count")
-            if expected is None or detected is None or expected < 2 or expected > 6 or detected != expected:
+            if (
+                expected is None
+                or detected is None
+                or expected < 2
+                or expected > 6
+                or detected != expected
+            ):
                 if "invalid_option_count" not in blocking:
                     blocking.append("invalid_option_count")
             url = str(seg.get("url", "") or "")
@@ -415,7 +450,10 @@ def _check_option_visual_blocking(
 
     # 3. All parsed_options empty but no option_group segment — only flag
     #    as placeholder_missing when we haven't already detected a legacy fallback
-    has_legacy_fallback = "unresolved_option_mapping" in blocking or "option_image_requires_review" in blocking
+    has_legacy_fallback = (
+        "unresolved_option_mapping" in blocking
+        or "option_image_requires_review" in blocking
+    )
     if not has_legacy_fallback:
         all_empty = all(
             isinstance(parsed_options.get(k), str) and not parsed_options[k].strip()
@@ -454,12 +492,19 @@ async def list_import_batches(
     keyword: str | None = None,
 ) -> tuple[list[dict], int]:
     conditions = _batch_conditions(status, source_type, keyword)
-    total_query = select(func.count()).select_from(select(QuestionImport.batch_id).where(*conditions).group_by(QuestionImport.batch_id).subquery())
+    total_query = select(func.count()).select_from(
+        select(QuestionImport.batch_id)
+        .where(*conditions)
+        .group_by(QuestionImport.batch_id)
+        .subquery()
+    )
     total = await db.scalar(total_query)
 
     result = await db.execute(
         _batch_summary_query(conditions)
-        .order_by(desc("updated_at"), desc("created_at"), QuestionImport.batch_id.desc())
+        .order_by(
+            desc("updated_at"), desc("created_at"), QuestionImport.batch_id.desc()
+        )
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -482,7 +527,9 @@ async def get_import_batch_detail(
     item_conditions = [QuestionImport.batch_id == batch_id]
     if status:
         item_conditions.append(QuestionImport.status == status)
-    total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*item_conditions))
+    total = await db.scalar(
+        select(func.count()).select_from(QuestionImport).where(*item_conditions)
+    )
     item_result = await db.execute(
         select(*_LIST_COLUMNS)
         .where(*item_conditions)
@@ -560,9 +607,11 @@ _LIST_COLUMNS = (
     QuestionImport.raw_data,
     func.substr(
         func.coalesce(
-            QuestionImport.parsed_content['text'].as_string(),
+            QuestionImport.parsed_content["text"].as_string(),
             QuestionImport.parsed_content.cast(String),
-        ), 1, 160
+        ),
+        1,
+        160,
     ).label("content_preview"),
 )
 
@@ -580,7 +629,12 @@ def _brief_from_row(row) -> AdminImportQuestionItemBrief:
     item.risk_level = risk["risk_level"]
     item.risk_reasons = risk["risk_reasons"]
     # ── 历史数据兜底：从 raw_data 提取 source_question_no 和 raw_text_preview ──
-    if not item.source_question_no or not item.raw_text_preview or item.source_image_seq is None or not item.source_locator:
+    if (
+        not item.source_question_no
+        or not item.raw_text_preview
+        or item.source_image_seq is None
+        or not item.source_locator
+    ):
         _raw_data = None
         if hasattr(row, "_mapping"):
             _raw_data = row._mapping.get("raw_data")
@@ -600,19 +654,26 @@ def _brief_from_row(row) -> AdminImportQuestionItemBrief:
                 if _raw_text:
                     item.raw_text_preview = str(_raw_text)[:200]
             if item.source_image_seq is None:
-                item.source_image_seq = _raw_data.get("source_image_seq") or _raw_data.get("seq")
+                item.source_image_seq = _raw_data.get(
+                    "source_image_seq"
+                ) or _raw_data.get("seq")
             if not item.source_image_name:
-                item.source_image_name = _raw_data.get("source_image_name") or _raw_data.get("source_file") or _raw_data.get("file_name")
+                item.source_image_name = (
+                    _raw_data.get("source_image_name")
+                    or _raw_data.get("source_file")
+                    or _raw_data.get("file_name")
+                )
             if item.source_page_start is None:
                 item.source_page_start = (
                     resolve_source_page(_raw_data)
-                    or _raw_data.get("page_start") or _raw_data.get("source_page") or _raw_data.get("page")
+                    or _raw_data.get("page_start")
+                    or _raw_data.get("source_page")
+                    or _raw_data.get("page")
                 )
             if item.source_page_end is None:
-                item.source_page_end = (
-                    resolve_source_page_end(_raw_data)
-                    or _raw_data.get("page_end")
-                )
+                item.source_page_end = resolve_source_page_end(
+                    _raw_data
+                ) or _raw_data.get("page_end")
 
     # ── source_locator 动态生成（无数据库字段时也保证返回） ──
     if not item.source_locator:
@@ -648,7 +709,9 @@ async def list_review_queue(
         resolved = await resolve_subject_id(db, subject)
         if resolved is not None:
             subject_id = resolved
-    conditions = _question_conditions(status, batch_id, source_type, keyword, subject_id=subject_id)
+    conditions = _question_conditions(
+        status, batch_id, source_type, keyword, subject_id=subject_id
+    )
 
     # answer_status 过滤
     if answer_status:
@@ -657,7 +720,9 @@ async def list_review_queue(
     if question_type:
         conditions.append(QuestionImport.question_type == question_type)
 
-    total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*conditions))
+    total = await db.scalar(
+        select(func.count()).select_from(QuestionImport).where(*conditions)
+    )
 
     # 排序
     if sort == "source_order" or (sort is None and batch_id):
@@ -669,7 +734,10 @@ async def list_review_queue(
             QuestionImport.id.asc(),
         )
     elif sort == "risk_desc":
-        order_by = (QuestionImport.review_priority.asc().nullslast(), QuestionImport.created_at.desc())
+        order_by = (
+            QuestionImport.review_priority.asc().nullslast(),
+            QuestionImport.created_at.desc(),
+        )
     elif sort == "answer_priority":
         # 答案缺失 / AI 补全优先
         order_by = (
@@ -718,6 +786,7 @@ async def update_import_question(
     _options_val = payload.get("options")
     if "stem" in payload:
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
         content = dict(qi.parsed_content or {})
         stem_text = deduplicate_repeated_text(payload.pop("stem").strip())
         content["stem"] = stem_text
@@ -771,6 +840,7 @@ async def update_import_question(
                 build_blank_option_groups,
                 extract_blank_slots,
             )
+
             stem = (qi.parsed_content or {}).get("text", "")
             slot_ids = extract_blank_slots(stem)
             if slot_ids and len(slot_ids) >= 2:
@@ -783,6 +853,7 @@ async def update_import_question(
     # Legacy subject → subject_id conversion
     if "subject" in payload and "subject_id" not in payload:
         from app.services.admin_subject_service import resolve_subject_id
+
         resolved = await resolve_subject_id(db, payload.pop("subject"))
         if resolved is not None:
             payload["subject_id"] = resolved
@@ -825,13 +896,13 @@ async def update_import_question(
     return AdminImportQuestionItem.model_validate(qi)
 
 
-async def approve_import_question(db: AsyncSession, import_id: int, operator_id: int) -> AdminImportQuestionItem:
+async def approve_import_question(
+    db: AsyncSession, import_id: int, operator_id: int
+) -> AdminImportQuestionItem:
     # 行级锁：并发审核同一 import_id 时，第二个请求会阻塞到第一个提交，
     # 读到已发布的 question_id 后抛错，杜绝重复发布。
     result = await db.execute(
-        select(QuestionImport)
-        .where(QuestionImport.id == import_id)
-        .with_for_update()
+        select(QuestionImport).where(QuestionImport.id == import_id).with_for_update()
     )
     qi = result.scalar_one_or_none()
     if qi is None:
@@ -857,7 +928,8 @@ async def approve_import_question(db: AsyncSession, import_id: int, operator_id:
     elif pub_result["status"] == "failed":
         logger.warning(
             "Auto-publish failed for import %d: %s (rolling back approval)",
-            import_id, pub_result.get("reason"),
+            import_id,
+            pub_result.get("reason"),
         )
         qi.status = "pending"  # 回滚状态，保留在审核队列等待修复后重试
         qi.reviewed_by = None
@@ -889,9 +961,15 @@ async def batch_complete_import_questions(
 
     await ensure_ai_parse_allowed(db, operator, request)
     from app.services.admin_ai_settings_service import is_super_admin
+
     _skip_budget = await is_super_admin(db, operator)
     result = await question_pipeline.batch_complete_questions(
-        db, operator.id, import_ids, fields, strategy, skip_budget_check=_skip_budget,
+        db,
+        operator.id,
+        import_ids,
+        fields,
+        strategy,
+        skip_budget_check=_skip_budget,
     )
 
     await write_admin_audit(
@@ -905,7 +983,9 @@ async def batch_complete_import_questions(
             "import_ids": import_ids,
             "fields": fields,
             "strategy": strategy,
-            "result": {k: result[k] for k in ("total", "succeeded", "failed", "skipped")},
+            "result": {
+                k: result[k] for k in ("total", "succeeded", "failed", "skipped")
+            },
         },
         request=request,
     )
@@ -913,7 +993,9 @@ async def batch_complete_import_questions(
     return result
 
 
-async def reject_import_question(db: AsyncSession, import_id: int, operator_id: int, reason: str | None = None) -> AdminImportQuestionItem:
+async def reject_import_question(
+    db: AsyncSession, import_id: int, operator_id: int, reason: str | None = None
+) -> AdminImportQuestionItem:
     qi = await _get_import_question(db, import_id)
     if qi.status == "published" or qi.question_id is not None:
         raise ValueError("已发布题目不可驳回")
@@ -927,8 +1009,12 @@ async def reject_import_question(db: AsyncSession, import_id: int, operator_id: 
     return AdminImportQuestionItem.model_validate(qi)
 
 
-async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int) -> int:
-    records = await _get_batch_records(db, batch_id, statuses={"pending", "rejected"}, for_update=True)
+async def approve_import_batch(
+    db: AsyncSession, batch_id: str, operator_id: int
+) -> int:
+    records = await _get_batch_records(
+        db, batch_id, statuses={"pending", "rejected"}, for_update=True
+    )
     now = utcnow()
     from app.features.question_publish_service import publish_single_question
 
@@ -936,11 +1022,14 @@ async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int
     for qi in records:
         if qi.question_id is None:
             # Skip items with visual option blocking (log, don't fail batch)
-            visual_blocking = _check_option_visual_blocking(qi.parsed_content, qi.parsed_options)
+            visual_blocking = _check_option_visual_blocking(
+                qi.parsed_content, qi.parsed_options
+            )
             if visual_blocking:
                 logger.info(
                     "Batch approve skipped import %d: visual option blocking %s",
-                    qi.id, visual_blocking,
+                    qi.id,
+                    visual_blocking,
                 )
                 continue
 
@@ -958,14 +1047,17 @@ async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int
                 elif pub["status"] == "failed":
                     logger.warning(
                         "Batch auto-publish failed for import %d: %s (skipped)",
-                        qi.id, pub.get("reason"),
+                        qi.id,
+                        pub.get("reason"),
                     )
                     qi.status = "pending"  # 回滚，留在审核队列
                     qi.reviewed_by = None
                     qi.reviewed_at = None
             except Exception as exc:
                 logger.warning(
-                    "Batch auto-publish error for import %d: %s", qi.id, exc,
+                    "Batch auto-publish error for import %d: %s",
+                    qi.id,
+                    exc,
                 )
                 qi.status = "pending"  # 异常也回滚
                 qi.reviewed_by = None
@@ -977,7 +1069,9 @@ async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int
     return count
 
 
-async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_id: int) -> dict:
+async def approve_low_risk_questions(
+    db: AsyncSession, batch_id: str, operator_id: int
+) -> dict:
     """批量通过低风险题目：只通过 risk_level == "low" 且无高风险标记的待审核题。
 
     Returns:
@@ -985,7 +1079,9 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
     """
     from app.features.question_publish_service import publish_single_question
 
-    records = await _get_batch_records(db, batch_id, statuses={"pending"}, for_update=True)
+    records = await _get_batch_records(
+        db, batch_id, statuses={"pending"}, for_update=True
+    )
     now = utcnow()
 
     affected = 0
@@ -1014,14 +1110,18 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
         )
 
         # Visual option blocking — re-computed from current DB state
-        visual_blocking = _check_option_visual_blocking(qi.parsed_content, qi.parsed_options)
+        visual_blocking = _check_option_visual_blocking(
+            qi.parsed_content, qi.parsed_options
+        )
         if visual_blocking:
             is_low_risk = False
 
         if not is_low_risk:
             skipped += 1
             if visual_blocking:
-                skipped_reasons.append(f"#{qi.id}: 图片选项问题 ({'、'.join(visual_blocking)})")
+                skipped_reasons.append(
+                    f"#{qi.id}: 图片选项问题 ({'、'.join(visual_blocking)})"
+                )
             elif rl == "high":
                 skipped_reasons.append(f"#{qi.id}: 高风险")
             elif qi.ai_answer_flag:
@@ -1046,17 +1146,22 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
                 elif pub["status"] == "failed":
                     logger.warning(
                         "Low-risk approve publish failed for import %d: %s (rolled back)",
-                        qi.id, pub.get("reason"),
+                        qi.id,
+                        pub.get("reason"),
                     )
                     qi.status = "pending"
                     qi.reviewed_by = None
                     qi.reviewed_at = None
                     skipped += 1
-                    skipped_reasons.append(f"#{qi.id}: 发布失败({pub.get('reason', '未知')})")
+                    skipped_reasons.append(
+                        f"#{qi.id}: 发布失败({pub.get('reason', '未知')})"
+                    )
                     continue
             except Exception as exc:
                 logger.warning(
-                    "Low-risk approve publish error for import %d: %s", qi.id, exc,
+                    "Low-risk approve publish error for import %d: %s",
+                    qi.id,
+                    exc,
                 )
                 qi.status = "pending"
                 qi.reviewed_by = None
@@ -1082,7 +1187,9 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
     }
 
 
-async def reject_import_batch(db: AsyncSession, batch_id: str, operator_id: int, reason: str | None = None) -> int:
+async def reject_import_batch(
+    db: AsyncSession, batch_id: str, operator_id: int, reason: str | None = None
+) -> int:
     records = await _get_batch_records(db, batch_id, statuses={"pending", "approved"})
     now = utcnow()
     for qi in records:
@@ -1109,7 +1216,9 @@ async def delete_import_batch(db: AsyncSession, batch_id: str) -> int:
     records = await _get_batch_records(db, batch_id)
     if any(qi.status == "published" or qi.question_id is not None for qi in records):
         raise ValueError("已发布批次不可删除")
-    result = await db.execute(delete(QuestionImport).where(QuestionImport.batch_id == batch_id))
+    result = await db.execute(
+        delete(QuestionImport).where(QuestionImport.batch_id == batch_id)
+    )
     await db.flush()
     return int(result.rowcount or 0)
 
@@ -1158,7 +1267,9 @@ async def create_enrich_task(
     operator: AdminPrincipal,
     request: Request | None = None,
 ) -> AdminImportEnrichResponse:
-    summary_result = await db.execute(_batch_summary_query([QuestionImport.batch_id == batch_id]))
+    summary_result = await db.execute(
+        _batch_summary_query([QuestionImport.batch_id == batch_id])
+    )
     summary_row = summary_result.first()
     if not summary_row:
         raise ValueError("导入批次不存在")
@@ -1185,10 +1296,16 @@ async def create_enrich_task(
         "import_batch",
         batch_id,
         severity="important",
-        detail={"task_id": task_id, "batch_id": batch_id, "total_count": payload["total_count"]},
+        detail={
+            "task_id": task_id,
+            "batch_id": batch_id,
+            "total_count": payload["total_count"],
+        },
         request=request,
     )
-    return AdminImportEnrichResponse(task_id=task_id, batch_id=batch_id, status="pending", created_at=now)
+    return AdminImportEnrichResponse(
+        task_id=task_id, batch_id=batch_id, status="pending", created_at=now
+    )
 
 
 async def get_enrich_status(batch_id: str) -> dict:
@@ -1224,10 +1341,15 @@ async def get_import_question_detail(
             item.raw_text_preview = str(_raw_text)[:200]
     # source_locator 动态生成
     if not item.source_locator:
-        source_page = getattr(qi, "source_page_start", None) or resolve_source_page(qi.raw_data)
-        source_page_end = getattr(qi, "source_page_end", None) or resolve_source_page_end(qi.raw_data)
+        source_page = getattr(qi, "source_page_start", None) or resolve_source_page(
+            qi.raw_data
+        )
+        source_page_end = getattr(
+            qi, "source_page_end", None
+        ) or resolve_source_page_end(qi.raw_data)
         item.source_locator = build_source_locator(
-            source_image_seq=getattr(qi, "source_image_seq", None) or (qi.raw_data or {}).get("source_image_seq"),
+            source_image_seq=getattr(qi, "source_image_seq", None)
+            or (qi.raw_data or {}).get("source_image_seq"),
             source_image_name=getattr(qi, "source_image_name", None) or qi.source_file,
             source_file=qi.source_file,
             source_page_start=source_page,
@@ -1269,7 +1391,9 @@ def _question_conditions(
 
 
 async def _get_import_question(db: AsyncSession, import_id: int) -> QuestionImport:
-    result = await db.execute(select(QuestionImport).where(QuestionImport.id == import_id))
+    result = await db.execute(
+        select(QuestionImport).where(QuestionImport.id == import_id)
+    )
     qi = result.scalar_one_or_none()
     if qi is None:
         raise ValueError("导入题目不存在")
@@ -1294,7 +1418,11 @@ async def _get_batch_records(
     if not records:
         raise ValueError("导入批次不存在")
     return records
-def _batch_conditions(status: str | None, source_type: str | None, keyword: str | None) -> list:
+
+
+def _batch_conditions(
+    status: str | None, source_type: str | None, keyword: str | None
+) -> list:
     conditions = []
     if status:
         conditions.append(QuestionImport.status == status)
@@ -1302,7 +1430,12 @@ def _batch_conditions(status: str | None, source_type: str | None, keyword: str 
         conditions.append(QuestionImport.source_type == source_type)
     if keyword:
         pattern = f"%{keyword}%"
-        conditions.append(or_(QuestionImport.batch_id.ilike(pattern), QuestionImport.source_file.ilike(pattern)))
+        conditions.append(
+            or_(
+                QuestionImport.batch_id.ilike(pattern),
+                QuestionImport.source_file.ilike(pattern),
+            )
+        )
     return conditions
 
 
@@ -1313,11 +1446,21 @@ def _batch_summary_query(conditions: list):
             func.min(QuestionImport.source_type).label("source_type"),
             func.min(QuestionImport.source_file).label("source_file"),
             func.count().label("total_count"),
-            func.sum(case((QuestionImport.status == "pending", 1), else_=0)).label("pending_count"),
-            func.sum(case((QuestionImport.status == "approved", 1), else_=0)).label("approved_count"),
-            func.sum(case((QuestionImport.status == "rejected", 1), else_=0)).label("rejected_count"),
-            func.sum(case((QuestionImport.status == "published", 1), else_=0)).label("published_count"),
-            func.sum(case((QuestionImport.ai_generated.is_(True), 1), else_=0)).label("ai_count"),
+            func.sum(case((QuestionImport.status == "pending", 1), else_=0)).label(
+                "pending_count"
+            ),
+            func.sum(case((QuestionImport.status == "approved", 1), else_=0)).label(
+                "approved_count"
+            ),
+            func.sum(case((QuestionImport.status == "rejected", 1), else_=0)).label(
+                "rejected_count"
+            ),
+            func.sum(case((QuestionImport.status == "published", 1), else_=0)).label(
+                "published_count"
+            ),
+            func.sum(case((QuestionImport.ai_generated.is_(True), 1), else_=0)).label(
+                "ai_count"
+            ),
             func.min(QuestionImport.created_at).label("created_at"),
             func.max(QuestionImport.updated_at).label("updated_at"),
         )
@@ -1363,8 +1506,16 @@ def _batch_task_key(batch_id: str) -> str:
 async def list_subject_options(db: AsyncSession) -> list[dict]:
     """返回活跃科目列表 [{id, code, name, path, level, parent_id, has_children, is_leaf}]，供下拉框使用。"""
     from app.models.admin import Subject
+
     result = await db.execute(
-        select(Subject.id, Subject.code, Subject.name, Subject.path, Subject.level, Subject.parent_id)
+        select(
+            Subject.id,
+            Subject.code,
+            Subject.name,
+            Subject.path,
+            Subject.level,
+            Subject.parent_id,
+        )
         .where(Subject.is_active.is_(True))
         .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
@@ -1386,21 +1537,24 @@ async def list_subject_options(db: AsyncSession) -> list[dict]:
         result_list = []
         for row in rows:
             has_children = row.id in parent_ids or _has_children_by_path(row.id)
-            result_list.append({
-                "id": row.id,
-                "code": row.code,
-                "name": row.name,
-                "path": row.path,
-                "level": row.level,
-                "parent_id": row.parent_id,
-                "has_children": has_children,
-                "is_leaf": not has_children,
-            })
+            result_list.append(
+                {
+                    "id": row.id,
+                    "code": row.code,
+                    "name": row.name,
+                    "path": row.path,
+                    "level": row.level,
+                    "parent_id": row.parent_id,
+                    "has_children": has_children,
+                    "is_leaf": not has_children,
+                }
+            )
         return result_list
 
     # Fallback: extract distinct subject_ids from existing import data
     from app.models.admin import Subject
     from app.models.question_import import QuestionImport
+
     fb = await db.execute(
         select(Subject.id, Subject.code, Subject.name)
         .join(QuestionImport, QuestionImport.subject_id == Subject.id)
@@ -1408,4 +1562,7 @@ async def list_subject_options(db: AsyncSession) -> list[dict]:
         .distinct()
         .order_by(Subject.code.asc())
     )
-    return [{"id": row[0], "code": row[1], "name": row[2], "path": row[1], "level": 1} for row in fb.all()]
+    return [
+        {"id": row[0], "code": row[1], "name": row[2], "path": row[1], "level": 1}
+        for row in fb.all()
+    ]

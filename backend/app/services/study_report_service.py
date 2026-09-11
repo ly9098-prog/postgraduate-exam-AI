@@ -1,4 +1,5 @@
 """V5 学习报告服务 — 纯统计查询，不修改任何数据。"""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import Date as SQLDate, case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import shanghai_date_utc_range, shanghai_today, shanghai_today_boundaries, utcnow
+from app.core.time_utils import (
+    shanghai_date_utc_range,
+    shanghai_today,
+    shanghai_today_boundaries,
+    utcnow,
+)
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -107,7 +113,9 @@ async def _subject_exists(db: AsyncSession, subject_id: int) -> bool:
 # ── 1. Overview ─────────────────────────────────────────────────────
 
 
-async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7) -> dict:
+async def get_overview(
+    db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7
+) -> dict:
     now = utcnow()
     today_start = _today_utc()
     recent_start = today_start - timedelta(days=days)
@@ -148,7 +156,8 @@ async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = 
         ).label("recent_correct"),
         func.count(PracticeRecord.id).label("total_count"),
         func.coalesce(
-            func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0  # noqa: E712
+            func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)),  # noqa: E712
+            0,  # noqa: E712
         ).label("total_correct"),
     ).where(PracticeRecord.user_id == user_id)
 
@@ -207,9 +216,9 @@ async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = 
             *where_extra,
         )
         if subject_id is not None:
-            q = q.join(
-                Question, UserQuestionState.question_id == Question.id
-            ).where(Question.subject_id == subject_id)
+            q = q.join(Question, UserQuestionState.question_id == Question.id).where(
+                Question.subject_id == subject_id
+            )
         return q
 
     wrong_total = (await db.execute(_wq_count_q([]))).scalar_one()
@@ -306,7 +315,9 @@ async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = 
 # ── 2. Review Plan ──────────────────────────────────────────────────
 
 
-async def get_review_plan(db: AsyncSession, user_id: int, subject_id: int | None = None, limit: int = 20) -> dict:
+async def get_review_plan(
+    db: AsyncSession, user_id: int, subject_id: int | None = None, limit: int = 20
+) -> dict:
     now = utcnow()
     overdue_threshold = now - timedelta(days=1)
 
@@ -379,7 +390,10 @@ async def get_review_plan(db: AsyncSession, user_id: int, subject_id: int | None
                     QuestionKnowledgePoint.knowledge_point_id,
                     KnowledgePoint.name,
                 )
-                .join(KnowledgePoint, QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+                .join(
+                    KnowledgePoint,
+                    QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+                )
                 .where(QuestionKnowledgePoint.question_id.in_(q_ids))
                 .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
             )
@@ -390,7 +404,11 @@ async def get_review_plan(db: AsyncSession, user_id: int, subject_id: int | None
 
     items = []
     for r in rows:
-        overdue_days = max(0, int((now - r.next_review_at).total_seconds() // 86400)) if r.next_review_at else 0
+        overdue_days = (
+            max(0, int((now - r.next_review_at).total_seconds() // 86400))
+            if r.next_review_at
+            else 0
+        )
         kp = kp_map.get(r.question_id)
         items.append(
             {
@@ -426,7 +444,9 @@ _BOX_META = [
 ]
 
 
-async def get_leitner_distribution(db: AsyncSession, user_id: int, subject_id: int | None = None) -> dict:
+async def get_leitner_distribution(
+    db: AsyncSession, user_id: int, subject_id: int | None = None
+) -> dict:
     q = select(
         UserQuestionState.box_level,
         func.count(UserQuestionState.id).label("cnt"),
@@ -443,7 +463,12 @@ async def get_leitner_distribution(db: AsyncSession, user_id: int, subject_id: i
 
     total = sum(counts.values())
     boxes = [
-        {"box_level": lv, "label": label, "description": desc, "count": counts.get(lv, 0)}
+        {
+            "box_level": lv,
+            "label": label,
+            "description": desc,
+            "count": counts.get(lv, 0),
+        }
         for lv, label, desc in _BOX_META
     ]
 
@@ -476,7 +501,13 @@ async def get_knowledge_mastery(
     if subject_id is not None:
         if not await _subject_exists(db, subject_id):
             return {
-                "summary": {"weak_count": 0, "normal_count": 0, "good_count": 0, "mastered_count": 0, "unknown_count": 0},
+                "summary": {
+                    "weak_count": 0,
+                    "normal_count": 0,
+                    "good_count": 0,
+                    "mastered_count": 0,
+                    "unknown_count": 0,
+                },
                 "items": [],
             }
         q = q.where(UserKnowledgeState.subject_id == subject_id)
@@ -494,7 +525,13 @@ async def get_knowledge_mastery(
     q = q.limit(limit)
     rows = (await db.execute(q)).all()
 
-    summary = {"weak_count": 0, "normal_count": 0, "good_count": 0, "mastered_count": 0, "unknown_count": 0}
+    summary = {
+        "weak_count": 0,
+        "normal_count": 0,
+        "good_count": 0,
+        "mastered_count": 0,
+        "unknown_count": 0,
+    }
     items = []
     for r in rows:
         status = _classify_mastery(r.confidence, r.mastery_score)
@@ -590,7 +627,10 @@ async def get_wrong_questions_summary(
                     QuestionKnowledgePoint.knowledge_point_id,
                     KnowledgePoint.name,
                 )
-                .join(KnowledgePoint, QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+                .join(
+                    KnowledgePoint,
+                    QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+                )
                 .where(QuestionKnowledgePoint.question_id.in_(q_ids))
                 .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
             )
@@ -635,7 +675,9 @@ async def get_wrong_questions_summary(
 # ── 6. Study Trend ──────────────────────────────────────────────────
 
 
-async def get_study_trend(db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7) -> dict:
+async def get_study_trend(
+    db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7
+) -> dict:
     today = shanghai_today()
     since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
     day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
@@ -644,7 +686,8 @@ async def get_study_trend(db: AsyncSession, user_id: int, subject_id: int | None
         day_expr.label("d"),
         func.count(PracticeRecord.id).label("total"),
         func.coalesce(
-            func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0  # noqa: E712
+            func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)),  # noqa: E712
+            0,  # noqa: E712
         ).label("correct"),
     ).where(
         PracticeRecord.user_id == user_id,

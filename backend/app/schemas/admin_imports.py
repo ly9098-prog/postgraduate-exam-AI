@@ -26,6 +26,7 @@ class AdminImportQuestionItemBrief(BaseModel):
 
     列表页使用此 schema，详情页使用完整的 AdminImportQuestionItem。
     """
+
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="before")
@@ -178,7 +179,11 @@ class AdminImportCompleteResponse(BaseModel):
 
 
 class AdminImportQuestionUpdateRequest(BaseModel):
-    subject: str | None = Field(None, deprecated=True, description="Deprecated alias of subject_id. Legacy subject string will be resolved to subject_id internally.")
+    subject: str | None = Field(
+        None,
+        deprecated=True,
+        description="Deprecated alias of subject_id. Legacy subject string will be resolved to subject_id internally.",
+    )
     subject_id: int | None = None
     question_type: str | None = None
     stem: str | None = None
@@ -198,6 +203,7 @@ class AdminImportQuestionUpdateRequest(BaseModel):
         if v is not None:
             validate_question_type(v)
         return v
+
     # ── 导入审核定位与答案状态字段 ──
     source_question_no: str | None = None
     source_question_label: str | None = None
@@ -242,8 +248,13 @@ class AdminImportTaskStatusResponse(BaseModel):
 
 
 class AdminImportBatchCompleteRequest(BaseModel):
-    import_ids: list[int] = Field(..., description="要补全的导入题目 ID 列表，最多 50 条")
-    fields: list[str] = Field(..., description="补全字段列表: answer, analysis, knowledge_points, difficulty, subject_id, question_type, stem, options, tips, tags")
+    import_ids: list[int] = Field(
+        ..., description="要补全的导入题目 ID 列表，最多 50 条"
+    )
+    fields: list[str] = Field(
+        ...,
+        description="补全字段列表: answer, analysis, knowledge_points, difficulty, subject_id, question_type, stem, options, tips, tags",
+    )
     strategy: str = Field("fill_empty", description="fill_empty | force_overwrite")
 
 
@@ -264,12 +275,16 @@ class AdminImportBatchCompleteResponse(BaseModel):
 
 class TextParseRequest(BaseModel):
     text: str = Field(..., max_length=100_000)  # ~100KB
-    subject: str = Field("", deprecated=True, description="Deprecated alias of subject_id")
+    subject: str = Field(
+        "", deprecated=True, description="Deprecated alias of subject_id"
+    )
     subject_id: int | None = None
 
 
 class TextParseQuestion(BaseModel):
-    subject: str | None = Field(None, deprecated=True, description="Deprecated alias of subject_id")
+    subject: str | None = Field(
+        None, deprecated=True, description="Deprecated alias of subject_id"
+    )
     subject_id: int | None = None
     question_type: str | None = None
     stem: str = ""
@@ -295,7 +310,9 @@ class TextParseResponse(BaseModel):
 
 
 class TextImportQuestion(BaseModel):
-    subject: str = Field("", deprecated=True, description="Deprecated alias of subject_id")
+    subject: str = Field(
+        "", deprecated=True, description="Deprecated alias of subject_id"
+    )
     subject_id: int | None = None
     stem: str
     options: list[dict] = []
@@ -314,7 +331,9 @@ class TextImportQuestion(BaseModel):
 
 
 class TextImportRequest(BaseModel):
-    subject: str = Field("", deprecated=True, description="Deprecated alias of subject_id")
+    subject: str = Field(
+        "", deprecated=True, description="Deprecated alias of subject_id"
+    )
     subject_id: int | None = None
     questions: list[TextImportQuestion]
 
@@ -336,6 +355,7 @@ class TextImportResponse(BaseModel):
 
 
 # --- 批量图片导题 ---
+
 
 class BatchImageUploadResponse(BaseModel):
     job_id: str
@@ -367,6 +387,7 @@ class TraceEventItem(BaseModel):
 
     seq is per-job monotonic. item_seq=None means job-level event.
     """
+
     seq: int
     item_seq: int
     step: str
@@ -383,7 +404,9 @@ class BatchImageJobStatusResponse(BaseModel):
     job_id: str
     status: str  # queued | running | completed | failed
     source_type: str = "image"
-    subject: str | None = Field(None, deprecated=True, description="Deprecated alias of subject_id")
+    subject: str | None = Field(
+        None, deprecated=True, description="Deprecated alias of subject_id"
+    )
     subject_id: int | None = None
     concurrency: int = 2
     total: int = 0
@@ -402,7 +425,9 @@ class BatchImageJobStatusResponse(BaseModel):
     started_at: str = ""
     finished_at: str = ""
     items: list[BatchImageJobItem] = []
-    trace_events: list[TraceEventItem] = []  # append-only event log (backend source of truth)
+    trace_events: list[
+        TraceEventItem
+    ] = []  # append-only event log (backend source of truth)
 
 
 class BatchImageReparseResponse(BaseModel):

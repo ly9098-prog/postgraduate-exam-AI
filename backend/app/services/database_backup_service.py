@@ -14,6 +14,7 @@ admin API does *not* create a second scheduler.  It only:
 This keeps a single production schedule while making the task visible and
 operable from ``/system/tasks``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -125,7 +126,9 @@ def _artifact_fingerprint() -> dict[str, tuple[int, int]]:
     return result
 
 
-def _new_or_changed_artifact(before: dict[str, tuple[int, int]]) -> dict[str, Any] | None:
+def _new_or_changed_artifact(
+    before: dict[str, tuple[int, int]],
+) -> dict[str, Any] | None:
     """Return the newest artifact created or materially changed since ``before``."""
     candidates: list[Path] = []
     backup_dir = _configured_backup_dir()
@@ -212,7 +215,12 @@ def list_backup_artifacts(limit: int | None = None) -> list[dict[str, Any]]:
     return rows
 
 
-async def _run_command(*args: str, timeout: float, cwd: Path | None = None, env: dict[str, str] | None = None) -> tuple[int, str, str]:
+async def _run_command(
+    *args: str,
+    timeout: float,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     process = await asyncio.create_subprocess_exec(
         *args,
         cwd=str(cwd) if cwd else None,
@@ -263,7 +271,13 @@ async def inspect_database_backup() -> dict[str, Any]:
     timer, service = await asyncio.gather(
         _systemctl_show(
             settings.POSTGRES_BACKUP_TIMER_UNIT,
-            ("LoadState", "ActiveState", "SubState", "NextElapseUSecRealtime", "LastTriggerUSec"),
+            (
+                "LoadState",
+                "ActiveState",
+                "SubState",
+                "NextElapseUSecRealtime",
+                "LastTriggerUSec",
+            ),
         ),
         _systemctl_show(
             settings.POSTGRES_BACKUP_SERVICE_UNIT,
@@ -415,9 +429,7 @@ async def _run_repository_script(script: Path) -> BackupRunResult:
     artifact = _new_or_changed_artifact(before)
     if artifact is None:
         detail = (stdout or stderr or "脚本无输出")[:260]
-        raise RuntimeError(
-            f"备份脚本退出成功但未产生新的非空备份文件：{detail}"
-        )
+        raise RuntimeError(f"备份脚本退出成功但未产生新的非空备份文件：{detail}")
     return BackupRunResult(
         message=f"备份完成：{artifact['name']}（{artifact['size_bytes']} bytes）",
         artifact_name=artifact["name"],
@@ -471,7 +483,9 @@ async def _run_pg_dump_fallback() -> BackupRunResult:
         "size_bytes": int(stat.st_size),
     }
     try:
-        sidecar.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        sidecar.write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     except OSError:
         pass
     return BackupRunResult(
@@ -511,4 +525,6 @@ async def run_postgres_backup() -> BackupRunResult:
     except Exception as exc:
         errors.append(str(exc))
 
-    raise RuntimeError("；".join(errors[-3:]) or "当前运行环境没有可用的 PostgreSQL 备份执行器")
+    raise RuntimeError(
+        "；".join(errors[-3:]) or "当前运行环境没有可用的 PostgreSQL 备份执行器"
+    )

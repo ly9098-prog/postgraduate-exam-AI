@@ -188,11 +188,18 @@ class OcrExecutorProcess:
             self._terminate_and_raise("Executor pipes are unavailable")
 
         task_id = uuid.uuid4().hex[:12]
-        payload = json.dumps({
-            "task_id": task_id,
-            "pages": [{"index": page_index, "data": _bytes_to_b64(image_bytes)}],
-            "gpu_memory_limit_mb": self._gpu_memory_limit_mb,
-        }) + "\n"
+        payload = (
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "pages": [
+                        {"index": page_index, "data": _bytes_to_b64(image_bytes)}
+                    ],
+                    "gpu_memory_limit_mb": self._gpu_memory_limit_mb,
+                }
+            )
+            + "\n"
+        )
         deadline = time.perf_counter() + timeout
 
         try:
@@ -260,13 +267,16 @@ class OcrExecutorProcess:
 
 # ── Helpers ───────────────────────────────────────────────
 
+
 def _bytes_to_b64(data: bytes) -> str:
     import base64
+
     return base64.b64encode(data).decode()
 
 
 def _b64_to_bytes(s: str) -> bytes:
     import base64
+
     return base64.b64decode(s)
 
 
@@ -275,7 +285,7 @@ def _build_subprocess_script() -> str:
 
     This keeps the subprocess self-contained without needing file access.
     """
-    return r'''
+    return r"""
 import json
 import sys
 import time
@@ -324,4 +334,4 @@ for line in sys.stdin:
         output = {"task_id": task.get("task_id", "?"), "pages": [], "error": str(e)}
     sys.stdout.write(json.dumps(output, ensure_ascii=False) + "\n")
     sys.stdout.flush()
-'''
+"""

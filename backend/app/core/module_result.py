@@ -31,7 +31,9 @@ from typing import Any, Generic, TypeVar
 
 _SCHEMA_VERSION = "1.0"
 _RAW_MAX_BYTES = 100 * 1024  # 100 KB
-_RAW_CAPTURE_MODE = os.environ.get("MODULE_RAW_CAPTURE_MODE", "always")  # off | errors_only | always
+_RAW_CAPTURE_MODE = os.environ.get(
+    "MODULE_RAW_CAPTURE_MODE", "always"
+)  # off | errors_only | always
 _DETAILS_MAX_BYTES = 10 * 1024  # 10 KB for error details and warnings
 
 # Sensitive field name patterns (case-insensitive, checked against key & value)
@@ -97,6 +99,7 @@ class ModuleError:
     **不可重试的异常**：``CancelledError``、``KeyboardInterrupt``、``SystemExit``
     不得被此 dataclass 包装或吞掉。
     """
+
     code: str
     message: str
     category: str = "system"
@@ -123,6 +126,7 @@ class AdapterCapabilities:
 
     所有列表字段使用 ``tuple``（不可变），避免字符串漂移。
     """
+
     backend: str
     adapter_type: str  # "ocr" | "transform"
 
@@ -143,7 +147,9 @@ class AdapterCapabilities:
     region_types: tuple[str, ...] = field(default_factory=tuple)
 
     # === 输入能力 ===
-    supported_mime_types: tuple[str, ...] = field(default_factory=lambda: ("application/pdf", "image/png"))
+    supported_mime_types: tuple[str, ...] = field(
+        default_factory=lambda: ("application/pdf", "image/png")
+    )
     supported_devices: tuple[str, ...] = field(default_factory=lambda: ("cpu",))
     multipage: bool = False
     max_batch: int = 1
@@ -176,7 +182,11 @@ def _sanitize_value(value: Any, depth: int = 0) -> Any:
     ``depth`` bounds recursion to avoid stack overflow on deeply nested input.
     """
     if depth > 20:
-        return str(value)[:200] if not isinstance(value, (int, float, bool, type(None))) else value
+        return (
+            str(value)[:200]
+            if not isinstance(value, (int, float, bool, type(None)))
+            else value
+        )
 
     if isinstance(value, dict):
         result: dict[str, Any] = {}
@@ -200,7 +210,9 @@ def _sanitize_value(value: Any, depth: int = 0) -> Any:
     return value
 
 
-def _truncate_string_values(obj: Any, max_total_bytes: int = _RAW_MAX_BYTES, max_str_len: int = 5000) -> tuple[Any, bool]:
+def _truncate_string_values(
+    obj: Any, max_total_bytes: int = _RAW_MAX_BYTES, max_str_len: int = 5000
+) -> tuple[Any, bool]:
     """Truncate large string values in a dict to fit within max_total_bytes when serialized.
 
     Returns ``(truncated_obj, was_truncated)``.
@@ -214,7 +226,9 @@ def _truncate_string_values(obj: Any, max_total_bytes: int = _RAW_MAX_BYTES, max
                 result[k] = v[:max_str_len] + f"...(truncated from {len(v)} chars)"
                 was_truncated = True
             elif isinstance(v, (dict, list)):
-                result[k], sub_truncated = _truncate_string_values(v, max_total_bytes, max_str_len)
+                result[k], sub_truncated = _truncate_string_values(
+                    v, max_total_bytes, max_str_len
+                )
                 was_truncated = was_truncated or sub_truncated
             else:
                 result[k] = v
@@ -225,9 +239,13 @@ def _truncate_string_values(obj: Any, max_total_bytes: int = _RAW_MAX_BYTES, max
         was_truncated = False
         for item in obj:
             if isinstance(item, (dict, list)):
-                result_list.append(_truncate_string_values(item, max_total_bytes, max_str_len)[0])
+                result_list.append(
+                    _truncate_string_values(item, max_total_bytes, max_str_len)[0]
+                )
             elif isinstance(item, str) and len(item) > max_str_len:
-                result_list.append(item[:max_str_len] + f"...(truncated from {len(item)} chars)")
+                result_list.append(
+                    item[:max_str_len] + f"...(truncated from {len(item)} chars)"
+                )
                 was_truncated = True
             else:
                 result_list.append(item)
@@ -236,7 +254,9 @@ def _truncate_string_values(obj: Any, max_total_bytes: int = _RAW_MAX_BYTES, max
     return obj, False
 
 
-def _truncate_json_to_max_bytes(obj: Any, max_bytes: int = _RAW_MAX_BYTES) -> tuple[Any, str | None, bool]:
+def _truncate_json_to_max_bytes(
+    obj: Any, max_bytes: int = _RAW_MAX_BYTES
+) -> tuple[Any, str | None, bool]:
     """Sanitize, size-check, and truncate an object to max_bytes.
 
     Strategy: truncate large string values iteratively until the serialized
@@ -260,12 +280,16 @@ def _truncate_json_to_max_bytes(obj: Any, max_bytes: int = _RAW_MAX_BYTES) -> tu
     truncated_obj, _ = _truncate_string_values(sanitized, max_bytes, max_str_len)
 
     # Re-check size
-    truncated_json = json.dumps(truncated_obj, ensure_ascii=False, default=str, sort_keys=True)
+    truncated_json = json.dumps(
+        truncated_obj, ensure_ascii=False, default=str, sort_keys=True
+    )
 
     while len(truncated_json) > max_bytes and max_str_len > 100:
         max_str_len //= 2
         truncated_obj, _ = _truncate_string_values(sanitized, max_bytes, max_str_len)
-        truncated_json = json.dumps(truncated_obj, ensure_ascii=False, default=str, sort_keys=True)
+        truncated_json = json.dumps(
+            truncated_obj, ensure_ascii=False, default=str, sort_keys=True
+        )
 
     # If still too large, prune keys
     if len(truncated_json) > max_bytes and isinstance(truncated_obj, dict):
@@ -315,6 +339,7 @@ class ModuleResult(Generic[T]):
     - confidence 不在 [0, 1] → ``ValueError``
     - latency_ms 为负 → ``ValueError``
     """
+
     # 标识
     module_name: str = ""
     module_version: str = "0.1.0"
@@ -360,7 +385,11 @@ class ModuleResult(Generic[T]):
         # Raw sanitization
         if self.raw is not None and _RAW_CAPTURE_MODE == "always":
             self._sanitize_raw()
-        elif self.raw is not None and _RAW_CAPTURE_MODE == "errors_only" and self.error is not None:
+        elif (
+            self.raw is not None
+            and _RAW_CAPTURE_MODE == "errors_only"
+            and self.error is not None
+        ):
             self._sanitize_raw()
 
     def _validate_state(self) -> None:
@@ -370,13 +399,19 @@ class ModuleResult(Generic[T]):
         if self.data is None and self.error is None:
             raise ValueError("ModuleResult: either data or error must be non-None")
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
-            raise ValueError(f"ModuleResult: confidence must be in [0, 1], got {self.confidence}")
+            raise ValueError(
+                f"ModuleResult: confidence must be in [0, 1], got {self.confidence}"
+            )
         if self.latency_ms < 0:
-            raise ValueError(f"ModuleResult: latency_ms must be >= 0, got {self.latency_ms}")
+            raise ValueError(
+                f"ModuleResult: latency_ms must be >= 0, got {self.latency_ms}"
+            )
 
     def _sanitize_raw(self) -> None:
         """Apply sanitization, truncation, and SHA256 to raw."""
-        sanitized, sha256_hex, truncated = _truncate_json_to_max_bytes(self.raw, _RAW_MAX_BYTES)
+        sanitized, sha256_hex, truncated = _truncate_json_to_max_bytes(
+            self.raw, _RAW_MAX_BYTES
+        )
         object.__setattr__(self, "raw", sanitized)
         object.__setattr__(self, "raw_sha256", sha256_hex)
         object.__setattr__(self, "raw_truncated", truncated)
@@ -506,8 +541,7 @@ class ModuleResult(Generic[T]):
                 encoded["data"] = self.data.to_dict()
             elif hasattr(self.data, "__dataclass_fields__"):
                 encoded["data"] = {
-                    f: getattr(self.data, f)
-                    for f in self.data.__dataclass_fields__
+                    f: getattr(self.data, f) for f in self.data.__dataclass_fields__
                 }
             else:
                 encoded["data"] = str(self.data)

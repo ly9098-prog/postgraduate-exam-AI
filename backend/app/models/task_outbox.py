@@ -51,6 +51,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 def _compile_jsonb_sqlite(element, compiler, **kw):
     """Render JSONB as JSON on SQLite — lossy for binary keys, fine for payload blobs."""
     from sqlalchemy.types import JSON as SA_JSON
+
     return compiler.visit_JSON(SA_JSON(), **kw)
 
 
@@ -62,50 +63,73 @@ class TaskOutbox(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(
-        String(64), nullable=False, unique=True, index=True,
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
         comment="Idempotent task ID (e.g. import:{pipeline_id})",
     )
     task_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, index=True,
+        String(32),
+        nullable=False,
+        index=True,
         comment="Queue task type (import_pipeline, image_pipeline, etc.)",
     )
     payload: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, default=dict,
+        JSONB,
+        nullable=False,
+        default=dict,
         comment="Task payload (will be serialized to Redis task hash)",
     )
     schema_version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1,
+        Integer,
+        nullable=False,
+        default=1,
         comment="Payload schema version for rolling upgrade compatibility",
     )
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="pending", index=True,
+        String(16),
+        nullable=False,
+        default="pending",
+        index=True,
         comment="pending | leased | published | failed | cancelled",
     )
     lease_token: Mapped[str | None] = mapped_column(
-        String(64), nullable=True,
+        String(64),
+        nullable=True,
         comment="Dispatcher lease token (for FOR UPDATE SKIP LOCKED tracking)",
     )
     lease_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True,
+        DateTime,
+        nullable=True,
         comment="Lease expiry — auto-resets to pending after timeout",
     )
     published_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True,
+        DateTime,
+        nullable=True,
         comment="When the task was enqueued to Redis",
     )
     retry_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0,
+        Integer,
+        nullable=False,
+        default=0,
         comment="Number of publish attempts",
     )
     error_message: Mapped[str | None] = mapped_column(
-        Text, nullable=True,
+        Text,
+        nullable=True,
         comment="Last error message from publish attempt",
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False,
+        DateTime,
+        server_default=func.now(),
+        nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False,
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     def __repr__(self) -> str:

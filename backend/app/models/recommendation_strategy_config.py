@@ -1,4 +1,5 @@
 """Phase 4 — 推荐策略权重配置。"""
+
 from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,7 +13,9 @@ class RecommendationStrategyConfig(Base):
     __tablename__ = "recommendation_strategy_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
+    )
     display_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     description: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
@@ -23,18 +26,30 @@ class RecommendationStrategyConfig(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # 权重向量
-    weight_vector_similarity: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
-    weight_knowledge_overlap: Mapped[float] = mapped_column(Float, nullable=False, default=0.2)
-    weight_difficulty_match: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
-    weight_mastery_gap: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
-    weight_path_priority: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
+    weight_vector_similarity: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.5
+    )
+    weight_knowledge_overlap: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.2
+    )
+    weight_difficulty_match: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.1
+    )
+    weight_mastery_gap: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.1
+    )
+    weight_path_priority: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.1
+    )
 
     exploration_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
 
     config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at = mapped_column(DateTime, nullable=False, default=utcnow)
-    updated_at = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    updated_at = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
     def __repr__(self):
         return f"<RecommendationStrategyConfig name={self.name!r} scene={self.scene!r}>"

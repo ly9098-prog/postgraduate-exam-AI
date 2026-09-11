@@ -19,9 +19,7 @@ _WATERMARK_KEYWORDS = re.compile(
     r"kaoya[no]?|Kaoyan|com|ska|ai\.)"
 )
 
-_HEADER_KEYWORDS = re.compile(
-    r"(考研复习指导|第\s*\d+\s*章.{0,10}$)"
-)
+_HEADER_KEYWORDS = re.compile(r"(考研复习指导|第\s*\d+\s*章.{0,10}$)")
 
 
 def preprocess_wangdao_blocks(raw_blocks: list[dict]) -> list[dict]:
@@ -78,7 +76,10 @@ def preprocess_wangdao_blocks_detailed(
             continue
 
         kept_lines, kept_boxes, removal_info = _filter_lines_and_boxes_detailed(
-            text, boxes, page_w, page_h,
+            text,
+            boxes,
+            page_w,
+            page_h,
         )
 
         for cat, count in removal_info.items():
@@ -103,7 +104,10 @@ def _filter_lines(text: str, boxes: list[dict], page_w: int, page_h: int) -> lis
 
 
 def _filter_lines_and_boxes(
-    text: str, boxes: list[dict], page_w: int, page_h: int,
+    text: str,
+    boxes: list[dict],
+    page_w: int,
+    page_h: int,
 ) -> tuple[list[str], list[dict]]:
     """Filter lines and corresponding boxes simultaneously.
     Returns (kept_lines, kept_boxes) with identical length for non-empty lines.
@@ -142,7 +146,10 @@ def _filter_lines_and_boxes(
 
 
 def _filter_lines_and_boxes_detailed(
-    text: str, boxes: list[dict], page_w: int, page_h: int,
+    text: str,
+    boxes: list[dict],
+    page_w: int,
+    page_h: int,
 ) -> tuple[list[str], list[dict], dict[str, int]]:
     lines = text.split("\n")
     kept_lines: list[str] = []
@@ -180,15 +187,25 @@ def _filter_lines_and_boxes_detailed(
 
 
 def _classify_zone(
-    text: str, x0: float, y0: float, x1: float, y1: float,
-    page_w: int, page_h: int,
+    text: str,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    page_w: int,
+    page_h: int,
 ) -> str:
     return classify_zone(text, x0, y0, x1, y1, page_w, page_h)
 
 
 def classify_zone(
-    text: str, x0: float, y0: float, x1: float, y1: float,
-    page_w: int, page_h: int,
+    text: str,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    page_w: int,
+    page_h: int,
 ) -> str:
     """基于坐标和内容判断文本行的区域类型。
     公开函数，供 question_snapshot_service 等外部模块复用。

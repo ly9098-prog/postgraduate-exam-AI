@@ -46,7 +46,19 @@ def _find_cjk_font() -> str:
     # Fallback: fuzzy match on ttflist names
     for fname in available:
         lower = fname.lower()
-        if any(k in lower for k in ["cjk", "wenquanyi", "wqy", "noto", "simsun", "simhei", "songti", "heiti"]):
+        if any(
+            k in lower
+            for k in [
+                "cjk",
+                "wenquanyi",
+                "wqy",
+                "noto",
+                "simsun",
+                "simhei",
+                "songti",
+                "heiti",
+            ]
+        ):
             return fname
     # Fallback: try fontconfig via findfont (covers system fonts not in ttflist)
     for candidate in _CJK_FONT_CANDIDATES:
@@ -54,7 +66,9 @@ def _find_cjk_font() -> str:
             fpath = fm.findfont(candidate, fallback_to_default=False)
             if fpath and not fpath.endswith("DejaVu Sans"):
                 fm.fontManager.addfont(fpath)
-                logger.info("CJK font discovered via findfont: %s -> %s", candidate, fpath)
+                logger.info(
+                    "CJK font discovered via findfont: %s -> %s", candidate, fpath
+                )
                 return candidate
         except Exception:
             continue
@@ -122,17 +136,20 @@ GRAPH_THEME = {
     "asymptote_style": (0, (4, 4)),
 }
 
-plt.rcParams.update({
-    "font.family": _CJK_FONT or "sans-serif",
-    "font.sans-serif": [_CJK_FONT] if _CJK_FONT else [],
-    "text.usetex": False,
-    "axes.unicode_minus": False,
-})
+plt.rcParams.update(
+    {
+        "font.family": _CJK_FONT or "sans-serif",
+        "font.sans-serif": [_CJK_FONT] if _CJK_FONT else [],
+        "text.usetex": False,
+        "axes.unicode_minus": False,
+    }
+)
 
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════
+
 
 def _build_x_grid(
     intervals: list,
@@ -149,7 +166,9 @@ def _build_x_grid(
             if start >= end:
                 continue
             # Scale point density to interval width
-            n = max(200, int(num_points * (end - start) / (x_range[1] - x_range[0] + 1e-12)))
+            n = max(
+                200, int(num_points * (end - start) / (x_range[1] - x_range[0] + 1e-12))
+            )
             parts.append(np.linspace(start, end, n))
         if not parts:
             return np.array([])
@@ -177,7 +196,9 @@ def _filter_finite(xs: np.ndarray, ys: np.ndarray):
 
 
 def _discontinuity_gap(
-    xs: np.ndarray, ys: np.ndarray, threshold: float | None = None,
+    xs: np.ndarray,
+    ys: np.ndarray,
+    threshold: float | None = None,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Split data at large discontinuities (asymptotes, jumps)."""
     if len(xs) < 2:
@@ -291,16 +312,29 @@ def _render_shading(ax, shading: list[dict], x_range: list[float]) -> None:
         if orientation == "horizontal":
             # For Y-type regions: shade horizontally between x=g₁(y) and x=g₂(y)
             # y1 gves x=g₁(y), y2 gives x=g₂(y) — shade between them at each y
-            ax.fill_betweenx(xs[mask], y1[mask], y2[mask],
-                             color=color, alpha=alpha, label=label or None)
+            ax.fill_betweenx(
+                xs[mask],
+                y1[mask],
+                y2[mask],
+                color=color,
+                alpha=alpha,
+                label=label or None,
+            )
         else:
-            ax.fill_between(xs[mask], y1[mask], y2[mask],
-                            color=color, alpha=alpha, label=label or None)
+            ax.fill_between(
+                xs[mask],
+                y1[mask],
+                y2[mask],
+                color=color,
+                alpha=alpha,
+                label=label or None,
+            )
 
 
 # ═══════════════════════════════════════════════════════════════
 # Per-panel rendering
 # ═══════════════════════════════════════════════════════════════
+
 
 def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     """Render expressions, annotations, and reference lines on one axes.
@@ -329,7 +363,12 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     if axis_style == "cross":
         ax.grid(True, linewidth=0.6, alpha=0.18)
     else:
-        ax.grid(True, color=theme["grid"]["color"], linewidth=0.5, alpha=theme["grid"]["alpha"])
+        ax.grid(
+            True,
+            color=theme["grid"]["color"],
+            linewidth=0.5,
+            alpha=theme["grid"]["alpha"],
+        )
     ax.set_axisbelow(True)
 
     ax.spines["left"].set_color(theme["axis"]["color"])
@@ -347,7 +386,9 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         ax.xaxis.set_ticks_position("bottom")
         ax.yaxis.set_ticks_position("left")
 
-    ax.tick_params(colors=theme["axis"]["color"], labelsize=theme["font"]["size"]["tick"])
+    ax.tick_params(
+        colors=theme["axis"]["color"], labelsize=theme["font"]["size"]["tick"]
+    )
 
     # Custom ticks (optional — backward compatible)
     x_ticks = panel.get("x_ticks")
@@ -370,28 +411,57 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         ax.set_xlabel(x_label, fontsize=theme["font"]["size"]["axis_label"])
         ax.set_ylabel(y_label, fontsize=theme["font"]["size"]["axis_label"])
     if title:
-        ax.set_title(_sanitize_label(title), fontsize=theme["font"]["size"]["panel_title"])
+        ax.set_title(
+            _sanitize_label(title), fontsize=theme["font"]["size"]["panel_title"]
+        )
 
     # Reference lines first (drawn behind curves)
     for vl in vlines:
         val = vl.get("value")
         if val is not None:
             ls = theme["dash_styles"].get(vl.get("style", "dashed"), (0, (4, 4)))
-            ax.axvline(x=val, color=theme["asymptote_color"], linewidth=1.0, linestyle=ls, alpha=0.7)
+            ax.axvline(
+                x=val,
+                color=theme["asymptote_color"],
+                linewidth=1.0,
+                linestyle=ls,
+                alpha=0.7,
+            )
             label = _sanitize_label(vl.get("label"))
             if label:
-                ax.text(val, ax.get_ylim()[1], label, fontsize=9, color=theme["asymptote_color"],
-                        ha="left", va="bottom", rotation=90)
+                ax.text(
+                    val,
+                    ax.get_ylim()[1],
+                    label,
+                    fontsize=9,
+                    color=theme["asymptote_color"],
+                    ha="left",
+                    va="bottom",
+                    rotation=90,
+                )
 
     for hl in hlines:
         val = hl.get("value")
         if val is not None:
             ls = theme["dash_styles"].get(hl.get("style", "dashed"), (0, (4, 4)))
-            ax.axhline(y=val, color=theme["asymptote_color"], linewidth=1.0, linestyle=ls, alpha=0.7)
+            ax.axhline(
+                y=val,
+                color=theme["asymptote_color"],
+                linewidth=1.0,
+                linestyle=ls,
+                alpha=0.7,
+            )
             label = _sanitize_label(hl.get("label"))
             if label:
-                ax.text(ax.get_xlim()[1], val, label, fontsize=9, color=theme["asymptote_color"],
-                        ha="left", va="bottom")
+                ax.text(
+                    ax.get_xlim()[1],
+                    val,
+                    label,
+                    fontsize=9,
+                    color=theme["asymptote_color"],
+                    ha="left",
+                    va="bottom",
+                )
 
     # Render expressions
     collected_xs = []
@@ -454,12 +524,18 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         segments = _discontinuity_gap(xs, ys)
         for j, (seg_x, seg_y) in enumerate(segments):
             (line,) = ax.plot(
-                seg_x, seg_y, color=color, linewidth=2.0,
-                linestyle=dash, label=label if (j == 0 and label) else None,
+                seg_x,
+                seg_y,
+                color=color,
+                linewidth=2.0,
+                linestyle=dash,
+                label=label if (j == 0 and label) else None,
             )
 
         if label:
-            legend_handles.append(plt.Line2D([0], [0], color=color, linewidth=2, linestyle=dash))
+            legend_handles.append(
+                plt.Line2D([0], [0], color=color, linewidth=2, linestyle=dash)
+            )
             legend_labels.append(label)
 
     # Shading region legend entries (patch proxies)
@@ -467,8 +543,13 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         region_label = _sanitize_label(region.get("label", ""))
         if region_label:
             from matplotlib.patches import Patch
-            legend_handles.append(Patch(facecolor=region.get("color", "#2563eb"),
-                                        alpha=region.get("alpha", 0.25)))
+
+            legend_handles.append(
+                Patch(
+                    facecolor=region.get("color", "#2563eb"),
+                    alpha=region.get("alpha", 0.25),
+                )
+            )
             legend_labels.append(region_label)
 
     # Annotations (drawn on top of curves)
@@ -486,13 +567,28 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
             va = ann.get("va", "center")
             offset = ann.get("offset")
             if offset:
-                ax.annotate(label, xy=(x, y), xytext=offset,
-                            textcoords="offset points",
-                            fontsize=fontsize, color=color, ha=ha, va=va,
-                            clip_on=False)
+                ax.annotate(
+                    label,
+                    xy=(x, y),
+                    xytext=offset,
+                    textcoords="offset points",
+                    fontsize=fontsize,
+                    color=color,
+                    ha=ha,
+                    va=va,
+                    clip_on=False,
+                )
             else:
-                ax.text(x, y, label, fontsize=fontsize, color=color,
-                        ha=ha, va=va, clip_on=False)
+                ax.text(
+                    x,
+                    y,
+                    label,
+                    fontsize=fontsize,
+                    color=color,
+                    ha=ha,
+                    va=va,
+                    clip_on=False,
+                )
             continue
 
         if ann_type == "arrow":
@@ -528,23 +624,39 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         point_style = ann.get("point_style", "filled")
 
         if point_style == "hollow":
-            ax.plot(x, y, "o", color=color, markersize=6, fillstyle="none",
-                    markeredgewidth=1.5, markeredgecolor=color)
+            ax.plot(
+                x,
+                y,
+                "o",
+                color=color,
+                markersize=6,
+                fillstyle="none",
+                markeredgewidth=1.5,
+                markeredgecolor=color,
+            )
         else:
             ax.plot(x, y, "o", color=color, markersize=6)
 
         if ann_label:
-            ax.annotate(ann_label, (x, y), xytext=(8, 8),
-                        textcoords="offset points", fontsize=theme["font"]["size"]["annotation"],
-                        color=color)
+            ax.annotate(
+                ann_label,
+                (x, y),
+                xytext=(8, 8),
+                textcoords="offset points",
+                fontsize=theme["font"]["size"]["annotation"],
+                color=color,
+            )
 
     # Legend
     show_legend = panel.get("show_legend", True)
     if legend_labels and show_legend:
         ax.legend(
-            legend_handles, legend_labels,
-            loc="upper right", fontsize=theme["font"]["size"]["legend"],
-            framealpha=0.9, edgecolor=theme["axis"]["color"],
+            legend_handles,
+            legend_labels,
+            loc="upper right",
+            fontsize=theme["font"]["size"]["legend"],
+            framealpha=0.9,
+            edgecolor=theme["axis"]["color"],
         )
 
     # Set axis limits and aspect
@@ -564,7 +676,11 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     if axis_style == "cross":
         _add_cross_axis_arrows(ax)
 
-    metadata = {"curve_count": curve_count, "total_points": total_points, "valid_points": valid_points}
+    metadata = {
+        "curve_count": curve_count,
+        "total_points": total_points,
+        "valid_points": valid_points,
+    }
     return metadata
 
 
@@ -577,28 +693,68 @@ def _add_cross_axis_arrows(ax):
 
     arrow_len_x = x_range * 0.06
     arrow_len_y = y_range * 0.04
-    arrow_style = dict(arrowstyle="->", linewidth=1.4, color="black",
-                       shrinkA=0, shrinkB=0)
+    arrow_style = dict(
+        arrowstyle="->", linewidth=1.4, color="black", shrinkA=0, shrinkB=0
+    )
     # x-axis positive
-    ax.annotate("", xy=(x_max, 0), xytext=(x_max - arrow_len_x, 0),
-                arrowprops=arrow_style, annotation_clip=False, zorder=10)
+    ax.annotate(
+        "",
+        xy=(x_max, 0),
+        xytext=(x_max - arrow_len_x, 0),
+        arrowprops=arrow_style,
+        annotation_clip=False,
+        zorder=10,
+    )
     # x-axis negative
-    ax.annotate("", xy=(x_min, 0), xytext=(x_min + arrow_len_x, 0),
-                arrowprops=arrow_style, annotation_clip=False, zorder=10)
+    ax.annotate(
+        "",
+        xy=(x_min, 0),
+        xytext=(x_min + arrow_len_x, 0),
+        arrowprops=arrow_style,
+        annotation_clip=False,
+        zorder=10,
+    )
     # y-axis positive
-    ax.annotate("", xy=(0, y_max), xytext=(0, y_max - arrow_len_y),
-                arrowprops=arrow_style, annotation_clip=False, zorder=10)
+    ax.annotate(
+        "",
+        xy=(0, y_max),
+        xytext=(0, y_max - arrow_len_y),
+        arrowprops=arrow_style,
+        annotation_clip=False,
+        zorder=10,
+    )
 
     # Axis labels at ends
-    ax.text(x_max + x_range * 0.02, -x_range * 0.005, "x",
-            fontsize=14, ha="left", va="top", clip_on=False)
-    ax.text(0, y_max + y_range * 0.01, "y",
-            fontsize=14, ha="left", va="bottom", clip_on=False)
+    ax.text(
+        x_max + x_range * 0.02,
+        -x_range * 0.005,
+        "x",
+        fontsize=14,
+        ha="left",
+        va="top",
+        clip_on=False,
+    )
+    ax.text(
+        0,
+        y_max + y_range * 0.01,
+        "y",
+        fontsize=14,
+        ha="left",
+        va="bottom",
+        clip_on=False,
+    )
 
     # O at origin
-    ax.annotate("O", xy=(0, 0), xytext=(-10, -12),
-                textcoords="offset points", fontsize=13, color="black",
-                ha="right", va="top")
+    ax.annotate(
+        "O",
+        xy=(0, 0),
+        xytext=(-10, -12),
+        textcoords="offset points",
+        fontsize=13,
+        color="black",
+        ha="right",
+        va="top",
+    )
 
     # Clear tick label at origin to avoid overlap with O (use Text.set_text to avoid warning)
     eps = 1e-9
@@ -625,6 +781,7 @@ _lambdify_cache: dict[int, callable] = {}
 def _parse_expression_cached(expr_str: str):
     """Parse with memoization."""
     from app.services.formula_graph_expr_parser import parse_expression
+
     if expr_str not in _parse_cache:
         _parse_cache[expr_str] = parse_expression(expr_str)
     return _parse_cache[expr_str]
@@ -632,6 +789,7 @@ def _parse_expression_cached(expr_str: str):
 
 def _lambdify_cached(expr):
     from app.services.formula_graph_expr_parser import lambdify_expression
+
     key = id(expr)
     if key not in _lambdify_cache:
         _lambdify_cache[key] = lambdify_expression(expr)
@@ -641,6 +799,7 @@ def _lambdify_cached(expr):
 # ═══════════════════════════════════════════════════════════════
 # Template dispatchers
 # ═══════════════════════════════════════════════════════════════
+
 
 def _render_single_function(spec: dict) -> tuple[plt.Figure, list, list]:
     """Single axes with all panels overlaid (standard use: 1 panel)."""
@@ -660,9 +819,15 @@ def _render_single_function(spec: dict) -> tuple[plt.Figure, list, list]:
         all_meta.append(meta)
 
     # Global title
-    title = spec.get("title") or spec.get("panels", [{}])[0].get("title", "") if panels else ""
+    title = (
+        spec.get("title") or spec.get("panels", [{}])[0].get("title", "")
+        if panels
+        else ""
+    )
     if title:
-        fig.suptitle(_sanitize_label(title), fontsize=theme["font"]["size"]["title"], y=0.98)
+        fig.suptitle(
+            _sanitize_label(title), fontsize=theme["font"]["size"]["title"], y=0.98
+        )
 
     fig.tight_layout(rect=[0, 0, 1, 0.97] if title else None)
     return fig, all_meta, [ax]
@@ -677,7 +842,8 @@ def _render_multi_panel(spec: dict) -> tuple[plt.Figure, list, list]:
     cols = layout.get("columns", 1)
 
     fig, axes = plt.subplots(
-        rows, cols,
+        rows,
+        cols,
         figsize=(theme["width"] / theme["dpi"], theme["height"] / theme["dpi"]),
         dpi=theme["dpi"],
         squeeze=False,
@@ -704,7 +870,9 @@ def _render_multi_panel(spec: dict) -> tuple[plt.Figure, list, list]:
     # Global title
     title = spec.get("title", "")
     if title:
-        fig.suptitle(_sanitize_label(title), fontsize=theme["font"]["size"]["title"], y=1.01)
+        fig.suptitle(
+            _sanitize_label(title), fontsize=theme["font"]["size"]["title"], y=1.01
+        )
 
     return fig, all_meta, axes
 
@@ -718,22 +886,29 @@ def _render_discontinuity_comparison(spec: dict) -> tuple[plt.Figure, list, list
         spec["panels"] = [
             {
                 "title": "可去间断点",
-                "expressions": [{"expression": "(x**2 - 1)/(x - 1)", "label": "f(x)=(x²-1)/(x-1)"}],
-                "x_range": [-3, 3], "y_range": [-1, 5],
-                "annotations": [{"x": 1, "y": 2, "label": "可去", "point_style": "hollow"}],
+                "expressions": [
+                    {"expression": "(x**2 - 1)/(x - 1)", "label": "f(x)=(x²-1)/(x-1)"}
+                ],
+                "x_range": [-3, 3],
+                "y_range": [-1, 5],
+                "annotations": [
+                    {"x": 1, "y": 2, "label": "可去", "point_style": "hollow"}
+                ],
                 "axis_mode": "manual",
                 "horizontal_lines": [{"value": 2, "style": "dashed"}],
             },
             {
                 "title": "跳跃间断点",
                 "expressions": [{"expression": "floor(x)", "label": "f(x)=⌊x⌋"}],
-                "x_range": [-3, 3], "y_range": [-3, 3],
+                "x_range": [-3, 3],
+                "y_range": [-3, 3],
                 "axis_mode": "manual",
             },
             {
                 "title": "无穷间断点",
                 "expressions": [{"expression": "1/x", "label": "f(x)=1/x"}],
-                "x_range": [-3, 3], "y_range": [-10, 10],
+                "x_range": [-3, 3],
+                "y_range": [-10, 10],
                 "axis_mode": "manual",
                 "vertical_lines": [{"value": 0, "label": "x=0"}],
             },
@@ -742,7 +917,8 @@ def _render_discontinuity_comparison(spec: dict) -> tuple[plt.Figure, list, list
                 "expressions": [
                     {"expression": "sin(1/x)", "label": "f(x)=sin(1/x)"},
                 ],
-                "x_range": [-1, 1], "y_range": [-1.5, 1.5],
+                "x_range": [-1, 1],
+                "y_range": [-1.5, 1.5],
                 "axis_mode": "manual",
                 "vertical_lines": [{"value": 0, "style": "dashed"}],
             },
@@ -763,7 +939,8 @@ def _render_inequality_auxiliary(spec: dict) -> tuple[plt.Figure, list, list]:
                     {"expression": "exp(x)", "label": "y=e^x"},
                     {"expression": "x+1", "label": "y=x+1"},
                 ],
-                "x_range": [-3, 3], "y_range": [-1, 8],
+                "x_range": [-3, 3],
+                "y_range": [-1, 8],
                 "annotations": [{"x": 0, "y": 1, "label": "(0,1)"}],
                 "axis_mode": "manual",
             },
@@ -774,7 +951,8 @@ def _render_inequality_auxiliary(spec: dict) -> tuple[plt.Figure, list, list]:
                     {"expression": "x-1", "label": "y=x-1"},
                 ],
                 "domain": {"intervals": [[0.001, 5]]},
-                "x_range": [0, 5], "y_range": [-3, 4],
+                "x_range": [0, 5],
+                "y_range": [-3, 4],
                 "annotations": [{"x": 1, "y": 0, "label": "(1,0)"}],
                 "axis_mode": "manual",
                 "vertical_lines": [{"value": 0, "style": "dashed"}],
@@ -786,7 +964,8 @@ def _render_inequality_auxiliary(spec: dict) -> tuple[plt.Figure, list, list]:
                     {"expression": "sin(x)", "label": "y=sin x"},
                 ],
                 "domain": {"intervals": [[0, 5]]},
-                "x_range": [0, 5], "y_range": [-1, 5],
+                "x_range": [0, 5],
+                "y_range": [-1, 5],
                 "annotations": [{"x": 0, "y": 0, "label": "(0,0)"}],
                 "axis_mode": "manual",
             },
@@ -807,6 +986,7 @@ _TEMPLATE_DISPATCH = {
 # ═══════════════════════════════════════════════════════════════
 # Public API
 # ═══════════════════════════════════════════════════════════════
+
 
 def _render_spec_sync(spec: dict) -> tuple[bytes, dict]:
     """Render a graph_spec to PNG bytes (synchronous, for subprocess)."""
@@ -830,9 +1010,13 @@ def _render_spec_sync(spec: dict) -> tuple[bytes, dict]:
     # Save
     buf = io.BytesIO()
     fig.savefig(
-        buf, format="png", dpi=GRAPH_THEME["dpi"],
-        bbox_inches="tight", pad_inches=0.2,
-        facecolor="white", edgecolor="none",
+        buf,
+        format="png",
+        dpi=GRAPH_THEME["dpi"],
+        bbox_inches="tight",
+        pad_inches=0.2,
+        facecolor="white",
+        edgecolor="none",
     )
     plt.close(fig)
 
@@ -852,6 +1036,7 @@ def _render_spec_sync(spec: dict) -> tuple[bytes, dict]:
 def _resize_to_canvas(png_bytes: bytes, width: int, height: int) -> bytes:
     """Resize to exact dimensions with letterbox."""
     from PIL import Image
+
     img_buf = io.BytesIO(png_bytes)
     img = Image.open(img_buf).convert("RGBA")
     if img.size == (width, height):
@@ -875,6 +1060,7 @@ def _create_thumbnail(png_bytes: bytes) -> bytes:
 
 # ── Quality checks ──
 
+
 def check_quality(png_bytes: bytes, spec: dict, render_meta: dict) -> dict:
     """Post-render quality check.
 
@@ -885,6 +1071,7 @@ def check_quality(png_bytes: bytes, spec: dict, render_meta: dict) -> dict:
 
     # 1. Blank image check
     from PIL import Image
+
     img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     arr = np.array(img)
     white_ratio = np.mean(arr > 250)
@@ -943,7 +1130,8 @@ def get_formula_render_pool() -> concurrent.futures.ProcessPoolExecutor:
         _pool_generation += 1
         logger.info(
             "Formula render pool created (generation=%d, pid=%d)",
-            _pool_generation, os.getpid(),
+            _pool_generation,
+            os.getpid(),
         )
         return _process_pool
 
@@ -974,7 +1162,8 @@ def shutdown_formula_render_pool(
         pool.shutdown(wait=wait, cancel_futures=cancel_futures)
         logger.info(
             "Formula render pool shut down (wait=%s, cancel_futures=%s)",
-            wait, cancel_futures,
+            wait,
+            cancel_futures,
         )
     except Exception as exc:
         logger.warning("Formula render pool shutdown error: %s", exc)
@@ -1019,9 +1208,9 @@ async def render_spec(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes,
         # by checking whether the pool was already replaced.
         if _process_pool is pool:
             logger.warning(
-                "Graph rendering timed out after %ds (generation=%d), "
-                "recycling pool",
-                timeout, gen,
+                "Graph rendering timed out after %ds (generation=%d), recycling pool",
+                timeout,
+                gen,
             )
             shutdown_formula_render_pool(wait=False, cancel_futures=False)
             reset_formula_render_pool()
@@ -1030,7 +1219,9 @@ async def render_spec(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes,
     return png, metadata
 
 
-async def render_and_check(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes, dict, dict]:
+async def render_and_check(
+    spec: dict, timeout: int = RENDER_TIMEOUT
+) -> tuple[bytes, dict, dict]:
     """Render and run quality check. Returns ``(png, metadata, quality)``."""
     png, metadata = await render_spec(spec, timeout)
     quality = check_quality(png, spec, metadata)

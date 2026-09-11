@@ -34,7 +34,9 @@ _MARKDOWN_CODE_BLOCK_RE = re.compile(r"^```\w*\s*\n(.*?)\n```\s*$", re.DOTALL)
 def _looks_like_json(text: str) -> bool:
     """快速判断文本是否看起来像 JSON。"""
     t = text.strip()
-    return (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))
+    return (t.startswith("{") and t.endswith("}")) or (
+        t.startswith("[") and t.endswith("]")
+    )
 
 
 def _detect_output_type(text: str) -> str:
@@ -66,7 +68,14 @@ def _json_to_text(parsed: Any) -> str | None:
     """
     if isinstance(parsed, dict):
         # 1. 已知单值键
-        for key in ("corrected_text", "corrected", "fixed_text", "text", "output", "content"):
+        for key in (
+            "corrected_text",
+            "corrected",
+            "fixed_text",
+            "text",
+            "output",
+            "content",
+        ):
             val = parsed.get(key)
             if val and isinstance(val, str) and len(val) > 10:
                 return val.strip()

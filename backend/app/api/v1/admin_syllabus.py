@@ -27,7 +27,12 @@ def _http_error(exc: syllabus_service.SyllabusError) -> HTTPException:
     message = str(exc)
     if "不存在" in message:
         return HTTPException(status_code=404, detail=message)
-    if "已存在" in message or "只有" in message or "不能" in message or "至少" in message:
+    if (
+        "已存在" in message
+        or "只有" in message
+        or "不能" in message
+        or "至少" in message
+    ):
         return HTTPException(status_code=409, detail=message)
     return HTTPException(status_code=422, detail=message)
 
@@ -37,7 +42,10 @@ async def list_versions(
     _=Depends(require_permissions("knowledge:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    return [SyllabusVersionSummary(**item) for item in await syllabus_service.list_versions(db)]
+    return [
+        SyllabusVersionSummary(**item)
+        for item in await syllabus_service.list_versions(db)
+    ]
 
 
 @router.post("/versions", response_model=SyllabusVersionDetail, status_code=201)
@@ -57,8 +65,13 @@ async def create_version(
             admin_id=current_admin.id,
         )
         await write_admin_audit(
-            db, current_admin, "syllabus.create", "syllabus_version", version.id,
-            detail={"code": version.code, "effective_year": version.effective_year}, request=request,
+            db,
+            current_admin,
+            "syllabus.create",
+            "syllabus_version",
+            version.id,
+            detail={"code": version.code, "effective_year": version.effective_year},
+            request=request,
         )
         await db.commit()
         detail = await syllabus_service.get_version_detail(db, int(version.id))
@@ -90,13 +103,22 @@ async def update_version(
 ):
     try:
         values = data.model_dump(exclude_unset=True)
-        await syllabus_service.update_version(db, version_id, values=values, admin_id=current_admin.id)
+        await syllabus_service.update_version(
+            db, version_id, values=values, admin_id=current_admin.id
+        )
         await write_admin_audit(
-            db, current_admin, "syllabus.update", "syllabus_version", version_id,
-            detail={"fields": sorted(values)}, request=request,
+            db,
+            current_admin,
+            "syllabus.update",
+            "syllabus_version",
+            version_id,
+            detail={"fields": sorted(values)},
+            request=request,
         )
         await db.commit()
-        return SyllabusVersionDetail(**(await syllabus_service.get_version_detail(db, version_id)))
+        return SyllabusVersionDetail(
+            **(await syllabus_service.get_version_detail(db, version_id))
+        )
     except syllabus_service.SyllabusError as exc:
         await db.rollback()
         raise _http_error(exc) from exc
@@ -109,12 +131,16 @@ async def get_catalog(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        return SyllabusCatalogResponse(**await syllabus_service.get_catalog(db, version_id))
+        return SyllabusCatalogResponse(
+            **await syllabus_service.get_catalog(db, version_id)
+        )
     except syllabus_service.SyllabusError as exc:
         raise _http_error(exc) from exc
 
 
-@router.put("/versions/{version_id}/knowledge-points", response_model=SyllabusVersionDetail)
+@router.put(
+    "/versions/{version_id}/knowledge-points", response_model=SyllabusVersionDetail
+)
 async def replace_memberships(
     version_id: int,
     data: SyllabusMembershipReplace,
@@ -127,8 +153,13 @@ async def replace_memberships(
             db, version_id, data.knowledge_point_ids, current_admin.id
         )
         await write_admin_audit(
-            db, current_admin, "syllabus.replace_knowledge_points", "syllabus_version", version_id,
-            detail={"knowledge_point_count": len(data.knowledge_point_ids)}, request=request,
+            db,
+            current_admin,
+            "syllabus.replace_knowledge_points",
+            "syllabus_version",
+            version_id,
+            detail={"knowledge_point_count": len(data.knowledge_point_ids)},
+            request=request,
         )
         await db.commit()
         return SyllabusVersionDetail(**detail)
@@ -145,13 +176,23 @@ async def activate_version(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        version = await syllabus_service.activate_version(db, version_id, current_admin.id)
+        version = await syllabus_service.activate_version(
+            db, version_id, current_admin.id
+        )
         await write_admin_audit(
-            db, current_admin, "syllabus.activate", "syllabus_version", version_id,
-            severity="critical", detail={"code": version.code, "effective_year": version.effective_year}, request=request,
+            db,
+            current_admin,
+            "syllabus.activate",
+            "syllabus_version",
+            version_id,
+            severity="critical",
+            detail={"code": version.code, "effective_year": version.effective_year},
+            request=request,
         )
         await db.commit()
-        return SyllabusVersionDetail(**(await syllabus_service.get_version_detail(db, version_id)))
+        return SyllabusVersionDetail(
+            **(await syllabus_service.get_version_detail(db, version_id))
+        )
     except syllabus_service.SyllabusError as exc:
         await db.rollback()
         raise _http_error(exc) from exc
@@ -167,11 +208,18 @@ async def archive_version(
     try:
         await syllabus_service.archive_version(db, version_id, current_admin.id)
         await write_admin_audit(
-            db, current_admin, "syllabus.archive", "syllabus_version", version_id,
-            detail={}, request=request,
+            db,
+            current_admin,
+            "syllabus.archive",
+            "syllabus_version",
+            version_id,
+            detail={},
+            request=request,
         )
         await db.commit()
-        return SyllabusVersionDetail(**(await syllabus_service.get_version_detail(db, version_id)))
+        return SyllabusVersionDetail(
+            **(await syllabus_service.get_version_detail(db, version_id))
+        )
     except syllabus_service.SyllabusError as exc:
         await db.rollback()
         raise _http_error(exc) from exc
@@ -185,7 +233,10 @@ async def list_mappings(
 ):
     if await db.get(SyllabusVersion, version_id) is None:
         raise HTTPException(status_code=404, detail="考纲版本不存在")
-    return [SyllabusMappingItem(**item) for item in await syllabus_service.list_mappings(db, version_id)]
+    return [
+        SyllabusMappingItem(**item)
+        for item in await syllabus_service.list_mappings(db, version_id)
+    ]
 
 
 @router.post("/mappings", response_model=SyllabusMappingItem, status_code=201)
@@ -205,12 +256,28 @@ async def create_mapping(
             admin_id=current_admin.id,
         )
         await write_admin_audit(
-            db, current_admin, "syllabus.create_mapping", "syllabus_knowledge_point_mapping", item.id,
-            detail={"relation_type": item.relation_type}, request=request,
+            db,
+            current_admin,
+            "syllabus.create_mapping",
+            "syllabus_knowledge_point_mapping",
+            item.id,
+            detail={"relation_type": item.relation_type},
+            request=request,
         )
         await db.commit()
         # Return via a compact payload without another N+1 lookup.
-        all_rows = await syllabus_service.list_mappings(db, int((await db.get(SyllabusKnowledgePoint, data.to_syllabus_knowledge_point_id or data.from_syllabus_knowledge_point_id)).syllabus_version_id))
+        all_rows = await syllabus_service.list_mappings(
+            db,
+            int(
+                (
+                    await db.get(
+                        SyllabusKnowledgePoint,
+                        data.to_syllabus_knowledge_point_id
+                        or data.from_syllabus_knowledge_point_id,
+                    )
+                ).syllabus_version_id
+            ),
+        )
         payload = next(row for row in all_rows if row["id"] == int(item.id))
         return SyllabusMappingItem(**payload)
     except syllabus_service.SyllabusError as exc:
@@ -228,8 +295,13 @@ async def delete_mapping(
     try:
         item = await syllabus_service.delete_mapping(db, mapping_id)
         await write_admin_audit(
-            db, current_admin, "syllabus.delete_mapping", "syllabus_knowledge_point_mapping", mapping_id,
-            detail={"relation_type": item.relation_type}, request=request,
+            db,
+            current_admin,
+            "syllabus.delete_mapping",
+            "syllabus_knowledge_point_mapping",
+            mapping_id,
+            detail={"relation_type": item.relation_type},
+            request=request,
         )
         await db.commit()
         return {"success": True, "id": mapping_id}
@@ -245,6 +317,8 @@ async def get_coverage(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        return SyllabusCoverageResponse(**await syllabus_service.get_coverage(db, version_id))
+        return SyllabusCoverageResponse(
+            **await syllabus_service.get_coverage(db, version_id)
+        )
     except syllabus_service.SyllabusError as exc:
         raise _http_error(exc) from exc

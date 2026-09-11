@@ -61,6 +61,7 @@ router = APIRouter(prefix="/api/admin/v1/formulas", tags=["admin-formulas"])
 
 # ── Audit helper ──
 
+
 async def _log_audit(
     db: AsyncSession,
     admin,
@@ -90,6 +91,7 @@ async def _log_audit(
 
 # ── Category helpers ──
 
+
 def _build_category_tree(
     categories: list[FormulaCategory],
     formula_counts: dict[int, int] | None = None,
@@ -116,8 +118,12 @@ def _build_category_tree(
             "is_active": cat.is_active,
             "formula_count": int(formula_counts.get(cat.id, 0)),
             "subtree_formula_count": 0,
-            "created_at": serialize_utc_datetime(cat.created_at) if cat.created_at else None,
-            "updated_at": serialize_utc_datetime(cat.updated_at) if cat.updated_at else None,
+            "created_at": serialize_utc_datetime(cat.created_at)
+            if cat.created_at
+            else None,
+            "updated_at": serialize_utc_datetime(cat.updated_at)
+            if cat.updated_at
+            else None,
             "children": [],
         }
     roots = []
@@ -166,6 +172,7 @@ def _collect_category_subtree_ids(
 # ════════════════════════════════════════════════════════════
 # Category CRUD
 # ════════════════════════════════════════════════════════════
+
 
 @router.get("/categories")
 async def list_formula_categories(
@@ -219,14 +226,20 @@ async def create_formula_category(
         )
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Code already exists under this parent")
+        raise HTTPException(
+            status_code=409, detail="Code already exists under this parent"
+        )
 
     category = FormulaCategory(**data.model_dump())
     db.add(category)
     await db.flush()
     await _log_audit(
-        db, admin, request, "formula-category.create",
-        "formula_category", str(category.id),
+        db,
+        admin,
+        request,
+        "formula-category.create",
+        "formula_category",
+        str(category.id),
         {"code": category.code, "name": category.name},
     )
     await db.commit()
@@ -241,8 +254,12 @@ async def create_formula_category(
         "description": category.description,
         "sort_order": category.sort_order,
         "is_active": category.is_active,
-        "created_at": serialize_utc_datetime(category.created_at) if category.created_at else None,
-        "updated_at": serialize_utc_datetime(category.updated_at) if category.updated_at else None,
+        "created_at": serialize_utc_datetime(category.created_at)
+        if category.created_at
+        else None,
+        "updated_at": serialize_utc_datetime(category.updated_at)
+        if category.updated_at
+        else None,
     }
 
 
@@ -266,8 +283,12 @@ async def update_formula_category(
         setattr(category, key, value)
 
     await _log_audit(
-        db, admin, request, "formula-category.update",
-        "formula_category", str(category_id),
+        db,
+        admin,
+        request,
+        "formula-category.update",
+        "formula_category",
+        str(category_id),
         {"updates": update_data},
     )
     await db.commit()
@@ -278,6 +299,7 @@ async def update_formula_category(
 # ════════════════════════════════════════════════════════════
 # Card CRUD
 # ════════════════════════════════════════════════════════════
+
 
 def _json_safe(v):
     """Convert non-JSON-safe types for JSON column storage."""
@@ -348,6 +370,7 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         choose_effective_graph_asset,
         load_graph_assets_map,
     )
+
     assets_map = await load_graph_assets_map(db, [card.id])
     assets = assets_map.get(card.id, [])
     effective = choose_effective_graph_asset(assets)
@@ -357,7 +380,13 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
             return None
         return FormulaGraphAssetResponse.model_validate(a).model_dump(
             mode="json",
-            exclude={"template_type", "template_parameters", "viewport", "original_svg_url", "formula_card_id"},
+            exclude={
+                "template_type",
+                "template_parameters",
+                "viewport",
+                "original_svg_url",
+                "formula_card_id",
+            },
         )
 
     base["graph_asset"] = _asset_to_min(effective)
@@ -368,9 +397,9 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
 
     # Load multi-graph specs (FormulaGraphSpec)
     specs_result = await db.execute(
-        select(FormulaGraphSpec).where(
-            FormulaGraphSpec.formula_card_id == card.id
-        ).order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
+        select(FormulaGraphSpec)
+        .where(FormulaGraphSpec.formula_card_id == card.id)
+        .order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
     )
     base["graph_specs"] = [_graph_spec_to_min(s) for s in specs_result.scalars().all()]
 
@@ -460,15 +489,32 @@ async def list_formula_cards(
         )
 
     if study_card_type and study_card_type != "all":
-        allowed_study_types = {"formula", "definition", "complexity", "protocol_rule", "key_conclusion", "confusable", "trap", "comparison"}
+        allowed_study_types = {
+            "formula",
+            "definition",
+            "complexity",
+            "protocol_rule",
+            "key_conclusion",
+            "confusable",
+            "trap",
+            "comparison",
+        }
         if study_card_type not in allowed_study_types:
-            raise HTTPException(status_code=400, detail=f"无效的 study_card_type: '{study_card_type}'")
+            raise HTTPException(
+                status_code=400, detail=f"无效的 study_card_type: '{study_card_type}'"
+            )
         query = query.where(FormulaCard.study_card_type == study_card_type)
 
     if graph_status:
         allowed_graph_statuses = {
-            "not_applicable", "unconfigured", "missing", "generating",
-            "draft", "ready", "failed", "ignored",
+            "not_applicable",
+            "unconfigured",
+            "missing",
+            "generating",
+            "draft",
+            "ready",
+            "failed",
+            "ignored",
         }
         if graph_status not in allowed_graph_statuses:
             raise HTTPException(
@@ -479,8 +525,7 @@ async def list_formula_cards(
 
     if library_type == "function_graph":
         exists_subq = (
-            select(FormulaGraphAsset.id)
-            .where(
+            select(FormulaGraphAsset.id).where(
                 FormulaGraphAsset.formula_card_id == FormulaCard.id,
                 FormulaGraphAsset.image_url.isnot(None),
             )
@@ -496,8 +541,7 @@ async def list_formula_cards(
         )
     elif library_type == "pure_formula":
         exists_subq = (
-            select(FormulaGraphAsset.id)
-            .where(
+            select(FormulaGraphAsset.id).where(
                 FormulaGraphAsset.formula_card_id == FormulaCard.id,
                 FormulaGraphAsset.image_url.isnot(None),
             )
@@ -518,7 +562,9 @@ async def list_formula_cards(
     total = (await db.execute(count_q)).scalar() or 0
 
     offset = (page - 1) * page_size
-    query = query.order_by(FormulaCard.updated_at.desc()).offset(offset).limit(page_size)
+    query = (
+        query.order_by(FormulaCard.updated_at.desc()).offset(offset).limit(page_size)
+    )
     result = await db.execute(query)
     cards = list(result.scalars().all())
 
@@ -537,9 +583,7 @@ async def list_formula_tags(
     _=Depends(require_permissions("formula:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(FormulaTag).order_by(FormulaTag.sort_order.asc())
-    )
+    result = await db.execute(select(FormulaTag).order_by(FormulaTag.sort_order.asc()))
     tags = result.scalars().all()
     return {
         "items": [
@@ -623,8 +667,12 @@ async def create_formula_card(
     await _create_version_snapshot(db, card, "create", admin.id)
 
     await _log_audit(
-        db, admin, request, "formula.create",
-        "formula_card", str(card.id),
+        db,
+        admin,
+        request,
+        "formula.create",
+        "formula_card",
+        str(card.id),
         {"title": card.title},
     )
     await db.commit()
@@ -661,11 +709,15 @@ async def update_formula_card(
         raise HTTPException(status_code=422, detail="No fields to update")
 
     if "study_card_type" in update_data and "template_type" not in update_data:
-        update_data["template_type"] = default_template_for(update_data["study_card_type"])
+        update_data["template_type"] = default_template_for(
+            update_data["study_card_type"]
+        )
 
     # Update formula blocks → recalc content hash
     if "formula_blocks" in update_data and update_data["formula_blocks"] is not None:
-        update_data["content_hash"] = _compute_content_hash(update_data["formula_blocks"])
+        update_data["content_hash"] = _compute_content_hash(
+            update_data["formula_blocks"]
+        )
 
     # Update category scope
     if "category_id" in update_data:
@@ -684,6 +736,7 @@ async def update_formula_card(
             from app.services.formula_graph_asset_service import (
                 get_graph_assets_for_card,
             )
+
             existing_assets = await get_graph_assets_for_card(db, card.id)
             has_asset = any(a.image_url for a in existing_assets)
             update_data["graph_status"] = "ready" if has_asset else "unconfigured"
@@ -748,8 +801,12 @@ async def update_formula_card(
     db.add(version)
 
     await _log_audit(
-        db, admin, request, "formula.update",
-        "formula_card", str(card.id),
+        db,
+        admin,
+        request,
+        "formula.update",
+        "formula_card",
+        str(card.id),
         {"title": card.title, "fields": list(update_data.keys())},
     )
     await db.commit()
@@ -761,7 +818,9 @@ async def update_formula_card(
         )
         fresh_card = fresh_result.scalar_one_or_none()
         if not fresh_card:
-            raise HTTPException(status_code=404, detail="Formula disappeared after commit")
+            raise HTTPException(
+                status_code=404, detail="Formula disappeared after commit"
+            )
         return await _card_to_dict(db, fresh_card)
     except Exception:
         raise
@@ -793,8 +852,12 @@ async def soft_delete_formula_card(
     card.deleted_at = utcnow()
     await _create_version_snapshot(db, card, "delete", admin.id)
     await _log_audit(
-        db, admin, request, "formula.delete",
-        "formula_card", str(card.id),
+        db,
+        admin,
+        request,
+        "formula.delete",
+        "formula_card",
+        str(card.id),
         {"title": card.title},
     )
     await db.commit()
@@ -809,20 +872,20 @@ _VALID_TRANSITIONS = {
     "draft": ["restore", "approve"],
     "pending_review": ["approve", "reject"],
     "rejected": ["restore"],
-    "approved": ["publish"],            # compat for legacy data
+    "approved": ["publish"],  # compat for legacy data
     "published": ["offline"],
     "offline": ["publish"],
 }
 
 # Normal business transitions (not exhaustive — compat paths exist)
 _NEW_STATUS_MAP = {
-    ("draft", "approve"): "pending_review",         # submit for review
-    ("pending_review", "approve"): "published",      # approve → auto-publish
+    ("draft", "approve"): "pending_review",  # submit for review
+    ("pending_review", "approve"): "published",  # approve → auto-publish
     ("pending_review", "reject"): "rejected",
     ("rejected", "restore"): "draft",
     ("published", "offline"): "offline",
     ("offline", "publish"): "published",
-    ("approved", "publish"): "published",            # legacy compat
+    ("approved", "publish"): "published",  # legacy compat
 }
 
 
@@ -853,8 +916,13 @@ def _apply_formula_action(
     new_status = _NEW_STATUS_MAP.get(key)
     if new_status is None:
         # fallback: direct action→status mapping (legacy)
-        fallback = {"approve": "approved", "reject": "rejected", "publish": "published",
-                    "offline": "offline", "restore": "draft"}
+        fallback = {
+            "approve": "approved",
+            "reject": "rejected",
+            "publish": "published",
+            "offline": "offline",
+            "restore": "draft",
+        }
         new_status = fallback[action]
 
     # ── Rejection reason validation ──
@@ -924,15 +992,24 @@ async def review_formula_card(
     now = utcnow()
 
     new_status = _apply_formula_action(
-        card, data.action, admin.id,
-        now=now, rejection_reason=data.rejection_reason,
+        card,
+        data.action,
+        admin.id,
+        now=now,
+        rejection_reason=data.rejection_reason,
     )
 
-    await _create_version_snapshot(db, card, data.action, admin.id, data.rejection_reason)
+    await _create_version_snapshot(
+        db, card, data.action, admin.id, data.rejection_reason
+    )
     await db.flush()
     await _log_audit(
-        db, admin, request, f"formula.{data.action}",
-        "formula_card", str(card.id),
+        db,
+        admin,
+        request,
+        f"formula.{data.action}",
+        "formula_card",
+        str(card.id),
         {
             "from_status": old_status,
             "to_status": new_status,
@@ -977,8 +1054,11 @@ async def batch_review_formulas(
 
             try:
                 new_status = _apply_formula_action(
-                    card, data.action, admin.id,
-                    now=now, rejection_reason=data.rejection_reason,
+                    card,
+                    data.action,
+                    admin.id,
+                    now=now,
+                    rejection_reason=data.rejection_reason,
                 )
             except HTTPException as e:
                 if "Cannot transition" in str(e.detail):
@@ -989,14 +1069,20 @@ async def batch_review_formulas(
                     results.append({"id": card_id, "status": "error"})
                 continue
 
-            await _create_version_snapshot(db, card, data.action, admin.id, data.rejection_reason)
+            await _create_version_snapshot(
+                db, card, data.action, admin.id, data.rejection_reason
+            )
             results.append({"id": card_id, "status": new_status})
         except Exception:
             results.append({"id": card_id, "status": "error"})
 
     await _log_audit(
-        db, admin, request, f"formula.batch-{data.action}",
-        "formula_card", None,
+        db,
+        admin,
+        request,
+        f"formula.batch-{data.action}",
+        "formula_card",
+        None,
         {"card_ids": data.card_ids, "results": results},
     )
     await db.commit()
@@ -1006,6 +1092,7 @@ async def batch_review_formulas(
 # ════════════════════════════════════════════════════════════
 # Versions
 # ════════════════════════════════════════════════════════════
+
 
 @router.get("/{card_id}/versions")
 async def get_formula_card_versions(
@@ -1028,7 +1115,9 @@ async def get_formula_card_versions(
                 "edited_by": v.edited_by,
                 "edit_reason": v.edit_reason,
                 "snapshot": v.snapshot,
-                "created_at": serialize_utc_datetime(v.created_at) if v.created_at else None,
+                "created_at": serialize_utc_datetime(v.created_at)
+                if v.created_at
+                else None,
             }
             for v in versions
         ]
@@ -1038,6 +1127,7 @@ async def get_formula_card_versions(
 # ════════════════════════════════════════════════════════════
 # Duplicate Check
 # ════════════════════════════════════════════════════════════
+
 
 @router.post("/{card_id}/check-duplicate")
 async def check_formula_duplicate(
@@ -1069,9 +1159,7 @@ async def check_formula_duplicate(
         strong_dups = []
 
     return {
-        "strong_duplicates": [
-            {"id": d.id, "title": d.title} for d in strong_dups
-        ],
+        "strong_duplicates": [{"id": d.id, "title": d.title} for d in strong_dups],
     }
 
 
@@ -1101,10 +1189,14 @@ def _validate_latex(formula_blocks: list[dict]) -> dict:
         # Check dangerous commands
         dangerous = _LATEX_DANGEROUS.findall(latex)
         if dangerous:
-            errors.append({"block_index": i, "type": "dangerous_command", "detail": dangerous[0]})
+            errors.append(
+                {"block_index": i, "type": "dangerous_command", "detail": dangerous[0]}
+            )
 
         # Check balanced braces
-        opens = len(_LATEX_BRACKET_RE.findall(latex.replace("\\{", "").replace("\\}", "")))
+        opens = len(
+            _LATEX_BRACKET_RE.findall(latex.replace("\\{", "").replace("\\}", ""))
+        )
         if opens % 2 != 0:
             errors.append({"block_index": i, "type": "unbalanced_braces"})
 
@@ -1129,6 +1221,7 @@ async def validate_formula_latex(
 # Import Jobs
 # ════════════════════════════════════════════════════════════
 
+
 @router.get("/import-jobs")
 async def list_formula_import_jobs(
     status: str | None = Query(None),
@@ -1145,7 +1238,11 @@ async def list_formula_import_jobs(
     total = (await db.execute(count_q)).scalar() or 0
 
     offset = (page - 1) * page_size
-    query = query.order_by(FormulaImportJob.created_at.desc()).offset(offset).limit(page_size)
+    query = (
+        query.order_by(FormulaImportJob.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
     result = await db.execute(query)
     jobs = result.scalars().all()
 
@@ -1165,12 +1262,18 @@ async def list_formula_import_jobs(
                 "retry_of": j.retry_of,
                 "metadata_json": j.metadata_json,
                 "created_by": j.created_by,
-                "created_at": serialize_utc_datetime(j.created_at) if j.created_at else None,
-                "updated_at": serialize_utc_datetime(j.updated_at) if j.updated_at else None,
+                "created_at": serialize_utc_datetime(j.created_at)
+                if j.created_at
+                else None,
+                "updated_at": serialize_utc_datetime(j.updated_at)
+                if j.updated_at
+                else None,
             }
             for j in jobs
         ],
-        total, page, page_size,
+        total,
+        page,
+        page_size,
     )
 
 
@@ -1197,8 +1300,12 @@ async def get_formula_import_job(
         "retry_of": job.retry_of,
         "metadata_json": job.metadata_json,
         "created_by": job.created_by,
-        "created_at": serialize_utc_datetime(job.created_at) if job.created_at else None,
-        "updated_at": serialize_utc_datetime(job.updated_at) if job.updated_at else None,
+        "created_at": serialize_utc_datetime(job.created_at)
+        if job.created_at
+        else None,
+        "updated_at": serialize_utc_datetime(job.updated_at)
+        if job.updated_at
+        else None,
     }
 
 
@@ -1242,12 +1349,18 @@ async def get_formula_import_items(
                 "review_status": item.review_status,
                 "rejection_reason": item.rejection_reason,
                 "result_card_id": item.result_card_id,
-                "created_at": serialize_utc_datetime(item.created_at) if item.created_at else None,
-                "updated_at": serialize_utc_datetime(item.updated_at) if item.updated_at else None,
+                "created_at": serialize_utc_datetime(item.created_at)
+                if item.created_at
+                else None,
+                "updated_at": serialize_utc_datetime(item.updated_at)
+                if item.updated_at
+                else None,
             }
             for item in items
         ],
-        total, page, page_size,
+        total,
+        page,
+        page_size,
     )
 
 
@@ -1269,8 +1382,12 @@ async def review_formula_import_item(
     item.rejection_reason = data.rejection_reason
 
     await _log_audit(
-        db, admin, request, f"formula.import-item.{data.review_status}",
-        "formula_import_item", str(item_id),
+        db,
+        admin,
+        request,
+        f"formula.import-item.{data.review_status}",
+        "formula_import_item",
+        str(item_id),
     )
     await db.commit()
     return {"status": "ok"}
@@ -1336,8 +1453,12 @@ async def update_graph_asset_metadata(
         asset.description = data.description
 
     await _log_audit(
-        db, admin, request, "formula.graph_asset.metadata",
-        "formula_graph_asset", str(asset.id),
+        db,
+        admin,
+        request,
+        "formula.graph_asset.metadata",
+        "formula_graph_asset",
+        str(asset.id),
         detail={"formula_card_id": card_id, "updated_fields": []},
     )
 
@@ -1379,7 +1500,9 @@ async def upload_graph_asset_endpoint(
     suffix = "." + filename.rsplit(".", 1)[-1] if "." in filename else ".png"
     try:
         tmp = await stream_to_temp(
-            file_field, max_size=MAX_IMAGE_SIZE, suffix=suffix,
+            file_field,
+            max_size=MAX_IMAGE_SIZE,
+            suffix=suffix,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -1397,7 +1520,9 @@ async def upload_graph_asset_endpoint(
         tmp.close()
 
     try:
-        asset, is_new = await upload_graph_asset(db, card, file_data, filename, admin.id)
+        asset, is_new = await upload_graph_asset(
+            db, card, file_data, filename, admin.id
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -1411,9 +1536,18 @@ async def upload_graph_asset_endpoint(
                 old_cs = a.checksum
                 break
 
-    action = "formula.graph_asset.replace" if not is_new and old_cs else "formula.graph_asset.upload"
+    action = (
+        "formula.graph_asset.replace"
+        if not is_new and old_cs
+        else "formula.graph_asset.upload"
+    )
     await _log_audit(
-        db, admin, request, action, "formula_graph_asset", str(asset.id),
+        db,
+        admin,
+        request,
+        action,
+        "formula_graph_asset",
+        str(asset.id),
         detail={
             "formula_card_id": card_id,
             "source_type": "uploaded",
@@ -1455,8 +1589,12 @@ async def delete_graph_asset(
         raise HTTPException(status_code=404, detail=f"未找到 {source_type} 类型资产")
 
     await _log_audit(
-        db, admin, request, "formula.graph_asset.delete",
-        "formula_graph_asset", None,
+        db,
+        admin,
+        request,
+        "formula.graph_asset.delete",
+        "formula_graph_asset",
+        None,
         detail={
             "formula_card_id": card_id,
             "source_type": source_type,
@@ -1511,11 +1649,17 @@ async def preview_formula_graph(
         status_code = 422
         if len(e.args) > 1 and e.args[1] == "429":
             status_code = 429
-        raise HTTPException(status_code=status_code, detail=str(e.args[0] if e.args else e))
+        raise HTTPException(
+            status_code=status_code, detail=str(e.args[0] if e.args else e)
+        )
 
     await _log_audit(
-        db, admin, request, "formula.graph.generate",
-        "formula_card", str(card_id),
+        db,
+        admin,
+        request,
+        "formula.graph.generate",
+        "formula_card",
+        str(card_id),
         detail={"template": spec.template},
     )
     await db.commit()
@@ -1539,7 +1683,8 @@ async def confirm_formula_graph(
 
     try:
         asset = await confirm_preview(
-            db, card,
+            db,
+            card,
             preview_token=data.preview_token,
             card_version=data.card_version,
             accept_warnings=data.accept_warnings,
@@ -1549,12 +1694,22 @@ async def confirm_formula_graph(
         )
     except ValueError as e:
         status_code = int(e.args[1]) if len(e.args) > 1 else 422
-        raise HTTPException(status_code=status_code, detail=str(e.args[0] if e.args else e))
+        raise HTTPException(
+            status_code=status_code, detail=str(e.args[0] if e.args else e)
+        )
 
-    audit_action = "formula.graph.confirm.warn_accepted" if data.accept_warnings else "formula.graph.confirm"
+    audit_action = (
+        "formula.graph.confirm.warn_accepted"
+        if data.accept_warnings
+        else "formula.graph.confirm"
+    )
     await _log_audit(
-        db, admin, request, audit_action,
-        "formula_graph_asset", str(asset.id),
+        db,
+        admin,
+        request,
+        audit_action,
+        "formula_graph_asset",
+        str(asset.id),
         detail={
             "formula_card_id": card_id,
             "checksum": data.checksum,
@@ -1591,10 +1746,14 @@ async def regenerate_formula_graph(
         raise HTTPException(status_code=422, detail=str(e.args[0] if e.args else e))
 
     await _log_audit(
-            db, admin, request, "formula.graph.replace",
-            "formula_graph_asset", str(asset.id),
-            detail={"formula_card_id": card_id},
-        )
+        db,
+        admin,
+        request,
+        "formula.graph.replace",
+        "formula_graph_asset",
+        str(asset.id),
+        detail={"formula_card_id": card_id},
+    )
 
     await db.commit()
     await db.refresh(asset)
@@ -1619,8 +1778,12 @@ async def delete_generated_graph(
         raise HTTPException(status_code=404, detail="No generated asset found")
 
     await _log_audit(
-        db, admin, request, "formula.graph.delete",
-        "formula_graph_asset", None,
+        db,
+        admin,
+        request,
+        "formula.graph.delete",
+        "formula_graph_asset",
+        None,
         detail={"formula_card_id": card_id},
     )
     await db.commit()
@@ -1641,11 +1804,17 @@ async def batch_generate_missing_graphs(
         job_id = await start_batch_generate(db, admin.id)
     except ValueError as e:
         status_code = int(e.args[1]) if len(e.args) > 1 else 422
-        raise HTTPException(status_code=status_code, detail=str(e.args[0] if e.args else e))
+        raise HTTPException(
+            status_code=status_code, detail=str(e.args[0] if e.args else e)
+        )
 
     await _log_audit(
-        db, admin, request, "formula.graph.batch_generate",
-        "formula_card", None,
+        db,
+        admin,
+        request,
+        "formula.graph.batch_generate",
+        "formula_card",
+        None,
         detail={"job_id": job_id},
     )
     return {"job_id": job_id}
@@ -1661,4 +1830,3 @@ async def get_batch_generate_status(
     if not job:
         raise HTTPException(status_code=404, detail="Batch job not found")
     return job
-

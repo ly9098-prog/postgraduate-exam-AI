@@ -25,12 +25,12 @@ logger = logging.getLogger(__name__)
 
 # ── Question number patterns matching question_splitter ──
 _Q_NUM_PATTERNS: list[re.Pattern] = [
-    re.compile(r"^(\d+)\s*[.．、]"),          # "1." "1．" "1、"
-    re.compile(r"^(\d+)\s*[)）]"),            # "1)" "1）"
-    re.compile(r"^\((\d+)\)"),                # "(1)"
-    re.compile(r"^（(\d+)）"),                # "（1）"
-    re.compile(r"^【(\d+)】"),                # "【1】"
-    re.compile(r"^第\s*(\d+)\s*题"),          # "第1题"
+    re.compile(r"^(\d+)\s*[.．、]"),  # "1." "1．" "1、"
+    re.compile(r"^(\d+)\s*[)）]"),  # "1)" "1）"
+    re.compile(r"^\((\d+)\)"),  # "(1)"
+    re.compile(r"^（(\d+)）"),  # "（1）"
+    re.compile(r"^【(\d+)】"),  # "【1】"
+    re.compile(r"^第\s*(\d+)\s*题"),  # "第1题"
 ]
 
 # OCR-tolerant question number (l/I → 1)
@@ -38,11 +38,25 @@ _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # Visual reference keywords (diagrams between stem and options)
 _VISUAL_REF_KEYWORDS = [
-    "如图", "如下图", "图中", "见图", "如图所示",
-    "如下所示", "如下表", "根据图示",
-    "上图", "下图", "表", "示意图",
-    "从图中", "由图中", "由图可知", "由表可知",
-    "根据图", "根据下表", "根据上表",
+    "如图",
+    "如下图",
+    "图中",
+    "见图",
+    "如图所示",
+    "如下所示",
+    "如下表",
+    "根据图示",
+    "上图",
+    "下图",
+    "表",
+    "示意图",
+    "从图中",
+    "由图中",
+    "由图可知",
+    "由表可知",
+    "根据图",
+    "根据下表",
+    "根据上表",
 ]
 
 # ── Coordinate space helpers ──
@@ -92,7 +106,9 @@ def expand_bbox(
         # Image pixels: convert from points to pixels using DPI
         if page_pdf_width and page_pdf_width > 0:
             dpi_x = page_image_width / page_pdf_width * 72
-            dpi_y = page_image_height / page_pdf_height * 72 if page_pdf_height else dpi_x
+            dpi_y = (
+                page_image_height / page_pdf_height * 72 if page_pdf_height else dpi_x
+            )
         else:
             dpi_x = dpi_y = 150.0  # fallback default
         pad_x = padding_pt * dpi_x / 72.0
@@ -209,16 +225,18 @@ def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:
             if zone in ("header", "footer", "watermark"):
                 continue
 
-            ocr_lines.append({
-                "page": page,
-                "text": stripped,
-                "bbox": (float(x0), float(y0), float(x1), float(y1)),
-                "confidence": float(confidence),
-                "zone": zone,
-                "line_index": line_idx,
-                "page_width": pw,
-                "page_height": ph,
-            })
+            ocr_lines.append(
+                {
+                    "page": page,
+                    "text": stripped,
+                    "bbox": (float(x0), float(y0), float(x1), float(y1)),
+                    "confidence": float(confidence),
+                    "zone": zone,
+                    "line_index": line_idx,
+                    "page_width": pw,
+                    "page_height": ph,
+                }
+            )
 
     return ocr_lines
 
@@ -259,16 +277,18 @@ def _build_ocr_lines_ir(doc: DocumentIR) -> list[dict]:
                 if zone in ("header", "footer", "watermark"):
                     continue
 
-                ocr_lines.append({
-                    "page": page.page_index + 1,
-                    "text": text,
-                    "bbox": (float(x0), float(y0), float(x1), float(y1)),
-                    "confidence": float(line.confidence or 0.0),
-                    "zone": zone,
-                    "line_index": line_index,
-                    "page_width": pw,
-                    "page_height": ph,
-                })
+                ocr_lines.append(
+                    {
+                        "page": page.page_index + 1,
+                        "text": text,
+                        "bbox": (float(x0), float(y0), float(x1), float(y1)),
+                        "confidence": float(line.confidence or 0.0),
+                        "zone": zone,
+                        "line_index": line_index,
+                        "page_width": pw,
+                        "page_height": ph,
+                    }
+                )
                 line_index += 1
 
     return ocr_lines
@@ -295,8 +315,10 @@ def _match_question_number(text: str, expected_num: int | str | None) -> bool:
     stripped = text.strip()
 
     if expected_num is not None:
-        expected = int(expected_num) if isinstance(expected_num, str) and expected_num.isdigit() else (
-            expected_num if isinstance(expected_num, int) else None
+        expected = (
+            int(expected_num)
+            if isinstance(expected_num, str) and expected_num.isdigit()
+            else (expected_num if isinstance(expected_num, int) else None)
         )
 
         if expected is not None:
@@ -425,7 +447,9 @@ def compute_question_bbox(
     page_lines = [l for l in ocr_lines if l.get("page") == page]
     if not page_lines:
         return _make_fallback_result(
-            page, raw_question, "no_ocr_lines_on_page",
+            page,
+            raw_question,
+            "no_ocr_lines_on_page",
         )
 
     # Get page dimensions from first OCR line
@@ -434,13 +458,19 @@ def compute_question_bbox(
 
     # ── Step 1: Find anchor line (question start) ──
     anchor = _find_anchor_line(
-        page_lines, raw_text, source_qno, source_label,
+        page_lines,
+        raw_text,
+        source_qno,
+        source_label,
     )
 
     if anchor is None:
         return _make_fallback_result(
-            page, raw_question, "anchor_not_found",
-            page_width=pw, page_height=ph,
+            page,
+            raw_question,
+            "anchor_not_found",
+            page_width=pw,
+            page_height=ph,
         )
 
     anchor_idx = anchor["line_index"]
@@ -452,7 +482,11 @@ def compute_question_bbox(
     # Find all OCR lines belonging to this question (from anchor to next question
     # or end of page)
     question_lines = _collect_question_lines(
-        page_lines, anchor_idx, page, raw_question, option_lines,
+        page_lines,
+        anchor_idx,
+        page,
+        raw_question,
+        option_lines,
     )
 
     if not question_lines:
@@ -496,17 +530,27 @@ def compute_question_bbox(
         # If coverage is incomplete, try to extend bottom to find missing options
         if coverage < 1.0 and next_q_line is None:
             extended = _extend_for_missing_options(
-                page_lines, question_lines, bbox, expected_keys, matched_keys,
+                page_lines,
+                question_lines,
+                bbox,
+                expected_keys,
+                matched_keys,
             )
             if extended:
                 bbox = extended
                 # Re-check coverage after extension
                 opt_lines_found = _find_option_lines_in_ocr(
-                    [l for l in page_lines if l["bbox"][1] >= anchor_bbox[1] and l["bbox"][3] <= bbox[3]],
+                    [
+                        l
+                        for l in page_lines
+                        if l["bbox"][1] >= anchor_bbox[1] and l["bbox"][3] <= bbox[3]
+                    ],
                     expected_keys,
                 )
                 matched_keys = _match_option_keys(opt_lines_found, expected_keys)
-                coverage = len(matched_keys) / len(expected_keys) if expected_keys else 1.0
+                coverage = (
+                    len(matched_keys) / len(expected_keys) if expected_keys else 1.0
+                )
     else:
         matched_keys = []
         coverage = 1.0
@@ -548,8 +592,10 @@ def compute_question_bbox(
         bbox,
         CS_IMAGE_PIXELS,
         padding_pt,
-        pw, ph,  # page_image_width, page_image_height
-        None, None,  # page_pdf_width, page_pdf_height (unknown at this stage)
+        pw,
+        ph,  # page_image_width, page_image_height
+        None,
+        None,  # page_pdf_width, page_pdf_height (unknown at this stage)
     )
 
     # ── Build diagnostics ──
@@ -620,7 +666,9 @@ def _find_anchor_line(
 
     if candidates:
         # Sort by score (highest first), then by position (top of page first)
-        candidates.sort(key=lambda l: (-l.get("_match_score", 0), l.get("bbox", [0, 0, 0, 0])[1]))
+        candidates.sort(
+            key=lambda l: (-l.get("_match_score", 0), l.get("bbox", [0, 0, 0, 0])[1])
+        )
         result = dict(candidates[0])
         result["line_index"] = page_lines.index(candidates[0])
         return result
@@ -716,7 +764,9 @@ def _match_option_keys(
     for ol in opt_lines:
         text = ol.get("text", "").strip()
         for key in upper_expected:
-            if key not in matched and re.match(rf"^\s*{re.escape(key)}\s*[.、:：)）]\s*", text):
+            if key not in matched and re.match(
+                rf"^\s*{re.escape(key)}\s*[.、:：)）]\s*", text
+            ):
                 matched.append(key)
     return sorted(matched, key=_option_key_sort_key)
 
@@ -729,7 +779,9 @@ def _extend_for_missing_options(
     already_matched: list[str],
 ) -> tuple[float, float, float, float] | None:
     """Extend bbox bottom to find missing option lines."""
-    missing = set(k.upper() for k in expected_keys) - set(k.upper() for k in already_matched)
+    missing = set(k.upper() for k in expected_keys) - set(
+        k.upper() for k in already_matched
+    )
     if not missing:
         return None
 
@@ -774,10 +826,15 @@ def _make_fallback_result(
         return {
             "question_bbox": existing,
             "question_bbox_coordinate_space": raw_question.get(
-                "question_bbox_coordinate_space", CS_IMAGE_PIXELS,
+                "question_bbox_coordinate_space",
+                CS_IMAGE_PIXELS,
             ),
-            "question_bbox_page_width": raw_question.get("question_bbox_page_width", page_width),
-            "question_bbox_page_height": raw_question.get("question_bbox_page_height", page_height),
+            "question_bbox_page_width": raw_question.get(
+                "question_bbox_page_width", page_width
+            ),
+            "question_bbox_page_height": raw_question.get(
+                "question_bbox_page_height", page_height
+            ),
             "question_bbox_confidence": 0.3,
             "question_bbox_strategy": f"fallback_existing:{reason}",
             "question_bbox_diagnostics": {
@@ -828,7 +885,9 @@ def compute_question_bboxes(
         page_ocr = ocr_lines_by_page.get(page, [])
 
         result = compute_question_bbox(
-            q, page_ocr, page,
+            q,
+            page_ocr,
+            page,
             visual_regions=visual_regions,
         )
 
@@ -856,7 +915,9 @@ def compute_question_bboxes_from_ir(
     Returns:
         The modified raw_questions list (same objects, mutated in place).
     """
-    return _compute_question_bboxes_ir(raw_questions, doc, visual_regions=visual_regions)
+    return _compute_question_bboxes_ir(
+        raw_questions, doc, visual_regions=visual_regions
+    )
 
 
 def _compute_question_bboxes_ir(
@@ -882,7 +943,9 @@ def _compute_question_bboxes_ir(
         page_ocr = ocr_lines_by_page.get(page, [])
 
         result = compute_question_bbox(
-            q, page_ocr, page,
+            q,
+            page_ocr,
+            page,
             visual_regions=visual_regions,
         )
 
@@ -941,7 +1004,12 @@ def render_source_snapshot(
 
         pdf_page = doc[page - 1]
 
-        if bbox_image_pixels and len(bbox_image_pixels) == 4 and page_image_width > 0 and page_image_height > 0:
+        if (
+            bbox_image_pixels
+            and len(bbox_image_pixels) == 4
+            and page_image_width > 0
+            and page_image_height > 0
+        ):
             # Convert image pixel bbox to PDF points
             # PDF page bounds in points
             pdf_rect = pdf_page.rect
@@ -968,7 +1036,9 @@ def render_source_snapshot(
         if max(pix.width, pix.height) > max_long_side:
             scale = max_long_side / max(pix.width, pix.height)
             pix = pdf_page.get_pixmap(
-                dpi=int(dpi * scale), clip=clip_rect, alpha=False,
+                dpi=int(dpi * scale),
+                clip=clip_rect,
+                alpha=False,
             )
 
         return pix.tobytes("png")

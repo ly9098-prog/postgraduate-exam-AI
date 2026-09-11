@@ -85,7 +85,10 @@ async def _acquire_pipeline_reservation(pipeline_id: str, resource_type: str) ->
     if not token:
         raise ResourceGuardError(RESOURCE_PRESSURE, f"{resource_type} 并发数已达上限")
     _pipeline_reservations[pipeline_id] = (
-        token, resource_type, resource_guard.process_owner_token, 0,
+        token,
+        resource_type,
+        resource_guard.process_owner_token,
+        0,
     )
     return token
 
@@ -111,6 +114,8 @@ def _sha256_of_file(path: str) -> str:
         for chunk in iter(lambda: f.read(65536), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
 _IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_IMAGE_PIPELINE_STORE_SIZE = 200
 _IMAGE_PIPELINE_STATUS_TTL_SECONDS = 86400
@@ -160,7 +165,10 @@ async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
             ttl=_IMAGE_PIPELINE_STATUS_TTL_SECONDS,
         )
     except Exception:
-        logger.warning("image pipeline status cache write failed: pipeline_id=%s", image_pipeline_id)
+        logger.warning(
+            "image pipeline status cache write failed: pipeline_id=%s",
+            image_pipeline_id,
+        )
     return status
 
 
@@ -168,7 +176,9 @@ async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
     try:
         cached = await cache.get(_image_pipeline_key(pipeline_id))
     except Exception:
-        logger.warning("image pipeline status cache read failed: pipeline_id=%s", pipeline_id)
+        logger.warning(
+            "image pipeline status cache read failed: pipeline_id=%s", pipeline_id
+        )
         cached = None
     if cached is not None:
         _image_pipeline_store[pipeline_id] = cached
@@ -346,22 +356,30 @@ def _build_pre_extracted_ocr_blocks(
                 and all(isinstance(v, (int, float)) for v in bbox)
             )
             conf = line.get("confidence", line.get("conf", 0.0))
-            box_entries = [{
-                "bbox": list(bbox),
-                "conf": float(conf or 0.0),
-                "text": text,
-            }] if valid_bbox else []
-            blocks.append({
-                "page": 1,
-                "block_index": index,
-                "text": text,
-                "boxes": box_entries,
-                "page_width": width,
-                "page_height": height,
-                "source": "ocr",
-                "has_boxes": bool(box_entries),
-                "engine_fingerprint": engine_fingerprint,
-            })
+            box_entries = (
+                [
+                    {
+                        "bbox": list(bbox),
+                        "conf": float(conf or 0.0),
+                        "text": text,
+                    }
+                ]
+                if valid_bbox
+                else []
+            )
+            blocks.append(
+                {
+                    "page": 1,
+                    "block_index": index,
+                    "text": text,
+                    "boxes": box_entries,
+                    "page_width": width,
+                    "page_height": height,
+                    "source": "ocr",
+                    "has_boxes": bool(box_entries),
+                    "engine_fingerprint": engine_fingerprint,
+                }
+            )
 
     if blocks:
         return blocks
@@ -369,17 +387,19 @@ def _build_pre_extracted_ocr_blocks(
     boxes = ocr_result.get("boxes")
     if not isinstance(boxes, list):
         boxes = []
-    return [{
-        "page": 1,
-        "block_index": 0,
-        "text": cleaned_text,
-        "boxes": boxes,
-        "page_width": width,
-        "page_height": height,
-        "source": "ocr",
-        "has_boxes": bool(boxes),
-        "engine_fingerprint": engine_fingerprint,
-    }]
+    return [
+        {
+            "page": 1,
+            "block_index": 0,
+            "text": cleaned_text,
+            "boxes": boxes,
+            "page_width": width,
+            "page_height": height,
+            "source": "ocr",
+            "has_boxes": bool(boxes),
+            "engine_fingerprint": engine_fingerprint,
+        }
+    ]
 
 
 def _build_pre_extracted_ocr_block(
@@ -403,7 +423,11 @@ def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | No
     if split.get("failure_reason") == "text_present_but_no_question_boundary":
         return "text_present_but_split_failed"
     schema_errors = result.get("diagnostics", {}).get("schema_errors", [])
-    if any("missing_options" in item.get("errors", []) for item in schema_errors if isinstance(item, dict)):
+    if any(
+        "missing_options" in item.get("errors", [])
+        for item in schema_errors
+        if isinstance(item, dict)
+    ):
         return "missing_options"
     if result.get("status") != "completed":
         return "pipeline_failed"
@@ -425,7 +449,11 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
             None,
         )
         if active_stage:
-            stages[active_stage] = {**stages[active_stage], "status": "failed", "error": error}
+            stages[active_stage] = {
+                **stages[active_stage],
+                "status": "failed",
+                "error": error,
+            }
     await _set_image_pipeline_status(
         pipeline_id,
         status="failed",
@@ -453,8 +481,10 @@ async def _run_image_pipeline_with_db(
     )
 
     log_event(
-        logger, "import.background.start",
-        pipeline_id=pipeline_id, source_type="image",
+        logger,
+        "import.background.start",
+        pipeline_id=pipeline_id,
+        source_type="image",
         source_file=source_file,
     )
 
@@ -471,7 +501,9 @@ async def _run_image_pipeline_with_db(
         set_tag("stage", "ocr")
         set_tag("ocr.engine", "PaddleOCR")
 
-        logger.info("image OCR started: pipeline_id=%s file=%s", pipeline_id, source_file)
+        logger.info(
+            "image OCR started: pipeline_id=%s file=%s", pipeline_id, source_file
+        )
         runtime_diagnostics = _build_ocr_runtime_diagnostics()
         await _set_image_pipeline_status(
             pipeline_id,
@@ -488,11 +520,13 @@ async def _run_image_pipeline_with_db(
             ocr_result=ocr_result,
         )
         ocr_diagnostics = _build_ocr_text_diagnostics(raw_ocr_text, raw_text)
-        ocr_diagnostics.update({
-            "execution_backend": runtime_diagnostics.get("execution_backend"),
-            "box_count": len(pre_extracted_blocks[0].get("boxes") or []),
-            "engine_fingerprint": ocr_result.get("engine_fingerprint", ""),
-        })
+        ocr_diagnostics.update(
+            {
+                "execution_backend": runtime_diagnostics.get("execution_backend"),
+                "box_count": len(pre_extracted_blocks[0].get("boxes") or []),
+                "engine_fingerprint": ocr_result.get("engine_fingerprint", ""),
+            }
+        )
         if not raw_text:
             await _set_image_pipeline_status(
                 pipeline_id,
@@ -565,7 +599,9 @@ async def _run_image_pipeline_with_db(
                 result.get("batch_id"),
                 result.get("stats", {}).get("to_review", 0),
             )
-        logger.info("image pipeline completed: pipeline_id=%s status=%s", pipeline_id, status)
+        logger.info(
+            "image pipeline completed: pipeline_id=%s status=%s", pipeline_id, status
+        )
         result["pipeline_id"] = pipeline_id
         result["status"] = status
         result["raw_text_preview"] = raw_text[:500]
@@ -582,24 +618,40 @@ async def _run_image_pipeline_with_db(
         if status == "completed" and result.get("batch_id"):
             result["question_count"] = result.get("stats", {}).get("to_review", 0)
         current = await _get_image_pipeline_status(pipeline_id) or {}
-        result.setdefault("started_at", current.get("started_at", serialize_utc_datetime(utcnow())))
+        result.setdefault(
+            "started_at", current.get("started_at", serialize_utc_datetime(utcnow()))
+        )
         await _set_image_pipeline_status(pipeline_id, **result)
         log_event(
-            logger, "import.background.finish",
-            pipeline_id=pipeline_id, source_type="image",
-            source_file=source_file, status=status,
+            logger,
+            "import.background.finish",
+            pipeline_id=pipeline_id,
+            source_type="image",
+            source_file=source_file,
+            status=status,
         )
     except Exception as exc:
-        logger.exception("image pipeline failed: pipeline_id=%s file=%s", pipeline_id, source_file)
+        logger.exception(
+            "image pipeline failed: pipeline_id=%s file=%s", pipeline_id, source_file
+        )
         log_event(
-            logger, "import.background.error",
+            logger,
+            "import.background.error",
             level="error",
-            pipeline_id=pipeline_id, source_type="image",
+            pipeline_id=pipeline_id,
+            source_type="image",
             source_file=source_file,
             error_type=type(exc).__name__,
             error_message=str(exc)[:300],
         )
-        capture_exception(exc, tags={"pipeline_id": pipeline_id, "source_file": source_file, "stage": "ocr"})
+        capture_exception(
+            exc,
+            tags={
+                "pipeline_id": pipeline_id,
+                "source_file": source_file,
+                "stage": "ocr",
+            },
+        )
         await _fail_image_pipeline(pipeline_id, str(exc))
     finally:
         await _release_pipeline_reservation(pipeline_id)
@@ -636,8 +688,10 @@ async def _run_pipeline_with_db(
 
     lgr = logging.getLogger("postgraduate-ai")
     log_event(
-        lgr, "import.background.start",
-        pipeline_id=pipeline_id, source_type=source_type,
+        lgr,
+        "import.background.start",
+        pipeline_id=pipeline_id,
+        source_type=source_type,
         source_file=source_file,
     )
 
@@ -669,39 +723,52 @@ async def _run_pipeline_with_db(
                 source_sha256=source_sha256,
             )
         log_event(
-            lgr, "import.background.finish",
-            pipeline_id=pipeline_id, source_type=source_type,
+            lgr,
+            "import.background.finish",
+            pipeline_id=pipeline_id,
+            source_type=source_type,
             source_file=source_file,
         )
     except Exception as exc:
         logger.error(
             "Background task for pipeline %s crashed: %s\n%s",
-            pipeline_id, exc, traceback.format_exc(),
+            pipeline_id,
+            exc,
+            traceback.format_exc(),
         )
         log_event(
-            lgr, "import.background.error",
+            lgr,
+            "import.background.error",
             level="error",
-            pipeline_id=pipeline_id, source_type=source_type,
+            pipeline_id=pipeline_id,
+            source_type=source_type,
             source_file=source_file,
             error_type=type(exc).__name__,
             error_message=str(exc)[:300],
         )
-        capture_exception(exc, tags={"pipeline_id": pipeline_id, "stage": "pipeline_background"})
-        await _set_pipeline_store(pipeline_id, {
-            "pipeline_id": pipeline_id,
-            "status": "failed",
-            "source_type": source_type,
-            "errors": [f"后台任务崩溃: {exc}"],
-            "started_at": "",
-            "finished_at": "",
-        })
+        capture_exception(
+            exc, tags={"pipeline_id": pipeline_id, "stage": "pipeline_background"}
+        )
+        await _set_pipeline_store(
+            pipeline_id,
+            {
+                "pipeline_id": pipeline_id,
+                "status": "failed",
+                "source_type": source_type,
+                "errors": [f"后台任务崩溃: {exc}"],
+                "started_at": "",
+                "finished_at": "",
+            },
+        )
     finally:
         await _release_pipeline_reservation(pipeline_id)
         if file_path and os.path.exists(file_path):
             try:
                 os.unlink(file_path)
             except OSError as e:
-                logger.warning("Failed to delete pipeline tmp file %s: %s", file_path, e)
+                logger.warning(
+                    "Failed to delete pipeline tmp file %s: %s", file_path, e
+                )
 
 
 async def start_import_pipeline(
@@ -809,10 +876,14 @@ async def start_import_pipeline(
                     "image_format": image_format,
                     "staging_object_id": staging_obj.object_id,
                 },
-                stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
+                stages={
+                    "upload": {"status": "completed"},
+                    "ocr": {"status": "pending"},
+                },
             )
 
             from app.services.task_queue_worker import enqueue_image_pipeline
+
             result = await enqueue_image_pipeline(
                 pipeline_id=pipeline_id,
                 staging_object_id=staging_obj.object_id,
@@ -822,55 +893,84 @@ async def start_import_pipeline(
                 options=options,
             )
             if not result:
-                await _set_image_pipeline_status(pipeline_id, status="failed", errors=[f"Queue rejected: {result.reason}"])
+                await _set_image_pipeline_status(
+                    pipeline_id,
+                    status="failed",
+                    errors=[f"Queue rejected: {result.reason}"],
+                )
                 raise ValueError(_queue_rejection_message(result.reason))
 
             log_event(
-                logger, "import.upload.accepted",
-                pipeline_id=pipeline_id, source_type="image",
-                source_file=filename, file_size=file_size,
+                logger,
+                "import.upload.accepted",
+                pipeline_id=pipeline_id,
+                source_type="image",
+                source_file=filename,
+                file_size=file_size,
                 content_type=content_type or "-",
             )
-            return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
+            return PipelineUploadResponse(
+                pipeline_id=pipeline_id, status="queued", source_type="image"
+            )
         except Exception:
             await _release_pipeline_reservation(pipeline_id)
             raise
 
     if is_excel:
-        pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        pipeline_id = (
+            f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        )
 
         await _acquire_pipeline_reservation(pipeline_id, "excel_pipeline")
         try:
-            staging_obj = await async_store_file(file_path, original_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            await _set_pipeline_store(pipeline_id, {
-                "pipeline_id": pipeline_id,
-                "status": "parsing",
-                "source_type": "excel",
-                "source_file": filename,
-                "stages": {"upload": {"status": "completed"}},
-                "stats": {},
-                "errors": [],
-                "started_at": serialize_utc_datetime(utcnow()),
-                "staging_object_id": staging_obj.object_id,
-            })
+            staging_obj = await async_store_file(
+                file_path,
+                original_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            await _set_pipeline_store(
+                pipeline_id,
+                {
+                    "pipeline_id": pipeline_id,
+                    "status": "parsing",
+                    "source_type": "excel",
+                    "source_file": filename,
+                    "stages": {"upload": {"status": "completed"}},
+                    "stats": {},
+                    "errors": [],
+                    "started_at": serialize_utc_datetime(utcnow()),
+                    "staging_object_id": staging_obj.object_id,
+                },
+            )
 
             from app.services.task_queue_worker import enqueue_excel_pipeline
+
             result = await enqueue_excel_pipeline(
                 pipeline_id=pipeline_id,
                 staging_object_id=staging_obj.object_id,
                 source_file=filename,
             )
             if not result:
-                await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
+                await _set_pipeline_store(
+                    pipeline_id,
+                    {
+                        "status": "failed",
+                        "errors": [f"Queue rejected: {result.reason}"],
+                    },
+                )
                 raise ValueError(_queue_rejection_message(result.reason))
 
-            return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
+            return PipelineUploadResponse(
+                pipeline_id=pipeline_id, status="parsing", source_type="excel"
+            )
         except Exception:
             await _release_pipeline_reservation(pipeline_id)
             raise
 
     source_type = "pdf" if is_pdf else "txt"
-    pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    pipeline_id = (
+        f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
 
     page_range: PdfPageRangeInfo | None = None
     pdf_total_pages = 0
@@ -878,6 +978,7 @@ async def start_import_pipeline(
     if is_pdf:
         try:
             import fitz
+
             with fitz.open(file_path) as doc:
                 pdf_total_pages = len(doc)
                 validator.validate_pdf_pages(pdf_total_pages)
@@ -893,7 +994,10 @@ async def start_import_pipeline(
 
         logger.info(
             "PDF upload accepted: filename=%s total_pages=%s page_start=%s page_end=%s selected=%s",
-            filename, pdf_total_pages, page_start, page_end,
+            filename,
+            pdf_total_pages,
+            page_start,
+            page_end,
             page_range.selected_page_count if page_range else "N/A",
         )
 
@@ -915,7 +1019,9 @@ async def start_import_pipeline(
     try:
         # Stage file to persistent storage before enqueuing task
         mime = content_type or ("application/pdf" if is_pdf else "text/plain")
-        staging_obj = await async_store_file(file_path, original_name=filename, mime=mime)
+        staging_obj = await async_store_file(
+            file_path, original_name=filename, mime=mime
+        )
 
         store_data: dict = {
             "pipeline_id": pipeline_id,
@@ -935,6 +1041,7 @@ async def start_import_pipeline(
         await _set_pipeline_store(pipeline_id, store_data)
 
         from app.services.task_queue_worker import enqueue_import_pipeline
+
         result = await enqueue_import_pipeline(
             pipeline_id=pipeline_id,
             staging_object_id=staging_obj.object_id,
@@ -946,18 +1053,26 @@ async def start_import_pipeline(
             created_by=created_by,
         )
         if not result:
-            await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
+            await _set_pipeline_store(
+                pipeline_id,
+                {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]},
+            )
             raise ValueError(_queue_rejection_message(result.reason))
 
         log_event(
-            logger, "import.upload.accepted",
-            pipeline_id=pipeline_id, source_type=source_type,
-            source_file=filename, file_size=file_size,
+            logger,
+            "import.upload.accepted",
+            pipeline_id=pipeline_id,
+            source_type=source_type,
+            source_file=filename,
+            file_size=file_size,
             content_type=content_type or "-",
         )
         return PipelineUploadResponse(
-            pipeline_id=pipeline_id, status="parsing",
-            source_type=source_type, page_range=page_range,
+            pipeline_id=pipeline_id,
+            status="parsing",
+            source_type=source_type,
+            page_range=page_range,
         )
     except Exception:
         await _release_pipeline_reservation(pipeline_id)
@@ -965,7 +1080,9 @@ async def start_import_pipeline(
         raise
 
 
-async def get_pipeline_status(pipeline_id: str, db: AsyncSession) -> PipelineStatusResponse:
+async def get_pipeline_status(
+    pipeline_id: str, db: AsyncSession
+) -> PipelineStatusResponse:
     """查询流水线执行状态。"""
     status = await _orchestrator_get_pipeline_status(pipeline_id, db=db)
     if status is None:

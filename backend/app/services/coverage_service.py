@@ -54,7 +54,12 @@ def _has_image_reference_anomaly(content: Any, options: Any, image_url: Any) -> 
                 if not isinstance(segment, dict):
                     continue
                 segment_type = str(segment.get("type") or "").strip().lower()
-                if segment_type not in {"image", "math_image", "table_image", "code_image"}:
+                if segment_type not in {
+                    "image",
+                    "math_image",
+                    "table_image",
+                    "code_image",
+                }:
                     continue
                 if segment.get("display") is False:
                     continue
@@ -78,15 +83,21 @@ def _has_image_reference_anomaly(content: Any, options: Any, image_url: Any) -> 
     for value in option_values:
         if not isinstance(value, dict):
             continue
-        image_keys = [key for key in ("image_url", "imageUrl", "url", "src") if key in value]
+        image_keys = [
+            key for key in ("image_url", "imageUrl", "url", "src") if key in value
+        ]
         for key in image_keys:
             candidate = value.get(key)
-            if candidate is not None and (not isinstance(candidate, str) or not candidate.strip()):
+            if candidate is not None and (
+                not isinstance(candidate, str) or not candidate.strip()
+            ):
                 return True
     return False
 
 
-async def _resolve_syllabus(db: AsyncSession, syllabus_version_id: int | None) -> SyllabusVersion:
+async def _resolve_syllabus(
+    db: AsyncSession, syllabus_version_id: int | None
+) -> SyllabusVersion:
     if syllabus_version_id is None:
         version = await syllabus_service.get_active_version(db)
         if version is None:
@@ -110,9 +121,17 @@ async def _load_members(
     )
     if subject_id is not None:
         stmt = stmt.where(SyllabusKnowledgePoint.subject_id == subject_id)
-    rows = list((await db.execute(
-        stmt.order_by(Subject.sort_order.asc(), SyllabusKnowledgePoint.sort_order.asc(), SyllabusKnowledgePoint.id.asc())
-    )).all())
+    rows = list(
+        (
+            await db.execute(
+                stmt.order_by(
+                    Subject.sort_order.asc(),
+                    SyllabusKnowledgePoint.sort_order.asc(),
+                    SyllabusKnowledgePoint.id.asc(),
+                )
+            )
+        ).all()
+    )
     if subject_id is not None and not rows:
         raise CoverageError("所选科目不在该考纲版本中")
     if not rows:
@@ -124,25 +143,29 @@ async def _duplicate_groups(
     db: AsyncSession,
     scope_conditions: list[Any],
 ) -> tuple[set[int], list[dict]]:
-    hash_rows = (await db.execute(
-        select(Question.question_hash, func.count(Question.id))
-        .where(
-            *scope_conditions,
-            Question.question_hash.is_not(None),
-            func.length(func.trim(Question.question_hash)) > 0,
+    hash_rows = (
+        await db.execute(
+            select(Question.question_hash, func.count(Question.id))
+            .where(
+                *scope_conditions,
+                Question.question_hash.is_not(None),
+                func.length(func.trim(Question.question_hash)) > 0,
+            )
+            .group_by(Question.question_hash)
+            .having(func.count(Question.id) > 1)
+            .order_by(func.count(Question.id).desc(), Question.question_hash.asc())
         )
-        .group_by(Question.question_hash)
-        .having(func.count(Question.id) > 1)
-        .order_by(func.count(Question.id).desc(), Question.question_hash.asc())
-    )).all()
+    ).all()
     hashes = [str(row[0]) for row in hash_rows]
     if not hashes:
         return set(), []
-    rows = (await db.execute(
-        select(Question.question_hash, Question.id)
-        .where(*scope_conditions, Question.question_hash.in_(hashes))
-        .order_by(Question.question_hash.asc(), Question.id.asc())
-    )).all()
+    rows = (
+        await db.execute(
+            select(Question.question_hash, Question.id)
+            .where(*scope_conditions, Question.question_hash.in_(hashes))
+            .order_by(Question.question_hash.asc(), Question.id.asc())
+        )
+    ).all()
     by_hash: dict[str, list[int]] = defaultdict(list)
     suspect_ids: set[int] = set()
     for question_hash, question_id in rows:
@@ -152,7 +175,9 @@ async def _duplicate_groups(
         suspect_ids.add(qid)
     samples = [
         {"question_hash": key, "question_ids": ids}
-        for key, ids in sorted(by_hash.items(), key=lambda item: (-len(item[1]), item[0]))[:_DUPLICATE_GROUP_LIMIT]
+        for key, ids in sorted(
+            by_hash.items(), key=lambda item: (-len(item[1]), item[0])
+        )[:_DUPLICATE_GROUP_LIMIT]
     ]
     return suspect_ids, samples
 
@@ -165,13 +190,24 @@ async def _exam_year_report(
 ) -> list[dict]:
     from app.services import admin_exam_service
 
-    papers = list((await db.scalars(
-        select(ExamPaper)
-        .where(ExamPaper.paper_type == "past_exam_choice", ExamPaper.year.is_not(None))
-        .order_by(ExamPaper.year.asc(), ExamPaper.version.desc(), ExamPaper.id.desc())
-    )).all())
+    papers = list(
+        (
+            await db.scalars(
+                select(ExamPaper)
+                .where(
+                    ExamPaper.paper_type == "past_exam_choice",
+                    ExamPaper.year.is_not(None),
+                )
+                .order_by(
+                    ExamPaper.year.asc(), ExamPaper.version.desc(), ExamPaper.id.desc()
+                )
+            )
+        ).all()
+    )
 
-    known_years = sorted({int(paper.year) for paper in papers if paper.year is not None})
+    known_years = sorted(
+        {int(paper.year) for paper in papers if paper.year is not None}
+    )
     if year_from is None and known_years:
         year_from = min(known_years)
     if year_to is None and known_years:
@@ -205,43 +241,72 @@ async def _exam_year_report(
     missing_analysis: dict[int, int] = defaultdict(int)
     missing_kp: dict[int, int] = defaultdict(int)
     if representative_ids:
-        analysis_rows = (await db.execute(
-            select(
-                ExamPaperQuestion.paper_id,
-                func.sum(case((func.length(func.trim(func.coalesce(QuestionVersion.analysis, ""))) == 0, 1), else_=0)),
+        analysis_rows = (
+            await db.execute(
+                select(
+                    ExamPaperQuestion.paper_id,
+                    func.sum(
+                        case(
+                            (
+                                func.length(
+                                    func.trim(
+                                        func.coalesce(QuestionVersion.analysis, "")
+                                    )
+                                )
+                                == 0,
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                )
+                .join(
+                    QuestionVersion,
+                    QuestionVersion.id == ExamPaperQuestion.question_version_id,
+                )
+                .where(ExamPaperQuestion.paper_id.in_(representative_ids))
+                .group_by(ExamPaperQuestion.paper_id)
             )
-            .join(QuestionVersion, QuestionVersion.id == ExamPaperQuestion.question_version_id)
-            .where(ExamPaperQuestion.paper_id.in_(representative_ids))
-            .group_by(ExamPaperQuestion.paper_id)
-        )).all()
-        missing_analysis.update({int(paper_id): int(count or 0) for paper_id, count in analysis_rows})
+        ).all()
+        missing_analysis.update(
+            {int(paper_id): int(count or 0) for paper_id, count in analysis_rows}
+        )
 
         kp_exists = (
             select(QuestionVersionKnowledgePoint.id)
-            .where(QuestionVersionKnowledgePoint.question_version_id == ExamPaperQuestion.question_version_id)
+            .where(
+                QuestionVersionKnowledgePoint.question_version_id
+                == ExamPaperQuestion.question_version_id
+            )
             .limit(1)
             .correlate(ExamPaperQuestion)
         )
-        kp_rows = (await db.execute(
-            select(
-                ExamPaperQuestion.paper_id,
-                func.sum(case((~kp_exists.exists(), 1), else_=0)),
+        kp_rows = (
+            await db.execute(
+                select(
+                    ExamPaperQuestion.paper_id,
+                    func.sum(case((~kp_exists.exists(), 1), else_=0)),
+                )
+                .where(ExamPaperQuestion.paper_id.in_(representative_ids))
+                .group_by(ExamPaperQuestion.paper_id)
             )
-            .where(ExamPaperQuestion.paper_id.in_(representative_ids))
-            .group_by(ExamPaperQuestion.paper_id)
-        )).all()
-        missing_kp.update({int(paper_id): int(count or 0) for paper_id, count in kp_rows})
+        ).all()
+        missing_kp.update(
+            {int(paper_id): int(count or 0) for paper_id, count in kp_rows}
+        )
 
     result: list[dict] = []
     for year in range(year_from, year_to + 1):
         paper = representatives.get(year)
         if paper is None:
-            result.append({
-                "year": year,
-                "status": "missing",
-                "validation_errors": ["该年份尚无真题选择题试卷记录"],
-                "quality_warnings": [],
-            })
+            result.append(
+                {
+                    "year": year,
+                    "status": "missing",
+                    "validation_errors": ["该年份尚无真题选择题试卷记录"],
+                    "quality_warnings": [],
+                }
+            )
             continue
 
         detail = await admin_exam_service.get_exam_paper_detail(db, int(paper.id))
@@ -263,20 +328,22 @@ async def _exam_year_report(
         else:
             status = "complete"
 
-        result.append({
-            "year": year,
-            "status": status,
-            "paper_id": int(paper.id),
-            "paper_title": paper.title,
-            "paper_status": paper.status,
-            "paper_version": int(paper.version or 1),
-            "question_count": int(detail.get("question_count") or 0),
-            "total_choice_score": float(detail.get("total_choice_score") or 0),
-            "missing_analysis_count": analysis_missing,
-            "missing_knowledge_point_count": kp_missing,
-            "validation_errors": errors,
-            "quality_warnings": warnings,
-        })
+        result.append(
+            {
+                "year": year,
+                "status": status,
+                "paper_id": int(paper.id),
+                "paper_title": paper.title,
+                "paper_status": paper.status,
+                "paper_version": int(paper.version or 1),
+                "question_count": int(detail.get("question_count") or 0),
+                "total_choice_score": float(detail.get("total_choice_score") or 0),
+                "missing_analysis_count": analysis_missing,
+                "missing_knowledge_point_count": kp_missing,
+                "validation_errors": errors,
+                "quality_warnings": warnings,
+            }
+        )
     return result
 
 
@@ -299,19 +366,31 @@ async def build_coverage_report(
         Question.review_status == "approved",
     ]
 
-    aggregate_rows = (await db.execute(
-        select(
-            QuestionKnowledgePoint.knowledge_point_id,
-            func.count(func.distinct(Question.id)).label("total_count"),
-            func.sum(case((Question.difficulty.in_((1, 2)), 1), else_=0)).label("easy_count"),
-            func.sum(case((Question.difficulty == 3, 1), else_=0)).label("medium_count"),
-            func.sum(case((Question.difficulty.in_((4, 5)), 1), else_=0)).label("hard_count"),
-            func.sum(case((_analysis_missing_expr(), 1), else_=0)).label("missing_analysis_count"),
+    aggregate_rows = (
+        await db.execute(
+            select(
+                QuestionKnowledgePoint.knowledge_point_id,
+                func.count(func.distinct(Question.id)).label("total_count"),
+                func.sum(case((Question.difficulty.in_((1, 2)), 1), else_=0)).label(
+                    "easy_count"
+                ),
+                func.sum(case((Question.difficulty == 3, 1), else_=0)).label(
+                    "medium_count"
+                ),
+                func.sum(case((Question.difficulty.in_((4, 5)), 1), else_=0)).label(
+                    "hard_count"
+                ),
+                func.sum(case((_analysis_missing_expr(), 1), else_=0)).label(
+                    "missing_analysis_count"
+                ),
+            )
+            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+            .where(
+                QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids), *scope_conditions
+            )
+            .group_by(QuestionKnowledgePoint.knowledge_point_id)
         )
-        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
-        .where(QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids), *scope_conditions)
-        .group_by(QuestionKnowledgePoint.knowledge_point_id)
-    )).all()
+    ).all()
     aggregates = {
         int(row.knowledge_point_id): {
             "total": int(row.total_count or 0),
@@ -323,43 +402,59 @@ async def build_coverage_report(
         for row in aggregate_rows
     }
 
-    type_rows = (await db.execute(
-        select(QuestionKnowledgePoint.knowledge_point_id, Question.question_type, func.count(Question.id))
-        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
-        .where(QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids), *scope_conditions)
-        .group_by(QuestionKnowledgePoint.knowledge_point_id, Question.question_type)
-    )).all()
+    type_rows = (
+        await db.execute(
+            select(
+                QuestionKnowledgePoint.knowledge_point_id,
+                Question.question_type,
+                func.count(Question.id),
+            )
+            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+            .where(
+                QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids), *scope_conditions
+            )
+            .group_by(QuestionKnowledgePoint.knowledge_point_id, Question.question_type)
+        )
+    ).all()
     type_counts: dict[int, dict[str, int]] = defaultdict(dict)
     for kp_id, question_type, count in type_rows:
         type_counts[int(kp_id)][str(question_type)] = int(count or 0)
 
-    year_rows = (await db.execute(
-        select(QuestionKnowledgePoint.knowledge_point_id, Question.year)
-        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
-        .where(
-            QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
-            *scope_conditions,
-            Question.year.is_not(None),
+    year_rows = (
+        await db.execute(
+            select(QuestionKnowledgePoint.knowledge_point_id, Question.year)
+            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+            .where(
+                QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
+                *scope_conditions,
+                Question.year.is_not(None),
+            )
+            .distinct()
+            .order_by(
+                QuestionKnowledgePoint.knowledge_point_id.asc(), Question.year.desc()
+            )
         )
-        .distinct()
-        .order_by(QuestionKnowledgePoint.knowledge_point_id.asc(), Question.year.desc())
-    )).all()
+    ).all()
     years_by_kp: dict[int, list[int]] = defaultdict(list)
     for kp_id, year in year_rows:
         years_by_kp[int(kp_id)].append(int(year))
 
-    source_rows = (await db.execute(
-        select(QuestionKnowledgePoint.knowledge_point_id, Question.source)
-        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
-        .where(
-            QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
-            *scope_conditions,
-            Question.source.is_not(None),
-            func.length(func.trim(Question.source)) > 0,
+    source_rows = (
+        await db.execute(
+            select(QuestionKnowledgePoint.knowledge_point_id, Question.source)
+            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+            .where(
+                QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
+                *scope_conditions,
+                Question.source.is_not(None),
+                func.length(func.trim(Question.source)) > 0,
+            )
+            .distinct()
+            .order_by(
+                QuestionKnowledgePoint.knowledge_point_id.asc(), Question.source.asc()
+            )
         )
-        .distinct()
-        .order_by(QuestionKnowledgePoint.knowledge_point_id.asc(), Question.source.asc())
-    )).all()
+    ).all()
     sources_by_kp: dict[int, list[str]] = defaultdict(list)
     for kp_id, source in source_rows:
         values = sources_by_kp[int(kp_id)]
@@ -370,83 +465,129 @@ async def build_coverage_report(
     # knowledge snapshot pinned by each paper item. Using the mutable current
     # QuestionKnowledgePoint relation here would make historical coverage drift
     # after administrators edit a question's knowledge-point mapping.
-    exam_type_rows = (await db.execute(
-        select(
-            QuestionVersionKnowledgePoint.knowledge_point_id,
-            ExamPaper.paper_type,
-            func.count(func.distinct(ExamPaperQuestion.question_id)),
+    exam_type_rows = (
+        await db.execute(
+            select(
+                QuestionVersionKnowledgePoint.knowledge_point_id,
+                ExamPaper.paper_type,
+                func.count(func.distinct(ExamPaperQuestion.question_id)),
+            )
+            .select_from(ExamPaperQuestion)
+            .join(ExamPaper, ExamPaper.id == ExamPaperQuestion.paper_id)
+            .join(
+                QuestionVersionKnowledgePoint,
+                QuestionVersionKnowledgePoint.question_version_id
+                == ExamPaperQuestion.question_version_id,
+            )
+            .where(
+                QuestionVersionKnowledgePoint.knowledge_point_id.in_(kp_ids),
+                # Exam coverage is historical paper coverage, not current-bank
+                # availability. The paper item already pins question_version_id, so
+                # mutable Question active/review/current-version state must not make
+                # an already published paper disappear from coverage later.
+                ExamPaper.paper_type.in_(("past_exam_choice", "mock_choice")),
+                ExamPaper.status != "archived",
+            )
+            .group_by(
+                QuestionVersionKnowledgePoint.knowledge_point_id, ExamPaper.paper_type
+            )
         )
-        .select_from(ExamPaperQuestion)
-        .join(ExamPaper, ExamPaper.id == ExamPaperQuestion.paper_id)
-        .join(
-            QuestionVersionKnowledgePoint,
-            QuestionVersionKnowledgePoint.question_version_id == ExamPaperQuestion.question_version_id,
-        )
-        .where(
-            QuestionVersionKnowledgePoint.knowledge_point_id.in_(kp_ids),
-            # Exam coverage is historical paper coverage, not current-bank
-            # availability. The paper item already pins question_version_id, so
-            # mutable Question active/review/current-version state must not make
-            # an already published paper disappear from coverage later.
-            ExamPaper.paper_type.in_(("past_exam_choice", "mock_choice")),
-            ExamPaper.status != "archived",
-        )
-        .group_by(QuestionVersionKnowledgePoint.knowledge_point_id, ExamPaper.paper_type)
-    )).all()
+    ).all()
     past_counts: dict[int, int] = {}
     mock_counts: dict[int, int] = {}
     for kp_id, paper_type, count in exam_type_rows:
         target = past_counts if str(paper_type) == "past_exam_choice" else mock_counts
         target[int(kp_id)] = int(count or 0)
 
-    duplicate_question_ids, duplicate_samples = await _duplicate_groups(db, scope_conditions)
+    duplicate_question_ids, duplicate_samples = await _duplicate_groups(
+        db, scope_conditions
+    )
     duplicate_kp_counts: dict[int, int] = {}
     if duplicate_question_ids:
-        duplicate_rows = (await db.execute(
-            select(QuestionKnowledgePoint.knowledge_point_id, func.count(func.distinct(QuestionKnowledgePoint.question_id)))
-            .where(
-                QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
-                QuestionKnowledgePoint.question_id.in_(duplicate_question_ids),
+        duplicate_rows = (
+            await db.execute(
+                select(
+                    QuestionKnowledgePoint.knowledge_point_id,
+                    func.count(func.distinct(QuestionKnowledgePoint.question_id)),
+                )
+                .where(
+                    QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
+                    QuestionKnowledgePoint.question_id.in_(duplicate_question_ids),
+                )
+                .group_by(QuestionKnowledgePoint.knowledge_point_id)
             )
-            .group_by(QuestionKnowledgePoint.knowledge_point_id)
-        )).all()
-        duplicate_kp_counts = {int(kp_id): int(count or 0) for kp_id, count in duplicate_rows}
+        ).all()
+        duplicate_kp_counts = {
+            int(kp_id): int(count or 0) for kp_id, count in duplicate_rows
+        }
 
-    total_questions = int(await db.scalar(
-        select(func.count(Question.id)).where(*scope_conditions)
-    ) or 0)
-    mapped_qids_stmt = select(QuestionKnowledgePoint.question_id).where(
-        QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids)
-    ).distinct()
-    mapped_questions = int(await db.scalar(
-        select(func.count(Question.id)).where(*scope_conditions, Question.id.in_(mapped_qids_stmt))
-    ) or 0)
+    total_questions = int(
+        await db.scalar(select(func.count(Question.id)).where(*scope_conditions)) or 0
+    )
+    mapped_qids_stmt = (
+        select(QuestionKnowledgePoint.question_id)
+        .where(QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids))
+        .distinct()
+    )
+    mapped_questions = int(
+        await db.scalar(
+            select(func.count(Question.id)).where(
+                *scope_conditions, Question.id.in_(mapped_qids_stmt)
+            )
+        )
+        or 0
+    )
 
-    unmapped_ids = [int(qid) for qid in (await db.scalars(
-        select(Question.id)
-        .where(*scope_conditions, ~Question.id.in_(mapped_qids_stmt))
-        .order_by(Question.id.asc())
-        .limit(_ISSUE_SAMPLE_LIMIT)
-    )).all()]
-    missing_analysis_ids = [int(qid) for qid in (await db.scalars(
-        select(Question.id)
-        .where(*scope_conditions, _analysis_missing_expr())
-        .order_by(Question.id.asc())
-        .limit(_ISSUE_SAMPLE_LIMIT)
-    )).all()]
-    missing_analysis_count = int(await db.scalar(
-        select(func.count(Question.id)).where(*scope_conditions, _analysis_missing_expr())
-    ) or 0)
+    unmapped_ids = [
+        int(qid)
+        for qid in (
+            await db.scalars(
+                select(Question.id)
+                .where(*scope_conditions, ~Question.id.in_(mapped_qids_stmt))
+                .order_by(Question.id.asc())
+                .limit(_ISSUE_SAMPLE_LIMIT)
+            )
+        ).all()
+    ]
+    missing_analysis_ids = [
+        int(qid)
+        for qid in (
+            await db.scalars(
+                select(Question.id)
+                .where(*scope_conditions, _analysis_missing_expr())
+                .order_by(Question.id.asc())
+                .limit(_ISSUE_SAMPLE_LIMIT)
+            )
+        ).all()
+    ]
+    missing_analysis_count = int(
+        await db.scalar(
+            select(func.count(Question.id)).where(
+                *scope_conditions, _analysis_missing_expr()
+            )
+        )
+        or 0
+    )
 
-    unversioned_count = int(await db.scalar(
-        select(func.count(Question.id)).where(*scope_conditions, Question.current_version_id.is_(None))
-    ) or 0)
-    unversioned_ids = [int(qid) for qid in (await db.scalars(
-        select(Question.id)
-        .where(*scope_conditions, Question.current_version_id.is_(None))
-        .order_by(Question.id.asc())
-        .limit(_ISSUE_SAMPLE_LIMIT)
-    )).all()]
+    unversioned_count = int(
+        await db.scalar(
+            select(func.count(Question.id)).where(
+                *scope_conditions, Question.current_version_id.is_(None)
+            )
+        )
+        or 0
+    )
+    unversioned_ids = [
+        int(qid)
+        for qid in (
+            await db.scalars(
+                select(Question.id)
+                .where(*scope_conditions, Question.current_version_id.is_(None))
+                .order_by(Question.id.asc())
+                .limit(_ISSUE_SAMPLE_LIMIT)
+            )
+        ).all()
+    ]
 
     snapshot_problem_stmt = (
         select(Question.id)
@@ -454,8 +595,10 @@ async def build_coverage_report(
         .outerjoin(
             QuestionVersionKnowledgePoint,
             and_(
-                QuestionVersionKnowledgePoint.question_version_id == Question.current_version_id,
-                QuestionVersionKnowledgePoint.knowledge_point_id == QuestionKnowledgePoint.knowledge_point_id,
+                QuestionVersionKnowledgePoint.question_version_id
+                == Question.current_version_id,
+                QuestionVersionKnowledgePoint.knowledge_point_id
+                == QuestionKnowledgePoint.knowledge_point_id,
             ),
         )
         .where(
@@ -469,18 +612,30 @@ async def build_coverage_report(
         )
         .distinct()
     )
-    snapshot_missing_count = int(await db.scalar(
-        select(func.count()).select_from(snapshot_problem_stmt.subquery())
-    ) or 0)
-    snapshot_missing_ids = [int(qid) for qid in (await db.scalars(
-        snapshot_problem_stmt.order_by(Question.id.asc()).limit(_ISSUE_SAMPLE_LIMIT)
-    )).all()]
+    snapshot_missing_count = int(
+        await db.scalar(
+            select(func.count()).select_from(snapshot_problem_stmt.subquery())
+        )
+        or 0
+    )
+    snapshot_missing_ids = [
+        int(qid)
+        for qid in (
+            await db.scalars(
+                snapshot_problem_stmt.order_by(Question.id.asc()).limit(
+                    _ISSUE_SAMPLE_LIMIT
+                )
+            )
+        ).all()
+    ]
 
-    image_rows = (await db.execute(
-        select(Question.id, Question.content, Question.options, Question.image_url)
-        .where(*scope_conditions)
-        .order_by(Question.id.asc())
-    )).all()
+    image_rows = (
+        await db.execute(
+            select(Question.id, Question.content, Question.options, Question.image_url)
+            .where(*scope_conditions)
+            .order_by(Question.id.asc())
+        )
+    ).all()
     image_anomaly_ids_all = [
         int(question_id)
         for question_id, content, options, image_url in image_rows
@@ -490,7 +645,10 @@ async def build_coverage_report(
     items: list[dict] = []
     for member, subject in members:
         kp_id = int(member.knowledge_point_id)
-        stats = aggregates.get(kp_id, {"total": 0, "easy": 0, "medium": 0, "hard": 0, "missing_analysis": 0})
+        stats = aggregates.get(
+            kp_id,
+            {"total": 0, "easy": 0, "medium": 0, "hard": 0, "missing_analysis": 0},
+        )
         issues: list[str] = []
         total = int(stats["total"])
         if total == 0:
@@ -512,44 +670,50 @@ async def build_coverage_report(
         if duplicate_kp_counts.get(kp_id, 0) > 0:
             issues.append(f"{duplicate_kp_counts[kp_id]} 道题命中重复 hash")
 
-        items.append({
-            "syllabus_knowledge_point_id": int(member.id),
-            "knowledge_point_id": kp_id,
-            "subject_id": int(member.subject_id),
-            "subject_code": subject.code,
-            "subject_name": subject.name,
-            "name": member.name_snapshot,
-            "total_question_count": total,
-            "past_exam_choice_count": int(past_counts.get(kp_id, 0)),
-            "mock_choice_count": int(mock_counts.get(kp_id, 0)),
-            "difficulty_easy_count": int(stats["easy"]),
-            "difficulty_medium_count": int(stats["medium"]),
-            "difficulty_hard_count": int(stats["hard"]),
-            "question_type_counts": type_counts.get(kp_id, {}),
-            "years": years_by_kp.get(kp_id, []),
-            "sources": sources_by_kp.get(kp_id, []),
-            "missing_analysis_count": int(stats["missing_analysis"]),
-            "duplicate_suspect_count": int(duplicate_kp_counts.get(kp_id, 0)),
-            "status": status,
-            "issues": issues,
-        })
+        items.append(
+            {
+                "syllabus_knowledge_point_id": int(member.id),
+                "knowledge_point_id": kp_id,
+                "subject_id": int(member.subject_id),
+                "subject_code": subject.code,
+                "subject_name": subject.name,
+                "name": member.name_snapshot,
+                "total_question_count": total,
+                "past_exam_choice_count": int(past_counts.get(kp_id, 0)),
+                "mock_choice_count": int(mock_counts.get(kp_id, 0)),
+                "difficulty_easy_count": int(stats["easy"]),
+                "difficulty_medium_count": int(stats["medium"]),
+                "difficulty_hard_count": int(stats["hard"]),
+                "question_type_counts": type_counts.get(kp_id, {}),
+                "years": years_by_kp.get(kp_id, []),
+                "sources": sources_by_kp.get(kp_id, []),
+                "missing_analysis_count": int(stats["missing_analysis"]),
+                "duplicate_suspect_count": int(duplicate_kp_counts.get(kp_id, 0)),
+                "status": status,
+                "issues": issues,
+            }
+        )
 
     status_rank = {"empty": 0, "insufficient": 1, "imbalanced": 2, "healthy": 3}
-    items.sort(key=lambda item: (
-        status_rank[item["status"]],
-        int(item["total_question_count"]),
-        str(item["subject_code"]),
-        str(item["name"]),
-    ))
+    items.sort(
+        key=lambda item: (
+            status_rank[item["status"]],
+            int(item["total_question_count"]),
+            str(item["subject_code"]),
+            str(item["name"]),
+        )
+    )
 
     status_counts = defaultdict(int)
     for item in items:
         status_counts[item["status"]] += 1
 
-    knowledge_graph_quality = await recommendation_quality_service.build_knowledge_quality_report(
-        db,
-        subject_id=subject_id,
-        knowledge_point_ids=kp_ids,
+    knowledge_graph_quality = (
+        await recommendation_quality_service.build_knowledge_quality_report(
+            db,
+            subject_id=subject_id,
+            knowledge_point_ids=kp_ids,
+        )
     )
     exam_years = await _exam_year_report(db, year_from=year_from, year_to=year_to)
 
@@ -581,7 +745,9 @@ async def build_coverage_report(
         "quality_issues": {
             "unmapped_question_ids": unmapped_ids,
             "missing_analysis_question_ids": missing_analysis_ids,
-            "image_reference_anomaly_question_ids": image_anomaly_ids_all[:_ISSUE_SAMPLE_LIMIT],
+            "image_reference_anomaly_question_ids": image_anomaly_ids_all[
+                :_ISSUE_SAMPLE_LIMIT
+            ],
             "unversioned_question_ids": unversioned_ids,
             "syllabus_snapshot_missing_question_ids": snapshot_missing_ids,
             "duplicate_groups": duplicate_samples,

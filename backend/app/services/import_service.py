@@ -61,21 +61,43 @@ def _parse_excel(content: bytes, filename: str) -> list[dict]:
 def _raw_to_parsed(raw: dict) -> dict:
     """将原始行数据转为结构化字段，尽量智能映射"""
     SUBJECT_MAP = {
-        "数学二": "math2", "数学": "math2", "math2": "math2",
-        "高等数学": "math2-calculus", "高数": "math2-calculus",
-        "线性代数": "math2-linalg", "线代": "math2-linalg",
-        "408": "exam408", "计算机": "exam408", "exam408": "exam408",
-        "数据结构": "data_structure", "data_structure": "data_structure",
-        "操作系统": "operating_system", "operating_system": "operating_system",
-        "计算机组成": "computer_organization", "组成原理": "computer_organization", "computer_organization": "computer_organization",
-        "计算机网络": "computer_network", "网络": "computer_network", "computer_network": "computer_network",
-        "英语": "english", "英语二": "english", "english": "english",
+        "数学二": "math2",
+        "数学": "math2",
+        "math2": "math2",
+        "高等数学": "math2-calculus",
+        "高数": "math2-calculus",
+        "线性代数": "math2-linalg",
+        "线代": "math2-linalg",
+        "408": "exam408",
+        "计算机": "exam408",
+        "exam408": "exam408",
+        "数据结构": "data_structure",
+        "data_structure": "data_structure",
+        "操作系统": "operating_system",
+        "operating_system": "operating_system",
+        "计算机组成": "computer_organization",
+        "组成原理": "computer_organization",
+        "computer_organization": "computer_organization",
+        "计算机网络": "computer_network",
+        "网络": "computer_network",
+        "computer_network": "computer_network",
+        "英语": "english",
+        "英语二": "english",
+        "english": "english",
     }
     TYPE_MAP = {
-        "选择": "single_choice", "选择题": "single_choice", "单选": "single_choice", "choice": "single_choice",
-        "填空": "fill_blank", "填空题": "fill_blank", "fill": "fill_blank",
-        "主观": "subjective", "主观题": "subjective", "简答": "subjective",
-        "简答题": "subjective", "subjective": "subjective",
+        "选择": "single_choice",
+        "选择题": "single_choice",
+        "单选": "single_choice",
+        "choice": "single_choice",
+        "填空": "fill_blank",
+        "填空题": "fill_blank",
+        "fill": "fill_blank",
+        "主观": "subjective",
+        "主观题": "subjective",
+        "简答": "subjective",
+        "简答题": "subjective",
+        "subjective": "subjective",
     }
 
     subject = raw.get("subject", "")
@@ -126,11 +148,20 @@ def _raw_to_parsed(raw: dict) -> dict:
     difficulty = max(1, min(5, difficulty))
 
     return {
-        "subject": subject if subject in (
-            "math2", "math2-calculus", "math2-linalg",
-            "exam408", "data_structure", "operating_system", "computer_organization", "computer_network",
+        "subject": subject
+        if subject
+        in (
+            "math2",
+            "math2-calculus",
+            "math2-linalg",
+            "exam408",
+            "data_structure",
+            "operating_system",
+            "computer_organization",
+            "computer_network",
             "english",
-        ) else None,
+        )
+        else None,
         "question_type": qtype,
         "parsed_content": content,
         "parsed_options": options,
@@ -145,43 +176,136 @@ def _guess_subject(text: str) -> str | None:
     """根据 PDF 文本内容关键词猜测科目（含子科目）"""
     text_lower = text.lower()
     scores: dict[str, int] = {
-        "data_structure": 0, "operating_system": 0, "computer_organization": 0, "computer_network": 0,
-        "math2-calculus": 0, "math2-linalg": 0,
+        "data_structure": 0,
+        "operating_system": 0,
+        "computer_organization": 0,
+        "computer_network": 0,
+        "math2-calculus": 0,
+        "math2-linalg": 0,
         "english": 0,
     }
     keywords = {
         "data_structure": [
-            "数据结构", "链表", "栈", "队列", "二叉树", "红黑树", "b树", "avl",
-            "排序", "查找", "图论", "dfs", "bfs", "最短路", "最小生成树",
-            "哈希表", "散列", "堆", "优先队列",
+            "数据结构",
+            "链表",
+            "栈",
+            "队列",
+            "二叉树",
+            "红黑树",
+            "b树",
+            "avl",
+            "排序",
+            "查找",
+            "图论",
+            "dfs",
+            "bfs",
+            "最短路",
+            "最小生成树",
+            "哈希表",
+            "散列",
+            "堆",
+            "优先队列",
         ],
         "operating_system": [
-            "操作系统", "进程", "线程", "死锁", "调度", "内存管理", "虚拟内存",
-            "分页", "分段", "文件系统", "i/o", "中断", "信号量", "互斥",
-            "页面置换", "缺页",
+            "操作系统",
+            "进程",
+            "线程",
+            "死锁",
+            "调度",
+            "内存管理",
+            "虚拟内存",
+            "分页",
+            "分段",
+            "文件系统",
+            "i/o",
+            "中断",
+            "信号量",
+            "互斥",
+            "页面置换",
+            "缺页",
         ],
         "computer_organization": [
-            "计算机组成", "指令系统", "cpu", "alu", "cache", "存储器", "dma",
-            "总线", "寻址", "流水线", "ieee 754", "浮点", "定点", "补码",
+            "计算机组成",
+            "指令系统",
+            "cpu",
+            "alu",
+            "cache",
+            "存储器",
+            "dma",
+            "总线",
+            "寻址",
+            "流水线",
+            "ieee 754",
+            "浮点",
+            "定点",
+            "补码",
         ],
         "computer_network": [
-            "计算机网络", "tcp", "ip", "http", "udp", "路由", "交换",
-            "dns", "nat", "arp", "以太网", "局域网", "csma", "帧",
-            "网络层", "传输层", "应用层", "拥塞控制",
+            "计算机网络",
+            "tcp",
+            "ip",
+            "http",
+            "udp",
+            "路由",
+            "交换",
+            "dns",
+            "nat",
+            "arp",
+            "以太网",
+            "局域网",
+            "csma",
+            "帧",
+            "网络层",
+            "传输层",
+            "应用层",
+            "拥塞控制",
         ],
         "math2-calculus": [
-            "极限", "导数", "积分", "微分方程", "级数", "泰勒", "麦克劳林",
-            "偏导", "多元函数", "曲线积分", "曲面积分", "不定积分", "定积分",
-            "连续", "可导", "极值", "拐点", "渐近线",
+            "极限",
+            "导数",
+            "积分",
+            "微分方程",
+            "级数",
+            "泰勒",
+            "麦克劳林",
+            "偏导",
+            "多元函数",
+            "曲线积分",
+            "曲面积分",
+            "不定积分",
+            "定积分",
+            "连续",
+            "可导",
+            "极值",
+            "拐点",
+            "渐近线",
         ],
         "math2-linalg": [
-            "矩阵", "行列式", "向量", "线性方程组", "特征值", "特征向量",
-            "二次型", "正定", "正交", "秩", "线性相关", "线性无关", "基",
-            "子空间", "相似矩阵",
+            "矩阵",
+            "行列式",
+            "向量",
+            "线性方程组",
+            "特征值",
+            "特征向量",
+            "二次型",
+            "正定",
+            "正交",
+            "秩",
+            "线性相关",
+            "线性无关",
+            "基",
+            "子空间",
+            "相似矩阵",
         ],
         "english": [
-            "reading comprehension", "passage", "paragraph", "translate",
-            "完形填空", "阅读理解", "写作", "according to the passage",
+            "reading comprehension",
+            "passage",
+            "paragraph",
+            "translate",
+            "完形填空",
+            "阅读理解",
+            "写作",
+            "according to the passage",
         ],
     }
     for subj, words in keywords.items():
@@ -195,9 +319,12 @@ def _guess_subject(text: str) -> str | None:
 
     # 子科目得分不足时，退化到父科目
     parent_map = {
-        "data_structure": "exam408", "operating_system": "exam408",
-        "computer_organization": "exam408", "computer_network": "exam408",
-        "math2-calculus": "math2", "math2-linalg": "math2",
+        "data_structure": "exam408",
+        "operating_system": "exam408",
+        "computer_organization": "exam408",
+        "computer_network": "exam408",
+        "math2-calculus": "math2",
+        "math2-linalg": "math2",
     }
     return best if scores[best] >= 3 else parent_map.get(best, best)
 
@@ -249,16 +376,16 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
 
     # 按题号切分：支持 "1." / "1、" / "1)" / "1 . " 等格式
     # OCR 或某些字体渲染会在数字与标点间插空格，所以允许 \s*
-    blocks = re.split(r'\n\s*(?=\d+\s*[.、)）])', text)
+    blocks = re.split(r"\n\s*(?=\d+\s*[.、)）])", text)
     blocks = [b.strip() for b in blocks if len(b.strip()) > 20]
 
     # 答案区识别：冒号必须存在，行首严格匹配，不允许在解析区再次触发
-    _ANSWER_RE = re.compile(r'^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:](.*)$')
-    _ANALYSIS_RE = re.compile(r'^(?:【)?(?:解析|解答)(?:】)?\s*[：:](.*)')
+    _ANSWER_RE = re.compile(r"^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:](.*)$")
+    _ANALYSIS_RE = re.compile(r"^(?:【)?(?:解析|解答)(?:】)?\s*[：:](.*)")
 
     def _stem_key(line: str) -> str:
-        k = re.sub(r'^\d+\s*[.、)）]\s*', '', line).strip()
-        return re.sub(r'\s+', ' ', k)
+        k = re.sub(r"^\d+\s*[.、)）]\s*", "", line).strip()
+        return re.sub(r"\s+", " ", k)
 
     results = []
     for block in blocks:
@@ -278,7 +405,7 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
                 continue
 
             # 识别选项行：A. xxx / A: xxx（容忍空格）
-            opt_match = re.match(r'^([A-D])\s*[.、:]\s*(.*)', line)
+            opt_match = re.match(r"^([A-D])\s*[.、:]\s*(.*)", line)
             if opt_match and section in ("stem", "options"):
                 key = opt_match.group(1)
                 if key not in options:
@@ -316,15 +443,21 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
         stem = "\n".join(stem_lines)
 
         # 清理题干前缀：去掉 "1." "1、" "1)" "1 ." 等编号和 "(单选题)" 等题型标记
-        stem = re.sub(r'^\d+\s*[.、)）]\s*', '', stem)
-        stem = re.sub(r'^[（(]\s*(单选|多选|选择|填空|判断|简答|论述|计算)题?[）)]\s*', '', stem)
+        stem = re.sub(r"^\d+\s*[.、)）]\s*", "", stem)
+        stem = re.sub(
+            r"^[（(]\s*(单选|多选|选择|填空|判断|简答|论述|计算)题?[）)]\s*", "", stem
+        )
         stem = stem.strip()
 
         # 仅当有题干时才保留
         if len(stem) < 5:
             continue
 
-        options_str = "\\n".join(f"{k}:{v}" for k, v in sorted(options.items())) if options else ""
+        options_str = (
+            "\\n".join(f"{k}:{v}" for k, v in sorted(options.items()))
+            if options
+            else ""
+        )
 
         raw = {
             "subject": guessed_subject,
@@ -352,7 +485,9 @@ async def import_excel(
     if not raw_rows:
         raise ValueError("Excel 文件为空或格式不正确")
 
-    batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
 
     for row in raw_rows:
         parsed = _raw_to_parsed(row)
@@ -362,10 +497,19 @@ async def import_excel(
             source_file=filename,
             raw_data=row,
             status="pending",
-            **{k: v for k, v in parsed.items() if k in (
-                "subject", "question_type", "parsed_content",
-                "parsed_options", "parsed_answer", "parsed_analysis",
-            )},
+            **{
+                k: v
+                for k, v in parsed.items()
+                if k
+                in (
+                    "subject",
+                    "question_type",
+                    "parsed_content",
+                    "parsed_options",
+                    "parsed_answer",
+                    "parsed_analysis",
+                )
+            },
         )
         db.add(qi)
 
@@ -398,7 +542,9 @@ async def import_pdf(
         os.unlink(tmp_path)
         raise
 
-    batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
 
     for row in raw_rows:
         parsed = _raw_to_parsed(row)
@@ -408,10 +554,19 @@ async def import_pdf(
             source_file=filename,
             raw_data=row,
             status="pending",
-            **{k: v for k, v in parsed.items() if k in (
-                "subject", "question_type", "parsed_content",
-                "parsed_options", "parsed_answer", "parsed_analysis",
-            )},
+            **{
+                k: v
+                for k, v in parsed.items()
+                if k
+                in (
+                    "subject",
+                    "question_type",
+                    "parsed_content",
+                    "parsed_options",
+                    "parsed_answer",
+                    "parsed_analysis",
+                )
+            },
         )
         db.add(qi)
 
@@ -461,7 +616,9 @@ async def _run_math_pipeline(batch_id: str, tmp_pdf_path: str) -> None:
                     if not regions:
                         continue
 
-                    regions = await crop_and_upload(doc, regions, storage, import_id=qi.id)
+                    regions = await crop_and_upload(
+                        doc, regions, storage, import_id=qi.id
+                    )
                     content = build_content(
                         text=(qi.parsed_content or {}).get("text", ""),
                         regions=regions,
@@ -505,6 +662,7 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
     if not subject_id and data.get("subject"):
         # Legacy subject string → resolve to subject_id
         from app.services.admin_subject_service import resolve_subject_id
+
         subject_id = await resolve_subject_id(db, data["subject"])
     question_type = data.get("question_type", qi.question_type)
     content = data.get("parsed_content", qi.parsed_content)
@@ -529,6 +687,7 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
         difficulty = ai_diff
 
     from app.utils.question_content import extract_image_urls_from_content
+
     image_urls = extract_image_urls_from_content(content)
 
     q = Question(
@@ -561,7 +720,9 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
         await sync_question_knowledge_points(db, q, knowledge_points, source="imported")
     from app.services.question_revision_service import ensure_question_revision
 
-    await ensure_question_revision(db, q, change_source="import_service", edit_reason="initial publish")
+    await ensure_question_revision(
+        db, q, change_source="import_service", edit_reason="initial publish"
+    )
     await db.refresh(q)
 
     qi.status = "approved"
@@ -615,6 +776,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
             skipped[qi.id] = missing
             continue
         from app.utils.question_content import extract_image_urls_from_content
+
         image_urls = extract_image_urls_from_content(qi.parsed_content)
         q = Question(
             subject_id=qi.subject_id,
@@ -652,7 +814,9 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
             await sync_question_knowledge_points(db, q, kp_names, source="imported")
         from app.services.question_revision_service import ensure_question_revision
 
-        await ensure_question_revision(db, q, change_source="import_service", edit_reason="initial publish")
+        await ensure_question_revision(
+            db, q, change_source="import_service", edit_reason="initial publish"
+        )
         await db.refresh(q)
 
         qi.status = "approved"
@@ -667,8 +831,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
             f"#{qid} 缺{'、'.join(fields)}" for qid, fields in skipped.items()
         )
         raise ValueError(
-            f"批量审批未通过任何题目（{len(skipped)} 道缺少必填字段）。"
-            f"详情：{details}"
+            f"批量审批未通过任何题目（{len(skipped)} 道缺少必填字段）。详情：{details}"
         )
     return count, len(skipped)
 
@@ -702,15 +865,15 @@ async def list_batches(db: AsyncSession) -> list[dict]:
             QuestionImport.source_type,
             QuestionImport.source_file,
             func.count(QuestionImport.id).label("total"),
-            func.sum(
-                case((QuestionImport.status == "pending", 1), else_=0)
-            ).label("pending"),
-            func.sum(
-                case((QuestionImport.status == "approved", 1), else_=0)
-            ).label("approved"),
-            func.sum(
-                case((QuestionImport.status == "rejected", 1), else_=0)
-            ).label("rejected"),
+            func.sum(case((QuestionImport.status == "pending", 1), else_=0)).label(
+                "pending"
+            ),
+            func.sum(case((QuestionImport.status == "approved", 1), else_=0)).label(
+                "approved"
+            ),
+            func.sum(case((QuestionImport.status == "rejected", 1), else_=0)).label(
+                "rejected"
+            ),
             func.max(QuestionImport.created_at).label("created_at"),
         )
         .group_by(
@@ -744,17 +907,30 @@ def generate_template() -> bytes:
     ws.title = "导入模板"
 
     headers = [
-        "subject", "question_type", "stem", "options",
-        "answer", "explanation", "difficulty", "tags",
+        "subject",
+        "question_type",
+        "stem",
+        "options",
+        "answer",
+        "explanation",
+        "difficulty",
+        "tags",
     ]
     ws.append(headers)
 
     # 示例数据
-    ws.append([
-        "math2", QT_SINGLE_CHOICE, "设函数 $f(x)=x^2+1$，求 $f'(x)$。",
-        "A:$2x$\\nB:$x^2$\\nC:$2x+1$\\nD:$x$",
-        "A", "根据求导公式，$(x^2+1)'=2x$。", "2", "导数,求导公式",
-    ])
+    ws.append(
+        [
+            "math2",
+            QT_SINGLE_CHOICE,
+            "设函数 $f(x)=x^2+1$，求 $f'(x)$。",
+            "A:$2x$\\nB:$x^2$\\nC:$2x+1$\\nD:$x$",
+            "A",
+            "根据求导公式，$(x^2+1)'=2x$。",
+            "2",
+            "导数,求导公式",
+        ]
+    )
 
     # 设置列宽
     col_widths = [12, 14, 40, 50, 10, 40, 10, 25]
@@ -767,9 +943,7 @@ def generate_template() -> bytes:
     return buf.getvalue()
 
 
-async def get_batch_detail(
-    db: AsyncSession, batch_id: str
-) -> list[QuestionImport]:
+async def get_batch_detail(db: AsyncSession, batch_id: str) -> list[QuestionImport]:
     result = await db.execute(
         select(QuestionImport)
         .where(QuestionImport.batch_id == batch_id)

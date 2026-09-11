@@ -1,4 +1,5 @@
 """Legacy re-export — use ``app.core.resource_guard`` instead."""
+
 from app.core.resource_guard import (  # noqa: F401
     ARTIFACT_SIZE_LIMIT_EXCEEDED,
     CONCURRENCY_LIMIT_EXCEEDED,

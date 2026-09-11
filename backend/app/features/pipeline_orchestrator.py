@@ -103,6 +103,7 @@ def _get_structure_freeze_mode() -> str:
     """Return the effective structure freeze mode, preferring settings."""
     try:
         from app.core.config import settings
+
         return settings.STRUCTURE_FREEZE_MODE or _STRUCTURE_FREEZE_MODE
     except (ImportError, AttributeError):
         return _STRUCTURE_FREEZE_MODE
@@ -120,6 +121,7 @@ def _get_domain_quality_gate_mode() -> str:
     """Return the effective quality gate mode, preferring settings."""
     try:
         from app.core.config import settings
+
         return settings.DOMAIN_QUALITY_GATE_MODE or _DOMAIN_QUALITY_GATE_MODE
     except (ImportError, AttributeError):
         return _DOMAIN_QUALITY_GATE_MODE
@@ -135,6 +137,7 @@ def _validate_quality_gate_mode(mode: str) -> str:
     if mode == "enforce":
         try:
             from app.core.config import settings
+
             if not settings.QUALITY_GATE_ENFORCE_ENABLED:
                 raise RuntimeError(
                     "DOMAIN_QUALITY_GATE_MODE=enforce is not allowed without "
@@ -257,11 +260,13 @@ def _apply_frozen_options(
                 logger.warning(
                     "[FREEZE] checksum MISMATCH in _apply_frozen_options: "
                     "expected=%s actual=%s — frozen data may have been modified!",
-                    freeze_checksum, _actual,
+                    freeze_checksum,
+                    _actual,
                 )
         except Exception as exc:
             logger.warning(
-                "[FREEZE] checksum verification failed: %s", exc,
+                "[FREEZE] checksum verification failed: %s",
+                exc,
             )
 
     # ── Build block text index: {page: {block_index: text}} ──
@@ -321,7 +326,8 @@ def _apply_frozen_options(
             applied_count += 1
             logger.debug(
                 "[FREEZE] applied frozen options to q%s (page %s, blocks=%s): %s",
-                q.get("number", "?"), q_page_start,
+                q.get("number", "?"),
+                q_page_start,
                 sorted(question_block_keys),
                 sorted(frozen_matches.keys()),
             )
@@ -331,7 +337,8 @@ def _apply_frozen_options(
     if applied_count:
         logger.info(
             "[FREEZE] applied frozen options to %d/%d questions",
-            applied_count, len(raw_questions),
+            applied_count,
+            len(raw_questions),
         )
     elif raw_questions:
         logger.info(
@@ -404,19 +411,23 @@ def _compare_freeze_results(
 
     differences: list[dict] = []
     for key, text in sorted(only_legacy):
-        differences.append({
-            "type": "only_in_legacy",
-            "option_key": key,
-            "legacy_text": text,
-            "ir_text": "",
-        })
+        differences.append(
+            {
+                "type": "only_in_legacy",
+                "option_key": key,
+                "legacy_text": text,
+                "ir_text": "",
+            }
+        )
     for key, text in sorted(only_ir):
-        differences.append({
-            "type": "only_in_ir",
-            "option_key": key,
-            "ir_text": text,
-            "legacy_text": "",
-        })
+        differences.append(
+            {
+                "type": "only_in_ir",
+                "option_key": key,
+                "ir_text": text,
+                "legacy_text": "",
+            }
+        )
 
     # ── Text mismatch for shared keys ──
     legacy_by_key: dict[str, str] = {}
@@ -432,12 +443,14 @@ def _compare_freeze_results(
         it = ir_by_key[k].strip()
         if lt != it:
             text_mismatches += 1
-            differences.append({
-                "type": "text_mismatch",
-                "option_key": k,
-                "legacy_text": lt,
-                "ir_text": it,
-            })
+            differences.append(
+                {
+                    "type": "text_mismatch",
+                    "option_key": k,
+                    "legacy_text": lt,
+                    "ir_text": it,
+                }
+            )
 
     option_key_match = len(only_legacy) == 0 and len(only_ir) == 0
     option_text_match = text_mismatches == 0
@@ -467,6 +480,7 @@ def _safe_hash_preview(data: list[dict]) -> dict:
     """Return a safe (hash + count) summary instead of raw question text."""
     import hashlib
     import json
+
     raw = json.dumps(data, sort_keys=True, ensure_ascii=False, default=str)
     return {
         "count": len(data),
@@ -477,12 +491,14 @@ def _safe_hash_preview(data: list[dict]) -> dict:
 def _safe_text_digest(text: str, max_len: int = 16) -> str:
     """Return a short hash digest instead of raw OCR text."""
     import hashlib
+
     return hashlib.md5(text.encode()).hexdigest()[:max_len]
 
 
 def _safe_text_summary(text: str) -> dict:
     """Return a safe summary of text (hash + metrics), never the text itself."""
     import hashlib
+
     return {
         "len": len(text),
         "nonempty_lines": len([l for l in text.splitlines() if l.strip()]),
@@ -506,7 +522,11 @@ def _remap_frozen_registry_vl_rebuild(
         - ``binding_lost_option_keys``: list[tuple(str,str)] of (qkey, opt_key) with loss
     """
     if not old_registry:
-        return {"registry": {}, "binding_lost_questions": [], "binding_lost_option_keys": []}
+        return {
+            "registry": {},
+            "binding_lost_questions": [],
+            "binding_lost_option_keys": [],
+        }
 
     # Build a text index of rebuilt blocks: option_key → texts found in block
     rebuilt_texts: dict[str, list[str]] = {}
@@ -551,7 +571,10 @@ def _remap_frozen_registry_vl_rebuild(
             # FrozenOptionEntry format
             new_entries = list(entries)
             for entry in new_entries:
-                if hasattr(entry, 'binding_status') and getattr(entry, 'binding_status', '') == 'binding_lost':
+                if (
+                    hasattr(entry, "binding_status")
+                    and getattr(entry, "binding_status", "") == "binding_lost"
+                ):
                     binding_lost_questions.append(question_key)
             new_registry[question_key] = new_entries
         else:
@@ -603,12 +626,17 @@ def _merge_cross_page_blocks(
         if hasattr(doc_ir, "cross_page_links"):
             doc_ir.cross_page_links = cross_page_links
 
-        merged_blocks, merge_results = _apply_cross_page_block_merge(blocks, links, doc_ir)
+        merged_blocks, merge_results = _apply_cross_page_block_merge(
+            blocks, links, doc_ir
+        )
 
         logger.info(
             "[CROSS-PAGE] detected %d links, merged across %d pages",
             len(links),
-            len(set(l.source_page_id for l in links) | set(l.target_page_id for l in links)),
+            len(
+                set(l.source_page_id for l in links)
+                | set(l.target_page_id for l in links)
+            ),
         )
         return merged_blocks, cross_page_links, warnings, merge_results
 
@@ -678,7 +706,9 @@ def _apply_cross_page_block_merge(
                 if block_revision >= link_idx + 1:
                     logger.debug(
                         "[CROSS-PAGE] skip idempotent merge %s (rev=%d >= %d)",
-                        link_id, block_revision, link_idx + 1,
+                        link_id,
+                        block_revision,
+                        link_idx + 1,
                     )
                     break
 
@@ -700,7 +730,8 @@ def _apply_cross_page_block_merge(
                 source_region_ids: list[str] = []
                 if hasattr(doc_ir.pages[source_idx], "regions"):
                     source_region_ids = [
-                        getattr(r, "region_id", "") for r in doc_ir.pages[source_idx].regions
+                        getattr(r, "region_id", "")
+                        for r in doc_ir.pages[source_idx].regions
                     ]
                 merge_result = CrossPageMergeResult(
                     merged_block_id=f"{link.source_page_id}:block_{source_page_num}",
@@ -715,15 +746,19 @@ def _apply_cross_page_block_merge(
                 merge_results.append(merge_result)
                 logger.debug(
                     "[CROSS-PAGE] merged %s → p%d (rev=%d, conf=%.2f, reasons=%s)",
-                    link_id, source_page_num, link_idx + 1,
-                    link.confidence, link.reason_codes,
+                    link_id,
+                    source_page_num,
+                    link_idx + 1,
+                    link.confidence,
+                    link.reason_codes,
                 )
                 break
 
     if merged_pages:
         logger.info(
             "[CROSS-PAGE] merged content into pages %s (%d merge results)",
-            sorted(merged_pages), len(merge_results),
+            sorted(merged_pages),
+            len(merge_results),
         )
 
     return merged, [r.to_dict() for r in merge_results]
@@ -842,8 +877,11 @@ async def _write_stage_checkpoint(
     # Strip large fields to keep checkpoint lightweight
     if "stage_statuses" in ckpt and ckpt["stage_statuses"]:
         ckpt["stage_statuses"] = {
-            k: {"status": v.get("status"), "duration_ms": v.get("duration_ms"),
-                "error": v.get("error")}
+            k: {
+                "status": v.get("status"),
+                "duration_ms": v.get("duration_ms"),
+                "error": v.get("error"),
+            }
             for k, v in ckpt["stage_statuses"].items()
             if isinstance(v, dict)
         }
@@ -851,6 +889,7 @@ async def _write_stage_checkpoint(
     _prune_stage_checkpoints()
     try:
         from app.core.cache import cache
+
         await cache.set(
             f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}",
             ckpt,
@@ -866,6 +905,7 @@ async def _get_stage_checkpoint(pipeline_id: str) -> dict | None:
         return _pipeline_stage_checkpoints[pipeline_id]
     try:
         from app.core.cache import cache
+
         data = await cache.get(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
         if data:
             _pipeline_stage_checkpoints[pipeline_id] = data
@@ -881,6 +921,7 @@ async def _clear_stage_checkpoint(pipeline_id: str) -> None:
     _pipeline_stage_checkpoints.pop(pipeline_id, None)
     try:
         from app.core.cache import cache
+
         await cache.delete(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
     except Exception:
         pass
@@ -892,8 +933,11 @@ def _slim_ocr_diagnostics(diag: dict) -> dict:
         return diag
     corrections = diag.get("corrections", [])
     if len(corrections) > 50:
-        diag = {**diag, "corrections": corrections[:50],
-                "corrections_truncated": len(corrections) - 50}
+        diag = {
+            **diag,
+            "corrections": corrections[:50],
+            "corrections_truncated": len(corrections) - 50,
+        }
     return diag
 
 
@@ -905,7 +949,9 @@ def _slim_value(value: Any) -> Any:
 def _summarize_ocr_diffs(corrections: list[dict]) -> dict:
     """Summarize OCR correction diffs for diagnostics stage_diffs."""
     corrected = [c for c in corrections if c.get("corrected")]
-    rejected = [c for c in corrections if c.get("reason", "").startswith("safety_rejected")]
+    rejected = [
+        c for c in corrections if c.get("reason", "").startswith("safety_rejected")
+    ]
     all_safety = [c["safety"] for c in corrections if c.get("safety")]
     return {
         "total_corrected": len(corrected),
@@ -932,6 +978,7 @@ async def _set_pipeline_diagnostics(pipeline_id: str, diagnostics: dict) -> None
     _prune_diagnostics_store()
     try:
         from app.core.cache import cache
+
         await cache.set(
             f"{_PIPELINE_DIAGNOSTICS_REDIS_PREFIX}:{pipeline_id}",
             diagnostics,
@@ -946,6 +993,7 @@ async def _get_pipeline_diagnostics(pipeline_id: str) -> dict | None:
         return _pipeline_diagnostics_store[pipeline_id]
     try:
         from app.core.cache import cache
+
         data = await cache.get(f"{_PIPELINE_DIAGNOSTICS_REDIS_PREFIX}:{pipeline_id}")
         if data:
             _pipeline_diagnostics_store[pipeline_id] = data
@@ -972,8 +1020,11 @@ async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
     _prune_store()
     try:
         from app.core.cache import cache
+
         await cache.set(
-            f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}", slim, ttl=_PIPELINE_STATUS_TTL,
+            f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}",
+            slim,
+            ttl=_PIPELINE_STATUS_TTL,
         )
     except Exception:
         pass
@@ -990,6 +1041,7 @@ async def _get_pipeline_store(pipeline_id: str) -> dict | None:
         return _pipeline_store[pipeline_id]
     try:
         from app.core.cache import cache
+
         data = await cache.get(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}")
         if data:
             _pipeline_store[pipeline_id] = data
@@ -998,8 +1050,6 @@ async def _get_pipeline_store(pipeline_id: str) -> dict | None:
     except Exception:
         pass
     return None
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1047,11 +1097,13 @@ def _extract_pdf_blocks(
         for i in range(start_idx, end_idx):
             text = doc[i].get_text()
             if text.strip():
-                blocks.append({
-                    "page": i + 1,
-                    "block_index": len(blocks),
-                    "text": text.strip(),
-                })
+                blocks.append(
+                    {
+                        "page": i + 1,
+                        "block_index": len(blocks),
+                        "text": text.strip(),
+                    }
+                )
     finally:
         doc.close()
 
@@ -1083,7 +1135,11 @@ def _render_page_images(
     try:
         import fitz
 
-        doc = fitz.open(pdf_source) if isinstance(pdf_source, str) else fitz.open(stream=pdf_source, filetype="pdf")
+        doc = (
+            fitz.open(pdf_source)
+            if isinstance(pdf_source, str)
+            else fitz.open(stream=pdf_source, filetype="pdf")
+        )
         total_pages = len(doc)
         start_idx = max(0, (page_start or 1) - 1)
         end_idx = min(total_pages, page_end or total_pages)
@@ -1194,14 +1250,20 @@ def _ocr_scanned_pdf(
 
     # Sentry OCR monitoring
     set_tag("ocr.engine", "PaddleOCR")
-    ocr_source = str(content_or_path) if isinstance(content_or_path, (str, os.PathLike)) else pipeline_id
+    ocr_source = (
+        str(content_or_path)
+        if isinstance(content_or_path, (str, os.PathLike))
+        else pipeline_id
+    )
     set_tag("ocr.source", ocr_source[:200])
 
     # Page range: convert 1-based user params to 0-based indices
     start_idx = max(0, (page_start or 1) - 1)
     end_idx = min(total_pages, page_end or total_pages)
     pages_in_range = end_idx - start_idx
-    pages_to_process = min(pages_in_range, max_pages) if max_pages > 0 else pages_in_range
+    pages_to_process = (
+        min(pages_in_range, max_pages) if max_pages > 0 else pages_in_range
+    )
 
     blocks: list[dict] = []
     page_dimensions: dict[int, tuple[int, int]] = {}
@@ -1209,7 +1271,12 @@ def _ocr_scanned_pdf(
     timed_out = False
     start_time = time.monotonic()
 
-    logger.info("OCR 开始：共 %d 页待处理（第 %d-%d 页）", pages_to_process, start_idx + 1, end_idx)
+    logger.info(
+        "OCR 开始：共 %d 页待处理（第 %d-%d 页）",
+        pages_to_process,
+        start_idx + 1,
+        end_idx,
+    )
     if pipeline_id:
         _ocr_progress[pipeline_id] = f"0/{pages_to_process} pages"
 
@@ -1219,7 +1286,10 @@ def _ocr_scanned_pdf(
             if timeout > 0 and elapsed >= timeout:
                 logger.warning(
                     "OCR 超时中断：已用 %.1fs（限制 %ds），处理了 %d/%d 页",
-                    elapsed, timeout, batch_start, pages_to_process,
+                    elapsed,
+                    timeout,
+                    batch_start,
+                    pages_to_process,
                 )
                 timed_out = True
                 break
@@ -1249,17 +1319,22 @@ def _ocr_scanned_pdf(
             try:
                 # Reset OCR before text fallback to avoid using corrupted model state
                 from app.services.ocr_service import reset_ocr_engine
+
                 reset_ocr_engine()
                 fallback_results = ocr_pages(failed_images) if failed_images else {}
             except (RuntimeError, Exception) as exc:
-                logger.warning("OCR text fallback failed: %s — retrying with another reset", exc)
+                logger.warning(
+                    "OCR text fallback failed: %s — retrying with another reset", exc
+                )
                 try:
                     reset_ocr_engine()
                     fallback_results = ocr_pages(failed_images) if failed_images else {}
                 except Exception as exc2:
                     logger.warning("OCR text fallback retry also failed: %s", exc2)
                     fallback_results = {}
-                    ocr_text_fallback_unavailable_pages.update(idx for idx, _ in failed_images)
+                    ocr_text_fallback_unavailable_pages.update(
+                        idx for idx, _ in failed_images
+                    )
 
             del batch_images
             gc.collect()
@@ -1270,18 +1345,20 @@ def _ocr_scanned_pdf(
                 if result.failed:
                     text = fallback_results.get(page_idx, "")
                     if text.strip():
-                        blocks.append({
-                            "page": page_idx,
-                            "page_index": page_idx,
-                            "block_index": len(blocks),
-                            "text": text,
-                            "boxes": [],
-                            "page_width": pw,
-                            "page_height": ph,
-                            "source": "ocr_text_fallback",
-                            "has_boxes": False,
-                            "_ocr_boxes_failed": True,
-                        })
+                        blocks.append(
+                            {
+                                "page": page_idx,
+                                "page_index": page_idx,
+                                "block_index": len(blocks),
+                                "text": text,
+                                "boxes": [],
+                                "page_width": pw,
+                                "page_height": ph,
+                                "source": "ocr_text_fallback",
+                                "has_boxes": False,
+                                "_ocr_boxes_failed": True,
+                            }
+                        )
                     else:
                         ocr_text_fallback_unavailable_pages.add(page_idx)
                     continue
@@ -1289,21 +1366,25 @@ def _ocr_scanned_pdf(
                 text = result.text
                 if text.strip():
                     boxes = result.boxes or []
-                    blocks.append({
-                        "page": page_idx,
-                        "page_index": page_idx,
-                        "block_index": len(blocks),
-                        "text": text,
-                        "boxes": boxes,
-                        "page_width": pw,
-                        "page_height": ph,
-                        "source": "ocr_boxes",
-                        "has_boxes": bool(boxes),
-                    })
+                    blocks.append(
+                        {
+                            "page": page_idx,
+                            "page_index": page_idx,
+                            "block_index": len(blocks),
+                            "text": text,
+                            "boxes": boxes,
+                            "page_width": pw,
+                            "page_height": ph,
+                            "source": "ocr_boxes",
+                            "has_boxes": bool(boxes),
+                        }
+                    )
 
             logger.info(
                 "OCR 进度：%d/%d 页已处理（%.1fs）",
-                batch_end, pages_to_process, time.monotonic() - start_time,
+                batch_end,
+                pages_to_process,
+                time.monotonic() - start_time,
             )
             if pipeline_id:
                 _ocr_progress[pipeline_id] = f"{batch_end}/{pages_to_process} pages"
@@ -1362,7 +1443,10 @@ def _blocks_to_document_ir(
     Kept as thin wrapper for backward compat.
     """
     from app.features.document_ir_builder import blocks_to_document_ir as _builder
-    return _builder(blocks, pipeline_id=pipeline_id, engine=engine, source_bytes=source_bytes)
+
+    return _builder(
+        blocks, pipeline_id=pipeline_id, engine=engine, source_bytes=source_bytes
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1398,6 +1482,7 @@ def document_ir_to_json(doc_ir: DocumentIR) -> dict:
     """
     try:
         from app.core.document_ir import document_ir_to_dict
+
         return document_ir_to_dict(doc_ir)
     except ImportError:
         return {}
@@ -1411,6 +1496,7 @@ def document_ir_from_json(data: dict) -> DocumentIR | None:
     """
     try:
         from app.core.document_ir import document_ir_from_dict
+
         return document_ir_from_dict(data)
     except ImportError:
         return None
@@ -1512,7 +1598,8 @@ def _resolve_chunk_size() -> int:
     if page_window > 0 and page_window < env_size:
         logger.info(
             "Chunk size capped by PDF_RENDER_PAGE_WINDOW=%d (env value was %d)",
-            page_window, env_size,
+            page_window,
+            env_size,
         )
         return page_window
     return env_size
@@ -1673,7 +1760,9 @@ def _serialize_watermark_patterns(patterns: list) -> list[dict]:
         except AttributeError:
             # 兜底：dict 形式直接收，字符串当 pattern
             if isinstance(pat, dict) and "pattern" in pat:
-                out.append({"pattern": pat["pattern"], "flags": int(pat.get("flags", 0))})
+                out.append(
+                    {"pattern": pat["pattern"], "flags": int(pat.get("flags", 0))}
+                )
             elif isinstance(pat, str):
                 out.append({"pattern": pat, "flags": 0})
     return out
@@ -1726,7 +1815,9 @@ def _derive_session_factory(db):
             return _global_async_session
         return async_sessionmaker(bind, expire_on_commit=False, class_=AsyncSession)
     except Exception:
-        logger.debug("derive session factory failed; using global async_session", exc_info=True)
+        logger.debug(
+            "derive session factory failed; using global async_session", exc_info=True
+        )
         return _global_async_session
 
 
@@ -1764,9 +1855,13 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
         "page_classifications": data.get("page_classifications", []),
         "ocr_boxes_failed_pages": data.get("ocr_boxes_failed_pages", []),
         "ocr_text_fallback_pages": data.get("ocr_text_fallback_pages", []),
-        "ocr_text_fallback_unavailable_pages": data.get("ocr_text_fallback_unavailable_pages", []),
+        "ocr_text_fallback_unavailable_pages": data.get(
+            "ocr_text_fallback_unavailable_pages", []
+        ),
         "ocr_runtime_failed_pages": data.get("ocr_runtime_failed_pages", []),
-        "ocr_correction": _slim_ocr_diagnostics(data.get("ocr_correction_diagnostics", {})),
+        "ocr_correction": _slim_ocr_diagnostics(
+            data.get("ocr_correction_diagnostics", {})
+        ),
         "split": data.get("split_diagnostics", {}),
         "risk_flag_counts": data.get("risk_flag_counts", {}),
         "batch_validation": data.get("batch_validation_diagnostics", {}),
@@ -1794,7 +1889,9 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
         "performance_profile": _build_performance_profile(
             {n: s.to_dict() for n, s in stages.items()},
             data,
-        ) if stages else {},
+        )
+        if stages
+        else {},
         # ── Structure Freeze diagnostics ──
         "freeze_mode": data.get("freeze_mode", "legacy"),
         "freeze_dual_diagnostics": _slim_value(data.get("freeze_dual_diagnostics")),
@@ -1802,7 +1899,9 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
         # ── Domain Quality Gate shadow diagnostics ──
         "quality_gate_mode": _get_domain_quality_gate_mode(),
         "quality_gate_shadow_count": len(data.get("quality_gate_shadow_records", [])),
-        "quality_gate_shadow_records": data.get("quality_gate_shadow_records", [])[:100],
+        "quality_gate_shadow_records": data.get("quality_gate_shadow_records", [])[
+            :100
+        ],
     }
     return _slim_diagnostics_arrays(raw)
 
@@ -1811,6 +1910,7 @@ def _get_token_usage_snapshot_safe() -> dict:
     """Safe wrapper around token_budget.get_token_usage_snapshot()."""
     try:
         from app.features.token_budget import get_token_usage_snapshot
+
         return get_token_usage_snapshot()
     except Exception:
         return {"daily": 0, "monthly": 0}
@@ -1820,6 +1920,7 @@ def _get_ocr_cache_stats_safe() -> dict:
     """Safe wrapper around ocr_service.get_ocr_cache_stats()."""
     try:
         from app.services.ocr_service import get_ocr_cache_stats
+
         return get_ocr_cache_stats()
     except Exception:
         return {"hits": 0, "misses": 0, "hit_rate": 0.0}
@@ -1863,8 +1964,9 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
     # ── classify_pages ──
     elif name == "classify_pages":
         stage.input_count = len(data.get("normalized_blocks") or [])
-        stage.output_count = len(result.get("filtered_blocks") or
-                                 result.get("page_classifications") or [])
+        stage.output_count = len(
+            result.get("filtered_blocks") or result.get("page_classifications") or []
+        )
     # ── split ──
     elif name == "split":
         stage.input_count = len(data.get("normalized_blocks") or [])
@@ -1876,7 +1978,9 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
     # ── match ──
     elif name == "match":
         stage.input_count = len(data.get("raw_questions") or [])
-        stage.output_count = len(result.get("matched") or []) + len(result.get("unmatched") or [])
+        stage.output_count = len(result.get("matched") or []) + len(
+            result.get("unmatched") or []
+        )
     # ── normalize_schema ──
     elif name == "normalize_schema":
         stage.input_count = len(data.get("questions") or [])
@@ -1961,12 +2065,21 @@ def _build_quality_report(data: dict, diagnostics: dict) -> dict:
     for q in questions:
         risk_flags = q.get("risk_flags") or []
         # Re-use the same classification as derive_import_risk
-        is_high = bool(set(risk_flags) & {
-            "answer_ai_generated", "code_uncertain", "formula_uncertain",
-            "options_anomaly", "answer_missing", "ai_major_edit",
-            "math_image_crop_failed", "table_low_confidence",
-            "complex_formula_requires_review", "answer_missing",
-        })
+        is_high = bool(
+            set(risk_flags)
+            & {
+                "answer_ai_generated",
+                "code_uncertain",
+                "formula_uncertain",
+                "options_anomaly",
+                "answer_missing",
+                "ai_major_edit",
+                "math_image_crop_failed",
+                "table_low_confidence",
+                "complex_formula_requires_review",
+                "answer_missing",
+            }
+        )
         if is_high:
             high += 1
         elif risk_flags:
@@ -1978,7 +2091,9 @@ def _build_quality_report(data: dict, diagnostics: dict) -> dict:
             ai_answer_count += 1
 
         # Count segment types
-        segments = q.get("segments") or (q.get("parsed_content") or {}).get("segments") or []
+        segments = (
+            q.get("segments") or (q.get("parsed_content") or {}).get("segments") or []
+        )
         for seg in segments:
             if seg.get("type") in {"table", "table_markdown"}:
                 table_count += 1
@@ -2084,7 +2199,9 @@ def _build_performance_profile(stages: dict[str, Any], data: dict) -> dict:
             "total_tokens_used": total_tokens,
             "total_cache_hits": cache_hits,
             "total_cache_misses": cache_misses,
-            "cache_hit_rate": round(cache_hits / (cache_hits + cache_misses), 2) if (cache_hits + cache_misses) > 0 else 0,
+            "cache_hit_rate": round(cache_hits / (cache_hits + cache_misses), 2)
+            if (cache_hits + cache_misses) > 0
+            else 0,
             "slowest_stage": slowest[0],
             "slowest_duration_ms": slowest[1]["duration_ms"],
         }
@@ -2142,8 +2259,13 @@ def _slim_diagnostics_arrays(diagnostics: dict) -> dict:
     structure = diagnostics.get("structure")
     if isinstance(structure, dict):
         slim_structure: dict[str, Any] = {}
-        for skey in ("question_pages", "answer_pages", "explanation_pages",
-                       "content_pages", "section_markers"):
+        for skey in (
+            "question_pages",
+            "answer_pages",
+            "explanation_pages",
+            "content_pages",
+            "section_markers",
+        ):
             val = structure.get(skey)
             if isinstance(val, list) and len(val) > 50:
                 slim_structure[skey] = val[:50]
@@ -2200,6 +2322,7 @@ def _merge_risk_flag_counts(chunks: list[dict]) -> dict[str, int]:
 def _visual_boundary_preview(blocks: list[dict], boundary: dict) -> str:
     """Return a safe summary for boundary preview (never raw text)."""
     import hashlib
+
     block_index = boundary.get("block_index")
     line_index = boundary.get("line_index")
     if not isinstance(block_index, int) or not isinstance(line_index, int):
@@ -2210,7 +2333,9 @@ def _visual_boundary_preview(blocks: list[dict], boundary: dict) -> str:
         text = block.get("normalized_text") or block.get("text") or ""
         lines = str(text).split("\n")
         if 0 <= line_index < len(lines):
-            joined = "".join(line.strip() for line in lines[line_index:line_index + 2])
+            joined = "".join(
+                line.strip() for line in lines[line_index : line_index + 2]
+            )
             return hashlib.md5(joined.encode()).hexdigest()[:12]
     return ""
 
@@ -2263,13 +2388,15 @@ class PipelineStage:
 
         # Stage -> business domain mapping (for Sentry trace linking)
         from app.features.pipeline_definition import PipelineDefinition as _PipeDef
+
         _STAGE_BUSINESS_MAP = _PipeDef.business_map()
         set_tag("stage", _STAGE_BUSINESS_MAP.get(self.name, "unknown"))
         set_tag("pipeline.stage", self.name)
         bind_log_context(stage=self.name)
 
         log_event(
-            _pipe_logger, "pipeline.stage.start",
+            _pipe_logger,
+            "pipeline.stage.start",
             stage=self.name,
         )
 
@@ -2285,7 +2412,8 @@ class PipelineStage:
                 set_tag("pipeline.stage_duration_ms", self.duration_ms)
 
                 log_event(
-                    _pipe_logger, "pipeline.stage.finish",
+                    _pipe_logger,
+                    "pipeline.stage.finish",
                     stage=self.name,
                     duration_ms=self.duration_ms,
                     status="completed",
@@ -2304,13 +2432,17 @@ class PipelineStage:
                 set_tag("pipeline.stage_status", "failed")
                 capture_exception(
                     exc,
-                    tags={"pipeline.stage": self.name, "stage": _STAGE_BUSINESS_MAP.get(self.name, "unknown")},
+                    tags={
+                        "pipeline.stage": self.name,
+                        "stage": _STAGE_BUSINESS_MAP.get(self.name, "unknown"),
+                    },
                 )
 
                 logger.exception("Pipeline stage '%s' failed: %s", self.name, exc)
 
                 log_event(
-                    _pipe_logger, "pipeline.stage.error",
+                    _pipe_logger,
+                    "pipeline.stage.error",
                     level="error",
                     stage=self.name,
                     duration_ms=self.duration_ms,
@@ -2364,37 +2496,61 @@ def _save_stage_artifact(pipeline_id: str, stage_name: str, data: dict) -> None:
     under ``.backend_cache/pipeline_artifacts/{pipeline_id}/``.
     """
     if stage_name == "split":
-        _save_artifact(pipeline_id, "split", {
-            "raw_questions": data.get("raw_questions", []),
-            "structure": data.get("structure"),
-            "source_file": data.get("source_file", ""),
-            "source_type": data.get("source_type", ""),
-            "subject": data.get("subject"),
-        })
+        _save_artifact(
+            pipeline_id,
+            "split",
+            {
+                "raw_questions": data.get("raw_questions", []),
+                "structure": data.get("structure"),
+                "source_file": data.get("source_file", ""),
+                "source_type": data.get("source_type", ""),
+                "subject": data.get("subject"),
+            },
+        )
     elif stage_name == "normalize_schema":
-        _save_artifact(pipeline_id, "normalize_schema", {
-            "questions": data.get("questions", []),
-            "source_file": data.get("source_file", ""),
-            "source_type": data.get("source_type", ""),
-            "subject": data.get("subject"),
-        })
+        _save_artifact(
+            pipeline_id,
+            "normalize_schema",
+            {
+                "questions": data.get("questions", []),
+                "source_file": data.get("source_file", ""),
+                "source_type": data.get("source_type", ""),
+                "subject": data.get("subject"),
+            },
+        )
     elif stage_name == "repair":
-        _save_artifact(pipeline_id, "repair", {
-            "questions": data.get("questions", []),
-        })
+        _save_artifact(
+            pipeline_id,
+            "repair",
+            {
+                "questions": data.get("questions", []),
+            },
+        )
     elif stage_name == "math_detect":
-        _save_artifact(pipeline_id, "math_detect", {
-            "questions": data.get("questions", []),
-        })
+        _save_artifact(
+            pipeline_id,
+            "math_detect",
+            {
+                "questions": data.get("questions", []),
+            },
+        )
     elif stage_name == "table_detect":
-        _save_artifact(pipeline_id, "table_detect", {
-            "questions": data.get("questions", []),
-        })
+        _save_artifact(
+            pipeline_id,
+            "table_detect",
+            {
+                "questions": data.get("questions", []),
+            },
+        )
     elif stage_name == "review":
-        _save_artifact(pipeline_id, "review", {
-            "batch_id": data.get("batch_id", ""),
-            "written": data.get("written", 0),
-        })
+        _save_artifact(
+            pipeline_id,
+            "review",
+            {
+                "batch_id": data.get("batch_id", ""),
+                "written": data.get("written", 0),
+            },
+        )
 
 
 def _restore_from_artifacts(
@@ -2438,7 +2594,8 @@ def _restore_from_artifacts(
         if not compatible:
             logger.warning(
                 "Cannot resume from %s artifact: %s",
-                stage_name, reason,
+                stage_name,
+                reason,
             )
             continue
 
@@ -2467,7 +2624,12 @@ def _restore_from_artifacts(
             )
             return stage_name, preceding_set
 
-        elif stage_name in ("normalize_schema", "repair", "math_detect", "table_detect"):
+        elif stage_name in (
+            "normalize_schema",
+            "repair",
+            "math_detect",
+            "table_detect",
+        ):
             questions = saved.get("questions", [])
             if not questions:
                 continue
@@ -2486,7 +2648,9 @@ def _restore_from_artifacts(
                     completed_stages.append(s)
             logger.info(
                 "Resume from %s artifact: %d questions restored (derived %d preceding stages)",
-                stage_name, len(questions), len(preceding_set),
+                stage_name,
+                len(questions),
+                len(preceding_set),
             )
             return stage_name, preceding_set
 
@@ -2599,12 +2763,15 @@ class ImportPipeline:
 
                 if settings.OCR_ENABLED:
                     logger.info(
-                        "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
+                        "PDF text only %d chars, attempting PaddleOCR fallback",
+                        total_text,
                     )
                     ocr_ok = False
                     try:
                         import_mode_str = opts.get("import_mode", "auto")
-                        user_specified_range = opts.get("page_start") or opts.get("page_end")
+                        user_specified_range = opts.get("page_start") or opts.get(
+                            "page_end"
+                        )
 
                         # ── Single OCR pass (the ONLY PaddleOCR call) ──
                         ocr_page_start = opts.get("page_start") or 1
@@ -2622,9 +2789,11 @@ class ImportPipeline:
 
                             # Exercise detection reuses the full OCR text —
                             # no separate lightweight OCR pass (Task 2)
-                            if (settings.EXERCISE_DETECTION_ENABLED
-                                    and import_mode_str != "exam"
-                                    and not user_specified_range):
+                            if (
+                                settings.EXERCISE_DETECTION_ENABLED
+                                and import_mode_str != "exam"
+                                and not user_specified_range
+                            ):
                                 from app.features.exercise_region_detector import (
                                     detect_exercise_regions,
                                 )
@@ -2640,8 +2809,12 @@ class ImportPipeline:
 
                                 if exercise_regions:
                                     exercise_regions_result = [
-                                        {"start_page": r.start_page, "end_page": r.end_page,
-                                         "confidence": r.confidence, "matched_keyword": r.matched_keyword}
+                                        {
+                                            "start_page": r.start_page,
+                                            "end_page": r.end_page,
+                                            "confidence": r.confidence,
+                                            "matched_keyword": r.matched_keyword,
+                                        }
                                         for r in exercise_regions
                                     ]
                                     # Filter blocks to exercise region pages
@@ -2649,10 +2822,15 @@ class ImportPipeline:
                                     for r in exercise_regions:
                                         for p in range(r.start_page, r.end_page + 1):
                                             region_pages.add(p)
-                                    raw_blocks = [b for b in raw_blocks if b.get("page", 0) in region_pages]
+                                    raw_blocks = [
+                                        b
+                                        for b in raw_blocks
+                                        if b.get("page", 0) in region_pages
+                                    ]
                                     logger.info(
                                         "Exercise region detection found %d region(s), filtered to %d blocks",
-                                        len(exercise_regions), len(raw_blocks),
+                                        len(exercise_regions),
+                                        len(raw_blocks),
                                     )
                                     del exercise_regions
                                 else:
@@ -2664,7 +2842,8 @@ class ImportPipeline:
                             elif user_specified_range:
                                 logger.info(
                                     "Skipping exercise detection: user specified page range %s-%s",
-                                    opts.get("page_start"), opts.get("page_end"),
+                                    opts.get("page_start"),
+                                    opts.get("page_end"),
                                 )
 
                             logger.info("OCR succeeded: %d blocks", len(raw_blocks))
@@ -2674,7 +2853,8 @@ class ImportPipeline:
                         logger.warning("OCR fallback unavailable: %s", exc)
                     except Exception as exc:
                         logger.warning(
-                            "OCR fallback failed, using original extraction: %s", exc,
+                            "OCR fallback failed, using original extraction: %s",
+                            exc,
                         )
 
                     # PaddleOCR-VL 不在此处调用 — 由下游 ocr_correction 阶段的路由器统一处理
@@ -2704,7 +2884,9 @@ class ImportPipeline:
             else:
                 text_source = file_content if file_content is not None else file_path
                 if text_source is None:
-                    raise ValueError("either file_content or file_path must be provided")
+                    raise ValueError(
+                        "either file_content or file_path must be provided"
+                    )
                 raw_blocks = _extract_text_blocks(text_source)
             exercise_regions_result = []
             exercise_regions_missing = False
@@ -2712,31 +2894,43 @@ class ImportPipeline:
         return {
             "raw_blocks": raw_blocks,
             "extracted": len(raw_blocks),
-            "_original_raw_text": (_kw.get("options") or {}).get("_original_raw_text", ""),
+            "_original_raw_text": (_kw.get("options") or {}).get(
+                "_original_raw_text", ""
+            ),
             "exercise_regions": exercise_regions_result,
             "exercise_regions_missing": exercise_regions_missing,
-            "ocr_boxes_failed_pages": sorted({
-                int(b.get("page") or b.get("page_index") or 0)
-                for b in raw_blocks
-                if b.get("_ocr_boxes_failed") and (b.get("page") or b.get("page_index"))
-            }),
-            "ocr_text_fallback_pages": sorted({
-                int(b.get("page") or b.get("page_index") or 0)
-                for b in raw_blocks
-                if b.get("source") == "ocr_text_fallback" and (b.get("page") or b.get("page_index"))
-            }),
-            "ocr_text_fallback_unavailable_pages": sorted({
-                int(page)
-                for b in raw_blocks
-                for page in (b.get("_ocr_text_fallback_unavailable_pages") or [])
-                if page
-            }),
-            "ocr_runtime_failed_pages": sorted({
-                int(page)
-                for b in raw_blocks
-                for page in (b.get("_ocr_runtime_failed_pages") or [])
-                if page
-            }),
+            "ocr_boxes_failed_pages": sorted(
+                {
+                    int(b.get("page") or b.get("page_index") or 0)
+                    for b in raw_blocks
+                    if b.get("_ocr_boxes_failed")
+                    and (b.get("page") or b.get("page_index"))
+                }
+            ),
+            "ocr_text_fallback_pages": sorted(
+                {
+                    int(b.get("page") or b.get("page_index") or 0)
+                    for b in raw_blocks
+                    if b.get("source") == "ocr_text_fallback"
+                    and (b.get("page") or b.get("page_index"))
+                }
+            ),
+            "ocr_text_fallback_unavailable_pages": sorted(
+                {
+                    int(page)
+                    for b in raw_blocks
+                    for page in (b.get("_ocr_text_fallback_unavailable_pages") or [])
+                    if page
+                }
+            ),
+            "ocr_runtime_failed_pages": sorted(
+                {
+                    int(page)
+                    for b in raw_blocks
+                    for page in (b.get("_ocr_runtime_failed_pages") or [])
+                    if page
+                }
+            ),
         }
 
     def _run_wangdao_preprocess(self, raw_blocks: list[dict], **_kw) -> dict:
@@ -2748,7 +2942,9 @@ class ImportPipeline:
         removed = len(raw_blocks) - len(filtered)
         warnings: list[str] = []
         if removed:
-            warnings.append(f"wangdao_preprocess: removed {removed} blocks (watermark/header/footer)")
+            warnings.append(
+                f"wangdao_preprocess: removed {removed} blocks (watermark/header/footer)"
+            )
 
         return {"raw_blocks": filtered, "warnings": warnings}
 
@@ -2773,8 +2969,12 @@ class ImportPipeline:
                 logger.info(
                     "【OCR-3】text_normalizer 修正 | block=%d page=%s len=%d→%d\n"
                     "  └─ 原始: %.160s\n  └─ 清洗: %.160s",
-                    b.get("block_index", 0), b.get("page", "?"),
-                    len(raw), len(norm), raw, norm,
+                    b.get("block_index", 0),
+                    b.get("page", "?"),
+                    len(raw),
+                    len(norm),
+                    raw,
+                    norm,
                 )
 
         warnings: list[str] = []
@@ -2808,7 +3008,9 @@ class ImportPipeline:
         if doc_ir is not None:
             result = run_layout_reconstruction_stage_from_ir(doc_ir)
         else:
-            result = run_layout_reconstruction_stage(normalized_blocks=normalized_blocks)
+            result = run_layout_reconstruction_stage(
+                normalized_blocks=normalized_blocks
+            )
 
         warnings: list[str] = list(result.get("warnings", []))
         layout_result = result.get("layout_result", {})
@@ -2818,10 +3020,15 @@ class ImportPipeline:
         layout_confidence = result.get("layout_confidence", 1.0)
 
         page_layouts: dict = layout_result.get("page_layouts", {})
-        multi_col_count = sum(
-            1 for pl in page_layouts.values()
-            if getattr(pl, "is_multicolumn", False)
-        ) if isinstance(page_layouts, dict) else 0
+        multi_col_count = (
+            sum(
+                1
+                for pl in page_layouts.values()
+                if getattr(pl, "is_multicolumn", False)
+            )
+            if isinstance(page_layouts, dict)
+            else 0
+        )
 
         logger.info(
             "Layout reconstruction: confidence=%.2f, "
@@ -2839,7 +3046,13 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
-    def _run_layout_router(self, layout_result: dict, strategy: dict | None = None, options: dict | None = None, **_kw) -> dict:
+    def _run_layout_router(
+        self,
+        layout_result: dict,
+        strategy: dict | None = None,
+        options: dict | None = None,
+        **_kw,
+    ) -> dict:
         """Stage 1.8: 结构感知路由决策。
 
         根据 layout_reconstruction 的质量评估结果，决定下游 split 模式：
@@ -2855,10 +3068,9 @@ class ImportPipeline:
         from app.features.layout_router import evaluate_routing
 
         # Allow override for A/B experiment baseline
-        force_mode = (
-            (strategy or {}).get("force_split_mode")
-            or (options or {}).get("strategy", {}).get("force_split_mode")
-        )
+        force_mode = (strategy or {}).get("force_split_mode") or (options or {}).get(
+            "strategy", {}
+        ).get("force_split_mode")
         if force_mode:
             split_mode = force_mode
             logger.info(
@@ -2872,8 +3084,7 @@ class ImportPipeline:
             split_mode = evaluate_routing(layout_result)
 
         logger.info(
-            "Layout router: mode=%s (confidence=%.2f, "
-            "opt_score=%.2f, opt_failed=%s)",
+            "Layout router: mode=%s (confidence=%.2f, opt_score=%.2f, opt_failed=%s)",
             split_mode,
             layout_result.get("layout_confidence", 1.0),
             layout_result.get("option_detection_score", 1.0),
@@ -2915,8 +3126,14 @@ class ImportPipeline:
             return None
 
         try:
-            api_token = vl_config.get("api_key") or vl_config.get("paddleocr_vl_api_token") or ""
-            base_url = vl_config.get("api_base_url") or "https://paddleocr.aistudio-app.com"
+            api_token = (
+                vl_config.get("api_key")
+                or vl_config.get("paddleocr_vl_api_token")
+                or ""
+            )
+            base_url = (
+                vl_config.get("api_base_url") or "https://paddleocr.aistudio-app.com"
+            )
             model = vl_config.get("model_name") or "PaddleOCR-VL-1.6"
 
             if not api_token:
@@ -2927,20 +3144,25 @@ class ImportPipeline:
             from app.features.ocr_fix.router import STRATEGY_MANUAL, OCRFixRouter
 
             router = OCRFixRouter()
-            router.configure({
-                "ocr_fix_strategy": STRATEGY_MANUAL,
-                "ocr_fix_model": "paddleocr-vl",
-                "paddleocr_vl_api_token": api_token,
-                "paddleocr_vl_base_url": base_url,
-                "paddleocr_vl_model": model,
-            })
+            router.configure(
+                {
+                    "ocr_fix_strategy": STRATEGY_MANUAL,
+                    "ocr_fix_model": "paddleocr-vl",
+                    "paddleocr_vl_api_token": api_token,
+                    "paddleocr_vl_base_url": base_url,
+                    "paddleocr_vl_model": model,
+                }
+            )
 
             new_blocks: list[dict] = []
-            page_batches: list[tuple[int, bytes, int, int]] = []  # (page_idx, png_bytes, pw, ph)
+            page_batches: list[
+                tuple[int, bytes, int, int]
+            ] = []  # (page_idx, png_bytes, pw, ph)
 
             if is_pdf:
                 # ── PDF path: render each page to image ──
                 import fitz
+
                 doc = fitz.open(file_path, filetype="pdf")
                 try:
                     total_pages = len(doc)
@@ -2964,6 +3186,7 @@ class ImportPipeline:
             else:
                 # ── Image path: read file directly ──
                 import os
+
                 if not os.path.isfile(file_path):
                     logger.warning("VL_REBUILD: image file not found: %s", file_path)
                     return None
@@ -3010,15 +3233,23 @@ class ImportPipeline:
                             pp_opt_count = len(extract_options_from_text(pp_text))
                             logger.info(
                                 "VL_REBUILD page %d: PP-OCRv4 (%d chars, %d options detected)",
-                                page_idx, len(pp_text), pp_opt_count,
+                                page_idx,
+                                len(pp_text),
+                                pp_opt_count,
                             )
                     except Exception as exc:
-                        logger.warning("VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc)
+                        logger.warning(
+                            "VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc
+                        )
 
                 # Phase 2: Call VL when PP-OCR has fewer than 4 options
                 # (PP-OCR re-run on raw image can miss options that VL recovers)
                 if pp_opt_count < 4:
-                    ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
+                    ctx = {
+                        "page_num": page_idx,
+                        "filename": f"page_{page_idx}.png",
+                        "entry_point": "vl_rebuild",
+                    }
                     result = _run_coro_in_loop(
                         router.fix(image=png_bytes, ocr_text="", context=ctx)
                     )
@@ -3026,28 +3257,45 @@ class ImportPipeline:
                     if result and result.fixed_text:
                         vl_raw = result.fixed_text.strip()
                         page_table_blocks = [
-                            item for item in ((getattr(result, "metadata", None) or {}).get("layout_blocks") or [])
+                            item
+                            for item in (
+                                (getattr(result, "metadata", None) or {}).get(
+                                    "layout_blocks"
+                                )
+                                or []
+                            )
                             if isinstance(item, dict)
                             and str(item.get("type") or item.get("label") or "").lower()
                             in {"table", "table_image", "table_caption"}
                         ]
-                        repaired = repair_option_structure(vl_raw, pp_text, original_raw_text)
+                        repaired = repair_option_structure(
+                            vl_raw, pp_text, original_raw_text
+                        )
                         vl_has_opts = detect_options_from_text(repaired)
                         vl_text = repaired if vl_has_opts else vl_raw
-                        vl_opt_count = len(extract_options_from_text(vl_text)) if vl_has_opts else 0
+                        vl_opt_count = (
+                            len(extract_options_from_text(vl_text))
+                            if vl_has_opts
+                            else 0
+                        )
 
                         if vl_opt_count > pp_opt_count:
                             best_text = vl_text
                             logger.info(
                                 "VL_REBUILD page %d: switching to VL (%d chars, %d options "
                                 "vs PP-OCR's %d)",
-                                page_idx, len(best_text), vl_opt_count, pp_opt_count,
+                                page_idx,
+                                len(best_text),
+                                vl_opt_count,
+                                pp_opt_count,
                             )
                         elif not best_text:
                             best_text = vl_text
                             logger.info(
                                 "VL_REBUILD page %d: using VL (%d chars, options=%s)",
-                                page_idx, len(best_text), vl_has_opts,
+                                page_idx,
+                                len(best_text),
+                                vl_has_opts,
                             )
 
                 # Phase 3: Check original_raw_text for missing options.
@@ -3070,7 +3318,9 @@ class ImportPipeline:
                                         logger.info(
                                             "VL_REBUILD page %d: merged option %s from "
                                             "original_raw_text (now %d options)",
-                                            page_idx, key, len(current_opts),
+                                            page_idx,
+                                            key,
+                                            len(current_opts),
                                         )
                                         break
 
@@ -3083,14 +3333,20 @@ class ImportPipeline:
                     )
 
                     recovered = recover_options_from_sources(
-                        best_text, pp_text, original_raw_text,
+                        best_text,
+                        pp_text,
+                        original_raw_text,
                     )
-                    if len(recovered.options) >= max(2, len(extract_options_from_text(best_text))):
+                    if len(recovered.options) >= max(
+                        2, len(extract_options_from_text(best_text))
+                    ):
                         best_text = recovered.text
                         if recovered.repaired_keys:
                             logger.info(
                                 "VL_REBUILD page %d: Phase 8 recovered keys=%s mirror_repairs=%d",
-                                page_idx, recovered.repaired_keys, recovered.mirror_repairs,
+                                page_idx,
+                                recovered.repaired_keys,
+                                recovered.mirror_repairs,
                             )
 
                     # Clean standalone page/order markers (<1>, <2>, <>, etc.)
@@ -3098,19 +3354,21 @@ class ImportPipeline:
                     best_text = re.sub(
                         r"(?:^|\n)\s*<\d*>\s*(?:\n|$)", r"\n", best_text
                     ).strip()
-                    new_blocks.append({
-                        "page": page_idx,
-                        "page_index": page_idx,
-                        "block_index": len(new_blocks),
-                        "text": best_text,
-                        "normalized_text": best_text,
-                        "boxes": [],
-                        "page_width": pw,
-                        "page_height": ph,
-                        "source": "vl_rebuild",
-                        "has_boxes": False,
-                        "vl_layout_blocks": page_table_blocks,
-                    })
+                    new_blocks.append(
+                        {
+                            "page": page_idx,
+                            "page_index": page_idx,
+                            "block_index": len(new_blocks),
+                            "text": best_text,
+                            "normalized_text": best_text,
+                            "boxes": [],
+                            "page_width": pw,
+                            "page_height": ph,
+                            "source": "vl_rebuild",
+                            "has_boxes": False,
+                            "vl_layout_blocks": page_table_blocks,
+                        }
+                    )
 
             if not new_blocks:
                 logger.warning("VL_REBUILD: no blocks produced")
@@ -3118,7 +3376,8 @@ class ImportPipeline:
 
             logger.info(
                 "VL_REBUILD: %d blocks from %s",
-                len(new_blocks), "PDF" if is_pdf else "image",
+                len(new_blocks),
+                "PDF" if is_pdf else "image",
             )
             return new_blocks
 
@@ -3154,7 +3413,12 @@ class ImportPipeline:
 
     async def _load_structure_features_async(self, db) -> dict[str, bool]:
         """从 DB 读取 ocr_structure_* 配置，返回 feature flags 字典。"""
-        features = {"question_type": True, "options": True, "answer": True, "analysis": True}
+        features = {
+            "question_type": True,
+            "options": True,
+            "answer": True,
+            "analysis": True,
+        }
         if not db:
             return features
         try:
@@ -3175,7 +3439,9 @@ class ImportPipeline:
                 features[name] = False
         return features
 
-    async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
+    async def _run_ocr_correction(
+        self, normalized_blocks: list[dict], options: dict | None = None, **_kw
+    ) -> dict:
         """Stage 1.5: AI OCR text correction via multi-model router (PaddleOCR-VL → OpenAI-compatible LLM → rule)."""
         opts = options or {}
         db = _kw.get("db")
@@ -3186,7 +3452,10 @@ class ImportPipeline:
                 "【OCR-4】skip_ocr_correction | blocks=%d — 合并流水线复用单图纠错结果",
                 len(normalized_blocks),
             )
-            return {"normalized_blocks": normalized_blocks, "ocr_correction_diagnostics": {}}
+            return {
+                "normalized_blocks": normalized_blocks,
+                "ocr_correction_diagnostics": {},
+            }
 
         logger.info(
             "【OCR-4】ocr_correction router | blocks=%d",
@@ -3194,11 +3463,18 @@ class ImportPipeline:
         )
         kw = {k: v for k, v in _kw.items() if k != "db"}
         return await self._run_ocr_correction_router(
-            normalized_blocks, opts, db, **kw,
+            normalized_blocks,
+            opts,
+            db,
+            **kw,
         )
 
     async def _run_ocr_correction_router(
-        self, normalized_blocks: list[dict], opts: dict, db, **_kw,
+        self,
+        normalized_blocks: list[dict],
+        opts: dict,
+        db,
+        **_kw,
     ) -> dict:
         """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
         from app.features.ocr_fix import OCRFixRouter
@@ -3225,7 +3501,12 @@ class ImportPipeline:
             "model_used": "",
         }
         quality_gate_shadow_records: list[dict] = []
-        model_call_totals = {"ai_calls": 0, "llm_calls": 0, "vl_calls": 0, "tokens_used": 0}
+        model_call_totals = {
+            "ai_calls": 0,
+            "llm_calls": 0,
+            "vl_calls": 0,
+            "tokens_used": 0,
+        }
 
         # Phase 1: classify blocks and collect correction candidates
         to_correct: list[tuple[int, dict, str, float, float]] = []
@@ -3238,18 +3519,25 @@ class ImportPipeline:
             noise_score = _detect_noise(block)
             structure_score = _detect_structure_abnormal(text)
             has_image = bool(page_images)
-            should = _should_correct(noise_score, router_config, structure_score=structure_score, has_image=has_image)
+            should = _should_correct(
+                noise_score,
+                router_config,
+                structure_score=structure_score,
+                has_image=has_image,
+            )
 
             if not should:
                 corrected_blocks[idx] = block
                 stats["skipped_blocks"] += 1
-                corrections.append({
-                    "block_index": block.get("block_index", 0),
-                    "page": block.get("page", 1),
-                    "noise_score": round(noise_score, 3),
-                    "structure_score": round(structure_score, 3),
-                    "corrected": False,
-                })
+                corrections.append(
+                    {
+                        "block_index": block.get("block_index", 0),
+                        "page": block.get("page", 1),
+                        "noise_score": round(noise_score, 3),
+                        "structure_score": round(structure_score, 3),
+                        "corrected": False,
+                    }
+                )
                 continue
 
             stats["noisy_blocks"] += 1
@@ -3288,20 +3576,30 @@ class ImportPipeline:
                 page_image = page_images.get(page_num) if page_images else None
                 logger.info(
                     "【OCR-4】AI纠错输入 | block=%d page=%s noise=%.3f structure=%.3f %s",
-                    idx, page_num,
-                    _detect_noise(block), _detect_structure_abnormal(text),
+                    idx,
+                    page_num,
+                    _detect_noise(block),
+                    _detect_structure_abnormal(text),
                     safe_text_preview(text),
                 )
                 has_options = bool(re.search(r"[A-D][.、．）)\s]", text))
                 result = await router.fix(
                     image=page_image,
                     ocr_text=text,
-                    context={"block_index": idx, "page": page_num, "entry_point": "ocr_correction_router",
-                             "has_options": has_options},
+                    context={
+                        "block_index": idx,
+                        "page": page_num,
+                        "entry_point": "ocr_correction_router",
+                        "has_options": has_options,
+                    },
                 )
 
-                router_stats = (getattr(result, "metadata", None) or {}).get("router_call_stats") or {}
-                used_tokens = int(router_stats.get("tokens_used", result.tokens_used or 0) or 0)
+                router_stats = (getattr(result, "metadata", None) or {}).get(
+                    "router_call_stats"
+                ) or {}
+                used_tokens = int(
+                    router_stats.get("tokens_used", result.tokens_used or 0) or 0
+                )
                 if used_tokens:
                     await record_token_usage(used_tokens)
 
@@ -3313,34 +3611,43 @@ class ImportPipeline:
         )
 
         # Phase 3: process results
-        for (idx, block, text, noise_score, structure_score), fix_result in zip(to_correct, fix_results):
+        for (idx, block, text, noise_score, structure_score), fix_result in zip(
+            to_correct, fix_results
+        ):
             if isinstance(fix_result, BaseException):
                 logger.warning("router fix block %d failed: %s", idx, fix_result)
                 corrected_blocks[idx] = block
-                corrections.append({
-                    "block_index": block.get("block_index", 0),
-                    "page": block.get("page", 1),
-                    "noise_score": round(noise_score, 3),
-                    "structure_score": round(structure_score, 3),
-                    "corrected": False,
-                    "reason": f"exception: {fix_result}",
-                    "before_preview": _safe_text_summary(text),
-                })
+                corrections.append(
+                    {
+                        "block_index": block.get("block_index", 0),
+                        "page": block.get("page", 1),
+                        "noise_score": round(noise_score, 3),
+                        "structure_score": round(structure_score, 3),
+                        "corrected": False,
+                        "reason": f"exception: {fix_result}",
+                        "before_preview": _safe_text_summary(text),
+                    }
+                )
                 metrics.record_failure(model="exception", before=text)
                 continue
 
             _, result = fix_result
             new_block = dict(block)
-            router_stats = (getattr(result, "metadata", None) or {}).get("router_call_stats") or {}
+            router_stats = (getattr(result, "metadata", None) or {}).get(
+                "router_call_stats"
+            ) or {}
             for key in model_call_totals:
                 model_call_totals[key] += int(router_stats.get(key, 0) or 0)
 
             # Preserve bounded provider layout metadata even when the text
             # candidate is unchanged or rejected.  Later table recovery only
             # consumes blocks explicitly labelled as tables.
-            layout_blocks = (getattr(result, "metadata", None) or {}).get("layout_blocks") or []
+            layout_blocks = (getattr(result, "metadata", None) or {}).get(
+                "layout_blocks"
+            ) or []
             table_layout_blocks = [
-                item for item in layout_blocks
+                item
+                for item in layout_blocks
                 if isinstance(item, dict)
                 and str(item.get("type") or item.get("label") or "").lower()
                 in {"table", "table_image", "table_caption"}
@@ -3352,7 +3659,9 @@ class ImportPipeline:
             # provide per-document confidence — treat VL results as valid
             # regardless of confidence value.
             is_vl = "paddleocr-vl" in (result.model_used or "")
-            if result.fixed_text != text and (result.confidence and result.confidence > 0 or is_vl):
+            if result.fixed_text != text and (
+                result.confidence and result.confidence > 0 or is_vl
+            ):
                 # ---- AI safety gate: use unified CandidateEvaluator ----
                 from app.features.candidate_evaluator import (
                     CandidateDecision,
@@ -3393,6 +3702,7 @@ class ImportPipeline:
                         from app.features.quality_gate import (
                             record_shadow_decision as _record_qgate,
                         )
+
                         _qgate = CompositeQualityGate()
                         _qctx = QGateContext(
                             pipeline_fingerprint=self.pipeline_id or "ocr_correction",
@@ -3408,7 +3718,8 @@ class ImportPipeline:
                             quality_gate_shadow_records.append(entry)
                     except Exception as _qexc:
                         logger.warning(
-                            "[QUALITY-GATE] shadow evaluation failed: %s", _qexc,
+                            "[QUALITY-GATE] shadow evaluation failed: %s",
+                            _qexc,
                         )
 
                 accepted = evaluation.decision == CandidateDecision.ACCEPT
@@ -3440,8 +3751,12 @@ class ImportPipeline:
                     logger.info(
                         "【OCR-5】AI纠错输出 | block=%d page=%d model=%s conf=%.2f\n"
                         "  └─ 纠错前: %.160s\n  └─ 纠错后: %.160s",
-                        idx, block.get("page", 1), result.model_used, result.confidence,
-                        text, safe_text,
+                        idx,
+                        block.get("page", 1),
+                        result.model_used,
+                        result.confidence,
+                        text,
+                        safe_text,
                     )
                     metrics.record_correction(
                         model=result.model_used,
@@ -3450,44 +3765,51 @@ class ImportPipeline:
                         duration_ms=getattr(result, "duration_ms", None),
                         tokens=result.tokens_used,
                     )
-                    corrections.append({
-                        "block_index": block.get("block_index", 0),
-                        "page": block.get("page", 1),
-                        "noise_score": round(noise_score, 3),
-                        "structure_score": round(structure_score, 3),
-                        "corrected": True,
-                        "model_used": result.model_used,
-                        "before_preview": _safe_text_summary(text),
-                        "after_preview": _safe_text_summary(safe_text),
-                        "safety": safety_dict,
-                    })
+                    corrections.append(
+                        {
+                            "block_index": block.get("block_index", 0),
+                            "page": block.get("page", 1),
+                            "noise_score": round(noise_score, 3),
+                            "structure_score": round(structure_score, 3),
+                            "corrected": True,
+                            "model_used": result.model_used,
+                            "before_preview": _safe_text_summary(text),
+                            "after_preview": _safe_text_summary(safe_text),
+                            "safety": safety_dict,
+                        }
+                    )
                 else:
                     # AI 修改被安全门拒绝，回滚到原文
                     logger.warning(
                         "【OCR-5-SAFETY】纠错被拒绝 | block=%d reason=%s",
-                        idx, reason_code,
+                        idx,
+                        reason_code,
                     )
-                    corrections.append({
+                    corrections.append(
+                        {
+                            "block_index": block.get("block_index", 0),
+                            "page": block.get("page", 1),
+                            "noise_score": round(noise_score, 3),
+                            "structure_score": round(structure_score, 3),
+                            "corrected": False,
+                            "reason": f"safety_rejected: {reason_code}",
+                            "model_used": result.model_used,
+                            "before_preview": _safe_text_summary(text),
+                            "safety": safety_dict,
+                        }
+                    )
+            else:
+                corrections.append(
+                    {
                         "block_index": block.get("block_index", 0),
                         "page": block.get("page", 1),
                         "noise_score": round(noise_score, 3),
                         "structure_score": round(structure_score, 3),
                         "corrected": False,
-                        "reason": f"safety_rejected: {reason_code}",
-                        "model_used": result.model_used,
+                        "reason": result.raw_response or "no_change",
                         "before_preview": _safe_text_summary(text),
-                        "safety": safety_dict,
-                    })
-            else:
-                corrections.append({
-                    "block_index": block.get("block_index", 0),
-                    "page": block.get("page", 1),
-                    "noise_score": round(noise_score, 3),
-                    "structure_score": round(structure_score, 3),
-                    "corrected": False,
-                    "reason": result.raw_response or "no_change",
-                    "before_preview": _safe_text_summary(text),
-                })
+                    }
+                )
                 metrics.record_unchanged(
                     model=result.model_used,
                     before=text,
@@ -3525,10 +3847,12 @@ class ImportPipeline:
                 f"(model: {stats['model_used']})"
             )
 
-        metrics.flush(extra={
-            "stats": stats,
-            "used_models": sorted(used_models) if used_models else [],
-        })
+        metrics.flush(
+            extra={
+                "stats": stats,
+                "used_models": sorted(used_models) if used_models else [],
+            }
+        )
 
         return {
             "normalized_blocks": corrected_blocks,
@@ -3551,7 +3875,9 @@ class ImportPipeline:
             "mode": opts.get("ocr_correction_mode", "auto"),
             "noise_threshold": opts.get("ocr_noise_threshold", 0.3),
             "daily_token_limit": opts.get("ocr_correction_daily_token_limit", 50000),
-            "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
+            "monthly_token_limit": opts.get(
+                "ocr_correction_monthly_token_limit", 1000000
+            ),
         }
 
         for key in ("ocr_fix_model", "ocr_fix_strategy"):
@@ -3577,7 +3903,9 @@ class ImportPipeline:
                 # adapter; every other provider is treated as an OpenAI-compatible
                 # text LLM for OCR correction.
                 try:
-                    ocr_fix_config = await resolver.resolve_for_capability(AICapability.OCR_FIX)
+                    ocr_fix_config = await resolver.resolve_for_capability(
+                        AICapability.OCR_FIX
+                    )
                     secret = await resolver.resolve_secret(ocr_fix_config)
                     provider = (ocr_fix_config.provider or "").lower().replace("_", "-")
 
@@ -3592,37 +3920,60 @@ class ImportPipeline:
                         config["llm_model_name"] = ocr_fix_config.model_name
                         config["llm_provider"] = ocr_fix_config.provider
                 except ValueError:
-                    logger.info("OCR router: no OCR_FIX config resolved via AIModelConfigResolver")
+                    logger.info(
+                        "OCR router: no OCR_FIX config resolved via AIModelConfigResolver"
+                    )
 
                 # Text-LLM fallback for the auto chain when the primary OCR fixer is
                 # PaddleOCR-VL. Reuse AI_REPAIR as a backward-compatible fallback.
                 if "llm_api_key" not in config:
                     try:
-                        fallback_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
-                        fallback_provider = (fallback_config.provider or "").lower().replace("_", "-")
+                        fallback_config = await resolver.resolve_for_capability(
+                            AICapability.AI_REPAIR
+                        )
+                        fallback_provider = (
+                            (fallback_config.provider or "").lower().replace("_", "-")
+                        )
                         if not fallback_provider.startswith("paddleocr"):
-                            config["llm_api_key"] = await resolver.resolve_secret(fallback_config)
+                            config["llm_api_key"] = await resolver.resolve_secret(
+                                fallback_config
+                            )
                             config["llm_base_url"] = fallback_config.endpoint or ""
                             config["llm_model_name"] = fallback_config.model_name
                             config["llm_provider"] = fallback_config.provider
                     except ValueError:
-                        logger.info("OCR router: no OpenAI-compatible fallback config resolved")
+                        logger.info(
+                            "OCR router: no OpenAI-compatible fallback config resolved"
+                        )
             except Exception:
-                logger.warning("OCR router: AIModelConfigResolver failed", exc_info=True)
+                logger.warning(
+                    "OCR router: AIModelConfigResolver failed", exc_info=True
+                )
 
             # 从 DB admin_ai_configs 读取过滤配置
             try:
                 from app.services.admin_ai_config_service import get_all_configs
+
                 db_configs = await get_all_configs(db)
-                for key in ("ocr_filter_sensitive", "ocr_filter_max_chars", "ocr_filter_max_tokens"):
+                for key in (
+                    "ocr_filter_sensitive",
+                    "ocr_filter_max_chars",
+                    "ocr_filter_max_tokens",
+                ):
                     val = db_configs.get(key)
                     if val is not None:
                         if isinstance(val, bool):
                             config[key] = val
                         else:
-                            config[key] = str(val).lower() != "false" if key == "ocr_filter_sensitive" else val
+                            config[key] = (
+                                str(val).lower() != "false"
+                                if key == "ocr_filter_sensitive"
+                                else val
+                            )
             except Exception:
-                logger.warning("OCR router: admin_ai_configs read failed", exc_info=True)
+                logger.warning(
+                    "OCR router: admin_ai_configs read failed", exc_info=True
+                )
 
         # Legacy aliases for rolling upgrades. New router code reads llm_* keys.
         if "deepseek_api_key" not in config:
@@ -3632,18 +3983,20 @@ class ImportPipeline:
 
         return config
 
-    async def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
+    async def _run_analyze_structure(
+        self, normalized_blocks: list[dict], **_kw
+    ) -> dict:
         """Stage 2: detect question/answer document layout."""
         db = _kw.get("db")
         features = await self._load_structure_features_async(db)
         has_boxes = any(
-            b.get("boxes") and len(b["boxes"]) > 0
-            for b in (normalized_blocks or [])
+            b.get("boxes") and len(b["boxes"]) > 0 for b in (normalized_blocks or [])
         )
         if has_boxes:
             doc_ir = _get_blocks_document_ir(normalized_blocks)
             if doc_ir is not None:
                 from app.features.structure_analyzer import analyze_structure_from_ir
+
                 structure = analyze_structure_from_ir(doc_ir, features=features)
             else:
                 structure = analyze_structure(normalized_blocks, features=features)
@@ -3665,23 +4018,35 @@ class ImportPipeline:
 
         return {"structure": structure, "warnings": []}
 
-    def _run_classify_pages(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
+    def _run_classify_pages(
+        self, normalized_blocks: list[dict], structure: dict | None = None, **_kw
+    ) -> dict:
         """Stage 2.5: classify each page and filter out non-question pages."""
         from app.core.config import settings
 
         strategy = _kw.get("strategy") or {}
 
-        if not settings.PAGE_CLASSIFIER_ENABLED and not strategy.get("page_classifier_enabled"):
-            return {"page_classifications": [], "warnings": ["page classifier disabled"]}
+        if not settings.PAGE_CLASSIFIER_ENABLED and not strategy.get(
+            "page_classifier_enabled"
+        ):
+            return {
+                "page_classifications": [],
+                "warnings": ["page classifier disabled"],
+            }
 
         doc_ir = _get_blocks_document_ir(normalized_blocks)
         section_markers = structure.get("section_markers") if structure else None
 
         if doc_ir is not None:
             from app.features.page_classifier import classify_pages_from_ir
-            page_classifications = classify_pages_from_ir(doc_ir, section_markers=section_markers)
+
+            page_classifications = classify_pages_from_ir(
+                doc_ir, section_markers=section_markers
+            )
         else:
-            page_classifications = classify_pages(normalized_blocks, section_markers=section_markers)
+            page_classifications = classify_pages(
+                normalized_blocks, section_markers=section_markers
+            )
 
         # Apply mode-specific filtering rules
         filter_knowledge = strategy.get("filter_knowledge_pages", True)
@@ -3694,7 +4059,9 @@ class ImportPipeline:
             allowed_labels.add("CATALOG_PAGE")
 
         filtered = filter_blocks_by_classification(
-            normalized_blocks, page_classifications, allowed_labels=allowed_labels,
+            normalized_blocks,
+            page_classifications,
+            allowed_labels=allowed_labels,
         )
 
         warnings: list[str] = []
@@ -3764,7 +4131,8 @@ class ImportPipeline:
                 ir_registry_raw = ir_result.get("frozen_option_registry", {})
             except Exception as exc:
                 logger.warning(
-                    "[FREEZE] IR freeze failed, falling back: %s", exc,
+                    "[FREEZE] IR freeze failed, falling back: %s",
+                    exc,
                 )
                 ir_result = {"warnings": [f"ir_freeze_error: {exc}"]}
 
@@ -3830,8 +4198,10 @@ class ImportPipeline:
 
             # Compute comparison once, reuse results
             _cmp = _compare_freeze_results(
-                legacy_result, ir_result,
-                legacy_registry, ir_registry_raw,
+                legacy_result,
+                ir_result,
+                legacy_registry,
+                ir_registry_raw,
             )
 
             should_fallback, failover_reasons = check_ir_canary_failover(
@@ -3894,8 +4264,10 @@ class ImportPipeline:
         # ── Dual mode: compare and log ──
         if freeze_mode == "dual":
             dual_diagnostics = _compare_freeze_results(
-                legacy_result, ir_result,
-                legacy_registry, ir_registry_raw,
+                legacy_result,
+                ir_result,
+                legacy_registry,
+                ir_registry_raw,
             )
 
             logger.info(
@@ -3913,8 +4285,10 @@ class ImportPipeline:
                 for diff in dual_diagnostics["differences"][:10]:
                     logger.info(
                         "[FREEZE-DUAL] diff: %s key=%s legacy=%.40s ir=%.40s",
-                        diff["type"], diff.get("option_key", "?"),
-                        diff.get("legacy_text", ""), diff.get("ir_text", ""),
+                        diff["type"],
+                        diff.get("option_key", "?"),
+                        diff.get("legacy_text", ""),
+                        diff.get("ir_text", ""),
                     )
 
             result = dict(legacy_result)
@@ -3930,7 +4304,9 @@ class ImportPipeline:
         )
         return legacy_result
 
-    def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
+    def _run_split(
+        self, normalized_blocks: list[dict], structure: dict | None = None, **_kw
+    ) -> dict:
         """Stage 4: split text blocks into individual questions.
 
         P2-3 / P1-3: when running in chunked mode, ``_kw`` may include
@@ -3970,7 +4346,9 @@ class ImportPipeline:
         _run_split_data: dict[str, Any] = {}
 
         # ── Cross-page linking: merge content from linked pages ──
-        xp_blocks, xp_links, xp_warnings, xp_merge_results = _merge_cross_page_blocks(split_blocks)
+        xp_blocks, xp_links, xp_warnings, xp_merge_results = _merge_cross_page_blocks(
+            split_blocks
+        )
         if xp_links:
             split_blocks = xp_blocks
             warnings.extend(xp_warnings)
@@ -3996,9 +4374,14 @@ class ImportPipeline:
 
                 doc_ir = _get_blocks_document_ir(normalized_blocks)
                 if doc_ir is not None:
-                    split_blocks, layout_filter_diagnostics = filter_book_layout_blocks_from_ir(doc_ir)
+                    split_blocks, layout_filter_diagnostics = (
+                        filter_book_layout_blocks_from_ir(doc_ir)
+                    )
                 else:
-                    split_blocks, layout_filter_diagnostics = normalized_blocks, {"error": "no_document_ir"}
+                    split_blocks, layout_filter_diagnostics = (
+                        normalized_blocks,
+                        {"error": "no_document_ir"},
+                    )
             except Exception as exc:
                 logger.warning("book layout filter failed: %s", exc)
 
@@ -4019,7 +4402,9 @@ class ImportPipeline:
                     layout_result.get("option_detection_failed", False),
                 )
                 rebuilt = self._run_vl_rebuild_blocks(
-                    file_path, normalized_blocks, vl_config,
+                    file_path,
+                    normalized_blocks,
+                    vl_config,
                     original_raw_text=_kw.get("_original_raw_text", ""),
                 )
                 if rebuilt:
@@ -4031,21 +4416,24 @@ class ImportPipeline:
                     layout_result = {}
                     if old_registry:
                         remap_result = _remap_frozen_registry_vl_rebuild(
-                            old_registry, rebuilt,
+                            old_registry,
+                            rebuilt,
                         )
                         frozen_option_registry = remap_result.get("registry", {})
                         binding_lost_qs = remap_result.get("binding_lost_questions", [])
                         if binding_lost_qs:
                             logger.warning(
                                 "[FREEZE] VL rebuild: %d questions with binding_lost: %s",
-                                len(binding_lost_qs), binding_lost_qs,
+                                len(binding_lost_qs),
+                                binding_lost_qs,
                             )
                         if frozen_option_registry:
                             preserved = sum(
-                                1 for q in frozen_option_registry.values()
+                                1
+                                for q in frozen_option_registry.values()
                                 if not isinstance(q, list)
                                 or not any(
-                                    getattr(e, 'binding_status', '') == 'binding_lost'
+                                    getattr(e, "binding_status", "") == "binding_lost"
                                     for e in q
                                 )
                             )
@@ -4083,8 +4471,7 @@ class ImportPipeline:
         )
 
         text_blocks = [
-            b for b in split_blocks
-            if str(b.get("normalized_text") or "").strip()
+            b for b in split_blocks if str(b.get("normalized_text") or "").strip()
         ]
         split_diagnostics = {
             "normalized_block_count": len(normalized_blocks),
@@ -4092,7 +4479,8 @@ class ImportPipeline:
             "raw_question_count": len(raw_questions),
             "split_mode": split_mode,
             "book_prose_downgraded": sum(
-                1 for q in raw_questions
+                1
+                for q in raw_questions
                 if "book_pdf_prose_like" in (q.get("risk_flags") or [])
             ),
             "layout_filter": layout_filter_diagnostics,
@@ -4116,13 +4504,18 @@ class ImportPipeline:
                     prose_skipped += 1
                     if len(prose_preview) < 20:
                         import hashlib
+
                         raw_text = str(question.get("raw_question_text") or "")
-                        prose_preview.append({
-                            "page": question.get("page_start"),
-                            "number": question.get("number"),
-                            "text_hash": hashlib.md5(raw_text.encode()).hexdigest()[:12],
-                            "text_len": len(raw_text),
-                        })
+                        prose_preview.append(
+                            {
+                                "page": question.get("page_start"),
+                                "number": question.get("number"),
+                                "text_hash": hashlib.md5(raw_text.encode()).hexdigest()[
+                                    :12
+                                ],
+                                "text_len": len(raw_text),
+                            }
+                        )
                     continue
                 kept_questions.append(question)
             if prose_skipped:
@@ -4134,8 +4527,12 @@ class ImportPipeline:
                 split_diagnostics["prose_skipped_count"] = (
                     split_diagnostics.get("prose_skipped_count", 0) + prose_skipped
                 )
-                split_diagnostics.setdefault("prose_skipped_preview", []).extend(prose_preview)
-                split_diagnostics["raw_question_count_after_prose_filter"] = len(raw_questions)
+                split_diagnostics.setdefault("prose_skipped_preview", []).extend(
+                    prose_preview
+                )
+                split_diagnostics["raw_question_count_after_prose_filter"] = len(
+                    raw_questions
+                )
 
         def _record_book_pdf_prose_from_blocks() -> None:
             if (
@@ -4151,17 +4548,21 @@ class ImportPipeline:
                 match = re.match(r"^(\d+)\s*[.．、]\s*", first_line)
                 if not match:
                     continue
-                if _BOOK_PDF_QUESTION_SIGNAL_RE.search(text) or re.search(r"(?:^|\n)\s*[A-D]\s*[.．、:：)）]", text):
+                if _BOOK_PDF_QUESTION_SIGNAL_RE.search(text) or re.search(
+                    r"(?:^|\n)\s*[A-D]\s*[.．、:：)）]", text
+                ):
                     continue
                 marker_count = len(_BOOK_PDF_PROSE_MARKER_RE.findall(text))
                 sentence_count = len(_BOOK_PDF_SENTENCE_END_RE.findall(text))
                 if marker_count < 2 or sentence_count < 2:
                     continue
-                previews.append({
-                    "page": block.get("page"),
-                    "number": int(match.group(1)),
-                    "text": re.sub(r"\s+", " ", text)[:80],
-                })
+                previews.append(
+                    {
+                        "page": block.get("page"),
+                        "number": int(match.group(1)),
+                        "text": re.sub(r"\s+", " ", text)[:80],
+                    }
+                )
                 if len(previews) >= 20:
                     break
             if previews:
@@ -4189,20 +4590,27 @@ class ImportPipeline:
                         from app.features.question_splitter import (
                             split_by_visual_boundaries,
                         )
+
                         split_diagnostics["visual_boundary"] = {
                             "boundary_count": len(visual_bounds),
                             "boundaries": [
                                 {
                                     "page": b.get("page"),
                                     "signal": b.get("signal"),
-                                    "preview": _visual_boundary_preview(split_blocks, b),
+                                    "preview": _visual_boundary_preview(
+                                        split_blocks, b
+                                    ),
                                 }
                                 for b in visual_bounds[:20]
                             ],
                         }
                         if len(visual_bounds) >= 2:
-                            raw_questions = split_by_visual_boundaries(split_blocks, visual_bounds)
-                            warnings.append(f"visual_boundary: split {len(raw_questions)} questions via bbox")
+                            raw_questions = split_by_visual_boundaries(
+                                split_blocks, visual_bounds
+                            )
+                            warnings.append(
+                                f"visual_boundary: split {len(raw_questions)} questions via bbox"
+                            )
                             split_diagnostics["failure_reason"] = None
                             split_diagnostics["fallback_created"] = False
                             split_diagnostics["detection_method"] = "visual_boundary"
@@ -4212,35 +4620,51 @@ class ImportPipeline:
 
                 # 仍然无结果时 fallback 为单条
                 if not raw_questions:
-                    if _is_book_import_mode(_kw.get("import_mode")) and str(_kw.get("source_type") or "").lower() == "pdf":
+                    if (
+                        _is_book_import_mode(_kw.get("import_mode"))
+                        and str(_kw.get("source_type") or "").lower() == "pdf"
+                    ):
                         warnings.append(
                             "no questions found in book import; skipped low-confidence fallback review item"
                         )
                         split_diagnostics["fallback_created"] = False
-                        split_diagnostics["failure_reason"] = "book_text_present_but_no_question_boundary"
+                        split_diagnostics["failure_reason"] = (
+                            "book_text_present_but_no_question_boundary"
+                        )
                         split_diagnostics["non_question_like_skipped"] = True
                     else:
-                        raw_questions = [{
-                            "number": 1,
-                            "raw_question_text": "\n".join(
-                                str(b.get("normalized_text") or "").strip() for b in text_blocks
-                            ),
-                            "page_start": text_blocks[0].get("page", 1),
-                            "page_end": text_blocks[-1].get("page", text_blocks[0].get("page", 1)),
-                            "has_options": False,
-                            "option_lines": {},
-                            "confidence": 0.2,
-                            "risk_flags": ["fallback_low_confidence"],
-                        }]
-                        warnings.append("no questions found in document; created low-confidence review item")
+                        raw_questions = [
+                            {
+                                "number": 1,
+                                "raw_question_text": "\n".join(
+                                    str(b.get("normalized_text") or "").strip()
+                                    for b in text_blocks
+                                ),
+                                "page_start": text_blocks[0].get("page", 1),
+                                "page_end": text_blocks[-1].get(
+                                    "page", text_blocks[0].get("page", 1)
+                                ),
+                                "has_options": False,
+                                "option_lines": {},
+                                "confidence": 0.2,
+                                "risk_flags": ["fallback_low_confidence"],
+                            }
+                        ]
+                        warnings.append(
+                            "no questions found in document; created low-confidence review item"
+                        )
                         split_diagnostics["fallback_created"] = True
-                        split_diagnostics["failure_reason"] = "text_present_but_no_question_boundary"
+                        split_diagnostics["failure_reason"] = (
+                            "text_present_but_no_question_boundary"
+                        )
             else:
                 warnings.append("no questions found in document")
                 split_diagnostics["fallback_created"] = False
                 split_diagnostics["failure_reason"] = "no_text_blocks"
         elif len(raw_questions) < len(normalized_blocks):
-            warnings.append(f"{len(normalized_blocks) - len(raw_questions)} blocks produced no questions")
+            warnings.append(
+                f"{len(normalized_blocks) - len(raw_questions)} blocks produced no questions"
+            )
             split_diagnostics["fallback_created"] = False
             split_diagnostics["failure_reason"] = None
         else:
@@ -4281,7 +4705,9 @@ class ImportPipeline:
                 warnings.append(
                     f"boundary_overlap_skipped: {sorted(set(skipped_numbers))}"
                 )
-                split_diagnostics["overlap_skipped_numbers"] = sorted(set(skipped_numbers))
+                split_diagnostics["overlap_skipped_numbers"] = sorted(
+                    set(skipped_numbers)
+                )
             raw_questions = kept
 
             # Boundary unclosed: P1-2 收紧为"明显被截断的 4 选题"才警告，
@@ -4302,11 +4728,7 @@ class ImportPipeline:
                     and "D" not in opt_keys
                     and "E" not in opt_keys
                 )
-                if (
-                    near_boundary
-                    and bool(last.get("has_options"))
-                    and looks_truncated
-                ):
+                if near_boundary and bool(last.get("has_options")) and looks_truncated:
                     warnings.append(
                         f"chunk_boundary_unclosed: q{last.get('number')} "
                         f"may span next chunk (page_end={last_page_end}, "
@@ -4314,12 +4736,18 @@ class ImportPipeline:
                     )
                     split_diagnostics["boundary_unclosed_question"] = last.get("number")
 
-        _log_multi_blank_stage("split", raw_questions, source_type=_kw.get("source_type"), import_mode=import_mode_str)
+        _log_multi_blank_stage(
+            "split",
+            raw_questions,
+            source_type=_kw.get("source_type"),
+            import_mode=import_mode_str,
+        )
 
         # ── Apply frozen options to raw_questions (single source of truth) ──
         if frozen_option_registry:
             _apply_frozen_options(
-                raw_questions, frozen_option_registry,
+                raw_questions,
+                frozen_option_registry,
                 freeze_checksum=_kw.get("freeze_checksum"),
                 normalized_blocks=split_blocks,
             )
@@ -4327,13 +4755,15 @@ class ImportPipeline:
         # Log each parsed question
         for q in raw_questions:
             opts = q.get("option_lines") or {}
-            opt_summary = ", ".join(
-                f"{k}: {str(v)[:40]}" for k, v in sorted(opts.items())
-            ) or "(无选项)"
+            opt_summary = (
+                ", ".join(f"{k}: {str(v)[:40]}" for k, v in sorted(opts.items()))
+                or "(无选项)"
+            )
             logger.info(
                 "【OCR-6】题目解析结果 | number=%s page=%s has_options=%s options=%s%s\n"
                 "  └─ 题干: %.200s",
-                q.get("number", "?"), q.get("page_start", "?"),
+                q.get("number", "?"),
+                q.get("page_start", "?"),
                 q.get("has_options", False),
                 opt_summary[:120],
                 " [FROZEN]" if q.get("is_frozen") else "",
@@ -4365,7 +4795,10 @@ class ImportPipeline:
 
         if not normalized_blocks:
             logger.warning("question_bbox stage: no normalized_blocks available")
-            return {"raw_questions": raw_questions, "warnings": ["no_normalized_blocks"]}
+            return {
+                "raw_questions": raw_questions,
+                "warnings": ["no_normalized_blocks"],
+            }
 
         try:
             doc_ir = _get_blocks_document_ir(normalized_blocks)
@@ -4374,11 +4807,16 @@ class ImportPipeline:
             logger.info("question_bbox: %d/%d got bbox", with_bbox, len(enriched))
             warnings: list[str] = []
             if with_bbox < len(enriched):
-                warnings.append(f"question_bbox: {len(enriched)-with_bbox} missing bbox")
+                warnings.append(
+                    f"question_bbox: {len(enriched) - with_bbox} missing bbox"
+                )
             return {"raw_questions": enriched, "warnings": warnings}
         except Exception as e:
             logger.warning("question_bbox stage failed: %s", e, exc_info=True)
-            return {"raw_questions": raw_questions, "warnings": [f"question_bbox_failed: {e}"]}
+            return {
+                "raw_questions": raw_questions,
+                "warnings": [f"question_bbox_failed: {e}"],
+            }
 
     def _run_match(
         self,
@@ -4389,8 +4827,7 @@ class ImportPipeline:
     ) -> dict:
         """Stage 4: match answers and explanations to questions (P5-2: delegated)."""
         has_boxes = any(
-            b.get("boxes") and len(b["boxes"]) > 0
-            for b in (normalized_blocks or [])
+            b.get("boxes") and len(b["boxes"]) > 0 for b in (normalized_blocks or [])
         )
         if has_boxes:
             doc_ir = _get_blocks_document_ir(normalized_blocks)
@@ -4398,7 +4835,10 @@ class ImportPipeline:
                 from app.features.pipeline_stages.match_stage import (
                     run_match_stage_from_ir,
                 )
-                return run_match_stage_from_ir(raw_questions, doc_ir, structure=structure)
+
+                return run_match_stage_from_ir(
+                    raw_questions, doc_ir, structure=structure
+                )
         return run_match_stage(raw_questions, normalized_blocks, structure=structure)
 
     def _run_normalize_schema(
@@ -4421,7 +4861,8 @@ class ImportPipeline:
         splitter, freeze mismatch) is detectable in logs and diagnostics.
         """
         result = run_normalize_schema_stage(
-            raw_questions, matched,
+            raw_questions,
+            matched,
             source_file=source_file,
             source_type=source_type,
             subject=subject,
@@ -4455,9 +4896,9 @@ class ImportPipeline:
                     enforce_warnings.append(msg)
                     # Mark the question so downstream can see the enforcement
                     existing_flags = list(q.get("risk_flags") or [])
-                    q["risk_flags"] = list(dict.fromkeys(
-                        existing_flags + ["options_dropped_enforcement"]
-                    ))
+                    q["risk_flags"] = list(
+                        dict.fromkeys(existing_flags + ["options_dropped_enforcement"])
+                    )
 
         if enforce_warnings:
             existing_warnings = list(result.get("warnings", []))
@@ -4469,7 +4910,9 @@ class ImportPipeline:
 
         return result
 
-    async def _run_code_language_noise_clean(self, questions: list[dict], options: dict, **_kw) -> dict:
+    async def _run_code_language_noise_clean(
+        self, questions: list[dict], options: dict, **_kw
+    ) -> dict:
         """Stage 5.3: clean OCR code language identifier noise from question stems.
 
         Lightweight rule-based stage — no AI calls. Removes lines like ``(1>``,
@@ -4477,14 +4920,17 @@ class ImportPipeline:
         """
         return run_code_language_noise_clean_stage(questions, options)
 
-    async def _run_code_structure_reconstruct(self, questions: list[dict], options: dict, **_kw) -> dict:
+    async def _run_code_structure_reconstruct(
+        self, questions: list[dict], options: dict, **_kw
+    ) -> dict:
         """Stage 5.5: reconstruct code structure for questions with code integrity issues.
 
         Runs between normalize_schema and classify_questions. Only processes
         questions with code integrity flags (code_brace_unbalanced, etc.).
         """
         return await run_code_structure_stage(
-            questions, options,
+            questions,
+            options,
             db=_kw.get("db"),
         )
 
@@ -4547,7 +4993,9 @@ class ImportPipeline:
                 logger.info(
                     "[CLASSIFY-GATE] q%s: has_options=False cleared %d options "
                     "(was type=%s, now=subjective)",
-                    entry["question_number"], len(options_list), question_type,
+                    entry["question_number"],
+                    len(options_list),
+                    question_type,
                 )
             else:
                 entry["enforced"] = False
@@ -4580,7 +5028,8 @@ class ImportPipeline:
     async def _run_repair(self, questions: list[dict], options: dict, **_kw) -> dict:
         """Stage 6: AI repair for low-confidence questions (P5-2: delegated)."""
         return await run_repair_stage(
-            questions, options,
+            questions,
+            options,
             db=_kw.get("db"),
             batch_validation_diagnostics=_kw.get("batch_validation_diagnostics"),
         )
@@ -4610,7 +5059,10 @@ class ImportPipeline:
         }
 
         result = await match_similar_questions(
-            questions, db=db, config=match_config, hash_index=hash_index,
+            questions,
+            db=db,
+            config=match_config,
+            hash_index=hash_index,
         )
 
         warnings: list[str] = []
@@ -4668,6 +5120,7 @@ class ImportPipeline:
         from app.features.pipeline_stages.visual_region_detect_stage import (
             run_visual_region_detect_stage,
         )
+
         # Build layout_blocks_by_page from normalized_blocks when available
         layout_blocks_by_page: dict[int, list[dict]] | None = None
         page_dimensions: dict[int, tuple[int, int]] | None = None
@@ -4687,7 +5140,9 @@ class ImportPipeline:
                     layout_blocks_by_page.setdefault(page, []).extend(boxes)
                 # PaddleOCR-VL provider blocks carry semantic type + table
                 # markup and must be preserved for the late table stage.
-                vl_blocks = block.get("vl_layout_blocks") or block.get("layout_blocks") or []
+                vl_blocks = (
+                    block.get("vl_layout_blocks") or block.get("layout_blocks") or []
+                )
                 if isinstance(vl_blocks, list):
                     for vl_block in vl_blocks:
                         if not isinstance(vl_block, dict):
@@ -4725,7 +5180,7 @@ class ImportPipeline:
         }
         if not page_regions:
             for q in questions:
-                for vr in (q.get("visual_regions") or []):
+                for vr in q.get("visual_regions") or []:
                     if isinstance(vr, dict):
                         page = vr.get("source_page") or q.get("page_start") or 1
                         page_regions.setdefault(int(page), []).append(vr)
@@ -4760,7 +5215,10 @@ class ImportPipeline:
                 if "source_snapshot_failed" not in flags:
                     flags.append("source_snapshot_failed")
                 q["risk_flags"] = flags
-            return {"questions": questions, "warnings": ["visual_region_crop: no page images"]}
+            return {
+                "questions": questions,
+                "warnings": ["visual_region_crop: no page images"],
+            }
 
         from app.services.storage_backend import get_storage
         from app.services.visual_region_cropper import crop_and_upload_region
@@ -4808,7 +5266,9 @@ class ImportPipeline:
                     region_id=region_id,
                     region_type=rt,
                     source_page=vr_dict.get("source_page", 1),
-                    bbox=tuple(bbox) if isinstance(bbox, (list, tuple)) and len(bbox) == 4 else None,
+                    bbox=tuple(bbox)
+                    if isinstance(bbox, (list, tuple)) and len(bbox) == 4
+                    else None,
                     coordinate_space=cs,
                     confidence=vr_dict.get("confidence", 0.5),
                     alt=vr_dict.get("alt", ""),
@@ -4818,7 +5278,9 @@ class ImportPipeline:
 
                 if region.bbox:
                     region = await crop_and_upload_region(
-                        page_image_refs, region, virtual_import_id,
+                        page_image_refs,
+                        region,
+                        virtual_import_id,
                     )
 
                 if region.image_url:
@@ -4840,7 +5302,9 @@ class ImportPipeline:
                     should_append_image = (
                         rt != VisualRegionType.TABLE
                         or not matching_tables
-                        or any(table.get("requires_review") for table in matching_tables)
+                        or any(
+                            table.get("requires_review") for table in matching_tables
+                        )
                     )
                     if should_append_image and not any(
                         existing.get("type") == seg.get("type")
@@ -4885,7 +5349,8 @@ class ImportPipeline:
 
                         png_bytes = await get_executor("image").run(
                             crop_region,
-                            page_path, tuple(q_bbox),
+                            page_path,
+                            tuple(q_bbox),
                             coordinate_space=CoordinateSpace.IMAGE_PIXELS,
                         )
                         is_full_page = False
@@ -4902,17 +5367,27 @@ class ImportPipeline:
 
                     if png_bytes and len(png_bytes) > 0:
                         content_hash = hashlib.md5(png_bytes).hexdigest()[:12]
-                        filename = f"{virtual_import_id}_snapshot_p{page}_{content_hash}.png"
+                        filename = (
+                            f"{virtual_import_id}_snapshot_p{page}_{content_hash}.png"
+                        )
                         snapshot_url = await storage.upload(
-                            f"{month}/snapshots/{filename}", png_bytes,
+                            f"{month}/snapshots/{filename}",
+                            png_bytes,
                         )
                         if "parsed_content" not in q:
                             q["parsed_content"] = {"text": stem}
                         if isinstance(q["parsed_content"], dict):
                             q["parsed_content"]["source_snapshot_url"] = snapshot_url
-                            q["parsed_content"]["source_snapshot_full_page"] = is_full_page
+                            q["parsed_content"]["source_snapshot_full_page"] = (
+                                is_full_page
+                            )
             except Exception as e:
-                logger.warning("source_snapshot failed import=%s page=%s: %s", self.pipeline_id, page, e)
+                logger.warning(
+                    "source_snapshot failed import=%s page=%s: %s",
+                    self.pipeline_id,
+                    page,
+                    e,
+                )
                 flags = list(q.get("risk_flags") or [])
                 if "source_snapshot_failed" not in flags:
                     flags.append("source_snapshot_failed")
@@ -5011,11 +5486,15 @@ class ImportPipeline:
         if db:
             try:
                 from app.services.watermark_service import load_rules
+
                 watermark_patterns = await load_rules(db)
             except Exception as e:
-                logger.warning("Failed to load watermark rules from DB, using defaults: %s", e)
+                logger.warning(
+                    "Failed to load watermark rules from DB, using defaults: %s", e
+                )
         if not watermark_patterns:
             from app.services.watermark_service import get_default_patterns
+
             watermark_patterns = get_default_patterns()
 
         shared = {
@@ -5026,9 +5505,12 @@ class ImportPipeline:
 
         _pipe_logger = logging.getLogger("app.pipeline")
         log_event(
-            _pipe_logger, "pipeline.plan.start",
-            pipeline_id=self.pipeline_id, source_type=source_type,
-            source_file=source_file, import_mode=mode_str,
+            _pipe_logger,
+            "pipeline.plan.start",
+            pipeline_id=self.pipeline_id,
+            source_type=source_type,
+            source_file=source_file,
+            import_mode=mode_str,
             ocr_enabled=opts.get("enable_ocr_correction", True),
             enable_ai_repair=opts.get("enable_ai_repair", True),
         )
@@ -5066,13 +5548,20 @@ class ImportPipeline:
                 page_start=render_page_start,
                 page_end=render_page_end,
             )
-            page_images = pdf_render_result.page_images if pdf_render_result.rendered_count else None
+            page_images = (
+                pdf_render_result.page_images
+                if pdf_render_result.rendered_count
+                else None
+            )
             page_image_refs = pdf_render_result.page_file_refs or None
 
         log_event(
-            _pipe_logger, "pipeline.plan.finish",
-            pipeline_id=self.pipeline_id, source_type=source_type,
-            source_file=source_file, import_mode=mode_str,
+            _pipe_logger,
+            "pipeline.plan.finish",
+            pipeline_id=self.pipeline_id,
+            source_type=source_type,
+            source_file=source_file,
+            import_mode=mode_str,
             chunk_count=len(chunk_ranges) if chunk_ranges else 1,
         )
 
@@ -5159,7 +5648,9 @@ class ImportPipeline:
         try:
             total_pages = _read_pdf_page_count(file_path or file_content)
         except Exception as exc:
-            logger.warning("Failed to read PDF page count, falling back to single-pass: %s", exc)
+            logger.warning(
+                "Failed to read PDF page count, falling back to single-pass: %s", exc
+            )
             return []
 
         if total_pages <= 0:
@@ -5168,9 +5659,15 @@ class ImportPipeline:
         # Determine the actual page count we need to chunk over
         if has_user_range:
             if effective_start > total_pages:
-                logger.warning("page_start %d exceeds total_pages %d, cannot chunk", effective_start, total_pages)
+                logger.warning(
+                    "page_start %d exceeds total_pages %d, cannot chunk",
+                    effective_start,
+                    total_pages,
+                )
                 return []
-            page_count_for_chunking = min(effective_end, total_pages) - effective_start + 1
+            page_count_for_chunking = (
+                min(effective_end, total_pages) - effective_start + 1
+            )
         else:
             effective_end = total_pages
             page_count_for_chunking = total_pages
@@ -5232,9 +5729,12 @@ class ImportPipeline:
         _sp_logger = logging.getLogger("app.pipeline")
         _sp_start = time.monotonic()
         log_event(
-            _sp_logger, "pipeline.single_pass.start",
-            pipeline_id=self.pipeline_id, source_type=source_type,
-            page_start=page_start, page_end=page_end,
+            _sp_logger,
+            "pipeline.single_pass.start",
+            pipeline_id=self.pipeline_id,
+            source_type=source_type,
+            page_start=page_start,
+            page_end=page_end,
         )
 
         # When called from the chunk loop, override the page range in opts
@@ -5246,13 +5746,15 @@ class ImportPipeline:
         vision_config = None
         if db is not None:
             from app.services.model_config_resolver import resolve_active_model
+
             try:
                 resolved = await resolve_active_model(db, feature="vision")
                 if resolved and resolved.get("api_key"):
                     vision_config = resolved
                     logger.info(
                         "Vision model configured: %s (provider=%s)",
-                        vision_config.get("display_name") or vision_config.get("model_name", "?"),
+                        vision_config.get("display_name")
+                        or vision_config.get("model_name", "?"),
                         vision_config.get("provider", "?"),
                     )
             except Exception as exc:
@@ -5313,10 +5815,13 @@ class ImportPipeline:
         completed_stages: list[str] = []
         has_resume_ckpt = resume_from_checkpoint is not None
         if has_resume_ckpt:
-            completed_stages = list(resume_from_checkpoint.get("completed_stages") or [])
+            completed_stages = list(
+                resume_from_checkpoint.get("completed_stages") or []
+            )
             logger.info(
                 "Resuming pipeline %s from checkpoint: %d stages completed",
-                self.pipeline_id, len(completed_stages),
+                self.pipeline_id,
+                len(completed_stages),
             )
 
         # Write initial checkpoint so we have metadata even if first stage fails
@@ -5336,16 +5841,18 @@ class ImportPipeline:
         _artifact_skipped: set[str] = set()
         if has_resume_ckpt:
             restored_stage, _artifact_skipped = _restore_from_artifacts(
-                self.pipeline_id, completed_stages, data,
+                self.pipeline_id,
+                completed_stages,
+                data,
             )
             if restored_stage:
                 logger.info(
                     "True resume from artifact: restored=%s skipped_stages=%s",
-                    restored_stage, sorted(_artifact_skipped),
+                    restored_stage,
+                    sorted(_artifact_skipped),
                 )
 
         for name, stage in self.stages.items():
-
             # P4-3: skip stages restored from artifacts
             if name in _artifact_skipped:
                 logger.info("Skipping stage '%s' (restored from artifact)", name)
@@ -5389,7 +5896,9 @@ class ImportPipeline:
                     # 反映真实的 block 数（之前只在 match 后缓存，前序失败会
                     # 静默归零）。
                     if "normalized_blocks" in result:
-                        data["normalized_block_count"] = len(result["normalized_blocks"])
+                        data["normalized_block_count"] = len(
+                            result["normalized_blocks"]
+                        )
                 # P6-2: update per-stage profiling metrics from data & result
                 _update_stage_metrics(stage, data, result)
                 # P0-1 / P1-A: 大字段一过最后消费者立即释放，避免随 8+ 个阶段
@@ -5413,6 +5922,7 @@ class ImportPipeline:
                     # ── 观察：split 质量评估 ──
                     try:
                         from app.evaluation.split_quality import evaluate_split_quality
+
                         sq = evaluate_split_quality(
                             result.get("raw_questions", []),
                             result.get("split_diagnostics"),
@@ -5424,6 +5934,7 @@ class ImportPipeline:
                     # ── 观察：per-run routing metrics ──
                     try:
                         from app.evaluation.routing_metrics import build_routing_metrics
+
                         data["routing_metrics"] = build_routing_metrics(data)
                     except Exception as exc:
                         logger.warning("routing_metrics build failed: %s", exc)
@@ -5475,7 +5986,9 @@ class ImportPipeline:
                     data.pop("page_images", None)
                     if name in ("extract", "normalize_text"):
                         break
-                logger.warning("Stage '%s' failed, continuing with partial results", name)
+                logger.warning(
+                    "Stage '%s' failed, continuing with partial results", name
+                )
 
             if progress_callback:
                 try:
@@ -5521,12 +6034,17 @@ class ImportPipeline:
         artifacts_list = _list_artifacts(self.pipeline_id)
 
         log_event(
-            _sp_logger, "pipeline.single_pass.finish",
-            pipeline_id=self.pipeline_id, source_type=source_type,
-            page_start=page_start, page_end=page_end,
+            _sp_logger,
+            "pipeline.single_pass.finish",
+            pipeline_id=self.pipeline_id,
+            source_type=source_type,
+            page_start=page_start,
+            page_end=page_end,
             status=overall_status,
             duration_ms=round((time.monotonic() - _sp_start) * 1000),
-            question_count=data.get("stats", {}).get("to_review", 0) if isinstance(data.get("stats"), dict) else 0,
+            question_count=data.get("stats", {}).get("to_review", 0)
+            if isinstance(data.get("stats"), dict)
+            else 0,
         )
 
         return {
@@ -5610,7 +6128,8 @@ class ImportPipeline:
         _chunk_start = time.monotonic()
         bind_log_context(chunk_index=chunk_index)
         log_event(
-            _chunk_logger, "pipeline.chunk.start",
+            _chunk_logger,
+            "pipeline.chunk.start",
             pipeline_id=self.pipeline_id,
             chunk_index=chunk_index,
             page_start=page_start,
@@ -5660,7 +6179,9 @@ class ImportPipeline:
             # must still keep the import alive.
             logger.exception(
                 "chunk %d (pages %d-%d) raised unexpectedly",
-                chunk_index, page_start, logical_end,
+                chunk_index,
+                page_start,
+                logical_end,
             )
             chunk_status = "failed"
             chunk_error = f"{type(exc).__name__}: {exc}"
@@ -5687,10 +6208,15 @@ class ImportPipeline:
         )
         await ckpt.invalidate_progress_cache(self.pipeline_id)
 
-        _chunk_event = "pipeline.chunk.finish" if chunk_status == "completed" else "pipeline.chunk.error"
+        _chunk_event = (
+            "pipeline.chunk.finish"
+            if chunk_status == "completed"
+            else "pipeline.chunk.error"
+        )
         _chunk_level = "info" if chunk_status == "completed" else "error"
         log_event(
-            _chunk_logger, _chunk_event,
+            _chunk_logger,
+            _chunk_event,
             level=_chunk_level,
             pipeline_id=self.pipeline_id,
             chunk_index=chunk_index,
@@ -5713,7 +6239,9 @@ class ImportPipeline:
             "batch_id": batch_id,
             "question_count": written,
             "error_message": chunk_error,
-            "diagnostics": _slim_chunk_diagnostics(chunk_result.get("diagnostics") or {}),
+            "diagnostics": _slim_chunk_diagnostics(
+                chunk_result.get("diagnostics") or {}
+            ),
             "stages": chunk_result.get("stages") or {},
         }
 
@@ -5794,7 +6322,9 @@ class ImportPipeline:
             async with session_factory() as init_db:
                 await hash_index.load(init_db)
         except Exception:
-            logger.exception("GlobalHashIndex.load failed; chunked similarity match will fallback")
+            logger.exception(
+                "GlobalHashIndex.load failed; chunked similarity match will fallback"
+            )
             hash_index = None
         if hash_index is not None:
             shared = {**shared, "hash_index": hash_index}
@@ -5808,7 +6338,8 @@ class ImportPipeline:
         _chunked_logger = logging.getLogger("app.pipeline")
         _chunked_start = time.monotonic()
         log_event(
-            _chunked_logger, "pipeline.chunked.start",
+            _chunked_logger,
+            "pipeline.chunked.start",
             pipeline_id=self.pipeline_id,
             total_pages=total_pages,
             chunk_size=chunk_size,
@@ -5873,7 +6404,9 @@ class ImportPipeline:
         # Aggregate stats across chunks
         agg_stats = {
             "total_chunks": len(chunk_ranges),
-            "completed_chunks": sum(1 for c in chunk_results if c["status"] == "completed"),
+            "completed_chunks": sum(
+                1 for c in chunk_results if c["status"] == "completed"
+            ),
             "failed_chunks": sum(1 for c in chunk_results if c["status"] == "failed"),
             "to_review": sum(c["question_count"] or 0 for c in chunk_results),
             "extracted": total_pages,
@@ -5891,10 +6424,15 @@ class ImportPipeline:
             "",
         )
 
-        _chunked_event = "pipeline.chunked.finish" if overall_status == "completed" else "pipeline.chunked.paused"
+        _chunked_event = (
+            "pipeline.chunked.finish"
+            if overall_status == "completed"
+            else "pipeline.chunked.paused"
+        )
         _chunked_level = "info" if overall_status == "completed" else "warning"
         log_event(
-            _chunked_logger, _chunked_event,
+            _chunked_logger,
+            _chunked_event,
             level=_chunked_level,
             pipeline_id=self.pipeline_id,
             total_pages=total_pages,
@@ -5982,13 +6520,19 @@ async def run_import_pipeline(
         raise ValueError("either file_path or file_content must be provided")
 
     if not pipeline_id:
-        pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        pipeline_id = (
+            f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        )
 
     # Auto-detect Wangdao preset from filename
     opts = dict(options) if options else {}
     if "enable_wangdao_preprocess" not in opts:
         lower_name = (source_file or "").lower()
-        if "王道" in (source_file or "") or "wangdao" in lower_name or re.search(r"(?:^|[_\-\s])408(?:[_\-\s.]|$)", lower_name):
+        if (
+            "王道" in (source_file or "")
+            or "wangdao" in lower_name
+            or re.search(r"(?:^|[_\-\s])408(?:[_\-\s.]|$)", lower_name)
+        ):
             opts["enable_wangdao_preprocess"] = True
 
     # EXAM mode disables wangdao preprocessing by default
@@ -5997,7 +6541,9 @@ async def run_import_pipeline(
         import_mode = ImportMode(mode_str)
     except ValueError:
         import_mode = ImportMode.AUTO
-    if import_mode == ImportMode.EXAM and "enable_wangdao_preprocess" not in (options or {}):
+    if import_mode == ImportMode.EXAM and "enable_wangdao_preprocess" not in (
+        options or {}
+    ):
         opts["enable_wangdao_preprocess"] = False
 
     pipeline = ImportPipeline(options=opts)
@@ -6007,12 +6553,17 @@ async def run_import_pipeline(
 
     _pipe_logger = logging.getLogger("app.pipeline")
     _run_start = time.monotonic()
-    bind_log_context(pipeline_id=pipeline_id, source_type=source_type, source_file=source_file)
+    bind_log_context(
+        pipeline_id=pipeline_id, source_type=source_type, source_file=source_file
+    )
 
     log_event(
-        _pipe_logger, "pipeline.run.start",
-        pipeline_id=pipeline_id, source_type=source_type,
-        source_file=source_file, subject=subject or "-",
+        _pipe_logger,
+        "pipeline.run.start",
+        pipeline_id=pipeline_id,
+        source_type=source_type,
+        source_file=source_file,
+        subject=subject or "-",
     )
 
     # Cancellation checkpoint before pipeline execution
@@ -6040,8 +6591,10 @@ async def run_import_pipeline(
         result["pipeline_id"] = pipeline_id
 
         log_event(
-            _pipe_logger, "pipeline.run.finish",
-            pipeline_id=pipeline_id, source_type=source_type,
+            _pipe_logger,
+            "pipeline.run.finish",
+            pipeline_id=pipeline_id,
+            source_type=source_type,
             source_file=source_file,
             status=result.get("status", "unknown"),
             duration_ms=round((time.monotonic() - _run_start) * 1000),
@@ -6049,9 +6602,11 @@ async def run_import_pipeline(
         return result
     except Exception as exc:
         log_event(
-            _pipe_logger, "pipeline.run.error",
+            _pipe_logger,
+            "pipeline.run.error",
             level="error",
-            pipeline_id=pipeline_id, source_type=source_type,
+            pipeline_id=pipeline_id,
+            source_type=source_type,
             source_file=source_file,
             duration_ms=round((time.monotonic() - _run_start) * 1000),
             error_type=type(exc).__name__,
@@ -6085,31 +6640,37 @@ async def run_pipeline_background(
     # Preserve page_range from the initial store (set by start_import_pipeline)
     # so it survives the background-task store overwrite.
     initial_page_range = _pipeline_store.get(pipeline_id, {}).get("page_range")
-    await _set_pipeline_store(pipeline_id, {
-        "pipeline_id": pipeline_id,
-        "status": "processing",
-        "source_type": source_type,
-        "current_stage": "extract",
-        "stages": {},
-        "stats": {},
-        "errors": [],
-        "started_at": started_at,
-        "page_range": initial_page_range,
-    })
-
-    async def _progress(stages_dict, current_stage, errors):
-        existing = _pipeline_store.get(pipeline_id, {})
-        await _set_pipeline_store(pipeline_id, {
+    await _set_pipeline_store(
+        pipeline_id,
+        {
             "pipeline_id": pipeline_id,
             "status": "processing",
             "source_type": source_type,
-            "current_stage": current_stage,
-            "stages": stages_dict,
+            "current_stage": "extract",
+            "stages": {},
             "stats": {},
-            "errors": errors,
+            "errors": [],
             "started_at": started_at,
-            "page_range": existing.get("page_range") or initial_page_range,
-        })
+            "page_range": initial_page_range,
+        },
+    )
+
+    async def _progress(stages_dict, current_stage, errors):
+        existing = _pipeline_store.get(pipeline_id, {})
+        await _set_pipeline_store(
+            pipeline_id,
+            {
+                "pipeline_id": pipeline_id,
+                "status": "processing",
+                "source_type": source_type,
+                "current_stage": current_stage,
+                "stages": stages_dict,
+                "stats": {},
+                "errors": errors,
+                "started_at": started_at,
+                "page_range": existing.get("page_range") or initial_page_range,
+            },
+        )
 
     # Cancellation checkpoint before pipeline execution
     await _check_cancelled()
@@ -6151,7 +6712,9 @@ async def run_pipeline_background(
                 result["alerts"] = alerts
                 await _set_pipeline_store(pipeline_id, result)
         except Exception as alert_exc:
-            logger.warning("Alert evaluation failed for pipeline %s: %s", pipeline_id, alert_exc)
+            logger.warning(
+                "Alert evaluation failed for pipeline %s: %s", pipeline_id, alert_exc
+            )
 
         # P7-4: persist quality_report + alerts to DB so they survive restarts
         if db is not None:
@@ -6164,6 +6727,7 @@ async def run_pipeline_background(
                     from app.models.import_pipeline import (
                         ImportPipeline as ImportPipelineRow,
                     )
+
                     await db.execute(
                         update(ImportPipelineRow)
                         .where(ImportPipelineRow.pipeline_id == pipeline_id)
@@ -6176,20 +6740,24 @@ async def run_pipeline_background(
             except Exception as persist_exc:
                 logger.warning(
                     "Failed to persist quality_report/alerts for pipeline %s: %s",
-                    pipeline_id, persist_exc,
+                    pipeline_id,
+                    persist_exc,
                 )
     except Exception as exc:
         logger.exception("Pipeline %s failed", pipeline_id)
         existing = _pipeline_store.get(pipeline_id, {})
-        await _set_pipeline_store(pipeline_id, {
-            "pipeline_id": pipeline_id,
-            "status": "failed",
-            "source_type": source_type,
-            "errors": [str(exc)],
-            "started_at": existing.get("started_at", ""),
-            "finished_at": serialize_utc_datetime(utcnow()),
-            "page_range": existing.get("page_range"),
-        })
+        await _set_pipeline_store(
+            pipeline_id,
+            {
+                "pipeline_id": pipeline_id,
+                "status": "failed",
+                "source_type": source_type,
+                "errors": [str(exc)],
+                "started_at": existing.get("started_at", ""),
+                "finished_at": serialize_utc_datetime(utcnow()),
+                "page_range": existing.get("page_range"),
+            },
+        )
 
 
 async def _load_seen_hashes_for_resume(db, pipeline_id: str) -> set[str]:
@@ -6292,7 +6860,9 @@ async def resume_pipeline_background(
         )
     ).scalar_one_or_none()
     if pipeline_row is None:
-        logger.warning("resume_pipeline_background: pipeline %s missing, abort", pipeline_id)
+        logger.warning(
+            "resume_pipeline_background: pipeline %s missing, abort", pipeline_id
+        )
         return
 
     # Recover subject_id from checkpoint if caller didn't pass it
@@ -6311,7 +6881,10 @@ async def resume_pipeline_background(
         # nothing to do — caller probably hit a race; mark completed if no
         # chunks are still failing.
         await ckpt.update_pipeline_status(
-            db, pipeline_id, status="completed", finished=True,
+            db,
+            pipeline_id,
+            status="completed",
+            finished=True,
         )
         await ckpt.invalidate_progress_cache(pipeline_id)
         return
@@ -6329,7 +6902,9 @@ async def resume_pipeline_background(
         .all()
     )
     if not all_chunks:
-        logger.warning("resume_pipeline_background: pipeline %s has no chunk rows", pipeline_id)
+        logger.warning(
+            "resume_pipeline_background: pipeline %s has no chunk rows", pipeline_id
+        )
         return
 
     total_pages = pipeline_row.total_pages or all_chunks[-1].page_end
@@ -6370,11 +6945,15 @@ async def resume_pipeline_background(
             )
         try:
             from app.services.watermark_service import load_rules
+
             watermark_patterns = await load_rules(db)
         except Exception as exc:
-            logger.warning("resume: watermark load_rules failed (%s); using defaults", exc)
+            logger.warning(
+                "resume: watermark load_rules failed (%s); using defaults", exc
+            )
         if not watermark_patterns:
             from app.services.watermark_service import get_default_patterns
+
             watermark_patterns = get_default_patterns()
 
     shared: dict = {
@@ -6453,9 +7032,13 @@ async def resume_pipeline_background(
     # also covers the case where an earlier chunk silently regressed (we
     # never overwrite completed chunks here).
     async with session_factory() as final_db:
-        progress = await ckpt.get_pipeline_progress(final_db, pipeline_id, use_cache=False)
-        still_failing = (progress and progress.get("failed_chunks", 0) > 0)
-        overall_status = "paused" if (any_chunk_failed or still_failing) else "completed"
+        progress = await ckpt.get_pipeline_progress(
+            final_db, pipeline_id, use_cache=False
+        )
+        still_failing = progress and progress.get("failed_chunks", 0) > 0
+        overall_status = (
+            "paused" if (any_chunk_failed or still_failing) else "completed"
+        )
         await ckpt.update_pipeline_status(
             final_db,
             pipeline_id,
@@ -6474,42 +7057,53 @@ async def run_excel_pipeline_background(
     """后台运行 Excel 导入，结果写入 Redis + 内存以支持状态查询。"""
     from app.core.database import async_session
 
-    await _set_pipeline_store(pipeline_id, {
-        "pipeline_id": pipeline_id,
-        "status": "parsing",
-        "source_type": "excel",
-        "stages": {"extract": {"status": "running"}},
-        "stats": {},
-        "errors": [],
-        "started_at": serialize_utc_datetime(utcnow()),
-    })
+    await _set_pipeline_store(
+        pipeline_id,
+        {
+            "pipeline_id": pipeline_id,
+            "status": "parsing",
+            "source_type": "excel",
+            "stages": {"extract": {"status": "running"}},
+            "stats": {},
+            "errors": [],
+            "started_at": serialize_utc_datetime(utcnow()),
+        },
+    )
 
     try:
         async with async_session() as db:
             batch_id, total = await import_excel_fn(db, file_content, source_file)
         # P0-1: release Excel bytes after import function consumes them
         del file_content
-        await _set_pipeline_store(pipeline_id, {
-            "pipeline_id": pipeline_id,
-            "status": "completed",
-            "source_type": "excel",
-            "batch_id": batch_id,
-            "stats": {"total": total, "to_review": total},
-            "stages": {"extract": {"status": "completed"}},
-            "errors": [],
-            "started_at": _pipeline_store[pipeline_id]["started_at"],
-            "finished_at": serialize_utc_datetime(utcnow()),
-        })
+        await _set_pipeline_store(
+            pipeline_id,
+            {
+                "pipeline_id": pipeline_id,
+                "status": "completed",
+                "source_type": "excel",
+                "batch_id": batch_id,
+                "stats": {"total": total, "to_review": total},
+                "stages": {"extract": {"status": "completed"}},
+                "errors": [],
+                "started_at": _pipeline_store[pipeline_id]["started_at"],
+                "finished_at": serialize_utc_datetime(utcnow()),
+            },
+        )
     except Exception as exc:
         logger.exception("Excel pipeline %s failed", pipeline_id)
-        await _set_pipeline_store(pipeline_id, {
-            "pipeline_id": pipeline_id,
-            "status": "failed",
-            "source_type": "excel",
-            "errors": [str(exc)],
-            "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
-            "finished_at": serialize_utc_datetime(utcnow()),
-        })
+        await _set_pipeline_store(
+            pipeline_id,
+            {
+                "pipeline_id": pipeline_id,
+                "status": "failed",
+                "source_type": "excel",
+                "errors": [str(exc)],
+                "started_at": _pipeline_store.get(pipeline_id, {}).get(
+                    "started_at", ""
+                ),
+                "finished_at": serialize_utc_datetime(utcnow()),
+            },
+        )
 
 
 async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
@@ -6546,9 +7140,7 @@ async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
         try:
             from app.features import pipeline_checkpoint as ckpt
 
-            progress = await ckpt.get_pipeline_progress(
-                db, pipeline_id, use_cache=True
-            )
+            progress = await ckpt.get_pipeline_progress(db, pipeline_id, use_cache=True)
             if progress is not None:
                 data["chunk_progress"] = progress
                 db_status = progress.get("status")

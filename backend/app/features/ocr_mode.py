@@ -69,7 +69,9 @@ def validate_ocr_mode_dependencies(mode: str) -> None:
                 "标准 OCR 功能未启用：请设置 OCR_ENABLED=true，或使用 ocr_mode=api"
             )
         if cfg.execution_backend == "disabled":
-            raise RuntimeError("标准 OCR 执行后端已禁用（OCR_EXECUTION_BACKEND=disabled）")
+            raise RuntimeError(
+                "标准 OCR 执行后端已禁用（OCR_EXECUTION_BACKEND=disabled）"
+            )
         if cfg.execution_backend == "paddlex_http":
             if not cfg.remote_url:
                 raise RuntimeError(

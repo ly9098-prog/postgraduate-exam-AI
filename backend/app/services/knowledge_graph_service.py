@@ -5,6 +5,7 @@
 - 前置知识链查询（BFS，防循环）
 - 冷启动推断（基于名称前缀包含关系）
 """
+
 import logging
 from collections import deque
 
@@ -45,7 +46,9 @@ async def create_knowledge_edge(
         raise ValueError("source_knowledge_point_id 不能等于 target_knowledge_point_id")
 
     if relation_type not in _VALID_RELATION_TYPES:
-        raise ValueError(f"relation_type 必须为 {_VALID_RELATION_TYPES} 之一，收到 {relation_type!r}")
+        raise ValueError(
+            f"relation_type 必须为 {_VALID_RELATION_TYPES} 之一，收到 {relation_type!r}"
+        )
 
     # 校验两个知识点存在且 subject_id 一致
     kp_result = await db.execute(
@@ -150,8 +153,12 @@ async def list_knowledge_edges(
         {
             "id": e.id,
             "subject_id": e.subject_id,
-            "subject_code": subject_map[e.subject_id].code if e.subject_id in subject_map else "",
-            "subject_name": subject_map[e.subject_id].name if e.subject_id in subject_map else "",
+            "subject_code": subject_map[e.subject_id].code
+            if e.subject_id in subject_map
+            else "",
+            "subject_name": subject_map[e.subject_id].name
+            if e.subject_id in subject_map
+            else "",
             "source_knowledge_point_id": e.source_knowledge_point_id,
             "source_name": e.source_kp.name if e.source_kp else None,
             "target_knowledge_point_id": e.target_knowledge_point_id,
@@ -230,14 +237,16 @@ async def _get_prerequisite_sources(
     for e in edges:
         kp = e.source_kp
         if kp and kp.is_active:
-            items.append({
-                "knowledge_point_id": kp.id,
-                "name": kp.name,
-                "subject_id": kp.subject_id,
-                "weight": e.weight,
-                "confidence": e.confidence,
-                "edge_id": e.id,
-            })
+            items.append(
+                {
+                    "knowledge_point_id": kp.id,
+                    "name": kp.name,
+                    "subject_id": kp.subject_id,
+                    "weight": e.weight,
+                    "confidence": e.confidence,
+                    "edge_id": e.id,
+                }
+            )
     return items
 
 
@@ -269,15 +278,17 @@ async def get_next_nodes(
     for e in edges:
         kp = e.target_kp
         if kp and kp.is_active:
-            items.append({
-                "knowledge_point_id": kp.id,
-                "name": kp.name,
-                "subject_id": kp.subject_id,
-                "weight": e.weight,
-                "confidence": e.confidence,
-                "relation_type": "next",
-                "edge_id": e.id,
-            })
+            items.append(
+                {
+                    "knowledge_point_id": kp.id,
+                    "name": kp.name,
+                    "subject_id": kp.subject_id,
+                    "weight": e.weight,
+                    "confidence": e.confidence,
+                    "relation_type": "next",
+                    "edge_id": e.id,
+                }
+            )
 
     if not items:
         # fallback 到 related
@@ -315,15 +326,17 @@ async def get_related_nodes(
         else:
             kp = e.source_kp
         if kp and kp.is_active:
-            items.append({
-                "knowledge_point_id": kp.id,
-                "name": kp.name,
-                "subject_id": kp.subject_id,
-                "weight": e.weight,
-                "confidence": e.confidence,
-                "relation_type": "related",
-                "edge_id": e.id,
-            })
+            items.append(
+                {
+                    "knowledge_point_id": kp.id,
+                    "name": kp.name,
+                    "subject_id": kp.subject_id,
+                    "weight": e.weight,
+                    "confidence": e.confidence,
+                    "relation_type": "related",
+                    "edge_id": e.id,
+                }
+            )
     return items
 
 
@@ -365,7 +378,8 @@ async def infer_simple_edges_from_names(
         await db.flush()
         logger.info(
             "force_rebuild: deleted %d inferred edges for subject_id=%s",
-            deleted, subject_id,
+            deleted,
+            subject_id,
         )
 
     # 1. 获取该科目所有活跃知识点 (1 次查询)
@@ -395,9 +409,7 @@ async def infer_simple_edges_from_names(
             KnowledgeEdge.source == "inferred",
         )
     )
-    existing_edges = {
-        (row[0], row[1], row[2]) for row in existing_result.all()
-    }
+    existing_edges = {(row[0], row[1], row[2]) for row in existing_result.all()}
 
     # 3. Python 端批量计算候选边 (0 次 DB 查询)
     kps_sorted = sorted(kps, key=lambda kp: len(kp.normalized_name or kp.name))
@@ -409,7 +421,7 @@ async def infer_simple_edges_from_names(
         if not name_a:
             continue
 
-        for kp_b in kps_sorted[i + 1:]:
+        for kp_b in kps_sorted[i + 1 :]:
             name_b = (kp_b.normalized_name or kp_b.name).strip()
             if not name_b:
                 continue
@@ -420,15 +432,17 @@ async def infer_simple_edges_from_names(
                 if edge_key in existing_edges:
                     skipped += 1
                     continue
-                new_edges.append(KnowledgeEdge(
-                    subject_id=subject_id,
-                    source_knowledge_point_id=kp_a.id,
-                    target_knowledge_point_id=kp_b.id,
-                    relation_type="parent",
-                    weight=0.5,
-                    confidence=0.3,
-                    source="inferred",
-                ))
+                new_edges.append(
+                    KnowledgeEdge(
+                        subject_id=subject_id,
+                        source_knowledge_point_id=kp_a.id,
+                        target_knowledge_point_id=kp_b.id,
+                        relation_type="parent",
+                        weight=0.5,
+                        confidence=0.3,
+                        source="inferred",
+                    )
+                )
 
     # 4. 批量写入 (1 次批量操作)
     created = 0

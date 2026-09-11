@@ -1,4 +1,5 @@
 from app.schemas.base import BaseModel
+
 """Stage 7 审核系统 — Pydantic schemas."""
 
 from datetime import datetime
@@ -8,8 +9,10 @@ from pydantic import ConfigDict
 
 # --- submit_to_review ---
 
+
 class Stage5Question(BaseModel):
     """Stage 5/6 输出的单道题目。"""
+
     stem: str
     options: list[dict] = []
     answer: str = ""
@@ -59,8 +62,10 @@ class SubmitReviewResponse(BaseModel):
 
 # --- review-queue ---
 
+
 class ReviewQueueItem(BaseModel):
     """审核队列中的单条记录。"""
+
     id: int
     batch_id: str
     source_type: str
@@ -93,6 +98,7 @@ class ReviewQueueResponse(BaseModel):
 
 # --- fix ---
 
+
 class FixQuestionRequest(BaseModel):
     stem: str | None = None
     options: list[dict] | None = None
@@ -118,6 +124,7 @@ class PdfPageRangeInfo(BaseModel):
 
 
 # --- pipeline ---
+
 
 class PipelineUploadResponse(BaseModel):
     pipeline_id: str
@@ -156,6 +163,7 @@ class PipelineStatusResponse(BaseModel):
 
 class PipelineResumeResponse(BaseModel):
     """P2-5 manual resume — reports which chunks were re-queued."""
+
     pipeline_id: str
     status: str
     resumed_chunks: list[int] = []

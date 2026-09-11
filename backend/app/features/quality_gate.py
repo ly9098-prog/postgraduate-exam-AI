@@ -42,16 +42,18 @@ DOMAIN_QUALITY_GATE_MODE = "off"  # "off" | "shadow" | "enforce"
 @dataclass
 class QualityContext:
     """Quality evaluation context."""
+
     pipeline_fingerprint: str = ""
     gate_mode: str = DOMAIN_QUALITY_GATE_MODE
     existing_decision: str = "accept"  # "accept" | "reject"
-    doc_ir_source: str = ""           # "paddleocr" | "paddleocr-vl" | "deepseek"
+    doc_ir_source: str = ""  # "paddleocr" | "paddleocr-vl" | "deepseek"
     diagnostics: list[dict] = field(default_factory=list)
 
 
 @dataclass
 class QualityDecision:
     """Single gate evaluation result."""
+
     accepted: bool
     score_before: float = 0.0
     score_after: float = 0.0
@@ -79,8 +81,7 @@ class DomainQualityGate(Protocol):
         before: Any,
         candidate: Any,
         context: QualityContext,
-    ) -> QualityDecision:
-        ...
+    ) -> QualityDecision: ...
 
 
 # ---------------------------------------------------------------------------
@@ -125,12 +126,18 @@ def _text_length(text: str) -> int:
 def _char_ratio(text: str) -> dict[str, float]:
     """Compute Chinese, English, digit, symbol ratios."""
     if not text:
-        return {"chinese": 0.0, "english": 0.0, "digit": 0.0, "symbol": 0.0, "other": 0.0}
+        return {
+            "chinese": 0.0,
+            "english": 0.0,
+            "digit": 0.0,
+            "symbol": 0.0,
+            "other": 0.0,
+        }
     total = len(text)
-    chinese = sum(1 for c in text if '一' <= c <= '鿿')
-    english = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+    chinese = sum(1 for c in text if "一" <= c <= "鿿")
+    english = sum(1 for c in text if "a" <= c.lower() <= "z")
     digit = sum(1 for c in text if c.isdigit())
-    symbol = sum(1 for c in text if not c.isalnum() and c not in ('\n', ' ', '\t'))
+    symbol = sum(1 for c in text if not c.isalnum() and c not in ("\n", " ", "\t"))
     other = total - chinese - english - digit - symbol
     return {
         "chinese": chinese / max(total, 1),
@@ -143,7 +150,7 @@ def _char_ratio(text: str) -> dict[str, float]:
 
 def _tokenize_code(text: str) -> set[str]:
     """Extract code-like tokens from text."""
-    return set(re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', text))
+    return set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", text))
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +332,9 @@ class CodeQualityGate:
             risk_flags.append("bracket_imbalance")
             reason_codes.append("CODE_BRACKET_IMBALANCE")
 
-        score_after = min(1.0, id_retention * 0.4 + op_retention * 0.4 + bracket_rate * 0.2)
+        score_after = min(
+            1.0, id_retention * 0.4 + op_retention * 0.4 + bracket_rate * 0.2
+        )
         accepted = score_after >= 0.7
 
         return QualityDecision(

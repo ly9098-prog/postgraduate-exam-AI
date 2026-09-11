@@ -54,7 +54,11 @@ async def update_model(
     except ValueError as exc:
         await db.rollback()
         msg = str(exc)
-        code = status.HTTP_404_NOT_FOUND if "不存在" in msg else status.HTTP_400_BAD_REQUEST
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "不存在" in msg
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=code, detail=msg)
     except SecretEncryptionError:
         await db.rollback()
@@ -70,7 +74,11 @@ async def update_model(
         )
 
 
-@router.post("/ai-models", response_model=AdminAiModelConfigResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/ai-models",
+    response_model=AdminAiModelConfigResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_model_endpoint(
     data: AdminAiModelConfigCreateRequest,
     request: Request,
@@ -105,7 +113,11 @@ async def delete_model_endpoint(
     except ValueError as exc:
         await db.rollback()
         msg = str(exc)
-        code = status.HTTP_404_NOT_FOUND if "不存在" in msg else status.HTTP_400_BAD_REQUEST
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "不存在" in msg
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=code, detail=msg)
 
 

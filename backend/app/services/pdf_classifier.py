@@ -3,6 +3,7 @@
 判断每一页是"可提取文本"还是"图片型（需要 OCR）"。
 只负责分类，不负责提取文本或 OCR。
 """
+
 import fitz  # PyMuPDF
 
 # 一页文本少于这个字符数，视为图片型页面
@@ -24,13 +25,15 @@ def classify_pages(pdf_bytes: bytes) -> list[dict]:
     for i, page in enumerate(doc):
         text = page.get_text().strip()
         needs_ocr = len(text) < _TEXT_THRESHOLD
-        results.append({
-            "page_index": i,
-            "needs_ocr": needs_ocr,
-            "text": text if not needs_ocr else "",
-            # 仅图片型页面保存 page 对象引用（用于后续 OCR 转图）
-            "_page": page if needs_ocr else None,
-        })
+        results.append(
+            {
+                "page_index": i,
+                "needs_ocr": needs_ocr,
+                "text": text if not needs_ocr else "",
+                # 仅图片型页面保存 page 对象引用（用于后续 OCR 转图）
+                "_page": page if needs_ocr else None,
+            }
+        )
 
     return results
 

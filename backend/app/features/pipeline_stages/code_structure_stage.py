@@ -35,14 +35,16 @@ _CONFIDENCE_BUMP = 0.2
 _CONFIDENCE_CAP = 0.6
 
 # Code integrity flags that trigger reconstruction
-_CODE_STRUCTURE_FLAGS = frozenset({
-    "code_brace_unbalanced",
-    "code_block_incomplete",
-    "code_block_truncated",
-    "code_fence_unclosed",
-    "code_garbled_text",
-    "code_line_break_suspicious",
-})
+_CODE_STRUCTURE_FLAGS = frozenset(
+    {
+        "code_brace_unbalanced",
+        "code_block_incomplete",
+        "code_block_truncated",
+        "code_fence_unclosed",
+        "code_garbled_text",
+        "code_line_break_suspicious",
+    }
+)
 
 
 def _questions_with_code_issues(questions: list[dict]) -> list[tuple[int, dict]]:
@@ -125,6 +127,7 @@ async def _call_llm_for_structure_reconstruct(
     except json.JSONDecodeError:
         # Try extracting from ```json block
         import re
+
         m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content)
         if m:
             try:
@@ -136,7 +139,7 @@ async def _call_llm_for_structure_reconstruct(
             start = content.find("{")
             end = content.rfind("}")
             if start >= 0 and end > start:
-                candidate = content[start:end + 1]
+                candidate = content[start : end + 1]
                 # Quick sanity check: must start with {"stem" to avoid
                 # picking up unrelated braces (e.g. from C code in output)
                 stripped = candidate.lstrip()
@@ -228,11 +231,13 @@ async def run_code_structure_stage(
 
         if result is None:
             failed_count += 1
-            fix_actions.append({
-                "question_index": idx,
-                "success": False,
-                "reason": "llm_failed",
-            })
+            fix_actions.append(
+                {
+                    "question_index": idx,
+                    "success": False,
+                    "reason": "llm_failed",
+                }
+            )
             continue
 
         # Apply safety gate via CandidateEvaluator (unified single acceptance authority)
@@ -241,7 +246,10 @@ async def run_code_structure_stage(
             original_text=stem_before,
             candidate_text=result["repaired_stem"],
             context={"is_code_context": True},
-            provenance={"stage": "code_structure_reconstruct", "model": "openai_compatible"},
+            provenance={
+                "stage": "code_structure_reconstruct",
+                "model": "openai_compatible",
+            },
         )
 
         if evaluation.decision != CandidateDecision.ACCEPT:
@@ -251,11 +259,13 @@ async def run_code_structure_stage(
                 q.get("number", idx),
                 evaluation.reason_code or "unknown",
             )
-            fix_actions.append({
-                "question_index": idx,
-                "success": False,
-                "reason": f"safety_rejected: {evaluation.reason_code or 'unknown'}",
-            })
+            fix_actions.append(
+                {
+                    "question_index": idx,
+                    "success": False,
+                    "reason": f"safety_rejected: {evaluation.reason_code or 'unknown'}",
+                }
+            )
             continue
 
         # Apply the fix: update stem with accepted text from evaluator
@@ -296,53 +306,64 @@ async def run_code_structure_stage(
                 "Code structure reconstruction had no measurable improvement for q%s: "
                 "pre_flags=%s post_flags=%s pre_score=%.2f post_score=%.2f",
                 q.get("number", idx),
-                sorted(_pre_flags), sorted(_post_flags),
-                _pre_score, _post_score,
+                sorted(_pre_flags),
+                sorted(_post_flags),
+                _pre_score,
+                _post_score,
             )
-            fix_actions.append({
-                "question_index": idx,
-                "success": False,
-                "reason": "integrity_not_improved",
-                "pre_flags": sorted(_pre_flags),
-                "post_flags": sorted(_post_flags),
-                "pre_score": _pre_score,
-                "post_score": _post_score,
-            })
+            fix_actions.append(
+                {
+                    "question_index": idx,
+                    "success": False,
+                    "reason": "integrity_not_improved",
+                    "pre_flags": sorted(_pre_flags),
+                    "post_flags": sorted(_post_flags),
+                    "pre_score": _pre_score,
+                    "post_score": _post_score,
+                }
+            )
             continue
 
         # Only boost confidence if no garbled text persists
         if "code_garbled_text" not in _persisted_flags:
             current_conf = q.get("confidence_score", 0)
             if current_conf < _CONFIDENCE_CAP:
-                q["confidence_score"] = min(current_conf + _CONFIDENCE_BUMP, _CONFIDENCE_CAP)
+                q["confidence_score"] = min(
+                    current_conf + _CONFIDENCE_BUMP, _CONFIDENCE_CAP
+                )
 
         # Add decision trace
         dt = list(q.get("decision_trace") or [])
-        dt.append({
-            "stage": "code_structure_reconstruct",
-            "result": "repaired",
-            "reason": ";".join(result.get("fix_actions", ["structure_fixed"])),
-        })
+        dt.append(
+            {
+                "stage": "code_structure_reconstruct",
+                "result": "repaired",
+                "reason": ";".join(result.get("fix_actions", ["structure_fixed"])),
+            }
+        )
         q["decision_trace"] = dt
 
-        fix_actions.append({
-            "question_index": idx,
-            "success": True,
-            "code_fixed": len(_resolved_flags) > 0,
-            "confidence": result.get("confidence", 0.5),
-            "tokens_used": result.get("token_used", 0),
-            "actions": result.get("fix_actions", []),
-            "pre_flags": sorted(_pre_flags),
-            "post_flags": sorted(_post_flags),
-            "resolved_flags": sorted(_resolved_flags),
-        })
+        fix_actions.append(
+            {
+                "question_index": idx,
+                "success": True,
+                "code_fixed": len(_resolved_flags) > 0,
+                "confidence": result.get("confidence", 0.5),
+                "tokens_used": result.get("token_used", 0),
+                "actions": result.get("fix_actions", []),
+                "pre_flags": sorted(_pre_flags),
+                "post_flags": sorted(_post_flags),
+                "resolved_flags": sorted(_resolved_flags),
+            }
+        )
 
         logger.info(
             "Code structure reconstructed: q%s (resolved=%s, persisted=%s, pre_score=%.2f post_score=%.2f)",
             q.get("number", idx),
             sorted(_resolved_flags),
             sorted(_persisted_flags),
-            _pre_score, _post_score,
+            _pre_score,
+            _post_score,
         )
 
     if reconstructed_count:

@@ -30,6 +30,7 @@ def _get_gateway():
     """Get the OCRGateway singleton (lazy)."""
     try:
         import app.features.ocr_gateway  # noqa: F401
+
         return _gateway_singleton
     except ImportError:
         return None
@@ -127,7 +128,8 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     warnings.warn(
         "ocr_service.ocr_pages() is deprecated. "
         "Use OCRGateway.recognize_pages() instead.",
-        DeprecationWarning, stacklevel=2,
+        DeprecationWarning,
+        stacklevel=2,
     )
 
     if not page_images:
@@ -173,7 +175,8 @@ def ocr_pages_with_boxes(
     warnings.warn(
         "ocr_service.ocr_pages_with_boxes() is deprecated. "
         "Use OCRGateway.recognize_pages() instead.",
-        DeprecationWarning, stacklevel=2,
+        DeprecationWarning,
+        stacklevel=2,
     )
 
     if not page_images:
@@ -192,10 +195,7 @@ def ocr_pages_with_boxes(
             )
             if _gateway_results_all_failed(results):
                 raise RuntimeError("OCR gateway returned no successful results")
-            return {
-                r.page_index: _worker_result_to_page_result(r)
-                for r in results
-            }
+            return {r.page_index: _worker_result_to_page_result(r) for r in results}
         except Exception as exc:
             if is_restricted_ocr_environment():
                 raise RuntimeError(
@@ -217,7 +217,8 @@ def ocr_raw_text(image_bytes: bytes) -> str:
     """
     warnings.warn(
         "ocr_service.ocr_raw_text() is deprecated.",
-        DeprecationWarning, stacklevel=2,
+        DeprecationWarning,
+        stacklevel=2,
     )
 
     _ensure_sync_context()
@@ -255,6 +256,7 @@ def reset_ocr_engine() -> None:
     _reject_cloud_legacy("reset_ocr_engine")
     logger.info("reset_ocr_engine() called — recycling process pool workers")
     from app.core.ocr_process_pool import ocr_process_pool
+
     ocr_process_pool._shutdown_nonblocking()
 
 
@@ -274,7 +276,10 @@ def ocr_is_available() -> bool:
         # Check backend-specific reachability.
         backend = metrics.get("backend", "")
         if backend == "paddlex_http":
-            return metrics.get("configured", False) and metrics.get("reachable") is not False
+            return (
+                metrics.get("configured", False)
+                and metrics.get("reachable") is not False
+            )
         return False
     return False
 
@@ -290,6 +295,7 @@ def get_ocr_init_error() -> str | None:
 def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
     """Clean OCR output text — delegates to text_normalizer.normalize_ocr_text()."""
     from app.features.text_normalizer import normalize_ocr_text
+
     return normalize_ocr_text(text, trace_id=trace_id)
 
 
@@ -312,7 +318,8 @@ def get_last_transform_tracker():
     warnings.warn(
         "get_last_transform_tracker() is deprecated. "
         "Transforms are embedded in WorkerResult.",
-        DeprecationWarning, stacklevel=2,
+        DeprecationWarning,
+        stacklevel=2,
     )
     return None
 
@@ -357,7 +364,8 @@ def _legacy_ocr_pages_with_boxes(
     try:
         raw = _run_async(
             ocr_executor.run_ocr_pages_with_boxes(
-                page_images, skip_rotation=skip_rotation,
+                page_images,
+                skip_rotation=skip_rotation,
             ),
         )
         result: dict[int, OcrPageResult] = {}
@@ -378,7 +386,10 @@ def _legacy_ocr_pages_with_boxes(
         return result
     except Exception as exc:
         logger.error("Legacy OCR boxes failed: %s", exc)
-        return {idx: OcrPageResult(page_index=idx, text="", boxes=[]) for idx, _ in page_images}
+        return {
+            idx: OcrPageResult(page_index=idx, text="", boxes=[])
+            for idx, _ in page_images
+        }
 
 
 def _legacy_ocr_raw_text(image_bytes: bytes) -> str:
@@ -396,7 +407,9 @@ def _legacy_ocr_raw_text(image_bytes: bytes) -> str:
 def _worker_result_to_page_result(r) -> OcrPageResult:
     """Convert a WorkerResult (or similar) from Gateway to OcrPageResult."""
     if r is None:
-        return OcrPageResult(page_index=0, text="", boxes=[], failed=True, error="No result")
+        return OcrPageResult(
+            page_index=0, text="", boxes=[], failed=True, error="No result"
+        )
 
     result_data = r.result if hasattr(r, "result") else r
     if isinstance(result_data, dict):

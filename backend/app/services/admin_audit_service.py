@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 try:
     from app.core.log_context import log_event
 except ImportError:  # pragma: no cover
+
     def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
         pass
 
@@ -62,7 +63,9 @@ async def write_admin_audit(
 
     try:
         log_event(
-            logger, "admin.audit.write", "info",
+            logger,
+            "admin.audit.write",
+            "info",
             operator_id=operator.id if operator else None,
             operator_name=operator.username if operator else None,
             action=action,
@@ -230,13 +233,17 @@ async def cleanup_expired_admin_audit_logs(
     while True:
         # Fetch batch of IDs to delete
         batch_ids = (
-            await db.execute(
-                select(AuditLog.id)
-                .where(AuditLog.created_at < cutoff)
-                .order_by(AuditLog.id)
-                .limit(batch_size)
+            (
+                await db.execute(
+                    select(AuditLog.id)
+                    .where(AuditLog.created_at < cutoff)
+                    .order_by(AuditLog.id)
+                    .limit(batch_size)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         if not batch_ids:
             break

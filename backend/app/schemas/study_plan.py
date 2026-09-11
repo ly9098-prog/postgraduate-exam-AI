@@ -88,4 +88,6 @@ class StudyPlanOverviewResponse(BaseModel):
     countdown: StudyPlanCountdown | None = None
     weekly: StudyPlanWeeklyProgress | None = None
     today: StudyPlanToday | None = None
-    suggested_defaults: StudyPlanSuggestedDefaults = Field(default_factory=StudyPlanSuggestedDefaults)
+    suggested_defaults: StudyPlanSuggestedDefaults = Field(
+        default_factory=StudyPlanSuggestedDefaults
+    )

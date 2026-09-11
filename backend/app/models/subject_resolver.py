@@ -32,7 +32,5 @@ async def resolve_subject_id_by_code(db: AsyncSession, code: str) -> int | None:
     raw = str(code or "").strip().lower()
     if not raw:
         return None
-    result = await db.execute(
-        select(Subject.id).where(Subject.code == raw).limit(1)
-    )
+    result = await db.execute(select(Subject.id).where(Subject.code == raw).limit(1))
     return result.scalar_one_or_none()

@@ -14,10 +14,10 @@ import re
 
 # 题号模式
 _QUESTION_PATTERN_LIST = [
-    r"^\s*\d+\s*[.．、)）]",         # 1. / 1．/ 1、/ 1) / 1）
-    r"^\s*\(\d+\)",                  # (1)
-    r"^\s*【\d+】",                  # 【1】
-    r"^第\s*\d+\s*题",              # 第1题
+    r"^\s*\d+\s*[.．、)）]",  # 1. / 1．/ 1、/ 1) / 1）
+    r"^\s*\(\d+\)",  # (1)
+    r"^\s*【\d+】",  # 【1】
+    r"^第\s*\d+\s*题",  # 第1题
     r"^第\s*[一二三四五六七八九十]+\s*题",  # 第一题
 ]
 
@@ -25,16 +25,29 @@ QUESTION_PATTERNS = [re.compile(pat) for pat in _QUESTION_PATTERN_LIST]
 
 # 答案区域关键词
 ANSWER_KEYWORDS = [
-    "答案", "参考答案", "正确答案", "标准答案",
-    "answer", "Answer", "ANSWER",
-    "KEY", "Key",
+    "答案",
+    "参考答案",
+    "正确答案",
+    "标准答案",
+    "answer",
+    "Answer",
+    "ANSWER",
+    "KEY",
+    "Key",
 ]
 
 # 解析区域关键词
 ANALYSIS_KEYWORDS = [
-    "解析", "解答", "讲解", "分析", "详解",
-    "explanation", "Explanation",
-    "【解析】", "【解答】", "【分析】",
+    "解析",
+    "解答",
+    "讲解",
+    "分析",
+    "详解",
+    "explanation",
+    "Explanation",
+    "【解析】",
+    "【解答】",
+    "【分析】",
 ]
 
 # 节标志模式（王道教材特有）
@@ -47,9 +60,17 @@ _SECTION_MARKER_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"答案与解析|答案和解析"), "answer_start"),
     (re.compile(r"本章小结|疑难点"), "summary"),
     # 试卷大题节标题
-    (re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*(?:选择|单选|多选)题?"), "question_type_single"),
+    (
+        re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*(?:选择|单选|多选)题?"),
+        "question_type_single",
+    ),
     (re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*填空题?"), "question_type_fill"),
-    (re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*(?:简答|解答|计算|证明|论述|程序设计|应用)题?"), "question_type_subjective"),
+    (
+        re.compile(
+            r"^[一二三四五六七八九十]+\s*[、.．]\s*(?:简答|解答|计算|证明|论述|程序设计|应用)题?"
+        ),
+        "question_type_subjective",
+    ),
     (re.compile(r"^第\s*[一二三四五六七八九十]+\s*(?:部分|大?题)"), "exam_section"),
 ]
 
@@ -134,12 +155,14 @@ def _detect_section_markers(normalized_blocks: list[dict]) -> list[dict]:
                 continue
             for pat, marker_type in _SECTION_MARKER_PATTERNS:
                 if pat.search(stripped):
-                    markers.append({
-                        "page": block.get("page", 0),
-                        "block_index": block.get("block_index", 0),
-                        "marker_type": marker_type,
-                        "text": stripped[:60],
-                    })
+                    markers.append(
+                        {
+                            "page": block.get("page", 0),
+                            "block_index": block.get("block_index", 0),
+                            "marker_type": marker_type,
+                            "text": stripped[:60],
+                        }
+                    )
                     break
     return markers
 
@@ -259,7 +282,12 @@ def analyze_structure(
         禁用的检测项将被跳过。
     """
     if features is None:
-        features = {"question_type": True, "options": True, "answer": True, "analysis": True}
+        features = {
+            "question_type": True,
+            "options": True,
+            "answer": True,
+            "analysis": True,
+        }
 
     detect_question = features.get("question_type", True)
     detect_answer = features.get("answer", True)
@@ -317,9 +345,16 @@ def analyze_structure(
         total_e_matches += e_count
 
         bt = _block_type(text)
-        raw_types.append((
-            page, block_idx, bt, q_count > 0, a_count > 0, e_count > 0,
-        ))
+        raw_types.append(
+            (
+                page,
+                block_idx,
+                bt,
+                q_count > 0,
+                a_count > 0,
+                e_count > 0,
+            )
+        )
 
     # 上下文感知：答案/解析区域之后的"题号"更可能是答案列表编号
     first_answer_like = None
@@ -331,7 +366,11 @@ def analyze_structure(
     block_types: list[tuple[int, str]] = []
     page_types: list[tuple[int, str]] = []
     for page, idx, bt, has_q, has_a, has_e in raw_types:
-        if first_answer_like is not None and idx > first_answer_like and bt == "question":
+        if (
+            first_answer_like is not None
+            and idx > first_answer_like
+            and bt == "question"
+        ):
             # 答案区域之后的题号 → 降级为混合块
             bt = "mixed"
         block_types.append((idx, bt))
@@ -340,17 +379,17 @@ def analyze_structure(
     # 收集各类型页码
     question_blocks = [idx for idx, bt in block_types if bt in ("question", "mixed")]
     a_blocks = [idx for idx, bt in block_types if bt in ("answer", "mixed")]
-    a_pages = sorted(set(
-        page for page, bt in page_types if bt in ("answer", "mixed")
-    ))
+    a_pages = sorted(set(page for page, bt in page_types if bt in ("answer", "mixed")))
     pure_question_blocks = [idx for idx, bt in block_types if bt == "question"]
-    e_pages = sorted(set(
-        page for page, _, _, _, _, has_e in raw_types if has_e
-    ))
+    e_pages = sorted(set(page for page, _, _, _, _, has_e in raw_types if has_e))
 
     mode, confidence = _detect_mode(
-        block_types, pure_question_blocks, a_blocks,
-        total_q_matches, total_a_matches, total_blocks,
+        block_types,
+        pure_question_blocks,
+        a_blocks,
+        total_q_matches,
+        total_a_matches,
+        total_blocks,
     )
 
     # If section markers found "answer_start", use that for more precise detection
@@ -365,7 +404,8 @@ def analyze_structure(
     question_pages = [
         page
         for page, bt in page_types
-        if bt == "question" or (bt == "mixed" and (mode != "SEPARATED" or page not in a_pages))
+        if bt == "question"
+        or (bt == "mixed" and (mode != "SEPARATED" or page not in a_pages))
     ]
     q_pages = sorted(set(question_pages))
 
@@ -377,7 +417,9 @@ def analyze_structure(
     all_pages = sorted(set(b.get("page", 0) for b in normalized_blocks))
     content_pages = _derive_content_pages(all_pages, q_pages, a_pages, section_markers)
 
-    reason = _diagnostic_reason(mode, total_q_matches, total_a_matches, pure_question_blocks, a_pages)
+    reason = _diagnostic_reason(
+        mode, total_q_matches, total_a_matches, pure_question_blocks, a_pages
+    )
 
     q_density = round(total_q_matches / max(total_blocks, 1), 3)
     a_density = round(total_a_matches / max(total_blocks, 1), 3)
@@ -416,6 +458,7 @@ def analyze_structure_from_ir(
 ) -> dict:
     """DocumentIR entry point for analyze_structure."""
     from app.core.document_ir import document_ir_to_blocks
+
     blocks = document_ir_to_blocks(doc)
     return analyze_structure(blocks, features=features)
 
@@ -447,8 +490,12 @@ def _detect_mode(
         last_pure_q = max(pure_question_blocks)
         if last_pure_q < first_answer:
             gap = first_answer - last_pure_q
-            conf = min(0.95, 0.6 + gap / max(total_blocks, 1) * 0.2
-                       + min(total_q_matches, 10) * 0.02)
+            conf = min(
+                0.95,
+                0.6
+                + gap / max(total_blocks, 1) * 0.2
+                + min(total_q_matches, 10) * 0.02,
+            )
             return ("SEPARATED", round(conf, 2))
 
     q_before_answer = [q for q in all_q_blocks if q < first_answer]

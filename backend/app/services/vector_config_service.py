@@ -86,9 +86,13 @@ async def resolve_embedding_model(
     if selected_id is not None:
         model = await db.get(AdminAiModelConfig, selected_id)
         if model is None:
-            raise ValueError(f"Embedding 模型配置 #{selected_id} 不存在，请重新选择模型")
+            raise ValueError(
+                f"Embedding 模型配置 #{selected_id} 不存在，请重新选择模型"
+            )
         if not model.is_enabled:
-            raise ValueError(f"Embedding 模型「{model.display_name}」已禁用，请先启用或重新选择")
+            raise ValueError(
+                f"Embedding 模型「{model.display_name}」已禁用，请先启用或重新选择"
+            )
         if "embedding" not in _model_features(model):
             raise ValueError(f"模型「{model.display_name}」未声明 Embedding 能力")
         return model
@@ -96,7 +100,9 @@ async def resolve_embedding_model(
     result = await db.execute(
         select(AdminAiModelConfig)
         .where(AdminAiModelConfig.is_enabled == True)  # noqa: E712
-        .order_by(AdminAiModelConfig.is_default.desc(), AdminAiModelConfig.sort_order.asc())
+        .order_by(
+            AdminAiModelConfig.is_default.desc(), AdminAiModelConfig.sort_order.asc()
+        )
     )
     for model in result.scalars().all():
         if "embedding" in _model_features(model):
@@ -127,8 +133,10 @@ async def resolve_embedding_config(
             base_url="",
             model="",
             dim=dim or int(cfg.get("embedding_dim", settings.EMBEDDING_DIM)),
-            timeout=timeout or int(cfg.get("embedding_timeout", settings.EMBEDDING_TIMEOUT)),
-            batch_size=batch_size or int(cfg.get("embedding_batch_size", settings.EMBEDDING_BATCH_SIZE)),
+            timeout=timeout
+            or int(cfg.get("embedding_timeout", settings.EMBEDDING_TIMEOUT)),
+            batch_size=batch_size
+            or int(cfg.get("embedding_batch_size", settings.EMBEDDING_BATCH_SIZE)),
             provider="",
             model_config_id=None,
         )
@@ -145,8 +153,10 @@ async def resolve_embedding_config(
         base_url=(model.api_base_url or "").rstrip("/"),
         model=model.name,
         dim=dim or int(cfg.get("embedding_dim", settings.EMBEDDING_DIM)),
-        timeout=timeout or int(cfg.get("embedding_timeout", settings.EMBEDDING_TIMEOUT)),
-        batch_size=batch_size or int(cfg.get("embedding_batch_size", settings.EMBEDDING_BATCH_SIZE)),
+        timeout=timeout
+        or int(cfg.get("embedding_timeout", settings.EMBEDDING_TIMEOUT)),
+        batch_size=batch_size
+        or int(cfg.get("embedding_batch_size", settings.EMBEDDING_BATCH_SIZE)),
         provider=model.provider,
         model_config_id=model.id,
     )
@@ -197,10 +207,14 @@ async def test_embedding_connection(
 
     try:
         from app.services.safe_remote_fetch import validate_remote_url
+
         validate_remote_url(api_base_url, allow_http=settings.AI_ALLOW_HTTP_BASE_URLS)
     except ValueError as exc:
         return EmbeddingTestResponse(
-            success=False, status="network_error", message=str(exc), latency_ms=0,
+            success=False,
+            status="network_error",
+            message=str(exc),
+            latency_ms=0,
         )
 
     from app.services.embedding_service import build_embeddings_url
@@ -216,6 +230,7 @@ async def test_embedding_connection(
 
     try:
         from app.services.safe_remote_fetch import request_remote_bytes
+
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         remote = await asyncio.to_thread(
             request_remote_bytes,

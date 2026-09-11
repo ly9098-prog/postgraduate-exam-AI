@@ -33,7 +33,9 @@ def _build_base_query(user_id: int) -> select:
     )
 
 
-async def _apply_filters(db: AsyncSession, query: select, filters: dict | None) -> select:
+async def _apply_filters(
+    db: AsyncSession, query: select, filters: dict | None
+) -> select:
     """Apply the same filter logic as the wrong-question list endpoint.
 
     Supported filter keys: ``subject``, ``error_type``, ``topic``.
@@ -63,16 +65,21 @@ async def _apply_filters(db: AsyncSession, query: select, filters: dict | None) 
                 select(QuestionVersionKnowledgePoint.question_version_id)
                 .join(
                     KnowledgePoint,
-                    KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+                    KnowledgePoint.id
+                    == QuestionVersionKnowledgePoint.knowledge_point_id,
                 )
                 .where(
                     or_(
                         KnowledgePoint.name.contains(t),
-                        KnowledgePoint.normalized_name.contains(normalize_knowledge_name(t)),
+                        KnowledgePoint.normalized_name.contains(
+                            normalize_knowledge_name(t)
+                        ),
                     )
                 )
             )
-            query = query.where(WrongQuestion.question_version_id.in_(matching_versions))
+            query = query.where(
+                WrongQuestion.question_version_id.in_(matching_versions)
+            )
 
     return query
 
@@ -165,7 +172,8 @@ async def _resolve_selected(
     if missing > 0:
         logger.warning(
             "User %d: %d selected wrong-question IDs invalid (unauthorized/deleted)",
-            user_id, missing,
+            user_id,
+            missing,
         )
         # Return an opaque error — do not leak which IDs are valid
         raise ValueError("部分题目无法导出，请刷新后重试")

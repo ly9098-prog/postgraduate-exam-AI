@@ -37,7 +37,9 @@ async def daily(
     try:
         return await get_dashboard_daily(db, created_from, created_to)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
 
 
 @router.get("/questions-stats", response_model=AdminDashboardQuestionStats)

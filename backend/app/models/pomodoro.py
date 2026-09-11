@@ -20,7 +20,9 @@ from app.core.database import Base
 class PomodoroSession(Base):
     __tablename__ = "pomodoro_sessions"
     __table_args__ = (
-        Index("ix_pomodoro_sessions_user_status_start", "user_id", "status", "start_time"),
+        Index(
+            "ix_pomodoro_sessions_user_status_start", "user_id", "status", "start_time"
+        ),
         Index("ix_pomodoro_sessions_user_status_end", "user_id", "status", "end_time"),
         Index(
             "ux_pomodoro_sessions_user_client_start_id",
@@ -48,8 +50,12 @@ class PomodoroSession(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    subject_id: Mapped[int | None] = mapped_column(ForeignKey("subjects.id"), nullable=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    subject_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subjects.id"), nullable=True, index=True
+    )
     chapter_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Client-generated idempotency key for /start. It lets a mobile client retry an
     # uncertain start without guessing which cross-device active session is its own.
@@ -68,12 +74,20 @@ class PomodoroSession(Base):
     break_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    expected_end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    expected_end_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
     actual_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
-    notification_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    notification_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notification_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    notification_sent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    notification_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     notification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     openid_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -86,7 +100,9 @@ class PomodoroSession(Base):
 class PomodoroPauseInterval(Base):
     __tablename__ = "pomodoro_pause_intervals"
     __table_args__ = (
-        Index("ix_pomodoro_pause_intervals_session_started", "session_id", "started_at"),
+        Index(
+            "ix_pomodoro_pause_intervals_session_started", "session_id", "started_at"
+        ),
         # At most one open pause interval per session.
         Index(
             "ux_pomodoro_pause_intervals_one_open",

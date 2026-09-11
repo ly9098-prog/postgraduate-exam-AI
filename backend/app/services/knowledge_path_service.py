@@ -2,6 +2,7 @@
 
 基于知识图谱和用户掌握度，构建个性化学习路径并推荐题目。
 """
+
 import logging
 
 from sqlalchemy import and_, func, select
@@ -108,15 +109,17 @@ async def build_user_knowledge_path(
     if not start_kp:
         # 取最薄弱知识点
         weak_kps = await mastery_service.get_user_weak_knowledge_points(
-            db, user_id, subject_id, limit=1,
+            db,
+            user_id,
+            subject_id,
+            limit=1,
         )
         if weak_kps:
             start_kp = weak_kps[0]
         else:
             # 没有任何掌握度数据，随机选一个知识点（random offset avoids ORDER BY random())
             count_result = await db.execute(
-                select(func.count(KnowledgePoint.id))
-                .where(
+                select(func.count(KnowledgePoint.id)).where(
                     KnowledgePoint.subject_id == subject_id,
                     KnowledgePoint.is_active,
                 )
@@ -126,6 +129,7 @@ async def build_user_knowledge_path(
                 random_kp = None
             else:
                 import random
+
                 offset = random.randint(0, total - 1)
                 kp_result = await db.execute(
                     select(KnowledgePoint)
@@ -158,49 +162,83 @@ async def build_user_knowledge_path(
     # 前置知识
     try:
         prereqs = await knowledge_graph_service.get_prerequisites(
-            db, start_kp["knowledge_point_id"], max_depth=1,
+            db,
+            start_kp["knowledge_point_id"],
+            max_depth=1,
         )
         for p in prereqs[:3]:
-            nodes.append(_build_node(
-                p, path_role="prerequisite", priority=0.0,
-            ))
+            nodes.append(
+                _build_node(
+                    p,
+                    path_role="prerequisite",
+                    priority=0.0,
+                )
+            )
     except Exception:
-        logger.warning("get_prerequisites failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
+        logger.warning(
+            "get_prerequisites failed for kp=%d",
+            start_kp["knowledge_point_id"],
+            exc_info=True,
+        )
 
     # 后续节点
     try:
         nexts = await knowledge_graph_service.get_next_nodes(
-            db, start_kp["knowledge_point_id"], max_depth=1,
+            db,
+            start_kp["knowledge_point_id"],
+            max_depth=1,
         )
         for n in nexts[:3]:
             # get_next_nodes() may fallback to related when no explicit next
             # edge exists.  Preserve that semantic so the API/reason never
             # presents a merely-related node as the user's "next step".
             relation_role = "next" if n.get("relation_type") == "next" else "related"
-            nodes.append(_build_node(
-                n, path_role=relation_role, priority=0.0,
-            ))
+            nodes.append(
+                _build_node(
+                    n,
+                    path_role=relation_role,
+                    priority=0.0,
+                )
+            )
     except Exception:
-        logger.warning("get_next_nodes failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
+        logger.warning(
+            "get_next_nodes failed for kp=%d",
+            start_kp["knowledge_point_id"],
+            exc_info=True,
+        )
 
     # 相关节点
     try:
         relateds = await knowledge_graph_service.get_related_nodes(
-            db, start_kp["knowledge_point_id"], limit=3,
+            db,
+            start_kp["knowledge_point_id"],
+            limit=3,
         )
         for r in relateds[:3]:
-            nodes.append(_build_node(
-                r, path_role="related", priority=0.0,
-            ))
+            nodes.append(
+                _build_node(
+                    r,
+                    path_role="related",
+                    priority=0.0,
+                )
+            )
     except Exception:
-        logger.warning("get_related_nodes failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
+        logger.warning(
+            "get_related_nodes failed for kp=%d",
+            start_kp["knowledge_point_id"],
+            exc_info=True,
+        )
 
     # 2b. 批量加载节点所属科目标签（单次查询）
     await _attach_subject_info(db, nodes + [start_kp])
 
     # 3. 批量查询掌握度（替代每次循环调 N+1 次 _get_mastery_for_kp）
-    all_kp_ids = list({n["knowledge_point_id"] for n in nodes if n.get("knowledge_point_id")})
-    mastery_map = await _batch_get_mastery(db, user_id, all_kp_ids) if all_kp_ids else {}
+    all_kp_ids = list(
+        {n["knowledge_point_id"] for n in nodes if n.get("knowledge_point_id")}
+    )
+    mastery_map = (
+        await _batch_get_mastery(db, user_id, all_kp_ids) if all_kp_ids else {}
+    )
     for node in nodes:
         kp_id = node["knowledge_point_id"]
         if kp_id in mastery_map:
@@ -256,10 +294,14 @@ async def attach_recommended_questions_to_path(
 
     # Build answered subquery once
     answered_sub = (
-        select(PracticeRecord.question_id)
-        .where(PracticeRecord.user_id == user_id)
-        .distinct()
-    ) if exclude_answered else None
+        (
+            select(PracticeRecord.question_id)
+            .where(PracticeRecord.user_id == user_id)
+            .distinct()
+        )
+        if exclude_answered
+        else None
+    )
 
     # ── Batch load all candidate questions for all KPs in one query ──
     # Returns (knowledge_point_id, question_id, difficulty) tuples.
@@ -335,7 +377,7 @@ async def attach_recommended_questions_to_path(
                     count=questions_per_node - len(recommended),
                     exclude_answered=exclude_answered,
                 )
-                for rec in (recalls or []):
+                for rec in recalls or []:
                     qid = rec["question_id"]
                     if qid not in global_seen_ids:
                         recommended.append(qid)
@@ -343,7 +385,9 @@ async def attach_recommended_questions_to_path(
                         if len(recommended) >= questions_per_node:
                             break
             except Exception:
-                logger.warning("vector_recall_by_text 补齐失败 kp=%d", kp_id, exc_info=True)
+                logger.warning(
+                    "vector_recall_by_text 补齐失败 kp=%d", kp_id, exc_info=True
+                )
 
         node["recommended_question_ids"] = recommended
 
@@ -373,7 +417,9 @@ async def get_user_path_recommendations(
     subject_name = subject_obj.name if subject_obj else ""
 
     path_result = await build_user_knowledge_path(
-        db, user_id, subject_id,
+        db,
+        user_id,
+        subject_id,
         start_knowledge_point_id=start_knowledge_point_id,
         limit=limit,
     )
@@ -388,7 +434,9 @@ async def get_user_path_recommendations(
             "subject_code": subject_code,
             "subject_name": subject_name,
             "user_id": user_id,
-            "start_knowledge_point_id": start_kp["knowledge_point_id"] if start_kp else None,
+            "start_knowledge_point_id": start_kp["knowledge_point_id"]
+            if start_kp
+            else None,
             "strategy": "empty",
             "nodes": [],
             "recommended_question_ids": [],
@@ -397,7 +445,10 @@ async def get_user_path_recommendations(
 
     # 挂题
     nodes = await attach_recommended_questions_to_path(
-        db, user_id, subject_code, nodes,
+        db,
+        user_id,
+        subject_code,
+        nodes,
         questions_per_node=questions_per_node,
     )
 
@@ -413,13 +464,15 @@ async def get_user_path_recommendations(
         recs = []
         for n in nodes:
             for qid in n.get("recommended_question_ids", []):
-                recs.append({
-                    "question_id": qid,
-                    "subject": subject_code,
-                    "recommend_score": n.get("priority"),
-                    "similarity": None,
-                    "reason": n.get("reason", ""),
-                })
+                recs.append(
+                    {
+                        "question_id": qid,
+                        "subject": subject_code,
+                        "recommend_score": n.get("priority"),
+                        "similarity": None,
+                        "reason": n.get("reason", ""),
+                    }
+                )
         if recs:
             await recommendation_log_service.create_recommendation_logs(
                 db=db,
@@ -436,7 +489,9 @@ async def get_user_path_recommendations(
         "subject_code": subject_code,
         "subject_name": subject_name,
         "user_id": user_id,
-        "start_knowledge_point_id": start_kp["knowledge_point_id"] if start_kp else None,
+        "start_knowledge_point_id": start_kp["knowledge_point_id"]
+        if start_kp
+        else None,
         "strategy": strategy,
         "nodes": nodes,
         "recommended_question_ids": list(dict.fromkeys(all_recommended)),  # 去重保序
@@ -465,7 +520,9 @@ async def _batch_get_mastery(
     return {
         kp_id: {
             "mastery_score": states[kp_id].mastery_score if kp_id in states else None,
-            "weakness_level": states[kp_id].weakness_level if kp_id in states else "unknown",
+            "weakness_level": states[kp_id].weakness_level
+            if kp_id in states
+            else "unknown",
         }
         for kp_id in kp_ids
     }
@@ -575,7 +632,9 @@ def _compute_priorities(nodes: list[dict], start_kp: dict):
 
         # 生成 reason
         if role == "current":
-            node["reason"] = f"知识路径推荐：你在『{node['name']}』上较薄弱，建议重点练习"
+            node["reason"] = (
+                f"知识路径推荐：你在『{node['name']}』上较薄弱，建议重点练习"
+            )
         elif role == "prerequisite":
             node["reason"] = f"前置知识：掌握『{node['name']}』有助于理解当前知识点"
         elif role == "next":

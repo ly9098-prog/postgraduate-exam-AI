@@ -18,9 +18,7 @@ from typing import Iterable
 logger = logging.getLogger(__name__)
 
 _OPTION_KEYS = ("A", "B", "C", "D")
-_LABEL_LINE_RE = re.compile(
-    r"^\s*(?:[?？]\s*)?([A-Da-d])\s*[.．、:：)）]\s*(.*?)\s*$"
-)
+_LABEL_LINE_RE = re.compile(r"^\s*(?:[?？]\s*)?([A-Da-d])\s*[.．、:：)）]\s*(.*?)\s*$")
 _INLINE_LABEL_RE = re.compile(
     r"(?<![A-Za-z])([A-Da-d])\s*[.．、:：)）]\s*"
     r"(.+?)(?=(?:\s+[A-Da-d]\s*[.．、:：)）])|$)"
@@ -63,14 +61,14 @@ _KNOWN_OPTION_GROUPS: tuple[tuple[str, str, str, str], ...] = (
 # lone fragment floating in unrelated text can never synthesize a group.
 
 _OCR_CHAR_EQUIV = str.maketrans("连练", "链链")  # 链/连/练 homophone misreads
-_FRAGMENT_SUBSTRING_BASE = 0.6      # substring containment starts at this
-_FRAGMENT_SUBSTRING_WEIGHT = 0.4    # …plus coverage * this (max 1.0)
-_FRAGMENT_MIN_COVERAGE = 0.4        # a 1-char fragment must never count alone
-_FRAGMENT_MIN_SCORE = 0.62          # floor below which a fragment is ignored
-_GROUP_FULL_MEMBER_SCORE = 1.0      # a fully-recognized member contributes 1.0
-_GROUP_MIN_ANCHORS = 1              # need ≥1 already-recognized member
-_GROUP_COMPLETE_SCORE = 1.9         # sum over members; weaker groups are untrusted
-_GROUP_MIN_GAP = 0.45               # winner must beat runner-up by this much
+_FRAGMENT_SUBSTRING_BASE = 0.6  # substring containment starts at this
+_FRAGMENT_SUBSTRING_WEIGHT = 0.4  # …plus coverage * this (max 1.0)
+_FRAGMENT_MIN_COVERAGE = 0.4  # a 1-char fragment must never count alone
+_FRAGMENT_MIN_SCORE = 0.62  # floor below which a fragment is ignored
+_GROUP_FULL_MEMBER_SCORE = 1.0  # a fully-recognized member contributes 1.0
+_GROUP_MIN_ANCHORS = 1  # need ≥1 already-recognized member
+_GROUP_COMPLETE_SCORE = 1.9  # sum over members; weaker groups are untrusted
+_GROUP_MIN_GAP = 0.45  # winner must beat runner-up by this much
 
 
 @dataclass(slots=True)
@@ -284,7 +282,9 @@ def _recover_known_group_fragments(
 
     scored: list[tuple[float, dict[str, str], dict[str, str]]] = []
     for group in _KNOWN_OPTION_GROUPS:
-        score, recovered, sources_map = _score_known_group(group, options, expected, fragments)
+        score, recovered, sources_map = _score_known_group(
+            group, options, expected, fragments
+        )
         if score > 0 and set(recovered) == missing_set:
             scored.append((score, recovered, sources_map))
 
@@ -295,8 +295,12 @@ def _recover_known_group_fragments(
     runner_up = scored[1][0] if len(scored) > 1 else 0.0
     if best_score < _GROUP_COMPLETE_SCORE or (best_score - runner_up) < _GROUP_MIN_GAP:
         return {}, set()
-    logger.debug("known-group fragment recovery: %s (score=%.2f, gap=%.2f)",
-                 best_recovered, best_score, best_score - runner_up)
+    logger.debug(
+        "known-group fragment recovery: %s (score=%.2f, gap=%.2f)",
+        best_recovered,
+        best_score,
+        best_score - runner_up,
+    )
     return best_recovered, set(best_sources.values())
 
 
@@ -332,7 +336,7 @@ def _leading_bare_in_source(
         return {}, set()
 
     keys_after: list[str] = []
-    for line in lines[first_idx + 1:]:
+    for line in lines[first_idx + 1 :]:
         if not line.strip():
             continue
         m = _LABEL_LINE_RE.match(line.strip()) or _BROAD_LINE_RE.match(line.strip())
@@ -398,7 +402,9 @@ def recover_options_from_sources(
         for value in (primary_text, *reference_texts)
         if str(value or "").strip()
     ]
-    expected = tuple(key.upper() for key in expected_keys if key.upper() in _OPTION_KEYS)
+    expected = tuple(
+        key.upper() for key in expected_keys if key.upper() in _OPTION_KEYS
+    )
     if not sources:
         return OptionRecoveryResult(text=primary_text or "", source_count=0)
 
@@ -424,7 +430,9 @@ def recover_options_from_sources(
             for idx, literal in enumerate(group):
                 key = _OPTION_KEYS[idx]
                 if key in labeled and literal in source:
-                    labeled[key].append((_option_quality(literal) + 10, -source_idx, literal))
+                    labeled[key].append(
+                        (_option_quality(literal) + 10, -source_idx, literal)
+                    )
         for key, value in _recover_bare_sequence(source, expected).items():
             if key in bare:
                 bare[key].append((_option_quality(value), -source_idx, value))
@@ -442,7 +450,9 @@ def recover_options_from_sources(
     consumed_lines: set[str] = set()
     if any(key not in options for key in expected):
         group_recovered, group_consumed = _recover_known_group_fragments(
-            normalized_sources, options, expected,
+            normalized_sources,
+            options,
+            expected,
         )
         consumed_lines |= group_consumed
         for key, value in group_recovered.items():
@@ -454,7 +464,9 @@ def recover_options_from_sources(
     # Single leading bare code line before the first labeled option → A.
     if "A" not in options:
         leading_recovered, leading_consumed = _recover_single_leading_bare_option(
-            normalized_sources, options, expected,
+            normalized_sources,
+            options,
+            expected,
         )
         consumed_lines |= leading_consumed
         for key, value in leading_recovered.items():
@@ -463,7 +475,11 @@ def recover_options_from_sources(
     else:
         leading_recovered = {}
 
-    repaired_keys = [key for key in options if key not in primary_existing or options[key] != primary_existing.get(key)]
+    repaired_keys = [
+        key
+        for key in options
+        if key not in primary_existing or options[key] != primary_existing.get(key)
+    ]
     warnings: list[str] = []
     missing = [key for key in expected if key not in options]
     if missing:
@@ -473,14 +489,15 @@ def recover_options_from_sources(
             f"known_group_fragment_recovered:{','.join(sorted(group_recovered))}"
         )
     if leading_recovered:
-        warnings.append(
-            f"leading_bare_recovered:{','.join(sorted(leading_recovered))}"
-        )
+        warnings.append(f"leading_bare_recovered:{','.join(sorted(leading_recovered))}")
     if mirror_repairs:
         warnings.append(f"mirror_code_repaired:{mirror_repairs}")
 
     recovered_text = _render_canonical_text(
-        normalized_sources[0], options, expected, drop_lines=consumed_lines,
+        normalized_sources[0],
+        options,
+        expected,
+        drop_lines=consumed_lines,
     )
     return OptionRecoveryResult(
         text=recovered_text,
@@ -513,7 +530,9 @@ def _recover_bare_sequence(text: str, expected: tuple[str, ...]) -> dict[str, st
         return result
     # Prefer the longest run; ties prefer the last one because options normally
     # follow the stem/code block.
-    run = sorted(enumerate(runs), key=lambda pair: (len(pair[1]), pair[0]), reverse=True)[0][1]
+    run = sorted(
+        enumerate(runs), key=lambda pair: (len(pair[1]), pair[0]), reverse=True
+    )[0][1]
     for idx, value in enumerate(run):
         if idx < len(expected):
             result[expected[idx]] = _clean_option_text(value)
@@ -623,8 +642,12 @@ def _render_canonical_text(
         # Remove a line containing a complete inline option block only when every
         # inline label key survived recovery.
         inline_matches = list(_INLINE_LABEL_RE.finditer(line))
-        if len(inline_matches) >= 2 and all(m.group(1).upper() in options for m in inline_matches):
-            prefix = re.split(r"(?<![A-Za-z])[A-Da-d]\s*[.．、:：)）]", line, maxsplit=1)[0].strip()
+        if len(inline_matches) >= 2 and all(
+            m.group(1).upper() in options for m in inline_matches
+        ):
+            prefix = re.split(
+                r"(?<![A-Za-z])[A-Da-d]\s*[.．、:：)）]", line, maxsplit=1
+            )[0].strip()
             if prefix:
                 kept.append(prefix)
             continue

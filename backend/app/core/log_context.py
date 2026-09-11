@@ -214,7 +214,10 @@ def _sanitize_value(value: Any, depth: int = 0) -> Any:
 
     if isinstance(value, str):
         if len(value) > _MAX_STRING_LENGTH:
-            return value[:_MAX_STRING_LENGTH] + f"...[truncated:{len(value) - _MAX_STRING_LENGTH}]"
+            return (
+                value[:_MAX_STRING_LENGTH]
+                + f"...[truncated:{len(value) - _MAX_STRING_LENGTH}]"
+            )
         return value
 
     if isinstance(value, bytes):
@@ -225,7 +228,10 @@ def _sanitize_value(value: Any, depth: int = 0) -> Any:
 
 def sanitize_fields(fields: dict[str, Any]) -> dict[str, Any]:
     """Sanitize a flat-ish dict of fields for safe inclusion in log extra."""
-    return {k: "[redacted]" if _is_sensitive(k) else _sanitize_value(v) for k, v in fields.items()}
+    return {
+        k: "[redacted]" if _is_sensitive(k) else _sanitize_value(v)
+        for k, v in fields.items()
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -25,8 +25,12 @@ class SubjectBusinessRuleError(ValueError):
     pass
 
 
-async def list_subject_tree(db: AsyncSession, include_inactive: bool = False) -> list[dict]:
-    query = select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+async def list_subject_tree(
+    db: AsyncSession, include_inactive: bool = False
+) -> list[dict]:
+    query = select(Subject).order_by(
+        Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
+    )
     if not include_inactive:
         query = query.where(Subject.is_active.is_(True))
     result = await db.execute(query)
@@ -154,9 +158,13 @@ async def update_subject(
             )
 
         if current_product_code == EXAM408_ROOT_CODE and not confirm_core_disable:
-            raise SubjectBusinessRuleError("停用 408 根科目会隐藏全部 408 学习入口，请确认后重试")
+            raise SubjectBusinessRuleError(
+                "停用 408 根科目会隐藏全部 408 学习入口，请确认后重试"
+            )
 
-    parent_changed = "parent_id" in update_data and update_data["parent_id"] != subject.parent_id
+    parent_changed = (
+        "parent_id" in update_data and update_data["parent_id"] != subject.parent_id
+    )
     code_changed = new_code != subject.code
     if parent_changed:
         new_parent_id = update_data["parent_id"]
@@ -239,7 +247,9 @@ async def update_subject(
         detail={
             "before": before,
             "after": _subject_state(subject),
-            "auto_enabled_ancestor_ids": [ancestor.id for ancestor, _ in auto_enabled_ancestors],
+            "auto_enabled_ancestor_ids": [
+                ancestor.id for ancestor, _ in auto_enabled_ancestors
+            ],
         },
         request=request,
     )
@@ -255,7 +265,9 @@ async def delete_subject(
     subject = await get_subject(db, subject_id, lock=True)
     if canonical_408_code(subject.code):
         raise SubjectBusinessRuleError("408 核心科目不能删除；如需临时隐藏，请使用停用")
-    child_count = await db.scalar(select(func.count()).select_from(Subject).where(Subject.parent_id == subject.id))
+    child_count = await db.scalar(
+        select(func.count()).select_from(Subject).where(Subject.parent_id == subject.id)
+    )
     if child_count:
         raise SubjectBusinessRuleError("存在子科目，不能删除")
     question_count = await _question_count_for_subject(db, subject.id)
@@ -310,7 +322,9 @@ async def _get_parent(db: AsyncSession, parent_id: int | None) -> Subject | None
     return parent
 
 
-async def _ensure_unique_code(db: AsyncSession, code: str, exclude_id: int | None = None) -> None:
+async def _ensure_unique_code(
+    db: AsyncSession, code: str, exclude_id: int | None = None
+) -> None:
     query = select(Subject).where(Subject.code == code)
     if exclude_id is not None:
         query = query.where(Subject.id != exclude_id)
@@ -321,17 +335,26 @@ async def _ensure_unique_code(db: AsyncSession, code: str, exclude_id: int | Non
 
 async def _question_count_for_subject(db: AsyncSession, subject_id: int) -> int:
     from app.models.question_import import QuestionImport
+
     q_count = await db.scalar(
-        select(func.count()).select_from(Question).where(Question.subject_id == subject_id)
+        select(func.count())
+        .select_from(Question)
+        .where(Question.subject_id == subject_id)
     )
     qi_count = await db.scalar(
-        select(func.count()).select_from(QuestionImport).where(QuestionImport.subject_id == subject_id)
+        select(func.count())
+        .select_from(QuestionImport)
+        .where(QuestionImport.subject_id == subject_id)
     )
     return int((q_count or 0) + (qi_count or 0))
 
 
 async def _list_all_subjects(db: AsyncSession) -> list[Subject]:
-    result = await db.execute(select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()))
+    result = await db.execute(
+        select(Subject).order_by(
+            Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
+        )
+    )
     return list(result.scalars().all())
 
 
@@ -414,9 +437,7 @@ def _sync_descendant_paths(subjects: list[Subject], root: Subject) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def resolve_subject_id(
-    db: AsyncSession, subject: str | int | None
-) -> int | None:
+async def resolve_subject_id(db: AsyncSession, subject: str | int | None) -> int | None:
     """Resolve a subject id or an exact canonical ``subjects.code`` value.
 
     No suffix, name, or alias fallback is performed. Invalid/stale codes return
@@ -431,13 +452,14 @@ async def resolve_subject_id(
     key = str(subject).strip().lower()
     if not key:
         return None
-    return (await db.execute(
-        select(Subject.id).where(Subject.code == key).limit(1)
-    )).scalar_one_or_none()
+    return (
+        await db.execute(select(Subject.id).where(Subject.code == key).limit(1))
+    ).scalar_one_or_none()
 
 
 async def resolve_subject_ids(
-    db: AsyncSession, subject: str | int | None,
+    db: AsyncSession,
+    subject: str | int | None,
     include_descendants: bool = True,
 ) -> list[int]:
     """Resolve a canonical subject and optionally its descendants."""
@@ -447,9 +469,17 @@ async def resolve_subject_ids(
     if not include_descendants:
         return [sid]
 
-    all_subjs = (await db.execute(
-        select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
-    )).scalars().all()
+    all_subjs = (
+        (
+            await db.execute(
+                select(Subject).order_by(
+                    Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     subjects_list = list(all_subjs)
 
     descendant_ids = {sid}
@@ -468,9 +498,15 @@ def _validate_subject_code(code: str) -> None:
     if not raw:
         raise SubjectBusinessRuleError("科目编码不能为空")
     if raw != raw.lower() or raw != code:
-        raise SubjectBusinessRuleError("科目编码必须使用小写 canonical code，不能包含首尾空格")
-    if not raw[0].isalpha() or not all(ch.islower() or ch.isdigit() or ch == "_" for ch in raw):
-        raise SubjectBusinessRuleError("科目编码仅允许小写字母、数字和下划线，并且必须以字母开头")
+        raise SubjectBusinessRuleError(
+            "科目编码必须使用小写 canonical code，不能包含首尾空格"
+        )
+    if not raw[0].isalpha() or not all(
+        ch.islower() or ch.isdigit() or ch == "_" for ch in raw
+    ):
+        raise SubjectBusinessRuleError(
+            "科目编码仅允许小写字母、数字和下划线，并且必须以字母开头"
+        )
 
 
 def _validate_product_activation(

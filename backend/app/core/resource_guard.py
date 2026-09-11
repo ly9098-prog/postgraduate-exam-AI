@@ -190,6 +190,7 @@ return count
 
 class ResourceGuardError(ValueError):
     """Raised when a resource guard limit is exceeded."""
+
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
@@ -208,6 +209,7 @@ class SystemThresholds:
     healthy host whose root disk already contains unrelated data would reject
     every import job.
     """
+
     max_rss_mb: float = 1024
     min_available_memory_mb: float = 256
     max_event_loop_lag_ms: float = 500
@@ -219,6 +221,7 @@ class SystemThresholds:
 @dataclass
 class SystemMetrics:
     """Snapshot of current system resource usage."""
+
     rss_mb: float = 0.0
     available_memory_mb: float = 0.0
     event_loop_lag_ms: float = 0.0
@@ -233,6 +236,7 @@ class SystemMetrics:
 @dataclass
 class ReservationInfo:
     """Metadata for an acquired reservation."""
+
     token: str
     task_id: str
     owner_token: str
@@ -336,6 +340,7 @@ class ResourceGuard:
             return None
         try:
             import redis.asyncio as redis_async
+
             if ResourceGuard._redis_pool is None:
                 ResourceGuard._redis_pool = redis_async.ConnectionPool.from_url(
                     settings.REDIS_URL,
@@ -394,10 +399,14 @@ class ResourceGuard:
         client = await self._get_redis_client()
         if client is None:
             if self._is_restricted():
-                logger.warning("Reservation denied: Redis unavailable in restricted env")
+                logger.warning(
+                    "Reservation denied: Redis unavailable in restricted env"
+                )
                 return None
             logger.warning("Reservation using in-memory fallback")
-            return self._acquire_local(capacity, ttl_sec, resource_type, task_id, owner_token, generation)
+            return self._acquire_local(
+                capacity, ttl_sec, resource_type, task_id, owner_token, generation
+            )
 
         try:
             token = uuid.uuid4().hex
@@ -405,7 +414,9 @@ class ResourceGuard:
             meta_key = self._meta_key(resource_type, token)
 
             if self._lua_acquire_sha is None:
-                self._lua_acquire_sha = await client.script_load(_LUA_ACQUIRE_RESERVATION_V2)
+                self._lua_acquire_sha = await client.script_load(
+                    _LUA_ACQUIRE_RESERVATION_V2
+                )
 
             result = await client.evalsha(
                 self._lua_acquire_sha,
@@ -429,7 +440,9 @@ class ResourceGuard:
             logger.warning("Redis reservation acquire error: %s", exc)
             if self._is_restricted():
                 return None
-            return self._acquire_local(capacity, ttl_sec, resource_type, task_id, owner_token, generation)
+            return self._acquire_local(
+                capacity, ttl_sec, resource_type, task_id, owner_token, generation
+            )
         finally:
             if client:
                 await client.aclose()
@@ -445,7 +458,8 @@ class ResourceGuard:
     ) -> str | None:
         """In-process fallback acquire (dev only)."""
         active = sum(
-            1 for r in ResourceGuard._reservations_by_task.values()
+            1
+            for r in ResourceGuard._reservations_by_task.values()
             if r.resource_type == resource_type and r.expires_at > time.time()
         )
         if active >= capacity:
@@ -489,7 +503,9 @@ class ResourceGuard:
 
         try:
             if self._lua_release_sha is None:
-                self._lua_release_sha = await client.script_load(_LUA_RELEASE_RESERVATION_V2)
+                self._lua_release_sha = await client.script_load(
+                    _LUA_RELEASE_RESERVATION_V2
+                )
 
             zset_key = self._zset_key(resource_type)
             meta_key = self._meta_key(resource_type, token)
@@ -523,7 +539,9 @@ class ResourceGuard:
                 continue
             try:
                 if self._lua_reaper_sha is None:
-                    self._lua_reaper_sha = await client.script_load(_LUA_REAPER_RESERVATIONS_V2)
+                    self._lua_reaper_sha = await client.script_load(
+                        _LUA_REAPER_RESERVATIONS_V2
+                    )
 
                 zset_key = self._zset_key(resource_type)
                 meta_prefix = self._meta_prefix(resource_type)
@@ -539,7 +557,8 @@ class ResourceGuard:
                 if count > 0:
                     logger.warning(
                         "Orphan reconciler released %d expired %s reservations",
-                        count, resource_type,
+                        count,
+                        resource_type,
                     )
                 total += count
             except Exception as exc:
@@ -631,13 +650,25 @@ class ResourceGuard:
         metrics = self._metrics_provider()
 
         if metrics.rss_mb > self._thresholds.max_rss_mb:
-            return False, f"RSS {metrics.rss_mb:.0f}MB exceeds limit {self._thresholds.max_rss_mb}MB"
+            return (
+                False,
+                f"RSS {metrics.rss_mb:.0f}MB exceeds limit {self._thresholds.max_rss_mb}MB",
+            )
 
-        if metrics.available_memory_mb > 0 and metrics.available_memory_mb < self._thresholds.min_available_memory_mb:
-            return False, f"Available memory {metrics.available_memory_mb:.0f}MB below minimum {self._thresholds.min_available_memory_mb}MB"
+        if (
+            metrics.available_memory_mb > 0
+            and metrics.available_memory_mb < self._thresholds.min_available_memory_mb
+        ):
+            return (
+                False,
+                f"Available memory {metrics.available_memory_mb:.0f}MB below minimum {self._thresholds.min_available_memory_mb}MB",
+            )
 
         if metrics.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
-            return False, f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
+            return (
+                False,
+                f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms",
+            )
 
         if (
             self._thresholds.max_temp_disk_mb > 0
@@ -710,7 +741,9 @@ class ResourceGuard:
             # Access the module global from main.py
             _main_mod = _sys.modules.get("app.main")
             if _main_mod is not None:
-                m.event_loop_lag_ms = getattr(_main_mod, "_elapsed_monitor_event_loop_lag_ms", 0.0)
+                m.event_loop_lag_ms = getattr(
+                    _main_mod, "_elapsed_monitor_event_loop_lag_ms", 0.0
+                )
         except Exception:
             pass
 
@@ -723,7 +756,9 @@ class ResourceGuard:
         # "Temp disk 84245MB exceeds limit 512MB" for a 0.2MB image upload.
         try:
             temp_paths, disk_probe = ResourceGuard._managed_temp_paths()
-            managed_bytes = sum(ResourceGuard._path_size_bytes(path) for path in temp_paths)
+            managed_bytes = sum(
+                ResourceGuard._path_size_bytes(path) for path in temp_paths
+            )
             m.temp_disk_usage_mb = managed_bytes / (1024**2)
 
             usage = shutil.disk_usage(disk_probe)
@@ -757,8 +792,7 @@ class ResourceGuard:
         total = 0
         for root, dirs, files in os.walk(real_path, followlinks=False):
             dirs[:] = [
-                name for name in dirs
-                if not os.path.islink(os.path.join(root, name))
+                name for name in dirs if not os.path.islink(os.path.join(root, name))
             ]
             for name in files:
                 file_path = os.path.join(root, name)
@@ -801,7 +835,9 @@ class ResourceGuard:
                 "scratch",
             )
             add_path(fallback_scratch)
-            disk_probe = fallback_scratch if os.path.exists(fallback_scratch) else temp_root
+            disk_probe = (
+                fallback_scratch if os.path.exists(fallback_scratch) else temp_root
+            )
 
         # Known temp locations created by pipeline helpers that have not yet
         # migrated to WORKER_SCRATCH_DIR.  Only our own names are counted.
@@ -838,10 +874,10 @@ class ResourceGuard:
         """Create a ResourceGuard with defaults for the deployment profile."""
         guard = cls()
         if profile == DeploymentProfile.CLOUD_API:
-            guard.max_input_bytes = 5 * 1024 * 1024   # 5MB (per task doc)
-            guard.max_pages = 30                       # 30 pages (per task doc)
+            guard.max_input_bytes = 5 * 1024 * 1024  # 5MB (per task doc)
+            guard.max_pages = 30  # 30 pages (per task doc)
             guard.max_pixel_budget = 4000 * 4000 * 30
-            guard.max_remote_ocr_calls = 60            # ~2 calls/page for 30 pages
+            guard.max_remote_ocr_calls = 60  # ~2 calls/page for 30 pages
             guard.max_artifact_bytes = 50 * 1024 * 1024
             guard.max_pipeline_seconds = 1800
             guard.max_page_seconds = 120

@@ -74,7 +74,9 @@ class InputCoordinator:
                 )
 
             gateway = InputGateway()
-            doc = gateway.accept(source, filename=filename, mime=mime, page_count=page_count)
+            doc = gateway.accept(
+                source, filename=filename, mime=mime, page_count=page_count
+            )
 
             return ModuleResult.success(
                 data=doc,
@@ -83,7 +85,9 @@ class InputCoordinator:
             )
         except Exception as e:
             return ModuleResult.failure(
-                ModuleError(code="INPUT_COORDINATOR_ERROR", message=str(e), category="input"),
+                ModuleError(
+                    code="INPUT_COORDINATOR_ERROR", message=str(e), category="input"
+                ),
                 module_name="input_coordinator",
             )
 
@@ -142,7 +146,9 @@ class OCRCoordinator:
                     snap = configs.get(cap, {})
                     if snap and isinstance(snap, dict):
                         vl_model = snap.get("model_name", vl_model)
-                        endpoint = snap.get("endpoint", "") or snap.get("api_base_url", "")
+                        endpoint = snap.get("endpoint", "") or snap.get(
+                            "api_base_url", ""
+                        )
                         if endpoint:
                             vl_base_url = endpoint
                         break
@@ -223,7 +229,9 @@ class DocumentStructureCoordinator:
             # Delegate to existing reading_order_stage
             from app.features.pipeline_stages import reading_order_stage
 
-            result = reading_order_stage.run_reading_order_stage_v2(doc_ir, stage_config=None)
+            result = reading_order_stage.run_reading_order_stage_v2(
+                doc_ir, stage_config=None
+            )
             if result.is_failure:
                 return ModuleResult.failure(
                     error=result.error,
@@ -420,9 +428,7 @@ class ReviewCoordinator:
                 doc_id = getattr(doc_ir, "document_id", "unknown")
                 pages = getattr(doc_ir, "pages", [])
                 page_count = len(pages)
-                has_regions = any(
-                    getattr(p, "regions", []) for p in pages
-                )
+                has_regions = any(getattr(p, "regions", []) for p in pages)
                 item_count = len(questions or [])
 
             review_artifact = {

@@ -24,9 +24,13 @@ async def import_sync_package(
     admin: AdminPrincipal = Depends(require_permissions("sync:write")),
 ):
     if package.manifest.question_count != len(package.questions):
-        raise HTTPException(status_code=422, detail="manifest question_count 与实际数据不一致")
+        raise HTTPException(
+            status_code=422, detail="manifest question_count 与实际数据不一致"
+        )
     if package.manifest.tag_count != len(package.tags):
-        raise HTTPException(status_code=422, detail="manifest tag_count 与实际数据不一致")
+        raise HTTPException(
+            status_code=422, detail="manifest tag_count 与实际数据不一致"
+        )
     if len(package.questions) > MAX_QUESTIONS_PER_SYNC:
         raise HTTPException(
             status_code=422,
@@ -58,8 +62,10 @@ async def import_sync_package(
     await db.commit()
     logger.info(
         "Sync import complete: new=%d updated=%d skipped=%d conflicts=%d deduped=%d",
-        report.questions_new, report.questions_updated,
-        report.questions_skipped, report.questions_conflict,
+        report.questions_new,
+        report.questions_updated,
+        report.questions_skipped,
+        report.questions_conflict,
         report.questions_deduped,
     )
     return SyncReportResponse(

@@ -42,6 +42,7 @@ NO_WRITABLE_ITEMS = "NO_WRITABLE_ITEMS"
 
 class BusinessError(Exception):
     """业务异常，携带稳定错误码。"""
+
     def __init__(self, code: str, message: str = ""):
         self.code = code
         self.message = message
@@ -78,18 +79,20 @@ def _is_answer_empty(val: str | None) -> bool:
 
 class AnswerParseMode(StrEnum):
     """答案输入解析模式。"""
+
     MULTI_CHOICE_DELIMITED = "multi_choice_delimited"  # 多选题显式分隔格式
     SINGLE_CHOICE_PLAIN = "single_choice_plain"  # 连续的单选题答案串
 
 
 class PreviewStatus(StrEnum):
     """预览中每道题的处理状态。"""
-    WILL_UPDATE = "will_update"                # 将写入
-    SKIP_EXISTING = "skip_existing"            # 已有答案，跳过
+
+    WILL_UPDATE = "will_update"  # 将写入
+    SKIP_EXISTING = "skip_existing"  # 已有答案，跳过
     SKIP_EXISTING_SAME = "skip_existing_same"  # 输入与已有答案相同，跳过
-    INVALID_ANSWER = "invalid_answer"          # 非法答案
-    UNSUPPORTED_TYPE = "unsupported_type"      # 题型不支持
-    ORDER_ANOMALY = "order_anomaly"            # 题目顺序异常
+    INVALID_ANSWER = "invalid_answer"  # 非法答案
+    UNSUPPORTED_TYPE = "unsupported_type"  # 题型不支持
+    ORDER_ANOMALY = "order_anomaly"  # 题目顺序异常
 
     def __str__(self) -> str:
         return self.value
@@ -98,13 +101,14 @@ class PreviewStatus(StrEnum):
 @dataclass
 class PreviewItem:
     """单道题的预览结果。"""
+
     import_id: int
     source_order_index: int | None
     source_question_no: str | None
     stem_excerpt: str  # 题干摘要（前 120 字）
     question_type: str | None
     original_answer: str | None  # 数据库中已有答案
-    input_answer: str | None     # 用户输入的原始答案
+    input_answer: str | None  # 用户输入的原始答案
     normalized_answer: str | None  # 标准化后的答案
     status: PreviewStatus
     status_message: str = ""
@@ -115,6 +119,7 @@ class PreviewItem:
 @dataclass
 class PreviewSummary:
     """预览汇总统计。"""
+
     batch_total: int = 0
     parsed_answer_count: int = 0
     target_question_count: int = 0
@@ -178,7 +183,9 @@ def _split_by_separator(text: str, pattern: re.Pattern) -> list[str]:
 # ══════════════════════════════════════════════════════════
 
 
-def normalize_single_answer(answer: str, question_type: str | None, parsed_options: dict | None = None) -> tuple[str | None, list[str]]:
+def normalize_single_answer(
+    answer: str, question_type: str | None, parsed_options: dict | None = None
+) -> tuple[str | None, list[str]]:
     """标准化单个答案，返回 (normalized, errors)。
 
     对于 single_choice：要求单个字母 A-D
@@ -218,10 +225,12 @@ def normalize_single_answer(answer: str, question_type: str | None, parsed_optio
     return None, [f"不支持的题型: {question_type}"]
 
 
-def _normalize_single_choice(normalized: str, parsed_options: dict | None, errors: list[str]) -> tuple[str | None, list[str]]:
+def _normalize_single_choice(
+    normalized: str, parsed_options: dict | None, errors: list[str]
+) -> tuple[str | None, list[str]]:
     """标准化单选题答案。"""
     # 去除标点符号和空格
-    clean = re.sub(r"[.．、，,]","", normalized)
+    clean = re.sub(r"[.．、，,]", "", normalized)
 
     if len(clean) != 1 or not clean.isalpha():
         errors.append(f"单选题答案格式错误: {normalized}（应为单个字母）")
@@ -237,7 +246,9 @@ def _normalize_single_choice(normalized: str, parsed_options: dict | None, error
     return letter, []
 
 
-def _normalize_multi_choice(normalized: str, parsed_options: dict | None, errors: list[str]) -> tuple[str | None, list[str]]:
+def _normalize_multi_choice(
+    normalized: str, parsed_options: dict | None, errors: list[str]
+) -> tuple[str | None, list[str]]:
     """标准化多选题答案（去重、排序）。"""
     # 去除无用字符，提取字母
     letters = re.findall(r"[A-Z]", normalized)
@@ -253,7 +264,9 @@ def _normalize_multi_choice(normalized: str, parsed_options: dict | None, errors
     valid_options = _get_valid_option_keys(parsed_options)
     invalid = [k for k in unique if k not in valid_options]
     if invalid:
-        errors.append(f"答案 {''.join(invalid)} 超出题目选项范围（{sorted(valid_options)}）")
+        errors.append(
+            f"答案 {''.join(invalid)} 超出题目选项范围（{sorted(valid_options)}）"
+        )
         return None, errors
 
     return result, []
@@ -265,13 +278,19 @@ def _get_valid_option_keys(parsed_options: dict | None) -> set[str]:
         return _SINGLE_CHOICE_OPTIONS
 
     if isinstance(parsed_options, list):
-        keys = {str(o.get("key", "")).upper() for o in parsed_options if isinstance(o, dict) and o.get("key")}
+        keys = {
+            str(o.get("key", "")).upper()
+            for o in parsed_options
+            if isinstance(o, dict) and o.get("key")
+        }
     elif isinstance(parsed_options, dict):
         keys = set(parsed_options.keys())
     else:
         return _SINGLE_CHOICE_OPTIONS
 
-    return {k for k in keys if re.match(r"^[A-Z]$", k)} if keys else _SINGLE_CHOICE_OPTIONS
+    return (
+        {k for k in keys if re.match(r"^[A-Z]$", k)} if keys else _SINGLE_CHOICE_OPTIONS
+    )
 
 
 # ══════════════════════════════════════════════════════════
@@ -282,7 +301,8 @@ def _get_valid_option_keys(parsed_options: dict | None) -> set[str]:
 async def _check_batch_editable(db: AsyncSession, batch_id: str) -> None:
     """检查批次内所有题目是否均为可编辑状态（status == pending）。"""
     result = await db.execute(
-        select(func.count()).select_from(QuestionImport)
+        select(func.count())
+        .select_from(QuestionImport)
         .where(QuestionImport.batch_id == batch_id, QuestionImport.status != "pending")
     )
     non_pending = result.scalar() or 0
@@ -293,7 +313,9 @@ async def _check_batch_editable(db: AsyncSession, batch_id: str) -> None:
         )
 
 
-async def _lock_batch_questions(db: AsyncSession, batch_id: str) -> list[QuestionImport]:
+async def _lock_batch_questions(
+    db: AsyncSession, batch_id: str
+) -> list[QuestionImport]:
     """按 source_order_index 升序获取批次内所有题目。
 
     校验：
@@ -304,7 +326,9 @@ async def _lock_batch_questions(db: AsyncSession, batch_id: str) -> list[Questio
     result = await db.execute(
         select(QuestionImport)
         .where(QuestionImport.batch_id == batch_id)
-        .order_by(QuestionImport.source_order_index.asc().nullslast(), QuestionImport.id.asc())
+        .order_by(
+            QuestionImport.source_order_index.asc().nullslast(), QuestionImport.id.asc()
+        )
     )
     questions = list(result.scalars().all())
 
@@ -378,7 +402,8 @@ def _generate_operation_id() -> str:
 async def _get_batch_pending_count(db: AsyncSession, batch_id: str) -> int:
     """获取批次内 pending 状态的题目数量。"""
     result = await db.execute(
-        select(func.count()).select_from(QuestionImport)
+        select(func.count())
+        .select_from(QuestionImport)
         .where(QuestionImport.batch_id == batch_id, QuestionImport.status == "pending")
     )
     return result.scalar() or 0
@@ -387,20 +412,29 @@ async def _get_batch_pending_count(db: AsyncSession, batch_id: str) -> int:
 async def _get_answer_stats(db: AsyncSession, batch_id: str) -> dict:
     """获取批次答案相关统计。"""
     total = await db.execute(
-        select(func.count()).select_from(QuestionImport)
+        select(func.count())
+        .select_from(QuestionImport)
         .where(QuestionImport.batch_id == batch_id)
     )
     total_count = total.scalar() or 0
 
     missing = await db.execute(
-        select(func.count()).select_from(QuestionImport)
-        .where(QuestionImport.batch_id == batch_id, func.coalesce(QuestionImport.parsed_answer, "") == "")
+        select(func.count())
+        .select_from(QuestionImport)
+        .where(
+            QuestionImport.batch_id == batch_id,
+            func.coalesce(QuestionImport.parsed_answer, "") == "",
+        )
     )
     missing_answer_count = missing.scalar() or 0
 
     manual_filled = await db.execute(
-        select(func.count()).select_from(QuestionImport)
-        .where(QuestionImport.batch_id == batch_id, QuestionImport.answer_source == "manual_batch_input")
+        select(func.count())
+        .select_from(QuestionImport)
+        .where(
+            QuestionImport.batch_id == batch_id,
+            QuestionImport.answer_source == "manual_batch_input",
+        )
     )
     manual_filled_count = manual_filled.scalar() or 0
 
@@ -475,9 +509,15 @@ async def generate_preview(
             continue
 
         # 已有答案检查（复用统一空答案判定）
-        existing = question.parsed_answer if not _is_answer_empty(question.parsed_answer) else ""
+        existing = (
+            question.parsed_answer
+            if not _is_answer_empty(question.parsed_answer)
+            else ""
+        )
         if existing:
-            normalized_input, _ = normalize_single_answer(input_ans, qt, question.parsed_options)
+            normalized_input, _ = normalize_single_answer(
+                input_ans, qt, question.parsed_options
+            )
             if normalized_input and normalized_input == existing.upper():
                 item = PreviewItem(
                     import_id=question.id,
@@ -587,21 +627,27 @@ async def generate_preview(
     }
 
 
-def _make_preview_items(items: list[dict], questions: list[QuestionImport]) -> list[dict]:
+def _make_preview_items(
+    items: list[dict], questions: list[QuestionImport]
+) -> list[dict]:
     """为预览项附加一致性快照字段，供 apply 时校验。"""
     q_map = {q.id: q for q in questions}
     enriched = []
     for item in items:
         q = q_map.get(item.get("import_id"))
-        enriched.append({
-            "import_id": item["import_id"],
-            "source_order_index": item.get("source_order_index"),
-            "normalized_answer": item.get("normalized_answer"),
-            "will_update": item.get("will_update", False),
-            "question_type": item.get("question_type"),
-            "options_hash": _options_hash(q) if q else "",
-            "updated_at": serialize_utc_datetime(q.updated_at) if q and q.updated_at else "",
-        })
+        enriched.append(
+            {
+                "import_id": item["import_id"],
+                "source_order_index": item.get("source_order_index"),
+                "normalized_answer": item.get("normalized_answer"),
+                "will_update": item.get("will_update", False),
+                "question_type": item.get("question_type"),
+                "options_hash": _options_hash(q) if q else "",
+                "updated_at": serialize_utc_datetime(q.updated_at)
+                if q and q.updated_at
+                else "",
+            }
+        )
     return enriched
 
 
@@ -618,6 +664,7 @@ def _batch_version(questions: list[QuestionImport]) -> str:
 def _generate_token(data: dict) -> str:
     """生成预览 token。"""
     import secrets
+
     h = hashlib.sha256(
         json.dumps(data, sort_keys=True).encode() + secrets.token_hex(8).encode()
     ).hexdigest()[:24]
@@ -652,7 +699,10 @@ async def apply_preview(
     if not preview_data:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"error_code": PREVIEW_EXPIRED, "detail": "预览已过期或无效，请重新预览"},
+            detail={
+                "error_code": PREVIEW_EXPIRED,
+                "detail": "预览已过期或无效，请重新预览",
+            },
         )
 
     # 反序列化（缓存存储的是 dict 或 json 字符串）
@@ -675,19 +725,31 @@ async def apply_preview(
     if preview_data.get("used"):
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"error_code": PREVIEW_ALREADY_APPLIED, "detail": "预览 token 已使用，不可重复提交"},
+            detail={
+                "error_code": PREVIEW_ALREADY_APPLIED,
+                "detail": "预览 token 已使用，不可重复提交",
+            },
         )
 
     # 4. 校验 token 归属
     if preview_data.get("batch_id") != batch_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "INVALID_TOKEN", "detail": "预览 token 与当前批次不匹配"},
+            detail={
+                "error_code": "INVALID_TOKEN",
+                "detail": "预览 token 与当前批次不匹配",
+            },
         )
-    if preview_data.get("admin_id") is not None and preview_data["admin_id"] != current_admin.id:
+    if (
+        preview_data.get("admin_id") is not None
+        and preview_data["admin_id"] != current_admin.id
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error_code": "TOKEN_OWNER_MISMATCH", "detail": "预览 token 不属于当前管理员"},
+            detail={
+                "error_code": "TOKEN_OWNER_MISMATCH",
+                "detail": "预览 token 不属于当前管理员",
+            },
         )
 
     # 5. 重新锁定题目，检验一致性
@@ -696,7 +758,10 @@ async def apply_preview(
     if current_version != preview_data.get("batch_version"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": PREVIEW_STALE, "detail": "批次题目顺序或答案已发生变化，请重新预览"},
+            detail={
+                "error_code": PREVIEW_STALE,
+                "detail": "批次题目顺序或答案已发生变化，请重新预览",
+            },
         )
 
     # 逐项一致性校验
@@ -712,32 +777,47 @@ async def apply_preview(
         if not q:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"import_id {import_id} 不存在"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"import_id {import_id} 不存在",
+                },
             )
         # 校验 source_order_index
         if str(q.source_order_index) != str(item.get("source_order_index", "")):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 的 source_order_index 已变化"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"题目 {import_id} 的 source_order_index 已变化",
+                },
             )
         # 校验 question_type
         if q.question_type != item.get("question_type"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 的题型已变化"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"题目 {import_id} 的题型已变化",
+                },
             )
         # 校验 options_hash
         cached_hash = item.get("options_hash", "")
         if cached_hash and _options_hash(q) != cached_hash:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 的选项已变化"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"题目 {import_id} 的选项已变化",
+                },
             )
         # 校验答案仍为空（统一判定）
         if not _is_answer_empty(q.parsed_answer):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 已有答案，不可再写入"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"题目 {import_id} 已有答案，不可再写入",
+                },
             )
 
     # 6. writable_count 检查
@@ -783,7 +863,8 @@ async def apply_preview(
             else:
                 logger.warning(
                     "Batch answer SQL update rowcount=%d for import_id=%s, expected 1",
-                    result.rowcount, import_id,
+                    result.rowcount,
+                    import_id,
                 )
 
         await db.flush()
@@ -819,7 +900,9 @@ async def apply_preview(
         await db.commit()
     except Exception:
         await db.rollback()
-        logger.exception("Failed to write audit log for batch answer fill (answers already saved)")
+        logger.exception(
+            "Failed to write audit log for batch answer fill (answers already saved)"
+        )
 
     # 10. 标记 token 已使用 + 缓存 operation_id 结果
     batch_stats = await _get_answer_stats(db, batch_id)
@@ -840,12 +923,18 @@ async def apply_preview(
         )
 
     # 保留 token 防重放
-    await cache.set(cache_key, {**preview_data, "used": True, "updated_count": updated_count}, ttl=300)
+    await cache.set(
+        cache_key,
+        {**preview_data, "used": True, "updated_count": updated_count},
+        ttl=300,
+    )
 
     return result_payload
 
 
-def _extract_will_update_items(preview_data: dict, target_questions: list[QuestionImport]) -> list[tuple[int, str]]:
+def _extract_will_update_items(
+    preview_data: dict, target_questions: list[QuestionImport]
+) -> list[tuple[int, str]]:
     """从预览数据中提取需要更新的 (import_id, normalized_answer) 列表。"""
     result: list[tuple[int, str]] = []
     items = preview_data.get("items", [])
@@ -888,4 +977,6 @@ async def apply_answers(
 
     这是 apply_preview 的别名，提供给外部模块使用。
     """
-    return await apply_preview(db, batch_id, preview_token, current_admin, request=request)
+    return await apply_preview(
+        db, batch_id, preview_token, current_admin, request=request
+    )

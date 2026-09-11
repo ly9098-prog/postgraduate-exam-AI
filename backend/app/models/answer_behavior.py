@@ -20,9 +20,15 @@ class AnswerBehavior(Base):
     __tablename__ = "answer_behaviors"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    question_id: Mapped[int] = mapped_column(Integer, ForeignKey("questions.id"), nullable=False)
-    practice_record_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("practice_records.id"), nullable=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
+    question_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("questions.id"), nullable=False
+    )
+    practice_record_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("practice_records.id"), nullable=True
+    )
     question_version_id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("question_versions.id"),
@@ -30,9 +36,14 @@ class AnswerBehavior(Base):
         index=True,
     )
     subject_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True
+        Integer,
+        ForeignKey("subjects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
-    subject_ref = relationship("Subject", back_populates="answer_behaviors", lazy="noload")
+    subject_ref = relationship(
+        "Subject", back_populates="answer_behaviors", lazy="noload"
+    )
 
     # 答题行为
     time_spent_sec: Mapped[int] = mapped_column(Integer, default=0)

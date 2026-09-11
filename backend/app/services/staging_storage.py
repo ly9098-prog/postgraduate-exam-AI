@@ -40,7 +40,9 @@ _STAGING_DIR = Path(_candidate)
 
 # In restricted environments, fail if the staging directory parent doesn't exist
 _profile = detect_deployment_profile()
-_is_production = _profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
+_is_production = (
+    _profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
+)
 if _is_production and not _STAGING_DIR.parent.exists():
     raise RuntimeError(
         f"Staging directory parent does not exist: {_STAGING_DIR}. "
@@ -161,14 +163,18 @@ def release_object(object_id: str, owner_token: str = "", generation: int = 0) -
                 if stored_owner and stored_owner != owner_token:
                     logger.warning(
                         "Lease owner mismatch for %s (expected=%s, got=%s)",
-                        object_id, stored_owner, owner_token,
+                        object_id,
+                        stored_owner,
+                        owner_token,
                     )
                     return False
                 stored_gen = data.get("generation", -1)
                 if stored_owner and stored_gen != -1 and stored_gen != generation:
                     logger.warning(
                         "Lease generation mismatch for %s (expected=%d, got=%d)",
-                        object_id, stored_gen, generation,
+                        object_id,
+                        stored_gen,
+                        generation,
                     )
                     return False
             except (json.JSONDecodeError, OSError):
@@ -204,14 +210,18 @@ def extend_lease(
                 if stored_owner and stored_owner != owner_token:
                     logger.warning(
                         "Extend lease owner mismatch for %s (expected=%s, got=%s)",
-                        object_id, stored_owner, owner_token,
+                        object_id,
+                        stored_owner,
+                        owner_token,
                     )
                     return False
                 stored_gen = data.get("generation", -1)
                 if stored_owner and stored_gen != -1 and stored_gen != generation:
                     logger.warning(
                         "Extend lease generation mismatch for %s (expected=%d, got=%d)",
-                        object_id, stored_gen, generation,
+                        object_id,
+                        stored_gen,
+                        generation,
                     )
                     return False
             except (json.JSONDecodeError, OSError):
@@ -262,7 +272,9 @@ def cleanup_work_copy(work_path: str | Path) -> None:
         logger.warning("Failed to cleanup work copy %s: %s", work_path, e)
 
 
-def set_object_retention(object_id: str, ttl_sec: int, owner_token: str = "", generation: int = 0) -> bool:
+def set_object_retention(
+    object_id: str, ttl_sec: int, owner_token: str = "", generation: int = 0
+) -> bool:
     """Adjust the lease TTL for a staging object based on terminal state.
 
     Called after a task reaches a terminal state (success, fail, dead,
@@ -273,7 +285,9 @@ def set_object_retention(object_id: str, ttl_sec: int, owner_token: str = "", ge
     Returns True if the retention was set, False if the object has no
     lease or ownership verification failed.
     """
-    return extend_lease(object_id, owner_token=owner_token, generation=generation, ttl_sec=ttl_sec)
+    return extend_lease(
+        object_id, owner_token=owner_token, generation=generation, ttl_sec=ttl_sec
+    )
 
 
 # ── Refcount for content-addressed staging objects ──
@@ -402,7 +416,9 @@ def _object_lifecycle_guard(object_id: str):
                     break
             except Exception as exc:
                 _reset_refcount_redis_sync()
-                raise RuntimeError("Redis unavailable for staging lifecycle guard") from exc
+                raise RuntimeError(
+                    "Redis unavailable for staging lifecycle guard"
+                ) from exc
             time.sleep(0.025)
         if not acquired:
             raise RuntimeError(f"Timed out acquiring staging guard: {object_id}")
@@ -414,7 +430,9 @@ def _object_lifecycle_guard(object_id: str):
             except Exception:
                 # TTL guarantees eventual release.  Do not mask the operation
                 # result solely because guard cleanup failed.
-                logger.warning("Failed to release staging lifecycle guard: %s", object_id)
+                logger.warning(
+                    "Failed to release staging lifecycle guard: %s", object_id
+                )
 
 
 def _refcount_key(object_id: str) -> str:
@@ -455,7 +473,9 @@ def get_refcounts(object_ids: list[str]) -> dict[str, int]:
         client = _ensure_refcount_redis_sync()
         if client is not None:
             try:
-                values = client.mget([_refcount_key(object_id) for object_id in unique_ids])
+                values = client.mget(
+                    [_refcount_key(object_id) for object_id in unique_ids]
+                )
                 return {
                     object_id: int(value) if value else 0
                     for object_id, value in zip(unique_ids, values, strict=True)
@@ -476,7 +496,9 @@ def incr_refcount(object_id: str) -> int:
             if value is not None:
                 return value
             if _is_production:
-                raise RuntimeError(f"Redis unavailable for refcount incr (object_id={object_id})")
+                raise RuntimeError(
+                    f"Redis unavailable for refcount incr (object_id={object_id})"
+                )
         count = _REFCOUNT_STORE.get(object_id, 0) + 1
         _REFCOUNT_STORE[object_id] = count
         return count
@@ -491,7 +513,9 @@ def decr_refcount(object_id: str) -> int:
             if value is not None:
                 return value
             if _is_production:
-                raise RuntimeError(f"Redis unavailable for refcount decr (object_id={object_id})")
+                raise RuntimeError(
+                    f"Redis unavailable for refcount decr (object_id={object_id})"
+                )
         count = _REFCOUNT_STORE.get(object_id, 0) - 1
         if count <= 0:
             _REFCOUNT_STORE.pop(object_id, None)
@@ -537,6 +561,7 @@ def is_object_leased(object_id: str, max_lease_sec: int = _DEFAULT_LEASE_SEC) ->
 @dataclass
 class StagingObject:
     """Metadata for a staged file."""
+
     object_id: str
     sha256: str
     size: int
@@ -668,7 +693,10 @@ def store_file(
     _write_metadata(object_id, meta)
     logger.info(
         "Staged file: object_id=%s sha256=%s size=%d mime=%s",
-        object_id, sha256[:16], src_size, mime,
+        object_id,
+        sha256[:16],
+        src_size,
+        mime,
     )
     return StagingObject(**meta)
 
@@ -720,7 +748,11 @@ def get_metadata(object_id: str) -> StagingObject | None:
 
 def _delete_object_unlocked(object_id: str) -> bool:
     removed = False
-    for p in (_object_path(object_id), _metadata_path(object_id), _lease_path(object_id)):
+    for p in (
+        _object_path(object_id),
+        _metadata_path(object_id),
+        _lease_path(object_id),
+    ):
         if p.exists():
             p.unlink()
             removed = True
@@ -739,6 +771,7 @@ def delete_object(object_id: str) -> bool:
 def _load_metadata(object_id: str) -> StagingObject:
     """Load metadata from JSON file."""
     import json
+
     mp = _metadata_path(object_id)
     with open(mp) as f:
         data = json.load(f)
@@ -753,6 +786,7 @@ def _write_metadata(object_id: str, data: dict) -> None:
     new metadata, never a partial/corrupt file.
     """
     import json
+
     mp = _metadata_path(object_id)
     tmp = mp.with_name(f".{mp.name}.{uuid.uuid4().hex}.tmp")
     try:
@@ -811,7 +845,11 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
     # Atomic-write leftovers must never be deleted while a writer may still be
     # fsyncing/renaming them.
     for entry in entries:
-        if entry.is_file() and entry.name.endswith(".tmp") and older_than(entry, orphan_cutoff):
+        if (
+            entry.is_file()
+            and entry.name.endswith(".tmp")
+            and older_than(entry, orphan_cutoff)
+        ):
             removed += int(unlink(entry))
 
     # Expired/corrupt leases should not protect an object forever.  Valid live
@@ -819,7 +857,7 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
     for entry in entries:
         if not entry.is_file() or not entry.name.endswith(_LEASE_SUFFIX):
             continue
-        oid = entry.name[:-len(_LEASE_SUFFIX)]
+        oid = entry.name[: -len(_LEASE_SUFFIX)]
         try:
             validate_object_id(oid)
         except ValueError:
@@ -840,7 +878,10 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
                 if expires_at is not None:
                     stale = float(expires_at) <= time.time()
                 else:
-                    stale = older_than(current, time.time() - max(_DEFAULT_LEASE_SEC, _ORPHAN_GRACE_SEC))
+                    stale = older_than(
+                        current,
+                        time.time() - max(_DEFAULT_LEASE_SEC, _ORPHAN_GRACE_SEC),
+                    )
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 stale = older_than(current, orphan_cutoff)
             if stale:
@@ -853,7 +894,7 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
         if not entry.is_file():
             continue
         if entry.name.endswith(".data"):
-            oid = entry.name[:-len(".data")]
+            oid = entry.name[: -len(".data")]
             try:
                 validate_object_id(oid)
             except ValueError:
@@ -861,7 +902,7 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
             else:
                 data_ids.add(oid)
         elif entry.name.endswith(_METADATA_SUFFIX):
-            oid = entry.name[:-len(_METADATA_SUFFIX)]
+            oid = entry.name[: -len(_METADATA_SUFFIX)]
             try:
                 validate_object_id(oid)
             except ValueError:
@@ -897,7 +938,9 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
             # atomic renames.  Only reclaim it after the orphan grace period.
             if not (has_data and has_meta):
                 existing = [path for path in (data_path, meta_path) if path.exists()]
-                if existing and all(older_than(path, orphan_cutoff) for path in existing):
+                if existing and all(
+                    older_than(path, orphan_cutoff) for path in existing
+                ):
                     for path in existing:
                         removed += int(unlink(path))
                 continue
@@ -906,7 +949,9 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
                 meta = _load_metadata(oid)
             except Exception:
                 # Corrupt metadata plus data is also protected by the grace window.
-                if older_than(data_path, orphan_cutoff) and older_than(meta_path, orphan_cutoff):
+                if older_than(data_path, orphan_cutoff) and older_than(
+                    meta_path, orphan_cutoff
+                ):
                     removed += int(unlink(data_path))
                     removed += int(unlink(meta_path))
                 continue
@@ -932,6 +977,7 @@ def inspect_staging_cleanup_capability() -> tuple[bool, str | None]:
     if not os.access(obj_dir, os.R_OK | os.W_OK | os.X_OK):
         return False, "staging objects 目录缺少读/写/遍历权限"
     return True, None
+
 
 def sweep_temp_files() -> int:
     """Clean up legacy temp files from previous runs.
@@ -999,7 +1045,9 @@ async def async_lease_object(
     ttl_sec: int = _DEFAULT_LEASE_SEC,
 ) -> None:
     """Async wrapper for lease_object."""
-    return await asyncio.to_thread(lease_object, object_id, owner_token, generation, ttl_sec)
+    return await asyncio.to_thread(
+        lease_object, object_id, owner_token, generation, ttl_sec
+    )
 
 
 async def async_extend_lease(
@@ -1009,7 +1057,9 @@ async def async_extend_lease(
     ttl_sec: int = _DEFAULT_LEASE_SEC,
 ) -> bool:
     """Async wrapper for extend_lease."""
-    return await asyncio.to_thread(extend_lease, object_id, owner_token, generation, ttl_sec)
+    return await asyncio.to_thread(
+        extend_lease, object_id, owner_token, generation, ttl_sec
+    )
 
 
 async def async_release_object(
@@ -1038,7 +1088,9 @@ async def async_set_object_retention(
     generation: int = 0,
 ) -> bool:
     """Async wrapper for set_object_retention."""
-    return await asyncio.to_thread(set_object_retention, object_id, ttl_sec, owner_token, generation)
+    return await asyncio.to_thread(
+        set_object_retention, object_id, ttl_sec, owner_token, generation
+    )
 
 
 async def async_incr_refcount(object_id: str) -> int:
@@ -1062,12 +1114,12 @@ def get_metrics() -> dict:
         has_meta: set[str] = set()
         for entry in obj_dir.iterdir():
             if entry.is_file() and entry.name.endswith(_METADATA_SUFFIX):
-                has_meta.add(entry.name[:-len(_METADATA_SUFFIX)])
+                has_meta.add(entry.name[: -len(_METADATA_SUFFIX)])
         for entry in obj_dir.iterdir():
             if not entry.is_file():
                 continue
             if entry.name.endswith(".data"):
-                oid = entry.name[:-len(".data")]
+                oid = entry.name[: -len(".data")]
                 object_count += 1
                 try:
                     disk_usage += entry.stat().st_size
@@ -1076,7 +1128,7 @@ def get_metrics() -> dict:
                 if oid not in has_meta:
                     orphan_count += 1
             elif entry.name.endswith(_LEASE_SUFFIX):
-                oid = entry.name[:-len(_LEASE_SUFFIX)]
+                oid = entry.name[: -len(_LEASE_SUFFIX)]
                 try:
                     validate_object_id(oid)
                     if is_object_leased(oid):

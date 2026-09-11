@@ -83,15 +83,18 @@ async def _cmd_status() -> int:
         print(f"  Objects:      {object_count}")
         print(f"  Temp files:   {tmp_count}")
         print(f"  Active leases:{lease_count}")
-        print(f"  Total size:   {total_size / (1024*1024):.1f} MB")
+        print(f"  Total size:   {total_size / (1024 * 1024):.1f} MB")
 
         # Disk usage
         import shutil
+
         usage = shutil.disk_usage(str(_STAGING_DIR))
-        free_gb = usage.free / (1024 ** 3)
-        total_gb = usage.total / (1024 ** 3)
+        free_gb = usage.free / (1024**3)
+        total_gb = usage.total / (1024**3)
         used_pct = (usage.used / usage.total) * 100
-        print(f"  Disk free:    {free_gb:.1f} GB / {total_gb:.1f} GB ({used_pct:.0f}% used)")
+        print(
+            f"  Disk free:    {free_gb:.1f} GB / {total_gb:.1f} GB ({used_pct:.0f}% used)"
+        )
 
         if free_gb < 1.0:
             print(f"  {_red('WARNING: Less than 1 GB free disk space!')}")
@@ -111,7 +114,9 @@ async def _cmd_status() -> int:
         refcount_keys: list[str] = []
         cursor = 0
         while True:
-            cursor, batch = await client.scan(cursor=cursor, match="staging:ref:*", count=200)
+            cursor, batch = await client.scan(
+                cursor=cursor, match="staging:ref:*", count=200
+            )
             refcount_keys.extend(batch)
             if cursor == 0:
                 break
@@ -139,13 +144,17 @@ async def _cmd_status() -> int:
             print("  Negative refcounts: 0")
 
         if orphan_candidates > 0:
-            print(f"  {_yellow(f'Orphan candidates (refcount=0): {orphan_candidates} (sampled)')}")
+            print(
+                f"  {_yellow(f'Orphan candidates (refcount=0): {orphan_candidates} (sampled)')}"
+            )
 
         # Active leases
         lease_keys: list[str] = []
         cursor = 0
         while True:
-            cursor, batch = await client.scan(cursor=cursor, match="staging:lease:*", count=200)
+            cursor, batch = await client.scan(
+                cursor=cursor, match="staging:lease:*", count=200
+            )
             lease_keys.extend(batch)
             if cursor == 0:
                 break

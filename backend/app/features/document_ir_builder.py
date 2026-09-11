@@ -84,10 +84,19 @@ def blocks_to_document_ir(
             # otherwise successful OCR result before question splitting.
             line_count = max(len(text_lines), len(boxes))
             for li in range(line_count):
-                box_entry = boxes[li] if li < len(boxes) and isinstance(boxes[li], dict) else {}
+                box_entry = (
+                    boxes[li] if li < len(boxes) and isinstance(boxes[li], dict) else {}
+                )
                 bbox_coords = box_entry.get("bbox")
-                bbox = BBox(*bbox_coords) if bbox_coords and len(bbox_coords) == 4 else None
-                conf = box_entry.get("conf", box_entry.get("confidence", 1.0 if bbox is not None else 0.0))
+                bbox = (
+                    BBox(*bbox_coords)
+                    if bbox_coords and len(bbox_coords) == 4
+                    else None
+                )
+                conf = box_entry.get(
+                    "conf",
+                    box_entry.get("confidence", 1.0 if bbox is not None else 0.0),
+                )
                 low_conf = box_entry.get("low_conf", False)
                 flags: set[str] = set()
                 if low_conf:
@@ -95,25 +104,31 @@ def blocks_to_document_ir(
                 if bbox is None:
                     flags.add("geometry_missing")
 
-                line_text = text_lines[li] if li < len(text_lines) else str(box_entry.get("text") or "")
+                line_text = (
+                    text_lines[li]
+                    if li < len(text_lines)
+                    else str(box_entry.get("text") or "")
+                )
 
                 if bi < len(regions):
                     region_id_for_line = regions[bi].region_id
                 else:
                     region_id_for_line = ""
 
-                lines.append(LineIR(
-                    line_id=(
-                        make_line_id_from_bbox(region_id_for_line, bbox, line_text)
-                        if region_id_for_line
-                        else f"p{zero_based_idx}r{bi}l{li}"
-                    ),
-                    text=line_text,
-                    bbox=bbox,
-                    confidence=conf,
-                    flags=flags,
-                    provenance=Provenance(engine=engine),
-                ))
+                lines.append(
+                    LineIR(
+                        line_id=(
+                            make_line_id_from_bbox(region_id_for_line, bbox, line_text)
+                            if region_id_for_line
+                            else f"p{zero_based_idx}r{bi}l{li}"
+                        ),
+                        text=line_text,
+                        bbox=bbox,
+                        confidence=conf,
+                        flags=flags,
+                        provenance=Provenance(engine=engine),
+                    )
+                )
 
             b.get("source", "ocr")
             region_flags: set[str] = set()
@@ -135,15 +150,19 @@ def blocks_to_document_ir(
             )
             for line in region.lines:
                 if not line.line_id or not line.line_id.startswith(region_id):
-                    line.line_id = make_line_id_from_bbox(region_id, line.bbox, line.text)
+                    line.line_id = make_line_id_from_bbox(
+                        region_id, line.bbox, line.text
+                    )
             regions.append(region)
 
-        doc.add_page(PageIR(
-            page_id=page_id,
-            page_index=zero_based_idx,
-            width=pw,
-            height=ph,
-            regions=regions,
-        ))
+        doc.add_page(
+            PageIR(
+                page_id=page_id,
+                page_index=zero_based_idx,
+                width=pw,
+                height=ph,
+                regions=regions,
+            )
+        )
 
     return doc

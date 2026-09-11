@@ -1,4 +1,5 @@
 """V6 用户自适应间隔画像 — 记录用户整体遗忘速度倍率。"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, UniqueConstraint, func
@@ -21,23 +22,34 @@ class UserAdaptiveProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=False, index=True,
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
     )
 
     interval_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-    min_interval_factor: Mapped[float] = mapped_column(Float, nullable=False, default=0.6)
-    max_interval_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.6)
+    min_interval_factor: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.6
+    )
+    max_interval_factor: Mapped[float] = mapped_column(
+        Float, nullable=False, default=1.6
+    )
 
-    target_recall_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.8)
+    target_recall_rate: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.8
+    )
     recent_due_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    recent_due_correct_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    recent_due_correct_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
 
     last_adjusted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(),
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
-    __table_args__ = (
-        UniqueConstraint("user_id", name="uq_uap_user_id"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", name="uq_uap_user_id"),)

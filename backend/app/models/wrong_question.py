@@ -22,7 +22,9 @@ from app.core.database import Base
 class WrongQuestion(Base):
     __tablename__ = "wrong_questions"
     __table_args__ = (
-        UniqueConstraint("user_id", "question_id", name="uq_wrong_questions_user_question"),
+        UniqueConstraint(
+            "user_id", "question_id", name="uq_wrong_questions_user_question"
+        ),
         # Covers the hot dashboard/stats predicates:
         # user_id + is_active + mastered, while review_count makes the
         # high-frequency wrong-question aggregate index-only on SQLite.
@@ -58,9 +60,7 @@ class WrongQuestion(Base):
     mastered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

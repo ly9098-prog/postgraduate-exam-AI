@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 class IOType(Enum):
     """Stage 的输入/输出数据类型。"""
+
     STR = auto()
     TEXT_REGIONS = auto()
 
@@ -39,6 +40,7 @@ class StageNode:
         guard: 是否在此节点启用 mutation_guard（校验 code 区域不变）。
         description: 可选的阶段描述（用于日志和可观测性）。
     """
+
     name: str
     fn: Callable[..., Any]
     input_type: IOType = IOType.STR
@@ -83,13 +85,19 @@ class DAGPipeline:
             # 执行
             logger.debug(
                 "[DAG] stage=%s desc=%s input=%s",
-                stage.name, stage.description or "-", type(data).__name__,
+                stage.name,
+                stage.description or "-",
+                type(data).__name__,
             )
             if stage.guard:
-                data = apply_guard(stage.fn, data, trace_id=trace_id, stage_name=stage.name)
+                data = apply_guard(
+                    stage.fn, data, trace_id=trace_id, stage_name=stage.name
+                )
             else:
                 data = stage.fn(data)
-            logger.debug("[DAG] stage=%s done output=%s", stage.name, type(data).__name__)
+            logger.debug(
+                "[DAG] stage=%s done output=%s", stage.name, type(data).__name__
+            )
 
             # 确保输出类型匹配声明
             data = self._ensure_output_type(data, stage)
@@ -109,7 +117,9 @@ class DAGPipeline:
         return data
 
     @staticmethod
-    def _ensure_output_type(data: str | TextRegions, stage: StageNode) -> str | TextRegions:
+    def _ensure_output_type(
+        data: str | TextRegions, stage: StageNode
+    ) -> str | TextRegions:
         """在 stage 执行后确保输出类型匹配声明。"""
         if stage.output_type == IOType.TEXT_REGIONS and isinstance(data, str):
             return TextRegions.from_fenced_text(data)

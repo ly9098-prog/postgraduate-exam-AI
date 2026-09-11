@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 # ── Fencing context (set by worker before calling handlers) ──
 
-_fencing_ctx: contextvars.ContextVar[dict[str, Any] | None] = (
-    contextvars.ContextVar("pipeline_fencing_ctx", default=None)
+_fencing_ctx: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "pipeline_fencing_ctx", default=None
 )
 
 
@@ -44,11 +44,13 @@ def set_fencing_context(
     Called by the worker before invoking business handlers.
     Returns a Token that should be passed to ``clear_fencing_context``.
     """
-    return _fencing_ctx.set({
-        "task_id": task_id,
-        "owner_token": owner_token,
-        "generation": generation,
-    })
+    return _fencing_ctx.set(
+        {
+            "task_id": task_id,
+            "owner_token": owner_token,
+            "generation": generation,
+        }
+    )
 
 
 def clear_fencing_context(token: contextvars.Token) -> None:
@@ -73,6 +75,7 @@ def _utcnow() -> datetime:
 async def _cache_set(pipeline_id: str, snapshot: dict[str, Any]) -> None:
     try:
         from app.core.cache import cache
+
         await cache.set(
             f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}",
             snapshot,
@@ -85,6 +88,7 @@ async def _cache_set(pipeline_id: str, snapshot: dict[str, Any]) -> None:
 async def _cache_get(pipeline_id: str) -> dict[str, Any] | None:
     try:
         from app.core.cache import cache
+
         return await cache.get(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
     except Exception:
         logger.debug("checkpoint cache get failed for %s", pipeline_id, exc_info=True)
@@ -335,17 +339,15 @@ async def get_pipeline_progress(
     total = completed + failed + running + pending
 
     question_count = (
-        (
-            await db.execute(
-                select(func.coalesce(func.sum(ImportPipelineChunk.question_count), 0))
-                .where(
-                    ImportPipelineChunk.pipeline_id == pipeline_id,
-                    ImportPipelineChunk.status == "completed",
-                )
+        await db.execute(
+            select(
+                func.coalesce(func.sum(ImportPipelineChunk.question_count), 0)
+            ).where(
+                ImportPipelineChunk.pipeline_id == pipeline_id,
+                ImportPipelineChunk.status == "completed",
             )
-        ).scalar()
-        or 0
-    )
+        )
+    ).scalar() or 0
 
     failed_rows = (
         (
@@ -371,8 +373,12 @@ async def get_pipeline_progress(
         "running_chunks": running,
         "pending_chunks": pending,
         "question_count": int(question_count),
-        "started_at": serialize_utc_datetime(pipeline_row.started_at) if pipeline_row.started_at else None,
-        "finished_at": serialize_utc_datetime(pipeline_row.finished_at) if pipeline_row.finished_at else None,
+        "started_at": serialize_utc_datetime(pipeline_row.started_at)
+        if pipeline_row.started_at
+        else None,
+        "finished_at": serialize_utc_datetime(pipeline_row.finished_at)
+        if pipeline_row.finished_at
+        else None,
         "failed_chunk_details": [
             {
                 "chunk_index": c.chunk_index,
@@ -397,15 +403,19 @@ async def get_pending_chunks(
     failed 后再恢复，避免并发同一 chunk。
     """
     rows = (
-        await db.execute(
-            select(ImportPipelineChunk)
-            .where(
-                ImportPipelineChunk.pipeline_id == pipeline_id,
-                ImportPipelineChunk.status.in_(("failed", "pending")),
+        (
+            await db.execute(
+                select(ImportPipelineChunk)
+                .where(
+                    ImportPipelineChunk.pipeline_id == pipeline_id,
+                    ImportPipelineChunk.status.in_(("failed", "pending")),
+                )
+                .order_by(ImportPipelineChunk.chunk_index)
             )
-            .order_by(ImportPipelineChunk.chunk_index)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
@@ -413,6 +423,7 @@ async def invalidate_progress_cache(pipeline_id: str) -> None:
     """chunk 状态写入 DB 后调用，清掉 Redis 缓存避免读到旧快照。"""
     try:
         from app.core.cache import cache
+
         await cache.delete(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
     except Exception:
         logger.debug(

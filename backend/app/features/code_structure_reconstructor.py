@@ -33,14 +33,14 @@ logger = logging.getLogger(__name__)
 # Applied in sequence to avoid partial-match cascading.
 _OPERATOR_FIXES: Final[list[tuple[str, str]]] = [
     # Multi-char operators: longest patterns first to avoid partial matches
-    (r"(?<!\*)\*\s*=(?!\s*=)", "*="),      # * = (but not **=)
-    (r"\+\s*\+", "++"),                     # + +
-    (r"-\s*>(?!\s*>)", "->"),              # - > (but not -->)
-    (r"(?<![<>])=\s*=(?!\s*=)", "=="),     # = = (but not ===)
-    (r"!\s*=", "!="),                       # ! =
-    (r"(?<!\*)\*\*(?!\s*[/*])", "**"),      # * * (power op)
+    (r"(?<!\*)\*\s*=(?!\s*=)", "*="),  # * = (but not **=)
+    (r"\+\s*\+", "++"),  # + +
+    (r"-\s*>(?!\s*>)", "->"),  # - > (but not -->)
+    (r"(?<![<>])=\s*=(?!\s*=)", "=="),  # = = (but not ===)
+    (r"!\s*=", "!="),  # ! =
+    (r"(?<!\*)\*\*(?!\s*[/*])", "**"),  # * * (power op)
     r"(?<![+\-*/%&|^<>!])([<>=])"
-    r"\s*=\s*(?!=)",                        # <= >= (but not <<= >>=)
+    r"\s*=\s*(?!=)",  # <= >= (but not <<= >>=)
     # Single fixed-form: < = → <=, > = → >=
     # Note: the above regex handles the general case
 ]
@@ -100,9 +100,7 @@ def _fix_ocr_operators(code: str) -> str:
 
 # Semicolon is NOT always a line-break signal. Things like ``for(;;)``
 # should not be split. We detect loop/control-flow header context.
-_RE_FOR_WHILE_HEADER = re.compile(
-    r"\b(for|while|if|else\s+if|switch|catch)\s*\("
-)
+_RE_FOR_WHILE_HEADER = re.compile(r"\b(for|while|if|else\s+if|switch|catch)\s*\(")
 _RE_FUNC_SIGNATURE = re.compile(
     r"\b(?:int|void|char|float|double|long|short|unsigned|signed|const|"
     r"static|bool|ElemType|Status|LinkList|BiTree|SqList|Stack|Queue|"
@@ -155,7 +153,7 @@ def _split_semicolons(text: str) -> str:
         next_ch = text[i + 1] if i + 1 < len(text) else ""
 
         # Toggle string context (simple heuristic)
-        if ch in ("\"", "'", "`") and not _is_escaped(text, i):
+        if ch in ('"', "'", "`") and not _is_escaped(text, i):
             if in_string and ch == string_char:
                 in_string = False
             elif not in_string:

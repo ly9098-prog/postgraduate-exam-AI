@@ -56,9 +56,7 @@ _RE_KNOWN_GARBLED = re.compile(
 # ---------------------------------------------------------------------------
 
 # 行尾只剩操作符（暗示下一行是操作数）
-_RE_LINE_END_OPERATOR = re.compile(
-    r"(?:<=|>=|!=|==|&&|\|\||[+\-*/%]|->|[=,;])\s*$"
-)
+_RE_LINE_END_OPERATOR = re.compile(r"(?:<=|>=|!=|==|&&|\|\||[+\-*/%]|->|[=,;])\s*$")
 
 # 行首以操作符或右括号开头（暗示上行被截断）
 _RE_LINE_START_OPERATOR = re.compile(r"^\s*(?:<=|>=|!=|==|&&|\|\||[+\-*/%]|[)\]}])")
@@ -74,7 +72,9 @@ _RE_SINGLE_BRACE_LINE = re.compile(r"^\s*[{}]\s*;?\s*$")
 _RE_STRUCT_DEF = re.compile(r"\b(?:typedef\s+)?struct\s+\w+\s*\{")
 
 # 函数定义开始
-_RE_FUNC_DEF = re.compile(r"\b(?:int|void|char|float|double|long|short|Status|bool|ElemType)\s+\*?\w+\s*\(")
+_RE_FUNC_DEF = re.compile(
+    r"\b(?:int|void|char|float|double|long|short|Status|bool|ElemType)\s+\*?\w+\s*\("
+)
 
 # if/while/for 没有闭合大括号（只有 ")" 没有后续 "{"）
 _RE_IF_WHILE_FOR = re.compile(r"\b(?:if|while|for)\s*\([^)]*\)\s*\{?")
@@ -87,30 +87,89 @@ _RE_HAS_CLOSE_BLOCK = re.compile(r"\}")
 # C/C++ 关键词（用于判断文本段是否包含代码）
 # ---------------------------------------------------------------------------
 
-_C_CODE_KEYWORDS = frozenset({
-    "int", "void", "char", "float", "double", "long", "short", "struct",
-    "typedef", "return", "if", "else", "for", "while", "do", "switch",
-    "case", "break", "continue", "enum", "union", "const", "static",
-    "sizeof", "unsigned", "signed", "NULL", "malloc", "free",
-    "printf", "scanf", "true", "false", "include", "define",
-    "->", "::",
-})
+_C_CODE_KEYWORDS = frozenset(
+    {
+        "int",
+        "void",
+        "char",
+        "float",
+        "double",
+        "long",
+        "short",
+        "struct",
+        "typedef",
+        "return",
+        "if",
+        "else",
+        "for",
+        "while",
+        "do",
+        "switch",
+        "case",
+        "break",
+        "continue",
+        "enum",
+        "union",
+        "const",
+        "static",
+        "sizeof",
+        "unsigned",
+        "signed",
+        "NULL",
+        "malloc",
+        "free",
+        "printf",
+        "scanf",
+        "true",
+        "false",
+        "include",
+        "define",
+        "->",
+        "::",
+    }
+)
 
 # 代码题信号阈值检测关键词（按信号强度排序）
 _CODE_SIGNALS = [
-    "typedef", "struct", "class",
-    "public:", "private:",
-    "return", "void ", "int ", "char ",
-    "void*", "int*", "char*",  # 指针形式（void * 会被 "void " 匹配）
-    "{", "}", "(", ")",
+    "typedef",
+    "struct",
+    "class",
+    "public:",
+    "private:",
+    "return",
+    "void ",
+    "int ",
+    "char ",
+    "void*",
+    "int*",
+    "char*",  # 指针形式（void * 会被 "void " 匹配）
+    "{",
+    "}",
+    "(",
+    ")",
 ]
 
 # 408 数据结构关键字
-_DS_KEYWORDS = frozenset({
-    "LNode", "TNode", "BiTNode", "BiTree", "BSTNode", "LinkList",
-    "SqList", "Stack", "Queue", "SqStack", "DeQueue", "ListNode",
-    "TreeNode", "LinkedList", "ElemType", "Status",
-})
+_DS_KEYWORDS = frozenset(
+    {
+        "LNode",
+        "TNode",
+        "BiTNode",
+        "BiTree",
+        "BSTNode",
+        "LinkList",
+        "SqList",
+        "Stack",
+        "Queue",
+        "SqStack",
+        "DeQueue",
+        "ListNode",
+        "TreeNode",
+        "LinkedList",
+        "ElemType",
+        "Status",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +309,9 @@ def detect_code_block_integrity(text: str) -> dict:
         if abs(paren_diff) >= 2:
             flags.append("code_paren_unbalanced")
             score += 0.20
-            details.append(f"括号不平衡: {paren_diff} (open {open_parens}, close {close_parens})")
+            details.append(
+                f"括号不平衡: {paren_diff} (open {open_parens}, close {close_parens})"
+            )
 
     # ---- 4. 乱码检测（围栏内 + 代码上下文中的围栏外） ----
     garbled_matches = []
@@ -327,7 +388,9 @@ def detect_code_block_integrity(text: str) -> dict:
     for content in code_blocks["content"]:
         # 围栏内容以不完整行结尾（首行有内容但末行无结尾标记）
         last_line = content.rstrip().split("\n")[-1].strip()
-        if last_line and not last_line.endswith((";", "}", ")", "]", ",", "\"", "'", ">")):
+        if last_line and not last_line.endswith(
+            (";", "}", ")", "]", ",", '"', "'", ">")
+        ):
             # 代码行数 > 2 且末行不是正常语句结尾，可能被截断
             lines = content.strip().split("\n")
             if len(lines) >= 3:
@@ -529,9 +592,7 @@ def reconstruct_code_block(lines: list[str]) -> str:
     close_braces = 0
 
     # Code start signals
-    _CODE_START_RE = re.compile(
-        r"\b(for|while|if|struct|typedef)\b"
-    )
+    _CODE_START_RE = re.compile(r"\b(for|while|if|struct|typedef)\b")
 
     for line in lines:
         stripped = line.strip()
@@ -618,7 +679,8 @@ def classify_line(line: str) -> str:
 
     # Code signals
     _CODE_SIGNALS_WEIGHTED = {
-        "{": 0.3, "}": 0.2,
+        "{": 0.3,
+        "}": 0.2,
         "->": 0.3,
         ";": 0.25,
         "struct": 0.35,
@@ -692,10 +754,10 @@ def fix_tree_recursion_breaks(text: str) -> str:
     i = 0
 
     # Pattern: first line ends with a condition fragment
-    _COND_START_RE = re.compile(
-        r"(?:if|while|else\s+if)\s*\([^)]*$"
+    _COND_START_RE = re.compile(r"(?:if|while|else\s+if)\s*\([^)]*$")
+    _COND_CONT_RE = re.compile(
+        r"^\s*(?:[A-Za-z_][\w*]*)\s*(?:->|\.)\s*(?:lchild|rchild|next|prior|data|key)\s*(?:==|!=)\s*(?:NULL|null|0)\s*\)?\s*\{?\s*$"
     )
-    _COND_CONT_RE = re.compile(r"^\s*(?:[A-Za-z_][\w*]*)\s*(?:->|\.)\s*(?:lchild|rchild|next|prior|data|key)\s*(?:==|!=)\s*(?:NULL|null|0)\s*\)?\s*\{?\s*$")
     _PTR_COND_MID_RE = re.compile(r"^\s*(?:&&|\|\|)\s*$")
 
     while i < len(lines):
@@ -715,7 +777,10 @@ def fix_tree_recursion_breaks(text: str) -> str:
                 if re.match(r"^\d+\s*[.、)）]", next_stripped):
                     break
                 # Stop if next line starts a new statement (not a continuation)
-                if re.match(r"^(?:if|while|for|return|struct)\b", next_stripped) and j > i + 1:
+                if (
+                    re.match(r"^(?:if|while|for|return|struct)\b", next_stripped)
+                    and j > i + 1
+                ):
                     break
                 merged = merged.rstrip() + " " + next_stripped
                 j += 1
@@ -776,6 +841,7 @@ from dataclasses import dataclass
 @dataclass
 class CodeGarbledResult:
     """Result of garbled code block detection."""
+
     is_garbled: bool
     score: float
     reasons: list[str]
@@ -799,10 +865,10 @@ _RE_STRUCT_DEF_CLOSE = re.compile(r"\}\s*\w+\s*,\s*\*?\w+\s*;")
 # Garbled token patterns
 _RE_GARBLED_TOKEN = re.compile(
     r"(?:"
-    r"\d+[a-zA-Z]{2,}\d*|"     # digits followed by letters: 1typu
+    r"\d+[a-zA-Z]{2,}\d*|"  # digits followed by letters: 1typu
     r"[a-zA-Z]+\d+[a-zA-Z]+|"  # letters-digits-letters: p1tysI, apo11ta
-    r"[a-z]{5,}[A-Z]\w*|"       # lowercase-heavy with cap in middle
-    r"[A-Z][a-z]{0,2}\d{2,}"   # single cap + digits: P2s → but NOT P_2
+    r"[a-z]{5,}[A-Z]\w*|"  # lowercase-heavy with cap in middle
+    r"[A-Z][a-z]{0,2}\d{2,}"  # single cap + digits: P2s → but NOT P_2
     r")"
 )
 
@@ -834,7 +900,10 @@ def detect_garbled_code_block(code: str) -> CodeGarbledResult:
     """
     if not code or not code.strip():
         return CodeGarbledResult(
-            is_garbled=False, score=0.0, reasons=[], expected_language=None,
+            is_garbled=False,
+            score=0.0,
+            reasons=[],
+            expected_language=None,
         )
 
     reasons: list[str] = []
@@ -858,13 +927,13 @@ def detect_garbled_code_block(code: str) -> CodeGarbledResult:
             stripped = line.strip()
             if "{" in stripped:
                 in_body = True
-                body_part = stripped[stripped.index("{")+1:]
+                body_part = stripped[stripped.index("{") + 1 :]
                 if body_part:
                     struct_body += body_part + "\n"
                 continue
             if "}" in stripped:
                 in_body = False
-                body_part = stripped[:stripped.index("}")]
+                body_part = stripped[: stripped.index("}")]
                 if body_part.strip():
                     struct_body += body_part + "\n"
                 continue

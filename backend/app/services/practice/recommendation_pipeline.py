@@ -4,6 +4,7 @@ Strategy implementations may recall/score candidates differently, but they
 share naming, stable merge/deduplication and fallback semantics here.  Keeping
 these rules centralized prevents scored/path/vector branches from drifting.
 """
+
 from __future__ import annotations
 
 from typing import TypeVar

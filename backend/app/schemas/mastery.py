@@ -1,11 +1,12 @@
 from app.schemas.base import BaseModel
+
 """V3 知识点掌握度查询 Schema。"""
 from datetime import datetime
 
 
-
 class KnowledgeStateItem(BaseModel):
     """单个知识点掌握状态。"""
+
     knowledge_point_id: int | None = None
     knowledge_point: str
     mastery_score: float
@@ -20,5 +21,6 @@ class KnowledgeStateItem(BaseModel):
 
 class KnowledgeStateListResponse(BaseModel):
     """知识点掌握状态列表响应。"""
+
     items: list[KnowledgeStateItem]
     total: int

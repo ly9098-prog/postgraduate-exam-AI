@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AiModelConfigCheck:
     """Health check result for admin_ai_model_configs."""
+
     ok: bool = True
     severity: str = "ok"  # "ok" | "warning" | "error"
     code: str = ""
@@ -35,6 +36,7 @@ class AiModelConfigCheck:
 @dataclass
 class SystemHealthResult:
     """Top-level health check response."""
+
     ok: bool = True
     checks: dict = field(default_factory=dict)
 
@@ -93,8 +95,6 @@ async def check_ai_model_config(db: AsyncSession) -> AiModelConfigCheck:
         check.message = "AI 模型配置正常"
 
     return check
-
-
 
 
 def check_ai_runtime_health() -> dict:
@@ -191,10 +191,7 @@ async def check_system_health(db: AsyncSession) -> SystemHealthResult:
     )
 
     # Overall ok = no error-level checks
-    result.ok = all(
-        c.get("severity") != "error"
-        for c in result.checks.values()
-    )
+    result.ok = all(c.get("severity") != "error" for c in result.checks.values())
 
     return result
 

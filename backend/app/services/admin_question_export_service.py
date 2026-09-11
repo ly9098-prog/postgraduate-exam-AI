@@ -95,7 +95,8 @@ def _options_text(options: object, *, include_image_marker: bool = True) -> str:
         return options
     if isinstance(options, dict):
         return "\n".join(
-            f"{key}. {_option_value_text(value, include_image_marker=include_image_marker)}" for key, value in options.items()
+            f"{key}. {_option_value_text(value, include_image_marker=include_image_marker)}"
+            for key, value in options.items()
         )
     if isinstance(options, list):
         rows: list[str] = []
@@ -104,7 +105,9 @@ def _options_text(options: object, *, include_image_marker: bool = True) -> str:
                 key = value["key"]
             else:
                 key = chr(ord("A") + index) if index < 26 else str(index + 1)
-            rows.append(f"{key}. {_option_value_text(value, include_image_marker=include_image_marker)}")
+            rows.append(
+                f"{key}. {_option_value_text(value, include_image_marker=include_image_marker)}"
+            )
         return "\n".join(rows)
     return json.dumps(options, ensure_ascii=False, separators=(",", ":"))
 
@@ -307,7 +310,9 @@ def _rows(
             question.analysis or "",
             "、".join(kp_map.get(question.id, [])),
             question.source or "",
-            to_shanghai(question.updated_at).strftime("%Y-%m-%d %H:%M:%S") if question.updated_at else "",
+            to_shanghai(question.updated_at).strftime("%Y-%m-%d %H:%M:%S")
+            if question.updated_at
+            else "",
         ]
 
 

@@ -2,6 +2,7 @@
 
 任何异常 → 返回空列表，记录 warning，不抛出。
 """
+
 import logging
 import re
 from dataclasses import dataclass
@@ -14,10 +15,10 @@ logger = logging.getLogger(__name__)
 # ── Unicode 数学字符区间 ──────────────────────────────────────────────────────
 
 _MATH_RANGES = [
-    (0x0391, 0x03C9),   # 希腊字母 Α-Ω, α-ω
-    (0x2200, 0x22FF),   # 数学运算符 ∫ ∑ ∏ ≤ ≥ ≠ ∈ ∉ ∞ ∂ …
-    (0x2100, 0x214F),   # 字母化数字符号 ℝ ℤ ℕ ℂ …
-    (0x2070, 0x209C),   # 上标/下标 Unicode
+    (0x0391, 0x03C9),  # 希腊字母 Α-Ω, α-ω
+    (0x2200, 0x22FF),  # 数学运算符 ∫ ∑ ∏ ≤ ≥ ≠ ∈ ∉ ∞ ∂ …
+    (0x2100, 0x214F),  # 字母化数字符号 ℝ ℤ ℕ ℂ …
+    (0x2070, 0x209C),  # 上标/下标 Unicode
 ]
 
 _MATH_ASCII = set("^_{}\\")
@@ -25,7 +26,13 @@ _MATH_ASCII = set("^_{}\\")
 # ── 字体名辅助关键词 ─────────────────────────────────────────────────────────
 
 _MATH_FONT_KEYWORDS = [
-    "Math", "CMMI", "Symbol", "MT Extra", "Cambria", "STIX", "Mathmaru",
+    "Math",
+    "CMMI",
+    "Symbol",
+    "MT Extra",
+    "Cambria",
+    "STIX",
+    "Mathmaru",
 ]
 
 # ── 可调参数 ──────────────────────────────────────────────────────────────────
@@ -47,6 +54,7 @@ _RE_DISPLAY_MATH = re.compile(r"\$\$([\s\S]*?)\$\$")
 
 # ── 枚举 / 数据类 ─────────────────────────────────────────────────────────────
 
+
 class MathRegionType(StrEnum):
     INLINE = "inline"
     DISPLAY = "display"
@@ -63,6 +71,7 @@ class MathRegion:
 
 
 # ── 内部辅助 ─────────────────────────────────────────────────────────────────
+
 
 def _is_math_char(ch: str) -> bool:
     if ch in _MATH_ASCII:
@@ -93,6 +102,7 @@ def _median_height(chars):
 
 
 # ── 主检测函数 ───────────────────────────────────────────────────────────────
+
 
 def detect_page(page: fitz.Page) -> list[MathRegion]:
     """检测单页 PDF 中的数学公式区域。"""
@@ -129,7 +139,9 @@ def detect_page(page: fitz.Page) -> list[MathRegion]:
     line_threshold = max(med_h * _SAME_LINE_Y_RATIO, 4.0)
 
     # 按 y 中心排序（同行聚合）
-    char_with_y = [(c[0], c[1], c[2], c[3], c[4], c[5], (c[1] + c[3]) / 2) for c in chars]
+    char_with_y = [
+        (c[0], c[1], c[2], c[3], c[4], c[5], (c[1] + c[3]) / 2) for c in chars
+    ]
     char_with_y.sort(key=lambda c: (c[6], c[0]))
 
     # 按行分组 → 同行内聚类
@@ -153,6 +165,7 @@ def detect_page(page: fitz.Page) -> list[MathRegion]:
 
 
 # ── 行分组 + 同行聚类 ─────────────────────────────────────────────────────────
+
 
 def _cluster_by_lines(char_with_y, line_threshold):
     """按 y 中心分行，同行内对数学字符做 x 间距聚类。"""
@@ -205,17 +218,20 @@ def _cluster_line(line_chars):
         x1 = max(c[2] for c in cluster)
         y1 = max(c[3] for c in cluster)
         raw = "".join(c[4] for c in cluster)
-        regions.append(MathRegion(
-            page_num=0,
-            bbox=(x0, y0, x1, y1),
-            region_type=MathRegionType.MIXED,  # 暂定，后续分类
-            raw_latex=raw,
-        ))
+        regions.append(
+            MathRegion(
+                page_num=0,
+                bbox=(x0, y0, x1, y1),
+                region_type=MathRegionType.MIXED,  # 暂定，后续分类
+                raw_latex=raw,
+            )
+        )
 
     return regions
 
 
 # ── 扩展 / 合并 / 过滤 ───────────────────────────────────────────────────────
+
 
 def _expand_and_filter(regions):
     """bbox 四周扩展 6pt，同行间距 < 12pt 合并，过滤最小面积。"""
@@ -256,14 +272,18 @@ def _expand_and_filter(regions):
         merged.append(r)
 
     # 最小面积过滤
-    merged = [r for r in merged
-              if (r.bbox[2] - r.bbox[0]) >= _MIN_WIDTH
-              and (r.bbox[3] - r.bbox[1]) >= _MIN_HEIGHT]
+    merged = [
+        r
+        for r in merged
+        if (r.bbox[2] - r.bbox[0]) >= _MIN_WIDTH
+        and (r.bbox[3] - r.bbox[1]) >= _MIN_HEIGHT
+    ]
 
     return merged
 
 
 # ── 区域分类 ─────────────────────────────────────────────────────────────────
+
 
 def _classify_regions(regions, char_with_y, line_threshold, page_width):
     """将每个区域分类为 INLINE / DISPLAY / MIXED。"""
@@ -274,8 +294,11 @@ def _classify_regions(regions, char_with_y, line_threshold, page_width):
         y_center = (ry0 + ry1) / 2
 
         # 同行所有字符
-        same_line = [c for c in char_with_y
-                     if abs(c[6] - y_center) < max(region_h * _SAME_LINE_Y_RATIO_CLASSIFY, 5.0)]
+        same_line = [
+            c
+            for c in char_with_y
+            if abs(c[6] - y_center) < max(region_h * _SAME_LINE_Y_RATIO_CLASSIFY, 5.0)
+        ]
 
         if not same_line:
             r.region_type = MathRegionType.MIXED
@@ -290,8 +313,12 @@ def _classify_regions(regions, char_with_y, line_threshold, page_width):
             r.region_type = MathRegionType.DISPLAY
             # 高度超过行高 1.5 倍 → 扩展至整行高度
             if region_h > (max(c[3] - c[1] for c in same_line) * _DISPLAY_HEIGHT_RATIO):
-                r.bbox = (r.bbox[0], min(c[1] for c in same_line),
-                          r.bbox[2], max(c[3] for c in same_line))
+                r.bbox = (
+                    r.bbox[0],
+                    min(c[1] for c in same_line),
+                    r.bbox[2],
+                    max(c[3] for c in same_line),
+                )
             continue
 
         # Inline：同行有其他文字 span
@@ -299,8 +326,9 @@ def _classify_regions(regions, char_with_y, line_threshold, page_width):
         for c in same_line:
             if not c[4]:  # 非数学字符
                 # 在区域左侧或右侧相邻位置
-                if (c[2] <= rx0 + _PADDING * 2 and rx0 - c[2] < line_w * 0.5) or \
-                   (c[0] >= rx1 - _PADDING * 2 and c[0] - rx1 < line_w * 0.5):
+                if (c[2] <= rx0 + _PADDING * 2 and rx0 - c[2] < line_w * 0.5) or (
+                    c[0] >= rx1 - _PADDING * 2 and c[0] - rx1 < line_w * 0.5
+                ):
                     has_nearby_text = True
                     break
         if has_nearby_text:
@@ -313,6 +341,7 @@ def _classify_regions(regions, char_with_y, line_threshold, page_width):
 
 # ── 正则降级 ─────────────────────────────────────────────────────────────────
 
+
 def _detect_latex_delimiters(page):
     """检测页面文本中的 $...$ / $$...$$ 定界符。"""
     try:
@@ -322,20 +351,24 @@ def _detect_latex_delimiters(page):
 
     regions = []
     for m in _RE_INLINE_MATH.finditer(text):
-        regions.append(MathRegion(
-            page_num=page.number,
-            bbox=(0, 0, 0, 0),
-            region_type=MathRegionType.INLINE,
-            raw_latex=m.group(1),
-        ))
+        regions.append(
+            MathRegion(
+                page_num=page.number,
+                bbox=(0, 0, 0, 0),
+                region_type=MathRegionType.INLINE,
+                raw_latex=m.group(1),
+            )
+        )
 
     for m in _RE_DISPLAY_MATH.finditer(text):
-        regions.append(MathRegion(
-            page_num=page.number,
-            bbox=(0, 0, 0, 0),
-            region_type=MathRegionType.DISPLAY,
-            raw_latex=m.group(1),
-        ))
+        regions.append(
+            MathRegion(
+                page_num=page.number,
+                bbox=(0, 0, 0, 0),
+                region_type=MathRegionType.DISPLAY,
+                raw_latex=m.group(1),
+            )
+        )
 
     return regions
 
@@ -358,7 +391,10 @@ def _merge_regex_regions(existing, regex_regions, char_with_y, line_threshold):
 
 # ── 文档级检测 ────────────────────────────────────────────────────────────────
 
-def detect_document(doc: fitz.Document, pages: list[int] | None = None) -> dict[int, list[MathRegion]]:
+
+def detect_document(
+    doc: fitz.Document, pages: list[int] | None = None
+) -> dict[int, list[MathRegion]]:
     """检测多页 PDF 的数学区域。
 
     Args:
@@ -385,6 +421,7 @@ def detect_document(doc: fitz.Document, pages: list[int] | None = None) -> dict[
 
 
 # ── Stage 5：扫描版 OCR 框聚类检测 ───────────────────────────────────────────
+
 
 def detect_from_ocr_boxes(
     boxes: list[dict],
@@ -421,7 +458,7 @@ def _cluster_ocr_boxes(boxes: list[dict], page_height: int) -> list[MathRegion]:
         w, h = x1 - x0, y1 - y0
         if h < 8 or w <= 0:  # 高度 < 8px 过滤
             continue
-        if w / h > 5:         # 宽高比 > 5:1 的细条过滤
+        if w / h > 5:  # 宽高比 > 5:1 的细条过滤
             continue
         parsed.append((x0, y0, x1, y1))
 
@@ -470,12 +507,14 @@ def _cluster_ocr_boxes(boxes: list[dict], page_height: int) -> list[MathRegion]:
             y0 = min(b[1] for b in cluster)
             x1 = max(b[2] for b in cluster)
             y1 = max(b[3] for b in cluster)
-            regions.append(MathRegion(
-                page_num=0,
-                bbox=(x0, y0, x1, y1),
-                region_type=MathRegionType.MIXED,
-                raw_latex=None,
-                image_url=None,
-            ))
+            regions.append(
+                MathRegion(
+                    page_num=0,
+                    bbox=(x0, y0, x1, y1),
+                    region_type=MathRegionType.MIXED,
+                    raw_latex=None,
+                    image_url=None,
+                )
+            )
 
     return regions

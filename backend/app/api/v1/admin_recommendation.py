@@ -1,4 +1,5 @@
 """Phase 4 — 推荐策略 / 实验 / 指标 / 质量报告 Admin API。"""
+
 import logging
 from datetime import date
 
@@ -43,7 +44,9 @@ async def list_strategies(
     """查询策略配置列表。"""
     from app.services import recommendation_strategy_service
 
-    configs = await recommendation_strategy_service.list_strategy_configs(db, scene=scene)
+    configs = await recommendation_strategy_service.list_strategy_configs(
+        db, scene=scene
+    )
     return [StrategyConfigResponse(**c) for c in configs]
 
 
@@ -57,7 +60,8 @@ async def create_or_update_strategy(
     from app.services import recommendation_strategy_service
 
     result = await recommendation_strategy_service.create_or_update_strategy_config(
-        db, data.model_dump(),
+        db,
+        data.model_dump(),
     )
     await db.commit()
     return StrategyConfigResponse(**result)
@@ -75,7 +79,9 @@ async def list_experiments(
     """查询实验列表。"""
     from app.services import recommendation_experiment_service
 
-    experiments = await recommendation_experiment_service.list_experiments(db, scene=scene)
+    experiments = await recommendation_experiment_service.list_experiments(
+        db, scene=scene
+    )
     return [ExperimentResponseExtended(**e) for e in experiments]
 
 
@@ -89,13 +95,16 @@ async def create_experiment(
     from app.services import recommendation_experiment_service
 
     result = await recommendation_experiment_service.create_experiment(
-        db, data.model_dump(),
+        db,
+        data.model_dump(),
     )
     await db.commit()
     return ExperimentResponseExtended(**result)
 
 
-@router.patch("/experiments/{experiment_id}/status", response_model=ExperimentResponseExtended)
+@router.patch(
+    "/experiments/{experiment_id}/status", response_model=ExperimentResponseExtended
+)
 async def update_experiment_status(
     experiment_id: int,
     data: ExperimentStatusUpdate,
@@ -106,7 +115,9 @@ async def update_experiment_status(
     from app.services import recommendation_experiment_service
 
     result = await recommendation_experiment_service.update_experiment_status(
-        db, experiment_id, data.status,
+        db,
+        experiment_id,
+        data.status,
     )
     if not result:
         raise HTTPException(status_code=404, detail="实验不存在")
@@ -126,8 +137,12 @@ async def aggregate_metrics(
     """聚合指定日期推荐指标。"""
     from app.services import recommendation_metrics_service
 
-    result = await recommendation_metrics_service.aggregate_recommendation_metrics_daily(
-        db, target_date=data.date, subject_id=data.subject_id,
+    result = (
+        await recommendation_metrics_service.aggregate_recommendation_metrics_daily(
+            db,
+            target_date=data.date,
+            subject_id=data.subject_id,
+        )
     )
     await db.commit()
     return MetricsAggregateResponse(**result)
@@ -147,8 +162,12 @@ async def get_metrics(
     from app.services import recommendation_metrics_service
 
     rows = await recommendation_metrics_service.get_recommendation_metrics(
-        db, date_from=date_from, date_to=date_to,
-        subject_id=subject_id, scene=scene, strategy=strategy,
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        subject_id=subject_id,
+        scene=scene,
+        strategy=strategy,
     )
     return [MetricsDailyResponse(**r) for r in rows]
 
@@ -156,7 +175,9 @@ async def get_metrics(
 # ── 实验对比 ──
 
 
-@router.get("/experiments/{experiment_id}/compare", response_model=VariantComparisonResponse)
+@router.get(
+    "/experiments/{experiment_id}/compare", response_model=VariantComparisonResponse
+)
 async def compare_experiment_variants(
     experiment_id: int,
     date_from: date = Query(...),
@@ -168,8 +189,10 @@ async def compare_experiment_variants(
     from app.services import recommendation_metrics_service
 
     result = await recommendation_metrics_service.compare_experiment_variants(
-        db, experiment_id=experiment_id,
-        date_from=date_from, date_to=date_to,
+        db,
+        experiment_id=experiment_id,
+        date_from=date_from,
+        date_to=date_to,
     )
     return VariantComparisonResponse(**result)
 
@@ -187,7 +210,8 @@ async def get_recommendation_quality_report(
     from app.services import recommendation_quality_service
 
     result = await recommendation_quality_service.build_recommendation_quality_report(
-        db, subject_id=subject_id,
+        db,
+        subject_id=subject_id,
     )
     return RecommendationQualityReportResponse(**result)
 
@@ -202,9 +226,11 @@ async def get_knowledge_quality_report(
     from app.services import recommendation_quality_service
 
     result = await recommendation_quality_service.build_knowledge_quality_report(
-        db, subject_id=subject_id,
+        db,
+        subject_id=subject_id,
     )
     return KnowledgeQualityReportResponse(**result)
+
 
 # ── Phase 4.5: 种子策略 ──
 
@@ -217,7 +243,9 @@ async def seed_strategies(
     """种子默认推荐策略。"""
     from app.services import recommendation_seed_service
 
-    result = await recommendation_seed_service.seed_default_recommendation_strategies(db)
+    result = await recommendation_seed_service.seed_default_recommendation_strategies(
+        db
+    )
     await db.commit()
     return SeedStrategiesResponse(**result)
 
@@ -225,7 +253,9 @@ async def seed_strategies(
 # ── Phase 4.5: 实验安全检查 ──
 
 
-@router.post("/experiments/{experiment_id}/safety-check", response_model=SafetyCheckResponse)
+@router.post(
+    "/experiments/{experiment_id}/safety-check", response_model=SafetyCheckResponse
+)
 async def safety_check(
     experiment_id: int,
     date_from: date = Query(...),
@@ -237,7 +267,10 @@ async def safety_check(
     from app.services import recommendation_experiment_service
 
     result = await recommendation_experiment_service.evaluate_experiment_safety(
-        db, experiment_id, date_from, date_to,
+        db,
+        experiment_id,
+        date_from,
+        date_to,
     )
     await db.commit()
     return SafetyCheckResponse(**result)
@@ -256,7 +289,10 @@ async def backfill_metrics(
     from app.services import recommendation_metrics_service
 
     result = await recommendation_metrics_service.backfill_metrics(
-        db, date_from=data.date_from, date_to=data.date_to, subject_id=data.subject_id,
+        db,
+        date_from=data.date_from,
+        date_to=data.date_to,
+        subject_id=data.subject_id,
     )
     await db.commit()
     return MetricsBackfillResponse(**result)
@@ -277,6 +313,9 @@ async def health_report(
     from app.services import recommendation_health_service
 
     result = await recommendation_health_service.build_recommendation_health_report(
-        db, subject_id=subject_id, date_from=date_from, date_to=date_to,
+        db,
+        subject_id=subject_id,
+        date_from=date_from,
+        date_to=date_to,
     )
     return HealthReportResponse(**result)

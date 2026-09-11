@@ -6,6 +6,7 @@
 
 crop_from_page_ref 委托给 visual_region_cropper 实现，保持向后兼容。
 """
+
 import hashlib
 import logging
 from datetime import datetime
@@ -69,7 +70,9 @@ async def crop_and_upload(
         except Exception as e:
             logger.warning(
                 "截图上传失败 import_id=%s page=%s: %s",
-                import_id, region.page_num, e,
+                import_id,
+                region.page_num,
+                e,
             )
         result.append(region)
 
@@ -127,7 +130,9 @@ async def crop_and_upload_refs(
         except Exception as e:
             logger.warning(
                 "截图上传失败 import_id=%s page=%s: %s",
-                import_id, region.page_num, e,
+                import_id,
+                region.page_num,
+                e,
             )
         result.append(region)
 

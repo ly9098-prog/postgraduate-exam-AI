@@ -42,11 +42,15 @@ class ExportValidationError(ExportDomainError):
     """Validation errors (400) — invalid input, too many questions, etc."""
 
     def __init__(self, error_code: ExportErrorCode, message: str, **context):
-        super().__init__(status_code=400, error_code=error_code, message=message, context=context)
+        super().__init__(
+            status_code=400, error_code=error_code, message=message, context=context
+        )
 
 
 class ExportPermissionError(ExportDomainError):
     """Permission errors (403) — feature disabled, user not allowed, etc."""
 
     def __init__(self, error_code: ExportErrorCode, message: str, **context):
-        super().__init__(status_code=403, error_code=error_code, message=message, context=context)
+        super().__init__(
+            status_code=403, error_code=error_code, message=message, context=context
+        )

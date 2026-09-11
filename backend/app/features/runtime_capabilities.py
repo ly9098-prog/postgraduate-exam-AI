@@ -128,7 +128,9 @@ class RuntimeCapabilities:
     def from_dict(cls, data: dict[str, Any]) -> RuntimeCapabilities:
         """Deserialize from dict (for resume from artifact)."""
         return cls(
-            profile=DeploymentProfile(data.get("profile", DeploymentProfile.LOCAL_IMPORT.value)),
+            profile=DeploymentProfile(
+                data.get("profile", DeploymentProfile.LOCAL_IMPORT.value)
+            ),
             cpu_count=data.get("cpu_count", 2),
             memory_limit_bytes=data.get("memory_limit_bytes", 2 * 1024 * 1024 * 1024),
             gpu_available=data.get("gpu_available", False),
@@ -144,7 +146,9 @@ class RuntimeCapabilities:
             gpu_ocr_batch_size=data.get("gpu_ocr_batch_size", 0),
             gpu_memory_budget_bytes=data.get("gpu_memory_budget_bytes", 0),
             max_rendered_page_cache=data.get("max_rendered_page_cache", 1),
-            max_remote_ocr_calls_per_document=data.get("max_remote_ocr_calls_per_document", 100),
+            max_remote_ocr_calls_per_document=data.get(
+                "max_remote_ocr_calls_per_document", 100
+            ),
         )
 
 
@@ -179,7 +183,11 @@ def build_runtime_capabilities(
     """
     profile = profile or detect_deployment_profile()
 
-    defaults = _LOCAL_IMPORT_DEFAULTS if profile == DeploymentProfile.LOCAL_IMPORT else _CLOUD_API_DEFAULTS
+    defaults = (
+        _LOCAL_IMPORT_DEFAULTS
+        if profile == DeploymentProfile.LOCAL_IMPORT
+        else _CLOUD_API_DEFAULTS
+    )
 
     # Build from defaults, then apply env overrides, then explicit overrides
     values: dict[str, Any] = dict(defaults)
@@ -260,11 +268,16 @@ def _apply_env_overrides(values: dict[str, Any], profile: DeploymentProfile) -> 
             pass
 
     # Apply non-prefixed generic overrides (CLOUD_* OR LOCAL_*)
-    for env_var, key in [("CLOUD_PAGE_STREAM_WINDOW_SIZE", "page_stream_window_size"),
-                          ("CLOUD_PAGE_STREAM_OVERLAP", "page_stream_overlap"),
-                          ("CLOUD_MAX_CONCURRENT_PAGES", "max_concurrent_pages"),
-                          ("CLOUD_MAX_RENDERED_PAGE_CACHE", "max_rendered_page_cache"),
-                          ("CLOUD_MAX_REMOTE_OCR_CALLS_PER_DOCUMENT", "max_remote_ocr_calls_per_document")]:
+    for env_var, key in [
+        ("CLOUD_PAGE_STREAM_WINDOW_SIZE", "page_stream_window_size"),
+        ("CLOUD_PAGE_STREAM_OVERLAP", "page_stream_overlap"),
+        ("CLOUD_MAX_CONCURRENT_PAGES", "max_concurrent_pages"),
+        ("CLOUD_MAX_RENDERED_PAGE_CACHE", "max_rendered_page_cache"),
+        (
+            "CLOUD_MAX_REMOTE_OCR_CALLS_PER_DOCUMENT",
+            "max_remote_ocr_calls_per_document",
+        ),
+    ]:
         raw = os.environ.get(env_var)
         if raw is not None:
             try:

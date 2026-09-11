@@ -34,7 +34,9 @@ _POOL_BY_ROLE = {
     "all": (settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW),
 }
 _role = getattr(settings, "PROCESS_ROLE", "web")
-_pool_size, _max_overflow = _POOL_BY_ROLE.get(_role, (settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW))
+_pool_size, _max_overflow = _POOL_BY_ROLE.get(
+    _role, (settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW)
+)
 
 _connect_args = {}
 _engine_kwargs: dict = {
@@ -99,10 +101,12 @@ def get_db_query_metrics() -> dict[str, int | float]:
     metrics["duration_ms_avg"] = float(metrics["duration_ms_total"]) / total
     return metrics
 
+
 try:
     from app.core.log_context import log_event as _log_event
 except ImportError:  # pragma: no cover
     _log_event = None
+
 
 @event.listens_for(engine.sync_engine, "before_cursor_execute")
 def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
@@ -117,7 +121,9 @@ def _after_cursor_execute(conn, cursor, statement, parameters, context, executem
     duration_ms = (time.perf_counter() - start) * 1000
     with _query_metrics_lock:
         _query_metrics["total"] = int(_query_metrics["total"]) + 1
-        _query_metrics["duration_ms_total"] = float(_query_metrics["duration_ms_total"]) + duration_ms
+        _query_metrics["duration_ms_total"] = (
+            float(_query_metrics["duration_ms_total"]) + duration_ms
+        )
         _query_metrics["duration_ms_max"] = max(
             float(_query_metrics["duration_ms_max"]), duration_ms
         )
@@ -132,7 +138,9 @@ def _after_cursor_execute(conn, cursor, statement, parameters, context, executem
         compact_sql = compact_sql[:1200] + "..."
     if _log_event is not None:
         _log_event(
-            _slow_query_logger, "db.slow_query", "warning",
+            _slow_query_logger,
+            "db.slow_query",
+            "warning",
             duration_ms=round(duration_ms, 1),
             rowcount=getattr(cursor, "rowcount", None),
             executemany=executemany,
@@ -146,6 +154,7 @@ def _after_cursor_execute(conn, cursor, statement, parameters, context, executem
             executemany,
             compact_sql,
         )
+
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -181,11 +190,18 @@ async def _repair_sqlite_admin_bigint_pk(conn):
 
             if table_exists:
                 columns = inspector.get_columns(table_name)
-                id_column = next((column for column in columns if column["name"] == "id"), None)
-                if id_column is None or id_column["type"].__class__.__name__.upper() == "INTEGER":
+                id_column = next(
+                    (column for column in columns if column["name"] == "id"), None
+                )
+                if (
+                    id_column is None
+                    or id_column["type"].__class__.__name__.upper() == "INTEGER"
+                ):
                     continue
                 if not backup_exists:
-                    sync_conn.exec_driver_sql(f'ALTER TABLE "{table_name}" RENAME TO "{backup_table}"')
+                    sync_conn.exec_driver_sql(
+                        f'ALTER TABLE "{table_name}" RENAME TO "{backup_table}"'
+                    )
                     existing_tables.discard(table_name)
                     existing_tables.add(backup_table)
                     backup_exists = True
@@ -195,15 +211,29 @@ async def _repair_sqlite_admin_bigint_pk(conn):
                 for index in backup_indexes:
                     index_name = index.get("name")
                     if index_name and not index_name.startswith("sqlite_autoindex_"):
-                        sync_conn.exec_driver_sql(f'DROP INDEX IF EXISTS "{index_name}"')
+                        sync_conn.exec_driver_sql(
+                            f'DROP INDEX IF EXISTS "{index_name}"'
+                        )
 
             table.create(sync_conn, checkfirst=True)
             if backup_exists:
-                new_columns = {column["name"] for column in inspect(sync_conn).get_columns(table_name)}
-                old_columns = {column["name"] for column in inspect(sync_conn).get_columns(backup_table)}
-                common_columns = [column.name for column in table.columns if column.name in new_columns and column.name in old_columns]
+                new_columns = {
+                    column["name"]
+                    for column in inspect(sync_conn).get_columns(table_name)
+                }
+                old_columns = {
+                    column["name"]
+                    for column in inspect(sync_conn).get_columns(backup_table)
+                }
+                common_columns = [
+                    column.name
+                    for column in table.columns
+                    if column.name in new_columns and column.name in old_columns
+                ]
                 if common_columns:
-                    quoted_columns = ", ".join(f'"{column}"' for column in common_columns)
+                    quoted_columns = ", ".join(
+                        f'"{column}"' for column in common_columns
+                    )
                     sync_conn.exec_driver_sql(
                         f'INSERT OR IGNORE INTO "{table_name}" ({quoted_columns}) '
                         f'SELECT {quoted_columns} FROM "{backup_table}"'
@@ -234,15 +264,27 @@ async def _ensure_duplicate_check_columns(conn):
         for table_name, columns in table_columns.items():
             if table_name not in existing_tables:
                 continue
-            existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+            existing_columns = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
             for column_name, column_type in columns.items():
                 if column_name not in existing_columns:
-                    sync_conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_type}'))
-            existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+                    sync_conn.execute(
+                        text(
+                            f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_type}'
+                        )
+                    )
+            existing_indexes = {
+                index["name"] for index in inspector.get_indexes(table_name)
+            }
             for column_name in table_indexes.get(table_name, []):
                 index_name = f"ix_{table_name}_{column_name}"
                 if index_name not in existing_indexes:
-                    sync_conn.execute(text(f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table_name}" ("{column_name}")'))
+                    sync_conn.execute(
+                        text(
+                            f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table_name}" ("{column_name}")'
+                        )
+                    )
 
     await conn.run_sync(repair)
 
@@ -275,11 +317,19 @@ async def _ensure_user_ban_columns(conn):
         }
         for column_name, column_type in column_specs.items():
             if column_name not in existing_columns:
-                sync_conn.execute(text(f'ALTER TABLE "users" ADD COLUMN "{column_name}" {column_type}'))
+                sync_conn.execute(
+                    text(
+                        f'ALTER TABLE "users" ADD COLUMN "{column_name}" {column_type}'
+                    )
+                )
 
         existing_indexes = {index["name"] for index in inspector.get_indexes("users")}
         if "ix_users_is_banned" not in existing_indexes:
-            sync_conn.execute(text('CREATE INDEX IF NOT EXISTS "ix_users_is_banned" ON "users" ("is_banned")'))
+            sync_conn.execute(
+                text(
+                    'CREATE INDEX IF NOT EXISTS "ix_users_is_banned" ON "users" ("is_banned")'
+                )
+            )
 
     await conn.run_sync(repair)
 
@@ -291,7 +341,9 @@ async def _ensure_user_deleted_column(conn):
             return
         existing_columns = {column["name"] for column in inspector.get_columns("users")}
         if "deleted_at" not in existing_columns:
-            sync_conn.execute(text('ALTER TABLE "users" ADD COLUMN "deleted_at" TIMESTAMP'))
+            sync_conn.execute(
+                text('ALTER TABLE "users" ADD COLUMN "deleted_at" TIMESTAMP')
+            )
 
     await conn.run_sync(repair)
 
@@ -304,20 +356,36 @@ async def _ensure_sync_columns(conn):
         if "questions" in existing_tables:
             cols = {c["name"] for c in inspector.get_columns("questions")}
             if "sync_uuid" not in cols:
-                sync_conn.execute(text('ALTER TABLE "questions" ADD COLUMN "sync_uuid" VARCHAR(36)'))
+                sync_conn.execute(
+                    text('ALTER TABLE "questions" ADD COLUMN "sync_uuid" VARCHAR(36)')
+                )
             if "sync_version" not in cols:
-                sync_conn.execute(text('ALTER TABLE "questions" ADD COLUMN "sync_version" INTEGER NOT NULL DEFAULT 0'))
+                sync_conn.execute(
+                    text(
+                        'ALTER TABLE "questions" ADD COLUMN "sync_version" INTEGER NOT NULL DEFAULT 0'
+                    )
+                )
             indexes = {i["name"] for i in inspector.get_indexes("questions")}
             if "ix_questions_sync_uuid" not in indexes:
-                sync_conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_questions_sync_uuid" ON "questions" ("sync_uuid")'))
+                sync_conn.execute(
+                    text(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS "ix_questions_sync_uuid" ON "questions" ("sync_uuid")'
+                    )
+                )
 
         if "tags" in existing_tables:
             cols = {c["name"] for c in inspector.get_columns("tags")}
             if "sync_uuid" not in cols:
-                sync_conn.execute(text('ALTER TABLE "tags" ADD COLUMN "sync_uuid" VARCHAR(36)'))
+                sync_conn.execute(
+                    text('ALTER TABLE "tags" ADD COLUMN "sync_uuid" VARCHAR(36)')
+                )
             indexes = {i["name"] for i in inspector.get_indexes("tags")}
             if "ix_tags_sync_uuid" not in indexes:
-                sync_conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_tags_sync_uuid" ON "tags" ("sync_uuid")'))
+                sync_conn.execute(
+                    text(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS "ix_tags_sync_uuid" ON "tags" ("sync_uuid")'
+                    )
+                )
 
     await conn.run_sync(repair)
 
@@ -333,7 +401,11 @@ async def _ensure_pomodoro_table(conn):
 
         # Development-only: add missing columns for schema drift
         import os
-        if os.environ.get("APP_ENV") == "production" or detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+
+        if (
+            os.environ.get("APP_ENV") == "production"
+            or detect_deployment_profile() == DeploymentProfile.CLOUD_API
+        ):
             return
 
         existing = {c["name"] for c in inspector.get_columns("pomodoro_sessions")}
@@ -372,6 +444,7 @@ async def _ensure_vector_schema(conn):
     此函数仅用于本地开发环境，且每个 DDL 使用独立 SAVEPOINT，
     避免 PostgreSQL 单条失败后事务进入 aborted 状态。
     """
+
     def repair(sync_conn):
         if sync_conn.dialect.name != "postgresql":
             return
@@ -406,13 +479,16 @@ async def _ensure_vector_schema(conn):
             with sync_conn.begin_nested():
                 sync_conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         except Exception:
-            logger.warning("pgvector extension unavailable; skipping vector schema", exc_info=True)
+            logger.warning(
+                "pgvector extension unavailable; skipping vector schema", exc_info=True
+            )
             return
 
         # 2. question_embeddings 表
         try:
             with sync_conn.begin_nested():
-                sync_conn.execute(text(f'''
+                sync_conn.execute(
+                    text(f"""
                 CREATE TABLE IF NOT EXISTS question_embeddings (
                     id BIGSERIAL PRIMARY KEY,
                     question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
@@ -428,7 +504,8 @@ async def _ensure_vector_schema(conn):
                     embedded_at TIMESTAMP NOT NULL DEFAULT NOW(),
                     UNIQUE(question_id, embedding_model)
                 )
-                '''))
+                """)
+                )
         except Exception:
             logger.warning("question_embeddings table creation failed", exc_info=True)
             return
@@ -436,7 +513,8 @@ async def _ensure_vector_schema(conn):
         # CREATE TABLE IF NOT EXISTS 不会修复已有列的维度；显式检查并告警，
         # 由迁移脚本处理，禁止在启动阶段隐式丢弃已有 embedding。
         try:
-            type_name = sync_conn.execute(text("""
+            type_name = sync_conn.execute(
+                text("""
                 SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
                 FROM pg_catalog.pg_attribute a
                 JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
@@ -447,7 +525,8 @@ async def _ensure_vector_schema(conn):
                   AND a.attnum > 0
                   AND NOT a.attisdropped
                 LIMIT 1
-            """)).scalar()
+            """)
+            ).scalar()
             expected_type = f"vector({dim})"
             if type_name != expected_type:
                 logger.error(
@@ -466,32 +545,40 @@ async def _ensure_vector_schema(conn):
 
         # 3. B-tree 索引
         for idx_sql in [
-            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)',
-            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject_id ON question_embeddings(subject_id)',
-            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)',
+            "CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)",
+            "CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject_id ON question_embeddings(subject_id)",
+            "CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)",
         ]:
             try:
                 with sync_conn.begin_nested():
                     sync_conn.execute(text(idx_sql))
             except Exception:
-                logger.warning("vector index creation failed: %s", idx_sql[:80], exc_info=True)
+                logger.warning(
+                    "vector index creation failed: %s", idx_sql[:80], exc_info=True
+                )
 
         # 4. HNSW 索引（可选，独立 savepoint）
         try:
             with sync_conn.begin_nested():
-                sync_conn.execute(text('''
+                sync_conn.execute(
+                    text("""
                 CREATE INDEX IF NOT EXISTS ix_question_embeddings_embedding_hnsw
                 ON question_embeddings
                 USING hnsw (embedding vector_cosine_ops)
-                '''))
+                """)
+                )
         except Exception:
-            logger.warning("pgvector hnsw index unavailable; continue without vector index", exc_info=True)
+            logger.warning(
+                "pgvector hnsw index unavailable; continue without vector index",
+                exc_info=True,
+            )
 
     await conn.run_sync(repair)
 
 
 async def _repair_postgres_sequences(conn):
     """Sync PG sequences for tables that may have explicit-ID inserts (bootstrap, etc)."""
+
     def repair(sync_conn):
         if sync_conn.dialect.name != "postgresql":
             return
@@ -504,6 +591,7 @@ async def _repair_postgres_sequences(conn):
                     f"COALESCE((SELECT MAX(id) FROM {table_name}), 1))"
                 )
             )
+
     await conn.run_sync(repair)
 
 

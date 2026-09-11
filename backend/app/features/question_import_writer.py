@@ -69,46 +69,146 @@ def _parse_excel(content: bytes, filename: str) -> list[dict]:
 
 _PDF_SUBJECT_KEYWORDS = {
     "data_structure": [
-        "数据结构", "二叉树", "栈", "队列", "排序", "查找", "链表", "图论",
-        "哈夫曼", "邻接矩阵", "邻接表", "散列", "hash", "深度优先", "广度优先",
-        "二分查找", "插入排序", "归并排序", "快速排序", "堆排序",
+        "数据结构",
+        "二叉树",
+        "栈",
+        "队列",
+        "排序",
+        "查找",
+        "链表",
+        "图论",
+        "哈夫曼",
+        "邻接矩阵",
+        "邻接表",
+        "散列",
+        "hash",
+        "深度优先",
+        "广度优先",
+        "二分查找",
+        "插入排序",
+        "归并排序",
+        "快速排序",
+        "堆排序",
     ],
     "operating_system": [
-        "操作系统", "进程", "线程", "信号量", "死锁", "调度算法",
-        "页表", "虚拟内存", "缺页", "tlb", "文件系统", "i/o",
-        "互斥", "同步", "管程", "临界区", "时间片", "fcfs", "rr",
+        "操作系统",
+        "进程",
+        "线程",
+        "信号量",
+        "死锁",
+        "调度算法",
+        "页表",
+        "虚拟内存",
+        "缺页",
+        "tlb",
+        "文件系统",
+        "i/o",
+        "互斥",
+        "同步",
+        "管程",
+        "临界区",
+        "时间片",
+        "fcfs",
+        "rr",
     ],
     "computer_organization": [
-        "cpu", "存储器", "主存", "指令", "中断", "dma", "cache", "流水线",
-        "微指令", "寻址", "补码", "原码", "浮点", "运算器", "控制器",
-        "总线", "字长", "定长指令", "条件转移",
+        "cpu",
+        "存储器",
+        "主存",
+        "指令",
+        "中断",
+        "dma",
+        "cache",
+        "流水线",
+        "微指令",
+        "寻址",
+        "补码",
+        "原码",
+        "浮点",
+        "运算器",
+        "控制器",
+        "总线",
+        "字长",
+        "定长指令",
+        "条件转移",
     ],
     "computer_network": [
-        "网络层", "tcp", "ip地址", "路由", "码分", "频分", "csma",
-        "局域网", "以太网", "传输层", "应用层", "数据链路",
-        "拥塞", "三次握手", "udp", "http", "dns", "子网掩码",
+        "网络层",
+        "tcp",
+        "ip地址",
+        "路由",
+        "码分",
+        "频分",
+        "csma",
+        "局域网",
+        "以太网",
+        "传输层",
+        "应用层",
+        "数据链路",
+        "拥塞",
+        "三次握手",
+        "udp",
+        "http",
+        "dns",
+        "子网掩码",
     ],
     "exam408": [
-        "算法", "计算机", "时间复杂度", "空间复杂度",
+        "算法",
+        "计算机",
+        "时间复杂度",
+        "空间复杂度",
     ],
     "math2-calculus": [
-        "极限", "导数", "积分", "微分方程", "lim",
-        "连续", "可导", "定积分", "不定积分", "偏导",
-        "极大值", "极小值", "拐点", "渐近线", "曲率",
-        "泰勒", "罗尔", "拉格朗日", "中值定理",
+        "极限",
+        "导数",
+        "积分",
+        "微分方程",
+        "lim",
+        "连续",
+        "可导",
+        "定积分",
+        "不定积分",
+        "偏导",
+        "极大值",
+        "极小值",
+        "拐点",
+        "渐近线",
+        "曲率",
+        "泰勒",
+        "罗尔",
+        "拉格朗日",
+        "中值定理",
     ],
     "math2-linalg": [
-        "矩阵", "向量", "行列式", "特征值", "二次型",
-        "线性代数", "相似矩阵", "正交", "秩", "线性方程组",
-        "线性相关", "线性无关", "特征向量",
+        "矩阵",
+        "向量",
+        "行列式",
+        "特征值",
+        "二次型",
+        "线性代数",
+        "相似矩阵",
+        "正交",
+        "秩",
+        "线性方程组",
+        "线性相关",
+        "线性无关",
+        "特征向量",
     ],
     "math2": [
-        "函数", "微积分",
+        "函数",
+        "微积分",
     ],
     "english": [
-        "reading comprehension", "passage", "paragraph", "translate",
-        "词汇", "完形填空", "阅读理解", "写作",
-        "according to the passage", "which of the following",
+        "reading comprehension",
+        "passage",
+        "paragraph",
+        "translate",
+        "词汇",
+        "完形填空",
+        "阅读理解",
+        "写作",
+        "according to the passage",
+        "which of the following",
     ],
 }
 
@@ -158,6 +258,7 @@ def _extract_pdf_text(content: bytes) -> str:
     if ocr_targets:
         ocr_results = ocr_pages(ocr_targets)
         from app.services.formula_normalizer import fix_ocr_formula
+
         for idx, raw_text in ocr_results.items():
             page_texts[idx] = fix_ocr_formula(clean_ocr_text(raw_text))
 
@@ -166,9 +267,7 @@ def _extract_pdf_text(content: bytes) -> str:
 
 _ANSWER_RE = re.compile(r"^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:](.*)$")
 _ANALYSIS_RE = re.compile(r"^(?:【)?(?:解析|解答)(?:】)?\s*[：:](.*)")
-_OPT_INLINE_RE = re.compile(
-    r"([A-D])[.、:：）]\s*([^A-D]*?)(?=\s+[A-D][.、:：）]|$)"
-)
+_OPT_INLINE_RE = re.compile(r"([A-D])[.、:：）]\s*([^A-D]*?)(?=\s+[A-D][.、:：）]|$)")
 
 
 def _parse_option_line(line: str) -> dict | None:
@@ -278,17 +377,27 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
         per_question_subject_code = (
             _guess_subject(stem + " " + analysis, min_score=1) or default_subject
         )
-        results.append({
-            "subject": per_question_subject_code,
-            "stem": stem,
-            "options": "" if blank_option_groups else options_str,
-            "blank_option_groups": blank_option_groups,
-            "answer": answer,
-            "explanation": analysis,
-            "question_type": "multi_blank_choice" if blank_option_groups else (QT_SINGLE_CHOICE if options else (
-                QT_TRUE_FALSE if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else QT_FILL_BLANK
-            )),
-        })
+        results.append(
+            {
+                "subject": per_question_subject_code,
+                "stem": stem,
+                "options": "" if blank_option_groups else options_str,
+                "blank_option_groups": blank_option_groups,
+                "answer": answer,
+                "explanation": analysis,
+                "question_type": "multi_blank_choice"
+                if blank_option_groups
+                else (
+                    QT_SINGLE_CHOICE
+                    if options
+                    else (
+                        QT_TRUE_FALSE
+                        if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem)
+                        else QT_FILL_BLANK
+                    )
+                ),
+            }
+        )
 
     if not results:
         raise ValueError("未能从 PDF 中解析出有效题目，请检查文件格式")
@@ -317,7 +426,9 @@ async def _build_import_duplicate_fields(
     result_label = "normal"
     matched_id = None
 
-    duplicate_question = await _find_duplicate_by_hash(db, subject_code, question_hash, subject_id=subject_id)
+    duplicate_question = await _find_duplicate_by_hash(
+        db, subject_code, question_hash, subject_id=subject_id
+    )
     if duplicate_question and not hasattr(duplicate_question, "id"):
         duplicate_question = None
     if duplicate_question:
@@ -326,7 +437,9 @@ async def _build_import_duplicate_fields(
         result_label = "matched_question"
         matched_id = duplicate_question.id
     else:
-        duplicate_import = await _find_import_duplicate_by_hash(db, subject_code, question_hash, subject_id=subject_id)
+        duplicate_import = await _find_import_duplicate_by_hash(
+            db, subject_code, question_hash, subject_id=subject_id
+        )
         if duplicate_import and not hasattr(duplicate_import, "id"):
             duplicate_import = None
         if duplicate_import and duplicate_import.id != import_id:
@@ -382,7 +495,9 @@ async def _create_question_import(
     subject_id_val = result["import_fields"].get("subject_id")
 
     if skip_existing and question_hash and subject_id_val:
-        existing = await _find_duplicate_by_hash(db, None, question_hash, subject_id=subject_id_val)
+        existing = await _find_duplicate_by_hash(
+            db, None, question_hash, subject_id=subject_id_val
+        )
         if existing:
             logger.info(
                 "[DuplicateFilter] 跳过已存在的题目 subject_id=%s hash=%s existing_id=%s",
@@ -391,7 +506,9 @@ async def _create_question_import(
                 existing.id,
             )
             return None
-        existing_import = await _find_import_duplicate_by_hash(db, None, question_hash, subject_id=subject_id_val)
+        existing_import = await _find_import_duplicate_by_hash(
+            db, None, question_hash, subject_id=subject_id_val
+        )
         if existing_import:
             logger.info(
                 "[DuplicateFilter] 跳过审核池中已存在的题目 subject_id=%s hash=%s existing_import_id=%s",
@@ -424,13 +541,13 @@ async def import_excel(
     if not raw_rows:
         raise ValueError("Excel 文件为空或格式不正确")
 
-    batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
     imported = 0
     skipped_duplicates = 0
     for row in raw_rows:
-        result = process_question_pipeline(
-            row, "excel", {"file": filename, "page": 0}
-        )
+        result = process_question_pipeline(row, "excel", {"file": filename, "page": 0})
         if not result["is_valid"]:
             continue
         qi = await _create_question_import(
@@ -456,7 +573,9 @@ async def import_pdf(
     db: AsyncSession, content: bytes, filename: str, background_tasks=None
 ) -> tuple[str, int]:
     raw_rows = _parse_pdf(content, filename)
-    batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
     imported = 0
     skipped_duplicates = 0
     for row in raw_rows:
@@ -490,18 +609,14 @@ async def import_pdf(
 
 
 async def _get_qi(db: AsyncSession, import_id: int) -> QuestionImport:
-    res = await db.execute(
-        select(QuestionImport).where(QuestionImport.id == import_id)
-    )
+    res = await db.execute(select(QuestionImport).where(QuestionImport.id == import_id))
     qi = res.scalar_one_or_none()
     if not qi:
         raise ValueError("导入记录不存在")
     return qi
 
 
-async def approve_question(
-    db: AsyncSession, import_id: int, data: dict
-) -> dict:
+async def approve_question(db: AsyncSession, import_id: int, data: dict) -> dict:
     """审核通过单题并写入正式题库。返回 {qi, is_duplicate, question_id}。"""
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
@@ -571,8 +686,11 @@ async def approve_question(
             }
         # Preserve source_snapshot_url
         if isinstance(qi_content, dict) and qi_content.get("source_snapshot_url"):
-            q_fields["content"]["source_snapshot_url"] = qi_content["source_snapshot_url"]
+            q_fields["content"]["source_snapshot_url"] = qi_content[
+                "source_snapshot_url"
+            ]
         from app.utils.question_content import extract_image_urls_from_content
+
         image_urls = extract_image_urls_from_content(qi_content)
         if image_urls:
             q_fields["image_url"] = image_urls
@@ -597,13 +715,17 @@ async def approve_question(
             await sync_question_knowledge_points(db, q, kp_names, source="imported")
         from app.services.question_revision_service import ensure_question_revision
 
-        await ensure_question_revision(db, q, change_source="import_writer", edit_reason="initial publish")
+        await ensure_question_revision(
+            db, q, change_source="import_writer", edit_reason="initial publish"
+        )
         await db.refresh(q)
         qi.status = "published"
         qi.question_id = q.id
         logger.info(
             "[Review Pass] import_id=%s → question_id=%s subject_id=%s",
-            qi.id, q.id, q.subject_id,
+            qi.id,
+            q.id,
+            q.subject_id,
         )
 
     qi.review_note = data.get("review_note")
@@ -624,7 +746,9 @@ async def reject_question(
     await db.commit()
 
 
-async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int, list[str]]]:
+async def batch_approve(
+    db: AsyncSession, batch_id: str
+) -> tuple[int, dict[int, list[str]]]:
     res = await db.execute(
         select(QuestionImport).where(
             QuestionImport.batch_id == batch_id,
@@ -678,15 +802,21 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             q_fields["subject_id"] = qi.subject_id
             # P1-5: 保留 segments/render_mode（同 publish_single_question）
             qi_content = qi.parsed_content or {}
-            if isinstance(qi_content, dict) and qi_content.get("render_mode") == "segments":
+            if (
+                isinstance(qi_content, dict)
+                and qi_content.get("render_mode") == "segments"
+            ):
                 q_fields["content"] = {
                     **(q_fields.get("content") or {}),
                     "render_mode": "segments",
                     "segments": qi_content.get("segments"),
                 }
             if isinstance(qi_content, dict) and qi_content.get("source_snapshot_url"):
-                q_fields["content"]["source_snapshot_url"] = qi_content["source_snapshot_url"]
+                q_fields["content"]["source_snapshot_url"] = qi_content[
+                    "source_snapshot_url"
+                ]
             from app.utils.question_content import extract_image_urls_from_content
+
             image_urls = extract_image_urls_from_content(qi_content)
             if image_urls:
                 q_fields["image_url"] = image_urls
@@ -711,13 +841,17 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
                 await sync_question_knowledge_points(db, q, kp_names, source="imported")
             from app.services.question_revision_service import ensure_question_revision
 
-            await ensure_question_revision(db, q, change_source="import_writer", edit_reason="initial publish")
+            await ensure_question_revision(
+                db, q, change_source="import_writer", edit_reason="initial publish"
+            )
             await db.refresh(q)
             qi.status = "published"
             qi.question_id = q.id
             logger.info(
                 "[Batch Approve] import_id=%s → question_id=%s subject_id=%s",
-                qi.id, q.id, q.subject_id,
+                qi.id,
+                q.id,
+                q.subject_id,
             )
         if qi.ai_generated:
             qi.ai_reviewed_at = utcnow()
@@ -726,7 +860,10 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
     await db.commit()
     logger.info(
         "[Batch Approve] batch_id=%s total=%d approved=%d skipped=%d",
-        batch_id, len(records), count, len(skipped),
+        batch_id,
+        len(records),
+        count,
+        len(skipped),
     )
     if skipped:
         details = "; ".join(
@@ -743,9 +880,15 @@ async def list_batches(db: AsyncSession) -> list[dict]:
             QuestionImport.source_type,
             QuestionImport.source_file,
             func.count(QuestionImport.id).label("total"),
-            func.sum(case((QuestionImport.status == "pending", 1), else_=0)).label("pending"),
-            func.sum(case((QuestionImport.status.in_(["approved", "published"]), 1), else_=0)).label("approved"),
-            func.sum(case((QuestionImport.status == "rejected", 1), else_=0)).label("rejected"),
+            func.sum(case((QuestionImport.status == "pending", 1), else_=0)).label(
+                "pending"
+            ),
+            func.sum(
+                case((QuestionImport.status.in_(["approved", "published"]), 1), else_=0)
+            ).label("approved"),
+            func.sum(case((QuestionImport.status == "rejected", 1), else_=0)).label(
+                "rejected"
+            ),
             func.max(QuestionImport.created_at).label("created_at"),
         )
         .group_by(
@@ -771,9 +914,7 @@ async def list_batches(db: AsyncSession) -> list[dict]:
     ]
 
 
-async def get_batch_detail(
-    db: AsyncSession, batch_id: str
-) -> list[QuestionImport]:
+async def get_batch_detail(db: AsyncSession, batch_id: str) -> list[QuestionImport]:
     res = await db.execute(
         select(QuestionImport)
         .where(QuestionImport.batch_id == batch_id)
@@ -787,15 +928,28 @@ def generate_template() -> bytes:
     ws = wb.active
     ws.title = "导入模板"
     headers = [
-        "subject", "question_type", "stem", "options",
-        "answer", "explanation", "difficulty", "tags",
+        "subject",
+        "question_type",
+        "stem",
+        "options",
+        "answer",
+        "explanation",
+        "difficulty",
+        "tags",
     ]
     ws.append(headers)
-    ws.append([
-        "math2", "single_choice", "设函数 $f(x)=x^2+1$，求 $f'(x)$。",
-        "A:$2x$\\nB:$x^2$\\nC:$2x+1$\\nD:$x$",
-        "A", "根据求导公式，$(x^2+1)'=2x$。", "2", "导数,求导公式",
-    ])
+    ws.append(
+        [
+            "math2",
+            "single_choice",
+            "设函数 $f(x)=x^2+1$，求 $f'(x)$。",
+            "A:$2x$\\nB:$x^2$\\nC:$2x+1$\\nD:$x$",
+            "A",
+            "根据求导公式，$(x^2+1)'=2x$。",
+            "2",
+            "导数,求导公式",
+        ]
+    )
     for i, w in enumerate([12, 14, 40, 50, 10, 40, 10, 25], 1):
         ws.column_dimensions[chr(64 + i)].width = w
     buf = io.BytesIO()

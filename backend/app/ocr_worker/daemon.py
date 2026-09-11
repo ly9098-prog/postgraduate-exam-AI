@@ -137,8 +137,10 @@ class OcrWorkerDaemon:
 
         logger.info(
             "Claimed job %s (input=%s, mime=%s, pages=%s)",
-            claimed.job_id, claimed.input_artifact_key,
-            claimed.input_mime_type, claimed.input_page_count,
+            claimed.job_id,
+            claimed.input_artifact_key,
+            claimed.input_mime_type,
+            claimed.input_page_count,
         )
 
         try:
@@ -171,9 +173,7 @@ class OcrWorkerDaemon:
         if not _SHUTTING_DOWN and not self._executor.is_running:
             self._executor.start()
         elif self._executor.task_count >= self._config.MAX_TASKS_PER_CHILD:
-            logger.info(
-                "Recycling executor after %d pages", self._executor.task_count
-            )
+            logger.info("Recycling executor after %d pages", self._executor.task_count)
             self._executor.stop()
             self._executor.start()
 
@@ -183,17 +183,20 @@ class OcrWorkerDaemon:
 
         # Ensure workspace exists for resume
         import asyncio
+
         asyncio.run(ws.create())
 
         # Write initial manifest
-        ws.write_manifest({
-            "job_id": claimed.job_id,
-            "pipeline_fingerprint": claimed.pipeline_fingerprint,
-            "status": "downloading",
-            "completed_pages": [],
-            "input_artifact_key": claimed.input_artifact_key,
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        ws.write_manifest(
+            {
+                "job_id": claimed.job_id,
+                "pipeline_fingerprint": claimed.pipeline_fingerprint,
+                "status": "downloading",
+                "completed_pages": [],
+                "input_artifact_key": claimed.input_artifact_key,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
         # Download input
         logger.info("Downloading input for job %s", claimed.job_id)
@@ -206,7 +209,9 @@ class OcrWorkerDaemon:
             max_bytes=remaining_bytes,
             expected_size=claimed.input_size_bytes,
         )
-        logger.info("Downloaded %d bytes for job %s", input_path.stat().st_size, claimed.job_id)
+        logger.info(
+            "Downloaded %d bytes for job %s", input_path.stat().st_size, claimed.job_id
+        )
 
         ws.update_manifest(status="downloaded")
         self._ensure_lease_active()
@@ -254,6 +259,7 @@ class OcrWorkerDaemon:
 
         # Upload result (in production, this would upload to artifact storage)
         import hashlib
+
         output_sha256 = hashlib.sha256(result_bytes).hexdigest()
         output_key = f"ocr-results/{claimed.job_id}/document.ir.json"
 
@@ -281,7 +287,9 @@ class OcrWorkerDaemon:
             complete_idempotency_key=output_sha256,
         )
 
-        ws.update_manifest(status="completed", completed_at=datetime.now(UTC).isoformat())
+        ws.update_manifest(
+            status="completed", completed_at=datetime.now(UTC).isoformat()
+        )
         logger.info("Job %s completed successfully", claimed.job_id)
 
     def _start_heartbeat(
@@ -340,10 +348,7 @@ class OcrWorkerDaemon:
                 logger.warning("Heartbeat failed for job %s: %s", job_id, exc)
                 fatal_http = "(409)" in str(exc) or "(401)" in str(exc)
                 safety_margin = max(5.0, float(interval))
-                if (
-                    fatal_http
-                    or time.time() >= lease_deadline - safety_margin
-                ):
+                if fatal_http or time.time() >= lease_deadline - safety_margin:
                     self._lease_lost.set()
                     # Abort native OCR promptly; continuing after lease loss can
                     # duplicate GPU work after the server reclaims the job.
@@ -369,7 +374,9 @@ class OcrWorkerDaemon:
             if deleted:
                 logger.info(
                     "Pruned %d OCR workspaces (freed %.1f MB, remaining %.1f MB)",
-                    deleted, freed / (1024 * 1024), remaining / (1024 * 1024),
+                    deleted,
+                    freed / (1024 * 1024),
+                    remaining / (1024 * 1024),
                 )
         except Exception:
             logger.exception("OCR workspace pruning failed")
@@ -400,7 +407,8 @@ class OcrWorkerDaemon:
 
         try:
             self._client.fail(
-                job_id, lease_token,
+                job_id,
+                lease_token,
                 error_code=error_code,
                 error_message=error_message,
                 is_retryable=is_retryable,
@@ -436,20 +444,20 @@ class OcrWorkerDaemon:
         self._executor.stop()
         if self._current_job_id and self._current_lease_token:
             try:
-                self._client.release(
-                    self._current_job_id, self._current_lease_token
-                )
+                self._client.release(self._current_job_id, self._current_lease_token)
                 logger.info("Released job %s", self._current_job_id)
             except WorkerClientError:
                 logger.exception("Failed to release job during shutdown")
         self._client.close()
         logger.info(
             "Worker stopped: completed=%d failed=%d",
-            self._completed_jobs, self._failed_jobs,
+            self._completed_jobs,
+            self._failed_jobs,
         )
 
 
 # ── Helpers ───────────────────────────────────────────────
+
 
 def _download_file(
     url: str,
@@ -513,18 +521,18 @@ def _upload_artifact(
     sha256 = hashlib.sha256(data).hexdigest()
     prefix = (
         "{"
-        f"\"job_id\":{json.dumps(job_id)},"
-        f"\"key\":{json.dumps(key)},"
-        f"\"sha256\":{json.dumps(sha256)},"
-        "\"data\":\""
+        f'"job_id":{json.dumps(job_id)},'
+        f'"key":{json.dumps(key)},'
+        f'"sha256":{json.dumps(sha256)},'
+        '"data":"'
     ).encode("utf-8")
 
     def _body_chunks():
         yield prefix
         view = memoryview(data)
         for offset in range(0, len(view), 64 * 1024):
-            yield bytes(view[offset:offset + 64 * 1024]).hex().encode("ascii")
-        yield b"\"}"
+            yield bytes(view[offset : offset + 64 * 1024]).hex().encode("ascii")
+        yield b'"}'
 
     headers = {
         "Worker-API-Key": f"{worker_id}/{api_key}",
@@ -540,6 +548,7 @@ def _upload_artifact(
 
 
 # ── CLI entry point ───────────────────────────────────────
+
 
 def main() -> None:
     """CLI entry point."""

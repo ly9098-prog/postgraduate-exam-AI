@@ -66,7 +66,9 @@ router = APIRouter(prefix="/api/admin/v1/questions", tags=["admin-questions"])
 def _raise_question_error(exc: ValueError) -> None:
     if str(exc) == "题目不存在":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+    )
 
 
 def _to_admin_item(question, kps=None) -> AdminQuestionListItem:
@@ -105,7 +107,10 @@ def _replace_legacy_image_url(values, old_url: str, new_url: str):
                 next_value = dict(value)
                 for key in ("url", "src", "image_url", "imageUrl"):
                     candidate = next_value.get(key)
-                    if isinstance(candidate, str) and candidate.strip() == normalized_old:
+                    if (
+                        isinstance(candidate, str)
+                        and candidate.strip() == normalized_old
+                    ):
                         next_value[key] = new_url
                         break
                 updated.append(next_value)
@@ -119,7 +124,8 @@ def _remove_legacy_image_url(values, url: str):
         return None
     normalized_url = url.strip()
     updated = [
-        value for value in values
+        value
+        for value in values
         if _image_url_from_legacy_entry(value) != normalized_url
     ]
     return updated if len(updated) != len(values) else None
@@ -135,7 +141,12 @@ def _rendered_content_image_urls(content) -> set[str]:
     for segment in segments:
         if not isinstance(segment, dict):
             continue
-        if normalize_segment_type(segment) not in {"image", "math_image", "table_image", "code_image"}:
+        if normalize_segment_type(segment) not in {
+            "image",
+            "math_image",
+            "table_image",
+            "code_image",
+        }:
             continue
         url = segment.get("url")
         if isinstance(url, str) and url.strip():
@@ -176,7 +187,9 @@ def _coerce_legacy_option_mapping(value):
         for index, item in enumerate(value):
             if item is None:
                 continue
-            fallback_key = _OPTION_LABELS[index] if index < len(_OPTION_LABELS) else str(index + 1)
+            fallback_key = (
+                _OPTION_LABELS[index] if index < len(_OPTION_LABELS) else str(index + 1)
+            )
             key = fallback_key
             if isinstance(item, dict):
                 for field in ("key", "label", "name"):
@@ -226,14 +239,18 @@ def _effective_question_options(question):
     return question.options
 
 
-def _option_mutation_patch(question, options, edit_reason: str | None) -> AdminQuestionPatchRequest:
+def _option_mutation_patch(
+    question, options, edit_reason: str | None
+) -> AdminQuestionPatchRequest:
     """Keep legacy content-level option mirrors synchronized when present.
 
     Without this, an image removed from the top-level options can remain hidden
     in ``content.options`` and continue counting as a live asset reference.
     """
     content = question.content if isinstance(question.content, dict) else None
-    if not content or not any(field in content for field in _LEGACY_OPTION_CONTENT_FIELDS):
+    if not content or not any(
+        field in content for field in _LEGACY_OPTION_CONTENT_FIELDS
+    ):
         return AdminQuestionPatchRequest(options=options, edit_reason=edit_reason)
 
     next_content = dict(content)
@@ -279,7 +296,10 @@ async def list_questions(
     )
     kp_map = await load_question_kps(db, [q.id for q in questions])
     return paginated_response(
-        [_to_admin_item(question, kp_map.get(question.id, [])) for question in questions],
+        [
+            _to_admin_item(question, kp_map.get(question.id, []))
+            for question in questions
+        ],
         total,
         page,
         page_size,
@@ -407,7 +427,9 @@ async def patch_question(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        question = await update_admin_question(db, question_id, data, current_admin, request)
+        question = await update_admin_question(
+            db, question_id, data, current_admin, request
+        )
         await db.commit()
         await db.refresh(question)
         kp_map = await load_question_kps(db, [question.id])
@@ -445,7 +467,9 @@ async def toggle_active_question(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        question = await toggle_active_admin_question(db, question_id, data, current_admin, request)
+        question = await toggle_active_admin_question(
+            db, question_id, data, current_admin, request
+        )
         await db.commit()
         await db.refresh(question)
         kp_map = await load_question_kps(db, [question.id])
@@ -462,23 +486,34 @@ async def _upload_question_asset(file: UploadFile, question_id: int) -> str:
     """Stream, compress and store a question image under static/question-assets."""
     ctype = (file.content_type or "").lower()
     if ctype and not ctype.startswith("image/"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅支持图片文件")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="仅支持图片文件"
+        )
     filename = file.filename or "question-image.png"
     suffix = os.path.splitext(filename)[1] or ".png"
     try:
-        tmp = await stream_to_temp(file, max_size=_QUESTION_IMAGE_MAX_SIZE, suffix=suffix)
+        tmp = await stream_to_temp(
+            file, max_size=_QUESTION_IMAGE_MAX_SIZE, suffix=suffix
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+        ) from exc
     try:
         if tmp.size == 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片内容为空")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="图片内容为空"
+            )
         with open(tmp.path, "rb") as fh:
             data = fh.read(_QUESTION_IMAGE_MAX_SIZE + 1)
         compressed = compress_image(data)
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="图片格式无效或尺寸过大") from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="图片格式无效或尺寸过大",
+        ) from exc
     finally:
         tmp.close()
     if compressed.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -563,7 +598,9 @@ async def upload_question_image(
                     edit_reason="替换题干图片",
                 )
             else:
-                new_image_url = _merge_content_image_urls_with_legacy(question, new_content)
+                new_image_url = _merge_content_image_urls_with_legacy(
+                    question, new_content
+                )
                 patch = AdminQuestionPatchRequest(
                     content=new_content,
                     image_url=new_image_url,
@@ -571,13 +608,17 @@ async def upload_question_image(
                 )
         else:
             key = target.split(":", 1)[1]
-            new_options = upsert_option_image(_effective_question_options(question), key, url, replace_url)
+            new_options = upsert_option_image(
+                _effective_question_options(question), key, url, replace_url
+            )
             patch = _option_mutation_patch(
                 question,
                 new_options,
                 f"插入/替换选项 {key} 图片",
             )
-        question = await update_admin_question(db, question_id, patch, current_admin, request)
+        question = await update_admin_question(
+            db, question_id, patch, current_admin, request
+        )
         await db.commit()
         await db.refresh(question)
     except ValueError as exc:
@@ -612,7 +653,9 @@ async def delete_question_image(
             try:
                 new_content = remove_stem_image(question.content, data.url)
             except ValueError:
-                legacy_image_url = _remove_legacy_image_url(question.image_url, data.url)
+                legacy_image_url = _remove_legacy_image_url(
+                    question.image_url, data.url
+                )
                 if legacy_image_url is None:
                     raise
                 patch = AdminQuestionPatchRequest(
@@ -620,7 +663,9 @@ async def delete_question_image(
                     edit_reason=data.edit_reason or "删除题干图片",
                 )
             else:
-                new_image_url = _merge_content_image_urls_with_legacy(question, new_content)
+                new_image_url = _merge_content_image_urls_with_legacy(
+                    question, new_content
+                )
                 patch = AdminQuestionPatchRequest(
                     content=new_content,
                     image_url=new_image_url,
@@ -628,13 +673,17 @@ async def delete_question_image(
                 )
         else:
             key = data.target.split(":", 1)[1]
-            new_options = remove_option_image(_effective_question_options(question), key, data.url)
+            new_options = remove_option_image(
+                _effective_question_options(question), key, data.url
+            )
             patch = _option_mutation_patch(
                 question,
                 new_options,
                 data.edit_reason or f"删除选项 {key} 图片",
             )
-        question = await update_admin_question(db, question_id, patch, current_admin, request)
+        question = await update_admin_question(
+            db, question_id, patch, current_admin, request
+        )
         await db.commit()
         await db.refresh(question)
     except ValueError as exc:
@@ -658,12 +707,19 @@ async def list_versions(
 ):
     try:
         versions, total = await list_question_versions(db, question_id, page, page_size)
-        return paginated_response([AdminQuestionVersionListItem.model_validate(item) for item in versions], total, page, page_size)
+        return paginated_response(
+            [AdminQuestionVersionListItem.model_validate(item) for item in versions],
+            total,
+            page,
+            page_size,
+        )
     except ValueError as exc:
         _raise_question_error(exc)
 
 
-@router.get("/{question_id}/versions/{version}", response_model=AdminQuestionVersionDetail)
+@router.get(
+    "/{question_id}/versions/{version}", response_model=AdminQuestionVersionDetail
+)
 async def get_version(
     question_id: int,
     version: int,

@@ -1,4 +1,5 @@
 """Phase 4 — 推荐 A/B 实验服务。"""
+
 import hashlib
 import logging
 from datetime import date, timedelta
@@ -92,7 +93,9 @@ async def assign_user_to_variant(
     variant_bucket = _stable_bucket(experiment_id, user_id, "variant")
 
     raw_traffic_ratio = getattr(experiment, "traffic_ratio", 1.0)
-    traffic_ratio = float(raw_traffic_ratio) if isinstance(raw_traffic_ratio, (int, float)) else 1.0
+    traffic_ratio = (
+        float(raw_traffic_ratio) if isinstance(raw_traffic_ratio, (int, float)) else 1.0
+    )
     traffic_ratio = max(0.0, min(traffic_ratio, 1.0))
 
     raw_max_traffic = getattr(experiment, "max_traffic_percent", 100.0)
@@ -212,7 +215,9 @@ async def evaluate_experiment_safety(
     否则会把其他实验的 A/B 数据混入当前实验。这里直接聚合原始推荐日志。
     """
     exp_result = await db.execute(
-        select(RecommendationExperiment).where(RecommendationExperiment.id == experiment_id)
+        select(RecommendationExperiment).where(
+            RecommendationExperiment.id == experiment_id
+        )
     )
     experiment = exp_result.scalar_one_or_none()
     if not experiment:
@@ -286,7 +291,9 @@ async def create_experiment(
     payload = {**payload}  # shallow copy — 避免 pop 修改调用方 dict
     variants = payload.pop("variants", [])
     # 转换为 list[dict]
-    variants_data = [v.model_dump() if hasattr(v, "model_dump") else v for v in variants]
+    variants_data = [
+        v.model_dump() if hasattr(v, "model_dump") else v for v in variants
+    ]
 
     experiment = RecommendationExperiment(
         **payload,

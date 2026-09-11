@@ -10,6 +10,7 @@ maintaining another mutable metrics store:
 This keeps the diagnostics useful even after process restarts and avoids a
 second source of truth for task health.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -103,8 +104,7 @@ async def _collect_outbox_metrics(db: AsyncSession) -> dict[str, Any]:
         .order_by(func.count(TaskOutbox.id).desc())
     )
     pending_by_type = {
-        str(task_type): int(count or 0)
-        for task_type, count in pending_by_type_rows
+        str(task_type): int(count or 0) for task_type, count in pending_by_type_rows
     }
 
     recent_failures_rows = await db.execute(
@@ -166,7 +166,13 @@ async def _collect_queue_metrics() -> dict[str, Any]:
             "available": False,
             "error": "redis_not_configured",
             "queues": _empty_queue_rows(),
-            "totals": {"ready": 0, "processing": 0, "retry": 0, "dead": 0, "corrupt": 0},
+            "totals": {
+                "ready": 0,
+                "processing": 0,
+                "retry": 0,
+                "dead": 0,
+                "corrupt": 0,
+            },
             "oldest_ready_seconds": 0,
         }
 
@@ -250,7 +256,13 @@ async def _collect_queue_metrics() -> dict[str, Any]:
             "available": False,
             "error": f"{type(exc).__name__}: {str(exc)[:160]}",
             "queues": _empty_queue_rows(),
-            "totals": {"ready": 0, "processing": 0, "retry": 0, "dead": 0, "corrupt": 0},
+            "totals": {
+                "ready": 0,
+                "processing": 0,
+                "retry": 0,
+                "dead": 0,
+                "corrupt": 0,
+            },
             "oldest_ready_seconds": 0,
         }
     finally:
@@ -289,7 +301,9 @@ async def _collect_projection_metrics(db: AsyncSession) -> dict[str, Any]:
     }
 
 
-async def _collect_activity_trend(db: AsyncSession, *, days: int = 7) -> list[dict[str, Any]]:
+async def _collect_activity_trend(
+    db: AsyncSession, *, days: int = 7
+) -> list[dict[str, Any]]:
     """Return a small DB-backed task activity series for the admin dashboard.
 
     The series deliberately uses PostgreSQL/SQLite-portable ORM queries and
@@ -459,14 +473,25 @@ async def find_trace_tasks(
             try:
                 queue_raw = await task_queue.get_task_v2(row.task_id)
                 if queue_raw:
-                    data = queue_raw.get("data") if isinstance(queue_raw.get("data"), dict) else {}
+                    data = (
+                        queue_raw.get("data")
+                        if isinstance(queue_raw.get("data"), dict)
+                        else {}
+                    )
                     queue_state = {
                         "status": queue_raw.get("status") or data.get("status"),
-                        "retry_count": int(queue_raw.get("retry_count") or data.get("retry_count") or 0),
-                        "generation": int(queue_raw.get("generation") or data.get("generation") or 0),
+                        "retry_count": int(
+                            queue_raw.get("retry_count") or data.get("retry_count") or 0
+                        ),
+                        "generation": int(
+                            queue_raw.get("generation") or data.get("generation") or 0
+                        ),
                         "created_at": data.get("created_at"),
                         "updated_at": data.get("updated_at"),
-                        "last_error": str(queue_raw.get("error") or data.get("error") or "")[:300] or None,
+                        "last_error": str(
+                            queue_raw.get("error") or data.get("error") or ""
+                        )[:300]
+                        or None,
                     }
             except Exception:
                 redis_available = False
@@ -482,9 +507,13 @@ async def find_trace_tasks(
                 "outbox_retry_count": int(row.retry_count or 0),
                 "outbox_error": (row.error_message or "")[:300] or None,
                 "created_at": serialize_utc_datetime(row.created_at),
-                "published_at": serialize_utc_datetime(row.published_at) if row.published_at else None,
+                "published_at": serialize_utc_datetime(row.published_at)
+                if row.published_at
+                else None,
                 "updated_at": serialize_utc_datetime(row.updated_at),
-                "practice_record_id": int(practice_record_id) if practice_record_id is not None else None,
+                "practice_record_id": int(practice_record_id)
+                if practice_record_id is not None
+                else None,
                 "projection_receipt_at": projection_receipt_at,
                 "queue": queue_state,
             }
@@ -520,8 +549,16 @@ async def run_task_health_monitor() -> None:
                         logger.info("Async task health recovered")
                 else:
                     summary = ",".join(codes) or "unknown"
-                    log_fn = logger.error if health["severity"] == "error" else logger.warning
-                    log_fn("Async task health degraded: severity=%s issues=%s", health["severity"], summary)
+                    log_fn = (
+                        logger.error
+                        if health["severity"] == "error"
+                        else logger.warning
+                    )
+                    log_fn(
+                        "Async task health degraded: severity=%s issues=%s",
+                        health["severity"],
+                        summary,
+                    )
                     capture_message(
                         "Async task health degraded",
                         level="error" if health["severity"] == "error" else "warning",

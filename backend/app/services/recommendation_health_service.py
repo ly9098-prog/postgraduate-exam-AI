@@ -1,4 +1,5 @@
 """Phase 4.5 — 推荐系统健康报告服务。"""
+
 import logging
 
 from sqlalchemy import case, func, select
@@ -51,7 +52,9 @@ async def build_recommendation_health_report(
                 func.sum(
                     case(
                         (
-                            RecommendationLog.strategy.in_(["fallback", "fallback_random", "random"]),
+                            RecommendationLog.strategy.in_(
+                                ["fallback", "fallback_random", "random"]
+                            ),
                             1,
                         ),
                         else_=0,
@@ -105,10 +108,12 @@ async def build_recommendation_health_report(
         select(
             RecommendationLog.variant_key,
             func.count(RecommendationLog.id),
-        ).where(
+        )
+        .where(
             *conditions,
             RecommendationLog.variant_key.isnot(None),
-        ).group_by(RecommendationLog.variant_key)
+        )
+        .group_by(RecommendationLog.variant_key)
     )
     variant_distribution = {row[0]: row[1] for row in variant_result.all()}
 
@@ -119,7 +124,8 @@ async def build_recommendation_health_report(
                 func.sum(
                     case(
                         (
-                            (RecommendationLog.similarity.is_(None)) | (RecommendationLog.similarity < 0.1),
+                            (RecommendationLog.similarity.is_(None))
+                            | (RecommendationLog.similarity < 0.1),
                             1,
                         ),
                         else_=0,
@@ -139,24 +145,36 @@ async def build_recommendation_health_report(
         select(
             RecommendationLog.scene,
             func.count(RecommendationLog.id),
-        ).where(
+        )
+        .where(
             *conditions,
             RecommendationLog.strategy.in_(["fallback", "fallback_random", "random"]),
-        ).group_by(RecommendationLog.scene).order_by(func.count(RecommendationLog.id).desc()).limit(5)
+        )
+        .group_by(RecommendationLog.scene)
+        .order_by(func.count(RecommendationLog.id).desc())
+        .limit(5)
     )
-    top_fallback_scenes = [{"scene": row[0], "count": row[1]} for row in scene_result.all()]
+    top_fallback_scenes = [
+        {"scene": row[0], "count": row[1]} for row in scene_result.all()
+    ]
 
     # 8. Top error strategies
     error_result = await db.execute(
         select(
             RecommendationLog.strategy,
             func.count(RecommendationLog.id),
-        ).where(
+        )
+        .where(
             *conditions,
             RecommendationLog.is_correct == False,  # noqa: E712
-        ).group_by(RecommendationLog.strategy).order_by(func.count(RecommendationLog.id).desc()).limit(5)
+        )
+        .group_by(RecommendationLog.strategy)
+        .order_by(func.count(RecommendationLog.id).desc())
+        .limit(5)
     )
-    top_error_strategies = [{"strategy": row[0], "error_count": row[1]} for row in error_result.all()]
+    top_error_strategies = [
+        {"strategy": row[0], "error_count": row[1]} for row in error_result.all()
+    ]
 
     # 9. 生成 warnings
     warnings = []

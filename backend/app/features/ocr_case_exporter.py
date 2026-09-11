@@ -129,8 +129,12 @@ def _truncate_raw_data(raw_data: dict) -> dict:
     for key, value in raw_data.items():
         # Skip fields that contain full file content
         if key in (
-            "file_bytes", "image_bytes", "full_text", "pdf_content",
-            "source_bytes", "raw_file",
+            "file_bytes",
+            "image_bytes",
+            "full_text",
+            "pdf_content",
+            "source_bytes",
+            "raw_file",
         ):
             truncated[key] = f"<{key}: stripped for export>"
         elif isinstance(value, str):
@@ -152,7 +156,11 @@ def _build_parsed_summary(question_import: dict) -> dict:
     summary: dict[str, Any] = {}
 
     for field in ("stem", "options", "answer", "analysis", "question_type"):
-        val = question_import.get(field) if question_import.get(field) is not None else question_import.get(f"parsed_{field}")
+        val = (
+            question_import.get(field)
+            if question_import.get(field) is not None
+            else question_import.get(f"parsed_{field}")
+        )
         if val is not None:
             if isinstance(val, str) and len(val) > _MAX_PARSED_LENGTH:
                 summary[field] = val[:_MAX_PARSED_LENGTH]

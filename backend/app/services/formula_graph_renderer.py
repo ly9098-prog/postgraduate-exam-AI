@@ -76,8 +76,15 @@ def _setup_plot(viewport: dict, width: int, height: int):
 def _save_figure(fig) -> bytes:
     """Render figure to PNG bytes with consistent canvas size."""
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=DPI, bbox_inches="tight", pad_inches=0.0,
-                facecolor="white", edgecolor="none")
+    fig.savefig(
+        buf,
+        format="png",
+        dpi=DPI,
+        bbox_inches="tight",
+        pad_inches=0.0,
+        facecolor="white",
+        edgecolor="none",
+    )
     plt.close(fig)
     return buf.getvalue()
 
@@ -85,6 +92,7 @@ def _save_figure(fig) -> bytes:
 def _resize_to_canvas(png_bytes: bytes, width: int, height: int) -> bytes:
     """Resize a PNG to exactly width×height using Pillow (letterbox with white)."""
     from PIL import Image
+
     buf = io.BytesIO(png_bytes)
     img = Image.open(buf).convert("RGBA")
 
@@ -107,7 +115,13 @@ def _resize_to_canvas(png_bytes: bytes, width: int, height: int) -> bytes:
     return out.getvalue()
 
 
-def _draw_asymptote(ax, x: float | None, y: float | None, x_range: tuple[float, float], y_range: tuple[float, float]):
+def _draw_asymptote(
+    ax,
+    x: float | None,
+    y: float | None,
+    x_range: tuple[float, float],
+    y_range: tuple[float, float],
+):
     """Draw a dashed asymptote line."""
     if x is not None:
         ax.axvline(x=x, color="#94a3b8", linewidth=1.0, linestyle="--", alpha=0.7)
@@ -124,7 +138,9 @@ def _draw_legend(ax, labels: list[str], colors: list[str]):
     ax.legend(handles=handles, loc="upper right", fontsize=10, framealpha=0.9)
 
 
-def _sample_function(func, x_start: float, x_end: float, num_points: int = 2000) -> tuple[np.ndarray, np.ndarray]:
+def _sample_function(
+    func, x_start: float, x_end: float, num_points: int = 2000
+) -> tuple[np.ndarray, np.ndarray]:
     """Sample a function over [x_start, x_end] with dense points."""
     xs = np.linspace(x_start, x_end, num_points)
     try:
@@ -134,7 +150,9 @@ def _sample_function(func, x_start: float, x_end: float, num_points: int = 2000)
     return xs, ys
 
 
-def _sample_piecewise(segments: list[tuple[float, float, callable]], num_points: int = 500) -> list[tuple[np.ndarray, np.ndarray]]:
+def _sample_piecewise(
+    segments: list[tuple[float, float, callable]], num_points: int = 500
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """Sample a piecewise function.
 
     Each segment: (x_start, x_end, func).
@@ -159,7 +177,9 @@ def _filter_finite(xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarr
     return xs[mask], ys[mask]
 
 
-def _discontinuity_gap(xs: np.ndarray, ys: np.ndarray, threshold: float = 5.0) -> list[tuple[np.ndarray, np.ndarray]]:
+def _discontinuity_gap(
+    xs: np.ndarray, ys: np.ndarray, threshold: float = 5.0
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """Split data at large discontinuities (e.g., asymptotes)."""
     if len(xs) < 2:
         return [(xs, ys)]
@@ -205,8 +225,14 @@ def render_quadratic(ax, params: dict, color: str, label: str):
     vertex_x, vertex_y = h, k
     if x_min <= vertex_x <= x_max:
         ax.plot(vertex_x, vertex_y, "o", color=color, markersize=4)
-        ax.annotate(f"({vertex_x:.0f},{vertex_y:.0f})", (vertex_x, vertex_y),
-                    xytext=(5, 10), textcoords="offset points", fontsize=9, color=color)
+        ax.annotate(
+            f"({vertex_x:.0f},{vertex_y:.0f})",
+            (vertex_x, vertex_y),
+            xytext=(5, 10),
+            textcoords="offset points",
+            fontsize=9,
+            color=color,
+        )
 
     # Axis of symmetry
     ax.axvline(x=vertex_x, color=color, linewidth=0.8, linestyle=":", alpha=0.5)
@@ -247,7 +273,12 @@ def render_reciprocal(ax, params: dict, color: str, label: str):
     mask = np.isfinite(y_left) & (np.abs(y_left) < max(abs(y_min), abs(y_max)) * 2)
     if np.any(mask):
         for seg in _discontinuity_gap(x_left[mask], y_left[mask]):
-            ax.plot(*seg, color=color, linewidth=2, label=label or None if seg is not None else None)
+            ax.plot(
+                *seg,
+                color=color,
+                linewidth=2,
+                label=label or None if seg is not None else None,
+            )
 
     # Right branch (x > h)
     right_start = max(x_min, h + 1e-6)
@@ -280,7 +311,12 @@ def render_reciprocal_sq(ax, params: dict, color: str, label: str):
         mask = np.isfinite(ys) & (np.abs(ys) < max(abs(y_min), abs(y_max)) * 2)
         if np.any(mask):
             for seg in _discontinuity_gap(xs[mask], ys[mask]):
-                ax.plot(*seg, color=color, linewidth=2, label=label or None if seg is not None else None)
+                ax.plot(
+                    *seg,
+                    color=color,
+                    linewidth=2,
+                    label=label or None if seg is not None else None,
+                )
 
 
 def render_exp(ax, params: dict, color: str, label: str):
@@ -290,7 +326,7 @@ def render_exp(ax, params: dict, color: str, label: str):
     k = params.get("k", 0.0)
     x_min, x_max = ax.get_xlim()
     xs = np.linspace(x_min, x_max, 500)
-    ys = a * b ** xs + k
+    ys = a * b**xs + k
     xs, ys = _filter_finite(xs, ys)
     ax.plot(xs, ys, color=color, linewidth=2, label=label or None)
 
@@ -313,7 +349,12 @@ def render_log(ax, params: dict, color: str, label: str):
     mask = np.abs(ys) < max(abs(y_min), abs(y_max)) * 2
     if np.any(mask):
         for seg in _discontinuity_gap(xs[mask], ys[mask]):
-            ax.plot(*seg, color=color, linewidth=2, label=label or None if seg is not None else None)
+            ax.plot(
+                *seg,
+                color=color,
+                linewidth=2,
+                label=label or None if seg is not None else None,
+            )
 
 
 def render_sine(ax, params: dict, color: str, label: str):
@@ -340,7 +381,9 @@ def render_tangent(ax, params: dict, color: str, label: str):
     # Find asymptotes in range: freq*x + c = π/2 + nπ → x = (π/2 + nπ - c)/freq
     n_start = math.ceil((freq * x_min + c - math.pi / 2) / math.pi)
     n_end = math.floor((freq * x_max + c - math.pi / 2) / math.pi)
-    asymptotes = [(math.pi / 2 + n * math.pi - c) / freq for n in range(n_start, n_end + 1)]
+    asymptotes = [
+        (math.pi / 2 + n * math.pi - c) / freq for n in range(n_start, n_end + 1)
+    ]
     asymptotes = [x for x in asymptotes if x_min <= x <= x_max]
 
     for a_pos in asymptotes:
@@ -359,14 +402,19 @@ def render_tangent(ax, params: dict, color: str, label: str):
         mask = np.isfinite(ys) & (np.abs(ys) < max(abs(y_min), abs(y_max)) * 1.5)
         if np.any(mask):
             for seg in _discontinuity_gap(xs[mask], ys[mask], 10):
-                ax.plot(*seg, color=color, linewidth=2, label=label or None if seg is not None else None)
+                ax.plot(
+                    *seg,
+                    color=color,
+                    linewidth=2,
+                    label=label or None if seg is not None else None,
+                )
 
 
 def render_sample_quadratic(ax, params: dict, color: str, label: str):
     """Standard quadratic f(x) = x^2 + x - 1"""
     x_min, x_max = ax.get_xlim()
     xs = np.linspace(x_min, x_max, 400)
-    ys = xs ** 2 + xs - 1
+    ys = xs**2 + xs - 1
     ax.plot(xs, ys, color=color, linewidth=2, label=label or None)
 
 
@@ -374,7 +422,7 @@ def render_sample_quadratic_abs(ax, params: dict, color: str, label: str):
     """|f(x)| for f(x) = x^2 + x - 1"""
     x_min, x_max = ax.get_xlim()
     xs = np.linspace(x_min, x_max, 400)
-    ys = np.abs(xs ** 2 + xs - 1)
+    ys = np.abs(xs**2 + xs - 1)
     ax.plot(xs, ys, color=color, linewidth=2, label=label or None)
 
 
@@ -393,12 +441,14 @@ def render_piecewise_sign(ax, params: dict, color: str, label: str):
 
     # Left branch: y=-1, x<0
     x_left = np.linspace(max(x_min, -10), -0.01, 200)
-    ax.plot(x_left, np.full_like(x_left, -1), color=color, linewidth=2, label=label or None)
+    ax.plot(
+        x_left, np.full_like(x_left, -1), color=color, linewidth=2, label=label or None
+    )
     ax.plot(-0.01, -1, "o", color=color, markersize=5, fillstyle="full")  # closed at 0-
 
     # Jump at 0
     ax.plot(0, -1, "o", color=color, markersize=5, fillstyle="full")  # solid at -1
-    ax.plot(0, 1, "o", color=color, markersize=5, fillstyle="full")   # solid at +1
+    ax.plot(0, 1, "o", color=color, markersize=5, fillstyle="full")  # solid at +1
 
     # Right branch: y=1, x>0
     x_right = np.linspace(0.01, min(x_max, 10), 200)
@@ -433,8 +483,16 @@ def render_piecewise_floor(ax, params: dict, color: str, label: str):
 
         # Open point at right end
         if x_min <= n + 1 <= x_max:
-            ax.plot(n + 1, n, "o", color=color, markersize=4, fillstyle="none",
-                    markeredgewidth=1.5, markeredgecolor=color)
+            ax.plot(
+                n + 1,
+                n,
+                "o",
+                color=color,
+                markersize=4,
+                fillstyle="none",
+                markeredgewidth=1.5,
+                markeredgecolor=color,
+            )
 
 
 # ── Template registry ──
@@ -533,9 +591,14 @@ def render_formula_graph(
                 if x is not None and y_coord is not None:
                     ax.plot(x, y_coord, "o", color="#dc2626", markersize=5)
                     if ann_label:
-                        ax.annotate(ann_label, (x, y_coord),
-                                    xytext=(8, 8), textcoords="offset points",
-                                    fontsize=10, color="#dc2626")
+                        ax.annotate(
+                            ann_label,
+                            (x, y_coord),
+                            xytext=(8, 8),
+                            textcoords="offset points",
+                            fontsize=10,
+                            color="#dc2626",
+                        )
 
     # Legend
     _draw_legend(ax, labels, colors_used)

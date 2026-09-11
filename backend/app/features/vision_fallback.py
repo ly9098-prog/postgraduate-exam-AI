@@ -17,14 +17,16 @@ from app.features.code_integrity import detect_code_block_integrity
 logger = logging.getLogger(__name__)
 
 # 触发视觉回退的 code integrity flag 集合
-CODE_TRIGGER_FLAGS: frozenset[str] = frozenset({
-    "code_block_incomplete",
-    "code_block_truncated",
-    "code_garbled_text",
-    "code_brace_unbalanced",
-    "code_line_break_suspicious",
-    "code_structure_regression",
-})
+CODE_TRIGGER_FLAGS: frozenset[str] = frozenset(
+    {
+        "code_block_incomplete",
+        "code_block_truncated",
+        "code_garbled_text",
+        "code_brace_unbalanced",
+        "code_line_break_suspicious",
+        "code_structure_regression",
+    }
+)
 
 _DEFAULT_VL_BASE_URL = "https://paddleocr.aistudio-app.com"
 _DEFAULT_VL_MODEL = "PaddleOCR-VL-1.6"
@@ -50,7 +52,9 @@ def _build_vl_config(config: dict | None) -> dict:
         logger.warning("PaddleOCR-VL api_token 未配置，视觉回退不可用")
     return {
         "api_token": api_token,
-        "base_url": cfg.get("paddleocr_vl_base_url") or cfg.get("base_url") or _DEFAULT_VL_BASE_URL,
+        "base_url": cfg.get("paddleocr_vl_base_url")
+        or cfg.get("base_url")
+        or _DEFAULT_VL_BASE_URL,
         "model": cfg.get("paddleocr_vl_model") or cfg.get("model") or _DEFAULT_VL_MODEL,
     }
 
@@ -77,17 +81,20 @@ def _call_vl_sync(image_bytes: bytes, vl_config: dict) -> str:
     from app.features.ocr_fix.router import STRATEGY_MANUAL, OCRFixRouter
 
     router = OCRFixRouter()
-    router.configure({
-        "ocr_fix_strategy": STRATEGY_MANUAL,
-        "ocr_fix_model": "paddleocr-vl",
-        "paddleocr_vl_api_token": api_token,
-        "paddleocr_vl_base_url": base_url,
-        "paddleocr_vl_model": model,
-    })
+    router.configure(
+        {
+            "ocr_fix_strategy": STRATEGY_MANUAL,
+            "ocr_fix_model": "paddleocr-vl",
+            "paddleocr_vl_api_token": api_token,
+            "paddleocr_vl_base_url": base_url,
+            "paddleocr_vl_model": model,
+        }
+    )
 
     async def _run() -> str:
         result = await router.fix(
-            image=image_bytes, ocr_text="",
+            image=image_bytes,
+            ocr_text="",
             context={"entry_point": "vision_fallback"},
         )
         return result.fixed_text or ""
@@ -135,9 +142,13 @@ def _compare_code_results(
     """
     # 兼容两种格式
     orig_score = original_code.get("score", original_code.get("confidence_score", 0))
-    fallback_score = fallback_code.get("score", fallback_code.get("confidence_score", 0))
+    fallback_score = fallback_code.get(
+        "score", fallback_code.get("confidence_score", 0)
+    )
     orig_flags = set(original_code.get("flags", original_code.get("risk_flags", [])))
-    fallback_flags = set(fallback_code.get("flags", fallback_code.get("risk_flags", [])))
+    fallback_flags = set(
+        fallback_code.get("flags", fallback_code.get("risk_flags", []))
+    )
 
     # 对 normalize_question 结果：confidence_score 越高越好，需要反转
     # detect_code_block_integrity 的结果用 score（越低越好）
@@ -236,7 +247,11 @@ def apply_vision_fallback(
     if stem_has_code:
         # VL 结果作为 stem 的替代：使用 detect_code_block_integrity 比较
         vl_code = detect_code_block_integrity(vl_text)
-    orig_code = detect_code_block_integrity(stem) if stem_has_code else {"score": 0, "flags": []}
+    orig_code = (
+        detect_code_block_integrity(stem)
+        if stem_has_code
+        else {"score": 0, "flags": []}
+    )
 
     # 比较
     verdict = _compare_code_results(orig_code, vl_code)
@@ -252,17 +267,19 @@ def apply_vision_fallback(
         result["vision_fallback_status"] = "success"
         result["vision_fallback_used"] = True
         logger.info(
-            "Vision fallback improved code integrity: score %.2f→%.2f, "
-            "flags %s→%s",
-            orig_code.get("score", 0), vl_code.get("score", 0),
-            orig_code.get("flags", []), vl_code.get("flags", []),
+            "Vision fallback improved code integrity: score %.2f→%.2f, flags %s→%s",
+            orig_code.get("score", 0),
+            vl_code.get("score", 0),
+            orig_code.get("flags", []),
+            vl_code.get("flags", []),
         )
     elif verdict == "worse":
         result["vision_fallback_status"] = "not_better"
         result["vision_fallback_used"] = False
         logger.info(
             "Vision fallback result is worse: score %.2f→%.2f — keeping original",
-            orig_code.get("score", 0), vl_code.get("score", 0),
+            orig_code.get("score", 0),
+            vl_code.get("score", 0),
         )
     else:
         # similar

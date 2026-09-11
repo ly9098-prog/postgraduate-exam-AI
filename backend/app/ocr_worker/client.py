@@ -39,6 +39,7 @@ class WorkerClientError(Exception):
 @dataclass
 class ClaimResult:
     """Result of a successful claim."""
+
     job_id: str
     lease_token: str
     lease_expires_at: float  # Unix timestamp
@@ -91,14 +92,15 @@ class WorkerAPIClient:
         try:
             body = resp.json()
         except json.JSONDecodeError as e:
-            raise WorkerClientError(f"Invalid JSON response ({resp.status_code}): {e}") from e
+            raise WorkerClientError(
+                f"Invalid JSON response ({resp.status_code}): {e}"
+            ) from e
 
         if not body.get("ok"):
             detail = body.get("detail", body.get("data", str(resp.text)))
             raise WorkerClientError(f"API error ({resp.status_code}): {detail}")
 
         return body.get("data", {})
-
 
     def close(self) -> None:
         """Close pooled HTTP connections."""
@@ -139,9 +141,13 @@ class WorkerAPIClient:
             json={"lease_token": lease_token},
         )
 
-    def start(self, job_id: str, lease_token: str,
-              worker_fingerprint: str | None = None,
-              model_fingerprint: str | None = None) -> dict:
+    def start(
+        self,
+        job_id: str,
+        lease_token: str,
+        worker_fingerprint: str | None = None,
+        model_fingerprint: str | None = None,
+    ) -> dict:
         """Mark job as started (downloading → running)."""
         body = {"lease_token": lease_token}
         if worker_fingerprint:
@@ -154,12 +160,16 @@ class WorkerAPIClient:
             json=body,
         )
 
-    def complete(self, job_id: str, lease_token: str,
-                 output_artifact_key: str,
-                 output_sha256: str,
-                 worker_fingerprint: str | None = None,
-                 model_fingerprint: str | None = None,
-                 complete_idempotency_key: str | None = None) -> dict:
+    def complete(
+        self,
+        job_id: str,
+        lease_token: str,
+        output_artifact_key: str,
+        output_sha256: str,
+        worker_fingerprint: str | None = None,
+        model_fingerprint: str | None = None,
+        complete_idempotency_key: str | None = None,
+    ) -> dict:
         """Mark job as completed."""
         body = {
             "lease_token": lease_token,
@@ -178,11 +188,15 @@ class WorkerAPIClient:
             json=body,
         )
 
-    def fail(self, job_id: str, lease_token: str,
-             error_code: str,
-             error_message: str = "",
-             is_retryable: bool = True,
-             worker_fingerprint: str | None = None) -> dict:
+    def fail(
+        self,
+        job_id: str,
+        lease_token: str,
+        error_code: str,
+        error_message: str = "",
+        is_retryable: bool = True,
+        worker_fingerprint: str | None = None,
+    ) -> dict:
         """Report job failure."""
         body = {
             "lease_token": lease_token,

@@ -45,6 +45,7 @@ async def generate_drafts(
     # Resolve subject: prefer subject_id (DB lookup), fall back to subject string
     if subject_id:
         from app.models.admin import Subject
+
         subj = await db.get(Subject, subject_id)
         if not subj:
             raise ValueError(f"subject_id={subject_id} 不存在")
@@ -62,7 +63,9 @@ async def generate_drafts(
         )
     count = max(1, min(10, count))
 
-    batch_id = f"AIGEN_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    batch_id = (
+        f"AIGEN_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    )
     messages = build_generate_questions(
         subject_code, knowledge_points, difficulty, count, question_type, extra_hint
     )
@@ -72,14 +75,24 @@ async def generate_drafts(
     )
 
     if raw is None:
-        db.add(_build_log(
-            user_id=user_id, action="generate", target_type="batch",
-            target_id=None, batch_id=batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=resp["fallback_value"],
-            confidence=0.0,
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="generate",
+                target_type="batch",
+                target_id=None,
+                batch_id=batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=resp["fallback_value"],
+                confidence=0.0,
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
         await db.commit()
         return {"batch_id": batch_id, "generated": 0, "from_fallback": True}
 
@@ -128,14 +141,23 @@ async def generate_drafts(
             continue
         generated += 1
 
-    db.add(_build_log(
-        user_id=user_id, action="generate", target_type="batch",
-        target_id=None, batch_id=batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result={"count": generated, "skipped_duplicate": skipped_duplicate},
-        confidence=None,
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="generate",
+            target_type="batch",
+            target_id=None,
+            batch_id=batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result={"count": generated, "skipped_duplicate": skipped_duplicate},
+            confidence=None,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     await db.commit()
     return {
         "batch_id": batch_id,

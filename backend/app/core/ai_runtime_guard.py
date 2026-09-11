@@ -45,7 +45,9 @@ class _CircuitState:
 class AIRuntimeGuard:
     def __init__(self) -> None:
         self._sem_lock = threading.Lock()
-        self._semaphores: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Semaphore]] = {}
+        self._semaphores: dict[
+            int, tuple[asyncio.AbstractEventLoop, asyncio.Semaphore]
+        ] = {}
 
         self._state_lock = threading.Lock()
         self._circuits: dict[str, _CircuitState] = {}
@@ -116,7 +118,9 @@ class AIRuntimeGuard:
         key = id(loop)
         with self._sem_lock:
             for old_key in [
-                k for k, (old_loop, _) in self._semaphores.items() if old_loop.is_closed()
+                k
+                for k, (old_loop, _) in self._semaphores.items()
+                if old_loop.is_closed()
             ]:
                 self._semaphores.pop(old_key, None)
             entry = self._semaphores.get(key)
@@ -136,7 +140,9 @@ class AIRuntimeGuard:
             )
         except TimeoutError as exc:
             with self._state_lock:
-                self._metrics["rejected_overload"] = int(self._metrics["rejected_overload"]) + 1
+                self._metrics["rejected_overload"] = (
+                    int(self._metrics["rejected_overload"]) + 1
+                )
             raise AIResourceRejected(
                 "ai_overloaded",
                 retry_after_sec=max(1, int(settings.AI_QUEUE_WAIT_TIMEOUT_SEC)),
@@ -145,8 +151,12 @@ class AIRuntimeGuard:
         wait_ms = (time.perf_counter() - started) * 1000
         with self._state_lock:
             self._metrics["in_flight"] = int(self._metrics["in_flight"]) + 1
-            self._metrics["queue_wait_ms_total"] = float(self._metrics["queue_wait_ms_total"]) + wait_ms
-            self._metrics["queue_wait_count"] = int(self._metrics["queue_wait_count"]) + 1
+            self._metrics["queue_wait_ms_total"] = (
+                float(self._metrics["queue_wait_ms_total"]) + wait_ms
+            )
+            self._metrics["queue_wait_count"] = (
+                int(self._metrics["queue_wait_count"]) + 1
+            )
         return sem, wait_ms
 
     def release_slot(self, sem: asyncio.Semaphore) -> None:
@@ -193,7 +203,9 @@ class AIRuntimeGuard:
         client = await self._redis()
         if client is None and self._restricted() and settings.AI_RATE_LIMIT_FAIL_CLOSED:
             with self._state_lock:
-                self._metrics["rejected_rate_limit"] = int(self._metrics["rejected_rate_limit"]) + 1
+                self._metrics["rejected_rate_limit"] = (
+                    int(self._metrics["rejected_rate_limit"]) + 1
+                )
             raise AIResourceRejected("ai_rate_limit_unavailable", retry_after_sec=5)
 
         if client is not None:
@@ -210,21 +222,31 @@ class AIRuntimeGuard:
                     return
                 retry_after = max(1, 60 - int(now % 60))
                 with self._state_lock:
-                    self._metrics["rejected_rate_limit"] = int(self._metrics["rejected_rate_limit"]) + 1
+                    self._metrics["rejected_rate_limit"] = (
+                        int(self._metrics["rejected_rate_limit"]) + 1
+                    )
                 raise AIResourceRejected("ai_rate_limited", retry_after_sec=retry_after)
             except AIResourceRejected:
                 raise
             except Exception as exc:
                 if self._restricted() and settings.AI_RATE_LIMIT_FAIL_CLOSED:
                     with self._state_lock:
-                        self._metrics["rejected_rate_limit"] = int(self._metrics["rejected_rate_limit"]) + 1
-                    raise AIResourceRejected("ai_rate_limit_unavailable", retry_after_sec=5) from exc
-                logger.debug("AI Redis rate limiter unavailable; using local fallback: %s", exc)
+                        self._metrics["rejected_rate_limit"] = (
+                            int(self._metrics["rejected_rate_limit"]) + 1
+                        )
+                    raise AIResourceRejected(
+                        "ai_rate_limit_unavailable", retry_after_sec=5
+                    ) from exc
+                logger.debug(
+                    "AI Redis rate limiter unavailable; using local fallback: %s", exc
+                )
 
         allowed, retry_after = self._local_rate_allowed(subject, now)
         if not allowed:
             with self._state_lock:
-                self._metrics["rejected_rate_limit"] = int(self._metrics["rejected_rate_limit"]) + 1
+                self._metrics["rejected_rate_limit"] = (
+                    int(self._metrics["rejected_rate_limit"]) + 1
+                )
             raise AIResourceRejected("ai_rate_limited", retry_after_sec=retry_after)
 
     # ------------------------------------------------------------------
@@ -245,7 +267,9 @@ class AIRuntimeGuard:
             if state.state == "half_open" and not state.probe_in_flight:
                 state.probe_in_flight = True
                 return
-            self._metrics["rejected_circuit"] = int(self._metrics["rejected_circuit"]) + 1
+            self._metrics["rejected_circuit"] = (
+                int(self._metrics["rejected_circuit"]) + 1
+            )
         raise AIResourceRejected(
             "ai_circuit_open",
             retry_after_sec=max(1, int(recovery)),
@@ -280,7 +304,9 @@ class AIRuntimeGuard:
                 state.opened_at = time.monotonic()
                 state.probe_in_flight = False
                 if not was_open:
-                    self._metrics["circuit_trips"] = int(self._metrics["circuit_trips"]) + 1
+                    self._metrics["circuit_trips"] = (
+                        int(self._metrics["circuit_trips"]) + 1
+                    )
 
     # ------------------------------------------------------------------
     # Request cost guard / metrics
@@ -290,7 +316,9 @@ class AIRuntimeGuard:
         maximum = max(0, int(settings.AI_MAX_PROMPT_CHARS))
         if maximum > 0 and prompt_chars > maximum:
             with self._state_lock:
-                self._metrics["rejected_prompt_too_large"] = int(self._metrics["rejected_prompt_too_large"]) + 1
+                self._metrics["rejected_prompt_too_large"] = (
+                    int(self._metrics["rejected_prompt_too_large"]) + 1
+                )
             raise AIResourceRejected("ai_prompt_too_large")
 
     def bounded_max_tokens(self, requested: int | None) -> int | None:
@@ -321,7 +349,9 @@ class AIRuntimeGuard:
                 1 for state in self._circuits.values() if state.state == "open"
             )
             wait_count = max(1, int(result["queue_wait_count"]))
-            result["queue_wait_ms_avg"] = float(result["queue_wait_ms_total"]) / wait_count
+            result["queue_wait_ms_avg"] = (
+                float(result["queue_wait_ms_total"]) / wait_count
+            )
             return result
 
 

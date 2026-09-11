@@ -1,4 +1,5 @@
 from app.schemas.base import BaseModel
+
 """V6 个性化调度 Schema"""
 
 

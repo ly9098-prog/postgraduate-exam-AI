@@ -58,8 +58,13 @@ logger = logging.getLogger(__name__)
 try:
     from app.core.log_context import bind_log_context, log_event
 except ImportError:  # pragma: no cover
-    def bind_log_context(**_kw): return []  # type: ignore[misc]
-    def log_event(_lg, _ev, **_kw): pass  # type: ignore[misc]
+
+    def bind_log_context(**_kw):
+        return []  # type: ignore[misc]
+
+    def log_event(_lg, _ev, **_kw):
+        pass  # type: ignore[misc]
+
 
 _MIN_CONCURRENCY = 1
 _MAX_CONCURRENCY = 4
@@ -107,7 +112,10 @@ def _now() -> datetime:
 
 
 def clamp_concurrency(value: int | None) -> int:
-    default = max(_MIN_CONCURRENCY, min(_MAX_CONCURRENCY, settings.BATCH_IMAGE_DEFAULT_CONCURRENCY))
+    default = max(
+        _MIN_CONCURRENCY,
+        min(_MAX_CONCURRENCY, settings.BATCH_IMAGE_DEFAULT_CONCURRENCY),
+    )
     if value is None:
         return default
     return max(_MIN_CONCURRENCY, min(_MAX_CONCURRENCY, value))
@@ -153,15 +161,22 @@ async def _append_trace_event(
     try:
         from app.core.background_tasks import create_background_task
         from app.services.sse_pubsub import publish_event
-        create_background_task(publish_event(
-            job_id,
-            "trace",
-            {
-                "seq": seq, "item_seq": item_seq or 0,
-                "step": step, "status": status, "message": message[:200],
-                "duration_ms": duration_ms,
-            },
-        ), name=f"sse-pub:{job_id}")
+
+        create_background_task(
+            publish_event(
+                job_id,
+                "trace",
+                {
+                    "seq": seq,
+                    "item_seq": item_seq or 0,
+                    "step": step,
+                    "status": status,
+                    "message": message[:200],
+                    "duration_ms": duration_ms,
+                },
+            ),
+            name=f"sse-pub:{job_id}",
+        )
     except Exception:
         logger.debug("SSE Pub/Sub create_task failed for job %s (best-effort)", job_id)
 
@@ -194,6 +209,7 @@ async def _update_item_with_trace(
             return
         # Validate trace status is a valid trace event value (not a job status)
         from app.models.pipeline_enums import VALID_TRACE_STATUS
+
         if trace.status not in VALID_TRACE_STATUS:
             raise ValueError(
                 f"Invalid trace event status: {trace.status!r}. "
@@ -243,6 +259,7 @@ async def _batch_merge_commit(
 
     # Batch load all items in one query to avoid N+1
     from sqlalchemy import select as sa_select
+
     item_ids = [r.id for r in items]
     result = await db.execute(
         sa_select(ImportBatchJobItem).where(
@@ -352,7 +369,8 @@ async def _set_job_status_with_trace(
             except Exception:
                 logger.debug(
                     "SSE terminal publish failed for job %s (DB fallback remains available)",
-                    job_id, exc_info=True,
+                    job_id,
+                    exc_info=True,
                 )
 
 
@@ -367,26 +385,31 @@ async def find_existing_job(
     """查找已存在的 job_id（用于去重）。"""
     row = (
         await db.execute(
-            select(ImportBatchJobItem.job_id).where(
+            select(ImportBatchJobItem.job_id)
+            .where(
                 ImportBatchJobItem.batch_import_id == batch_import_id,
                 ImportBatchJobItem.image_import_id == image_import_id,
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
     return row
 
 
 async def _find_job_by_request_id(
-    db: AsyncSession, request_id: str,
+    db: AsyncSession,
+    request_id: str,
 ) -> str | None:
     """查找 request_id 对应的已有 job（job 级幂等）。"""
     if not request_id:
         return None
     row = (
         await db.execute(
-            select(ImportBatchJob.job_id).where(
+            select(ImportBatchJob.job_id)
+            .where(
                 ImportBatchJob.request_id == request_id,
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
     return row
@@ -428,7 +451,8 @@ async def create_batch_job(
         if existing:
             logger.info(
                 "Duplicate batch submission: request_id=%s -> existing job=%s",
-                request_id, existing,
+                request_id,
+                existing,
             )
             stub = ImportBatchJob(
                 job_id=existing,
@@ -444,7 +468,9 @@ async def create_batch_job(
         if existing:
             logger.info(
                 "Duplicate batch image submission: batch=%s image=%s -> existing job=%s",
-                batch_import_id, image_import_id, existing,
+                batch_import_id,
+                image_import_id,
+                existing,
             )
             stub = ImportBatchJob(
                 job_id=existing,
@@ -514,6 +540,7 @@ async def create_batch_job(
     # Lightweight AI model config pre-check — warn once per job, don't block
     try:
         from app.services.health_check_service import check_ai_model_config
+
         ai_check = await check_ai_model_config(db)
         if ai_check.severity in ("error", "warning"):
             await _append_trace_event(
@@ -563,7 +590,8 @@ async def _merge_image_texts(
         if job.merge_status == "completed" and job.merged_batch_id:
             logger.info(
                 "Merge already completed for job=%s batch=%s, skipping",
-                job_id, job.merged_batch_id,
+                job_id,
+                job.merged_batch_id,
             )
             return {
                 "merged": True,
@@ -575,16 +603,20 @@ async def _merge_image_texts(
         await db.flush()
 
         rows = (
-            await db.execute(
-                select(ImportBatchJobItem)
-                .where(
-                    ImportBatchJobItem.job_id == job_id,
-                    ImportBatchJobItem.status == "succeeded",
-                    ImportBatchJobItem.ocr_cleaned_text.isnot(None),
+            (
+                await db.execute(
+                    select(ImportBatchJobItem)
+                    .where(
+                        ImportBatchJobItem.job_id == job_id,
+                        ImportBatchJobItem.status == "succeeded",
+                        ImportBatchJobItem.ocr_cleaned_text.isnot(None),
+                    )
+                    .order_by(ImportBatchJobItem.seq)
                 )
-                .order_by(ImportBatchJobItem.seq)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     if len(rows) < 2:
         msg = f"only {len(rows)} succeeded item(s)"
@@ -603,11 +635,17 @@ async def _merge_image_texts(
 
     logger.info(
         "【MERGE-1】合并 %d 张图片 OCR 文本 | job=%s total_chars=%d",
-        len(rows), job_id, len(merged_text),
+        len(rows),
+        job_id,
+        len(merged_text),
     )
     log_event(
-        logger, "batch_image.job.merge.start", "info",
-        job_id=job_id, source_count=len(rows), total_chars=len(merged_text),
+        logger,
+        "batch_image.job.merge.start",
+        "info",
+        job_id=job_id,
+        source_count=len(rows),
+        total_chars=len(merged_text),
     )
 
     try:
@@ -650,12 +688,16 @@ async def _merge_image_texts(
                     job.merge_error = reason
                     job.merge_finished_at = _now()
                     await db.commit()
-            logger.warning("【MERGE-FAIL】job=%s reason=%s — 保留原始单图批次", job_id, reason)
+            logger.warning(
+                "【MERGE-FAIL】job=%s reason=%s — 保留原始单图批次", job_id, reason
+            )
             return {"merged": False, "reason": reason}
 
         logger.info(
             "【MERGE-2】合并流水线成功 | job=%s merged_batch=%s questions=%d",
-            job_id, merged_batch_id, qcount,
+            job_id,
+            merged_batch_id,
+            qcount,
         )
 
         async with async_session() as db:
@@ -671,12 +713,17 @@ async def _merge_image_texts(
 
         logger.info(
             "【MERGE-3】清理完成 | job=%s superseded_batches=%d",
-            job_id, superseded_count,
+            job_id,
+            superseded_count,
         )
         log_event(
-            logger, "batch_image.job.merge.finish", "info",
-            job_id=job_id, merged_batch_id=merged_batch_id,
-            question_count=qcount, superseded_batches=superseded_count,
+            logger,
+            "batch_image.job.merge.finish",
+            "info",
+            job_id=job_id,
+            merged_batch_id=merged_batch_id,
+            question_count=qcount,
+            superseded_batches=superseded_count,
         )
         return {
             "merged": True,
@@ -693,7 +740,9 @@ async def _merge_image_texts(
                 job.merge_error = "exception during merge pipeline"
                 job.merge_finished_at = _now()
                 await db.commit()
-        logger.exception("【MERGE-FAIL】合并流水线异常 | job=%s — 保留原始单图批次", job_id)
+        logger.exception(
+            "【MERGE-FAIL】合并流水线异常 | job=%s — 保留原始单图批次", job_id
+        )
         return {"merged": False, "reason": "exception during merge pipeline"}
 
 
@@ -764,7 +813,9 @@ async def _run_vl_ocr(
         vl_duration = int((_now() - vl_start).total_seconds() * 1000)
         logger.info(
             "【OCR-VL】识别完成 | file=%s %s (%dms)",
-            source_file, safe_text_preview(result.text), vl_duration,
+            source_file,
+            safe_text_preview(result.text),
+            vl_duration,
         )
         return result.text
     finally:
@@ -772,9 +823,14 @@ async def _run_vl_ocr(
 
 
 async def _run_single_image(
-    item_id: int, source_file: str, content: bytes,
-    subject: str | None, subject_id: int | None, options: dict,
-    job_id: str, seq: int,
+    item_id: int,
+    source_file: str,
+    content: bytes,
+    subject: str | None,
+    subject_id: int | None,
+    options: dict,
+    job_id: str,
+    seq: int,
 ) -> dict:
     """OCR → 清洗 → 现有 TXT 导入流水线。返回结果 dict（含 raw/cleaned 文本）。
 
@@ -822,19 +878,25 @@ async def _run_single_image(
 
     logger.info(
         "【OCR-1】OCR 原始结果 | file=%s mode=%s backend=%s %s",
-        source_file, ocr_mode, configured_backend, safe_text_preview(raw_ocr_text),
+        source_file,
+        ocr_mode,
+        configured_backend,
+        safe_text_preview(raw_ocr_text),
     )
 
     cleaned_text = clean_ocr_text(raw_ocr_text)
     logger.info(
         "【OCR-2】clean_ocr_text 清洗结果 | file=%s chars=%d lines=%d%s %s",
-        source_file, len(cleaned_text), cleaned_text.count("\n") + 1,
+        source_file,
+        len(cleaned_text),
+        cleaned_text.count("\n") + 1,
         " (未变化)" if cleaned_text == raw_ocr_text else "",
         safe_text_preview(cleaned_text),
     )
 
     if ocr_mode != "api" and ocr_result:
         from app.services.import_pipeline_service import _build_pre_extracted_ocr_blocks
+
         pre_extracted_blocks = _build_pre_extracted_ocr_blocks(
             image_bytes=content,
             cleaned_text=cleaned_text,
@@ -851,10 +913,12 @@ async def _run_single_image(
     # 空文本检查 —— 在写入 trace 之前，避免误报 success
     if not cleaned_text.strip():
         await _update_item_with_trace(
-            item_id, job_id,
+            item_id,
+            job_id,
             fields={"ocr_raw_text": raw_ocr_text, "ocr_cleaned_text": cleaned_text},
             trace=_TraceData(
-                step="ocr", status="failed",
+                step="ocr",
+                status="failed",
                 message=f"OCR 未识别到可导入文本 ({ocr_duration}ms)",
                 duration_ms=ocr_duration,
                 item_seq=seq,
@@ -864,10 +928,12 @@ async def _run_single_image(
 
     # 单一 OCR 成功 trace event：缓存文本 + 记录耗时（local/api 统一）
     await _update_item_with_trace(
-        item_id, job_id,
+        item_id,
+        job_id,
         fields={"ocr_raw_text": raw_ocr_text, "ocr_cleaned_text": cleaned_text},
         trace=_TraceData(
-            step="ocr", status="success",
+            step="ocr",
+            status="success",
             message=f"OCR 识别完成 ({ocr_duration}ms, {len(cleaned_text)}字)",
             duration_ms=ocr_duration,
             item_seq=seq,
@@ -875,17 +941,18 @@ async def _run_single_image(
     )
 
     await _update_item_with_trace(
-        item_id, job_id,
+        item_id,
+        job_id,
         fields={},
         trace=_TraceData(
-            step="pipeline", status="running",
+            step="pipeline",
+            status="running",
             message="开始结构解析与 AI 修复",
             item_seq=seq,
         ),
     )
 
     async with async_session() as pdb:
-
         # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段。
         # 批量图片默认启用 single-AI-pass：通用 repair 已能同时修复代码结构
         # 与缺失答案时，不再先做一次独立 code-structure LLM 调用。
@@ -915,14 +982,18 @@ async def _run_single_image(
 
         # Save image to temp file for VL_REBUILD fallback (needs disk path)
         import tempfile
+
         _tmp_img_path: str | None = None
         if content:
             try:
                 ext = os.path.splitext(source_file)[1] or ".png"
                 from app.core.config import settings
+
                 _scratch = settings.WORKER_SCRATCH_DIR
                 _tmp_dir = _scratch if _scratch and os.path.isdir(_scratch) else None
-                tmpf = tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=_tmp_dir)
+                tmpf = tempfile.NamedTemporaryFile(
+                    suffix=ext, delete=False, dir=_tmp_dir
+                )
                 tmpf.write(content)
                 _tmp_img_path = tmpf.name
                 tmpf.close()
@@ -959,17 +1030,21 @@ async def _run_single_image(
     stage_errors = result.get("errors", [])
     logger.info(
         "【OCR-9】流水线汇总 | file=%s status=%s batch=%s questions=%d errors=%s",
-        source_file, result.get("status", "?"),
-        batch_id or "❌", qcount,
+        source_file,
+        result.get("status", "?"),
+        batch_id or "❌",
+        qcount,
         stage_errors[0] if stage_errors else "无",
     )
 
     # Trace: pipeline done
     await _update_item_with_trace(
-        item_id, job_id,
+        item_id,
+        job_id,
         fields={},
         trace=_TraceData(
-            step="pipeline", status="success",
+            step="pipeline",
+            status="success",
             message=f"解析流水线完成 ({pipeline_duration}ms)",
             duration_ms=pipeline_duration,
             item_seq=seq,
@@ -994,17 +1069,23 @@ async def _process_source(
     """单张图片 worker：失败隔离，绝不向上抛异常。"""
     async with sem:
         await _update_item_with_trace(
-            item_id, job_id,
+            item_id,
+            job_id,
             fields={"status": "processing", "started_at": _now()},
             trace=_TraceData(
-                step="ocr", status="running",
+                step="ocr",
+                status="running",
                 message=f"第 {src.seq} 张开始识别",
                 item_seq=src.seq,
             ),
         )
         log_event(
-            logger, "batch_image.item.start", "info",
-            item_id=item_id, source_file=src.source_file, seq=src.seq,
+            logger,
+            "batch_image.item.start",
+            "info",
+            item_id=item_id,
+            source_file=src.source_file,
+            seq=src.seq,
         )
 
         proc_start = _now()
@@ -1014,8 +1095,14 @@ async def _process_source(
                 content = fh.read()
 
             result = await _run_single_image(
-                item_id, src.source_file, content, subject, subject_id, options,
-                job_id=job_id, seq=src.seq,
+                item_id,
+                src.source_file,
+                content,
+                subject,
+                subject_id,
+                options,
+                job_id=job_id,
+                seq=src.seq,
             )
             del content
 
@@ -1029,6 +1116,7 @@ async def _process_source(
                     from sqlalchemy import update as _sa_update
 
                     from app.models.question_import import QuestionImport as _QI
+
                     async with async_session() as _db:
                         await _db.execute(
                             _sa_update(_QI)
@@ -1042,12 +1130,14 @@ async def _process_source(
                 except Exception:
                     logger.warning(
                         "Failed to backfill source_image_seq for batch %s (non-fatal)",
-                        review_batch_id, exc_info=True,
+                        review_batch_id,
+                        exc_info=True,
                     )
 
             if pipeline_ok and review_batch_id:
                 await _update_item_with_trace(
-                    item_id, job_id,
+                    item_id,
+                    job_id,
                     fields={
                         "status": "succeeded",
                         "review_batch_id": review_batch_id,
@@ -1057,7 +1147,8 @@ async def _process_source(
                         "finished_at": _now(),
                     },
                     trace=_TraceData(
-                        step="done", status="success",
+                        step="done",
+                        status="success",
                         message=f"识别完成，生成 {question_count} 道题",
                         item_seq=src.seq,
                         duration_ms=int((_now() - proc_start).total_seconds() * 1000),
@@ -1065,19 +1156,27 @@ async def _process_source(
                 )
                 logger.info(
                     "batch image item succeeded: item_id=%s file=%s batch_id=%s questions=%s",
-                    item_id, src.source_file, review_batch_id, question_count,
+                    item_id,
+                    src.source_file,
+                    review_batch_id,
+                    question_count,
                 )
                 log_event(
-                    logger, "batch_image.item.finish", "info",
-                    item_id=item_id, source_file=src.source_file,
-                    review_batch_id=review_batch_id, question_count=question_count,
+                    logger,
+                    "batch_image.item.finish",
+                    "info",
+                    item_id=item_id,
+                    source_file=src.source_file,
+                    review_batch_id=review_batch_id,
+                    question_count=question_count,
                     duration_ms=int((_now() - proc_start).total_seconds() * 1000),
                 )
             else:
                 errors = result.get("errors") or []
                 reason = errors[0] if errors else "OCR 文本未生成待审核批次"
                 await _update_item_with_trace(
-                    item_id, job_id,
+                    item_id,
+                    job_id,
                     fields={
                         "status": "failed",
                         "pipeline_id": result.get("pipeline_id"),
@@ -1086,34 +1185,42 @@ async def _process_source(
                         "finished_at": _now(),
                     },
                     trace=_TraceData(
-                        step="error", status="failed",
+                        step="error",
+                        status="failed",
                         message=reason,
                         item_seq=src.seq,
                     ),
                 )
                 logger.warning(
                     "batch image item produced no review batch: item_id=%s file=%s reason=%s",
-                    item_id, src.source_file, reason,
+                    item_id,
+                    src.source_file,
+                    reason,
                 )
         except Exception as exc:
             logger.exception(
                 "batch image item failed: item_id=%s file=%s", item_id, src.source_file
             )
             log_event(
-                logger, "batch_image.item.error", "error",
-                item_id=item_id, source_file=src.source_file,
+                logger,
+                "batch_image.item.error",
+                "error",
+                item_id=item_id,
+                source_file=src.source_file,
                 error_type=type(exc).__name__,
                 error_message=str(exc)[:500],
             )
             await _update_item_with_trace(
-                item_id, job_id,
+                item_id,
+                job_id,
                 fields={
                     "status": "failed",
                     "error_message": str(exc),
                     "finished_at": _now(),
                 },
                 trace=_TraceData(
-                    step="error", status="failed",
+                    step="error",
+                    status="failed",
                     message=str(exc)[:512],
                     item_seq=src.seq,
                 ),
@@ -1123,7 +1230,9 @@ async def _process_source(
                 try:
                     os.unlink(src.temp_path)
                 except OSError as exc:
-                    logger.warning("delete batch tmp file failed: %s (%s)", src.temp_path, exc)
+                    logger.warning(
+                        "delete batch tmp file failed: %s (%s)", src.temp_path, exc
+                    )
 
 
 # ================================================================
@@ -1160,7 +1269,9 @@ async def run_batch_job(
             job_options["_ocr_vl_error"] = str(exc)
     logger.info(
         "batch image job started: job_id=%s total=%d concurrency=%d",
-        job_id, len(sources), concurrency,
+        job_id,
+        len(sources),
+        concurrency,
     )
 
     # Bind trace context for the entire batch job lifetime
@@ -1173,14 +1284,19 @@ async def run_batch_job(
         bind_ctx["request_id"] = _request_id
     bind_log_context(**bind_ctx)
     log_event(
-        logger, "batch_image.job.start", "info",
-        total=len(sources), concurrency=concurrency,
-        subject=subject, ocr_mode=job_options.get("ocr_mode", "local"),
+        logger,
+        "batch_image.job.start",
+        "info",
+        total=len(sources),
+        concurrency=concurrency,
+        subject=subject,
+        ocr_mode=job_options.get("ocr_mode", "local"),
     )
 
     try:
         await _set_job_status_with_trace(
-            job_id, "running",
+            job_id,
+            "running",
             trace_message=f"开始处理 ({len(sources)} 张)",
         )
 
@@ -1214,12 +1330,16 @@ async def run_batch_job(
         # 派生 batch status：从 items 状态计算
         async with async_session() as db:
             statuses = (
-                await db.execute(
-                    select(ImportBatchJobItem.status).where(
-                        ImportBatchJobItem.job_id == job_id
+                (
+                    await db.execute(
+                        select(ImportBatchJobItem.status).where(
+                            ImportBatchJobItem.job_id == job_id
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         total = len(statuses)
         succeeded = sum(1 for s in statuses if s == "succeeded")
@@ -1229,47 +1349,60 @@ async def run_batch_job(
         if succeeded == total and len(sources) >= 2:
             # 全部成功 → 进入 merging 状态，执行跨图片合并
             await _set_job_status_with_trace(
-                job_id, "merging",
+                job_id,
+                "merging",
                 trace_message="图片全部处理完成，开始合并",
             )
             merge_result = await _merge_image_texts(
-                job_id=job_id, subject=subject, options=job_options, subject_id=subject_id,
+                job_id=job_id,
+                subject=subject,
+                options=job_options,
+                subject_id=subject_id,
             )
             if merge_result.get("merged"):
                 logger.info(
                     "batch image job merged: job_id=%s merged_batch=%s questions=%d",
-                    job_id, merge_result.get("batch_id"), merge_result.get("question_count"),
+                    job_id,
+                    merge_result.get("batch_id"),
+                    merge_result.get("question_count"),
                 )
                 await _set_job_status_with_trace(
-                    job_id, "completed",
+                    job_id,
+                    "completed",
                     error_message=None,
                     trace_message=f"合并完成，共 {merge_result.get('question_count', 0)} 道题",
                 )
             else:
                 reason = merge_result.get("reason", "合并失败")
-                logger.warning("batch image merge failed: job_id=%s reason=%s", job_id, reason)
+                logger.warning(
+                    "batch image merge failed: job_id=%s reason=%s", job_id, reason
+                )
                 # merge 失败：job 仍为 completed（保留了原始单图批次），但带上 warning
                 await _set_job_status_with_trace(
-                    job_id, "completed",
+                    job_id,
+                    "completed",
                     error_message=f"合并未执行: {reason}",
                     trace_message=f"单图处理完成 (合并跳过: {reason})",
                 )
         elif succeeded == total:
             # 单张图片：无合并必要，直接完成
             await _set_job_status_with_trace(
-                job_id, "completed",
+                job_id,
+                "completed",
                 error_message=None,
                 trace_message="全部处理完成",
             )
         elif succeeded > 0:
             await _set_job_status_with_trace(
-                job_id, "completed",
+                job_id,
+                "completed",
                 error_message=f"部分失败: {failed}/{total}",
                 trace_message=f"部分失败: {failed}/{total}",
             )
         else:
             await _set_job_status_with_trace(
-                job_id, "failed",
+                job_id,
+                "failed",
                 error_message=f"全部失败: {failed}/{total}",
                 trace_message=f"全部失败: {failed}/{total}",
             )
@@ -1277,19 +1410,28 @@ async def run_batch_job(
         logger.info("batch image job completed: job_id=%s", job_id)
         _was_merged = "merge_result" in locals() and merge_result.get("merged", False)
         log_event(
-            logger, "batch_image.job.finish", "info",
-            job_id=job_id, succeeded=succeeded, failed=failed, total=total,
+            logger,
+            "batch_image.job.finish",
+            "info",
+            job_id=job_id,
+            succeeded=succeeded,
+            failed=failed,
+            total=total,
             merged=_was_merged,
         )
     except Exception as exc:
         logger.exception("batch image job crashed: job_id=%s", job_id)
         log_event(
-            logger, "batch_image.job.error", "error",
-            job_id=job_id, error_type=type(exc).__name__,
+            logger,
+            "batch_image.job.error",
+            "error",
+            job_id=job_id,
+            error_type=type(exc).__name__,
             error_message=str(exc)[:500],
         )
         await _set_job_status_with_trace(
-            job_id, "failed",
+            job_id,
+            "failed",
             error_message=str(exc),
             trace_message=f"任务异常: {exc}",
         )
@@ -1315,12 +1457,16 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         raise ValueError("批量导题任务不存在")
 
     rows = (
-        await db.execute(
-            select(ImportBatchJobItem)
-            .where(ImportBatchJobItem.job_id == job_id)
-            .order_by(ImportBatchJobItem.seq)
+        (
+            await db.execute(
+                select(ImportBatchJobItem)
+                .where(ImportBatchJobItem.job_id == job_id)
+                .order_by(ImportBatchJobItem.seq)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     counts = {"pending": 0, "processing": 0, "succeeded": 0, "failed": 0}
     total_questions = 0
@@ -1334,31 +1480,38 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         if item.status == "processing" and not current_file:
             current_file = item.source_file or ""
             current_seq = item.seq
-        items.append({
-            "id": item.id,
-            "seq": item.seq,
-            "source_file": item.source_file,
-            "status": item.status,
-            "review_batch_id": item.review_batch_id,
-            "question_count": item.question_count or 0,
-            "error_message": item.error_message,
-            "has_ocr_cache": bool(item.ocr_cleaned_text or item.ocr_raw_text),
-            "batch_import_id": item.batch_import_id,
-            "image_import_id": item.image_import_id,
-            "request_id": item.request_id,
-        })
+        items.append(
+            {
+                "id": item.id,
+                "seq": item.seq,
+                "source_file": item.source_file,
+                "status": item.status,
+                "review_batch_id": item.review_batch_id,
+                "question_count": item.question_count or 0,
+                "error_message": item.error_message,
+                "has_ocr_cache": bool(item.ocr_cleaned_text or item.ocr_raw_text),
+                "batch_import_id": item.batch_import_id,
+                "image_import_id": item.image_import_id,
+                "request_id": item.request_id,
+            }
+        )
 
     # 显式检测合并状态
     is_merged = False
-    succeeded_items = [r for r in items if r["status"] == "succeeded" and r["review_batch_id"]]
+    succeeded_items = [
+        r for r in items if r["status"] == "succeeded" and r["review_batch_id"]
+    ]
     if len(succeeded_items) >= 2:
         candidate = succeeded_items[0]["review_batch_id"]
         if all(it["review_batch_id"] == candidate for it in succeeded_items):
             is_merged = True
             merged_batch_id = candidate
             from app.models.question_import import QuestionImport as QI
+
             q_count = await db.scalar(
-                select(func.count()).select_from(QI).where(QI.batch_id == merged_batch_id)
+                select(func.count())
+                .select_from(QI)
+                .where(QI.batch_id == merged_batch_id)
             )
             total_questions = q_count or 0
 
@@ -1367,12 +1520,16 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
 
     # 读取 trace events
     events = (
-        await db.execute(
-            select(BatchJobTraceEvent)
-            .where(BatchJobTraceEvent.job_id == job_id)
-            .order_by(BatchJobTraceEvent.seq)
+        (
+            await db.execute(
+                select(BatchJobTraceEvent)
+                .where(BatchJobTraceEvent.job_id == job_id)
+                .order_by(BatchJobTraceEvent.seq)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     trace_events = [
         {
             "seq": e.seq,
@@ -1409,7 +1566,9 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         "current_file": current_file,
         "error_message": job.error_message,
         "started_at": serialize_utc_datetime(job.started_at) if job.started_at else "",
-        "finished_at": serialize_utc_datetime(job.finished_at) if job.finished_at else "",
+        "finished_at": serialize_utc_datetime(job.finished_at)
+        if job.finished_at
+        else "",
         "items": items,
         "trace_events": trace_events,
     }
@@ -1425,15 +1584,19 @@ async def poll_trace_events(
 ) -> list[dict]:
     """返回 id > since_id 的增量 trace events（按 auto-increment id 排序）。"""
     rows = (
-        await db.execute(
-            select(BatchJobTraceEvent)
-            .where(
-                BatchJobTraceEvent.job_id == job_id,
-                BatchJobTraceEvent.id > since_id,
+        (
+            await db.execute(
+                select(BatchJobTraceEvent)
+                .where(
+                    BatchJobTraceEvent.job_id == job_id,
+                    BatchJobTraceEvent.id > since_id,
+                )
+                .order_by(BatchJobTraceEvent.id)
             )
-            .order_by(BatchJobTraceEvent.id)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": e.id,
@@ -1450,18 +1613,22 @@ async def poll_trace_events(
 
 
 async def poll_job_summary(
-    db: AsyncSession, job_id: str,
+    db: AsyncSession,
+    job_id: str,
 ) -> dict | None:
     """简化的 job 终态摘要（用于 SSE done event）。"""
     job = await db.get(ImportBatchJob, job_id)
     if job is None:
         return None
     rows = (
-        await db.execute(
-            select(ImportBatchJobItem)
-            .where(ImportBatchJobItem.job_id == job_id)
+        (
+            await db.execute(
+                select(ImportBatchJobItem).where(ImportBatchJobItem.job_id == job_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     total_questions = sum(item.question_count or 0 for item in rows)
     succeeded = sum(1 for item in rows if item.status == "succeeded")
     failed = sum(1 for item in rows if item.status == "failed")
@@ -1479,7 +1646,12 @@ async def poll_job_summary(
 # ================================================================
 
 
-async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str | None = None, subject_id: int | None = None) -> dict:
+async def reparse_item_from_cache(
+    db: AsyncSession,
+    item_id: int,
+    subject: str | None = None,
+    subject_id: int | None = None,
+) -> dict:
     """基于缓存的 OCR 文本重新跑导入流水线（不重复 OCR）。
 
     用于 AI 解析失败 / Prompt 调整后重新解析。复用 ocr_cleaned_text；
@@ -1507,6 +1679,7 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
     cleaned = item.ocr_cleaned_text
     if not cleaned and item.ocr_raw_text:
         from app.services.ocr_service import clean_ocr_text
+
         cleaned = clean_ocr_text(item.ocr_raw_text)
     if not cleaned or not cleaned.strip():
         item.status = "failed"
@@ -1525,20 +1698,26 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
     if not effective_subject_id and effective_subject_code:
         try:
             from app.services.admin_subject_service import resolve_subject_id
+
             effective_subject_id = await resolve_subject_id(db, effective_subject_code)
         except Exception:
-            logger.warning("reparse: failed to resolve legacy subject=%s to subject_id", effective_subject_code)
+            logger.warning(
+                "reparse: failed to resolve legacy subject=%s to subject_id",
+                effective_subject_code,
+            )
 
     # ── Run pipeline ──
     async with async_session() as pdb:
         from app.features.import_ai_policy import apply_image_single_pass_policy
         from app.features.pipeline_orchestrator import run_import_pipeline
 
-        reparse_options = apply_image_single_pass_policy({
-            "enable_ai_repair": True,
-            "confidence_threshold": 0.6,
-            "batch_fast_mode": True,
-        })
+        reparse_options = apply_image_single_pass_policy(
+            {
+                "enable_ai_repair": True,
+                "confidence_threshold": 0.6,
+                "batch_fast_mode": True,
+            }
+        )
         result = await run_import_pipeline(
             file_content=cleaned.encode("utf-8"),
             source_type="txt",
@@ -1557,7 +1736,8 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
     if pipeline_ok:
         # ── Success: atomically switch to new batch ──
         await _update_item_with_trace(
-            item.id, item.job_id,
+            item.id,
+            item.job_id,
             fields={
                 "status": "succeeded",
                 "review_batch_id": review_batch_id,
@@ -1568,7 +1748,8 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
                 "reparse_finished_at": now,
             },
             trace=_TraceData(
-                step="pipeline", status="success",
+                step="pipeline",
+                status="success",
                 message=f"重新解析完成，生成 {question_count} 道题",
                 item_seq=item.seq,
                 request_id=item.request_id,
@@ -1580,7 +1761,8 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
         # ── Failure: preserve previous batch, mark item failed ──
         error_msg = (result.get("errors") or ["重新解析未生成待审核批次"])[0]
         await _update_item_with_trace(
-            item.id, item.job_id,
+            item.id,
+            item.job_id,
             fields={
                 "status": "failed",
                 "review_batch_id": previous_batch_id,  # restore previous
@@ -1590,7 +1772,8 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
                 "reparse_finished_at": now,
             },
             trace=_TraceData(
-                step="pipeline", status="failed",
+                step="pipeline",
+                status="failed",
                 message=error_msg,
                 item_seq=item.seq,
                 request_id=item.request_id,

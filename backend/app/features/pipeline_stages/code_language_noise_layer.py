@@ -42,22 +42,22 @@ logger = logging.getLogger(__name__)
 # Keywords that signal a transition from natural language into code.
 _TRANSITION_PATTERNS = re.compile(
     r"(?:"
-    r"在\w+中执行[：:]|"      # 在单链表中执行：/在循环中执行:
+    r"在\w+中执行[：:]|"  # 在单链表中执行：/在循环中执行:
     r"在\w+中进行如下\w*[：:]|"  # 在单链表中进行如下操作：
-    r"执行如下\w*[：:]|"      # 执行如下操作：/执行如下计算：
-    r"执行如下\w*代码|"       # 执行如下Java代码 / 执行如下C代码
-    r"进行如下\w*[：:]|"      # 进行如下操作：/进行如下计算：
-    r"已知\s+\w+\s*指向|"     # 已知 p 指向某节点/已知指针指向
-    r"对\w+执行\w+操作|"      # 对链表执行插入操作/对栈执行删除操作
-    r"下列\w*程序|"           # 下列C程序 / 下列Java程序
+    r"执行如下\w*[：:]|"  # 执行如下操作：/执行如下计算：
+    r"执行如下\w*代码|"  # 执行如下Java代码 / 执行如下C代码
+    r"进行如下\w*[：:]|"  # 进行如下操作：/进行如下计算：
+    r"已知\s+\w+\s*指向|"  # 已知 p 指向某节点/已知指针指向
+    r"对\w+执行\w+操作|"  # 对链表执行插入操作/对栈执行删除操作
+    r"下列\w*程序|"  # 下列C程序 / 下列Java程序
     r"代码如下|"
-    r"如下\w*代码|"           # 如下Java代码 / 如下HTML代码
-    r"以下\w*程序|"           # 以下C程序 / 以下Java程序
-    r"以下\w*代码|"           # 以下C代码 / 以下HTML代码
+    r"如下\w*代码|"  # 如下Java代码 / 如下HTML代码
+    r"以下\w*程序|"  # 以下C程序 / 以下Java程序
+    r"以下\w*代码|"  # 以下C代码 / 以下HTML代码
     r"程序如下|"
-    r"阅读以下\w*程序|"       # 阅读以下C程序 / 阅读以下Java程序
-    r"阅读以下\w*代码|"       # 阅读以下HTML代码
-    r"阅读下列\w*程序|"       # 阅读下列C程序 / 阅读下列Java程序
+    r"阅读以下\w*程序|"  # 阅读以下C程序 / 阅读以下Java程序
+    r"阅读以下\w*代码|"  # 阅读以下HTML代码
+    r"阅读下列\w*程序|"  # 阅读下列C程序 / 阅读下列Java程序
     r"C语言程序|"
     r"C\+\+程序|"
     r"C\+\+代码|"
@@ -79,7 +79,7 @@ _CODE_PRECURSOR_PATTERNS = re.compile(
     r"^\s*(?:"
     r"#\s*(?:include|define|pragma|import|typedef)|"  # preprocessor
     r"using\s+(?:namespace|System)|"  # C# / C++ using
-    r"typedef\s|"                      # typedef without # prefix
+    r"typedef\s|"  # typedef without # prefix
     r"public|private|protected|static|class|struct|void|int\s+\w+\s*\(|"  # declarations
     r"int\s+main|"
     r"for\s*\(|while\s*\(|if\s*\(|switch\s*\(|"
@@ -168,9 +168,7 @@ _GENERIC_ANGLE_NOISE_RE = re.compile(r"^\s*[<>]+\s*$")
 # Lines like "S = μxau<-d :μxau<-d = μxau<-s'g" (OCR corruption of a code
 # option) contain = and ; so _is_code_keyword_line would mark them as code.
 # Checked before the code keyword guard to catch these false positives.
-_OCR_HALLUCINATION_RE = re.compile(
-    r"^\s*[A-Za-df-z]\s*=\s*\S*[^\x00-\x7f]"
-)
+_OCR_HALLUCINATION_RE = re.compile(r"^\s*[A-Za-df-z]\s*=\s*\S*[^\x00-\x7f]")
 
 
 def _is_code_keyword_line(line: str) -> bool:
@@ -179,13 +177,18 @@ def _is_code_keyword_line(line: str) -> bool:
     if not stripped:
         return False
     # Check for common code keywords and constructs
-    if re.search(r"\b(for|if|while|switch|case|return|break|continue|else|do)\b\s*", stripped):
+    if re.search(
+        r"\b(for|if|while|switch|case|return|break|continue|else|do)\b\s*", stripped
+    ):
         return True
     if "{" in stripped or "}" in stripped:
         return True
     if ";" in stripped:
         return True
-    if re.search(r"\b(int|float|double|char|void|bool|string|var|let|const|def|function)\b", stripped):
+    if re.search(
+        r"\b(int|float|double|char|void|bool|string|var|let|const|def|function)\b",
+        stripped,
+    ):
         return True
     if re.search(r"[!=]=|->|\+=|-=|\*=|/=|%=|&=|\|=", stripped):
         return True
@@ -243,14 +246,16 @@ def classify_noise(line: str) -> tuple[str, float]:
 # ---------------------------------------------------------------------------
 
 # Noise types eligible for removal.
-_REMOVABLE_NOISE = frozenset({
-    "c_cpp_noise",
-    "python_noise",
-    "tag_noise",
-    "lang_label",
-    "generic_ocr_noise",
-    "ocr_hallucination",
-})
+_REMOVABLE_NOISE = frozenset(
+    {
+        "c_cpp_noise",
+        "python_noise",
+        "tag_noise",
+        "lang_label",
+        "generic_ocr_noise",
+        "ocr_hallucination",
+    }
+)
 
 # Minimum confidence threshold for removal.
 _CONFIDENCE_THRESHOLD = 0.6
@@ -316,6 +321,7 @@ def _should_remove(
 # Main cleaning function
 # ---------------------------------------------------------------------------
 
+
 def clean_code_language_noise(
     text: str,
     safe_mode: bool = False,
@@ -372,7 +378,10 @@ def clean_code_language_noise(
                     _collector.record_removal(line_num, noise_type)
                 logger.debug(
                     "Removed noise line %d: type=%s conf=%.2f line=%r",
-                    line_num, noise_type, confidence, line,
+                    line_num,
+                    noise_type,
+                    confidence,
+                    line,
                 )
                 continue  # skip this line entirely
             elif noise_type and _collector:
@@ -384,7 +393,9 @@ def clean_code_language_noise(
     if removed_lines:
         logger.info(
             "Code language noise clean: removed %d line(s) across %d zone(s): %s",
-            len(removed_lines), len(zones), removed_lines,
+            len(removed_lines),
+            len(zones),
+            removed_lines,
         )
 
     return "\n".join(result_lines)
@@ -393,6 +404,7 @@ def clean_code_language_noise(
 # ---------------------------------------------------------------------------
 # Clean questions (pipeline stage entry)
 # ---------------------------------------------------------------------------
+
 
 def _scan_stems_for_noise(
     questions: list[dict],
@@ -416,7 +428,9 @@ def _scan_stems_for_noise(
             continue
 
         collector = NoiseMetricsCollector(doc_id=str(i))
-        cleaned = clean_code_language_noise(stem, safe_mode=safe_mode, _collector=collector)
+        cleaned = clean_code_language_noise(
+            stem, safe_mode=safe_mode, _collector=collector
+        )
         metrics_list.append(collector.metrics)
 
         if cleaned != stem:
@@ -477,23 +491,28 @@ def run_code_language_noise_clean_stage(
 
         # Add decision trace
         dt = list(q.get("decision_trace") or [])
-        dt.append({
-            "stage": "code_language_noise_clean",
-            "result": "cleaned",
-            "reason": f"removed_{removed}_noise_lines",
-        })
+        dt.append(
+            {
+                "stage": "code_language_noise_clean",
+                "result": "cleaned",
+                "reason": f"removed_{removed}_noise_lines",
+            }
+        )
         q["decision_trace"] = dt
 
         cleaned_count += 1
-        fix_actions.append({
-            "question_index": idx,
-            "success": True,
-            "removed_lines": removed,
-        })
+        fix_actions.append(
+            {
+                "question_index": idx,
+                "success": True,
+                "removed_lines": removed,
+            }
+        )
 
         logger.info(
             "Code language noise clean: q%s removed %d noise line(s)",
-            q.get("number", idx), removed,
+            q.get("number", idx),
+            removed,
         )
 
     warnings: list[str] = []
@@ -518,7 +537,9 @@ def run_code_language_noise_clean_stage(
 
     # ── v2 adaptive governance ──
     governor_result = evaluate_noise_policy(
-        false_positive_suspected_count=metrics_summary.get("total_false_positive_suspected", 0),
+        false_positive_suspected_count=metrics_summary.get(
+            "total_false_positive_suspected", 0
+        ),
         total_protected_count=metrics_summary.get("total_protected_lines", 0),
         total_removed_count=total_removed_lines,
         current_policy={"safe_mode": safe_mode},

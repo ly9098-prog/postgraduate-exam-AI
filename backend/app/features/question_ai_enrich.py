@@ -43,6 +43,7 @@ def _normalize_enrich(parsed: dict) -> dict:
             out["subject"] = subject_code
     qtype = parsed.get("question_type")
     from app.features.question_pipeline import normalizer
+
     normalized_type = normalizer.normalize_type(qtype)
     if normalized_type:
         out["question_type"] = normalized_type
@@ -69,9 +70,7 @@ def _normalize_enrich(parsed: dict) -> dict:
     return out
 
 
-async def enrich_import(
-    db: AsyncSession, user_id: int, import_id: int
-) -> dict:
+async def enrich_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
     """AI 丰富单题信息（科目、题型、难度、知识点等）。"""
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
@@ -102,14 +101,24 @@ async def enrich_import(
 
     if raw is None:
         parsed = resp["fallback_value"]
-        db.add(_build_log(
-            user_id=user_id, action="enrich", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-            raw_response=None, parsed_result=parsed,
-            confidence=parsed.get("confidence"),
-            model=resp["model"], tokens_used=0, duration_ms=0,
-            success=False, error_message=resp.get("error"),
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="enrich",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=prompt_text,
+                raw_response=None,
+                parsed_result=parsed,
+                confidence=parsed.get("confidence"),
+                model=resp["model"],
+                tokens_used=0,
+                duration_ms=0,
+                success=False,
+                error_message=resp.get("error"),
+            )
+        )
         await db.commit()
         return {"from_fallback": True, "ai_metadata": parsed}
 
@@ -120,6 +129,7 @@ async def enrich_import(
             qi.subject_id = normalized["subject_id"]
         elif normalized.get("subject"):
             from app.services.admin_subject_service import resolve_subject_id
+
             resolved = await resolve_subject_id(db, normalized["subject"])
             if resolved is not None:
                 qi.subject_id = resolved
@@ -128,7 +138,8 @@ async def enrich_import(
             else:
                 logger.warning(
                     "enrich: resolve_subject_id failed for subject=%r, import_id=%d",
-                    normalized["subject"], qi.id,
+                    normalized["subject"],
+                    qi.id,
                 )
     if normalized.get("question_type") and not qi.question_type:
         qi.question_type = normalized["question_type"]
@@ -140,6 +151,7 @@ async def enrich_import(
 
     # 记录 AI enrich trace
     from app.core.ai_trace import AIEditTrace
+
     enrich_trace = AIEditTrace(
         stage="ai_enrich",
         model=resp.get("model", "unknown"),
@@ -152,14 +164,23 @@ async def enrich_import(
         qi.ai_metadata = {}
     qi.ai_metadata["_trace"] = enrich_trace.to_dict()
 
-    db.add(_build_log(
-        user_id=user_id, action="enrich", target_type="import",
-        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result=normalized,
-        confidence=normalized.get("confidence"),
-        model=resp["model"], tokens_used=resp["tokens_used"],
-        duration_ms=resp["duration_ms"], success=True,
-    ))
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="enrich",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result=normalized,
+            confidence=normalized.get("confidence"),
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
     await db.commit()
     return {
         "from_fallback": False,
@@ -170,7 +191,10 @@ async def enrich_import(
 
 
 async def enrich_batch(
-    db: AsyncSession, user_id: int, batch_id: str, limit: int = 50,
+    db: AsyncSession,
+    user_id: int,
+    batch_id: str,
+    limit: int = 50,
     max_concurrency: int = 3,
 ) -> dict:
     """批量 AI 丰富。分三阶段：顺序预读 → 并发 LLM → 顺序落 DB。"""
@@ -207,18 +231,22 @@ async def enrich_batch(
             )
             qi.ai_metadata = dict(qi.ai_metadata or {})
             qi.ai_metadata["_enrich_skipped_reason"] = "complete_high_risk"
-            qi.ai_metadata["_enrich_risk_flags"] = ["enrich_skipped_due_to_complete_risk"]
+            qi.ai_metadata["_enrich_risk_flags"] = [
+                "enrich_skipped_due_to_complete_risk"
+            ]
             skipped_count += 1
             continue
 
         messages = build_enrich_question(_qi_to_dict(qi))
         prompt_text = json.dumps(messages, ensure_ascii=False)
-        prepared.append({
-            "qi": qi,
-            "messages": messages,
-            "prompt_text": prompt_text,
-            "fallback_value": fallback.get_fallback_enrich(),
-        })
+        prepared.append(
+            {
+                "qi": qi,
+                "messages": messages,
+                "prompt_text": prompt_text,
+                "fallback_value": fallback.get_fallback_enrich(),
+            }
+        )
 
     # Phase 2: 并发调用 AI（纯 HTTP，无 DB 操作）
     sem = asyncio.Semaphore(max_concurrency)
@@ -230,11 +258,17 @@ async def enrich_batch(
                 return item
             from app.core.config import settings
             from app.features.token_budget import check_token_limit, estimate_tokens
-            _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
-            if not await check_token_limit(_estimated, {
-                "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
-                "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
-            }):
+
+            _estimated = (
+                estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
+            )
+            if not await check_token_limit(
+                _estimated,
+                {
+                    "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
+                    "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
+                },
+            ):
                 item["error"] = "token_budget_exhausted"
                 return item
             try:
@@ -252,7 +286,8 @@ async def enrich_batch(
             return item
 
     gathered = await asyncio.gather(
-        *[_call(item) for item in prepared], return_exceptions=True,
+        *[_call(item) for item in prepared],
+        return_exceptions=True,
     )
 
     # Phase 3: 顺序应用结果到 DB
@@ -269,14 +304,24 @@ async def enrich_batch(
 
         if "raw" not in item or item["raw"] is None:
             parsed = item["fallback_value"]
-            db.add(_build_log(
-                user_id=user_id, action="enrich", target_type="import",
-                target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
-                raw_response=None, parsed_result=parsed,
-                confidence=parsed.get("confidence"),
-                model="fallback", tokens_used=0, duration_ms=0,
-                success=False, error_message=item.get("error"),
-            ))
+            db.add(
+                _build_log(
+                    user_id=user_id,
+                    action="enrich",
+                    target_type="import",
+                    target_id=qi.id,
+                    batch_id=qi.batch_id,
+                    prompt_text=item["prompt_text"],
+                    raw_response=None,
+                    parsed_result=parsed,
+                    confidence=parsed.get("confidence"),
+                    model="fallback",
+                    tokens_used=0,
+                    duration_ms=0,
+                    success=False,
+                    error_message=item.get("error"),
+                )
+            )
             fallback_count += 1
             continue
 
@@ -289,6 +334,7 @@ async def enrich_batch(
                 qi.subject_id = normalized["subject_id"]
             elif normalized.get("subject"):
                 from app.services.admin_subject_service import resolve_subject_id
+
                 resolved = await resolve_subject_id(db, normalized["subject"])
                 if resolved is not None:
                     qi.subject_id = resolved
@@ -297,7 +343,8 @@ async def enrich_batch(
                 else:
                     logger.warning(
                         "enrich_batch: resolve_subject_id failed for subject=%r, import_id=%d",
-                        normalized["subject"], qi.id,
+                        normalized["subject"],
+                        qi.id,
                     )
         if normalized.get("question_type") and not qi.question_type:
             qi.question_type = normalized["question_type"]
@@ -308,6 +355,7 @@ async def enrich_batch(
         qi.ai_raw_response = raw
 
         from app.core.ai_trace import AIEditTrace
+
         enrich_trace = AIEditTrace(
             stage="ai_enrich",
             model=resp.get("model", "unknown"),
@@ -320,22 +368,33 @@ async def enrich_batch(
             qi.ai_metadata = {}
         qi.ai_metadata["_trace"] = enrich_trace.to_dict()
 
-        db.add(_build_log(
-            user_id=user_id, action="enrich", target_type="import",
-            target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
-            raw_response=raw, parsed_result=normalized,
-            confidence=normalized.get("confidence"),
-            model=resp["model"], tokens_used=resp["tokens_used"],
-            duration_ms=resp["duration_ms"], success=True,
-        ))
+        db.add(
+            _build_log(
+                user_id=user_id,
+                action="enrich",
+                target_type="import",
+                target_id=qi.id,
+                batch_id=qi.batch_id,
+                prompt_text=item["prompt_text"],
+                raw_response=raw,
+                parsed_result=normalized,
+                confidence=normalized.get("confidence"),
+                model=resp["model"],
+                tokens_used=resp["tokens_used"],
+                duration_ms=resp["duration_ms"],
+                success=True,
+            )
+        )
         succeeded += 1
 
     total_enrich_tokens = sum(
         (result.get("resp") or {}).get("tokens_used", 0)
-        for result in gathered if isinstance(result, dict) and result.get("resp")
+        for result in gathered
+        if isinstance(result, dict) and result.get("resp")
     )
     if total_enrich_tokens:
         from app.features.token_budget import record_token_usage
+
         await record_token_usage(total_enrich_tokens)
 
     _duration_ms = int((datetime.now() - _start_time).total_seconds() * 1000)

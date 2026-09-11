@@ -10,7 +10,6 @@ from app.services import behavior_service as svc
 router = APIRouter(prefix="/api/v1/behavior")
 
 
-
 @router.get("/stats", response_model=BehaviorStatsResponse)
 async def get_stats(
     db: AsyncSession = Depends(get_db),

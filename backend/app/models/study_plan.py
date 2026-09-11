@@ -54,8 +54,12 @@ class StudyPlan(Base):
     priority_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, default="balanced", server_default="balanced"
     )
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -79,8 +83,12 @@ class StudyPlanDay(Base):
     __tablename__ = "study_plan_days"
     __table_args__ = (
         UniqueConstraint("plan_id", "plan_date", name="uq_study_plan_days_plan_date"),
-        CheckConstraint("plan_revision >= 1", name="ck_study_plan_days_revision_positive"),
-        CheckConstraint("target_minutes >= 0", name="ck_study_plan_days_target_nonnegative"),
+        CheckConstraint(
+            "plan_revision >= 1", name="ck_study_plan_days_revision_positive"
+        ),
+        CheckConstraint(
+            "target_minutes >= 0", name="ck_study_plan_days_target_nonnegative"
+        ),
         Index("ix_study_plan_days_plan_date", "plan_id", "plan_date"),
     )
 
@@ -91,7 +99,9 @@ class StudyPlanDay(Base):
     plan_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     plan_date: Mapped[date] = mapped_column(Date, nullable=False)
     target_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_rest_day: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    is_rest_day: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     allocation_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     basis_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -48,13 +48,19 @@ def _worker_main(
 
         engine = OcrEngine(config)
         pid = os.getpid()
-        conn.send({
-            "status": "ready",
-            "pid": pid,
-            "fingerprint": engine.fingerprint,
-        })
-        logger.info("Worker[%d] ready (pid=%d fingerprint=%s)",
-                     worker_id, pid, engine.fingerprint)
+        conn.send(
+            {
+                "status": "ready",
+                "pid": pid,
+                "fingerprint": engine.fingerprint,
+            }
+        )
+        logger.info(
+            "Worker[%d] ready (pid=%d fingerprint=%s)",
+            worker_id,
+            pid,
+            engine.fingerprint,
+        )
 
         # Main loop: receive request → run engine → send result
         while True:
@@ -82,11 +88,15 @@ def _worker_main(
                 logger.error("Worker[%d] engine error: %s", worker_id, exc)
                 result_dict = {
                     "page_index": req.page_index,
-                    "text": "", "lines": [], "boxes": [],
-                    "confidence": 0.0, "transforms": None,
+                    "text": "",
+                    "lines": [],
+                    "boxes": [],
+                    "confidence": 0.0,
+                    "transforms": None,
                     "coordinate_space": "image",
                     "engine_fingerprint": engine.fingerprint,
-                    "failed": True, "error": str(exc),
+                    "failed": True,
+                    "error": str(exc),
                 }
 
             finished = time.monotonic()
@@ -102,16 +112,21 @@ def _worker_main(
                 finished_monotonic=finished,
                 engine_fingerprint=engine.fingerprint,
                 stable_error_code=(
-                    None if not result_dict.get("failed")
+                    None
+                    if not result_dict.get("failed")
                     else STABLE_ERROR_CODES["ENGINE_ERROR"]
                 ),
-                error_type=result_dict.get("error") if result_dict.get("failed") else None,
+                error_type=result_dict.get("error")
+                if result_dict.get("failed")
+                else None,
             )
 
             try:
                 conn.send(_worker_result_to_dict(result))
             except (BrokenPipeError, ConnectionError):
-                logger.warning("Worker[%d] cannot send result, parent disconnected", worker_id)
+                logger.warning(
+                    "Worker[%d] cannot send result, parent disconnected", worker_id
+                )
                 break
 
     except Exception as exc:
@@ -192,6 +207,7 @@ class OcrWorkerProcess:
         self._current_request_id: str = ""
 
         import multiprocessing
+
         self._mp_context = mp_context or multiprocessing.get_context(
             config.start_method or "spawn",
         )
@@ -201,8 +217,11 @@ class OcrWorkerProcess:
     def start(self) -> None:
         """Start the worker subprocess and wait for readiness handshake."""
         if self._process is not None and self._process.is_alive():
-            logger.warning("Worker[%d] already running (pid=%d), skipping start",
-                           self._worker_id, self._pid)
+            logger.warning(
+                "Worker[%d] already running (pid=%d), skipping start",
+                self._worker_id,
+                self._pid,
+            )
             return
 
         # Create new Pipe for this generation
@@ -227,7 +246,9 @@ class OcrWorkerProcess:
 
             logger.info(
                 "Worker[%d] g%d started (pid=%d)",
-                self._worker_id, self._generation, self._pid,
+                self._worker_id,
+                self._generation,
+                self._pid,
             )
 
             # Wait for readiness handshake
@@ -260,8 +281,10 @@ class OcrWorkerProcess:
                         self._fingerprint = msg.get("fingerprint", "")
                         logger.info(
                             "Worker[%d] g%d handshake OK (pid=%s fingerprint=%s)",
-                            self._worker_id, self._generation,
-                            msg.get("pid"), self._fingerprint,
+                            self._worker_id,
+                            self._generation,
+                            msg.get("pid"),
+                            self._fingerprint,
                         )
                         return
                     elif isinstance(msg, dict) and msg.get("status") == "error":
@@ -271,9 +294,7 @@ class OcrWorkerProcess:
             except (EOFError, ConnectionError):
                 raise RuntimeError("Worker pipe broken during handshake")
 
-        raise TimeoutError(
-            f"Worker handshake timed out after {timeout}s"
-        )
+        raise TimeoutError(f"Worker handshake timed out after {timeout}s")
 
     # ── IPC ─────────────────────────────────────────────────────────────────
 
@@ -288,18 +309,20 @@ class OcrWorkerProcess:
 
         self._current_request_id = req.request_id
         try:
-            self._parent_conn.send({
-                "protocol_version": req.protocol_version,
-                "request_id": req.request_id,
-                "page_index": req.page_index,
-                "mode": req.mode,
-                "worker_generation": req.worker_generation,
-                "submitted_monotonic": req.submitted_monotonic,
-                "deadline_monotonic": req.deadline_monotonic,
-                "image_hash": req.image_hash,
-                "image_bytes": req.image_bytes,
-                "options": req.options,
-            })
+            self._parent_conn.send(
+                {
+                    "protocol_version": req.protocol_version,
+                    "request_id": req.request_id,
+                    "page_index": req.page_index,
+                    "mode": req.mode,
+                    "worker_generation": req.worker_generation,
+                    "submitted_monotonic": req.submitted_monotonic,
+                    "deadline_monotonic": req.deadline_monotonic,
+                    "image_hash": req.image_hash,
+                    "image_bytes": req.image_bytes,
+                    "options": req.options,
+                }
+            )
         except (BrokenPipeError, ConnectionError) as exc:
             raise RuntimeError(
                 f"Worker pipe broken when sending request {req.request_id[:8]}"
@@ -322,12 +345,16 @@ class OcrWorkerProcess:
                 data = self._parent_conn.recv()
                 if isinstance(data, dict):
                     result = WorkerResult(
-                        protocol_version=data.get("protocol_version", _PROTOCOL_VERSION),
+                        protocol_version=data.get(
+                            "protocol_version", _PROTOCOL_VERSION
+                        ),
                         request_id=data.get("request_id", ""),
                         page_index=data.get("page_index", 0),
                         worker_id=data.get("worker_id", self._worker_id),
                         worker_pid=data.get("worker_pid", self._pid or 0),
-                        worker_generation=data.get("worker_generation", self._generation),
+                        worker_generation=data.get(
+                            "worker_generation", self._generation
+                        ),
                         status=data.get("status", "failed"),
                         result=data.get("result"),
                         stable_error_code=data.get("stable_error_code"),
@@ -379,7 +406,9 @@ class OcrWorkerProcess:
                 self._tasks_completed += 1
                 return result
         except (EOFError, ConnectionError) as exc:
-            raise RuntimeError(f"Worker pipe broken during blocking receive: {exc}") from exc
+            raise RuntimeError(
+                f"Worker pipe broken during blocking receive: {exc}"
+            ) from exc
 
         raise RuntimeError("Unexpected data from worker pipe")
 
@@ -388,8 +417,12 @@ class OcrWorkerProcess:
     def terminate(self) -> None:
         """Send SIGTERM to worker process."""
         if self._process is not None and self._process.is_alive():
-            logger.info("Worker[%d] g%d sending SIGTERM (pid=%d)",
-                        self._worker_id, self._generation, self._pid)
+            logger.info(
+                "Worker[%d] g%d sending SIGTERM (pid=%d)",
+                self._worker_id,
+                self._generation,
+                self._pid,
+            )
             try:
                 self._process.terminate()
             except Exception as exc:
@@ -398,8 +431,12 @@ class OcrWorkerProcess:
     def kill(self) -> None:
         """Send SIGKILL to worker process."""
         if self._process is not None and self._process.is_alive():
-            logger.info("Worker[%d] g%d sending SIGKILL (pid=%d)",
-                        self._worker_id, self._generation, self._pid)
+            logger.info(
+                "Worker[%d] g%d sending SIGKILL (pid=%d)",
+                self._worker_id,
+                self._generation,
+                self._pid,
+            )
             try:
                 # ``Process.kill`` is cross-platform.  Fall back to os.kill for
                 # older runtimes where it is unavailable.
@@ -411,7 +448,9 @@ class OcrWorkerProcess:
             except (ProcessLookupError, PermissionError) as exc:
                 logger.warning("Worker[%d] kill error: %s", self._worker_id, exc)
             except Exception as exc:
-                logger.warning("Worker[%d] kill unexpected error: %s", self._worker_id, exc)
+                logger.warning(
+                    "Worker[%d] kill unexpected error: %s", self._worker_id, exc
+                )
 
     def join(self, timeout: float | None = None) -> None:
         """Wait for the process to exit."""

@@ -17,8 +17,9 @@ from typing import Any
 @dataclass
 class OcrLine:
     """单行 OCR 识别结果。"""
+
     text: str
-    polygon: list[float]          # [x0,y0,x1,y1,x2,y2,x3,y3]
+    polygon: list[float]  # [x0,y0,x1,y1,x2,y2,x3,y3]
     bbox: tuple[float, float, float, float]  # (x0, y0, x1, y1)
     confidence: float = 0.0
     line_id: str = ""
@@ -31,13 +32,16 @@ class OcrPageResult:
     保留 P3 所需的 line-level 数据：text、polygon/bbox、confidence、
     transforms、coordinate space 完整信息。
     """
+
     page_index: int
-    text: str                     # 拼接全文
+    text: str  # 拼接全文
     lines: list[OcrLine] = field(default_factory=list)
-    boxes: list = field(default_factory=list)  # 原始 PaddleOCR bbox（用于 legacy bridge）
+    boxes: list = field(
+        default_factory=list
+    )  # 原始 PaddleOCR bbox（用于 legacy bridge）
     confidence: float = 0.0
     transforms: list[dict] | None = None  # TransformRecord list
-    coordinate_space: str = "image"       # "image" | "original"
+    coordinate_space: str = "image"  # "image" | "original"
     failed: bool = False
     error: str | None = None
     engine_fingerprint: str = ""
@@ -46,6 +50,7 @@ class OcrPageResult:
 @dataclass
 class OcrCandidateResult:
     """OCR 推理候选结果（含原始 PaddleOCR 输出）。"""
+
     result: Any
     image_size: tuple[int, int]
 
@@ -61,14 +66,15 @@ _PROTOCOL_VERSION = 1
 @dataclass
 class WorkerRequest:
     """父进程 → Worker 子进程的 IPC 请求。"""
+
     protocol_version: int = _PROTOCOL_VERSION
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     page_index: int = 0
-    mode: str = "boxes"           # "text" | "boxes" | "raw"
+    mode: str = "boxes"  # "text" | "boxes" | "raw"
     worker_generation: int = 0
     submitted_monotonic: float = 0.0
     deadline_monotonic: float = 0.0
-    image_hash: str = ""          # SHA256 prefix
+    image_hash: str = ""  # SHA256 prefix
     image_bytes: bytes = b""
     options: dict = field(default_factory=dict)
 
@@ -82,15 +88,18 @@ class WorkerRequest:
 @dataclass
 class WorkerResult:
     """Worker 子进程 → 父进程的 IPC 结果。"""
+
     protocol_version: int = _PROTOCOL_VERSION
     request_id: str = ""
     page_index: int = 0
     worker_id: int = 0
     worker_pid: int = 0
     worker_generation: int = 0
-    status: str = "failed"        # "success" | "failed" | "timeout"
+    status: str = "failed"  # "success" | "failed" | "timeout"
     result: dict | None = None
-    stable_error_code: str | None = None  # "QUEUE_TIMEOUT" | "EXECUTION_TIMEOUT" | "ENGINE_ERROR" | ...
+    stable_error_code: str | None = (
+        None  # "QUEUE_TIMEOUT" | "EXECUTION_TIMEOUT" | "ENGINE_ERROR" | ...
+    )
     error_type: str | None = None
     started_monotonic: float = 0.0
     finished_monotonic: float = 0.0
@@ -100,7 +109,8 @@ class WorkerResult:
 @dataclass
 class HandshakeMessage:
     """Worker 启动后的 readiness handshake。"""
-    status: str                   # "ready" | "error"
+
+    status: str  # "ready" | "error"
     pid: int = 0
     fingerprint: str = ""
     error: str | None = None
@@ -114,7 +124,8 @@ class HandshakeMessage:
 @dataclass
 class OcrOptions:
     """OCR 识别选项。"""
-    mode: str = "boxes"           # "text" | "boxes" | "raw"
+
+    mode: str = "boxes"  # "text" | "boxes" | "raw"
     skip_rotation: bool = False
     language: str = "ch"
 
@@ -127,19 +138,20 @@ class OcrOptions:
 @dataclass
 class WorkerPoolMetrics:
     """Worker pool 生命周期指标。"""
-    accepted: int = 0             # 总提交任务数
-    queued: int = 0               # 当前在队列中的任务数
-    running: int = 0              # 当前正在执行的任务数
-    finished: int = 0             # 成功完成数
-    failed: int = 0               # 失败数
-    timed_out: int = 0            # 执行超时数
-    late_finished: int = 0        # 超时后 worker 才返回结果数
-    crashed: int = 0              # worker crash 数
-    restarted: int = 0            # worker 重启数
-    stale_discarded: int = 0      # 旧 generation 迟到结果丢弃数
-    queue_full: int = 0           # 队列满拒绝数
-    queue_wait_timeout: int = 0   # 队列等待超时数
-    active_leases: int = 0        # 当前未释放的 lease 数
+
+    accepted: int = 0  # 总提交任务数
+    queued: int = 0  # 当前在队列中的任务数
+    running: int = 0  # 当前正在执行的任务数
+    finished: int = 0  # 成功完成数
+    failed: int = 0  # 失败数
+    timed_out: int = 0  # 执行超时数
+    late_finished: int = 0  # 超时后 worker 才返回结果数
+    crashed: int = 0  # worker crash 数
+    restarted: int = 0  # worker 重启数
+    stale_discarded: int = 0  # 旧 generation 迟到结果丢弃数
+    queue_full: int = 0  # 队列满拒绝数
+    queue_wait_timeout: int = 0  # 队列等待超时数
+    active_leases: int = 0  # 当前未释放的 lease 数
 
     def snapshot(self) -> dict:
         return {

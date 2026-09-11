@@ -21,7 +21,9 @@ async def get_knowledge_map_overview(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return KnowledgeMapOverviewResponse(**await knowledge_map_service.get_overview(db, current_user.id))
+    return KnowledgeMapOverviewResponse(
+        **await knowledge_map_service.get_overview(db, current_user.id)
+    )
 
 
 @router.get("/subjects/{subject_id}", response_model=KnowledgeMapSubjectResponse)
@@ -32,17 +34,25 @@ async def get_subject_knowledge_map(
 ):
     data = await knowledge_map_service.get_subject_map(db, current_user.id, subject_id)
     if data is None:
-        raise HTTPException(status_code=404, detail="408 科目不存在、已停用或不在当前产品范围")
+        raise HTTPException(
+            status_code=404, detail="408 科目不存在、已停用或不在当前产品范围"
+        )
     return KnowledgeMapSubjectResponse(**data)
 
 
-@router.get("/points/{knowledge_point_id}", response_model=KnowledgeMapPointDetailResponse)
+@router.get(
+    "/points/{knowledge_point_id}", response_model=KnowledgeMapPointDetailResponse
+)
 async def get_knowledge_point_detail(
     knowledge_point_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = await knowledge_map_service.get_point_detail(db, current_user.id, knowledge_point_id)
+    data = await knowledge_map_service.get_point_detail(
+        db, current_user.id, knowledge_point_id
+    )
     if data is None:
-        raise HTTPException(status_code=404, detail="知识点不存在、已停用或不属于当前 408 范围")
+        raise HTTPException(
+            status_code=404, detail="知识点不存在、已停用或不属于当前 408 范围"
+        )
     return KnowledgeMapPointDetailResponse(**data)

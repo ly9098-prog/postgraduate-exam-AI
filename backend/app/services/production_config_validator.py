@@ -82,14 +82,11 @@ def validate_production_config() -> None:
         try:
             check(errors)
         except Exception as exc:
-            errors.append(
-                f"{check.__name__} 检查异常: {type(exc).__name__}: {exc}"
-            )
+            errors.append(f"{check.__name__} 检查异常: {type(exc).__name__}: {exc}")
 
     if errors:
         raise SystemError(
-            "Production configuration validation failed:\n  - "
-            + "\n  - ".join(errors)
+            "Production configuration validation failed:\n  - " + "\n  - ".join(errors)
         )
 
     logger.info("Production configuration validated: sync checks passed")
@@ -138,7 +135,6 @@ def _check_app_secret(errors: list[str]) -> None:
         )
 
 
-
 def _check_scoped_security_secrets(errors: list[str]) -> None:
     """Validate optional independent JWT roots and observability token."""
     user_secret = (settings.USER_JWT_SECRET or "").strip()
@@ -153,6 +149,7 @@ def _check_scoped_security_secrets(errors: list[str]) -> None:
     observability_token = (settings.OBSERVABILITY_TOKEN or "").strip()
     if observability_token and len(observability_token) < 32:
         errors.append("OBSERVABILITY_TOKEN 如配置，长度至少需要 32 字符")
+
 
 def _check_debug_settings(errors: list[str]) -> None:
     """Reject settings that can expose sensitive runtime or SQL details."""
@@ -189,9 +186,7 @@ def _check_cors(errors: list[str]) -> None:
         if origin == "*":
             errors.append("CORS_ORIGINS 不允许使用通配符 '*'")
         elif "localhost" in origin or "127.0.0.1" in origin:
-            errors.append(
-                f"CORS_ORIGINS 不得包含 localhost/127.0.0.1: {origin}"
-            )
+            errors.append(f"CORS_ORIGINS 不得包含 localhost/127.0.0.1: {origin}")
         elif not _is_valid_origin(origin):
             errors.append(f"CORS_ORIGINS 包含非法 origin: {origin}")
         elif not origin.startswith("https://"):
@@ -264,19 +259,19 @@ def _check_ai_encrypt_key(errors: list[str]) -> None:
     if not key:
         errors.append(
             "AI_CONFIG_ENCRYPT_KEY 未设置——生产环境需要有效的 Fernet 密钥。"
-            " 生成命令: python -c \"from cryptography.fernet import Fernet; "
-            "print(Fernet.generate_key().decode())\""
+            ' 生成命令: python -c "from cryptography.fernet import Fernet; '
+            'print(Fernet.generate_key().decode())"'
         )
         return
     try:
         from cryptography.fernet import Fernet
+
         Fernet(key.encode())
     except Exception:
         errors.append(
             "AI_CONFIG_ENCRYPT_KEY 格式无效——必须是有效的 Fernet 密钥。"
             " 变量值不记录在日志中。"
         )
-
 
 
 def _check_ai_runtime_guard(errors: list[str]) -> None:
@@ -324,7 +319,9 @@ def _check_outbound_url_policy(errors: list[str]) -> None:
 def _check_internal_api_auth(errors: list[str]) -> None:
     """Forbid the legacy shared-key fallback in restricted environments."""
     if settings.INTERNAL_API_FALLBACK_ENABLED:
-        errors.append("生产环境禁止 INTERNAL_API_FALLBACK_ENABLED；内部 Worker 必须使用数据库凭据")
+        errors.append(
+            "生产环境禁止 INTERNAL_API_FALLBACK_ENABLED；内部 Worker 必须使用数据库凭据"
+        )
 
 
 def _check_deployment_profile(errors: list[str]) -> None:
@@ -350,12 +347,21 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
 
     # Unsafe fallbacks are forbidden even while OCR is disabled; otherwise a
     # later feature toggle could silently activate a local path.
-    if os.environ.get("OCR_REMOTE_FALLBACK_ENABLED", "").lower() in {"1", "true", "yes"}:
+    if os.environ.get("OCR_REMOTE_FALLBACK_ENABLED", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         errors.append("生产环境禁止 OCR_REMOTE_FALLBACK_ENABLED")
-    if os.environ.get("OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "").lower() in {"1", "true", "yes"}:
+    if os.environ.get("OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         errors.append("生产环境禁止 OCR_UNSAFE_THREAD_FALLBACK_ENABLED")
 
     from app.core.ocr_profile import get_ocr_profile
+
     try:
         profile = get_ocr_profile()
         if profile.use_gpu:
@@ -396,10 +402,7 @@ def _check_ocr_no_local_deps(errors: list[str]) -> None:
         return
     loaded = loaded_local_ocr_modules()
     if loaded:
-        errors.append(
-            "cloud_api 部署检测到已加载的本地 OCR 模块: "
-            + ", ".join(loaded)
-        )
+        errors.append("cloud_api 部署检测到已加载的本地 OCR 模块: " + ", ".join(loaded))
 
 
 def _check_pdf_production_rules(errors: list[str]) -> None:
@@ -432,7 +435,9 @@ def _check_staging_production(errors: list[str]) -> None:
     """Verify staging directory exists, is writable, and has free space."""
     staging_dir = settings.STAGING_STORAGE_DIR or ""
     if not staging_dir:
-        errors.append("STAGING_STORAGE_DIR is not set — staging is required in production")
+        errors.append(
+            "STAGING_STORAGE_DIR is not set — staging is required in production"
+        )
         return
     try:
         os.makedirs(staging_dir, exist_ok=True)
@@ -445,7 +450,7 @@ def _check_staging_production(errors: list[str]) -> None:
         if free_bytes < min_free:
             errors.append(
                 f"STAGING_STORAGE_DIR 剩余空间不足: "
-                f"{free_bytes / (1024*1024):.0f}MB free, need at least {min_free / (1024*1024):.0f}MB"
+                f"{free_bytes / (1024 * 1024):.0f}MB free, need at least {min_free / (1024 * 1024):.0f}MB"
             )
     except OSError as exc:
         errors.append(f"STAGING_STORAGE_DIR 检查失败: {staging_dir}: {exc}")
@@ -457,7 +462,9 @@ def _check_db_pool_budget(errors: list[str]) -> None:
     web_per_worker = settings.DB_POOL_SIZE_WEB + settings.DB_MAX_OVERFLOW_WEB
     web_total = web_per_worker * workers
     worker_total = settings.DB_POOL_SIZE_WORKER + settings.DB_MAX_OVERFLOW_WORKER
-    scheduler_total = settings.DB_POOL_SIZE_SCHEDULER + settings.DB_MAX_OVERFLOW_SCHEDULER
+    scheduler_total = (
+        settings.DB_POOL_SIZE_SCHEDULER + settings.DB_MAX_OVERFLOW_SCHEDULER
+    )
     worst_case = web_total + worker_total + scheduler_total
     max_connections = settings.MAX_CONNECTIONS
     if worst_case > max_connections:
@@ -491,9 +498,7 @@ def _check_worker_scratch_dir(errors: list[str]) -> None:
 
     scratch = settings.WORKER_SCRATCH_DIR
     if not scratch:
-        errors.append(
-            "WORKER_SCRATCH_DIR 未设置——生产过程需要显式配置工作暂存目录。"
-        )
+        errors.append("WORKER_SCRATCH_DIR 未设置——生产过程需要显式配置工作暂存目录。")
         return
 
     import tempfile
@@ -533,7 +538,11 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
     safe even with ``--preload``.
     """
 
-    gunicorn_preload = os.environ.get("GUNICORN_PRELOAD", "").lower() in ("1", "true", "yes")
+    gunicorn_preload = os.environ.get("GUNICORN_PRELOAD", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if not gunicorn_preload:
         return
 
@@ -565,7 +574,8 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
                     continue
                 indent = len(line) - len(stripped)
                 if indent == 0 and (
-                    stripped.startswith("def ") or stripped.startswith("class ")
+                    stripped.startswith("def ")
+                    or stripped.startswith("class ")
                     or stripped.startswith("async def ")
                 ):
                     body_start = lineno
@@ -679,9 +689,7 @@ async def _check_alembic_current(errors: list[str]) -> None:
             from sqlalchemy import text
 
             row = (
-                await session.execute(
-                    text("SELECT version_num FROM alembic_version")
-                )
+                await session.execute(text("SELECT version_num FROM alembic_version"))
             ).scalar_one_or_none()
             db_revision = row or ""
 
@@ -714,7 +722,9 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
     try:
         async with async_session() as session:
             ai_urls = list(
-                (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
+                (await session.execute(select(AdminAiModelConfig.api_base_url)))
+                .scalars()
+                .all()
             )
     except Exception as exc:
         errors.append(f"无法检查数据库中的外部服务 URL: {exc}")

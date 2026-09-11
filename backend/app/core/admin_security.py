@@ -99,6 +99,7 @@ def delete_refresh_cookie(
         max_age=0,
     )
 
+
 # bcrypt 协议硬限制：超过 72 bytes 会抛异常或被截断
 BCRYPT_MAX_BYTES = 72
 
@@ -209,7 +210,9 @@ def create_admin_token(admin_user: AdminUser, *, issued_at: int | None = None) -
     return jwt.encode(payload, _admin_jwt_secret(), algorithm="HS256")
 
 
-def create_admin_refresh_token(admin_user: AdminUser, *, issued_at: int | None = None) -> str:
+def create_admin_refresh_token(
+    admin_user: AdminUser, *, issued_at: int | None = None
+) -> str:
     current = int(datetime.now(UTC).timestamp())
     now = datetime.fromtimestamp(max(current, issued_at or current), tz=UTC)
     payload = {
@@ -288,10 +291,14 @@ async def consume_admin_refresh_token(
             detail="Authentication service temporarily unavailable",
         ) from exc
     if is_blacklisted:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
     if user_nbf and token_iat < int(user_nbf):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
     ttl = max(token_exp - int(unix_timestamp(utcnow())), 1)
     try:
@@ -306,14 +313,18 @@ async def consume_admin_refresh_token(
             detail="Authentication service temporarily unavailable",
         ) from exc
     if not consumed:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
     result = await db.execute(
         select(AdminUser).where(AdminUser.id == user_id, AdminUser.is_active.is_(True))
     )
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
     return user
 
 
@@ -345,18 +356,25 @@ async def get_current_admin(
             detail="Authentication service temporarily unavailable",
         ) from exc
     if is_blacklisted:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
     if user_nbf and token_iat < int(user_nbf):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
     result = await db.execute(select(AdminUser).where(AdminUser.id == user_id))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
     # Bind admin identity to log context for trace correlation
     try:
         from app.core.log_context import bind_log_context
+
         bind_log_context(admin_id=str(user.id))
     except Exception:
         pass
@@ -369,10 +387,14 @@ def require_roles(*role_names: str):
         current_admin: AdminPrincipal = Depends(get_current_admin),
         db: AsyncSession = Depends(get_db),
     ) -> AdminPrincipal:
-        result = await db.execute(select(Role.name).where(Role.id == current_admin.role_id))
+        result = await db.execute(
+            select(Role.name).where(Role.id == current_admin.role_id)
+        )
         role_name = result.scalar_one_or_none()
         if role_name not in role_names:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+            )
         return current_admin
 
     return dependency
@@ -385,7 +407,9 @@ def require_permissions(*permission_names: str):
     ) -> AdminPrincipal:
         granted = await _get_permission_names(db, current_admin.role_id)
         if not set(permission_names).issubset(granted):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied"
+            )
         return current_admin
 
     return dependency

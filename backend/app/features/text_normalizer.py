@@ -10,19 +10,22 @@ import re
 # 已知 OCR 箭头乱码模式（PaddleOCR 特定字体/排版将 -> 误识为 <- + 随机字母前缀）
 # 支持环境变量覆盖：OCR_ARROW_GARBLED_PATTERNS="xau,axau,xeu,Aaxd"
 _OCR_ARROW_GARBLED_PATTERNS: tuple[str, ...] = tuple(
-    p for p in os.environ.get("OCR_ARROW_GARBLED_PATTERNS", "xau,axau,xeu,Aaxd").split(",")
+    p
+    for p in os.environ.get("OCR_ARROW_GARBLED_PATTERNS", "xau,axau,xeu,Aaxd").split(
+        ","
+    )
     if p
 )
 
 # 低信息量噪声检测阈值（可通过环境变量覆盖）
 _SHORT_NOISE_CHAR_LIMIT: int = int(os.environ.get("OCR_SHORT_NOISE_CHAR_LIMIT", "6"))
-_LOW_INFO_CASE_SWITCH_RATIO: float = float(os.environ.get("OCR_LOW_INFO_CASE_SWITCH_RATIO", "0.35"))
+_LOW_INFO_CASE_SWITCH_RATIO: float = float(
+    os.environ.get("OCR_LOW_INFO_CASE_SWITCH_RATIO", "0.35")
+)
 
 
 # Unicode 替换字符和常见 OCR 乱码
-_RE_GARBLED = re.compile(
-    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|�|□+"
-)
+_RE_GARBLED = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|�|□+")
 
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 _OPTION_PREFIX_MARKER = r"(?:[?？]\s*|[" + _CIRCLED_OPTION_CHARS + r"]\s*)?"
@@ -30,20 +33,28 @@ _OPTION_MARKER = _OPTION_PREFIX_MARKER + r"([A-Da-d])\s*[.．、:：)）]"
 _INLINE_OPTION_MARKER = re.compile(r"(?<![A-Za-z0-9])" + _OPTION_MARKER)
 _RE_OPTION_MARKER = re.compile(_OPTION_MARKER)
 _RE_CIRCLED_GROUP_MARKER = re.compile(
-    r"^(?:[" + _CIRCLED_OPTION_CHARS + r"]|[（(]\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*[）)])$"
+    r"^(?:["
+    + _CIRCLED_OPTION_CHARS
+    + r"]|[（(]\s*["
+    + _CIRCLED_OPTION_CHARS
+    + r"]\s*[）)])$"
 )
-_CIRCLED_GROUP_MARKER_PATTERN = r"(?:[" + _CIRCLED_OPTION_CHARS + r"]|[（(]\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*[）)])"
-_GROUP_MARKER_PATTERN = r"(?:" + _CIRCLED_GROUP_MARKER_PATTERN + r"|[（(]\s*\d{1,2}\s*[）)]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])"
+_CIRCLED_GROUP_MARKER_PATTERN = (
+    r"(?:["
+    + _CIRCLED_OPTION_CHARS
+    + r"]|[（(]\s*["
+    + _CIRCLED_OPTION_CHARS
+    + r"]\s*[）)])"
+)
+_GROUP_MARKER_PATTERN = (
+    r"(?:" + _CIRCLED_GROUP_MARKER_PATTERN + r"|[（(]\s*\d{1,2}\s*[）)]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])"
+)
 
 # 题号行：用于 OCR 字符纠正的上下文判断
-_RE_QUESTION_NUMBER = re.compile(
-    r"^\s*\d+\s*[.、)）]"
-)
+_RE_QUESTION_NUMBER = re.compile(r"^\s*\d+\s*[.、)）]")
 
 # 行首选项标记（用于 OCR 纠正上下文）
-_RE_OPTION_LINE = re.compile(
-    r"^[A-Da-d8６0Oo]\s*[.、:：）]"
-)
+_RE_OPTION_LINE = re.compile(r"^[A-Da-d8６0Oo]\s*[.、:：）]")
 
 # Roman numeral constants imported from shared module (single source of truth)
 from app.features.roman_schema import (  # noqa: E402
@@ -57,8 +68,7 @@ from app.features.roman_schema import (  # noqa: E402
 _RE_STRUCTURE_LINE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
-    r"|" + _OPTION_MARKER +
-    r"|" + _GROUP_MARKER_PATTERN + r"\s*$"
+    r"|" + _OPTION_MARKER + r"|" + _GROUP_MARKER_PATTERN + r"\s*$"
     r"|" + _ROMAN_SUBITEM_TOKEN + r"\s*[.、)）]"
     r"|[（(]\s*[A-D]\s*[）)]"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]"
@@ -110,9 +120,7 @@ _RE_WATERMARK = re.compile(
 # 独立章标题行检测 — 仅删除纯章标题行，不删除章标题与题目内容合并的行
 # 不应删除："第1章 线性表 1.下列选项中正确的是（）"
 # 应删除："第1章 线性表"
-_RE_CHAPTER_HEADER = re.compile(
-    r"^第\s*\d+\s*章\s*\S+"
-)
+_RE_CHAPTER_HEADER = re.compile(r"^第\s*\d+\s*章\s*\S+")
 
 # 题目特征信号 — 用于判断章标题后是否跟有题目内容
 _RE_QUESTION_SIGNAL = re.compile(
@@ -137,16 +145,16 @@ _RE_POINTER_ARROW = re.compile(r"([\w)\]）】])\s*[−\-–—]\s*>(?=\w)")
 # 这些是 OCR 引擎对特定字体/排版的确定性误识，修复安全。
 # 模式列表可从环境变量 OCR_ARROW_GARBLED_PATTERNS 追加。
 _RE_POINTER_ARROW_GARBLED_KNOWN = re.compile(
-    r"\b(" + "|".join(re.escape(p) for p in _OCR_ARROW_GARBLED_PATTERNS) + r")<-(?=\s*[a-zA-Z_])"
+    r"\b("
+    + "|".join(re.escape(p) for p in _OCR_ARROW_GARBLED_PATTERNS)
+    + r")<-(?=\s*[a-zA-Z_])"
 )
 
 # 通用箭头方向修复：在 C 指针上下文中 <- 不是合法运算符，
 # 小写标识符后跟 <- 极可能是 OCR 将 -> 翻转为 <- 的产物。
 # 仅当左侧是单个小写标识符（1-4 个字母+数字）时执行，
 # 负向先行断言要求右侧紧跟字母/下划线（C 成员访问模式 —>next/->data）。
-_RE_POINTER_ARROW_REVERSED = re.compile(
-    r"([a-z_][a-z0-9_]{0,3})<-(?=\s*[a-zA-Z_])"
-)
+_RE_POINTER_ARROW_REVERSED = re.compile(r"([a-z_][a-z0-9_]{0,3})<-(?=\s*[a-zA-Z_])")
 
 # LaTeX 命令标记清理
 _RE_LATEX_DOTS = re.compile(r"\\l(?:dots|dotsquare|ldots)")
@@ -238,9 +246,7 @@ def _clean_text_regions(
         # ---- Step 2: 乱码字符移除 ----
         content = _RE_GARBLED.sub("", content)
         content = content.replace("\xa0", " ")
-        content = re.sub(
-            r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n①-⑳⑴-⒇]", "", content
-        )
+        content = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n①-⑳⑴-⒇]", "", content)
 
         # ---- Step 3: OCR 箭头乱码修正 — 仅对纯文本区域 ----
         content = _RE_POINTER_ARROW_GARBLED_KNOWN.sub(r"->", content)
@@ -248,11 +254,13 @@ def _clean_text_regions(
         # ---- Step 4: 中文断行合并 + 答案行格式修正 ----
         content = re.sub(
             r"([一-鿿，。；：！？])\n(?!((?:参考|正确)?\s*答案|解析|解答)\b)([一-鿿])",
-            r"\1\3", content,
+            r"\1\3",
+            content,
         )
         content = re.sub(
             r"(?<!\n)(?=(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:])",
-            "\n", content,
+            "\n",
+            content,
         )
         content = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", content)
 
@@ -293,6 +301,7 @@ def _clean_text_regions(
         # ---- Step 11: 数学公式标准化 ----
         if _strategy_on("math_formula"):
             from app.services.formula_normalizer import fix_ocr_formula
+
             content = fix_ocr_formula(content)
             content = _fix_latex_substitutions(content)
 
@@ -354,6 +363,7 @@ def normalize_ocr_text(
     # P1: 代码块围栏保护（必须最早，基于原始文本）
     # ================================================================
     from app.features.code_detector import repair_unclosed_fences, wrap_code_fences
+
     text = wrap_code_fences(text, trace_id=trace_id)
     text = repair_unclosed_fences(text, trace_id=trace_id)
 
@@ -406,7 +416,9 @@ def _filter_lines(text: str, extra_watermark_patterns: list | None = None) -> st
         if _RE_WATERMARK.match(stripped):
             continue
         # 额外水印规则
-        if extra_watermark_patterns and any(pat.search(stripped) for pat in extra_watermark_patterns):
+        if extra_watermark_patterns and any(
+            pat.search(stripped) for pat in extra_watermark_patterns
+        ):
             continue
         # 页码
         if _RE_PAGE_NUMBER.match(stripped) and 1 <= int(stripped) <= 500:
@@ -415,7 +427,7 @@ def _filter_lines(text: str, extra_watermark_patterns: list | None = None) -> st
             continue
         # 纯章标题行（无题目内容跟随）
         ch_match = _RE_CHAPTER_HEADER.match(stripped)
-        if ch_match and not _RE_QUESTION_SIGNAL.search(stripped[ch_match.end():]):
+        if ch_match and not _RE_QUESTION_SIGNAL.search(stripped[ch_match.end() :]):
             continue
         # 选项/圈号标记行不按噪声处理
         if _RE_OPTION_MARKER.match(stripped):
@@ -446,7 +458,8 @@ def _filter_lines(text: str, extra_watermark_patterns: list | None = None) -> st
             if len(alpha_chars) < 4:
                 continue
             case_switches = sum(
-                1 for i in range(1, len(alpha_chars))
+                1
+                for i in range(1, len(alpha_chars))
                 if alpha_chars[i].islower() != alpha_chars[i - 1].islower()
             )
             if case_switches / max(len(alpha_chars), 1) > _LOW_INFO_CASE_SWITCH_RATIO:
@@ -465,8 +478,9 @@ def _split_inline_option_sequence(text: str) -> str:
             return line
         for match in reversed(matches):
             if match.start() > 0 and line[match.start() - 1] != "\n":
-                line = line[:match.start()] + "\n" + line[match.start():]
+                line = line[: match.start()] + "\n" + line[match.start() :]
         return line
+
     return "\n".join(split_line(line) for line in text.split("\n"))
 
 
@@ -522,9 +536,7 @@ def _merge_ocr_newlines(text: str) -> str:
         r")\b"
     )
     # Lines ending with a trailing operator (OCR-split expression)
-    _TRAILING_OP_RE = re.compile(
-        r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
-    )
+    _TRAILING_OP_RE = re.compile(r"(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$")
 
     def _merge_sep(prev: str, curr: str) -> str:
         if not prev:
@@ -597,11 +609,16 @@ def _fix_roman_numeral_duplicates(text: str) -> str:
         if not value:
             continue
         start = line.index(m.group(0))
-        roman_entries.append({
-            "line_idx": i, "token": token, "value": value,
-            "start": start, "end": start + len(m.group(0)),
-            "match": m.group(0),
-        })
+        roman_entries.append(
+            {
+                "line_idx": i,
+                "token": token,
+                "value": value,
+                "start": start,
+                "end": start + len(m.group(0)),
+                "match": m.group(0),
+            }
+        )
     if len(roman_entries) < 2:
         return text
     for j in range(1, len(roman_entries)):
@@ -613,7 +630,9 @@ def _fix_roman_numeral_duplicates(text: str) -> str:
             if new_token and new_token != curr["token"]:
                 new_match = curr["match"].replace(curr["token"], new_token, 1)
                 li = curr["line_idx"]
-                lines[li] = lines[li][:curr["start"]] + new_match + lines[li][curr["end"]:]
+                lines[li] = (
+                    lines[li][: curr["start"]] + new_match + lines[li][curr["end"] :]
+                )
                 curr["token"] = new_token
                 curr["value"] = expected
                 curr["match"] = new_match
@@ -642,11 +661,22 @@ def _is_question_number_line(line: str) -> bool:
     m = re.match(r"^\d+\s*[.、:：）]", line)
     if not m:
         return False
-    after = line[m.end():]
-    cn_count = sum(1 for c in after if '一' <= c <= '鿿')
+    after = line[m.end() :]
+    cn_count = sum(1 for c in after if "一" <= c <= "鿿")
     if cn_count >= 8:
         return True
-    stem_keywords = {"在", "下列", "以下", "已知", "设", "若", "对于", "关于", "阅读", "执行"}
+    stem_keywords = {
+        "在",
+        "下列",
+        "以下",
+        "已知",
+        "设",
+        "若",
+        "对于",
+        "关于",
+        "阅读",
+        "执行",
+    }
     for kw in stem_keywords:
         if after.startswith(kw):
             return True
@@ -664,10 +694,10 @@ def _fix_option_line(line: str, line_index: int = -1) -> str:
     if not _is_question_number_line(line):
         m = re.match(r"^([8６6])\s*([.、:：）])", line)
         if m:
-            return "B" + m.group(2) + line[m.end():]
+            return "B" + m.group(2) + line[m.end() :]
     m = re.match(r"^([0OoＯ])\s*([.、:：）])(?!.*[A-Ha-h]\s*[.、:：）])", line)
     if m:
-        return "D" + m.group(2) + line[m.end():]
+        return "D" + m.group(2) + line[m.end() :]
     return line
 
 
@@ -675,14 +705,14 @@ def _fix_question_number_line(line: str, has_roman_list: bool = False) -> str:
     """修复题号行 OCR 错误：O/o→0, l/I→1。"""
     m = re.match(r"^(\d+)\s*([.、)）])\s*[Oo](?=\s)", line)
     if m:
-        return f"{m.group(1)}{m.group(2)} 0{line[m.end() + 1:]}"
+        return f"{m.group(1)}{m.group(2)} 0{line[m.end() + 1 :]}"
     m = re.match(r"^(l)\s*([.、)）])\s*", line)
     if m:
-        return f"1{m.group(2)} {line[m.end():]}"
+        return f"1{m.group(2)} {line[m.end() :]}"
     if not has_roman_list:
         m = re.match(r"^(I)\s*([.、)）])\s*", line)
         if m:
-            return f"1{m.group(2)} {line[m.end():]}"
+            return f"1{m.group(2)} {line[m.end() :]}"
     return line
 
 
@@ -690,12 +720,14 @@ def _fix_option_roman_digit_confusion(line: str, has_roman_list: bool) -> str:
     """修复选项文本中数字 1 与罗马数字 I 的 OCR 混淆。"""
     if not has_roman_list:
         return line
-    m = re.match(r"^([A-D])\s*[.、:：）]\s*(1\s*[、,]\s*" + _ROMAN_SUBITEM_TOKEN + r")", line)
+    m = re.match(
+        r"^([A-D])\s*[.、:：）]\s*(1\s*[、,]\s*" + _ROMAN_SUBITEM_TOKEN + r")", line
+    )
     if m:
         prefix = m.group(1)
         content = m.group(2)
         fixed_content = re.sub(r"^1\s*([、,])", r"I\1", content)
-        return f"{prefix}. {fixed_content}{line[m.end():]}"
+        return f"{prefix}. {fixed_content}{line[m.end() :]}"
     return line
 
 
@@ -703,18 +735,45 @@ def _fix_latex_substitutions(text: str) -> str:
     """行级：仅在含编程信号的行内还原 OCR 误识的 LaTeX 符号。"""
     if not text or "\\" not in text:
         return text
-    _re_latex_greek = re.compile(r"\$?\\" r"(alpha|beta|gamma|delta|theta|lambda)" r"\$?")
-    _map = {"alpha": "a", "beta": "B", "gamma": "r", "delta": "d", "theta": "0", "lambda": "l"}
+    _re_latex_greek = re.compile(
+        r"\$?\\" r"(alpha|beta|gamma|delta|theta|lambda)" r"\$?"
+    )
+    _map = {
+        "alpha": "a",
+        "beta": "B",
+        "gamma": "r",
+        "delta": "d",
+        "theta": "0",
+        "lambda": "l",
+    }
     _signals = (
-        "->", "next", "prior", "链表", "结点", "节点", "指针",
-        "数组", "栈", "队列", "NULL", "malloc", "struct",
-        "单链表", "双链表", "循环链表", "头插法", "前驱", "后继",
+        "->",
+        "next",
+        "prior",
+        "链表",
+        "结点",
+        "节点",
+        "指针",
+        "数组",
+        "栈",
+        "队列",
+        "NULL",
+        "malloc",
+        "struct",
+        "单链表",
+        "双链表",
+        "循环链表",
+        "头插法",
+        "前驱",
+        "后继",
     )
     lines = text.split("\n")
     result: list[str] = []
     for line in lines:
         if any(sig in line for sig in _signals):
-            result.append(_re_latex_greek.sub(lambda m: _map.get(m.group(1), m.group(0)), line))
+            result.append(
+                _re_latex_greek.sub(lambda m: _map.get(m.group(1), m.group(0)), line)
+            )
         else:
             result.append(line)
     return "\n".join(result)
@@ -817,19 +876,24 @@ def _normalize_punctuation(text: str) -> str:
         key = f"\x00C{len(stash)}\x00"
         stash[key] = m.group(0)
         return key
+
     text = _re_circled_fw.sub(_stash_circled, text)
 
     def _to_halfwidth(m: re.Match) -> str:
         ch = m.group(0)
-        code = ord(ch) - 0xfee0
-        return chr(code) if 0x21 <= code <= 0x7e else ch
+        code = ord(ch) - 0xFEE0
+        return chr(code) if 0x21 <= code <= 0x7E else ch
+
     text = _RE_FULLWIDTH_ASCII.sub(_to_halfwidth, text)
 
     for key, original in stash.items():
         text = text.replace(key, original)
 
     text = _RE_CJK_PUNCT.sub(
-        lambda m: m.group(1) + {",": "，", ";": "；", "!": "！", "?": "？"}.get(m.group(2), m.group(2)),
+        lambda m: (
+            m.group(1)
+            + {",": "，", ";": "；", "!": "！", "?": "？"}.get(m.group(2), m.group(2))
+        ),
         text,
     )
     text = text.replace("'", "'").replace("'", "'")
@@ -938,11 +1002,13 @@ class ImportTextNormalizer:
             if len(matches) < 2:
                 return line
             keys = [m.group(1).upper() for m in matches]
-            if not any(ord(keys[i + 1]) == ord(keys[i]) + 1 for i in range(len(keys) - 1)):
+            if not any(
+                ord(keys[i + 1]) == ord(keys[i]) + 1 for i in range(len(keys) - 1)
+            ):
                 return line
             for match in reversed(matches):
                 if match.start() > 0 and line[match.start() - 1] != "\n":
-                    line = line[:match.start()] + "\n" + line[match.start():]
+                    line = line[: match.start()] + "\n" + line[match.start() :]
             return line
 
         return "\n".join(split_line(line) for line in text.split("\n"))
@@ -991,8 +1057,8 @@ class ImportTextNormalizer:
         """统一空格：全角→半角，连续空格合并。"""
         if not text:
             return text
-        text = text.replace("　", " ")   # 全角空格 → 半角
-        text = text.replace("\xa0", " ")     # 非断空格 → 半角
+        text = text.replace("　", " ")  # 全角空格 → 半角
+        text = text.replace("\xa0", " ")  # 非断空格 → 半角
         parts = re.split(r"(```[\s\S]*?```)", text)
         return "".join(
             part if part.startswith("```") else re.sub(r" {2,}", " ", part)
@@ -1051,11 +1117,11 @@ class ImportTextNormalizer:
         # 匹配行首的选项标记（A-D 范围，含常见 OCR 混淆）
         m = re.match(r"^([8６6])\s*([.、:：）])", line)
         if m:
-            return "B" + m.group(2) + line[m.end():]
+            return "B" + m.group(2) + line[m.end() :]
 
         m = re.match(r"^([0OoＯ])\s*([.、:：）])(?!.*[A-Ha-h]\s*[.、:：）])", line)
         if m:
-            return "D" + m.group(2) + line[m.end():]
+            return "D" + m.group(2) + line[m.end() :]
 
         return line
 
@@ -1071,18 +1137,18 @@ class ImportTextNormalizer:
         # 例："1.O" → "1.0", "2,0" → "2.0"
         m = re.match(r"^(\d+)\s*([.、)）])\s*[Oo](?=\s)", line)
         if m:
-            return f"{m.group(1)}{m.group(2)} 0{line[m.end() + 1:]}"
+            return f"{m.group(1)}{m.group(2)} 0{line[m.end() + 1 :]}"
 
         # 小写 "l." → "1." 题号（罗马数字不用小写 l，始终纠正）
         m = re.match(r"^(l)\s*([.、)）])\s*", line)
         if m:
-            return f"1{m.group(2)} {line[m.end():]}"
+            return f"1{m.group(2)} {line[m.end() :]}"
 
         # 大写 "I." → "1." 题号：仅当不在罗马子项列表上下文中才纠正
         if not has_roman_list:
             m = re.match(r"^(I)\s*([.、)）])\s*", line)
             if m:
-                return f"1{m.group(2)} {line[m.end():]}"
+                return f"1{m.group(2)} {line[m.end() :]}"
 
         return line
 
@@ -1094,12 +1160,14 @@ class ImportTextNormalizer:
         """
         if not has_roman_list:
             return line
-        m = re.match(r"^([A-D])\s*[.、:：）]\s*(1\s*[、,]\s*" + _ROMAN_SUBITEM_TOKEN + r")", line)
+        m = re.match(
+            r"^([A-D])\s*[.、:：）]\s*(1\s*[、,]\s*" + _ROMAN_SUBITEM_TOKEN + r")", line
+        )
         if m:
             prefix = m.group(1)
             content = m.group(2)
             fixed_content = re.sub(r"^1\s*([、,])", r"I\1", content)
-            return f"{prefix}. {fixed_content}{line[m.end():]}"
+            return f"{prefix}. {fixed_content}{line[m.end() :]}"
         return line
 
     def _fix_roman_numeral_duplicates(self, text: str) -> str:
@@ -1127,11 +1195,16 @@ class ImportTextNormalizer:
                 continue
             # start/end positions in the original line
             start = line.index(m.group(0))
-            roman_entries.append({
-                "line_idx": i, "token": token, "value": value,
-                "start": start, "end": start + len(m.group(0)),
-                "match": m.group(0),
-            })
+            roman_entries.append(
+                {
+                    "line_idx": i,
+                    "token": token,
+                    "value": value,
+                    "start": start,
+                    "end": start + len(m.group(0)),
+                    "match": m.group(0),
+                }
+            )
 
         if len(roman_entries) < 2:
             return text
@@ -1147,7 +1220,11 @@ class ImportTextNormalizer:
                 if new_token and new_token != curr["token"]:
                     new_match = curr["match"].replace(curr["token"], new_token, 1)
                     li = curr["line_idx"]
-                    lines[li] = lines[li][:curr["start"]] + new_match + lines[li][curr["end"]:]
+                    lines[li] = (
+                        lines[li][: curr["start"]]
+                        + new_match
+                        + lines[li][curr["end"] :]
+                    )
                     curr["token"] = new_token
                     curr["value"] = expected
                     curr["match"] = new_match
@@ -1203,18 +1280,34 @@ class ImportTextNormalizer:
     # OCR 看到拉丁字母，输出 LaTeX 希腊符号。此表将这些误识产物还原。
     # 例如 gamma→r 是因为 OCR 视觉上 γ 像 r，不代表希腊语义（γ=g）
     _OCR_LATEX_REVERSION_MAP = {
-        "alpha": "a",   # OCR 视觉: a/q → \alpha
-        "beta": "B",    # OCR 视觉: B → \beta
-        "gamma": "r",   # OCR 视觉: r → \gamma（视觉误识，非希腊语义映射）
-        "delta": "d",   # OCR 视觉: d → \delta
-        "theta": "0",   # OCR 视觉: 0 → \theta
+        "alpha": "a",  # OCR 视觉: a/q → \alpha
+        "beta": "B",  # OCR 视觉: B → \beta
+        "gamma": "r",  # OCR 视觉: r → \gamma（视觉误识，非希腊语义映射）
+        "delta": "d",  # OCR 视觉: d → \delta
+        "theta": "0",  # OCR 视觉: 0 → \theta
         "lambda": "l",  # OCR 视觉: l → \lambda
     }
 
     _PROG_CONTEXT_SIGNALS = (
-        "->", "next", "prior", "链表", "结点", "节点", "指针",
-        "数组", "栈", "队列", "NULL", "malloc", "struct",
-        "单链表", "双链表", "循环链表", "头插法", "前驱", "后继",
+        "->",
+        "next",
+        "prior",
+        "链表",
+        "结点",
+        "节点",
+        "指针",
+        "数组",
+        "栈",
+        "队列",
+        "NULL",
+        "malloc",
+        "struct",
+        "单链表",
+        "双链表",
+        "循环链表",
+        "头插法",
+        "前驱",
+        "后继",
     )
 
     _RE_LATEX_GREEK_SINGLE = re.compile(
@@ -1252,9 +1345,7 @@ class ImportTextNormalizer:
     _RE_FULLWIDTH_ASCII = re.compile(r"[！-～]")
     _RE_CJK_PUNCT = re.compile(r"([一-鿿])([,;!?])(?=\s*[一-鿿])")
 
-    _RE_CIRCLED_FW_PAREN = re.compile(
-        r"（(\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*)）"
-    )
+    _RE_CIRCLED_FW_PAREN = re.compile(r"（(\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*)）")
 
     def _normalize_punctuation(self, text: str) -> str:
         """标点符号规范化：统一中英文标点。
@@ -1267,17 +1358,19 @@ class ImportTextNormalizer:
 
         # 保护全角括号包围的圈号占位符（如 （①）），避免被转为半角
         stash: dict[str, str] = {}
+
         def _stash_circled(m: re.Match) -> str:
             key = f"\x00C{len(stash)}\x00"
             stash[key] = m.group(0)
             return key
+
         text = self._RE_CIRCLED_FW_PAREN.sub(_stash_circled, text)
 
         # 全角 ASCII 转半角（! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~）
         def _to_halfwidth(m: re.Match) -> str:
             ch = m.group(0)
-            code = ord(ch) - 0xfee0
-            return chr(code) if 0x21 <= code <= 0x7e else ch
+            code = ord(ch) - 0xFEE0
+            return chr(code) if 0x21 <= code <= 0x7E else ch
 
         text = self._RE_FULLWIDTH_ASCII.sub(_to_halfwidth, text)
 
@@ -1287,9 +1380,15 @@ class ImportTextNormalizer:
 
         # 中文后跟半角逗号/分号/叹号/问号 → 中文标点
         text = self._RE_CJK_PUNCT.sub(
-            lambda m: m.group(1) + {
-                ",": "，", ";": "；", "!": "！", "?": "？",
-            }.get(m.group(2), m.group(2)),
+            lambda m: (
+                m.group(1)
+                + {
+                    ",": "，",
+                    ";": "；",
+                    "!": "！",
+                    "?": "？",
+                }.get(m.group(2), m.group(2))
+            ),
             text,
         )
 
@@ -1328,7 +1427,7 @@ class ImportTextNormalizer:
                 continue
             # 章标题行：仅当后续无题目特征时才过滤（避免误删合并行）
             ch_match = _RE_CHAPTER_HEADER.match(stripped)
-            if ch_match and not _RE_QUESTION_SIGNAL.search(stripped[ch_match.end():]):
+            if ch_match and not _RE_QUESTION_SIGNAL.search(stripped[ch_match.end() :]):
                 continue
             filtered.append(line)
         return "\n".join(filtered)
@@ -1377,7 +1476,8 @@ class ImportTextNormalizer:
                 return True  # 几乎没有字母字符的纯符号文本
             # 统计大小写切换次数 — 正常英文/C 代码切换率较低
             case_switches = sum(
-                1 for i in range(1, len(alpha_chars))
+                1
+                for i in range(1, len(alpha_chars))
                 if alpha_chars[i].islower() != alpha_chars[i - 1].islower()
             )
             switch_ratio = case_switches / max(len(alpha_chars), 1)

@@ -48,28 +48,71 @@ def _review_408_scope_condition(subject_ids: set[int]):
         ),
     )
 
+
 # Keep review payload rendering consistent with the practice/wrong-book APIs.
 # Review used to return raw immutable revision content, which meant OCR line
 # breaks/admin-only fields could reappear only in the review flow.
-_CODE_OP_SPLIT_RE = re.compile(
-    r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
-)
+_CODE_OP_SPLIT_RE = re.compile(r"(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$")
 _CODE_SIGNALS = [
-    'return', 'printf', 'scanf', 'malloc', 'free', 'NULL',
-    'struct', 'typedef', 'enum', 'union',
-    'int ', 'void ', 'char ', 'float ', 'double ',
-    'bool', 'const', 'static', 'sizeof',
-    '->', '::', '{', '}', ';',
-    '++', '--', '+=', '-=', '*=', '/=',
-    '#include', '#define',
+    "return",
+    "printf",
+    "scanf",
+    "malloc",
+    "free",
+    "NULL",
+    "struct",
+    "typedef",
+    "enum",
+    "union",
+    "int ",
+    "void ",
+    "char ",
+    "float ",
+    "double ",
+    "bool",
+    "const",
+    "static",
+    "sizeof",
+    "->",
+    "::",
+    "{",
+    "}",
+    ";",
+    "++",
+    "--",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "#include",
+    "#define",
 ]
 _CONTROL_KW = [
-    'for', 'while', 'if', 'else if', 'else', 'switch',
-    'return', 'break', 'continue', 'case', 'do',
+    "for",
+    "while",
+    "if",
+    "else if",
+    "else",
+    "switch",
+    "return",
+    "break",
+    "continue",
+    "case",
+    "do",
 ]
 _DS_KW = [
-    'LNode', 'TNode', 'BiTNode', 'BiTree', 'BSTNode', 'LinkList',
-    'SqList', 'Stack', 'Queue', 'SqStack', 'ElemType', 'Status',
+    "LNode",
+    "TNode",
+    "BiTNode",
+    "BiTree",
+    "BSTNode",
+    "LinkList",
+    "SqList",
+    "Stack",
+    "Queue",
+    "SqStack",
+    "ElemType",
+    "Status",
 ]
 
 
@@ -79,29 +122,28 @@ def _contains_code(text: str) -> bool:
     score = sum(1 for sig in _CODE_SIGNALS if sig in text)
     score += sum(2 for kw in _DS_KW if kw in text)
     score += sum(
-        1 for kw in _CONTROL_KW
-        if re.search(r'\b' + re.escape(kw) + r'\b', text)
+        1 for kw in _CONTROL_KW if re.search(r"\b" + re.escape(kw) + r"\b", text)
     )
     return score >= 3
 
 
 def _fix_code_operator_splits(text: str) -> str:
-    if not isinstance(text, str) or '\n' not in text:
+    if not isinstance(text, str) or "\n" not in text:
         return text
-    lines = text.split('\n')
+    lines = text.split("\n")
     merged = [lines[0]]
     for line in lines[1:]:
         if _CODE_OP_SPLIT_RE.search(merged[-1]):
             merged[-1] += line.lstrip()
         else:
             merged.append(line)
-    return '\n'.join(merged)
+    return "\n".join(merged)
 
 
 def _sanitize_review_text(value: str | None) -> str | None:
     if not isinstance(value, str):
         return value
-    value = re.sub(r'\r\n?', '\n', value)
+    value = re.sub(r"\r\n?", "\n", value)
     if _contains_code(value):
         return _fix_code_operator_splits(value)
     value = deduplicate_repeated_text(value)
@@ -111,32 +153,37 @@ def _sanitize_review_text(value: str | None) -> str | None:
 
 def _sanitize_review_content(content: dict | str | None) -> dict:
     if isinstance(content, str):
-        content = {'text': content}
+        content = {"text": content}
     elif not isinstance(content, dict):
         content = {}
     sanitized = dict(content)
-    for field in ('text', 'stem'):
+    for field in ("text", "stem"):
         if field in sanitized:
             sanitized[field] = _sanitize_review_text(sanitized[field])
-    if sanitized.get('stem'):
-        sanitized['text'] = sanitized['stem']
-    for field in ('source_snapshot_url', 'source_snapshot_full_page', 'visual_regions', 'visual_region_ids'):
+    if sanitized.get("stem"):
+        sanitized["text"] = sanitized["stem"]
+    for field in (
+        "source_snapshot_url",
+        "source_snapshot_full_page",
+        "visual_regions",
+        "visual_region_ids",
+    ):
         sanitized.pop(field, None)
     return strip_student_segment_metadata(sanitized)
 
 
 def _sanitize_review_option_value(value):
     if isinstance(value, str):
-        value = re.sub(r'\r\n?', '\n', value)
+        value = re.sub(r"\r\n?", "\n", value)
         value = _fix_code_operator_splits(value)
-        return re.sub(r'\n+', ' ', value).strip()
+        return re.sub(r"\n+", " ", value).strip()
     if isinstance(value, dict):
         result = dict(value)
-        text = result.get('text')
-        if text in (None, ''):
-            text = result.get('value')
+        text = result.get("text")
+        if text in (None, ""):
+            text = result.get("value")
         if isinstance(text, str):
-            result['text'] = _sanitize_review_option_value(text)
+            result["text"] = _sanitize_review_option_value(text)
         return result
     return value
 
@@ -150,22 +197,23 @@ def _sanitize_review_options(options) -> dict:
 def _review_question_payload(schedule: ReviewSchedule, revision) -> dict:
     content = _sanitize_review_content(revision.content)
     return {
-        'schedule_id': schedule.id,
-        'question_id': schedule.question_id,
-        'question_version_id': schedule.question_version_id,
-        'occurrence_seq': schedule.occurrence_seq,
-        'subject_id': schedule.subject_id,
-        'subject_code': revision.subject_ref.code if revision.subject_ref else '',
-        'subject_name': revision.subject_ref.name if revision.subject_ref else '',
-        'question_type': revision.question_type,
-        'stem': content.get('text') or content.get('stem') or '',
-        'options': _sanitize_review_options(revision.options),
-        'content': content,
-        'image_url': revision.image_url,
-        'interval': schedule.interval,
-        'repetitions': schedule.repetitions,
-        'ease_factor': schedule.ease_factor,
+        "schedule_id": schedule.id,
+        "question_id": schedule.question_id,
+        "question_version_id": schedule.question_version_id,
+        "occurrence_seq": schedule.occurrence_seq,
+        "subject_id": schedule.subject_id,
+        "subject_code": revision.subject_ref.code if revision.subject_ref else "",
+        "subject_name": revision.subject_ref.name if revision.subject_ref else "",
+        "question_type": revision.question_type,
+        "stem": content.get("text") or content.get("stem") or "",
+        "options": _sanitize_review_options(revision.options),
+        "content": content,
+        "image_url": revision.image_url,
+        "interval": schedule.interval,
+        "repetitions": schedule.repetitions,
+        "ease_factor": schedule.ease_factor,
     }
+
 
 # Review mastery belongs to the immutable scheduled revision.  It must not be
 # inferred from UserQuestionState because that table represents the mutable
@@ -232,9 +280,7 @@ async def lock_question_review_state(
     # state.
     lock_user = int(user_id) & 0x7FFFFFFF
     lock_question = int(question_id) & 0x7FFFFFFF
-    await db.execute(
-        select(func.pg_advisory_xact_lock(lock_user, lock_question))
-    )
+    await db.execute(select(func.pg_advisory_xact_lock(lock_user, lock_question)))
 
 
 async def _sync_schedule_to_wq(
@@ -278,6 +324,7 @@ async def _sync_schedule_to_wq(
         wq.mastered_at = None
 
     return wq
+
 
 async def set_mastered_state(
     db: AsyncSession,
@@ -355,6 +402,7 @@ async def set_mastered_state(
     await db.flush()
     return changed
 
+
 async def get_today_review(
     db: AsyncSession,
     user_id: int,
@@ -386,25 +434,32 @@ async def get_today_review(
         )
     )
     total = int(
-        (await db.scalar(
-            select(func.count(ReviewSchedule.id))
-            .select_from(ReviewSchedule)
-            .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
-            .where(
-                and_(
-                    *conditions,
-                    QuestionVersion.question_id == ReviewSchedule.question_id,
+        (
+            await db.scalar(
+                select(func.count(ReviewSchedule.id))
+                .select_from(ReviewSchedule)
+                .join(
+                    QuestionVersion,
+                    QuestionVersion.id == ReviewSchedule.question_version_id,
+                )
+                .where(
+                    and_(
+                        *conditions,
+                        QuestionVersion.question_id == ReviewSchedule.question_id,
+                    )
                 )
             )
-        ))
+        )
         or 0
     )
     schedules = list(
-        (await db.scalars(
-            valid_schedule_stmt
-            .order_by(ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc())
-            .limit(limit)
-        )).all()
+        (
+            await db.scalars(
+                valid_schedule_stmt.order_by(
+                    ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc()
+                ).limit(limit)
+            )
+        ).all()
     )
     revision_ids = [int(schedule.question_version_id) for schedule in schedules]
     views = await load_revision_views(db, revision_ids)
@@ -416,6 +471,7 @@ async def get_today_review(
             continue
         questions.append(_review_question_payload(schedule, revision))
     return {"total_today": total, "questions": questions}
+
 
 async def _get_review_record_by_request(
     db: AsyncSession,
@@ -453,7 +509,9 @@ async def submit_review(
 
     # Exact network replay is resolved before mutable schedule state.
     existing = await _get_review_record_by_request(
-        db, user_id=user_id, request_id=request_id,
+        db,
+        user_id=user_id,
+        request_id=request_id,
     )
     if existing is not None:
         if (
@@ -523,8 +581,11 @@ async def submit_review(
     current_version_id = await db.scalar(
         select(Question.current_version_id).where(Question.id == question_id)
     )
-    if current_version_id is not None and int(current_version_id) == int(question_version_id):
+    if current_version_id is not None and int(current_version_id) == int(
+        question_version_id
+    ):
         from app.services import question_review_service
+
         await question_review_service.update_user_question_state_after_answer(
             db, user_id, question_id, is_correct, answered_at=now
         )
@@ -577,9 +638,15 @@ async def submit_review(
         "already_submitted": False,
         # Internal fields used by grade_batch_review after the transaction commits.
         # They are intentionally not copied into the public batch response.
-        "wrong_question_id": int(synced_wq.id) if synced_wq is not None and not is_correct else None,
-        "wrong_review_count": int(synced_wq.review_count or 0) if synced_wq is not None and not is_correct else None,
-        "wrong_answer": synced_wq.wrong_answer if synced_wq is not None and not is_correct else None,
+        "wrong_question_id": int(synced_wq.id)
+        if synced_wq is not None and not is_correct
+        else None,
+        "wrong_review_count": int(synced_wq.review_count or 0)
+        if synced_wq is not None and not is_correct
+        else None,
+        "wrong_answer": synced_wq.wrong_answer
+        if synced_wq is not None and not is_correct
+        else None,
     }
 
 
@@ -629,7 +696,14 @@ async def grade_batch_review(
     views = await load_revision_views(db, version_ids)
 
     indexed = list(enumerate(reviews))
-    ordered = sorted(indexed, key=lambda pair: (int(pair[1]["question_id"]), int(pair[1]["schedule_id"]), pair[0]))
+    ordered = sorted(
+        indexed,
+        key=lambda pair: (
+            int(pair[1]["question_id"]),
+            int(pair[1]["schedule_id"]),
+            pair[0],
+        ),
+    )
     results_by_index: list[tuple[int, dict]] = []
     correct_count = 0
     wrong_count = 0
@@ -641,26 +715,31 @@ async def grade_batch_review(
         request_id = str(item["request_id"])
         occurrence_seq = int(item["occurrence_seq"])
         if revision is None or int(revision.question_id) != int(item["question_id"]):
-            results_by_index.append((original_index, {
-                "schedule_id": item["schedule_id"],
-                "question_id": item["question_id"],
-                "question_version_id": version_id,
-                "occurrence_seq": occurrence_seq,
-                "request_id": request_id,
-                "success": False,
-                "error": "复习题版本不存在",
-                "error_code": "REVIEW_VERSION_MISSING",
-                "retryable": False,
-                "refresh_required": True,
-                "is_correct": False,
-                "correct_answer": "",
-                "rating": 0,
-                "interval_after": 0,
-                "ease_factor_after": 0.0,
-                "next_review_at": None,
-                "mastery_percent": 20,
-                "mastered": False,
-            }))
+            results_by_index.append(
+                (
+                    original_index,
+                    {
+                        "schedule_id": item["schedule_id"],
+                        "question_id": item["question_id"],
+                        "question_version_id": version_id,
+                        "occurrence_seq": occurrence_seq,
+                        "request_id": request_id,
+                        "success": False,
+                        "error": "复习题版本不存在",
+                        "error_code": "REVIEW_VERSION_MISSING",
+                        "retryable": False,
+                        "refresh_required": True,
+                        "is_correct": False,
+                        "correct_answer": "",
+                        "rating": 0,
+                        "interval_after": 0,
+                        "ease_factor_after": 0.0,
+                        "next_review_at": None,
+                        "mastery_percent": 20,
+                        "mastered": False,
+                    },
+                )
+            )
             continue
 
         answer = str(item.get("user_answer") or "")
@@ -714,14 +793,18 @@ async def grade_batch_review(
             else:
                 wrong_count += 1
                 if result.get("wrong_question_id"):
-                    prewarm_candidates.append((
-                        int(result["wrong_question_id"]),
-                        int(result.get("wrong_review_count") or 0),
-                        str(result.get("wrong_answer") or ""),
-                    ))
+                    prewarm_candidates.append(
+                        (
+                            int(result["wrong_question_id"]),
+                            int(result.get("wrong_review_count") or 0),
+                            str(result.get("wrong_answer") or ""),
+                        )
+                    )
         except ValueError as exc:
             error_text = str(exc)
-            error_code, retryable, refresh_required = _review_item_error_meta(error_text)
+            error_code, retryable, refresh_required = _review_item_error_meta(
+                error_text
+            )
             payload = {
                 "schedule_id": item["schedule_id"],
                 "question_id": item["question_id"],
@@ -769,10 +852,14 @@ async def grade_batch_review(
                 exc_info=True,
             )
 
-    results = [payload for _, payload in sorted(results_by_index, key=lambda pair: pair[0])]
+    results = [
+        payload for _, payload in sorted(results_by_index, key=lambda pair: pair[0])
+    ]
     # Counts describe successful submissions only.
     correct_count = sum(1 for item in results if item["success"] and item["is_correct"])
-    wrong_count = sum(1 for item in results if item["success"] and not item["is_correct"])
+    wrong_count = sum(
+        1 for item in results if item["success"] and not item["is_correct"]
+    )
     return {
         "results": results,
         "total": len(results),
@@ -826,9 +913,7 @@ async def get_review_stats(
     accuracy_q = await db.execute(
         select(
             func.count(ReviewRecord.id),
-            func.sum(
-                case((ReviewRecord.rating >= 3, 1), else_=0)
-            ),
+            func.sum(case((ReviewRecord.rating >= 3, 1), else_=0)),
         ).where(
             ReviewRecord.user_id == user_id,
             ReviewRecord.reviewed_at >= since,
@@ -879,17 +964,18 @@ async def get_review_stats(
         .group_by(QuestionVersion.subject_id)
     )
     reviewed_by_subject = {
-        (r[0] if r[0] is not None else 0): r[1]
-        for r in subject_reviewed_result.all()
+        (r[0] if r[0] is not None else 0): r[1] for r in subject_reviewed_result.all()
     }
 
     subject_rows = subject_result.all()
     subject_ids = [row[0] for row in subject_rows if row[0] is not None]
     code_name = {}
     if subject_ids:
-        subs = (await db.execute(
-            select(Subject).where(Subject.id.in_(subject_ids))
-        )).scalars().all()
+        subs = (
+            (await db.execute(select(Subject).where(Subject.id.in_(subject_ids))))
+            .scalars()
+            .all()
+        )
         code_name = {s.id: (s.code, s.name) for s in subs}
 
     by_subject = []
@@ -898,14 +984,16 @@ async def get_review_stats(
         sched = row[1] or 0
         rem = row[2] or 0
         rev = reviewed_by_subject.get(sid, 0)
-        by_subject.append({
-            "subject_id": sid,
-            "subject_code": code_name.get(sid, ("", ""))[0],
-            "subject_name": code_name.get(sid, ("", ""))[1],
-            "scheduled": sched,
-            "reviewed": rev,
-            "remaining": rem,
-        })
+        by_subject.append(
+            {
+                "subject_id": sid,
+                "subject_code": code_name.get(sid, ("", ""))[0],
+                "subject_name": code_name.get(sid, ("", ""))[1],
+                "scheduled": sched,
+                "reviewed": rev,
+                "remaining": rem,
+            }
+        )
 
     return {
         "total_scheduled": total_scheduled,
@@ -923,9 +1011,7 @@ async def get_review_history(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    count_q = select(func.count(ReviewRecord.id)).where(
-        ReviewRecord.user_id == user_id
-    )
+    count_q = select(func.count(ReviewRecord.id)).where(ReviewRecord.user_id == user_id)
     total = (await db.execute(count_q)).scalar()
 
     result = await db.execute(
@@ -977,7 +1063,9 @@ async def auto_schedule_wrong_question(
     first_review_at = shanghai_date_utc_range(first_review_date)[0]
     schedule = await db.scalar(
         select(ReviewSchedule)
-        .where(ReviewSchedule.user_id == user_id, ReviewSchedule.question_id == question_id)
+        .where(
+            ReviewSchedule.user_id == user_id, ReviewSchedule.question_id == question_id
+        )
         .with_for_update()
     )
     if schedule is None:
@@ -1017,6 +1105,7 @@ async def auto_schedule_wrong_question(
         await db.flush()
     return schedule
 
+
 async def mark_mastered(
     db: AsyncSession, user_id: int, schedule_id: int
 ) -> tuple[ReviewSchedule | None, bool]:
@@ -1036,7 +1125,10 @@ async def mark_mastered(
         # stale client can create an undo for state it no longer owns.
         return schedule, False
     changed = await set_mastered_state(
-        db, user_id=user_id, question_id=schedule.question_id, mastered=True,
+        db,
+        user_id=user_id,
+        question_id=schedule.question_id,
+        mastered=True,
     )
     await db.commit()
     await db.refresh(schedule)
@@ -1062,7 +1154,10 @@ async def unmark_mastered(
         # operation allowed to reactivate that workflow.
         return schedule, False
     changed = await set_mastered_state(
-        db, user_id=user_id, question_id=schedule.question_id, mastered=False,
+        db,
+        user_id=user_id,
+        question_id=schedule.question_id,
+        mastered=False,
     )
     await db.commit()
     await db.refresh(schedule)
@@ -1087,72 +1182,98 @@ async def _get_today_review_task_state(
     today_start, today_end = shanghai_today_boundaries()
     allowed_subject_ids = await _active_408_subject_ids(db)
 
-    due_schedules = list((await db.scalars(
-        select(ReviewSchedule)
-        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
-        .where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.is_active,
-            ~ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at <= today_end,
-            # Legacy/corrupt schedule rows must never surface another question's
-            # immutable revision. Excluding them here also prevents one broken
-            # schedule from keeping the "today remaining" counter non-zero.
-            QuestionVersion.question_id == ReviewSchedule.question_id,
-            _review_408_scope_condition(allowed_subject_ids),
-        )
-    )).all())
+    due_schedules = list(
+        (
+            await db.scalars(
+                select(ReviewSchedule)
+                .join(
+                    QuestionVersion,
+                    QuestionVersion.id == ReviewSchedule.question_version_id,
+                )
+                .where(
+                    ReviewSchedule.user_id == user_id,
+                    ReviewSchedule.is_active,
+                    ~ReviewSchedule.mastered,
+                    ReviewSchedule.next_review_at <= today_end,
+                    # Legacy/corrupt schedule rows must never surface another question's
+                    # immutable revision. Excluding them here also prevents one broken
+                    # schedule from keeping the "today remaining" counter non-zero.
+                    QuestionVersion.question_id == ReviewSchedule.question_id,
+                    _review_408_scope_condition(allowed_subject_ids),
+                )
+            )
+        ).all()
+    )
 
-    reviewed_rows = list((await db.execute(
-        select(ReviewRecord.schedule_id, ReviewRecord.question_id).where(
-            ReviewRecord.user_id == user_id,
-            ReviewRecord.reviewed_at >= today_start,
-            ReviewRecord.reviewed_at <= today_end,
-        )
-    )).all())
+    reviewed_rows = list(
+        (
+            await db.execute(
+                select(ReviewRecord.schedule_id, ReviewRecord.question_id).where(
+                    ReviewRecord.user_id == user_id,
+                    ReviewRecord.reviewed_at >= today_start,
+                    ReviewRecord.reviewed_at <= today_end,
+                )
+            )
+        ).all()
+    )
     reviewed_schedule_ids = {sid for sid, _ in reviewed_rows if sid is not None}
     reviewed_question_ids = {int(qid) for _, qid in reviewed_rows}
 
     reviewed_schedules: list[ReviewSchedule] = []
     if reviewed_schedule_ids:
-        reviewed_schedules = list((await db.scalars(
-            select(ReviewSchedule)
-            .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
-            .where(
-                ReviewSchedule.user_id == user_id,
-                ReviewSchedule.id.in_(reviewed_schedule_ids),
-                QuestionVersion.question_id == ReviewSchedule.question_id,
-                _review_408_scope_condition(allowed_subject_ids),
-            )
-        )).all())
+        reviewed_schedules = list(
+            (
+                await db.scalars(
+                    select(ReviewSchedule)
+                    .join(
+                        QuestionVersion,
+                        QuestionVersion.id == ReviewSchedule.question_version_id,
+                    )
+                    .where(
+                        ReviewSchedule.user_id == user_id,
+                        ReviewSchedule.id.in_(reviewed_schedule_ids),
+                        QuestionVersion.question_id == ReviewSchedule.question_id,
+                        _review_408_scope_condition(allowed_subject_ids),
+                    )
+                )
+            ).all()
+        )
 
     # Manual mastery consumes today's visible task without creating a grade record.
     # WrongQuestion.mastered_at is the explicit event timestamp; schedule.updated_at
     # is intentionally not used because unrelated state changes may touch it.
-    mastered_schedules = list((await db.scalars(
-        select(ReviewSchedule)
-        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
-        .join(
-            WrongQuestion,
-            and_(
-                WrongQuestion.user_id == ReviewSchedule.user_id,
-                WrongQuestion.question_id == ReviewSchedule.question_id,
-                WrongQuestion.question_version_id == ReviewSchedule.question_version_id,
-            ),
-        )
-        .where(
-            ReviewSchedule.user_id == user_id,
-            QuestionVersion.question_id == ReviewSchedule.question_id,
-            _review_408_scope_condition(allowed_subject_ids),
-            ReviewSchedule.is_active,
-            ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at <= today_end,
-            WrongQuestion.is_active,
-            WrongQuestion.mastered,
-            WrongQuestion.mastered_at >= today_start,
-            WrongQuestion.mastered_at <= today_end,
-        )
-    )).all())
+    mastered_schedules = list(
+        (
+            await db.scalars(
+                select(ReviewSchedule)
+                .join(
+                    QuestionVersion,
+                    QuestionVersion.id == ReviewSchedule.question_version_id,
+                )
+                .join(
+                    WrongQuestion,
+                    and_(
+                        WrongQuestion.user_id == ReviewSchedule.user_id,
+                        WrongQuestion.question_id == ReviewSchedule.question_id,
+                        WrongQuestion.question_version_id
+                        == ReviewSchedule.question_version_id,
+                    ),
+                )
+                .where(
+                    ReviewSchedule.user_id == user_id,
+                    QuestionVersion.question_id == ReviewSchedule.question_id,
+                    _review_408_scope_condition(allowed_subject_ids),
+                    ReviewSchedule.is_active,
+                    ReviewSchedule.mastered,
+                    ReviewSchedule.next_review_at <= today_end,
+                    WrongQuestion.is_active,
+                    WrongQuestion.mastered,
+                    WrongQuestion.mastered_at >= today_start,
+                    WrongQuestion.mastered_at <= today_end,
+                )
+            )
+        ).all()
+    )
 
     schedule_by_id = {
         int(schedule.id): schedule
@@ -1176,11 +1297,14 @@ async def _get_today_review_task_state(
         )
         mastered_question_ids = {int(row[0]) for row in mastered_rows.all()}
 
-    completed_question_ids = (reviewed_question_ids | mastered_question_ids) & task_question_ids
+    completed_question_ids = (
+        reviewed_question_ids | mastered_question_ids
+    ) & task_question_ids
     pending_schedules = [
         schedule
         for schedule in task_schedules
-        if int(schedule.question_id) not in completed_question_ids and not schedule.mastered
+        if int(schedule.question_id) not in completed_question_ids
+        and not schedule.mastered
     ]
 
     return {
@@ -1293,7 +1417,9 @@ async def get_next_today_review_batch(
     due_count = len(task_schedules)
     remaining_count = len(pending)
     completed_count = max(0, due_count - remaining_count)
-    total_batch_count = max(1, (due_count + batch_size - 1) // batch_size) if due_count else 1
+    total_batch_count = (
+        max(1, (due_count + batch_size - 1) // batch_size) if due_count else 1
+    )
     batch_no = min((completed_count // batch_size) + 1, total_batch_count)
     date_str = datetime.now(_SHANGHAI_TZ).strftime("%Y%m%d")
     session_id = f"review_{date_str}_{user_id}"
@@ -1309,6 +1435,7 @@ async def get_next_today_review_batch(
         "today_remaining_count": remaining_count,
         "questions": questions,
     }
+
 
 async def get_today_review_result(
     db: AsyncSession,
@@ -1362,7 +1489,11 @@ async def get_today_review_result(
     )
     for record in unique:
         revision = revision_views.get(int(record.question_version_id))
-        subj_id = int(revision.subject_id) if revision and revision.subject_id is not None else 0
+        subj_id = (
+            int(revision.subject_id)
+            if revision and revision.subject_id is not None
+            else 0
+        )
         subject = revision.subject_ref if revision else None
         entry = subject_map.setdefault(
             subj_id,

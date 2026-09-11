@@ -6,7 +6,9 @@ from pydantic import Field
 from app.schemas.base import BaseModel
 
 SyllabusStatus = Literal["draft", "active", "archived"]
-SyllabusMappingType = Literal["unchanged", "renamed", "added", "removed", "merged", "split", "replaced"]
+SyllabusMappingType = Literal[
+    "unchanged", "renamed", "added", "removed", "merged", "split", "replaced"
+]
 SyllabusManualMappingType = Literal["merged", "split", "replaced"]
 
 

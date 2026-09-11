@@ -1,4 +1,5 @@
 """题目 CRUD（保持精简，业务流转见 features.question_pipeline）。"""
+
 import random
 
 from sqlalchemy import and_, func, select
@@ -44,7 +45,9 @@ async def create(
         await sync_question_knowledge_points(db, q, knowledge_points, source="manual")
     from app.services.question_revision_service import ensure_question_revision
 
-    await ensure_question_revision(db, q, change_source="manual_create", edit_reason="initial create")
+    await ensure_question_revision(
+        db, q, change_source="manual_create", edit_reason="initial create"
+    )
     await db.commit()
     await db.refresh(q)
     return q
@@ -78,13 +81,15 @@ async def list_questions(
 ) -> tuple[list[Question], int]:
     conditions = [Question.is_active]
     if subject_id:
-        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject_id)))
+        conditions.append(
+            Question.subject_id.in_(await resolve_subject_ids(db, subject_id))
+        )
     if question_type:
         conditions.extend(_type_conditions(question_type))
 
-    total = (await db.execute(
-        select(func.count(Question.id)).where(and_(*conditions))
-    )).scalar()
+    total = (
+        await db.execute(select(func.count(Question.id)).where(and_(*conditions)))
+    ).scalar()
 
     res = await db.execute(
         select(Question)
@@ -105,12 +110,18 @@ async def get_random(
 ) -> Question | None:
     conditions = [Question.is_active]
     if subject_id:
-        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject_id)))
+        conditions.append(
+            Question.subject_id.in_(await resolve_subject_ids(db, subject_id))
+        )
     if question_type:
         conditions.extend(_type_conditions(question_type))
     if exclude_ids:
         conditions.append(Question.id.notin_(exclude_ids))
-    base = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref))
+    base = (
+        select(Question)
+        .where(and_(*conditions))
+        .options(selectinload(Question.subject_ref))
+    )
     count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar() or 0
     if total == 0:

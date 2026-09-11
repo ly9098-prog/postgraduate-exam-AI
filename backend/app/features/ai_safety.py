@@ -46,7 +46,8 @@ def safe_accept_ai_result(
     from app.features.candidate_evaluator import CandidateDecision, evaluate_candidate
 
     evaluation = evaluate_candidate(
-        before, after,
+        before,
+        after,
         context=context,
         quality_report=quality_report,
         provenance={"source": "ai_safety.safe_accept_ai_result"},
@@ -82,7 +83,8 @@ def evaluate_and_trace(
     If rejected, ``final_text == before`` (rollback to original).
     """
     safety = safe_accept_ai_result(
-        before, after,
+        before,
+        after,
         context=context,
         quality_report=quality_report,
     )
@@ -104,14 +106,18 @@ def evaluate_and_trace(
     if not safety["accepted"]:
         logger.warning(
             "AI safety REJECTED [%s/%s]: %s",
-            stage, model, safety["rollback_reason"],
+            stage,
+            model,
+            safety["rollback_reason"],
         )
         return trace, before  # rollback
 
     if safety["risk_flags"]:
         logger.info(
             "AI safety ACCEPTED with flags [%s/%s]: %s",
-            stage, model, ", ".join(safety["risk_flags"]),
+            stage,
+            model,
+            ", ".join(safety["risk_flags"]),
         )
 
     return trace, after

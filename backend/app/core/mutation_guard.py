@@ -17,6 +17,7 @@ from app.core.immutable_regions import Region, TextRegions
 
 class MutationError(RuntimeError):
     """当 code 区域内容被修改时抛出。"""
+
     pass
 
 
@@ -39,7 +40,9 @@ def assert_no_mutation(before: Region, after: Region) -> None:
     )
 
 
-def verify_all_code_regions(regions: list[Region] | tuple[Region, ...] | TextRegions) -> list[str]:
+def verify_all_code_regions(
+    regions: list[Region] | tuple[Region, ...] | TextRegions,
+) -> list[str]:
     """验证所有 code 区域的完整性，返回被篡改的 region id 列表。
 
     Args:

@@ -69,7 +69,9 @@ def _allocate_integer(total: int, weights: dict[str, float]) -> dict[str, int]:
 
 
 def _category_availability(hub: dict, exam_suggestion: dict | None) -> dict[str, bool]:
-    task_types = {str(task.get("task_type")) for task in (hub.get("tasks") or []) if task}
+    task_types = {
+        str(task.get("task_type")) for task in (hub.get("tasks") or []) if task
+    }
     return {
         "review": "review" in task_types,
         "weakness": "weakness" in task_types,
@@ -129,9 +131,11 @@ async def _get_user_plan(
 
 
 async def _load_scope_ids(db: AsyncSession) -> tuple[list[int], list[int]]:
-    rows = (await db.execute(
-        select(Subject.id, Subject.code).where(Subject.code.in_(EXAM408_ALL_CODES))
-    )).all()
+    rows = (
+        await db.execute(
+            select(Subject.id, Subject.code).where(Subject.code.in_(EXAM408_ALL_CODES))
+        )
+    ).all()
     all_ids = [int(row.id) for row in rows]
     core_ids = [int(row.id) for row in rows if str(row.code) in EXAM408_CORE_CODES]
     return all_ids, core_ids
@@ -146,13 +150,18 @@ async def _load_exam_suggestion(db: AsyncSession, user_id: int) -> dict | None:
     if not papers:
         return None
     unfinished = [
-        paper for paper in papers
+        paper
+        for paper in papers
         if paper.get("latest_attempt_status") not in {"submitted", "expired"}
     ]
     paper = unfinished[0] if unfinished else papers[0]
     question_count = max(0, int(paper.get("question_count") or 0))
     duration_sec = int(paper.get("duration_sec") or 0)
-    estimated_minutes = _ceil_minutes(duration_sec) if duration_sec > 0 else max(15, _ceil_minutes(question_count * 90))
+    estimated_minutes = (
+        _ceil_minutes(duration_sec)
+        if duration_sec > 0
+        else max(15, _ceil_minutes(question_count * 90))
+    )
     return {
         "paper_id": int(paper["id"]),
         "title": str(paper.get("title") or "选择题套卷"),
@@ -179,52 +188,67 @@ async def _load_activity_dates(
     timestamps = []
 
     if all_408_ids:
-        timestamps.extend((await db.scalars(
-            select(PracticeSession.finished_at).where(
-                PracticeSession.user_id == user_id,
-                PracticeSession.subject_id.in_(all_408_ids),
-                PracticeSession.finished_at >= start_utc,
-                PracticeSession.finished_at < end_utc,
-            )
-        )).all())
-        timestamps.extend((await db.scalars(
-            select(PomodoroSession.end_time).where(
-                PomodoroSession.user_id == user_id,
-                PomodoroSession.subject_id.in_(all_408_ids),
-                PomodoroSession.status == "completed",
-                PomodoroSession.end_time.is_not(None),
-                PomodoroSession.end_time >= start_utc,
-                PomodoroSession.end_time < end_utc,
-            )
-        )).all())
+        timestamps.extend(
+            (
+                await db.scalars(
+                    select(PracticeSession.finished_at).where(
+                        PracticeSession.user_id == user_id,
+                        PracticeSession.subject_id.in_(all_408_ids),
+                        PracticeSession.finished_at >= start_utc,
+                        PracticeSession.finished_at < end_utc,
+                    )
+                )
+            ).all()
+        )
+        timestamps.extend(
+            (
+                await db.scalars(
+                    select(PomodoroSession.end_time).where(
+                        PomodoroSession.user_id == user_id,
+                        PomodoroSession.subject_id.in_(all_408_ids),
+                        PomodoroSession.status == "completed",
+                        PomodoroSession.end_time.is_not(None),
+                        PomodoroSession.end_time >= start_utc,
+                        PomodoroSession.end_time < end_utc,
+                    )
+                )
+            ).all()
+        )
 
     if core_408_ids:
-        timestamps.extend((await db.scalars(
-            select(ReviewRecord.reviewed_at)
-            .join(QuestionVersion, QuestionVersion.id == ReviewRecord.question_version_id)
-            .where(
-                ReviewRecord.user_id == user_id,
-                QuestionVersion.subject_id.in_(core_408_ids),
-                ReviewRecord.reviewed_at >= start_utc,
-                ReviewRecord.reviewed_at < end_utc,
-            )
-        )).all())
-
-    timestamps.extend((await db.scalars(
-        select(ExamAttempt.submitted_at).where(
-            ExamAttempt.user_id == user_id,
-            ExamAttempt.submitted_at.is_not(None),
-            ExamAttempt.submitted_at >= start_utc,
-            ExamAttempt.submitted_at < end_utc,
-            ExamAttempt.status.in_(("submitted", "expired")),
+        timestamps.extend(
+            (
+                await db.scalars(
+                    select(ReviewRecord.reviewed_at)
+                    .join(
+                        QuestionVersion,
+                        QuestionVersion.id == ReviewRecord.question_version_id,
+                    )
+                    .where(
+                        ReviewRecord.user_id == user_id,
+                        QuestionVersion.subject_id.in_(core_408_ids),
+                        ReviewRecord.reviewed_at >= start_utc,
+                        ReviewRecord.reviewed_at < end_utc,
+                    )
+                )
+            ).all()
         )
-    )).all())
 
-    return {
-        shanghai_date_for_utc(value)
-        for value in timestamps
-        if value is not None
-    }
+    timestamps.extend(
+        (
+            await db.scalars(
+                select(ExamAttempt.submitted_at).where(
+                    ExamAttempt.user_id == user_id,
+                    ExamAttempt.submitted_at.is_not(None),
+                    ExamAttempt.submitted_at >= start_utc,
+                    ExamAttempt.submitted_at < end_utc,
+                    ExamAttempt.status.in_(("submitted", "expired")),
+                )
+            )
+        ).all()
+    )
+
+    return {shanghai_date_for_utc(value) for value in timestamps if value is not None}
 
 
 async def _today_completion(
@@ -240,56 +264,86 @@ async def _today_completion(
 
     review_count = 0
     if core_408_ids:
-        review_count = int((await db.execute(
-            select(func.count(ReviewRecord.id))
-            .join(QuestionVersion, QuestionVersion.id == ReviewRecord.question_version_id)
-            .where(
-                ReviewRecord.user_id == user_id,
-                QuestionVersion.subject_id.in_(core_408_ids),
-                ReviewRecord.reviewed_at >= start_utc,
-                ReviewRecord.reviewed_at < end_utc,
-            )
-        )).scalar_one() or 0)
+        review_count = int(
+            (
+                await db.execute(
+                    select(func.count(ReviewRecord.id))
+                    .join(
+                        QuestionVersion,
+                        QuestionVersion.id == ReviewRecord.question_version_id,
+                    )
+                    .where(
+                        ReviewRecord.user_id == user_id,
+                        QuestionVersion.subject_id.in_(core_408_ids),
+                        ReviewRecord.reviewed_at >= start_utc,
+                        ReviewRecord.reviewed_at < end_utc,
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
 
     session_rows = []
     if all_408_ids:
-        session_rows = (await db.execute(
-            select(PracticeSession.mode, PracticeSession.duration_sec).where(
-                PracticeSession.user_id == user_id,
-                PracticeSession.subject_id.in_(all_408_ids),
-                PracticeSession.finished_at >= start_utc,
-                PracticeSession.finished_at < end_utc,
-                PracticeSession.status == "completed",
+        session_rows = (
+            await db.execute(
+                select(PracticeSession.mode, PracticeSession.duration_sec).where(
+                    PracticeSession.user_id == user_id,
+                    PracticeSession.subject_id.in_(all_408_ids),
+                    PracticeSession.finished_at >= start_utc,
+                    PracticeSession.finished_at < end_utc,
+                    PracticeSession.status == "completed",
+                )
             )
-        )).all()
+        ).all()
 
-    smart_sec = sum(int(row.duration_sec or 0) for row in session_rows if str(row.mode or "") == "smart")
-    other_sec = sum(int(row.duration_sec or 0) for row in session_rows if str(row.mode or "") != "smart")
+    smart_sec = sum(
+        int(row.duration_sec or 0)
+        for row in session_rows
+        if str(row.mode or "") == "smart"
+    )
+    other_sec = sum(
+        int(row.duration_sec or 0)
+        for row in session_rows
+        if str(row.mode or "") != "smart"
+    )
     smart_minutes = _ceil_minutes(smart_sec)
     other_minutes = _ceil_minutes(other_sec)
 
-    exam_sec = int((await db.execute(
-        select(func.coalesce(func.sum(ExamAttempt.duration_sec), 0)).where(
-            ExamAttempt.user_id == user_id,
-            ExamAttempt.submitted_at.is_not(None),
-            ExamAttempt.submitted_at >= start_utc,
-            ExamAttempt.submitted_at < end_utc,
-            ExamAttempt.status.in_(("submitted", "expired")),
-        )
-    )).scalar_one() or 0)
+    exam_sec = int(
+        (
+            await db.execute(
+                select(func.coalesce(func.sum(ExamAttempt.duration_sec), 0)).where(
+                    ExamAttempt.user_id == user_id,
+                    ExamAttempt.submitted_at.is_not(None),
+                    ExamAttempt.submitted_at >= start_utc,
+                    ExamAttempt.submitted_at < end_utc,
+                    ExamAttempt.status.in_(("submitted", "expired")),
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
 
     focus_sec = 0
     if all_408_ids:
-        focus_sec = int((await db.execute(
-            select(func.coalesce(func.sum(PomodoroSession.actual_duration), 0)).where(
-                PomodoroSession.user_id == user_id,
-                PomodoroSession.subject_id.in_(all_408_ids),
-                PomodoroSession.status == "completed",
-                PomodoroSession.end_time.is_not(None),
-                PomodoroSession.end_time >= start_utc,
-                PomodoroSession.end_time < end_utc,
-            )
-        )).scalar_one() or 0)
+        focus_sec = int(
+            (
+                await db.execute(
+                    select(
+                        func.coalesce(func.sum(PomodoroSession.actual_duration), 0)
+                    ).where(
+                        PomodoroSession.user_id == user_id,
+                        PomodoroSession.subject_id.in_(all_408_ids),
+                        PomodoroSession.status == "completed",
+                        PomodoroSession.end_time.is_not(None),
+                        PomodoroSession.end_time >= start_utc,
+                        PomodoroSession.end_time < end_utc,
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
 
     completed = {category: 0 for category in CATEGORIES}
     # Review runner has no server-side elapsed timer. Keep the same 2 questions /
@@ -321,7 +375,11 @@ async def _today_completion(
 
 def _task_by_type(hub: dict, task_type: str) -> dict | None:
     return next(
-        (task for task in (hub.get("tasks") or []) if task and task.get("task_type") == task_type),
+        (
+            task
+            for task in (hub.get("tasks") or [])
+            if task and task.get("task_type") == task_type
+        ),
         None,
     )
 
@@ -460,7 +518,9 @@ def _dynamic_remaining(
         # Keep a small floor for still-available work even when its original
         # bucket is already met; this lets the plan absorb time released by a
         # finished/unavailable category without changing the historical snapshot.
-        need_weights[category] = float(current_weights.get(category, 0.0)) * (0.25 + 0.75 * need_ratio)
+        need_weights[category] = float(current_weights.get(category, 0.0)) * (
+            0.25 + 0.75 * need_ratio
+        )
     return _allocate_integer(budget, need_weights)
 
 
@@ -495,7 +555,9 @@ def _build_allocation_views(
             route = task.get("route")
             route_params = dict(task.get("route_params") or {})
             action_label = str(task.get("action_label") or "开始")
-            estimated_question_count = max(0, int(task.get("estimated_question_count") or 0))
+            estimated_question_count = max(
+                0, int(task.get("estimated_question_count") or 0)
+            )
         elif category == "exam" and exam_suggestion and available:
             route = "exam_list"
             route_params = {"suggested_paper_id": int(exam_suggestion["paper_id"])}
@@ -518,9 +580,15 @@ def _build_allocation_views(
             )
         elif category == "new":
             title = str(task.get("title")) if task else "继续新题推进"
-            reason = str(task.get("reason")) if task else "用新题持续扩展知识边界并刷新推荐状态。"
+            reason = (
+                str(task.get("reason"))
+                if task
+                else "用新题持续扩展知识边界并刷新推荐状态。"
+            )
         else:
-            title = exam_suggestion["title"] if exam_suggestion else "暂无可用选择题套卷"
+            title = (
+                exam_suggestion["title"] if exam_suggestion else "暂无可用选择题套卷"
+            )
             if exam_suggestion:
                 reason = (
                     f"建议套卷约 {exam_suggestion['question_count']} 题 / "
@@ -532,27 +600,33 @@ def _build_allocation_views(
         if adjusted_minutes > 0 and available:
             reason = f"动态调整后今天建议投入约 {adjusted_minutes} 分钟。{reason}"
 
-        if adjusted_minutes <= 0 and completed_minutes >= planned_minutes and planned_minutes > 0:
+        if (
+            adjusted_minutes <= 0
+            and completed_minutes >= planned_minutes
+            and planned_minutes > 0
+        ):
             status = "done"
         elif available:
             status = "available"
         else:
             status = "unavailable"
 
-        result.append({
-            "category": category,
-            "title": title,
-            "reason": reason,
-            "planned_minutes": planned_minutes,
-            "completed_minutes": completed_minutes,
-            "remaining_minutes": remaining_minutes,
-            "adjusted_minutes": adjusted_minutes,
-            "status": status,
-            "action_label": action_label,
-            "route": route,
-            "route_params": route_params,
-            "estimated_question_count": estimated_question_count,
-        })
+        result.append(
+            {
+                "category": category,
+                "title": title,
+                "reason": reason,
+                "planned_minutes": planned_minutes,
+                "completed_minutes": completed_minutes,
+                "remaining_minutes": remaining_minutes,
+                "adjusted_minutes": adjusted_minutes,
+                "status": status,
+                "action_label": action_label,
+                "route": route,
+                "route_params": route_params,
+                "estimated_question_count": estimated_question_count,
+            }
+        )
     return result
 
 
@@ -594,13 +668,15 @@ async def upsert_study_plan(
                 raise
 
     if not created:
-        changed = any((
-            plan.target_date != data.target_date,
-            int(plan.daily_minutes) != int(data.daily_minutes),
-            int(plan.weekly_days) != int(data.weekly_days),
-            str(plan.priority_mode) != str(data.priority_mode),
-            not bool(plan.is_active),
-        ))
+        changed = any(
+            (
+                plan.target_date != data.target_date,
+                int(plan.daily_minutes) != int(data.daily_minutes),
+                int(plan.weekly_days) != int(data.weekly_days),
+                str(plan.priority_mode) != str(data.priority_mode),
+                not bool(plan.is_active),
+            )
+        )
         plan.target_date = data.target_date
         plan.daily_minutes = int(data.daily_minutes)
         plan.weekly_days = int(data.weekly_days)
@@ -688,7 +764,10 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
     # release the plan row lock before the remaining read-only aggregation.
     await db.commit()
 
-    planned = {category: int((day.allocation_json or {}).get(category) or 0) for category in CATEGORIES}
+    planned = {
+        category: int((day.allocation_json or {}).get(category) or 0)
+        for category in CATEGORIES
+    }
     completed, focus_minutes = await _today_completion(
         db,
         user_id,
@@ -728,7 +807,8 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
     )
     remaining_total = max(0, int(day.target_minutes) - completed_total)
     completion_percent = (
-        100 if int(day.target_minutes) <= 0
+        100
+        if int(day.target_minutes) <= 0
         else min(100, round(completed_total / int(day.target_minutes) * 100))
     )
     primary = next(
@@ -736,7 +816,10 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
             item["category"]
             for item in sorted(
                 allocations,
-                key=lambda item: (-int(item["adjusted_minutes"]), CATEGORIES.index(item["category"])),
+                key=lambda item: (
+                    -int(item["adjusted_minutes"]),
+                    CATEGORIES.index(item["category"]),
+                ),
             )
             if int(item["adjusted_minutes"]) > 0 and item["status"] == "available"
         ),
@@ -744,7 +827,9 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
     )
 
     active_dates = set(prior_dates)
-    actual_activity_minutes = sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES)
+    actual_activity_minutes = sum(
+        max(0, int(completed.get(category) or 0)) for category in CATEGORIES
+    )
     if actual_activity_minutes > 0 or focus_minutes > 0:
         active_dates.add(today)
     active_days = len(active_dates)

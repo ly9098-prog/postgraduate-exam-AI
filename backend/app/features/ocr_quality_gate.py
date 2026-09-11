@@ -21,24 +21,76 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 数学上下文关键词 — LaTeX 命令在此类文本中属于合法数学符号
 # ---------------------------------------------------------------------------
-_MATH_CONTEXT_KEYWORDS: frozenset[str] = frozenset([
-    "向量", "矩阵", "行列式", "特征值", "特征向量", "二次型",
-    "积分", "导数", "微分方程", "偏导", "极限", "收敛", "连续",
-    "可导", "可微", "单调", "极值", "拐点", "渐近线",
-    "概率", "分布", "期望", "方差", "统计",
-    "方程", "不等式", "函数", "线性无关", "线性相关",
-    "正交", "相似矩阵", "对角化", "秩",
-])
+_MATH_CONTEXT_KEYWORDS: frozenset[str] = frozenset(
+    [
+        "向量",
+        "矩阵",
+        "行列式",
+        "特征值",
+        "特征向量",
+        "二次型",
+        "积分",
+        "导数",
+        "微分方程",
+        "偏导",
+        "极限",
+        "收敛",
+        "连续",
+        "可导",
+        "可微",
+        "单调",
+        "极值",
+        "拐点",
+        "渐近线",
+        "概率",
+        "分布",
+        "期望",
+        "方差",
+        "统计",
+        "方程",
+        "不等式",
+        "函数",
+        "线性无关",
+        "线性相关",
+        "正交",
+        "相似矩阵",
+        "对角化",
+        "秩",
+    ]
+)
 
 # ---------------------------------------------------------------------------
 # 编程上下文关键词 — LaTeX 命令在此类文本中更可能是 OCR 污染
 # ---------------------------------------------------------------------------
-_PROGRAMMING_CONTEXT_KEYWORDS: frozenset[str] = frozenset([
-    "链表", "结点", "节点", "指针", "数组", "栈", "队列",
-    "二叉树", "排序", "递归", "迭代", "遍历", "查找",
-    "next", "prev", "NULL", "malloc", "free", "struct",
-    "->", "typedef", "void", "int ", "char ", "float ",
-])
+_PROGRAMMING_CONTEXT_KEYWORDS: frozenset[str] = frozenset(
+    [
+        "链表",
+        "结点",
+        "节点",
+        "指针",
+        "数组",
+        "栈",
+        "队列",
+        "二叉树",
+        "排序",
+        "递归",
+        "迭代",
+        "遍历",
+        "查找",
+        "next",
+        "prev",
+        "NULL",
+        "malloc",
+        "free",
+        "struct",
+        "->",
+        "typedef",
+        "void",
+        "int ",
+        "char ",
+        "float ",
+    ]
+)
 
 
 def _assess_context(text: str) -> str:
@@ -92,8 +144,8 @@ _SYMBOL_SUBSTITUTION_PATTERNS = [
 # 乱码模式 — 源自 code_integrity 的共享模式
 # ---------------------------------------------------------------------------
 _GARBLED_PATTERNS = [
-    _RE_KNOWN_GARBLED,                    # 已知乱码片段
-    _RE_CONSECUTIVE_CONSONANTS,           # 4+ 连续纯辅音字母
+    _RE_KNOWN_GARBLED,  # 已知乱码片段
+    _RE_CONSECUTIVE_CONSONANTS,  # 4+ 连续纯辅音字母
 ]
 
 # 短 ASCII 行模式：一行内全是短 ASCII 片段且无中文字符
@@ -139,6 +191,7 @@ def detect_ocr_contamination(raw_text: str) -> dict:
 
     # ---- 0. 代码块完整性检测（在其它检测前运行） ----
     from app.features.code_integrity import detect_code_block_integrity
+
     code_result = detect_code_block_integrity(raw_text)
     if code_result["score"] > 0:
         for flag in code_result["flags"]:
@@ -209,7 +262,11 @@ def detect_ocr_contamination(raw_text: str) -> dict:
             score += 0.20
             flags.append("option_structure_corrupted")
             details.append("选项结构破损: 有B缺C")
-        if "C" in present_options and "D" not in present_options and len(raw_text) > 100:
+        if (
+            "C" in present_options
+            and "D" not in present_options
+            and len(raw_text) > 100
+        ):
             score += 0.20
             flags.append("option_structure_corrupted")
             details.append("选项结构破损: 有C缺D（疑似D被水印覆盖）")

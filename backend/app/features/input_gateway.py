@@ -76,6 +76,7 @@ class InputDocument:
     All subsequent pipeline stages read from ``local_path``.
     The original bytes are persisted at input time and NOT carried in context.
     """
+
     source_type: str = ""
     mime_type: str = ""
     filename: str = ""
@@ -149,7 +150,10 @@ class InputGateway:
         os.makedirs(subdir, exist_ok=True)
 
         ext_map = {
-            "pdf": ".pdf", "image": ".png", "txt": ".txt", "excel": ".xlsx",
+            "pdf": ".pdf",
+            "image": ".png",
+            "txt": ".txt",
+            "excel": ".xlsx",
         }
         ext = ext_map.get(source_type, ".bin")
         local_path = os.path.join(subdir, f"{sha256}{ext}")

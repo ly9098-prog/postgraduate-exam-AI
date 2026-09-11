@@ -59,6 +59,7 @@ def _read_file_bytes(path: str) -> bytes:
 @dataclass(frozen=True)
 class RequiredOCRCapabilities:
     """Capabilities required for a specific OCR recognition request."""
+
     text: bool = True
     bbox: bool = True
     layout: bool = False
@@ -75,6 +76,7 @@ class RequiredOCRCapabilities:
 @dataclass
 class GatewayRouteDecision:
     """The routing decision the Gateway would make (shadow mode)."""
+
     selected_backend: str = ""
     confidence: float = 0.0
     reason_codes: list[str] = field(default_factory=list)
@@ -173,18 +175,23 @@ class OCRGateway:
         route = self._resolve_route(req, caps)
         logger.debug(
             "OCRGateway[%s]: p%d backend=%s caps=%s",
-            self._mode, page.page_index, route.selected_backend, caps,
+            self._mode,
+            page.page_index,
+            route.selected_backend,
+            caps,
         )
 
         if self.is_shadow:
             # Shadow: return route decision only, no actual OCR
             latency = round((time.monotonic() - start) * 1000, 2)
             return ModuleResult.success(
-                data={"gateway_route": {
-                    "selected_backend": route.selected_backend,
-                    "fallback_chain": route.fallback_chain,
-                    "reason_codes": route.reason_codes,
-                }},
+                data={
+                    "gateway_route": {
+                        "selected_backend": route.selected_backend,
+                        "fallback_chain": route.fallback_chain,
+                        "reason_codes": route.reason_codes,
+                    }
+                },
                 data_type="GatewayRouteDecision",
                 module_name="ocr_gateway",
                 trace_id=trace_id,
@@ -206,7 +213,9 @@ class OCRGateway:
 
         # Gateway mode: execute through adapter with fallback chain
         return await self._execute_with_fallback(
-            req, route, trace_id=trace_id,
+            req,
+            route,
+            trace_id=trace_id,
         )
 
     # ── New: Business caller API ──
@@ -264,7 +273,8 @@ class OCRGateway:
         if worker_client is None:
             return [
                 WorkerResult(
-                    request_id="", page_index=idx,
+                    request_id="",
+                    page_index=idx,
                     status="failed",
                     stable_error_code=STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
                     error_type="No worker client — execution backend is disabled",
@@ -285,7 +295,8 @@ class OCRGateway:
         """
         logger.info(
             "OCRGateway shutting down (graceful=%.0fs kill=%.0fs)",
-            graceful_timeout, kill_timeout,
+            graceful_timeout,
+            kill_timeout,
         )
         worker_client = self._worker_client
         self._worker_client = None
@@ -314,6 +325,7 @@ class OCRGateway:
     def _get_runtime_config(self):
         """Get runtime config (lazy)."""
         from app.core.ocr_runtime_config import get_runtime_config
+
         return get_runtime_config()
 
     def _init_worker_client(self):
@@ -322,6 +334,7 @@ class OCRGateway:
         The factory returns ``None`` when ``execution_backend`` is ``"disabled"``.
         """
         from app.services.ocr_worker_client import create_ocr_worker_client
+
         cfg = self._get_runtime_config()
         return create_ocr_worker_client(cfg)
 
@@ -409,7 +422,9 @@ class OCRGateway:
                     logger.error(
                         "CLOUD_LOCAL_OCR_BLOCKED: profile=%s attempted backend=%s "
                         "(fallback_chain=%s)",
-                        self._profile.value, backend_name, route.fallback_chain,
+                        self._profile.value,
+                        backend_name,
+                        route.fallback_chain,
                     )
                     continue  # skip — do NOT attempt this backend
 
@@ -427,12 +442,19 @@ class OCRGateway:
 
                 logger.warning(
                     "OCRGateway: %s failed (recoverable=%s), trying next",
-                    backend_name, result.error.recoverable if result.error else "?",
+                    backend_name,
+                    result.error.recoverable if result.error else "?",
                 )
             except TimeoutError:
-                logger.warning("OCRGateway: %s timed out after %ds", backend_name, _OCR_TIMEOUT_SECONDS)
+                logger.warning(
+                    "OCRGateway: %s timed out after %ds",
+                    backend_name,
+                    _OCR_TIMEOUT_SECONDS,
+                )
             except Exception as e:
-                logger.warning("OCRGateway: %s error: %s", backend_name, e, exc_info=True)
+                logger.warning(
+                    "OCRGateway: %s error: %s", backend_name, e, exc_info=True
+                )
 
         latency = round((time.monotonic() - start) * 1000, 2)
         return ModuleResult.failure(
@@ -452,7 +474,8 @@ class OCRGateway:
         source = b""
         if page.image_path and os.path.exists(page.image_path):
             source = await asyncio.to_thread(
-                _read_file_bytes, page.image_path,
+                _read_file_bytes,
+                page.image_path,
             )
 
         return OCRRequest(
@@ -476,10 +499,12 @@ class OCRGateway:
 
                 cfg = self._get_runtime_config()
                 if cfg.execution_backend == "local_process":
-                    self._registry.register_ocr(PaddleOCRLocalAdapter(
-                        engine="paddleocr",
-                        worker_client_provider=self._get_or_init_worker_client,
-                    ))
+                    self._registry.register_ocr(
+                        PaddleOCRLocalAdapter(
+                            engine="paddleocr",
+                            worker_client_provider=self._get_or_init_worker_client,
+                        )
+                    )
                     logger.info(
                         "OCRGateway[%s]: registered PaddleOCRLocalAdapter",
                         self._profile.value,
@@ -511,11 +536,13 @@ class OCRGateway:
         try:
             from app.features.ocr_adapter import PaddleOCRVLDocumentAdapter
 
-            self._registry.register_ocr(PaddleOCRVLDocumentAdapter(
-                api_token=self._vl_api_token,
-                base_url=self._vl_base_url,
-                model=self._vl_model,
-            ))
+            self._registry.register_ocr(
+                PaddleOCRVLDocumentAdapter(
+                    api_token=self._vl_api_token,
+                    base_url=self._vl_base_url,
+                    model=self._vl_model,
+                )
+            )
             logger.info(
                 "OCRGateway[%s]: registered PaddleOCRVLDocumentAdapter (token=%s endpoint=%s)",
                 self._profile.value,

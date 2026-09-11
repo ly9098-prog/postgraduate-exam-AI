@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 BUCKET_DIVISOR = 10000
 
 # Group identifiers
-GROUP_CONTROL_A = "control_a"          # freeze=legacy, quality_gate=off
-GROUP_OBSERVATION_B = "observation_b"   # freeze=dual, quality_gate=shadow
-GROUP_CANARY_C = "canary_c"            # freeze=ir_canary, quality_gate=shadow
+GROUP_CONTROL_A = "control_a"  # freeze=legacy, quality_gate=off
+GROUP_OBSERVATION_B = "observation_b"  # freeze=dual, quality_gate=shadow
+GROUP_CANARY_C = "canary_c"  # freeze=ir_canary, quality_gate=shadow
 
 # Config version for rebucketing
 _CANARY_CONFIG_VERSION = "s3f-v1"
@@ -61,24 +61,27 @@ class OCRCanaryConfig:
     ``enabled=False`` means no canary logic runs at all.
     ``rollout_percent=0`` means IR canary is disabled even when enabled=True.
     """
+
     enabled: bool = False
-    rollout_percent: float = 0.0        # 0.0–100.0, 0 = disabled
-    freeze_mode: str = "legacy"         # legacy | dual | ir_canary
-    quality_gate_mode: str = "off"      # off | shadow
+    rollout_percent: float = 0.0  # 0.0–100.0, 0 = disabled
+    freeze_mode: str = "legacy"  # legacy | dual | ir_canary
+    quality_gate_mode: str = "off"  # off | shadow
     process_pool_enabled: bool = False
-    subjects: tuple[str, ...] = ()       # empty = all subjects
-    source_types: tuple[str, ...] = ()   # empty = all types
+    subjects: tuple[str, ...] = ()  # empty = all subjects
+    source_types: tuple[str, ...] = ()  # empty = all types
     tenant_allowlist: tuple[str, ...] = ()
     tenant_denylist: tuple[str, ...] = ()
     max_pages: int | None = None
     require_human_review: bool = True
-    fail_open: bool = False              # True = degrade gracefully, False = fail fast
+    fail_open: bool = False  # True = degrade gracefully, False = fail fast
     config_version: str = _CANARY_CONFIG_VERSION
 
     def __post_init__(self) -> None:
         """Validate config invariants at construction time."""
         if not 0.0 <= self.rollout_percent <= 100.0:
-            raise ValueError(f"rollout_percent must be 0–100, got {self.rollout_percent}")
+            raise ValueError(
+                f"rollout_percent must be 0–100, got {self.rollout_percent}"
+            )
         if self.freeze_mode not in ("legacy", "dual", "ir_canary"):
             raise ValueError(
                 f"freeze_mode must be legacy/dual/ir_canary, got {self.freeze_mode}"
@@ -88,9 +91,13 @@ class OCRCanaryConfig:
                 f"quality_gate_mode must be off/shadow, got {self.quality_gate_mode}"
             )
         if self.quality_gate_mode == "enforce":
-            raise ValueError("CANARY: quality_gate=enforce is prohibited in canary config")
+            raise ValueError(
+                "CANARY: quality_gate=enforce is prohibited in canary config"
+            )
         if self.freeze_mode == "ir_global_default":
-            raise ValueError("CANARY: freeze=ir_global_default is prohibited in canary config")
+            raise ValueError(
+                "CANARY: freeze=ir_global_default is prohibited in canary config"
+            )
 
     @staticmethod
     def from_env() -> OCRCanaryConfig:
@@ -117,15 +124,23 @@ class OCRCanaryConfig:
             rollout_percent=rollout_percent,
             freeze_mode=_os.environ.get("STRUCTURE_FREEZE_MODE", "legacy"),
             quality_gate_mode=_os.environ.get("DOMAIN_QUALITY_GATE_MODE", "off"),
-            process_pool_enabled=_os.environ.get("OCR_USE_PROCESS_POOL", "").lower() == "true",
+            process_pool_enabled=_os.environ.get("OCR_USE_PROCESS_POOL", "").lower()
+            == "true",
             subjects=tuple(s.strip() for s in subjects_str.split(",") if s.strip()),
-            source_types=tuple(s.strip() for s in source_types_str.split(",") if s.strip()),
+            source_types=tuple(
+                s.strip() for s in source_types_str.split(",") if s.strip()
+            ),
             tenant_allowlist=_parse_csv_env(ENV_CANARY_TENANT_ALLOWLIST),
             tenant_denylist=_parse_csv_env(ENV_CANARY_TENANT_DENYLIST),
             max_pages=_parse_int_env(ENV_CANARY_MAX_PAGES),
-            require_human_review=_os.environ.get(ENV_CANARY_REQUIRE_REVIEW, "true").lower() != "false",
+            require_human_review=_os.environ.get(
+                ENV_CANARY_REQUIRE_REVIEW, "true"
+            ).lower()
+            != "false",
             fail_open=_os.environ.get(ENV_CANARY_FAIL_OPEN, "").lower() == "true",
-            config_version=_os.environ.get(ENV_CANARY_CONFIG_VERSION, _CANARY_CONFIG_VERSION),
+            config_version=_os.environ.get(
+                ENV_CANARY_CONFIG_VERSION, _CANARY_CONFIG_VERSION
+            ),
         )
 
     def with_overrides(self, **kwargs: Any) -> OCRCanaryConfig:
@@ -151,6 +166,7 @@ class OCRCanaryConfig:
 
 def _parse_csv_env(key: str) -> tuple[str, ...]:
     import os as _os
+
     val = _os.environ.get(key, "")
     if not val:
         return ()
@@ -159,6 +175,7 @@ def _parse_csv_env(key: str) -> tuple[str, ...]:
 
 def _parse_int_env(key: str) -> int | None:
     import os as _os
+
     val = _os.environ.get(key, "")
     if not val:
         return None
@@ -179,6 +196,7 @@ class CanaryBucketAssignment:
 
     Serialized to pipeline diagnostics for full traceability.
     """
+
     canary_selected: bool = False
     canary_bucket: int = 0
     rollout_percent: float = 0.0
@@ -249,7 +267,9 @@ def assign_canary_bucket(
 
     # ── Page count filter ──
     if config.max_pages is not None and page_count > config.max_pages:
-        assignment.selection_reasons.append(f"page_count_exceeded:{page_count}>{config.max_pages}")
+        assignment.selection_reasons.append(
+            f"page_count_exceeded:{page_count}>{config.max_pages}"
+        )
         return assignment
 
     # ── Compute stable bucket ──
@@ -285,6 +305,7 @@ class CanaryGroupSelection:
     Observation B: dual freeze, quality gate shadow (no output change)
     Canary C: ir_canary freeze, quality gate shadow, forced review
     """
+
     group: str = GROUP_CONTROL_A
     effective_freeze_mode: str = "legacy"
     effective_quality_gate_mode: str = "off"
@@ -357,8 +378,9 @@ def select_canary_group(
 
     # ── Canary C: IR canary for selected tasks ──
     if bucket.canary_selected and config.enabled:
-        if (config.freeze_mode == "dual" and config.quality_gate_mode == "shadow") or \
-           config.freeze_mode == "ir_canary":
+        if (
+            config.freeze_mode == "dual" and config.quality_gate_mode == "shadow"
+        ) or config.freeze_mode == "ir_canary":
             selection.group = GROUP_CANARY_C
             selection.effective_freeze_mode = "ir_canary"
             selection.effective_quality_gate_mode = "shadow"
@@ -433,6 +455,7 @@ def check_ir_canary_failover(
 @dataclass
 class CanaryHealthDecision:
     """Result of canary health evaluation."""
+
     healthy: bool = True
     stop_rollout: bool = False
     rollback_required: bool = False
@@ -494,9 +517,13 @@ def evaluate_canary_health(
     if ir_fallback_rate > 1.0:
         stat_reasons.append(f"IR_FALLBACK_RATE={ir_fallback_rate:.1f}%")
     if question_count_mismatch_rate > 0.0:
-        stat_reasons.append(f"QUESTION_COUNT_MISMATCH_RATE={question_count_mismatch_rate:.1f}%")
+        stat_reasons.append(
+            f"QUESTION_COUNT_MISMATCH_RATE={question_count_mismatch_rate:.1f}%"
+        )
     if option_text_normalized_mismatch_rate > 5.0:
-        stat_reasons.append(f"OPTION_TEXT_MISMATCH_RATE={option_text_normalized_mismatch_rate:.1f}%")
+        stat_reasons.append(
+            f"OPTION_TEXT_MISMATCH_RATE={option_text_normalized_mismatch_rate:.1f}%"
+        )
     if p95_latency_increase_pct > 20.0:
         stat_reasons.append(f"P95_LATENCY_INCREASE={p95_latency_increase_pct:.1f}%")
     if error_rate_increase_pct > 0.5:
@@ -544,6 +571,7 @@ class CanaryReviewOutcome:
     option_reordered, answer_wrong, reading_order_wrong, cross_page_wrong,
     code_corrupted, formula_corrupted, table_corrupted, image_binding_wrong, other
     """
+
     pipeline_id: str
     document_id: str
     group: str  # control_a | observation_b | canary_c
@@ -626,6 +654,7 @@ class OCRReleaseDecision:
       Stage 4: IR Canary 20%
       Stage 5: IR Canary 50% (requires separate approval)
     """
+
     approved: bool = False
     approved_stage: str = "stage_0"
     blockers: list[str] = field(default_factory=list)
@@ -647,7 +676,9 @@ class OCRReleaseDecision:
     def _recommendation(self) -> str:
         if self.approved:
             return f"proceed_to_{self.approved_stage}"
-        if any("DATA_LOSS" in b or "DUPLICATE" in b or "CRASH" in b for b in self.blockers):
+        if any(
+            "DATA_LOSS" in b or "DUPLICATE" in b or "CRASH" in b for b in self.blockers
+        ):
             return "rollback_to_legacy"
         return "hold_and_investigate"
 
@@ -755,6 +786,7 @@ def is_canary_globally_disabled() -> bool:
     When OCR_CANARY_ENABLED=false, no canary logic runs at all.
     """
     import os as _os
+
     return _os.environ.get(ENV_CANARY_ENABLED, "").lower() != "true"
 
 
@@ -765,6 +797,7 @@ def is_ir_canary_disabled() -> bool:
     even if the global switch is on.
     """
     import os as _os
+
     val = _os.environ.get(ENV_IR_CANARY_PERCENT, "0")
     try:
         return float(val) <= 0.0

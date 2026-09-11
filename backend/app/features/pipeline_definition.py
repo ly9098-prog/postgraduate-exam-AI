@@ -119,61 +119,135 @@ class PipelineDefinition:
     """
 
     _STAGES: tuple[StageDefinition, ...] = (
-        _always("extract", business_domain="ocr",
-                description="Extract raw text blocks from file content"),
-        _when("wangdao_preprocess", "enable_wangdao_preprocess", enabled_by_default=False,
-              description="Wangdao format preprocessing for imported data"),
-        _always("normalize_text",
-                description="Normalize whitespace, unicode, and layout tokens"),
-        _when("ocr_correction", "enable_ocr_correction", business_domain="ai_correct",
-              description="AI correction of OCR recognition errors"),
-        _always("layout_reconstruction",
-                description="Reconstruct document layout from OCR blocks"),
-        _always("layout_router",
-                description="Route layout to standard/enhanced/VL path by confidence"),
-        _when("visual_region_detect", "enable_visual_region_detect",
-              description="Detect visual regions (tables, figures, math)"),
-        _always("analyze_structure",
-                description="Analyze document structure hierarchy"),
-        _always("classify_pages",
-                description="Classify pages by layout type and orientation"),
-        _always("structure_freeze",
-                description="Freeze final structure before question parsing"),
-        _resumable("split", "split.json",
-                   description="Split document into individual questions"),
-        _always("question_bbox",
-                description="Assign bounding boxes to each question"),
-        _resumable("match", "match.json",
-                   description="Match questions with their answer regions"),
-        _resumable("normalize_schema", "normalize_schema.json",
-                   description="Normalize question schema to canonical format"),
-        _when("code_language_noise_clean", "enable_code_language_noise_clean",
-              description="Remove OCR language identifier noise before structure repair"),
-        _when("code_structure_reconstruct", "enable_code_structure_reconstruct",
-              description="Fix code integrity issues before AI repair"),
-        _always("classify_questions",
-                description="Enforce question type classification with strict has_options"),
-        _always("batch_validation",
-                description="Validate all parsed questions for structural consistency"),
-        _when("batch_dedup", "enable_batch_dedup",
-              description="Deduplicate questions before AI repair"),
-        _resumable("repair", "repair.json", option_key="enable_ai_repair",
-                   business_domain="ai_correct",
-                   description="AI repair of structural and content issues"),
-        _when("ai_validation", "enable_ai_repair",
-              description="Validate AI repair output for correctness"),
-        _when("similarity_match", "enable_similarity_match",
-              description="Match similar questions across sources"),
-        _when("visual_region_assign", "enable_visual_region_assign",
-              description="Assign visual regions (tables, figures) to questions"),
-        _resumable("math_detect", "math_detect.json", option_key="enable_math_detect",
-                   description="Detect and mark math content"),
-        _resumable("table_detect", "table_detect.json", option_key="enable_table_detect",
-                   description="Detect and extract table structures"),
-        _when("visual_region_crop", "enable_visual_region_crop",
-              description="Crop visual region images for downstream processing"),
-        _resumable("review", "review_commit_state.json", business_domain="save",
-                   description="Final review and save of completed pipeline"),
+        _always(
+            "extract",
+            business_domain="ocr",
+            description="Extract raw text blocks from file content",
+        ),
+        _when(
+            "wangdao_preprocess",
+            "enable_wangdao_preprocess",
+            enabled_by_default=False,
+            description="Wangdao format preprocessing for imported data",
+        ),
+        _always(
+            "normalize_text",
+            description="Normalize whitespace, unicode, and layout tokens",
+        ),
+        _when(
+            "ocr_correction",
+            "enable_ocr_correction",
+            business_domain="ai_correct",
+            description="AI correction of OCR recognition errors",
+        ),
+        _always(
+            "layout_reconstruction",
+            description="Reconstruct document layout from OCR blocks",
+        ),
+        _always(
+            "layout_router",
+            description="Route layout to standard/enhanced/VL path by confidence",
+        ),
+        _when(
+            "visual_region_detect",
+            "enable_visual_region_detect",
+            description="Detect visual regions (tables, figures, math)",
+        ),
+        _always(
+            "analyze_structure", description="Analyze document structure hierarchy"
+        ),
+        _always(
+            "classify_pages",
+            description="Classify pages by layout type and orientation",
+        ),
+        _always(
+            "structure_freeze",
+            description="Freeze final structure before question parsing",
+        ),
+        _resumable(
+            "split",
+            "split.json",
+            description="Split document into individual questions",
+        ),
+        _always("question_bbox", description="Assign bounding boxes to each question"),
+        _resumable(
+            "match",
+            "match.json",
+            description="Match questions with their answer regions",
+        ),
+        _resumable(
+            "normalize_schema",
+            "normalize_schema.json",
+            description="Normalize question schema to canonical format",
+        ),
+        _when(
+            "code_language_noise_clean",
+            "enable_code_language_noise_clean",
+            description="Remove OCR language identifier noise before structure repair",
+        ),
+        _when(
+            "code_structure_reconstruct",
+            "enable_code_structure_reconstruct",
+            description="Fix code integrity issues before AI repair",
+        ),
+        _always(
+            "classify_questions",
+            description="Enforce question type classification with strict has_options",
+        ),
+        _always(
+            "batch_validation",
+            description="Validate all parsed questions for structural consistency",
+        ),
+        _when(
+            "batch_dedup",
+            "enable_batch_dedup",
+            description="Deduplicate questions before AI repair",
+        ),
+        _resumable(
+            "repair",
+            "repair.json",
+            option_key="enable_ai_repair",
+            business_domain="ai_correct",
+            description="AI repair of structural and content issues",
+        ),
+        _when(
+            "ai_validation",
+            "enable_ai_repair",
+            description="Validate AI repair output for correctness",
+        ),
+        _when(
+            "similarity_match",
+            "enable_similarity_match",
+            description="Match similar questions across sources",
+        ),
+        _when(
+            "visual_region_assign",
+            "enable_visual_region_assign",
+            description="Assign visual regions (tables, figures) to questions",
+        ),
+        _resumable(
+            "math_detect",
+            "math_detect.json",
+            option_key="enable_math_detect",
+            description="Detect and mark math content",
+        ),
+        _resumable(
+            "table_detect",
+            "table_detect.json",
+            option_key="enable_table_detect",
+            description="Detect and extract table structures",
+        ),
+        _when(
+            "visual_region_crop",
+            "enable_visual_region_crop",
+            description="Crop visual region images for downstream processing",
+        ),
+        _resumable(
+            "review",
+            "review_commit_state.json",
+            business_domain="save",
+            description="Final review and save of completed pipeline",
+        ),
     )
 
     # ── classmethods ──────────────────────────────────────────────────────
@@ -201,7 +275,8 @@ class PipelineDefinition:
 
     @classmethod
     def enabled_stages(
-        cls, options: dict[str, bool] | None = None,
+        cls,
+        options: dict[str, bool] | None = None,
     ) -> tuple[StageDefinition, ...]:
         """Return stage definitions filtered by runtime *options*.
 

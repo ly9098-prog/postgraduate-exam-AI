@@ -33,15 +33,18 @@ _QUESTION_NUMBER_PATTERNS = [
     re.compile(r"^第\s*[一二三四五六七八九十]+\s*题"),
 ]
 
-_OPTION_PATTERN = re.compile(
-    r"(?:^|\s)[A-Da-d]\s*[.．、:：)）]", re.MULTILINE
-)
+_OPTION_PATTERN = re.compile(r"(?:^|\s)[A-Da-d]\s*[.．、:：)）]", re.MULTILINE)
 
 _FILL_BLANK_PATTERN = re.compile(r"_{2,}|（\s*）|\(\s*\)")
 
 _ANSWER_KEYWORDS = [
-    "答案", "参考答案", "正确答案", "标准答案",
-    "Answer", "ANSWER", "KEY",
+    "答案",
+    "参考答案",
+    "正确答案",
+    "标准答案",
+    "Answer",
+    "ANSWER",
+    "KEY",
 ]
 
 _NUMBERED_ANSWER_PATTERN = re.compile(
@@ -49,8 +52,13 @@ _NUMBERED_ANSWER_PATTERN = re.compile(
 )
 
 _ANALYSIS_KEYWORDS = [
-    "解析", "解答", "讲解", "详解",
-    "【解析】", "【解答】", "【分析】",
+    "解析",
+    "解答",
+    "讲解",
+    "详解",
+    "【解析】",
+    "【解答】",
+    "【分析】",
 ]
 
 _CATALOG_PATTERNS = [
@@ -194,7 +202,9 @@ def _classify_single_page(page_text: str, section_hints: dict | None = None) -> 
         scores[CATALOG_PAGE] += 0.7
 
     # Knowledge signals (prose without question/answer patterns)
-    total_question_answer_signal = q_numbers + options + answer_kw + numbered_answers + analysis_kw
+    total_question_answer_signal = (
+        q_numbers + options + answer_kw + numbered_answers + analysis_kw
+    )
     if total_question_answer_signal == 0 and text_len > 50:
         scores[KNOWLEDGE_PAGE] += 0.4
         if knowledge_signals >= 2:
@@ -285,12 +295,14 @@ def classify_pages(
         combined_text = "\n".join(page_texts[page])
         hints = page_hints.get(page)
         classification = _classify_single_page(combined_text, hints)
-        results.append({
-            "page": page,
-            "label": classification["label"],
-            "confidence": classification["confidence"],
-            "signals": classification["signals"],
-        })
+        results.append(
+            {
+                "page": page,
+                "label": classification["label"],
+                "confidence": classification["confidence"],
+                "signals": classification["signals"],
+            }
+        )
 
     return results
 
@@ -327,5 +339,6 @@ def classify_pages_from_ir(
 ) -> list[dict]:
     """DocumentIR entry point for classify_pages."""
     from app.core.document_ir import document_ir_to_blocks
+
     blocks = document_ir_to_blocks(doc)
     return classify_pages(blocks, section_markers=section_markers)

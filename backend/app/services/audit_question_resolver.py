@@ -8,6 +8,7 @@ Priority chain (highest first):
 5. ``detail.question_summary`` / ``detail_summary`` — summary-only
 6. Current database — look up by ``resource_id`` (last resort)
 """
+
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +36,7 @@ def extract_question_content_text(content: Any) -> str | None:
                 return val
         # Fallback: return JSON
         import json
+
         return json.dumps(content, ensure_ascii=False)
     if isinstance(content, list):
         parts = []
@@ -154,9 +156,8 @@ async def resolve_question_audit_detail(
     and no resolution is possible.
     """
     # Only process question-related logs
-    is_question = (
-        audit_log_resource_type == "question"
-        or (audit_log_action and audit_log_action.startswith("question."))
+    is_question = audit_log_resource_type == "question" or (
+        audit_log_action and audit_log_action.startswith("question.")
     )
     if not is_question:
         return None

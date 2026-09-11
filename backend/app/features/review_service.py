@@ -62,7 +62,9 @@ def _summarize_blank_option_groups(groups: list[dict]) -> list[dict]:
             continue
         options = group.get("options") or {}
         if isinstance(options, dict):
-            keys = sorted(str(key).upper() for key in options.keys() if str(key).strip())
+            keys = sorted(
+                str(key).upper() for key in options.keys() if str(key).strip()
+            )
         elif isinstance(options, list):
             keys = sorted(
                 str(option.get("key") or "").upper()
@@ -71,10 +73,15 @@ def _summarize_blank_option_groups(groups: list[dict]) -> list[dict]:
             )
         else:
             keys = []
-        summary.append({
-            "id": group.get("id") or group.get("blank_id") or group.get("label") or index + 1,
-            "option_keys": keys,
-        })
+        summary.append(
+            {
+                "id": group.get("id")
+                or group.get("blank_id")
+                or group.get("label")
+                or index + 1,
+                "option_keys": keys,
+            }
+        )
     return summary
 
 
@@ -88,7 +95,11 @@ def _log_multi_blank_review_item(
     raw_groups = _get_blank_option_groups(source_question)
     parsed_content = qi.parsed_content if isinstance(qi.parsed_content, dict) else {}
     parsed_groups = _get_blank_option_groups(parsed_content)
-    if qi.question_type != "multi_blank_choice" and not raw_groups and not parsed_groups:
+    if (
+        qi.question_type != "multi_blank_choice"
+        and not raw_groups
+        and not parsed_groups
+    ):
         return
 
     logger.warning(
@@ -100,7 +111,9 @@ def _log_multi_blank_review_item(
             "stem_preview": stem[:80],
             "parsed_options_is_none": qi.parsed_options is None,
             "blank_option_group_count": len(parsed_groups or raw_groups),
-            "blank_option_groups": _summarize_blank_option_groups(parsed_groups or raw_groups),
+            "blank_option_groups": _summarize_blank_option_groups(
+                parsed_groups or raw_groups
+            ),
             "parsed_content_has_blank_option_groups": bool(parsed_groups),
             "raw_data_has_blank_option_groups": bool(raw_groups),
         },
@@ -125,6 +138,7 @@ async def _batch_find_duplicate_questions(
     # Resolve legacy string subjects to IDs (batch)
     str_subjects = list({s for s, _ in unique_pairs if isinstance(s, str)})
     from app.services.admin_subject_service import resolve_subject_id
+
     subject_code_map: dict[str, int] = {}
     for code in str_subjects:
         resolved = await resolve_subject_id(db, code)
@@ -132,7 +146,7 @@ async def _batch_find_duplicate_questions(
             subject_code_map[code] = resolved
 
     for i in range(0, len(unique_pairs), 500):
-        chunk = unique_pairs[i:i + 500]
+        chunk = unique_pairs[i : i + 500]
         conditions = []
         for s, h in chunk:
             if isinstance(s, int):
@@ -148,6 +162,7 @@ async def _batch_find_duplicate_questions(
         if not conditions:
             continue
         from sqlalchemy import or_
+
         select_cols = [Question.question_hash, Question.id]
         stmt = select(*select_cols).where(
             or_(*conditions),
@@ -181,6 +196,7 @@ async def _batch_find_duplicate_imports(
     # Resolve legacy string subjects to IDs (batch)
     str_subjects = list({s for s, _ in unique_pairs if isinstance(s, str)})
     from app.services.admin_subject_service import resolve_subject_id
+
     subject_code_map: dict[str, int] = {}
     for code in str_subjects:
         resolved = await resolve_subject_id(db, code)
@@ -188,23 +204,28 @@ async def _batch_find_duplicate_imports(
             subject_code_map[code] = resolved
 
     for i in range(0, len(unique_pairs), 500):
-        chunk = unique_pairs[i:i + 500]
+        chunk = unique_pairs[i : i + 500]
         conditions = []
         for s, h in chunk:
             if isinstance(s, int):
                 conditions.append(
-                    (QuestionImport.subject_id == s) & (QuestionImport.question_hash == h)
+                    (QuestionImport.subject_id == s)
+                    & (QuestionImport.question_hash == h)
                 )
             else:
                 sid = subject_code_map.get(s)
                 if sid is not None:
                     conditions.append(
-                        (QuestionImport.subject_id == sid) & (QuestionImport.question_hash == h)
+                        (QuestionImport.subject_id == sid)
+                        & (QuestionImport.question_hash == h)
                     )
         if not conditions:
             continue
         from sqlalchemy import or_
-        stmt = select(QuestionImport.question_hash, QuestionImport.id, QuestionImport.question_id).where(
+
+        stmt = select(
+            QuestionImport.question_hash, QuestionImport.id, QuestionImport.question_id
+        ).where(
             or_(*conditions),
             QuestionImport.status != "rejected",
         )
@@ -220,7 +241,7 @@ async def _batch_find_duplicate_imports(
                     Question.is_active == True,  # noqa: E712
                 )
             )
-            active_qids = {qid for qid, in q_result.all()}
+            active_qids = {qid for (qid,) in q_result.all()}
 
         # Build hash→row mapping for quick lookup
         hash_to_rows: dict[str, list] = {}
@@ -269,13 +290,19 @@ async def submit_to_review(
     if not subject_id and subject:
         try:
             from app.services.admin_subject_service import resolve_subject_id
+
             resolved = await resolve_subject_id(db, subject)
             if resolved is not None:
                 subject_id = resolved
             else:
-                logger.warning("submit_to_review: could not resolve subject=%r to subject_id", subject)
+                logger.warning(
+                    "submit_to_review: could not resolve subject=%r to subject_id",
+                    subject,
+                )
         except Exception:
-            logger.warning("submit_to_review: failed to resolve subject=%r", subject, exc_info=True)
+            logger.warning(
+                "submit_to_review: failed to resolve subject=%r", subject, exc_info=True
+            )
 
     items: list[dict] = []
     written = 0
@@ -289,7 +316,9 @@ async def submit_to_review(
     pending_meta: list[tuple[dict, str, str | None]] = []
 
     # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
-    prepared: list[tuple[dict, str, dict | None, str | None, int | None, str | None]] = []
+    prepared: list[
+        tuple[dict, str, dict | None, str | None, int | None, str | None]
+    ] = []
     subject_hash_pairs: list[tuple[int | str | None, str | None]] = []
 
     # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
@@ -315,7 +344,10 @@ async def submit_to_review(
                 "confidence_score": 0,
                 "is_valid": False,
                 "errors": [*q.get("errors", []), "empty_stem_raw_text_fallback"],
-                "warnings": [*q.get("warnings", []), "题干为空，已用 OCR 原文进入待审核区"],
+                "warnings": [
+                    *q.get("warnings", []),
+                    "题干为空，已用 OCR 原文进入待审核区",
+                ],
             }
 
         options = q.get("options") or []
@@ -324,9 +356,13 @@ async def submit_to_review(
         parsed_answer = (q.get("answer") or "").strip() or None
         qi_subject = subject or q.get("subject") or None
         qi_subject_id = subject_id or q.get("subject_id") or None
-        question_hash = normalizer.build_question_hash(stem, parsed_options, parsed_answer)
+        question_hash = normalizer.build_question_hash(
+            stem, parsed_options, parsed_answer
+        )
 
-        prepared.append((q, stem, parsed_options, qi_subject, qi_subject_id, question_hash))
+        prepared.append(
+            (q, stem, parsed_options, qi_subject, qi_subject_id, question_hash)
+        )
         # Prefer subject_id (int) for duplicate matching; fall back to subject string
         dup_key = qi_subject_id if qi_subject_id else qi_subject
         subject_hash_pairs.append((dup_key, question_hash))
@@ -345,30 +381,45 @@ async def submit_to_review(
     # 隐患② 修复：分批 commit 失去原子性，中途崩溃会留下孤儿 batch_id 记录。
     # 用 try/except 包住整段写入逻辑，失败时按 batch_id 清理已 commit 的部分。
     try:
-        for q, stem, parsed_options, qi_subject, qi_subject_id, question_hash in prepared:
+        for (
+            q,
+            stem,
+            parsed_options,
+            qi_subject,
+            qi_subject_id,
+            question_hash,
+        ) in prepared:
             if not stem:
                 continue
 
             # Skip existing questions in the published bank or review pool
             dup_subject = qi_subject_id if qi_subject_id else qi_subject
-            dup_key = (dup_subject, question_hash) if (dup_subject and question_hash) else None
+            dup_key = (
+                (dup_subject, question_hash)
+                if (dup_subject and question_hash)
+                else None
+            )
             if skip_existing and dup_key and dup_key in dup_questions:
                 skipped += 1
                 duplicates_filtered += 1
-                items.append({
-                    "block_index": len(items),
-                    "status": "duplicate",
-                    "error": "题库中已存在相同题目",
-                })
+                items.append(
+                    {
+                        "block_index": len(items),
+                        "status": "duplicate",
+                        "error": "题库中已存在相同题目",
+                    }
+                )
                 continue
             if skip_existing and dup_key and dup_key in dup_imports:
                 skipped += 1
                 duplicates_filtered += 1
-                items.append({
-                    "block_index": len(items),
-                    "status": "duplicate",
-                    "error": "审核池中已存在相同题目",
-                })
+                items.append(
+                    {
+                        "block_index": len(items),
+                        "status": "duplicate",
+                        "error": "审核池中已存在相同题目",
+                    }
+                )
                 continue
 
             # Build duplicate fields from pre-fetched maps
@@ -386,7 +437,9 @@ async def submit_to_review(
                 duplicate_fields["duplicate_of_import_id"] = dup_imports[dup_key]
             elif question_hash and question_hash in seen_hash_set:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
-                duplicate_fields["duplicate_of_import_id"] = seen_hashes.get(question_hash)
+                duplicate_fields["duplicate_of_import_id"] = seen_hashes.get(
+                    question_hash
+                )
 
             # 即时加入 seen_hash_set，后续同批次重复可立即检测到
             if question_hash:
@@ -398,18 +451,22 @@ async def submit_to_review(
             if q.get("blank_option_groups"):
                 parsed_content["blank_option_groups"] = q.get("blank_option_groups")
             # P1-5: 保留上游 stage 写入的 segments / render_mode
-            q_segments = q.get("segments") or (q.get("parsed_content") or {}).get("segments")
+            q_segments = q.get("segments") or (q.get("parsed_content") or {}).get(
+                "segments"
+            )
             if q_segments:
                 parsed_content["render_mode"] = "segments"
                 parsed_content["segments"] = q_segments
 
             # P0: 追加 review 阶段决策到 decision_trace
             q_decision_trace = list(q.get("decision_trace") or [])
-            q_decision_trace.append({
-                "stage": "review",
-                "result": "pending",
-                "reason": "written_to_review_queue",
-            })
+            q_decision_trace.append(
+                {
+                    "stage": "review",
+                    "result": "pending",
+                    "reason": "written_to_review_queue",
+                }
+            )
             q["decision_trace"] = q_decision_trace
 
             # ── 推导 answer_status ──
@@ -443,17 +500,32 @@ async def submit_to_review(
 
             # ── 原题定位信息 ──
             src = q.get("source", {}) or {}
-            source_question_no = q.get("source_question_no") or src.get("source_question_no")
-            source_question_label = q.get("source_question_label") or src.get("source_question_label")
-            source_image_seq = q.get("source_image_seq") or src.get("source_image_seq")
-            source_image_name = q.get("source_image_name") or src.get("source_image_name") or source_file
-            source_page_start = q.get("page_start") or src.get("page_start") or q.get("source_page_start")
-            source_page_end = q.get("page_end") or src.get("page_end") or q.get("source_page_end")
-            source_order_index = q.get("source_order_index") or src.get("source_order_index")
-            raw_text_preview = (
-                (q.get("raw_text") or q.get("raw_question_text") or "")[:200]
-                or (source_question_label or "") + (stem or "")[:180]
+            source_question_no = q.get("source_question_no") or src.get(
+                "source_question_no"
             )
+            source_question_label = q.get("source_question_label") or src.get(
+                "source_question_label"
+            )
+            source_image_seq = q.get("source_image_seq") or src.get("source_image_seq")
+            source_image_name = (
+                q.get("source_image_name")
+                or src.get("source_image_name")
+                or source_file
+            )
+            source_page_start = (
+                q.get("page_start")
+                or src.get("page_start")
+                or q.get("source_page_start")
+            )
+            source_page_end = (
+                q.get("page_end") or src.get("page_end") or q.get("source_page_end")
+            )
+            source_order_index = q.get("source_order_index") or src.get(
+                "source_order_index"
+            )
+            raw_text_preview = (q.get("raw_text") or q.get("raw_question_text") or "")[
+                :200
+            ] or (source_question_label or "") + (stem or "")[:180]
 
             qi = QuestionImport(
                 batch_id=batch_id,
@@ -485,7 +557,8 @@ async def submit_to_review(
                     # P1-2: 透传上游 stage 写入的风险标（值域见
                     # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3）。
                     # 前端 import-batch 页据此渲染徽章；空列表写 None 减少 JSON 体积。
-                    "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])) or None,
+                    "risk_flags": list(dict.fromkeys(q.get("risk_flags") or []))
+                    or None,
                     # P0: Quality status monotonic preservation
                     "quality_status": q.get("quality_status", "passed"),
                     "quality_blockers": q.get("quality_blockers") or [],
@@ -532,33 +605,40 @@ async def submit_to_review(
                     if _qh:
                         seen_hashes.setdefault(_qh, _qi.id)
                     _stem_preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
-                    items.append({
-                        "id": _qi.id,
-                        "status": "pending",
-                        "confidence_score": _q.get("confidence_score", 0),
-                        "stem_preview": _stem_preview,
-                        "has_issues": not _q.get("is_valid", True) or bool(_q.get("errors")),
-                        "question_hash": _qi.question_hash,
-                        "duplicate_status": _qi.duplicate_status,
-                        "duplicate_of_question_id": _qi.duplicate_of_question_id,
-                        "duplicate_of_import_id": _qi.duplicate_of_import_id,
-                    })
+                    items.append(
+                        {
+                            "id": _qi.id,
+                            "status": "pending",
+                            "confidence_score": _q.get("confidence_score", 0),
+                            "stem_preview": _stem_preview,
+                            "has_issues": not _q.get("is_valid", True)
+                            or bool(_q.get("errors")),
+                            "question_hash": _qi.question_hash,
+                            "duplicate_status": _qi.duplicate_status,
+                            "duplicate_of_question_id": _qi.duplicate_of_question_id,
+                            "duplicate_of_import_id": _qi.duplicate_of_import_id,
+                        }
+                    )
                     _log_multi_blank_review_item(
-                        batch_id=batch_id, qi=_qi,
-                        source_question=_q, stem=_stem,
+                        batch_id=batch_id,
+                        qi=_qi,
+                        source_question=_q,
+                        stem=_stem,
                     )
 
                 # 回填同批次重复的 duplicate_of_import_id：
                 # flush 前 seen_hashes 为空，duplicate_of_import_id 暂为 None；
                 # flush 后 seen_hashes 已填充，此时回填第一个同 hash 题目的 ID。
-                for _item in items[-len(pending_qis):]:
+                for _item in items[-len(pending_qis) :]:
                     if (
                         _item["duplicate_status"] == "possible_duplicate"
                         and _item["duplicate_of_import_id"] is None
                         and _item["question_hash"]
                         and _item["question_hash"] in seen_hashes
                     ):
-                        _item["duplicate_of_import_id"] = seen_hashes[_item["question_hash"]]
+                        _item["duplicate_of_import_id"] = seen_hashes[
+                            _item["question_hash"]
+                        ]
 
                 for _qi in pending_qis:
                     db.expunge(_qi)
@@ -576,20 +656,25 @@ async def submit_to_review(
                 if _qh:
                     seen_hashes.setdefault(_qh, _qi.id)
                 _stem_preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
-                items.append({
-                    "id": _qi.id,
-                    "status": "pending",
-                    "confidence_score": _q.get("confidence_score", 0),
-                    "stem_preview": _stem_preview,
-                    "has_issues": not _q.get("is_valid", True) or bool(_q.get("errors")),
-                    "question_hash": _qi.question_hash,
-                    "duplicate_status": _qi.duplicate_status,
-                    "duplicate_of_question_id": _qi.duplicate_of_question_id,
-                    "duplicate_of_import_id": _qi.duplicate_of_import_id,
-                })
+                items.append(
+                    {
+                        "id": _qi.id,
+                        "status": "pending",
+                        "confidence_score": _q.get("confidence_score", 0),
+                        "stem_preview": _stem_preview,
+                        "has_issues": not _q.get("is_valid", True)
+                        or bool(_q.get("errors")),
+                        "question_hash": _qi.question_hash,
+                        "duplicate_status": _qi.duplicate_status,
+                        "duplicate_of_question_id": _qi.duplicate_of_question_id,
+                        "duplicate_of_import_id": _qi.duplicate_of_import_id,
+                    }
+                )
                 _log_multi_blank_review_item(
-                    batch_id=batch_id, qi=_qi,
-                    source_question=_q, stem=_stem,
+                    batch_id=batch_id,
+                    qi=_qi,
+                    source_question=_q,
+                    stem=_stem,
                 )
 
             # 回填同批次重复的 duplicate_of_import_id（同 batch commit 块逻辑）
@@ -601,7 +686,9 @@ async def submit_to_review(
                     and _item["question_hash"]
                     and _item["question_hash"] in seen_hashes
                 ):
-                    _item["duplicate_of_import_id"] = seen_hashes[_item["question_hash"]]
+                    _item["duplicate_of_import_id"] = seen_hashes[
+                        _item["question_hash"]
+                    ]
 
             for _qi in pending_qis:
                 db.expunge(_qi)
@@ -613,7 +700,9 @@ async def submit_to_review(
         # 隐患② 修复：分批 commit 中途失败时，先回滚当前事务，再按 batch_id
         # best-effort 清理之前已 commit 的部分；任何一步失败都只记日志，
         # 不掩盖原始异常。
-        logger.exception("submit_to_review failed mid-batch (batch_id=%s): %s", batch_id, exc)
+        logger.exception(
+            "submit_to_review failed mid-batch (batch_id=%s): %s", batch_id, exc
+        )
         try:
             await db.rollback()
         except Exception:
@@ -629,7 +718,8 @@ async def submit_to_review(
             )
         except Exception:
             logger.exception(
-                "orphan cleanup for batch_id=%s failed; manual cleanup required", batch_id
+                "orphan cleanup for batch_id=%s failed; manual cleanup required",
+                batch_id,
             )
         raise
 
@@ -677,7 +767,9 @@ async def get_review_queue(
     stmt = select(QuestionImport)
     if conditions:
         stmt = stmt.where(*conditions)
-    stmt = stmt.order_by(nulls_last(asc(QuestionImport.ai_confidence)), QuestionImport.id)
+    stmt = stmt.order_by(
+        nulls_last(asc(QuestionImport.ai_confidence)), QuestionImport.id
+    )
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
     rows = (await db.execute(stmt)).scalars().all()
@@ -685,31 +777,37 @@ async def get_review_queue(
     items = []
     for qi in rows:
         ai_meta = qi.ai_metadata or {}
-        items.append({
-            "id": qi.id,
-            "batch_id": qi.batch_id,
-            "source_type": qi.source_type,
-            "source_file": qi.source_file,
-            "subject_id": qi.subject_id,
-            "subject": qi.subject_ref.code if qi.subject_ref else None,
-            "subject_name": qi.subject_ref.name if qi.subject_ref else None,
-            "question_type": qi.question_type,
-            "parsed_content": qi.parsed_content,
-            "parsed_options": qi.parsed_options,
-            "parsed_answer": qi.parsed_answer,
-            "parsed_analysis": qi.parsed_analysis,
-            "question_hash": qi.question_hash,
-            "duplicate_status": qi.duplicate_status,
-            "duplicate_of_question_id": qi.duplicate_of_question_id,
-            "duplicate_of_import_id": qi.duplicate_of_import_id,
-            "status": qi.status,
-            "ai_confidence": qi.ai_confidence,
-            "review_note": qi.review_note,
-            "ai_metadata": qi.ai_metadata,
-            "errors": ai_meta.get("errors", []) if isinstance(ai_meta, dict) else [],
-            "warnings": ai_meta.get("warnings", []) if isinstance(ai_meta, dict) else [],
-            "created_at": qi.created_at,
-        })
+        items.append(
+            {
+                "id": qi.id,
+                "batch_id": qi.batch_id,
+                "source_type": qi.source_type,
+                "source_file": qi.source_file,
+                "subject_id": qi.subject_id,
+                "subject": qi.subject_ref.code if qi.subject_ref else None,
+                "subject_name": qi.subject_ref.name if qi.subject_ref else None,
+                "question_type": qi.question_type,
+                "parsed_content": qi.parsed_content,
+                "parsed_options": qi.parsed_options,
+                "parsed_answer": qi.parsed_answer,
+                "parsed_analysis": qi.parsed_analysis,
+                "question_hash": qi.question_hash,
+                "duplicate_status": qi.duplicate_status,
+                "duplicate_of_question_id": qi.duplicate_of_question_id,
+                "duplicate_of_import_id": qi.duplicate_of_import_id,
+                "status": qi.status,
+                "ai_confidence": qi.ai_confidence,
+                "review_note": qi.review_note,
+                "ai_metadata": qi.ai_metadata,
+                "errors": ai_meta.get("errors", [])
+                if isinstance(ai_meta, dict)
+                else [],
+                "warnings": ai_meta.get("warnings", [])
+                if isinstance(ai_meta, dict)
+                else [],
+                "created_at": qi.created_at,
+            }
+        )
 
     return {
         "items": items,
@@ -750,6 +848,7 @@ async def fix_question(
     stem = fixes.get("stem")
     if stem is not None:
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
         parsed_content = dict(qi.parsed_content or {})
         parsed_content["text"] = deduplicate_repeated_text(str(stem).strip())
         qi.parsed_content = parsed_content

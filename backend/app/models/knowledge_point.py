@@ -26,9 +26,13 @@ class KnowledgePoint(Base):
     subject_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("subjects.id"), nullable=False, index=True
     )
-    subject_ref = relationship("Subject", back_populates="knowledge_points", lazy="noload")
+    subject_ref = relationship(
+        "Subject", back_populates="knowledge_points", lazy="noload"
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    normalized_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    normalized_name: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
     aliases: Mapped[list | None] = mapped_column(JSON, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty_level: Mapped[int] = mapped_column(SmallInteger, default=3)
@@ -39,5 +43,7 @@ class KnowledgePoint(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("subject_id", "normalized_name", name="uq_kp_subject_id_normalized_name"),
+        UniqueConstraint(
+            "subject_id", "normalized_name", name="uq_kp_subject_id_normalized_name"
+        ),
     )

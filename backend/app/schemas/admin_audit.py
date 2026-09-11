@@ -51,13 +51,16 @@ class QuestionAuditDetail(BaseModel):
     year: int | None = None
     review_status: str | None = None
     is_active: bool | None = None
-    data_source: Literal[
-        "audit_snapshot",
-        "audit_before",
-        "audit_after",
-        "audit_summary",
-        "current_database",
-    ] | None = None
+    data_source: (
+        Literal[
+            "audit_snapshot",
+            "audit_before",
+            "audit_after",
+            "audit_summary",
+            "current_database",
+        ]
+        | None
+    ) = None
 
 
 class AdminAuditLogDetail(AdminAuditLogListItem):

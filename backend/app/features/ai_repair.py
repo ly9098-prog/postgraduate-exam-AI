@@ -16,41 +16,50 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 _VALID_QUESTION_TYPES = (
-    "single_choice", "multiple_choice", "true_false", "fill_blank", "multi_blank_choice", "subjective",
+    "single_choice",
+    "multiple_choice",
+    "true_false",
+    "fill_blank",
+    "multi_blank_choice",
+    "subjective",
 )
 
 # P2-4: risk flags that should still allow low-risk skip (informational only)
-_HARMLESS_RISK_FLAGS = frozenset({
-    "math_region_detected",
-    "roman_repair_applied",
-    "batch_fallback_repair",
-    "math_image_crop_failed",
-    "math_image_upload_failed",
-})
+_HARMLESS_RISK_FLAGS = frozenset(
+    {
+        "math_region_detected",
+        "roman_repair_applied",
+        "batch_fallback_repair",
+        "math_image_crop_failed",
+        "math_image_upload_failed",
+    }
+)
 
 # P2-4: risk flags that always require AI repair
-_RISK_FLAGS_REQUIRE_REPAIR = frozenset({
-    "complex_formula_requires_review",
-    "table_low_confidence",
-    "table_requires_review",
-    "ocr_garbled_code",
-    "non_question_like",
-    "low_confidence",
-    "fallback_low_confidence",
-    "no_exercise_regions",
-    "option_structure_corruption",
-    "code_symbol_risk",
-    "math_low_confidence",
-    # 代码块完整性风险（BUGS Task 2: 这些 flag 禁止 low_risk_skip）
-    "code_block_incomplete",
-    "code_block_truncated",
-    "code_brace_unbalanced",
-    "code_garbled_text",
-    "code_line_break_suspicious",
-    "code_paren_unbalanced",
-    "code_fence_unclosed",
-    "code_structure_regression",
-})
+_RISK_FLAGS_REQUIRE_REPAIR = frozenset(
+    {
+        "complex_formula_requires_review",
+        "table_low_confidence",
+        "table_requires_review",
+        "ocr_garbled_code",
+        "non_question_like",
+        "low_confidence",
+        "fallback_low_confidence",
+        "no_exercise_regions",
+        "option_structure_corruption",
+        "code_symbol_risk",
+        "math_low_confidence",
+        # 代码块完整性风险（BUGS Task 2: 这些 flag 禁止 low_risk_skip）
+        "code_block_incomplete",
+        "code_block_truncated",
+        "code_brace_unbalanced",
+        "code_garbled_text",
+        "code_line_break_suspicious",
+        "code_paren_unbalanced",
+        "code_fence_unclosed",
+        "code_structure_regression",
+    }
+)
 
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
 from app.features.code_integrity import (
@@ -79,28 +88,38 @@ async def _record_token_usage(tokens: int) -> None:
 
 def _looks_like_non_question_text(question: dict) -> bool:
     stem = str(question.get("stem") or "").strip()
-    raw_text = str(question.get("raw_text") or question.get("raw_question_text") or "").strip()
+    raw_text = str(
+        question.get("raw_text") or question.get("raw_question_text") or ""
+    ).strip()
     text = "\n".join(part for part in (stem, raw_text) if part)
     if len(text) < 120:
         return False
 
     options = question.get("options") or []
     answer = str(question.get("answer") or "").strip()
-    has_choice_options = bool(options) or bool(re.search(r"(^|\n)\s*[A-D][.．、)]\s*\S+", text))
-    has_question_signal = bool(re.search(r"(求|问|判断|选择|下列|正确|错误|的是|为多少|\?|？)", text))
-    has_number_signal = bool(re.search(r"(^|\n)\s*(?:第\s*\d+\s*题|\d+[.．、)]\s*)", text))
+    has_choice_options = bool(options) or bool(
+        re.search(r"(^|\n)\s*[A-D][.．、)]\s*\S+", text)
+    )
+    has_question_signal = bool(
+        re.search(r"(求|问|判断|选择|下列|正确|错误|的是|为多少|\?|？)", text)
+    )
+    has_number_signal = bool(
+        re.search(r"(^|\n)\s*(?:第\s*\d+\s*题|\d+[.．、)]\s*)", text)
+    )
     has_answer_signal = bool(answer) or bool(re.search(r"答案|参考答案|解析", text))
     prose_markers = re.findall(
         r"定义|定理|知识点|证明|证毕|解法|例题|例如|如下|因此可得|由此可知|综上|性质|推论|注意",
         text,
     )
 
-    weak_question_signals = sum([
-        has_choice_options,
-        has_question_signal,
-        has_number_signal,
-        has_answer_signal,
-    ])
+    weak_question_signals = sum(
+        [
+            has_choice_options,
+            has_question_signal,
+            has_number_signal,
+            has_answer_signal,
+        ]
+    )
     return len(prose_markers) >= 2 and weak_question_signals <= 1
 
 
@@ -111,7 +130,9 @@ _RE_SUBSCRIPT = re.compile(r"\b([A-Za-z])[_\^]\{?(\d+|[imn])\}?")
 _RE_SUBSCRIPT_RAW = re.compile(r"\b([A-Za-z])\s*[_\^]\s*[{]?\s*(\d+|[imn])\s*[}]?")
 
 
-def _detect_subscript_changes(before_stem: str, after_stem: str, raw_text: str) -> list[str]:
+def _detect_subscript_changes(
+    before_stem: str, after_stem: str, raw_text: str
+) -> list[str]:
     """Detect AI repair changes to math subscripts that lack evidence in raw text.
 
     Compares subscript pairs (variable + index) between before and after stems.
@@ -167,12 +188,14 @@ def _detect_subscript_changes(before_stem: str, after_stem: str, raw_text: str) 
         if best_match:
             var, old_idx, new_idx = best_match
             if best_dist <= 20:  # same area in text
+
                 def _subscript_in_raw(sub: str) -> bool:
                     return bool(
-                        re.search(rf"{var}\s*[_\^]\s*{sub}(?!\d)", raw_text) or
-                        re.search(rf"{var}\s*[_\^]\s*{{\s*{sub}\s*}}", raw_text) or
-                        re.search(rf"{var}{sub}(?!\d)", raw_text)
+                        re.search(rf"{var}\s*[_\^]\s*{sub}(?!\d)", raw_text)
+                        or re.search(rf"{var}\s*[_\^]\s*{{\s*{sub}\s*}}", raw_text)
+                        or re.search(rf"{var}{sub}(?!\d)", raw_text)
                     )
+
                 raw_has_new = _subscript_in_raw(new_idx)
                 raw_has_old = _subscript_in_raw(old_idx)
 
@@ -206,14 +229,14 @@ def _detect_subscript_changes(before_stem: str, after_stem: str, raw_text: str) 
             # Check if any of the new subscripts are unsupported by raw text
             def _subscript_in_raw2(sub: str) -> bool:
                 return bool(
-                    re.search(rf"{var}\s*[_\^]\s*{sub}(?!\d)", raw_text) or
-                    re.search(rf"{var}\s*[_\^]\s*{{\s*{sub}\s*}}", raw_text) or
-                    re.search(rf"{var}{sub}(?!\d)", raw_text)
+                    re.search(rf"{var}\s*[_\^]\s*{sub}(?!\d)", raw_text)
+                    or re.search(rf"{var}\s*[_\^]\s*{{\s*{sub}\s*}}", raw_text)
+                    or re.search(rf"{var}{sub}(?!\d)", raw_text)
                 )
+
             if not _subscript_in_raw2(new_idx) and new_idx.isdigit():
                 changes.append(
-                    f"{var}_{{{new_idx}}}: "
-                    f"new subscript not found in OCR evidence"
+                    f"{var}_{{{new_idx}}}: new subscript not found in OCR evidence"
                 )
 
     # Also check for specificity loss: P_3 → P_i (generalizing a specific subscript)
@@ -221,7 +244,9 @@ def _detect_subscript_changes(before_stem: str, after_stem: str, raw_text: str) 
         before_idxs = before_by_var[var]
         after_idxs = after_by_var.get(var, set())
         numeric_before = {i for i in before_idxs if i.isdigit()}
-        symbolic_after = {i for i in after_idxs if not i.isdigit() and i in ("i", "j", "k", "m", "n")}
+        symbolic_after = {
+            i for i in after_idxs if not i.isdigit() and i in ("i", "j", "k", "m", "n")
+        }
         if numeric_before and symbolic_after:
             for old_idx in numeric_before:
                 changes.append(
@@ -241,7 +266,10 @@ def _stem_has_code(stem: str) -> bool:
     if "->" in stem:
         return True
     # 仅匹配最不可能出现在题干自然语言中的 C 关键词
-    if re.search(r"\b(?:struct\s|typedef|printf|scanf|malloc|free|NULL|nullptr|return\s|int\s+\*|char\s+\*|void\s+\*)", stem):
+    if re.search(
+        r"\b(?:struct\s|typedef|printf|scanf|malloc|free|NULL|nullptr|return\s|int\s+\*|char\s+\*|void\s+\*)",
+        stem,
+    ):
         return True
     # 仅当关键词后明确跟标识符或括号时才触发
     if re.search(r"\b(?:int|void|char|float|double)\s+(?:\w+\s*[\[(;=]|\*)", stem):
@@ -251,7 +279,9 @@ def _stem_has_code(stem: str) -> bool:
     return False
 
 
-def _append_decision_trace(question: dict, stage: str, result: str, reason: str) -> None:
+def _append_decision_trace(
+    question: dict, stage: str, result: str, reason: str
+) -> None:
     """向题目的 decision_trace 追加入口。如果题目没有 decision_trace 则初始化。"""
     if not isinstance(question, dict):
         return
@@ -260,7 +290,9 @@ def _append_decision_trace(question: dict, stage: str, result: str, reason: str)
     question["decision_trace"] = trace
 
 
-def _is_low_risk_skip_candidate(question: dict, high_confidence_threshold: float = 0.95) -> bool:
+def _is_low_risk_skip_candidate(
+    question: dict, high_confidence_threshold: float = 0.95
+) -> bool:
     """P2-4: 判断是否可跳过 AI repair（低风险高置信度题）。
 
     条件（全满足才跳过）：
@@ -328,7 +360,9 @@ def _should_repair(
         return False, "non_question_like"
 
     # P2-4: 低风险题跳过 AI repair（综合条件判断）
-    if low_risk_skip_enabled and _is_low_risk_skip_candidate(question, high_confidence_threshold):
+    if low_risk_skip_enabled and _is_low_risk_skip_candidate(
+        question, high_confidence_threshold
+    ):
         return False, "low_risk_high_confidence"
 
     # 0. Roman numeral anomalies — always trigger repair regardless of confidence
@@ -361,7 +395,10 @@ def _should_repair(
                     return True, "incomplete_options"
 
     # 4. answer 为空
-    if qt in ("single_choice", "multiple_choice", "true_false") and not (question.get("answer") or "").strip():
+    if (
+        qt in ("single_choice", "multiple_choice", "true_false")
+        and not (question.get("answer") or "").strip()
+    ):
         return True, "missing_answer"
 
     # 5. stem 异常短
@@ -443,7 +480,11 @@ def _normalize_ai_options(options) -> list[dict]:
 
 
 def _marker_ids(groups: list[dict] | None) -> set[str]:
-    return {str(group.get("id") or group.get("marker") or "").strip() for group in (groups or []) if str(group.get("id") or group.get("marker") or "").strip()}
+    return {
+        str(group.get("id") or group.get("marker") or "").strip()
+        for group in (groups or [])
+        if str(group.get("id") or group.get("marker") or "").strip()
+    }
 
 
 def _stem_contains_markers(stem: str, markers: set[str]) -> bool:
@@ -500,8 +541,13 @@ def _parse_batch_ai_response(content: str) -> list[dict] | None:
 
 
 async def _call_ai_for_repair(
-    raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None,
-    api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
+    raw_text: str,
+    existing: dict,
+    config: dict,
+    db: AsyncSession | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model_name: str | None = None,
     provider: str | None = None,
     call_stats: dict[str, int] | None = None,
 ) -> dict | None:
@@ -520,7 +566,9 @@ async def _call_ai_for_repair(
     from app.services.model_config_resolver import AICapability
 
     if db is not None and api_key is None:
-        runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        runtime = await resolve_llm_runtime_config(
+            db, capability=AICapability.AI_REPAIR
+        )
         if runtime is not None:
             api_key = runtime.api_key
             base_url = runtime.base_url
@@ -545,7 +593,14 @@ async def _call_ai_for_repair(
     try:
         if call_stats is not None:
             call_stats["llm_calls"] = call_stats.get("llm_calls", 0) + 1
-        result = await llm.chat(messages, temperature=0.3, model=model_name, api_key=api_key, base_url=base_url, provider=provider)
+        result = await llm.chat(
+            messages,
+            temperature=0.3,
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            provider=provider,
+        )
     except Exception:
         return None
 
@@ -581,7 +636,9 @@ async def _call_ai_for_batch_repair(
 
     api_key = base_url = model_name = provider = None
     if db is not None:
-        runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        runtime = await resolve_llm_runtime_config(
+            db, capability=AICapability.AI_REPAIR
+        )
         if runtime is not None:
             api_key = runtime.api_key
             base_url = runtime.base_url
@@ -596,7 +653,13 @@ async def _call_ai_for_batch_repair(
         batch = candidates[batch_start : batch_start + batch_limit]
         # ── Structure Freeze: strip frozen options from batch prompt ──
         batch = [
-            (idx, {k: v for k, v in q.items() if k != "options"} if q.get("is_frozen") else q, rt)
+            (
+                idx,
+                {k: v for k, v in q.items() if k != "options"}
+                if q.get("is_frozen")
+                else q,
+                rt,
+            )
             for idx, q, rt in batch
         ]
         messages = build_batch_repair_prompt(batch)
@@ -612,8 +675,12 @@ async def _call_ai_for_batch_repair(
             if call_stats is not None:
                 call_stats["llm_calls"] = call_stats.get("llm_calls", 0) + 1
             result = await llm.chat(
-                messages, temperature=0.3, model=model_name,
-                api_key=api_key, base_url=base_url, provider=provider,
+                messages,
+                temperature=0.3,
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                provider=provider,
             )
         except Exception:
             for idx, _q, _rt in batch:
@@ -630,26 +697,38 @@ async def _call_ai_for_batch_repair(
             rem = total_tokens % len(batch)
             for pos, ((idx, q, _rt), repaired) in enumerate(zip(batch, responses)):
                 is_valid, errors = _validate_repaired(repaired)
-                all_results.append((
-                    idx,
-                    {
-                        "repaired": repaired,
-                        "ai_valid": is_valid,
-                        "ai_errors": errors,
-                        "token_used": base + (1 if pos < rem else 0),
-                    } if is_valid else None,
-                ))
+                all_results.append(
+                    (
+                        idx,
+                        {
+                            "repaired": repaired,
+                            "ai_valid": is_valid,
+                            "ai_errors": errors,
+                            "token_used": base + (1 if pos < rem else 0),
+                        }
+                        if is_valid
+                        else None,
+                    )
+                )
         else:
             # batch 解析失败，逐题降级
             logger.warning(
                 "Batch repair parse failed (%d responses for %d questions), "
                 "falling back to per-question repair",
-                len(responses) if responses else 0, len(batch),
+                len(responses) if responses else 0,
+                len(batch),
             )
             for idx, q, raw_text in batch:
                 single = await _call_ai_for_repair(
-                    raw_text, q, config, db, api_key=api_key, base_url=base_url,
-                    model_name=model_name, provider=provider, call_stats=call_stats,
+                    raw_text,
+                    q,
+                    config,
+                    db,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model_name=model_name,
+                    provider=provider,
+                    call_stats=call_stats,
                 )
                 if single:
                     single["_batch_fallback"] = True  # L2: mark degradation source
@@ -702,7 +781,9 @@ async def _call_ai_for_roman_decision(
 
     api_key = base_url = model_name = provider = None
     if db is not None:
-        runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        runtime = await resolve_llm_runtime_config(
+            db, capability=AICapability.AI_REPAIR
+        )
         if runtime is not None:
             api_key = runtime.api_key
             base_url = runtime.base_url
@@ -720,8 +801,12 @@ async def _call_ai_for_roman_decision(
         if call_stats is not None:
             call_stats["llm_calls"] = call_stats.get("llm_calls", 0) + 1
         result = await llm.chat(
-            messages, temperature=0.2, model=model_name,
-            api_key=api_key, base_url=base_url, provider=provider,
+            messages,
+            temperature=0.2,
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            provider=provider,
         )
     except Exception:
         return None
@@ -738,9 +823,7 @@ async def _call_ai_for_roman_decision(
     }
 
 
-def _build_roman_fix_from_decision(
-    anomaly: dict, decision: dict
-) -> dict:
+def _build_roman_fix_from_decision(anomaly: dict, decision: dict) -> dict:
     """Convert an AI-chosen flat candidate into a mechanical fix instruction.
 
     The anomaly has pre-generated flat candidates (each a self-contained action).
@@ -819,7 +902,9 @@ def _apply_roman_decisions(
             source = anom.get("source", "")
             issue_type = anom.get("issue_type", "")
             if issue_type == "ocr_digit_confusion":
-                opt_key = source.split("_", 1)[1] if source.startswith("option_") else ""
+                opt_key = (
+                    source.split("_", 1)[1] if source.startswith("option_") else ""
+                )
                 resolved_digit_option_keys.add(opt_key)
             else:
                 resolved_sequence_sources.add(source)
@@ -835,7 +920,10 @@ def _apply_roman_decisions(
                 break
         if keep:
             for key in resolved_digit_option_keys:
-                if w.startswith("option_roman_digit_confusion") and f"option {key}" in w:
+                if (
+                    w.startswith("option_roman_digit_confusion")
+                    and f"option {key}" in w
+                ):
                     keep = False
                     break
         if keep:
@@ -875,6 +963,7 @@ async def _run_roman_repair_phase(
         by_index.setdefault(idx, []).append(anom)
 
     import asyncio
+
     sem = asyncio.Semaphore(3)
     results: list[dict] = []
 
@@ -882,7 +971,11 @@ async def _run_roman_repair_phase(
         async with sem:
             q = questions[idx] if idx < len(questions) else {}
             ai_result = await _call_ai_for_roman_decision(
-                q, anoms, config, db, call_stats=call_stats,
+                q,
+                anoms,
+                config,
+                db,
+                call_stats=call_stats,
             )
             if ai_result:
                 return {
@@ -948,16 +1041,22 @@ async def repair_questions(
 
     if not enabled:
         for i, q in enumerate(questions):
-            skipped.append({
-                "question_index": i,
-                "reason": "ai_disabled",
-                "confidence": q.get("confidence_score", 0),
-            })
+            skipped.append(
+                {
+                    "question_index": i,
+                    "reason": "ai_disabled",
+                    "confidence": q.get("confidence_score", 0),
+                }
+            )
         return {
-            "repaired": [], "unrepaired": [], "skipped": skipped,
+            "repaired": [],
+            "unrepaired": [],
+            "skipped": skipped,
             "stats": {
                 "total_candidates": len(questions),
-                "repaired": 0, "unrepaired": 0, "skipped": len(skipped),
+                "repaired": 0,
+                "unrepaired": 0,
+                "skipped": len(skipped),
                 "total_tokens": 0,
                 "llm_calls": 0,
             },
@@ -966,18 +1065,28 @@ async def repair_questions(
     from app.ai.gateway import resolve_llm_runtime_config
     from app.services.model_config_resolver import AICapability
 
-    runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR) if db is not None else None
+    runtime = (
+        await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        if db is not None
+        else None
+    )
     if runtime is None:
         for i, q in enumerate(questions):
-            unrepaired.append({
-                "question_index": i,
-                "reason": "ai_unavailable",
-            })
+            unrepaired.append(
+                {
+                    "question_index": i,
+                    "reason": "ai_unavailable",
+                }
+            )
         return {
-            "repaired": [], "unrepaired": unrepaired, "skipped": [],
+            "repaired": [],
+            "unrepaired": unrepaired,
+            "skipped": [],
             "stats": {
                 "total_candidates": len(questions),
-                "repaired": 0, "unrepaired": len(unrepaired), "skipped": 0,
+                "repaired": 0,
+                "unrepaired": len(unrepaired),
+                "skipped": 0,
                 "total_tokens": 0,
                 "llm_calls": 0,
             },
@@ -992,7 +1101,11 @@ async def repair_questions(
 
     if enable_roman_repair_phase and roman_diagnostics and runtime is not None:
         phase1_results = await _run_roman_repair_phase(
-            questions, roman_diagnostics, config, db, call_stats=call_stats,
+            questions,
+            roman_diagnostics,
+            config,
+            db,
+            call_stats=call_stats,
         )
         for r in phase1_results:
             idx = r["index"]
@@ -1006,7 +1119,9 @@ async def repair_questions(
             # Find anomalies for this question
             q_anomalies = [a for a in roman_diagnostics if a.get("index") == i]
             fixed = _apply_roman_decisions(
-                q, q_anomalies, roman_results[i]["decisions"],
+                q,
+                q_anomalies,
+                roman_results[i]["decisions"],
             )
             roman_fixed_questions.append(fixed)
         else:
@@ -1027,12 +1142,20 @@ async def repair_questions(
         # Roman-repaired questions that had ONLY roman issues skip Phase 2
         if i in roman_results and roman_results[i].get("decisions"):
             # Check if there are still non-roman reasons to repair
-            _, reason = _should_repair(q, threshold, roman_anomalies=None, high_confidence_threshold=high_confidence_threshold, low_risk_skip_enabled=low_risk_skip_enabled)
+            _, reason = _should_repair(
+                q,
+                threshold,
+                roman_anomalies=None,
+                high_confidence_threshold=high_confidence_threshold,
+                low_risk_skip_enabled=low_risk_skip_enabled,
+            )
             if reason == "above_threshold":
                 # Roman repair was the only issue — record and skip Phase 2
                 roman_entry = {
                     "question_index": i,
-                    "before": {k: v for k, v in questions[i].items() if k != "raw_text"},
+                    "before": {
+                        k: v for k, v in questions[i].items() if k != "raw_text"
+                    },
                     "after": q,
                     "repair_actions": ["roman_numeral_fixed"],
                     "repair_method": "roman_decision",
@@ -1045,14 +1168,22 @@ async def repair_questions(
                 total_tokens += roman_results[i].get("token_used", 0)
                 continue
 
-        do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies, high_confidence_threshold=high_confidence_threshold, low_risk_skip_enabled=low_risk_skip_enabled)
+        do_repair, reason = _should_repair(
+            q,
+            threshold,
+            roman_anomalies=q_anomalies,
+            high_confidence_threshold=high_confidence_threshold,
+            low_risk_skip_enabled=low_risk_skip_enabled,
+        )
         if not do_repair:
             _append_decision_trace(questions[i], "ai_repair", "skipped", reason)
-            skipped.append({
-                "question_index": i,
-                "reason": reason,
-                "confidence": q.get("confidence_score", 0),
-            })
+            skipped.append(
+                {
+                    "question_index": i,
+                    "reason": reason,
+                    "confidence": q.get("confidence_score", 0),
+                }
+            )
         else:
             raw_text = q.get("raw_text", "") or q.get("raw_question_text", "")
             if reason == "incomplete_options":
@@ -1063,8 +1194,7 @@ async def repair_questions(
                 q.pop("options", None)
                 raw_text = (
                     "【注意】本题选项不完整（中间缺失），"
-                    "请根据原始文本中的完整选项内容补充所有选项。\n\n"
-                    + raw_text
+                    "请根据原始文本中的完整选项内容补充所有选项。\n\n" + raw_text
                 )
             candidates.append((i, q, raw_text))
 
@@ -1072,7 +1202,10 @@ async def repair_questions(
     batch_size = config.get("batch_size", _BATCH_LIMIT)
     if batch_size > 1 and len(candidates) > 1:
         results = await _call_ai_for_batch_repair(
-            candidates, config, db, call_stats=call_stats,
+            candidates,
+            config,
+            db,
+            call_stats=call_stats,
         )
     else:
         # 单题修复（并发 3 路）
@@ -1081,7 +1214,11 @@ async def repair_questions(
         async def _repair_one(idx: int, q: dict, raw_text: str):
             async with sem:
                 return idx, await _call_ai_for_repair(
-                    raw_text, q, config, db, call_stats=call_stats,
+                    raw_text,
+                    q,
+                    config,
+                    db,
+                    call_stats=call_stats,
                 )
 
         gathered = await asyncio.gather(
@@ -1097,21 +1234,26 @@ async def repair_questions(
                 results.append(result)  # type: ignore[assignment]
 
     for (i, q, raw_text), (_, ai_result) in zip(candidates, results):
-
         if ai_result is None:
             _append_decision_trace(questions[i], "ai_repair", "failed", "ai_failed")
-            unrepaired.append({
-                "question_index": i,
-                "reason": "ai_failed",
-            })
+            unrepaired.append(
+                {
+                    "question_index": i,
+                    "reason": "ai_failed",
+                }
+            )
             continue
 
         if not ai_result["ai_valid"]:
-            _append_decision_trace(questions[i], "ai_repair", "failed", "ai_invalid_result")
-            unrepaired.append({
-                "question_index": i,
-                "reason": "ai_invalid_result",
-            })
+            _append_decision_trace(
+                questions[i], "ai_repair", "failed", "ai_invalid_result"
+            )
+            unrepaired.append(
+                {
+                    "question_index": i,
+                    "reason": "ai_invalid_result",
+                }
+            )
             total_tokens += ai_result["token_used"]
             continue
 
@@ -1121,18 +1263,24 @@ async def repair_questions(
         token_used = ai_result["token_used"]
         total_tokens += token_used
 
-        blank_option_groups = result_data.get("blank_option_groups") or q.get("blank_option_groups", [])
+        blank_option_groups = result_data.get("blank_option_groups") or q.get(
+            "blank_option_groups", []
+        )
         repaired_stem = result_data.get("stem", "")
         original_markers = _marker_ids(q.get("blank_option_groups"))
-        if original_markers and not _stem_contains_markers(repaired_stem, original_markers):
+        if original_markers and not _stem_contains_markers(
+            repaired_stem, original_markers
+        ):
             logger.warning(
                 "AI repair lost blank markers for question %d: markers=%s not in stem, discarding repaired stem",
-                i, original_markers,
+                i,
+                original_markers,
             )
             repaired_stem = q.get("stem", "")
             ai_errors = [*ai_errors, "ai_stem_lost_blank_markers"]
 
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
         repaired_stem = deduplicate_repeated_text(repaired_stem)
 
         # ══════════════════════════════════════════════════════════════════════
@@ -1169,21 +1317,29 @@ async def repair_questions(
                 logger.info(
                     "[IMMUTABLE] ai_repair ALLOWED for q%d: AI recovered missing "
                     "options (original=%d, ai=%d, added=[%s])",
-                    i, len(original_opts), len(ai_options),
+                    i,
+                    len(original_opts),
+                    len(ai_options),
                     ",".join(sorted(ai_keys - original_keys)),
                 )
             else:
                 logger.warning(
                     "[IMMUTABLE] ai_repair REJECTED for q%d: AI tried to modify options "
                     "(frozen=%s, ai_opts=%d, original_opts=%d)",
-                    i, is_frozen, len(ai_options), len(original_opts),
+                    i,
+                    is_frozen,
+                    len(ai_options),
+                    len(original_opts),
                 )
-                _append_decision_trace(questions[i], "ai_repair", "rejected",
-                                       "options_modified_by_ai")
-                unrepaired.append({
-                    "question_index": i,
-                    "reason": "options_modified_by_ai",
-                })
+                _append_decision_trace(
+                    questions[i], "ai_repair", "rejected", "options_modified_by_ai"
+                )
+                unrepaired.append(
+                    {
+                        "question_index": i,
+                        "reason": "options_modified_by_ai",
+                    }
+                )
                 total_tokens += token_used
                 continue
 
@@ -1192,14 +1348,18 @@ async def repair_questions(
             logger.warning(
                 "[IMMUTABLE] ai_repair REJECTED for q%d: AI deleted existing options "
                 "(original_opts=%d)",
-                i, len(original_opts),
+                i,
+                len(original_opts),
             )
-            _append_decision_trace(questions[i], "ai_repair", "rejected",
-                                   "options_deleted_by_ai")
-            unrepaired.append({
-                "question_index": i,
-                "reason": "options_deleted_by_ai",
-            })
+            _append_decision_trace(
+                questions[i], "ai_repair", "rejected", "options_deleted_by_ai"
+            )
+            unrepaired.append(
+                {
+                    "question_index": i,
+                    "reason": "options_deleted_by_ai",
+                }
+            )
             total_tokens += token_used
             continue
 
@@ -1216,17 +1376,18 @@ async def repair_questions(
         # passed Rule 1). In that case, use AI's options directly since they
         # include the recovered keys.
         if original_opts:
-            _superset = (
-                ai_options
-                and {o["key"] for o in ai_options} > {o["key"] for o in original_opts}
-            )
+            _superset = ai_options and {o["key"] for o in ai_options} > {
+                o["key"] for o in original_opts
+            }
             if not _superset:
                 ai_options = list(original_opts)
 
         after = {
             "schema_version": q.get("schema_version", "v1"),
             "subject": q.get("subject", ""),
-            "question_type": result_data.get("question_type", q.get("question_type", "")),
+            "question_type": result_data.get(
+                "question_type", q.get("question_type", "")
+            ),
             "stem": repaired_stem,
             "options": ai_options,
             "frozen_options_restored": is_frozen,
@@ -1242,7 +1403,9 @@ async def repair_questions(
             "errors": ai_errors,
             "warnings": q.get("warnings", []),
             "stem_hash": q.get("stem_hash", ""),
-            "confidence_score": result_data.get("confidence", q.get("confidence_score", 0)),
+            "confidence_score": result_data.get(
+                "confidence", q.get("confidence_score", 0)
+            ),
             "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])),
         }
 
@@ -1254,7 +1417,9 @@ async def repair_questions(
             # overwritten when the question also needed non-Roman repair.
             q_anoms = roman_anomalies_by_index.get(i)
             if q_anoms:
-                after = _apply_roman_decisions(after, q_anoms, roman_results[i]["decisions"])
+                after = _apply_roman_decisions(
+                    after, q_anoms, roman_results[i]["decisions"]
+                )
             after.setdefault("risk_flags", [])
             if "roman_repair_applied" not in after["risk_flags"]:
                 after["risk_flags"] = ["roman_repair_applied", *after["risk_flags"]]
@@ -1265,21 +1430,30 @@ async def repair_questions(
         # Cases: P_3 → P_1, P_1 → P_2, P_i → P_3 (subscript identity changes)
         _before_stem = str(questions[i].get("stem", "") or "")
         _after_stem = str(after.get("stem", "") or "")
-        _raw_text = str(questions[i].get("raw_text") or questions[i].get("raw_question_text") or "")
-        _subscript_changes = _detect_subscript_changes(_before_stem, _after_stem, _raw_text)
+        _raw_text = str(
+            questions[i].get("raw_text") or questions[i].get("raw_question_text") or ""
+        )
+        _subscript_changes = _detect_subscript_changes(
+            _before_stem, _after_stem, _raw_text
+        )
         if _subscript_changes:
             logger.warning(
                 "[SUBSCRIPT-SAFETY] q%d: AI repair changed subscripts without evidence: %s",
-                i, _subscript_changes,
+                i,
+                _subscript_changes,
             )
             _append_decision_trace(
-                questions[i], "ai_repair", "rejected",
+                questions[i],
+                "ai_repair",
+                "rejected",
                 f"subscript_change_without_evidence: {_subscript_changes}",
             )
-            unrepaired.append({
-                "question_index": i,
-                "reason": f"subscript_change_rejected: {_subscript_changes}",
-            })
+            unrepaired.append(
+                {
+                    "question_index": i,
+                    "reason": f"subscript_change_rejected: {_subscript_changes}",
+                }
+            )
             total_tokens += token_used
             continue
 
@@ -1311,11 +1485,18 @@ async def repair_questions(
         )
 
         if not safety_trace.accepted:
-            _append_decision_trace(questions[i], "ai_safety", "blocked", f"safety_rejected: {safety_trace.rollback_reason}")
-            unrepaired.append({
-                "question_index": i,
-                "reason": f"safety_rejected: {safety_trace.rollback_reason}",
-            })
+            _append_decision_trace(
+                questions[i],
+                "ai_safety",
+                "blocked",
+                f"safety_rejected: {safety_trace.rollback_reason}",
+            )
+            unrepaired.append(
+                {
+                    "question_index": i,
+                    "reason": f"safety_rejected: {safety_trace.rollback_reason}",
+                }
+            )
             continue
 
         repair_entry = {
@@ -1327,7 +1508,12 @@ async def repair_questions(
             "token_used": token_used + roman_results.get(i, {}).get("token_used", 0),
             "safety": safety_trace.to_dict(),
         }
-        _append_decision_trace(after, "ai_repair", "repaired", ";".join(repair_actions) if repair_actions else "ai_repaired")
+        _append_decision_trace(
+            after,
+            "ai_repair",
+            "repaired",
+            ";".join(repair_actions) if repair_actions else "ai_repaired",
+        )
         if safety_trace.risk_flags:
             after.setdefault("risk_flags", [])
             for flag in safety_trace.risk_flags:

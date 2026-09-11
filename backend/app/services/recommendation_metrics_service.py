@@ -1,4 +1,5 @@
 """Phase 4 — 推荐指标聚合与查询服务。"""
+
 import logging
 from datetime import date, timedelta
 
@@ -35,7 +36,9 @@ async def aggregate_recommendation_metrics_daily(
         RecommendationLog.shown_at < day_end,
     ]
     if subject_id:
-        conditions.append(RecommendationLog.subject_id.in_(await resolve_subject_ids(db, subject_id)))
+        conditions.append(
+            RecommendationLog.subject_id.in_(await resolve_subject_ids(db, subject_id))
+        )
 
     agg_query = (
         select(
@@ -134,7 +137,11 @@ async def aggregate_recommendation_metrics_daily(
         count += 1
 
     await db.flush()
-    return {"aggregated_rows": count, "target_date": str(target_date), "subject_id": subject_id}
+    return {
+        "aggregated_rows": count,
+        "target_date": str(target_date),
+        "subject_id": subject_id,
+    }
 
 
 async def get_recommendation_metrics(
@@ -151,7 +158,11 @@ async def get_recommendation_metrics(
         RecommendationMetricsDaily.date <= date_to,
     ]
     if subject_id:
-        conditions.append(RecommendationMetricsDaily.subject_id.in_(await resolve_subject_ids(db, subject_id)))
+        conditions.append(
+            RecommendationMetricsDaily.subject_id.in_(
+                await resolve_subject_ids(db, subject_id)
+            )
+        )
     if scene:
         conditions.append(RecommendationMetricsDaily.scene == scene)
     if strategy:
@@ -181,7 +192,9 @@ async def compare_experiment_variants(
     因此实验对比直接从 recommendation_logs 按 experiment_id 聚合。
     """
     exp_result = await db.execute(
-        select(RecommendationExperiment).where(RecommendationExperiment.id == experiment_id)
+        select(RecommendationExperiment).where(
+            RecommendationExperiment.id == experiment_id
+        )
     )
     experiment = exp_result.scalar_one_or_none()
     if not experiment:
@@ -235,18 +248,22 @@ async def compare_experiment_variants(
         correct = int(row.correct_count or 0) if row else 0
         avg_mastery_delta = row.avg_mastery_delta if row else None
 
-        variants_data.append({
-            "variant_key": variant_key,
-            "exposure_count": exposure,
-            "answer_count": answers,
-            "correct_count": correct,
-            "accuracy": round(correct / answers, 4) if answers else 0.0,
-            "completion_rate": round(answers / exposure, 4) if exposure else 0.0,
-            "avg_mastery_delta": (
-                round(float(avg_mastery_delta), 4) if avg_mastery_delta is not None else None
-            ),
-            "ctr": round(clicks / exposure, 4) if exposure else 0.0,
-        })
+        variants_data.append(
+            {
+                "variant_key": variant_key,
+                "exposure_count": exposure,
+                "answer_count": answers,
+                "correct_count": correct,
+                "accuracy": round(correct / answers, 4) if answers else 0.0,
+                "completion_rate": round(answers / exposure, 4) if exposure else 0.0,
+                "avg_mastery_delta": (
+                    round(float(avg_mastery_delta), 4)
+                    if avg_mastery_delta is not None
+                    else None
+                ),
+                "ctr": round(clicks / exposure, 4) if exposure else 0.0,
+            }
+        )
 
     return {
         "experiment_id": experiment_id,
@@ -294,6 +311,7 @@ async def _attach_subject_labels(db: AsyncSession, rows: list[dict]) -> list[dic
             r["subject_code"], r["subject_name"] = labels[sid]
     return rows
 
+
 async def backfill_metrics(
     db: AsyncSession,
     date_from: date,
@@ -318,7 +336,9 @@ async def backfill_metrics(
             # false and every later day fails as well.
             async with db.begin_nested():
                 await aggregate_recommendation_metrics_daily(
-                    db, target_date=current, subject_id=subject_id,
+                    db,
+                    target_date=current,
+                    subject_id=subject_id,
                 )
             success_dates.append(str(current))
         except Exception as e:

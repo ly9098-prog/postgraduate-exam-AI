@@ -65,12 +65,14 @@ _NUMBERED_ANSWER_PATTERN = re.compile(
 
 class ImagePreviewMode(StrEnum):
     """图片导入模式。"""
+
     ANSWER_ONLY = "answer_only"
     ANSWER_ANALYSIS = "answer_analysis"
 
 
 class BusinessError(Exception):
     """业务异常，携带稳定错误码。"""
+
     def __init__(self, code: str, message: str = ""):
         self.code = code
         self.message = message
@@ -158,7 +160,9 @@ def _extract_entries(text: str, mode: str) -> list[dict]:
     return entries
 
 
-def _normalize_single_answer(answer: str, question_type: str | None) -> tuple[str | None, list[str]]:
+def _normalize_single_answer(
+    answer: str, question_type: str | None
+) -> tuple[str | None, list[str]]:
     """标准化单个答案（复用 Phase 1 逻辑的简化版）。"""
     normalized = answer.strip().upper()
     if not normalized:
@@ -204,7 +208,8 @@ def _normalize_single_answer(answer: str, question_type: str | None) -> tuple[st
 async def _check_batch_editable(db: AsyncSession, batch_id: str) -> None:
     """检查批次内所有题目是否均为可编辑状态。"""
     result = await db.execute(
-        select(func.count()).select_from(QuestionImport)
+        select(func.count())
+        .select_from(QuestionImport)
         .where(QuestionImport.batch_id == batch_id, QuestionImport.status != "pending")
     )
     non_pending = result.scalar() or 0
@@ -215,12 +220,16 @@ async def _check_batch_editable(db: AsyncSession, batch_id: str) -> None:
         )
 
 
-async def _lock_batch_questions(db: AsyncSession, batch_id: str) -> list[QuestionImport]:
+async def _lock_batch_questions(
+    db: AsyncSession, batch_id: str
+) -> list[QuestionImport]:
     """锁定批次题目，校验 source_order_index，按索引升序返回。"""
     result = await db.execute(
         select(QuestionImport)
         .where(QuestionImport.batch_id == batch_id)
-        .order_by(QuestionImport.source_order_index.asc().nullslast(), QuestionImport.id.asc())
+        .order_by(
+            QuestionImport.source_order_index.asc().nullslast(), QuestionImport.id.asc()
+        )
     )
     questions = list(result.scalars().all())
     if not questions:
@@ -228,14 +237,19 @@ async def _lock_batch_questions(db: AsyncSession, batch_id: str) -> list[Questio
 
     null_indices = [q.id for q in questions if q.source_order_index is None]
     if null_indices:
-        raise BusinessError(ORDER_INDEX_MISSING, f"{len(null_indices)} 道题缺少 source_order_index")
+        raise BusinessError(
+            ORDER_INDEX_MISSING, f"{len(null_indices)} 道题缺少 source_order_index"
+        )
 
     seen: dict[int, list[int]] = {}
     for q in questions:
         seen.setdefault(q.source_order_index, []).append(q.id)
     duplicate_indices = {idx: ids for idx, ids in seen.items() if len(ids) > 1}
     if duplicate_indices:
-        raise BusinessError(ORDER_INDEX_DUPLICATED, f"存在重复的 source_order_index: {duplicate_indices}")
+        raise BusinessError(
+            ORDER_INDEX_DUPLICATED,
+            f"存在重复的 source_order_index: {duplicate_indices}",
+        )
 
     return questions
 
@@ -245,7 +259,9 @@ async def _lock_batch_questions(db: AsyncSession, batch_id: str) -> list[Questio
 # ══════════════════════════════════════════════════════════
 
 
-def _build_question_no_map(questions: list[QuestionImport]) -> dict[str, list[QuestionImport]]:
+def _build_question_no_map(
+    questions: list[QuestionImport],
+) -> dict[str, list[QuestionImport]]:
     """按归一化题号建立 QuestionImport 映射。"""
     q_map: dict[str, list[QuestionImport]] = {}
     for q in questions:
@@ -294,26 +310,39 @@ def _stem_excerpt(question: QuestionImport) -> str:
 async def _get_answer_stats(db: AsyncSession, batch_id: str) -> dict:
     """获取批次答案相关统计。"""
     total = await db.execute(
-        select(func.count()).select_from(QuestionImport)
+        select(func.count())
+        .select_from(QuestionImport)
         .where(QuestionImport.batch_id == batch_id)
     )
     total_count = total.scalar() or 0
 
     missing_answer = await db.execute(
-        select(func.count()).select_from(QuestionImport)
-        .where(QuestionImport.batch_id == batch_id, func.coalesce(QuestionImport.parsed_answer, "") == "")
+        select(func.count())
+        .select_from(QuestionImport)
+        .where(
+            QuestionImport.batch_id == batch_id,
+            func.coalesce(QuestionImport.parsed_answer, "") == "",
+        )
     )
     missing_answer_count = missing_answer.scalar() or 0
 
     missing_analysis = await db.execute(
-        select(func.count()).select_from(QuestionImport)
-        .where(QuestionImport.batch_id == batch_id, func.coalesce(QuestionImport.parsed_analysis, "") == "")
+        select(func.count())
+        .select_from(QuestionImport)
+        .where(
+            QuestionImport.batch_id == batch_id,
+            func.coalesce(QuestionImport.parsed_analysis, "") == "",
+        )
     )
     missing_analysis_count = missing_analysis.scalar() or 0
 
     manual_filled = await db.execute(
-        select(func.count()).select_from(QuestionImport)
-        .where(QuestionImport.batch_id == batch_id, QuestionImport.answer_source == "manual_batch_input")
+        select(func.count())
+        .select_from(QuestionImport)
+        .where(
+            QuestionImport.batch_id == batch_id,
+            QuestionImport.answer_source == "manual_batch_input",
+        )
     )
     manual_filled_count = manual_filled.scalar() or 0
 
@@ -360,11 +389,13 @@ async def generate_image_preview(
             logger.warning("图片 OCR 失败: %s, filename=%s", e, img.get("filename", ""))
             text = ""
             confidence = 0.0
-        ocr_results.append({
-            "filename": img.get("filename", ""),
-            "text": text,
-            "confidence": confidence,
-        })
+        ocr_results.append(
+            {
+                "filename": img.get("filename", ""),
+                "text": text,
+                "confidence": confidence,
+            }
+        )
 
     # 3. 从所有 OCR 文本中提取条目
     all_entries: list[dict] = []
@@ -381,7 +412,9 @@ async def generate_image_preview(
             )
 
     if not all_entries:
-        raise BusinessError(NO_ANSWERS_PARSED, "所有图片中均未识别到题号+答案格式的条目")
+        raise BusinessError(
+            NO_ANSWERS_PARSED, "所有图片中均未识别到题号+答案格式的条目"
+        )
 
     # 4. 锁定并加载批次题目
     questions = await _lock_batch_questions(db, batch_id)
@@ -413,79 +446,85 @@ async def generate_image_preview(
 
         if len(candidates) == 0:
             # 无候选 → 未匹配
-            preview_items.append({
-                "import_id": None,
-                "source_order_index": None,
-                "source_question_no": entry["question_no"],
-                "stem_excerpt": "",
-                "question_type": None,
-                "original_answer": None,
-                "original_analysis": None,
-                "extracted_answer": entry["answer"],
-                "extracted_analysis": entry.get("analysis"),
-                "status": "unmatched",
-                "status_message": f"未匹配到题号 {normalized_no} 的题目",
-                "will_update_answer": False,
-                "will_update_analysis": False,
-                "validation_errors": [],
-                "source_filename": entry.get("source_filename", ""),
-                "image_index": None,
-                "ocr_confidence": entry.get("ocr_confidence"),
-                "extract_method": "rule",
-                "raw_text_excerpt": entry.get("raw_match", "")[:200],
-            })
+            preview_items.append(
+                {
+                    "import_id": None,
+                    "source_order_index": None,
+                    "source_question_no": entry["question_no"],
+                    "stem_excerpt": "",
+                    "question_type": None,
+                    "original_answer": None,
+                    "original_analysis": None,
+                    "extracted_answer": entry["answer"],
+                    "extracted_analysis": entry.get("analysis"),
+                    "status": "unmatched",
+                    "status_message": f"未匹配到题号 {normalized_no} 的题目",
+                    "will_update_answer": False,
+                    "will_update_analysis": False,
+                    "validation_errors": [],
+                    "source_filename": entry.get("source_filename", ""),
+                    "image_index": None,
+                    "ocr_confidence": entry.get("ocr_confidence"),
+                    "extract_method": "rule",
+                    "raw_text_excerpt": entry.get("raw_match", "")[:200],
+                }
+            )
             summary["unmatched_count"] += 1
             continue
 
         if len(available) == 0 and len(candidates) > 0:
             # 所有候选均已匹配过 → 视为 ambiguous（或 redundant）
-            preview_items.append({
-                "import_id": None,
-                "source_order_index": None,
-                "source_question_no": entry["question_no"],
-                "stem_excerpt": "",
-                "question_type": None,
-                "original_answer": None,
-                "original_analysis": None,
-                "extracted_answer": entry["answer"],
-                "extracted_analysis": entry.get("analysis"),
-                "status": "ambiguous",
-                "status_message": f"题号 {normalized_no} 已匹配过其他条目",
-                "will_update_answer": False,
-                "will_update_analysis": False,
-                "validation_errors": [],
-                "source_filename": entry.get("source_filename", ""),
-                "image_index": None,
-                "ocr_confidence": entry.get("ocr_confidence"),
-                "extract_method": "rule",
-                "raw_text_excerpt": entry.get("raw_match", "")[:200],
-            })
+            preview_items.append(
+                {
+                    "import_id": None,
+                    "source_order_index": None,
+                    "source_question_no": entry["question_no"],
+                    "stem_excerpt": "",
+                    "question_type": None,
+                    "original_answer": None,
+                    "original_analysis": None,
+                    "extracted_answer": entry["answer"],
+                    "extracted_analysis": entry.get("analysis"),
+                    "status": "ambiguous",
+                    "status_message": f"题号 {normalized_no} 已匹配过其他条目",
+                    "will_update_answer": False,
+                    "will_update_analysis": False,
+                    "validation_errors": [],
+                    "source_filename": entry.get("source_filename", ""),
+                    "image_index": None,
+                    "ocr_confidence": entry.get("ocr_confidence"),
+                    "extract_method": "rule",
+                    "raw_text_excerpt": entry.get("raw_match", "")[:200],
+                }
+            )
             summary["ambiguous_count"] += 1
             continue
 
         if len(candidates) > 1:
             # 多个候选 → ambiguous
-            preview_items.append({
-                "import_id": None,
-                "source_order_index": None,
-                "source_question_no": entry["question_no"],
-                "stem_excerpt": "",
-                "question_type": None,
-                "original_answer": None,
-                "original_analysis": None,
-                "extracted_answer": entry["answer"],
-                "extracted_analysis": entry.get("analysis"),
-                "status": "ambiguous",
-                "status_message": f"题号 {normalized_no} 匹配到 {len(candidates)} 道题，无法自动确定",
-                "will_update_answer": False,
-                "will_update_analysis": False,
-                "validation_errors": [],
-                "source_filename": entry.get("source_filename", ""),
-                "image_index": None,
-                "ocr_confidence": entry.get("ocr_confidence"),
-                "extract_method": "rule",
-                "raw_text_excerpt": entry.get("raw_match", "")[:200],
-            })
+            preview_items.append(
+                {
+                    "import_id": None,
+                    "source_order_index": None,
+                    "source_question_no": entry["question_no"],
+                    "stem_excerpt": "",
+                    "question_type": None,
+                    "original_answer": None,
+                    "original_analysis": None,
+                    "extracted_answer": entry["answer"],
+                    "extracted_analysis": entry.get("analysis"),
+                    "status": "ambiguous",
+                    "status_message": f"题号 {normalized_no} 匹配到 {len(candidates)} 道题，无法自动确定",
+                    "will_update_answer": False,
+                    "will_update_analysis": False,
+                    "validation_errors": [],
+                    "source_filename": entry.get("source_filename", ""),
+                    "image_index": None,
+                    "ocr_confidence": entry.get("ocr_confidence"),
+                    "extract_method": "rule",
+                    "raw_text_excerpt": entry.get("raw_match", "")[:200],
+                }
+            )
             summary["ambiguous_count"] += 1
             continue
 
@@ -496,27 +535,29 @@ async def generate_image_preview(
 
         # 检查题型是否支持
         if qt.lower() not in _SUPPORTED_TYPES:
-            preview_items.append({
-                "import_id": q.id,
-                "source_order_index": q.source_order_index,
-                "source_question_no": q.source_question_no,
-                "stem_excerpt": _stem_excerpt(q),
-                "question_type": qt,
-                "original_answer": q.parsed_answer,
-                "original_analysis": q.parsed_analysis,
-                "extracted_answer": entry["answer"],
-                "extracted_analysis": entry.get("analysis"),
-                "status": "unsupported_type",
-                "status_message": f"题型不支持批量补录: {qt}",
-                "will_update_answer": False,
-                "will_update_analysis": False,
-                "validation_errors": [],
-                "source_filename": entry.get("source_filename", ""),
-                "image_index": None,
-                "ocr_confidence": entry.get("ocr_confidence"),
-                "extract_method": "rule",
-                "raw_text_excerpt": entry.get("raw_match", "")[:200],
-            })
+            preview_items.append(
+                {
+                    "import_id": q.id,
+                    "source_order_index": q.source_order_index,
+                    "source_question_no": q.source_question_no,
+                    "stem_excerpt": _stem_excerpt(q),
+                    "question_type": qt,
+                    "original_answer": q.parsed_answer,
+                    "original_analysis": q.parsed_analysis,
+                    "extracted_answer": entry["answer"],
+                    "extracted_analysis": entry.get("analysis"),
+                    "status": "unsupported_type",
+                    "status_message": f"题型不支持批量补录: {qt}",
+                    "will_update_answer": False,
+                    "will_update_analysis": False,
+                    "validation_errors": [],
+                    "source_filename": entry.get("source_filename", ""),
+                    "image_index": None,
+                    "ocr_confidence": entry.get("ocr_confidence"),
+                    "extract_method": "rule",
+                    "raw_text_excerpt": entry.get("raw_match", "")[:200],
+                }
+            )
             continue
 
         # 标准化答案
@@ -525,9 +566,7 @@ async def generate_image_preview(
         # 检查答案是否可写入
         has_existing_answer = not _is_answer_empty(q.parsed_answer)
         will_update_answer = bool(
-            not has_existing_answer
-            and normalized_ans is not None
-            and not norm_errors
+            not has_existing_answer and normalized_ans is not None and not norm_errors
         )
         # 检查解析是否可写入
         has_existing_analysis = not _is_answer_empty(q.parsed_analysis)
@@ -562,27 +601,31 @@ async def generate_image_preview(
             status_str = "skipped"
             status_msg_parts.append("无需更新")
 
-        preview_items.append({
-            "import_id": q.id,
-            "source_order_index": q.source_order_index,
-            "source_question_no": q.source_question_no,
-            "stem_excerpt": _stem_excerpt(q),
-            "question_type": qt,
-            "original_answer": q.parsed_answer,
-            "original_analysis": q.parsed_analysis,
-            "extracted_answer": normalized_ans if normalized_ans else entry["answer"],
-            "extracted_analysis": entry.get("analysis"),
-            "status": status_str,
-            "status_message": "；".join(status_msg_parts),
-            "will_update_answer": will_update_answer,
-            "will_update_analysis": will_update_analysis,
-            "validation_errors": norm_errors,
-            "source_filename": entry.get("source_filename", ""),
-            "image_index": None,
-            "ocr_confidence": entry.get("ocr_confidence"),
-            "extract_method": "rule",
-            "raw_text_excerpt": entry.get("raw_match", "")[:200],
-        })
+        preview_items.append(
+            {
+                "import_id": q.id,
+                "source_order_index": q.source_order_index,
+                "source_question_no": q.source_question_no,
+                "stem_excerpt": _stem_excerpt(q),
+                "question_type": qt,
+                "original_answer": q.parsed_answer,
+                "original_analysis": q.parsed_analysis,
+                "extracted_answer": normalized_ans
+                if normalized_ans
+                else entry["answer"],
+                "extracted_analysis": entry.get("analysis"),
+                "status": status_str,
+                "status_message": "；".join(status_msg_parts),
+                "will_update_answer": will_update_answer,
+                "will_update_analysis": will_update_analysis,
+                "validation_errors": norm_errors,
+                "source_filename": entry.get("source_filename", ""),
+                "image_index": None,
+                "ocr_confidence": entry.get("ocr_confidence"),
+                "extract_method": "rule",
+                "raw_text_excerpt": entry.get("raw_match", "")[:200],
+            }
+        )
 
     # 7. 生成 preview_token 和 operation_id
     operation_id = _generate_operation_id()
@@ -617,7 +660,9 @@ async def generate_image_preview(
         "created_at": serialize_utc_datetime(utcnow()),
     }
     token = _generate_token(preview_data)
-    await cache.set(f"{_PREVIEW_TOKEN_PREFIX}{token}", preview_data, ttl=_PREVIEW_TOKEN_TTL)
+    await cache.set(
+        f"{_PREVIEW_TOKEN_PREFIX}{token}", preview_data, ttl=_PREVIEW_TOKEN_TTL
+    )
 
     return {
         "batch_id": batch_id,
@@ -655,7 +700,10 @@ async def apply_image_preview(
     if not preview_data:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"error_code": PREVIEW_EXPIRED, "detail": "预览已过期或无效，请重新预览"},
+            detail={
+                "error_code": PREVIEW_EXPIRED,
+                "detail": "预览已过期或无效，请重新预览",
+            },
         )
     if isinstance(preview_data, str):
         preview_data = json.loads(preview_data)
@@ -675,19 +723,31 @@ async def apply_image_preview(
     if preview_data.get("used"):
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"error_code": PREVIEW_ALREADY_APPLIED, "detail": "预览 token 已使用"},
+            detail={
+                "error_code": PREVIEW_ALREADY_APPLIED,
+                "detail": "预览 token 已使用",
+            },
         )
 
     # 5. token 归属校验
     if preview_data.get("batch_id") != batch_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error_code": "INVALID_TOKEN", "detail": "预览 token 与当前批次不匹配"},
+            detail={
+                "error_code": "INVALID_TOKEN",
+                "detail": "预览 token 与当前批次不匹配",
+            },
         )
-    if preview_data.get("admin_id") is not None and preview_data["admin_id"] != current_admin.id:
+    if (
+        preview_data.get("admin_id") is not None
+        and preview_data["admin_id"] != current_admin.id
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error_code": "TOKEN_OWNER_MISMATCH", "detail": "预览 token 不属于当前管理员"},
+            detail={
+                "error_code": "TOKEN_OWNER_MISMATCH",
+                "detail": "预览 token 不属于当前管理员",
+            },
         )
 
     # 6. 重新加载题目，逐项一致性校验
@@ -715,20 +775,29 @@ async def apply_image_preview(
         if not q:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"import_id {import_id} 不存在"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"import_id {import_id} 不存在",
+                },
             )
 
         # 校验 source_order_index
         if str(q.source_order_index) != str(item.get("source_order_index", "")):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 的 source_order_index 已变化"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"题目 {import_id} 的 source_order_index 已变化",
+                },
             )
         # 校验 question_type
         if q.question_type != item.get("question_type"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 的题型已变化"},
+                detail={
+                    "error_code": PREVIEW_STALE,
+                    "detail": f"题目 {import_id} 的题型已变化",
+                },
             )
 
         # 校验答案仍为空
@@ -739,7 +808,10 @@ async def apply_image_preview(
             if not _is_answer_empty(q.parsed_answer):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 已有答案，不可再写入"},
+                    detail={
+                        "error_code": PREVIEW_STALE,
+                        "detail": f"题目 {import_id} 已有答案，不可再写入",
+                    },
                 )
             will_update_answer_ids.append(import_id)
 
@@ -748,7 +820,10 @@ async def apply_image_preview(
             if not _is_answer_empty(q.parsed_analysis):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail={"error_code": PREVIEW_STALE, "detail": f"题目 {import_id} 已有解析，不可再写入"},
+                    detail={
+                        "error_code": PREVIEW_STALE,
+                        "detail": f"题目 {import_id} 已有解析，不可再写入",
+                    },
                 )
             will_update_analysis_ids.append(import_id)
 
@@ -763,7 +838,9 @@ async def apply_image_preview(
             "batch_stats": await _get_answer_stats(db, batch_id),
         }
         if operation_id:
-            await cache.set(f"{_OPID_PREFIX}{operation_id}", result_payload, ttl=_OPID_TTL)
+            await cache.set(
+                f"{_OPID_PREFIX}{operation_id}", result_payload, ttl=_OPID_TTL
+            )
         return result_payload
 
     # 7. 构建答案/解析值的映射
@@ -856,7 +933,8 @@ async def apply_image_preview(
         "updated_answer_count": updated_answer_count,
         "updated_analysis_count": updated_analysis_count,
         "skipped_existing_answer_count": writable_answer_count - updated_answer_count,
-        "skipped_existing_analysis_count": writable_analysis_count - updated_analysis_count,
+        "skipped_existing_analysis_count": writable_analysis_count
+        - updated_analysis_count,
         "remaining_count": len(questions) - len(items),
         "batch_stats": batch_stats,
     }

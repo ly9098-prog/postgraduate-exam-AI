@@ -1,4 +1,5 @@
 """V5 学习报告 API 路由"""
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +37,9 @@ async def review_plan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = await svc.get_review_plan(db, current_user.id, subject_id=subject_id, limit=limit)
+    data = await svc.get_review_plan(
+        db, current_user.id, subject_id=subject_id, limit=limit
+    )
     return ReviewPlanResponse(**data)
 
 
@@ -46,7 +49,9 @@ async def leitner_distribution(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = await svc.get_leitner_distribution(db, current_user.id, subject_id=subject_id)
+    data = await svc.get_leitner_distribution(
+        db, current_user.id, subject_id=subject_id
+    )
     return LeitnerDistributionResponse(**data)
 
 
@@ -54,7 +59,10 @@ async def leitner_distribution(
 async def knowledge_mastery(
     subject_id: int | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
-    sort: str = Query("weak_first", pattern="^(weak_first|mastered_first|confidence_low|recent_practiced)$"),
+    sort: str = Query(
+        "weak_first",
+        pattern="^(weak_first|mastered_first|confidence_low|recent_practiced)$",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -73,7 +81,11 @@ async def wrong_questions(
     current_user: User = Depends(get_current_user),
 ):
     data = await svc.get_wrong_questions_summary(
-        db, current_user.id, subject_id=subject_id, limit=limit, min_wrong_count=min_wrong_count
+        db,
+        current_user.id,
+        subject_id=subject_id,
+        limit=limit,
+        min_wrong_count=min_wrong_count,
     )
     return WrongQuestionSummaryResponse(**data)
 
@@ -85,5 +97,7 @@ async def study_trend(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = await svc.get_study_trend(db, current_user.id, subject_id=subject_id, days=days)
+    data = await svc.get_study_trend(
+        db, current_user.id, subject_id=subject_id, days=days
+    )
     return StudyTrendResponse(**data)

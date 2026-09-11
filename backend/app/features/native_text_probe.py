@@ -54,15 +54,16 @@ _MIN_FONT_COUNT = 2
 
 # Printable ASCII + CJK ranges
 _PRINTABLE_RE = re.compile(
-    r'[ -~ -ɏ一-鿿　-〿＀-￯'
-    r' -⁯℀-⅏Ͱ-Ͽ'
-    r'0-9a-zA-Z.,;:!?()（）【】《》""'' '
-    r'+\-*/=<>≤≥≠∞∫∑∏√∪∩∈∅∀∃⇒⇔∧∨¬∂∇′″'
-    r'πθαβγδεζηλμξστφχψω]'
+    r"[ -~ -ɏ一-鿿　-〿＀-￯"
+    r" -⁯℀-⅏Ͱ-Ͽ"
+    r'0-9a-zA-Z.,;:!?()（）【】《》""'
+    " "
+    r"+\-*/=<>≤≥≠∞∫∑∏√∪∩∈∅∀∃⇒⇔∧∨¬∂∇′″"
+    r"πθαβγδεζηλμξστφχψω]"
 )
 
 # Control characters (except common whitespace)
-_CONTROL_CHAR_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,7 @@ _CONTROL_CHAR_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
 @dataclass
 class NativeTextProbeResult:
     """Per-page native text layer analysis result."""
+
     page_index: int
     native_text: str = ""
     native_text_length: int = 0
@@ -177,7 +179,9 @@ class NativeTextProbe:
         )
 
         confidence = self._compute_confidence(
-            printable_ratio, garbled_ratio, dup_glyph_ratio,
+            printable_ratio,
+            garbled_ratio,
+            dup_glyph_ratio,
         )
 
         return NativeTextProbeResult(
@@ -251,7 +255,10 @@ class NativeTextProbe:
             return "LOCAL_OCR"
 
         # Low font count suggests incomplete text layer
-        if font_count < _MIN_FONT_COUNT and text_coverage < _TEXT_BBOX_COVERAGE_THRESHOLD:
+        if (
+            font_count < _MIN_FONT_COUNT
+            and text_coverage < _TEXT_BBOX_COVERAGE_THRESHOLD
+        ):
             reason_codes.append("LOW_FONT_COUNT")
             return "LOCAL_OCR"
 
@@ -311,8 +318,10 @@ class NativeTextProbe:
             if self.is_shadow:
                 logger.debug(
                     "Shadow probe [p%d]: route=%s confidence=%.2f codes=%s",
-                    page_index, result.route_recommendation,
-                    result.confidence, result.reason_codes,
+                    page_index,
+                    result.route_recommendation,
+                    result.confidence,
+                    result.reason_codes,
                 )
 
         return results

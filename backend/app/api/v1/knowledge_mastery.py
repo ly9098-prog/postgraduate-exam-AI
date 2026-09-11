@@ -1,4 +1,5 @@
 """用户知识点掌握度 + 推荐反馈 API。"""
+
 import logging
 
 from fastapi import APIRouter, Depends, Query
@@ -29,7 +30,9 @@ async def get_knowledge_states(
     from app.services import mastery_service
 
     states = await mastery_service.get_user_knowledge_states(
-        db, current_user.id, subject_id,
+        db,
+        current_user.id,
+        subject_id,
     )
     return [KnowledgeStateItem(**s) for s in states]
 
@@ -45,7 +48,10 @@ async def get_weak_knowledge_points(
     from app.services import mastery_service
 
     weak = await mastery_service.get_user_weak_knowledge_points(
-        db, current_user.id, subject_id, limit=limit,
+        db,
+        current_user.id,
+        subject_id,
+        limit=limit,
     )
     return [WeakKnowledgePointItem(**w) for w in weak]
 
@@ -62,11 +68,16 @@ async def post_recommendation_feedback(
     matched = False
     if data.event == "clicked":
         matched = await recommendation_log_service.mark_recommendation_clicked(
-            db, current_user.id, data.question_id, data.request_id,
+            db,
+            current_user.id,
+            data.question_id,
+            data.request_id,
         )
     elif data.event == "answered":
         matched = await recommendation_log_service.mark_recommendation_answered(
-            db, current_user.id, data.question_id,
+            db,
+            current_user.id,
+            data.question_id,
             is_correct=data.is_correct or False,
             request_id=data.request_id,
         )

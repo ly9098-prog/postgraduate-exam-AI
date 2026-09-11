@@ -79,7 +79,9 @@ class RoutingMetricsCollector:
             mode: {
                 "success": mode_success.get(mode, 0),
                 "total": count,
-                "rate": round(mode_success.get(mode, 0) / count, 3) if count > 0 else 0.0,
+                "rate": round(mode_success.get(mode, 0) / count, 3)
+                if count > 0
+                else 0.0,
             }
             for mode, count in mode_total.items()
         }
@@ -101,9 +103,9 @@ class RoutingMetricsCollector:
             option_missing_rates[mode] = {
                 "missing": mode_missing.get(mode, 0),
                 "total_questions": total_q,
-                "missing_rate": round(
-                    mode_missing.get(mode, 0) / total_q, 3
-                ) if total_q > 0 else 0.0,
+                "missing_rate": round(mode_missing.get(mode, 0) / total_q, 3)
+                if total_q > 0
+                else 0.0,
             }
 
         # ── VL trigger analysis ──
@@ -172,16 +174,16 @@ def build_routing_metrics(data: dict) -> dict[str, Any]:
     option_detection_failed = layout_result.get("option_detection_failed", False)
 
     question_count = len(raw_questions)
-    option_missing_questions = sum(
-        1 for q in raw_questions if not q.get("has_options")
-    )
-    avg_confidence = (
-        sum(q.get("confidence", 0.0) for q in raw_questions) / max(question_count, 1)
+    option_missing_questions = sum(1 for q in raw_questions if not q.get("has_options"))
+    avg_confidence = sum(q.get("confidence", 0.0) for q in raw_questions) / max(
+        question_count, 1
     )
     split_quality_score = split_quality.get("split_quality_score", 0.0)
 
     # VL is now purely confidence-triggered (frozen policy)
-    vl_trigger_reason: str | None = "low_confidence" if split_mode == "vl_rebuild" else None
+    vl_trigger_reason: str | None = (
+        "low_confidence" if split_mode == "vl_rebuild" else None
+    )
 
     metrics = {
         "split_mode": split_mode,

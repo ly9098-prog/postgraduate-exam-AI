@@ -35,17 +35,13 @@ class FormulaCategory(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
     __table_args__ = (
-        UniqueConstraint(
-            "parent_id", "code", name="uq_formula_categories_parent_code"
-        ),
+        UniqueConstraint("parent_id", "code", name="uq_formula_categories_parent_code"),
     )
 
 
@@ -58,9 +54,7 @@ class FormulaTag(Base):
     )
     name: Mapped[str] = mapped_column(String(32), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FormulaCard(Base):
@@ -83,7 +77,11 @@ class FormulaCard(Base):
         String(32), nullable=False, default="formula", server_default="formula"
     )  # formula | definition | complexity | protocol_rule | key_conclusion | confusable | trap | comparison
     template_type: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="standard", server_default="standard", index=True
+        String(24),
+        nullable=False,
+        default="standard",
+        server_default="standard",
+        index=True,
     )  # standard | memory | rule | contrast | trap
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     formula_blocks: Mapped[list] = mapped_column(JSON, nullable=False)
@@ -122,8 +120,11 @@ class FormulaCard(Base):
     graph_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     draft_graph_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     graph_status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="not_applicable",
-        server_default="not_applicable", index=True,
+        String(32),
+        nullable=False,
+        default="not_applicable",
+        server_default="not_applicable",
+        index=True,
     )
     graph_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     graph_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -131,9 +132,7 @@ class FormulaCard(Base):
 
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
@@ -156,16 +155,15 @@ class FormulaCardTag(Base):
     tag_id: Mapped[int] = mapped_column(
         ForeignKey("formula_tags.id"), nullable=False, index=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FormulaGraphAsset(Base):
     __tablename__ = "formula_graph_assets"
     __table_args__ = (
         UniqueConstraint(
-            "formula_card_id", "source_type",
+            "formula_card_id",
+            "source_type",
             name="uq_formula_graph_assets_card_source",
         ),
     )
@@ -199,9 +197,7 @@ class FormulaGraphAsset(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     review_note: Mapped[str | None] = mapped_column(String(256), nullable=True)
     published_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
@@ -221,9 +217,7 @@ class FormulaGraphPreview(Base):
         nullable=False,
         index=True,
     )
-    preview_token: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False
-    )
+    preview_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
     preview_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -235,9 +229,7 @@ class FormulaGraphPreview(Base):
     quality_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     quality_warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FormulaGraphSpec(Base):
@@ -251,7 +243,8 @@ class FormulaGraphSpec(Base):
     __tablename__ = "formula_graph_specs"
     __table_args__ = (
         UniqueConstraint(
-            "formula_card_id", "slug",
+            "formula_card_id",
+            "slug",
             name="uq_formula_graph_specs_card_slug",
         ),
     )
@@ -269,12 +262,8 @@ class FormulaGraphSpec(Base):
     alt_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
     spec_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     spec_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    schema_version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1
-    )
-    renderer_version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1
-    )
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    renderer_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="draft", index=True
     )
@@ -286,12 +275,8 @@ class FormulaGraphSpec(Base):
     reviewed_by: Mapped[int | None] = mapped_column(
         ForeignKey("admin_users.id"), nullable=True
     )
-    reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
@@ -301,14 +286,13 @@ class FormulaCardVersion(Base):
     __tablename__ = "formula_card_versions"
     __table_args__ = (
         UniqueConstraint(
-            "formula_card_id", "version",
+            "formula_card_id",
+            "version",
             name="uq_formula_card_versions_card_version",
         ),
     )
 
-    id: Mapped[int] = mapped_column(
-        Integer, primary_key=True, autoincrement=True
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     formula_card_id: Mapped[int] = mapped_column(
         ForeignKey("formula_cards.id", ondelete="CASCADE"),
         nullable=False,
@@ -323,16 +307,15 @@ class FormulaCardVersion(Base):
         ForeignKey("admin_users.id"), nullable=True
     )
     edit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class UserFormulaFavorite(Base):
     __tablename__ = "user_formula_favorites"
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "formula_card_id",
+            "user_id",
+            "formula_card_id",
             name="uq_user_formula_favorites_user_card",
         ),
     )
@@ -348,9 +331,7 @@ class UserFormulaFavorite(Base):
         nullable=False,
         index=True,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FormulaImportJob(Base):
@@ -368,9 +349,7 @@ class FormulaImportJob(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_filename: Mapped[str | None] = mapped_column(String(256), nullable=True)
     total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    processed_items: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
+    processed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     retry_of: Mapped[int | None] = mapped_column(
         ForeignKey("formula_import_jobs.id"), nullable=True
@@ -379,15 +358,15 @@ class FormulaImportJob(Base):
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("admin_users.id"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
     # P0-1 fencing: execution generation prevents stale workers from writing
-    execution_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    execution_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     current_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     current_owner_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     execution_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -426,9 +405,7 @@ class FormulaImportItem(Base):
     result_card_id: Mapped[int | None] = mapped_column(
         ForeignKey("formula_cards.id"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

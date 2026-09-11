@@ -24,7 +24,9 @@ def _raise_exam_error(exc: ValueError) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, exam_service.ExamStateError):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+    )
 
 
 @router.get("/papers", response_model=list[ExamPaperSummary])
@@ -42,7 +44,9 @@ async def get_paper(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return await exam_service.get_published_paper_detail(db, paper_id, current_user.id)
+        return await exam_service.get_published_paper_detail(
+            db, paper_id, current_user.id
+        )
     except ValueError as exc:
         _raise_exam_error(exc)
 
@@ -55,7 +59,9 @@ async def start_attempt(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return await exam_service.start_attempt(db, paper_id, current_user.id, data.request_id)
+        return await exam_service.start_attempt(
+            db, paper_id, current_user.id, data.request_id
+        )
     except ValueError as exc:
         _raise_exam_error(exc)
 

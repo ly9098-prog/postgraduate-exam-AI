@@ -11,6 +11,7 @@ silently pulled into a hot-path ``SELECT *``.
 ``PracticeRecord.projection_state`` is the durable processing receipt;
 reconciliation only repairs records explicitly left in ``pending``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -172,15 +173,19 @@ async def _load_revision_source(
 ) -> _RevisionSource | None:
     """Load the immutable revision fields consumed by projection."""
     row = (
-        await db.execute(
-            select(
-                QuestionVersion.id,
-                QuestionVersion.question_id,
-                QuestionVersion.subject_id,
-                QuestionVersion.answer,
-            ).where(QuestionVersion.id == question_version_id)
+        (
+            await db.execute(
+                select(
+                    QuestionVersion.id,
+                    QuestionVersion.question_id,
+                    QuestionVersion.subject_id,
+                    QuestionVersion.answer,
+                ).where(QuestionVersion.id == question_version_id)
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         return None
     return _RevisionSource(
@@ -246,7 +251,9 @@ async def project_practice_answer(
     await _verify_projection_schema_contract(db)
     record = await _lock_projection_source(db, practice_record_id)
     if record is None:
-        logger.warning("answer projection record missing: record_id=%s", practice_record_id)
+        logger.warning(
+            "answer projection record missing: record_id=%s", practice_record_id
+        )
         return {"processed": False, "missing": True}
 
     if record.projection_state != PROJECTION_PENDING:
@@ -319,13 +326,15 @@ async def project_practice_answer(
     if is_current_revision:
         from app.services import question_review_service
 
-        review_transition = await question_review_service.update_user_question_state_after_answer(
-            db,
-            user_id,
-            question_id,
-            is_correct,
-            used_time=used_time,
-            answered_at=record.answered_at,
+        review_transition = (
+            await question_review_service.update_user_question_state_after_answer(
+                db,
+                user_id,
+                question_id,
+                is_correct,
+                used_time=used_time,
+                answered_at=record.answered_at,
+            )
         )
 
         from app.services import adaptive_learning_service

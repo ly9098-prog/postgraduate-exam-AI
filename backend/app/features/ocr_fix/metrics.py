@@ -21,9 +21,10 @@ metrics_logger = logging.getLogger("ocr_correction_metrics")
 @dataclass
 class ModelBucket:
     """单个模型的指标桶。"""
+
     called: int = 0
-    succeeded: int = 0          # 模型返回结果
-    actually_changed: int = 0   # 结果与输入不同（真正产生效果）
+    succeeded: int = 0  # 模型返回结果
+    actually_changed: int = 0  # 结果与输入不同（真正产生效果）
     total_before_chars: int = 0
     total_after_chars: int = 0
     total_duration_ms: int = 0
@@ -138,7 +139,8 @@ class OcrCorrectionMetrics:
                     "succeeded": b.succeeded,
                     "actually_changed": b.actually_changed,
                     "change_rate": round(
-                        b.actually_changed / max(b.called, 1), 3,
+                        b.actually_changed / max(b.called, 1),
+                        3,
                     ),
                     "avg_duration_ms": round(b.total_duration_ms / max(b.called, 1)),
                     "total_tokens": b.total_tokens,
@@ -155,4 +157,6 @@ class OcrCorrectionMetrics:
         payload = self.summary()
         if extra:
             payload["extra"] = extra
-        metrics_logger.info("OCR_CORRECTION_METRICS %s", json.dumps(payload, ensure_ascii=False))
+        metrics_logger.info(
+            "OCR_CORRECTION_METRICS %s", json.dumps(payload, ensure_ascii=False)
+        )

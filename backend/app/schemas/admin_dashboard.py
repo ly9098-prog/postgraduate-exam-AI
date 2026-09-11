@@ -2,7 +2,6 @@ from app.schemas.base import BaseModel
 from datetime import date
 
 
-
 class AdminDashboardOverview(BaseModel):
     users_total: int
     users_new_today: int

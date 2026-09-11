@@ -34,14 +34,27 @@ class ImportBatchJob(Base):
     __tablename__ = "import_batch_jobs"
 
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="image")
-    subject_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
-    subject_ref = relationship("Subject", foreign_keys=[subject_id], lazy="selectin", back_populates="import_batch_jobs")
+    source_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="image"
+    )
+    subject_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
+    )
+    subject_ref = relationship(
+        "Subject",
+        foreign_keys=[subject_id],
+        lazy="selectin",
+        back_populates="import_batch_jobs",
+    )
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     # Status values defined in pipeline_enums.BatchJobStatus
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", index=True)
-    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="queued", index=True
+    )
+    created_by: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -62,7 +75,9 @@ class ImportBatchJob(Base):
     merge_finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # P0-1 fencing: execution generation prevents stale workers from writing
-    execution_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    execution_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     current_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     current_owner_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     execution_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -72,7 +87,9 @@ class ImportBatchJobItem(Base):
     __tablename__ = "import_batch_job_items"
     __table_args__ = (
         UniqueConstraint("job_id", "seq", name="uq_batch_job_items_job_seq"),
-        UniqueConstraint("batch_import_id", "image_import_id", name="uq_batch_import_id_image"),
+        UniqueConstraint(
+            "batch_import_id", "image_import_id", name="uq_batch_import_id_image"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -81,12 +98,16 @@ class ImportBatchJobItem(Base):
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     batch_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Status values defined in pipeline_enums.BatchItemStatus
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", index=True
+    )
     ocr_raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     ocr_cleaned_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     review_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -103,10 +124,14 @@ class ImportBatchJobItem(Base):
     )
 
     # P0-2: reparse tracking — preserved across reparse attempts
-    previous_review_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_review_batch_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     reparse_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reparse_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    reparse_finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reparse_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     reparse_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 

@@ -42,10 +42,12 @@ _config_cache: dict | None = None
 _config_cache_time: float = 0
 _CONFIG_CACHE_TTL = 10  # seconds
 
+
 def _clear_config_cache() -> None:
     global _config_cache, _config_cache_time
     _config_cache = None
     _config_cache_time = 0
+
 
 # ---------------------------------------------------------------------------
 # Default config values — mirrors app/ai/prompts.py
@@ -147,9 +149,17 @@ _DEFAULT_CONFIGS: dict[str, str] = {
 }
 
 _DEFAULT_MODELS: list[dict] = [
-    {"name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "provider": "deepseek",
-     "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1,
-     "feature": None, "features": None},
+    {
+        "name": "deepseek-v4-flash",
+        "display_name": "DeepSeek V4 Flash",
+        "provider": "deepseek",
+        "api_base_url": "https://api.deepseek.com",
+        "is_enabled": True,
+        "is_default": True,
+        "sort_order": 1,
+        "feature": None,
+        "features": None,
+    },
 ]
 
 
@@ -167,10 +177,14 @@ def _validate_model_feature_shape(features: list[str] | None) -> None:
     """
     values = set(features or [])
     if "embedding" in values and len(values) > 1:
-        raise ValueError("Embedding 模型不能同时绑定 Chat/OCR 功能；请将模型类型设为 Embedding")
+        raise ValueError(
+            "Embedding 模型不能同时绑定 Chat/OCR 功能；请将模型类型设为 Embedding"
+        )
 
 
-def _single_assignment_overlap(features: list[str], other_features: list[str]) -> set[str]:
+def _single_assignment_overlap(
+    features: list[str], other_features: list[str]
+) -> set[str]:
     """Return capabilities that still require a single active model.
 
     ``embedding`` is intentionally excluded because vector config explicitly
@@ -184,6 +198,7 @@ def _reset_vector_runtime_cache() -> None:
     """Invalidate vector runtime cache after model-registry changes."""
     try:
         from app.services.vector_retrieval_service import _reset_vector_enabled_cache
+
         _reset_vector_enabled_cache()
     except Exception:
         # Avoid creating a hard dependency/cycle during startup or migrations.
@@ -350,11 +365,7 @@ async def patch_model(
         if not new_base_url:
             raise ValueError("API Base URL 不能为空")
         old_base_url = (model.api_base_url or "").rstrip("/") or None
-        if (
-            new_base_url != old_base_url
-            and model.api_key_encrypted
-            and new_key is None
-        ):
+        if new_base_url != old_base_url and model.api_key_encrypted and new_key is None:
             raise ValueError("修改 API Base URL 时必须同时重新提交 API Key")
         model.api_base_url = new_base_url
         changes["api_base_url"] = new_base_url
@@ -420,8 +431,12 @@ async def patch_model(
     _reset_vector_runtime_cache()
 
     await write_admin_audit(
-        db, operator, "ai_model_config.update", "ai_model_config",
-        model.id, detail={"model_name": model.name, "changes": changes},
+        db,
+        operator,
+        "ai_model_config.update",
+        "ai_model_config",
+        model.id,
+        detail={"model_name": model.name, "changes": changes},
     )
     return _model_to_response(model)
 
@@ -464,7 +479,9 @@ async def create_model(
 
     api_base_url = _validated_api_base_url(data.api_base_url)
     if not api_base_url:
-        raise ValueError("API Base URL 不能为空；请填写 OpenAI-compatible SDK 使用的 base_url")
+        raise ValueError(
+            "API Base URL 不能为空；请填写 OpenAI-compatible SDK 使用的 base_url"
+        )
     model = AdminAiModelConfig(
         name=data.name.strip(),
         display_name=data.display_name.strip(),
@@ -484,8 +501,12 @@ async def create_model(
     _reset_vector_runtime_cache()
 
     await write_admin_audit(
-        db, operator, "ai_model_config.create", "ai_model_config",
-        model.id, detail={"model_name": model.name, "provider": model.provider},
+        db,
+        operator,
+        "ai_model_config.create",
+        "ai_model_config",
+        model.id,
+        detail={"model_name": model.name, "provider": model.provider},
     )
     return _model_to_response(model)
 
@@ -514,13 +535,22 @@ async def delete_model(
 
     selected_embedding = await db.get(AdminAiConfig, "embedding_model_config_id")
     selection_cleared = False
-    if selected_embedding is not None and selected_embedding.config_value == str(model_id):
+    if selected_embedding is not None and selected_embedding.config_value == str(
+        model_id
+    ):
         selected_embedding.config_value = ""
         selection_cleared = True
 
     await write_admin_audit(
-        db, operator, "ai_model_config.delete", "ai_model_config",
-        model.id, detail={"model_name": model.name, "embedding_selection_cleared": selection_cleared},
+        db,
+        operator,
+        "ai_model_config.delete",
+        "ai_model_config",
+        model.id,
+        detail={
+            "model_name": model.name,
+            "embedding_selection_cleared": selection_cleared,
+        },
     )
     await db.delete(model)
     await db.flush()
@@ -539,7 +569,10 @@ async def get_all_configs(db: AsyncSession) -> dict:
         return _config_cache
     await _seed_configs_if_empty(db)
     result = await db.execute(select(AdminAiConfig))
-    _config_cache = {row.config_key: _coerce_value(row.config_value) for row in result.scalars().all()}
+    _config_cache = {
+        row.config_key: _coerce_value(row.config_value)
+        for row in result.scalars().all()
+    }
     _config_cache_time = now
     return _config_cache
 
@@ -557,12 +590,19 @@ async def patch_configs(
     for key, value in updates.items():
         if key not in _DEFAULT_CONFIGS:
             continue  # 忽略不存在的 key
-        if key in ("ocr_correction_prompt", "completion_prompt") and len(str(value)) > MAX_PROMPT_LENGTH:
+        if (
+            key in ("ocr_correction_prompt", "completion_prompt")
+            and len(str(value)) > MAX_PROMPT_LENGTH
+        ):
             raise ValueError(f"{key} exceeds max length of {MAX_PROMPT_LENGTH}")
         serialized = str(value).lower() if isinstance(value, bool) else str(value)
         existing = await db.get(AdminAiConfig, key)
         if existing is None:
-            db.add(AdminAiConfig(config_key=key, config_value=serialized, updated_by=operator.id))
+            db.add(
+                AdminAiConfig(
+                    config_key=key, config_value=serialized, updated_by=operator.id
+                )
+            )
         else:
             existing.config_value = serialized
             existing.updated_by = operator.id
@@ -571,8 +611,12 @@ async def patch_configs(
 
     if changed_keys:
         await write_admin_audit(
-            db, operator, "ai_config.update", "ai_config",
-            None, detail={"changed_keys": changed_keys},
+            db,
+            operator,
+            "ai_config.update",
+            "ai_config",
+            None,
+            detail={"changed_keys": changed_keys},
         )
 
     await db.flush()
@@ -633,7 +677,6 @@ async def test_model_connection(
 
     # Key priority 2: from DB via model_id (only if no explicit key provided)
     if effective_api_key is None and model_id is not None and db is not None:
-
         model = await db.get(AdminAiModelConfig, model_id)
         if model is not None:
             # model_id is primarily used to reuse the encrypted saved secret.
@@ -642,8 +685,10 @@ async def test_model_connection(
             if not effective_provider:
                 effective_provider = model.provider
             if not effective_features:
-                effective_features = model.features if model.features else (
-                    [model.feature] if model.feature else []
+                effective_features = (
+                    model.features
+                    if model.features
+                    else ([model.feature] if model.feature else [])
                 )
 
             if model.api_key_encrypted:
@@ -665,8 +710,10 @@ async def test_model_connection(
                 if not effective_provider:
                     effective_provider = model.provider
                 if not effective_features:
-                    effective_features = model.features if model.features else (
-                        [model.feature] if model.feature else []
+                    effective_features = (
+                        model.features
+                        if model.features
+                        else ([model.feature] if model.feature else [])
                     )
                 if model.api_key_encrypted:
                     try:
@@ -719,7 +766,11 @@ async def test_model_connection(
 
     # PaddleOCR-VL 特殊处理：不调用 chat/completions
     _provider_norm = (effective_provider or "").strip().lower().replace("_", "-")
-    _is_paddleocr = "vision" in effective_features or _provider_norm == "paddle" or _provider_norm.startswith("paddleocr")
+    _is_paddleocr = (
+        "vision" in effective_features
+        or _provider_norm == "paddle"
+        or _provider_norm.startswith("paddleocr")
+    )
     if _is_paddleocr:
         return await _test_paddleocr_vl_connection(api_base_url, effective_api_key)
 

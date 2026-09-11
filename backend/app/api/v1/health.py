@@ -1,4 +1,5 @@
 """健康检查与版本信息端点。"""
+
 import os
 import time
 
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.core.database import async_session
 
 router = APIRouter(prefix="/api/v1", tags=["health"])
+
 
 def _build_version() -> str:
     return os.environ.get("APP_VERSION", "1.0.0")
@@ -46,11 +48,14 @@ async def health_check():
 
     # Public health output is intentionally minimal: no database errors,
     # topology, latency, environment, commit hashes or dependency details.
-    return JSONResponse(status_code=200 if all_ok else 503, content={
-        "status": "ok" if all_ok else "degraded",
-        "version": _build_version(),
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    })
+    return JSONResponse(
+        status_code=200 if all_ok else 503,
+        content={
+            "status": "ok" if all_ok else "degraded",
+            "version": _build_version(),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+    )
 
 
 @router.get("/version")

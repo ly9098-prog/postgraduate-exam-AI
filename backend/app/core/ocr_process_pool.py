@@ -49,6 +49,7 @@ def _get_worker_engine() -> Any:
     global _WORKER_ENGINE
     if _WORKER_ENGINE is None:
         from app.core.ocr_engine import create_engine_for_child
+
         _WORKER_ENGINE = create_engine_for_child()
     return _WORKER_ENGINE
 
@@ -64,8 +65,9 @@ def _init_worker() -> None:
         _get_worker_engine()
         logger.info("Process worker PaddleOCR initialized (pid=%d)", os.getpid())
     except Exception as exc:
-        logger.error("Process worker PaddleOCR init failed (pid=%d): %s",
-                      os.getpid(), exc)
+        logger.error(
+            "Process worker PaddleOCR init failed (pid=%d): %s", os.getpid(), exc
+        )
         raise
 
 
@@ -80,7 +82,9 @@ def _run_one_page(image_bytes: bytes, page_index: int) -> str:
 
 
 def _run_one_page_with_boxes(
-    image_bytes: bytes, page_index: int, skip_rotation: bool = False,
+    image_bytes: bytes,
+    page_index: int,
+    skip_rotation: bool = False,
 ) -> dict:
     """Run OCR on a single page and return text + detection boxes.
 
@@ -90,7 +94,9 @@ def _run_one_page_with_boxes(
     Module-level for pickling across process boundary.
     """
     engine = _get_worker_engine()
-    result = engine.recognize(image_bytes, page_index, skip_rotation=skip_rotation, mode="boxes")
+    result = engine.recognize(
+        image_bytes, page_index, skip_rotation=skip_rotation, mode="boxes"
+    )
     return {
         "page_index": result.get("page_index", page_index),
         "text": result.get("text", ""),
@@ -174,7 +180,8 @@ class OcrProcessPool:
                 self._spawn_count += 1
                 logger.info(
                     "OCR process pool spawned (pid=%d, spawn=%d)",
-                    os.getpid(), self._spawn_count,
+                    os.getpid(),
+                    self._spawn_count,
                 )
             return self._executor
 
@@ -234,7 +241,8 @@ class OcrProcessPool:
             self._total_timeouts += 1
             logger.error(
                 "OCR process timed out after %ds, recycling pool (timeout=%d)",
-                effective_timeout, self._total_timeouts,
+                effective_timeout,
+                self._total_timeouts,
             )
             self._shutdown_nonblocking(
                 expected=getattr(future, "_ocr_pool_executor", None),
@@ -264,14 +272,20 @@ class OcrProcessPool:
         executor = self._ensure()
         try:
             future = executor.submit(
-                _run_one_page_with_boxes, image_bytes, page_index, skip_rotation,
+                _run_one_page_with_boxes,
+                image_bytes,
+                page_index,
+                skip_rotation,
             )
         except BrokenProcessPool:
             self._total_crashes += 1
             self._shutdown_nonblocking(expected=executor)
             executor = self._ensure()
             future = executor.submit(
-                _run_one_page_with_boxes, image_bytes, page_index, skip_rotation,
+                _run_one_page_with_boxes,
+                image_bytes,
+                page_index,
+                skip_rotation,
             )
         except RuntimeError:
             raise
@@ -302,14 +316,18 @@ class OcrProcessPool:
         executor = self._ensure()
         try:
             future = executor.submit(
-                _run_lightweight_ocr, image_bytes, page_index,
+                _run_lightweight_ocr,
+                image_bytes,
+                page_index,
             )
         except BrokenProcessPool:
             self._total_crashes += 1
             self._shutdown_nonblocking(expected=executor)
             executor = self._ensure()
             future = executor.submit(
-                _run_lightweight_ocr, image_bytes, page_index,
+                _run_lightweight_ocr,
+                image_bytes,
+                page_index,
             )
         except RuntimeError:
             raise
@@ -351,9 +369,7 @@ class OcrProcessPool:
         survivors.  This is intentionally isolated here because the public
         executor API has no force-stop primitive.
         """
-        processes = list(
-            (getattr(executor, "_processes", None) or {}).values()
-        )
+        processes = list((getattr(executor, "_processes", None) or {}).values())
         try:
             executor.shutdown(wait=False, cancel_futures=True)
         except Exception as exc:

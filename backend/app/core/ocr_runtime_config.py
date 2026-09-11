@@ -36,8 +36,7 @@ def sanitize_url(url: str) -> str:
             # Rebuild without credentials
             clean = parsed._replace(
                 netloc=(
-                    (parsed.hostname or "")
-                    + (f":{parsed.port}" if parsed.port else "")
+                    (parsed.hostname or "") + (f":{parsed.port}" if parsed.port else "")
                 ),
                 query="",
             )
@@ -68,8 +67,7 @@ def sanitize_url_strip_credentials(url: str) -> str:
         if parsed.username or parsed.password:
             clean = parsed._replace(
                 netloc=(
-                    (parsed.hostname or "")
-                    + (f":{parsed.port}" if parsed.port else "")
+                    (parsed.hostname or "") + (f":{parsed.port}" if parsed.port else "")
                 ),
                 query="",
             )
@@ -90,7 +88,7 @@ class OcrRuntimeConfig:
     """
 
     # ── Environment ──
-    environment: str = "development"   # "development" | "production"
+    environment: str = "development"  # "development" | "production"
     profile: str = ""
 
     # ── Engine ──
@@ -126,27 +124,27 @@ class OcrRuntimeConfig:
     )
 
     # ── Process Worker Pool ──
-    worker_count: int = 1                       # number of worker processes
-    queue_capacity: int = 20                    # max pending tasks in parent queue
-    start_method: str = "spawn"                 # multiprocessing start method
+    worker_count: int = 1  # number of worker processes
+    queue_capacity: int = 20  # max pending tasks in parent queue
+    start_method: str = "spawn"  # multiprocessing start method
 
     # ── Timeouts (seconds) ──
-    startup_timeout: float = 30.0               # worker readiness handshake
-    queue_wait_timeout: float = 120.0           # max time in parent queue
-    execution_timeout: float = 600.0            # max OCR execution in worker
-    total_deadline: float = 900.0               # total request deadline
-    shutdown_grace_timeout: float = 5.0         # graceful shutdown wait
-    kill_timeout: float = 10.0                  # force kill wait
+    startup_timeout: float = 30.0  # worker readiness handshake
+    queue_wait_timeout: float = 120.0  # max time in parent queue
+    execution_timeout: float = 600.0  # max OCR execution in worker
+    total_deadline: float = 900.0  # total request deadline
+    shutdown_grace_timeout: float = 5.0  # graceful shutdown wait
+    kill_timeout: float = 10.0  # force kill wait
 
     # ── Heartbeat ──
     heartbeat_interval: float = 30.0
     heartbeat_timeout: float = 60.0
 
     # ── Worker lifecycle ──
-    max_tasks_per_worker: int = 0               # 0 = unlimited
-    max_rss_mb: int = 0                         # 0 = no limit
-    max_image_bytes: int = 20 * 1024 * 1024     # 20 MB
-    max_image_pixels: int = 30_000_000          # ~6000x5000
+    max_tasks_per_worker: int = 0  # 0 = unlimited
+    max_rss_mb: int = 0  # 0 = no limit
+    max_image_bytes: int = 20 * 1024 * 1024  # 20 MB
+    max_image_pixels: int = 30_000_000  # ~6000x5000
 
     # ── Restart governance ──
     max_restarts_per_window: int = 5
@@ -160,17 +158,23 @@ class OcrRuntimeConfig:
     gpu_shards: int = 1
 
     # ── Remote execution backend ──
-    execution_backend: str = "local_process"       # "local_process" | "paddlex_http" | "disabled"
+    execution_backend: str = (
+        "local_process"  # "local_process" | "paddlex_http" | "disabled"
+    )
     remote_url: str = ""
-    remote_auth_token: str = field(repr=False, default="")  # NEVER in repr, logs, metrics, exceptions, or response bodies
-    remote_auth_header: str = "Authorization"                # configurable header name
-    remote_auth_scheme: str = "Bearer"                       # configurable scheme prefix
+    remote_auth_token: str = field(
+        repr=False, default=""
+    )  # NEVER in repr, logs, metrics, exceptions, or response bodies
+    remote_auth_header: str = "Authorization"  # configurable header name
+    remote_auth_scheme: str = "Bearer"  # configurable scheme prefix
     remote_connect_timeout_sec: float = 5.0
     remote_read_timeout_sec: float = 600.0
     remote_health_timeout_sec: float = 3.0
     remote_max_concurrency: int = 1
-    remote_request_max_bytes: int = 10 * 1024 * 1024        # pre-request size limit (raw image)
-    remote_response_max_bytes: int = 10 * 1024 * 1024       # max response body before abort
+    remote_request_max_bytes: int = (
+        10 * 1024 * 1024
+    )  # pre-request size limit (raw image)
+    remote_response_max_bytes: int = 10 * 1024 * 1024  # max response body before abort
     remote_visualize: bool = False
     remote_fail_fast: bool = False
     remote_use_doc_orientation_classify: bool = False
@@ -189,76 +193,78 @@ def _build_runtime_config() -> OcrRuntimeConfig:
     dep_profile = detect_deployment_profile()
 
     # Use deployment profile for environment classification
-    environment = "production" if dep_profile == DeploymentProfile.CLOUD_API else "development"
+    environment = (
+        "production" if dep_profile == DeploymentProfile.CLOUD_API else "development"
+    )
 
     return OcrRuntimeConfig(
         # Environment
         environment=environment,
         profile=dep_profile.value if dep_profile else "",
-
         # Engine
         enabled=settings.OCR_ENABLED,
-        use_gpu=settings.OCR_USE_GPU if settings.OCR_USE_GPU is not None else profile.use_gpu,
+        use_gpu=settings.OCR_USE_GPU
+        if settings.OCR_USE_GPU is not None
+        else profile.use_gpu,
         language=settings.OCR_LANGUAGE or "ch",
-
         # Threading / concurrency — Settings take priority
         executor_workers=settings.OCR_EXECUTOR_WORKERS,
         max_concurrency=settings.OCR_MAX_CONCURRENCY,
         max_queue_size=settings.OCR_MAX_QUEUE_SIZE,
         task_timeout_seconds=settings.OCR_TASK_TIMEOUT_SEC,
-
         # Detection params — from Settings only (no profile overlap)
         det_db_thresh=settings.OCR_DET_DB_THRESH,
         det_db_box_thresh=settings.OCR_DET_DB_BOX_THRESH,
         det_db_unclip_ratio=settings.OCR_DET_DB_UNCLIP_RATIO,
         drop_score=settings.OCR_DROP_SCORE,
-
         # Image preprocessing — merge Settings over profile
         min_image_width=settings.OCR_MIN_IMAGE_WIDTH or profile.min_image_width,
         enable_rotation=profile.enable_rotation,
-
         # AI correction — from profile only
         enable_ai_correction=profile.enable_ai_correction,
-
         # Upload / page limits — from profile
         max_pdf_pages=profile.max_pdf_pages,
         max_upload_bytes=profile.max_upload_bytes,
         max_batch_files=profile.max_batch_files,
         allowed_source_types=profile.allowed_source_types,
-
         # Process Worker Pool — from Settings with defaults
-        worker_count=settings.OCR_WORKER_COUNT if hasattr(settings, 'OCR_WORKER_COUNT') else 1,
+        worker_count=settings.OCR_WORKER_COUNT
+        if hasattr(settings, "OCR_WORKER_COUNT")
+        else 1,
         queue_capacity=settings.OCR_MAX_QUEUE_SIZE * 2,
-
         # Timeouts
         startup_timeout=float(os.environ.get("OCR_STARTUP_TIMEOUT", "30")),
         queue_wait_timeout=float(os.environ.get("OCR_QUEUE_WAIT_TIMEOUT", "120")),
-        execution_timeout=float(os.environ.get("OCR_EXECUTION_TIMEOUT", str(settings.OCR_TASK_TIMEOUT_SEC))),
+        execution_timeout=float(
+            os.environ.get("OCR_EXECUTION_TIMEOUT", str(settings.OCR_TASK_TIMEOUT_SEC))
+        ),
         total_deadline=float(os.environ.get("OCR_TOTAL_DEADLINE", "900")),
         shutdown_grace_timeout=float(os.environ.get("OCR_SHUTDOWN_GRACE_TIMEOUT", "5")),
         kill_timeout=float(os.environ.get("OCR_KILL_TIMEOUT", "10")),
-
         # Heartbeat
         heartbeat_interval=float(os.environ.get("OCR_HEARTBEAT_INTERVAL", "30")),
         heartbeat_timeout=float(os.environ.get("OCR_HEARTBEAT_TIMEOUT", "60")),
-
         # Worker lifecycle
         max_tasks_per_worker=int(os.environ.get("OCR_MAX_TASKS_PER_WORKER", "0")),
         max_rss_mb=int(os.environ.get("OCR_MAX_RSS_MB", "0")),
-        max_image_bytes=int(os.environ.get("OCR_MAX_IMAGE_BYTES", str(20 * 1024 * 1024))),
+        max_image_bytes=int(
+            os.environ.get("OCR_MAX_IMAGE_BYTES", str(20 * 1024 * 1024))
+        ),
         max_image_pixels=int(os.environ.get("OCR_MAX_IMAGE_PIXELS", str(30_000_000))),
-
         # Restart governance
         max_restarts_per_window=int(os.environ.get("OCR_MAX_RESTARTS_PER_WINDOW", "5")),
-        restart_window_seconds=float(os.environ.get("OCR_RESTART_WINDOW_SECONDS", "60")),
-
+        restart_window_seconds=float(
+            os.environ.get("OCR_RESTART_WINDOW_SECONDS", "60")
+        ),
         # Fallback policy
-        remote_fallback_enabled=os.environ.get("OCR_REMOTE_FALLBACK_ENABLED", "0") == "1",
-        unsafe_thread_fallback_enabled=os.environ.get("OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "0") == "1",
-
+        remote_fallback_enabled=os.environ.get("OCR_REMOTE_FALLBACK_ENABLED", "0")
+        == "1",
+        unsafe_thread_fallback_enabled=os.environ.get(
+            "OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "0"
+        )
+        == "1",
         # GPU
         gpu_shards=int(os.environ.get("OCR_GPU_SHARDS", "1")),
-
         # Remote execution backend
         execution_backend=settings.OCR_EXECUTION_BACKEND,
         remote_url=settings.OCR_REMOTE_URL,
@@ -303,9 +309,7 @@ def _validate_config(cfg: OcrRuntimeConfig) -> None:
 
     # Worker count must be >= 1 when enabled
     if cfg.enabled and cfg.worker_count < 1:
-        errors.append(
-            f"worker_count must be >= 1, got {cfg.worker_count}"
-        )
+        errors.append(f"worker_count must be >= 1, got {cfg.worker_count}")
 
     # Queue/lifecycle limits must be usable; invalid values otherwise fail at
     # runtime with hangs, immediate queue-full errors, or divide-by-zero waits.
@@ -372,9 +376,7 @@ def _validate_config(cfg: OcrRuntimeConfig) -> None:
             )
 
     if errors:
-        raise ValueError(
-            "OcrRuntimeConfig validation failed:\n" + "\n".join(errors)
-        )
+        raise ValueError("OcrRuntimeConfig validation failed:\n" + "\n".join(errors))
 
 
 # Module-level singleton — built once, never mutated
@@ -412,24 +414,43 @@ def _log_effective_config(cfg: OcrRuntimeConfig) -> None:
         "remote_fallback=%s unsafe_thread=%s gpu_shards=%d "
         "exec_backend=%s remote_url=%s remote_concurrency=%d "
         "remote_fail_fast=%s remote_visualize=%s",
-        cfg.environment, cfg.profile,
-        cfg.enabled, cfg.use_gpu, cfg.language,
-        cfg.executor_workers, cfg.max_concurrency, cfg.max_queue_size,
-        cfg.task_timeout_seconds, cfg.min_image_width,
-        cfg.enable_rotation, cfg.enable_ai_correction,
-        cfg.max_pdf_pages, cfg.max_upload_bytes,
-        cfg.worker_count, cfg.queue_capacity, cfg.start_method,
-        cfg.startup_timeout, cfg.queue_wait_timeout,
-        cfg.execution_timeout, cfg.total_deadline,
-        cfg.shutdown_grace_timeout, cfg.kill_timeout,
-        cfg.heartbeat_interval, cfg.heartbeat_timeout,
-        cfg.max_tasks_per_worker, cfg.max_rss_mb,
-        cfg.max_restarts_per_window, cfg.restart_window_seconds,
-        cfg.remote_fallback_enabled, cfg.unsafe_thread_fallback_enabled,
+        cfg.environment,
+        cfg.profile,
+        cfg.enabled,
+        cfg.use_gpu,
+        cfg.language,
+        cfg.executor_workers,
+        cfg.max_concurrency,
+        cfg.max_queue_size,
+        cfg.task_timeout_seconds,
+        cfg.min_image_width,
+        cfg.enable_rotation,
+        cfg.enable_ai_correction,
+        cfg.max_pdf_pages,
+        cfg.max_upload_bytes,
+        cfg.worker_count,
+        cfg.queue_capacity,
+        cfg.start_method,
+        cfg.startup_timeout,
+        cfg.queue_wait_timeout,
+        cfg.execution_timeout,
+        cfg.total_deadline,
+        cfg.shutdown_grace_timeout,
+        cfg.kill_timeout,
+        cfg.heartbeat_interval,
+        cfg.heartbeat_timeout,
+        cfg.max_tasks_per_worker,
+        cfg.max_rss_mb,
+        cfg.max_restarts_per_window,
+        cfg.restart_window_seconds,
+        cfg.remote_fallback_enabled,
+        cfg.unsafe_thread_fallback_enabled,
         cfg.gpu_shards,
-        cfg.execution_backend, sanitize_url(cfg.remote_url),
+        cfg.execution_backend,
+        sanitize_url(cfg.remote_url),
         cfg.remote_max_concurrency,
-        cfg.remote_fail_fast, cfg.remote_visualize,
+        cfg.remote_fail_fast,
+        cfg.remote_visualize,
     )
 
 

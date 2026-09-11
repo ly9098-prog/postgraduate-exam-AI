@@ -44,8 +44,12 @@ async def create_rule(
     """创建水印规则。"""
     try:
         rule = await watermark_service.create_rule(
-            db, pattern=data.pattern, rule_type=data.rule_type, description=data.description,
-            operator=current_admin, request=request,
+            db,
+            pattern=data.pattern,
+            rule_type=data.rule_type,
+            description=data.description,
+            operator=current_admin,
+            request=request,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -63,12 +67,14 @@ async def update_rule(
     """更新水印规则。"""
     try:
         result = await watermark_service.update_rule(
-            db, rule_id,
+            db,
+            rule_id,
             pattern=data.pattern,
             rule_type=data.rule_type,
             description=data.description,
             is_active=data.is_active,
-            operator=current_admin, request=request,
+            operator=current_admin,
+            request=request,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -85,9 +91,9 @@ async def delete_rule(
     current_admin=Depends(require_permissions("import:write")),
 ):
     """删除水印规则。"""
-    deleted = await watermark_service.delete_rule(db, rule_id, operator=current_admin, request=request)
+    deleted = await watermark_service.delete_rule(
+        db, rule_id, operator=current_admin, request=request
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="规则不存在")
     return {"ok": True}
-
-

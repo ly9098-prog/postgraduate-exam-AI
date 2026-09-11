@@ -1,4 +1,5 @@
 """Phase 4 — 实验用户分组分配。"""
+
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,11 +32,14 @@ class RecommendationExperimentAssignment(Base):
 
     assigned_at = mapped_column(DateTime, nullable=False, default=utcnow)
     created_at = mapped_column(DateTime, nullable=False, default=utcnow)
-    updated_at = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    updated_at = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
     __table_args__ = (
         UniqueConstraint(
-            "experiment_id", "user_id",
+            "experiment_id",
+            "user_id",
             name="uq_rea_experiment_user",
         ),
     )

@@ -105,7 +105,12 @@ async def error_analysis(
         wrong_question_id=data.wrong_question_id,
     )
     try:
-        result = await svc.analyze_error(db, current_user.id, data.wrong_question_id, force_regenerate=data.force_regenerate)
+        result = await svc.analyze_error(
+            db,
+            current_user.id,
+            data.wrong_question_id,
+            force_regenerate=data.force_regenerate,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -115,9 +120,10 @@ async def error_analysis(
     )
 
 
-
-
-@router.get("/error-analysis/status/{wrong_question_id}", response_model=AiAnalysisStatusResponse)
+@router.get(
+    "/error-analysis/status/{wrong_question_id}",
+    response_model=AiAnalysisStatusResponse,
+)
 async def error_analysis_status(
     wrong_question_id: int,
     db: AsyncSession = Depends(get_db),
@@ -216,10 +222,12 @@ async def prewarm_analysis(
         )
     )
     wq_map = {wq.id: wq for wq in result.scalars().all()}
-    blocked_question_ids = await ai_teacher_408_service.active_exam_blocked_question_ids(
-        db,
-        user_id=current_user.id,
-        question_ids=[int(wq.question_id) for wq in wq_map.values()],
+    blocked_question_ids = (
+        await ai_teacher_408_service.active_exam_blocked_question_ids(
+            db,
+            user_id=current_user.id,
+            question_ids=[int(wq.question_id) for wq in wq_map.values()],
+        )
     )
 
     for wq_id in data.wrong_question_ids:
@@ -243,7 +251,9 @@ async def prewarm_analysis(
             revision=revision,
         )
         if not queued_ok:
-            logger.warning("Prewarm queue unavailable (Redis?), skipped wq_id=%d", wq_id)
+            logger.warning(
+                "Prewarm queue unavailable (Redis?), skipped wq_id=%d", wq_id
+            )
             skipped.append(wq_id)
             continue
         queued.append(wq_id)

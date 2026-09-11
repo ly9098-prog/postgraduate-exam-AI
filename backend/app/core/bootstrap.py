@@ -93,7 +93,9 @@ class ManagedTask:
         if exc:
             logger.error(
                 "Background task %s failed: %s: %s",
-                task.get_name(), type(exc).__name__, exc,
+                task.get_name(),
+                type(exc).__name__,
+                exc,
             )
 
     def cancel(self) -> None:
@@ -106,9 +108,13 @@ class ManagedTask:
         except asyncio.CancelledError:
             pass
         except TimeoutError:
-            logger.warning("Managed task %s: did not stop within %ss grace", self._name, timeout)
+            logger.warning(
+                "Managed task %s: did not stop within %ss grace", self._name, timeout
+            )
         except Exception as exc:
-            logger.warning("Managed task %s: %s: %s", self._name, type(exc).__name__, exc)
+            logger.warning(
+                "Managed task %s: %s: %s", self._name, type(exc).__name__, exc
+            )
 
     @classmethod
     def create(cls, coro: Awaitable, name: str) -> ManagedTask:
@@ -209,7 +215,9 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
         is_production=(profile == DeploymentProfile.CLOUD_API),
     )
     init_executor_registry(executors)
-    logger.info("Worker executors initialized: %s", {k: v.name for k, v in executors.items()})
+    logger.info(
+        "Worker executors initialized: %s", {k: v.name for k, v in executors.items()}
+    )
 
     # OCR Gateway (external HTTP client only — no local Paddle).
     # Let the worker client own its AsyncClient so gateway.shutdown() closes it.
@@ -230,13 +238,15 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
         set_gateway(ocr_gateway)
         logger.info(
             "OCR Gateway initialized (role=worker exec_backend=%s profile=%s)",
-            cfg.execution_backend, cfg.profile,
+            cfg.execution_backend,
+            cfg.profile,
         )
     else:
         logger.info("OCR not enabled on worker, skipping Gateway")
 
     # Staging orphan reconciler
     from app.core.resource_guard import resource_guard
+
     await resource_guard.start_orphan_reconciler()
 
     # Pipeline dispatcher + reaper (v2)
@@ -252,7 +262,8 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
 
     logger.info(
         "Worker dependencies initialized: concurrency=%d profile=%s",
-        settings.WORKER_CONCURRENCY, profile,
+        settings.WORKER_CONCURRENCY,
+        profile,
     )
 
 
@@ -323,7 +334,9 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
                 schema_version=schema_version,
             )
 
-        registry.create(run_outbox_dispatcher(_enqueue_from_outbox), "outbox-dispatcher")
+        registry.create(
+            run_outbox_dispatcher(_enqueue_from_outbox), "outbox-dispatcher"
+        )
         registry.create(run_outbox_reconciler(), "outbox-reconciler")
         logger.info("Outbox dispatcher + DB/Redis reconciler started")
     except Exception as e:
@@ -369,7 +382,9 @@ async def _run_registered_periodic_task(task_id: str, label: str) -> None:
 
 async def _periodic_token_cleanup() -> None:
     """Clean up expired refresh tokens on deterministic 6-hour UTC slots."""
-    await _run_registered_periodic_task("refresh_token_cleanup", "Refresh token cleanup")
+    await _run_registered_periodic_task(
+        "refresh_token_cleanup", "Refresh token cleanup"
+    )
 
 
 async def _periodic_staging_cleanup() -> None:
@@ -402,7 +417,9 @@ def _startup_failure_reporter(profile):
     """
     from app.core.deployment_profile import DeploymentProfile
 
-    is_restricted = profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
+    is_restricted = (
+        profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
+    )
 
     def _report(component: str, exc: Exception) -> None:
         if is_restricted:
@@ -431,7 +448,10 @@ def _ensure_scratch_dir() -> str:
                 "(pointing to a Docker volume or dedicated directory). "
                 f"Current value: {scratch!r}"
             )
-        scratch = os.path.join(os.path.dirname(settings.STAGING_STORAGE_DIR or "/opt/2240ai-v2/staging"), "scratch")
+        scratch = os.path.join(
+            os.path.dirname(settings.STAGING_STORAGE_DIR or "/opt/2240ai-v2/staging"),
+            "scratch",
+        )
     os.makedirs(scratch, exist_ok=True)
     return scratch
 
@@ -513,7 +533,9 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
         )
 
         await asyncio.wait_for(
-            asyncio.to_thread(shutdown_formula_render_pool, wait=True, cancel_futures=False),
+            asyncio.to_thread(
+                shutdown_formula_render_pool, wait=True, cancel_futures=False
+            ),
             timeout=30,
         )
     except TimeoutError:
@@ -538,7 +560,6 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
                 logger.exception("OCR executor shutdown error")
 
         try:
-
             # Gateway may or may not be initialized in this role
             # Attempt shutdown safely
             from app.services.ocr_service import get_gateway
@@ -650,7 +671,8 @@ async def _run_role_async(role: str) -> None:
         raise SystemError(f"Role {role} initialization failed: {e}") from e
 
     logger.info(
-        "Role %s fully initialized — running event loop", role,
+        "Role %s fully initialized — running event loop",
+        role,
     )
 
     # Wait for shutdown signal

@@ -103,7 +103,9 @@ async def _subscribe_all():
                                     log_tokens = bind_log_context(
                                         trace_id=normalize_trace_id(trace_id),
                                         user_id=user_id,
-                                        job_id=f"export:{_task_id}" if _task_id else None,
+                                        job_id=f"export:{_task_id}"
+                                        if _task_id
+                                        else None,
                                     )
                                 try:
                                     await send_to_user(user_id, payload)
@@ -117,7 +119,9 @@ async def _subscribe_all():
                     break
                 except Exception:
                     await asyncio.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 2, 30)  # exponential backoff, cap at 30s
+                    retry_delay = min(
+                        retry_delay * 2, 30
+                    )  # exponential backoff, cap at 30s
 
     except Exception:
         logger.debug("Redis subscriber unavailable (polling fallback)")
@@ -160,7 +164,11 @@ async def register(user_id: int, ws: WebSocket) -> bool:
         return False
 
     _connections[user_id].add(ws)
-    logger.debug("WebSocket registered for user %d (total: %d)", user_id, len(_connections[user_id]))
+    logger.debug(
+        "WebSocket registered for user %d (total: %d)",
+        user_id,
+        len(_connections[user_id]),
+    )
 
     # Ensure the per-instance subscriber is running
     start_redis_subscriber()
@@ -194,8 +202,14 @@ async def send_to_user(user_id: int, event: dict) -> int:
     payload = json.dumps(event, ensure_ascii=False, default=str)
 
     if len(payload) > _MAX_MESSAGE_BYTES:
-        logger.warning("WS payload too large (%d bytes) for user %d", len(payload), user_id)
-        event = {"type": "export_status", "task_id": event.get("task_id"), "status": event.get("status")}
+        logger.warning(
+            "WS payload too large (%d bytes) for user %d", len(payload), user_id
+        )
+        event = {
+            "type": "export_status",
+            "task_id": event.get("task_id"),
+            "status": event.get("status"),
+        }
         payload = json.dumps(event, ensure_ascii=False, default=str)
 
     # Snapshot to avoid Set changed size during iteration
@@ -352,7 +366,9 @@ async def handle_export_ws(
                     await ws.close(code=4001, reason="Session expired")
                     break
             try:
-                data = await asyncio.wait_for(ws.receive_text(), timeout=_HEARTBEAT_INTERVAL + 5)
+                data = await asyncio.wait_for(
+                    ws.receive_text(), timeout=_HEARTBEAT_INTERVAL + 5
+                )
                 msg = json.loads(data)
                 if msg.get("type") == "ping":
                     await ws.send_json({"type": "pong"})

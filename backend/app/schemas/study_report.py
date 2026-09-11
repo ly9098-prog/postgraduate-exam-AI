@@ -1,4 +1,5 @@
 from app.schemas.base import BaseModel
+
 """V5 学习报告 Schema"""
 from datetime import datetime
 

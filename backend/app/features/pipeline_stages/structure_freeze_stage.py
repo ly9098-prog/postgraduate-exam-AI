@@ -52,6 +52,7 @@ class FrozenOptionEntry:
     ``normalized_text``: 标准化后的选项文本
     ``binding_status``: 绑定状态 (bound/replaced/merged/split/binding_lost/needs_review)
     """
+
     option_key: str
     source_region_ids: list[str] = field(default_factory=list)
     source_line_ids: list[str] = field(default_factory=list)
@@ -79,7 +80,9 @@ class FrozenOptionEntry:
             self.binding_status = status
             self.frozen_revision += 1
         if reason_codes:
-            self.binding_reason_codes = list(set(self.binding_reason_codes + reason_codes))
+            self.binding_reason_codes = list(
+                set(self.binding_reason_codes + reason_codes)
+            )
             if status in (BINDING_LOST, BINDING_NEEDS_REVIEW):
                 self.needs_review = True
         if new_region_ids is not None:
@@ -238,34 +241,44 @@ def freeze_from_document_ir(
                             options[key] = opt_text
                             for l in region.lines:
                                 if key in l.text[:10]:
-                                    option_line_ids.setdefault(key, []).append(l.line_id)
+                                    option_line_ids.setdefault(key, []).append(
+                                        l.line_id
+                                    )
 
             if options:
                 total_option_regions += 1
                 entries: list[FrozenOptionEntry] = []
                 for key, val in options.items():
-                    entries.append(FrozenOptionEntry(
-                        option_key=key,
-                        source_region_ids=[region.region_id],
-                        source_line_ids=option_line_ids.get(key, []),
-                        original_text=val,
-                        normalized_text=val,
-                        confidence=region.confidence,
-                        binding_status=BINDING_BOUND,
-                    ))
+                    entries.append(
+                        FrozenOptionEntry(
+                            option_key=key,
+                            source_region_ids=[region.region_id],
+                            source_line_ids=option_line_ids.get(key, []),
+                            original_text=val,
+                            normalized_text=val,
+                            confidence=region.confidence,
+                            binding_status=BINDING_BOUND,
+                        )
+                    )
                 registry[region.region_id] = entries
-                structures.append({
-                    "region_id": region.region_id,
-                    "page": page.page_index,
-                    "options": dict(options),
-                    "entries": [
-                        {"option_key": e.option_key, "original_text": e.original_text,
-                         "binding_status": e.binding_status, "source_region_ids": e.source_region_ids}
-                        for e in entries
-                    ],
-                    "is_frozen": True,
-                    "is_complete": options.keys() >= {"A", "B", "C", "D"},
-                })
+                structures.append(
+                    {
+                        "region_id": region.region_id,
+                        "page": page.page_index,
+                        "options": dict(options),
+                        "entries": [
+                            {
+                                "option_key": e.option_key,
+                                "original_text": e.original_text,
+                                "binding_status": e.binding_status,
+                                "source_region_ids": e.source_region_ids,
+                            }
+                            for e in entries
+                        ],
+                        "is_frozen": True,
+                        "is_complete": options.keys() >= {"A", "B", "C", "D"},
+                    }
+                )
 
     if total_option_regions == 0:
         warnings.append("no_options_detected")
@@ -460,20 +473,25 @@ def run_structure_freeze_stage(
         if options:
             total_option_blocks += 1
             registry[registry_key] = dict(options)
-            structures.append({
-                "page": page,
-                "block_index": block_idx,
-                "options": dict(options),
-                "option_style": style,
-                "option_lines": option_lines_found,
-                "option_keys": sorted(options.keys()),
-                "confidence": _compute_confidence(options),
-                "is_frozen": True,
-                "is_complete": options.keys() >= {"A", "B", "C", "D"},
-            })
+            structures.append(
+                {
+                    "page": page,
+                    "block_index": block_idx,
+                    "options": dict(options),
+                    "option_style": style,
+                    "option_lines": option_lines_found,
+                    "option_keys": sorted(options.keys()),
+                    "confidence": _compute_confidence(options),
+                    "is_frozen": True,
+                    "is_complete": options.keys() >= {"A", "B", "C", "D"},
+                }
+            )
             logger.debug(
                 "[FREEZE] block %s:%s options=%s style=%s",
-                page, block_idx, sorted(options.keys()), style,
+                page,
+                block_idx,
+                sorted(options.keys()),
+                style,
             )
 
     if total_option_blocks == 0:
@@ -481,7 +499,9 @@ def run_structure_freeze_stage(
 
     logger.info(
         "[FREEZE] stage complete: %d/%d blocks with options, %d structures frozen",
-        total_option_blocks, len(normalized_blocks), len(structures),
+        total_option_blocks,
+        len(normalized_blocks),
+        len(structures),
     )
 
     # Compute checksum over the raw registry BEFORE freezing (so we can verify
@@ -551,5 +571,6 @@ def run_structure_freeze_stage_from_ir(
 ) -> dict:
     """DocumentIR entry point for run_structure_freeze_stage."""
     from app.core.document_ir import document_ir_to_blocks
+
     blocks = document_ir_to_blocks(doc)
     return run_structure_freeze_stage(blocks, **kwargs)

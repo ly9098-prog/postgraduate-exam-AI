@@ -44,7 +44,11 @@ def reconcile_student_stem_fields(content: dict) -> dict:
         compact_text = re.sub(r"\s+", "", text_value)
         compact_stem = re.sub(r"\s+", "", stem_value)
         if compact_text == compact_stem:
-            canonical = stem_value if stem_value.count("\n") > text_value.count("\n") else text_value
+            canonical = (
+                stem_value
+                if stem_value.count("\n") > text_value.count("\n")
+                else text_value
+            )
         else:
             canonical = text_value
 

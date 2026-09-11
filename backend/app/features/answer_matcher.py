@@ -17,29 +17,48 @@ _OCR_ANSWER_MAP = {"8": "B", "6": "B", "0": "D"}
 # ── Explicit answer extraction (P0: Problem D from audit) ──
 _EXPLICIT_ANSWER_PATTERNS: list[tuple[re.Pattern, str | None]] = [
     # 答案：A / 答案:A / 答案: A
-    (re.compile(r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*([A-Da-d][、,，]?\s*[A-Da-d]?|[A-Da-d])\s*(?:\n|$)"), None),
+    (
+        re.compile(
+            r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*([A-Da-d][、,，]?\s*[A-Da-d]?|[A-Da-d])\s*(?:\n|$)"
+        ),
+        None,
+    ),
     # 答案：AB / 答案：A、C  (multi-choice)
-    (re.compile(r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*([A-Da-d][、,，]\s*[A-Da-d]|[A-Da-d]{2,})\s*(?:\n|$)"), None),
+    (
+        re.compile(
+            r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*([A-Da-d][、,，]\s*[A-Da-d]|[A-Da-d]{2,})\s*(?:\n|$)"
+        ),
+        None,
+    ),
     # 参考答案：A
     (re.compile(r"(?:^|\s)参考答案\s*[:：]\s*([A-Da-d])\s*(?:\n|$)"), None),
     # 正确答案：A
     (re.compile(r"(?:^|\s)正确答案\s*[:：]\s*([A-Da-d])\s*(?:\n|$)"), None),
     # Answer: A / KEY: A
-    (re.compile(r"(?:^|\s)(?:Answer|KEY)\s*[:：]\s*([A-Da-d])\s*(?:\n|$)", re.IGNORECASE), None),
+    (
+        re.compile(
+            r"(?:^|\s)(?:Answer|KEY)\s*[:：]\s*([A-Da-d])\s*(?:\n|$)", re.IGNORECASE
+        ),
+        None,
+    ),
     # 【答案】A
     (re.compile(r"(?:^|\s)【(?:参考|正确)?答案】\s*([A-Da-d])\s*(?:\n|$)"), None),
     # ①B、②D — 多空选择题答案
-    (re.compile(
-        r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*"
-        r"([①-⑳]\s*[A-Da-d](?:[、，,，\s]+[①-⑳]\s*[A-Da-d])+)"
-        r"\s*(?:\n|$)"
-    ), None),
+    (
+        re.compile(
+            r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*"
+            r"([①-⑳]\s*[A-Da-d](?:[、，,，\s]+[①-⑳]\s*[A-Da-d])+)"
+            r"\s*(?:\n|$)"
+        ),
+        None,
+    ),
 ]
 
 
 @dataclass
 class ExplicitAnswerResult:
     """Result of explicit answer extraction from raw text."""
+
     answer: str | None
     source_span: tuple[int, int] | None
     pattern: str | None
@@ -58,7 +77,9 @@ def extract_explicit_answer(raw_text: str) -> ExplicitAnswerResult:
         or answer=None if no explicit answer found.
     """
     if not raw_text:
-        return ExplicitAnswerResult(answer=None, source_span=None, pattern=None, confidence=0.0)
+        return ExplicitAnswerResult(
+            answer=None, source_span=None, pattern=None, confidence=0.0
+        )
 
     for pat, _ in _EXPLICIT_ANSWER_PATTERNS:
         m = pat.search(raw_text)
@@ -99,7 +120,9 @@ def extract_explicit_answer(raw_text: str) -> ExplicitAnswerResult:
                 )
 
     # OCR fuzzy: "答案:8" → "B"
-    fuzzy_pat = re.compile(r"(?:^|\n)\s*(?:参考|正确)?答案\s*[:：]\s*([068])\s*(?:\n|$)")
+    fuzzy_pat = re.compile(
+        r"(?:^|\n)\s*(?:参考|正确)?答案\s*[:：]\s*([068])\s*(?:\n|$)"
+    )
     m = fuzzy_pat.search(raw_text)
     if m:
         ocr_digit = m.group(1)
@@ -112,14 +135,24 @@ def extract_explicit_answer(raw_text: str) -> ExplicitAnswerResult:
                 confidence=0.7,
             )
 
-    return ExplicitAnswerResult(answer=None, source_span=None, pattern=None, confidence=0.0)
+    return ExplicitAnswerResult(
+        answer=None, source_span=None, pattern=None, confidence=0.0
+    )
+
 
 # 答案字母字符集（含 OCR 容错、判断 T/F、多选逗号）
 _ANSWER_LETTERS = r"[A-Da-d068TFtf,，]"
 
 # 答案标记模式: (regex, 答案字母组)
 _ANSWER_LABEL_PATTERNS: list[tuple[re.Pattern, int]] = [
-    (re.compile(r"(?:【答案】|答案[：:]\s*|参考答案[：:]\s*|正确答案[：:]\s*)\s*(" + _ANSWER_LETTERS + r"+)"), 1),
+    (
+        re.compile(
+            r"(?:【答案】|答案[：:]\s*|参考答案[：:]\s*|正确答案[：:]\s*)\s*("
+            + _ANSWER_LETTERS
+            + r"+)"
+        ),
+        1,
+    ),
     (re.compile(r"(?:KEY|Answer|answer)\s*[：:]\s*(" + _ANSWER_LETTERS + r"+)"), 1),
 ]
 
@@ -198,11 +231,13 @@ def _extract_all_separated_answers(text: str) -> list[dict]:
             continue
         seen.add(num)
         letter = _correct_answer_letter(m.group(2))
-        answers.append({
-            "number": num,
-            "answer": letter,
-            "raw": m.group(0).strip(),
-        })
+        answers.append(
+            {
+                "number": num,
+                "answer": letter,
+                "raw": m.group(0).strip(),
+            }
+        )
     return answers
 
 
@@ -231,7 +266,9 @@ def _extract_separated_answer(
 
     # 方式 2：题号 + 答案标签 "1 答案：A"
     pat_label = re.compile(
-        rf"(?:^|\n)\s*{question_number}\s*[.、)）]?\s*(?:答案[：:]|【答案】)\s*(" + _ANSWER_LETTERS + r"+)"
+        rf"(?:^|\n)\s*{question_number}\s*[.、)）]?\s*(?:答案[：:]|【答案】)\s*("
+        + _ANSWER_LETTERS
+        + r"+)"
     )
     m = pat_label.search(answer_text)
     if m:
@@ -283,9 +320,7 @@ def _extract_separated_explanation(
         }
 
     # 题号 + 任意内容（弱匹配）
-    pat_weak = re.compile(
-        rf"(?:^|\n)\s*{question_number}\s*[.、)）]\s*(.+)"
-    )
+    pat_weak = re.compile(rf"(?:^|\n)\s*{question_number}\s*[.、)）]\s*(.+)")
     m = pat_weak.search(expl_text)
     if m:
         raw = m.group(0).strip()
@@ -308,7 +343,9 @@ def _extract_explicit_answer_from_raw(raw_text: str) -> dict | None:
     if result.answer:
         logger.info(
             "Explicit answer extracted: answer=%s pattern=%.60s confidence=%.2f",
-            result.answer, result.pattern or "none", result.confidence,
+            result.answer,
+            result.pattern or "none",
+            result.confidence,
         )
         return {
             "answer": result.answer,
@@ -369,7 +406,11 @@ def match_answers(
         if explicit:
             answer = explicit["answer"]
             answer_source = explicit["answer_source"]
-            raw_answer_text = qtext[explicit["source_span"][0]:explicit["source_span"][1]] if explicit.get("source_span") else ""
+            raw_answer_text = (
+                qtext[explicit["source_span"][0] : explicit["source_span"][1]]
+                if explicit.get("source_span")
+                else ""
+            )
             confidence = max(confidence, explicit["confidence"])
             trace_answer_source = f"explicit_{explicit.get('pattern', 'unknown')}"
 
@@ -415,26 +456,32 @@ def match_answers(
 
         # 3. 答案和解析都缺失 → 完全未匹配
         if answer is None and explanation is None:
-            unmatched.append({
-                "question_number": qnum,
-                "reason": "answer_not_found",
-            })
+            unmatched.append(
+                {
+                    "question_number": qnum,
+                    "reason": "answer_not_found",
+                }
+            )
         elif answer is None:
-            unmatched.append({
-                "question_number": qnum,
-                "reason": "answer_not_found",
-            })
+            unmatched.append(
+                {
+                    "question_number": qnum,
+                    "reason": "answer_not_found",
+                }
+            )
 
-        matched.append({
-            "question_number": qnum,
-            "answer": answer,
-            "explanation": explanation,
-            "answer_source": answer_source,
-            "explanation_source": explanation_source,
-            "confidence": round(confidence, 2),
-            "raw_answer_text": raw_answer_text,
-            "raw_explanation_text": raw_explanation_text,
-            "trace_answer_source": trace_answer_source,
-        })
+        matched.append(
+            {
+                "question_number": qnum,
+                "answer": answer,
+                "explanation": explanation,
+                "answer_source": answer_source,
+                "explanation_source": explanation_source,
+                "confidence": round(confidence, 2),
+                "raw_answer_text": raw_answer_text,
+                "raw_explanation_text": raw_explanation_text,
+                "trace_answer_source": trace_answer_source,
+            }
+        )
 
     return {"matched": matched, "unmatched": unmatched}

@@ -190,9 +190,7 @@ def get_metrics() -> dict:
     total_completed = _completed
     total_failed = _failed
     success_rate = (
-        (total_completed / total_created * 100)
-        if total_created > 0
-        else 100.0
+        (total_completed / total_created * 100) if total_created > 0 else 100.0
     )
 
     with _lock:
@@ -226,19 +224,25 @@ def get_metrics() -> dict:
         # Histograms
         "export_processing_seconds_count": len(proc_copy),
         "export_processing_seconds_sum": sum(proc_copy),
-        "export_processing_seconds_avg": (sum(proc_copy) / len(proc_copy)) if proc_copy else 0,
+        "export_processing_seconds_avg": (sum(proc_copy) / len(proc_copy))
+        if proc_copy
+        else 0,
         "export_processing_seconds_p50": _percentile(proc_copy, 50),
         "export_processing_seconds_p95": _percentile(proc_copy, 95),
         "export_processing_seconds_p99": _percentile(proc_copy, 99),
         "export_queue_wait_seconds_count": len(queue_copy),
         "export_queue_wait_seconds_sum": sum(queue_copy),
-        "export_queue_wait_seconds_avg": (sum(queue_copy) / len(queue_copy)) if queue_copy else 0,
+        "export_queue_wait_seconds_avg": (sum(queue_copy) / len(queue_copy))
+        if queue_copy
+        else 0,
         "export_queue_wait_seconds_p50": _percentile(queue_copy, 50),
         "export_queue_wait_seconds_p95": _percentile(queue_copy, 95),
         "export_queue_wait_seconds_p99": _percentile(queue_copy, 99),
         "export_file_size_bytes_count": len(size_copy),
         "export_file_size_bytes_sum": int(sum(size_copy)),
-        "export_file_size_bytes_avg": int((sum(size_copy) / len(size_copy)) if size_copy else 0),
+        "export_file_size_bytes_avg": int(
+            (sum(size_copy) / len(size_copy)) if size_copy else 0
+        ),
         "export_file_size_bytes_p50": int(_percentile(size_copy, 50)),
         "export_file_size_bytes_p95": int(_percentile(size_copy, 95)),
         "export_file_size_bytes_p99": int(_percentile(size_copy, 99)),
@@ -255,4 +259,8 @@ def metrics_as_prometheus() -> str:
         elif isinstance(value, int):
             lines.append(f"{key} {value}")
     # Add histogram buckets (simplified)
-    return "# HELP export metrics from 2240AI export pipeline\n# TYPE export counter\n" + "\n".join(lines) + "\n"
+    return (
+        "# HELP export metrics from 2240AI export pipeline\n# TYPE export counter\n"
+        + "\n".join(lines)
+        + "\n"
+    )

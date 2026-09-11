@@ -16,6 +16,7 @@ Product-accepted trade-off (documented in docs/pomodoro_v2_migration.md):
 After the migration the runtime never needs to know a pause interval was
 reconstructed — canonical sessions are indistinguishable.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,11 +26,13 @@ from datetime import datetime, timedelta
 # wall clock by up to this many seconds is treated as historical rounding.
 ROUNDING_TOLERANCE_SEC = 2
 
-ACTION_NOOP = "noop"                    # already canonical, nothing to change
-ACTION_CREATE_PAUSE = "create_pause"    # reconstruct one centered pause interval
-ACTION_CLAMP_ROUNDING = "clamp_rounding"  # actual > wall (<=2s): clamp to wall, no pause
-ACTION_REPAIR = "repair"                # explicit --repair-invalid handling
-ACTION_INVALID = "invalid"              # invalid data: skipped unless --repair-invalid
+ACTION_NOOP = "noop"  # already canonical, nothing to change
+ACTION_CREATE_PAUSE = "create_pause"  # reconstruct one centered pause interval
+ACTION_CLAMP_ROUNDING = (
+    "clamp_rounding"  # actual > wall (<=2s): clamp to wall, no pause
+)
+ACTION_REPAIR = "repair"  # explicit --repair-invalid handling
+ACTION_INVALID = "invalid"  # invalid data: skipped unless --repair-invalid
 
 
 @dataclass(frozen=True)
@@ -46,7 +49,9 @@ class Normalization:
     corrected_actual: int | None = None
 
 
-def centered_pause_interval(start: datetime, end: datetime, actual_duration: int) -> tuple[datetime, datetime]:
+def centered_pause_interval(
+    start: datetime, end: datetime, actual_duration: int
+) -> tuple[datetime, datetime]:
     """Reconstruct the pause as a single interval centered on the active timeline.
 
     Places ``wall - actual`` seconds starting at ``start + floor(actual/2)`` so that
@@ -99,7 +104,10 @@ def normalize_completed(
     if pause_sec <= 0:
         return Normalization(ACTION_NOOP)
 
-    return Normalization(ACTION_CREATE_PAUSE, interval=centered_pause_interval(start, end, actual_duration))
+    return Normalization(
+        ACTION_CREATE_PAUSE,
+        interval=centered_pause_interval(start, end, actual_duration),
+    )
 
 
 def active_past_pause_interval(

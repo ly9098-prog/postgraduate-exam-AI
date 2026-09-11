@@ -40,7 +40,11 @@ def create_background_task(
     task = asyncio.create_task(coro, name=name)
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
-    logger.debug("Background task %s registered (total=%d)", name or task.get_name(), len(_background_tasks))
+    logger.debug(
+        "Background task %s registered (total=%d)",
+        name or task.get_name(),
+        len(_background_tasks),
+    )
     return task
 
 
@@ -69,6 +73,12 @@ async def cancel_all_tasks(timeout: float = 30.0) -> None:
         except asyncio.CancelledError:
             logger.info("Background task %s: cancelled", task.get_name())
         except TimeoutError:
-            logger.warning("Background task %s: did not stop within %ss grace period", task.get_name(), timeout)
+            logger.warning(
+                "Background task %s: did not stop within %ss grace period",
+                task.get_name(),
+                timeout,
+            )
         except Exception as e:
-            logger.warning("Background task %s: error during cancel: %s", task.get_name(), e)
+            logger.warning(
+                "Background task %s: error during cancel: %s", task.get_name(), e
+            )

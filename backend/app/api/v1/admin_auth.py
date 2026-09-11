@@ -1,4 +1,3 @@
-
 import hashlib
 from urllib.parse import urlsplit
 
@@ -52,7 +51,9 @@ def _enforce_trusted_browser_origin(request: Request) -> None:
     fetch_site = request.headers.get("sec-fetch-site", "").lower()
     if not origin:
         if fetch_site == "cross-site":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin"
+            )
         return
     allowed = {
         normalized
@@ -60,7 +61,9 @@ def _enforce_trusted_browser_origin(request: Request) -> None:
         if (normalized := _normalized_origin(value)) is not None
     }
     if _normalized_origin(origin) not in allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin"
+        )
 
 
 def _login_rate_key(request: Request, username: str) -> str:
@@ -92,7 +95,9 @@ async def _read_fail_count(rate_key: str) -> int:
 
 async def _increment_fail_count(rate_key: str) -> int:
     try:
-        return await cache.increment_strict(rate_key, ttl=settings.ADMIN_LOGIN_WINDOW_SEC)
+        return await cache.increment_strict(
+            rate_key, ttl=settings.ADMIN_LOGIN_WINDOW_SEC
+        )
     except CacheUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -111,7 +116,12 @@ async def _clear_fail_count(rate_key: str) -> None:
 
 
 @router.post("/login", response_model=AdminTokenResponse)
-async def login(data: AdminLoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(
+    data: AdminLoginRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     _enforce_trusted_browser_origin(request)
     rate_key = _login_rate_key(request, data.username)
     account_fail_key = _account_fail_key(data.username)
@@ -136,7 +146,9 @@ async def login(data: AdminLoginRequest, request: Request, response: Response, d
         await _increment_fail_count(rate_key)
         account_fails = await _increment_fail_count(account_fail_key)
         if account_fails >= settings.ADMIN_LOGIN_MAX_FAILURES:
-            await cache.set_strict(account_lock_key, 1, ttl=settings.ADMIN_LOGIN_WINDOW_SEC)
+            await cache.set_strict(
+                account_lock_key, 1, ttl=settings.ADMIN_LOGIN_WINDOW_SEC
+            )
             account_locked = True
         msg = str(exc)
         if "72字节" in msg:
@@ -153,29 +165,47 @@ async def login(data: AdminLoginRequest, request: Request, response: Response, d
     await _clear_fail_count(account_fail_key)
     await _clear_fail_count(account_lock_key)
 
-    token, refresh_token, user, role, permissions = await build_admin_login_response(db, admin_user)
+    token, refresh_token, user, role, permissions = await build_admin_login_response(
+        db, admin_user
+    )
     admin_user.last_login_at = utcnow()
     admin_user.last_login_ip = request.client.host if request.client else None
     await db.commit()
     set_refresh_cookie(response, refresh_token, request=request)
-    return AdminTokenResponse(access_token=token, user=user, role=role, permissions=permissions)
+    return AdminTokenResponse(
+        access_token=token, user=user, role=role, permissions=permissions
+    )
 
 
 @router.post("/refresh", response_model=AdminTokenResponse)
-async def refresh(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+async def refresh(
+    request: Request, response: Response, db: AsyncSession = Depends(get_db)
+):
     _enforce_trusted_browser_origin(request)
     refresh_token = request.cookies.get(REFRESH_COOKIE_KEY)
     if not refresh_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
     payload = decode_admin_refresh_token(refresh_token)
     admin_user = await consume_admin_refresh_token(payload, db)
-    token, new_refresh_token, user, role, permissions = await build_admin_login_response(db, admin_user)
+    (
+        token,
+        new_refresh_token,
+        user,
+        role,
+        permissions,
+    ) = await build_admin_login_response(db, admin_user)
     set_refresh_cookie(response, new_refresh_token, request=request)
-    return AdminTokenResponse(access_token=token, user=user, role=role, permissions=permissions)
+    return AdminTokenResponse(
+        access_token=token, user=user, role=role, permissions=permissions
+    )
 
 
 @router.post("/logout")
-async def logout(request: Request, response: Response, current_admin=Depends(get_current_admin)):
+async def logout(
+    request: Request, response: Response, current_admin=Depends(get_current_admin)
+):
     _enforce_trusted_browser_origin(request)
     payload = current_admin.token_payload
     await blacklist_admin_token(payload["jti"], int(payload["exp"]))
@@ -184,7 +214,9 @@ async def logout(request: Request, response: Response, current_admin=Depends(get
     if refresh_token:
         try:
             refresh_payload = decode_admin_refresh_token(refresh_token)
-            await blacklist_admin_token(refresh_payload["jti"], int(refresh_payload["exp"]))
+            await blacklist_admin_token(
+                refresh_payload["jti"], int(refresh_payload["exp"])
+            )
         except HTTPException:
             pass
 
@@ -193,7 +225,9 @@ async def logout(request: Request, response: Response, current_admin=Depends(get
 
 
 @router.get("/me", response_model=AdminMeResponse)
-async def me(current_admin=Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+async def me(
+    current_admin=Depends(get_current_admin), db: AsyncSession = Depends(get_db)
+):
     return await get_admin_me_response(db, current_admin.user)
 
 
@@ -208,7 +242,11 @@ async def update_password(
     _enforce_trusted_browser_origin(request)
     try:
         await change_admin_password(
-            db, current_admin.user, data, operator=current_admin, request=request,
+            db,
+            current_admin.user,
+            data,
+            operator=current_admin,
+            request=request,
         )
     except PasswordPolicyError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

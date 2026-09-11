@@ -25,7 +25,10 @@ from app.schemas.admin_questions import (
 )
 from app.services.admin_audit_service import write_admin_audit
 from app.services.knowledge_point_service import load_question_kps
-from app.utils.question_content import normalize_segment_type, reconcile_student_stem_fields
+from app.utils.question_content import (
+    normalize_segment_type,
+    reconcile_student_stem_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +146,9 @@ def _question_summary(question: Question) -> dict[str, Any]:
 async def _resolve_question_subject(db: AsyncSession, question: Question) -> None:
     """Ensure subject_ref is loaded for a question."""
     if question.subject_ref is None and question.subject_id:
-        result = await db.execute(select(Subject).where(Subject.id == question.subject_id))
+        result = await db.execute(
+            select(Subject).where(Subject.id == question.subject_id)
+        )
         question.subject_ref = result.scalar_one_or_none()
 
 
@@ -195,7 +200,10 @@ async def list_admin_questions(
             ).bindparams(pattern=pattern)
         kp_qids = (
             select(QuestionKnowledgePoint.question_id)
-            .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+            .join(
+                KnowledgePoint,
+                KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+            )
             .where(
                 or_(
                     KnowledgePoint.name.ilike(pattern, escape="\\"),
@@ -224,9 +232,7 @@ async def list_admin_questions(
         numeric_keyword = keyword.strip().removeprefix("#")
         if numeric_keyword.isdigit():
             keyword_conditions.append(Question.id == int(numeric_keyword))
-        conditions.append(
-            or_(*keyword_conditions)
-        )
+        conditions.append(or_(*keyword_conditions))
     if year is not None:
         conditions.append(Question.year == year)
     if import_batch_id:
@@ -257,6 +263,7 @@ async def list_admin_questions(
 
     total = await db.scalar(count_query)
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         query.options(selectinload(Question.subject_ref))
         .order_by(Question.updated_at.desc(), Question.id.desc())
@@ -273,9 +280,15 @@ async def get_admin_question(db: AsyncSession, question_id: int) -> Question:
     return question
 
 
-async def get_admin_question_detail(db: AsyncSession, question_id: int) -> dict[str, Any]:
+async def get_admin_question_detail(
+    db: AsyncSession, question_id: int
+) -> dict[str, Any]:
     question = await get_admin_question(db, question_id)
-    result = await db.execute(select(QuestionImport).where(QuestionImport.question_id == question.id).order_by(QuestionImport.id.desc()))
+    result = await db.execute(
+        select(QuestionImport)
+        .where(QuestionImport.question_id == question.id)
+        .order_by(QuestionImport.id.desc())
+    )
     import_record = result.scalars().first()
     if import_record:
         import_record = {
@@ -284,7 +297,9 @@ async def get_admin_question_detail(db: AsyncSession, question_id: int) -> dict[
         }
         if not import_record.get("duplicate_status"):
             import_record["duplicate_status"] = "normal"
-    data = {field: getattr(question, field) for field in question.__mapper__.columns.keys()}
+    data = {
+        field: getattr(question, field) for field in question.__mapper__.columns.keys()
+    }
     kp_map = await load_question_kps(db, [question.id])
     data["knowledge_points"] = kp_map.get(question.id, [])
     data["import_record"] = import_record
@@ -327,7 +342,9 @@ async def update_admin_question(
 
     # Audit keeps the pre-change values; immutable question revisions are
     # created *after* the mutation reaches its final scalar + KP state.
-    before_changed = {f: _edit_field_value(question, f, before_kps) for f in changed_fields}
+    before_changed = {
+        f: _edit_field_value(question, f, before_kps) for f in changed_fields
+    }
 
     # subject_id 优先应用，使后续 KP sync 使用新科目（subject 不变量）
     if "subject_id" in changed_fields:
@@ -357,13 +374,17 @@ async def update_admin_question(
             replace_question_knowledge_points,
         )
 
-        await replace_question_knowledge_points(db, question, before_kps, source="admin")
+        await replace_question_knowledge_points(
+            db, question, before_kps, source="admin"
+        )
 
     await _resolve_question_subject(db, question)
 
     after_kp_map = await load_question_kps(db, [question.id])
     after_kps = after_kp_map.get(question.id, [])
-    after_changed = {f: _edit_field_value(question, f, after_kps) for f in changed_fields}
+    after_changed = {
+        f: _edit_field_value(question, f, after_kps) for f in changed_fields
+    }
 
     from app.services.question_revision_service import ensure_question_revision
 
@@ -430,7 +451,9 @@ def _next_option_letter(used: set[str]) -> str:
     raise ValueError("选项数量不能超过 26 个")
 
 
-def ensure_content_segments(content: dict[str, Any], stem_text: str | None = None) -> dict[str, Any]:
+def ensure_content_segments(
+    content: dict[str, Any], stem_text: str | None = None
+) -> dict[str, Any]:
     """Upgrade a legacy ``{text, stem}`` content to the segments form when no
     segments exist yet, so an image segment can be appended."""
     segments = content.get("segments")
@@ -443,15 +466,23 @@ def ensure_content_segments(content: dict[str, Any], stem_text: str | None = Non
     return out
 
 
-def upsert_stem_image(content: dict[str, Any], url: str, replace_url: str | None = None) -> dict[str, Any]:
+def upsert_stem_image(
+    content: dict[str, Any], url: str, replace_url: str | None = None
+) -> dict[str, Any]:
     """Add a stem image segment, or replace the segment whose url == replace_url."""
     content = ensure_content_segments(content)
     segments = content["segments"]
     if replace_url:
         normalized_replace_url = replace_url.strip()
         for i, seg in enumerate(segments):
-            segment_url = str(seg.get("url") or "").strip() if isinstance(seg, dict) else ""
-            if isinstance(seg, dict) and normalize_segment_type(seg) == "image" and segment_url == normalized_replace_url:
+            segment_url = (
+                str(seg.get("url") or "").strip() if isinstance(seg, dict) else ""
+            )
+            if (
+                isinstance(seg, dict)
+                and normalize_segment_type(seg) == "image"
+                and segment_url == normalized_replace_url
+            ):
                 updated = [*segments]
                 updated[i] = {**seg, "url": url}
                 out = dict(content)
@@ -459,7 +490,10 @@ def upsert_stem_image(content: dict[str, Any], url: str, replace_url: str | None
                 return out
         raise ValueError("待替换图片不存在")
     out = dict(content)
-    out["segments"] = [*segments, {"type": "image", "url": url, "semantic_role": "content_image"}]
+    out["segments"] = [
+        *segments,
+        {"type": "image", "url": url, "semantic_role": "content_image"},
+    ]
     return out
 
 
@@ -470,7 +504,8 @@ def remove_stem_image(content: dict[str, Any], url: str) -> dict[str, Any]:
         raise ValueError("待删除图片不存在")
     normalized_url = url.strip()
     kept = [
-        s for s in segments
+        s
+        for s in segments
         if not (
             isinstance(s, dict)
             and normalize_segment_type(s) == "image"
@@ -501,7 +536,9 @@ def _resolve_option_storage_key(options: dict[str, Any], key: str) -> str | None
 _OPTION_DIRECT_IMAGE_KEYS = ("url", "image_url", "imageUrl", "src")
 
 
-def _option_direct_image_key(value: dict[str, Any], url: str | None = None) -> str | None:
+def _option_direct_image_key(
+    value: dict[str, Any], url: str | None = None
+) -> str | None:
     normalized_url = url.strip() if isinstance(url, str) else None
     for key in _OPTION_DIRECT_IMAGE_KEYS:
         candidate = value.get(key)
@@ -540,7 +577,11 @@ def upsert_option_image(
         current_value = {}
 
     raw_segments = current_value.get("segments")
-    segments = [s for s in raw_segments if isinstance(s, dict)] if isinstance(raw_segments, list) else []
+    segments = (
+        [s for s in raw_segments if isinstance(s, dict)]
+        if isinstance(raw_segments, list)
+        else []
+    )
 
     if replace_url:
         normalized_replace_url = replace_url.strip()
@@ -567,7 +608,9 @@ def upsert_option_image(
     return result
 
 
-def remove_option_image(options: dict[str, Any] | None, key: str, url: str) -> dict[str, Any]:
+def remove_option_image(
+    options: dict[str, Any] | None, key: str, url: str
+) -> dict[str, Any]:
     """Remove a segment-based or legacy direct option image reference."""
     requested_key = key.strip().upper()
     result = dict(options or {})
@@ -638,7 +681,9 @@ async def delete_question_asset_if_orphan(db: AsyncSession, url: str) -> None:
         storage = get_question_assets_storage()
         await storage.delete(url)
     except Exception:
-        logger.warning("question asset orphan-cleanup skipped for %s", url, exc_info=True)
+        logger.warning(
+            "question asset orphan-cleanup skipped for %s", url, exc_info=True
+        )
 
 
 async def soft_delete_admin_question(
@@ -660,7 +705,11 @@ async def soft_delete_admin_question(
         from app.services.question_revision_service import ensure_question_revision
 
         await ensure_question_revision(
-            db, question, editor_id=operator.id, change_source="admin", edit_reason="soft delete"
+            db,
+            question,
+            editor_id=operator.id,
+            change_source="admin",
+            edit_reason="soft delete",
         )
 
     await write_admin_audit(
@@ -711,9 +760,7 @@ async def batch_delete_admin_questions(
         detail={
             "requested_ids": ids,
             "success_ids": success_ids,
-            "failed_items": [
-                {"id": f.id, "error": f.error} for f in failed_items
-            ],
+            "failed_items": [{"id": f.id, "error": f.error} for f in failed_items],
             "success_count": len(success_ids),
             "failed_count": len(failed_items),
             "questions": questions_summary,
@@ -743,7 +790,11 @@ async def toggle_active_admin_question(
         from app.services.question_revision_service import ensure_question_revision
 
         await ensure_question_revision(
-            db, question, editor_id=operator.id, change_source="admin", edit_reason="toggle active"
+            db,
+            question,
+            editor_id=operator.id,
+            change_source="admin",
+            edit_reason="toggle active",
         )
 
     await write_admin_audit(
@@ -778,8 +829,12 @@ def _question_version_payload(
         column.key: getattr(question_version, column.key)
         for column in question_version.__mapper__.columns
     }
-    data["edited_by_name"] = (editor_display_name or "").strip() or (editor_username or "").strip() or None
-    data["change_source"] = str(getattr(question_version, "change_source", "system") or "system")
+    data["edited_by_name"] = (
+        (editor_display_name or "").strip() or (editor_username or "").strip() or None
+    )
+    data["change_source"] = str(
+        getattr(question_version, "change_source", "system") or "system"
+    )
     return data
 
 

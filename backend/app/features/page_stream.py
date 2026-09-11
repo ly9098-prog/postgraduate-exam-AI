@@ -51,6 +51,7 @@ DEFAULT_DPI = 200
 @dataclass
 class RenderedPage:
     """A single rendered page with its metadata."""
+
     page_index: int
     page_id: str
     image_path: str | None = None
@@ -118,6 +119,7 @@ class PageRenderer:
         """Try rendering using the production pdf_renderer_service."""
         try:
             from app.services.pdf_renderer_service import render_pdf_page
+
             result = render_pdf_page(pdf_path, page_index + 1, dpi=dpi)
             if result and os.path.exists(result.path):
                 # Copy to our output location
@@ -261,8 +263,11 @@ class PageStream:
         )
         logger.info(
             "PageStream: start doc=%s pages=%s window=%d overlap=%d dir=%s",
-            document.sha256[:8], document.page_count,
-            self._window_size, self._overlap, self._rendered_dir,
+            document.sha256[:8],
+            document.page_count,
+            self._window_size,
+            self._overlap,
+            self._rendered_dir,
         )
 
         # Resolve total page count
@@ -285,11 +290,17 @@ class PageStream:
             window_start += max(1, stride)
 
             # Clear rendered pages beyond overlap from memory
-            self._current_window = window_pages[-self._overlap:] if self._overlap > 0 else []
+            self._current_window = (
+                window_pages[-self._overlap :] if self._overlap > 0 else []
+            )
 
-        logger.info("PageStream: complete doc=%s total=%d", document.sha256[:8], total_pages)
+        logger.info(
+            "PageStream: complete doc=%s total=%d", document.sha256[:8], total_pages
+        )
 
-    def _render_or_resume(self, document: InputDocument, page_index: int) -> RenderedPage:
+    def _render_or_resume(
+        self, document: InputDocument, page_index: int
+    ) -> RenderedPage:
         """Render a page or resume from a valid artifact."""
         page_id = f"p{page_index:04d}"
         image_path = os.path.join(self._rendered_dir, f"{page_id}.png")
@@ -302,7 +313,9 @@ class PageStream:
 
         # Render fresh
         page = self._renderer.render_page(
-            document.local_path, page_index, self._rendered_dir,
+            document.local_path,
+            page_index,
+            self._rendered_dir,
         )
 
         # Atomically persist artifact
@@ -312,7 +325,10 @@ class PageStream:
         return page
 
     def _find_resumable_artifact(
-        self, document: InputDocument, page_index: int, image_path: str,
+        self,
+        document: InputDocument,
+        page_index: int,
+        image_path: str,
     ) -> RenderedPage | None:
         """Find a valid, previously-rendered artifact for resume.
 
@@ -321,8 +337,9 @@ class PageStream:
         2. Metadata file exists
         3. Checksum matches
         """
-        metadata_path = os.path.join(os.path.dirname(image_path),
-                                     f"p{page_index:04d}.meta.json")
+        metadata_path = os.path.join(
+            os.path.dirname(image_path), f"p{page_index:04d}.meta.json"
+        )
         if not os.path.exists(image_path) or not os.path.exists(metadata_path):
             return None
 
@@ -335,7 +352,9 @@ class PageStream:
                 current_checksum = hashlib.sha256(f.read()).hexdigest()[:16]
 
             if meta.get("checksum") != current_checksum:
-                logger.debug("PageStream: checksum mismatch p%d, re-rendering", page_index)
+                logger.debug(
+                    "PageStream: checksum mismatch p%d, re-rendering", page_index
+                )
                 return None
 
             return RenderedPage(
@@ -377,6 +396,7 @@ class PageStream:
         if document.source_type == "pdf" and os.path.exists(document.local_path):
             try:
                 import PyPDF2
+
                 with open(document.local_path, "rb") as f:
                     reader = PyPDF2.PdfReader(f)
                     return len(reader.pages)

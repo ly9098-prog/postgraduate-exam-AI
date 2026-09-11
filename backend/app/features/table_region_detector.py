@@ -21,7 +21,9 @@ def detect_table_candidate(text: str) -> dict:
     ``table.v2`` segments and is the preferred output.
     """
     tables = restore_tables_from_source(text, source_format="auto")
-    confidence = max((float(table.get("confidence") or 0.0) for table in tables), default=0.0)
+    confidence = max(
+        (float(table.get("confidence") or 0.0) for table in tables), default=0.0
+    )
     signals: list[str] = []
     for table in tables:
         signals.extend(table.get("signals") or [])
@@ -53,9 +55,11 @@ def detect_tables_in_blocks(blocks: list[dict]) -> list[dict]:
             value = block.get(key)
             if isinstance(value, list):
                 candidates.extend(
-                    item for item in value
+                    item
+                    for item in value
                     if isinstance(item, dict)
-                    and str(item.get("type") or item.get("label") or "").lower() in {"table", "table_image"}
+                    and str(item.get("type") or item.get("label") or "").lower()
+                    in {"table", "table_image"}
                 )
         if not candidates:
             text = str(block.get("normalized_text") or block.get("text") or "").strip()

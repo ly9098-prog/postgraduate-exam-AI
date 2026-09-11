@@ -13,6 +13,7 @@ import enum
 
 class BatchJobStatus(enum.StrEnum):
     """ImportBatchJob.status values."""
+
     QUEUED = "queued"
     RUNNING = "running"
     MERGING = "merging"
@@ -23,6 +24,7 @@ class BatchJobStatus(enum.StrEnum):
 
 class BatchItemStatus(enum.StrEnum):
     """ImportBatchJobItem.status values."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     SUCCEEDED = "succeeded"
@@ -35,6 +37,7 @@ class TraceEventStatus(enum.StrEnum):
 
     Only these values are valid in trace events.
     """
+
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
@@ -43,6 +46,7 @@ class TraceEventStatus(enum.StrEnum):
 
 class TraceStep(enum.StrEnum):
     """BatchJobTraceEvent.step — processing step name."""
+
     UPLOAD = "upload"
     WAITING = "waiting"
     OCR = "ocr"
@@ -66,6 +70,7 @@ class OCRJobStatus(enum.StrEnum):
                                               └───────────────────┤
                                                           failed ─┘
     """
+
     PENDING = "pending"
     LEASED = "leased"
     DOWNLOADING = "downloading"
@@ -185,7 +190,6 @@ OCR_JOB_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-
 def guard_ocr_job_transition(current: str, next_status: str) -> None:
     """Raise ValueError if OCR job transition is not allowed."""
     allowed = OCR_JOB_TRANSITIONS.get(current, set())
@@ -208,11 +212,23 @@ VALID_TRACE_STEPS: set[str] = {s.value for s in TraceStep}
 
 # Job → trace mapping: maps job final status to trace step/status.
 _JOB_TO_TRACE_MAP: dict[str, tuple[str, str]] = {
-    BatchJobStatus.COMPLETED.value: (TraceStep.DONE.value, TraceEventStatus.SUCCESS.value),
-    BatchJobStatus.COMPLETED_WITH_WARNINGS.value: (TraceStep.DONE.value, TraceEventStatus.SUCCESS.value),
+    BatchJobStatus.COMPLETED.value: (
+        TraceStep.DONE.value,
+        TraceEventStatus.SUCCESS.value,
+    ),
+    BatchJobStatus.COMPLETED_WITH_WARNINGS.value: (
+        TraceStep.DONE.value,
+        TraceEventStatus.SUCCESS.value,
+    ),
     BatchJobStatus.FAILED.value: (TraceStep.ERROR.value, TraceEventStatus.FAILED.value),
-    BatchJobStatus.RUNNING.value: (TraceStep.WAITING.value, TraceEventStatus.RUNNING.value),
-    BatchJobStatus.MERGING.value: (TraceStep.MERGE.value, TraceEventStatus.RUNNING.value),
+    BatchJobStatus.RUNNING.value: (
+        TraceStep.WAITING.value,
+        TraceEventStatus.RUNNING.value,
+    ),
+    BatchJobStatus.MERGING.value: (
+        TraceStep.MERGE.value,
+        TraceEventStatus.RUNNING.value,
+    ),
 }
 
 

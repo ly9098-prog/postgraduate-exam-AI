@@ -101,9 +101,7 @@ class NoiseMetricsCollector:
 
     def record_zones(self, zones: list[tuple[int, int]]) -> None:
         self.metrics.total_transition_zones = len(zones)
-        self.metrics.total_zone_lines = sum(
-            end - start + 1 for start, end in zones
-        )
+        self.metrics.total_zone_lines = sum(end - start + 1 for start, end in zones)
 
     def record_classification(self, noise_type: str, _confidence: float) -> None:
         """Record a noise classification result (detected noise only)."""
@@ -169,11 +167,7 @@ def format_metrics_summary(metrics_list: list[NoiseMetrics]) -> dict[str, Any]:
         "total_false_positive_suspected": total_fp,
         "noise_type_distribution": dict(type_counts),
         "risk_distribution": dict(risk_distribution),
-        "avg_noise_ratio": round(
-            sum(m.noise_ratio for m in metrics_list) / total, 4
-        ),
-        "high_risk_docs": [
-            m.doc_id for m in metrics_list if m.risk_level == "high"
-        ],
+        "avg_noise_ratio": round(sum(m.noise_ratio for m in metrics_list) / total, 4),
+        "high_risk_docs": [m.doc_id for m in metrics_list if m.risk_level == "high"],
         "per_document": [m.to_dict() for m in metrics_list],
     }

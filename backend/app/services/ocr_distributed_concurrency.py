@@ -216,9 +216,7 @@ class OcrDistributedConcurrency:
                 # dependency is down; retry periodically instead of per page.
                 self._retry_after_monotonic = time.monotonic() + 30.0
                 if self._profile == DeploymentProfile.CLOUD_API:
-                    raise DistributedConcurrencyError(
-                        self._last_init_error
-                    ) from exc
+                    raise DistributedConcurrencyError(self._last_init_error) from exc
                 logger.warning("%s", self._last_init_error)
                 return None
 
@@ -291,7 +289,8 @@ class OcrDistributedConcurrency:
                 return token
             # At capacity — return None, caller must NOT proceed with OCR
             logger.warning(
-                "OCR distributed concurrency at capacity (%d), request rejected", capacity,
+                "OCR distributed concurrency at capacity (%d), request rejected",
+                capacity,
             )
             return None
         except Exception as exc:

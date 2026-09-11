@@ -30,21 +30,18 @@ _STRICT_OPTION_LINE = re.compile(
 )
 
 # Inline ABCD pattern (not at line start, but clearly option-like)
-_STRICT_INLINE_OPTION = re.compile(
-    r"(?<!\w)([A-Da-d])\s*[.．、:：)）]\s*\S"
-)
+_STRICT_INLINE_OPTION = re.compile(r"(?<!\w)([A-Da-d])\s*[.．、:：)）]\s*\S")
 
 # Numbered choice pattern: (1) text  (2) text  etc.
-_STRICT_NUMBERED_CHOICE = re.compile(
-    r"(?:^|\n)\s*[（(]\s*[1-4]\s*[）)]\s*\S"
-)
+_STRICT_NUMBERED_CHOICE = re.compile(r"(?:^|\n)\s*[（(]\s*[1-4]\s*[）)]\s*\S")
 
 # Circled digit choices: ① ② ③ ④ (only mapped entries, others are not option markers)
 _CIRCLED_CHOICE = re.compile(r"[①②③④]")
 
 # Explicit choice question keywords in Chinese
 _CHOICE_KEYWORDS = [
-    "下列选项", "以下选项",
+    "下列选项",
+    "以下选项",
 ]
 
 # Fragmented OCR option pattern: handles OCR artifacts like "A ." / "A．\nxxx"
@@ -150,7 +147,12 @@ def force_options_probe(raw_text: str) -> dict:
         - ``summary`` (str): human‑readable explanation
     """
     if not raw_text:
-        return {"detected": False, "patterns": {}, "extracted": {}, "summary": "empty_text"}
+        return {
+            "detected": False,
+            "patterns": {},
+            "extracted": {},
+            "summary": "empty_text",
+        }
 
     patterns: dict[str, dict] = {}
 
@@ -233,7 +235,9 @@ def force_options_probe(raw_text: str) -> dict:
         summary_parts.append(f"failed:{','.join(failed_patterns)}")
     summary_parts.append(f"unique_ABCD_keys={sorted(total_unique_keys)}")
     summary_parts.append(f"extracted_count={len(extracted)}")
-    summary_parts.append(f"extracted_keys={sorted(extracted.keys()) if extracted else 'none'}")
+    summary_parts.append(
+        f"extracted_keys={sorted(extracted.keys()) if extracted else 'none'}"
+    )
 
     return {
         "detected": any_pattern_matched,
@@ -271,9 +275,7 @@ _EXTRACT_INLINE_OPTIONS = re.compile(
     r"([^A-Da-d\n]+?)"
     r"(?=\s*[A-Da-d]\s*[.．、:：)）]|\s*$)"
 )
-_EXTRACT_BROAD_OPTION = re.compile(
-    r"(?:^|\n)\s*([A-Da-d])\s{2,}([^\n]+)"
-)
+_EXTRACT_BROAD_OPTION = re.compile(r"(?:^|\n)\s*([A-Da-d])\s{2,}([^\n]+)")
 
 
 def extract_options_from_text(raw_text: str) -> dict[str, str]:
@@ -396,7 +398,8 @@ def classify(
         logger.info(
             "[TRACE] stage=classify_decision is_frozen=True → has_options=True "
             "raw_text_len=%d option_lines=%s",
-            len(raw_text), sorted(option_lines.keys()) if option_lines else "none",
+            len(raw_text),
+            sorted(option_lines.keys()) if option_lines else "none",
         )
         return {
             "has_options": True,
@@ -413,7 +416,8 @@ def classify(
         "[TRACE] stage=classify_text_detect "
         "detect_options_from_text=%s splitter_has_options=%s "
         "splitter_option_lines=%s raw_text_len=%d",
-        text_has_options, splitter_has_options,
+        text_has_options,
+        splitter_has_options,
         sorted(option_lines.keys()) if option_lines else "none",
         len(raw_text),
     )
@@ -443,7 +447,8 @@ def classify(
             "[TRACE] stage=classify_decision priority=3 "
             "detect_options_from_text=False but splitter_has_content=%s "
             "→ has_options=True (option_lines=%s)",
-            splitter_has_content, sorted(option_lines.keys()),
+            splitter_has_content,
+            sorted(option_lines.keys()),
         )
         return {
             "has_options": True,
@@ -456,7 +461,8 @@ def classify(
         "[TRACE] stage=classify_decision priority=4 "
         "detect_options_from_text=False splitter_has_options=%s "
         "option_lines=%s → has_options=False",
-        splitter_has_options, sorted(option_lines.keys()) if option_lines else "none",
+        splitter_has_options,
+        sorted(option_lines.keys()) if option_lines else "none",
     )
     return {
         "has_options": False,

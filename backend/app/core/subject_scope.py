@@ -28,6 +28,7 @@ EXAM408_DISPLAY_ORDER: dict[str, int] = {
     "computer_network": 40,
 }
 
+
 def canonical_408_code(code: str | None) -> str | None:
     """Return ``code`` only when it is already a canonical 408 code."""
     raw = str(code or "").strip().lower()
@@ -83,10 +84,7 @@ def select_408_subject_records(records: Iterable[Any]) -> list[Any]:
     instead of masking it behind compatibility rules.
     """
     items = list(records)
-    roots = [
-        item for item in items
-        if _record_product_code(item) == EXAM408_ROOT_CODE
-    ]
+    roots = [item for item in items if _record_product_code(item) == EXAM408_ROOT_CODE]
     if len(roots) != 1:
         return []
 
@@ -134,7 +132,8 @@ def select_408_subject_records(records: Iterable[Any]) -> list[Any]:
         add_active_descendants(branch_id)
 
     return [
-        item for item in items
+        item
+        for item in items
         if _record_id(item) in selected_ids and _record_active(item)
     ]
 
@@ -151,28 +150,58 @@ def selected_408_subject_ids(records: Iterable[Any]) -> set[int]:
 # selectors alongside the computer-science catalog.  Historical databases may
 # still use older canonical codes for these rows, so matching intentionally
 # accepts the known code variants and the stable Chinese display names.
-EXTRA_STUDY_SUBJECT_CODES: frozenset[str] = frozenset({
-    "advanced_math", "math2-calculus",
-    "linear_algebra", "math2-linalg",
-    "english",
-    "politics", "pol",
-})
+EXTRA_STUDY_SUBJECT_CODES: frozenset[str] = frozenset(
+    {
+        "advanced_math",
+        "math2-calculus",
+        "linear_algebra",
+        "math2-linalg",
+        "english",
+        "politics",
+        "pol",
+    }
+)
 EXTRA_STUDY_PARENT_CODES: frozenset[str] = frozenset({"math", "math2"})
-EXTRA_STUDY_SUBJECT_NAMES: frozenset[str] = frozenset({
-    "高等数学", "高数", "线性代数", "线代", "英语", "政治",
-})
+EXTRA_STUDY_SUBJECT_NAMES: frozenset[str] = frozenset(
+    {
+        "高等数学",
+        "高数",
+        "线性代数",
+        "线代",
+        "英语",
+        "政治",
+    }
+)
 
 
 def _raw_record_code(record: Any) -> str:
-    return str(_record_attr(record, "code", _record_attr(record, "subject_code", "")) or "").strip().lower()
+    return (
+        str(
+            _record_attr(record, "code", _record_attr(record, "subject_code", "")) or ""
+        )
+        .strip()
+        .lower()
+    )
 
 
 def _raw_record_name(record: Any) -> str:
-    return str(_record_attr(record, "name", _record_attr(record, "subject_name", _record_attr(record, "display_name", ""))) or "").strip()
+    return str(
+        _record_attr(
+            record,
+            "name",
+            _record_attr(
+                record, "subject_name", _record_attr(record, "display_name", "")
+            ),
+        )
+        or ""
+    ).strip()
 
 
 def is_extra_study_subject(record: Any) -> bool:
-    return _raw_record_code(record) in EXTRA_STUDY_SUBJECT_CODES or _raw_record_name(record) in EXTRA_STUDY_SUBJECT_NAMES
+    return (
+        _raw_record_code(record) in EXTRA_STUDY_SUBJECT_CODES
+        or _raw_record_name(record) in EXTRA_STUDY_SUBJECT_NAMES
+    )
 
 
 def is_extra_study_parent(record: Any) -> bool:
@@ -218,7 +247,11 @@ def select_study_subject_records(records: Iterable[Any]) -> list[Any]:
             selected_ids.add(parent_id)
             parent_id = _record_parent_id(by_id[parent_id])
 
-    return [record for record in items if _record_id(record) in selected_ids and is_study_subject_enabled(record)]
+    return [
+        record
+        for record in items
+        if _record_id(record) in selected_ids and is_study_subject_enabled(record)
+    ]
 
 
 def selected_study_subject_ids(records: Iterable[Any]) -> set[int]:

@@ -1,6 +1,5 @@
 """向量功能相关 Pydantic 模型。"""
 
-
 from pydantic import Field
 from app.schemas.base import BaseModel
 
@@ -9,7 +8,9 @@ class EmbeddingBackfillRequest(BaseModel):
     subject: str | None = None
     limit: int = Field(default=100, ge=1, le=1000)
     force: bool = False
-    after_id: int = Field(default=0, ge=0, description="游标：从此 question_id 之后开始")
+    after_id: int = Field(
+        default=0, ge=0, description="游标：从此 question_id 之后开始"
+    )
 
 
 class EmbeddingBackfillError(BaseModel):

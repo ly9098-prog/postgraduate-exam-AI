@@ -52,8 +52,10 @@ async def resolve_llm_runtime_config(
 ) -> LLMRuntimeConfig | None:
     """Resolve model, endpoint, provider and secret once for an LLM call."""
     capability_value = (
-        capability.value if isinstance(capability, AICapability) else str(capability)
-    ) if capability is not None else None
+        (capability.value if isinstance(capability, AICapability) else str(capability))
+        if capability is not None
+        else None
+    )
     # ``analysis`` is retained as a compatibility capability even though it is
     # not a strict AICapability enum member. This preserves the existing DB-backed
     # analysis routing used by stats/AI services.
@@ -78,7 +80,10 @@ async def resolve_llm_runtime_config(
                 return None
 
             model_id = int(resolved.model_config_id)
-            if _is_non_chat_provider(resolved.provider, resolved.model_name) or not resolved.endpoint:
+            if (
+                _is_non_chat_provider(resolved.provider, resolved.model_name)
+                or not resolved.endpoint
+            ):
                 excluded.add(model_id)
                 continue
             try:
@@ -110,7 +115,9 @@ async def resolve_llm_runtime_config(
         model_name=str(config["model_name"]),
         provider=str(config.get("provider") or "openai_compatible"),
         model_config_id=config.get("id"),
-        capabilities=frozenset(str(item) for item in (config.get("features") or []) if item),
+        capabilities=frozenset(
+            str(item) for item in (config.get("features") or []) if item
+        ),
         config_fingerprint="",
     )
 

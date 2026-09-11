@@ -174,7 +174,12 @@ def _validate_headers(headers: dict[str, str] | None) -> dict[str, str]:
     for name, value in (headers or {}).items():
         if "\r" in name or "\n" in name or "\r" in value or "\n" in value:
             raise UnsafeRemoteURLError("invalid request header")
-        if name.lower() in {"host", "connection", "content-length", "transfer-encoding"}:
+        if name.lower() in {
+            "host",
+            "connection",
+            "content-length",
+            "transfer-encoding",
+        }:
             continue
         cleaned[str(name)] = str(value)
     return cleaned
@@ -230,7 +235,9 @@ def request_remote_bytes(
         parsed, addresses = validate_remote_url(current_url, allow_http=allow_http)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         connection_cls = (
-            _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+            _PinnedHTTPSConnection
+            if parsed.scheme == "https"
+            else _PinnedHTTPConnection
         )
         path = parsed.path or "/"
         if parsed.query:
@@ -262,13 +269,21 @@ def request_remote_bytes(
             # AI request or duplicate another side effect.
             try:
                 connection.connect()
-            except (socket.timeout, TimeoutError, OSError, http.client.HTTPException, ssl.SSLError) as exc:
+            except (
+                socket.timeout,
+                TimeoutError,
+                OSError,
+                http.client.HTTPException,
+                ssl.SSLError,
+            ) as exc:
                 last_connect_exc = exc
                 connection.close()
                 if address_index + 1 < len(addresses):
                     continue
                 if isinstance(exc, (socket.timeout, TimeoutError)):
-                    raise RemoteFetchTimeoutError("remote resource fetch timed out") from exc
+                    raise RemoteFetchTimeoutError(
+                        "remote resource fetch timed out"
+                    ) from exc
                 raise UnsafeRemoteURLError("remote resource fetch failed") from exc
 
             try:
@@ -322,7 +337,9 @@ def request_remote_bytes(
                         if int(content_length) > max_bytes:
                             raise UnsafeRemoteURLError("remote resource is too large")
                     except ValueError as exc:
-                        raise UnsafeRemoteURLError("invalid Content-Length header") from exc
+                        raise UnsafeRemoteURLError(
+                            "invalid Content-Length header"
+                        ) from exc
 
                 chunks: list[bytes] = []
                 total = 0
@@ -347,7 +364,9 @@ def request_remote_bytes(
             except RemoteFetchTimeoutError:
                 raise
             except (socket.timeout, TimeoutError) as exc:
-                raise RemoteFetchTimeoutError("remote resource fetch timed out") from exc
+                raise RemoteFetchTimeoutError(
+                    "remote resource fetch timed out"
+                ) from exc
             except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
                 raise UnsafeRemoteURLError("remote resource fetch failed") from exc
             finally:
@@ -358,8 +377,12 @@ def request_remote_bytes(
         if last_connect_exc is not None:
             # Defensive fallback; the final address branch above normally raises.
             if isinstance(last_connect_exc, (socket.timeout, TimeoutError)):
-                raise RemoteFetchTimeoutError("remote resource fetch timed out") from last_connect_exc
-            raise UnsafeRemoteURLError("remote resource fetch failed") from last_connect_exc
+                raise RemoteFetchTimeoutError(
+                    "remote resource fetch timed out"
+                ) from last_connect_exc
+            raise UnsafeRemoteURLError(
+                "remote resource fetch failed"
+            ) from last_connect_exc
 
     raise UnsafeRemoteURLError("too many redirects")
 
@@ -389,4 +412,3 @@ def fetch_remote_bytes(
         require_2xx=True,
         headers=merged_headers,
     )
-

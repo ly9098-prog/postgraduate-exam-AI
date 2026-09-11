@@ -10,6 +10,7 @@ from pydantic import ConfigDict, Field
 
 class OCRJobCreate(BaseModel):
     """Request to create a new OCR job."""
+
     request_id: str = Field(..., min_length=1, max_length=64)
     document_id: str = Field(..., min_length=1, max_length=64)
     document_sha256: str = Field(..., min_length=64, max_length=64)
@@ -24,6 +25,7 @@ class OCRJobCreate(BaseModel):
 
 class OCRJobResponse(BaseModel):
     """OCR job status response."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -53,6 +55,7 @@ class OCRJobResponse(BaseModel):
 
 class OCRClaimResponse(BaseModel):
     """Response returned when a worker claims a job."""
+
     job_id: str
     lease_token: str
     lease_expires_at: datetime
@@ -67,11 +70,13 @@ class OCRClaimResponse(BaseModel):
 
 class OCRHeartbeatRequest(BaseModel):
     """Worker heartbeat request."""
+
     lease_token: str
 
 
 class OCRStartRequest(BaseModel):
     """Worker marks job as started (downloading → running)."""
+
     lease_token: str
     worker_fingerprint: str | None = None
     model_fingerprint: str | None = None
@@ -79,6 +84,7 @@ class OCRStartRequest(BaseModel):
 
 class OCRCompleteRequest(BaseModel):
     """Worker uploads completed OCR result."""
+
     lease_token: str
     output_artifact_key: str = Field(..., min_length=1, max_length=256)
     output_sha256: str = Field(..., min_length=64, max_length=64)
@@ -89,6 +95,7 @@ class OCRCompleteRequest(BaseModel):
 
 class OCRFailRequest(BaseModel):
     """Worker reports a job failure."""
+
     lease_token: str
     error_code: str = Field(..., max_length=32)
     error_message: str = Field(default="", max_length=1024)
@@ -98,5 +105,6 @@ class OCRFailRequest(BaseModel):
 
 class OCRJobListResponse(BaseModel):
     """Paginated list of OCR jobs."""
+
     items: list[OCRJobResponse]
     total: int

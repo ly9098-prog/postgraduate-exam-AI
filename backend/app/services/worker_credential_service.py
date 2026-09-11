@@ -48,7 +48,9 @@ async def create_credential(
         worker_id=worker_id,
         key_hash=hash_key(raw_key),
         is_active=True,
-        expires_at=normalize_to_naive_utc(expires_at) if expires_at is not None else None,
+        expires_at=normalize_to_naive_utc(expires_at)
+        if expires_at is not None
+        else None,
     )
     db.add(credential)
     await db.flush()

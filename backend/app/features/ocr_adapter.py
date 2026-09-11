@@ -39,6 +39,7 @@ def _get_image_dimensions(source: bytes) -> tuple[int, int]:
         import io
 
         from PIL import Image
+
         with Image.open(io.BytesIO(source)) as img:
             return img.size
     except Exception:
@@ -90,8 +91,7 @@ class OcrAdapter(Protocol):
     """
 
     @property
-    def capabilities(self) -> AdapterCapabilities:
-        ...
+    def capabilities(self) -> AdapterCapabilities: ...
 
     async def process(
         self,
@@ -121,8 +121,7 @@ class DocumentTransformAdapter(Protocol):
     """
 
     @property
-    def capabilities(self) -> AdapterCapabilities:
-        ...
+    def capabilities(self) -> AdapterCapabilities: ...
 
     async def transform(
         self,
@@ -178,7 +177,11 @@ class ReadingOrderTransformAdapter:
     ) -> ModuleResult[Any]:
         if self._closed:
             return ModuleResult.failure(
-                ModuleError(code="ADAPTER_CLOSED", message="ReadingOrderTransformAdapter is closed", category="system"),
+                ModuleError(
+                    code="ADAPTER_CLOSED",
+                    message="ReadingOrderTransformAdapter is closed",
+                    category="system",
+                ),
                 module_name="reading_order_transform",
                 trace_id=trace_id,
                 backend="reading_order",
@@ -188,7 +191,9 @@ class ReadingOrderTransformAdapter:
 
         if doc_ir is None:
             return ModuleResult.failure(
-                ModuleError(code="INPUT_NONE", message="doc_ir is None", category="input"),
+                ModuleError(
+                    code="INPUT_NONE", message="doc_ir is None", category="input"
+                ),
                 module_name="reading_order_transform",
                 trace_id=trace_id,
                 backend="reading_order",
@@ -199,7 +204,9 @@ class ReadingOrderTransformAdapter:
             from app.features.pipeline_stages import reading_order_stage
 
             # Use v2 function — doc_ir is modified in-place
-            v2_result = reading_order_stage.run_reading_order_stage_v2(doc_ir, stage_config=None)
+            v2_result = reading_order_stage.run_reading_order_stage_v2(
+                doc_ir, stage_config=None
+            )
 
             latency_ms = round((time.monotonic() - start) * 1000, 2)
 
@@ -294,7 +301,12 @@ class PaddleOCRLocalAdapter:
             offline=True,
             layout_labels=(),
             region_types=("text", "unknown"),
-            supported_mime_types=("application/pdf", "image/png", "image/jpeg", "image/bmp"),
+            supported_mime_types=(
+                "application/pdf",
+                "image/png",
+                "image/jpeg",
+                "image/bmp",
+            ),
             supported_devices=("cpu", "cuda"),
             multipage=True,
             max_batch=10,
@@ -319,7 +331,11 @@ class PaddleOCRLocalAdapter:
     ) -> ModuleResult[Any]:
         if self._closed:
             return ModuleResult.failure(
-                ModuleError(code="ADAPTER_CLOSED", message="PaddleOCRLocalAdapter is closed", category="system"),
+                ModuleError(
+                    code="ADAPTER_CLOSED",
+                    message="PaddleOCRLocalAdapter is closed",
+                    category="system",
+                ),
                 module_name="paddleocr_local",
                 trace_id=trace_id,
                 backend="paddleocr",
@@ -335,7 +351,8 @@ class PaddleOCRLocalAdapter:
                 else:
                     dimensions = {
                         1: await asyncio.to_thread(
-                            _get_image_dimensions, request.source,
+                            _get_image_dimensions,
+                            request.source,
                         ),
                     }
                     results = await client.recognize_batch(
@@ -364,7 +381,12 @@ class PaddleOCRLocalAdapter:
             # Convert blocks to DocumentIR using standalone builder
             from app.features.document_ir_builder import blocks_to_document_ir
 
-            doc_ir = blocks_to_document_ir(blocks, pipeline_id=trace_id, engine="paddleocr", source_bytes=request.source)
+            doc_ir = blocks_to_document_ir(
+                blocks,
+                pipeline_id=trace_id,
+                engine="paddleocr",
+                source_bytes=request.source,
+            )
 
             if doc_ir is None:
                 return ModuleResult.failure(
@@ -465,20 +487,21 @@ class PaddleOCRLocalAdapter:
             if not isinstance(boxes, list):
                 boxes = []
             width, height = dimensions.get(page_idx, (0, 0))
-            failed = (
-                getattr(worker_result, "status", "failed") != "success"
-                or bool(data.get("failed"))
+            failed = getattr(worker_result, "status", "failed") != "success" or bool(
+                data.get("failed")
             )
-            blocks.append({
-                "page": page_idx,
-                "text": str(data.get("text", "") or ""),
-                "boxes": boxes,
-                "page_width": width,
-                "page_height": height,
-                "source": "ocr",
-                "has_boxes": bool(boxes),
-                "_ocr_boxes_failed": failed,
-            })
+            blocks.append(
+                {
+                    "page": page_idx,
+                    "text": str(data.get("text", "") or ""),
+                    "boxes": boxes,
+                    "page_width": width,
+                    "page_height": height,
+                    "source": "ocr",
+                    "has_boxes": bool(boxes),
+                    "_ocr_boxes_failed": failed,
+                }
+            )
         return blocks
 
     async def _recognize_pdf(self, client: Any, source: bytes) -> list[dict]:
@@ -594,7 +617,15 @@ class PaddleOCRVLDocumentAdapter:
             code=True,
             per_line_confidence=False,
             offline=False,
-            layout_labels=("text", "code", "formula", "table", "figure", "title", "caption"),
+            layout_labels=(
+                "text",
+                "code",
+                "formula",
+                "table",
+                "figure",
+                "title",
+                "caption",
+            ),
             region_types=("text", "code", "formula", "table", "figure", "unknown"),
             supported_mime_types=("image/png", "image/jpeg"),
             supported_devices=("cpu", "cuda"),
@@ -633,7 +664,11 @@ class PaddleOCRVLDocumentAdapter:
     ) -> ModuleResult[Any]:
         if self._closed:
             return ModuleResult.failure(
-                ModuleError(code="ADAPTER_CLOSED", message="PaddleOCRVLDocumentAdapter is closed", category="system"),
+                ModuleError(
+                    code="ADAPTER_CLOSED",
+                    message="PaddleOCRVLDocumentAdapter is closed",
+                    category="system",
+                ),
                 module_name="paddleocr_vl_document",
                 trace_id=trace_id,
                 backend="paddleocr-vl",
@@ -737,7 +772,9 @@ class PaddleOCRVLDocumentAdapter:
 
             category = "system"
             retryable = False
-            if isinstance(exc, (JobSubmissionError, JobPollingError, ResultDownloadError)):
+            if isinstance(
+                exc, (JobSubmissionError, JobPollingError, ResultDownloadError)
+            ):
                 category = "network"
                 retryable = True
             elif isinstance(exc, ContractError):
@@ -833,7 +870,11 @@ class PaddleOCRVLDocumentAdapter:
 
                 # Bbox
                 bbox_coords = block.get("bbox")
-                bbox = BBox(*bbox_coords) if bbox_coords and len(bbox_coords) == 4 else None
+                bbox = (
+                    BBox(*bbox_coords)
+                    if bbox_coords and len(bbox_coords) == 4
+                    else None
+                )
 
                 # Polygon (if available)
                 polygon_coords = block.get("polygon")
@@ -850,7 +891,10 @@ class PaddleOCRVLDocumentAdapter:
                     conf = 0.0
 
                 region_id = make_region_id(
-                    page_id, bbox, "paddleocr-vl", block_text[:64],
+                    page_id,
+                    bbox,
+                    "paddleocr-vl",
+                    block_text[:64],
                 )
                 line_id = make_line_id(region_id, bbox, block_text[:200])
                 line = LineIR(
@@ -883,8 +927,12 @@ class PaddleOCRVLDocumentAdapter:
         page = PageIR(
             page_id=page_id,
             page_index=page_index,
-            width=result.raw.get("width", 0) or getattr(result, "image_width", 0) if hasattr(result, "raw") else 0,
-            height=result.raw.get("height", 0) or getattr(result, "image_height", 0) if hasattr(result, "raw") else 0,
+            width=result.raw.get("width", 0) or getattr(result, "image_width", 0)
+            if hasattr(result, "raw")
+            else 0,
+            height=result.raw.get("height", 0) or getattr(result, "image_height", 0)
+            if hasattr(result, "raw")
+            else 0,
             regions=regions,
         )
         doc.pages = [page]
@@ -955,7 +1003,11 @@ class RuleFallbackAdapter:
     ) -> ModuleResult[Any]:
         if self._closed:
             return ModuleResult.failure(
-                ModuleError(code="ADAPTER_CLOSED", message="RuleFallbackAdapter is closed", category="system"),
+                ModuleError(
+                    code="ADAPTER_CLOSED",
+                    message="RuleFallbackAdapter is closed",
+                    category="system",
+                ),
                 module_name="rule_fallback",
                 trace_id=trace_id,
                 backend="rule_fallback",
@@ -965,7 +1017,9 @@ class RuleFallbackAdapter:
 
         if doc_ir is None:
             return ModuleResult.failure(
-                ModuleError(code="INPUT_NONE", message="doc_ir is None", category="input"),
+                ModuleError(
+                    code="INPUT_NONE", message="doc_ir is None", category="input"
+                ),
                 module_name="rule_fallback",
                 trace_id=trace_id,
                 backend="rule_fallback",
@@ -1035,9 +1089,8 @@ class AdapterRegistry:
         ``AsyncClient`` instances were closed, so application shutdown could
         leak sockets or cancel the close tasks when the loop stopped.
         """
-        adapters = (
-            list(self._ocr_adapters.values())
-            + list(self._transform_adapters.values())
+        adapters = list(self._ocr_adapters.values()) + list(
+            self._transform_adapters.values()
         )
         self._ocr_adapters.clear()
         self._transform_adapters.clear()
@@ -1073,6 +1126,7 @@ class AdapterRegistry:
 @dataclass
 class AdapterHealth:
     """Per-adapter health tracking."""
+
     healthy: bool = True
     consecutive_failures: int = 0
     last_failure_time: float = 0.0
@@ -1220,7 +1274,9 @@ class AdapterSelector:
         if backend in self._health:
             self._health[backend].consecutive_failures = 0
             self._health[backend].healthy = True
-            self._health[backend].concurrent_calls = max(0, self._health[backend].concurrent_calls - 1)
+            self._health[backend].concurrent_calls = max(
+                0, self._health[backend].concurrent_calls - 1
+            )
 
     def record_failure(self, backend: str, retryable: bool = True) -> None:
         """Record a failure, potentially opening the circuit breaker."""
@@ -1280,10 +1336,12 @@ def create_default_adapter_registry(
     registry.register_ocr(PaddleOCRLocalAdapter(engine="paddleocr"))
 
     # PaddleOCR-VL (registered even without token — fail with a clear error)
-    registry.register_ocr(PaddleOCRVLDocumentAdapter(
-        api_token=vl_api_token,
-        base_url=vl_base_url,
-    ))
+    registry.register_ocr(
+        PaddleOCRVLDocumentAdapter(
+            api_token=vl_api_token,
+            base_url=vl_base_url,
+        )
+    )
 
     # Transforms
     registry.register_transform(ReadingOrderTransformAdapter())

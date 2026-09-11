@@ -1,4 +1,5 @@
 """V6 个人题目难度状态 — 根据用户作答表现自动校准每道题的个人难度。"""
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -30,14 +31,24 @@ class UserQuestionDifficultyState(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=False, index=True,
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
     )
     question_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("questions.id"), nullable=False, index=True,
+        Integer,
+        ForeignKey("questions.id"),
+        nullable=False,
+        index=True,
     )
 
-    personal_difficulty_score: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
-    difficulty_label: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    personal_difficulty_score: Mapped[float] = mapped_column(
+        Float, nullable=False, default=50.0
+    )
+    difficulty_label: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="normal"
+    )
 
     answer_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     correct_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -52,12 +63,15 @@ class UserQuestionDifficultyState(Base):
     last_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(),
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "question_id",
+            "user_id",
+            "question_id",
             name="uq_uqds_user_question",
         ),
     )

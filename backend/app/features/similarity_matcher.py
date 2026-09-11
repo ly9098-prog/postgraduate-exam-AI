@@ -70,8 +70,10 @@ async def _load_subject_questions(db: AsyncSession, subject: str) -> list[dict]:
     if subject_id is None:
         return []
     result = await db.execute(
-        select(Question.id, Question.content, Question.options, Question.answer)
-        .where(Question.subject_id == subject_id, Question.is_active == True)  # noqa: E712
+        select(Question.id, Question.content, Question.options, Question.answer).where(
+            Question.subject_id == subject_id,
+            Question.is_active == True,  # noqa: E712
+        )
     )
     rows = result.all()
     return [
@@ -261,12 +263,14 @@ async def match_similar_questions(
             new_question["similarity_suggestion"] = suggestion
             matched_count += 1
             total_ratio += suggestion["similarity_ratio"]
-            matches.append({
-                "question_index": i,
-                "matched_question_id": suggestion["matched_question_id"],
-                "similarity_ratio": suggestion["similarity_ratio"],
-                "source": suggestion.get("source"),
-            })
+            matches.append(
+                {
+                    "question_index": i,
+                    "matched_question_id": suggestion["matched_question_id"],
+                    "similarity_ratio": suggestion["similarity_ratio"],
+                    "source": suggestion.get("source"),
+                }
+            )
 
         result_questions.append(new_question)
 

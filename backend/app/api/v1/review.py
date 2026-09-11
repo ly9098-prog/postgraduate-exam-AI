@@ -67,7 +67,9 @@ async def get_next_today_review_batch(
 ):
     """获取今日下一组待复习题。"""
     result = await review_scheduler.get_next_today_review_batch(
-        db, current_user.id, batch_size=data.batch_size,
+        db,
+        current_user.id,
+        batch_size=data.batch_size,
     )
     return result
 
@@ -135,7 +137,9 @@ async def master_review_question(
     current_user: User = Depends(get_current_user),
 ):
     """手动标记当前复习任务为已掌握。"""
-    schedule, changed = await review_scheduler.mark_mastered(db, current_user.id, schedule_id)
+    schedule, changed = await review_scheduler.mark_mastered(
+        db, current_user.id, schedule_id
+    )
     if schedule is None:
         raise HTTPException(status_code=404, detail="复习记录不存在")
     await cache.delete(f"review:*:{current_user.id}*")
@@ -157,7 +161,9 @@ async def unmaster_review_question(
 ):
     """撤销手动掌握，并恢复当前题目的复习资格。"""
     try:
-        schedule, changed = await review_scheduler.unmark_mastered(db, current_user.id, schedule_id)
+        schedule, changed = await review_scheduler.unmark_mastered(
+            db, current_user.id, schedule_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if schedule is None:
@@ -171,4 +177,3 @@ async def unmaster_review_question(
         active=bool(schedule.is_active),
         changed=changed,
     )
-

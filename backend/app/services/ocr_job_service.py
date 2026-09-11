@@ -46,6 +46,7 @@ NON_RETRYABLE_ERROR_CODES: set[str] = {
 
 # ── Helpers ───────────────────────────────────────────────
 
+
 def _generate_id() -> str:
     return secrets.token_hex(16)  # 32 hex chars
 
@@ -94,6 +95,7 @@ def _compute_retry_at(attempt: int) -> datetime:
 
 # ── Core Service ──────────────────────────────────────────
 
+
 async def create_job(
     db: AsyncSession,
     *,
@@ -114,9 +116,7 @@ async def create_job(
     Raises ValueError if input validation fails.
     """
     # Check for existing job with same request_id (idempotency)
-    existing = await db.execute(
-        select(OCRJob).where(OCRJob.request_id == request_id)
-    )
+    existing = await db.execute(select(OCRJob).where(OCRJob.request_id == request_id))
     existing_job = existing.scalar_one_or_none()
     if existing_job is not None:
         return existing_job
@@ -202,13 +202,14 @@ async def claim_job(
         .where(
             candidate.status.in_(claimable_statuses),
             candidate.attempt_count < candidate.max_attempts,
-            (candidate.next_retry_at.is_(None))
-            | (candidate.next_retry_at <= now),
+            (candidate.next_retry_at.is_(None)) | (candidate.next_retry_at <= now),
             (
-                candidate.status.in_((
-                    OCRJobStatus.PENDING.value,
-                    OCRJobStatus.RETRYABLE.value,
-                ))
+                candidate.status.in_(
+                    (
+                        OCRJobStatus.PENDING.value,
+                        OCRJobStatus.RETRYABLE.value,
+                    )
+                )
             )
             | (
                 candidate.lease_expires_at.is_not(None)
@@ -270,9 +271,7 @@ async def heartbeat(
         OCRJobStatus.RUNNING.value,
         OCRJobStatus.UPLOADING.value,
     }:
-        raise ValueError(
-            f"Job {job.id} cannot heartbeat in status {job.status}"
-        )
+        raise ValueError(f"Job {job.id} cannot heartbeat in status {job.status}")
 
     now = _now()
     job.heartbeat_at = now
@@ -332,13 +331,14 @@ async def complete_job(
 
     # Idempotent re-completion check
     if job.status == OCRJobStatus.COMPLETED.value:
-        if complete_idempotency_key and job.complete_idempotency_key == complete_idempotency_key:
+        if (
+            complete_idempotency_key
+            and job.complete_idempotency_key == complete_idempotency_key
+        ):
             return job
         if job.output_sha256 == output_sha256:
             return job
-        raise ValueError(
-            f"Job {job_id} already completed with a different output"
-        )
+        raise ValueError(f"Job {job_id} already completed with a different output")
 
     _verify_lease(job, lease_token)
     if job.status == OCRJobStatus.RUNNING.value:
@@ -451,9 +451,7 @@ async def release_job(
         job.next_retry_at = _now()
         job.completed_at = None
     else:
-        raise ValueError(
-            f"Job {job.id} cannot be released from status {job.status}"
-        )
+        raise ValueError(f"Job {job.id} cannot be released from status {job.status}")
 
     job.lease_owner = None
     job.lease_token_hash = None
@@ -519,6 +517,7 @@ async def list_jobs(
 
 # ── Internal ──────────────────────────────────────────────
 
+
 async def _get_job_or_raise(db: AsyncSession, job_id: str) -> OCRJob:
     """Get job by ID or raise ValueError."""
     job = await db.get(OCRJob, job_id)
@@ -533,21 +532,14 @@ def _verify_lease(job: OCRJob, lease_token: str) -> None:
     Also checks that lease has not expired.
     """
     if job.lease_token_hash is None:
-        raise ValueError(
-            f"Job {job.id} has no active lease (status={job.status})"
-        )
+        raise ValueError(f"Job {job.id} has no active lease (status={job.status})")
 
     if _hash_token(lease_token) != job.lease_token_hash:
-        raise ValueError(
-            f"Lease token mismatch for job {job.id}"
-        )
+        raise ValueError(f"Lease token mismatch for job {job.id}")
 
     # Warn but don't reject expired leases — the caller can decide.
     # The claim mechanism will eventually reclaim expired leases.
-    if (
-        job.lease_expires_at is not None
-        and _now() > _as_utc(job.lease_expires_at)
-    ):
+    if job.lease_expires_at is not None and _now() > _as_utc(job.lease_expires_at):
         raise ValueError(
             f"Lease expired for job {job.id} at {job.lease_expires_at.isoformat()}"
         )

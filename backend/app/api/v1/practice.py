@@ -45,27 +45,69 @@ from app.utils.question_content import (
 )
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
-_CODE_OP_SPLIT_RE = re.compile(
-    r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
-)
+_CODE_OP_SPLIT_RE = re.compile(r"(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$")
 
 # Code detection signals (mirrors frontend containsCode logic)
 _CODE_SIGNALS = [
-    'return', 'printf', 'scanf', 'malloc', 'free', 'NULL',
-    'struct', 'typedef', 'enum', 'union',
-    'int ', 'void ', 'char ', 'float ', 'double ',
-    'bool', 'const', 'static', 'sizeof',
-    '->', '::', '{', '}', ';',
-    '++', '--', '+=', '-=', '*=', '/=',
-    '#include', '#define',
+    "return",
+    "printf",
+    "scanf",
+    "malloc",
+    "free",
+    "NULL",
+    "struct",
+    "typedef",
+    "enum",
+    "union",
+    "int ",
+    "void ",
+    "char ",
+    "float ",
+    "double ",
+    "bool",
+    "const",
+    "static",
+    "sizeof",
+    "->",
+    "::",
+    "{",
+    "}",
+    ";",
+    "++",
+    "--",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "#include",
+    "#define",
 ]
 _CONTROL_KW = [
-    'for', 'while', 'if', 'else if', 'else', 'switch',
-    'return', 'break', 'continue', 'case', 'do',
+    "for",
+    "while",
+    "if",
+    "else if",
+    "else",
+    "switch",
+    "return",
+    "break",
+    "continue",
+    "case",
+    "do",
 ]
 _DS_KW = [
-    'LNode', 'TNode', 'BiTNode', 'BiTree', 'BSTNode', 'LinkList',
-    'SqList', 'Stack', 'Queue', 'SqStack', 'ElemType', 'Status',
+    "LNode",
+    "TNode",
+    "BiTNode",
+    "BiTree",
+    "BSTNode",
+    "LinkList",
+    "SqList",
+    "Stack",
+    "Queue",
+    "SqStack",
+    "ElemType",
+    "Status",
 ]
 
 
@@ -81,9 +123,11 @@ def _contains_code(text: str) -> bool:
         if kw in text:
             score += 2
     for kw in _CONTROL_KW:
-        if re.search(r'\b' + re.escape(kw) + r'\b', text):
+        if re.search(r"\b" + re.escape(kw) + r"\b", text):
             score += 1
     return score >= 3
+
+
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
@@ -259,7 +303,9 @@ async def get_practice_questions(
     # 解析 subject_id → (subject_code, subject_name)
     resolved = await svc.resolve_subject_id_to_code(db, subject_id)
     if resolved is None:
-        raise HTTPException(status_code=404, detail=f"科目不存在: subject_id={subject_id}")
+        raise HTTPException(
+            status_code=404, detail=f"科目不存在: subject_id={subject_id}"
+        )
     subject_code, subject_name = resolved
 
     # 始终使用 subject_code（字符串）作查询参数，避免与 VARCHAR 列比较时类型不匹配
@@ -267,13 +313,17 @@ async def get_practice_questions(
 
     # 解析科目作用域：是否有启用子科目、需要查询的 subject ID 列表
     has_enabled_children, scope_subject_ids = await svc.resolve_practice_subject_scope(
-        db, subject_id, include_children,
+        db,
+        subject_id,
+        include_children,
     )
     if not scope_subject_ids:
         # The subject may have been disabled after the client cached the subject
         # tree.  Treat that as an unavailable subject instead of continuing with
         # an empty SQL scope and presenting a misleading “暂无题目” state.
-        raise HTTPException(status_code=404, detail="科目不可用或已停用，请重新选择科目")
+        raise HTTPException(
+            status_code=404, detail="科目不可用或已停用，请重新选择科目"
+        )
 
     # 父级科目 + sequential → 400
     if has_enabled_children and mode == "sequential":
@@ -284,11 +334,17 @@ async def get_practice_questions(
 
     trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
     if knowledge_point and knowledge_point_id is not None:
-        raise HTTPException(status_code=400, detail="knowledge_point 与 knowledge_point_id 不能同时使用")
+        raise HTTPException(
+            status_code=400, detail="knowledge_point 与 knowledge_point_id 不能同时使用"
+        )
     if include_descendants and knowledge_point_id is None:
-        raise HTTPException(status_code=400, detail="include_descendants 需要 knowledge_point_id")
+        raise HTTPException(
+            status_code=400, detail="include_descendants 需要 knowledge_point_id"
+        )
     if include_descendants and mode != "random":
-        raise HTTPException(status_code=400, detail="章节专项练习当前仅支持 random 模式")
+        raise HTTPException(
+            status_code=400, detail="章节专项练习当前仅支持 random 模式"
+        )
 
     knowledge_scope: dict | None = None
     knowledge_point_ids: list[int] | None = None
@@ -300,7 +356,9 @@ async def get_practice_questions(
             include_descendants=include_descendants,
         )
         if knowledge_scope is None:
-            raise HTTPException(status_code=404, detail="知识点不存在、不属于当前科目范围或不在当前大纲")
+            raise HTTPException(
+                status_code=404, detail="知识点不存在、不属于当前科目范围或不在当前大纲"
+            )
         knowledge_point_ids = list(knowledge_scope["knowledge_point_ids"])
         # 非章节模式保留历史名称过滤契约（sequential/similar fallback 仍会使用）；
         # random 同时携带 canonical ID，名称只是兼容约束。
@@ -315,10 +373,14 @@ async def get_practice_questions(
     targeted_question_ids: list[int] = []
     if question_ids:
         try:
-            raw_ids = [part.strip() for part in str(question_ids).split(",") if part.strip()]
+            raw_ids = [
+                part.strip() for part in str(question_ids).split(",") if part.strip()
+            ]
             targeted_question_ids = [int(part) for part in raw_ids]
         except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail="question_ids 格式无效") from exc
+            raise HTTPException(
+                status_code=400, detail="question_ids 格式无效"
+            ) from exc
         if not targeted_question_ids or len(targeted_question_ids) > 50:
             raise HTTPException(status_code=400, detail="question_ids 数量必须为 1-50")
         if any(qid <= 0 for qid in targeted_question_ids):
@@ -326,7 +388,10 @@ async def get_practice_questions(
         if len(set(targeted_question_ids)) != len(targeted_question_ids):
             raise HTTPException(status_code=400, detail="question_ids 不允许重复")
         if source_question_id or kps or knowledge_point_ids:
-            raise HTTPException(status_code=400, detail="定向题目不可与 source_question_id/knowledge_point 混用")
+            raise HTTPException(
+                status_code=400,
+                detail="定向题目不可与 source_question_id/knowledge_point 混用",
+            )
         if mode != "random":
             raise HTTPException(status_code=400, detail="定向题目仅支持 random runner")
         # A targeted retry is an explicit set, not a candidate pool.  Honour
@@ -366,8 +431,12 @@ async def get_practice_questions(
             logger.warning("similar 模式缺少 source_question_id，回退到 random")
             mode = "random"
             questions = await svc.get_practice_questions(
-                db=db, user_id=current_user.id, subject_code=subject_for_query,
-                count=random_candidate_count, mode="random", knowledge_points=kps,
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
+                count=random_candidate_count,
+                mode="random",
+                knowledge_points=kps,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
@@ -375,10 +444,14 @@ async def get_practice_questions(
             )
         else:
             import uuid
+
             request_id = str(uuid.uuid4())
             questions, question_metadata = await svc.get_similar_practice_questions(
-                db=db, user_id=current_user.id, subject_code=subject_for_query,
-                source_question_id=source_question_id, count=count,
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
+                source_question_id=source_question_id,
+                count=count,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
@@ -387,6 +460,7 @@ async def get_practice_questions(
             # 记录推荐日志
             try:
                 from app.services import recommendation_log_service
+
                 recs = [
                     {
                         "question_id": qid,
@@ -398,10 +472,16 @@ async def get_practice_questions(
                     for qid, meta in question_metadata.items()
                 ]
                 if recs:
-                    await recommendation_log_service.create_recommendation_logs_isolated(
-                        db=db, user_id=current_user.id, recommendations=recs,
-                        scene="similar", strategy="vector_plus_rule",
-                        request_id=request_id, source_question_id=source_question_id,
+                    await (
+                        recommendation_log_service.create_recommendation_logs_isolated(
+                            db=db,
+                            user_id=current_user.id,
+                            recommendations=recs,
+                            scene="similar",
+                            strategy="vector_plus_rule",
+                            request_id=request_id,
+                            source_question_id=source_question_id,
+                        )
                     )
             except Exception:
                 logger.warning("similar 推荐日志写入失败", exc_info=True)
@@ -413,7 +493,10 @@ async def get_practice_questions(
             sequential_reservation_request_id = str(
                 start_request_id or f"seqstart:{current_user.id}:{uuid4().hex}"
             ).strip()
-            questions, sequential_progress = await svc.get_sequential_practice_questions(
+            (
+                questions,
+                sequential_progress,
+            ) = await svc.get_sequential_practice_questions(
                 db=db,
                 user_id=current_user.id,
                 subject_id=subject_id,
@@ -427,25 +510,34 @@ async def get_practice_questions(
 
     elif mode == "smart":
         import uuid
+
         request_id = str(uuid.uuid4())
         if len(scope_subject_ids) > 1:
             # 父级科目聚合智能推荐
             questions, question_metadata = await svc.get_aggregated_smart_questions(
-                db=db, user_id=current_user.id, subject_code=subject_for_query,
-                subject_ids=scope_subject_ids, count=count,
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
+                subject_ids=scope_subject_ids,
+                count=count,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
-                request_id=request_id, smart_strategy=smart_strategy,
+                request_id=request_id,
+                smart_strategy=smart_strategy,
             )
         else:
             questions, question_metadata = await svc.get_smart_practice_questions(
-                db=db, user_id=current_user.id, subject_code=subject_for_query,
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
                 subject_ids=scope_subject_ids,
-                count=count, exclude_answered=exclude_answered,
+                count=count,
+                exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
-                request_id=request_id, smart_strategy=smart_strategy,
+                request_id=request_id,
+                smart_strategy=smart_strategy,
             )
 
     else:
@@ -467,8 +559,11 @@ async def get_practice_questions(
         elif len(scope_subject_ids) > 1:
             # 父级科目聚合随机
             questions = await svc.get_aggregated_random_questions(
-                db=db, user_id=current_user.id, subject_code=subject_for_query,
-                subject_ids=scope_subject_ids, count=random_candidate_count,
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
+                subject_ids=scope_subject_ids,
+                count=random_candidate_count,
                 knowledge_points=(kps if not knowledge_point_ids else None),
                 knowledge_point_ids=knowledge_point_ids,
                 exclude_answered=exclude_answered,
@@ -479,9 +574,12 @@ async def get_practice_questions(
             # 具体科目（叶子或 include_children=false）—— 精确查询
             # 传入 subject_ids 阻止 resolve_subject_ids 的内部递归扩展
             questions = await svc.get_practice_questions(
-                db=db, user_id=current_user.id, subject_code=subject_for_query,
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
                 subject_ids=scope_subject_ids,
-                count=random_candidate_count, mode=mode,
+                count=random_candidate_count,
+                mode=mode,
                 knowledge_points=(kps if not knowledge_point_ids else None),
                 knowledge_point_ids=knowledge_point_ids,
                 exclude_answered=exclude_answered,
@@ -498,7 +596,9 @@ async def get_practice_questions(
         due_ids = await get_due_question_ids(
             db, current_user.id, [int(question.id) for question in questions]
         )
-        filtered_questions = [question for question in questions if int(question.id) in due_ids]
+        filtered_questions = [
+            question for question in questions if int(question.id) in due_ids
+        ]
         if len(filtered_questions) != len(questions):
             logger.info(
                 "[PRACTICE_LEITNER_GUARD] uid=%s mode=%s filtered=%s remaining=%s",
@@ -527,7 +627,10 @@ async def get_practice_questions(
             )
             existing_ids = {int(question.id) for question in filtered_questions}
             for question in fallback:
-                if int(question.id) in fallback_due_ids and int(question.id) not in existing_ids:
+                if (
+                    int(question.id) in fallback_due_ids
+                    and int(question.id) not in existing_ids
+                ):
                     filtered_questions.append(question)
                     existing_ids.add(int(question.id))
                 if len(filtered_questions) >= count:
@@ -564,7 +667,9 @@ async def get_practice_questions(
     if duplicate_question_ids:
         logger.warning(
             "[PRACTICE_DUPLICATE_CANDIDATE] subject_id=%s mode=%s duplicate_ids=%s",
-            subject_id, mode, sorted(set(duplicate_question_ids)),
+            subject_id,
+            mode,
+            sorted(set(duplicate_question_ids)),
         )
     questions = deduped_questions[:count]
     if targeted_question_ids:
@@ -575,7 +680,9 @@ async def get_practice_questions(
         final_targeted_ids = [int(question.id) for question in questions]
         if final_targeted_ids != targeted_question_ids:
             missing_ids = [
-                qid for qid in targeted_question_ids if qid not in set(final_targeted_ids)
+                qid
+                for qid in targeted_question_ids
+                if qid not in set(final_targeted_ids)
             ]
             raise HTTPException(
                 status_code=409,
@@ -592,6 +699,7 @@ async def get_practice_questions(
     if request_id and mode in {"smart", "similar"}:
         try:
             from app.services import recommendation_log_service
+
             await recommendation_log_service.retain_recommendation_logs_for_questions(
                 db,
                 user_id=current_user.id,
@@ -607,14 +715,24 @@ async def get_practice_questions(
     # ── 结构化日志：刷题请求范围与分布 ──
     scope_desc = "聚合" if len(scope_subject_ids) > 1 else "精确"
     from collections import Counter
+
     subject_distribution = dict(Counter(q.subject_id for q in questions))
     logger.info(
         "[PRACTICE_SCOPE] subject_id=%s subject_code=%s include_children=%s "
         "include_descendants=%s knowledge_scope_size=%d has_children=%s "
         "scope=%s scope_ids=%s mode=%s count=%d result_count=%d subject_distribution=%s",
-        subject_id, subject_code, include_children, include_descendants,
-        len(knowledge_point_ids or []), has_enabled_children, scope_desc, scope_subject_ids,
-        mode, count, len(questions), subject_distribution,
+        subject_id,
+        subject_code,
+        include_children,
+        include_descendants,
+        len(knowledge_point_ids or []),
+        has_enabled_children,
+        scope_desc,
+        scope_subject_ids,
+        mode,
+        count,
+        len(questions),
+        subject_distribution,
     )
     # Freeze the response from the exact immutable revisions signed into the
     # batch. A mutable Question/KP edit committed between candidate selection and
@@ -654,7 +772,9 @@ async def get_practice_questions(
         if entry_context is None:
             logger.info(
                 "[STUDY_HUB_PLAN_ATTRIBUTION_SKIPPED] user_id=%s subject_id=%s mode=%s",
-                current_user.id, subject_id, mode,
+                current_user.id,
+                subject_id,
+                mode,
             )
 
     sequential_submission_request_id = None
@@ -669,17 +789,19 @@ async def get_practice_questions(
             subject_id,
             scope_identity,
         )
-    batch_token, issued_revisions, submission_request_id = svc.create_practice_batch_token(
-        user_id=current_user.id,
-        subject_id=subject_id,
-        mode=mode,
-        questions=questions,
-        revision_ids=latest_revision_ids,
-        recommendation_request_id=request_id,
-        knowledge_context=knowledge_context,
-        entry_context=entry_context,
-        sequential_reservation_request_id=sequential_reservation_request_id,
-        submission_request_id=sequential_submission_request_id,
+    batch_token, issued_revisions, submission_request_id = (
+        svc.create_practice_batch_token(
+            user_id=current_user.id,
+            subject_id=subject_id,
+            mode=mode,
+            questions=questions,
+            revision_ids=latest_revision_ids,
+            recommendation_request_id=request_id,
+            knowledge_context=knowledge_context,
+            entry_context=entry_context,
+            sequential_reservation_request_id=sequential_reservation_request_id,
+            submission_request_id=sequential_submission_request_id,
+        )
     )
     revision_views = await load_revision_views(db, issued_revisions.values())
     revision_kps = await load_revision_kp_names(db, issued_revisions.values())
@@ -688,7 +810,9 @@ async def get_practice_questions(
         revision_id = issued_revisions.get(int(selected.id))
         revision = revision_views.get(int(revision_id or 0))
         if revision is None or int(revision.question_id) != int(selected.id):
-            raise HTTPException(status_code=500, detail="题目版本数据不完整，请稍后重试")
+            raise HTTPException(
+                status_code=500, detail="题目版本数据不完整，请稍后重试"
+            )
         issued_rows.append((selected, revision))
 
         content = _sanitize_question_content(revision.content)
@@ -720,8 +844,12 @@ async def get_practice_questions(
                 difficulty=revision.difficulty,
                 image_url=revision.image_url,
                 trace_id=trace_id,
-                recommend_reason=(question_metadata.get(selected.id) or {}).get("recommend_reason"),
-                recommend_score=(question_metadata.get(selected.id) or {}).get("recommend_score"),
+                recommend_reason=(question_metadata.get(selected.id) or {}).get(
+                    "recommend_reason"
+                ),
+                recommend_score=(question_metadata.get(selected.id) or {}).get(
+                    "recommend_score"
+                ),
                 strategy=(question_metadata.get(selected.id) or {}).get("strategy"),
                 similarity=(question_metadata.get(selected.id) or {}).get("similarity"),
             )
@@ -739,7 +867,8 @@ async def get_practice_questions(
                 "include_descendants": bool(knowledge_scope["include_descendants"]),
                 "knowledge_point_count": len(knowledge_scope["knowledge_point_ids"]),
             }
-            if knowledge_scope is not None else None
+            if knowledge_scope is not None
+            else None
         ),
         batch_token=batch_token,
         submission_request_id=submission_request_id,
@@ -747,7 +876,11 @@ async def get_practice_questions(
     debug_log(
         trace_id,
         "API_RESPONSE",
-        {"endpoint": "practice/questions", "subject_id": subject_id, "count": len(questions)},
+        {
+            "endpoint": "practice/questions",
+            "subject_id": subject_id,
+            "count": len(questions),
+        },
     )
     save_debug_snapshot(
         trace_id,
@@ -767,7 +900,8 @@ async def get_practice_questions(
             delete(SequentialReservation).where(
                 SequentialReservation.user_id == current_user.id,
                 SequentialReservation.subject_id == subject_id,
-                SequentialReservation.start_request_id == sequential_reservation_request_id,
+                SequentialReservation.start_request_id
+                == sequential_reservation_request_id,
                 SequentialReservation.question_id.notin_(final_question_ids),
             )
         )
@@ -793,7 +927,9 @@ async def reset_sequential_practice(
         raise HTTPException(status_code=404, detail="科目不存在")
 
     has_enabled_children, scope_subject_ids = await svc.resolve_practice_subject_scope(
-        db, data.subject_id, include_children=False,
+        db,
+        data.subject_id,
+        include_children=False,
     )
     if has_enabled_children or len(scope_subject_ids) != 1:
         raise HTTPException(
@@ -832,7 +968,9 @@ async def batch_submit(
             db=db,
             user_id=current_user.id,
             answers=[a.model_dump() for a in data.answers],
-            session_meta=data.session.model_dump() if data.session is not None else None,
+            session_meta=data.session.model_dump()
+            if data.session is not None
+            else None,
             skipped_question_ids=data.skipped_question_ids,
             batch_token=data.batch_token,
         )
@@ -923,7 +1061,9 @@ async def get_practice_session_scope_snapshot(
     return PracticeSessionScopeResponse(request_id=request_id, scope=scope)
 
 
-@router.get("/session/knowledge-summary", response_model=PracticeKnowledgeSummaryResponse)
+@router.get(
+    "/session/knowledge-summary", response_model=PracticeKnowledgeSummaryResponse
+)
 async def get_practice_session_knowledge_summary(
     request_id: str = Query(..., min_length=1, max_length=128),
     db: AsyncSession = Depends(get_db),
@@ -981,9 +1121,7 @@ async def list_records(
     if subject_id:
         conds.append(PR.subject_id == subject_id)
 
-    total = (
-        await db.execute(select(func.count(PR.id)).where(and_(*conds)))
-    ).scalar()
+    total = (await db.execute(select(func.count(PR.id)).where(and_(*conds)))).scalar()
 
     rows = await db.execute(
         select(
@@ -1027,6 +1165,7 @@ async def list_records(
         page_size=page_size,
     )
 
+
 # ── V3: 知识点掌握度查询接口 ──
 
 
@@ -1058,7 +1197,9 @@ async def get_knowledge_states(
     all_items = []
     for subject_id in subjects:
         states = await mastery_service.get_user_knowledge_states(
-            db, current_user.id, subject_id,
+            db,
+            current_user.id,
+            subject_id,
         )
         all_items.extend(states)
 
@@ -1074,6 +1215,7 @@ async def get_knowledge_states(
 
     # 转换为 Schema
     from app.schemas.mastery import KnowledgeStateItem, KnowledgeStateListResponse
+
     items = [
         KnowledgeStateItem(
             knowledge_point_id=item.get("knowledge_point_id"),
@@ -1119,21 +1261,28 @@ async def get_weak_knowledge_points(
     all_weak = []
     for subject_id in subjects:
         weak = await mastery_service.get_user_weak_knowledge_points(
-            db, current_user.id, subject_id, limit=limit,
+            db,
+            current_user.id,
+            subject_id,
+            limit=limit,
         )
         all_weak.extend(weak)
 
     # 过滤：只保留 mastery_score < 40 且 confidence >= 0.3
     all_weak = [
-        item for item in all_weak
+        item
+        for item in all_weak
         if item.get("mastery_score", 50) < 40 and item.get("confidence", 0) >= 0.3
     ]
 
     # 排序：mastery_score ASC, recent_wrong_count DESC
-    all_weak.sort(key=lambda x: (x.get("mastery_score", 50), -x.get("attempt_count", 0)))
+    all_weak.sort(
+        key=lambda x: (x.get("mastery_score", 50), -x.get("attempt_count", 0))
+    )
     all_weak = all_weak[:limit]
 
     from app.schemas.mastery import KnowledgeStateItem, KnowledgeStateListResponse
+
     items = [
         KnowledgeStateItem(
             knowledge_point_id=item.get("knowledge_point_id"),
@@ -1142,8 +1291,13 @@ async def get_weak_knowledge_points(
             confidence=item.get("confidence", 0.0),
             label=item.get("weakness_level", "weak"),
             answer_count=item.get("attempt_count", 0),
-            correct_count=item.get("correct_count", 0) if isinstance(item.get("correct_count"), int) else round(item.get("accuracy", 0) * item.get("attempt_count", 0)),
-            wrong_count=item.get("wrong_count", 0) if isinstance(item.get("wrong_count"), int) else item.get("attempt_count", 0) - round(item.get("accuracy", 0) * item.get("attempt_count", 0)),
+            correct_count=item.get("correct_count", 0)
+            if isinstance(item.get("correct_count"), int)
+            else round(item.get("accuracy", 0) * item.get("attempt_count", 0)),
+            wrong_count=item.get("wrong_count", 0)
+            if isinstance(item.get("wrong_count"), int)
+            else item.get("attempt_count", 0)
+            - round(item.get("accuracy", 0) * item.get("attempt_count", 0)),
             recent_wrong_count=item.get("recent_wrong_count", 0),
         )
         for item in all_weak

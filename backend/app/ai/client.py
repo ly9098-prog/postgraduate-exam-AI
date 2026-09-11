@@ -67,12 +67,12 @@ class _CompatibilityProfile:
 
 
 _REASONING_CONTROLS: tuple[str | None, ...] = (
-    "reasoning_effort",            # OpenAI-style reasoning + recent vLLM
-    "enable_thinking",             # several hosted compatible gateways
+    "reasoning_effort",  # OpenAI-style reasoning + recent vLLM
+    "enable_thinking",  # several hosted compatible gateways
     "chat_template_enable_thinking",  # vLLM/Qwen-style chat template kwargs
-    "chat_template_thinking",      # vLLM models using a thinking boolean
-    "thinking",                    # gateways exposing {"type": "disabled"}
-    None,                           # strict/minimal Chat Completions fallback
+    "chat_template_thinking",  # vLLM models using a thinking boolean
+    "thinking",  # gateways exposing {"type": "disabled"}
+    None,  # strict/minimal Chat Completions fallback
 )
 _TOKEN_FIELDS: tuple[str | None, ...] = (
     "max_tokens",
@@ -224,8 +224,6 @@ def _looks_like_parameter_rejection(status: int, raw: str) -> bool:
     return "not supported" in text and any(name in text for name in optional_names)
 
 
-
-
 def _classify_http_error_kind(status: int, raw: str) -> str | None:
     """Reduce an upstream body to a non-sensitive diagnostic category."""
     text = _compatibility_error_text(raw)
@@ -250,7 +248,8 @@ def _classify_http_error_kind(status: int, raw: str) -> str | None:
             return "model_not_found"
         vision_markers = ("image_url", "image input", "vision", "multimodal")
         if any(marker in text for marker in vision_markers) and any(
-            marker in text for marker in ("not supported", "unsupported", "does not support")
+            marker in text
+            for marker in ("not supported", "unsupported", "does not support")
         ):
             return "vision_unsupported"
         if _looks_like_parameter_rejection(status, raw):
@@ -271,7 +270,7 @@ def _rejected_optional_field(raw: str) -> str | None:
         ("response_format", ("response_format", "response format")),
         ("max_tokens", ("max_tokens", "max tokens")),
         ("temperature", ("temperature",)),
-        ("thinking", ("\"thinking\"", "'thinking'", " thinking ")),
+        ("thinking", ('"thinking"', "'thinking'", " thinking ")),
     )
     for canonical, candidates in aliases:
         if any(candidate in text for candidate in candidates):
@@ -329,7 +328,9 @@ class OpenAICompatibleClient:
         self._base_url = ""
         self.timeout = settings.AI_TIMEOUT
         self._client: httpx.AsyncClient | None = None
-        self._compatibility_profiles: OrderedDict[str, _CompatibilityProfile] = OrderedDict()
+        self._compatibility_profiles: OrderedDict[str, _CompatibilityProfile] = (
+            OrderedDict()
+        )
 
     @property
     def api_key(self) -> str:
@@ -397,7 +398,11 @@ class OpenAICompatibleClient:
             payload["response_format"] = response_format
         if prefer_direct_answer and not explicit_reasoning:
             payload.update(_reasoning_payload(profile.reasoning_control))
-        if effective_max_tokens is not None and not explicit_token_limit and profile.token_field:
+        if (
+            effective_max_tokens is not None
+            and not explicit_token_limit
+            and profile.token_field
+        ):
             payload[profile.token_field] = effective_max_tokens
 
         # Explicit caller extensions win over inferred compatibility fields. The
@@ -502,21 +507,31 @@ class OpenAICompatibleClient:
         """
         effective_key = api_key if api_key is not None else self._api_key
         effective_base_url = base_url if base_url is not None else self._base_url
-        effective_provider = (provider or "openai_compatible").strip() or "openai_compatible"
+        effective_provider = (
+            provider or "openai_compatible"
+        ).strip() or "openai_compatible"
 
         if not effective_key:
-            raise RuntimeError("AI模型 API Key 未配置，请先在后台 AI 设置页面配置模型凭据")
+            raise RuntimeError(
+                "AI模型 API Key 未配置，请先在后台 AI 设置页面配置模型凭据"
+            )
         if not effective_base_url:
-            raise RuntimeError("AI模型 API Base URL 未配置，请先在后台 AI 设置页面配置兼容接口地址")
+            raise RuntimeError(
+                "AI模型 API Base URL 未配置，请先在后台 AI 设置页面配置兼容接口地址"
+            )
         if not model:
-            raise RuntimeError("AI模型标识未配置，请先在后台 AI 设置页面配置 model name")
+            raise RuntimeError(
+                "AI模型标识未配置，请先在后台 AI 设置页面配置 model name"
+            )
 
         try:
             base_url_host = urlparse(effective_base_url).hostname or "-"
         except Exception:
             base_url_host = "-"
 
-        prompt_chars = sum(_message_prompt_chars(m.get("content", "")) for m in messages)
+        prompt_chars = sum(
+            _message_prompt_chars(m.get("content", "")) for m in messages
+        )
         request_timeout = float(timeout if timeout is not None else self.timeout)
         if request_timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -536,14 +551,20 @@ class OpenAICompatibleClient:
             "max_completion_tokens",
             explicit.get("max_tokens", max_tokens),
         )
-        effective_max_tokens = ai_runtime_guard.bounded_max_tokens(requested_output_tokens)
+        effective_max_tokens = ai_runtime_guard.bounded_max_tokens(
+            requested_output_tokens
+        )
         if "max_completion_tokens" in explicit and effective_max_tokens is not None:
             explicit["max_completion_tokens"] = effective_max_tokens
         if "max_tokens" in explicit and effective_max_tokens is not None:
             explicit["max_tokens"] = effective_max_tokens
 
-        temperature_requested = temperature is not None and "temperature" not in explicit
-        response_format_requested = response_format is not None and "response_format" not in explicit
+        temperature_requested = (
+            temperature is not None and "temperature" not in explicit
+        )
+        response_format_requested = (
+            response_format is not None and "response_format" not in explicit
+        )
         token_limit_requested = effective_max_tokens is not None and not any(
             key in explicit for key in ("max_tokens", "max_completion_tokens")
         )
@@ -559,7 +580,9 @@ class OpenAICompatibleClient:
             prompt_chars=prompt_chars,
             max_tokens=effective_max_tokens,
             direct_answer=prefer_direct_answer,
-            compatibility_profile=_profile_label(profile, direct_answer=prefer_direct_answer),
+            compatibility_profile=_profile_label(
+                profile, direct_answer=prefer_direct_answer
+            ),
             connection_probe=connection_probe,
         )
 
@@ -586,7 +609,9 @@ class OpenAICompatibleClient:
                     request_deadline = time.monotonic() + request_timeout
                     while True:
                         if profile in attempted_profiles:
-                            raise RuntimeError("OpenAI-compatible compatibility negotiation loop")
+                            raise RuntimeError(
+                                "OpenAI-compatible compatibility negotiation loop"
+                            )
                         attempted_profiles.add(profile)
 
                         payload = self._build_payload(
@@ -606,7 +631,9 @@ class OpenAICompatibleClient:
                         ).encode("utf-8")
                         remaining_timeout = request_deadline - time.monotonic()
                         if remaining_timeout <= 0:
-                            raise TimeoutError("OpenAI-compatible request budget exhausted")
+                            raise TimeoutError(
+                                "OpenAI-compatible request budget exhausted"
+                            )
                         remote = await asyncio.to_thread(
                             request_remote_bytes,
                             url,
@@ -668,7 +695,9 @@ class OpenAICompatibleClient:
 
                         elapsed = int((time.time() - start) * 1000)
                         retryable_status = (
-                            remote.status == 429 or remote.status == 408 or remote.status >= 500
+                            remote.status == 429
+                            or remote.status == 408
+                            or remote.status >= 500
                         )
                         if not connection_probe:
                             ai_runtime_guard.record_provider_failure(
@@ -702,10 +731,14 @@ class OpenAICompatibleClient:
                 data = json.loads(response_text)
                 choices = data.get("choices")
                 if not isinstance(choices, list) or not choices:
-                    raise RuntimeError("OpenAI-compatible API response missing choices[0]")
+                    raise RuntimeError(
+                        "OpenAI-compatible API response missing choices[0]"
+                    )
                 choice = choices[0]
                 if not isinstance(choice, dict):
-                    raise RuntimeError("OpenAI-compatible API response has invalid choice format")
+                    raise RuntimeError(
+                        "OpenAI-compatible API response has invalid choice format"
+                    )
                 message = choice.get("message")
                 if isinstance(message, dict):
                     content = _normalise_message_content(message.get("content"))
@@ -715,7 +748,9 @@ class OpenAICompatibleClient:
                     # text without changing the request protocol.
                     content = _normalise_message_content(choice.get("text"))
                     if not content:
-                        raise RuntimeError("OpenAI-compatible API response missing choice.message")
+                        raise RuntimeError(
+                            "OpenAI-compatible API response missing choice.message"
+                        )
                 tokens = _tokens_used(data)
                 response_chars = len(content)
                 self._remember_profile(profile_key, profile)
@@ -767,7 +802,9 @@ class OpenAICompatibleClient:
             except Exception as exc:
                 if not provider_outcome_recorded:
                     if not connection_probe:
-                        ai_runtime_guard.record_provider_failure(endpoint_key, retryable=True)
+                        ai_runtime_guard.record_provider_failure(
+                            endpoint_key, retryable=True
+                        )
                         ai_runtime_guard.record_failure()
                     provider_outcome_recorded = True
                 if not isinstance(exc, OpenAICompatibleAPIError):

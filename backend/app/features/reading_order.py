@@ -37,6 +37,7 @@ class ReadingOrderError(Exception):
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ReadingOrderEdge:
     """Directed edge between two regions in reading order.
@@ -44,6 +45,7 @@ class ReadingOrderEdge:
     ``source_region_id`` → ``target_region_id`` with a confidence score
     and human-readable reason.
     """
+
     source_region_id: str
     target_region_id: str
     confidence: float
@@ -53,12 +55,15 @@ class ReadingOrderEdge:
 @dataclass
 class ReadingOrderResult:
     """Result of resolving a single page's reading order."""
+
     ordered_region_ids: list[str]
     edges: list[ReadingOrderEdge]
-    confidence: float              # 0.0–1.0 overall confidence
-    strategy: str                  # "single_column" | "double_column" | "multi_column"
-    risk_flags: list[str]          # e.g. ["column_count_ambiguous", "overlapping_regions"]
-    column_assignments: dict[str, int] = field(default_factory=dict)  # region_id → column index
+    confidence: float  # 0.0–1.0 overall confidence
+    strategy: str  # "single_column" | "double_column" | "multi_column"
+    risk_flags: list[str]  # e.g. ["column_count_ambiguous", "overlapping_regions"]
+    column_assignments: dict[str, int] = field(
+        default_factory=dict
+    )  # region_id → column index
 
     @property
     def has_risks(self) -> bool:
@@ -132,7 +137,9 @@ def _region_width_ratio(region: RegionIR, page_width: float) -> float:
     return (bbox.x1 - bbox.x0) / page_width
 
 
-def _region_area_ratio(region: RegionIR, page_width: float, page_height: float) -> float:
+def _region_area_ratio(
+    region: RegionIR, page_width: float, page_height: float
+) -> float:
     """Get region area as fraction of page area."""
     bbox = _safe_bbox(region)
     if bbox is None or page_width <= 0 or page_height <= 0:
@@ -191,8 +198,9 @@ def _rectangles_overlap(a: BBox, b: BBox) -> bool:
 @dataclass
 class _ColumnCluster:
     """A detected column cluster."""
+
     index: int
-    x_center: float      # mean x-center of regions in this column
+    x_center: float  # mean x-center of regions in this column
     region_ids: list[str]
 
 
@@ -228,7 +236,11 @@ def _detect_columns(
 
     if len(body_regions) < 3:
         # Too few regions to detect columns — single column
-        clusters = [_ColumnCluster(index=0, x_center=0.5, region_ids=[r.region_id for r in body_regions])]
+        clusters = [
+            _ColumnCluster(
+                index=0, x_center=0.5, region_ids=[r.region_id for r in body_regions]
+            )
+        ]
         return clusters, risk_flags
 
     # Compute x-centers for all body regions
@@ -247,7 +259,11 @@ def _detect_columns(
 
     if not col_bins:
         # No clear column structure
-        clusters = [_ColumnCluster(index=0, x_center=0.5, region_ids=[r.region_id for r in body_regions])]
+        clusters = [
+            _ColumnCluster(
+                index=0, x_center=0.5, region_ids=[r.region_id for r in body_regions]
+            )
+        ]
         risk_flags.append("column_count_ambiguous")
         return clusters, risk_flags
 
@@ -391,7 +407,9 @@ class ReadingOrderResolver:
         risk_flags.extend(col_risk_flags)
 
         # Step 3: Assign regions to columns
-        column_assignments = _assign_regions_to_columns(body_regions, columns, page.width)
+        column_assignments = _assign_regions_to_columns(
+            body_regions, columns, page.width
+        )
 
         # Step 4: Check for overlapping regions
         for i in range(len(body_regions)):
@@ -433,12 +451,14 @@ class ReadingOrderResolver:
 
         # Step 8: Build edges
         for i in range(len(ordered_ids) - 1):
-            edges.append(ReadingOrderEdge(
-                source_region_id=ordered_ids[i],
-                target_region_id=ordered_ids[i + 1],
-                confidence=0.9 if n_cols <= 1 else 0.7,
-                reason=f"column_{strategy}_order",
-            ))
+            edges.append(
+                ReadingOrderEdge(
+                    source_region_id=ordered_ids[i],
+                    target_region_id=ordered_ids[i + 1],
+                    confidence=0.9 if n_cols <= 1 else 0.7,
+                    reason=f"column_{strategy}_order",
+                )
+            )
 
         # Append headers/footers/watermarks at the end (excluded from main order)
         # (These don't participate in the reading order proper)
@@ -563,12 +583,14 @@ def shuffle_regions(page: PageIR, seed: int) -> PageIR:
     Uses a deterministic pseudo-random shuffle based on ``seed``.
     """
     import copy
+
     page_copy = copy.deepcopy(page)
     regions = list(page_copy.regions)
     # Deterministic shuffle
     import hashlib
-    regions.sort(key=lambda r: hashlib.sha256(
-        f"{r.region_id}:{seed}".encode()
-    ).hexdigest())
+
+    regions.sort(
+        key=lambda r: hashlib.sha256(f"{r.region_id}:{seed}".encode()).hexdigest()
+    )
     page_copy.regions = regions
     return page_copy

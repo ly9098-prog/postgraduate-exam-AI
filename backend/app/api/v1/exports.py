@@ -105,16 +105,20 @@ async def preview_export_count(
     """Preview how many questions match the given export range + filters."""
     try:
         count = await _preview_count(
-            db, current_user.id,
+            db,
+            current_user.id,
             ExportRangeType(req.range_type),
             req.filters,
             req.selected_ids,
         )
-        logger.info("export_preview_count", extra={
-            "user_id": current_user.id,
-            "range_type": req.range_type,
-            "count": count,
-        })
+        logger.info(
+            "export_preview_count",
+            extra={
+                "user_id": current_user.id,
+                "range_type": req.range_type,
+                "count": count,
+            },
+        )
         return PreviewCountResponse(count=count, range_type=req.range_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -138,7 +142,8 @@ async def create_export(
     # Validate range and count before creating
     range_type = ExportRangeType(req.range_type)
     count = await _preview_count(
-        db, current_user.id,
+        db,
+        current_user.id,
         range_type,
         req.filters,
         req.selected_ids,
@@ -163,14 +168,20 @@ async def create_export(
         select(ExportTask.id)
         .where(
             ExportTask.user_id == current_user.id,
-            ExportTask.status.in_([ExportTaskStatus.PENDING, ExportTaskStatus.PROCESSING]),
+            ExportTask.status.in_(
+                [ExportTaskStatus.PENDING, ExportTaskStatus.PROCESSING]
+            ),
         )
         .limit(_MAX_PER_USER)
         .with_for_update()
     )
     pending_count = await get_user_pending_count(db, current_user.id)
     if pending_count >= _MAX_PER_USER:
-        raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
+        raise_export_error(
+            429,
+            ExportErrorCode.TOO_MANY_CONCURRENT,
+            f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
+        )
 
     # Capture user_id before any DB mutation — needed in the IntegrityError
     # recovery path after db.rollback() (which expires all ORM objects).
@@ -181,11 +192,16 @@ async def create_export(
     # This handles cases where the migration to drop the UNIQUE constraint hasn't
     # been applied (SQLite) or a race condition between idempotency check and INSERT.
     from sqlalchemy.exc import IntegrityError
+
     try:
-        task = await _create_export_task(db, _user_id, {
-            **req.model_dump(),
-            "_idempotency_key": idempotency_key,
-        })
+        task = await _create_export_task(
+            db,
+            _user_id,
+            {
+                **req.model_dump(),
+                "_idempotency_key": idempotency_key,
+            },
+        )
         task.total_count = count
     except IntegrityError:
         await db.rollback()
@@ -199,21 +215,27 @@ async def create_export(
                 return _task_to_response(existing)
         # If we still can't find it, try to return any task with this key
         from app.services.export.service import find_task_by_idempotency_key
+
         existing = await find_task_by_idempotency_key(db, _user_id, idempotency_key)
         if existing is not None:
             return _task_to_response(existing)
         # Last resort: re-raise as a structured error
-        raise_export_error(409, ExportErrorCode.TASK_ALREADY_EXISTS, "相同配置的导出任务已存在")
+        raise_export_error(
+            409, ExportErrorCode.TASK_ALREADY_EXISTS, "相同配置的导出任务已存在"
+        )
     await db.commit()
     await db.refresh(task)
     _wake_local_export_processor()
-    logger.info("export_task_created", extra={
-        "task_id": task.id,
-        "user_id": current_user.id,
-        "format": task.file_format,
-        "range_type": task.range_type,
-        "question_count": task.total_count,
-    })
+    logger.info(
+        "export_task_created",
+        extra={
+            "task_id": task.id,
+            "user_id": current_user.id,
+            "format": task.file_format,
+            "range_type": task.range_type,
+            "question_count": task.total_count,
+        },
+    )
     return _task_to_response(task)
 
 
@@ -227,8 +249,7 @@ async def list_exports(
     """List the current user's export tasks (newest first)."""
     # Count
     count_result = await db.execute(
-        select(ExportTask.id)
-        .where(ExportTask.user_id == current_user.id)
+        select(ExportTask.id).where(ExportTask.user_id == current_user.id)
     )
     total = len(count_result.fetchall())
 
@@ -295,7 +316,9 @@ async def download_export(
         file_path = _resolve_local_path(task.file_key)
         if not file_path or not os.path.exists(file_path):
             logger.error("export_file_missing: task %d key %s", task.id, task.file_key)
-            raise_export_error(500, ExportErrorCode.FILE_NOT_FOUND, "文件不存在，请重新导出")
+            raise_export_error(
+                500, ExportErrorCode.FILE_NOT_FOUND, "文件不存在，请重新导出"
+            )
 
         return DownloadInfoResponse(
             url=None,
@@ -382,7 +405,9 @@ async def delete_export(
     task = await _get_user_task(db, task_id, current_user.id, for_update=True)
 
     if task.status in (ExportTaskStatus.PENDING, ExportTaskStatus.PROCESSING):
-        raise_export_error(400, ExportErrorCode.ACCESS_DENIED, "导出任务仍在处理中，不能删除")
+        raise_export_error(
+            400, ExportErrorCode.ACCESS_DENIED, "导出任务仍在处理中，不能删除"
+        )
 
     # Resolve the snapshot mutation first while everything is still inside the
     # database transaction. ``delete_snapshot`` only stages the DELETE; if the
@@ -402,11 +427,16 @@ async def delete_export(
             if other_refs.scalar_one_or_none() is None:
                 await delete_snapshot(db, task.snapshot_id)
             else:
-                logger.debug("Snapshot %s still referenced by other tasks — skipping delete", task.snapshot_id)
+                logger.debug(
+                    "Snapshot %s still referenced by other tasks — skipping delete",
+                    task.snapshot_id,
+                )
         except Exception as exc:
             await db.rollback()
             logger.warning("Snapshot delete check failed for task %d: %s", task.id, exc)
-            raise_export_error(503, ExportErrorCode.SERVICE_UNAVAILABLE, "导出记录清理失败，请稍后重试")
+            raise_export_error(
+                503, ExportErrorCode.SERVICE_UNAVAILABLE, "导出记录清理失败，请稍后重试"
+            )
 
     # Delete stored file before committing the DB row deletion. A false/exception
     # is a hard stop: rollback keeps both task and snapshot ownership records.
@@ -416,23 +446,33 @@ async def delete_export(
             deleted = await storage.delete(task.file_key)
         except Exception as exc:
             await db.rollback()
-            logger.warning("File delete failed for task %d: %s — DB record retained", task.id, exc)
-            raise_export_error(503, ExportErrorCode.STORAGE_FAILED, "导出文件删除失败，请稍后重试")
+            logger.warning(
+                "File delete failed for task %d: %s — DB record retained", task.id, exc
+            )
+            raise_export_error(
+                503, ExportErrorCode.STORAGE_FAILED, "导出文件删除失败，请稍后重试"
+            )
         if not deleted:
             await db.rollback()
             logger.warning(
                 "File delete returned false for task %d, key %s — DB record retained",
-                task.id, task.file_key,
+                task.id,
+                task.file_key,
             )
-            raise_export_error(503, ExportErrorCode.STORAGE_FAILED, "导出文件删除失败，请稍后重试")
+            raise_export_error(
+                503, ExportErrorCode.STORAGE_FAILED, "导出文件删除失败，请稍后重试"
+            )
 
     await db.delete(task)
     await db.commit()
-    logger.info("export_task_deleted", extra={
-        "task_id": task_id,
-        "user_id": current_user.id,
-        "format": task.file_format,
-    })
+    logger.info(
+        "export_task_deleted",
+        extra={
+            "task_id": task_id,
+            "user_id": current_user.id,
+            "format": task.file_format,
+        },
+    )
     return {"success": True}
 
 
@@ -457,7 +497,8 @@ async def retry_export(
     # Validate range and count before creating
     range_type = ExportRangeType(config["range_type"])
     count = await _preview_count(
-        db, current_user.id,
+        db,
+        current_user.id,
         range_type,
         config.get("filters"),
         config.get("selected_ids"),
@@ -469,7 +510,11 @@ async def retry_export(
 
     pending_count = await get_user_pending_count(db, current_user.id)
     if pending_count >= _MAX_PER_USER:
-        raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
+        raise_export_error(
+            429,
+            ExportErrorCode.TOO_MANY_CONCURRENT,
+            f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
+        )
 
     config = _task_to_config(task)
 
@@ -480,11 +525,14 @@ async def retry_export(
     await db.commit()
     await db.refresh(new_task)
     _wake_local_export_processor()
-    logger.info("export_task_retried", extra={
-        "task_id": new_task.id,
-        "source_task_id": task.id,
-        "user_id": current_user.id,
-    })
+    logger.info(
+        "export_task_retried",
+        extra={
+            "task_id": new_task.id,
+            "source_task_id": task.id,
+            "user_id": current_user.id,
+        },
+    )
     return _task_to_response(new_task)
 
 
@@ -643,9 +691,7 @@ async def export_status_ws(ws: WebSocket):
                 selected_subprotocol = "bearer"
 
         local_env = settings.APP_ENV.lower() in {"development", "local", "test"}
-        if not token and (
-            local_env or settings.ALLOW_LEGACY_WEBSOCKET_QUERY_TOKEN
-        ):
+        if not token and (local_env or settings.ALLOW_LEGACY_WEBSOCKET_QUERY_TOKEN):
             token = ws.query_params.get("token", "")
         if not token:
             await ws.close(code=4001, reason="Missing token")
@@ -709,6 +755,7 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
         # Check if processor is locally available
         try:
             from app.services.export.processor import get_processor_health
+
             ph = get_processor_health()
             if not ph.get("running", False):
                 status_reason = "processor_unavailable"
@@ -718,9 +765,12 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
         # Check pending duration
         from app.core.config import settings as _export_settings
         from app.core.time_utils import utcnow as _utcnow
+
         if task.created_at:
             pending_seconds = (_utcnow() - task.created_at).total_seconds()
-            warning_seconds = getattr(_export_settings, "EXPORT_PENDING_WARNING_SECONDS", 30)
+            warning_seconds = getattr(
+                _export_settings, "EXPORT_PENDING_WARNING_SECONDS", 30
+            )
             if pending_seconds > warning_seconds:
                 if status_reason is None:
                     status_reason = "pending_timeout"
@@ -730,8 +780,7 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
 
     now = utcnow()
     has_file = bool(
-        task.file_key
-        and (task.expires_at is None or task.expires_at > now)
+        task.file_key and (task.expires_at is None or task.expires_at > now)
     )
     response_status = (
         ExportTaskStatus.EXPIRED
@@ -814,7 +863,9 @@ def _build_idempotency_key(user_id: int, req: CreateExportTaskRequest) -> str:
         "space_style": req.space_style,
         "file_format": req.file_format,
     }
-    digest = hashlib.sha256(json.dumps(raw, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    digest = hashlib.sha256(
+        json.dumps(raw, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
     return f"export_{digest[:32]}"
 
 
@@ -828,15 +879,20 @@ async def _find_existing_task(
 
     cutoff = utcnow() - timedelta(seconds=_IDEMPOTENCY_WINDOW_SEC)
     result = await db.execute(
-        select(ExportTask).where(
+        select(ExportTask)
+        .where(
             ExportTask.user_id == user_id,
             ExportTask.idempotency_key == idempotency_key,
             ExportTask.created_at >= cutoff,
-            ExportTask.status.in_([
-                ExportTaskStatus.PENDING,
-                ExportTaskStatus.PROCESSING,
-            ]),
-        ).order_by(ExportTask.created_at.desc()).limit(1)
+            ExportTask.status.in_(
+                [
+                    ExportTaskStatus.PENDING,
+                    ExportTaskStatus.PROCESSING,
+                ]
+            ),
+        )
+        .order_by(ExportTask.created_at.desc())
+        .limit(1)
     )
     return result.scalar_one_or_none()
 
@@ -862,10 +918,13 @@ def _resolve_local_path(file_key: str) -> str | None:
 
 def _sort_dict(d: dict) -> dict:
     """Recursively sort a dict for stable hashing."""
-    return {k: _sort_dict(v) if isinstance(v, dict) else v for k, v in sorted(d.items())}
+    return {
+        k: _sort_dict(v) if isinstance(v, dict) else v for k, v in sorted(d.items())
+    }
 
 
 def _url_encode_filename(name: str) -> str:
     """Encode filename for Content-Disposition header."""
     from urllib.parse import quote
+
     return quote(name, safe="")

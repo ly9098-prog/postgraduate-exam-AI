@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 def _is_book_import_mode(import_mode: Any) -> bool:
     try:
         from app.features.import_mode import ImportMode
+
         if isinstance(import_mode, ImportMode):
             return import_mode == ImportMode.BOOK
     except ImportError:
@@ -55,7 +56,9 @@ def run_normalize_schema_stage(
     result = normalize_questions(raw_questions, matched, source_info)
 
     questions = result.get("questions", [])
-    _log_multi_blank_stage("normalize_schema", questions, source_type=source_type, source_file=source_file)
+    _log_multi_blank_stage(
+        "normalize_schema", questions, source_type=source_type, source_file=source_file
+    )
     errors = result.get("errors", [])
     warnings = result.get("warnings", [])
 
@@ -87,14 +90,18 @@ def run_normalize_schema_stage(
     for q in questions:
         raw_opts = q.get("parsed_options") or q.get("options") or {}
         if isinstance(raw_opts, dict):
-            opt_summary = ", ".join(
-                f"{k}: {str(v)[:60]}" for k, v in sorted(raw_opts.items())
-            ) or "(无选项)"
+            opt_summary = (
+                ", ".join(f"{k}: {str(v)[:60]}" for k, v in sorted(raw_opts.items()))
+                or "(无选项)"
+            )
         elif isinstance(raw_opts, list):
-            opt_summary = ", ".join(
-                f"{o.get('key', '?')}: {str(o.get('text', ''))[:60]}"
-                for o in raw_opts
-            ) or "(无选项)"
+            opt_summary = (
+                ", ".join(
+                    f"{o.get('key', '?')}: {str(o.get('text', ''))[:60]}"
+                    for o in raw_opts
+                )
+                or "(无选项)"
+            )
         else:
             opt_summary = str(raw_opts)[:200]
         logger.info(
@@ -103,8 +110,10 @@ def run_normalize_schema_stage(
             "  └─ 选项: %s\n"
             "  └─ 答案: %s\n"
             "  └─ risk_flags: %s",
-            q.get("number", "?"), q.get("question_type", "?"),
-            q.get("is_valid", True), q.get("confidence_score", 0),
+            q.get("number", "?"),
+            q.get("question_type", "?"),
+            q.get("is_valid", True),
+            q.get("confidence_score", 0),
             str(q.get("stem") or q.get("parsed_content") or "")[:200],
             opt_summary[:200],
             str(q.get("answer") or "❌"),
@@ -129,13 +138,19 @@ def run_batch_validation_stage(questions: list[dict]) -> dict:
     if stats["number_gap_count"] > 0:
         warnings.append(f"{stats['number_gap_count']} question number gaps detected")
     if stats["incomplete_option_count"] > 0:
-        warnings.append(f"{stats['incomplete_option_count']} questions with incomplete options")
+        warnings.append(
+            f"{stats['incomplete_option_count']} questions with incomplete options"
+        )
     if stats["missing_answer_count"] > 0:
         warnings.append(f"{stats['missing_answer_count']} questions missing answers")
     if stats.get("roman_numeral_issue_count", 0) > 0:
-        warnings.append(f"{stats['roman_numeral_issue_count']} Roman numeral sequence issues detected")
+        warnings.append(
+            f"{stats['roman_numeral_issue_count']} Roman numeral sequence issues detected"
+        )
     if stats.get("roman_digit_confusion_count", 0) > 0:
-        warnings.append(f"{stats['roman_digit_confusion_count']} Roman digit confusion issues detected")
+        warnings.append(
+            f"{stats['roman_digit_confusion_count']} Roman digit confusion issues detected"
+        )
 
     return {
         "questions": result["questions"],
@@ -150,7 +165,9 @@ def run_batch_dedup_stage(questions: list[dict]) -> dict:
 
     warnings: list[str] = []
     if result["duplicate_count"] > 0:
-        warnings.append(f"{result['duplicate_count']} batch-internal duplicates flagged")
+        warnings.append(
+            f"{result['duplicate_count']} batch-internal duplicates flagged"
+        )
 
     return {
         "questions": result["questions"],

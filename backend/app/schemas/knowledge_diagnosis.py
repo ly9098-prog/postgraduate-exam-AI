@@ -88,7 +88,9 @@ class KnowledgeDiagnosisResponse(BaseModel):
     period_days: int
     generated_at: str
     primary_recommendation: KnowledgeDiagnosisRecommendation | None = None
-    recommendations: list[KnowledgeDiagnosisRecommendation] = Field(default_factory=list)
+    recommendations: list[KnowledgeDiagnosisRecommendation] = Field(
+        default_factory=list
+    )
     report: KnowledgeDiagnosisReportSummary
     chapters: list[KnowledgeDiagnosisChapterReportItem] = Field(default_factory=list)
     recent_sessions: list[KnowledgeDiagnosisRecentSession] = Field(default_factory=list)

@@ -47,11 +47,25 @@ _LABEL_PATTERNS = [
     # 括号形式：必须带括号
     (re.compile(rf"\s*{_B}\s*(?:题目|题干)\s*{_E}\s*", re.IGNORECASE), "stem"),
     (re.compile(rf"\s*{_B}\s*Question\s*{_E}\s*", re.IGNORECASE), "stem"),
-    (re.compile(rf"\s*{_B}\s*(?:选项|Options?|Choices?)\s*{_E}\s*", re.IGNORECASE), "options"),
-    (re.compile(rf"\s*{_B}\s*(?:(?:参考|正确)?答案|正确答案)\s*{_E}\s*", re.IGNORECASE), "answer"),
+    (
+        re.compile(rf"\s*{_B}\s*(?:选项|Options?|Choices?)\s*{_E}\s*", re.IGNORECASE),
+        "options",
+    ),
+    (
+        re.compile(
+            rf"\s*{_B}\s*(?:(?:参考|正确)?答案|正确答案)\s*{_E}\s*", re.IGNORECASE
+        ),
+        "answer",
+    ),
     (re.compile(rf"\s*{_B}\s*Answer\s*{_E}\s*", re.IGNORECASE), "answer"),
-    (re.compile(rf"\s*{_B}\s*(?:解析|解答|讲解|分析)\s*{_E}\s*", re.IGNORECASE), "analysis"),
-    (re.compile(rf"\s*{_B}\s*(?:Analysis|Explanation)\s*{_E}\s*", re.IGNORECASE), "analysis"),
+    (
+        re.compile(rf"\s*{_B}\s*(?:解析|解答|讲解|分析)\s*{_E}\s*", re.IGNORECASE),
+        "analysis",
+    ),
+    (
+        re.compile(rf"\s*{_B}\s*(?:Analysis|Explanation)\s*{_E}\s*", re.IGNORECASE),
+        "analysis",
+    ),
 ]
 
 # 纯标签行（用于 heuristic 模式，兼容有括号和无括号两种形式）
@@ -127,7 +141,12 @@ def _normalize_text(text: str) -> str:
         # 不主动剥离 \mathrm / \mathtt / \textbf 等命令。它们可能属于用户
         # 明确输入的合法 LaTeX，文本结构化阶段只做机械格式清理，不改写公式内容。
         # "第X题" 独立标题行 → 批量分隔标记，让 _split_batch 能正确分题
-        segment = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "\n===\n", segment, flags=re.MULTILINE)
+        segment = re.sub(
+            r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$",
+            "\n===\n",
+            segment,
+            flags=re.MULTILINE,
+        )
         # 仅压缩正文连续空行；代码块内部换行和空格逐字保留。
         segment = re.sub(r"\n{3,}", "\n\n", segment)
         chunks[index] = segment
@@ -209,11 +228,15 @@ def _break_inline_text(text: str) -> str:
     通过插入换行符恢复基本结构。
     """
     # 去除内联 **第X题** / 第X题： 标题
-    text = re.sub(r"\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*[：:]?\s*", "", text)
+    text = re.sub(
+        r"\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*[：:]?\s*", "", text
+    )
     # 在选项标记前插入换行（A.xxx B.xxx 等，要求选项后跟空格以确保是真实选项）
     text = re.sub(r"(?<=[^\s])\s*(?=[A-Da-d]\s*[.．、:：)）]\s)", "\n", text)
     # 在子题标记（如 \(①\)、\(②\)）前插入换行，确保其独立成行后被跳过
-    text = re.sub(r"\s+(?=[\(\\]?\s*[①②③④⑤⑥⑦⑧⑨⑩]\s*\)?\s*[A-Da-d]\s*[.．、:：)）])", "\n", text)
+    text = re.sub(
+        r"\s+(?=[\(\\]?\s*[①②③④⑤⑥⑦⑧⑨⑩]\s*\)?\s*[A-Da-d]\s*[.．、:：)）])", "\n", text
+    )
     return text
 
 
@@ -243,7 +266,9 @@ def _parse_labeled_block(text: str) -> dict[str, Any]:
         next_start = positions[i + 1][0] if i + 1 < len(positions) else len(text)
         content = text[end:next_start].strip()
         content = _clean_bracket_residue(content)
-        result[label_type + "_text" if label_type == "options" else label_type] = content
+        result[label_type + "_text" if label_type == "options" else label_type] = (
+            content
+        )
 
     return result
 
@@ -343,8 +368,7 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
 
     # 检测内联选项：任何行包含多个选项标记（如 "A. xxx B. xxx"）
     has_inline_options = any(
-        len(_INLINE_OPTION_SPLIT_RE.split(ln.strip())) > 1
-        for ln in lines if ln.strip()
+        len(_INLINE_OPTION_SPLIT_RE.split(ln.strip())) > 1 for ln in lines if ln.strip()
     )
     if has_inline_options or len(lines) <= 2:
         text = _break_inline_text(text)
@@ -391,19 +415,25 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
                 section = "options"
             elif re.search(r"答案|Answer", stripped, re.IGNORECASE):
                 section = "answer"
-            elif re.search(r"解析|解答|分析|Analysis|Explanation", stripped, re.IGNORECASE):
+            elif re.search(
+                r"解析|解答|分析|Analysis|Explanation", stripped, re.IGNORECASE
+            ):
                 section = "analysis"
             continue
 
         # 行首标签 + 内容（如 "题目：xxx" / "答案：C"）
         if section in ("stem",):
-            stem_label = re.match(r"^(?:题目|题干|Question)\s*[：:]\s*(.+)", stripped, re.IGNORECASE)
+            stem_label = re.match(
+                r"^(?:题目|题干|Question)\s*[：:]\s*(.+)", stripped, re.IGNORECASE
+            )
             if stem_label:
                 stem_lines = [stem_label.group(1).strip()]
                 continue
 
         if section in ("stem", "options"):
-            opt_label = re.match(r"^(?:选项|Options?|Choices?)\s*[：:]\s*(.+)", stripped, re.IGNORECASE)
+            opt_label = re.match(
+                r"^(?:选项|Options?|Choices?)\s*[：:]\s*(.+)", stripped, re.IGNORECASE
+            )
             if opt_label:
                 section = "options"
                 # 可能是内联选项，尝试解析
@@ -414,7 +444,9 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
 
         # 答案标签 + 内容同行
         if section in ("stem", "options"):
-            ans_label = re.match(r"^(?:答案|正确答案|Answer)\s*[：:]\s*(.+)", stripped, re.IGNORECASE)
+            ans_label = re.match(
+                r"^(?:答案|正确答案|Answer)\s*[：:]\s*(.+)", stripped, re.IGNORECASE
+            )
             if ans_label:
                 answer_lines.append(ans_label.group(1).strip())
                 section = "answer"
@@ -422,7 +454,11 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
 
         # 解析标签 + 内容同行
         if section in ("stem", "options", "answer"):
-            ana_label = re.match(r"^(?:解析|解答|分析|Explanation)\s*[：:]\s*(.+)", stripped, re.IGNORECASE)
+            ana_label = re.match(
+                r"^(?:解析|解答|分析|Explanation)\s*[：:]\s*(.+)",
+                stripped,
+                re.IGNORECASE,
+            )
             if ana_label:
                 analysis_lines.append(ana_label.group(1).strip())
                 section = "analysis"
@@ -433,7 +469,9 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
         if not stripped_for_opt:
             continue
         if section in ("stem", "options"):
-            opt_m = _OPTION_LINE_RE.match(stripped_for_opt) or _OPTION_OCR_RE.match(stripped_for_opt)
+            opt_m = _OPTION_LINE_RE.match(stripped_for_opt) or _OPTION_OCR_RE.match(
+                stripped_for_opt
+            )
             if opt_m:
                 opt_key = opt_m.group(1).upper()
                 opt_val = opt_m.group(2).strip()
@@ -464,7 +502,9 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
                         clean_val = m2.group(1).strip()
                         ans_letter = m2.group(2).upper()
                         ana_text = m2.group(3).strip()
-                        if len(clean_val) > 3:  # 选项值必须足够长，避免 "选 A 或 B" 误匹配
+                        if (
+                            len(clean_val) > 3
+                        ):  # 选项值必须足够长，避免 "选 A 或 B" 误匹配
                             option_lines.append(f"{opt_key}. {clean_val}")
                             option_seen = True
                             section = "options"
@@ -504,7 +544,9 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
 
         # 数字/文本答案（选项后未识别的短行 → 可能是答案）
         if section in ("stem", "options") and option_seen and not answer_lines:
-            if len(stripped) <= 40 and not re.match(r"^\s*[A-Da-d]\s*[.．、:：)）]", stripped):
+            if len(stripped) <= 40 and not re.match(
+                r"^\s*[A-Da-d]\s*[.．、:：)）]", stripped
+            ):
                 answer_lines.append(stripped)
                 section = "answer"
                 continue
@@ -519,7 +561,9 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
             # 答案通常为短文本（1-2行），后续长文本/分析特征 → 自动切换为解析
             if answer_lines and (
                 len(stripped) > 60
-                or re.search(r"[→=]|故[答案为]|因此|所以|故选|综上|根据|由.*可知", stripped)
+                or re.search(
+                    r"[→=]|故[答案为]|因此|所以|故选|综上|根据|由.*可知", stripped
+                )
             ):
                 analysis_lines.append(stripped)
                 section = "analysis"
@@ -528,7 +572,9 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
         elif section == "analysis":
             analysis_lines.append(stripped)
 
-    result["stem"] = normalize_text_import_math(_clean_stem_number("\n".join(stem_lines).strip()))
+    result["stem"] = normalize_text_import_math(
+        _clean_stem_number("\n".join(stem_lines).strip())
+    )
     result["options_text"] = "\n".join(option_lines).strip()
     result["answer"] = "\n".join(answer_lines).strip()
     result["analysis"] = normalize_text_import_math("\n".join(analysis_lines).strip())
@@ -584,7 +630,9 @@ def _detect_question_type(options: list[dict], answer: str | list[str] | bool) -
 
     # 多选题（字符串形式，如 "ABCD" 或 "A,C,D"）
     if isinstance(answer, str) and len(answer) > 1:
-        parts = [p.strip().upper() for p in re.split(r"[,，、\s]+", answer) if p.strip()]
+        parts = [
+            p.strip().upper() for p in re.split(r"[,，、\s]+", answer) if p.strip()
+        ]
         if len(parts) > 1 and all(re.fullmatch(r"[A-D]", p) for p in parts):
             return "multiple_choice"
 
@@ -619,7 +667,9 @@ def _normalize_answer_text(answer_str: str) -> str | list[str] | bool:
 
     # 多选题（有分隔符，如 A,C,D 或 A B D）
     if len(cleaned) > 1:
-        parts = [p.strip().upper() for p in re.split(r"[,，、\s]+", cleaned) if p.strip()]
+        parts = [
+            p.strip().upper() for p in re.split(r"[,，、\s]+", cleaned) if p.strip()
+        ]
         if len(parts) > 1 and all(re.fullmatch(r"[A-D]", p) for p in parts):
             return sorted(set(parts))
 
@@ -765,14 +815,17 @@ def _merge_llm_into_raw(raw: dict[str, Any], llm_out: dict[str, Any]) -> dict[st
             llm_answer if isinstance(llm_answer, str) else ",".join(llm_answer)
         )
 
-    llm_analysis = (llm_out.get("analysis") or "").strip() if isinstance(llm_out.get("analysis"), str) else ""
+    llm_analysis = (
+        (llm_out.get("analysis") or "").strip()
+        if isinstance(llm_out.get("analysis"), str)
+        else ""
+    )
     if llm_analysis and not (merged.get("analysis") or "").strip():
         merged["analysis"] = normalize_text_import_math(llm_analysis)
 
     llm_qt = llm_out.get("question_type")
     if llm_qt and (
-        not merged.get("question_type")
-        or merged.get("question_type") == "subjective"
+        not merged.get("question_type") or merged.get("question_type") == "subjective"
     ):
         merged["question_type"] = llm_qt
 
@@ -791,7 +844,11 @@ def _finalize_questions(
     """走 pipeline 标准化 + 校验，返回 (questions, valid_count)。"""
     out: list[dict] = []
     for raw in raw_questions:
-        q_subject_code = subject_code or _guess_subject(raw["stem"] + " " + (raw.get("analysis") or "")) or ""
+        q_subject_code = (
+            subject_code
+            or _guess_subject(raw["stem"] + " " + (raw.get("analysis") or ""))
+            or ""
+        )
 
         pipeline_input = {
             "subject": q_subject_code,
@@ -817,30 +874,34 @@ def _finalize_questions(
         )
 
         normalized = result["normalized"]
-        out.append({
-            "subject": normalized.get("subject"),
-            "subject_id": normalized.get("subject_id"),
-            "question_type": normalized.get("question_type"),
-            "stem": normalized.get("stem"),
-            "options": normalized.get("options"),
-            "answer": normalized.get("answer"),
-            "analysis": normalized.get("analysis"),
-            "knowledge_points": normalized.get("knowledge_points"),
-            "difficulty": normalized.get("difficulty"),
-            "is_valid": result["is_valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"] + raw.get("warnings", []),
-            "question_hash": normalized.get("question_hash"),
-            "stem_hash": normalized.get("stem_hash"),
-            "block_index": raw.get("block_index", 0),
-            "detection_method": raw.get("detection_method", "unknown"),
-        })
+        out.append(
+            {
+                "subject": normalized.get("subject"),
+                "subject_id": normalized.get("subject_id"),
+                "question_type": normalized.get("question_type"),
+                "stem": normalized.get("stem"),
+                "options": normalized.get("options"),
+                "answer": normalized.get("answer"),
+                "analysis": normalized.get("analysis"),
+                "knowledge_points": normalized.get("knowledge_points"),
+                "difficulty": normalized.get("difficulty"),
+                "is_valid": result["is_valid"],
+                "errors": result["errors"],
+                "warnings": result["warnings"] + raw.get("warnings", []),
+                "question_hash": normalized.get("question_hash"),
+                "stem_hash": normalized.get("stem_hash"),
+                "block_index": raw.get("block_index", 0),
+                "detection_method": raw.get("detection_method", "unknown"),
+            }
+        )
 
     valid_count = sum(1 for q in out if q["is_valid"])
     return out, valid_count
 
 
-def parse_text_questions(text: str, subject: str, subject_id: int | None = None) -> dict[str, Any]:
+def parse_text_questions(
+    text: str, subject: str, subject_id: int | None = None
+) -> dict[str, Any]:
     """解析用户粘贴的文本，返回结构化题目列表（仅规则解析）。
 
     保留同步入口以兼容现有调用方与测试。需要 LLM 兜底请使用
@@ -908,11 +969,13 @@ async def parse_text_questions_async(
         }
         prepared.append((q_index, block, raw, should_call, reason, rule_hint))
         if should_call:
-            llm_candidates.append({
-                "index": q_index,
-                "text": block,
-                "rule_hint": rule_hint,
-            })
+            llm_candidates.append(
+                {
+                    "index": q_index,
+                    "text": block,
+                    "rule_hint": rule_hint,
+                }
+            )
 
     llm_outputs: dict[int, dict[str, Any]] = {}
     if len(llm_candidates) == 1:
@@ -943,7 +1006,9 @@ async def parse_text_questions_async(
                     )
             else:
                 raw["llm_reason"] = reason
-                raw["detection_method"] = raw.get("detection_method", "heuristic") + "_llm_failed"
+                raw["detection_method"] = (
+                    raw.get("detection_method", "heuristic") + "_llm_failed"
+                )
 
         raw_questions.append(raw)
         for warning in raw.get("warnings", []):

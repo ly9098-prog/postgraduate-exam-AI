@@ -153,11 +153,11 @@ def _fix_ns_prefix(xml_str: str) -> str:
     prefix registration doesn't take effect. This function normalises them.
     """
     import re as _re
+
     # Replace ``nsX:`` → ``m:`` for any namespace prefix
-    result = _re.sub(r'\bns\d+:', 'm:', xml_str)
+    result = _re.sub(r"\bns\d+:", "m:", xml_str)
     # Also handle default namespace xmlns="..."
     return result
-
 
 
 def _convert_element(mathml_elem, omml_parent: etree.Element, depth: int) -> None:
@@ -172,8 +172,14 @@ def _convert_element(mathml_elem, omml_parent: etree.Element, depth: int) -> Non
         logger.warning("OMML conversion max recursion depth reached")
         return
 
-    tag = etree.QName(mathml_elem).localname if mathml_elem.tag is etree.Comment else (
-        etree.QName(mathml_elem).localname if isinstance(mathml_elem.tag, str) else ""
+    tag = (
+        etree.QName(mathml_elem).localname
+        if mathml_elem.tag is etree.Comment
+        else (
+            etree.QName(mathml_elem).localname
+            if isinstance(mathml_elem.tag, str)
+            else ""
+        )
     )
 
     # Handle text content in the math element root
@@ -381,7 +387,7 @@ def insert_omml_into_paragraph(paragraph, omml_bytes: bytes) -> None:
         omml_str = str(omml_bytes)
 
     # Ensure namespace prefix is ``m:`` — Word requires this
-    omml_str = _re.sub(r'\bns\d+:', 'm:', omml_str)
+    omml_str = _re.sub(r"\bns\d+:", "m:", omml_str)
 
     try:
         # Inject the OMML as a namespace-normalised XML fragment
@@ -394,6 +400,7 @@ def insert_omml_into_paragraph(paragraph, omml_bytes: bytes) -> None:
     # Fallback: lxml with namespace map
     try:
         import lxml.etree as _etree
+
         parser = _etree.XMLParser(remove_blank_text=True)
         omml_elem = _etree.fromstring(omml_str.encode("utf-8"), parser)
         p_elem.append(omml_elem)
@@ -468,6 +475,7 @@ def render_latex_as_omml_or_fallback(
     run = paragraph.add_run(f" [公式] {latex} ")
     run.font.size = _pt(8)
     from app.services.export.docx_exporter import _BODY_FONT, DocxExporter
+
     run.font.name = _BODY_FONT
     DocxExporter._set_east_asian_font(run, _BODY_FONT)
     return False
@@ -476,4 +484,5 @@ def render_latex_as_omml_or_fallback(
 def _pt(val: float) -> Any:
     """Return a Pt value compatible with python-docx."""
     from docx.shared import Pt as _Pt
+
     return _Pt(val)

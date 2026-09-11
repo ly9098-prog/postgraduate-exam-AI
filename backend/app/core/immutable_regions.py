@@ -33,6 +33,7 @@ class Region:
         hash: content 的 SHA-256 十六进制摘要。
         fence_open: 围栏起始标记（code 类型），如 "```text"、"```python"。
     """
+
     id: str
     type: RegionType
     content: str
@@ -40,7 +41,9 @@ class Region:
     fence_open: str = ""
 
     @classmethod
-    def create(cls, id: str, type: RegionType, content: str, fence_open: str = "") -> Region:
+    def create(
+        cls, id: str, type: RegionType, content: str, fence_open: str = ""
+    ) -> Region:
         h = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return cls(id=id, type=type, content=content, hash=h, fence_open=fence_open)
 
@@ -62,9 +65,7 @@ class Region:
         code 区域禁止调用此方法（跑出 RuntimeError）。
         """
         if self.is_code:
-            raise RuntimeError(
-                f"MUTATION BLOCKED: cannot modify code region {self.id}"
-            )
+            raise RuntimeError(f"MUTATION BLOCKED: cannot modify code region {self.id}")
         return Region.create(self.id, self.type, new_content)
 
 
@@ -99,9 +100,14 @@ class TextRegions:
                 continue
             if part.startswith("```"):
                 fence_open, content = _extract_fence_info(part)
-                regions.append(Region.create(
-                    f"code_{len(regions)}", "code", content, fence_open=fence_open,
-                ))
+                regions.append(
+                    Region.create(
+                        f"code_{len(regions)}",
+                        "code",
+                        content,
+                        fence_open=fence_open,
+                    )
+                )
             else:
                 regions.append(Region.create(f"text_{len(regions)}", "text", part))
 
@@ -117,6 +123,7 @@ class TextRegions:
             return cls([])
 
         from app.features.code_detector import wrap_code_fences
+
         fenced = wrap_code_fences(text, trace_id=trace_id)
         return cls.from_fenced_text(fenced)
 

@@ -119,6 +119,7 @@ def validate_transition(
 @dataclass
 class _TaskSlot:
     """Tracks a claimed task for concurrency accounting and tracing."""
+
     task_id: int
     user_id: int
     file_format: str
@@ -204,10 +205,15 @@ async def run_export_processor():
 
     logger.info(
         "Export processor started (poll=%ds, timeout=%ds, max_concurrent=%d, pdf_c=%d, docx_c=%d)",
-        _POLL_INTERVAL_SEC, _TASK_TIMEOUT_SEC, _MAX_CONCURRENT,
-        _PDF_CONCURRENCY, _DOCX_CONCURRENCY,
+        _POLL_INTERVAL_SEC,
+        _TASK_TIMEOUT_SEC,
+        _MAX_CONCURRENT,
+        _PDF_CONCURRENCY,
+        _DOCX_CONCURRENCY,
     )
-    logger.info("export_processor_started role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
+    logger.info(
+        "export_processor_started role=%s", getattr(settings, "PROCESS_ROLE", "unknown")
+    )
 
     _processor_started_at = time.time()
     _processor_heartbeat_at = _processor_started_at
@@ -227,7 +233,9 @@ async def run_export_processor():
                     break
                 logger.info(
                     "Claimed task %d for user %d (%s)",
-                    slot.task_id, slot.user_id, slot.file_format,
+                    slot.task_id,
+                    slot.user_id,
+                    slot.file_format,
                 )
                 _spawn_worker(slot)
         except asyncio.CancelledError:
@@ -247,7 +255,9 @@ async def run_export_processor():
             # different process and therefore cannot signal this in-process event.
             pass
 
-    logger.info("export_processor_stopped role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
+    logger.info(
+        "export_processor_stopped role=%s", getattr(settings, "PROCESS_ROLE", "unknown")
+    )
 
     await _drain_worker_tasks()
     _processor_wakeup = None
@@ -273,7 +283,10 @@ async def _recover_stale_tasks():
             select(ExportTask).where(
                 ExportTask.status == ExportTaskStatus.PROCESSING,
                 ExportTask.processing_started_at.isnot(None),
-                sa.func.coalesce(ExportTask.heartbeat_at, ExportTask.processing_started_at) < cutoff,
+                sa.func.coalesce(
+                    ExportTask.heartbeat_at, ExportTask.processing_started_at
+                )
+                < cutoff,
             )
         )
         stale = result.scalars().all()
@@ -281,7 +294,9 @@ async def _recover_stale_tasks():
         for task in stale:
             logger.warning(
                 "Reclaiming stale task %d (started_at=%s, heartbeat=%s)",
-                task.id, task.processing_started_at, task.heartbeat_at,
+                task.id,
+                task.processing_started_at,
+                task.heartbeat_at,
             )
             target = (
                 ExportTaskStatus.COMPLETED
@@ -305,10 +320,12 @@ async def get_user_pending_count(db, user_id: int) -> int:
     result = await db.execute(
         select(sa.func.count(ExportTask.id)).where(
             ExportTask.user_id == user_id,
-            ExportTask.status.in_([
-                ExportTaskStatus.PENDING,
-                ExportTaskStatus.PROCESSING,
-            ]),
+            ExportTask.status.in_(
+                [
+                    ExportTaskStatus.PENDING,
+                    ExportTaskStatus.PROCESSING,
+                ]
+            ),
         )
     )
     return result.scalar() or 0
@@ -389,7 +406,12 @@ async def _try_claim_task() -> _TaskSlot | None:
                 processing_started_at=now,
                 heartbeat_at=now,
             )
-            .returning(ExportTask.id, ExportTask.user_id, ExportTask.file_format, ExportTask.filters)
+            .returning(
+                ExportTask.id,
+                ExportTask.user_id,
+                ExportTask.file_format,
+                ExportTask.filters,
+            )
         )
         claim_row = result.one_or_none()
         if claim_row is None:
@@ -482,7 +504,9 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
                         await hb_db.commit()
                         logger.debug("Heartbeat committed for task %d", slot.task_id)
             except Exception as e:
-                logger.warning("Heartbeat refresh failed for task %d: %s", slot.task_id, e)
+                logger.warning(
+                    "Heartbeat refresh failed for task %d: %s", slot.task_id, e
+                )
 
     heartbeat_task = asyncio.create_task(_refresh_heartbeat())
 
@@ -492,14 +516,18 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
                 exporter = None
                 if slot.file_format == "pdf":
                     from app.services.export.pdf_exporter import PdfExporter
+
                     exporter = PdfExporter()
                 elif slot.file_format == "docx":
                     from app.services.export.docx_exporter import DocxExporter
+
                     exporter = DocxExporter()
                 else:
                     raise ValueError(f"ERR_UNKNOWN_FORMAT:{slot.file_format}")
 
-                result = await db.execute(select(ExportTask).where(ExportTask.id == slot.task_id))
+                result = await db.execute(
+                    select(ExportTask).where(ExportTask.id == slot.task_id)
+                )
                 t = result.scalar_one_or_none()
                 if t is None:
                     raise ValueError(f"ERR_TASK_NOT_FOUND:{slot.task_id}")
@@ -507,26 +535,36 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
                 updated = await process_task(db, slot.task_id, exporter, token=token)
 
                 if updated.status == ExportTaskStatus.COMPLETED:
-                    logger.info("export_task_completed", extra={
-                        "task_id": slot.task_id,
-                        "user_id": slot.user_id,
-                        "format": updated.file_format,
-                        "question_count": updated.total_count,
-                        "success_count": updated.success_count,
-                        "skip_count": updated.skip_count,
-                        "file_size": updated.file_size,
-                        "duration": (
-                            (updated.completed_at - updated.processing_started_at).total_seconds()
-                            if updated.completed_at and updated.processing_started_at else None
-                        ),
-                    })
+                    logger.info(
+                        "export_task_completed",
+                        extra={
+                            "task_id": slot.task_id,
+                            "user_id": slot.user_id,
+                            "format": updated.file_format,
+                            "question_count": updated.total_count,
+                            "success_count": updated.success_count,
+                            "skip_count": updated.skip_count,
+                            "file_size": updated.file_size,
+                            "duration": (
+                                (
+                                    updated.completed_at - updated.processing_started_at
+                                ).total_seconds()
+                                if updated.completed_at
+                                and updated.processing_started_at
+                                else None
+                            ),
+                        },
+                    )
                 else:
-                    logger.info("export_task_failed", extra={
-                        "task_id": slot.task_id,
-                        "user_id": slot.user_id,
-                        "status": updated.status,
-                        "error_message": updated.error_message,
-                    })
+                    logger.info(
+                        "export_task_failed",
+                        extra={
+                            "task_id": slot.task_id,
+                            "user_id": slot.user_id,
+                            "status": updated.status,
+                            "error_message": updated.error_message,
+                        },
+                    )
 
                 _heartbeat_stop = True
                 heartbeat_task.cancel()
@@ -545,13 +583,18 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
         except asyncio.CancelledError:
             pass
         token.invalidate()
-        logger.warning("export_task_timed_out", extra={
-            "task_id": slot.task_id,
-            "timeout_sec": _TASK_TIMEOUT_SEC,
-        })
+        logger.warning(
+            "export_task_timed_out",
+            extra={
+                "task_id": slot.task_id,
+                "timeout_sec": _TASK_TIMEOUT_SEC,
+            },
+        )
         try:
             async with async_session() as db:
-                result = await db.execute(select(ExportTask).where(ExportTask.id == slot.task_id))
+                result = await db.execute(
+                    select(ExportTask).where(ExportTask.id == slot.task_id)
+                )
                 t = result.scalar_one_or_none()
                 if t and t.status == ExportTaskStatus.PROCESSING:
                     target = (
@@ -577,7 +620,9 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
         logger.exception("Task %d crashed: %s", slot.task_id, e)
         try:
             async with async_session() as db:
-                result = await db.execute(select(ExportTask).where(ExportTask.id == slot.task_id))
+                result = await db.execute(
+                    select(ExportTask).where(ExportTask.id == slot.task_id)
+                )
                 t = result.scalar_one_or_none()
                 if t and t.status == ExportTaskStatus.PROCESSING:
                     validate_transition(t.status, ExportTaskStatus.FAILED, slot.task_id)
@@ -655,25 +700,32 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
 
         from app.core.log_context import get_log_context
 
-        event = build_status_event({
-            "id": task.id,
-            "user_id": task.user_id,
-            "trace_id": get_log_context().get("trace_id"),
-            "status": task.status,
-            "file_format": task.file_format,
-            "success_count": task.success_count,
-            "skip_count": task.skip_count,
-            "error_message": task.error_message,
-            "completed_at": task.completed_at,
-            "expires_at": task.expires_at,
-            "updated_at": task.updated_at,
-            "version": getattr(task, "version", unix_timestamp(task.updated_at) if task.updated_at else 0),
-        })
+        event = build_status_event(
+            {
+                "id": task.id,
+                "user_id": task.user_id,
+                "trace_id": get_log_context().get("trace_id"),
+                "status": task.status,
+                "file_format": task.file_format,
+                "success_count": task.success_count,
+                "skip_count": task.skip_count,
+                "error_message": task.error_message,
+                "completed_at": task.completed_at,
+                "expires_at": task.expires_at,
+                "updated_at": task.updated_at,
+                "version": getattr(
+                    task,
+                    "version",
+                    unix_timestamp(task.updated_at) if task.updated_at else 0,
+                ),
+            }
+        )
 
         # Try Redis first for cross-process delivery
         redis_published = False
         try:
             from app.core.cache import cache
+
             if cache.is_enabled:
                 await publish_via_redis(event, task.user_id)
                 redis_published = True
@@ -686,7 +738,9 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
 
         logger.info(
             "export_status_published task_id=%d user_id=%d status=%s transport=%s",
-            task_id, task.user_id, task.status,
+            task_id,
+            task.user_id,
+            task.status,
             "redis" if redis_published else "local",
         )
     except Exception:

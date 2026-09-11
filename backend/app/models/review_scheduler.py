@@ -22,12 +22,20 @@ from app.core.database import Base
 class ReviewSchedule(Base):
     __tablename__ = "review_schedules"
     __table_args__ = (
-        UniqueConstraint("user_id", "question_id", name="uq_review_schedules_user_question"),
+        UniqueConstraint(
+            "user_id", "question_id", name="uq_review_schedules_user_question"
+        ),
         Index("ix_review_schedules_user_subject_id", "user_id", "subject_id"),
         Index("ix_review_schedules_user_version", "user_id", "question_version_id"),
-        CheckConstraint("occurrence_seq >= 0", name="ck_review_schedules_occurrence_nonnegative"),
-        CheckConstraint("interval >= 0", name="ck_review_schedules_interval_nonnegative"),
-        CheckConstraint("repetitions >= 0", name="ck_review_schedules_repetitions_nonnegative"),
+        CheckConstraint(
+            "occurrence_seq >= 0", name="ck_review_schedules_occurrence_nonnegative"
+        ),
+        CheckConstraint(
+            "interval >= 0", name="ck_review_schedules_interval_nonnegative"
+        ),
+        CheckConstraint(
+            "repetitions >= 0", name="ck_review_schedules_repetitions_nonnegative"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -46,7 +54,9 @@ class ReviewSchedule(Base):
     subject_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
     )
-    subject_ref = relationship("Subject", back_populates="review_schedules", lazy="noload")
+    subject_ref = relationship(
+        "Subject", back_populates="review_schedules", lazy="noload"
+    )
     interval: Mapped[int] = mapped_column(Integer, default=0)
     ease_factor: Mapped[float] = mapped_column(Float, default=2.5)
     repetitions: Mapped[int] = mapped_column(Integer, default=0)
@@ -67,10 +77,20 @@ class ReviewRecord(Base):
     __tablename__ = "review_records"
     __table_args__ = (
         Index("ix_review_records_user_version", "user_id", "question_version_id"),
-        UniqueConstraint("schedule_id", "occurrence_seq", name="uq_review_records_schedule_occurrence"),
-        UniqueConstraint("user_id", "request_id", name="uq_review_records_user_request"),
-        CheckConstraint("occurrence_seq >= 0", name="ck_review_records_occurrence_nonnegative"),
-        CheckConstraint("rating >= 0 AND rating <= 5", name="ck_review_records_rating_range"),
+        UniqueConstraint(
+            "schedule_id",
+            "occurrence_seq",
+            name="uq_review_records_schedule_occurrence",
+        ),
+        UniqueConstraint(
+            "user_id", "request_id", name="uq_review_records_user_request"
+        ),
+        CheckConstraint(
+            "occurrence_seq >= 0", name="ck_review_records_occurrence_nonnegative"
+        ),
+        CheckConstraint(
+            "rating >= 0 AND rating <= 5", name="ck_review_records_rating_range"
+        ),
         CheckConstraint(
             "mastery_percent IS NULL OR (mastery_percent >= 0 AND mastery_percent <= 100)",
             name="ck_review_records_mastery_percent_range",

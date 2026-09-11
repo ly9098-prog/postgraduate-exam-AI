@@ -1,4 +1,5 @@
 from app.schemas.base import BaseModel
+
 """Phase 4 — 推荐策略配置 + A/B 实验 + 指标 + 质量报告 Schema。"""
 from datetime import date as date_cls
 from datetime import datetime
@@ -12,7 +13,9 @@ class StrategyConfigCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     display_name: str = Field("", max_length=128)
     description: str | None = Field(None, max_length=512)
-    scene: str = Field(..., pattern="^(practice_smart|similar|knowledge_path|wrong_variant)$")
+    scene: str = Field(
+        ..., pattern="^(practice_smart|similar|knowledge_path|wrong_variant)$"
+    )
     is_active: bool = True
     is_default: bool = False
     weight_vector_similarity: float = Field(0.5, ge=0.0, le=1.0)
@@ -93,20 +96,29 @@ class ExperimentCreate(BaseModel):
         if any(not strategy for strategy in strategies):
             raise ValueError("实验分组 strategy 不能为空")
         allowed_strategies = {
-            "weakness_vector", "scored", "hybrid_graph", "smart_scored",
-            "path", "knowledge_path",
+            "weakness_vector",
+            "scored",
+            "hybrid_graph",
+            "smart_scored",
+            "path",
+            "knowledge_path",
         }
         invalid_strategies = sorted(set(strategies) - allowed_strategies)
         if invalid_strategies:
             raise ValueError(
-                "practice_smart 实验存在未接入的 strategy: " + ", ".join(invalid_strategies)
+                "practice_smart 实验存在未接入的 strategy: "
+                + ", ".join(invalid_strategies)
             )
 
         ratio_sum = sum(float(variant.ratio) for variant in self.variants)
         if abs(ratio_sum - 1.0) > 1e-6:
             raise ValueError(f"实验分组 ratio 总和必须为 1，当前为 {ratio_sum:.6f}")
 
-        if self.start_at is not None and self.end_at is not None and self.start_at >= self.end_at:
+        if (
+            self.start_at is not None
+            and self.end_at is not None
+            and self.start_at >= self.end_at
+        ):
             raise ValueError("end_at 必须晚于 start_at")
         return self
 
@@ -193,6 +205,7 @@ class KnowledgeQualityReportResponse(BaseModel):
     isolated_knowledge_points: list[dict]
     low_question_count_points: list[dict]
     cycles: list[list[int]]
+
 
 # ── Phase 4.5: 种子策略 ──
 

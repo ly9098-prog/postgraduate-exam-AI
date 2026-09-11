@@ -48,7 +48,8 @@ def _count_pending(
     from app.core.secret_crypto import ENCRYPTED_PREFIX
 
     return sum(
-        1 for r in rows
+        1
+        for r in rows
         if r[field_idx] is not None and not r[field_idx].startswith(ENCRYPTED_PREFIX)
     )
 
@@ -93,7 +94,7 @@ def _migrate_value(
 
     if value.startswith(ENCRYPTED_PREFIX):
         # Already in target format — verify it's decryptable
-        token = value[len(ENCRYPTED_PREFIX):]
+        token = value[len(ENCRYPTED_PREFIX) :]
         if not token:
             raise ValueError("enc:v1: envelope is empty")
         f.decrypt(token.encode())  # verify; raises InvalidToken on failure
@@ -117,11 +118,14 @@ def main(argv: list[str] | None = None) -> None:
     from app.core.config import settings
 
     if not settings.AI_CONFIG_ENCRYPT_KEY:
-        logger.error("AI_CONFIG_ENCRYPT_KEY is not configured — cannot encrypt secrets.")
+        logger.error(
+            "AI_CONFIG_ENCRYPT_KEY is not configured — cannot encrypt secrets."
+        )
         sys.exit(1)
 
     try:
         from cryptography.fernet import Fernet
+
         Fernet(settings.AI_CONFIG_ENCRYPT_KEY.encode())
     except Exception as exc:
         logger.error("AI_CONFIG_ENCRYPT_KEY is invalid: %s", exc)
@@ -149,7 +153,9 @@ def main(argv: list[str] | None = None) -> None:
 
         async with engine.connect() as conn:
             # Phase 1: Collect pending records (outside transaction to preview)
-            all_pending: list[tuple[str, int, str, str]] = []  # (table, pk, value, label)
+            all_pending: list[
+                tuple[str, int, str, str]
+            ] = []  # (table, pk, value, label)
 
             for table_name, pk_col, secret_col, label in tables:
                 result = await conn.execute(
@@ -178,7 +184,9 @@ def main(argv: list[str] | None = None) -> None:
             # Report
             logger.info(
                 "Migration preview: %d pending, %d skipped, %d errors",
-                total_processed, total_skipped, len(total_errors),
+                total_processed,
+                total_skipped,
+                len(total_errors),
             )
             for err in total_errors:
                 logger.error("  %s", err)
@@ -211,8 +219,13 @@ def main(argv: list[str] | None = None) -> None:
                                 f"WHERE {pk_col} IN :pks "
                                 f"FOR UPDATE"
                             ),
-                            {"pks": tuple(pk for tname, pk, _, _ in all_pending
-                                          if tname == table_name)},
+                            {
+                                "pks": tuple(
+                                    pk
+                                    for tname, pk, _, _ in all_pending
+                                    if tname == table_name
+                                )
+                            },
                         )
 
                 for tname, pk, val, label in all_pending:
@@ -242,7 +255,9 @@ def main(argv: list[str] | None = None) -> None:
             # Phase 3: Verify
             logger.info(
                 "Migration complete: %d encrypted, %d skipped, %d errors",
-                total_encrypted, total_skipped, len(total_errors),
+                total_encrypted,
+                total_skipped,
+                len(total_errors),
             )
             if total_errors:
                 for err in total_errors:

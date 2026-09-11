@@ -48,12 +48,10 @@ class OcrWorkerClient(Protocol):
         *,
         graceful_timeout: float | None = None,
         kill_timeout: float | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @property
-    def metrics(self) -> dict:
-        ...
+    def metrics(self) -> dict: ...
 
 
 def create_ocr_worker_client(
@@ -88,7 +86,8 @@ def create_ocr_worker_client(
 
         logger.info(
             "Creating LocalOcrWorkerClient (workers=%d, gpu=%s)",
-            config.executor_workers, config.use_gpu,
+            config.executor_workers,
+            config.use_gpu,
         )
         return LocalOcrWorkerClient(config)
 
@@ -99,7 +98,8 @@ def create_ocr_worker_client(
 
         logger.info(
             "Creating PaddleXHttpOcrWorkerClient (url=%s, concurrency=%d)",
-            sanitize_url(config.remote_url), config.remote_max_concurrency,
+            sanitize_url(config.remote_url),
+            config.remote_max_concurrency,
         )
         return PaddleXHttpOcrWorkerClient(config, http_client=http_client)
 
