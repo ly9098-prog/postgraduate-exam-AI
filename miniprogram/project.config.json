@@ -52,11 +52,23 @@
       },
       {
         "type": "folder",
-        "value": "miniprogram_npm"
+        "value": ".claude"
       },
       {
-        "type": "glob",
-        "value": "utils/ai-teacher-408.js"
+        "type": "folder",
+        "value": ".pytest_cache"
+      },
+      {
+        "type": "folder",
+        "value": ".ruff_cache"
+      },
+      {
+        "type": "suffix",
+        "value": ".Zone.Identifier"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram_npm"
       },
       {
         "type": "glob",
@@ -69,14 +81,6 @@
       {
         "type": "folder",
         "value": "assets/animation"
-      },
-      {
-        "type": "folder",
-        "value": "components/mp-user-avatar"
-      },
-      {
-        "type": "folder",
-        "value": "components/AnimatedView"
       },
       {
         "type": "glob",
@@ -93,10 +97,6 @@
       {
         "type": "glob",
         "value": "utils/error-diagnosis.js"
-      },
-      {
-        "type": "glob",
-        "value": "utils/katex.min.js"
       },
       {
         "type": "glob",

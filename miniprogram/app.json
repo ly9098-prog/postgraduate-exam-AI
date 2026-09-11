@@ -73,8 +73,6 @@
         "wrong-detail/wrong-detail",
         "review-today/review-today",
         "practice-result/index",
-        "knowledge-subject/index",
-        "knowledge-detail/index",
         "study-plan/index"
       ]
     },
@@ -87,6 +85,15 @@
         "exam-runner/index",
         "result/index",
         "history/index"
+      ]
+    },
+    {
+      "root": "subpackages/knowledge",
+      "name": "knowledge",
+      "independent": false,
+      "pages": [
+        "knowledge-subject/index",
+        "knowledge-detail/index"
       ]
     },
     {
@@ -104,13 +111,15 @@
       "network": "all",
       "packages": [
         "study",
-        "exam"
+        "exam",
+        "knowledge"
       ]
     },
     "pages/dashboard/dashboard": {
       "network": "all",
       "packages": [
-        "study"
+        "study",
+        "knowledge"
       ]
     },
     "pages/pomodoro/pomodoro": {

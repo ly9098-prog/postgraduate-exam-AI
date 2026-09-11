@@ -35,6 +35,10 @@
     {
       "action": "allow",
       "page": "pages/home/*"
+    },
+    {
+      "action": "disallow",
+      "page": "subpackages/knowledge/*"
     }
   ]
 }

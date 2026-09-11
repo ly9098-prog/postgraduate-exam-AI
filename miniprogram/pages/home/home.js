@@ -1295,7 +1295,7 @@ Page({
   openMasterySubject(event) {
     const subjectId = Number(event && event.currentTarget && event.currentTarget.dataset.subjectId)
     if (!subjectId) return
-    wx.navigateTo({ url: `/subpackages/study/knowledge-subject/index?subject_id=${subjectId}` })
+    wx.navigateTo({ url: `/subpackages/knowledge/knowledge-subject/index?subject_id=${subjectId}` })
   },
 
   _clearAnimTimer() {

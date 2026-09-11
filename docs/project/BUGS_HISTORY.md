@@ -1,5 +1,19 @@
 # Bugs History
 
+## 2026-09-12 — 开发者工具代码扫描仍提示主包体积超限（已修复）
+
+- **现象**：首次清理主包后，开发者工具代码扫描仍提示体积风险；实际检查发现 `study` 分包源码约 1.52MB，接近/超过部分工具按 1.5MB 执行的扫描阈值。
+- **根因**：知识图谱页面（`knowledge-subject`、`knowledge-detail`）与刷题、错题等页面共用 `subpackages/study` 根目录，知识图谱页面及其约 125KB WXSS 使 study 分包达到边界。
+- **处理**：新增独立 `subpackages/knowledge` 分包并迁移两个知识图谱页面；同步首页、学习看板、刷题结果和返回导航路径，首页/看板预加载新增 `knowledge` 分包；更新 sitemap 与主包体积回归配置。
+- **验证**：使用微信官方 `miniprogram-ci` 静态分析，源码目录主包为 766,900 bytes（约 749KiB），Windows 镜像 `D:\workspace\postgraduate-ai\miniprogram` 主包为 674,556 bytes（约 659KiB）；`study` 分包为 1,242,239 bytes（约 1.21MiB），`knowledge` 分包为 282,574 bytes（约 276KiB），各包均低于 1.5MB 扫描阈值且无依赖错误。若开发者工具仍显示旧体积，应确认打开的是该 Windows 镜像并完全重载项目后再扫描，界面缓存结果尚未单独确认。
+
+## 2026-09-11 — 微信小程序主包超过 1.5MB，开发者工具无法上传（已修复）
+
+- **现象**：在微信开发者工具上传小程序代码时提示主包体积超过 1.5MB，代码无法上传。
+- **根因**：主包目录中残留了未被运行时引用的重复资源，包括根目录 `utils/katex.min.js`（约 270KB）、根目录 AI 老师实现、重复的 `AnimatedView` 和 `mp-user-avatar` 组件；部分缓存及 Windows `Zone.Identifier` 文件也未明确排除。
+- **处理**：删除上述无运行时引用的主包副本，继续使用 `subpackages/formulas`、`subpackages/study` 及页面本地组件中的实现；更新 `project.config.json` 排除 `.claude`、`.pytest_cache`、`.ruff_cache` 和 `.Zone.Identifier` 文件；新增 `miniprogram/tests/test-main-package-size.js` 主包体积回归检查，并修正 408 AI 回归脚本引用分包实现。
+- **验证**：主包估算体积约 432.7KiB，低于微信 1.5MB 限制；主包体积检查、408 AI 老师及小程序代码模式、配置、导出、LaTeX、多空答案和渲染回归测试通过。
+
 ## 2026-06-27 — SQLAlchemy 全量日志刷屏 + question_imports 列表查询拉取大字段（已修复）
 
 - **现象**：① 开发环境每次请求都输出完整 SQL 语句（`sqlalchemy.engine` INFO），淹没有价值的 OCR/import pipeline 日志；② 审核池/导入列表页每页 50 条 SELECT 包含 `raw_data`、`parsed_content`（JSON）、`parsed_options`、`parsed_analysis`、`ai_raw_response`、`math_regions` 等大字段。

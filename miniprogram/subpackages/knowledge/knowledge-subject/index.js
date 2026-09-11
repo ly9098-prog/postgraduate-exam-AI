@@ -1621,7 +1621,7 @@ this._pendingReturnState = state
 this._persistViewState(state)
 this._detailNavigationPending = true
 wx.navigateTo({
-url: `/subpackages/study/knowledge-detail/index?knowledge_point_id=${id}`,
+url: `/subpackages/knowledge/knowledge-detail/index?knowledge_point_id=${id}`,
 fail: () => {
 this._detailNavigationPending = false
 if (!this._unloaded) wx.showToast({ title: '知识详情打开失败，请重试', icon: 'none' })
@@ -1635,7 +1635,7 @@ const state = this._captureViewState()
 this._pendingReturnState = state
 this._persistViewState(state)
 const count = Math.min(10, Math.max(1, Math.floor(item.trainable_question_count)))
-const returnTo = encodeURIComponent(`/subpackages/study/knowledge-subject/index?subject_id=${this.subjectId}&restore_state=1`)
+const returnTo = encodeURIComponent(`/subpackages/knowledge/knowledge-subject/index?subject_id=${this.subjectId}&restore_state=1`)
 const subjectName = encodeURIComponent(String((this.data.subject && this.data.subject.subject_name) || item.groupName || '专项练习'))
 const url = `/subpackages/study/practice/practice?subject_id=${this.subjectId}&subject_name=${subjectName}&mode=random&count=${count}&knowledge_point_id=${item.knowledge_point_id}&include_children=1&allow_repeat=1&autostart=1&source=knowledge_map&return_to=${returnTo}`
 this._practiceNavigationPending = true

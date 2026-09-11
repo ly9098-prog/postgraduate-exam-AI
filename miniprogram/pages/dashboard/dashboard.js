@@ -614,7 +614,7 @@ Page({
     const diagnosis = this.data.knowledgeDiagnosis
     const subjectId = Number(diagnosis && diagnosis.subjectId) || Number(this.data.knowledgeDiagnosisSubjectId) || 0
     if (!subjectId) return
-    this.goTo(`/subpackages/study/knowledge-subject/index?subject_id=${subjectId}`)
+    this.goTo(`/subpackages/knowledge/knowledge-subject/index?subject_id=${subjectId}`)
   },
 
   async loadInsights(retryCount = 0, requestSeq = null) {

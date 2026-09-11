@@ -1055,11 +1055,11 @@ const matchesIdentity = (page) => {
 if (!page) return false
 const route = String(page.route || '').replace(/^\//, '')
 if (route !== targetPath) return false
-if (targetPath === 'subpackages/study/knowledge-subject/index' && expectedSubjectId) {
+if (targetPath === 'subpackages/knowledge/knowledge-subject/index' && expectedSubjectId) {
 const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0
 return !pageSubjectId || pageSubjectId === expectedSubjectId
 }
-if (targetPath === 'subpackages/study/knowledge-detail/index' && expectedPointId) {
+if (targetPath === 'subpackages/knowledge/knowledge-detail/index' && expectedPointId) {
 const currentPointId = Number(page.knowledgePointId || (page.options && page.options.knowledge_point_id)) || 0
 return !currentPointId || currentPointId === expectedPointId
 }

@@ -1778,9 +1778,9 @@ if (this._navigationLocked) return;
 this._navigationLocked = true;
 const originalReturnTo = this._returnTo || '';
 const fromKnowledgeDetail = this._launchSource === 'knowledge_map' &&
-/^\/subpackages\/study\/knowledge-detail\/index(?:\?.*)?$/.test(originalReturnTo);
+/^\/subpackages\/knowledge\/knowledge-detail\/index(?:\?.*)?$/.test(originalReturnTo);
 const preferredReturnTo = fromKnowledgeDetail && this._launchSubjectId
-? `/subpackages/study/knowledge-subject/index?subject_id=${this._launchSubjectId}&restore_state=1`
+? `/subpackages/knowledge/knowledge-subject/index?subject_id=${this._launchSubjectId}&restore_state=1`
 : originalReturnTo;
 const targetPath = String(preferredReturnTo || '').split('?')[0].replace(/^\//, '');
 const fallback = () => {
@@ -1800,7 +1800,7 @@ for (let i = pages.length - 2; i >= 0; i -= 1) {
 const page = pages[i] || {};
 const route = String(page.route || '').replace(/^\//, '');
 if (route !== targetPath) continue;
-if (targetPath === 'subpackages/study/knowledge-subject/index' && this._launchSubjectId) {
+if (targetPath === 'subpackages/knowledge/knowledge-subject/index' && this._launchSubjectId) {
 const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0;
 if (pageSubjectId && pageSubjectId !== this._launchSubjectId) continue;
 }

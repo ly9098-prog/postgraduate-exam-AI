@@ -205,7 +205,7 @@ if (!p || !p.subject_id || !p.knowledge_point_id || trainableCount <= 0) {
 wx.showToast({ title: d && d.is_parent_node ? '当前章节暂无可练题目' : '当前知识点暂无可练题目', icon: 'none' })
 return
 }
-const returnTo = encodeURIComponent(`/subpackages/study/knowledge-detail/index?knowledge_point_id=${this.knowledgePointId}`)
+const returnTo = encodeURIComponent(`/subpackages/knowledge/knowledge-detail/index?knowledge_point_id=${this.knowledgePointId}`)
 const subjectName = encodeURIComponent(String(d.subject_name || '专项练习'))
 const includeDescendants = Number(p.include_descendants || 0) === 1 || Boolean(d.is_parent_node)
 const url = `/subpackages/study/practice/practice?subject_id=${p.subject_id}&subject_name=${subjectName}&mode=random&count=${p.count || 10}&knowledge_point_id=${p.knowledge_point_id}&include_descendants=${includeDescendants ? 1 : 0}&include_children=1&allow_repeat=1&autostart=1&source=knowledge_map&return_to=${returnTo}`

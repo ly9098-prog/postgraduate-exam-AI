@@ -7,7 +7,7 @@ const assert = require('assert')
 const miniRoot = path.resolve(__dirname, '..')
 const repoRoot = path.resolve(miniRoot, '..')
 const backendRoot = path.join(repoRoot, 'backend')
-const helper = require(path.join(miniRoot, 'utils/ai-teacher-408.js'))
+const helper = require(path.join(miniRoot, 'subpackages/study/utils/ai-teacher-408.js'))
 
 const expectedActions = [
   'explain_correct',
