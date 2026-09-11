@@ -9,6 +9,7 @@ const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/a
 const { buildAiRichText } = require('../utils/ai-math-render')
 const errorDiagnosis = require('../utils/error-diagnosis')
 const aiTeacher408 = require('../utils/ai-teacher-408')
+const { presentTeacherResult } = require('./teacher-presentation')
 const AI_REQUEST_TIMEOUT_MS = 55000
 const AI_CACHE_POLL_ATTEMPTS = 44
 const QUESTION_SWITCH_OUT_MS = 150
@@ -607,15 +608,16 @@ try {
 const raw = await requestPromise
 const normalized = aiTeacher408.normalizeResult(raw)
 if (!normalized) throw new Error('AI 返回格式异常')
+const presented = presentTeacherResult(normalized)
 if (!this._teacherCache) this._teacherCache = Object.create(null)
-this._teacherCache[cacheKey] = normalized
+this._teacherCache[cacheKey] = presented
 if (requestSeq !== this._teacherRequestSeq || !this._alive) return
 if (String((this.data.wq && this.data.wq.id) || '') !== sourceWqId) {
 this.setData({ teacherLoadingAction: '' })
 return
 }
 this._activeTeacherCacheKey = cacheKey
-this.setData({ teacherLoadingAction: '', teacherResult: normalized })
+this.setData({ teacherLoadingAction: '', teacherResult: presented })
 } catch (error) {
 if (requestSeq !== this._teacherRequestSeq || !this._alive) return
 this.setData({

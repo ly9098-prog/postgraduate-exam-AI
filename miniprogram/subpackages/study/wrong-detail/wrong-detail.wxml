@@ -272,8 +272,17 @@
 <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">知识点串联</text></view>
 <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
 <text class="teacher-kp-name">{{item.name}}</text>
-<text wx:if="{{item.relation}}" class="teacher-kp-relation">{{item.relation}}</text>
-<text wx:if="{{item.masteryHint}}" class="teacher-kp-hint">{{item.masteryHint}}</text>
+<view wx:if="{{item.relationItems.length}}" class="teacher-kp-relations">
+<view wx:for="{{item.relationItems}}" wx:for-item="relation" wx:key="key" class="teacher-kp-relation-chip">
+<text class="teacher-kp-relation-label">{{relation.label}}</text>
+<text class="teacher-kp-relation-value">{{relation.value}}</text>
+</view>
+</view>
+<text wx:elif="{{item.relationText}}" class="teacher-kp-relation">{{item.relationText}}</text>
+<view wx:if="{{item.masteryText || item.learningHint}}" class="teacher-kp-learning">
+<text wx:if="{{item.masteryText}}" class="teacher-kp-mastery">{{item.masteryText}}</text>
+<text wx:if="{{item.learningHint}}" class="teacher-kp-hint">{{item.learningHint}}</text>
+</view>
 </view>
 </view>
 <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section teacher-practice-card">
