@@ -310,7 +310,9 @@ async def list_models(db: AsyncSession) -> list[AdminAiModelConfigResponse]:
     await _seed_models_if_empty(db)
     await _ensure_env_key_synced(db)
     result = await db.execute(
-        select(AdminAiModelConfig).order_by(
+        select(AdminAiModelConfig)
+        .where(AdminAiModelConfig.deleted_at.is_(None))
+        .order_by(
             AdminAiModelConfig.is_default.desc(),
             AdminAiModelConfig.sort_order,
         )
@@ -325,7 +327,7 @@ async def patch_model(
     operator: AdminPrincipal,
 ) -> AdminAiModelConfigResponse:
     model = await db.get(AdminAiModelConfig, model_id)
-    if model is None:
+    if model is None or model.deleted_at is not None:
         raise ValueError(f"模型 {model_id} 不存在")
 
     changes = {}
@@ -345,6 +347,7 @@ async def patch_model(
         old_defaults = await db.execute(
             select(AdminAiModelConfig).where(
                 AdminAiModelConfig.is_default == True,  # noqa: E712
+                AdminAiModelConfig.deleted_at.is_(None),
                 AdminAiModelConfig.id != model_id,
             )
         )
@@ -388,6 +391,7 @@ async def patch_model(
                     select(AdminAiModelConfig).where(
                         AdminAiModelConfig.id != model_id,
                         AdminAiModelConfig.is_enabled == True,  # noqa: E712
+                        AdminAiModelConfig.deleted_at.is_(None),
                     )
                 )
                 for other in all_enabled.scalars().all():
@@ -460,6 +464,7 @@ async def create_model(
         all_enabled = await db.execute(
             select(AdminAiModelConfig).where(
                 AdminAiModelConfig.is_enabled == True,  # noqa: E712
+                AdminAiModelConfig.deleted_at.is_(None),
             )
         )
         for other in all_enabled.scalars().all():
@@ -516,16 +521,17 @@ async def delete_model(
     model_id: int,
     operator: AdminPrincipal,
 ) -> None:
-    """删除模型（保留最后一个启用模型）。"""
+    """软删除模型配置，同时保留稳定 ID 供历史记录继续引用。"""
     model = await db.get(AdminAiModelConfig, model_id)
-    if model is None:
+    if model is None or model.deleted_at is not None:
         raise ValueError(f"模型 {model_id} 不存在")
 
-    # 检查是否最后一个启用模型
+    # 保留最后一个可用模型，避免软删除后系统完全失去 AI 能力。
     if model.is_enabled:
         result = await db.execute(
             select(AdminAiModelConfig).where(
                 AdminAiModelConfig.is_enabled == True,  # noqa: E712
+                AdminAiModelConfig.deleted_at.is_(None),
                 AdminAiModelConfig.id != model_id,
             )
         )
@@ -541,6 +547,12 @@ async def delete_model(
         selected_embedding.config_value = ""
         selection_cleared = True
 
+    now = utcnow()
+    model.is_enabled = False
+    model.is_default = False
+    model.deleted_at = now
+    model.updated_at = now
+
     await write_admin_audit(
         db,
         operator,
@@ -549,10 +561,10 @@ async def delete_model(
         model.id,
         detail={
             "model_name": model.name,
+            "soft_deleted": True,
             "embedding_selection_cleared": selection_cleared,
         },
     )
-    await db.delete(model)
     await db.flush()
     _reset_vector_runtime_cache()
 
@@ -678,6 +690,13 @@ async def test_model_connection(
     # Key priority 2: from DB via model_id (only if no explicit key provided)
     if effective_api_key is None and model_id is not None and db is not None:
         model = await db.get(AdminAiModelConfig, model_id)
+        if model is not None and model.deleted_at is not None:
+            return {
+                "success": False,
+                "status": "model_not_found",
+                "message": f"模型配置 #{model_id} 已删除，请重新选择模型",
+                "latency_ms": 0,
+            }
         if model is not None:
             # model_id is primarily used to reuse the encrypted saved secret.
             # Keep the request's Base URL / model name / provider so the Admin
@@ -706,6 +725,13 @@ async def test_model_connection(
             await _seed_models_if_empty(db)
             await db.flush()
             model = await db.get(AdminAiModelConfig, model_id)
+            if model is not None and model.deleted_at is not None:
+                return {
+                    "success": False,
+                    "status": "model_not_found",
+                    "message": f"模型配置 #{model_id} 已删除，请重新选择模型",
+                    "latency_ms": 0,
+                }
             if model is not None:
                 if not effective_provider:
                     effective_provider = model.provider

@@ -1,849 +1,1202 @@
-/goal
-
-全面审查并修复“小程序刷题从开始到结束”的完整后端链路。
+你正在我的本地代码仓库和本地 PostgreSQL 数据库中工作。
 
-这是一个执行任务，不是只做 code review。
-你需要先理解小程序当前真实调用方式，再沿后端调用链检查实现、数据一致性、异常恢复、幂等、并发、性能和测试。
-发现能够确认的问题后直接修改代码并验证，持续执行“审查 → 修复 → 测试 → 再审查”，直到完成条件满足。
-
-==================================================
-一、先理解真实客户端契约
-==================================================
-
-不要根据后端函数名猜业务流程。
-
-首先阅读小程序中与刷题直接相关的代码，重点包括但不限于：
-
-- subpackages/study/practice/practice.js
-- subpackages/study/components/quiz-runner/**
-- subpackages/study/utils/question-runner-adapter.js
-- subpackages/study/utils/answer.js
-- subpackages/study/practice-result/**
-- review / wrong-question / study-plan 等刷题入口相关代码
-- utils/api.js
-- config.js
-
-以小程序实际发送的 request 和实际消费的 response 作为 API contract。
-
-先整理出完整流程和状态机，再开始修改后端。
+请完成一次 `question_embeddings` 模型字段规范化改造：
 
-当前已知核心链路包括：
-
-1. 获取可刷科目
-   GET /practice/subjects
-
-2. 开始刷题 / 获取题目
-   GET /practice/questions
-
-3. 顺序刷题完成一轮后可能调用
-   POST /practice/sequential/reset
-
-4. 用户本地完成答题
-
-5. 交卷
-   POST /practice/batch-submit
-
-6. 后端交卷后产生的所有业务副作用
-
-7. 小程序进入 practice-result，继续访问错题、复习、统计等数据
-
-但不要只检查以上几个 endpoint。
-必须继续追踪它们内部调用的 service / repository / model / task / scheduler。
-
-==================================================
-二、重点检查 GET /practice/questions
-==================================================
-
-完整追踪请求参数的处理：
-
-- subject_id
-- include_children
-- count
-- mode
-- exclude_answered
-- no_repeat_days
-- use_leitner
-- question_ids
-- plan_token
-- knowledge_point_id
-- include_descendants
-- knowledge_point
-- trace_id
+当前：
 
-覆盖至少这些模式：
+```text
+question_embeddings.embedding_model varchar(128)
+```
 
-- random
-- smart
-- sequential
-- 指定题目重练
-- 知识点专项
-- 包含子知识点
-- Study Plan 启动
-- 允许重复刷题
-- 禁止近期重复
-- Leitner / spaced repetition
+保存的是类似：
 
-检查：
+```text
+qwen3.7-text-embedding
+```
 
-1. 实际取题范围是否正确。
-2. subject / knowledge point scope 是否可能串范围。
-3. include_children / include_descendants 是否语义一致。
-4. question_ids 是否可能被推荐算法重新过滤。
-5. count 是否可能返回超量、少量或重复题。
-6. 是否可能返回无效 question id。
-7. 是否会返回小程序不能作答的 question_type。
-8. 是否存在已删除、禁用、审核未通过或版本异常的题目。
-9. 是否有 N+1 SQL。
-10. smart/random/sequential 是否存在重复数据库查询。
-11. no-repeat / Leitner / recommendation 策略是否可能互相覆盖。
-12. 顺序刷题游标是否正确推进。
-13. 多并发请求下顺序进度是否会重复或跳题。
-
-特别验证 response 中客户端依赖的：
-
-- questions
-- request_id
-- submission_request_id
-- batch_token
-- mode
-- trace_id
-- sequential_progress
-- knowledge_scope
+这样的模型名称字符串。
 
-这些字段必须具有一致且明确的语义。
+现在我要将其改造成真正的模型配置外键：
 
-==================================================
-三、重点审查 batch_token
-==================================================
+```text
+question_embeddings.model_id int4 NOT NULL
+    REFERENCES admin_ai_model_configs(id)
+```
 
-完整追踪 batch_token：
+也就是说：
 
-生成
-→ 保存/签名
-→ 返回小程序
-→ batch-submit 校验
-→ 失效
+```text
+question_embeddings
+        │
+        │ model_id
+        ▼
+admin_ai_model_configs.id
+```
 
-检查：
+最终 `question_embeddings` 不应再把模型名称字符串作为模型身份来源。
 
-- 是否绑定 user
-- 是否绑定 question ids
-- 是否绑定 question versions
-- 是否绑定 subject
-- 是否绑定 mode
-- 是否有合理 expiration
-- 是否能够篡改
-- 是否可能跨用户使用
-- 是否可能拿旧 batch 提交新答案
-- 是否可能少提交/多提交题目绕过校验
-- skipped_question_ids 是否必须属于 batch
-- answers.question_id 是否必须属于 batch
+------
 
-不要只验证 token 存在，要验证整个 batch integrity。
+# 一、最高优先级
 
-==================================================
-四、重点审查题目版本
-==================================================
+按以下优先级执行：
 
-小程序获取题目后，到用户交卷可能经过较长时间。
+```text
+数据库可恢复性
+>
+现有 embedding 数据不丢失
+>
+正确回填 model_id
+>
+后端代码完整迁移
+>
+数据库约束完整
+>
+删除旧 embedding_model 字符串字段
+```
 
-检查：
+不要直接执行破坏性 ALTER。
 
-- question_version_id
-- question_version
-- current question
-- historical question version
+必须先审计、备份、验证映射关系，然后迁移。
 
-交卷判题必须对应用户实际看到的题目版本。
+------
 
-确认以下情况不会错误判题：
+# 二、先检查代码和数据库
 
-1. 用户获取题目后管理员修改答案。
-2. 用户获取题目后修改选项。
-3. 用户获取题目后删除/禁用题目。
-4. 用户刷题期间 question version 更新。
-5. 历史版本缺失。
+不要根据本 Prompt 猜字段。
 
-重点检查：
+首先检查仓库中：
 
-PRACTICE_QUESTION_VERSION_CONFLICT
+- ORM model / entity
+- migration
+- repository / DAO
+- service
+- embedding service
+- AI model config service
+- admin AI model config API
+- embedding generation job
+- embedding backfill script
+- vector search / similarity search
+- question recommendation
+- tests
 
-是否真的只在无法安全恢复用户所见版本时产生。
+搜索所有：
 
-绝不能偷偷使用最新答案给旧题判分。
+```text
+embedding_model
+question_embeddings
+admin_ai_model_configs
+qwen3.7-text-embedding
+embedding_dim
+content_hash
+content_text
+```
 
-==================================================
-五、完整审查 POST /practice/batch-submit
-==================================================
+同时查询真实 PostgreSQL schema。
 
-客户端真实 payload 包括类似：
+至少检查：
 
-answers: [
-  {
-    question_id,
-    user_answer,
-    used_time,
-    request_id
-  }
-]
+```sql
+\d question_embeddings
+\d admin_ai_model_configs
+```
 
-skipped_question_ids
-
-session: {
-  request_id,
-  subject_id,
-  mode,
-  started_at,
-  finished_at,
-  duration_sec,
-  question_count,
-  answered_count,
-  status
-}
-
-batch_token
-
-注意：
-
-answers[].request_id 是推荐链路 attribution request id。
-
-session.request_id 是一次交卷的 idempotency request id。
-
-不要把这两个 request_id 混为一个概念。
-
-检查从 request validation 一直到 transaction commit 的整个链路。
-
-==================================================
-六、重点检查交卷幂等
-==================================================
-
-这是最高优先级。
-
-客户端网络失败后会使用完全相同的 submission snapshot 重试。
-
-因此：
-
-同一个：
-
-session.request_id
-+
-相同 payload
-
-重复提交必须安全返回相同业务结果，不产生重复副作用。
-
-但：
-
-相同 request_id
-+
-不同 payload
-
-必须确定性拒绝。
-
-重点检查：
-
-PRACTICE_SUBMISSION_CONFLICT
-
-以及数据库层是否有真正的唯一约束或事务保护。
-
-验证至少：
-
-- 双击交卷
-- 网络 timeout 后重试
-- server 已 commit 但 response 丢失
-- 两个并发相同 request
-- 两个并发不同 payload 但 request_id 相同
-- 服务重启后重试
-
-不能只依赖内存锁。
-
-==================================================
-七、检查 batch-submit 原子性
-==================================================
-
-追踪一次提交会产生的所有写操作。
-
-包括但不限于：
-
-- practice/session record
-- question answer record
-- correct/wrong result
-- wrong question
-- wrong question quality / metadata
-- review schedule
-- Leitner state
-- mastery / knowledge mastery
-- knowledge point statistics
-- subject statistics
-- study duration/statistics
-- recommendation feedback/log
-- sequential progress
-- user practice progress
-- daily statistics
-- dashboard aggregates
-- study plan progress
-
-搜索相关代码，例如：
-
-review_scheduler
-wrong_question_service
-practice service
-recommendation service
-mastery service
-study statistics
-Leitner / review scheduling
+或者通过 `information_schema` / `pg_catalog` 获取真实定义。
 
 确认：
 
-一次 batch-submit 是一个业务事务。
+1. `question_embeddings.embedding_model` 当前类型
+2. 是否允许 NULL
+3. 是否存在索引
+4. 是否存在 unique constraint
+5. `admin_ai_model_configs.id` 是否确实为 `int4`
+6. `admin_ai_model_configs` 中哪个字段保存类似：
 
-不能出现：
+```text
+qwen3.7-text-embedding
+```
 
-答案写成功
-但错题没写成功
+的模型标识
 
-或者：
+这个字段可能叫：
 
-错题写成功
-但 review scheduler 失败
+```text
+model
+model_name
+model_id
+model_key
+name
+api_model
+provider_model
+```
 
-或者：
+必须根据真实数据库确定。
 
-session 已标记 completed
-但题目结果只写了一半
+**不要假设字段名。**
 
-如果业务设计允许 eventual consistency，必须确认：
+------
 
-- 有可靠 job/outbox
-- 可重试
-- 幂等
-- 不会静默丢数据
+# 三、数据库修改前必须备份
 
-否则应该修复为适当的 transaction boundary。
+在任何：
 
-==================================================
-八、错题链路
-==================================================
+```text
+ALTER
+UPDATE
+DROP
+DELETE
+```
 
-答错题目后完整检查：
+之前，先创建 PostgreSQL 完整备份。
 
-batch-submit
-→ 判错
-→ wrong_question_service
-→ wrong_question record
-→ wrong book
-→ wrong detail
-→ 后续再次答题
+优先使用仓库已有 backup script。
 
-重点检查：
+否则使用：
 
-1. 同一道题重复答错是否创建重复错误记录。
-2. 应该 update 还是 insert。
-3. wrong_count 是否正确。
-4. 连续答错次数是否正确。
-5. 最近答错时间是否正确。
-6. 正确后错题状态怎么变化。
-7. question version 是否记录正确。
-8. subject / knowledge point 是否正确。
-9. user_answer 是否标准化。
-10. multiple_choice 顺序是否影响判题。
-11. true_false normalization。
-12. multi_blank_choice normalization。
-13. skipped / partial 是否错误进入错题本。
+```bash
+pg_dump
+```
 
-==================================================
-九、复习调度链路
-==================================================
+备份保存到例如：
 
-检查：
+```text
+artifacts/db_backup/
+```
 
-batch-submit
-→ answer correctness
-→ review_scheduler
-→ next review
+文件名：
 
-尤其检查：
+```text
+pre_question_embeddings_model_fk_YYYYMMDD_HHMMSS.dump
+```
 
-- 首次答错
-- 再次答错
-- 答对
-- 连续答对
-- repeated submissions
-- retry
-- duplicate request
+要求：
 
-同一份 batch-submit 被重试时：
+- 文件存在
+- 文件大小 > 0
+- pg_dump exit code = 0
+- 不覆盖旧备份
+- backup 文件加入 `.gitignore`
+- 不提交数据库备份到 Git
 
-review schedule 不能被推进两次。
+备份失败则禁止继续。
 
-检查时间计算：
+------
 
-- timezone
-- UTC / China time
-- naive datetime / aware datetime
-- date rollover
+# 四、先审计现有 embedding_model
 
-==================================================
-十、答题正确性
-==================================================
+正式迁移前查询：
 
-与小程序：
+```sql
+SELECT
+    embedding_model,
+    COUNT(*)
+FROM question_embeddings
+GROUP BY embedding_model
+ORDER BY COUNT(*) DESC;
+```
 
-subpackages/study/utils/answer.js
-subpackages/study/utils/question-runner-adapter.js
+然后查询：
 
-进行契约对照。
+```text
+admin_ai_model_configs
+```
 
-覆盖：
+确认每一个现有：
 
-- single_choice
-- multiple_choice
-- true_false
-- multi_blank_choice
+```text
+question_embeddings.embedding_model
+```
 
-检查 frontend 与 backend normalization 是否一致。
+都能映射到**唯一一个**：
+
+```text
+admin_ai_model_configs.id
+```
+
+例如当前可能存在：
+
+```text
+question_embeddings.embedding_model
+= 'qwen3.7-text-embedding'
+```
+
+如果：
+
+```text
+admin_ai_model_configs
+```
+
+中对应配置 ID 是：
+
+```text
+12
+```
+
+最终应该变成：
+
+```text
+question_embeddings.model_id = 12
+```
+
+------
+
+# 五、映射必须严格唯一
+
+请建立迁移前审计。
+
+对于每一个不同的旧模型名称，输出：
+
+```text
+old_embedding_model
+matched_admin_ai_model_config_id
+matched_model_name
+embedding_row_count
+match_status
+```
+
+`match_status` 至少区分：
+
+```text
+exact_unique
+unmatched
+ambiguous
+```
+
+只有：
+
+```text
+exact_unique
+```
+
+允许自动迁移。
+
+如果出现：
+
+```text
+unmatched
+```
+
+或：
+
+```text
+ambiguous
+```
+
+禁止继续执行 DROP / NOT NULL。
+
+停止迁移并报告具体模型名称。
+
+**不要 fuzzy match。**
+
+**不要猜测。**
+
+**不要自动创建新的 admin_ai_model_configs。**
+
+------
+
+# 六、推荐数据库迁移方案
+
+不要直接：
+
+```sql
+ALTER COLUMN embedding_model TYPE int4
+```
+
+因为旧数据是字符串。
+
+使用安全的 staged migration。
+
+## Phase 1
+
+新增：
+
+```sql
+ALTER TABLE question_embeddings
+ADD COLUMN model_id int4;
+```
+
+此时先允许 NULL。
+
+------
+
+## Phase 2
+
+使用 `admin_ai_model_configs` 的真实模型标识字段进行回填。
+
+类似：
+
+```sql
+UPDATE question_embeddings qe
+SET model_id = c.id
+FROM admin_ai_model_configs c
+WHERE qe.embedding_model = c.<REAL_MODEL_IDENTIFIER_COLUMN>;
+```
+
+这里：
+
+```text
+<REAL_MODEL_IDENTIFIER_COLUMN>
+```
+
+必须替换成数据库中的真实字段。
+
+不要照抄占位符。
+
+------
+
+# 七、回填后必须立即验证
+
+执行：
+
+```sql
+SELECT COUNT(*)
+FROM question_embeddings
+WHERE model_id IS NULL;
+```
+
+必须为：
+
+```text
+0
+```
+
+再检查：
+
+```sql
+SELECT
+    qe.embedding_model,
+    qe.model_id,
+    c.id,
+    c.<model identifier>
+FROM question_embeddings qe
+LEFT JOIN admin_ai_model_configs c
+    ON c.id = qe.model_id
+WHERE c.id IS NULL;
+```
+
+必须：
+
+```text
+0 rows
+```
+
+并验证迁移前后总行数完全一致。
 
 例如：
 
-"A"
-"a"
-" A "
-"AB"
-"A,B"
-["A","B"]
+```text
+before_count == after_count
+```
 
-在合理情况下应该得到一致结果。
+------
 
-multi_blank_choice 重点检查：
+# 八、增加 FK
 
-- blank id
-- answer order
-- serialization
-- 部分作答
-- 空字符串
-- 非法选项
+确认数据完全有效后增加：
 
-绝不能出现：
+```sql
+ALTER TABLE question_embeddings
+ADD CONSTRAINT fk_question_embeddings_model
+FOREIGN KEY (model_id)
+REFERENCES admin_ai_model_configs(id);
+```
 
-前端认为已经作答，
-后端认为未作答；
+默认：
 
-或者：
+**不要使用 `ON DELETE CASCADE`。**
 
-前端显示答案正确，
-后端记错题。
+模型配置被删除时，不应该顺带删除所有 question embedding。
 
-==================================================
-十一、skipped / partial
-==================================================
+请检查项目业务语义。
 
-小程序明确区分：
+优先考虑：
 
-answered
-partial
-skipped
+```text
+ON DELETE RESTRICT
+```
 
-检查 batch-submit 是否正确处理：
+或 PostgreSQL 默认 `NO ACTION`。
 
-- skipped_question_ids
-- partially answered multi_blank_choice
-- unanswered
+如果项目采用模型配置软删除，则更不需要 CASCADE。
 
-不要把：
+------
 
-skipped
+# 九、model_id 设置 NOT NULL
 
-错误记录成：
+只有确认：
 
-wrong
+```text
+model_id IS NULL = 0
+```
 
-也不要让 partial 产生不符合产品语义的 wrong-question / review side effect。
+之后执行：
 
-==================================================
-十二、答题时间
-==================================================
+```sql
+ALTER TABLE question_embeddings
+ALTER COLUMN model_id SET NOT NULL;
+```
 
-客户端上传：
+------
 
-used_time
-duration_sec
-started_at
-finished_at
+# 十、索引
 
-检查：
+检查实际查询模式。
 
-- 是否可信
-- 是否需要限制最大值
-- 是否允许负值
-- duration 与 question time 是否异常
-- 后台切换时间是否可能导致错误统计
-- 极端值是否污染统计
-- 用户篡改是否影响推荐系统
+如果 embedding 查询经常按：
 
-不要求重新设计反作弊系统，
-但明显的数据完整性问题需要修复。
+```text
+question_id + model
+```
 
-==================================================
-十三、并发和竞态
-==================================================
+查询，应考虑建立：
 
-重点主动寻找：
+```sql
+CREATE INDEX ...
+ON question_embeddings(model_id);
+```
 
-check-then-write race
-read-modify-write race
+如果业务逻辑要求同一：
 
-特别是：
-
-- sequential cursor
-- wrong question upsert
-- mastery update
-- Leitner update
-- review schedule
-- daily stats
-- recommendation feedback
-- idempotency record
-
-如果数据库支持：
-
-unique constraint
-upsert
-select for update
-atomic update
-
-优先使用数据库保证一致性，而不是进程级 Python lock。
-
-==================================================
-十四、异常和失败恢复
-==================================================
-
-模拟：
-
-- DB timeout
-- transient DB error
-- deadlock
-- network interruption
-- duplicated request
-- malformed payload
-- expired token
-- stale question version
-- unauthorized user
-- deleted question
-- invalid subject
-- partial batch
-- duplicated question ids
-
-检查异常是否：
-
-返回正确 HTTP status
-+
-稳定 error code
-+
-不会留下半写数据
-
-小程序目前至少会针对这些确定性错误停止重试：
-
-- PRACTICE_SUBMISSION_CONFLICT
-- PRACTICE_QUESTION_VERSION_CONFLICT
-- PRACTICE_BATCH_INVALID
-- PRACTICE_PAYLOAD_INVALID
-
-检查后端是否与此契约一致。
-
-==================================================
-十五、性能
-==================================================
-
-重点检查一组 5 / 10 / 20 / 50 道题时：
-
-GET /practice/questions
-
-和：
-
-POST /practice/batch-submit
-
-数据库 query 数是否随题目数量出现明显 N+1。
-
-特别检查：
-
-- knowledge points
-- question versions
-- wrong-question lookup
-- review state
-- mastery
-- recommendation logs
-
-可以合理 batch query / bulk insert / upsert 的地方进行优化。
-
-但是：
-
-不要为了微小性能收益做大规模重构。
-
-==================================================
-十六、安全
-==================================================
-
-确认：
-
-用户只能提交自己的 batch。
-
-客户端不能通过修改：
-
+```text
 question_id
-subject_id
-correct answer
-question version
-batch_token
-request_id
++
+question_type
++
+model_id
+```
 
-影响其他用户或伪造成绩。
+只能存在一个 embedding，则检查当前数据库是否已经通过 unique constraint 实现。
 
-不要信任客户端上传的：
+不要盲目建立重复索引。
 
-is_correct
-correct_answer
-subject ownership
-question ownership
+根据仓库真实查询调整。
 
-判题必须以服务端受信数据为准。
+------
 
-==================================================
-十七、代码质量
-==================================================
+# 十一、修改后端 ORM / Model
 
-重点寻找影响该链路可靠性的：
+将原来类似：
 
-- duplicated business rules
-- 新旧两套刷题实现并存
-- API / service validation 重复但规则不一致
-- transaction boundary 混乱
-- helper 语义不一致
-- exception 被吞
-- broad except
-- commit 出现在 service 中间
-- flush / commit 使用不一致
-- hidden side effects
-- dead code
+```text
+embedding_model: string
+```
 
-只修改和本次刷题链直接相关的问题。
+改成：
 
-不要顺手重构整个项目。
+```text
+model_id: int
+```
 
-==================================================
-十八、测试
-==================================================
+并建立 ORM relation：
 
-先阅读现有相关 tests。
+```text
+QuestionEmbedding
+    belongs_to
+AdminAiModelConfig
+```
 
-发现 bug 时优先增加 regression test。
+具体写法遵循项目现有 ORM。
 
-至少覆盖：
+最终模型语义应类似：
 
-A. 获取题目
+```text
+QuestionEmbedding {
+    id
+    question_id
+    question_type
+    model_id
+    model / ai_model_config relation
+    embedding_dim
+    content_hash
+    content_text
+    embedding
+    ...
+}
+```
 
-- random
-- smart
-- sequential
-- knowledge point
-- child subjects
-- targeted question ids
-- no repeat
-- invalid scope
+不要在 DB model 中继续把：
 
-B. 提交
+```text
+embedding_model
+```
 
-- all correct
-- wrong
-- skipped
-- partial
-- mixed result
+作为权威模型身份。
 
-C. 幂等
+------
 
-- same request_id + same payload
-- same request_id + different payload
-- concurrent identical submit
+# 十二、修改所有写入 embedding 的代码
 
-D. version
+搜索所有创建：
 
-- question modified after fetching
-- valid historical version
-- missing historical version
+```text
+question_embeddings
+```
 
-E. side effects
+的地方。
 
-- wrong question
-- review scheduler
-- mastery
-- Leitner
-- sequential progress
-- statistics
+旧代码可能类似：
 
-特别增加一个端到端 service/integration test：
+```python
+QuestionEmbedding(
+    question_id=...,
+    embedding_model=model_name,
+    embedding_dim=...
+)
+```
 
-获取一批题
-→ 作答
-→ batch-submit
-→ 验证 session
-→ 验证 answers
-→ 验证 wrong questions
-→ 验证 review schedule
-→ 验证 progress/statistics
+应改成类似：
 
-==================================================
-十九、修复原则
-==================================================
+```python
+QuestionEmbedding(
+    question_id=...,
+    model_id=model_config.id,
+    embedding_dim=...
+)
+```
 
-发现明确问题直接修复，不要只告诉我。
+注意：
 
-优先修根因。
+embedding service 已经选择了：
+
+```text
+admin_ai_model_configs
+```
+
+中的某个配置时，应直接沿用该配置的：
+
+```text
+id
+```
+
+不要再次通过模型名称查询 ID。
+
+即优先：
+
+```text
+resolved model config
+    ↓
+config.id
+    ↓
+question_embeddings.model_id
+```
 
 不要：
 
-- 为了测试通过删除功能
-- catch Exception 后静默忽略
-- 降低 validation
-- 跳过测试
-- 用 sleep 修 race condition
-- 用前端 workaround 掩盖后端问题
-- 大范围格式化无关文件
+```text
+config.model_name
+    ↓
+重新查数据库
+    ↓
+model_id
+```
 
-尽量：
+避免重复解析和名称歧义。
 
-- 保持现有 API contract
-- 保持现有数据库 schema
+------
 
-但如果数据库 schema 缺少保证数据一致性所必需的：
-unique constraint / index / relation
+# 十三、修改读取代码
 
-可以修改 migration。
+所有原来使用：
 
-如果涉及 migration：
-先确认确实必要，并保证向前兼容。
+```text
+embedding.embedding_model
+```
 
-不要新增第三方依赖，除非现有技术栈无法合理解决。
+的地方都要审计。
 
-==================================================
-二十、保护工作树
-==================================================
+如果业务只需要模型 ID：
 
-开始前执行：
+改为：
 
-git status
+```text
+embedding.model_id
+```
+
+如果 API / 日志 / Admin UI 需要显示：
+
+```text
+qwen3.7-text-embedding
+```
+
+则通过关联：
+
+```text
+embedding.model.<REAL_MODEL_IDENTIFIER_COLUMN>
+```
+
+获取。
+
+例如 ORM eager load / JOIN：
+
+```text
+question_embeddings
+JOIN admin_ai_model_configs
+ON question_embeddings.model_id = admin_ai_model_configs.id
+```
+
+------
+
+# 十四、不要产生 N+1
+
+如果列表接口展示 embedding model 名称：
+
+不要每一行 embedding 单独查询一次 model config。
+
+使用：
+
+- ORM eager loading
+- joinedload
+- preload
+- include
+- SQL JOIN
+
+根据项目框架实现。
+
+------
+
+# 十五、修改 embedding 去重 / cache / content hash 逻辑
+
+重点检查是否有代码使用：
+
+```text
+embedding_model
+```
+
+参与：
+
+- embedding 是否已经存在判断
+- UPSERT
+- unique key
+- cache key
+- dedup key
+- vector search filter
+- model compatibility check
+- stale embedding detection
+
+例如旧逻辑：
+
+```text
+(question_id, embedding_model)
+```
+
+需要改为：
+
+```text
+(question_id, model_id)
+```
+
+不要遗漏这一步。
+
+否则数据库虽然迁移成功，后端仍可能不断重复生成 embedding。
+
+------
+
+# 十六、embedding_dim 一致性验证
+
+`question_embeddings` 还保存：
+
+```text
+embedding_dim
+```
+
+请检查：
+
+```text
+admin_ai_model_configs
+```
+
+是否也配置了 embedding dimension。
+
+如果有：
+
+迁移后验证：
+
+```text
+question_embeddings.embedding_dim
+```
+
+与对应：
+
+```text
+admin_ai_model_configs
+```
+
+配置一致。
+
+如果存在不一致：
+
+先报告。
+
+不要自动修改 vector 数据。
+
+------
+
+# 十七、现有 embedding vector 不需要重新生成
+
+这次任务只是：
+
+```text
+模型字符串
+→
+模型配置 FK
+```
+
+如果：
+
+```text
+old embedding_model
+```
+
+能够精确唯一映射到相同模型配置，那么：
+
+**不要删除或重新生成现有 embedding vector。**
+
+例如：
+
+```text
+qwen3.7-text-embedding
+```
+
+仍然对应同一个 Qwen embedding 模型，只是身份从字符串变成：
+
+```text
+admin_ai_model_configs.id
+```
+
+那么：
+
+```text
+embedding vector
+content_hash
+content_text
+```
+
+本次都无需修改。
+
+注意：
+
+这与之前“知识点体系变化后重新生成 question_embeddings”是两个不同问题。
+
+如果当前 question_embeddings 已经是使用新知识点内容重新生成后的数据，本次只做 model FK migration。
+
+如果仓库实际发现当前 embeddings 仍是旧知识点体系生成的数据，则明确报告，不要把两个任务混在 migration 中偷偷重新生成。
+
+------
+
+# 十八、修改 API Schema
+
+检查是否有 API 返回：
+
+```json
+{
+  "embedding_model": "qwen3.7-text-embedding"
+}
+```
+
+如果这个 API 是内部接口，可以考虑调整为：
+
+```json
+{
+  "model_id": 12,
+  "model_name": "qwen3.7-text-embedding"
+}
+```
+
+如果已有前端依赖 `embedding_model`：
+
+不要直接破坏 API。
+
+可以临时通过 relation 兼容：
+
+```json
+{
+  "model_id": 12,
+  "embedding_model": "qwen3.7-text-embedding"
+}
+```
+
+其中：
+
+```text
+embedding_model
+```
+
+是 response compatibility field，不再对应数据库列。
+
+是否保留兼容字段，要根据仓库真实调用者决定。
+
+------
+
+# 十九、Admin 页面
+
+检查：
+
+```text
+admin_ai_model_configs
+```
+
+相关管理页面。
+
+如果 question embedding 页面会展示模型：
+
+应通过：
+
+```text
+model_id -> admin_ai_model_configs
+```
+
+展示模型名称。
+
+数据库中不再存冗余模型字符串。
+
+------
+
+# 二十、最终删除旧列
+
+只有在以下全部完成后：
+
+- model_id 全部回填
+- FK 生效
+- NOT NULL 生效
+- 后端已经全面使用 model_id
+- tests 通过
+- 搜索确认业务代码不再依赖 DB column `embedding_model`
+
+才允许：
+
+```sql
+ALTER TABLE question_embeddings
+DROP COLUMN embedding_model;
+```
+
+删除之前再执行一次全仓库：
+
+```text
+embedding_model
+```
+
+搜索。
+
+注意：
+
+API DTO 中为了兼容而存在的 `embedding_model` 可以继续存在。
+
+但数据库 ORM 不应再把它映射为真实列。
+
+------
+
+# 二十一、Migration 最好拆成明确步骤
+
+请使用项目现有 migration 框架。
+
+不要只在数据库客户端手工执行 SQL。
+
+至少产生可追踪 migration。
+
+建议逻辑：
+
+```text
+Migration A
+
+1. add question_embeddings.model_id nullable
+2. audit old model values
+3. backfill model_id
+4. validate no NULL
+5. add FK
+6. add needed indexes
+7. model_id NOT NULL
+8. drop embedding_model
+```
+
+如果项目 deployment 流程要求兼容滚动升级，可以拆成两个 migrations：
+
+```text
+Migration 1:
+add + backfill + FK
+
+代码部署:
+改用 model_id
+
+Migration 2:
+drop embedding_model
+```
+
+优先遵循项目现有部署方式。
+
+------
+
+# 二十二、回滚能力
+
+Migration 必须尽可能支持 rollback。
+
+如果需要恢复旧字段：
+
+可以通过：
+
+```text
+model_id
+JOIN
+admin_ai_model_configs
+```
+
+重新构造字符串模型字段。
+
+down migration 的逻辑应类似：
+
+```text
+add embedding_model varchar(128)
+↓
+JOIN model_id -> admin_ai_model_configs
+↓
+回填模型名称
+↓
+验证
+↓
+drop FK/model_id
+```
+
+不要写一个无法恢复数据的 down migration。
+
+------
+
+# 二十三、测试
+
+运行项目已有：
+
+```text
+unit tests
+integration tests
+backend tests
+lint
+typecheck
+```
+
+另外增加针对本次改动的测试。
+
+至少覆盖：
+
+### 创建 embedding
+
+给定：
+
+```text
+admin_ai_model_configs.id = X
+```
+
+新 embedding 保存：
+
+```text
+model_id = X
+```
+
+### 读取 embedding
+
+能够通过 relation 获取模型配置。
+
+### 不允许无效 ID
+
+插入：
+
+```text
+model_id = 不存在的ID
+```
+
+数据库应 FK failure。
+
+### model_id NOT NULL
+
+不允许创建：
+
+```text
+model_id = NULL
+```
+
+### 删除 model config
+
+确认实际 ON DELETE 行为符合预期。
+
+### embedding lookup
+
+原来依赖：
+
+```text
+embedding_model
+```
+
+的 lookup / upsert / search 仍然正常。
+
+------
+
+# 二十四、数据库最终验证
+
+迁移完成后输出：
+
+```sql
+SELECT COUNT(*)
+FROM question_embeddings;
+```
+
+与迁移前必须一致。
+
+再验证：
+
+```sql
+SELECT COUNT(*)
+FROM question_embeddings
+WHERE model_id IS NULL;
+```
+
+必须：
+
+```text
+0
+```
+
+验证孤儿 FK：
+
+```sql
+SELECT COUNT(*)
+FROM question_embeddings qe
+LEFT JOIN admin_ai_model_configs c
+  ON qe.model_id = c.id
+WHERE c.id IS NULL;
+```
+
+必须：
+
+```text
+0
+```
+
+再输出类似：
+
+```sql
+SELECT
+    qe.model_id,
+    c.<real_model_identifier>,
+    COUNT(*) AS embedding_count,
+    MIN(qe.embedding_dim),
+    MAX(qe.embedding_dim)
+FROM question_embeddings qe
+JOIN admin_ai_model_configs c
+  ON c.id = qe.model_id
+GROUP BY qe.model_id, c.<real_model_identifier>
+ORDER BY qe.model_id;
+```
+
+让我看到最终模型分布。
+
+------
+
+# 二十五、最终目标 Schema
+
+最终 `question_embeddings` 应类似：
+
+```text
+id
+question_id
+question_type
+model_id                int4 NOT NULL FK
+embedding_dim
+content_hash
+content_text
+embedding
+...
+```
+
+其中：
+
+```text
+model_id
+```
+
+引用：
+
+```text
+admin_ai_model_configs.id
+```
+
+不再存在数据库字段：
+
+```text
+embedding_model varchar(128)
+```
+
+模型名称只存储于：
+
+```text
+admin_ai_model_configs
+```
+
+中。
+
+------
+
+# 二十六、最后输出报告
+
+完成后给我：
+
+## 数据库
+
+- backup 路径
+- migration 文件
+- migration 前 embedding row count
+- migration 后 embedding row count
+- old embedding_model → model_id 映射表
+- NULL model_id 数
+- orphan model_id 数
+- FK 名称
+- index 名称
+
+## 后端
+
+列出所有修改文件，并说明：
+
+```text
+ORM
+repository
+service
+embedding generation
+vector search
+API DTO
+admin API
+tests
+```
+
+哪些发生了变化。
+
+## 验证
+
+列出实际执行的：
+
+```text
+migration
+SQL verification
+tests
+lint
+typecheck
+```
+
+以及结果。
+
+## Git
+
+运行：
+
+```bash
 git diff
+git status
+```
 
-保护当前已有未提交修改。
+确认：
 
-禁止：
+- backup 未进入 Git
+- 没有密码
+- 没有连接字符串
+- 没有无关修改
 
-git reset --hard
-git checkout .
-git clean
-git stash
+不要只告诉我“应该怎么改”。
 
-除非我明确要求。
+请实际：
 
-不要覆盖与当前 goal 无关的用户修改。
-
-==================================================
-二十一、执行方式
-==================================================
-
-开始时先输出一个简短链路图，例如：
-
-MiniProgram
-  ↓
-GET /practice/questions
-  ↓
-Practice API
-  ↓
-selection/recommendation
-  ↓
-batch token
-  ↓
-answer
-  ↓
-POST /practice/batch-submit
-  ↓
-validation
-  ↓
-grading
-  ↓
-transaction
-  ├─ answer records
-  ├─ wrong questions
-  ├─ review schedule
-  ├─ mastery
-  ├─ recommendation feedback
-  └─ statistics
-  ↓
-practice result
-
-然后开始真正检查代码。
-
-不要输出几十条可能存在的问题之后停止。
-
-对于每一个问题：
-
-确认代码证据
-→ 判断真实影响
-→ 修复
-→ regression test
-→ 验证
-
-如果一个假设经过检查不存在问题，就不要为了“有产出”而修改代码。
-
-==================================================
-二十二、验证
-==================================================
-
-每修复一批问题执行最相关 tests。
-
-最终至少尝试：
-
-- 后端相关 unit tests
-- practice API tests
-- service tests
-- integration tests
-- lint / formatter check
-- type/static check（如果项目已有）
-- affected backend test suite
-
-测试失败时：
-
-判断是已有问题还是本次修改导致。
-
-如果属于本链路真实 bug，继续处理。
-
-==================================================
-完成条件
-==================================================
-
-只有同时满足以下条件才能结束 goal：
-
-1. 已从小程序真实 request contract 出发完整追踪刷题链路。
-2. GET /practice/questions 已审查。
-3. POST /practice/batch-submit 已审查。
-4. batch token / question version 已审查。
-5. idempotency / concurrent submit 已审查。
-6. grading correctness 已审查。
-7. wrong-question side effects 已审查。
-8. review scheduling 已审查。
-9. mastery / Leitner / statistics 等直接副作用已审查。
-10. random / smart / sequential 三种核心模式已覆盖。
-11. 所有确认的高/中优先级问题已经实际修复。
-12. 对重要修复已有 regression tests。
-13. 相关测试通过。
-14. 最后重新检查 git diff 和 git status。
-15. 没有误改无关模块。
-
-在达到上述条件之前，不要仅因为完成一轮检查就宣布 goal complete。
-
-最终报告只包含：
-
-1. 实际确认的问题，按 Critical / High / Medium / Low 分类；
-2. 每个问题的根因；
-3. 已完成的修复；
-4. 新增或修改的测试；
-5. 实际运行的验证命令和结果；
-6. 修改文件列表；
-7. 仍存在的风险或无法验证项；
-8. 如果没有遗留问题，明确写“未发现仍需处理的已知高/中优先级问题”。
+**审计 → 备份 → 建 migration → 回填 → 改后端 → 执行 migration → 验证 → 测试 → 报告。**

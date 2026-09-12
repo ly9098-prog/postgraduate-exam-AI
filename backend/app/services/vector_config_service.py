@@ -85,9 +85,9 @@ async def resolve_embedding_model(
 
     if selected_id is not None:
         model = await db.get(AdminAiModelConfig, selected_id)
-        if model is None:
+        if model is None or model.deleted_at is not None:
             raise ValueError(
-                f"Embedding 模型配置 #{selected_id} 不存在，请重新选择模型"
+                f"Embedding 模型配置 #{selected_id} 不存在或已删除，请重新选择模型"
             )
         if not model.is_enabled:
             raise ValueError(
@@ -99,7 +99,10 @@ async def resolve_embedding_model(
 
     result = await db.execute(
         select(AdminAiModelConfig)
-        .where(AdminAiModelConfig.is_enabled == True)  # noqa: E712
+        .where(
+            AdminAiModelConfig.is_enabled == True,  # noqa: E712
+            AdminAiModelConfig.deleted_at.is_(None),
+        )
         .order_by(
             AdminAiModelConfig.is_default.desc(), AdminAiModelConfig.sort_order.asc()
         )

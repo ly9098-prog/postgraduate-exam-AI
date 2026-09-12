@@ -722,7 +722,13 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
     try:
         async with async_session() as session:
             ai_urls = list(
-                (await session.execute(select(AdminAiModelConfig.api_base_url)))
+                (
+                    await session.execute(
+                        select(AdminAiModelConfig.api_base_url).where(
+                            AdminAiModelConfig.deleted_at.is_(None)
+                        )
+                    )
+                )
                 .scalars()
                 .all()
             )

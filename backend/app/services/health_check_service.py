@@ -48,7 +48,9 @@ async def check_ai_model_config(db: AsyncSession) -> AiModelConfigCheck:
     admin-managed model config is complete, regardless of env var presence.
     """
     result = await db.execute(
-        select(AdminAiModelConfig).order_by(
+        select(AdminAiModelConfig)
+        .where(AdminAiModelConfig.deleted_at.is_(None))
+        .order_by(
             AdminAiModelConfig.is_default.desc(),
             AdminAiModelConfig.sort_order.asc(),
         )

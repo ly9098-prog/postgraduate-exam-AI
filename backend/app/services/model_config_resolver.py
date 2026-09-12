@@ -307,7 +307,11 @@ class AIModelConfigResolver:
         in context, artifacts, or logs.
         """
         model = await self._db.get(AdminAiModelConfig, int(config.model_config_id))
-        if model is None or not model.api_key_encrypted:
+        if (
+            model is None
+            or model.deleted_at is not None
+            or not model.api_key_encrypted
+        ):
             raise ValueError(
                 AIConfigErrorCode.AI_CONFIG_SECRET_MISSING.value,
                 f"No secret configured for model config {config.model_config_id}",
@@ -343,7 +347,10 @@ class AIModelConfigResolver:
         # Query all enabled models
         result = await self._db.execute(
             select(AdminAiModelConfig)
-            .where(AdminAiModelConfig.is_enabled)
+            .where(
+                AdminAiModelConfig.is_enabled,
+                AdminAiModelConfig.deleted_at.is_(None),
+            )
             .order_by(
                 AdminAiModelConfig.is_default.desc(),
                 AdminAiModelConfig.sort_order.asc(),
@@ -425,7 +432,7 @@ class AIModelConfigResolver:
     ) -> ResolvedAIModelConfig:
         """Resolve a specific model config by ID."""
         model = await self._db.get(AdminAiModelConfig, int(config_id))
-        if model is None:
+        if model is None or model.deleted_at is not None:
             raise ValueError(
                 AIConfigErrorCode.AI_MODEL_CONFIG_NOT_FOUND.value,
                 f"Model config with id={config_id} not found",
@@ -684,7 +691,10 @@ async def resolve_active_model(
     # 查出所有已启用模型，在 Python 层按序匹配
     result = await db.execute(
         select(AdminAiModelConfig)
-        .where(AdminAiModelConfig.is_enabled)
+        .where(
+            AdminAiModelConfig.is_enabled,
+            AdminAiModelConfig.deleted_at.is_(None),
+        )
         .order_by(
             AdminAiModelConfig.is_default.desc(),
             AdminAiModelConfig.sort_order.asc(),
