@@ -386,8 +386,17 @@ async def upsert_question_embedding(
     await _vs.refresh_async(db)
 
     qid = question.id
-    model = _vs.emb.model
     subject_id = getattr(question, "subject_id", None)
+
+    # model_id 是 FK 权威身份（admin_ai_model_configs.id）。未解析到模型
+    # 配置（如 settings 兜底无 DB 记录）时禁止写入 NULL。
+    model_config_id = _vs.emb.model_config_id
+    if model_config_id is None:
+        return {
+            "question_id": qid,
+            "status": "failed",
+            "reason": "embedding model config not resolved (model_id unknown)",
+        }
 
     try:
         subject_code = await _resolve_question_subject_code(db, question)
@@ -402,9 +411,9 @@ async def upsert_question_embedding(
         result = await db.execute(
             text(
                 "SELECT id, content_hash FROM question_embeddings "
-                "WHERE question_id = :qid AND embedding_model = :model"
+                "WHERE question_id = :qid AND model_id = :model_id"
             ),
-            {"qid": qid, "model": model},
+            {"qid": qid, "model_id": model_config_id},
         )
         existing = result.first()
 
@@ -448,7 +457,7 @@ async def upsert_question_embedding(
                     "embedding = CAST(:emb AS vector), embedding_dim = :dim, "
                     "subject_id = :subject_id, question_type = :qtype, "
                     "updated_at = NOW(), embedded_at = NOW() "
-                    "WHERE question_id = :qid AND embedding_model = :model"
+                    "WHERE question_id = :qid AND model_id = :model_id"
                 ),
                 {
                     "hash": content_hash,
@@ -458,7 +467,7 @@ async def upsert_question_embedding(
                     "subject_id": subject_id,
                     "qtype": question.question_type,
                     "qid": qid,
-                    "model": model,
+                    "model_id": model_config_id,
                 },
             )
             await db.flush()
@@ -467,15 +476,15 @@ async def upsert_question_embedding(
             await db.execute(
                 text(
                     "INSERT INTO question_embeddings "
-                    "(question_id, subject_id, question_type, embedding_model, embedding_dim, "
+                    "(question_id, subject_id, question_type, model_id, embedding_dim, "
                     "content_hash, content_text, embedding) "
-                    "VALUES (:qid, :subject_id, :qtype, :model, :dim, :hash, :text, CAST(:emb AS vector))"
+                    "VALUES (:qid, :subject_id, :qtype, :model_id, :dim, :hash, :text, CAST(:emb AS vector))"
                 ),
                 {
                     "qid": qid,
                     "subject_id": subject_id,
                     "qtype": question.question_type,
-                    "model": model,
+                    "model_id": model_config_id,
                     "dim": dim,
                     "hash": content_hash,
                     "text": content_text,
@@ -548,13 +557,33 @@ async def backfill_question_embeddings(
     if not force:
         # 查询当前 model 下缺少“可召回”embedding 的题目。历史版本可能
         # 因 subject_ref 未预加载写入空 subject，也必须自动进入修复批次。
+        if _vs.emb.model_config_id is None:
+            logger.warning(
+                "embedding model config 未解析（model_id 未知），跳过回填查询过滤"
+            )
+            return {
+                "total": 0,
+                "created": 0,
+                "updated": 0,
+                "skipped": 0,
+                "failed": 0,
+                "enabled": True,
+                "errors": [
+                    {
+                        "question_id": None,
+                        "reason": "embedding model config not resolved (model_id unknown)",
+                    }
+                ],
+                "next_cursor": None,
+                "has_more": False,
+            }
         conditions.append(
             ~Question.id.in_(
                 select(text("question_id"))
                 .select_from(text("question_embeddings"))
                 .where(
                     text(
-                        "embedding_model = :embedding_model "
+                        "model_id = :model_id "
                         "AND embedding_dim = :embedding_dim "
                         "AND subject_id IS NOT NULL"
                     )
@@ -572,7 +601,7 @@ async def backfill_question_embeddings(
 
     query_params = (
         {
-            "embedding_model": _vs.emb.model,
+            "model_id": _vs.emb.model_config_id,
             "embedding_dim": _vs.emb.dim,
         }
         if not force
@@ -634,14 +663,17 @@ async def _ensure_source_embedding(
     db: AsyncSession, question: Question
 ) -> list[float] | None:
     """确保源题有 embedding，如果没有则尝试现场生成。"""
-    model = _vs.emb.model
+    model_config_id = _vs.emb.model_config_id
+
+    if model_config_id is None:
+        return None
 
     result = await db.execute(
         text(
             "SELECT embedding::text FROM question_embeddings "
-            "WHERE question_id = :qid AND embedding_model = :model"
+            "WHERE question_id = :qid AND model_id = :model_id"
         ),
-        {"qid": question.id, "model": model},
+        {"qid": question.id, "model_id": model_config_id},
     )
     row = result.first()
     if row:
@@ -671,9 +703,9 @@ async def _ensure_source_embedding(
         result = await db.execute(
             text(
                 "SELECT embedding::text FROM question_embeddings "
-                "WHERE question_id = :qid AND embedding_model = :model"
+                "WHERE question_id = :qid AND model_id = :model_id"
             ),
-            {"qid": question.id, "model": model},
+            {"qid": question.id, "model_id": model_config_id},
         )
         row = result.first()
         if row:
@@ -823,9 +855,9 @@ async def search_similar_questions(
         return base_result
 
     # 缓存检查（仅 use_result=True 时读写缓存）
-    model = _vs.emb.model
+    model_id = _vs.emb.model_config_id
     answer_ver = await _get_user_answer_version(db, user_id)
-    cache_key = f"vector:similar:{user_id}:{question_id}:{count}:{exclude_answered}:{no_repeat_days}:{answer_ver}:{model}"
+    cache_key = f"vector:similar:{user_id}:{question_id}:{count}:{exclude_answered}:{no_repeat_days}:{answer_ver}:{model_id}"
 
     if decision.use_result:
         cached = await cache.get(cache_key)
@@ -861,7 +893,7 @@ async def search_similar_questions(
                       AND q.is_active = true
                       AND q.review_status = 'approved'
                       AND qe.subject_id = :subject_id
-                      AND qe.embedding_model = :model
+                      AND qe.model_id = :model_id
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr
                           WHERE pr.user_id = :uid AND pr.answered_at >= :cutoff
@@ -875,7 +907,7 @@ async def search_similar_questions(
                         "emb": pg_literal,
                         "qid": question_id,
                         "subject_id": subject_id,
-                        "model": model,
+                        "model_id": model_id,
                         "uid": user_id,
                         "cutoff": cutoff,
                         "top_k": top_k,
@@ -892,7 +924,7 @@ async def search_similar_questions(
                       AND q.is_active = true
                       AND q.review_status = 'approved'
                       AND qe.subject_id = :subject_id
-                      AND qe.embedding_model = :model
+                      AND qe.model_id = :model_id
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
                       )
@@ -905,7 +937,7 @@ async def search_similar_questions(
                         "emb": pg_literal,
                         "qid": question_id,
                         "subject_id": subject_id,
-                        "model": model,
+                        "model_id": model_id,
                         "uid": user_id,
                         "top_k": top_k,
                     },
@@ -921,7 +953,7 @@ async def search_similar_questions(
                   AND q.is_active = true
                   AND q.review_status = 'approved'
                   AND qe.subject_id = :subject_id
-                  AND qe.embedding_model = :model
+                  AND qe.model_id = :model_id
                 ORDER BY qe.embedding <=> CAST(:emb AS vector)
                 LIMIT :top_k
             """)
@@ -931,7 +963,7 @@ async def search_similar_questions(
                     "emb": pg_literal,
                     "qid": question_id,
                     "subject_id": subject_id,
-                    "model": model,
+                    "model_id": model_id,
                     "top_k": top_k,
                 },
             )
@@ -1105,10 +1137,10 @@ async def vector_recall_by_text(
         return []
 
     # 缓存检查（仅 use_result=True 时）
-    model = _vs.emb.model
+    model_id = _vs.emb.model_config_id
     weak_hash = hashlib.sha256(query_text.encode()).hexdigest()[:12]
     answer_ver = await _get_user_answer_version(db, user_id)
-    cache_key = f"vector:smart:{user_id}:{subject}:{count}:{exclude_answered}:{no_repeat_days}:{answer_ver}:{weak_hash}:{model}"
+    cache_key = f"vector:smart:{user_id}:{subject}:{count}:{exclude_answered}:{no_repeat_days}:{answer_ver}:{weak_hash}:{model_id}"
 
     if decision.use_result:
         cached = await cache.get(cache_key)
@@ -1137,7 +1169,7 @@ async def vector_recall_by_text(
                     WHERE q.is_active = true
                       AND q.review_status = 'approved'
                       AND qe.subject_id = ANY(:subject_ids)
-                      AND qe.embedding_model = :model
+                      AND qe.model_id = :model_id
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr
                           WHERE pr.user_id = :uid AND pr.answered_at >= :cutoff
@@ -1150,7 +1182,7 @@ async def vector_recall_by_text(
                     {
                         "emb": pg_literal,
                         "subject_ids": subject_ids,
-                        "model": model,
+                        "model_id": model_id,
                         "uid": user_id,
                         "cutoff": cutoff,
                         "top_k": top_k,
@@ -1166,7 +1198,7 @@ async def vector_recall_by_text(
                     WHERE q.is_active = true
                       AND q.review_status = 'approved'
                       AND qe.subject_id = ANY(:subject_ids)
-                      AND qe.embedding_model = :model
+                      AND qe.model_id = :model_id
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
                       )
@@ -1178,7 +1210,7 @@ async def vector_recall_by_text(
                     {
                         "emb": pg_literal,
                         "subject_ids": subject_ids,
-                        "model": model,
+                        "model_id": model_id,
                         "uid": user_id,
                         "top_k": top_k,
                     },
@@ -1193,7 +1225,7 @@ async def vector_recall_by_text(
                 WHERE q.is_active = true
                   AND q.review_status = 'approved'
                   AND qe.subject_id = ANY(:subject_ids)
-                  AND qe.embedding_model = :model
+                  AND qe.model_id = :model_id
                 ORDER BY qe.embedding <=> CAST(:emb AS vector)
                 LIMIT :top_k
             """)
@@ -1202,7 +1234,7 @@ async def vector_recall_by_text(
                 {
                     "emb": pg_literal,
                     "subject_ids": subject_ids,
-                    "model": model,
+                    "model_id": model_id,
                     "top_k": top_k,
                 },
             )
@@ -1325,14 +1357,18 @@ async def get_embedding_status(db: AsyncSession) -> dict:
                         f"database={database_dim}"
                     )
 
-                count_result = await db.execute(
-                    text(
-                        "SELECT COUNT(*) FROM question_embeddings "
-                        "WHERE embedding_model = :model"
-                    ),
-                    {"model": _vs.emb.model},
-                )
-                info["total_embeddings"] = count_result.scalar() or 0
+                if _vs.emb.model_config_id is None:
+                    issues.append("embedding model config not resolved (model_id unknown)")
+                    info["total_embeddings"] = 0
+                else:
+                    count_result = await db.execute(
+                        text(
+                            "SELECT COUNT(*) FROM question_embeddings "
+                            "WHERE model_id = :model_id"
+                        ),
+                        {"model_id": _vs.emb.model_config_id},
+                    )
+                    info["total_embeddings"] = count_result.scalar() or 0
             except Exception:
                 issues.append("could not inspect vector dimension or embedding count")
 

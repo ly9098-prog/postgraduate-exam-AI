@@ -65,7 +65,7 @@ def _alembic(args: list[str], db: str) -> subprocess.CompletedProcess:
         text=True,
         timeout=240,
         cwd=str(BACKEND),
-        env={**os.environ, "DATABASE_URL": str(url)},
+        env={**os.environ, "DATABASE_URL": url.render_as_string(hide_password=False)},
     )
 
 
@@ -229,9 +229,9 @@ def migrated_db():
 
     ids = _run(_seed())
 
-    result = _alembic(["upgrade", "head"], TEST_DB)
+    result = _alembic(["upgrade", "b2c3d4e5f6a7"], TEST_DB)
     assert result.returncode == 0, (
-        f"upgrade to head (b2c3d4e5f6a7) failed:\n{result.stdout}\n{result.stderr}"
+        f"upgrade to b2c3d4e5f6a7 failed:\n{result.stdout}\n{result.stderr}"
     )
 
     yield ids

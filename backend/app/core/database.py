@@ -494,7 +494,7 @@ async def _ensure_vector_schema(conn):
                     question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
                     subject_id INTEGER NOT NULL REFERENCES subjects(id),
                     question_type VARCHAR(32) NOT NULL,
-                    embedding_model VARCHAR(128) NOT NULL,
+                    model_id INTEGER NOT NULL REFERENCES admin_ai_model_configs(id),
                     embedding_dim INTEGER NOT NULL,
                     content_hash VARCHAR(64) NOT NULL,
                     content_text TEXT NOT NULL,
@@ -502,7 +502,7 @@ async def _ensure_vector_schema(conn):
                     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
                     embedded_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    UNIQUE(question_id, embedding_model)
+                    UNIQUE(question_id, model_id)
                 )
                 """)
                 )
@@ -548,6 +548,7 @@ async def _ensure_vector_schema(conn):
             "CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)",
             "CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject_id ON question_embeddings(subject_id)",
             "CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)",
+            "CREATE INDEX IF NOT EXISTS ix_question_embeddings_model_id ON question_embeddings(model_id)",
         ]:
             try:
                 with sync_conn.begin_nested():

@@ -21,7 +21,7 @@ from app.services.formula_graph_spec_renderer import (
 DIAGRAM_VERSION = 1
 
 # Load specs from the shared JSON data file
-_SPECS_FILE = Path(__file__).resolve().parent.parent / "app" / "data" / "formula_library" / "math2_diagram_specs.json"
+_SPECS_FILE = Path(__file__).resolve().parents[2] / "app" / "data" / "formula_library" / "math2_diagram_specs.json"
 with open(_SPECS_FILE) as _f:
     DIAGRAMS = json.load(_f)
 
