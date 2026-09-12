@@ -4,6 +4,7 @@ const { safeDecodeURIComponent } = require('../utils/route-params')
 const { toPlainInlineMathText } = require('../utils/stem-render')
 const storage = require('../../../utils/storage')
 const aiCache = require('../utils/ai-diagnosis-cache')
+const errorDiagnosis = require('../utils/error-diagnosis')
 const { getSubjectName, getSubjectShortName } = require('../utils/subject-meta')
 const exportApi = require('../utils/export-capability')
 const { parseServerUtc, getChinaDayRangeUtcMs, chinaCalendarDayDiff, formatChinaMonthDayCn } = require('../../../utils/china-time')
@@ -1487,7 +1488,8 @@ return getSubjectName(code)
 },
 _errorTypeLabel(t) {
 const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他', unknown: '未分类' }
-return map[t] || t || '未知'
+if (!t) return '未知'
+return map[t] || errorDiagnosis.labelOf(t)
 },
 _timeLabel(dateStr) {
 if (!dateStr) return ''

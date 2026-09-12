@@ -129,8 +129,15 @@
 </view>
 </view>
 <view class="runner-recommend-bar" wx:if="{{currentQuestion.recommend_reason}}">
+<view class="runner-recommend-icon-wrap">
+<image class="runner-recommend-icon" src="/assets/icons/practice/recommend-reason-bulb.png" mode="aspectFit"></image>
+</view>
+<view class="runner-recommend-divider"></view>
+<view class="runner-recommend-copy">
 <text class="runner-recommend-label">推荐原因</text>
+<view class="runner-recommend-copy-divider"></view>
 <text class="runner-recommend-text">{{currentQuestion.recommend_reason}}</text>
+</view>
 </view>
 <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}" wx:key="segments">
 <math-question segments="{{currentQuestion._renderModel.segments}}" />

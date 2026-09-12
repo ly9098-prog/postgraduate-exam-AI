@@ -199,26 +199,10 @@
 </view>
 <view class="sheet-close" hover-class="soft-pressed" catchtap="closeSubjectSheet"><text class="line-icon icon-close"></text></view>
 </view>
-<view class="sheet-current" wx:if="{{selectedSubjectName}}">
-<text class="sheet-current-label">当前选择</text>
-<text class="sheet-current-name">{{selectedSubjectName}}</text>
-</view>
-<view class="sheet-recent" wx:if="{{recentSubjects && recentSubjects.length > 0}}">
-<text class="sheet-section-label">最近使用</text>
-<view class="sheet-recent-list">
-<view
-              wx:for="{{recentSubjects}}"
-              wx:key="subject_id"
-              class="sheet-recent-chip {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
-              hover-class="option-pressed"
-              catchtap="chooseRecentSubject"
-              data-subject-id="{{item.subject_id}}"
-              data-subject-name="{{item.display_name}}"
-              data-has-children="{{item.has_children}}"
-            >{{item.display_name}}</view>
-</view>
-</view>
+<view class="all-subject-heading">
+<view class="all-subject-accent"></view>
 <text class="sheet-section-label all-subject-label">全部科目</text>
+</view>
 <scroll-view
           scroll-y
           enhanced
@@ -249,7 +233,10 @@
                   data-subject-name="{{item.display_name}}"
                   data-has-children="{{item.children && item.children.length > 0}}"
                 >
-<view class="parent-folder">□</view>
+<view class="parent-folder subject-icon-{{item.icon_type}}">
+<image class="subject-icon-image" wx:if="{{item.icon_src}}" src="{{item.icon_src}}" mode="aspectFit"></image>
+<text class="subject-icon-text" wx:else>{{item.icon_mark}}</text>
+</view>
 <view class="parent-copy">
 <text class="parent-name">{{item.display_name}}</text>
 <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">{{item.descendant_count || item.children.length}} 个下级科目 · 可选择全部</text>
@@ -257,7 +244,6 @@
 </view>
 </view>
 <view class="parent-right">
-<text class="parent-selected" wx:if="{{selectedSubjectId === item.subject_id}}">✓</text>
 <view
                     class="parent-expand-hit"
                     hover-class="soft-pressed"
@@ -265,8 +251,9 @@
                     data-subject-id="{{item.subject_id}}"
                     wx:if="{{item.children && item.children.length > 0}}"
                   >
-<text class="parent-arrow {{expandedSubjectId === item.subject_id ? 'up' : ''}}">⌄</text>
+<text class="parent-arrow {{expandedSubjectId === item.subject_id ? 'up' : ''}}">›</text>
 </view>
+<text class="parent-arrow parent-leaf-arrow" wx:else>›</text>
 </view>
 </view>
 <view class="child-subject-wrap" wx:if="{{expandedSubjectId === item.subject_id && item.flat_children && item.flat_children.length > 0}}">
@@ -281,7 +268,9 @@
                   data-has-children="{{item.has_children}}"
                 >
 <text class="child-subject-name" style="margin-left: {{item.indent_rpx || 0}}rpx;">{{item.display_name}}</text>
-<view class="child-select-mark" wx:if="{{selectedSubjectId === item.subject_id}}">✓</view>
+<view class="child-select-mark" wx:if="{{selectedSubjectId === item.subject_id}}">
+<image class="child-select-icon" src="/assets/icons/practice-subject/check.svg" mode="aspectFit"></image>
+</view>
 </view>
 </view>
 </view>

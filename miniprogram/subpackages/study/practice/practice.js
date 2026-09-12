@@ -758,6 +758,10 @@ const flatChildren = []
 flattenDescendants(root, 1, flatChildren)
 root.flat_children = flatChildren
 root.descendant_count = flatChildren.length
+const iconMeta = this._subjectIconMeta(root.display_name, root.subject_code)
+root.icon_type = iconMeta.type
+root.icon_mark = iconMeta.mark
+root.icon_src = iconMeta.src
 })
 return parentItems
 },
@@ -851,6 +855,23 @@ if (/数学|代数|高数|概率|统计/.test(text)) return 'Σ'
 if (/英语|外语/.test(text)) return 'A'
 if (/政治|思政/.test(text)) return '政'
 return text.slice(0, 1) || '·'
+},
+_subjectIconMeta(name, code) {
+const text = `${String(name || '')} ${String(code || '')}`
+const codeText = String(code || '').trim()
+if (/计算机|数据结构|程序|代码|网络|操作系统|computer/i.test(text) || /^cs(?:408)?$/i.test(codeText)) {
+return { type: 'computer', mark: '', src: '/assets/icons/practice-subject/monitor.svg' }
+}
+if (/数学|代数|高数|概率|统计|math/i.test(text)) {
+return { type: 'math', mark: '', src: '/assets/icons/practice-subject/code-xml.svg' }
+}
+if (/英语|外语|english/i.test(text)) {
+return { type: 'english', mark: '', src: '/assets/icons/practice-subject/languages.svg' }
+}
+if (/政治|思政|politic/i.test(text)) {
+return { type: 'politics', mark: '', src: '/assets/icons/practice-subject/landmark.svg' }
+}
+return { type: 'default', mark: String(name || '').slice(0, 1) || '·', src: '' }
 },
 _decorateRecentSubjects(subjects) {
 return (subjects || []).map((item) => {
@@ -1008,9 +1029,24 @@ if (isDoubleTap) {
 this.closeSubjectSheet()
 }
 },
+_clearLaunchOverridesForManualConfig() {
+// Home/Study Hub route params are setup defaults, not invisible constraints.
+// Once the user changes subject/mode/count, continuing to send the original KP or
+// targeted-question scope can silently pin a parent-subject practice to one child
+// subject and can also make the signed batch impossible to submit.
+this._launchKnowledgePoint = ''
+this._launchKnowledgePointId = null
+this._launchIncludeDescendants = false
+this._launchQuestionIds = ''
+this._launchAllowRepeat = false
+this._launchPlanToken = ''
+},
 _selectSubject(subjectId, subjectName, expandedSubjectId, hasChildren) {
 const id = Number(subjectId)
 if (!id || !subjectName) return
+if (Number(this.data.selectedSubjectId) !== id) {
+this._clearLaunchOverridesForManualConfig()
+}
 const resolvedHasChildren = hasChildren != null
 ? Boolean(hasChildren)
 : this._subjectHasChildren(id)
@@ -1178,12 +1214,20 @@ this._selectSubject(subjectId, subjectName, this._findParentSubjectId(subjectId)
 this._handleSubjectOptionTap(subjectId, 'child')
 },
 chooseMode(e) {
-this.setData({ selectedMode: e.currentTarget.dataset.mode }, () => {
+const mode = e.currentTarget.dataset.mode
+if (String(this.data.selectedMode || '') !== String(mode || '')) {
+this._clearLaunchOverridesForManualConfig()
+}
+this.setData({ selectedMode: mode }, () => {
 this._updateComputedFields()
 })
 },
 setCount(e) {
-this.setData({ count: Number(e.currentTarget.dataset.count) }, () => {
+const count = Number(e.currentTarget.dataset.count)
+if (Number(this.data.count) !== count) {
+this._clearLaunchOverridesForManualConfig()
+}
+this.setData({ count }, () => {
 this._updateComputedFields()
 })
 },

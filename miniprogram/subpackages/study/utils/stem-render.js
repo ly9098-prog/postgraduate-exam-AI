@@ -167,6 +167,15 @@ function _toPlainInlineMathText(text) {
 if (!text) return ''
 var source = _repairFalseNumberMarkerBreaks(String(text))
 if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+// Superscript/subscript syntax must keep the KaTeX render path.  The lightweight
+// formatter can only flatten a subset of TeX scripts; stripping `$...$` first made
+// expressions such as `O(n^{1/2})` leak literal `^{...}` into option text.
+var hasUnflattenableScript = false
+source.replace(/\$([^$\n]+?)\$/g, function (_, expr) {
+if (/[_^]/.test(expr)) hasUnflattenableScript = true
+return _
+})
+if (hasUnflattenableScript) return null
 var plain = formatInlineMathText(source)
 if (/\\[a-zA-Z]+/.test(plain)) return null
 plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
