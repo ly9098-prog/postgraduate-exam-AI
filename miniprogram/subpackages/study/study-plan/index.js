@@ -2,6 +2,11 @@ const api = require('../../../utils/api')
 const { getChinaDate } = require('../../../utils/china-time')
 const DAILY_OPTIONS = [30, 45, 60, 90, 120, 150, 180, 240]
 const WEEKLY_OPTIONS = [3, 4, 5, 6, 7]
+const FAB_IDLE_DELAY = 3000
+const FAB_SIZE_RPX = 120
+const FAB_RIGHT_RPX = 32
+const FAB_BOTTOM_RPX = 160
+const FAB_POSITION_KEY = 'study-plan-fab-position'
 const PRIORITY_OPTIONS = [
 { value: 'balanced', label: '均衡推进' },
 { value: 'review', label: '记忆复习优先' },
@@ -50,13 +55,127 @@ todayProgressPercent: 0,
 focusMinutes: 0,
 isRestDay: false,
 allocations: [],
+fabX: 0,
+fabY: 0,
+fabReady: false,
+fabIdle: false,
 },
 onLoad() {
 this.setData({ minDate: getChinaDate(0) })
+this._initFabPosition()
 this.loadOverview()
 },
 onShow() {
 if (this._loadedOnce) this.loadOverview()
+this._showFabAndScheduleHide()
+},
+onHide() {
+this._clearFabTimers()
+},
+onUnload() {
+this._clearFabTimers()
+},
+_clearFabTimers() {
+if (this._fabIdleTimer) clearTimeout(this._fabIdleTimer)
+if (this._fabDragClearTimer) clearTimeout(this._fabDragClearTimer)
+this._fabIdleTimer = null
+this._fabDragClearTimer = null
+},
+_getFabBounds() {
+let windowWidth = 375
+let windowHeight = 667
+let safeBottom = 0
+try {
+const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+windowWidth = Number(info.windowWidth || info.screenWidth || windowWidth)
+windowHeight = Number(info.windowHeight || info.screenHeight || windowHeight)
+if (info.safeArea && Number.isFinite(Number(info.safeArea.bottom))) {
+safeBottom = Math.max(0, windowHeight - Number(info.safeArea.bottom))
+}
+} catch (_) {}
+const rpx = windowWidth / 750
+const size = FAB_SIZE_RPX * rpx
+return {
+windowWidth,
+windowHeight,
+safeBottom,
+size,
+maxX: Math.max(0, windowWidth - size),
+maxY: Math.max(0, windowHeight - size),
+rpx,
+}
+},
+_initFabPosition() {
+const bounds = this._getFabBounds()
+let stored = null
+try {
+stored = wx.getStorageSync(FAB_POSITION_KEY)
+} catch (_) {}
+const storedX = stored && Number(stored.x)
+const storedY = stored && Number(stored.y)
+const defaultX = bounds.windowWidth - bounds.size - FAB_RIGHT_RPX * bounds.rpx
+const defaultY = bounds.windowHeight - bounds.size - bounds.safeBottom - FAB_BOTTOM_RPX * bounds.rpx
+const x = Number.isFinite(storedX) ? storedX : defaultX
+const y = Number.isFinite(storedY) ? storedY : defaultY
+this._lastFabPosition = {
+x: Math.max(0, Math.min(bounds.maxX, x)),
+y: Math.max(0, Math.min(bounds.maxY, y)),
+}
+this.setData({
+fabX: this._lastFabPosition.x,
+fabY: this._lastFabPosition.y,
+fabReady: true,
+fabIdle: false,
+}, () => this._showFabAndScheduleHide())
+},
+_showFabAndScheduleHide() {
+if (!this.data.fabReady) return
+if (this._fabIdleTimer) clearTimeout(this._fabIdleTimer)
+if (this.data.fabIdle) this.setData({ fabIdle: false })
+this._fabIdleTimer = setTimeout(() => {
+this._fabIdleTimer = null
+if (this.data.saving) {
+this._showFabAndScheduleHide()
+return
+}
+this.setData({ fabIdle: true })
+}, FAB_IDLE_DELAY)
+},
+onPlanInteraction() {
+this._showFabAndScheduleHide()
+},
+onFabTouchStart() {
+if (this._fabDragClearTimer) clearTimeout(this._fabDragClearTimer)
+this._fabDragClearTimer = null
+this._fabMoved = false
+this._showFabAndScheduleHide()
+},
+onFabMove(e) {
+const detail = e && e.detail ? e.detail : {}
+const x = Number(detail.x)
+const y = Number(detail.y)
+if (Number.isFinite(x) && Number.isFinite(y)) this._lastFabPosition = { x, y }
+if (String(detail.source || '').indexOf('touch') === 0) {
+this._fabMoved = true
+this._showFabAndScheduleHide()
+}
+},
+onFabTouchEnd() {
+if (this._lastFabPosition) {
+try {
+wx.setStorageSync(FAB_POSITION_KEY, this._lastFabPosition)
+} catch (_) {}
+}
+this._showFabAndScheduleHide()
+this._fabDragClearTimer = setTimeout(() => {
+this._fabMoved = false
+this._fabDragClearTimer = null
+}, 300)
+},
+onFabTap() {
+this._showFabAndScheduleHide()
+if (this._fabMoved) return
+this.savePlan()
 },
 onPullDownRefresh() {
 this.loadOverview().finally(() => wx.stopPullDownRefresh())
@@ -102,8 +221,8 @@ const adjusted = Math.max(0, Number(item.adjusted_minutes) || 0)
 const planned = Math.max(0, Number(item.planned_minutes) || 0)
 const completed = Math.max(0, Number(item.completed_minutes) || 0)
 let statusText = '等待安排'
-if (item.status === 'done') statusText = '已完成'
-else if (item.status === 'unavailable') statusText = '已转移额度'
+if (item.status === 'done') statusText = '本项已完成'
+else if (item.status === 'unavailable') statusText = '时间已转给其他任务'
 else if (adjusted > 0) statusText = `接下来 ${adjusted} 分钟`
 return {
 category: item.category,
