@@ -82,6 +82,7 @@ async def build_issue_knowledge_context(
     knowledge_scope: dict | None,
     questions: list,
     revision_ids: dict[int, int],
+    practice_subject_id: int | None = None,
 ) -> dict | None:
     """Build a compact, signed baseline for knowledge-point scoped practice.
 
@@ -196,7 +197,13 @@ async def build_issue_knowledge_context(
         ),
         "root_id": root_id,
         "root_name": str(knowledge_scope.get("root_name") or ""),
-        "subject_id": int(knowledge_scope.get("subject_id") or 0) or None,
+        # Keep semantic session subject aligned with the subject that issued the
+        # batch.  A knowledge point may belong to a child subject while the user
+        # legitimately practices through an aggregate parent subject.
+        "subject_id": int(
+            practice_subject_id or knowledge_scope.get("subject_id") or 0
+        )
+        or None,
         "syllabus_version_id": int(knowledge_scope.get("syllabus_version_id") or 0)
         or None,
         # Exact issue-time semantic scope. These compact id arrays are signed into

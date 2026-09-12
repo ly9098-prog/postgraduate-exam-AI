@@ -750,6 +750,7 @@ async def get_practice_questions(
         knowledge_scope=knowledge_scope,
         questions=questions,
         revision_ids=latest_revision_ids,
+        practice_subject_id=subject_id,
     )
 
     # Home today-plan attribution is accepted only from a valid server-issued token
