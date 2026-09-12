@@ -256,25 +256,25 @@ jobs:
       - name: Static architecture & non-GPU regression tests
         run: |
           python -m pytest \
-            tests/test_architecture_boundaries.py \
-            tests/test_gateway_bypass_zero.py \
-            tests/test_document_ir_production_write_zero.py \
-            tests/test_artifact_path_traversal.py \
-            tests/test_p5_ssrf_http_lifecycle.py \
-            tests/test_coordinator_mode_e2e.py \
-            tests/test_coordinator_boundaries.py \
-            tests/test_coordinator_rollback.py \
-            tests/test_pipeline_coordinator_shadow.py \
-            tests/test_ai_capability_model_separation.py \
-            tests/test_ai_model_config_resolver.py \
-            tests/test_ai_config_snapshot.py \
-            tests/test_code_integrity.py \
-            tests/test_ocr_resume_equivalence.py \
-            tests/test_candidate_evaluator_privacy.py \
-            tests/test_pipeline_fingerprint.py \
-            tests/test_artifact_fingerprint_compatibility.py \
-            tests/test_p6_fingerprint_manifest.py \
-            tests/test_unified_safety_evaluator.py \
+            tests/architecture/test_architecture_boundaries.py \
+            tests/architecture/test_gateway_bypass_zero.py \
+            tests/architecture/test_document_ir_production_write_zero.py \
+            tests/core/test_artifact_path_traversal.py \
+            tests/test_api/test_p5_ssrf_http_lifecycle.py \
+            tests/pipeline/test_coordinator_mode_e2e.py \
+            tests/pipeline/test_coordinator_boundaries.py \
+            tests/pipeline/test_coordinator_rollback.py \
+            tests/pipeline/test_pipeline_coordinator_shadow.py \
+            tests/test_api/test_ai_capability_model_separation.py \
+            tests/test_services/test_ai_model_config_resolver.py \
+            tests/test_services/test_ai_config_snapshot.py \
+            tests/core/test_code_integrity.py \
+            tests/ocr_pipeline/test_ocr_resume_equivalence.py \
+            tests/test_api/test_candidate_evaluator_privacy.py \
+            tests/pipeline/test_pipeline_fingerprint.py \
+            tests/pipeline/test_artifact_fingerprint_compatibility.py \
+            tests/pipeline/test_p6_fingerprint_manifest.py \
+            tests/test_api/test_unified_safety_evaluator.py \
             -v --tb=short 2>&1
 
       - name: Import smoke test

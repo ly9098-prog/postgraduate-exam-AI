@@ -22,71 +22,71 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 
 # Tests that should pass regardless of profile
 COMMON_TESTS = [
-    "tests/test_target_architecture_feature_matrix.py",
-    "tests/test_control_plane_facade.py",
-    "tests/test_deployment_profile.py",
-    "tests/test_runtime_capabilities.py",
-    "tests/test_profile_frozen_on_resume.py",
-    "tests/test_ocr_gateway.py",
-    "tests/test_ocr_gateway_shadow.py",
-    "tests/test_unified_safety_evaluator.py",
-    "tests/test_unified_safety_shadow_equivalence.py",
-    "tests/test_document_validator.py",
-    "tests/test_document_ir_ssot_boundaries.py",
-    "tests/test_coordinator_boundaries.py",
-    "tests/test_asset_outbox.py",
+    "tests/ocr_pipeline/test_target_architecture_feature_matrix.py",
+    "tests/pipeline/test_control_plane_facade.py",
+    "tests/ocr_pipeline/test_deployment_profile.py",
+    "tests/ocr_pipeline/test_runtime_capabilities.py",
+    "tests/ocr_pipeline/test_profile_frozen_on_resume.py",
+    "tests/ocr_pipeline/test_ocr_gateway.py",
+    "tests/ocr_pipeline/test_ocr_gateway_shadow.py",
+    "tests/test_api/test_unified_safety_evaluator.py",
+    "tests/test_api/test_unified_safety_shadow_equivalence.py",
+    "tests/ocr_pipeline/test_document_validator.py",
+    "tests/architecture/test_document_ir_ssot_boundaries.py",
+    "tests/pipeline/test_coordinator_boundaries.py",
+    "tests/test_services/test_asset_outbox.py",
 ]
 
 # Tests that verify cloud_api profile constraints
 CLOUD_API_TESTS = [
     # Profile isolation
-    "tests/test_cloud_profile_no_paddle_import.py",
-    "tests/test_cloud_profile_no_cuda_initialization.py",
-    "tests/test_cloud_ocr_no_local_fallback.py",
-    "tests/test_cloud_profile_registry.py",
+    "tests/cloud_isolation/test_cloud_profile_no_paddle_import.py",
+    "tests/cloud_isolation/test_cloud_profile_no_cuda_initialization.py",
+    "tests/cloud_isolation/test_cloud_ocr_no_local_fallback.py",
+    "tests/cloud_isolation/test_cloud_profile_registry.py",
     # Profile integration
-    "tests/test_ocr_gateway_profile_routes.py",
-    "tests/test_page_stream_profile_config.py",
-    "tests/test_orchestrator_profile_integration.py",
-    "tests/test_invalid_profile_flag_combinations.py",
-    "tests/test_profile_capability_enforcement.py",
+    "tests/ocr_pipeline/test_ocr_gateway_profile_routes.py",
+    "tests/ocr_pipeline/test_page_stream_profile_config.py",
+    "tests/pipeline/test_orchestrator_profile_integration.py",
+    "tests/ocr_pipeline/test_invalid_profile_flag_combinations.py",
+    "tests/ocr_pipeline/test_profile_capability_enforcement.py",
     # Resource guard
-    "tests/test_cloud_resource_guard.py",
-    "tests/test_ocr_adapter_lazy_loading.py",
+    "tests/cloud_isolation/test_cloud_resource_guard.py",
+    "tests/ocr_pipeline/test_ocr_adapter_lazy_loading.py",
 ]
 
 # Tests that verify local_import profile capabilities
 LOCAL_IMPORT_TESTS = [
-    "tests/test_local_profile_registry.py",
-    "tests/test_page_stream.py",
-    "tests/test_page_stream_memory.py",
-    "tests/test_page_stream_resume.py",
+    "tests/ocr_pipeline/test_local_profile_registry.py",
+    "tests/ocr_pipeline/test_page_stream.py",
+    "tests/ocr_pipeline/test_page_stream_memory.py",
+    "tests/ocr_pipeline/test_page_stream_resume.py",
 ]
 
 # Sprint 4C coordinator pipeline tests
 SPRINT_4C_TESTS = [
-    "tests/test_pipeline_coordinator_shadow.py",
-    "tests/test_pipeline_coordinator_production_entry.py",
-    "tests/test_pipeline_coordinator_single_execution.py",
-    "tests/test_public_admin_pipeline_equivalence.py",
-    "tests/test_coordinator_rollback.py",
-    "tests/test_rollback_resume_idempotency.py",
-    "tests/test_document_ir_no_production_write_violations.py",
-    "tests/test_no_new_legacy_call_sites.py",
-    "tests/test_cloud_gateway_e2e.py",
-    "tests/test_cloud_gateway_no_local_import_after_failure.py",
-    "tests/test_existing_sync_after_coordinator_switch.py",
-    "tests/test_database_sync_compatibility.py",
-    "tests/test_no_duplicate_database_sync.py",
+    "tests/pipeline/test_pipeline_coordinator_shadow.py",
+    "tests/pipeline/test_pipeline_coordinator_production_entry.py",
+    "tests/pipeline/test_pipeline_coordinator_single_execution.py",
+    "tests/pipeline/test_public_admin_pipeline_equivalence.py",
+    "tests/pipeline/test_coordinator_rollback.py",
+    "tests/pipeline/test_rollback_resume_idempotency.py",
+    "tests/architecture/test_document_ir_no_production_write_violations.py",
+    "tests/architecture/test_no_new_legacy_call_sites.py",
+    "tests/cloud_isolation/test_cloud_gateway_e2e.py",
+    "tests/cloud_isolation/test_cloud_gateway_no_local_import_after_failure.py",
+    "tests/pipeline/test_existing_sync_after_coordinator_switch.py",
+    "tests/core/test_database_sync_compatibility.py",
+    "tests/architecture/test_no_duplicate_database_sync.py",
 ]
 
 # Database sync boundary tests
 SYNC_TESTS = [
-    "tests/test_database_sync_compatibility.py",
-    "tests/test_no_duplicate_database_sync.py",
-    "tests/test_existing_sync_after_coordinator_switch.py",
-    "tests/test_no_new_sync_endpoint.py",
-    "tests/test_no_new_sync_worker.py",
+    "tests/core/test_database_sync_compatibility.py",
+    "tests/architecture/test_no_duplicate_database_sync.py",
+    "tests/pipeline/test_existing_sync_after_coordinator_switch.py",
+    "tests/architecture/test_no_new_sync_endpoint.py",
+    "tests/architecture/test_no_new_sync_worker.py",
 ]
 
 
