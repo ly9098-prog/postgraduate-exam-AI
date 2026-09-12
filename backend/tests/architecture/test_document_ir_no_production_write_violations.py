@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 # Path to the app directory
-APP_DIR = Path(__file__).resolve().parent.parent / "app"
+APP_DIR = Path(__file__).resolve().parent.parent.parent / "app"
 
 # Files and directories to exclude from scanning
 EXCLUDE_DIRS = {

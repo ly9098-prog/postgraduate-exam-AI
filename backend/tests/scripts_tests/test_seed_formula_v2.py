@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-DATA_FILE = Path(__file__).resolve().parent.parent / "app" / "data" / "formula_library" / "math2_core_v2_extensions.json"
+DATA_FILE = Path(__file__).resolve().parents[2] / "app" / "data" / "formula_library" / "math2_core_v2_extensions.json"
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ class TestSeedProductionGuard:
         env["APP_ENV"] = "production"
         result = subprocess.run(
             [sys.executable, "scripts/seed_formula_library_v2.py", "--apply"],
-            capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent),
+            capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
             env=env,
             timeout=30,
         )
@@ -222,7 +222,7 @@ class TestSeedProductionGuard:
         result = subprocess.run(
             [sys.executable, "scripts/seed_formula_library_v2.py", "--apply",
              "--allow-production"],
-            capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent),
+            capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
             env=env,
             timeout=30,
         )

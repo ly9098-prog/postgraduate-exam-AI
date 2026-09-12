@@ -285,7 +285,7 @@ sys.exit(0)
             capture_output=True,
             text=True,
             timeout=30,
-            cwd=os.path.join(os.path.dirname(__file__), ".."),
+            cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
         )
         stdout = proc.stdout.strip()
         stderr = proc.stderr.strip()
@@ -345,7 +345,7 @@ except SystemError as e:
             capture_output=True,
             text=True,
             timeout=30,
-            cwd=os.path.join(os.path.dirname(__file__), ".."),
+            cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
         )
         stdout = proc.stdout.strip()
         stderr = proc.stderr.strip()
@@ -394,7 +394,7 @@ sys.exit(0)
             capture_output=True,
             text=True,
             timeout=30,
-            cwd=os.path.join(os.path.dirname(__file__), ".."),
+            cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
         )
         stdout = proc.stdout.strip()
         stderr = proc.stderr.strip()

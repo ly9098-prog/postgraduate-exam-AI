@@ -10,7 +10,7 @@ import ast
 import os
 from pathlib import Path
 
-APP_DIR = Path(__file__).resolve().parent.parent / "app"
+APP_DIR = Path(__file__).resolve().parent.parent.parent / "app"
 FEATURES_DIR = APP_DIR / "features"
 
 # Files explicitly allowed to use legacy patterns.

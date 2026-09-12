@@ -15,7 +15,7 @@ from pathlib import Path
 class TestNoPaddleOcrTopLevelImport:
     def test_no_top_level_paddle_ocr_import(self) -> None:
         """Scan app/ for top-level paddleocr imports (inside functions is OK)."""
-        app_dir = Path(__file__).resolve().parent.parent / "app"
+        app_dir = Path(__file__).resolve().parent.parent.parent / "app"
         violations: list[str] = []
 
         for py_file in app_dir.rglob("*.py"):

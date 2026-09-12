@@ -8,16 +8,16 @@ import tempfile
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts"))
 # Also add project root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 import audit_legacy_question_visuals as audit
 
 # ── Fixtures ──
 
-FIXTURE_DB = os.path.join(os.path.dirname(__file__), "..", "postgraduate.db")
-FIXTURE_PDF = os.path.join(os.path.dirname(__file__), "..", "..", "artifacts", "data-structure-import", "source", "ds_sc.pdf")
+FIXTURE_DB = os.path.join(os.path.dirname(__file__), "..", "..", "postgraduate.db")
+FIXTURE_PDF = os.path.join(os.path.dirname(__file__), "..", "..", "..", "artifacts", "data-structure-import", "source", "ds_sc.pdf")
 
 
 def _has_ds_fixture() -> bool:

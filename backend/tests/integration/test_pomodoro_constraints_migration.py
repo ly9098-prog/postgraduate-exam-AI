@@ -9,7 +9,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 MIGRATION_PATH = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[2]
     / "alembic"
     / "versions"
     / "y9z0a1b2c3d4_repair_pomodoro_constraints.py"

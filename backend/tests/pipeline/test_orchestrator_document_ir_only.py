@@ -9,7 +9,7 @@ import ast
 import os
 from pathlib import Path
 
-APP_DIR = Path(__file__).resolve().parent.parent / "app"
+APP_DIR = Path(__file__).resolve().parent.parent.parent / "app"
 
 # Raw fields that the orchestrator should NOT use directly
 RAW_FIELD_PATTERNS = [

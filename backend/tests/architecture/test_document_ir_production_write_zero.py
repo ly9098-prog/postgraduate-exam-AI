@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-BACKEND = Path(__file__).resolve().parent.parent / "app"
+BACKEND = Path(__file__).resolve().parent.parent.parent / "app"
 
 LEGACY_PATTERNS = ["normalized_blocks", "rec_texts", "dt_polys", "layoutParsingResults"]
 

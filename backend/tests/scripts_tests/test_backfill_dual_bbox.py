@@ -21,8 +21,8 @@ import sys
 import pytest
 
 # Ensure the scripts and backend directories are importable
-_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "scripts")
-_BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
+_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts")
+_BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 for _p in (_SCRIPT_DIR, _BACKEND_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)

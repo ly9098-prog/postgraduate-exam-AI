@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import jwt
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Keep these unit tests independent from a concrete async database driver.
 from fastapi import HTTPException

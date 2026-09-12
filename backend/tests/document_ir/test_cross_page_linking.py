@@ -346,7 +346,7 @@ def test_run_cross_page_linking_no_pages():
 
 def test_real_case_014_cross_page():
     """014_cross_page 真实 case 可检测跨页。"""
-    case_dir = Path(__file__).parent / "ocr_bench" / "cases" / "014_cross_page"
+    case_dir = Path(__file__).parent.parent / "ocr_bench" / "cases" / "014_cross_page"
     json.loads((case_dir / "meta.json").read_text(encoding="utf-8"))
 
     # Build DocumentIR-like structure from the case data
@@ -366,7 +366,7 @@ def test_real_case_014_cross_page():
 
 def test_cross_page_014_qn_match():
     """014_cross_page 题号匹配 Ground Truth。"""
-    case_dir = Path(__file__).parent / "ocr_bench" / "cases" / "014_cross_page"
+    case_dir = Path(__file__).parent.parent / "ocr_bench" / "cases" / "014_cross_page"
     meta = json.loads((case_dir / "meta.json").read_text(encoding="utf-8"))
     assert len(meta["expected_qnumbers"]) == 2
     expected_answers = meta.get("expected_answers", {})

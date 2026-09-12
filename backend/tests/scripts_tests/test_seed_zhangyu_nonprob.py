@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-DATA_FILE = Path(__file__).resolve().parent.parent / "app" / "data" / "formula_library" / "zhangyu_nonprob_extensions_v1.json"
-SEED_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "seed_zhangyu_nonprob_formulas.py"
+DATA_FILE = Path(__file__).resolve().parents[2] / "app" / "data" / "formula_library" / "zhangyu_nonprob_extensions_v1.json"
+SEED_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "seed_zhangyu_nonprob_formulas.py"
 
 VALID_TAGS = {"syllabus_required", "common_inference", "basic",
               "high_frequency", "error_prone", "must_memorize"}
@@ -208,7 +208,7 @@ class TestSeedScript:
         return subprocess.run(
             [sys.executable, str(SEED_SCRIPT), *extra_args],
             capture_output=True, text=True,
-            cwd=str(Path(__file__).resolve().parent.parent),
+            cwd=str(Path(__file__).resolve().parents[2]),
             env=env, timeout=timeout,
         )
 

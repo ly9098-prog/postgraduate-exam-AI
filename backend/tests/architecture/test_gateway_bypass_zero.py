@@ -10,8 +10,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-BACKEND = Path(__file__).resolve().parent.parent / "app"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+BACKEND = Path(__file__).resolve().parent.parent.parent / "app"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Raw OCR types that should only be imported inside adapter boundary
 RAW_OCR_TYPES = {

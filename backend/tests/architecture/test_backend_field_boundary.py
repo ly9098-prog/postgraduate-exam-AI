@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 # Root directory of backend application code
-BACKEND_APP = Path(__file__).resolve().parent.parent / "app"
+BACKEND_APP = Path(__file__).resolve().parent.parent.parent / "app"
 
 # Backend-private field patterns that must NOT appear outside adapter code
 BACKEND_PRIVATE_FIELDS: list[re.Pattern] = [
