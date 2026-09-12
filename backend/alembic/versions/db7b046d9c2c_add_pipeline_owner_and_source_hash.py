@@ -10,9 +10,9 @@ endpoint 能校验"是否同一用户"以及"是否同一份 PDF"。两列都允
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "db7b046d9c2c"
 down_revision: Union[str, Sequence[str], None] = "n5d6e7f8a9b0"

@@ -7,7 +7,7 @@
 import json
 import os
 
-from .chunker import chunk_module, summarize_module
+from .chunker import chunk_module
 from .retriever import smart_retrieve
 
 INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.json")

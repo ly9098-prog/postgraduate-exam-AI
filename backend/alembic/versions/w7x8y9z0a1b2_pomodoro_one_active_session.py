@@ -11,6 +11,7 @@ migration decision. Resolve the reported users first, then re-run the migration.
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "w7x8y9z0a1b2"

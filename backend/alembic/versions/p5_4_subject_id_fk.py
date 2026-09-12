@@ -11,8 +11,9 @@ or subjects.name. Rows that cannot be matched are logged and left with subject_i
 The legacy subject string column is preserved for backward compatibility.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "p5_4_subject_id_fk"
 down_revision = "p5_3_vector_schema"

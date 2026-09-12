@@ -5,8 +5,9 @@ Revises: s408error20260907
 Create Date: 2026-09-07
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "s408syllabus20260907"
 down_revision = "s408error20260907"

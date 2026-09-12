@@ -17,9 +17,9 @@ Phase 5.0 Schema Baseline Repair:
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "p5_0_schema_baseline"
 down_revision: Union[str, Sequence[str], None] = "p4_6_release_hardening"

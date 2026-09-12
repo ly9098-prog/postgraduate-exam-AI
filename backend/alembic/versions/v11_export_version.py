@@ -8,8 +8,9 @@ Revises: f9e0d1c2b3a4
 Create Date: 2026-07-27
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "v11_export_version"
 down_revision = "f9e0d1c2b3a4"

@@ -17,9 +17,9 @@ This migration:
 3. Backfills question_imports.subject_id from legacy subject column
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "p5_5_1_fix_subjects"
 down_revision = "p5_5_vector_config"

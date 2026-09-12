@@ -3,6 +3,7 @@ from app.services.practice.session_scope import (
     public_practice_session_scope,
 )
 
+
 def _exact_context():
     return {
         "v": 2,

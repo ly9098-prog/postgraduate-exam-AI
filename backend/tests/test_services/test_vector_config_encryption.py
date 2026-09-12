@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import os
 
-import pytest
 from cryptography.fernet import Fernet
-
-from app.core.secret_crypto import ENCRYPTED_PREFIX
 
 TEST_FERNET_KEY = Fernet.generate_key().decode()
 TEST_API_KEY = "sk-test-embedding-123456"

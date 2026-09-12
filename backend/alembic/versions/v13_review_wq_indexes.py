@@ -15,9 +15,9 @@ Create Date: 2026-07-24
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "v13_review_wq_indexes"
 down_revision: Union[str, Sequence[str], None] = "2240ai_v12_missing_idx"

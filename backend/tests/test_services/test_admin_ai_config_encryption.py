@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from cryptography.fernet import Fernet
 
-from app.core.secret_crypto import ENCRYPTED_PREFIX, encrypt_secret
+from app.core.secret_crypto import encrypt_secret
 
 TEST_FERNET_KEY = Fernet.generate_key().decode()
 TEST_API_KEY = "sk-test-do-not-use-123456"

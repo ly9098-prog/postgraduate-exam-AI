@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "v14_execution_generation_fencing"
 down_revision: str | Sequence[str] | None = "v10_performance_indexes"

@@ -18,6 +18,7 @@ import unicodedata
 from collections import defaultdict
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "qvkp20260827"

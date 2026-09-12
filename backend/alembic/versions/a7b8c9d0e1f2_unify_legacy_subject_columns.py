@@ -40,8 +40,9 @@ Also adds the missing real SQLite foreign keys on tables that already carried
 subject_id (questions, question_imports, pomodoro_sessions).
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "a7b8c9d0e1f2"
 down_revision = "c9d8e7f6a5b4"
@@ -803,7 +804,6 @@ def _downgrade_restore_subject(inspector, table, old_len, old_nullable, old_inde
     if _has_column(inspector, table, "subject") or not _has_column(inspector, table, "subject_id"):
         return
     conn = op.get_bind()
-    st = sa.table(table, sa.column("id", sa.Integer()), sa.column("subject_id", sa.Integer()))
     op.add_column(table, sa.Column("subject", sa.String(old_len), nullable=True))
     # backfill subject from subjects.code
     conn.execute(sa.text(

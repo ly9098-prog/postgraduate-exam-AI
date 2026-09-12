@@ -8,8 +8,9 @@ The exam domain intentionally stores immutable question_version_id bindings and
 its own attempt/answer facts.  PracticeRecord is only an explicit downstream
 learning projection created after a successful exam submission.
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "s408exam20260907"
 down_revision = "s408canonical20260907"

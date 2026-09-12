@@ -10,8 +10,9 @@ adds subject_id FK, backfills from legacy subject column.
 Formerly branched from q2g3h4i5j6k7; rebased onto v7_import_review_source_metadata
 to eliminate the multi-head fork. The orphaned o0/q2/p1 chain is superseded.
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "r3g4h5i6j7k8"
 down_revision = "v7_import_review_source_metadata"

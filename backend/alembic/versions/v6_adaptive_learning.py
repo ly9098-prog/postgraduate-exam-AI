@@ -7,9 +7,9 @@ Revision ID: v6_adaptive_learning
 Revises: v5_study_report_idx
 Create Date: 2026-07-01
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v6_adaptive_learning"
 down_revision = "v5_study_report_idx"

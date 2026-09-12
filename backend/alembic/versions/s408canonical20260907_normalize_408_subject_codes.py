@@ -23,8 +23,9 @@ import json
 import re
 from typing import Any
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "s408canonical20260907"
 down_revision = "a4c5d6e7f8b9"

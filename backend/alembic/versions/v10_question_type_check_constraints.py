@@ -21,8 +21,9 @@ Revises: v11_merge_heads
 Create Date: 2026-07-16
 """
 
+from sqlalchemy import String, inspect, text
+
 from alembic import op
-from sqlalchemy import inspect, String, text
 
 revision = "v10_question_type_check_constraints"
 down_revision = "v11_merge_heads"

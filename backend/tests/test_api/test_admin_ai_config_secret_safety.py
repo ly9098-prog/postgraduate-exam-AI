@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
 from cryptography.fernet import Fernet
 
 TEST_FERNET_KEY = Fernet.generate_key().decode()

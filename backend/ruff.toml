@@ -5,5 +5,6 @@
 # - E741: ambiguous variable names (grandfathered)
 # - N806: variable naming in functions (grandfathered)
 # - N814/N817: CamelCase imported as acronym/constant (QI/PR/_QI aliases, grandfathered)
-ignore = ["E402", "E501", "E741", "N806", "N814", "N817"]
+# - N802: test function names reference literal OCR mappings (8_to_B, 0_to_D), grandfathered
+ignore = ["E402", "E501", "E741", "N802", "N806", "N814", "N817"]
 select = ["E", "F", "I", "N", "W"]

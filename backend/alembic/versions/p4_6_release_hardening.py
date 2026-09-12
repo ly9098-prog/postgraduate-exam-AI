@@ -20,9 +20,9 @@ Create Date: 2026-06-28 18:00:00.000000
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "p4_6_release_hardening"
 down_revision: str | Sequence[str] | None = "p4_5_safety_valve"

@@ -206,7 +206,7 @@ async def _run_heartbeat_test(task, lease_sec, owner_lost):
         _v2_heartbeat_loop_with_lease_window,
         _v2_worker_running,
     )
-    _v2_worker_running = True
+    _v2_worker_running = True  # noqa: F811
     try:
         await _v2_heartbeat_loop_with_lease_window(task, lease_sec, owner_lost)
     finally:

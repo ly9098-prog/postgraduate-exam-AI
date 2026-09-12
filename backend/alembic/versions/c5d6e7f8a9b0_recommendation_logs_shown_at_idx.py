@@ -12,9 +12,9 @@ Create Date: 2026-08-07
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "c5d6e7f8a9b0"
 down_revision: str | Sequence[str] | None = "b2c3d4e5f6a7"

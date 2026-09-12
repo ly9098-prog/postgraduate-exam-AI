@@ -16,8 +16,8 @@ Revises: v13_review_wq_indexes
 Create Date: 2026-07-25
 """
 
+
 from alembic import op
-import sqlalchemy as sa
 
 revision = "v10_performance_indexes"
 down_revision = "v13_review_wq_indexes"

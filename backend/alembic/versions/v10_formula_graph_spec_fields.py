@@ -14,9 +14,9 @@ Revises: 6c11177c2437
 Create Date: 2026-07-14
 """
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import sqlite
+
+from alembic import op
 
 revision = "v10_formula_graph_spec_fields"
 down_revision = "6c11177c2437"

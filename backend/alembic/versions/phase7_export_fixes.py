@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from typing import ClassVar, Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision: str = "phase7_export_fixes"
 down_revision: Union[str, Sequence[str], None] = "812ba6628ff1"

@@ -7,9 +7,9 @@ Revision ID: v1_no_repeat_idx
 Revises: 3a30ad6482fa
 Create Date: 2026-07-01
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v1_no_repeat_idx"
 down_revision = "3a30ad6482fa"

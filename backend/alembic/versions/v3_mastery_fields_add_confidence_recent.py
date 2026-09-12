@@ -7,9 +7,9 @@ Revision ID: v3_mastery_fields
 Revises: v2_user_question_state
 Create Date: 2026-07-01
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v3_mastery_fields"
 down_revision = "v2_user_question_state"

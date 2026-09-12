@@ -221,7 +221,6 @@ class TestSeedScript:
     def test_dry_run_is_non_mutating(self):
         import sqlite3
 
-        from app.core.database import settings
         tmpdir = tempfile.mkdtemp()
         db_file = Path(tmpdir) / "dry.db"
         env = {"DATABASE_URL": f"sqlite+aiosqlite:///{db_file}"}

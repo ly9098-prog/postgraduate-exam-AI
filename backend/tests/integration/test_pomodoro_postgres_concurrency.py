@@ -6,7 +6,6 @@ import uuid
 
 import pytest
 
-
 asyncpg = pytest.importorskip("asyncpg")
 POSTGRES_URL = os.getenv("POMODORO_TEST_POSTGRES_URL", "")
 if not POSTGRES_URL:

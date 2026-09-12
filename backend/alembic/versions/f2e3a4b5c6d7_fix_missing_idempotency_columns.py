@@ -13,10 +13,10 @@ Create Date: 2026-06-27 11:30:00.000000
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.exc import ProgrammingError
 
+from alembic import op
 
 revision: str = "f2e3a4b5c6d7"
 down_revision: str | Sequence[str] | None = "d1e2f3a4b5c6"

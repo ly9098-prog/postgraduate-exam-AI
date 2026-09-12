@@ -202,8 +202,8 @@ class TestSeedProductionGuard:
 
         from sqlalchemy import create_engine
 
-        from app.core.database import Base
         import app.models.formula  # noqa: F401  register Formula* models
+        from app.core.database import Base
 
         # The seed script calls init_db(), which returns early under
         # APP_ENV=production (detected as CLOUD_API) and creates no tables.

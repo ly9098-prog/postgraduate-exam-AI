@@ -6,9 +6,9 @@ Revision ID: v5_study_report_idx
 Revises: v3_mastery_fields
 Create Date: 2026-07-01
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v5_study_report_idx"
 down_revision = "v3_mastery_fields"

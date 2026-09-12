@@ -21,9 +21,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "s408outbox20260910"
 down_revision = "s408pscope20260909"

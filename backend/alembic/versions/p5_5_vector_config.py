@@ -8,8 +8,9 @@ Single-row table storing all vector search and embedding parameters.
 Seeds from environment variables on first read (handled by service layer).
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "p5_5_vector_config"
 down_revision = "p5_4_subject_id_fk"

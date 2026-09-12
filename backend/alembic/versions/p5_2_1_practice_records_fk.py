@@ -14,9 +14,9 @@ Phase 5.2.1: 补齐 ORM 已声明但数据库缺失的外键约束。
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "p5_2_1_practice_records_fk"
 down_revision: Union[str, Sequence[str], None] = "p5_0_schema_baseline"

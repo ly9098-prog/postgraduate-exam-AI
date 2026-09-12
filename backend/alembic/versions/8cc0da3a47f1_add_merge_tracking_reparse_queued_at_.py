@@ -12,9 +12,9 @@ P0-6: queued_at on ImportBatchJob
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "8cc0da3a47f1"
 down_revision: Union[str, Sequence[str], None] = "e19d1945618f"

@@ -14,7 +14,6 @@ from datetime import datetime, timedelta
 from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession  # noqa: E402
 from app.services import pomodoro_service as svc  # noqa: E402
 
-
 PASSED = 0
 
 

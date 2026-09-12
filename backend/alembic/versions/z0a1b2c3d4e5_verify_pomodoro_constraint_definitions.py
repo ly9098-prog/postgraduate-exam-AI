@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "z0a1b2c3d4e5"

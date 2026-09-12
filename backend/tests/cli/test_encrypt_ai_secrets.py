@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 from cryptography.fernet import Fernet
 
@@ -56,6 +54,7 @@ class TestMigrateValue:
 
     def test_legacy_fernet_reencrypted(self):
         from cryptography.fernet import Fernet
+
         from app.cli.encrypt_ai_secrets import _migrate_value
         from app.core.secret_crypto import ENCRYPTED_PREFIX, decrypt_secret
 
@@ -69,8 +68,8 @@ class TestMigrateValue:
         assert decrypted == "sk-legacy-value"
 
     def test_enc_v1_valid_skipped(self):
-        from app.core.secret_crypto import encrypt_secret
         from app.cli.encrypt_ai_secrets import _migrate_value
+        from app.core.secret_crypto import encrypt_secret
 
         encrypted = encrypt_secret("sk-already-encrypted")
         result = _migrate_value(encrypted, TEST_FERNET_KEY)
@@ -89,8 +88,9 @@ class TestMigrateValue:
         f = Fernet(wrong_key.encode())
         legacy_token = f.encrypt(b"some-value").decode()
 
-        from app.cli.encrypt_ai_secrets import _migrate_value
         from cryptography.fernet import InvalidToken
+
+        from app.cli.encrypt_ai_secrets import _migrate_value
 
         # Different key — can't decrypt legacy token
         with pytest.raises(InvalidToken):

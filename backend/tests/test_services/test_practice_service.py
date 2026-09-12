@@ -1,11 +1,9 @@
 """Stage 11 刷题系统 — 单元测试（mock DB session）。"""
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from app.models.question import Question
 
 # Ensure all ORM models are registered so Subject's string relationships
 # (practice_records, answer_behaviors, review_schedules, ...) resolve at
@@ -16,8 +14,11 @@ from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
 from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.pomodoro import PomodoroSession  # noqa: F401
 from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.question import Question
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.review_scheduler import ReviewSchedule  # noqa: F401
 from app.models.tag import Tag  # noqa: F401
 from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401

@@ -6,9 +6,9 @@ Revision ID: v2_user_question_state
 Revises: v1_no_repeat_idx
 Create Date: 2026-07-01
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v2_user_question_state"
 down_revision = "v1_no_repeat_idx"

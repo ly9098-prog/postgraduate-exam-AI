@@ -22,7 +22,9 @@ from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.pomodoro import PomodoroSession  # noqa: F401
 from app.models.practice_record import PracticeRecord  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.review_scheduler import ReviewSchedule  # noqa: F401
 from app.models.tag import Tag  # noqa: F401
 from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401

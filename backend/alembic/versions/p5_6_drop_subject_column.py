@@ -12,9 +12,9 @@ Removes the legacy string subject column from the questions table.
 The subject_id FK (→ subjects.id) is now the single source of truth.
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "p5_6_drop_subject_column"
 down_revision = "p5_5_1_fix_subjects"

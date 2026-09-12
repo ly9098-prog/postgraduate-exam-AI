@@ -1,5 +1,6 @@
 """add math_regions column to question_imports"""
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "a3f2e1b0c9d8"

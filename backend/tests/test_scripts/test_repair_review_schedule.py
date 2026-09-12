@@ -3,8 +3,6 @@ import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
-from scripts.repair_review_schedule_for_wrong_questions import repair_review_schedule
-
 # Ensure all ORM models are registered so Subject's string relationships
 # (practice_records, answer_behaviors, review_schedules, ...) resolve at
 # mapper configuration time (see app/models/admin.py Subject).
@@ -15,10 +13,13 @@ from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.pomodoro import PomodoroSession  # noqa: F401
 from app.models.practice_record import PracticeRecord  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.review_scheduler import ReviewSchedule  # noqa: F401
 from app.models.tag import Tag  # noqa: F401
 from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+from scripts.repair_review_schedule_for_wrong_questions import repair_review_schedule
 
 
 def _run(coro):

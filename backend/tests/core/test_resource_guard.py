@@ -157,13 +157,13 @@ class TestResourceGuardLocalReservation:
 
     @pytest.mark.asyncio
     async def test_acquire_pipeline_context_manager_releases_on_exception(self, guard):
-        class TestException(Exception):
+        class TestExceptionError(Exception):
             pass
 
-        with pytest.raises(TestException):
+        with pytest.raises(TestExceptionError):
             async with guard.acquire_pipeline(resource_type="test_ctx", task_id="ctx_err") as token:
                 assert token is not None
-                raise TestException("boom")
+                raise TestExceptionError("boom")
 
         # After exception, slot should be free
         async with guard.acquire_pipeline(resource_type="test_ctx", task_id="ctx_after") as token:

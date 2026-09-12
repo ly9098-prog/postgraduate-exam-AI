@@ -9,8 +9,9 @@ All subject data now uses subject_id -> subjects.id FK.
 
 Safety: refuses to drop if unmatched legacy values remain.
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "s4g5h6i7j8k9"
 down_revision = "r3g4h5i6j7k8"

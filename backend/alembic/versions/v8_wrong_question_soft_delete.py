@@ -7,9 +7,9 @@ Revision ID: v8_wrong_question_soft_delete
 Revises: v7_import_review_source_metadata
 Create Date: 2026-07-12
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v8_wrong_question_soft_delete"
 down_revision = "v7_import_review_source_metadata"

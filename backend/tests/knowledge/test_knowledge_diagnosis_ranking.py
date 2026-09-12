@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta
 
-from app.services.knowledge_diagnosis_logic import aggregate_session_stats, rank_chapter_recommendations
+from app.services.knowledge_diagnosis_logic import (
+    aggregate_session_stats,
+    rank_chapter_recommendations,
+)
 
 
 def _node(kp_id, name, *, depth=0, ancestors=None, coverage=0.5, mastery=60, weak=1):

@@ -10,8 +10,8 @@ from cryptography.fernet import Fernet
 from app.core.secret_crypto import (
     ENCRYPTED_PREFIX,
     SecretDecryptionError,
-    SecretEnvelopeVersionError,
     SecretEncryptionError,
+    SecretEnvelopeVersionError,
     decrypt_secret,
     encrypt_secret,
     is_encrypted_secret,

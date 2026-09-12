@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "v15_task_outbox"

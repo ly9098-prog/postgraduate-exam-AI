@@ -9,7 +9,6 @@ Merges the two parallel heads:
 2. v11_formula_graph_specs (new formula_graph_specs table)
 """
 
-from alembic import op
 
 revision = "v11_merge_heads"
 down_revision = ("v10_v9_merge", "v11_formula_graph_specs")

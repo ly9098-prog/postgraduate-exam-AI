@@ -15,8 +15,9 @@ import hashlib
 import json
 from collections import defaultdict
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "e0f1a2b3c4d5"
 down_revision = "d9e0f1a2b3c4"
@@ -321,9 +322,10 @@ def _backfill_learning_revision_links() -> None:
     behaviors = sa.Table("answer_behaviors", meta, autoload_with=bind)
     wrongs = sa.Table("wrong_questions", meta, autoload_with=bind)
 
-    current_revision = lambda table: sa.select(questions.c.current_version_id).where(
-        questions.c.id == table.c.question_id
-    ).scalar_subquery()
+    def current_revision(table):
+        return sa.select(questions.c.current_version_id).where(
+            questions.c.id == table.c.question_id
+        ).scalar_subquery()
 
     bind.execute(
         practices.update().values(

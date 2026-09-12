@@ -25,7 +25,6 @@ from app.services.vector_retrieval_service import (
     VectorDecision,
     decide_vector_access,
     invalidate_vector_cache,
-    is_vector_allowed_for,
     resolve_vector_mode,
     validate_embedding,
 )

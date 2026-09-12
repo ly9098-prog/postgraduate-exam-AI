@@ -8,9 +8,9 @@ Idempotent: skips if table/column already exist.
 """
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "t5g6h7i8j9k0"
 down_revision = "s4g5h6i7j8k9"

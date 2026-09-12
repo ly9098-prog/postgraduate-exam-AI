@@ -10,8 +10,9 @@ Adds:
 - One-to-many relationship: each card can have multiple independent specs
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "v11_formula_graph_specs"
 down_revision = "v10_formula_graph_spec_fields"

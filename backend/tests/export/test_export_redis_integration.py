@@ -127,9 +127,8 @@ class TestRedisPublishSubscribe:
 
     async def test_redis_unavailable_fallback(self):
         """publish_via_redis silently fails when Redis is down."""
-        from app.services.export.push_service import publish_via_redis
-
         from app.core.cache import cache
+        from app.services.export.push_service import publish_via_redis
         saved_enabled = cache._enabled
         saved_client = cache._client
         try:

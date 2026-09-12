@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 
 def _make_test_client():
     """Build a minimal FastAPI test app with just the endpoint mounted."""
-    from app.api.v1.admin_imports import router
     from app.main import app
 
     return TestClient(app)

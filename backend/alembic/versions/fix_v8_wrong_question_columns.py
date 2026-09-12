@@ -10,9 +10,9 @@ Revision ID: fix_v8_wrong_question_columns
 Revises: v11_merge_heads
 Create Date: 2026-07-19
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "fix_v8_wrong_question_columns"
 down_revision = "v11_merge_heads"

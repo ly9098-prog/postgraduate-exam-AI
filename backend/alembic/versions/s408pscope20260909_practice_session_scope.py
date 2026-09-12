@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "s408pscope20260909"
 down_revision: Union[str, Sequence[str], None] = (

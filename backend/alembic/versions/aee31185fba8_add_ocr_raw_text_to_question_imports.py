@@ -5,10 +5,6 @@ Revises: q2g3h4i5j6k7
 """
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
-
-
 revision: str = "aee31185fba8"
 down_revision: Union[str, Sequence[str], None] = "q2g3h4i5j6k7"
 

@@ -18,6 +18,7 @@ corrective revision was applied.
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "y9z0a1b2c3d4"

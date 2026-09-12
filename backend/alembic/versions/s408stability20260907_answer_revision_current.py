@@ -1,6 +1,8 @@
 """408 stability follow-up."""
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
+
 revision = "s408stability20260907"
 down_revision = "s408error20260907"
 branch_labels = None

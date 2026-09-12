@@ -11,9 +11,9 @@ covers a batch where every question is skipped.
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "c8d9e0f1a2b3"
 down_revision: Union[str, Sequence[str], None] = "b6c7d8e9f0a1"

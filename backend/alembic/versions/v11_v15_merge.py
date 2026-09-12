@@ -9,9 +9,6 @@ from __future__ import annotations
 
 from typing import ClassVar, Sequence, Union
 
-import sqlalchemy as sa
-from alembic import op
-
 revision: str = "v11_v15_merge"
 down_revision: Union[str, Sequence[str], None] = ("v11_export_version", "v15_task_outbox")
 branch_labels: ClassVar[tuple[str] | None] = None

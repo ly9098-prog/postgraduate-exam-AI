@@ -9,8 +9,9 @@ This migration replaces the runtime _ensure_vector_schema() DDL for production e
 
 NOTE: This migration is PostgreSQL-only. On SQLite (used for testing), it is a no-op.
 """
-from alembic import op
 from sqlalchemy import text
+
+from alembic import op
 
 revision = "p5_3_vector_schema"
 down_revision = "25b0a2fea77a"

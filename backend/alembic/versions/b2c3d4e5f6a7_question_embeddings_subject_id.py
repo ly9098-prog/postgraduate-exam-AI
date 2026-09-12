@@ -33,8 +33,9 @@ pgvector is available, so on other dialects the table does not exist and this
 migration is a no-op.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "b2c3d4e5f6a7"
 down_revision = "a7b8c9d0e1f2"

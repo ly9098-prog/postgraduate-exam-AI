@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import socket
 import sys
-from pathlib import Path
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import jwt
@@ -17,14 +17,14 @@ from fastapi import HTTPException
 
 from app.core.cache import cache
 from app.core.config import settings
+
 settings.APP_SECRET = "test-only-" + "x" * 64
 from app.core.security import decode_token_payload, issue_user_token, set_user_nbf
 from app.core.time_utils import utcnow
 from app.schemas.question import QuestionPublicResponse
-from app.services import safe_remote_fetch
+from app.services import safe_remote_fetch, token_service
 from app.services.safe_remote_fetch import UnsafeRemoteURLError, validate_remote_url
 from app.services.storage_backend import StorageBackend
-from app.services import token_service
 
 
 def _addr(ip: str, port: int = 443):

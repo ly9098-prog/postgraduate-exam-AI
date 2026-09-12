@@ -12,9 +12,9 @@ so that ORM queries against PracticeRecord do not fail with
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "3a30ad6482fa"
 down_revision: Union[str, Sequence[str], None] = "p5_7_drop_batch_job_subject"

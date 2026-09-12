@@ -4,6 +4,7 @@ subject 字段从 String(16) 扩展到 String(32)，支持 exam408-ds / math2-ca
 旧数据 exam408 / math2 / english 保持不变（向后兼容）。
 """
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "b4e3d2c1f0a9"

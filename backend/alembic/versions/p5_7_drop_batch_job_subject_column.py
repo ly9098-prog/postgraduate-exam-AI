@@ -10,9 +10,9 @@ resolved via the ORM relationship (ImportBatchJob.subject_ref.code).
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "p5_7_drop_batch_job_subject"
 down_revision: Union[str, Sequence[str], None] = "merge_p5_6_s7a8"

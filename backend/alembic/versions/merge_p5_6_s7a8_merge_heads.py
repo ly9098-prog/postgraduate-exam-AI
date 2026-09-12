@@ -10,10 +10,6 @@ a single head so `alembic upgrade head` works in production.
 """
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
-
-
 revision: str = "merge_p5_6_s7a8"
 down_revision: Union[str, Sequence[str], None] = ("p5_6_drop_subject_column", "s7a8b9c0d1e2")
 branch_labels: Union[str, Sequence[str], None] = None

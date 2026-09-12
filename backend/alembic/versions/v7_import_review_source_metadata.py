@@ -10,9 +10,9 @@ Revision ID: v7_import_review_source_metadata
 Revises: v6_adaptive_learning
 Create Date: 2026-07-04
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "v7_import_review_source_metadata"
 down_revision = "v6_adaptive_learning"

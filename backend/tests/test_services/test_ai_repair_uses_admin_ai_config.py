@@ -95,7 +95,10 @@ class TestAIRepairUsesAdminAIConfig:
 
     @pytest.mark.asyncio
     async def test_batch_and_roman_paths_use_ai_repair_capability(self):
-        from app.features.ai_repair import _call_ai_for_batch_repair, _call_ai_for_roman_decision
+        from app.features.ai_repair import (
+            _call_ai_for_batch_repair,
+            _call_ai_for_roman_decision,
+        )
 
         runtime = _runtime()
         with (

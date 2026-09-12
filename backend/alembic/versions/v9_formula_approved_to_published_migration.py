@@ -11,8 +11,9 @@ Revises: v8_wrong_question_soft_delete
 Create Date: 2026-07-14
 """
 
-from alembic import op
 from sqlalchemy import inspect
+
+from alembic import op
 
 revision = "v9_formula_approved_to_published_migration"
 down_revision = "v8_wrong_question_soft_delete"

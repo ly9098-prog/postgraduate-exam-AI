@@ -13,7 +13,6 @@ pytest.importorskip("fastapi")
 
 from app.main import app
 
-
 CRITICAL_OPERATIONS = {
     ("/api/admin/v1/auth/login", "post"): "AdminTokenResponse",
     ("/api/admin/v1/dashboard/overview", "get"): "AdminDashboardOverview",

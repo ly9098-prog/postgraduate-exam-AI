@@ -12,9 +12,9 @@ resume 之间调整规则导致新旧 chunk 文本归一化结果不一致 / Glo
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "8779bfb39e9d"
 down_revision: Union[str, Sequence[str], None] = "db7b046d9c2c"

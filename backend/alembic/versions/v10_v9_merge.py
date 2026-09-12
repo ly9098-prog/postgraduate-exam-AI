@@ -5,7 +5,6 @@ Revises: ('v10_formula_graph_spec_fields', 'v9_formula_approved_to_published_mig
 Create Date: 2026-07-14
 """
 
-from alembic import op
 
 revision = "v10_v9_merge"
 down_revision = ("v10_formula_graph_spec_fields", "v9_formula_approved_to_published_migration")
