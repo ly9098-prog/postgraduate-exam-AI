@@ -68,11 +68,18 @@ class TestAdminAiConfigEncryption:
 
         req = AdminAiModelConfigCreateRequest(
             name="test", display_name="test", provider="deepseek",
+            api_base_url="https://api.test.com",
             api_key=TEST_API_KEY,
         )
         with pytest.raises(SecretEncryptionError, match="not configured"):
+            from unittest.mock import patch
+
             from app.services.admin_ai_config_service import create_model
             principal = type(
                 "Principal", (), {"id": 1, "username": "admin", "roles": ["super_admin"]}
             )()
-            await create_model(AsyncMock(), req, principal)
+            with patch(
+                "app.services.admin_ai_config_service._validated_api_base_url",
+                return_value=req.api_base_url,
+            ):
+                await create_model(AsyncMock(), req, principal)

@@ -81,6 +81,7 @@ class TestModelConfigResponseSafety:
 
         req = AdminAiModelConfigCreateRequest(
             name="test", display_name="test", provider="deepseek",
+            api_base_url="https://api.test.com",
             api_key=TEST_API_KEY,
         )
         dump = str(req.model_dump())
