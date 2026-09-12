@@ -7,9 +7,13 @@ unit-tested without bootstrapping the application database driver.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from collections import defaultdict
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _FULLWIDTH_MAP = {
     "（": "(",
@@ -102,8 +106,16 @@ def alias_values(point) -> list[str]:
 def build_resolution_indexes(
     points,
 ) -> tuple[dict[str, object], dict[str, list[object]], set[str]]:
-    """Build canonical-name, active-alias and inactive-tombstone indexes."""
-    active_names: dict[str, object] = {}
+    """Build canonical-name, active-alias and inactive-tombstone indexes.
+
+    A subject may legitimately contain several active nodes sharing one
+    ``normalized_name``: the 408 syllabus reuses a title for a chapter/section and
+    its child (e.g. ``第4章 指令系统`` and ``4.1 指令系统`` both display as ``指令系统``).
+    Node identity is the id, so rather than rejecting such a catalog we pick one
+    canonical per name deterministically — the node that also lists the term among
+    its own aliases wins, otherwise the lowest id.
+    """
+    active_name_candidates: dict[str, list[tuple[Any, set[str]]]] = defaultdict(list)
     active_aliases: dict[str, list[object]] = defaultdict(list)
     inactive_terms: set[str] = set()
 
@@ -119,13 +131,7 @@ def build_resolution_indexes(
 
         if bool(getattr(point, "is_active", False)):
             if name_norm:
-                existing = active_names.get(name_norm)
-                if existing is not None and int(existing.id) != int(point.id):
-                    raise KnowledgePointResolutionError(
-                        f"同科目存在重复 active normalized_name={name_norm!r}: "
-                        f"{existing.id}, {point.id}"
-                    )
-                active_names[name_norm] = point
+                active_name_candidates[name_norm].append((point, aliases))
             for alias_norm in aliases:
                 bucket = active_aliases[alias_norm]
                 if all(int(item.id) != int(point.id) for item in bucket):
@@ -134,6 +140,23 @@ def build_resolution_indexes(
             if name_norm:
                 inactive_terms.add(name_norm)
             inactive_terms.update(aliases)
+
+    active_names: dict[str, object] = {}
+    for name_norm, candidates in active_name_candidates.items():
+        if len(candidates) == 1:
+            active_names[name_norm] = candidates[0][0]
+            continue
+        winner = min(
+            candidates,
+            key=lambda item: (name_norm not in item[1], int(item[0].id)),
+        )[0]
+        active_names[name_norm] = winner
+        logger.warning(
+            "重复 active normalized_name=%r: ids=%s，解析选用 id=%s",
+            name_norm,
+            sorted(int(p.id) for p, _aliases in candidates),
+            int(winner.id),
+        )
 
     return active_names, dict(active_aliases), inactive_terms
 

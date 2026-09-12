@@ -5,11 +5,11 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     String,
     Text,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,8 +42,8 @@ class KnowledgePoint(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
+    # 考纲允许同科目存在同名节点（如“第4章 指令系统”与“4.1 指令系统”展示名相同），
+    # 因此 (subject_id, normalized_name) 不是唯一键：节点由 id 区分，此处仅保留非唯一索引。
     __table_args__ = (
-        UniqueConstraint(
-            "subject_id", "normalized_name", name="uq_kp_subject_id_normalized_name"
-        ),
+        Index("ix_kp_subject_normalized_name", "subject_id", "normalized_name"),
     )

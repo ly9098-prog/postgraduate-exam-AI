@@ -77,6 +77,27 @@ class KnowledgePointResolutionPolicyTests(unittest.TestCase):
                 normalize_knowledge_name("shared alias"), names, aliases, inactive, block_inactive=True
             )
 
+    def test_duplicate_active_canonical_prefers_alias_owner(self):
+        # 408 syllabus: chapter "第4章 指令系统" and section "4.1 指令系统" both
+        # display as "指令系统"; the section owns the alias and should win.
+        chapter = kp(192, "指令系统")
+        section = kp(193, "指令系统", ["指令系统"])
+        names, aliases, inactive = build_resolution_indexes([chapter, section])
+        resolved = resolve_from_indexes(
+            normalize_knowledge_name("指令系统"), names, aliases, inactive, block_inactive=True
+        )
+        self.assertEqual(resolved.id, 193)
+
+    def test_duplicate_active_canonical_without_alias_picks_lowest_id(self):
+        lower = kp(5, "同名节点")
+        higher = kp(9, "同名节点")
+        # order of input must not affect the deterministic winner
+        names, aliases, inactive = build_resolution_indexes([higher, lower])
+        resolved = resolve_from_indexes(
+            normalize_knowledge_name("同名节点"), names, aliases, inactive, block_inactive=True
+        )
+        self.assertEqual(resolved.id, 5)
+
     def test_normalization_handles_width_case_and_space(self):
         self.assertEqual(normalize_knowledge_name("  Ｐｕｓｈ  "), "push")
         self.assertEqual(normalize_knowledge_name("Catalan   Numbers"), "catalan numbers")
