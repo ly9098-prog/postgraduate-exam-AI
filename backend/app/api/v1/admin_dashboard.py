@@ -5,11 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.schemas.admin_ai_settings import AdminAIStatsResponse
 from app.schemas.admin_dashboard import (
     AdminDashboardDailyPoint,
     AdminDashboardOverview,
     AdminDashboardQuestionStats,
 )
+from app.services.admin_ai_settings_service import get_ai_stats
 from app.services.admin_dashboard_service import (
     get_dashboard_daily,
     get_dashboard_overview,
@@ -48,3 +50,12 @@ async def questions_stats(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_dashboard_question_stats(db)
+
+
+@router.get("/ai-stats", response_model=AdminAIStatsResponse)
+async def ai_stats(
+    days: int = Query(default=7, ge=1, le=90),
+    _=Depends(require_permissions("dashboard:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_ai_stats(db, days, summary_days=days)

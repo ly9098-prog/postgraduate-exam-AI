@@ -230,7 +230,7 @@ export default function DashboardPage() {
   });
   const aiStats = useQuery({
     queryKey: ["dashboard", "ai-stats"],
-    queryFn: () => apiRequest<AIStatsResponse>("/ai-settings/stats?days=7"),
+    queryFn: () => apiRequest<AIStatsResponse>("/dashboard/ai-stats?days=7"),
     enabled: canRequestDashboard,
     staleTime: 60_000,
     retry: false,
@@ -318,7 +318,7 @@ export default function DashboardPage() {
       value: aiStats.data?.today_calls,
       icon: BrainCircuit,
       tone: "purple",
-      hint: aiStats.data ? `成功率 ${aiStats.data.success_rate.toFixed(1)}%` : "需 AI 设置读取权限",
+      hint: aiStats.data ? `成功率 ${aiStats.data.success_rate.toFixed(1)}%` : "AI 运行指标暂不可用",
       hintTone: aiStats.data && aiStats.data.success_rate >= 95 ? "positive" : "neutral",
       sparkline: aiSpark,
     },
@@ -479,8 +479,8 @@ export default function DashboardPage() {
                 <StatusPill tone={taskQueueStatus.tone}>{taskQueueStatus.label}</StatusPill>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><BrainCircuit className="h-4 w-4 shrink-0 text-[#82758f]" />AI Settings API</span>
-                <StatusPill tone={aiStats.data ? "ok" : aiStats.isLoading ? "muted" : "warning"}>{aiStats.data ? "正常" : aiStats.isLoading ? "检测中" : "未授权"}</StatusPill>
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><BrainCircuit className="h-4 w-4 shrink-0 text-[#82758f]" />AI Metrics API</span>
+                <StatusPill tone={aiStats.data ? "ok" : aiStats.isLoading ? "muted" : "warning"}>{aiStats.data ? "正常" : aiStats.isLoading ? "检测中" : "异常"}</StatusPill>
               </div>
               <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
                 <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><CheckCircle2 className="h-4 w-4 shrink-0 text-[#648764]" />系统就绪</span>
@@ -534,7 +534,7 @@ export default function DashboardPage() {
                 <DetailMetric label="7日 Token" value={aiStats.data.total_tokens >= 1000 ? `${(aiStats.data.total_tokens / 1000).toFixed(1)}k` : String(aiStats.data.total_tokens)} />
               </div>
             ) : (
-              <p className="rounded-lg bg-[var(--color-bg-input)]/55 px-3 py-3 text-xs text-[var(--color-text-hint)]">需要 AI 设置读取权限后展示调用质量指标</p>
+              <p className="rounded-lg bg-[var(--color-bg-input)]/55 px-3 py-3 text-xs text-[var(--color-text-hint)]">AI 运行指标暂不可用，请稍后刷新</p>
             )}
           </article>
 
