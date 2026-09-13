@@ -24,8 +24,6 @@
     <view class="stats-content {{contentReady ? 'stats-content-ready' : 'stats-content-pending'}}">
         <!-- ===== 累计专注 ===== -->
         <view class="card-section cumulative-focus-card">
-          <view class="stats-card-decor cumulative-card-decor" aria-hidden="true"></view>
-          <view class="stats-card-decor cumulative-card-decor-bottom" aria-hidden="true"></view>
           <view class="focus-card-head">
             <view class="focus-card-title-line">
               <text class="focus-card-title">累计专注</text>
@@ -67,7 +65,6 @@
 
         <!-- ===== 当日专注 ===== -->
         <view class="card-section daily-focus-card">
-          <view class="stats-card-decor daily-card-decor" aria-hidden="true"></view>
           <view class="focus-card-head daily-focus-head">
             <view class="focus-card-title-line daily-title-line">
               <text class="focus-card-title">当日专注</text>
@@ -100,14 +97,6 @@
 
         <!-- ===== 专注时长分布：默认扇形图，柱状图按需挂载 ===== -->
         <view class="card-section pie-card-section distribution-card">
-          <view class="distribution-card-decor" aria-hidden="true">
-            <view class="distribution-corner distribution-corner-top-left"></view>
-            <view class="distribution-corner distribution-corner-bottom-left"></view>
-            <view class="distribution-corner distribution-corner-bottom-right"></view>
-            <view class="distribution-dot distribution-dot-a"></view>
-            <view class="distribution-dot distribution-dot-b"></view>
-            <view class="distribution-dot distribution-dot-c"></view>
-          </view>
           <view class="section-header distribution-section-header">
             <text class="section-title distribution-title">专注时长分布</text>
             <view class="chart-switch-btn" hover-class="chart-switch-pressed" hover-start-time="20" hover-stay-time="80" catchtap="toggleChartMode" aria-role="button" aria-label="{{chartMode === 'pie' ? '切换到柱状图' : '切换到扇形图'}}">
@@ -191,8 +180,11 @@
                 <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject_id">
                   <view class="subject-legend-dot" style="background: {{item._color}};"></view>
                   <view class="subject-legend-copy">
-                    <text class="subject-legend-name">{{item._label}}</text>
-                    <text class="subject-legend-percent">{{item._pctText}}</text>
+                    <view class="subject-legend-head">
+                      <text class="subject-legend-name">{{item._label}}</text>
+                      <text class="subject-legend-percent">{{item._pctText}}</text>
+                    </view>
+                    <text class="subject-legend-duration">{{item._durationBadgeText}}</text>
                   </view>
                 </view>
               </view>

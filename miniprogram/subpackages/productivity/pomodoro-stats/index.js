@@ -140,6 +140,10 @@ var pageConfig = {
     this._cumulativeRequestSeq = 0
     this._distributionRequestSeq = 0
     this._daySubjectsRaw = []
+    this._distributionRawSubjects = []
+    this._subjectMetaLoaded = false
+    this._subjectMeta = null
+    this._subjectMetaPromise = null
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
     // 先用默认 day_start=0 计算当前中国统计日，settings 加载后若 day_start 不同会校正。
@@ -161,6 +165,9 @@ var pageConfig = {
 
   async _init() {
     await this._ensureSettings()
+    this._ensureSubjectMeta().catch(err => {
+      console.warn('加载科目树失败，将使用原始分布数据', err)
+    })
     // 首次加载由 onReady 的 loadData 完成（其内部 await _ensureSettings），
     // 此处不再重复触发，避免首屏并发两次 4 请求批次。
   },
@@ -362,6 +369,10 @@ var pageConfig = {
         dateText: 'rgba(21,35,26,0.44)',
         badgeFill: 'rgba(255,255,255,0.96)',
         badgeText: 'rgba(21,35,26,0.92)',
+        pieLeader: 'rgba(57,76,64,0.52)',
+        pieLabelText: 'rgba(37,54,43,0.90)',
+        pieLabelSubtext: 'rgba(82,101,89,0.72)',
+        pieInsideText: 'rgba(31,48,37,0.88)',
         emptyPieFill: 'rgba(21,51,35,0.045)',
         emptyPieStroke: 'rgba(21,51,35,0.13)',
         emptyPieText: 'rgba(21,35,26,0.42)',
@@ -379,6 +390,10 @@ var pageConfig = {
       dateText: 'rgba(255,255,255,0.25)',
       badgeFill: 'rgba(11,17,33,0.9)',
       badgeText: 'rgba(255,255,255,0.92)',
+      pieLeader: 'rgba(255,255,255,0.44)',
+      pieLabelText: 'rgba(255,255,255,0.90)',
+      pieLabelSubtext: 'rgba(255,255,255,0.58)',
+      pieInsideText: 'rgba(255,255,255,0.88)',
       emptyPieFill: 'rgba(255,255,255,0.05)',
       emptyPieStroke: 'rgba(255,255,255,0.08)',
       emptyPieText: 'rgba(255,255,255,0.28)',
@@ -490,8 +505,191 @@ var pageConfig = {
     return Array.isArray(subjects) && subjects.some(item => Number(item && item.duration_sec) > 0)
   },
 
-  _buildSubjectItems(subjects) {
+
+  _ensureSubjectMeta() {
+    if (this._subjectMetaLoaded) return Promise.resolve(this._subjectMeta)
+    if (this._subjectMetaPromise) return this._subjectMetaPromise
+    this._subjectMetaPromise = this._loadSubjectMeta()
+    return this._subjectMetaPromise
+  },
+
+  async _loadSubjectMeta() {
+    try {
+      const rawTree = await api.get('/practice/subjects')
+      this._subjectMeta = this._buildSubjectMeta(rawTree)
+      return this._subjectMeta
+    } catch (e) {
+      console.error('加载科目树失败', e)
+      this._subjectMeta = null
+      return null
+    } finally {
+      this._subjectMetaLoaded = true
+      this._subjectMetaPromise = null
+    }
+  },
+
+  _buildSubjectMeta(tree) {
+    const roots = Array.isArray(tree) ? tree : []
+    const byId = {}
+    const leafIds = []
+    const normalizeId = value => {
+      const n = Number(value)
+      return Number.isFinite(n) && n > 0 ? n : null
+    }
+    const visit = (node, parentId) => {
+      if (!node || node.is_active === false) return []
+      const id = normalizeId(node.subject_id || node.id)
+      const children = Array.isArray(node.children) ? node.children : []
+      const childLeafIds = []
+      children.forEach(child => {
+        const descendants = visit(child, id)
+        descendants.forEach(leafId => childLeafIds.push(leafId))
+      })
+      const label = String(node.subject_name || node.display_name || node.name || '').trim() || '未分类'
+      const code = String(node.subject_code || node.product_code || node.code || '').trim()
+      const isLeaf = childLeafIds.length === 0
+      const descendantLeafIds = isLeaf && id != null ? [id] : childLeafIds.slice()
+      if (id != null) {
+        byId[id] = {
+          id,
+          parentId: normalizeId(parentId),
+          name: label,
+          code,
+          isLeaf,
+          descendantLeafIds,
+        }
+        if (isLeaf) leafIds.push(id)
+      }
+      return descendantLeafIds
+    }
+    roots.forEach(node => visit(node, null))
+    return { byId, leafIds }
+  },
+
+  _distributeAggregateValue(total, leafIds, currentTotals) {
+    const count = Array.isArray(leafIds) ? leafIds.length : 0
+    const safeTotal = Math.max(0, Math.round(Number(total) || 0))
+    if (!count || !safeTotal) return []
+    const weights = leafIds.map(id => Math.max(0, Number(currentTotals[id]) || 0))
+    const weightSum = weights.reduce((sum, value) => sum + value, 0)
+    const base = []
+    const remainders = []
+    let assigned = 0
+    leafIds.forEach((id, index) => {
+      const share = weightSum > 0
+        ? (safeTotal * weights[index]) / weightSum
+        : safeTotal / count
+      const value = Math.floor(share)
+      base[index] = value
+      remainders[index] = share - value
+      assigned += value
+    })
+    let rest = safeTotal - assigned
+    const order = leafIds.map((id, index) => ({ index, remainder: remainders[index], weight: weights[index] }))
+      .sort((a, b) => {
+        if (b.remainder !== a.remainder) return b.remainder - a.remainder
+        if (b.weight !== a.weight) return b.weight - a.weight
+        return a.index - b.index
+      })
+    let cursor = 0
+    while (rest > 0 && order.length) {
+      const target = order[cursor % order.length]
+      base[target.index] += 1
+      rest -= 1
+      cursor += 1
+    }
+    return leafIds.map((id, index) => ({ id, value: base[index] }))
+  },
+
+  _normalizeDistributionSubjects(subjects) {
     const subjArr = Array.isArray(subjects) ? subjects : []
+    const meta = this._subjectMeta
+    if (!meta || !meta.byId) return subjArr.slice()
+
+    const bucketById = {}
+    const passthrough = []
+    const parentBuckets = []
+    const upsertLeaf = (subjectId, fallbackItem) => {
+      const metaNode = meta.byId[subjectId] || {}
+      if (!bucketById[subjectId]) {
+        bucketById[subjectId] = {
+          subject_id: subjectId,
+          subject_code: metaNode.code || String((fallbackItem && fallbackItem.subject_code) || ''),
+          subject_name: metaNode.name || String((fallbackItem && fallbackItem.subject_name) || '未分类'),
+          sessions: 0,
+          duration_sec: 0,
+        }
+      }
+      return bucketById[subjectId]
+    }
+
+    subjArr.forEach(item => {
+      const subjectId = item && item.subject_id != null ? Number(item.subject_id) : null
+      const durationSec = Math.max(0, Number(item && item.duration_sec) || 0)
+      const sessions = Math.max(0, Number(item && item.sessions) || 0)
+      if (subjectId == null || !meta.byId[subjectId]) {
+        passthrough.push({
+          subject_id: item && item.subject_id != null ? item.subject_id : null,
+          subject_code: String((item && item.subject_code) || ''),
+          subject_name: String((item && item.subject_name) || '未分类'),
+          sessions,
+          duration_sec: durationSec,
+        })
+        return
+      }
+      const node = meta.byId[subjectId]
+      if (node.isLeaf) {
+        const bucket = upsertLeaf(subjectId, item)
+        bucket.sessions += sessions
+        bucket.duration_sec += durationSec
+        return
+      }
+      const leafIds = Array.isArray(node.descendantLeafIds) ? node.descendantLeafIds.filter(id => meta.byId[id] && meta.byId[id].isLeaf) : []
+      if (!leafIds.length) {
+        passthrough.push({
+          subject_id: subjectId,
+          subject_code: node.code || String((item && item.subject_code) || ''),
+          subject_name: node.name || String((item && item.subject_name) || '未分类'),
+          sessions,
+          duration_sec: durationSec,
+        })
+        return
+      }
+      parentBuckets.push({ item, leafIds, durationSec, sessions })
+    })
+
+    parentBuckets.forEach(entry => {
+      const currentDurations = {}
+      const currentSessions = {}
+      entry.leafIds.forEach(id => {
+        currentDurations[id] = bucketById[id] ? bucketById[id].duration_sec : 0
+        currentSessions[id] = bucketById[id] ? bucketById[id].sessions : 0
+      })
+      const durationShares = this._distributeAggregateValue(entry.durationSec, entry.leafIds, currentDurations)
+      const sessionShares = this._distributeAggregateValue(entry.sessions, entry.leafIds, currentSessions)
+      durationShares.forEach(share => {
+        const bucket = upsertLeaf(share.id, entry.item)
+        bucket.duration_sec += share.value
+      })
+      sessionShares.forEach(share => {
+        const bucket = upsertLeaf(share.id, entry.item)
+        bucket.sessions += share.value
+      })
+    })
+
+    const normalized = Object.values(bucketById)
+      .concat(passthrough)
+      .filter(item => Number(item.duration_sec) > 0 || Number(item.sessions) > 0)
+      .sort((a, b) => {
+        const diff = Number(b.duration_sec || 0) - Number(a.duration_sec || 0)
+        if (diff !== 0) return diff
+        return String(a.subject_name || '').localeCompare(String(b.subject_name || ''), 'zh-Hans-CN')
+      })
+    return normalized
+  },
+
+  _buildSubjectItems(subjects) {
+    const subjArr = this._normalizeDistributionSubjects(subjects)
     const totalDur = Math.max(1, subjArr.reduce((sum, item) => sum + (item.duration_sec || 0), 0))
     return subjArr.map(item => {
       const dur = item.duration_sec || 0
@@ -507,6 +705,7 @@ var pageConfig = {
         _label: item.subject_name || '未分类',
         _color: getPieSubjectColor(subjectId != null ? String(subjectId) : (code || '未分类'), this.data.themeMode),
         _durationText: this._fmtMin(dur),
+        _durationBadgeText: this._fmtHourMinute(dur),
         _pct: pct,
         _pctText: (pct * 100).toFixed(1) + '%',
       }
@@ -565,8 +764,9 @@ var pageConfig = {
   },
 
   _commitDistributionSubjects(rawSubjects, animate) {
+    this._distributionRawSubjects = Array.isArray(rawSubjects) ? rawSubjects.slice() : []
     this._resetPieCache()
-    const subjectItems = this._buildSubjectItems(rawSubjects)
+    const subjectItems = this._buildSubjectItems(this._distributionRawSubjects)
     this.setData({
       subjects: subjectItems,
       distributionHasData: this._hasDistributionData(subjectItems),
@@ -609,6 +809,7 @@ var pageConfig = {
       _selectedSubject: null,
     })
     try {
+      await this._ensureSubjectMeta().catch(() => null)
       const summary = await api.get('/pomodoro/range-summary', {
         start_date: range.start,
         end_date: range.end,
@@ -870,6 +1071,7 @@ var pageConfig = {
 
   async loadData() {
     await this._ensureSettings()
+    const subjectMetaPromise = this._ensureSubjectMeta().catch(() => null)
     if (!this._alive) return
     const reqId = this._requestId
     const requestedDate = this.data.selectedDate
@@ -884,6 +1086,7 @@ var pageConfig = {
         api.get('/pomodoro/statistics-overview', viewingToday ? {} : { date: requestedDate }),
         api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
       ])
+      await subjectMetaPromise
       const overview = initialResponses[0]
       const historyRes = initialResponses[1]
       const stats = (overview && overview.stats) || {}
@@ -1741,14 +1944,17 @@ var pageConfig = {
   _getPieGeometry(rect) {
     const w = rect.width
     const h = rect.height
-    const radius = Math.min(w * 0.255, h * 0.3)
+    // Reserve explicit side gutters for reference-style labels.  The old 25.5%
+    // radius left too little horizontal room, forcing leader lines into a
+    // vertical stack on one side of the pie.
+    const radius = Math.min(w * 0.215, h * 0.275)
     return {
       w,
       h,
       centerX: w / 2,
-      centerY: h * 0.44,
+      centerY: h * 0.49,
       radius,
-      tilt: 0.72,
+      tilt: 0.74,
       depth: radius * 0.08,
     }
   },
@@ -1770,79 +1976,180 @@ var pageConfig = {
 
   _buildPieLabelLayout(sectors, geometry) {
     const { w, h, centerX, centerY, radius, tilt } = geometry
-    const minY = 24
-    const maxY = h - 28
-    const left = []
-    const right = []
+    const badgeW = 54
+    const badgeH = 23
+    const marginX = 6
+    const marginY = 8
+    const gapX = 5
+    const gapY = 4
+    const outerRadiusX = radius + 36
+    const outerRadiusY = radius * tilt + 31
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
-    sectors.forEach(sec => {
+    const items = sectors.map((sec, index) => {
       const mid = (sec.startA + sec.endA) / 2
-      const side = Math.cos(mid) >= 0 ? 'right' : 'left'
-      const rawY = centerY + Math.sin(mid) * radius * tilt * 1.14
-      const sign = side === 'right' ? 1 : -1
-      const startX = centerX + Math.cos(mid) * radius * 1.02
-      const startY = centerY + Math.sin(mid) * radius * tilt * 1.02
-      const shoulderX = centerX + Math.cos(mid) * radius * 1.11
-      const shoulderY = centerY + Math.sin(mid) * radius * tilt * 1.11
-      const item = {
+      const cos = Math.cos(mid)
+      const sin = Math.sin(mid)
+      const startX = centerX + cos * radius * 1.02
+      const startY = centerY + sin * radius * tilt * 1.02
+      const elbowX = centerX + cos * (radius + 9)
+      const elbowY = centerY + sin * (radius * tilt + 8)
+
+      // The badge follows the sector around an expanded ellipse.  Dense small
+      // sectors are resolved along the local tangent below, rather than being
+      // snapped into a left/right gutter column.
+      const baseX = centerX + cos * outerRadiusX
+      const baseY = centerY + sin * outerRadiusY
+      const tangentLen = Math.hypot(-sin, cos * tilt) || 1
+      const tangentX = -sin / tangentLen
+      const tangentY = (cos * tilt) / tangentLen
+      const radialLen = Math.hypot(cos, sin * tilt) || 1
+      const radialX = cos / radialLen
+      const radialY = (sin * tilt) / radialLen
+
+      return {
         sec,
+        index,
         mid,
-        side,
-        sign,
-        rawY,
         startX,
         startY,
-        shoulderX,
-        shoulderY,
+        elbowX,
+        elbowY,
+        baseX,
+        baseY,
+        badgeCenterX: clamp(baseX, marginX + badgeW / 2, w - marginX - badgeW / 2),
+        badgeCenterY: clamp(baseY, marginY + badgeH / 2, h - marginY - badgeH / 2),
+        badgeW,
+        badgeH,
+        tangentX,
+        tangentY,
+        radialX,
+        radialY,
       }
-      ;(side === 'right' ? right : left).push(item)
     })
 
-    const distribute = items => {
-      if (!items.length) return
-      items.sort((a, b) => a.rawY - b.rawY)
-      const gap = items.length > 1
-        ? Math.max(19, Math.min(25, (maxY - minY) / (items.length - 1)))
-        : 0
-      items[0].labelY = Math.max(minY, items[0].rawY)
-      for (let i = 1; i < items.length; i++) {
-        items[i].labelY = Math.max(items[i].rawY, items[i - 1].labelY + gap)
-      }
-      if (items[items.length - 1].labelY > maxY) {
-        items[items.length - 1].labelY = maxY
-        for (let i = items.length - 2; i >= 0; i--) {
-          items[i].labelY = Math.min(items[i].labelY, items[i + 1].labelY - gap)
+    const overlaps = (a, b) => (
+      Math.abs(a.badgeCenterX - b.badgeCenterX) < (badgeW + gapX) &&
+      Math.abs(a.badgeCenterY - b.badgeCenterY) < (badgeH + gapY)
+    )
+
+    // Local 2-D collision resolution.  Push along the ellipse tangent first:
+    // top clusters fan horizontally, side clusters fan vertically.  A small
+    // outward component gives especially dense groups a second ring without
+    // turning them into a vertical list.
+    for (let pass = 0; pass < 56; pass++) {
+      let changed = false
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          const a = items[i]
+          const b = items[j]
+          if (!overlaps(a, b)) continue
+          changed = true
+
+          const avgMid = (a.mid + b.mid) / 2
+          const tangentLen = Math.hypot(-Math.sin(avgMid), Math.cos(avgMid) * tilt) || 1
+          const tx = -Math.sin(avgMid) / tangentLen
+          const ty = (Math.cos(avgMid) * tilt) / tangentLen
+          const order = a.mid <= b.mid ? 1 : -1
+
+          const overlapX = (badgeW + gapX) - Math.abs(a.badgeCenterX - b.badgeCenterX)
+          const overlapY = (badgeH + gapY) - Math.abs(a.badgeCenterY - b.badgeCenterY)
+          const needed = Math.max(2.2, Math.min(7.5, Math.min(overlapX, overlapY) * 0.35 + 1.8))
+
+          a.badgeCenterX -= tx * needed * order
+          a.badgeCenterY -= ty * needed * order
+          b.badgeCenterX += tx * needed * order
+          b.badgeCenterY += ty * needed * order
+
+          // Every third pass adds a gentle radial fan.  This is what lets a
+          // run of tiny top sectors spread above the pie instead of stacking.
+          if (pass % 3 === 2) {
+            const outward = 1.35 + Math.min(2.4, pass * 0.035)
+            a.badgeCenterX += a.radialX * outward
+            a.badgeCenterY += a.radialY * outward
+            b.badgeCenterX += b.radialX * outward
+            b.badgeCenterY += b.radialY * outward
+          }
         }
       }
-      if (items[0].labelY < minY) {
-        const shift = minY - items[0].labelY
-        items.forEach(item => { item.labelY += shift })
-      }
+
+      items.forEach(item => {
+        // A weak tether keeps labels near their own sector after repulsion.
+        item.badgeCenterX += (item.baseX - item.badgeCenterX) * 0.035
+        item.badgeCenterY += (item.baseY - item.badgeCenterY) * 0.035
+        item.badgeCenterX = clamp(item.badgeCenterX, marginX + badgeW / 2, w - marginX - badgeW / 2)
+        item.badgeCenterY = clamp(item.badgeCenterY, marginY + badgeH / 2, h - marginY - badgeH / 2)
+      })
+      if (!changed) break
     }
 
-    distribute(left)
-    distribute(right)
+    // Final hard-separation pass: no spring-back here.  It guarantees that
+    // neighboring percentage badges remain distinct even in a very dense fan.
+    for (let pass = 0; pass < 32; pass++) {
+      let changed = false
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          const a = items[i]
+          const b = items[j]
+          if (!overlaps(a, b)) continue
+          changed = true
+          const avgMid = (a.mid + b.mid) / 2
+          const tangentLen = Math.hypot(-Math.sin(avgMid), Math.cos(avgMid) * tilt) || 1
+          const tx = -Math.sin(avgMid) / tangentLen
+          const ty = (Math.cos(avgMid) * tilt) / tangentLen
+          const order = a.mid <= b.mid ? 1 : -1
+          const push = 2.8
+          a.badgeCenterX -= tx * push * order
+          a.badgeCenterY -= ty * push * order
+          b.badgeCenterX += tx * push * order
+          b.badgeCenterY += ty * push * order
+          if (pass % 4 === 3) {
+            a.badgeCenterX += a.radialX * 1.2
+            a.badgeCenterY += a.radialY * 1.2
+            b.badgeCenterX += b.radialX * 1.2
+            b.badgeCenterY += b.radialY * 1.2
+          }
+          a.badgeCenterX = clamp(a.badgeCenterX, marginX + badgeW / 2, w - marginX - badgeW / 2)
+          a.badgeCenterY = clamp(a.badgeCenterY, marginY + badgeH / 2, h - marginY - badgeH / 2)
+          b.badgeCenterX = clamp(b.badgeCenterX, marginX + badgeW / 2, w - marginX - badgeW / 2)
+          b.badgeCenterY = clamp(b.badgeCenterY, marginY + badgeH / 2, h - marginY - badgeH / 2)
+        }
+      }
+      if (!changed) break
+    }
 
-    return left.concat(right).map(item => {
-      const badgeW = 54
-      const badgeH = 23
-      const badgeX = item.side === 'right' ? w - 61 : 7
-      const lineEndX = item.side === 'right' ? badgeX : badgeX + badgeW
-      const deltaY = item.labelY - item.shoulderY
-      const radialBendX = item.shoulderX + item.sign * Math.max(7, Math.min(13, Math.abs(deltaY) * 0.08 + 6))
-      const radialBendY = item.shoulderY + deltaY * 0.22
-      const outerBendX = centerX + item.sign * (radius + 18 + Math.min(10, Math.abs(deltaY) * 0.05))
-      const outerBendY = item.shoulderY + deltaY * 0.68
+    return items.map(item => {
+      const badgeX = item.badgeCenterX - badgeW / 2
+      const badgeY = item.badgeCenterY - badgeH / 2
+
+      // Keep a visible but compact elbow even when a badge sits almost exactly
+      // on the sector's radial line.  The bend follows the label's local
+      // tangent displacement, so it still reads as belonging to that sector.
+      const tangentDisplacement = (item.badgeCenterX - item.baseX) * item.tangentX + (item.badgeCenterY - item.baseY) * item.tangentY
+      const bendSign = Math.abs(tangentDisplacement) > 0.5
+        ? (tangentDisplacement > 0 ? 1 : -1)
+        : (item.index % 2 === 0 ? 1 : -1)
+      const elbowX = item.elbowX + item.tangentX * 7 * bendSign
+      const elbowY = item.elbowY + item.tangentY * 7 * bendSign
+
+      // Intersect the line from the badge centre toward the elbow with the
+      // badge rectangle.  The callout therefore needs only one short elbow.
+      const dx = elbowX - item.badgeCenterX
+      const dy = elbowY - item.badgeCenterY
+      const sx = Math.abs(dx) > 1e-6 ? (badgeW / 2) / Math.abs(dx) : Infinity
+      const sy = Math.abs(dy) > 1e-6 ? (badgeH / 2) / Math.abs(dy) : Infinity
+      const scale = Math.min(sx, sy)
+      const lineEndX = item.badgeCenterX + dx * scale
+      const lineEndY = item.badgeCenterY + dy * scale
+
       return {
         ...item,
         badgeX,
-        badgeW,
-        badgeH,
+        badgeY,
+        elbowX,
+        elbowY,
         lineEndX,
-        radialBendX,
-        radialBendY,
-        outerBendX,
-        outerBendY,
+        lineEndY,
       }
     })
   },
@@ -1858,16 +2165,14 @@ var pageConfig = {
     for (let i = startIndex; i < Math.min(endIndex, layout.length); i++) {
       const item = layout[i]
       const sec = item.sec
-      const lineY = item.labelY
 
+      // Short two-segment elbow: sector edge -> local outward elbow -> badge.
       ctx.strokeStyle = sec.color
       ctx.lineWidth = 1.15
       ctx.beginPath()
       ctx.moveTo(item.startX, item.startY)
-      ctx.lineTo(item.shoulderX, item.shoulderY)
-      ctx.lineTo(item.radialBendX, item.radialBendY)
-      ctx.lineTo(item.outerBendX, item.outerBendY)
-      ctx.lineTo(item.lineEndX, lineY)
+      ctx.lineTo(item.elbowX, item.elbowY)
+      ctx.lineTo(item.lineEndX, item.lineEndY)
       ctx.stroke()
 
       ctx.fillStyle = sec.color
@@ -1875,8 +2180,7 @@ var pageConfig = {
       ctx.arc(item.startX, item.startY, 2.1, 0, Math.PI * 2)
       ctx.fill()
 
-      const badgeY = lineY - item.badgeH / 2
-      this._roundRectPath(ctx, item.badgeX, badgeY, item.badgeW, item.badgeH, 8)
+      this._roundRectPath(ctx, item.badgeX, item.badgeY, item.badgeW, item.badgeH, 8)
       ctx.fillStyle = palette.badgeFill
       ctx.fill()
       ctx.strokeStyle = sec.color
@@ -1887,7 +2191,7 @@ var pageConfig = {
       ctx.font = '600 10px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(sec.subject._pctText || '0%', item.badgeX + item.badgeW / 2, lineY + 0.5)
+      ctx.fillText(sec.subject._durationBadgeText || '0时0分', item.badgeCenterX, item.badgeCenterY + 0.5)
     }
     ctx.restore()
   },
@@ -2058,7 +2362,7 @@ var pageConfig = {
       })
     }
 
-    // 7. Every sector gets a leader line and percentage badge.
+    // 7. Every sector gets a compact one-line callout near its own slice.
     if (includeLabels) {
       this._drawPieLabels(ctx, geometry, this._pieLabelLayout, labelReveal)
     }
@@ -2150,6 +2454,14 @@ var pageConfig = {
     }
     if (!parts.length) return [{ type: 'num', text: normalized }]
     return parts
+  },
+
+  _fmtHourMinute(sec) {
+    const s = Math.max(0, sec || 0)
+    const m = Math.floor(s / 60)
+    const h = Math.floor(m / 60)
+    const mins = m % 60
+    return `${h}时${mins}分`
   },
 
   _fmtMin(sec) {

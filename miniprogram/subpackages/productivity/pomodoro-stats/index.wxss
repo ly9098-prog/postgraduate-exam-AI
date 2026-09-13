@@ -3529,3 +3529,205 @@ page {
     height: 194rpx;
   }
 }
+
+/* ============================================
+   Round 6 — reference-style pie labels + complete segmented fill
+   ============================================ */
+.distribution-period-shell {
+  overflow: hidden;
+}
+
+.period-slot {
+  align-self: stretch;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: transparent;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.period-slot-active {
+  background: rgba(112, 218, 178, .16);
+}
+
+.period-slot:first-child.period-slot-active {
+  border-radius: 999rpx 0 0 999rpx;
+}
+
+.period-slot:last-child.period-slot-active {
+  border-radius: 0 999rpx 999rpx 0;
+}
+
+.period-slot-active::after {
+  opacity: 0;
+}
+
+.period-slot-picker,
+.period-slot-picker .period-picker,
+.period-slot-picker picker {
+  width: 100%;
+  height: 100%;
+  min-height: 54rpx;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+.period-slot-picker .period-picker,
+.period-slot-picker picker {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.period-segment-custom {
+  width: 100%;
+  height: 100%;
+  min-height: 54rpx;
+  box-sizing: border-box;
+}
+
+/* Active fill is owned by the slot instead of the inner text node.  This is
+   especially important for the native picker wrapper used by “自定义”. */
+.period-segment-active {
+  background: transparent;
+}
+
+.theme-light .period-slot-active {
+  background: #DFEEE5;
+}
+
+.theme-light .period-segment-active {
+  background: transparent;
+}
+
+/* Keep the supporting legend aligned to real columns instead of loosely
+   centered flex rows.  The pie itself now carries the primary label + duration. */
+.distribution-card .subject-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10rpx 16rpx;
+  width: 100%;
+  max-width: 560rpx;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 12rpx 2rpx 2rpx;
+}
+
+.distribution-card .subject-legend-item {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.distribution-card .subject-legend-copy {
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 5rpx;
+}
+
+.distribution-card .subject-legend-name {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 350px) {
+  .distribution-card .subject-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9rpx 18rpx;
+  }
+}
+
+
+/* ============================================
+   Round 7 — centered custom picker + radial pie callouts
+   ============================================ */
+.period-slot-picker,
+.period-slot-picker .period-picker,
+.period-slot-picker picker,
+.period-segment-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.period-slot-picker .period-picker,
+.period-slot-picker picker,
+.period-segment-custom {
+  width: 100%;
+  height: 100%;
+  min-height: 54rpx;
+  box-sizing: border-box;
+}
+
+.period-segment-custom {
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+  line-height: 1;
+}
+
+
+/* Round 6: center the native custom-range segment reliably. */
+.period-slot-picker,
+.period-slot-picker .period-picker,
+.period-slot-picker picker,
+.period-slot-picker .period-segment-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.period-slot-picker picker,
+.period-slot-picker .period-picker {
+  width: 100%;
+  height: 100%;
+}
+
+.period-slot-picker .period-segment-custom {
+  flex: 1;
+  width: 100%;
+  min-height: 54rpx;
+  line-height: 1;
+}
+
+
+/* Round 8: legend becomes two-line subject + percent + duration. */
+.distribution-card .subject-legend-item {
+  align-items: flex-start;
+}
+
+.distribution-card .subject-legend-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3rpx;
+}
+
+.distribution-card .subject-legend-head {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 0;
+  width: 100%;
+}
+
+.distribution-card .subject-legend-name,
+.distribution-card .subject-legend-percent,
+.distribution-card .subject-legend-duration {
+  line-height: 1.25;
+}
+
+.distribution-card .subject-legend-percent {
+  flex-shrink: 0;
+}
+
+.distribution-card .subject-legend-duration {
+  font-size: 18rpx;
+  color: rgba(255,255,255,.38);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-light .distribution-card .subject-legend-duration {
+  color: #9AA59F;
+}
