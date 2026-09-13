@@ -6,7 +6,7 @@
 
 ## 项目基础
 
-- **名称**：2240AI — 考研智能刷题小程序（数学二 / 408 / 英语）
+- **名称**：22408AI — 考研智能刷题小程序（数学二 / 408 / 英语）
 - **技术栈**：FastAPI + SQLAlchemy + PostgreSQL（生产）/ SQLite（开发）+ Redis（生产必需）
 - **AI**：DeepSeek API + PaddleOCR-VL 1.6 外部 API（httpx 直连，无 langchain/llamaindex）
 - **OCR 模型**：本地 PP-OCRv4（PaddleOCR 2.10.0）+ 外部 PaddleOCR-VL 1.6
@@ -44,6 +44,10 @@ ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh updat
 # 数据库迁移（生产）
 ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
 ```
+
+## 提交规范
+
+Git 提交必须遵守 `/docs/COMMIT_RULES.md`。要点：Conventional Commits 格式；严禁自动添加任何 AI（Claude/Anthropic 等）的 `Co-Authored-By` 或其他 attribution trailer；不执行未经授权的 force push / 历史重写；不提交 secrets。
 
 ## 代码查询
 

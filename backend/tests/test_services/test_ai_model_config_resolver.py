@@ -198,6 +198,7 @@ class TestResolverConfigResolution:
         model.sort_order = 1
         model.feature = "ocr"
         model.features = ["ocr", "vision"]
+        model.deleted_at = None
         model.created_at = datetime.now()
         model.updated_at = datetime.now()
         return model

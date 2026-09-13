@@ -11,7 +11,7 @@ import ast
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent.parent / "app"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # Raw OCR types that should only be imported inside adapter boundary
 RAW_OCR_TYPES = {

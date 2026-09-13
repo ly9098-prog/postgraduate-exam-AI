@@ -40,6 +40,7 @@ class TestAICapabilityModelSeparation:
         ocr_fix_model.sort_order = 1
         ocr_fix_model.feature = None
         ocr_fix_model.features = ["ocr", "vision"]
+        ocr_fix_model.deleted_at = None
         ocr_fix_model.created_at = datetime.now()
         ocr_fix_model.updated_at = datetime.now()
 
@@ -55,6 +56,7 @@ class TestAICapabilityModelSeparation:
         ai_repair_model.sort_order = 1
         ai_repair_model.feature = "completion"
         ai_repair_model.features = ["completion"]
+        ai_repair_model.deleted_at = None
         ai_repair_model.created_at = datetime.now()
         ai_repair_model.updated_at = datetime.now()
 
@@ -108,6 +110,7 @@ class TestAICapabilityModelSeparation:
         ocr_fix_model.sort_order = 1
         ocr_fix_model.feature = None
         ocr_fix_model.features = ["ocr"]
+        ocr_fix_model.deleted_at = None
         ocr_fix_model.created_at = datetime.now()
         ocr_fix_model.updated_at = datetime.now()
 
@@ -122,6 +125,7 @@ class TestAICapabilityModelSeparation:
         ai_repair_model.sort_order = 2
         ai_repair_model.feature = "completion"
         ai_repair_model.features = ["completion"]
+        ai_repair_model.deleted_at = None
         ai_repair_model.created_at = datetime.now()
         ai_repair_model.updated_at = datetime.now()
 
@@ -169,6 +173,7 @@ class TestAICapabilityModelSeparation:
         multi_model.sort_order = 1
         multi_model.feature = None
         multi_model.features = ["ocr", "completion", "vision"]
+        multi_model.deleted_at = None
         multi_model.created_at = datetime.now()
         multi_model.updated_at = datetime.now()
 
