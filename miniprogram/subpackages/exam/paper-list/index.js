@@ -204,8 +204,15 @@ Page({
 
     const confirmed = await this._showAppDialog({
       scenario: 'all-done',
+      layout: 'exam-start',
+      iconImage: '/components/app-dialog/assets/exam-start-check.png',
       title: paper.typeLabel,
-      message: `${paper.title}\n共 ${paper.question_count} 题、${paper.scoreText} 分。${paper.durationMinutes ? `限时 ${paper.durationMinutes} 分钟。` : ''}`,
+      subtitle: paper.year ? String(paper.year) : '',
+      metaItems: [
+        { icon: 'paper', text: `共 ${paper.question_count} 题` },
+        { icon: 'score', text: `${paper.scoreText} 分` },
+        { icon: 'time', text: paper.durationMinutes ? `限时 ${paper.durationMinutes} 分钟` : '不限时' },
+      ],
       confirmText: '开始作答',
       cancelText: '稍后再做',
       hideEyebrow: true,

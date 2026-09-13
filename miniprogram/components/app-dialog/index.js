@@ -17,6 +17,10 @@ Component({
     hideEyebrow: false,
     maskClose: false,
     items: [],
+    layout: 'default',
+    subtitle: '',
+    metaItems: [],
+    iconImage: '',
   },
   methods: {
     show(opts = {}) {
@@ -35,6 +39,13 @@ Component({
         hideEyebrow: !!opts.hideEyebrow,
         maskClose: !!opts.maskClose,
         items: [],
+        layout: opts.layout || 'default',
+        subtitle: opts.subtitle || '',
+        metaItems: (Array.isArray(opts.metaItems) ? opts.metaItems : []).map((item) => ({
+          icon: item && item.icon ? String(item.icon) : 'dot',
+          text: item && item.text != null ? String(item.text) : '',
+        })).filter((item) => item.text).slice(0, 3),
+        iconImage: opts.iconImage || '',
       })
       return new Promise((resolve) => { this._confirmResolve = resolve })
     },
@@ -60,6 +71,10 @@ Component({
         hideEyebrow: true,
         maskClose: opts.maskClose !== false,
         items,
+        layout: 'default',
+        subtitle: '',
+        metaItems: [],
+        iconImage: '',
       })
       return new Promise((resolve) => { this._confirmResolve = resolve })
     },

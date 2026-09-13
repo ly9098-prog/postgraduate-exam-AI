@@ -15,9 +15,10 @@
 <text class="runner-back-symbol">‹</text>
 </view>
 <text class="runner-eyebrow">{{mode === 'exam' ? 'EXAM' : (mode === 'review' ? 'REVIEW' : 'PRACTICE')}} {{currentIndex + 1 < 10 ? '0' : ''}}{{currentIndex + 1}}</text>
+<text class="runner-subject-chip" wx:if="{{mode === 'exam' && currentQuestion && currentQuestion._subjectName}}">{{currentQuestion._subjectName}}</text>
 <view class="runner-collapsed-copy">
 <text class="runner-collapsed-subject">{{subjectName || title || '练习'}}</text>
-<text class="runner-collapsed-meta">{{currentIndex + 1}} / {{totalCount || 0}} · {{elapsedText}}</text>
+<text class="runner-collapsed-meta"><text wx:if="{{mode === 'exam' && currentQuestion && currentQuestion._subjectName}}">{{currentQuestion._subjectName}} · </text>{{currentIndex + 1}} / {{totalCount || 0}} · {{elapsedText}}</text>
 </view>
 <view
           class="runner-expand-btn"

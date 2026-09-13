@@ -181,6 +181,22 @@
       {
         "type": "glob",
         "value": "miniprogram_*_patch*/**"
+      },
+      {
+        "type": "glob",
+        "value": "icon.png"
+      },
+      {
+        "type": "glob",
+        "value": "背景图.png"
+      },
+      {
+        "type": "glob",
+        "value": "components/app-dialog/assets/icon.png"
+      },
+      {
+        "type": "glob",
+        "value": "subpackages/exam/paper-list/assets/背景图.png"
       }
     ],
     "include": []

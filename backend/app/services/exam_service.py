@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -771,6 +772,13 @@ async def _finalize_attempt(
     attempt.answered_count = int(answered_count)
     attempt.correct_count = int(total_correct)
     attempt.score = earned_total
+
+    # ``result_snapshot`` is stored in a SQLAlchemy JSON column. Nested payloads
+    # (notably error-diagnosis metadata) may contain ``datetime`` values that
+    # FastAPI can serialize in a response but the database JSON serializer cannot.
+    # Normalize the complete snapshot at the persistence boundary so this path
+    # remains safe even when future nested result fields add datetime/Decimal types.
+    result = jsonable_encoder(result)
     attempt.result_snapshot = result
     await db.commit()
 

@@ -5,6 +5,36 @@ function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
 }
 
+const EXAM_SUBJECT_LABELS = {
+  data_structure: '数据结构',
+  ds: '数据结构',
+  'exam408-ds': '数据结构',
+  computer_organization: '计算机组成原理',
+  co: '计算机组成原理',
+  'exam408-co': '计算机组成原理',
+  operating_system: '操作系统',
+  os: '操作系统',
+  'exam408-os': '操作系统',
+  computer_network: '计算机网络',
+  cn: '计算机网络',
+  'exam408-cn': '计算机网络',
+}
+
+function examSubjectLabel(name, code) {
+  const normalizedCode = String(code || '').trim().toLowerCase()
+  if (EXAM_SUBJECT_LABELS[normalizedCode]) return EXAM_SUBJECT_LABELS[normalizedCode]
+
+  const cleaned = cleanUiLabel(name)
+    .replace(/^[-—–·：:\s]+|[-—–·：:\s]+$/g, '')
+    .trim()
+  if (!cleaned) return '未分类'
+  if (/数据结构/.test(cleaned)) return '数据结构'
+  if (/计算机组成原理|组成原理|计组/.test(cleaned)) return '计算机组成原理'
+  if (/操作系统/.test(cleaned)) return '操作系统'
+  if (/计算机网络|计网/.test(cleaned)) return '计算机网络'
+  return cleaned
+}
+
 function pad2(n) { return String(Math.max(0, Number(n) || 0)).padStart(2, '0') }
 function formatClock(sec) {
   sec = Math.max(0, Math.floor(Number(sec) || 0))
@@ -141,7 +171,8 @@ Page({
         _itemId: Number(raw.item_id),
         _position: Number(raw.position),
         _score: Number(raw.score || 0),
-        _subjectName: raw.subject_name || '',
+        _subjectCode: String(raw.subject_code || ''),
+        _subjectName: examSubjectLabel(raw.subject_name, raw.subject_code),
         _answered: !!answer.selected_answer,
         _marked: !!answer.marked_for_review,
       })

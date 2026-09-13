@@ -1,30 +1,65 @@
 <view class="sc-overlay {{visible ? 'sc-visible' : ''}}" catchtap="onMaskTap" catchtouchmove="noop">
-  <view class="sc-card scenario-{{scenario}} {{mode === 'options' ? 'sc-card-options' : ''}}" catchtap="noop">
-    <view class="sc-top-accent"></view>
-
-    <block wx:if="{{mode !== 'options'}}">
-      <view class="sc-icon-circle">
-        <text class="sc-icon-line line-icon {{scenario === 'all-done' ? 'icon-check' : 'icon-exclamation'}}"></text>
-      </view>
-      <text class="sc-eyebrow" wx:if="{{!hideEyebrow}}">{{eyebrow || (scenario === 'unanswered' ? 'UNFINISHED' : scenario === 'danger' ? 'NOTICE' : scenario === 'info' ? 'NOTICE' : 'CONFIRM')}}</text>
-    </block>
-
-    <text class="sc-title">{{title}}</text>
-    <text class="sc-msg" wx:if="{{message}}">{{message}}</text>
+  <view class="sc-card scenario-{{scenario}} {{mode === 'options' ? 'sc-card-options' : ''}} sc-card-layout-{{layout}}" catchtap="noop">
+    <view class="sc-top-accent" wx:if="{{mode === 'options' || layout !== 'exam-start'}}"></view>
 
     <block wx:if="{{mode === 'options'}}">
+      <text class="sc-title">{{title}}</text>
+      <text class="sc-msg" wx:if="{{message}}">{{message}}</text>
+
       <view class="sc-option-list">
         <button wx:for="{{items}}" wx:key="index" class="sc-option {{item.danger ? 'danger' : ''}}" data-index="{{item.index}}" bindtap="onOption">{{item.label}}</button>
       </view>
       <button class="sc-option-cancel" bindtap="onCancel">{{cancelText}}</button>
     </block>
 
-    <view class="sc-actions" wx:else>
-      <button class="sc-btn sc-btn-cancel" wx:if="{{!hideCancel}}" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">{{cancelText}}</button>
-      <button class="sc-btn sc-btn-confirm" hover-class="sc-btn-confirm-pressed" bindtap="onConfirm">
-        <text>{{confirmText}}</text>
-        <view class="sc-confirm-arrow"><text class="sc-confirm-arrow-text">›</text></view>
-      </button>
-    </view>
+    <block wx:elif="{{layout === 'exam-start'}}">
+      <view class="sc-exam-hero">
+        <image class="sc-exam-hero-image" src="{{iconImage}}" mode="aspectFit" wx:if="{{iconImage}}"></image>
+      </view>
+
+      <text class="sc-title sc-title-exam">{{title}}</text>
+      <text class="sc-subtitle" wx:if="{{subtitle}}">{{subtitle}}</text>
+
+      <view class="sc-meta-row" wx:if="{{metaItems.length}}">
+        <block wx:for="{{metaItems}}" wx:key="index">
+          <view class="sc-meta-item">
+            <image class="sc-meta-icon-image" src="/components/app-dialog/assets/meta-file.png" mode="aspectFit" wx:if="{{item.icon === 'paper'}}"></image>
+            <image class="sc-meta-icon-image" src="/components/app-dialog/assets/meta-clock.png" mode="aspectFit" wx:elif="{{item.icon === 'score'}}"></image>
+            <image class="sc-meta-icon-image" src="/components/app-dialog/assets/meta-timer.png" mode="aspectFit" wx:else></image>
+            <text class="sc-meta-text">{{item.text}}</text>
+          </view>
+          <view class="sc-meta-divider" wx:if="{{index !== metaItems.length - 1}}"></view>
+        </block>
+      </view>
+      <text class="sc-msg sc-msg-exam" wx:elif="{{message}}">{{message}}</text>
+
+      <view class="sc-actions sc-actions-exam">
+        <button class="sc-btn sc-btn-cancel sc-btn-cancel-exam" wx:if="{{!hideCancel}}" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">
+          <image class="sc-action-icon sc-action-icon-refresh" src="/components/app-dialog/assets/action-refresh.png" mode="aspectFit"></image>
+          <text>{{cancelText}}</text>
+        </button>
+        <button class="sc-btn sc-btn-confirm sc-btn-confirm-exam" hover-class="sc-btn-confirm-pressed" bindtap="onConfirm">
+          <text>{{confirmText}}</text>
+          <image class="sc-action-icon sc-action-icon-arrow" src="/components/app-dialog/assets/action-arrow.png" mode="aspectFit"></image>
+        </button>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="sc-icon-circle">
+        <text class="sc-icon-line line-icon {{scenario === 'all-done' ? 'icon-check' : 'icon-exclamation'}}"></text>
+      </view>
+      <text class="sc-eyebrow" wx:if="{{!hideEyebrow}}">{{eyebrow || (scenario === 'unanswered' ? 'UNFINISHED' : scenario === 'danger' ? 'NOTICE' : scenario === 'info' ? 'NOTICE' : 'CONFIRM')}}</text>
+      <text class="sc-title">{{title}}</text>
+      <text class="sc-msg" wx:if="{{message}}">{{message}}</text>
+
+      <view class="sc-actions">
+        <button class="sc-btn sc-btn-cancel" wx:if="{{!hideCancel}}" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">{{cancelText}}</button>
+        <button class="sc-btn sc-btn-confirm" hover-class="sc-btn-confirm-pressed" bindtap="onConfirm">
+          <text>{{confirmText}}</text>
+          <view class="sc-confirm-arrow"><text class="sc-confirm-arrow-text">›</text></view>
+        </button>
+      </view>
+    </block>
   </view>
 </view>

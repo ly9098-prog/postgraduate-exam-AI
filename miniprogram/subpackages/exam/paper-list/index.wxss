@@ -402,7 +402,7 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #8B9D97;
+  color: #6F988A;
   font-size: 20rpx;
   line-height: 1.3;
   font-weight: 700;
@@ -413,7 +413,7 @@ page {
   padding: 7rpx 18rpx;
   border-radius: 999rpx;
   background: #E0F3E4;
-  color: #5B8A70;
+  color: #4F866A;
   font-size: 18rpx;
   line-height: 1.25;
   font-weight: 800;
@@ -432,7 +432,7 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #153E35;
+  color: #12493C;
   font-size: 42rpx;
   line-height: 1.14;
   font-weight: 800;
@@ -446,7 +446,7 @@ page {
   flex-wrap: wrap;
   column-gap: 20rpx;
   row-gap: 8rpx;
-  color: #81928C;
+  color: #6F9187;
   font-size: 20rpx;
   line-height: 1.45;
 }
@@ -473,7 +473,7 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #97A6A0;
+  color: #829D94;
 }
 
 .paper-action-wrap {
@@ -481,7 +481,7 @@ page {
   align-items: center;
   gap: 4rpx;
   flex-shrink: 0;
-  color: #2D755C;
+  color: #197457;
 }
 
 .paper-action,
