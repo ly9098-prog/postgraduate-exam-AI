@@ -2,15 +2,17 @@
 
 import { useId, useEffect, useRef, useState, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, CheckCircle2, ChevronDown, FileBox, FileText, FileUp, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, FileBox, FileText, FileUp, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CustomSelect } from "@/components/ui/custom-select";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { ImportPipelineStatusResponse, ImportPipelineUploadResponse } from "@/lib/api/types";
+import type { ImportPipelineStatusResponse, ImportPipelineUploadResponse, QuestionCsvImportResponse } from "@/lib/api/types";
 import { parseProgressPercent } from "@/lib/import-utils";
 import { cn } from "@/lib/utils";
 import { ImportMetric, ImportPanelHeader, ImportProgressBar, ImportWorkspaceHeader } from "../components/import-workspace";
+import { ImportToast } from "../components/import-toast";
 
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
@@ -64,97 +66,6 @@ function getStageStatuses(status?: ImportPipelineStatusResponse, isRunning?: boo
 type TabKey = "upload" | "progress" | "quality";
 
 
-type CustomSelectOption = {
-  value: string;
-  label: string;
-};
-
-type CustomSelectProps = {
-  value: string;
-  onChange: (value: string) => void;
-  options: CustomSelectOption[];
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
-};
-
-function CustomSelect({ value, onChange, options, placeholder = "请选择", disabled = false, className = "" }: CustomSelectProps) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const selectedOption = options.find((option) => option.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative w-full">
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={`${className} inline-flex items-center outline-none import-interactive focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)] disabled:cursor-not-allowed disabled:opacity-60`}
-        onClick={() => {
-          if (!disabled) setOpen((current) => !current);
-        }}
-      >
-        <span className={`min-w-0 flex-1 truncate text-left ${selectedOption ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]"}`}>
-          {selectedOption?.label || placeholder}
-        </span>
-        <ChevronDown className={`ml-2 h-4 w-4 shrink-0 text-[var(--color-text-hint)] import-chevron ${open ? "rotate-180" : ""}`} aria-hidden="true" />
-      </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-auto rounded-xl import-popover border border-[var(--color-border)] bg-white py-1 text-sm shadow-[var(--shadow-floating)]"
-        >
-          {options.map((option) => {
-            const active = option.value === value;
-            return (
-              <button
-                key={option.value || "__empty__"}
-                type="button"
-                role="option"
-                aria-selected={active}
-                className={`flex min-h-11 w-full items-center px-3 py-2 text-left text-sm import-interactive ${
-                  active
-                    ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]"
-                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
-                }`}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {active ? <Check className="ml-2 h-3.5 w-3.5 text-[var(--color-primary)]" aria-hidden="true" /> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export default function ImportTasksPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
   const [file, setFile] = useState<File | null>(null);
@@ -173,6 +84,7 @@ export default function ImportTasksPage() {
   const [pageEnd, setPageEnd] = useState("");
 
   const isPdfFile = file?.name.toLowerCase().endsWith(".pdf") ?? false;
+  const isCsvFile = file?.name.toLowerCase().endsWith(".csv") ?? false;
   const pageStartNum = pageStart ? Number(pageStart) : null;
   const pageEndNum = pageEnd ? Number(pageEnd) : null;
   const pageStartError = pageStartNum !== null && (!Number.isInteger(pageStartNum) || pageStartNum < 1) ? "起始页必须是 ≥ 1 的正整数" : null;
@@ -211,8 +123,24 @@ export default function ImportTasksPage() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<
+      | { kind: "pipeline"; data: ImportPipelineUploadResponse }
+      | { kind: "csv"; data: QuestionCsvImportResponse }
+    > => {
       if (!file) throw new Error("请选择要导入的文件");
+      const formData = new FormData();
+      formData.set("file", file);
+
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const data = await apiRequest<QuestionCsvImportResponse>("/imports/questions-csv", {
+          method: "POST",
+          body: formData,
+          timeoutMs: 120_000,
+          exposeErrorDetail: true,
+        });
+        return { kind: "csv", data };
+      }
+
       const query = toQuery({
         subject_id: subjectId ? Number(subjectId) : undefined,
         import_mode: importMode,
@@ -222,17 +150,24 @@ export default function ImportTasksPage() {
         page_start: pageStart || undefined,
         page_end: pageEnd || undefined,
       });
-      const formData = new FormData();
-      formData.set("file", file);
-      return apiRequest<ImportPipelineUploadResponse>(`/imports/upload${query}`, { method: "POST", body: formData });
+      const data = await apiRequest<ImportPipelineUploadResponse>(`/imports/upload${query}`, { method: "POST", body: formData });
+      return { kind: "pipeline", data };
     },
     onSuccess: (result) => {
-      setPipelineId(result.pipeline_id);
-      setMessage(`导入任务已提交：${result.pipeline_id}`);
+      if (result.kind === "csv") {
+        setPipelineId(null);
+        setMessage(`CSV 导入完成：共 ${result.data.total_rows} 行，新增 ${result.data.inserted_count} 题，跳过 ${result.data.skipped_count} 题。`);
+        setActiveTab("upload");
+        queryClient.invalidateQueries({ queryKey: ["questions"] });
+        return;
+      }
+      setPipelineId(result.data.pipeline_id);
+      setMessage(`导入任务已提交：${result.data.pipeline_id}`);
       setActiveTab("progress");
     },
     onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "上传失败，请稍后重试。");
+      const detail = error instanceof Error ? error.message : "上传失败，请稍后重试。";
+      setMessage(isCsvFile ? `CSV 导入失败：${detail}` : detail);
     },
   });
 
@@ -273,7 +208,7 @@ export default function ImportTasksPage() {
       <ImportWorkspaceHeader
         icon={FileUp}
         title="导入任务"
-        description="用于 PDF、文档、表格与单文件图片的完整导入管线。先配置来源与解析策略，再实时跟踪 OCR、AI 解析和质量检查。"
+        description="支持 PDF、文档、表格、图片解析导入，也支持 questions CSV 直接导入题库。"
         meta={
           pipelineId ? (
             <div className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">
@@ -281,22 +216,16 @@ export default function ImportTasksPage() {
               {isPipelineRunning ? "任务处理中" : status ? (["failed", "error"].includes(status.status) ? "任务失败" : "任务完成") : "任务已提交"}
             </div>
           ) : (
-            <div className="inline-flex h-9 items-center rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">支持 PDF / 图片 / TXT / Excel</div>
+            <div className="inline-flex h-9 items-center rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">支持 CSV / PDF / 图片 / TXT / Excel</div>
           )
         }
       />
 
-      {message && !isPipelineRunning ? (
-        <div role={uploadMutation.isError ? "alert" : "status"} className={cn(
-          "flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm import-feedback-in",
-          uploadMutation.isError
-            ? "border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] text-[var(--color-danger)]"
-            : "border-[rgba(91,140,91,0.28)] bg-[var(--color-success-light)] text-[var(--color-success)]",
-        )}>
-          {uploadMutation.isError ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
-          <span className="leading-5">{message}</span>
-        </div>
-      ) : null}
+      <ImportToast
+        message={message}
+        tone={uploadMutation.isError ? "error" : "success"}
+        onDismiss={() => setMessage(null)}
+      />
 
       <nav aria-label="导入任务步骤" className="grid grid-cols-3 overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(239,235,229,0.42)] p-1.5 import-enter" style={{ animationDelay: "45ms" }}>
         {tabs.map((tab) => {
@@ -360,27 +289,49 @@ export default function ImportTasksPage() {
                   ) : (
                     <div className="mt-4">
                       <p className="text-sm font-semibold text-[var(--ink)]">选择导入文件</p>
-                      <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">PDF、JPG、PNG、WebP、TXT、XLSX、XLS</p>
+                      <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">CSV、PDF、JPG、PNG、WebP、TXT、XLSX、XLS</p>
                     </div>
                   )}
-                  <input id={fileInputId} type="file" accept=".pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" disabled={isPipelineRunning} className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+                  <input id={fileInputId} type="file" accept=".csv,.pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" disabled={isPipelineRunning} className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
                 </div>
               </label>
 
-              <div className="mt-4 space-y-1.5">
-                <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
-                <CustomSelect
-                  value={subjectId}
-                  onChange={setSubjectId}
-                  placeholder="选择科目（可选）"
-                  disabled={isPipelineRunning}
-                  options={[{ value: "", label: "未指定科目" }, ...subjectOptions.map((subject) => ({ value: String(subject.id), label: subject.name }))]}
-                  className="h-11 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
-                />
-              </div>
+              {!isCsvFile ? (
+                <div className="mt-4 space-y-1.5">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
+                  <CustomSelect
+                    value={subjectId}
+                    onChange={setSubjectId}
+                    placeholder="选择科目（可选）"
+                    disabled={isPipelineRunning}
+                    options={[{ value: "", label: "未指定科目" }, ...subjectOptions.map((subject) => ({ value: String(subject.id), label: subject.name }))]}
+                    className="h-11 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-[rgba(74,111,138,0.16)] bg-white/55 px-3.5 py-3 text-xs leading-5 text-[var(--color-text-secondary)]">
+                  CSV 将逐行读取 <span className="font-mono font-semibold text-[var(--ink)]">subject_id</span>，支持同一文件包含多个科目，无需额外选择或覆盖科目。
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col p-4 sm:p-5">
+              {isCsvFile ? (
+                <div className="rounded-xl border border-[rgba(74,111,138,0.22)] bg-[var(--color-primary-light)] p-4 import-panel-swap">
+                  <div className="flex items-start gap-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[rgba(74,111,138,0.18)] bg-white/80 text-[var(--color-primary-dark)]">
+                      <FileText className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--ink)]">questions CSV 直接导入</p>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-secondary)]">CSV 会逐行使用各自的 subject_id 直接写入正式题库，支持多科目混合导入，不经过 OCR / AI 审核管线。源文件中的 id 与 current_version_id 不复用，目标库会自动生成主键和题目版本；相同 sync_uuid 会自动跳过。</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {!isCsvFile ? (
+                <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5">
                   <span className="text-xs font-semibold text-[var(--color-text-secondary)]">导入模式</span>
@@ -429,16 +380,18 @@ export default function ImportTasksPage() {
                   <span className="mt-0.5 block text-[11px] leading-5 text-[var(--color-text-hint)]">自动校正 OCR 偏差与结构异常</span>
                 </span>
               </label>
+                </>
+              ) : null}
 
-              <div className="mt-auto flex items-center justify-between gap-4 border-t border-[var(--color-border-light)] pt-5">
-                <p className="text-[11px] leading-5 text-[var(--color-text-hint)]">提交后自动切换至进度页，完成后可查看质量报告。</p>
+              <div className={cn("mt-auto flex items-center justify-between gap-4 border-t border-[var(--color-border-light)] pt-5", isCsvFile && "mt-5")}>
+                <p className="text-[11px] leading-5 text-[var(--color-text-hint)]">{isCsvFile ? "CSV 导入成功后可直接在题库管理中查看；重复 sync_uuid 不会重复写入。" : "提交后自动切换至进度页，完成后可查看质量报告。"}</p>
                 <Button
-                  disabled={!file || uploadMutation.isPending || isPipelineRunning}
+                  disabled={!file || uploadMutation.isPending || isPipelineRunning || (!isCsvFile && Boolean(confidenceError || pageStartError || pageEndError || pageRangeError))}
                   onClick={() => uploadMutation.mutate()}
                   className="h-11 min-w-32 import-interactive group"
                 >
                   <FileUp className="h-4 w-4 transition-transform duration-200 group-hover:-translate-y-0.5 motion-reduce:transform-none" aria-hidden="true" />
-                  {uploadMutation.isPending ? "上传中" : isPipelineRunning ? "解析中" : "开始导入"}
+                  {uploadMutation.isPending ? "导入中" : isPipelineRunning ? "解析中" : isCsvFile ? "导入 CSV" : "开始导入"}
                 </Button>
               </div>
             </div>

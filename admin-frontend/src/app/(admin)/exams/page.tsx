@@ -83,7 +83,7 @@ export default function ExamPapersPage() {
       }),
     onSuccess: async (paper) => {
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
-      router.push(`/exams/${paper.id}`);
+      router.push(`/exams/${paper.public_id}`);
     },
   });
 
@@ -221,9 +221,9 @@ export default function ExamPapersPage() {
                         key={paper.id}
                         tabIndex={0}
                         role="button"
-                        onClick={() => router.push(`/exams/${paper.id}`)}
+                        onClick={() => router.push(`/exams/${paper.public_id}`)}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") router.push(`/exams/${paper.id}`);
+                          if (event.key === "Enter" || event.key === " ") router.push(`/exams/${paper.public_id}`);
                         }}
                         className="group border-t border-[var(--color-border-light)] transition-[background-color] duration-200 hover:bg-[rgba(74,111,138,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)] motion-reduce:transition-none"
                       >
@@ -248,7 +248,7 @@ export default function ExamPapersPage() {
               {filteredPapers.map((paper) => {
                 const status = statusMeta(paper.status);
                 return (
-                  <button key={paper.id} className="group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-[rgba(74,111,138,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]" onClick={() => router.push(`/exams/${paper.id}`)}>
+                  <button key={paper.id} className="group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-[rgba(74,111,138,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]" onClick={() => router.push(`/exams/${paper.public_id}`)}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
                         <p className="font-semibold leading-5 text-[var(--ink)]">{paper.title}</p>

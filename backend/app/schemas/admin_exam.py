@@ -55,6 +55,7 @@ class AdminExamPaperItemsReplaceRequest(BaseModel):
 
 class AdminExamPaperListItem(BaseModel):
     id: int
+    public_id: str
     title: str
     paper_type: ExamPaperType
     year: int | None = None
@@ -95,3 +96,19 @@ class AdminExamPaperQuestionItem(BaseModel):
 class AdminExamPaperDetail(AdminExamPaperListItem):
     items: list[AdminExamPaperQuestionItem] = Field(default_factory=list)
     validation_errors: list[str] = Field(default_factory=list)
+
+
+class AdminExamPastExamCandidate(BaseModel):
+    question_id: int
+    subject_id: int
+    subject_code: str
+    subject_name: str
+    content: dict
+    year: int
+    source: str | None = None
+
+
+class AdminExamPastExamCandidatesResponse(BaseModel):
+    year: int
+    total: int
+    items: list[AdminExamPastExamCandidate] = Field(default_factory=list)

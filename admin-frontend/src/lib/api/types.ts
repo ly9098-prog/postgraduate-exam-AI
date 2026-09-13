@@ -65,6 +65,14 @@ export type PdfPageRangeInfo = {
   total_pages: number;
 };
 
+export type QuestionCsvImportResponse = {
+  total_rows: number;
+  inserted_count: number;
+  skipped_count: number;
+  first_question_id?: number | null;
+  last_question_id?: number | null;
+};
+
 export type ImportPipelineUploadResponse = {
   pipeline_id: string;
   status: string;
@@ -1392,6 +1400,7 @@ export type AdminExamPaperStatus = "draft" | "published" | "archived";
 
 export type AdminExamPaperListItem = {
   id: number;
+  public_id: string;
   title: string;
   paper_type: AdminExamPaperType;
   year?: number | null;
@@ -1432,6 +1441,22 @@ export type AdminExamPaperQuestionItem = {
 export type AdminExamPaperDetail = AdminExamPaperListItem & {
   items: AdminExamPaperQuestionItem[];
   validation_errors: string[];
+};
+
+export type AdminExamPastExamCandidate = {
+  question_id: number;
+  subject_id: number;
+  subject_code: string;
+  subject_name: string;
+  content: Record<string, unknown>;
+  year: number;
+  source?: string | null;
+};
+
+export type AdminExamPastExamCandidatesResponse = {
+  year: number;
+  total: number;
+  items: AdminExamPastExamCandidate[];
 };
 
 

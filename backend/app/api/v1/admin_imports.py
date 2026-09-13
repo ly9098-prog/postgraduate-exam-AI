@@ -68,6 +68,7 @@ from app.schemas.admin_imports import (
     TextImportResultItem,
     TextParseRequest,
     TextParseResponse,
+    QuestionCsvImportResponse,
 )
 from app.schemas.common import paginated_response
 from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResponse
@@ -96,11 +97,43 @@ from app.services.import_pipeline_service import (
 from app.services.import_pipeline_service import (
     start_import_pipeline as svc_start_import_pipeline,
 )
+from app.services.question_csv_import_service import (
+    MAX_QUESTIONS_CSV_BYTES,
+    QuestionCsvValidationError,
+    import_questions_csv,
+)
 from app.services.streaming_upload_handler import stream_to_temp, validate_image
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/v1/imports", tags=["admin-imports"])
+
+
+def _question_csv_error_response(
+    *, status_code: int, message: str, code: str
+) -> JSONResponse:
+    """Return administrator-safe CSV diagnostics without global sanitization.
+
+    The application-level HTTPException handler intentionally replaces arbitrary
+    backend details with a generic message. CSV import validation errors are a
+    special case: they contain only file row/field diagnostics and are useful to
+    the administrator. Keep both ``detail`` and the standard ``error.message``
+    envelope so old/new admin clients and reverse proxies can surface the same
+    concrete reason.
+    """
+
+    safe_message = (message or "CSV 导入失败").strip()[:4000]
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": safe_message,
+            "error": {
+                "code": code,
+                "message": safe_message,
+                "retryable": False,
+            },
+        },
+    )
 
 
 def _raise_import_error(exc: ValueError) -> None:
@@ -151,6 +184,68 @@ async def upload_import_file(
         raise HTTPException(status_code=400, detail=str(exc))
     tmp.detach()
     return result
+
+
+@router.post("/questions-csv", response_model=QuestionCsvImportResponse)
+async def import_questions_csv_file(
+    file: UploadFile = File(...),
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Directly import an exported questions CSV into the target question bank."""
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="仅支持 .csv 文件",
+        )
+
+    try:
+        tmp = await stream_to_temp(
+            file,
+            max_size=MAX_QUESTIONS_CSV_BYTES,
+            suffix=".csv",
+        )
+    except ValueError as exc:
+        # This endpoint opts into returning user-safe import validation details.
+        # The global HTTPException handler intentionally strips ``detail``.
+        return _question_csv_error_response(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            message=str(exc),
+            code="QUESTION_CSV_TOO_LARGE",
+        )
+
+    try:
+        result = await import_questions_csv(
+            db,
+            tmp.path,
+            admin_id=current_admin.id,
+        )
+        await db.commit()
+        return QuestionCsvImportResponse(
+            total_rows=result.total_rows,
+            inserted_count=result.inserted_count,
+            skipped_count=result.skipped_count,
+            first_question_id=result.first_question_id,
+            last_question_id=result.last_question_id,
+        )
+    except QuestionCsvValidationError as exc:
+        await db.rollback()
+        # CSV validation messages contain only row/field diagnostics and are
+        # safe to show to the administrator. Return directly so the global
+        # sanitized HTTPException handler does not replace them with a generic
+        # "请求参数有误" message.
+        return _question_csv_error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message=str(exc),
+            code="QUESTION_CSV_VALIDATION_ERROR",
+        )
+    except Exception:
+        await db.rollback()
+        logger.exception("questions CSV import failed")
+        raise
+    finally:
+        tmp.close()
 
 
 @router.post("/segment-image/upload")

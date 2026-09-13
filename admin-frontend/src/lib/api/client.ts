@@ -142,6 +142,11 @@ interface ApiRequestOptions extends RequestInit {
   skipRefresh?: boolean;
   /** Optional caller-supplied trace ID to correlate multiple API calls. */
   traceId?: string;
+  /**
+   * Opt in to rendering a backend validation detail as the ApiError message.
+   * Keep disabled by default so internal backend errors are never exposed globally.
+   */
+  exposeErrorDetail?: boolean;
 }
 
 async function requestWithTimeout(
@@ -175,11 +180,60 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
-async function handleResponse(response: Response) {
+function formatValidationDetail(detail: unknown): string | null {
+  if (typeof detail === "string") {
+    const text = detail.trim();
+    return text ? text.slice(0, 2000) : null;
+  }
+
+  // FastAPI request-validation errors use detail: [{ loc, msg, type }, ...].
+  if (Array.isArray(detail)) {
+    const lines = detail.slice(0, 8).flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const value = item as Record<string, unknown>;
+      const msg = typeof value.msg === "string" ? value.msg.trim() : "";
+      if (!msg) return [];
+      const loc = Array.isArray(value.loc)
+        ? value.loc.filter((part) => typeof part === "string" || typeof part === "number").join(".")
+        : "";
+      return [loc ? `${loc}: ${msg}` : msg];
+    });
+    if (lines.length) return lines.join("；").slice(0, 2000);
+  }
+
+  if (detail && typeof detail === "object") {
+    const nested = detail as Record<string, unknown>;
+    for (const key of ["detail", "message", "reason"] as const) {
+      const text = formatValidationDetail(nested[key]);
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
+function readOptInErrorDetail(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const value = payload as Record<string, unknown>;
+  const detail = formatValidationDetail(value.detail);
+  if (detail) return detail;
+
+  // The backend's public error envelope is { error: { code, message, ... } }.
+  // Only callers that explicitly set exposeErrorDetail may render it. This is
+  // needed by import endpoints that intentionally return administrator-safe
+  // row/field diagnostics instead of the global sanitized message.
+  const errorDetail = formatValidationDetail(value.error);
+  if (errorDetail) return errorDetail;
+
+  return formatValidationDetail(value.message);
+}
+
+async function handleResponse(response: Response, exposeErrorDetail = false) {
   const payload = await parseResponse(response);
   if (!response.ok) {
-    // UI message is derived only from HTTP status. Never surface backend detail/error.message.
-    throw new ApiError(response.status, classifyError(response.status), readSafeErrorMeta(payload, response));
+    const fallbackMessage = classifyError(response.status);
+    const message = exposeErrorDetail ? readOptInErrorDetail(payload) ?? fallbackMessage : fallbackMessage;
+    throw new ApiError(response.status, message, readSafeErrorMeta(payload, response));
   }
   return payload;
 }
@@ -207,10 +261,12 @@ export interface ApiBlobResponse {
   mediaType: string | null;
 }
 
-async function handleBlobResponse(response: Response): Promise<ApiBlobResponse> {
+async function handleBlobResponse(response: Response, exposeErrorDetail = false): Promise<ApiBlobResponse> {
   if (!response.ok) {
     const payload = await parseResponse(response);
-    throw new ApiError(response.status, classifyError(response.status), readSafeErrorMeta(payload, response));
+    const fallbackMessage = classifyError(response.status);
+    const message = exposeErrorDetail ? readOptInErrorDetail(payload) ?? fallbackMessage : fallbackMessage;
+    throw new ApiError(response.status, message, readSafeErrorMeta(payload, response));
   }
   return {
     blob: await response.blob(),
@@ -255,7 +311,7 @@ export async function apiRequest<T>(
   path: string,
   init: ApiRequestOptions = {},
 ): Promise<T> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, skipRefresh, traceId: requestedTraceId, ...fetchInit } = init;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, skipRefresh, traceId: requestedTraceId, exposeErrorDetail = false, ...fetchInit } = init;
   const url = `${getBaseUrl()}${normalizePath(path)}`;
   const traceId = normalizeCorrelationId(requestedTraceId, "tr");
   let requestId = createApiRequestId();
@@ -264,7 +320,7 @@ export async function apiRequest<T>(
 
   try {
     const response = await requestWithTimeout(url, { ...fetchInit, headers, credentials: "include" }, timeoutMs, signal);
-    return (await handleResponse(response)) as T;
+    return (await handleResponse(response, exposeErrorDetail)) as T;
   } catch (error) {
     // If it's a 401, try refresh and retry once
     if (error instanceof ApiError && error.status === 401 && !skipRefresh && path !== "/auth/refresh") {
@@ -277,7 +333,7 @@ export async function apiRequest<T>(
         retryHeaders.set("X-Request-ID", requestId);
         try {
           const retryResponse = await requestWithTimeout(url, { ...fetchInit, headers: retryHeaders, credentials: "include" }, timeoutMs, signal);
-          return (await handleResponse(retryResponse)) as T;
+          return (await handleResponse(retryResponse, exposeErrorDetail)) as T;
         } catch (retryError) {
           if (retryError instanceof ApiError && retryError.status === 401) {
             // Retry also got 401 — token was invalidated between refresh and retry
@@ -317,7 +373,7 @@ export async function apiRequestBlob(
   path: string,
   init: ApiRequestOptions = {},
 ): Promise<ApiBlobResponse> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, skipRefresh, traceId: requestedTraceId, ...fetchInit } = init;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, skipRefresh, traceId: requestedTraceId, exposeErrorDetail = false, ...fetchInit } = init;
   const url = `${getBaseUrl()}${normalizePath(path)}`;
   const traceId = normalizeCorrelationId(requestedTraceId, 'tr');
   let requestId = createApiRequestId();
@@ -326,7 +382,7 @@ export async function apiRequestBlob(
 
   try {
     const response = await requestWithTimeout(url, { ...fetchInit, headers, credentials: 'include' }, timeoutMs, signal);
-    return await handleBlobResponse(response);
+    return await handleBlobResponse(response, exposeErrorDetail);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401 && !skipRefresh && path !== '/auth/refresh') {
       const newToken = await attemptRefresh(traceId);
@@ -337,7 +393,7 @@ export async function apiRequestBlob(
         retryHeaders.set('X-Request-ID', requestId);
         try {
           const retryResponse = await requestWithTimeout(url, { ...fetchInit, headers: retryHeaders, credentials: 'include' }, timeoutMs, signal);
-          return await handleBlobResponse(retryResponse);
+          return await handleBlobResponse(retryResponse, exposeErrorDetail);
         } catch (retryError) {
           if (retryError instanceof ApiError && retryError.status === 401) onAuthExpired?.();
           throw retryError;

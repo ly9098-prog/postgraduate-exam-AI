@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
@@ -51,6 +52,13 @@ class ExamPaper(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        unique=True,
+        index=True,
+        default=lambda: uuid4().hex,
+    )
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     paper_type: Mapped[str] = mapped_column(String(32), nullable=False)
     year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True, index=True)

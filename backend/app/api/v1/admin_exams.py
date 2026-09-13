@@ -8,6 +8,7 @@ from app.schemas.admin_exam import (
     AdminExamPaperDetail,
     AdminExamPaperItemsReplaceRequest,
     AdminExamPaperListItem,
+    AdminExamPastExamCandidatesResponse,
     AdminExamPaperUpdateRequest,
 )
 from app.services import admin_exam_service
@@ -71,6 +72,34 @@ async def get_paper(
         _raise_exam_error(exc)
 
 
+@router.get(
+    "/papers/public/{public_id}",
+    response_model=AdminExamPaperDetail,
+)
+async def get_paper_by_public_id(
+    public_id: str,
+    _=Depends(require_permissions("question:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        paper_id = await admin_exam_service.get_exam_paper_id_by_public_id(db, public_id)
+        return await admin_exam_service.get_exam_paper_detail(db, paper_id)
+    except ValueError as exc:
+        _raise_exam_error(exc)
+
+
+@router.get(
+    "/past-exam-candidates",
+    response_model=AdminExamPastExamCandidatesResponse,
+)
+async def get_past_exam_candidates(
+    year: int = Query(..., ge=2000, le=2100),
+    _=Depends(require_permissions("question:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_exam_service.list_past_exam_candidates(db, year)
+
+
 @router.patch("/papers/{paper_id}", response_model=AdminExamPaperDetail)
 async def update_paper(
     paper_id: int,
@@ -80,6 +109,29 @@ async def update_paper(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        await admin_exam_service.update_exam_paper(
+            db, paper_id, data, current_admin, request
+        )
+        await db.commit()
+        return await admin_exam_service.get_exam_paper_detail(db, paper_id)
+    except ValueError as exc:
+        await db.rollback()
+        _raise_exam_error(exc)
+
+
+@router.patch(
+    "/papers/public/{public_id}",
+    response_model=AdminExamPaperDetail,
+)
+async def update_paper_by_public_id(
+    public_id: str,
+    data: AdminExamPaperUpdateRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        paper_id = await admin_exam_service.get_exam_paper_id_by_public_id(db, public_id)
         await admin_exam_service.update_exam_paper(
             db, paper_id, data, current_admin, request
         )
@@ -109,6 +161,29 @@ async def replace_items(
         _raise_exam_error(exc)
 
 
+@router.put(
+    "/papers/public/{public_id}/items",
+    response_model=AdminExamPaperDetail,
+)
+async def replace_items_by_public_id(
+    public_id: str,
+    data: AdminExamPaperItemsReplaceRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        paper_id = await admin_exam_service.get_exam_paper_id_by_public_id(db, public_id)
+        await admin_exam_service.replace_exam_paper_items(
+            db, paper_id, data, current_admin, request
+        )
+        await db.commit()
+        return await admin_exam_service.get_exam_paper_detail(db, paper_id)
+    except ValueError as exc:
+        await db.rollback()
+        _raise_exam_error(exc)
+
+
 @router.post("/papers/{paper_id}/publish", response_model=AdminExamPaperDetail)
 async def publish_paper(
     paper_id: int,
@@ -127,6 +202,28 @@ async def publish_paper(
         _raise_exam_error(exc)
 
 
+@router.post(
+    "/papers/public/{public_id}/publish",
+    response_model=AdminExamPaperDetail,
+)
+async def publish_paper_by_public_id(
+    public_id: str,
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        paper_id = await admin_exam_service.get_exam_paper_id_by_public_id(db, public_id)
+        await admin_exam_service.publish_exam_paper(
+            db, paper_id, current_admin, request
+        )
+        await db.commit()
+        return await admin_exam_service.get_exam_paper_detail(db, paper_id)
+    except ValueError as exc:
+        await db.rollback()
+        _raise_exam_error(exc)
+
+
 @router.post("/papers/{paper_id}/archive", response_model=AdminExamPaperDetail)
 async def archive_paper(
     paper_id: int,
@@ -135,6 +232,28 @@ async def archive_paper(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        await admin_exam_service.archive_exam_paper(
+            db, paper_id, current_admin, request
+        )
+        await db.commit()
+        return await admin_exam_service.get_exam_paper_detail(db, paper_id)
+    except ValueError as exc:
+        await db.rollback()
+        _raise_exam_error(exc)
+
+
+@router.post(
+    "/papers/public/{public_id}/archive",
+    response_model=AdminExamPaperDetail,
+)
+async def archive_paper_by_public_id(
+    public_id: str,
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        paper_id = await admin_exam_service.get_exam_paper_id_by_public_id(db, public_id)
         await admin_exam_service.archive_exam_paper(
             db, paper_id, current_admin, request
         )

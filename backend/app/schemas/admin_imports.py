@@ -162,6 +162,14 @@ class AdminImportBatchDetail(AdminImportBatchListItem):
     total_pages: int
 
 
+class QuestionCsvImportResponse(BaseModel):
+    total_rows: int
+    inserted_count: int
+    skipped_count: int
+    first_question_id: int | None = None
+    last_question_id: int | None = None
+
+
 class AdminImportEnrichResponse(BaseModel):
     task_id: str
     batch_id: str

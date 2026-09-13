@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, CheckCircle2, ChevronDown, ClipboardCheck, Images, RefreshCw, UploadCloud, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardCheck, Images, RefreshCw, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
@@ -12,6 +12,7 @@ import { AiModelConfigBanner } from "@/components/ai-model-config-banner";
 import { useImportConfig } from "../hooks/useImportConfig";
 import { OcrModeSelector } from "../components/ocr-mode-selector";
 import { ImportMetric, ImportPanelHeader, ImportProgressBar, ImportWorkspaceHeader } from "../components/import-workspace";
+import { ImportToast } from "../components/import-toast";
 
 const MAX_FILES = (() => {
   const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_MAX_FILES);
@@ -496,22 +497,11 @@ export default function BatchImagePage() {
 
       <AiModelConfigBanner />
 
-      {message ? (
-        <div
-          role={message.type === "error" ? "alert" : "status"}
-          className={cn(
-            "flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm import-feedback-in",
-            message.type === "error"
-              ? "border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] text-[var(--color-danger)]"
-              : message.type === "success"
-                ? "border-[rgba(91,140,91,0.28)] bg-[var(--color-success-light)] text-[var(--color-success)]"
-                : "border-[rgba(74,111,138,0.22)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]",
-          )}
-        >
-          {message.type === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
-          <span className="leading-5">{message.text}</span>
-        </div>
-      ) : null}
+      <ImportToast
+        message={message?.text ?? null}
+        tone={message?.type ?? "info"}
+        onDismiss={() => setMessage(null)}
+      />
 
       <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-enter" style={{ animationDelay: "55ms" }}>
         <ImportPanelHeader

@@ -25,6 +25,7 @@ import { MathFormula } from "@/components/ui/math-formula";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { apiRequest } from "@/lib/api/client";
 import { ImportMetric, ImportPanelHeader, ImportWorkspaceHeader } from "../components/import-workspace";
+import { ImportToast } from "../components/import-toast";
 import { getQuestionTypeLabel, QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { inspectLatexImportText, normalizeLatexImportDelimiters } from "@/lib/latex-import";
 
@@ -595,15 +596,11 @@ export default function TextImportPage() {
         }
       />
 
-      {globalError ? (
-        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] px-4 py-3.5 text-sm text-[var(--color-danger)] import-feedback-in">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <div>
-            <p className="font-semibold">操作未完成</p>
-            <p className="mt-0.5 text-xs leading-5">{globalError}</p>
-          </div>
-        </div>
-      ) : null}
+      <ImportToast
+        message={globalError ? `操作未完成：${globalError}` : null}
+        tone="error"
+        onDismiss={() => setGlobalError(null)}
+      />
 
       <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-enter" style={{ animationDelay: "55ms" }}>
         <div className="grid min-h-[620px] xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">

@@ -38,6 +38,7 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { Input } from "@/components/ui/input";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type {
+  AdminExamPastExamCandidatesResponse,
   AdminExamPaperDetail,
   AdminExamPaperQuestionItem,
   AdminExamPaperType,
@@ -111,11 +112,19 @@ function statusMeta(status: AdminExamPaperDetail["status"]) {
   return { label: "草稿", tone: "warning" as const, summary: "可继续编辑题目与基础信息" };
 }
 
+function normalizeQuickYear(value: string): number | null {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 2) return 2000 + Number(digits);
+  if (digits.length === 4) return Number(digits);
+  return null;
+}
+
 export default function ExamPaperDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const paperId = Number(params.id);
+  const paperRef = params.id;
+  const isLegacyNumericRef = /^\d+$/.test(paperRef);
   const permissions = useAuthStore((state) => state.permissions);
   const canWrite = hasPermission(permissions, "question:write");
   const [title, setTitle] = useState("");
@@ -125,15 +134,28 @@ export default function ExamPaperDetailPage() {
   const [durationMin, setDurationMin] = useState("");
   const [items, setItems] = useState<DraftItem[]>([]);
   const [keyword, setKeyword] = useState("");
+  const [quickYear, setQuickYear] = useState("");
+  const [quickMessage, setQuickMessage] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"publish" | "archive" | null>(null);
 
   const paperQuery = useQuery({
-    queryKey: ["exam-paper", paperId],
-    queryFn: () => apiRequest<AdminExamPaperDetail>(`/exams/papers/${paperId}`),
-    enabled: Number.isFinite(paperId) && paperId > 0,
+    queryKey: ["exam-paper", paperRef],
+    queryFn: () =>
+      apiRequest<AdminExamPaperDetail>(
+        isLegacyNumericRef
+          ? `/exams/papers/${encodeURIComponent(paperRef)}`
+          : `/exams/papers/public/${encodeURIComponent(paperRef)}`,
+      ),
+    enabled: Boolean(paperRef),
   });
   const paper = paperQuery.data;
   const isDraft = paper?.status === "draft";
+  const mutationPaperRef = paper?.public_id || paperRef;
+
+  useEffect(() => {
+    if (!paper || !isLegacyNumericRef) return;
+    router.replace(`/exams/${paper.public_id}`);
+  }, [isLegacyNumericRef, paper, router]);
 
   useEffect(() => {
     if (!paper) return;
@@ -143,6 +165,7 @@ export default function ExamPaperDetailPage() {
     setSource(paper.source || "");
     setDurationMin(paper.duration_sec ? String(Math.round(paper.duration_sec / 60)) : "");
     setItems(paper.items.map(toDraftItem));
+    setQuickYear((current) => current || (paper.year ? String(paper.year).slice(-2) : ""));
   }, [paper]);
 
   const candidateQuery = useQuery({
@@ -169,7 +192,7 @@ export default function ExamPaperDetailPage() {
 
   const metaMutation = useMutation({
     mutationFn: () =>
-      apiRequest<AdminExamPaperDetail>(`/exams/papers/${paperId}`, {
+      apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}`, {
         method: "PATCH",
         body: JSON.stringify({
           title: title.trim(),
@@ -180,32 +203,75 @@ export default function ExamPaperDetailPage() {
         }),
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperId] });
+      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
     },
   });
 
   const itemsMutation = useMutation({
     mutationFn: () =>
-      apiRequest<AdminExamPaperDetail>(`/exams/papers/${paperId}/items`, {
+      apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/items`, {
         method: "PUT",
         body: JSON.stringify({
           items: items.map((item) => ({ question_id: item.question_id, score: Number(item.score) })),
         }),
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperId] });
+      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
     },
   });
 
   const stateMutation = useMutation({
     mutationFn: (action: "publish" | "archive") =>
-      apiRequest<AdminExamPaperDetail>(`/exams/papers/${paperId}/${action}`, { method: "POST" }),
+      apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/${action}`, { method: "POST" }),
     onSuccess: async () => {
       setConfirmAction(null);
-      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperId] });
+      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
+    },
+  });
+
+  const quickPastExamMutation = useMutation({
+    mutationFn: async () => {
+      const targetYear = normalizeQuickYear(quickYear);
+      if (!targetYear || targetYear < 2000 || targetYear > 2100) {
+        throw new Error("请输入 2 位年份，例如 14；也可输入完整年份 2014。");
+      }
+      if (paper?.paper_type === "past_exam_choice" && paper.year && targetYear !== paper.year) {
+        throw new Error(`当前试卷年份为 ${paper.year}，请输入 ${String(paper.year).slice(-2)}。`);
+      }
+      return apiRequest<AdminExamPastExamCandidatesResponse>(
+        `/exams/past-exam-candidates${toQuery({ year: targetYear })}`,
+      );
+    },
+    onSuccess: (result) => {
+      const existing = new Set(items.map((item) => item.question_id));
+      const addable = result.items.filter((item) => !existing.has(item.question_id));
+      if (addable.length) {
+        setItems((current) => [
+          ...current,
+          ...addable.map((item) => ({
+            question_id: item.question_id,
+            score: "2",
+            subject_name: item.subject_name,
+            subject_code: item.subject_code,
+            content: item.content,
+            year: item.year,
+            source: item.source,
+            version_is_current: true,
+          })),
+        ]);
+      }
+      const skipped = result.total - addable.length;
+      setQuickMessage(
+        result.total
+          ? `已匹配 ${result.total} 道 ${result.year} 真题，新增 ${addable.length} 道${skipped ? `，跳过已添加 ${skipped} 道` : ""}。`
+          : `未找到题干以【${result.year}统考真题】或【${result.year} 统考真题】开头的可用单选题。`,
+      );
+    },
+    onError: (error) => {
+      setQuickMessage(error instanceof Error ? error.message : "真题匹配失败，请稍后重试。");
     },
   });
 
@@ -282,7 +348,6 @@ export default function ExamPaperDetailPage() {
           <>
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
             <span>版本 v{paper.version}</span>
-            <span>试卷 ID #{paper.id}</span>
             {paper.source ? <span>{paper.source}</span> : null}
           </>
         }
@@ -326,6 +391,60 @@ export default function ExamPaperDetailPage() {
         <ManagementNotice tone="info" title="题库中已有题目的新版本">
           当前试卷仍引用已固定的题目版本；这不会改变历史试卷。如需采用新版本，请在草稿卷中重新添加对应题目。
         </ManagementNotice>
+      ) : null}
+
+      {isDraft && canWrite && paper.paper_type === "past_exam_choice" ? (
+        <ManagementPanel
+          variant="quiet"
+          title="快速添加真题"
+          description="只输入年份后两位即可一次匹配该年份全部可用单选题；同时兼容题干前缀中有无空格。"
+          icon={<Plus className="h-4 w-4" />}
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[132px_minmax(0,1fr)] sm:items-end">
+              <label>
+                <FieldLabel>年份后两位</FieldLabel>
+                <Input
+                  className="h-10 text-center font-semibold tabular-nums"
+                  value={quickYear}
+                  onChange={(event) => {
+                    setQuickYear(event.target.value.replace(/\D/g, "").slice(0, 4));
+                    setQuickMessage(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !quickPastExamMutation.isPending) {
+                      event.preventDefault();
+                      quickPastExamMutation.mutate();
+                    }
+                  }}
+                  placeholder="14"
+                  inputMode="numeric"
+                  aria-label="真题年份"
+                />
+              </label>
+              <div className="min-w-0 rounded-xl border border-[var(--color-border-light)] bg-[rgba(239,235,229,0.34)] px-3 py-2.5 text-xs leading-5 text-[var(--color-text-secondary)]">
+                输入 <strong className="font-semibold text-[var(--ink)]">14</strong> 将匹配
+                <span className="mx-1 font-mono text-[11px]">【2014统考真题】</span>
+                与
+                <span className="ml-1 font-mono text-[11px]">【2014 统考真题】</span>
+                开头的题目；重复题目自动跳过。
+              </div>
+            </div>
+            <Button
+              className="h-10 shrink-0 px-5"
+              onClick={() => quickPastExamMutation.mutate()}
+              disabled={!quickYear || quickPastExamMutation.isPending}
+            >
+              <Plus className="h-4 w-4" />
+              {quickPastExamMutation.isPending ? "正在匹配" : "匹配并加入"}
+            </Button>
+          </div>
+          {quickMessage ? (
+            <div className={`mt-3 rounded-xl border px-3 py-2.5 text-xs leading-5 ${quickPastExamMutation.isError ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+              {quickMessage}
+            </div>
+          ) : null}
+        </ManagementPanel>
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)] xl:items-start">
@@ -398,34 +517,34 @@ export default function ExamPaperDetailPage() {
           className="xl:sticky xl:top-5"
           actions={<StatusBadge tone={metaDirty ? "warning" : isDraft ? "success" : "neutral"}>{metaDirty ? "信息未保存" : isDraft ? "信息已同步" : "只读"}</StatusBadge>}
         >
-          <div className="space-y-4">
-            <label>
+          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+            <label className="sm:col-span-2">
               <FieldLabel>名称</FieldLabel>
-              <Input value={title} disabled={!isDraft || !canWrite} onChange={(event) => setTitle(event.target.value)} />
+              <Input className="h-10" value={title} disabled={!isDraft || !canWrite} onChange={(event) => setTitle(event.target.value)} />
             </label>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <label>
-                <FieldLabel>类型</FieldLabel>
-                <CustomSelect value={paperType} disabled={!isDraft || !canWrite} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} clearable={false} />
-              </label>
-              <label>
-                <FieldLabel>年份</FieldLabel>
-                <Input value={year} disabled={!isDraft || !canWrite} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} />
-              </label>
-            </div>
+            <label>
+              <FieldLabel>类型</FieldLabel>
+              <CustomSelect className="h-10" value={paperType} disabled={!isDraft || !canWrite} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} clearable={false} />
+            </label>
+            <label>
+              <FieldLabel>年份</FieldLabel>
+              <Input className="h-10 tabular-nums" value={year} disabled={!isDraft || !canWrite} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} />
+            </label>
             <label>
               <FieldLabel>建议时长（分钟）</FieldLabel>
-              <Input value={durationMin} disabled={!isDraft || !canWrite} onChange={(event) => setDurationMin(event.target.value.replace(/\D/g, ""))} />
+              <Input className="h-10 tabular-nums" value={durationMin} disabled={!isDraft || !canWrite} onChange={(event) => setDurationMin(event.target.value.replace(/\D/g, ""))} />
             </label>
             <label>
               <FieldLabel>来源</FieldLabel>
-              <Input value={source} disabled={!isDraft || !canWrite} onChange={(event) => setSource(event.target.value)} placeholder="例如：全国硕士研究生招生考试" />
+              <Input className="h-10" value={source} disabled={!isDraft || !canWrite} onChange={(event) => setSource(event.target.value)} placeholder="全国硕士研究生招生考试" />
             </label>
             {isDraft && canWrite ? (
-              <Button className="w-full transition-transform active:scale-[0.99] motion-reduce:transform-none" onClick={() => metaMutation.mutate()} disabled={!title.trim() || !metaDirty || metaMutation.isPending}>
-                <Save className="h-4 w-4" />
-                保存信息
-              </Button>
+              <div className="flex justify-end border-t border-[var(--color-border-light)] pt-4 sm:col-span-2">
+                <Button className="w-full transition-transform active:scale-[0.99] motion-reduce:transform-none sm:w-auto" onClick={() => metaMutation.mutate()} disabled={!title.trim() || !metaDirty || metaMutation.isPending}>
+                  <Save className="h-4 w-4" />
+                  保存信息
+                </Button>
+              </div>
             ) : null}
           </div>
         </ManagementPanel>

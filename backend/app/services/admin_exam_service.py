@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from decimal import Decimal
+from uuid import uuid4
 
 from fastapi import Request
 from sqlalchemy import delete, func, select
@@ -70,6 +72,7 @@ def _paper_payload(paper: ExamPaper, aggregate: dict | None = None) -> dict:
     aggregate = aggregate or {}
     return {
         "id": int(paper.id),
+        "public_id": paper.public_id,
         "title": paper.title,
         "paper_type": paper.paper_type,
         "year": paper.year,
@@ -125,6 +128,20 @@ async def _get_paper(
     if paper is None:
         raise ExamPaperNotFoundError("试卷不存在")
     return paper
+
+
+async def get_exam_paper_id_by_public_id(
+    db: AsyncSession, public_id: str
+) -> int:
+    value = (public_id or "").strip()
+    if not value:
+        raise ExamPaperNotFoundError("试卷不存在")
+    paper_id = await db.scalar(
+        select(ExamPaper.id).where(ExamPaper.public_id == value)
+    )
+    if paper_id is None:
+        raise ExamPaperNotFoundError("试卷不存在")
+    return int(paper_id)
 
 
 async def _load_paper_items(db: AsyncSession, paper_id: int) -> list[dict]:
@@ -225,6 +242,63 @@ async def get_exam_paper_detail(db: AsyncSession, paper_id: int) -> dict:
     return payload
 
 
+def _question_stem(content: object) -> str:
+    if not isinstance(content, dict):
+        return ""
+    for key in ("stem", "text", "question", "content", "title"):
+        value = content.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _matches_past_exam_prefix(stem: str, year: int) -> bool:
+    if not stem:
+        return False
+    # Accept both historical imports: 【2014统考真题】 and 【2014 统考真题】.
+    pattern = rf"^【\s*{year}\s*统考真题\s*】"
+    return re.match(pattern, stem) is not None
+
+
+async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
+    rows = await db.execute(
+        select(Question, QuestionVersion, Subject)
+        .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
+        .join(Subject, Subject.id == Question.subject_id)
+        .where(
+            Question.year == year,
+            Question.source_type == "past_exam",
+            Question.question_type == QT_SINGLE_CHOICE,
+            Question.review_status == "approved",
+            Question.is_active.is_(True),
+            QuestionVersion.is_active.is_(True),
+            QuestionVersion.question_type == QT_SINGLE_CHOICE,
+            Subject.is_active.is_(True),
+        )
+        .order_by(Question.id.asc())
+    )
+    items: list[dict] = []
+    for question, revision, subject in rows.all():
+        if canonical_408_code(subject.code) not in EXAM408_CORE_CODES:
+            continue
+        content = revision.content if isinstance(revision.content, dict) else question.content
+        stem = _question_stem(content)
+        if not _matches_past_exam_prefix(stem, year):
+            continue
+        items.append(
+            {
+                "question_id": int(question.id),
+                "subject_id": int(question.subject_id),
+                "subject_code": subject.code,
+                "subject_name": subject.name,
+                "content": content if isinstance(content, dict) else {},
+                "year": int(year),
+                "source": revision.source or question.source,
+            }
+        )
+    return {"year": int(year), "total": len(items), "items": items}
+
+
 async def create_exam_paper(
     db: AsyncSession,
     data: AdminExamPaperCreateRequest,
@@ -235,6 +309,7 @@ async def create_exam_paper(
     if not title:
         raise ValueError("试卷名称不能为空")
     paper = ExamPaper(
+        public_id=uuid4().hex,
         title=title,
         paper_type=data.paper_type,
         year=data.year,
