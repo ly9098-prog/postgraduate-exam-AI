@@ -1,5 +1,5 @@
 <view class="page theme-{{themeMode}}">
-  <view class="theme-backdrop"></view>
+  <image class="theme-backdrop" src="{{themeMode === 'light' ? './assets/stats-bg-light.jpg' : './assets/stats-bg-dark.jpg'}}" mode="aspectFill" aria-hidden="true"></image>
   <view class="page-inner">
 
     <view class="initial-state-layer" wx:if="{{loading && !contentReady}}" catchtouchmove="noop">
@@ -128,9 +128,10 @@
               <view class="period-slot">
                 <view class="period-segment {{distributionPeriod === 'month' ? 'period-segment-active' : ''}}" data-period="month" catchtap="onDistributionPeriodTap" hover-class="period-segment-pressed">月</view>
               </view>
-              <view class="period-slot period-slot-picker">
-                <picker mode="date" value="{{customRangeStartDate}}" start="{{customRangePickerStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
-                  <view class="period-segment period-segment-custom {{distributionPeriod === 'custom' ? 'period-segment-active' : ''}}" hover-class="period-segment-pressed">自定义</view>
+              <view class="period-slot period-slot-picker {{distributionPeriod === 'custom' ? 'period-slot-active' : ''}}">
+                <view class="period-segment period-segment-custom {{distributionPeriod === 'custom' ? 'period-segment-active' : ''}}">自定义</view>
+                <picker class="period-custom-picker-hitbox" mode="date" value="{{customRangeStartDate}}" start="{{customRangePickerStartDate}}" end="{{selectedDate}}" bindchange="onCustomRangeStartChange">
+                  <view class="period-custom-picker-hitbox-inner"></view>
                 </picker>
               </view>
             </view>
