@@ -8,11 +8,11 @@
 1. 查看后端日志: `grep pipeline_id logs/app.log`
 2. 检查 disk space: `df -h`（磁盘满会导致 artifact 写入失败）
 3. 检查系统资源: `top` / `free -h`（2C2G 服务器可能 OOM）
-4. 检查 AI API 可达性: `curl https://api.deepseek.com/v1/models`
+4. 检查 AI API 可达性（Admin 后台 → AI Settings 中配置的网关地址）
 
 **解决方案**:
 - 内存不足：减少 chunk_size（环境变量 `PDF_CHUNK_SIZE=20`）
-- AI 超时：检查 DEEPSEEK_API_KEY 有效性
+- AI 超时：在 Admin 后台 AI Settings 中检查模型凭据（API Key / Base URL / model name，存于数据库 `admin_ai_model_configs`）
 - 进程 OOM：重启后端进程
 
 ---
@@ -57,9 +57,8 @@
 
 **排查步骤**:
 1. 检查 token budget: `diagnostics.token_usage`
-2. 检查 DeepSeek API key: `grep DEEPSEEK_API_KEY .env`
-3. 检查模型配置: 管理端 → AI Settings
-4. 查看 repair_stats: `diagnostics.stage_diffs.ai_repair_stats`
+2. 检查模型配置: 管理端 → AI Settings（凭据存于数据库 `admin_ai_model_configs`，不用环境变量）
+3. 查看 repair_stats: `diagnostics.stage_diffs.ai_repair_stats`
 
 **临时解决方案**:
 - 关闭 AI repair: 上传时设置 `enable_ai_repair=false`

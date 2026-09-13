@@ -55,7 +55,7 @@ postgraduate-ai/
 │   ├── schemas/      # Pydantic 模型
 │   ├── services/     # 业务逻辑 (16文件)
 │   ├── features/     # 导入管线 (ImportTextNormalizer 等)
-│   ├── ai/           # DeepSeek 集成
+│   ├── ai/           # AI 集成（OpenAI-compatible 网关，模型由 Admin API 配置）
 │   └── main.py
 ├── admin-frontend/   # 管理端 (Next.js, shadcn/ui)
 ├── miniprogram/      # 微信小程序主包与 study/formulas/export 等分包
@@ -90,6 +90,9 @@ postgraduate-ai/
 | 编程题渲染 | ✅ 已接入 | Admin 专用代码渲染；小程序 CODE 渲染路径 |
 | 题目图片预加载 | ✅ 已接入 | `question-image-cache.js` 会话级预解码缓存 |
 | Admin 运维中心 | ✅ 已接入 | 系统健康、任务、队列、追踪、备份权限隔离 |
+| 408 选择题考试域 | ✅ 已部署 | `features/exam/`, `models/exam.py`（exam_papers / attempts / answers，题目绑定 question_version_id） |
+| 408 学习体系 | ✅ 已部署 | 学习计划（study_plan）、错因诊断（error_diagnosis）、408 大纲（syllabus）、知识地图 |
+| 刷题稳定性 | ✅ 已部署 | 顺序预约（sequential_reservation）、答案投影 outbox（task_outbox）、会话 scope（practice_sessions.syllabus_version_id） |
 
 ---
 
@@ -101,7 +104,7 @@ postgraduate-ai/
 请求 → ai_service.py
   ├─ 缓存检查 (WrongQuestion.ai_analysis)
   ├─ token 估算 (硬限制)
-  ├─ 构建上下文 → 构造 Prompt → 调用 DeepSeek
+  ├─ 构建上下文 → 构造 Prompt → 调用 LLM（OpenAI-compatible 网关）
   ├─ 成功: 解析 JSON → 缓存结果
   └─ 失败: fallback.py 降级响应
 ```

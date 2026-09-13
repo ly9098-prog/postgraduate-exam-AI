@@ -81,15 +81,15 @@ GET /api/admin/v1/imports/batch-image/{job_id}
 触发纠错后，按以下链顺序尝试，成功后立即返回：
 
 ```
-PaddleOCR-VL（外部高精 OCR API：看图纠错） → DeepSeek（文本模型：文本修复） → 规则降级（原样返回）
+PaddleOCR-VL（外部高精 OCR API：看图纠错） → LLM 纠错（Qwen/GLM，OpenAI-compatible 网关：文本修复） → 规则降级（原样返回）
 ```
 
 - **PaddleOCR-VL**（链首）：外部高精 OCR API，接收原图做视觉识别，凭证由 DB 动态管理（`resolve_active_model(feature="vision")`），admin UI 可配置
-- **DeepSeek**（回退）：纯文本纠错，修复 OCR 常见错字、错位等，含 length 越界检查（0.5x~2x）和题干丢失保护
+- **LLM 纠错（Qwen/GLM）**（回退）：纯文本纠错，修复 OCR 常见错字、错位等，含 length 越界检查（0.5x~2x）和题干丢失保护
 - **规则降级**（最终 fallback）：所有 AI 不可用时原样返回，不阻塞流程
 - **AI Safety Gate**（`ai_safety.py`）：每次 AI 编辑记录变更前后 diff，保护代码符号/中文比例/选项数，所有编辑可审计追溯
 
-> ⚠️ Qwen-VL 已从路由链中移除（2026-06-21）。旧版 `qwen_adapter.py`（309 行）已删除，路由链简化为 PaddleOCR-VL → DeepSeek → Rule。
+> ⚠️ Qwen-VL 已从路由链中移除（2026-06-21）。旧版 `qwen_adapter.py`（309 行）已删除；路由链现为 PaddleOCR-VL → LLM 纠错（Qwen/GLM，OpenAI-compatible 网关）→ Rule。
 
 ### 3.3 典型触发示例
 
@@ -143,7 +143,7 @@ OCR 结果看起来正常（无乱码），但只有 A/B/C 三个选项。传统
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `ocr_fix_feature_flag` | true | false 时降级，仅使用规则纠错 |
-| `ocr_correction_prompt` | (内置) | 自定义纠错 Prompt（仅 DeepSeek 文本纠错使用） |
+| `ocr_correction_prompt` | (内置) | 自定义纠错 Prompt（仅 LLM 文本纠错使用） |
 | `ocr_filter_max_chars` | 2000 | 超过此长度的文本跳过 AI 纠错 |
 | `ocr_filter_max_tokens` | 4096 | 超过此 token 估计值的文本跳过 AI 纠错 |
 | `vision_enabled` | true | 是否启用 PaddleOCR-VL 视觉纠错（链首） |
@@ -155,7 +155,7 @@ OCR 结果看起来正常（无乱码），但只有 A/B/C 三个选项。传统
 | Feature | 模型 | 用途 | 说明 |
 |---------|------|------|------|
 | `vision` | PaddleOCR-VL-1.6 | 视觉纠错（路由链首） | 外部高精 OCR API，凭证通过 admin UI 配置 |
-| `ocr` | DeepSeek-v4-flash | 文本纠错回退 | 路由链第二位，需要 DeepSeek API Key |
+| `ocr` | Qwen / GLM（OpenAI-compatible 网关） | 文本纠错回退 | 路由链第二位，凭据存于数据库 `admin_ai_model_configs`，经 admin UI 配置 |
 
 PaddleOCR-VL 凭证通过 `resolve_active_model(feature="vision")` 从 DB 动态获取，管理端 AI 设置页面可切换。pipeline `_run_extract` 中本地 OCR 全失败时也会自动触发 PaddleOCR-VL 回退。
 

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是仓库根目录的协作与开发说明，适用于整个 `postgraduate-ai` 项目。进入更深层目录后，应同时遵循该目录中的 `AGENTS.md`；例如管理后台还必须遵循 `admin-frontend/AGENTS.md`。项目长期约束以 `docs/project/PROJECT_RULES.md` 和相关专项文档为准，代码与运行时配置是实现事实的最终依据。
+本文件是仓库根目录的协作与开发说明，遵循 [agents.md](https://agents.md) 开放格式，适用于整个 `postgraduate-ai` 项目。进入更深层目录后，应同时遵循该目录中的 `AGENTS.md`（就近生效，最内层优先）；例如管理后台还必须遵循 `admin-frontend/AGENTS.md`。Claude Code 用户另见根目录 `CLAUDE.md` 与 `.claude/rules/`（按路径生效的专项规则）。项目长期约束以 `docs/project/PROJECT_RULES.md` 和相关专项文档为准，代码与运行时配置是实现事实的最终依据。
 
 ## 项目概述
 
@@ -65,7 +65,7 @@ MemoGrad / 22408AI 是面向考研场景的智能刷题与题库治理系统，�
 - Prompt 维护在 `prompts/`；AI 只能作为辅助，导入数据必须经过现有导入与人工确认链路。项目明确不引入 LangChain、LlamaIndex、微服务或 Kubernetes。
 - 管理端遵循 `admin-frontend/AGENTS.md`、Next.js App Router 和 strict TypeScript 约定。修改后优先使用 `npm ci`（存在 `package-lock.json` 时）保持锁文件一致。
 - 小程序使用原生微信开发者工具工作流；保持主包/分包边界、现有渲染不变性和环境配置逻辑。由于仓库没有统一小程序 lint/test 配置，不得声称存在未确认的检查命令。
-- 配置通过 `.env.example` 了解变量名；真实 `.env`、Token、密码、AppSecret、AI/OCR 凭据和私钥不得写入文档、日志或提交。
+- 配置通过 `.env.example` 了解变量名；真实 `.env`、Token、密码、AppSecret、AI/OCR 凭据和私钥不得写入文档、日志或提交。AI 模型凭据（API Key / Base URL / model name）不使用环境变量，统一存于数据库 `admin_ai_model_configs`，经 Admin API 管理，由 `AI_CONFIG_ENCRYPT_KEY` 加密；生产已不通过 `DEEPSEEK_API_KEY` 等环境变量提供 AI 凭据。
 - 文档只记录已实现或已验证事实；无法从代码、配置、CI 或现有文档确认的内容必须标注“待确认/未验证”。
 
 ## 常用命令
@@ -152,11 +152,14 @@ alembic heads
 
 ## Git 规则
 
-- 提交消息使用 `<type>: <简短描述>`，允许的 type 为 `feat`、`fix`、`refactor`、`perf`、`docs`、`chore`。
+提交消息、type 与 attribution 的完整规范见 `docs/COMMIT_RULES.md`，要点：
+
+- 提交消息使用 Conventional Commits 格式 `<type>(<scope>): <简短描述>`，允许的 type 为 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert`。
+- 严禁在提交中自动添加任何 AI（Claude/Anthropic、Codex/OpenAI 等）的 `Co-Authored-By`、`Generated-by`、`Assisted-by` 等 attribution trailer；保留仓库维护者的 Git author identity。
 - 提交前检查 `git status`、`git diff --check` 和受影响文件的测试；只提交与当前任务相关的变更，保留用户已有改动。
 - 不提交 `.env`、数据库文件、备份、日志、缓存、构建产物、`node_modules`、`.next`、虚拟环境、证书或任何密钥文件，即使它们在本机可用。
 - API、数据库、OCR/AI、前端规则和部署变化要同步对应 `docs/` 文档；文档更新不能替代必要的代码测试或迁移。
-- 不使用 `git reset --hard`、`git checkout --` 等破坏性命令覆盖未确认的用户改动。
+- 不使用 `git reset --hard`、`git checkout --` 等破坏性命令覆盖未确认的用户改动；不执行未经授权的 force push 或历史重写。
 
 ## 禁止事项
 

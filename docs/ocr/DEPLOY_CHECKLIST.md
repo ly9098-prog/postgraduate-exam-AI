@@ -8,7 +8,7 @@
 必填:
   APP_SECRET=               # 已配置
   DATABASE_URL=             # 指向正确数据库
-  DEEPSEEK_API_KEY=         # 有效 API key
+  AI_CONFIG_ENCRYPT_KEY=    # AI 模型凭据加密密钥
   WECHAT_APP_ID=            # 微信小程序 AppID
   WECHAT_APP_SECRET=        # 微信小程序 AppSecret
 
@@ -22,6 +22,8 @@ OCR 相关:
   PDF_CHUNK_SIZE=40         # PDF 分块页数
   OCR_CACHE_ENABLED=true    # OCR 结果缓存
 ```
+
+> AI 模型凭据（API Key / Base URL / model name）不使用环境变量，统一存于数据库 `admin_ai_model_configs`，经管理端 AI Settings 配置。
 
 ### 2. 运行预检查
 

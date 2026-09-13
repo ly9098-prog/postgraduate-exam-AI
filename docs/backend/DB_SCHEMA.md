@@ -45,6 +45,21 @@
 | watermark_rules | PDF 水印过滤规则 | pattern, rule_type, is_active |
 | app_user_admin_bindings | 小程序用户-管理员绑定 | user_id (唯一), admin_user_id (唯一) |
 
+> 2026-09 新增（408 学习体系与稳定性迁移，均已部署生产）：
+>
+> | 表名 | 用途 | 核心字段 |
+> |------|------|----------|
+> | exam_papers / exam_paper_questions | 408 选择题试卷域（真题/模拟） | paper_type, year, status, version, question_version_id 绑定 |
+> | exam_attempts / exam_answers | 考试作答事实（不可变） | attempt_id, score, answered, paper_version |
+> | wrong_question_error_diagnoses | 错因诊断（AI + 规则） | source_context, ai_status, ai_confidence, classification_version |
+> | study_plans / study_plan_days | 学习计划 | daily_minutes, weekly_days, priority_mode, target |
+> | syllabus_versions / syllabus_knowledge_points / syllabus_knowledge_point_mappings | 408 大纲版本化 | year, status, KP 映射 |
+> | formula_cards（扩展） | 408 记忆卡片 | exam_scope, template_type, study_type |
+> | sequential_reservations | 顺序刷题 reservation（幂等防并发） | user_id + question 唯一, request_id |
+> | task_outbox | 异步任务 outbox（答案投影等） | payload(JSONB), status |
+>
+> 另：`admin_ai_model_configs` 新增 `deleted_at` 软删除（迁移 d5f6a7b8c9d0）；`question_embeddings` 改为 `model_id` FK 指向模型配置（迁移 b3d4e5f6a7b8 + c4e5f6a7b8c9，`embedding_model` 字符串列已删除）；`knowledge_points` 的 (subject_id, normalized_name) 唯一约束已放宽（迁移 r408kpunique20260912，允许同科目同名节点）。
+
 ---
 
 ## users
@@ -334,7 +349,7 @@ class AdminAiModelConfig(Base):
     id: int              # PK
     name: str            # 标识名（唯一）
     display_name: str
-    provider: str        # deepseek / openai / etc
+    provider: str        # openai-compatible 供应商别名：qwen / glm / deepseek / openai 等
     api_base_url: str?
     api_key_encrypted: str?  # Fernet 加密
     is_enabled: bool     # 默认 True
@@ -342,6 +357,7 @@ class AdminAiModelConfig(Base):
     sort_order: int
     feature: str?        # 旧字段（单 feature，向后兼容）
     features: list?      # JSON 数组，多 feature 支持
+    deleted_at: datetime? # 软删除（迁移 d5f6a7b8c9d0，删除后模型 ID 保持稳定）
     created_at: datetime
     updated_at: datetime
 ```
@@ -359,6 +375,7 @@ class AdminAiModelConfig(Base):
 | sort_order | Integer | NOT NULL, default=0 |
 | feature | String(32) | NULLABLE |
 | features | JSON | NULLABLE |
+| deleted_at | DateTime | NULLABLE（软删除标记） |
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
 
@@ -918,7 +935,7 @@ class AiChat(Base):
     ai_response: str          # AI 响应（Text）
     context_snapshot: dict?   # JSON: 调用时上下文快照
     tokens_used: int          # token 消耗数
-    model: str                # 模型名，默认 "deepseek-chat"
+    model: str                # 模型名，默认 "openai-compatible"
     duration_ms: int          # 耗时（毫秒）
     created_at: datetime
 ```
@@ -932,7 +949,7 @@ class AiChat(Base):
 | ai_response | Text | NOT NULL |
 | context_snapshot | JSON | NULLABLE |
 | tokens_used | Integer | default=0 |
-| model | String(64) | default="deepseek-chat" |
+| model | String(64) | default="openai-compatible" |
 | duration_ms | Integer | default=0 |
 | created_at | DateTime | server_default=now() |
 
@@ -974,7 +991,7 @@ class AiGenerationLog(Base):
 | raw_response | Text | NULLABLE |
 | parsed_result | JSON | NULLABLE |
 | confidence | Float | NULLABLE |
-| model | String(64) | default="deepseek-chat" |
+| model | String(64) | default="openai-compatible" |
 | tokens_used | Integer | default=0 |
 | duration_ms | Integer | default=0 |
 | success | Integer | default=1 |

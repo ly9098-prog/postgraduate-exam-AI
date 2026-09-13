@@ -79,7 +79,7 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
   │
   ├─ [1] extract         — PaddleOCR 文本提取
   ├─ [2] normalize       — text_normalizer 规则清洗
-  ├─ [3] ocr_correction  — OCRFixRouter 纠错路由（PaddleOCR-VL → DeepSeek → Rule fallback）
+  ├─ [3] ocr_correction  — OCRFixRouter 纠错路由（PaddleOCR-VL → LLM 纠错（Qwen/GLM）→ Rule fallback）
   ├─ [4] analyze_structure — DocumentStructureAnalyzer
   ├─ [5] classify_pages  — PageClassifier
   ├─ [6] split           — QuestionSplitter
@@ -174,14 +174,14 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
 
 - 使用 PaddleOCR（本地 GPU/CPU）进行通用文字识别
 - PaddleOCR-VL 外部高精 OCR API 作为纠错路由链首
-- DeepSeek 纯文本纠错作为回退
+- LLM 纯文本纠错（Qwen/GLM）作为回退
 - AI Safety Gate（`ai_safety.py`）记录编辑前后 diff，保护代码符号/中文比例/选项数
 - 公式截图裁剪（`math_detect`）：高数题自动检测公式区域并截图保留
 - 表格 Markdown 转换（`table_detect`）：408 调度表/Cache 表保留行列结构
 - OCR 结果缓存（`ocr_cache_service.py`）：SHA256 哈希 + config_hash，避免重复 OCR
 - 16 阶段完整管线，含 checkpoint + artifact resume
 - 质量报告（`quality_report`）/ 性能 Profile / 失败自动归因（`ocr_failure_analyzer.py`）
-- PaddleOCR-VL → DeepSeek → Rule 三层纠错路由（旧版 Qwen-VL 已移除）
+- PaddleOCR-VL → LLM（Qwen/GLM）→ Rule 三层纠错路由（旧版 Qwen-VL 已移除）
 - Pipeline artifact 真断点恢复，幂等入库
 
 ### 明确不做的（2026-06-21 更新）

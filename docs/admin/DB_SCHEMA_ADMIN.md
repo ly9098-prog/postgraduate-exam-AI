@@ -328,6 +328,7 @@ model QuestionVersion {
 - `is_enabled`：是否启用。
 - `is_default`：是否为默认模型（全局唯一，`PATCH /ai-models/{id}` 设 default 时自动清除其他 default）。
 - `sort_order`：排序号。
+- `deleted_at`：软删除时间（2026-09-12 迁移 d5f6a7b8c9d0 新增）。删除模型走软删除以保持模型 ID 稳定（外部引用如 `question_embeddings.model_id` 不悬空）。
 - `created_at` / `updated_at`。
 
 业务约束：

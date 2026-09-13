@@ -132,7 +132,7 @@
 - ModelCards 组件展示模型列表：卡片显示 `display_name`、`provider`、`api_configured` 状态，使用 `PATCH /ai-models/{id}` 更新。
 - OcrAccordion / AiCompletionPreview 组件展示 AI 配置键值对：OCR 策略开关、Prompt 编辑区域、补全策略开关等，使用 `PATCH /ai-configs` 批量保存。
 - 更新模型和配置统一使用 `PATCH` 方法；配置区域提示"配置已保存，将在后续版本中生效"。
-- 模型卡片提示"当前版本实际使用模型为 DeepSeek V4 Flash，此处配置仅作为记录"。
+- 模型卡片展示 `display_name`、`provider` 与 API 配置状态；实际生效模型由数据库 `admin_ai_model_configs` 决定。
 - API key 输入以 `****` 掩码显示已配置状态；提交全新值时通过后端 Fernet 加密存储。
 - 加载态：组件首次加载展示骨架屏。
 - 错误态：API 失败时保留上次成功数据，不因网络问题清空用户可见内容。

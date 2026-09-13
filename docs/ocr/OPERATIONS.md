@@ -9,7 +9,7 @@
   → [12.math_detect] → [13.table_detect] → [14.review]
 
 总计 14 个处理 stage + artifact checkpoint + quality_report 输出。
-stage3 (ocr_correction) 使用 OCRFixRouter：PaddleOCR-VL → DeepSeek → Rule。
+stage3 (ocr_correction) 使用 OCRFixRouter：PaddleOCR-VL → LLM 纠错（Qwen/GLM，OpenAI-compatible 网关）→ Rule。
 stage9 (repair) 高置信度题（>0.95）跳过 AI 修复。
 P5-2 已将 9 个 stage 拆至 `pipeline_stages/` 目录。
 P6 新增 quality_report + performance_profile + failure_analyzer 随 pipeline 返回。

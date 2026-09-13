@@ -4,6 +4,40 @@
 
 ---
 
+## 2026-09-12 / 2026-09-13
+
+- **AI 模型配置软删除（稳定模型 ID）**
+  - `eeb7695f` `admin_ai_model_configs` 增加 `deleted_at` 软删除；删除模型后引用它的历史记录（如 `question_embeddings.model_id`）ID 保持稳定。Resolver 只解析未删除配置。新增迁移 `d5f6a7b8c9d0`。
+- **question_embeddings 改 model_id 外键**
+  - `033c3884` 以 `b3d4e5f6a7b8` + `c4e5f6a7b8c9` 两步迁移将 `question_embeddings.embedding_model` 字符串列替换为 `model_id` FK → `admin_ai_model_configs`；运行时向量服务改按 `subject_id` + `model_id` 过滤。已部署生产（2160 行回填 model_id=70）。
+- **知识点唯一约束放宽**
+  - `23905f44` 移除知识点全局/跨科目唯一限制，同科目内同名节点合法（迁移 `r408kpunique20260912`）；配套 408 知识图谱全量重构（499 节点/839 边）。
+- **测试目录重组**
+  - `59a8149e`/`14f9c660` 后端测试合并为规范包结构（architecture / test_api / test_services 等）；CI `ci.yml` 固定文件清单同步更新。
+- **刷题 UX**
+  - `770c544b` 练习科目选择底部弹层（学科图标 + 新样式）与 quiz-runner 推荐条；`365f0889` 修复 knowledge session subject_id 与发起批次科目对齐。
+
+## 2026-09-07 ~ 2026-09-11：408 学习体系
+
+- **408 智能学习中心域**（`5e810f6b`、`92798088`、`96f8d0cd`、`a8464975`、`6614f6ae`）：408 选择题考试域、知识地图、错因诊断、AI 教师、速记卡扩展（`826cf2a3`）、长期学习计划 `study_plan`（`0b026e73`）、题库覆盖率治理（`8b425a29`）、考纲版本治理 `syllabus`（`468c0557`，PostgreSQL 索引名缩短修复 `e41f8504`/`d99ebe5e`）、canonical 科目边界收紧（`78e27b30`）。
+- **练习与投影稳定性**：顺序练习预约防重（`3ee9dc94`，迁移 `s408seq20260911`）、练习会话范围持久化（`84d2a2ca`，迁移 `s408pscope20260909`）、答案修订 current 一致性（`08c27ce1`）、outbox 修复与恢复（`f3a8e148`、`2453aa33`）、掌握状态并发安全与撤销（`a028ed92`）、题目版本与学习状态一致性（`1cc55b7e`，迁移 `e0f1a2b3c4d5`）、per-answer practice_records 强制（`ed8f8ab4`，迁移 `a4c5d6e7f8b9`）、practice_session 幂等 payload（`c8d9e0f1a2b3`）。
+- **AI 分析**：错题 AI 分析流改进（`8f5a8c52`）、GPT-5.6 错误分析延迟上界（`5a7138d8`）、AI 分析超时降级（`93a1fd6c`）、AI 模型路由完善（`d46b8cfb`）、AI 教师知识点呈现结构化（`5faca505`）。
+- **导入链路加固**：导入解析与 LaTeX 预览改进（`cf62a761`）、导入工作流与任务恢复加固（`38bce8b4`）。
+- **小程序视觉与体验**：学习空状态刷新（`3baeb4b7`）、学习工作流改进（`ede05a14`）、首页薄荷主题（`b18b62df`）、学习看板/错题本视觉（`7393c4df`）、知识图谱交互多轮迭代（`827ce118`、`cf1a2024`、`c9acf1a8`、`1e25c868`、`f43ffcc9`）、主包体积缩减（`d1a24fcb`）。
+
+## 2026-09-03 ~ 2026-09-06
+
+- **AI 分析视觉链路收敛**（8 月 16 日系列提交的后续）：错题分析只读题库题图，移除用户截图上传与 vision 特征路由（`cab3585f`、`12b78d0c`）；缓存新鲜度体系——输入/模型双签名 + stale 状态 + 提交后预热（`d0583f9f`）；错误码体系——provider 异常分类 + prewarm 重试/死信语义（`a6d31524`）；纯文本题目缺视觉资源时 fail fast（`0f705e93`）；视觉证据探针修复（`fb205238`）。
+- **RBAC 权限细化**：knowledge/recommendation 独立权限 + admin 角色权限集重构（`7cc68893`）；super_admin 专属角色页 + 管理员管理页（`9011e858`）。
+- **头像与时间标准化**：用户头像持久化 `/static/avatars` 命名卷（`e788bb24`）+ 命名空间拆分（`4a0980a6`）；后端时间序列化统一 UTC Z 输出（`4ea1c0ef`），前后端接入 china-time 工具（`faa3d6f9`、`e46958b3`）；容器统一 `TZ=Asia/Shanghai`（`a8eca7f8`）。
+- **生产 worker 服务**：新增 worker 服务消费 Redis v2 任务队列（`ae75de56`），OCR 仅走外部 API（`5834ec78`、`da37d342`、`f6604890`）。
+- **管理端**：系统任务中心——调度任务目录 + Redis 遥测 + PG 备份观测/手动执行（`c1b0cd3f`）；公式库管理端改版（`6a1c9e9d`、`43f088a2`）；题库导出 CSV/DOCX（`dd2c47fd`、`629f0983`）；题目版本知识点规范化 + OCR 缓存指标（`bfdf6470`）。
+- **异步任务体系**：AI 运行时统一准入控制——有界并发/限流/熔断/成本上限 + Redis 共享 token 预算（`e804809e`）；答案投影改事务性 outbox 异步化（`f03af645`）+ 对账器（`994b57b9`）+ Redis 故障遗留 failed 行恢复（`f3cb9f58`）；outbox/Redis 队列/投影回执三源健康诊断页（`0e9bda16`）。
+- **番茄钟稳定性**：`/start` 幂等键 `client_start_id`（`0cfc64aa`）；专注生命周期离线/重试安全 + 单活跃会话约束（`b7d9f3aa`，迁移 `w7x8y9z0a1b2`、`x8y9z0a1b2c3`、`y9z0a1b2c3d4`）；错题首次复习从北京时间次日开始（`e8b97bdb`）。
+- **OpenAPI 契约门禁**：关键前端操作类型化响应 + operationId 唯一性（`77b13717`）；`/api/v1/practice/questions` 补响应模型（`9ee1c581`）。
+
+---
+
 ## 2026-09-02
 
 - **安全边界与系统运维权限收敛**

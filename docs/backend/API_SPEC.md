@@ -623,7 +623,7 @@ AI 错题分析。
   "from_cache": false,
   "from_fallback": false,
   "tokens_used": 150,
-  "model": "deepseek-chat",
+  "model": "qwen-plus (示例，实际由 admin_ai_model_configs 决定)",
   "duration_ms": 2000
 }
 ```
@@ -649,7 +649,7 @@ AI 学习建议。
   "from_cache": false,
   "from_fallback": false,
   "tokens_used": 200,
-  "model": "deepseek-chat",
+  "model": "qwen-plus (示例，实际由 admin_ai_model_configs 决定)",
   "duration_ms": 3000
 }
 ```

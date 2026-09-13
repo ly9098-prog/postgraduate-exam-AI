@@ -44,7 +44,7 @@ OCR 是**可选增强模块**，不是核心功能。通过 `OCR_ENABLED` 配置
 
 - **PaddleOCR**（GPU 本地 / CPU 生产）：通用文字识别引擎
 - **PaddleOCR-VL**（外部高精 OCR API）：OCR 纠错路由链首 + 本地 OCR 全失败回退，凭证由 DB 动态管理
-- **DeepSeek**（文本模型）：纯文本纠错回退（OCRFixRouter 第二位）
+- **LLM 纠错（Qwen / GLM，OpenAI-compatible 网关）**：纯文本纠错回退（OCRFixRouter 第二位），凭据存于数据库 `admin_ai_model_configs`
 - **PyMuPDF**：PDF 转图片
 - **ThreadPoolExecutor**：并发处理多页
 
@@ -52,7 +52,7 @@ OCR 是**可选增强模块**，不是核心功能。通过 `OCR_ENABLED` 配置
 
 | 引擎 | 场景 | 移除原因 |
 |------|------|---------|
-| ~~Qwen-VL~~ | 视觉纠错 | 2026-06-21 移除，路由链简化为 PaddleOCR-VL → DeepSeek → Rule |
+| ~~Qwen-VL~~ | 视觉纠错 | 2026-06-21 移除，路由链现为 PaddleOCR-VL → LLM（Qwen/GLM）→ Rule |
 | ~~DeepSeek VL~~ | 视觉回退 | 切换到 PaddleOCR-VL，凭证由 DB 动态管理 |
 | ~~pix2tex~~ | 公式 LaTeX 识别 | 无需 LaTeX 校正，公式截图以图片形式保留 |
 | ~~Mathpix~~ | 商业公式识别 | 未使用 |
@@ -77,7 +77,7 @@ OCR 是**可选增强模块**，不是核心功能。通过 `OCR_ENABLED` 配置
 
 ```
 PaddleOCR → text_normalizer（13 步规则清洗）
-  → OCRFixRouter（PaddleOCR-VL → DeepSeek → Rule）
+  → OCRFixRouter（PaddleOCR-VL → LLM（Qwen/GLM）→ Rule）
     → 结构分析 → 题目切分 → 答案匹配 → 标准化
       → AI Repair（可选，低置信度触发）
         → 相似匹配 → 公式检测 → 表格检测

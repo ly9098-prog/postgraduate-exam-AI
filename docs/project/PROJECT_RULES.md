@@ -65,7 +65,7 @@
 ### AI
 
 - 不引入 langchain / llamaindex
-- 直接 httpx 调 DeepSeek API
+- 直接 httpx 调 OpenAI-compatible 网关（Qwen/GLM 等，模型由 Admin API 配置于数据库）
 - 失败降级优先于重试
 - Prompt 放 `prompts.py`，不引入管理平台
 

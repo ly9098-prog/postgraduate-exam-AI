@@ -1,6 +1,6 @@
 # AI Pipeline
 
-> DeepSeek 直连方案，无 langchain/llamaindex，一次请求一次调用。
+> OpenAI-compatible 网关直连方案（Qwen / GLM 等，模型由 Admin API 配置于数据库 `admin_ai_model_configs`），无 langchain/llamaindex，一次请求一次调用。
 
 ---
 
@@ -9,7 +9,7 @@
 ### 架构
 
 ```
-用户请求 → Service 编排 → 构造 Prompt → DeepSeek API → 解析 JSON → 缓存 → 返回
+用户请求 → Service 编排 → 构造 Prompt → OpenAI-compatible 网关（模型由 admin_ai_model_configs 决定）→ 解析 JSON → 缓存 → 返回
 ```
 
 ### 模块分布
@@ -37,14 +37,14 @@
 ### 关键细节
 
 **客户端** (`client.py`)
-- 模型硬编码 `deepseek-chat`，temperature=0.3
+- 模型由 `admin_ai_model_configs` 数据库配置解析（历史默认 `deepseek-chat` 已移除），temperature=0.3
 - 超时 60 秒（`AI_TIMEOUT`）
 - `is_available()` 检查 API key 是否为非空且非占位符
 
 **基础 AI 服务** (`ai_service.py`)
 - `POST /api/v1/ai/error-analysis`：错题分析，结果缓存到 `WrongQuestion.ai_analysis`
 - `POST /api/v1/ai/study-advice`：基于最近错题统计生成学习建议
-- 基础服务仍是一次请求一次 DeepSeek 调用；DeepSeek 不可用时返回 fallback
+- 基础服务仍是一次请求一次 LLM 调用；模型不可用时返回 fallback
 
 **AI 学习引擎** (`ai_learning_service.py`)
 - `POST /api/v1/ai/explain`：题目讲解
@@ -82,7 +82,7 @@
 1. **基础 AI 服务 token 控制缺口** — `error-analysis` / `study-advice` 未接入 `_check_token_limit`
 2. **summary 未接入** — Prompt 已定义但无路由和 service 使用
 3. **study_advice 无记忆** — 每次调用都是独立请求，不传递历史对话，无法追问
-4. **基础 AI JSON 解析脆弱** — DeepSeek 返回非标准 JSON 时仅包裹原始文本，前端可能渲染异常
+4. **基础 AI JSON 解析脆弱** — 模型返回非标准 JSON 时仅包裹原始文本，前端可能渲染异常
 5. **无重试机制** — 一次失败直接降级，没有临时故障时的重试（如 5xx 可重试 1-2 次）
 6. **并发无控制** — 同一用户同时请求 AI 不做排队，可能短时间打满限额
 7. **超时后无用户反馈** — 60 秒超时期间前端无进度提示，体验差
@@ -133,14 +133,14 @@
 |------|------|---------|---------|
 | [1] extract | PaddleOCR | 不使用 | —（纯 OCR） |
 | [2] normalize | ImportTextNormalizer | 不使用 | —（纯规则，13 步清洗管线） |
-| [3] ocr_correction | OCRFixRouter | ✅ PaddleOCR-VL → DeepSeek → Rule | 噪声/结构异常/低置信度触发 |
+| [3] ocr_correction | OCRFixRouter | ✅ PaddleOCR-VL → LLM（Qwen/GLM）→ Rule | 噪声/结构异常/低置信度触发 |
 | [4] analyze_structure | DocumentStructureAnalyzer | 不使用 | —（纯规则） |
 | [5] classify_pages | PageClassifier | 不使用 | —（纯规则） |
 | [6] split | QuestionSplitter | 不使用 | —（纯规则，题号+选项提取） |
 | [7] match | AnswerMatcher | 不使用 | —（纯规则） |
 | [8] normalize_schema | QuestionNormalizer + BatchValidation + BatchDedup | 不使用 | —（纯规则标准化+校验+去重） |
-| [9] repair | AIRepairService | ✅ DeepSeek 修复 | 规则无法解析的低置信度题目 |
-| [10] ai_validation | AI 验证 | ✅ DeepSeek 验证 | repair 后补充验证 |
+| [9] repair | AIRepairService | ✅ LLM 修复（Qwen/GLM） | 规则无法解析的低置信度题目 |
+| [10] ai_validation | AI 验证 | ✅ LLM 验证（Qwen/GLM） | repair 后补充验证 |
 | [11] similarity_match | SimilarityMatcher | 不使用 | —（difflib 规则） |
 | [12] math_detect | MathImportProfile | 不使用 | —（规则公式区域检测 + 截图裁剪） |
 | [13] table_detect | TableRegionDetector | 不使用 | —（规则多列 Token + Markdown 转换） |
@@ -156,7 +156,7 @@
        │
        ├─ stage3 (ocr_correction): 噪声/结构异常/低置信度 → OCRFixRouter
        │    PaddleOCR-VL（链首，外部高精 OCR API）
-       │      → DeepSeek 纯文本纠错
+       │      → LLM（Qwen/GLM）纯文本纠错
        │        → Rule（原样返回，不阻塞）
        │  每次编辑经过 AI Safety Gate（diff 记录 + 代码/中文/选项保护）
        │
