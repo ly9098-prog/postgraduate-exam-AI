@@ -327,41 +327,50 @@ function PortalDropdown({
   const [mounted, setMounted] = useState(false);
 
   useLayoutEffect(() => {
-    const btn = triggerRef.current?.querySelector("button");
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const spaceAbove = rect.top - 12;
-    const dir = spaceBelow >= spaceAbove ? "down" : "up";
-    const maxH = dir === "down" ? Math.min(spaceBelow, 320) : Math.min(spaceAbove, 320);
+    const updatePosition = () => {
+      const btn = triggerRef.current?.querySelector("button");
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom - 12;
+      const spaceAbove = rect.top - 12;
+      const dir = spaceBelow >= spaceAbove ? "down" : "up";
+      const maxH = dir === "down" ? Math.min(spaceBelow, 320) : Math.min(spaceAbove, 320);
 
-    const minDropdownWidth = searchable ? 280 : Math.max(rect.width, 180);
-    const dropdownWidth = Math.min(Math.max(rect.width, minDropdownWidth), window.innerWidth - 16);
+      const minDropdownWidth = searchable ? 280 : Math.max(rect.width, 180);
+      const dropdownWidth = Math.min(Math.max(rect.width, minDropdownWidth), window.innerWidth - 16);
 
-    let top: number | undefined;
-    let bottom: number | undefined;
-    if (dir === "down") {
-      top = rect.bottom + 4;
-    } else {
-      bottom = window.innerHeight - rect.top + 4;
-    }
+      let top: number | undefined;
+      let bottom: number | undefined;
+      if (dir === "down") {
+        top = rect.bottom + 4;
+      } else {
+        bottom = window.innerHeight - rect.top + 4;
+      }
 
-    setStyle({
-      position: "fixed",
-      zIndex: 9999,
-      visibility: "visible",
-      width: dropdownWidth,
-      minWidth: minDropdownWidth,
-      maxHeight: Math.max(maxH, 120),
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column",
-      top,
-      bottom,
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - dropdownWidth - 8)),
-    });
+      setStyle({
+        position: "fixed",
+        zIndex: 9999,
+        visibility: "visible",
+        width: dropdownWidth,
+        minWidth: minDropdownWidth,
+        maxHeight: Math.max(Math.min(maxH, window.innerHeight - 24), 96),
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        top,
+        bottom,
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - dropdownWidth - 8)),
+      });
+    };
 
+    updatePosition();
     requestAnimationFrame(() => setMounted(true));
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
   }, [triggerRef, searchable]);
 
   return createPortal(
@@ -374,6 +383,21 @@ function PortalDropdown({
         mounted ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
       )}
       style={style}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          onActiveIndexChange(getNextEnabledIndex(activeIndex < 0 ? -1 : activeIndex, direction, filtered));
+          return;
+        }
+        if (event.key === "Enter" && activeIndex >= 0 && activeIndex < filtered.length) {
+          const option = filtered[activeIndex];
+          if (option && !option.disabled) {
+            event.preventDefault();
+            onChange(option.value);
+          }
+        }
+      }}
     >
       {searchable && (
         <div className="relative shrink-0 border-b border-[var(--color-border)]/60 p-2">
@@ -387,18 +411,20 @@ function PortalDropdown({
               onSearchChange(e.target.value);
               onActiveIndexChange(-1);
             }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Escape") {
-                e.stopPropagation();
-              }
-            }}
           />
         </div>
       )}
       <div
         ref={listRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
-        style={{ maxHeight: searchable ? "280px" : "320px" }}
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+        style={{
+          maxHeight: searchable ? "280px" : "320px",
+          overscrollBehavior: "contain",
+          touchAction: "pan-y",
+          scrollbarGutter: "stable",
+        }}
+        onWheelCapture={(event) => event.stopPropagation()}
+        onTouchMove={(event) => event.stopPropagation()}
       >
         {filtered.length === 0 ? (
           <div className="px-4 py-6 text-center text-xs text-[var(--color-text-hint)]">无匹配选项</div>

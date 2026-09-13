@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 
 from fastapi import Request
@@ -62,6 +63,39 @@ def _escape_like_keyword(keyword: str) -> str:
     ``1000``/``100x``, and a LaTeX keyword like ``\\frac`` would be mangled.
     """
     return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+_MAX_FUZZY_SEARCH_TERMS = 8
+
+
+def _fuzzy_keyword_terms(keyword: str) -> list[str]:
+    """Split an admin search into a small set of fuzzy AND terms.
+
+    A user searching ``二叉树 中序`` normally means "contains both concepts", not
+    the literal contiguous string including one ASCII space.  Splitting on common
+    separators keeps the existing substring semantics for each term while making
+    multi-keyword search useful for Chinese question stems.  Terms are de-duplicated
+    case-insensitively and capped so an accidental pasted paragraph cannot create an
+    unbounded SQL expression.
+    """
+    raw = keyword.strip()
+    if not raw:
+        return []
+    parts = [part.strip() for part in re.split(r"[\s,，、;；]+", raw) if part.strip()]
+    if not parts:
+        parts = [raw]
+
+    terms: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        marker = part.casefold()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        terms.append(part)
+        if len(terms) >= _MAX_FUZZY_SEARCH_TERMS:
+            break
+    return terms
 
 
 def _edit_field_value(question: Question, field: str, kps: list[str]) -> Any:
@@ -165,10 +199,19 @@ async def list_admin_questions(
     import_batch_id: str | None = None,
     difficulty: int | None = None,
     knowledge_point_id: int | None = None,
+    subject_codes: list[str] | tuple[str, ...] | None = None,
 ) -> tuple[list[Question], int]:
     conditions = []
     if subject_id is not None:
         conditions.append(Question.subject_id == subject_id)
+    if subject_codes:
+        normalized_codes = tuple(dict.fromkeys(code.strip() for code in subject_codes if code and code.strip()))
+        if normalized_codes:
+            conditions.append(
+                Question.subject_id.in_(
+                    select(Subject.id).where(Subject.code.in_(normalized_codes))
+                )
+            )
     if review_status:
         conditions.append(Question.review_status == review_status)
     if is_active is not None:
@@ -176,63 +219,71 @@ async def list_admin_questions(
     if question_type:
         conditions.append(Question.question_type == question_type)
     if keyword:
-        escaped = _escape_like_keyword(keyword)
-        pattern = f"%{escaped}%"
-        # aliases 是 JSON 数组：按元素 contains 匹配（跨 dialect）。
-        # SQLite 的 JSON 存储会对中文做 \\uXXXX 转义，CAST(... AS TEXT) 子串匹配会漏；
-        # json_each / json_array_elements_text 都会解码后逐元素匹配，两种 dialect 行为一致。
-        # 用户输入中的 %/_ 已转义并配合 ESCAPE，避免被当作 LIKE 通配符。
+        # Each token is a substring match, while multiple tokens are combined with
+        # AND.  Example: ``二叉树 中序`` finds a stem containing both terms even
+        # when they are separated by punctuation or other words.
         dialect_name = db.get_bind().dialect.name
-        if dialect_name == "sqlite":
-            alias_match = text(
-                "EXISTS (SELECT 1 FROM json_each(knowledge_points.aliases) "
-                "WHERE json_each.value LIKE :pattern ESCAPE '\\')"
-            ).bindparams(pattern=pattern)
-        else:
-            # json_typeof 守卫：aliases 非数组（标量/对象/NULL）时退化为空数组，
-            # 避免 json_array_elements_text 对非数组输入抛
-            # "cannot extract elements from a scalar / object" 使整个搜索 500。
-            alias_match = text(
-                "EXISTS (SELECT 1 FROM json_array_elements_text("
-                "CASE WHEN json_typeof(knowledge_points.aliases) = 'array' "
-                "THEN knowledge_points.aliases ELSE '[]'::json END) "
-                "AS _alias WHERE _alias ILIKE :pattern ESCAPE '\\')"
-            ).bindparams(pattern=pattern)
-        kp_qids = (
-            select(QuestionKnowledgePoint.question_id)
-            .join(
-                KnowledgePoint,
-                KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
-            )
-            .where(
-                or_(
-                    KnowledgePoint.name.ilike(pattern, escape="\\"),
-                    alias_match,
+        for term_index, term in enumerate(_fuzzy_keyword_terms(keyword)):
+            escaped = _escape_like_keyword(term)
+            pattern = f"%{escaped}%"
+
+            # aliases 是 JSON 数组：按元素 contains 匹配（跨 dialect）。
+            # Give every text() expression a unique bind name; otherwise multiple
+            # fuzzy terms would overwrite one another when SQLAlchemy combines them.
+            bind_name = f"keyword_pattern_{term_index}"
+            if dialect_name == "sqlite":
+                alias_match = text(
+                    "EXISTS (SELECT 1 FROM json_each(knowledge_points.aliases) "
+                    f"WHERE json_each.value LIKE :{bind_name} ESCAPE '\\')"
+                ).bindparams(**{bind_name: pattern})
+            else:
+                alias_match = text(
+                    "EXISTS (SELECT 1 FROM json_array_elements_text("
+                    "CASE WHEN json_typeof(knowledge_points.aliases) = 'array' "
+                    "THEN knowledge_points.aliases ELSE '[]'::json END) "
+                    f"AS _alias WHERE _alias ILIKE :{bind_name} ESCAPE '\\')"
+                ).bindparams(**{bind_name: pattern})
+
+            kp_qids = (
+                select(QuestionKnowledgePoint.question_id)
+                .join(
+                    KnowledgePoint,
+                    KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
+                )
+                .where(
+                    or_(
+                        KnowledgePoint.name.ilike(pattern, escape="\\"),
+                        alias_match,
+                    )
                 )
             )
-        )
-        subject_ids = select(Subject.id).where(
-            or_(
-                Subject.name.ilike(pattern, escape="\\"),
-                Subject.code.ilike(pattern, escape="\\"),
-                Subject.path.ilike(pattern, escape="\\"),
+            matching_subject_ids = select(Subject.id).where(
+                or_(
+                    Subject.name.ilike(pattern, escape="\\"),
+                    Subject.code.ilike(pattern, escape="\\"),
+                    Subject.path.ilike(pattern, escape="\\"),
+                )
             )
-        )
-        keyword_conditions = [
-            Question.content["stem"].as_string().ilike(pattern, escape="\\"),
-            Question.content["text"].as_string().ilike(pattern, escape="\\"),
-            Question.content["question"].as_string().ilike(pattern, escape="\\"),
-            Question.content["title"].as_string().ilike(pattern, escape="\\"),
-            Question.answer.ilike(pattern, escape="\\"),
-            Question.analysis.ilike(pattern, escape="\\"),
-            Question.raw_content.ilike(pattern, escape="\\"),
-            Question.id.in_(kp_qids),
-            Question.subject_id.in_(subject_ids),
-        ]
-        numeric_keyword = keyword.strip().removeprefix("#")
-        if numeric_keyword.isdigit():
-            keyword_conditions.append(Question.id == int(numeric_keyword))
-        conditions.append(or_(*keyword_conditions))
+            term_conditions = [
+                Question.content["stem"].as_string().ilike(pattern, escape="\\"),
+                Question.content["text"].as_string().ilike(pattern, escape="\\"),
+                Question.content["question"].as_string().ilike(pattern, escape="\\"),
+                Question.content["title"].as_string().ilike(pattern, escape="\\"),
+                Question.answer.ilike(pattern, escape="\\"),
+                Question.analysis.ilike(pattern, escape="\\"),
+                Question.raw_content.ilike(pattern, escape="\\"),
+                Question.source.ilike(pattern, escape="\\"),
+                Question.source_file.ilike(pattern, escape="\\"),
+                Question.id.in_(kp_qids),
+                Question.subject_id.in_(matching_subject_ids),
+            ]
+            numeric_term = term.removeprefix("#")
+            if numeric_term.isdigit():
+                numeric_value = int(numeric_term)
+                term_conditions.append(Question.id == numeric_value)
+                if len(numeric_term) == 4:
+                    term_conditions.append(Question.year == numeric_value)
+            conditions.append(or_(*term_conditions))
     if year is not None:
         conditions.append(Question.year == year)
     if import_batch_id:

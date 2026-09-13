@@ -1,6 +1,6 @@
 const config = require('../../../config')
-const adapter = require('../../study/utils/question-runner-adapter')
-const { buildRenderModel } = require('../../study/utils/stem-render')
+const adapter = require('./question-runner-adapter')
+const { buildRenderModel } = require('./stem-render')
 
 function normalizeQuestion(raw) {
   const q = Object.assign({}, raw || {})

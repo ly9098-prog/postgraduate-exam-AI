@@ -147,6 +147,7 @@ async def get_knowledge_graph(
             "nodes": [],
             "edges": [],
             "hot_nodes": [],
+            "overview_topics": [],
             "focus_id": None,
         }
 
@@ -207,6 +208,80 @@ async def get_knowledge_graph(
         filtered_degree[target_id] += 1
         adjacency[source_id].append(target_id)
         adjacency[target_id].append(source_id)
+
+    # Default subject overview: expose up to eight first-level themes so the
+    # management UI can start with a subject map (matching the learner-facing
+    # mental model) instead of an arbitrary list of highest-degree nodes.
+    parent_children: dict[int, set[int]] = {}
+    parent_targets: set[int] = set()
+    for edge in all_edges:
+        if edge.relation_type != "parent":
+            continue
+        parent_children.setdefault(edge.source_knowledge_point_id, set()).add(
+            edge.target_knowledge_point_id
+        )
+        parent_targets.add(edge.target_knowledge_point_id)
+
+    subject_name = (subject.name or "").strip().casefold()
+    subject_root_id = next(
+        (
+            kp.id
+            for kp in knowledge_points
+            if (kp.normalized_name or kp.name or "").strip().casefold() == subject_name
+            or (kp.name or "").strip().casefold() == subject_name
+        ),
+        None,
+    )
+    topic_ids: list[int] = []
+    if subject_root_id is not None and parent_children.get(subject_root_id):
+        topic_ids.extend(parent_children[subject_root_id])
+    else:
+        roots = [
+            kp_id
+            for kp_id in parent_children
+            if kp_id not in parent_targets and kp_id != subject_root_id
+        ]
+        topic_ids.extend(roots)
+
+    def overview_rank(kp_id: int) -> tuple[int, int, int, int]:
+        return (
+            -len(parent_children.get(kp_id, set())),
+            -all_degree[kp_id],
+            -question_counts.get(kp_id, 0),
+            kp_id,
+        )
+
+    topic_ids = sorted(set(topic_ids), key=overview_rank)
+    if len(topic_ids) < 8:
+        fallback_ids = sorted(
+            (kp_id for kp_id in parent_children if kp_id != subject_root_id),
+            key=overview_rank,
+        )
+        for kp_id in fallback_ids:
+            if kp_id not in topic_ids:
+                topic_ids.append(kp_id)
+            if len(topic_ids) >= 8:
+                break
+    if len(topic_ids) < 8:
+        fallback_ids = sorted(
+            (kp_id for kp_id in kp_ids if kp_id != subject_root_id),
+            key=overview_rank,
+        )
+        for kp_id in fallback_ids:
+            if kp_id not in topic_ids:
+                topic_ids.append(kp_id)
+            if len(topic_ids) >= 8:
+                break
+    topic_ids = topic_ids[:8]
+    overview_topics = [
+        {
+            "id": kp_id,
+            "name": kp_map[kp_id].name,
+            "direct_child_count": len(parent_children.get(kp_id, set())),
+            "question_count": question_counts.get(kp_id, 0),
+        }
+        for kp_id in topic_ids
+    ]
 
     normalized_search = (search or "").strip().casefold()
     search_matches: list[int] = []
@@ -394,6 +469,7 @@ async def get_knowledge_graph(
         "nodes": nodes,
         "edges": edge_payload,
         "hot_nodes": hot_nodes,
+        "overview_topics": overview_topics,
         "focus_id": focus_id,
     }
 

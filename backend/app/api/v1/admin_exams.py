@@ -8,8 +8,8 @@ from app.schemas.admin_exam import (
     AdminExamPaperDetail,
     AdminExamPaperItemsReplaceRequest,
     AdminExamPaperListItem,
-    AdminExamPastExamCandidatesResponse,
     AdminExamPaperUpdateRequest,
+    AdminExamPastExamCandidatesResponse,
 )
 from app.services import admin_exam_service
 

@@ -55,6 +55,47 @@ def _chunks(values: list[Any], size: int = _SQLITE_SAFE_IN_CHUNK) -> Iterable[li
         yield values[index : index + size]
 
 
+def _format_line_samples(lines: list[int]) -> str:
+    """Compact sampled CSV line numbers into readable ranges."""
+    if not lines:
+        return ""
+    values = sorted(set(lines))
+    ranges: list[tuple[int, int]] = []
+    start = previous = values[0]
+    for value in values[1:]:
+        if value == previous + 1:
+            previous = value
+            continue
+        ranges.append((start, previous))
+        start = previous = value
+    ranges.append((start, previous))
+    labels = [str(start) if start == end else f"{start}–{end}" for start, end in ranges]
+    return "第 " + "、".join(labels) + " 行"
+
+
+def _format_grouped_row_errors(
+    error_groups: dict[str, dict[str, Any]],
+    total_error_count: int,
+) -> str:
+    """Summarize repeated row errors instead of returning a wall of text."""
+    ordered = sorted(
+        error_groups.items(),
+        key=lambda item: (-int(item[1]["count"]), item[0]),
+    )
+    lines = [f"CSV 校验失败，共 {total_error_count} 处问题："]
+    for message, meta in ordered[:8]:
+        sample_lines = [int(value) for value in meta.get("lines", [])]
+        location = _format_line_samples(sample_lines)
+        count = int(meta.get("count", 0))
+        if count > len(sample_lines):
+            location = f"例如{location}"
+        suffix = f"（共 {count} 处）" if count > 1 else ""
+        lines.append(f"• {message}：{location}{suffix}")
+    if len(ordered) > 8:
+        lines.append(f"• 另有 {len(ordered) - 8} 类问题，请先修复以上高频项后重试")
+    return "\n".join(lines)
+
+
 def _optional_text(value: str | None, *, max_length: int | None = None, field: str = "字段") -> str | None:
     text = (value or "").strip()
     if not text:
@@ -115,6 +156,21 @@ def _parse_json(
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
         raise QuestionCsvValidationError(f"{field} 不是合法 JSON") from exc
+
+    # CSV files that have been opened and re-saved by spreadsheet software can
+    # wrap an existing JSON object/array in one extra JSON string layer, e.g.
+    # ``"{\"text\":\"...\"}"``. Accept exactly one such layer so imports are
+    # resilient without turning arbitrary plain text into structured content.
+    if expected_type is not None and isinstance(parsed, str):
+        nested_text = parsed.strip()
+        if nested_text:
+            try:
+                nested = json.loads(nested_text)
+            except json.JSONDecodeError:
+                nested = None
+            if nested is None or isinstance(nested, expected_type):
+                parsed = nested
+
     if required and parsed is None:
         raise QuestionCsvValidationError(f"{field} 不能为 null")
     if parsed is not None and expected_type is not None and not isinstance(parsed, expected_type):
@@ -235,8 +291,18 @@ def parse_questions_csv(path: str, *, subject_override: int | None = None) -> li
         raise QuestionCsvValidationError("CSV 必须使用 UTF-8 编码") from exc
 
     rows: list[ParsedQuestionRow] = []
-    errors: list[str] = []
+    error_groups: dict[str, dict[str, Any]] = {}
+    total_error_count = 0
     data_row_count = 0
+
+    def add_row_error(line_no: int, message: str) -> None:
+        nonlocal total_error_count
+        total_error_count += 1
+        group = error_groups.setdefault(message, {"count": 0, "lines": []})
+        group["count"] = int(group["count"]) + 1
+        samples = group["lines"]
+        if isinstance(samples, list) and len(samples) < 12:
+            samples.append(line_no)
     try:
         with handle:
             reader = csv.DictReader(handle)
@@ -251,8 +317,7 @@ def parse_questions_csv(path: str, *, subject_override: int | None = None) -> li
 
             for line_no, row in enumerate(reader, start=2):
                 if None in row:
-                    if len(errors) < 20:
-                        errors.append(f"第 {line_no} 行: 数据列数超过表头列数")
+                    add_row_error(line_no, "数据列数超过表头列数")
                     continue
                 # Ignore completely empty physical rows.
                 if not any(str(value or "").strip() for value in row.values()):
@@ -265,16 +330,16 @@ def parse_questions_csv(path: str, *, subject_override: int | None = None) -> li
                 try:
                     rows.append(_parse_row(row, line_no, subject_override))
                 except QuestionCsvValidationError as exc:
-                    if len(errors) < 20:
-                        errors.append(f"第 {line_no} 行: {exc}")
+                    add_row_error(line_no, str(exc))
     except UnicodeDecodeError as exc:
         raise QuestionCsvValidationError("CSV 必须使用 UTF-8 编码") from exc
     except csv.Error as exc:
         raise QuestionCsvValidationError(f"CSV 格式错误: {exc}") from exc
 
-    if errors:
-        suffix = "" if len(errors) < 20 else "；仅显示前 20 个错误"
-        raise QuestionCsvValidationError("；".join(errors) + suffix)
+    if total_error_count:
+        raise QuestionCsvValidationError(
+            _format_grouped_row_errors(error_groups, total_error_count)
+        )
     if not rows:
         raise QuestionCsvValidationError("CSV 中没有可导入的数据行")
     return rows

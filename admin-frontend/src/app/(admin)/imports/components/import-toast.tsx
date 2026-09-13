@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type ImportToastTone = "success" | "error" | "info";
+export type ImportToastTone = "success" | "error" | "warning" | "info";
 
 export function ImportToast({
   message,
+  title,
   tone = "info",
   onDismiss,
   duration = 3000,
 }: {
   message: string | null;
+  title?: string | null;
   tone?: ImportToastTone;
   onDismiss: () => void;
   duration?: number;
@@ -42,6 +44,11 @@ export function ImportToast({
       shell: "border-red-200/90 bg-red-50/95 text-red-900",
       iconWrap: "border-red-200 bg-white/80 text-red-700",
     },
+    warning: {
+      icon: AlertTriangle,
+      shell: "border-amber-200/90 bg-amber-50/95 text-amber-950",
+      iconWrap: "border-amber-200 bg-white/80 text-amber-700",
+    },
     info: {
       icon: Info,
       shell: "border-[rgba(74,111,138,0.24)] bg-[rgba(239,246,249,0.96)] text-[var(--color-primary-dark)]",
@@ -55,14 +62,17 @@ export function ImportToast({
       role={tone === "error" ? "alert" : "status"}
       aria-live={tone === "error" ? "assertive" : "polite"}
       className={cn(
-        "fixed right-4 top-24 z-[80] flex w-[min(420px,calc(100vw-2rem))] items-start gap-3 rounded-2xl border px-3.5 py-3 text-sm shadow-[0_18px_48px_rgba(27,39,51,0.16)] backdrop-blur-xl animate-drop-in sm:right-6",
+        "fixed right-4 top-24 z-[80] flex w-[min(500px,calc(100vw-2rem))] items-start gap-3 rounded-2xl border px-3.5 py-3 text-[13px] shadow-[0_18px_48px_rgba(27,39,51,0.16)] backdrop-blur-xl animate-drop-in sm:right-6",
         settings.shell,
       )}
     >
       <span className={cn("mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl border", settings.iconWrap)} aria-hidden="true">
         <Icon className="h-4 w-4" strokeWidth={1.9} />
       </span>
-      <span className="min-w-0 flex-1 whitespace-pre-line break-words py-1 leading-5">{message}</span>
+      <div className="min-w-0 flex-1 py-0.5">
+        {title ? <p className="mb-1 font-semibold leading-5">{title}</p> : null}
+        <p className="max-h-[32vh] overflow-y-auto whitespace-pre-line break-words pr-1 leading-5 [scrollbar-width:thin]">{message}</p>
+      </div>
       <button
         type="button"
         onClick={onDismiss}

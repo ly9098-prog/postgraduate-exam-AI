@@ -141,6 +141,7 @@ Page({
   _profileSavedHintTimer: null,
   _profileDraftVersion: 0,
   _profileNicknameDraftRaw: '',
+  _examRoutePending: false,
 
   onLoad() {
     this._alive = true
@@ -151,6 +152,7 @@ Page({
   async onShow() {
     this._alive = true
     this._visible = true
+    this._examRoutePending = false
 
     // chooseAvatar 会打开微信原生选择界面，返回页面时会再次触发 onShow。
     // 资料弹层打开期间绝不做 setData / 用户同步，避免在原生开放能力完成回调前
@@ -1287,7 +1289,57 @@ Page({
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
-  goExams() { wx.navigateTo({ url: '/subpackages/exam/paper-list/index' }) },
+  goExams() {
+    if (this._examRoutePending) return
+    this._examRoutePending = true
+
+    let navigated = false
+    const navigate = () => {
+      if (navigated) return
+      if (!this._alive || !this._visible) {
+        this._examRoutePending = false
+        return
+      }
+      navigated = true
+      wx.navigateTo({
+        url: '/subpackages/exam/paper-list/index',
+        fail: (error) => {
+          this._examRoutePending = false
+          console.warn('[EXAM_ROUTE] navigateTo failed', error && (error.errMsg || error.message || error))
+        },
+        complete: () => {
+          // navigateTo success will hide Home. If routing fails while Home stays visible,
+          // release the guard after the framework has finished the current route turn.
+          setTimeout(() => {
+            if (this._alive && this._visible) this._examRoutePending = false
+          }, 300)
+        },
+      })
+    }
+
+    // Home may already be preloading the exam package via preloadRule. Calling
+    // loadSubpackage here safely joins/waits for that load, so page creation does
+    // not race the package injection. It also keeps rapid taps from creating two
+    // competing webviews, which can surface as routeDone/webviewId warnings.
+    if (typeof wx.loadSubpackage !== 'function') {
+      navigate()
+      return
+    }
+
+    try {
+      wx.loadSubpackage({
+        name: 'exam',
+        success: navigate,
+        fail: (error) => {
+          console.warn('[EXAM_ROUTE] subpackage preload failed; falling back to navigateTo', error && (error.errMsg || error.message || error))
+          navigate()
+        },
+      })
+    } catch (error) {
+      console.warn('[EXAM_ROUTE] loadSubpackage unavailable; falling back to navigateTo', error && (error.errMsg || error.message || error))
+      navigate()
+    }
+  },
   goStudyPlan() {
     if (this.data.showGoalPicker) this.setData({ showGoalPicker: false })
     wx.navigateTo({ url: '/subpackages/study/study-plan/index' })

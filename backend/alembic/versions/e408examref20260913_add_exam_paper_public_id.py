@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "e408examref20260913"
 down_revision = "d5f6a7b8c9d0"

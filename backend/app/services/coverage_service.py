@@ -188,7 +188,16 @@ async def _exam_year_report(
     year_from: int | None,
     year_to: int | None,
 ) -> list[dict]:
-    from app.services import admin_exam_service
+    """Build year integrity rows without the old per-paper N+1 detail calls.
+
+    A coverage page commonly spans 10-20 exam years. Calling
+    ``get_exam_paper_detail`` for every representative paper caused several
+    queries per year and dominated request latency. Here all representative
+    paper items are loaded in one batch and validated in memory with the same
+    publish rules used by the exam service.
+    """
+    from app.core.subject_scope import EXAM408_CORE_CODES, canonical_408_code
+    from app.features.question_type import QT_SINGLE_CHOICE
 
     papers = list(
         (
@@ -205,9 +214,7 @@ async def _exam_year_report(
         ).all()
     )
 
-    known_years = sorted(
-        {int(paper.year) for paper in papers if paper.year is not None}
-    )
+    known_years = sorted({int(paper.year) for paper in papers if paper.year is not None})
     if year_from is None and known_years:
         year_from = min(known_years)
     if year_to is None and known_years:
@@ -238,40 +245,59 @@ async def _exam_year_report(
     }
     representative_ids = [int(paper.id) for paper in representatives.values()]
 
-    missing_analysis: dict[int, int] = defaultdict(int)
-    missing_kp: dict[int, int] = defaultdict(int)
+    items_by_paper: dict[int, list[dict[str, Any]]] = defaultdict(list)
     if representative_ids:
-        analysis_rows = (
+        item_rows = (
             await db.execute(
                 select(
                     ExamPaperQuestion.paper_id,
-                    func.sum(
-                        case(
-                            (
-                                func.length(
-                                    func.trim(
-                                        func.coalesce(QuestionVersion.analysis, "")
-                                    )
-                                )
-                                == 0,
-                                1,
-                            ),
-                            else_=0,
-                        )
-                    ),
+                    ExamPaperQuestion.position,
+                    ExamPaperQuestion.question_id,
+                    ExamPaperQuestion.question_version_id,
+                    ExamPaperQuestion.score,
+                    Question.question_type,
+                    Question.review_status,
+                    Question.is_active,
+                    Question.current_version_id,
+                    QuestionVersion.question_type,
+                    QuestionVersion.options,
+                    QuestionVersion.is_active,
+                    QuestionVersion.analysis,
+                    Subject.code,
                 )
+                .join(Question, Question.id == ExamPaperQuestion.question_id)
                 .join(
                     QuestionVersion,
                     QuestionVersion.id == ExamPaperQuestion.question_version_id,
                 )
+                .join(Subject, Subject.id == ExamPaperQuestion.section_subject_id)
                 .where(ExamPaperQuestion.paper_id.in_(representative_ids))
-                .group_by(ExamPaperQuestion.paper_id)
+                .order_by(
+                    ExamPaperQuestion.paper_id.asc(),
+                    ExamPaperQuestion.position.asc(),
+                    ExamPaperQuestion.id.asc(),
+                )
             )
         ).all()
-        missing_analysis.update(
-            {int(paper_id): int(count or 0) for paper_id, count in analysis_rows}
-        )
+        for row in item_rows:
+            items_by_paper[int(row[0])].append(
+                {
+                    "position": int(row[1]),
+                    "question_id": int(row[2]),
+                    "question_version_id": int(row[3]),
+                    "score": float(row[4] or 0),
+                    "question_type": str(row[9] or row[5] or ""),
+                    "review_status": str(row[6] or ""),
+                    "is_active": bool(row[7] and row[11]),
+                    "current_version_id": int(row[8]) if row[8] is not None else None,
+                    "options": row[10],
+                    "analysis": row[12],
+                    "subject_code": str(row[13] or ""),
+                }
+            )
 
+    missing_kp: dict[int, int] = defaultdict(int)
+    if representative_ids:
         kp_exists = (
             select(QuestionVersionKnowledgePoint.id)
             .where(
@@ -291,9 +317,38 @@ async def _exam_year_report(
                 .group_by(ExamPaperQuestion.paper_id)
             )
         ).all()
-        missing_kp.update(
-            {int(paper_id): int(count or 0) for paper_id, count in kp_rows}
-        )
+        missing_kp.update({int(paper_id): int(count or 0) for paper_id, count in kp_rows})
+
+    def validate_items(paper: ExamPaper, items: list[dict[str, Any]]) -> list[str]:
+        errors: list[str] = []
+        if not items:
+            return ["试卷至少需要 1 道选择题"]
+        positions = [int(item["position"]) for item in items]
+        if positions != list(range(1, len(items) + 1)):
+            errors.append("题目 position 必须从 1 开始连续且唯一")
+        question_ids = [int(item["question_id"]) for item in items]
+        if len(question_ids) != len(set(question_ids)):
+            errors.append("试卷存在重复题目")
+        for item in items:
+            prefix = f"第 {item['position']} 题"
+            if item["question_type"] != QT_SINGLE_CHOICE:
+                errors.append(f"{prefix} 不是 single_choice，V1 仅允许单选题")
+            options = item["options"]
+            if not options or not isinstance(options, dict) or len(options) < 2:
+                errors.append(f"{prefix} 缺少有效选项")
+            if paper.status == "draft" and (
+                not item["is_active"] or item["review_status"] != "approved"
+            ):
+                errors.append(f"{prefix} 当前不是 approved + active 可发布题目")
+            if paper.status == "draft" and item["current_version_id"] != item["question_version_id"]:
+                errors.append(f"{prefix} 已产生新题目版本，请重新保存组卷后再发布")
+            if canonical_408_code(item["subject_code"]) not in EXAM408_CORE_CODES:
+                errors.append(f"{prefix} 不属于 canonical 408 四科")
+            if float(item["score"] or 0) <= 0:
+                errors.append(f"{prefix} 分值必须大于 0")
+        if paper.paper_type == "past_exam_choice" and paper.year is None:
+            errors.append("真题选择题卷必须填写年份")
+        return errors
 
     result: list[dict] = []
     for year in range(year_from, year_to + 1):
@@ -309,9 +364,13 @@ async def _exam_year_report(
             )
             continue
 
-        detail = await admin_exam_service.get_exam_paper_detail(db, int(paper.id))
-        errors = list(detail.get("validation_errors") or [])
-        analysis_missing = int(missing_analysis.get(int(paper.id), 0))
+        paper_items = items_by_paper.get(int(paper.id), [])
+        errors = validate_items(paper, paper_items)
+        analysis_missing = sum(
+            1
+            for item in paper_items
+            if not str(item.get("analysis") or "").strip()
+        )
         kp_missing = int(missing_kp.get(int(paper.id), 0))
         warnings: list[str] = []
         if analysis_missing:
@@ -320,24 +379,27 @@ async def _exam_year_report(
             warnings.append(f"{kp_missing} 道题的固定题目版本未关联知识点")
 
         if paper.status == "archived":
-            status = "archived"
+            coverage_status = "archived"
         elif paper.status == "draft":
-            status = "draft"
+            coverage_status = "draft"
         elif errors or not paper.is_active:
-            status = "invalid"
+            coverage_status = "invalid"
         else:
-            status = "complete"
+            coverage_status = "complete"
 
         result.append(
             {
                 "year": year,
-                "status": status,
+                "status": coverage_status,
                 "paper_id": int(paper.id),
+                "paper_ref": paper.public_id,
                 "paper_title": paper.title,
                 "paper_status": paper.status,
                 "paper_version": int(paper.version or 1),
-                "question_count": int(detail.get("question_count") or 0),
-                "total_choice_score": float(detail.get("total_choice_score") or 0),
+                "question_count": len(paper_items),
+                "total_choice_score": round(
+                    sum(float(item["score"] or 0) for item in paper_items), 2
+                ),
                 "missing_analysis_count": analysis_missing,
                 "missing_knowledge_point_count": kp_missing,
                 "validation_errors": errors,

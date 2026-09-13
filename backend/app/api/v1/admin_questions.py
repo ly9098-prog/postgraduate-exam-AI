@@ -72,12 +72,27 @@ def _raise_question_error(exc: ValueError) -> None:
 
 
 def _to_admin_item(question, kps=None) -> AdminQuestionListItem:
-    """Serialize a Question into AdminQuestionListItem, injecting knowledge_points
-    from the relation table (the ORM column no longer exists)."""
+    """Serialize a question list item with stable subject display fields.
+
+    ``subject_code`` / ``subject_name`` are relationship-backed values rather than
+    real Question columns.  Pydantic ``from_attributes`` cannot reliably infer
+    them from the ORM object, so populate them explicitly after validation.  This
+    keeps list/search responses consistent for consumers such as exam assembly.
+    """
     item = AdminQuestionListItem.model_validate(question)
+    update = {}
+    subject_ref = getattr(question, "subject_ref", None)
+    if subject_ref is not None:
+        update.update(
+            {
+                "subject_code": getattr(subject_ref, "code", None),
+                "subject_name": getattr(subject_ref, "name", None),
+                "subject_path": getattr(subject_ref, "path", None),
+            }
+        )
     if kps is not None:
-        item = item.model_copy(update={"knowledge_points": kps})
-    return item
+        update["knowledge_points"] = kps
+    return item.model_copy(update=update) if update else item
 
 
 def _image_url_from_legacy_entry(value) -> str:
@@ -273,6 +288,7 @@ async def list_questions(
     is_active: bool | None = Query(None),
     question_type: str | None = None,
     keyword: str | None = None,
+    subject_codes: str | None = Query(None, max_length=300),
     year: int | None = None,
     import_batch_id: str | None = None,
     difficulty: int | None = Query(None, ge=1, le=5),
@@ -280,6 +296,11 @@ async def list_questions(
     _=Depends(require_permissions("question:read")),
     db: AsyncSession = Depends(get_db),
 ):
+    normalized_subject_codes = [
+        code.strip()
+        for code in (subject_codes or "").split(",")
+        if code.strip()
+    ]
     questions, total = await list_admin_questions(
         db,
         page,
@@ -293,6 +314,7 @@ async def list_questions(
         import_batch_id,
         difficulty,
         knowledge_point_id,
+        normalized_subject_codes or None,
     )
     kp_map = await load_question_kps(db, [q.id for q in questions])
     return paginated_response(

@@ -1063,6 +1063,137 @@ function RelationDonut({ counts }: { counts: Record<string, number> }) {
   );
 }
 
+
+function SubjectOverview({
+  subjectName,
+  totalNodes,
+  topics,
+  onFocus,
+}: {
+  subjectName: string;
+  totalNodes: number;
+  topics: KnowledgeGraphResponse["overview_topics"];
+  onFocus: (id: number) => void;
+}) {
+  const center = { x: 500, y: 355 };
+  const positions = [
+    { x: 220, y: 165 },
+    { x: 500, y: 112 },
+    { x: 780, y: 165 },
+    { x: 845, y: 355 },
+    { x: 780, y: 545 },
+    { x: 500, y: 598 },
+    { x: 220, y: 545 },
+    { x: 155, y: 355 },
+  ];
+
+  function labelPlacement(position: { x: number; y: number }) {
+    if (position.x < 360) return { x: position.x - 42, y: position.y - 2, anchor: "end" as const, metaY: position.y + 15 };
+    if (position.x > 640) return { x: position.x + 42, y: position.y - 2, anchor: "start" as const, metaY: position.y + 15 };
+    if (position.y < center.y) return { x: position.x, y: position.y - 44, anchor: "middle" as const, metaY: position.y - 29 };
+    return { x: position.x, y: position.y + 50, anchor: "middle" as const, metaY: position.y + 65 };
+  }
+
+  return (
+    <svg
+      id="knowledge-graph-svg"
+      viewBox="0 0 1000 710"
+      className="h-full min-h-[620px] w-full select-none"
+      role="img"
+      aria-label={`${subjectName} 一级主题知识图谱`}
+    >
+      <defs>
+        <marker id="kg-overview-arrow" markerWidth="9" markerHeight="9" refX="8.2" refY="4.5" orient="auto" markerUnits="userSpaceOnUse" overflow="visible">
+          <path d="M0.7,0.6 L8.8,4.5 L0.7,8.4 z" fill={RELATIONS.parent.color} />
+        </marker>
+        <filter id="kg-overview-shadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2.4" floodColor="#27485d" floodOpacity="0.12" />
+        </filter>
+      </defs>
+
+      <g pointerEvents="none">
+        {topics.slice(0, 8).map((topic, index) => {
+          const position = positions[index] ?? positions[0];
+          const dx = position.x - center.x;
+          const dy = position.y - center.y;
+          const length = Math.max(1, Math.hypot(dx, dy));
+          const startRadius = 56;
+          const endRadius = 31;
+          const start = { x: center.x + (dx / length) * startRadius, y: center.y + (dy / length) * startRadius };
+          const end = { x: position.x - (dx / length) * endRadius, y: position.y - (dy / length) * endRadius };
+          return (
+            <path
+              key={`overview-edge-${topic.id}`}
+              d={`M ${start.x} ${start.y} L ${end.x} ${end.y}`}
+              fill="none"
+              stroke={RELATIONS.parent.color}
+              strokeWidth="1.35"
+              strokeOpacity="0.52"
+              strokeLinecap="round"
+              markerEnd="url(#kg-overview-arrow)"
+            />
+          );
+        })}
+      </g>
+
+      <g
+        transform={`translate(${center.x} ${center.y})`}
+        className="cursor-default"
+      >
+        <circle r="64" fill="#4a6f8a" fillOpacity="0.05" stroke="#4a6f8a" strokeOpacity="0.12" strokeWidth="1.6" />
+        <circle r="52" fill="#e7f1f7" stroke="#5b83a0" strokeWidth="1.7" filter="url(#kg-overview-shadow)" />
+        <circle r="6" cy="-16" fill="#5b83a0" />
+        <text textAnchor="middle" y="7" fontSize="14" fontWeight="700" fill="#1e2b38">{shortName(subjectName, 8)}</text>
+        <text textAnchor="middle" y="25" fontSize="8.5" fill="#8295a2">{totalNodes} 个知识点</text>
+      </g>
+
+      {topics.slice(0, 8).map((topic, index) => {
+        const position = positions[index] ?? positions[0];
+        const label = labelPlacement(position);
+        return (
+          <g
+            key={topic.id}
+            data-kg-node="true"
+            transform={`translate(${position.x} ${position.y})`}
+            className="cursor-pointer"
+            onClick={(event) => { event.stopPropagation(); onFocus(topic.id); }}
+          >
+            <title>{`${topic.name}\n${topic.direct_child_count} 个直接子节点${topic.question_count ? ` · ${topic.question_count} 道题` : ""}`}</title>
+            <circle r="31" fill="#ffffff" stroke={RELATIONS.parent.color} strokeWidth="1.45" />
+            <circle r="5" fill={RELATIONS.parent.color} fillOpacity="0.88" />
+            <text
+              x={label.x - position.x}
+              y={label.y - position.y}
+              textAnchor={label.anchor}
+              fontSize="10.5"
+              fontWeight="650"
+              fill="#1e2b38"
+              stroke="#ffffff"
+              strokeWidth="4.5"
+              paintOrder="stroke fill"
+              strokeLinejoin="round"
+            >
+              {shortName(topic.name, 11)}
+            </text>
+            <text
+              x={label.x - position.x}
+              y={label.metaY - position.y}
+              textAnchor={label.anchor}
+              fontSize="8"
+              fill="#8295a2"
+              stroke="#ffffff"
+              strokeWidth="3.2"
+              paintOrder="stroke fill"
+            >
+              {topic.direct_child_count} 个直接子节点{topic.question_count ? ` · ${topic.question_count} 题` : ""}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 export default function KnowledgeGraphPage() {
   const [subjectId, setSubjectId] = useState("");
   const [relationType, setRelationType] = useState("");
@@ -1088,8 +1219,10 @@ export default function KnowledgeGraphPage() {
 
   useEffect(() => {
     if (subjectId || !subjects.data?.length) return;
-    const best = [...subjects.data].sort((a, b) => b.edge_count - a.edge_count || b.knowledge_point_count - a.knowledge_point_count)[0];
-    setSubjectId(String(best.id));
+    const dataStructure = subjects.data.find((item) => item.code === "data_structure" || item.name.trim() === "数据结构");
+    const fallback = [...subjects.data].sort((a, b) => b.edge_count - a.edge_count || b.knowledge_point_count - a.knowledge_point_count)[0];
+    const selected = dataStructure ?? fallback;
+    if (selected) setSubjectId(String(selected.id));
   }, [subjectId, subjects.data]);
 
   useEffect(() => {
@@ -1301,6 +1434,14 @@ export default function KnowledgeGraphPage() {
 
   const summary = graph.data?.summary;
   const relationCounts = summary?.relation_counts ?? {};
+  const isDefaultOverview = Boolean(
+    graph.data
+    && !searchTerm
+    && centerId == null
+    && !relationType
+    && depth === "2"
+    && graph.data.overview_topics.length,
+  );
 
   return (
     <div className="mx-auto flex max-w-[1580px] flex-col gap-3.5 [overflow-anchor:none]">
@@ -1388,13 +1529,13 @@ export default function KnowledgeGraphPage() {
           />
 
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="secondary" onClick={() => setLayoutVariant((value) => value + 1)}>
+            <Button variant="secondary" onClick={() => setLayoutVariant((value) => value + 1)} disabled={isDefaultOverview}>
               <LayoutGrid className="h-4 w-4" />布局
             </Button>
             <Button variant="secondary" onClick={resetView} title="重置搜索、关系、深度与当前中心节点">
               <RefreshCw className="h-4 w-4" />重置筛选
             </Button>
-            <Button variant="primary" onClick={exportGraph} disabled={!graph.data?.nodes.length}>
+            <Button variant="primary" onClick={exportGraph} disabled={!graph.data?.nodes.length || isDefaultOverview}>
               <Download className="h-4 w-4" />导出图谱
             </Button>
           </div>
@@ -1402,7 +1543,10 @@ export default function KnowledgeGraphPage() {
 
       </section>
 
-      <div className="grid min-h-[680px] grid-cols-1 items-start gap-4 [overflow-anchor:none] xl:grid-cols-[minmax(0,1fr)_350px]">
+      <div className={cn(
+        "grid min-h-[680px] grid-cols-1 items-start gap-4 [overflow-anchor:none]",
+        !isDefaultOverview && "xl:grid-cols-[minmax(0,1fr)_350px]",
+      )}>
         <section
           ref={graphPanelRef}
           className={cn(
@@ -1421,23 +1565,25 @@ export default function KnowledgeGraphPage() {
             }}
           />
 
-          <div className="absolute left-4 top-4 z-10 w-[148px] rounded-xl border border-[var(--color-border-light)] bg-white/94 p-3 shadow-[0_6px_18px_rgba(27,39,51,0.06)] backdrop-blur-md">
-            <div className="mb-2 text-[11px] font-semibold text-[var(--ink)]">关系类型</div>
-            <div className="mb-2 flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
-              <span className="grid h-5 w-5 place-items-center rounded-full border border-[var(--color-primary)] bg-[var(--color-primary-light)]"><Network className="h-3 w-3" /></span>
-              知识点节点
+          {!isDefaultOverview ? (
+            <div className="absolute left-4 top-4 z-10 w-[148px] rounded-xl border border-[var(--color-border-light)] bg-white/94 p-3 shadow-[0_6px_18px_rgba(27,39,51,0.06)] backdrop-blur-md">
+              <div className="mb-2 text-[11px] font-semibold text-[var(--ink)]">关系类型</div>
+              <div className="mb-2 flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
+                <span className="grid h-5 w-5 place-items-center rounded-full border border-[var(--color-primary)] bg-[var(--color-primary-light)]"><Network className="h-3 w-3" /></span>
+                知识点节点
+              </div>
+              <div className="space-y-1.5 border-t border-[var(--color-border-light)] pt-2">
+                {(Object.keys(RELATIONS) as RelationKey[]).map((key) => (
+                  <div key={key} className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
+                    <span className="h-[2px] w-6 rounded-full" style={{ background: RELATIONS[key].color }} />
+                    {RELATIONS[key].label}
+                    <ArrowRight className="ml-auto h-3 w-3" style={{ color: RELATIONS[key].color }} />
+                  </div>
+                ))}
+                <div className="pt-1 text-[9px] leading-4 text-[var(--color-text-hint)]">虚线表示 inferred 自动推断边</div>
+              </div>
             </div>
-            <div className="space-y-1.5 border-t border-[var(--color-border-light)] pt-2">
-              {(Object.keys(RELATIONS) as RelationKey[]).map((key) => (
-                <div key={key} className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
-                  <span className="h-[2px] w-6 rounded-full" style={{ background: RELATIONS[key].color }} />
-                  {RELATIONS[key].label}
-                  <ArrowRight className="ml-auto h-3 w-3" style={{ color: RELATIONS[key].color }} />
-                </div>
-              ))}
-              <div className="pt-1 text-[9px] leading-4 text-[var(--color-text-hint)]">虚线表示 inferred 自动推断边</div>
-            </div>
-          </div>
+          ) : null}
 
           <div className="absolute right-4 top-4 z-10 flex gap-2">
             {graph.isFetching && (
@@ -1456,11 +1602,13 @@ export default function KnowledgeGraphPage() {
             </button>
           </div>
 
-          <div className="absolute bottom-5 right-5 z-10 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/95 shadow-[0_6px_18px_rgba(27,39,51,0.06)]">
-            <button type="button" onClick={() => setZoom((value) => clamp(value + 0.12, 0.68, 1.5))} className="grid h-9 w-10 place-items-center text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)] disabled:cursor-default disabled:opacity-35" disabled={zoom >= 1.5} title="放大" aria-label="放大图谱"><Plus className="h-4 w-4" /></button>
-            <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="grid h-9 w-10 place-items-center border-y border-[var(--color-border-light)] text-[10px] font-semibold tabular-nums text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)]" title="重置缩放与位置" aria-label="重置缩放与位置">{Math.round(zoom * 100)}%</button>
-            <button type="button" onClick={() => setZoom((value) => clamp(value - 0.12, 0.68, 1.5))} className="grid h-9 w-10 place-items-center text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)] disabled:cursor-default disabled:opacity-35" disabled={zoom <= 0.68} title="缩小" aria-label="缩小图谱"><Minus className="h-4 w-4" /></button>
-          </div>
+          {!isDefaultOverview ? (
+            <div className="absolute bottom-5 right-5 z-10 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/95 shadow-[0_6px_18px_rgba(27,39,51,0.06)]">
+              <button type="button" onClick={() => setZoom((value) => clamp(value + 0.12, 0.68, 1.5))} className="grid h-9 w-10 place-items-center text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)] disabled:cursor-default disabled:opacity-35" disabled={zoom >= 1.5} title="放大" aria-label="放大图谱"><Plus className="h-4 w-4" /></button>
+              <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="grid h-9 w-10 place-items-center border-y border-[var(--color-border-light)] text-[10px] font-semibold tabular-nums text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)]" title="重置缩放与位置" aria-label="重置缩放与位置">{Math.round(zoom * 100)}%</button>
+              <button type="button" onClick={() => setZoom((value) => clamp(value - 0.12, 0.68, 1.5))} className="grid h-9 w-10 place-items-center text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)] disabled:cursor-default disabled:opacity-35" disabled={zoom <= 0.68} title="缩小" aria-label="缩小图谱"><Minus className="h-4 w-4" /></button>
+            </div>
+          ) : null}
 
           <div className="relative h-full min-h-0">
             {graph.isLoading ? (
@@ -1477,6 +1625,18 @@ export default function KnowledgeGraphPage() {
                   <p className="mt-1 text-sm text-[var(--color-text-hint)]">请确认后端已部署管理端 /knowledge/graph 接口并检查当前账号权限。</p>
                 </div>
               </div>
+            ) : graph.data && isDefaultOverview ? (
+              <SubjectOverview
+                subjectName={graph.data.subject.name}
+                totalNodes={graph.data.summary.total_nodes}
+                topics={graph.data.overview_topics}
+                onFocus={(id) => preserveScroll(() => {
+                  setCenterId(id);
+                  setSelectedId(id);
+                  setZoom(1);
+                  setPan({ x: 0, y: 0 });
+                })}
+              />
             ) : graph.data && graph.data.nodes.length > 0 ? (
               <GraphCanvas
                 data={graph.data}
@@ -1503,7 +1663,7 @@ export default function KnowledgeGraphPage() {
             )}
           </div>
 
-          {summary && (
+          {summary && !isDefaultOverview && (
             <div className="absolute bottom-5 left-5 z-10 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-text-hint)]">
               <span className="rounded-lg border border-[var(--color-border-light)] bg-white/92 px-2 py-1.5 shadow-[0_2px_8px_rgba(27,39,51,0.035)]">{summary.visible_nodes} 节点 · {summary.visible_edges} 边</span>
               <span className="rounded-lg border border-[var(--color-border-light)] bg-white/92 px-2 py-1.5 shadow-[0_2px_8px_rgba(27,39,51,0.035)]">单击查看 · 双击聚焦 · Ctrl/⌘ + 滚轮缩放</span>
@@ -1512,6 +1672,7 @@ export default function KnowledgeGraphPage() {
           )}
         </section>
 
+        {!isDefaultOverview ? (
         <aside className="surface-card min-h-[680px] rounded-2xl p-[18px] [overflow-anchor:none] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden xl:h-[680px] xl:overflow-y-auto">
           {selectedNode ? (
             <div className="space-y-[18px]">
@@ -1641,6 +1802,7 @@ export default function KnowledgeGraphPage() {
             </div>
           )}
         </aside>
+        ) : null}
       </div>
     </div>
   );

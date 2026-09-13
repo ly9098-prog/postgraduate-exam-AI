@@ -1,5 +1,5 @@
 const api = require('../../../utils/api')
-const stemRender = require('../../study/utils/stem-render')
+const stemRender = require('../utils/stem-render')
 const errorDiagnosis = require('../utils/error-diagnosis')
 const aiTeacher408 = require('../utils/ai-teacher-408')
 

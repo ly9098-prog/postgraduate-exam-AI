@@ -72,6 +72,7 @@ class ExamYearCoverageItem(BaseModel):
     year: int
     status: ExamYearCoverageStatus
     paper_id: int | None = None
+    paper_ref: str | None = None
     paper_title: str | None = None
     paper_status: str | None = None
     paper_version: int | None = None

@@ -1,7 +1,9 @@
 {
   "navigationStyle": "custom",
   "navigationBarTitleText": "选择题套卷",
-  "backgroundColor": "#F3F4F1",
+  "backgroundColor": "#F6FAF7",
+  "backgroundColorTop": "#F9FCFA",
+  "backgroundColorBottom": "#F3F7F4",
   "usingComponents": {
     "premium-nav": "/components/premium-nav/premium-nav",
     "app-dialog": "/components/app-dialog/index"

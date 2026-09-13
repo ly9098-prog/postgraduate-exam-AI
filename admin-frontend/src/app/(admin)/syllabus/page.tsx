@@ -284,7 +284,7 @@ export default function SyllabusPage() {
   const error = createMutation.isError || membershipMutation.isError || activateMutation.isError || archiveMutation.isError || mappingMutation.isError || deleteMappingMutation.isError;
 
   return (
-    <ManagementPage>
+    <ManagementPage className="space-y-6">
       <ManagementPageHeader
         icon={<BookOpen className="h-5 w-5" />}
         title="考纲版本"
@@ -310,23 +310,32 @@ export default function SyllabusPage() {
         <MetricCard icon={<GitMerge className="h-4 w-4" />} label="跨版本映射" value={mappingsQuery.data?.length ?? 0} hint="包含自动映射与手工补充关系" tone="accent" />
       </MetricStrip>
 
-      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start">
+      <div className="grid gap-5 xl:grid-cols-[328px_minmax(0,1fr)] xl:items-start">
         <div className="space-y-5 xl:sticky xl:top-5">
-          <ManagementPanel variant="quiet" title="版本列表" description={`${versionsQuery.data?.length ?? 0} 个版本`} contentClassName="p-2">
-            <div className="space-y-1">
+          <ManagementPanel variant="quiet" title="版本索引" description={`${versionsQuery.data?.length ?? 0} 个版本 · 选择后在右侧编辑范围`} contentClassName="p-2.5">
+            <div className="space-y-1.5">
               {(versionsQuery.data ?? []).map((item) => {
                 const selected = selectedVersionId === item.id;
                 return (
                   <button
                     key={item.id}
                     onClick={() => setSelectedVersionId(item.id)}
-                    className={`relative w-full rounded-[11px] border px-3.5 py-3 text-left transition-[background-color,border-color,transform,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] active:scale-[0.99] motion-reduce:transition-none ${selected ? "border-[rgba(74,111,138,0.30)] bg-[var(--mgmt-steel)] shadow-[0_7px_18px_rgba(45,80,104,0.06)] before:absolute before:inset-y-2.5 before:left-0 before:w-[2px] before:rounded-r-full before:bg-[var(--color-primary)]" : "border-transparent hover:border-[var(--mgmt-line)] hover:bg-white"}`}
+                    className={`group relative flex w-full items-center gap-3 rounded-[13px] border px-3 py-2.5 text-left transition-[background-color,border-color,transform,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] active:scale-[0.99] motion-reduce:transition-none ${selected ? "border-[rgba(74,111,138,0.32)] bg-[var(--mgmt-steel)] shadow-[0_8px_20px_rgba(45,80,104,0.07)]" : "border-transparent hover:border-[var(--mgmt-line)] hover:bg-white"}`}
+                    aria-pressed={selected}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 truncate text-sm font-semibold text-[var(--ink)]">{item.name}</span>
-                      <StatusBadge tone={statusTone(item.status)}>{STATUS_LABEL[item.status]}</StatusBadge>
-                    </div>
-                    <p className="mt-1.5 truncate text-[11px] text-[var(--color-text-tertiary)]">{item.code} · {item.effective_year} · {item.knowledge_point_count} KP</p>
+                    <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-[11px] border text-[13px] font-bold tabular-nums transition-colors ${selected ? "border-[rgba(74,111,138,0.26)] bg-white text-[var(--color-primary-dark)]" : "border-[var(--mgmt-line)] bg-[rgba(237,243,246,0.52)] text-[var(--color-text-secondary)] group-hover:bg-[var(--mgmt-steel)]"}`}>{item.effective_year}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-semibold text-[var(--ink)]">{item.name}</span>
+                        <StatusBadge tone={statusTone(item.status)}>{STATUS_LABEL[item.status]}</StatusBadge>
+                      </span>
+                      <span className="mt-1.5 flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]">
+                        <span className="min-w-0 truncate">{item.code}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="shrink-0 tabular-nums">{item.knowledge_point_count} KP</span>
+                      </span>
+                    </span>
+                    {selected ? <span aria-hidden="true" className="absolute inset-y-3 left-0 w-[2px] rounded-r-full bg-[var(--color-primary)]" /> : null}
                   </button>
                 );
               })}
@@ -420,11 +429,11 @@ export default function SyllabusPage() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="flex flex-col gap-2 border-t border-[var(--mgmt-line)]/70 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-2 border-t border-[var(--mgmt-line)]/70 bg-[rgba(255,254,250,0.84)] px-5 py-3 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
                     <label className="relative block w-full sm:max-w-sm">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
                       <Input
-                        className="h-9 bg-white pl-9 pr-9"
+                        className="h-10 bg-white pl-9 pr-9 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)]"
                         value={catalogKeyword}
                         onChange={(event) => setCatalogKeyword(event.target.value)}
                         placeholder="搜索知识点或科目"
@@ -453,7 +462,7 @@ export default function SyllabusPage() {
                   </div>
                 </div>
 
-                <div className="space-y-3 p-5">
+                <div className="space-y-3 p-4 sm:p-5">
                   {groupedCatalog.map(([subjectKey, items]) => {
                     const subjectName = items[0]?.subject_name ?? "未分类科目";
                     const subjectCode = items[0]?.subject_code ?? "unknown";
@@ -461,12 +470,12 @@ export default function SyllabusPage() {
                     const selectedCount = items.filter((item) => selectedKnowledgePointIds.has(item.knowledge_point_id)).length;
                     const collapsed = collapsedSubjects.has(subjectKey);
                     return (
-                      <section key={subjectKey} className="overflow-hidden rounded-[16px] border border-[var(--mgmt-line)] bg-white shadow-[0_6px_20px_rgba(31,49,61,0.025)] transition-[border-color,box-shadow] duration-200 hover:border-[rgba(74,111,138,0.25)] hover:shadow-[0_10px_26px_rgba(31,49,61,0.04)] motion-reduce:transition-none">
+                      <section key={subjectKey} className="overflow-hidden rounded-[15px] border border-[var(--mgmt-line)] bg-white shadow-[0_6px_18px_rgba(31,49,61,0.02)] transition-[border-color,box-shadow] duration-200 hover:border-[rgba(74,111,138,0.27)] hover:shadow-[0_10px_24px_rgba(31,49,61,0.035)] motion-reduce:transition-none">
                         <button
                           type="button"
                           onClick={() => toggleSubjectGroup(subjectKey)}
                           aria-expanded={!collapsed}
-                          className="group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-[rgba(237,243,246,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)] motion-reduce:transition-none"
+                          className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-[rgba(237,243,246,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)] motion-reduce:transition-none"
                         >
                           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[rgba(74,111,138,0.16)] bg-[var(--mgmt-steel)] text-[var(--color-primary-dark)]">
                             <Layers3 className="h-4 w-4" />

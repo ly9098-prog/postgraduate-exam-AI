@@ -1,0 +1,377 @@
+<view class="quiz-runner runner-theme-{{theme}} runner-mode-{{mode}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}} {{!showNavigation ? 'runner-no-navigation' : ''}} {{_hasBlankOptionGroups ? 'runner-multi-blank' : ''}}">
+<view class="runner-hero {{heroCollapsed ? 'runner-hero-collapsed' : ''}}" wx:if="{{!compactReviewMode}}">
+<view class="runner-hero-glow"></view>
+<view class="runner-hero-grid"></view>
+<view class="runner-hero-nav">
+<view class="runner-hero-left">
+<view
+          class="runner-back-btn"
+          wx:if="{{showBackButton}}"
+          hover-class="runner-control-pressed"
+          hover-start-time="20"
+          hover-stay-time="80"
+          bindtap="requestExit"
+        >
+<text class="runner-back-symbol">‹</text>
+</view>
+<text class="runner-eyebrow">{{mode === 'exam' ? 'EXAM' : (mode === 'review' ? 'REVIEW' : 'PRACTICE')}} {{currentIndex + 1 < 10 ? '0' : ''}}{{currentIndex + 1}}</text>
+<view class="runner-collapsed-copy">
+<text class="runner-collapsed-subject">{{subjectName || title || '练习'}}</text>
+<text class="runner-collapsed-meta">{{currentIndex + 1}} / {{totalCount || 0}} · {{elapsedText}}</text>
+</view>
+<view
+          class="runner-expand-btn"
+          wx:if="{{heroCollapsed && heroCollapseEnabled}}"
+          hover-class="runner-control-pressed"
+          hover-start-time="20"
+          hover-stay-time="80"
+          catchtap="expandHero"
+          aria-role="button"
+          aria-label="展开顶部信息"
+        >
+<text class="runner-expand-icon line-icon icon-chevron-down"></text>
+</view>
+</view>
+<view
+        class="runner-sheet-trigger"
+        hover-class="runner-control-pressed"
+        hover-start-time="20"
+        hover-stay-time="80"
+        bindtap="toggleSheet"
+      >
+<text class="runner-sheet-trigger-icon line-icon icon-list"></text>
+<text class="runner-sheet-trigger-text">{{currentIndex + 1}} / {{totalCount || 0}}</text>
+</view>
+</view>
+<view class="runner-hero-meta">
+<text class="runner-subject">{{subjectName || title || '练习'}}</text>
+<view class="runner-hero-meta-actions">
+<view wx:if="{{showMarkButton}}" class="runner-mark-btn {{markedForReview ? 'runner-marked' : ''}}" bindtap="toggleMark" hover-class="runner-control-pressed">
+<text>{{markedForReview ? '已标记' : '待检查'}}</text>
+</view>
+<text class="runner-timer">{{elapsedText}}</text>
+</view>
+</view>
+<view class="runner-number-row">
+<view class="runner-number-wrap">
+<text class="runner-number-current">{{currentIndex + 1 < 10 ? '0' : ''}}{{currentIndex + 1}}</text>
+<text class="runner-number-divider">/</text>
+<text class="runner-number-total">{{totalCount || 0}}</text>
+</view>
+</view>
+<view class="runner-segment-progress" wx:if="{{questions && questions.length > 0}}">
+<view
+        wx:for="{{questions}}"
+        wx:key="index"
+        class="runner-segment {{index < currentIndex ? 'past' : ''}} {{index === currentIndex ? 'current' : ''}} {{item._answered ? 'answered' : ''}} {{item._marked ? 'marked' : ''}} {{item._isCorrect || item._correct ? 'correct' : ''}} {{item._isWrong || item._wrong ? 'wrong' : ''}}"
+      ></view>
+</view>
+</view>
+<scroll-view
+    class="runner-question-area"
+    scroll-y="{{!flowLayout && !compactReviewMode}}"
+    scroll-into-view="{{questionScrollIntoView}}"
+    scroll-with-animation="{{false}}"
+    scroll-anchoring="{{false}}"
+    bounces="{{false}}"
+    enhanced
+    show-scrollbar="{{false}}"
+    bindscroll="onQuestionScroll"
+    bindtouchstart="onTouchStart"
+    bindtouchend="onTouchEnd"
+    bindtouchcancel="onTouchCancel"
+  >
+<view id="runner-scroll-top-anchor" class="runner-scroll-top-anchor"></view>
+<view class="runner-state-card" wx:if="{{loading}}">
+<view class="runner-loading-ring"></view>
+<text class="runner-state-text">加载中...</text>
+</view>
+<view class="runner-state-card" wx:elif="{{errorText}}">
+<text class="runner-state-icon">⚠</text>
+<text class="runner-state-text">{{errorText}}</text>
+<button class="runner-state-btn" bindtap="onRetry">重试</button>
+</view>
+<view class="runner-state-card" wx:elif="{{!currentQuestion}}">
+<text class="runner-state-text">{{emptyText || '暂无题目'}}</text>
+</view>
+<view class="runner-q-wrap {{animClass}}" wx:elif="{{_renderUnknownMode}}">
+<view class="runner-q-card-head">
+<view class="runner-q-labels">
+<text class="runner-q-badge">{{_qTypeLabel}}</text>
+</view>
+<text class="runner-compact-counter" wx:if="{{compactReviewMode && mode !== 'wrong-detail'}}">{{currentIndex + 1}} / {{totalCount || 0}}</text>
+</view>
+<view class="runner-fallback-text">{{_renderFallbackText}}</view>
+</view>
+<view
+      class="runner-q-wrap {{animClass}}"
+      wx:else
+      bindtouchstart="onTouchStart"
+      bindtouchend="onTouchEnd"
+      bindtouchcancel="onTouchCancel"
+    >
+<view class="runner-q-card-head">
+<view class="runner-q-labels">
+<text class="runner-q-badge">{{_qTypeLabel}}</text>
+<text class="runner-q-badge runner-q-badge-smart" wx:if="{{currentQuestion.recommend_reason}}">智能推荐</text>
+</view>
+<text class="runner-compact-counter" wx:if="{{compactReviewMode && mode !== 'wrong-detail'}}">{{currentIndex + 1}} / {{totalCount || 0}}</text>
+<view
+          class="runner-master-btn"
+          wx:if="{{showMasterButton && !readonly}}"
+          hover-class="runner-master-btn-pressed"
+          hover-start-time="20"
+          hover-stay-time="80"
+          catchtap="onMaster"
+        >
+<text class="runner-master-icon line-icon icon-check"></text>
+<text class="runner-master-text">已掌握</text>
+</view>
+</view>
+<view class="runner-recommend-bar" wx:if="{{currentQuestion.recommend_reason}}">
+<view class="runner-recommend-icon-wrap">
+<image class="runner-recommend-icon" src="/assets/icons/practice/recommend-reason-bulb.png" mode="aspectFit"></image>
+</view>
+<view class="runner-recommend-divider"></view>
+<view class="runner-recommend-copy">
+<text class="runner-recommend-label">推荐原因</text>
+<view class="runner-recommend-copy-divider"></view>
+<text class="runner-recommend-text">{{currentQuestion.recommend_reason}}</text>
+</view>
+</view>
+<block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}" wx:key="segments">
+<math-question segments="{{currentQuestion._renderModel.segments}}" />
+</block>
+<rich-text
+        wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}"
+        wx:key="rich-text"
+        class="runner-q-content"
+        nodes="{{currentQuestion._renderModel.richTextNodes}}"
+      ></rich-text>
+<scroll-view
+        wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}"
+        wx:key="code"
+        scroll-x
+        enhanced
+        show-scrollbar="{{false}}"
+        class="runner-code-wrapper"
+        data-swipe-block="1"
+      >
+<view class="runner-code-lines" data-swipe-block="1">
+<view class="runner-code-line" wx:for="{{_codeLines}}" wx:key="no" data-swipe-block="1">
+<text class="runner-code-no" data-swipe-block="1">{{item.no}}</text>
+<text decode="false" space="preserve" class="runner-code-text" data-swipe-block="1">{{item.text}}</text>
+</view>
+</view>
+</scroll-view>
+<mp-html
+        wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}"
+        wx:key="latex"
+        class="runner-q-content"
+        content="{{currentQuestion._renderModel.html}}"
+        lazy-load
+        set-title="{{false}}"
+        copy-link="{{false}}"
+      ></mp-html>
+<block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}" wx:key="mixed">
+<block wx:for="{{_mixedBlocks}}" wx:key="index">
+<rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="runner-mixed-text-block" nodes="{{item.richTextNodes}}" />
+<mp-html wx:elif="{{item.type === 'LATEX'}}" class="runner-mixed-latex-block" content="{{item.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}" />
+<scroll-view
+            wx:elif="{{item.type === 'CODE'}}"
+            scroll-x
+            enhanced
+            show-scrollbar="{{false}}"
+            class="runner-code-wrapper runner-mixed-code-block"
+            data-swipe-block="1"
+          >
+<view class="runner-code-lines" data-swipe-block="1">
+<view class="runner-code-line" wx:for="{{item._codeLines}}" wx:key="no" data-swipe-block="1">
+<text class="runner-code-no" data-swipe-block="1">{{item.no}}</text>
+<text decode="false" space="preserve" class="runner-code-text" data-swipe-block="1">{{item.text}}</text>
+</view>
+</view>
+</scroll-view>
+</block>
+</block>
+<view class="runner-question-images" wx:if="{{_questionImages && _questionImages.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<image
+          fade-in="{{false}}"
+          webp="{{true}}"
+          wx:for="{{_questionImages}}"
+          wx:key="*this"
+          class="runner-question-image"
+          src="{{item}}"
+          mode="widthFix"
+          data-src="{{item}}"
+          bindtap="previewQuestionImage"
+          show-menu-by-longpress="{{false}}"
+          data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
+        />
+</view>
+<view class="runner-blank-options" wx:if="{{_hasBlankOptionGroups}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<view class="runner-blank-group" wx:for="{{_blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<view class="runner-blank-group-head" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<text class="runner-blank-group-title" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{group.id}}</text>
+<text class="runner-blank-group-hint" wx:if="{{!readonly}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">请选择该空答案</text>
+</view>
+<view class="runner-blank-group-options" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<view
+              wx:for="{{group.options}}"
+              wx:for-item="opt"
+              wx:key="key"
+              class="runner-option-item runner-blank-option-item {{opt._selected ? 'runner-selected' : ''}} {{readonly && opt._isBoth ? 'runner-both' : ''}} {{readonly && opt._isCorrect && !opt._isBoth ? 'runner-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isBoth ? 'runner-user-answer' : ''}}"
+              catchtap="{{readonly ? 'noop' : 'selectBlankOption'}}"
+              data-blank-id="{{group.id}}"
+              data-option="{{opt.key}}"
+              data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
+            >
+<view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}} {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+<text wx:elif="{{readonly && opt._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+<text wx:elif="{{readonly && opt._isUserAnswer && !opt._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+</view>
+<view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt.key}}.</text>
+<block wx:if="{{opt._segments && opt._segments.length > 0}}">
+<image
+                    fade-in="{{false}}"
+                    webp="{{true}}"
+                    wx:for="{{opt._segments}}"
+                    wx:for-item="seg"
+                    wx:key="index"
+                    wx:if="{{seg.url}}"
+                    class="runner-option-image"
+                    src="{{seg.url}}"
+                    mode="widthFix"
+                    data-src="{{seg.url}}"
+                    bindtap="previewOptionImage"
+                    data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
+                  />
+<text wx:if="{{opt._text}}" class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt._text}}</text>
+</block>
+<mp-html wx:elif="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+<text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt._text}}</text>
+</view>
+</view>
+</view>
+</view>
+</view>
+<view class="runner-options" wx:elif="{{_optionList && _optionList.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<view
+          wx:for="{{_optionList}}"
+          wx:key="key"
+          class="runner-option-item {{item._selected ? 'runner-selected' : ''}} {{readonly && item._isBoth ? 'runner-both' : ''}} {{readonly && item._isCorrect && !item._isBoth ? 'runner-correct' : ''}} {{readonly && item._isUserAnswer && !item._isBoth ? 'runner-user-answer' : ''}}"
+          hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
+          catchtap="{{readonly ? 'noop' : 'selectOption'}}"
+          data-option="{{item.key}}"
+          data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
+        >
+<view class="runner-option-indicator {{item._selected ? 'runner-checked' : ''}} {{readonly && item._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && item._isUserAnswer && !item._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<text wx:if="{{item._selected && !readonly && currentQuestion.question_type === 'multiple_choice'}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+<text wx:elif="{{item._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+<text wx:elif="{{readonly && item._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+<text wx:elif="{{readonly && item._isUserAnswer && !item._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+</view>
+<view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+<text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item.key}}.</text>
+<block wx:if="{{item._segments && item._segments.length > 0}}">
+<image
+                fade-in="{{false}}"
+                webp="{{true}}"
+                wx:for="{{item._segments}}"
+                wx:for-item="seg"
+                wx:key="index"
+                wx:if="{{seg.url}}"
+                class="runner-option-image"
+                src="{{seg.url}}"
+                mode="widthFix"
+                data-src="{{seg.url}}"
+                bindtap="previewOptionImage"
+                data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
+              />
+<text wx:if="{{item._text}}" class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
+</block>
+<mp-html wx:elif="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+<text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
+</view>
+</view>
+</view>
+</view>
+</scroll-view>
+<view class="runner-bottom-bar" wx:if="{{showNavigation}}">
+<view class="runner-bottom-inner">
+<view
+        class="runner-nav-btn runner-prev {{currentIndex <= 0 || prevDisabled ? 'runner-disabled' : ''}}"
+        hover-class="{{currentIndex <= 0 || prevDisabled ? 'none' : 'runner-nav-pressed'}}"
+        hover-start-time="20"
+        hover-stay-time="80"
+        bindtap="goPrev"
+      >
+<text class="runner-nav-arrow line-icon icon-chevron-left"></text>
+<text class="runner-nav-label">上一题</text>
+</view>
+<view
+        class="runner-nav-btn runner-final-submit {{submitting || submitDisabled ? 'runner-disabled' : ''}}"
+        wx:if="{{showSubmitButton && currentIndex >= totalCount - 1}}"
+        hover-class="{{submitting || submitDisabled ? 'none' : 'runner-final-submit-pressed'}}"
+        hover-start-time="20"
+        hover-stay-time="80"
+        bindtap="onSubmit"
+      >
+<text class="runner-final-submit-label">{{submitText}}</text>
+<view class="runner-final-submit-arrow"><text class="runner-final-submit-arrow-text">›</text></view>
+</view>
+<view
+        class="runner-nav-btn runner-next {{currentIndex >= totalCount - 1 || nextDisabled ? 'runner-disabled' : ''}}"
+        wx:else
+        hover-class="{{currentIndex >= totalCount - 1 || nextDisabled ? 'none' : 'runner-nav-pressed'}}"
+        hover-start-time="20"
+        hover-stay-time="80"
+        bindtap="goNext"
+      >
+<text class="runner-nav-label">下一题</text>
+<text class="runner-nav-arrow line-icon icon-chevron-right"></text>
+</view>
+</view>
+</view>
+<view class="runner-sheet-overlay" wx:if="{{showSheet && !compactReviewMode}}" bindtap="closeSheet" catchtouchmove="noop">
+<view class="runner-sheet-modal" catchtap="noop">
+<view class="runner-sheet-handle"></view>
+<view class="runner-sheet-head">
+<view>
+<text class="runner-sheet-title">答题进度</text>
+<text class="runner-sheet-subtitle">已完成 {{answeredCount || 0}} / {{totalCount || 0}}</text>
+</view>
+<view class="runner-sheet-close" hover-class="runner-sheet-close-pressed" bindtap="closeSheet">×</view>
+</view>
+<view class="runner-sheet-legend">
+<view class="runner-legend-item"><view class="runner-legend-dot current"></view><text>当前题</text></view>
+<view class="runner-legend-item"><view class="runner-legend-dot answered"></view><text>已作答</text></view>
+<view class="runner-legend-item" wx:if="{{mode === 'exam'}}"><view class="runner-legend-dot marked"></view><text>待检查</text></view>
+<view class="runner-legend-item" wx:if="{{readonly}}"><view class="runner-legend-dot correct"></view><text>正确</text></view>
+<view class="runner-legend-item" wx:if="{{readonly}}"><view class="runner-legend-dot wrong"></view><text>错误</text></view>
+<view class="runner-legend-item"><view class="runner-legend-dot empty"></view><text>未作答</text></view>
+</view>
+<view class="runner-sheet-grid">
+<view
+          wx:for="{{questions}}"
+          wx:key="index"
+          class="runner-sheet-cell {{item._answered ? 'runner-done' : ''}} {{item._marked ? 'runner-marked-cell' : ''}} {{item._isCorrect || item._correct ? 'runner-correct-cell' : ''}} {{item._isWrong || item._wrong ? 'runner-wrong-cell' : ''}} {{index === currentIndex ? 'runner-current' : ''}}"
+          hover-class="runner-sheet-cell-pressed"
+          hover-start-time="20"
+          hover-stay-time="80"
+          data-index="{{index}}"
+          bindtap="goQuestion"
+        >{{index + 1}}</view>
+</view>
+<button
+        class="runner-btn-submit runner-sheet-submit {{submitting || submitDisabled ? 'runner-btn-submit-disabled' : ''}}"
+        wx:if="{{showSubmitButton}}"
+        hover-class="runner-btn-submit-pressed"
+        bindtap="onSubmit"
+        disabled="{{submitting || submitDisabled}}"
+      >{{submitText}}</button>
+</view>
+</view>
+</view>

@@ -1171,6 +1171,12 @@ export type KnowledgeGraphResponse = {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
   hot_nodes: Array<{ id: number; name: string; degree: number }>;
+  overview_topics: Array<{
+    id: number;
+    name: string;
+    direct_child_count: number;
+    question_count: number;
+  }>;
   focus_id: number | null;
 };
 
@@ -1609,6 +1615,7 @@ export type ExamYearCoverageItem = {
   year: number;
   status: ExamYearCoverageStatus;
   paper_id?: number | null;
+  paper_ref?: string | null;
   paper_title?: string | null;
   paper_status?: string | null;
   paper_version?: number | null;

@@ -150,6 +150,17 @@
         </view>
         <view class="route-arrow">→</view>
       </view>
+
+      <!-- Exam paper is also a permanent Home tool and must remain visible with Smart Study Hub recommendations. -->
+      <view class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
+        <view class="route-index"><image class="route-icon-image" src="/assets/icons/home-actions/list-checks.svg" mode="aspectFit" /></view>
+        <view class="route-copy">
+          <text class="route-eyebrow">套卷训练</text>
+          <text class="route-title">选择题真题 / 模拟</text>
+          <text class="route-desc">仅练适合手机作答的选择题，自动判分并生成四科复盘</text>
+        </view>
+        <view class="route-arrow">→</view>
+      </view>
     </view>
 
     <view class="route-stack" wx:else>

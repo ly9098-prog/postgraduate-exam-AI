@@ -63,6 +63,38 @@ function getStageStatuses(status?: ImportPipelineStatusResponse, isRunning?: boo
   ];
 }
 
+
+function readableImportError(error: unknown) {
+  const text = error instanceof Error ? error.message.trim() : "上传失败，请稍后重试。";
+  if (!text) return "上传失败，请稍后重试。";
+  if (text.includes("\n• ")) return text;
+
+  const rowIssues = text
+    .split(/[；;]/)
+    .map((item) => item.trim())
+    .map((item) => item.match(/^第\s*(\d+)\s*行[:：]\s*(.+)$/))
+    .filter((match): match is RegExpMatchArray => Boolean(match));
+  if (rowIssues.length < 3) return text.replace(/；/g, "\n");
+
+  const grouped = new Map<string, number[]>();
+  for (const match of rowIssues) {
+    const line = Number(match[1]);
+    const reason = match[2].trim();
+    const lines = grouped.get(reason) ?? [];
+    lines.push(line);
+    grouped.set(reason, lines);
+  }
+  const details = [...grouped.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 6)
+    .map(([reason, lines]) => {
+      const sample = lines.slice(0, 8).join("、");
+      const more = lines.length > 8 ? ` 等 ${lines.length} 行` : "";
+      return `• ${reason}：第 ${sample} 行${more}`;
+    });
+  return [`CSV 校验失败，共 ${rowIssues.length} 处问题：`, ...details].join("\n");
+}
+
 type TabKey = "upload" | "progress" | "quality";
 
 
@@ -166,8 +198,7 @@ export default function ImportTasksPage() {
       setActiveTab("progress");
     },
     onError: (error) => {
-      const detail = error instanceof Error ? error.message : "上传失败，请稍后重试。";
-      setMessage(isCsvFile ? `CSV 导入失败：${detail}` : detail);
+      setMessage(readableImportError(error));
     },
   });
 
@@ -223,6 +254,7 @@ export default function ImportTasksPage() {
 
       <ImportToast
         message={message}
+        title={uploadMutation.isError ? (isCsvFile ? "CSV 导入失败" : "导入失败") : null}
         tone={uploadMutation.isError ? "error" : "success"}
         onDismiss={() => setMessage(null)}
       />

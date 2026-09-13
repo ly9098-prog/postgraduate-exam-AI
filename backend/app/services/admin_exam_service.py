@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import Request
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
@@ -255,9 +255,29 @@ def _question_stem(content: object) -> str:
 def _matches_past_exam_prefix(stem: str, year: int) -> bool:
     if not stem:
         return False
-    # Accept both historical imports: 【2014统考真题】 and 【2014 统考真题】.
-    pattern = rf"^【\s*{year}\s*统考真题\s*】"
+    # The title prefix is the authoritative signal for this shortcut.  Legacy
+    # data can have source_type/year missing on the mutable Question projection,
+    # so do not make those columns a hard requirement.  Accept both Chinese and
+    # ASCII square brackets plus the historical optional space after the year.
+    pattern = rf"^[【\[]\s*{year}\s*统考真题\s*[】\]]"
     return re.match(pattern, stem) is not None
+
+
+def _matching_past_exam_content(question: Question, revision: QuestionVersion, year: int) -> dict | None:
+    """Return the versioned content whose stem carries the requested prefix.
+
+    Current-version content is preferred, but older imports can have an empty or
+    partially migrated revision payload while the Question projection is valid.
+    Checking both makes quick-add work for those rows without relaxing the final
+    title-prefix requirement.
+    """
+    candidates = [revision.content, question.content]
+    for content in candidates:
+        if not isinstance(content, dict):
+            continue
+        if _matches_past_exam_prefix(_question_stem(content), year):
+            return content
+    return None
 
 
 async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
@@ -266,13 +286,13 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
         .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
         .join(Subject, Subject.id == Question.subject_id)
         .where(
-            Question.year == year,
-            Question.source_type == "past_exam",
-            Question.question_type == QT_SINGLE_CHOICE,
             Question.review_status == "approved",
             Question.is_active.is_(True),
             QuestionVersion.is_active.is_(True),
-            QuestionVersion.question_type == QT_SINGLE_CHOICE,
+            or_(
+                Question.question_type == QT_SINGLE_CHOICE,
+                QuestionVersion.question_type == QT_SINGLE_CHOICE,
+            ),
             Subject.is_active.is_(True),
         )
         .order_by(Question.id.asc())
@@ -281,9 +301,8 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
     for question, revision, subject in rows.all():
         if canonical_408_code(subject.code) not in EXAM408_CORE_CODES:
             continue
-        content = revision.content if isinstance(revision.content, dict) else question.content
-        stem = _question_stem(content)
-        if not _matches_past_exam_prefix(stem, year):
+        content = _matching_past_exam_content(question, revision, year)
+        if content is None:
             continue
         items.append(
             {
@@ -291,7 +310,7 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
                 "subject_id": int(question.subject_id),
                 "subject_code": subject.code,
                 "subject_name": subject.name,
-                "content": content if isinstance(content, dict) else {},
+                "content": content,
                 "year": int(year),
                 "source": revision.source or question.source,
             }
