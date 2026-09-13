@@ -341,23 +341,23 @@ to{transform: translateY(0);opacity: 1;}
 /* 推荐原因 · 参考图还原 */
 .runner-recommend-bar,
 .runner-theme-premium-review .runner-recommend-bar {
-  min-height: 116rpx;
-  margin: -4rpx 0 26rpx;
-  padding: 18rpx 22rpx;
+  min-height: 92rpx;
+  margin: -4rpx 0 24rpx;
+  padding: 10rpx 16rpx;
   border: 1rpx solid #DDEAE5;
   border-left: 1rpx solid #DDEAE5;
   border-radius: 16rpx;
   background: linear-gradient(105deg, #F8FFFC 0%, #FBFEFC 56%, #F7FBF9 100%);
   display: flex;
   align-items: center;
-  gap: 20rpx;
+  gap: 12rpx;
   box-sizing: border-box;
   box-shadow: 0 6rpx 18rpx rgba(20, 73, 48, .025);
 }
 
 .runner-recommend-icon-wrap {
-  width: 66rpx;
-  height: 66rpx;
+  width: 46rpx;
+  height: 46rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -365,14 +365,14 @@ to{transform: translateY(0);opacity: 1;}
 }
 
 .runner-recommend-icon {
-  width: 66rpx;
-  height: 66rpx;
+  width: 46rpx;
+  height: 46rpx;
   display: block;
 }
 
 .runner-recommend-divider {
   width: 2rpx;
-  height: 68rpx;
+  height: 48rpx;
   border-radius: 999rpx;
   background: #78CEA2;
   flex-shrink: 0;
@@ -383,16 +383,16 @@ to{transform: translateY(0);opacity: 1;}
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 22rpx;
+  gap: 14rpx;
 }
 
 .runner-recommend-label,
 .runner-theme-premium-review .runner-recommend-label {
-  width: 112rpx;
-  flex: 0 0 112rpx;
+  width: 92rpx;
+  flex: 0 0 92rpx;
   color: #126438;
-  font-size: 28rpx;
-  line-height: 1.25;
+  font-size: 23rpx;
+  line-height: 1.22;
   font-weight: 900;
   letter-spacing: .5rpx;
   white-space: nowrap;
@@ -400,7 +400,7 @@ to{transform: translateY(0);opacity: 1;}
 
 .runner-recommend-copy-divider {
   width: 1rpx;
-  height: 76rpx;
+  height: 48rpx;
   background: #E7EEEA;
   flex-shrink: 0;
 }
@@ -410,8 +410,8 @@ to{transform: translateY(0);opacity: 1;}
   flex: 1;
   min-width: 0;
   color: #52645A;
-  font-size: 23rpx;
-  line-height: 1.68;
+  font-size: 19rpx;
+  line-height: 1.52;
   font-weight: 450;
 }
 
@@ -425,7 +425,7 @@ to{transform: translateY(0);opacity: 1;}
 
 .runner-mode-wrong-detail .runner-recommend-label {
   color: #126438;
-  font-size: 28rpx;
+  font-size: 23rpx;
   font-weight: 900;
 }
 
@@ -438,30 +438,31 @@ to{transform: translateY(0);opacity: 1;}
 @media (max-width: 360px) {
   .runner-recommend-bar,
   .runner-theme-premium-review .runner-recommend-bar {
-    gap: 14rpx;
-    padding-left: 16rpx;
-    padding-right: 16rpx;
+    gap: 10rpx;
+    padding-left: 14rpx;
+    padding-right: 14rpx;
   }
 
   .runner-recommend-icon-wrap,
   .runner-recommend-icon {
-    width: 58rpx;
-    height: 58rpx;
+    width: 42rpx;
+    height: 42rpx;
   }
 
   .runner-recommend-copy {
-    gap: 14rpx;
+    gap: 11rpx;
   }
 
   .runner-recommend-label,
   .runner-theme-premium-review .runner-recommend-label {
-    width: 96rpx;
-    flex-basis: 96rpx;
-    font-size: 25rpx;
+    width: 84rpx;
+    flex-basis: 84rpx;
+    font-size: 21rpx;
   }
 
   .runner-recommend-text,
   .runner-theme-premium-review .runner-recommend-text {
-    font-size: 21rpx;
+    font-size: 18rpx;
+    line-height: 1.5;
   }
 }
