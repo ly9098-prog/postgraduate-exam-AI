@@ -329,7 +329,14 @@ function splitPlainText(source: string): MathTextSegment[] {
     if (leading) segments.push({ type: "text", value: leading, displayMode: false });
 
     if (core) {
-      if (looksLikeMath(core)) {
+      // Inline source-code fragments (for example `if (...) { for (...) ... }`)
+      // can satisfy the generic math heuristics because they contain operators
+      // such as `>=`, `<` and `=`. Never feed those runs to KaTeX: incomplete
+      // snippets in analysis text commonly contain unmatched braces and would be
+      // rendered as red KaTeX parse errors. Keep them as ordinary text instead.
+      if (looksLikeProgrammingCode(core)) {
+        segments.push({ type: "text", value: core, displayMode: false });
+      } else if (looksLikeMath(core)) {
         segments.push({ type: "math", value: normalizeLatexExpression(core), displayMode: false });
       } else {
         segments.push({ type: "text", value: core, displayMode: false });
