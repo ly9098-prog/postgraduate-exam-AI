@@ -14,6 +14,7 @@
       <input
         class="search-input"
         value="{{searchInput}}"
+        focus="{{searchFocused}}"
         placeholder="搜索题目 / 题库 / 关键词"
         placeholder-class="search-placeholder"
         confirm-type="search"
@@ -53,7 +54,7 @@
   </view>
 
   <view class="content-panel">
-    <view class="section-toolbar" wx:if="{{!loading && !errorText && papers.length > 0}}">
+    <view class="section-toolbar" wx:if="{{!loading && !errorText && visiblePapers.length > 0}}">
       <view class="section-toolbar-copy">
         <text class="section-kicker">CHOICE PAPER</text>
         <text class="section-title">真题与模拟</text>
@@ -64,7 +65,7 @@
       </view>
     </view>
 
-    <view class="search-summary" wx:if="{{activeQuery && !loading && !errorText}}">
+    <view class="search-summary" wx:if="{{activeQuery && !loading && !errorText && visiblePapers.length > 0}}">
       <text class="search-summary-main">“{{activeQuery}}”</text>
       <text class="search-summary-sub">找到 {{visiblePapers.length}} 套</text>
     </view>
@@ -92,17 +93,26 @@
       <view class="state-action" bindtap="retryLoad" hover-class="state-action-pressed">重新加载</view>
     </view>
 
-    <view class="state-card" wx:elif="{{papers.length === 0}}">
-      <view class="state-icon">＋</view>
-      <text class="state-title">暂时没有已发布的选择题套卷</text>
-      <text class="state-sub">试卷发布后会自动出现在这里。</text>
+    <view class="empty-state-card" wx:elif="{{(activeQuery || searchInput) && visiblePapers.length === 0}}">
+      <image
+        class="empty-state-art"
+        src="./assets/paper-search-empty.png"
+        mode="widthFix"
+        aria-hidden="true"
+      />
+      <text class="empty-state-title">没有找到相关套卷</text>
+      <text class="empty-state-desc">试试在搜索框中输入题目名称、来源或“真题 / 模拟”等关键词。</text>
     </view>
 
-    <view class="state-card search-empty" wx:elif="{{visiblePapers.length === 0}}">
-      <view class="state-icon search-state-icon"></view>
-      <text class="state-title">没有找到相关套卷</text>
-      <text class="state-sub">试试年份、题目名称、来源或“真题 / 模拟”等关键词。</text>
-      <view class="state-action state-action-light" bindtap="clearSearch" hover-class="state-action-pressed">清空搜索</view>
+    <view class="empty-state-card" wx:elif="{{papers.length === 0}}">
+      <image
+        class="empty-state-art"
+        src="./assets/paper-search-empty.png"
+        mode="widthFix"
+        aria-hidden="true"
+      />
+      <text class="empty-state-title">暂时没有可用套卷</text>
+      <text class="empty-state-desc">已发布的选择题套卷会自动出现在这里。</text>
     </view>
 
     <view class="paper-list" wx:else>

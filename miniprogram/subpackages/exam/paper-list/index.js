@@ -57,6 +57,24 @@ function matchesPaper(paper, query) {
   return rawTerms.every((rawTerm) => fuzzyIncludes(target, normalizeSearchValue(rawTerm)))
 }
 
+function paperRenderSignature(papers) {
+  return (Array.isArray(papers) ? papers : []).map((item) => [
+    item.id,
+    item.title,
+    item.source,
+    item.typeLabel,
+    item.year,
+    item.question_count,
+    item.scoreText,
+    item.durationMinutes,
+    item.bestScoreText,
+    item.canResume ? 1 : 0,
+    item.latest_attempt_id || '',
+    item.isSuggested ? 1 : 0,
+    item.isLatestYear ? 1 : 0,
+  ].join('|')).join('||')
+}
+
 Page({
   data: {
     loading: true,
@@ -71,63 +89,98 @@ Page({
   },
 
   onLoad(options = {}) {
+    this._pageAlive = true
     const suggestedPaperId = Number(options.suggested_paper_id) || 0
     this.setData({ suggestedPaperId })
     this.loadPapers()
   },
 
   onShow() {
-    if (this._loadedOnce) this.loadPapers({ silent: true })
+    if (!this._loadedOnce) return
+    clearTimeout(this._resumeRefreshTimer)
+    this._resumeRefreshTimer = setTimeout(() => {
+      this._resumeRefreshTimer = null
+      this.loadPapers({ silent: true })
+    }, 180)
   },
 
   onUnload() {
+    this._pageAlive = false
     this._clearSearchTimer()
+    clearTimeout(this._resumeRefreshTimer)
+    this._resumeRefreshTimer = null
   },
 
   async loadPapers(options = {}) {
-    if (!options.silent) this.setData({ loading: true, errorText: '' })
-    try {
-      const rows = await api.get('/exams/papers')
-      const basePapers = (Array.isArray(rows) ? rows : []).map((item) => ({
-        ...item,
-        title: cleanUiLabel(item.title, '选择题套卷'),
-        source: cleanUiLabel(item.source, 'MemoGrad'),
-        typeLabel: typeLabel(item.paper_type),
-        typeHint: typeHint(item.paper_type),
-        durationMinutes: minutes(item.duration_sec),
-        scoreText: Number(item.total_choice_score || 0).toFixed(0),
-        bestScoreText: item.best_choice_score == null ? '' : Number(item.best_choice_score).toFixed(1),
-        canResume: item.latest_attempt_status === 'in_progress' && !!item.latest_attempt_id,
-        isSuggested: Number(item.id) === Number(this.data.suggestedPaperId),
-      }))
+    const silent = !!options.silent
+    if (this._loadPromise) return this._loadPromise
 
-      const latestYear = basePapers.reduce((maxYear, item) => {
-        const year = Number(item.year) || 0
-        return year > maxYear ? year : maxYear
-      }, 0)
+    if (!silent && !this._loadedOnce) {
+      this.setData({ loading: true, errorText: '' })
+    }
 
-      const papers = basePapers.map((item) => ({
-        ...item,
-        isLatestYear: !!latestYear && Number(item.year) === latestYear,
-      }))
+    const request = (async () => {
+      try {
+        const rows = await api.get('/exams/papers')
+        const basePapers = (Array.isArray(rows) ? rows : []).map((item) => ({
+          ...item,
+          title: cleanUiLabel(item.title, '选择题套卷'),
+          source: cleanUiLabel(item.source, 'MemoGrad'),
+          typeLabel: typeLabel(item.paper_type),
+          typeHint: typeHint(item.paper_type),
+          durationMinutes: minutes(item.duration_sec),
+          scoreText: Number(item.total_choice_score || 0).toFixed(0),
+          bestScoreText: item.best_choice_score == null ? '' : Number(item.best_choice_score).toFixed(1),
+          canResume: item.latest_attempt_status === 'in_progress' && !!item.latest_attempt_id,
+          isSuggested: Number(item.id) === Number(this.data.suggestedPaperId),
+        }))
 
-      this._loadedOnce = true
-      this._commitPapers(papers)
-    } catch (error) {
-      const message = api.getErrorMessage(error)
-      if (options.silent && this.data.papers.length) {
-        wx.showToast({ title: message, icon: 'none' })
-        return
+        const latestYear = basePapers.reduce((maxYear, item) => {
+          const year = Number(item.year) || 0
+          return year > maxYear ? year : maxYear
+        }, 0)
+
+        const papers = basePapers.map((item) => ({
+          ...item,
+          isLatestYear: !!latestYear && Number(item.year) === latestYear,
+        }))
+
+        if (!this._pageAlive) return
+        const wasLoaded = this._loadedOnce
+        this._loadedOnce = true
+        this._commitPapers(papers, { silent: silent || wasLoaded })
+      } catch (error) {
+        if (!this._pageAlive) return
+        const message = api.getErrorMessage(error)
+        if ((silent || this._loadedOnce) && !this.data.errorText) {
+          wx.showToast({ title: message, icon: 'none' })
+          return
+        }
+        this.setData({ loading: false, errorText: message })
       }
-      this.setData({ loading: false, errorText: message })
+    })()
+
+    this._loadPromise = request
+    try {
+      await request
+    } finally {
+      if (this._loadPromise === request) this._loadPromise = null
     }
   },
 
-  _commitPapers(papers) {
+  _commitPapers(papers, options = {}) {
     const query = String(this.data.searchInput || '').trim()
+    const nextSignature = paperRenderSignature(papers)
+    const visiblePapers = papers.filter((item) => matchesPaper(item, query))
+
+    if (options.silent && nextSignature === this._paperRenderSignature) {
+      return
+    }
+
+    this._paperRenderSignature = nextSignature
     this.setData({
       papers,
-      visiblePapers: papers.filter((item) => matchesPaper(item, query)),
+      visiblePapers,
       activeQuery: query,
       loading: false,
       errorText: '',
@@ -181,6 +234,7 @@ Page({
     this.setData({ searchInput: '' })
     this._applySearch('')
   },
+
 
   retryLoad() {
     this.loadPapers()
