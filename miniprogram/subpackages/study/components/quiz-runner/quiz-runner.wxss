@@ -280,6 +280,9 @@ to{transform: translateY(0);opacity: 1;}
 .runner-mode-wrong-detail .runner-q-content,.runner-mode-wrong-detail .runner-mixed-text-block,.runner-mode-wrong-detail .runner-mixed-latex-block,.runner-mode-wrong-detail .runner-fallback-text{color: #1D2A23;font-size: 30rpx;line-height: 1.78;font-weight: 400;}
 .runner-mode-wrong-detail .runner-q-content,.runner-mode-wrong-detail .runner-mixed-text-block,.runner-mode-wrong-detail .runner-mixed-latex-block{margin-bottom: 27rpx;}
 .runner-mode-wrong-detail .runner-code-wrapper{margin-bottom: 27rpx;border-radius: 12rpx;border-color: #E0E2DD;background: #F7F7F3;}
+.runner-mode-wrong-detail .runner-code-lines{padding-right: 30rpx;}
+.runner-mode-wrong-detail .runner-code-no{color:#8FBF2C;opacity:1;border-right-color:#D7DDD8;}
+.runner-mode-wrong-detail .runner-code-text{color:#26352D;font-weight:500;}
 .runner-mode-wrong-detail .runner-options,.runner-mode-wrong-detail .runner-blank-group-options{gap: 0;border-top: 1rpx solid #E4E5DF;}
 .runner-mode-wrong-detail .runner-option-item{position: relative;gap: 14rpx;min-height: 76rpx;padding: 20rpx 4rpx 20rpx 18rpx;border: 0;border-bottom: 1rpx solid #E4E5DF;border-radius: 0;background: transparent;box-shadow: none;overflow: visible;transition: background .14s ease,padding .14s ease;}
 .runner-mode-wrong-detail .runner-option-item::before{content: '';position: absolute;left: 0;top: 16rpx;bottom: 16rpx;width: 3rpx;border-radius: 999rpx;background: transparent;}
