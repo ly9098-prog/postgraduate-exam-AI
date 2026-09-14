@@ -127,6 +127,7 @@ flowchart LR
 │   │   ├── services/            # 业务服务、任务、导出、推荐等
 │   │   └── utils/               # 通用工具
 │   ├── alembic/                 # 数据库迁移
+│   ├── tests/                   # 按领域分包的测试（ocr_pipeline、canary、export 等）
 │   ├── requirements.txt
 │   ├── requirements-ocr.txt     # OCR 可选依赖
 │   ├── Dockerfile
@@ -664,7 +665,35 @@ ruff check path/to/changed_file.py
 
 这样可以提前发现 `F823`、未定义变量、作用域错误等会直接阻塞 CI 的问题。
 
-### 9.2 Reliability Gate
+### 9.2 后端测试组织
+
+后端测试位于 `backend/tests/`，按领域分包：
+
+| 目录 | 内容 |
+|---|---|
+| `tests/ocr_pipeline/` | OCR 流水线、页面流、PDF 解析、题号解析 |
+| `tests/pipeline/` | pipeline 编排、coordinator、fingerprint |
+| `tests/canary/` | OCR/IR Canary 配置、分桶、回滚、发布决策 |
+| `tests/architecture/` | 架构边界、生产写零违规守卫 |
+| `tests/document_ir/` | Document IR、跨页合并、reading order |
+| `tests/export/` | DOCX 导出、OMML、导出安全 |
+| `tests/quality_gate/` | 质量门禁 |
+| `tests/test_services/` `tests/test_api/` `tests/test_features/` `tests/core/` | 业务服务、API、功能特性、核心设施 |
+| `tests/cloud_isolation/` `tests/integration/` `tests/knowledge/` `tests/practice/` `tests/scripts_tests/` 等 | 云端隔离、集成、知识诊断、练习、脚本 |
+
+CI（`.github/workflows/ci.yml`）使用固定测试文件清单；移动、重命名或新增测试文件后必须同步该清单以及 `backend/pytest.ini` 的 `testpaths` 和 `backend/scripts/run_profile_test_matrix.py`。
+
+本地运行示例：
+
+```bash
+cd backend
+.venv/bin/python -m pytest tests/quality_gate -q
+.venv/bin/python -m pytest tests/ocr_pipeline/test_ocr_request.py -q
+```
+
+> 注意：全量本地 pytest 包含依赖 PostgreSQL/Redis/外部 OCR 服务的用例，失败不代表代码有问题；CI 只跑固定清单。
+
+### 9.3 Reliability Gate
 
 Reliability workflow 会覆盖：
 
@@ -678,7 +707,7 @@ Reliability workflow 会覆盖：
 - 管理后台 TypeScript contract 检查
 - 管理后台构建
 
-### 9.3 前端与小程序
+### 9.4 前端与小程序
 
 管理后台：
 
