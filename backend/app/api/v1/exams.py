@@ -7,6 +7,7 @@ from app.models.user import User
 from app.schemas.exam import (
     ExamAnswerSaveRequest,
     ExamAnswerSaveResponse,
+    ExamAttemptAbandonResponse,
     ExamAttemptStartRequest,
     ExamAttemptView,
     ExamHistoryItem,
@@ -103,6 +104,21 @@ async def save_answer(
             current_user.id,
             **kwargs,
         )
+    except ValueError as exc:
+        _raise_exam_error(exc)
+
+
+@router.post(
+    "/attempts/{attempt_id}/abandon",
+    response_model=ExamAttemptAbandonResponse,
+)
+async def abandon_attempt(
+    attempt_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return await exam_service.abandon_attempt(db, attempt_id, current_user.id)
     except ValueError as exc:
         _raise_exam_error(exc)
 

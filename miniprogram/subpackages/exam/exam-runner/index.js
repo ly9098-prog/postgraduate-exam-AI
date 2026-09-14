@@ -46,6 +46,8 @@ function formatClock(sec) {
 
 const EXAM_CACHE_SCHEMA_VERSION = 2
 const EXAM_CACHE_MIGRATION_MARK = 'exam_cache_migration_mark_v2'
+// 本地草稿保留时长：离开作答页后 60 分钟内可恢复，超时进入重新作答状态。
+const EXAM_DRAFT_TTL_MS = 60 * 60 * 1000
 function cacheKey(attemptId) { return `exam_attempt_pending_v2:${attemptId}` }
 function legacyCacheKey(attemptId) { return `exam_attempt_pending_v1:${attemptId}` }
 
@@ -117,6 +119,16 @@ Page({
           wx.removeStorageSync(legacyCacheKey(attemptId))
         }
       }
+      if (raw && typeof raw === 'object') {
+        const savedAt = Number(raw.saved_at || 0)
+        if (savedAt > 0 && api.now() - savedAt > EXAM_DRAFT_TTL_MS) {
+          // 草稿超过 60 分钟：清除本地缓存内容，进入页面后按“重新作答”处理
+          // （服务端答案仍以 loadAttempt 拉到的为准，但不再恢复本地草稿）。
+          wx.removeStorageSync(cacheKey(attemptId))
+          wx.removeStorageSync(legacyCacheKey(attemptId))
+          return Object.create(null)
+        }
+      }
       return raw && typeof raw === 'object' ? raw : Object.create(null)
     } catch (_) {
       return Object.create(null)
@@ -126,8 +138,12 @@ Page({
   _persistPending() {
     try {
       const keys = Object.keys(this._pending || {})
-      if (keys.length) wx.setStorageSync(cacheKey(this.data.attemptId), Object.assign({}, this._pending, { schema_version: EXAM_CACHE_SCHEMA_VERSION }))
-      else wx.removeStorageSync(cacheKey(this.data.attemptId))
+      if (keys.length) {
+        wx.setStorageSync(cacheKey(this.data.attemptId), Object.assign({}, this._pending, {
+          schema_version: EXAM_CACHE_SCHEMA_VERSION,
+          saved_at: api.now(),
+        }))
+      } else wx.removeStorageSync(cacheKey(this.data.attemptId))
     } catch (_) {}
   },
 
@@ -135,6 +151,13 @@ Page({
     this.setData({ loading: true, errorText: '' })
     try {
       const payload = await api.get(`/exams/attempts/${this.data.attemptId}`)
+      if (payload.status === 'abandoned') {
+        // 已放弃的草稿没有结果快照，回套卷列表重新开始而不是跳结果页。
+        this._pending = Object.create(null)
+        this._persistPending()
+        wx.redirectTo({ url: '/subpackages/exam/paper-list/index' })
+        return
+      }
       if (payload.status !== 'in_progress') {
         this._pending = Object.create(null)
         this._persistPending()
@@ -420,7 +443,7 @@ Page({
     const confirmed = await this._showAppDialog({
       scenario: 'all-done',
       title: '暂时退出考试？',
-      message: '已同步的答案会保留，下次可继续作答。',
+      message: '60 分钟内回来可继续作答；超过 60 分钟草稿将被清除，需要重新作答。',
       confirmText: '退出',
       cancelText: '继续作答',
       hideEyebrow: true,
@@ -456,6 +479,7 @@ Page({
       await this._flushAllPending()
       await api.post(`/exams/attempts/${this.data.attemptId}/submit`, {})
       try { wx.removeStorageSync(cacheKey(this.data.attemptId)) } catch (_) {}
+      try { wx.removeStorageSync(legacyCacheKey(this.data.attemptId)) } catch (_) {}
       wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}` })
     } catch (error) {
       this.setData({ submitting: false })

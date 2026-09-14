@@ -130,7 +130,13 @@ async def list_published_papers(db: AsyncSession, user_id: int) -> list[dict]:
     result: list[dict] = []
     for paper, question_count, total_score in papers:
         attempts = attempts_by_paper.get(int(paper.id), [])
-        latest = attempts[0] if attempts else None
+        # An abandoned attempt is a dead draft: it must not surface as the
+        # latest attempt, otherwise the list would offer "resume" on a stale
+        # in-progress-looking row instead of a fresh start.
+        latest = next(
+            (a for a in attempts if a.status != "abandoned"),
+            None,
+        )
         latest_status = latest.status if latest else None
         if (
             latest is not None
@@ -180,7 +186,7 @@ async def get_published_paper_detail(
         .scalars()
         .all()
     )
-    latest = attempts[0] if attempts else None
+    latest = next((a for a in attempts if a.status != "abandoned"), None)
     latest_status = latest.status if latest else None
     if (
         latest is not None
@@ -798,6 +804,25 @@ async def _finalize_attempt(
         except Exception:
             pass
     return result
+
+
+async def abandon_attempt(db: AsyncSession, attempt_id: int, user_id: int) -> dict:
+    """Mark an in-progress attempt as abandoned so the user can start over.
+
+    Abandoned attempts are terminal but carry no result snapshot: they never
+    enter history or the result page, and releasing the partial unique index
+    lets ``start_attempt`` create a fresh attempt for the same paper.
+    """
+    attempt = await _get_attempt_for_user(db, attempt_id, user_id, lock=True)
+    if attempt.status == "abandoned":
+        return {"id": int(attempt.id), "status": attempt.status}
+    if attempt.status != "in_progress":
+        raise ExamStateError("考试已结束，不能放弃本次作答")
+    attempt.status = "abandoned"
+    attempt.submitted_at = utcnow()
+    attempt.duration_sec = _elapsed_seconds(attempt.started_at)
+    await db.commit()
+    return {"id": int(attempt.id), "status": attempt.status}
 
 
 async def submit_attempt(db: AsyncSession, attempt_id: int, user_id: int) -> dict:

@@ -96,6 +96,11 @@ class ExamAnswerSaveResponse(BaseModel):
     answer: ExamSavedAnswer
 
 
+class ExamAttemptAbandonResponse(BaseModel):
+    id: int
+    status: ExamAttemptStatus
+
+
 class ExamResultSubjectBreakdown(BaseModel):
     subject_id: int
     subject_code: str
