@@ -131,6 +131,34 @@ function toDraftItem(item: AdminExamPaperQuestionItem): DraftItem {
   };
 }
 
+function buildExamItemsPayload(items: DraftItem[]) {
+  if (items.length < 1) {
+    throw new Error("试卷至少需要 1 道选择题后才能保存组卷。");
+  }
+  if (items.length > 100) {
+    throw new Error(`当前有 ${items.length} 道题，单份试卷最多保存 100 道。`);
+  }
+
+  const seen = new Set<number>();
+  return items.map((item, index) => {
+    const questionId = Number(item.question_id);
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      throw new Error(`第 ${index + 1} 题的 question_id 无效，请移除后重新添加。`);
+    }
+    if (seen.has(questionId)) {
+      throw new Error(`第 ${index + 1} 题与前面的题目重复（Q#${questionId}），请删除重复项。`);
+    }
+    seen.add(questionId);
+
+    const scoreText = String(item.score ?? "").trim();
+    const score = Number(scoreText);
+    if (!scoreText || !Number.isFinite(score) || score <= 0 || score > 100) {
+      throw new Error(`第 ${index + 1} 题（Q#${questionId}）分值必须大于 0 且不超过 100。`);
+    }
+    return { question_id: questionId, score };
+  });
+}
+
 function statusMeta(status: AdminExamPaperDetail["status"]) {
   if (status === "published") return { label: "已发布", tone: "success" as const, summary: "题序与题目版本已冻结" };
   if (status === "archived") return { label: "已归档", tone: "neutral" as const, summary: "不再出现在前台试卷列表" };
@@ -402,13 +430,14 @@ export default function ExamPaperDetailPage() {
   });
 
   const itemsMutation = useMutation({
-    mutationFn: () =>
-      apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/items`, {
+    mutationFn: () => {
+      const payloadItems = buildExamItemsPayload(items);
+      return apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/items`, {
         method: "PUT",
-        body: JSON.stringify({
-          items: items.map((item) => ({ question_id: item.question_id, score: Number(item.score) })),
-        }),
-      }),
+        body: JSON.stringify({ items: payloadItems }),
+        exposeErrorDetail: true,
+      });
+    },
     onSuccess: async () => {
       setToast({ tone: "success", title: "组卷已保存", message: `已固定 ${items.length} 道题的题序、分值与当前题目版本。` });
       await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });

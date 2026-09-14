@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import Request
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
@@ -280,6 +280,48 @@ def _matching_past_exam_content(question: Question, revision: QuestionVersion, y
     return None
 
 
+def _exam_item_validation_error(
+    question: Question,
+    revision: QuestionVersion,
+    subject: Subject,
+) -> str | None:
+    """Return a user-safe reason when a question cannot be pinned into a paper.
+
+    Quick-add and save must use exactly the same eligibility rules.  Keeping the
+    checks in one helper prevents candidates from appearing selectable only to be
+    rejected later by ``replace_exam_paper_items`` with a 422.
+    """
+    if question.review_status != "approved":
+        return "题目尚未审核通过"
+    if not question.is_active:
+        return "题目已停用"
+    if revision.is_active is not True:
+        return "当前题目版本未启用"
+    if str(question.question_type or "") != QT_SINGLE_CHOICE:
+        return "题目类型不是 single_choice"
+    if str(revision.question_type or "") != QT_SINGLE_CHOICE:
+        return "当前题目版本类型不是 single_choice"
+    if int(revision.question_id or 0) != int(question.id):
+        return "current revision 绑定异常"
+    if int(revision.subject_id or 0) != int(question.subject_id):
+        return "current revision 科目不一致"
+    if not subject.is_active or canonical_408_code(subject.code) not in EXAM408_CORE_CODES:
+        return "不属于启用的 canonical 408 四科"
+    if not isinstance(revision.options, dict) or len(revision.options) < 2:
+        return "当前题目版本缺少有效选择题选项"
+    return None
+
+
+def _summarize_exam_item_errors(errors: list[tuple[int, str]]) -> str:
+    if not errors:
+        return ""
+    shown = errors[:8]
+    text = "；".join(f"Q#{question_id}：{reason}" for question_id, reason in shown)
+    if len(errors) > len(shown):
+        text += f"；另有 {len(errors) - len(shown)} 道题存在问题"
+    return f"以下题目不能保存到试卷：{text}"
+
+
 async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
     rows = await db.execute(
         select(Question, QuestionVersion, Subject)
@@ -289,17 +331,17 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
             Question.review_status == "approved",
             Question.is_active.is_(True),
             QuestionVersion.is_active.is_(True),
-            or_(
-                Question.question_type == QT_SINGLE_CHOICE,
-                QuestionVersion.question_type == QT_SINGLE_CHOICE,
-            ),
+            Question.question_type == QT_SINGLE_CHOICE,
+            QuestionVersion.question_type == QT_SINGLE_CHOICE,
             Subject.is_active.is_(True),
         )
         .order_by(Question.id.asc())
     )
     items: list[dict] = []
     for question, revision, subject in rows.all():
-        if canonical_408_code(subject.code) not in EXAM408_CORE_CODES:
+        # Keep the quick-add candidate contract identical to the final save
+        # contract.  A candidate returned here must be safe to pin immediately.
+        if _exam_item_validation_error(question, revision, subject) is not None:
             continue
         content = _matching_past_exam_content(question, revision, year)
         if content is None:
@@ -424,37 +466,18 @@ async def replace_exam_paper_items(
         missing = sorted(set(ids) - set(by_id))
         raise ValueError(f"部分题目不存在或缺少 current revision: {missing}")
 
+    validation_errors: list[tuple[int, str]] = []
+    for input_item in data.items:
+        question, revision, subject = by_id[input_item.question_id]
+        reason = _exam_item_validation_error(question, revision, subject)
+        if reason is not None:
+            validation_errors.append((int(question.id), reason))
+    if validation_errors:
+        raise ValueError(_summarize_exam_item_errors(validation_errors))
+
     new_rows: list[ExamPaperQuestion] = []
     for position, input_item in enumerate(data.items, start=1):
-        question, revision, subject = by_id[input_item.question_id]
-        if (
-            question.review_status != "approved"
-            or not question.is_active
-            or not revision.is_active
-        ):
-            raise ValueError(
-                f"question_id={question.id} 不是 approved + active 可组卷题目"
-            )
-        if (
-            str(question.question_type or "") != QT_SINGLE_CHOICE
-            or str(revision.question_type or "") != QT_SINGLE_CHOICE
-        ):
-            raise ValueError(
-                f"question_id={question.id} 不是 single_choice，V1 仅允许单选题"
-            )
-        if int(revision.question_id) != int(question.id):
-            raise ValueError(f"question_id={question.id} current revision 绑定异常")
-        if int(revision.subject_id or 0) != int(question.subject_id):
-            raise ValueError(f"question_id={question.id} current revision 科目不一致")
-        if (
-            canonical_408_code(subject.code) not in EXAM408_CORE_CODES
-            or not subject.is_active
-        ):
-            raise ValueError(
-                f"question_id={question.id} 不属于启用的 canonical 408 四科"
-            )
-        if not isinstance(revision.options, dict) or len(revision.options) < 2:
-            raise ValueError(f"question_id={question.id} 缺少有效选择题选项")
+        question, revision, _subject = by_id[input_item.question_id]
         new_rows.append(
             ExamPaperQuestion(
                 paper_id=paper.id,

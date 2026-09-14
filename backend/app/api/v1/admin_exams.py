@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
@@ -23,6 +24,37 @@ def _raise_exam_error(exc: ValueError) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+    )
+
+
+def _exam_items_error_response(exc: ValueError) -> JSONResponse:
+    """Return safe, actionable diagnostics for the admin paper-items editor.
+
+    The global exception handler intentionally sanitizes arbitrary 4xx details.
+    This endpoint only emits paper/question validation messages created by the
+    exam service, so administrators can see the offending question IDs instead
+    of the generic ``HTTP_422`` text.
+    """
+    if isinstance(exc, admin_exam_service.ExamPaperNotFoundError):
+        status_code = status.HTTP_404_NOT_FOUND
+        code = "EXAM_PAPER_NOT_FOUND"
+    elif isinstance(exc, admin_exam_service.ExamPaperStateError):
+        status_code = status.HTTP_409_CONFLICT
+        code = "EXAM_PAPER_STATE_ERROR"
+    else:
+        status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        code = "EXAM_PAPER_ITEMS_INVALID"
+    message = (str(exc) or "试卷题目校验未通过").strip()[:4000]
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": message,
+            "error": {
+                "code": code,
+                "message": message,
+                "retryable": False,
+            },
+        },
     )
 
 
@@ -158,7 +190,7 @@ async def replace_items(
         return await admin_exam_service.get_exam_paper_detail(db, paper_id)
     except ValueError as exc:
         await db.rollback()
-        _raise_exam_error(exc)
+        return _exam_items_error_response(exc)
 
 
 @router.put(
@@ -181,7 +213,7 @@ async def replace_items_by_public_id(
         return await admin_exam_service.get_exam_paper_detail(db, paper_id)
     except ValueError as exc:
         await db.rollback()
-        _raise_exam_error(exc)
+        return _exam_items_error_response(exc)
 
 
 @router.post("/papers/{paper_id}/publish", response_model=AdminExamPaperDetail)
