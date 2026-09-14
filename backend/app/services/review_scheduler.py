@@ -15,11 +15,13 @@ from app.core.time_utils import (
 )
 from app.features.text_normalizer import _split_inline_roman_subitems
 from app.models.admin import QuestionVersion, Subject
-from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
-from app.services.question_revision_service import load_revision_views
+from app.services.question_revision_service import (
+    load_latest_question_revision_ids,
+    load_revision_views,
+)
 from app.services.sm2_service import calc_sm2
 from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
@@ -300,7 +302,13 @@ async def _sync_schedule_to_wq(
 
     # ReviewSchedule is always rebound when a newer wrong revision is produced.
     # Keep the wrong-book row and schedule on exactly the same immutable revision.
+    version_changed = int(wq.question_version_id or 0) != int(schedule.question_version_id)
     wq.question_version_id = int(schedule.question_version_id)
+    if version_changed:
+        # AI analysis is revision-specific.  Once review moves to a newer
+        # immutable question version, never keep advice generated for the old
+        # stem/options/answer snapshot.
+        wq.ai_analysis = None
     # ``WrongQuestion.last_review_at`` is the legacy storage backing the public
     # ``last_wrong_at`` field. A correct review must not make the UI claim the
     # learner was wrong again just now; true review time lives on ReviewSchedule.
@@ -324,6 +332,99 @@ async def _sync_schedule_to_wq(
         wq.mastered_at = None
 
     return wq
+
+
+async def _prepare_latest_review_revisions(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    schedules: list[ReviewSchedule],
+) -> list[tuple[ReviewSchedule, object]]:
+    """Bind issued review tasks to each question's newest immutable revision.
+
+    Review schedules are long-lived learning state, while question revisions can
+    be corrected after the schedule was created.  Student-facing review must show
+    the newest revision, but grading still has to be pinned to exactly what was
+    issued.  Rebinding the schedule at issuance preserves both properties.
+
+    A revision change increments ``occurrence_seq`` so a page that already loaded
+    the old version is rejected instead of submitting an answer against different
+    semantics.
+    """
+    if not schedules:
+        return []
+
+    latest_ids = await load_latest_question_revision_ids(
+        db, [int(schedule.question_id) for schedule in schedules]
+    )
+    revision_ids = list(latest_ids.values())
+    revision_ids.extend(
+        int(schedule.question_version_id)
+        for schedule in schedules
+        if int(schedule.question_version_id) not in revision_ids
+    )
+    latest_views = await load_revision_views(db, revision_ids)
+    prepared: list[tuple[ReviewSchedule, object]] = []
+    changed = False
+
+    for schedule in schedules:
+        question_id = int(schedule.question_id)
+        latest_version_id = latest_ids.get(question_id)
+        # A legacy schedule may predate the newest-revision index or run against
+        # a database where that index is temporarily unavailable. If its pinned
+        # immutable revision is still present, keep the task usable and pinned
+        # rather than silently dropping it.
+        revision_id = latest_version_id or int(schedule.question_version_id)
+        revision = latest_views.get(int(revision_id))
+        if (
+            revision is None
+            or int(revision.question_id) != question_id
+        ):
+            logger.warning(
+                "review.latest_revision_missing uid=%s schedule_id=%s question_id=%s",
+                user_id,
+                schedule.id,
+                question_id,
+            )
+            continue
+
+        if latest_version_id is not None and int(schedule.question_version_id) != int(
+            latest_version_id
+        ):
+            await lock_question_review_state(
+                db, user_id=user_id, question_id=question_id
+            )
+            locked = await db.scalar(
+                select(ReviewSchedule)
+                .where(
+                    ReviewSchedule.id == schedule.id,
+                    ReviewSchedule.user_id == user_id,
+                    ReviewSchedule.question_id == question_id,
+                )
+                .with_for_update()
+            )
+            if locked is None or not locked.is_active or locked.mastered:
+                continue
+
+            # Another request may have completed the same rebind while this one
+            # waited for the row/advisory lock. Only the request that actually
+            # changes the revision consumes a new occurrence sequence.
+            if int(locked.question_version_id) != int(latest_version_id):
+                locked.question_version_id = int(latest_version_id)
+                locked.subject_id = revision.subject_id
+                locked.occurrence_seq = int(locked.occurrence_seq or 0) + 1
+                await _sync_schedule_to_wq(db, locked)
+                await db.flush()
+                changed = True
+            schedule = locked
+
+        prepared.append((schedule, revision))
+
+    if changed:
+        # Issuance must persist the exact version/occurrence tuple returned to the
+        # client; otherwise a later grading request would see the old schedule.
+        await db.commit()
+    return prepared
 
 
 async def set_mastered_state(
@@ -461,14 +562,11 @@ async def get_today_review(
             )
         ).all()
     )
-    revision_ids = [int(schedule.question_version_id) for schedule in schedules]
-    views = await load_revision_views(db, revision_ids)
-
     questions = []
-    for schedule in schedules:
-        revision = views.get(int(schedule.question_version_id))
-        if revision is None:
-            continue
+    prepared = await _prepare_latest_review_revisions(
+        db, user_id=user_id, schedules=schedules
+    )
+    for schedule, revision in prepared:
         questions.append(_review_question_payload(schedule, revision))
     return {"total_today": total, "questions": questions}
 
@@ -578,10 +676,13 @@ async def submit_review(
     schedule.mastered = bool(is_correct and review_auto_mastered(schedule.repetitions))
     mastery_percent = review_mastery_percent(schedule.repetitions)
 
-    current_version_id = await db.scalar(
-        select(Question.current_version_id).where(Question.id == question_id)
+    latest_version_id = await db.scalar(
+        select(QuestionVersion.id)
+        .where(QuestionVersion.question_id == int(question_id))
+        .order_by(QuestionVersion.version.desc(), QuestionVersion.id.desc())
+        .limit(1)
     )
-    if current_version_id is not None and int(current_version_id) == int(
+    if latest_version_id is not None and int(latest_version_id) == int(
         question_version_id
     ):
         from app.services import question_review_service
@@ -1397,21 +1498,11 @@ async def get_next_today_review_batch(
     pending = state["pending_schedules"]
     batch = pending[:batch_size]
 
-    views = await load_revision_views(
-        db, [int(schedule.question_version_id) for schedule in batch]
-    )
     questions = []
-    for schedule in batch:
-        revision = views.get(int(schedule.question_version_id))
-        if revision is None or int(revision.question_id) != int(schedule.question_id):
-            logger.warning(
-                "review.next_batch.skip_invalid_revision uid=%s schedule_id=%s question_id=%s version_id=%s",
-                user_id,
-                schedule.id,
-                schedule.question_id,
-                schedule.question_version_id,
-            )
-            continue
+    prepared = await _prepare_latest_review_revisions(
+        db, user_id=user_id, schedules=batch
+    )
+    for schedule, revision in prepared:
         questions.append(_review_question_payload(schedule, revision))
 
     due_count = len(task_schedules)

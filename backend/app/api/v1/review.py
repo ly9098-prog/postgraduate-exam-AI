@@ -35,15 +35,12 @@ async def get_today_review(
     current_user: User = Depends(get_current_user),
 ):
     """获取今日待复习题目（不含答案）。"""
-    cache_key = f"review:today:{current_user.id}:{subject_id or 'all'}:{limit}"
-    cached_data = await cache.get(cache_key)
-    if cached_data is not None:
-        return cached_data
-    result = await review_scheduler.get_today_review(
+    # Question revisions can be corrected while a long-lived review schedule is
+    # waiting in the queue. Do not cache actionable task payloads: issuance also
+    # rebinds the schedule to the newest immutable revision/occurrence tuple.
+    return await review_scheduler.get_today_review(
         db, current_user.id, subject_id=subject_id, limit=limit
     )
-    await cache.set(cache_key, result, ttl=60)
-    return result
 
 
 @router.get("/today/overview", response_model=TodayReviewOverviewResponse)

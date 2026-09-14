@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
 const config = require('../../../config')
+const storage = require('../../../utils/storage')
 const {
 buildRenderModel, resetRenderGuard, setRenderGuardPage,
 stripLeadingOptionLabel, toPlainInlineMathText, needsRichRender,
@@ -14,6 +15,7 @@ const { getSubjectName } = require('../utils/subject-meta')
 const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
+var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
 var _reviewPerformanceClock = null
 function _reviewMonotonicNow() {
 try {
@@ -174,6 +176,110 @@ timerElapsedMs: 0,
 timerRunning: false,
 }
 },
+_getReviewDraftKey() {
+const session = this._reviewSession || (this._reviewSession = this._createReviewSession())
+const user = storage.get(storage.KEYS.USER) || {}
+const userId = user.id != null ? user.id : (user.user_id != null ? user.user_id : 'current')
+const taskDate = String(session.taskDate || getChinaDate(0))
+return REVIEW_DRAFT_PREFIX + ':' + String(userId) + ':' + taskDate
+},
+_readReviewDraft() {
+const raw = storage.get(this._getReviewDraftKey())
+if (!raw || typeof raw !== 'object') return { answers: {}, position: null }
+return {
+answers: raw.answers && typeof raw.answers === 'object' ? raw.answers : {},
+position: raw.position && typeof raw.position === 'object' ? raw.position : null,
+}
+},
+_writeReviewDraft(payload) {
+const answers = payload && payload.answers && typeof payload.answers === 'object' ? payload.answers : {}
+const hasAnswers = Object.keys(answers).length > 0
+if (!hasAnswers) {
+storage.remove(this._getReviewDraftKey())
+return
+}
+storage.set(this._getReviewDraftKey(), {
+version: 1,
+date: String(this._reviewSession.taskDate || getChinaDate(0)),
+updated_at: Date.now(),
+answers,
+position: payload.position || null,
+})
+},
+_persistReviewDraft() {
+if (!this._reviewSession || this.data.phase !== 'reviewing') return
+const questions = this.data.groupQuestions || []
+if (!questions.length) return
+const stored = this._readReviewDraft()
+const entries = { ...stored.answers }
+const answers = this._reviewSession.answers || {}
+questions.forEach(q => {
+const sid = String(q.schedule_id || '')
+if (!sid) return
+const answer = answers[q.schedule_id] != null ? answers[q.schedule_id] : answers[sid]
+if (answer !== undefined && answer !== null && String(answer) !== '') {
+entries[sid] = {
+schedule_id: q.schedule_id,
+question_id: q.question_id,
+question_version_id: q.question_version_id,
+occurrence_seq: q.occurrence_seq,
+answer: String(answer),
+}
+} else {
+delete entries[sid]
+}
+})
+const current = this.data.currentQuestion
+const position = current ? {
+schedule_id: current.schedule_id,
+question_version_id: current.question_version_id,
+occurrence_seq: current.occurrence_seq,
+} : stored.position
+this._writeReviewDraft({ answers: entries, position })
+},
+_restoreReviewDraft(questions) {
+const list = questions || []
+const stored = this._readReviewDraft()
+const answers = {}
+let restoredCount = 0
+let currentIndex = 0
+list.forEach((q, index) => {
+const sid = String(q.schedule_id || '')
+const entry = sid ? stored.answers[sid] : null
+if (
+entry &&
+String(entry.question_id) === String(q.question_id) &&
+String(entry.question_version_id) === String(q.question_version_id) &&
+String(entry.occurrence_seq) === String(q.occurrence_seq) &&
+String(entry.answer || '') !== ''
+) {
+answers[q.schedule_id] = String(entry.answer)
+restoredCount++
+}
+const pos = stored.position
+if (
+pos &&
+String(pos.schedule_id) === sid &&
+String(pos.question_version_id) === String(q.question_version_id) &&
+String(pos.occurrence_seq) === String(q.occurrence_seq)
+) {
+currentIndex = index
+}
+})
+return { answers, currentIndex, restoredCount }
+},
+_clearSubmittedReviewDraft(groupQuestions, groupResults) {
+const successfulIds = new Set(
+(groupResults || []).filter(item => item && item.wasSubmitted).map(item => String(item.schedule_id))
+)
+if (!successfulIds.size) return
+const stored = this._readReviewDraft()
+const entries = { ...stored.answers }
+successfulIds.forEach(sid => { delete entries[sid] })
+let position = stored.position
+if (position && successfulIds.has(String(position.schedule_id))) position = null
+this._writeReviewDraft({ answers: entries, position })
+},
 onLoad(options) {
 this._alive = true
 this._overviewRequestSeq = 0
@@ -207,6 +313,7 @@ this._showResultDockAndRefreshTimer()
 }
 },
 onHide() {
+if (typeof this._persistReviewDraft === 'function') this._persistReviewDraft()
 this._pauseReviewTimer()
 if (this._resultDockFadeTimer) {
 clearTimeout(this._resultDockFadeTimer)
@@ -214,6 +321,7 @@ this._resultDockFadeTimer = null
 }
 },
 onUnload() {
+if (typeof this._persistReviewDraft === 'function') this._persistReviewDraft()
 this._alive = false
 this._overviewRequestSeq++
 this._flowRequestSeq++
@@ -389,7 +497,8 @@ if (!allQuestions.length) {
 throw new Error('所有题目标准化后为空')
 }
 this._reviewSession.allQuestions = allQuestions
-this._reviewSession.answers = {}
+const restoredDraft = this._restoreReviewDraft(allQuestions)
+this._reviewSession.answers = restoredDraft.answers
 this._reviewSession.sessionId = batch.session_id || ''
 this._reviewSession.currentGroupId = batch.group_id || ''
 this._reviewSession.allGroupResults = []
@@ -401,12 +510,22 @@ this._reviewSession.renderTraces = []
 var firstEnriched = this._enrichQuestion(allQuestions[0])
 var preparedQuestions = allQuestions.slice()
 preparedQuestions[0] = firstEnriched
+var currentIndex = Math.min(Math.max(0, restoredDraft.currentIndex || 0), preparedQuestions.length - 1)
+if (currentIndex > 0) preparedQuestions[currentIndex] = this._enrichQuestion(preparedQuestions[currentIndex])
 this._reviewSession.allQuestions = preparedQuestions
-var firstOptionList = adapter.buildOptionList(firstEnriched, {}, KF)
-var firstQuestion = Object.assign({}, firstEnriched, {
-_optionList: firstOptionList,
+var currentEnriched = preparedQuestions[currentIndex]
+var currentOptionList = adapter.buildOptionList(currentEnriched, restoredDraft.answers, KF)
+var currentBlankOptionGroups = currentEnriched._blankOptionGroups || []
+if (currentEnriched._hasBlankOptionGroups) {
+const restoredAnswer = restoredDraft.answers[currentEnriched.schedule_id] || ''
+currentBlankOptionGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(currentEnriched), restoredAnswer)
+}
+var firstQuestion = Object.assign({}, currentEnriched, {
+_optionList: currentOptionList,
+_blankOptionGroups: currentBlankOptionGroups,
+_hasBlankOptionGroups: currentBlankOptionGroups.length > 0,
 })
-this._reviewSession.optionKeys = firstEnriched._optionKeys
+this._reviewSession.optionKeys = currentEnriched._optionKeys
 this._checkSetDataSize({ phase: 'reviewing', currentQuestion: firstQuestion })
 const batchDueCount = Number(batch.today_due_count || 0)
 const batchCompletedCount = Number(batch.today_completed_count || 0)
@@ -428,9 +547,9 @@ phase: 'reviewing',
 groups: [preparedQuestions],
 currentGroupIdx: 0,
 groupQuestions: preparedQuestions,
-currentIndex: 0,
+currentIndex: currentIndex,
 currentQuestion: firstQuestion,
-_answeredCount: 0,
+_answeredCount: adapter.computeAnsweredCount(preparedQuestions, restoredDraft.answers, KF),
 currentBatchNo: batch.batch_no || 1,
 totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
 todayDueCount: taskTotalCount,
@@ -450,10 +569,14 @@ batchLoading: false,
 isStarting: false,
 isContinuing: false,
 })
+this._syncAnsweredFlags()
 this._updateRunnerFields()
-this._checkRenderInvariant(firstEnriched._renderModel)
-this._recordRenderTrace(firstEnriched._renderModel && firstEnriched._renderModel.renderTrace)
+this._checkRenderInvariant(currentEnriched._renderModel)
+this._recordRenderTrace(currentEnriched._renderModel && currentEnriched._renderModel.renderTrace)
 this._startReviewTimer()
+if (restoredDraft.restoredCount > 0) {
+wx.showToast({ title: `已恢复 ${restoredDraft.restoredCount} 题草稿`, icon: 'none' })
+}
 } catch (e) {
 if (!this._alive || flowSeq !== this._flowRequestSeq) return
 console.error('[REVIEW_ERROR] startTodayReview failed',
@@ -671,6 +794,7 @@ answers[q.schedule_id] = opt
 }
 }
 this._reviewSession.answers = answers
+this._persistReviewDraft()
 const optionList = adapter.buildOptionList(q, answers, KF)
 const currentQuestion = Object.assign({}, q, { _optionList: optionList })
 const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
@@ -698,6 +822,7 @@ if (newAnswer) answers[q.schedule_id] = newAnswer
 else delete answers[q.schedule_id]
 const enrichedGroups = adapter.enrichBlankOptionGroups(rawGroups, newAnswer)
 this._reviewSession.answers = answers
+this._persistReviewDraft()
 const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
 const enrichedQuestions = adapter.applyAnsweredFlags(this.data.groupQuestions,
 adapter.buildAnsweredFlags(this.data.groupQuestions, answers, KF), KF)
@@ -715,12 +840,15 @@ goQuestion(e) {
 var index = e.detail.index
 if (index === this.data.currentIndex) return
 this._showQuestion(index)
+this._persistReviewDraft()
 },
 goNext(e) {
 this._showQuestion(e.detail.index)
+this._persistReviewDraft()
 },
 goPrev(e) {
 this._showQuestion(e.detail.index)
+this._persistReviewDraft()
 },
 tapMaster(e) {
 if (this.data.masterSubmitting || this.data.submittingGroup || this._masterUndoInFlight) return
@@ -1053,6 +1181,9 @@ masteryPercent: wasSubmitted && Number.isFinite(Number(r.mastery_percent)) ? Num
 mastered: !!(wasSubmitted && r.mastered),
 }
 })
+// Drafts are removed only after the server confirms that exact immutable task
+// occurrence was submitted. Failed/skipped items remain available for retry.
+this._clearSubmittedReviewDraft(groupQuestions, groupResults)
 const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasSubmitted).length
 const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
 const groupSkipped = groupResults.filter(r => !r.wasSubmitted).length
@@ -1174,14 +1305,15 @@ if (!this._alive || flowSeq !== this._flowRequestSeq) return
 const rawQuestions = batch.questions || []
 if (rawQuestions.length > 0) {
 const questions = rawQuestions.map(normalizeReviewQuestion).filter(Boolean)
+const restoredDraft = this._restoreReviewDraft(questions)
 this._reviewSession.allQuestions = questions
-this._reviewSession.answers = {}
+this._reviewSession.answers = restoredDraft.answers
 this.setData({
 phase: 'reviewing',
 groups: [questions],
 currentGroupIdx: 0,
 groupQuestions: questions,
-currentIndex: 0,
+currentIndex: restoredDraft.currentIndex,
 currentBatchNo: batch.batch_no || this.data.currentBatchNo + 1,
 totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
 todayDueCount: this._reviewSession.todayTaskTotalCount || this.data.todayDueCount,
@@ -1196,8 +1328,11 @@ showGroupDetails: false,
 resultTransitioning: false,
 })
 this._syncAnsweredFlags()
-this._showQuestion(0)
+this._showQuestion(restoredDraft.currentIndex)
 this._startReviewTimer()
+if (restoredDraft.restoredCount > 0) {
+wx.showToast({ title: `已恢复 ${restoredDraft.restoredCount} 题草稿`, icon: 'none' })
+}
 return
 }
 await this.refreshOverviewStatsSilently()
@@ -1385,6 +1520,7 @@ normalizeReviewBatchSize,
 formatReviewElapsed,
 normalizeReviewQuestion,
 REVIEW_BATCH_SIZE_OPTIONS,
+REVIEW_DRAFT_PREFIX,
 BATCH_SIZE_OPTIONS_META: [
 { value: 5, label: '快速复习' },
 { value: 10, label: '推荐' },
