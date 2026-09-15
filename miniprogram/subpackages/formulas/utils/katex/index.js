@@ -1,8 +1,29 @@
 /**
  * @fileoverview latex 插件
- * katex.min.js来源 https://github.com/rojer95/katex-mini
+ * KaTeX split into chunks to satisfy the 200 KiB single-file limit.
  */
-const parse = require('./katex.min')
+const katex = require('./katex.min')
+
+function parseKatexToNodes(source, options) {
+  const tree = katex.__renderToDomTree(String(source || ''), {
+    ...options,
+    output: 'html',
+  })
+  const nodes = [Object.assign({}, tree, {
+    name: 'span',
+    attrs: { class: 'katex' },
+    type: 'node',
+  })]
+  ;(function convert(item) {
+    if (item instanceof katex.__domTree.SymbolNode) {
+      item.type = 'text'
+      item.children = undefined
+    } else if (Array.isArray(item.children)) {
+      item.children.forEach(convert)
+    }
+  })(nodes[0])
+  return nodes
+}
 
 function Latex () {
 
@@ -57,11 +78,11 @@ function readableLatexFallback(value) {
 }
 
 function renderLatex(source, displayMode) {
-  var nodes = parse.default(source, {
+  var nodes = parseKatexToNodes(source, {
     displayMode: Boolean(displayMode),
     throwOnError: true,
   })
-  return Array.isArray(nodes) && nodes.length && !containsKatexError(nodes) ? nodes : null
+  return nodes
 }
 
 
