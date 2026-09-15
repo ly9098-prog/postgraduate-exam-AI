@@ -12,12 +12,14 @@ export function ImportToast({
   tone = "info",
   onDismiss,
   duration = 3000,
+  scrollable = true,
 }: {
   message: string | null;
   title?: string | null;
   tone?: ImportToastTone;
   onDismiss: () => void;
   duration?: number;
+  scrollable?: boolean;
 }) {
   const onDismissRef = useRef(onDismiss);
 
@@ -71,7 +73,15 @@ export function ImportToast({
       </span>
       <div className="min-w-0 flex-1 py-0.5">
         {title ? <p className="mb-1 font-semibold leading-5">{title}</p> : null}
-        <p className="max-h-[32vh] overflow-y-auto whitespace-pre-line break-words pr-1 leading-5 [scrollbar-width:thin]">{message}</p>
+        <p
+          className={cn(
+            "whitespace-pre-line break-words leading-5",
+            scrollable && "max-h-[32vh] overflow-y-auto pr-1 [scrollbar-width:thin]",
+            !scrollable && "overflow-visible",
+          )}
+        >
+          {message}
+        </p>
       </div>
       <button
         type="button"

@@ -270,7 +270,7 @@ this._indexSearchFootprintHeight = 0
 this._indexSearchRetentionHeight = 0
 let width = 375
 try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
 width = Number(info.windowWidth) || width
 } catch (error) { }
 this._frame = { left: 0, top: 0, width: width * 702 / 750, height: width * 860 / 750 }
@@ -981,7 +981,7 @@ const content = result && result[1]
 const viewport = result && result[2]
 let viewportHeight = 0
 try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
 viewportHeight = Math.max(0, Number(info && info.windowHeight) || 0)
 } catch (error) { }
 callback({
@@ -1332,7 +1332,7 @@ top = Number(detailRect.top)
 } else if (graphRect && Number.isFinite(Number(graphRect.bottom))) {
 let width = 375
 try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
 width = Number(info && info.windowWidth) || width
 } catch (error) { }
 // The card is inserted immediately after the graph. Measure that future
@@ -1428,7 +1428,7 @@ return
 }
 let width = 375
 try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
 width = Number(info && info.windowWidth) || width
 } catch (error) { }
 const gap = Math.max(0, 18 * width / 750)

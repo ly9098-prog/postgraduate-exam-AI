@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Archive, ChevronDown, ChevronRight, ClipboardCheck, History, Plus, RefreshCw, Search } from "lucide-react";
@@ -28,6 +28,7 @@ import type {
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
+import { DEFAULT_EXAM_YEAR, EXAM_YEAR_OPTIONS, isSupportedExamYear } from "@/lib/exam-years";
 
 const typeOptions = [
   { label: "历年真题 · 选择题", value: "past_exam_choice" },
@@ -59,21 +60,39 @@ export default function ExamPapersPage() {
   const canWrite = hasPermission(permissions, "question:write");
   const [title, setTitle] = useState("");
   const [paperType, setPaperType] = useState<AdminExamPaperType>("past_exam_choice");
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [year, setYear] = useState(DEFAULT_EXAM_YEAR);
   const [durationMin, setDurationMin] = useState("75");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const [settledKeyword, setSettledKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [displayStatusFilter, setDisplayStatusFilter] = useState("");
+  const [displayKeyword, setDisplayKeyword] = useState("");
+  const [resultsTransitionPhase, setResultsTransitionPhase] = useState<"idle" | "leaving" | "pre-enter" | "entering">("idle");
+  const displayedFilterRef = useRef({ status: "", keyword: "" });
+  const targetFilterRef = useRef({ status: "", keyword: "" });
+  const resultsTransitionPhaseRef = useRef<"idle" | "leaving" | "pre-enter" | "entering">("idle");
+  const leaveFallbackTimerRef = useRef<number | null>(null);
+  const enterFallbackTimerRef = useRef<number | null>(null);
+  const enterFrameRef = useRef<number | null>(null);
+  const enterFrame2Ref = useRef<number | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettledKeyword(keyword), 160);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
 
   const query = useQuery({
     queryKey: ["exam-papers"],
     queryFn: () => apiRequest<AdminExamPaperListItem[]>("/exams/papers"),
+    staleTime: 30_000,
   });
 
   const createMutation = useMutation({
     mutationFn: () =>
       apiRequest<AdminExamPaperDetail>("/exams/papers", {
         method: "POST",
+        exposeErrorDetail: true,
         body: JSON.stringify({
           title: title.trim(),
           paper_type: paperType,
@@ -94,12 +113,140 @@ export default function ExamPapersPage() {
     published: papers.filter((paper) => paper.status === "published").length,
     attempts: papers.reduce((total, paper) => total + paper.attempt_count, 0),
   }), [papers]);
-  const normalizedKeyword = keyword.trim().toLowerCase();
+  const normalizedKeyword = settledKeyword.trim().toLowerCase();
+
+  const updateResultsTransitionPhase = useCallback((phase: "idle" | "leaving" | "pre-enter" | "entering") => {
+    resultsTransitionPhaseRef.current = phase;
+    setResultsTransitionPhase(phase);
+  }, []);
+
+  const clearLeaveFallback = useCallback(() => {
+    if (leaveFallbackTimerRef.current !== null) {
+      window.clearTimeout(leaveFallbackTimerRef.current);
+      leaveFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const clearEnterFallback = useCallback(() => {
+    if (enterFallbackTimerRef.current !== null) {
+      window.clearTimeout(enterFallbackTimerRef.current);
+      enterFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const clearEnterFrames = useCallback(() => {
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current);
+      enterFrameRef.current = null;
+    }
+    if (enterFrame2Ref.current !== null) {
+      window.cancelAnimationFrame(enterFrame2Ref.current);
+      enterFrame2Ref.current = null;
+    }
+  }, []);
+
+  const commitDisplayedFilter = useCallback((nextFilter: { status: string; keyword: string }) => {
+    displayedFilterRef.current = nextFilter;
+    setDisplayStatusFilter(nextFilter.status);
+    setDisplayKeyword(nextFilter.keyword);
+  }, []);
+
+  const startResultsEnter = useCallback(() => {
+    clearEnterFrames();
+    clearEnterFallback();
+    updateResultsTransitionPhase("pre-enter");
+    enterFrameRef.current = window.requestAnimationFrame(() => {
+      enterFrameRef.current = null;
+      enterFrame2Ref.current = window.requestAnimationFrame(() => {
+        enterFrame2Ref.current = null;
+        if (resultsTransitionPhaseRef.current !== "pre-enter") return;
+        updateResultsTransitionPhase("entering");
+        enterFallbackTimerRef.current = window.setTimeout(() => {
+          enterFallbackTimerRef.current = null;
+          if (resultsTransitionPhaseRef.current === "entering") updateResultsTransitionPhase("idle");
+        }, 260);
+      });
+    });
+  }, [clearEnterFallback, clearEnterFrames, updateResultsTransitionPhase]);
+
+  const finishResultsLeave = useCallback(() => {
+    if (resultsTransitionPhaseRef.current !== "leaving") return;
+    clearLeaveFallback();
+    commitDisplayedFilter(targetFilterRef.current);
+    startResultsEnter();
+  }, [clearLeaveFallback, commitDisplayedFilter, startResultsEnter]);
+
+  useEffect(() => {
+    const nextFilter = { status: statusFilter, keyword: normalizedKeyword };
+    targetFilterRef.current = nextFilter;
+    const currentFilter = displayedFilterRef.current;
+    const isSameAsDisplayed = currentFilter.status === nextFilter.status && currentFilter.keyword === nextFilter.keyword;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      clearLeaveFallback();
+      clearEnterFallback();
+      clearEnterFrames();
+      if (!isSameAsDisplayed) commitDisplayedFilter(nextFilter);
+      updateResultsTransitionPhase("idle");
+      return undefined;
+    }
+
+    if (isSameAsDisplayed) {
+      if (resultsTransitionPhaseRef.current === "leaving") {
+        clearLeaveFallback();
+        clearEnterFallback();
+        updateResultsTransitionPhase("entering");
+        enterFallbackTimerRef.current = window.setTimeout(() => {
+          enterFallbackTimerRef.current = null;
+          if (resultsTransitionPhaseRef.current === "entering") updateResultsTransitionPhase("idle");
+        }, 260);
+      }
+      return undefined;
+    }
+
+    if (resultsTransitionPhaseRef.current === "pre-enter") {
+      commitDisplayedFilter(nextFilter);
+      return undefined;
+    }
+
+    if (resultsTransitionPhaseRef.current === "leaving") return undefined;
+
+    clearEnterFallback();
+    clearEnterFrames();
+    updateResultsTransitionPhase("leaving");
+    clearLeaveFallback();
+    leaveFallbackTimerRef.current = window.setTimeout(finishResultsLeave, 180);
+    return undefined;
+  }, [
+    clearEnterFallback,
+    clearEnterFrames,
+    clearLeaveFallback,
+    commitDisplayedFilter,
+    finishResultsLeave,
+    normalizedKeyword,
+    statusFilter,
+    updateResultsTransitionPhase,
+  ]);
+
+  useEffect(() => () => {
+    clearLeaveFallback();
+    clearEnterFallback();
+    clearEnterFrames();
+  }, [clearEnterFallback, clearEnterFrames, clearLeaveFallback]);
+
   const filteredPapers = useMemo(() => papers.filter((paper) => {
-    if (statusFilter && paper.status !== statusFilter) return false;
-    if (!normalizedKeyword) return true;
-    return `${paper.title} ${paper.source ?? ""} ${paper.year ?? ""} ${paper.version}`.toLowerCase().includes(normalizedKeyword);
-  }), [papers, normalizedKeyword, statusFilter]);
+    if (displayStatusFilter && paper.status !== displayStatusFilter) return false;
+    if (!displayKeyword) return true;
+    return `${paper.title} ${paper.source ?? ""} ${paper.year ?? ""} ${paper.version}`.toLowerCase().includes(displayKeyword);
+  }), [displayKeyword, displayStatusFilter, papers]);
+  const isSearchSettling = settledKeyword !== keyword;
+  const isResultsTransitioning = isSearchSettling || resultsTransitionPhase !== "idle";
+  const stableDesktopListHeight = papers.length > 0
+    ? Math.max(260, Math.min(720, 46 + papers.length * 78))
+    : 260;
+  const stableMobileListHeight = papers.length > 0
+    ? Math.max(240, Math.min(560, papers.length * 96))
+    : 240;
   const statusSegments = [
     { value: "", label: "全部", count: summary.total },
     { value: "draft", label: "草稿", count: summary.draft },
@@ -168,7 +315,13 @@ export default function ExamPapersPage() {
                 </label>
                 <label>
                   <FieldLabel>年份</FieldLabel>
-                  <Input value={year} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="2025" />
+                  <CustomSelect
+                    value={year}
+                    options={[...EXAM_YEAR_OPTIONS]}
+                    onChange={setYear}
+                    placeholder="选择年份"
+                    clearable={paperType !== "past_exam_choice"}
+                  />
                 </label>
                 <label>
                   <FieldLabel>建议时长（分钟）</FieldLabel>
@@ -177,13 +330,22 @@ export default function ExamPapersPage() {
                 <Button
                   className="w-full xl:w-auto"
                   onClick={() => createMutation.mutate()}
-                  disabled={!title.trim() || createMutation.isPending || (paperType === "past_exam_choice" && year.length !== 4)}
+                  disabled={
+                    !title.trim()
+                    || createMutation.isPending
+                    || (paperType === "past_exam_choice" && !isSupportedExamYear(year))
+                    || (paperType === "mock_choice" && Boolean(year) && !isSupportedExamYear(year))
+                  }
                 >
                   <Plus className="h-4 w-4" />
                   创建草稿
                 </Button>
               </div>
-              {createMutation.isError ? <ManagementNotice className="mt-3" tone="danger">创建失败，请检查名称、年份和时长后重试。</ManagementNotice> : null}
+              {createMutation.isError ? (
+                <ManagementNotice className="mt-3" tone="danger">
+                  {createMutation.error instanceof Error ? createMutation.error.message : "创建失败，请检查名称、年份和时长后重试。"}
+                </ManagementNotice>
+              ) : null}
             </ManagementPanel>
           </div>
         </div>
@@ -221,57 +383,93 @@ export default function ExamPapersPage() {
         }
         contentClassName="p-0"
       >
-        {query.isLoading ? <ManagementSkeletonRows rows={6} /> : (
-          <>
-            <div className="hidden max-h-[720px] overflow-auto md:block">
-              <table className="w-full min-w-[920px] text-sm">
-                <thead className="sticky top-0 z-10 bg-[rgba(244,247,249,0.96)] text-left text-[11px] font-semibold tracking-[0.015em] text-[var(--color-text-secondary)] shadow-[0_1px_0_var(--mgmt-line)] backdrop-blur-md">
-                  <tr>
-                    <th className="px-5 py-3">试卷</th>
-                    <th className="px-4 py-3">类型</th>
-                    <th className="px-4 py-3 text-right">题目 / 分值</th>
-                    <th className="px-4 py-3 text-right">建议时长</th>
-                    <th className="px-4 py-3 text-right">历史作答</th>
-                    <th className="px-4 py-3">状态</th>
-                    <th className="w-12 px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPapers.map((paper) => {
-                    const status = statusMeta(paper.status);
-                    return (
-                      <tr
-                        key={paper.id}
-                        tabIndex={0}
-                        role="button"
-                        onClick={() => router.push(`/exams/${paper.public_id}`)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") router.push(`/exams/${paper.public_id}`);
-                        }}
-                        className="group relative border-t border-[var(--color-border-light)] transition-[background-color,box-shadow] duration-200 hover:bg-[rgba(74,111,138,0.04)] hover:shadow-[inset_3px_0_0_rgba(74,111,138,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)] motion-reduce:transition-none"
-                      >
-                        <td className="px-5 py-4">
-                          <div className="flex min-w-0 items-center gap-2">
-                            {paper.year ? <span className="shrink-0 rounded-md border border-[var(--mgmt-line)] bg-[var(--mgmt-steel)] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[var(--color-primary-dark)]">{paper.year}</span> : null}
-                            <p className="max-w-[430px] truncate font-semibold leading-5 text-[var(--ink)]">{paper.title}</p>
-                          </div>
-                          <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">版本 v{paper.version}{paper.source ? ` · ${paper.source}` : ""}</p>
-                        </td>
-                        <td className="px-4 py-4 text-[var(--color-text-secondary)]">{paperKindLabel(paper)}</td>
-                        <td className="px-4 py-4 text-right tabular-nums"><span className="font-semibold text-[var(--ink)]">{paper.question_count}</span><span className="text-[var(--color-text-tertiary)]"> / {paper.total_choice_score} 分</span></td>
-                        <td className="px-4 py-4 text-right tabular-nums text-[var(--color-text-secondary)]">{paper.duration_sec ? `${Math.round(paper.duration_sec / 60)} 分钟` : "不限时"}</td>
-                        <td className="px-4 py-4 text-right tabular-nums text-[var(--color-text-secondary)]">{paper.attempt_count}</td>
-                        <td className="px-4 py-4"><StatusBadge tone={status.tone}>{status.label}</StatusBadge></td>
-                        <td className="px-4 py-4 text-[var(--color-text-tertiary)]"><ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 motion-reduce:transition-none" /></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+        {query.isLoading ? (
+          <div className="min-h-[300px]">
+            <ManagementSkeletonRows rows={4} />
+          </div>
+        ) : (
+          <div
+            aria-busy={isResultsTransitioning}
+            onTransitionEnd={(event) => {
+              if (event.currentTarget !== event.target || event.propertyName !== "opacity") return;
+              if (resultsTransitionPhaseRef.current === "leaving") {
+                finishResultsLeave();
+              } else if (resultsTransitionPhaseRef.current === "entering") {
+                clearEnterFallback();
+                updateResultsTransitionPhase("idle");
+              }
+            }}
+            className={`transition-opacity motion-reduce:transition-none motion-reduce:opacity-100 ${
+              resultsTransitionPhase === "leaving"
+                ? "pointer-events-none opacity-0 duration-[110ms] ease-[cubic-bezier(0.4,0,1,1)] will-change-[opacity]"
+                : resultsTransitionPhase === "pre-enter"
+                  ? "pointer-events-none opacity-0 duration-0 will-change-[opacity]"
+                  : resultsTransitionPhase === "entering"
+                    ? "opacity-100 duration-[190ms] ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[opacity]"
+                    : "opacity-100 duration-0"
+            }`}
+          >
+            <div
+              className="hidden max-h-[720px] overflow-auto [scrollbar-gutter:stable] md:block"
+              style={{ minHeight: stableDesktopListHeight }}
+            >
+              {filteredPapers.length > 0 ? (
+                <table className="w-full min-w-[920px] text-sm">
+                  <thead className="sticky top-0 z-10 bg-[rgba(244,247,249,0.96)] text-left text-[11px] font-semibold tracking-[0.015em] text-[var(--color-text-secondary)] shadow-[0_1px_0_var(--mgmt-line)] backdrop-blur-md">
+                    <tr>
+                      <th className="px-5 py-3">试卷</th>
+                      <th className="px-4 py-3">类型</th>
+                      <th className="px-4 py-3 text-right">题目 / 分值</th>
+                      <th className="px-4 py-3 text-right">建议时长</th>
+                      <th className="px-4 py-3 text-right">历史作答</th>
+                      <th className="px-4 py-3">状态</th>
+                      <th className="w-12 px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPapers.map((paper) => {
+                      const status = statusMeta(paper.status);
+                      return (
+                        <tr
+                          key={paper.id}
+                          tabIndex={0}
+                          role="button"
+                          onClick={() => router.push(`/exams/${paper.public_id}`)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") router.push(`/exams/${paper.public_id}`);
+                          }}
+                          className="group relative border-t border-[var(--color-border-light)] transition-[background-color,box-shadow] duration-200 hover:bg-[rgba(74,111,138,0.04)] hover:shadow-[inset_3px_0_0_rgba(74,111,138,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)] motion-reduce:transition-none"
+                        >
+                          <td className="px-5 py-4">
+                            <div className="flex min-w-0 items-center gap-2">
+                              {paper.year ? <span className="shrink-0 rounded-md border border-[var(--mgmt-line)] bg-[var(--mgmt-steel)] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[var(--color-primary-dark)]">{paper.year}</span> : null}
+                              <p className="max-w-[430px] truncate font-semibold leading-5 text-[var(--ink)]">{paper.title}</p>
+                            </div>
+                            <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">版本 v{paper.version}{paper.source ? ` · ${paper.source}` : ""}</p>
+                          </td>
+                          <td className="px-4 py-4 text-[var(--color-text-secondary)]">{paperKindLabel(paper)}</td>
+                          <td className="px-4 py-4 text-right tabular-nums"><span className="font-semibold text-[var(--ink)]">{paper.question_count}</span><span className="text-[var(--color-text-tertiary)]"> / {paper.total_choice_score} 分</span></td>
+                          <td className="px-4 py-4 text-right tabular-nums text-[var(--color-text-secondary)]">{paper.duration_sec ? `${Math.round(paper.duration_sec / 60)} 分钟` : "不限时"}</td>
+                          <td className="px-4 py-4 text-right tabular-nums text-[var(--color-text-secondary)]">{paper.attempt_count}</td>
+                          <td className="px-4 py-4"><StatusBadge tone={status.tone}>{status.label}</StatusBadge></td>
+                          <td className="px-4 py-4 text-[var(--color-text-tertiary)]"><ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 motion-reduce:transition-none" /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="grid h-full min-h-[176px] place-items-center">
+                  <EmptyState>{papers.length === 0 ? "还没有试卷。创建一份草稿后即可开始组卷。" : "当前筛选没有匹配的试卷。清空搜索或切换状态后再试。"}</EmptyState>
+                </div>
+              )}
             </div>
 
-            <div className="divide-y divide-[var(--color-border-light)] md:hidden">
-              {filteredPapers.map((paper) => {
+            <div
+              className="divide-y divide-[var(--color-border-light)] md:hidden"
+              style={{ minHeight: stableMobileListHeight }}
+            >
+              {filteredPapers.length > 0 ? filteredPapers.map((paper) => {
                 const status = statusMeta(paper.status);
                 return (
                   <button key={paper.id} className="group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-[rgba(74,111,138,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]" onClick={() => router.push(`/exams/${paper.public_id}`)}>
@@ -286,11 +484,13 @@ export default function ExamPapersPage() {
                     <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200 group-hover:translate-x-1" />
                   </button>
                 );
-              })}
+              }) : (
+                <div className="grid h-full min-h-[176px] place-items-center">
+                  <EmptyState>{papers.length === 0 ? "还没有试卷。创建一份草稿后即可开始组卷。" : "当前筛选没有匹配的试卷。清空搜索或切换状态后再试。"}</EmptyState>
+                </div>
+              )}
             </div>
-
-            {filteredPapers.length === 0 ? <EmptyState>{papers.length === 0 ? "还没有试卷。创建一份草稿后即可开始组卷。" : "当前筛选没有匹配的试卷。清空搜索或切换状态后再试。"}</EmptyState> : null}
-          </>
+          </div>
         )}
       </ManagementPanel>
     </ManagementPage>

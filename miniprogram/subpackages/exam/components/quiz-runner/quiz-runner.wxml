@@ -21,14 +21,15 @@
 <text class="runner-collapsed-meta"><text wx:if="{{mode === 'exam' && currentQuestion && currentQuestion._subjectName}}">{{currentQuestion._subjectName}} · </text>{{currentIndex + 1}} / {{totalCount || 0}} · {{elapsedText}}</text>
 </view>
 <view
-          class="runner-expand-btn"
-          wx:if="{{heroCollapsed && heroCollapseEnabled}}"
+          class="runner-expand-btn {{heroCollapsed ? 'runner-expand-btn-visible' : ''}}"
+          wx:if="{{heroCollapseEnabled}}"
           hover-class="runner-control-pressed"
           hover-start-time="20"
           hover-stay-time="80"
           catchtap="expandHero"
           aria-role="button"
           aria-label="展开顶部信息"
+          aria-hidden="{{!heroCollapsed}}"
         >
 <text class="runner-expand-icon line-icon icon-chevron-down"></text>
 </view>
@@ -71,13 +72,16 @@
 <scroll-view
     class="runner-question-area"
     scroll-y="{{!flowLayout && !compactReviewMode}}"
+    scroll-top="{{questionScrollTop}}"
     scroll-into-view="{{questionScrollIntoView}}"
     scroll-with-animation="{{false}}"
     scroll-anchoring="{{false}}"
     bounces="{{false}}"
     enhanced
     show-scrollbar="{{false}}"
+    upper-threshold="4"
     bindscroll="onQuestionScroll"
+    bindscrolltoupper="onQuestionScrollToUpper"
     bindtouchstart="onTouchStart"
     bindtouchend="onTouchEnd"
     bindtouchcancel="onTouchCancel"
@@ -143,12 +147,13 @@
 <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}" wx:key="segments">
 <math-question segments="{{currentQuestion._renderModel.segments}}" />
 </block>
-<rich-text
+<text
         wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}"
-        wx:key="rich-text"
+        wx:key="plain-text"
         class="runner-q-content"
-        nodes="{{currentQuestion._renderModel.richTextNodes}}"
-      ></rich-text>
+        space="preserve"
+        user-select="{{true}}"
+      >{{currentQuestion._renderModel.plainText}}</text>
 <scroll-view
         wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}"
         wx:key="code"
@@ -176,7 +181,7 @@
       ></mp-html>
 <block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}" wx:key="mixed">
 <block wx:for="{{_mixedBlocks}}" wx:key="index">
-<rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="runner-mixed-text-block" nodes="{{item.richTextNodes}}" />
+<text wx:if="{{item.type === 'RICH_TEXT'}}" class="runner-mixed-text-block" space="preserve" user-select="{{true}}">{{item.plainText}}</text>
 <mp-html wx:elif="{{item.type === 'LATEX'}}" class="runner-mixed-latex-block" content="{{item.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}" />
 <scroll-view
             wx:elif="{{item.type === 'CODE'}}"
@@ -234,25 +239,32 @@
 </view>
 <view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt.key}}.</text>
+<view class="runner-option-content" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <block wx:if="{{opt._segments && opt._segments.length > 0}}">
-<image
-                    fade-in="{{false}}"
-                    webp="{{true}}"
+<view
                     wx:for="{{opt._segments}}"
                     wx:for-item="seg"
                     wx:key="index"
                     wx:if="{{seg.url}}"
-                    class="runner-option-image"
-                    src="{{seg.url}}"
-                    mode="widthFix"
+                    class="runner-option-media"
                     data-src="{{seg.url}}"
                     bindtap="previewOptionImage"
                     data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
-                  />
+                  >
+<image
+                      fade-in="{{false}}"
+                      webp="{{true}}"
+                      class="runner-option-image"
+                      src="{{seg.url}}"
+                      mode="aspectFit"
+                      show-menu-by-longpress="{{false}}"
+                    />
+</view>
 <text wx:if="{{opt._text}}" class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt._text}}</text>
 </block>
-<mp-html wx:elif="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+<mp-html wx:elif="{{opt._needsRich}}" content="{{opt._html}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
 <text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt._text}}</text>
+</view>
 </view>
 </view>
 </view>
@@ -276,25 +288,32 @@
 </view>
 <view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item.key}}.</text>
+<view class="runner-option-content" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <block wx:if="{{item._segments && item._segments.length > 0}}">
-<image
-                fade-in="{{false}}"
-                webp="{{true}}"
+<view
                 wx:for="{{item._segments}}"
                 wx:for-item="seg"
                 wx:key="index"
                 wx:if="{{seg.url}}"
-                class="runner-option-image"
-                src="{{seg.url}}"
-                mode="widthFix"
+                class="runner-option-media"
                 data-src="{{seg.url}}"
                 bindtap="previewOptionImage"
                 data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
-              />
+              >
+<image
+                  fade-in="{{false}}"
+                  webp="{{true}}"
+                  class="runner-option-image"
+                  src="{{seg.url}}"
+                  mode="aspectFit"
+                  show-menu-by-longpress="{{false}}"
+                />
+</view>
 <text wx:if="{{item._text}}" class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
 </block>
-<mp-html wx:elif="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+<mp-html wx:elif="{{item._needsRich}}" content="{{item._html}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
 <text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
+</view>
 </view>
 </view>
 </view>

@@ -1,4 +1,5 @@
 const api = require('../../../utils/api')
+const examAttemptCache = require('../utils/exam-attempt-cache')
 
 const SEARCH_DEBOUNCE_MS = 280
 
@@ -85,11 +86,13 @@ Page({
     activeQuery: '',
     searchFocused: false,
     startingId: 0,
+    cancellingAttemptId: 0,
     suggestedPaperId: 0,
   },
 
   onLoad(options = {}) {
     this._pageAlive = true
+    this._loadGeneration = 0
     const suggestedPaperId = Number(options.suggested_paper_id) || 0
     this.setData({ suggestedPaperId })
     this.loadPapers()
@@ -106,6 +109,7 @@ Page({
 
   onUnload() {
     this._pageAlive = false
+    this._loadGeneration = (this._loadGeneration || 0) + 1
     this._clearSearchTimer()
     clearTimeout(this._resumeRefreshTimer)
     this._resumeRefreshTimer = null
@@ -113,11 +117,20 @@ Page({
 
   async loadPapers(options = {}) {
     const silent = !!options.silent
-    if (this._loadPromise) return this._loadPromise
+    const force = !!options.force
+    const suppressErrorToast = !!options.suppressErrorToast
+    if (this._loadPromise && !force) return this._loadPromise
 
     if (!silent && !this._loadedOnce) {
       this.setData({ loading: true, errorText: '' })
     }
+
+    // A cancellation can happen while an onShow refresh is still in flight.
+    // Allow the post-cancel force refresh to overtake it, and only let the
+    // newest generation commit. This prevents stale responses from restoring
+    // a just-cancelled "继续作答" state.
+    const generation = (this._loadGeneration || 0) + 1
+    this._loadGeneration = generation
 
     const request = (async () => {
       try {
@@ -145,15 +158,15 @@ Page({
           isLatestYear: !!latestYear && Number(item.year) === latestYear,
         }))
 
-        if (!this._pageAlive) return
+        if (!this._pageAlive || generation !== this._loadGeneration) return
         const wasLoaded = this._loadedOnce
         this._loadedOnce = true
         this._commitPapers(papers, { silent: silent || wasLoaded })
       } catch (error) {
-        if (!this._pageAlive) return
+        if (!this._pageAlive || generation !== this._loadGeneration) return
         const message = api.getErrorMessage(error)
         if ((silent || this._loadedOnce) && !this.data.errorText) {
-          wx.showToast({ title: message, icon: 'none' })
+          if (!suppressErrorToast) wx.showToast({ title: message, icon: 'none' })
           return
         }
         this.setData({ loading: false, errorText: message })
@@ -249,7 +262,7 @@ Page({
   async openPaper(e) {
     const id = Number(e.currentTarget.dataset.id)
     const paper = this.data.papers.find((item) => Number(item.id) === id)
-    if (!paper || this.data.startingId) return
+    if (!paper || this.data.startingId || this.data.cancellingAttemptId) return
 
     if (paper.canResume) {
       wx.navigateTo({ url: `/subpackages/exam/exam-runner/index?attempt_id=${paper.latest_attempt_id}` })
@@ -283,6 +296,106 @@ Page({
       wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
     } finally {
       this.setData({ startingId: 0 })
+    }
+  },
+
+  _optimisticallyClearResume(paperId, attemptId) {
+    const papers = this.data.papers.map((item) => {
+      if (Number(item.id) !== Number(paperId)) return item
+      if (Number(item.latest_attempt_id) !== Number(attemptId)) return item
+      return {
+        ...item,
+        canResume: false,
+        latest_attempt_id: null,
+        latest_attempt_status: 'abandoned',
+      }
+    })
+    this._commitPapers(papers)
+  },
+
+  _clearCancelledAttemptCache(attemptId) {
+    examAttemptCache.clearPendingAttempt(attemptId)
+  },
+
+  async _reconcileCancelledAttemptCache(attemptId) {
+    try {
+      const attempt = await api.get(
+        `/exams/attempts/${attemptId}`,
+        {},
+        { timeout: 10000, suppressNetworkToast: true }
+      )
+      const status = attempt && attempt.status
+      // A clock-expired attempt can still be stored as in_progress until the
+      // atomic submit arrives with locally pending answers. Never discard that
+      // cache based only on the paper-list's virtual "expired" presentation.
+      if (status === 'abandoned' || status === 'submitted' || status === 'expired') {
+        this._clearCancelledAttemptCache(attemptId)
+      }
+      return status || ''
+    } catch (_) {
+      // When state cannot be confirmed, preserving the draft is safer than
+      // deleting potentially unsynchronised final answers.
+      return ''
+    }
+  },
+
+  async cancelResume(e) {
+    const paperId = Number(e.currentTarget.dataset.id)
+    const attemptId = Number(e.currentTarget.dataset.attemptId)
+    if (!paperId || !attemptId || this.data.startingId || this.data.cancellingAttemptId) return
+
+    const paper = this.data.papers.find((item) => Number(item.id) === paperId)
+    if (!paper || !paper.canResume || Number(paper.latest_attempt_id) !== attemptId) {
+      await this.loadPapers({ silent: true, force: true, suppressErrorToast: true })
+      return
+    }
+
+    const confirmed = await this._showAppDialog({
+      scenario: 'danger',
+      title: '取消本次作答？',
+      message: '当前未提交的作答进度将被放弃，之后会从头开始；本次不会生成考试记录。',
+      confirmText: '取消本次',
+      cancelText: '继续作答',
+      maskClose: false,
+    })
+    if (!confirmed || !this._pageAlive) return
+
+    this.setData({ cancellingAttemptId: attemptId })
+    try {
+      const result = await api.post(`/exams/attempts/${attemptId}/abandon`)
+      if (!result || result.status !== 'abandoned' || Number(result.id) !== attemptId) {
+        throw new Error('INVALID_ABANDON_RESPONSE')
+      }
+
+      // Only clear local drafts after the server has durably accepted the
+      // cancellation. A network failure must leave the cache intact so the
+      // user can still resume safely.
+      this._clearCancelledAttemptCache(attemptId)
+      if (!this._pageAlive) return
+      this._optimisticallyClearResume(paperId, attemptId)
+      wx.showToast({ title: '已取消本次作答', icon: 'success' })
+
+      // Reconcile with the server after the optimistic update. force=true is
+      // important when an older onShow request is still running.
+      await this.loadPapers({ silent: true, force: true, suppressErrorToast: true })
+    } catch (error) {
+      if (!this._pageAlive) return
+
+      // A 409 means another request/device won a terminal-state race, or the
+      // countdown has just elapsed. Confirm the real attempt state before
+      // touching local drafts: list_papers may *present* an elapsed in_progress
+      // row as expired even though its pending answers still need atomic submit.
+      if (Number(error && error.statusCode) === 409) {
+        await this._reconcileCancelledAttemptCache(attemptId)
+        await this.loadPapers({ silent: true, force: true, suppressErrorToast: true })
+        wx.showToast({ title: '作答状态已变化，请重新确认', icon: 'none' })
+      } else {
+        wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+      }
+    } finally {
+      if (this._pageAlive && Number(this.data.cancellingAttemptId) === attemptId) {
+        this.setData({ cancellingAttemptId: 0 })
+      }
     }
   },
 

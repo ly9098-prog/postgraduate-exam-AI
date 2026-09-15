@@ -668,7 +668,7 @@ var m = model || {}
 var mode = m.mode
 var active = 0
 if (mode === RENDER_MODE.RICH_TEXT) {
-active += m.richTextNodes && m.richTextNodes.length ? 1 : 0
+active += m.plainText ? 1 : 0
 if (m.html || m.rawText || (m.blocks && m.blocks.length)) {
 console.error('[RENDER_PAYLOAD_CONFLICT] RICH_TEXT has extra payload')
 }
@@ -705,8 +705,8 @@ function _assertBlockPayloadIntegrity(blocks) {
 if (!appConfig.DEV || !Array.isArray(blocks)) return
 for (var i = 0; i < blocks.length; i++) {
 var b = blocks[i]
-if (b.type === 'RICH_TEXT' && !(b.richTextNodes && b.richTextNodes.length)) {
-console.error('[BLOCK_PAYLOAD] RICH_TEXT block #' + i + ' missing richTextNodes')
+if (b.type === 'RICH_TEXT' && !String(b.plainText || '')) {
+console.error('[BLOCK_PAYLOAD] RICH_TEXT block #' + i + ' missing plainText')
 }
 if (b.type === 'LATEX' && !b.html) {
 console.error('[BLOCK_PAYLOAD] LATEX block #' + i + ' missing html')
@@ -742,7 +742,8 @@ function _renderRichTextBlock(text) {
 var plain = _toPlainInlineMathText(text) || _toPlainSimpleInlineMathText(text) || text
 return {
 type: 'RICH_TEXT',
-richTextNodes: _buildRichTextNodes(plain),
+plainText: String(plain || ''),
+richTextNodes: [],
 }
 }
 function _renderLatexBlock(text) {
@@ -775,7 +776,7 @@ var sourceStemText = stemText || (content && _segmentsToText(content.segments)) 
 sourceStemText = _repairFalseNumberMarkerBreaks(sourceStemText)
 var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
 var stemHash = _hashStem(cleanedStem)
-var mode, richTextNodes, html, segments, rawText, blocks
+var mode, richTextNodes, html, segments, rawText, blocks, plainText
 var segmentsAgreeWithStem = !content || _segmentsAgreeWithCanonicalStem(content.segments, cleanedStem, options, optionKeys)
 if (content && content.render_mode === 'segments' && segmentsAgreeWithStem && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments) || _hasCodeSegments(content.segments))) {
 mode = RENDER_MODE.SEGMENTS
@@ -790,6 +791,7 @@ if (!hasTextualSegment && stemText && cleanedStem && !_stemIsRepresentedByCodeSe
 segments = _textToSegments(cleanedStem).concat(segments)
 }
 richTextNodes = []
+plainText = ''
 html = ''
 blocks = []
 } else {
@@ -813,6 +815,7 @@ blocks.push(_renderRichTextBlock(sb.text))
 }
 }
 richTextNodes = []
+plainText = ''
 html = ''
 rawText = ''
 segments = []
@@ -833,19 +836,22 @@ var plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathT
 var plainConversionSucceeded = typeof plainStem === 'string' && plainStem.length > 0 && !containsUnresolvedLatex(plainStem)
 if (plainConversionSucceeded && !containsCode(cleanedStem)) {
 mode = RENDER_MODE.RICH_TEXT
-richTextNodes = _buildRichTextNodes(plainStem)
+plainText = String(plainStem || '')
+richTextNodes = []
 html = ''
 segments = []
 blocks = []
 rawText = ''
 } else if (hasLatex && !selfHealCode) {
 mode = RENDER_MODE.LATEX
+plainText = ''
 html = _textToHtml(cleanedStem)
 richTextNodes = []
 segments = []
 blocks = []
 } else if (containsCode(cleanedStem)) {
 mode = RENDER_MODE.CODE
+plainText = ''
 var sanitizedCode = sanitizeImportedCodeArtifacts(cleanedStem)
 var codeText = sanitizedCode
 if (!effectiveConfig.DISABLE_CODE_RECONSTRUCT && shouldReconstructCode(sanitizedCode)) {
@@ -863,7 +869,8 @@ _reportDiff(diffIssues, q && q.id)
 } else {
 mode = RENDER_MODE.RICH_TEXT
 var plainStemFallback = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem) || cleanedStem
-richTextNodes = _buildRichTextNodes(plainStemFallback)
+plainText = String(plainStemFallback || '')
+richTextNodes = []
 html = ''
 segments = []
 blocks = []
@@ -878,6 +885,7 @@ _renderGuardCheck(q && q.id, stemHash, mode)
 var renderTrace = _buildRenderTrace(q && q.id, sourceStemText, mode, cleanedStem, blocks)
 var model = {
 mode: mode,
+plainText: plainText || '',
 richTextNodes: richTextNodes || [],
 html: html || '',
 segments: segments || [],

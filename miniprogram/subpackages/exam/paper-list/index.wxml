@@ -117,7 +117,7 @@
 
     <view class="paper-list" wx:else>
       <view
-        class="paper-card {{item.isSuggested ? 'paper-card-suggested' : ''}} {{startingId === item.id ? 'paper-card-starting' : ''}}"
+        class="paper-card {{item.isSuggested ? 'paper-card-suggested' : ''}} {{startingId === item.id ? 'paper-card-starting' : ''}} {{cancellingAttemptId === item.latest_attempt_id ? 'paper-card-cancelling' : ''}}"
         wx:for="{{visiblePapers}}"
         wx:key="id"
         data-id="{{item.id}}"
@@ -152,13 +152,28 @@
         <view class="paper-divider"></view>
 
         <view class="paper-foot">
-          <text class="paper-source">{{item.source || 'MemoGrad'}}</text>
+          <view class="paper-foot-left">
+            <view
+              wx:if="{{item.canResume}}"
+              class="paper-cancel-resume {{cancellingAttemptId === item.latest_attempt_id ? 'is-loading' : ''}}"
+              data-id="{{item.id}}"
+              data-attempt-id="{{item.latest_attempt_id}}"
+              catchtap="cancelResume"
+              hover-class="paper-cancel-resume-pressed"
+              hover-stop-propagation="true"
+              aria-role="button"
+              aria-label="取消 {{item.title}} 的当前作答进度"
+            >
+              <text>{{cancellingAttemptId === item.latest_attempt_id ? '取消中…' : '取消作答'}}</text>
+            </view>
+            <text class="paper-source">{{item.source || 'MemoGrad'}}</text>
+          </view>
           <view class="paper-action-wrap">
             <text class="paper-action" wx:if="{{startingId === item.id}}">正在创建…</text>
             <text class="paper-action" wx:elif="{{item.canResume}}">继续作答</text>
             <text class="paper-action" wx:elif="{{item.bestScoreText}}">再做一次</text>
             <text class="paper-action" wx:else>开始作答</text>
-            <text class="paper-action-arrow" wx:if="{{startingId !== item.id}}">→</text>
+            <text class="paper-action-arrow" wx:if="{{startingId !== item.id && cancellingAttemptId !== item.latest_attempt_id}}">→</text>
           </view>
         </view>
       </view>

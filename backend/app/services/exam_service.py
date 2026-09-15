@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, select
+from sqlalchemy import Float, case, cast, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,11 @@ class ExamStateError(ValueError):
 
 
 TERMINAL_ATTEMPT_STATUSES = {"submitted", "expired"}
+# The client flushes its last local answer/time slice immediately before the
+# final submit request.  Do not let that PATCH become the operation that
+# finalizes an expired attempt: otherwise it creates the history/result row
+# first and the client observes a 409 instead of completing auto-submit.
+ANSWER_SYNC_DEADLINE_GRACE_SEC = 8
 
 
 def _money(value: Any) -> float:
@@ -406,7 +411,11 @@ async def start_attempt(
 
 async def get_attempt_view(db: AsyncSession, attempt_id: int, user_id: int) -> dict:
     attempt = await _get_attempt_for_user(db, attempt_id, user_id)
-    await _ensure_attempt_not_expired(db, attempt)
+    # Keep this read endpoint side-effect free.  In particular, do not finalize
+    # an elapsed attempt here: a client may be reopening after an offline period
+    # with locally persisted answers that still need to be included in the
+    # atomic submit request.  ``remaining_sec == 0`` is enough for the runner to
+    # immediately enter auto-submit while preserving those pending answers.
     paper, question_count, total_score = await _load_paper_with_summary(
         db, int(attempt.paper_id)
     )
@@ -469,6 +478,80 @@ async def get_attempt_view(db: AsyncSession, attempt_id: int, user_id: int) -> d
     }
 
 
+async def _apply_final_submit_answers(
+    db: AsyncSession,
+    attempt: ExamAttempt,
+    final_answers: list[dict] | None,
+) -> None:
+    """Apply unsynced client rows immediately before grading.
+
+    The attempt row is already locked by ``submit_attempt``.  Applying the
+    final pending rows and grading in the same database transaction means a
+    submit can never observe a half-flushed client state.  Duplicate submit
+    requests remain safe because terminal attempts return their immutable
+    result snapshot before this helper is called.
+    """
+
+    if not final_answers:
+        return
+
+    rows = await db.execute(
+        select(ExamAnswer, ExamPaperQuestion, QuestionVersion)
+        .join(
+            ExamPaperQuestion,
+            ExamPaperQuestion.id == ExamAnswer.exam_paper_question_id,
+        )
+        .join(QuestionVersion, QuestionVersion.id == ExamAnswer.question_version_id)
+        .where(ExamAnswer.attempt_id == int(attempt.id))
+    )
+    by_item = {
+        int(item.id): (answer, revision)
+        for answer, item, revision in rows.all()
+        if int(item.paper_id) == int(attempt.paper_id)
+    }
+
+    seen: set[int] = set()
+    now = utcnow()
+    for payload in final_answers:
+        item_id = int(payload.get("item_id") or 0)
+        if item_id <= 0 or item_id in seen:
+            raise ValueError("交卷答案中存在无效或重复题目")
+        seen.add(item_id)
+
+        row = by_item.get(item_id)
+        if row is None:
+            raise ExamNotFoundError("交卷答案包含不属于本次考试的题目")
+        answer, revision = row
+
+        normalized = str(payload.get("selected_answer") or "").strip().upper() or None
+        if normalized is not None:
+            options = _student_options(revision.options)
+            valid_options = {str(key).strip().upper() for key in options}
+            if normalized not in valid_options:
+                raise ValueError("所选答案不在当前题目选项中")
+
+        marked = bool(payload.get("marked_for_review", False))
+        used_time = max(0, min(6 * 60 * 60, int(payload.get("used_time") or 0)))
+        old_selected = str(answer.selected_answer or "").strip().upper() or None
+        changed = False
+
+        if normalized != old_selected:
+            answer.selected_answer = normalized
+            answer.answered_at = now if normalized else None
+            changed = True
+        if bool(answer.marked_for_review) != marked:
+            answer.marked_for_review = marked
+            changed = True
+        if used_time > int(answer.used_time or 0):
+            answer.used_time = used_time
+            changed = True
+        if changed:
+            # This column already exists in the schema.  Keeping it monotonic is
+            # useful for diagnosing duplicate/stale client writes and provides a
+            # future optimistic-concurrency hook without a migration.
+            answer.answer_revision = int(answer.answer_revision or 0) + 1
+
+
 async def save_attempt_answer(
     db: AsyncSession,
     attempt_id: int,
@@ -480,38 +563,82 @@ async def save_attempt_answer(
     used_time: int | None = None,
 ) -> dict:
     attempt = await _get_attempt_for_user(db, attempt_id, user_id, lock=True)
-    await _ensure_attempt_not_expired(db, attempt)
     if attempt.status != "in_progress":
-        raise ExamStateError("考试已交卷，不能继续修改答案")
+        if attempt.status == "abandoned":
+            raise ExamStateError("本次作答已取消，不能继续修改答案")
+        raise ExamStateError("考试已结束，不能继续修改答案")
+
+    # Important: answer PATCH is a persistence operation, not a terminal-state
+    # transition.  Previously _ensure_attempt_not_expired() finalized the whole
+    # attempt here as soon as the deadline was crossed.  At the exact countdown
+    # boundary the client first flushes its current answer/time slice and then
+    # POSTs /submit, so the PATCH could create the result/history record and
+    # return 409 before the real submit request ran.
+    #
+    # Keep a very small grace window for the final network flush.  After that
+    # window we still allow idempotent metadata/time persistence, but we reject
+    # a changed choice so a stale or modified client cannot answer indefinitely
+    # after the deadline.  Finalization remains owned by /submit (or the normal
+    # lazy-expiry read/start paths).
     row = (
         await db.execute(
-            select(ExamAnswer, ExamPaperQuestion, QuestionVersion)
+            select(ExamAnswer, ExamPaperQuestion, QuestionVersion, ExamPaper)
             .join(
                 ExamPaperQuestion,
                 ExamPaperQuestion.id == ExamAnswer.exam_paper_question_id,
             )
             .join(QuestionVersion, QuestionVersion.id == ExamAnswer.question_version_id)
+            .join(ExamPaper, ExamPaper.id == ExamPaperQuestion.paper_id)
             .where(
                 ExamAnswer.attempt_id == attempt.id,
                 ExamPaperQuestion.id == item_id,
+                ExamPaperQuestion.paper_id == attempt.paper_id,
             )
         )
     ).one_or_none()
     if row is None:
         raise ExamNotFoundError("试卷题目不存在")
-    answer, _item, revision = row
+    answer, _item, revision, paper = row
+
+    normalized = ...
     if selected_answer is not ...:
         normalized = str(selected_answer or "").strip().upper() or None
         if normalized is not None:
             options = _student_options(revision.options)
             if normalized not in {str(key).strip().upper() for key in options}:
                 raise ValueError("所选答案不在当前题目选项中")
-        answer.selected_answer = normalized
-        answer.answered_at = utcnow() if normalized else None
+
+    deadline_overrun = 0
+    if paper.duration_sec:
+        deadline_overrun = max(
+            0, _elapsed_seconds(attempt.started_at) - int(paper.duration_sec)
+        )
+    if (
+        deadline_overrun > ANSWER_SYNC_DEADLINE_GRACE_SEC
+        and normalized is not ...
+        and normalized != (str(answer.selected_answer or "").strip().upper() or None)
+    ):
+        raise ExamStateError("考试已到时，不能再修改答案，请直接交卷")
+
+    changed = False
+    if normalized is not ...:
+        current_selected = str(answer.selected_answer or "").strip().upper() or None
+        if normalized != current_selected:
+            answer.selected_answer = normalized
+            answer.answered_at = utcnow() if normalized else None
+            changed = True
     if marked_for_review is not None:
-        answer.marked_for_review = bool(marked_for_review)
+        next_marked = bool(marked_for_review)
+        if bool(answer.marked_for_review) != next_marked:
+            answer.marked_for_review = next_marked
+            changed = True
     if used_time is not None:
-        answer.used_time = max(int(answer.used_time or 0), int(used_time))
+        next_used_time = max(int(answer.used_time or 0), int(used_time))
+        if next_used_time != int(answer.used_time or 0):
+            answer.used_time = next_used_time
+            changed = True
+    if changed:
+        answer.answer_revision = int(answer.answer_revision or 0) + 1
     await db.commit()
     return {
         "attempt_id": int(attempt.id),
@@ -807,39 +934,95 @@ async def _finalize_attempt(
 
 
 async def abandon_attempt(db: AsyncSession, attempt_id: int, user_id: int) -> dict:
-    """Mark an in-progress attempt as abandoned so the user can start over.
+    """Cancel a resumable attempt without producing an exam result/history row.
 
-    Abandoned attempts are terminal but carry no result snapshot: they never
-    enter history or the result page, and releasing the partial unique index
-    lets ``start_attempt`` create a fresh attempt for the same paper.
+    The transition is intentionally idempotent.  A conditional UPDATE is used
+    in addition to the PostgreSQL row lock so a stale client cannot overwrite a
+    concurrent submit/expiry transition when running on a database without
+    row-level ``FOR UPDATE`` semantics (notably local SQLite).
     """
     attempt = await _get_attempt_for_user(db, attempt_id, user_id, lock=True)
     if attempt.status == "abandoned":
         return {"id": int(attempt.id), "status": attempt.status}
     if attempt.status != "in_progress":
-        raise ExamStateError("考试已结束，不能放弃本次作答")
-    attempt.status = "abandoned"
-    attempt.submitted_at = utcnow()
-    attempt.duration_sec = _elapsed_seconds(attempt.started_at)
+        raise ExamStateError("考试已结束，不能取消本次作答")
+
+    paper = await db.get(ExamPaper, int(attempt.paper_id))
+    if paper is None:
+        raise ExamNotFoundError("试卷不存在")
+
+    now = utcnow()
+    elapsed = _elapsed_seconds(attempt.started_at, now)
+    if paper.duration_sec and elapsed >= int(paper.duration_sec):
+        # Once the timer has elapsed the attempt belongs to the submit/expiry
+        # state machine.  Do not let a stale paper-list screen use cancellation
+        # to bypass the timed-exam result.
+        raise ExamStateError("考试已到时，不能取消本次作答，请完成交卷")
+
+    transition = await db.execute(
+        update(ExamAttempt)
+        .where(
+            ExamAttempt.id == int(attempt.id),
+            ExamAttempt.user_id == int(user_id),
+            ExamAttempt.status == "in_progress",
+        )
+        .values(
+            status="abandoned",
+            submitted_at=now,
+            duration_sec=elapsed,
+            result_snapshot=None,
+        )
+    )
+
+    if transition.rowcount != 1:
+        current = await _get_attempt_for_user(db, attempt_id, user_id)
+        if current.status == "abandoned":
+            return {"id": int(current.id), "status": current.status}
+        raise ExamStateError("作答状态已变化，不能取消本次作答")
+
     await db.commit()
-    return {"id": int(attempt.id), "status": attempt.status}
+    return {"id": int(attempt.id), "status": "abandoned"}
 
 
-async def submit_attempt(db: AsyncSession, attempt_id: int, user_id: int) -> dict:
+async def submit_attempt(
+    db: AsyncSession,
+    attempt_id: int,
+    user_id: int,
+    *,
+    final_answers: list[dict] | None = None,
+) -> dict:
     attempt = await _get_attempt_for_user(db, attempt_id, user_id, lock=True)
     if attempt.status in TERMINAL_ATTEMPT_STATUSES:
         if not isinstance(attempt.result_snapshot, dict):
             raise ExamStateError("考试结果快照缺失")
         return dict(attempt.result_snapshot)
-    await _ensure_attempt_not_expired(db, attempt)
-    if attempt.status in TERMINAL_ATTEMPT_STATUSES:
-        return dict(attempt.result_snapshot or {})
-    return await _finalize_attempt(db, attempt, terminal_status="submitted")
+    if attempt.status != "in_progress":
+        if attempt.status == "abandoned":
+            raise ExamStateError("本次作答已取消，不能交卷")
+        raise ExamStateError("当前考试状态不能交卷")
+
+    # Persist any locally pending answers and finalize under the same attempt
+    # row lock.  This is the key reliability boundary: the client no longer has
+    # to win a sequence of PATCH requests immediately before POST /submit.
+    await _apply_final_submit_answers(db, attempt, final_answers)
+
+    paper = await db.get(ExamPaper, int(attempt.paper_id))
+    if paper is None:
+        raise ExamNotFoundError("试卷不存在")
+    elapsed = _elapsed_seconds(attempt.started_at)
+    terminal_status = (
+        "expired"
+        if paper.duration_sec and elapsed >= int(paper.duration_sec)
+        else "submitted"
+    )
+    return await _finalize_attempt(db, attempt, terminal_status=terminal_status)
 
 
 async def get_attempt_result(db: AsyncSession, attempt_id: int, user_id: int) -> dict:
     attempt = await _get_attempt_for_user(db, attempt_id, user_id)
-    await _ensure_attempt_not_expired(db, attempt)
+    # Result lookup is read-only.  Never turn an elapsed in-progress attempt
+    # into a history/result row from a GET request because the originating
+    # client may still have an offline final-answer batch waiting to submit.
     if attempt.status not in TERMINAL_ATTEMPT_STATUSES:
         raise ExamStateError("考试尚未交卷")
     if not isinstance(attempt.result_snapshot, dict):
@@ -847,47 +1030,172 @@ async def get_attempt_result(db: AsyncSession, attempt_id: int, user_id: int) ->
     return dict(attempt.result_snapshot)
 
 
+def _exam_history_paper_stats():
+    """Compact immutable paper totals used by the history list.
+
+    History intentionally does not hydrate ``result_snapshot``: a finalized
+    snapshot contains every question and can be tens of KB per attempt.  The
+    paper definition is immutable after publish, so count/score totals can be
+    read from the normalized paper tables without loading those large JSON
+    blobs.
+    """
+    return (
+        select(
+            ExamPaperQuestion.paper_id.label("paper_id"),
+            func.count(ExamPaperQuestion.id).label("question_count"),
+            func.coalesce(func.sum(ExamPaperQuestion.score), 0).label("total_score"),
+        )
+        .group_by(ExamPaperQuestion.paper_id)
+        .subquery()
+    )
+
+
+def _exam_history_filters(user_id: int):
+    return (
+        ExamAttempt.user_id == user_id,
+        ExamAttempt.status.in_(TERMINAL_ATTEMPT_STATUSES),
+        # History is a finalized-result view, never an attempt list.  The
+        # snapshot itself is deliberately not selected because it is large;
+        # requiring it to exist is enough to exclude unfinished/partial rows.
+        ExamAttempt.submitted_at.is_not(None),
+        ExamAttempt.result_snapshot.is_not(None),
+    )
+
+
+def _history_row_to_item(row) -> dict:
+    question_count = max(0, int(row.question_count or 0))
+    answered_count = max(0, min(question_count, int(row.answered_count or 0)))
+    correct_count = max(0, min(answered_count, int(row.correct_count or 0)))
+    wrong_count = max(0, answered_count - correct_count)
+    unanswered_count = max(0, question_count - answered_count)
+    accuracy = round(correct_count / question_count, 4) if question_count else 0.0
+    return {
+        "attempt_id": int(row.attempt_id),
+        "paper_id": int(row.paper_id),
+        "paper_title": row.paper_title or f"试卷 #{row.paper_id}",
+        "paper_type": row.paper_type or "mock_choice",
+        "year": row.year,
+        "status": row.status,
+        "started_at": row.started_at,
+        "submitted_at": row.submitted_at,
+        "duration_sec": int(row.duration_sec or 0),
+        "question_count": question_count,
+        "answered_count": answered_count,
+        "correct_count": correct_count,
+        "wrong_count": wrong_count,
+        "unanswered_count": unanswered_count,
+        "choice_score": _money(row.choice_score),
+        "total_choice_score": _money(row.total_choice_score),
+        "accuracy": accuracy,
+    }
+
+
+async def get_exam_history_overview(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """Return timeline rows plus all-time aggregate statistics.
+
+    The summary scans only scalar attempt/paper statistics and never loads the
+    per-question result JSON, keeping the endpoint predictable as a user's
+    history grows.  Rows are paginated so the mini-program can incrementally
+    render long histories.
+    """
+    limit = max(1, min(int(limit or 20), 100))
+    offset = max(0, int(offset or 0))
+    paper_stats = _exam_history_paper_stats()
+    filters = _exam_history_filters(user_id)
+
+    question_count_expr = func.coalesce(paper_stats.c.question_count, 0)
+    total_score_expr = func.coalesce(paper_stats.c.total_score, 0)
+    accuracy_expr = case(
+        (
+            question_count_expr > 0,
+            cast(ExamAttempt.correct_count, Float)
+            / cast(question_count_expr, Float),
+        ),
+        else_=0.0,
+    )
+    summary_row = (
+        await db.execute(
+            select(
+                func.count(ExamAttempt.id).label("completed_count"),
+                func.coalesce(func.avg(cast(ExamAttempt.score, Float)), 0).label(
+                    "average_choice_score"
+                ),
+                func.coalesce(func.avg(cast(total_score_expr, Float)), 0).label(
+                    "average_total_choice_score"
+                ),
+                func.coalesce(func.avg(accuracy_expr), 0).label("average_accuracy"),
+                func.coalesce(func.max(cast(ExamAttempt.score, Float)), 0).label(
+                    "best_choice_score"
+                ),
+                func.coalesce(func.max(accuracy_expr), 0).label("best_accuracy"),
+            )
+            .join(ExamPaper, ExamPaper.id == ExamAttempt.paper_id)
+            .outerjoin(paper_stats, paper_stats.c.paper_id == ExamAttempt.paper_id)
+            .where(*filters)
+        )
+    ).one()
+
+    completed_count = int(summary_row.completed_count or 0)
+    summary = {
+        "completed_count": completed_count,
+        "average_choice_score": round(float(summary_row.average_choice_score or 0), 2),
+        "average_total_choice_score": round(
+            float(summary_row.average_total_choice_score or 0), 2
+        ),
+        "average_accuracy": round(float(summary_row.average_accuracy or 0), 4),
+        "best_choice_score": round(float(summary_row.best_choice_score or 0), 2),
+        "best_accuracy": round(float(summary_row.best_accuracy or 0), 4),
+    }
+
+    page_rows = (
+        await db.execute(
+            select(
+                ExamAttempt.id.label("attempt_id"),
+                ExamAttempt.paper_id.label("paper_id"),
+                ExamAttempt.status.label("status"),
+                ExamAttempt.started_at.label("started_at"),
+                ExamAttempt.submitted_at.label("submitted_at"),
+                ExamAttempt.duration_sec.label("duration_sec"),
+                ExamAttempt.answered_count.label("answered_count"),
+                ExamAttempt.correct_count.label("correct_count"),
+                ExamAttempt.score.label("choice_score"),
+                ExamPaper.title.label("paper_title"),
+                ExamPaper.paper_type.label("paper_type"),
+                ExamPaper.year.label("year"),
+                func.coalesce(paper_stats.c.question_count, 0).label("question_count"),
+                func.coalesce(paper_stats.c.total_score, 0).label("total_choice_score"),
+            )
+            .join(ExamPaper, ExamPaper.id == ExamAttempt.paper_id)
+            .outerjoin(paper_stats, paper_stats.c.paper_id == ExamAttempt.paper_id)
+            .where(*filters)
+            .order_by(ExamAttempt.submitted_at.desc(), ExamAttempt.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    items = [_history_row_to_item(row) for row in page_rows]
+
+    return {
+        "summary": summary,
+        "items": items,
+        "total": completed_count,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(items) < completed_count,
+    }
+
+
 async def list_exam_history(
     db: AsyncSession, user_id: int, limit: int = 50
 ) -> list[dict]:
-    attempts = list(
-        (
-            await db.execute(
-                select(ExamAttempt)
-                .where(
-                    ExamAttempt.user_id == user_id,
-                    ExamAttempt.status.in_(TERMINAL_ATTEMPT_STATUSES),
-                )
-                .order_by(ExamAttempt.submitted_at.desc(), ExamAttempt.id.desc())
-                .limit(limit)
-            )
-        )
-        .scalars()
-        .all()
+    """Backward-compatible list endpoint used by older mini-program builds."""
+    overview = await get_exam_history_overview(
+        db, user_id, limit=max(1, min(int(limit or 50), 100)), offset=0
     )
-    result: list[dict] = []
-    for attempt in attempts:
-        snapshot = (
-            attempt.result_snapshot if isinstance(attempt.result_snapshot, dict) else {}
-        )
-        result.append(
-            {
-                "attempt_id": int(attempt.id),
-                "paper_id": int(attempt.paper_id),
-                "paper_title": snapshot.get("paper_title")
-                or f"试卷 #{attempt.paper_id}",
-                "paper_type": snapshot.get("paper_type") or "mock_choice",
-                "year": snapshot.get("year"),
-                "status": attempt.status,
-                "started_at": attempt.started_at,
-                "submitted_at": attempt.submitted_at,
-                "duration_sec": int(attempt.duration_sec or 0),
-                "question_count": int(snapshot.get("question_count") or 0),
-                "answered_count": int(attempt.answered_count or 0),
-                "correct_count": int(attempt.correct_count or 0),
-                "choice_score": _money(attempt.score),
-                "total_choice_score": _money(snapshot.get("total_choice_score") or 0),
-                "accuracy": float(snapshot.get("accuracy") or 0),
-            }
-        )
-    return result
+    return overview["items"]

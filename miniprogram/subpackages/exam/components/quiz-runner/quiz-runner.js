@@ -52,6 +52,7 @@ data: {
 showSheet: false,
 heroCollapsed: false,
 questionScrollIntoView: '',
+questionScrollTop: 0,
 animClass: '',
 _animating: false,
 _touchX: undefined,
@@ -74,6 +75,7 @@ this._lastQuestionId = null
 this._hasRenderedQuestion = false
 this._questionResetPending = false
 this._lastQuestionScrollTop = 0
+this._lastHeroScrollTop = 0
 this._heroCollapseLockUntil = 0
 },
 observers: {
@@ -192,11 +194,13 @@ var self = this
 if (this._questionResetPending) return
 this._questionResetPending = true
 this._lastQuestionScrollTop = 0
+this._lastHeroScrollTop = 0
 this._heroCollapseLockUntil = 0
 setTimeout(function () {
 self._questionResetPending = false
 self.setData({
 heroCollapsed: false,
+questionScrollTop: 0,
 questionScrollIntoView: 'runner-scroll-top-anchor',
 }, function () {
 self.setData({ questionScrollIntoView: '' })
@@ -340,16 +344,42 @@ onQuestionScroll: function (e) {
 if (this.data.flowLayout || this.data.compactReviewMode) return
 var top = e && e.detail ? Number(e.detail.scrollTop || 0) : 0
 if (!isFinite(top) || top < 0) top = 0
+var previousTop = Number(this._lastHeroScrollTop || 0)
+var delta = top - previousTop
+this._lastHeroScrollTop = top
 this._lastQuestionScrollTop = top
+this.data.questionScrollTop = top
 if (this.data.heroCollapseEnabled === false) {
 if (this.data.heroCollapsed) this.setData({ heroCollapsed: false })
 return
 }
 var now = Date.now()
-if (this.data.heroCollapsed) return
-if (top > 34 && now >= this._heroCollapseLockUntil) {
-this._heroCollapseLockUntil = now + 260
+if (now < this._heroCollapseLockUntil) return
+if (this.data.heroCollapsed) {
+// Expand only when the user has genuinely returned to the top area.
+// The wider hysteresis prevents repeated layout changes around one threshold.
+if (top <= 10 && delta <= 1) {
+this._heroCollapseLockUntil = now + 280
+this.setData({ heroCollapsed: false })
+}
+return
+}
+// Collapse after a small amount of downward travel rather than on the first
+// scroll tick. This gives the content and the header transition time to move
+// together and avoids a visible snap.
+if (top >= 48 && delta >= 0.5) {
+this._heroCollapseLockUntil = now + 320
 this.setData({ heroCollapsed: true })
+}
+},
+onQuestionScrollToUpper: function () {
+if (this.data.flowLayout || this.data.compactReviewMode) return
+this._lastQuestionScrollTop = 0
+this._lastHeroScrollTop = 0
+this.data.questionScrollTop = 0
+if (this.data.heroCollapsed) {
+this._heroCollapseLockUntil = Date.now() + 280
+this.setData({ heroCollapsed: false })
 }
 },
 _expandHero: function () {
@@ -357,8 +387,10 @@ if (!this.data.heroCollapsed) return
 var self = this
 this._heroCollapseLockUntil = Date.now() + 420
 this._lastQuestionScrollTop = 0
+this._lastHeroScrollTop = 0
 this.setData({
 heroCollapsed: false,
+questionScrollTop: 0,
 questionScrollIntoView: 'runner-scroll-top-anchor',
 }, function () {
 setTimeout(function () {

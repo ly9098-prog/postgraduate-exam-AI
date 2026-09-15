@@ -74,6 +74,7 @@ class ExamPaper(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("admin_users.id"), nullable=True
     )

@@ -1,4 +1,5 @@
 const api = require('../../../utils/api')
+const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
 
 function cleanUiLabel(value, fallback = '') {
@@ -44,12 +45,31 @@ function formatClock(sec) {
   return h > 0 ? `${pad2(h)}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
-const EXAM_CACHE_SCHEMA_VERSION = 2
-const EXAM_CACHE_MIGRATION_MARK = 'exam_cache_migration_mark_v2'
+const EXAM_CACHE_SCHEMA_VERSION = 3
 // 本地草稿保留时长：离开作答页后 60 分钟内可恢复，超时进入重新作答状态。
 const EXAM_DRAFT_TTL_MS = 60 * 60 * 1000
-function cacheKey(attemptId) { return `exam_attempt_pending_v2:${attemptId}` }
-function legacyCacheKey(attemptId) { return `exam_attempt_pending_v1:${attemptId}` }
+// 到时后如果因为断网尚未完成交卷，pending 答案需要比普通草稿保留更久。
+// 只有服务端确认终态后才主动清理；7 天上限用于防止异常缓存永久占用空间。
+const EXAM_SUBMIT_PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const { cacheKey, v2CacheKey, legacyCacheKey } = examAttemptCache
+function isPendingItemKey(value) { return /^\d+$/.test(String(value || '')) }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0))) }
+
+function sanitizePendingItems(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const result = Object.create(null)
+  Object.keys(source).forEach((key) => {
+    if (!isPendingItemKey(key)) return
+    const value = source[key]
+    if (!value || typeof value !== 'object') return
+    result[String(Number(key))] = {
+      selected_answer: String(value.selected_answer || '').trim().toUpperCase() || null,
+      marked_for_review: !!value.marked_for_review,
+      used_time: Math.min(6 * 60 * 60, Math.max(0, Number(value.used_time || 0))),
+    }
+  })
+  return result
+}
 
 Page({
   data: {
@@ -72,7 +92,7 @@ Page({
   },
 
   onLoad(options) {
-    const sys = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
+    const sys = wx.getWindowInfo ? (wx.getWindowInfo() || {}) : {}
     const attemptId = Number(options && options.attempt_id)
     this.setData({ statusBarHeight: Number(sys.statusBarHeight || 0), attemptId })
     if (!attemptId) {
@@ -80,12 +100,19 @@ Page({
       return
     }
     this._pageAlive = true
+    this._navigationLocked = false
+    this._terminalNavigation = false
+    this._attemptTerminal = false
+    this._attemptAbandoned = false
     this._renderCache = Object.create(null)
     this._answers = Object.create(null)
+    this._retainPendingForSubmit = false
     this._pending = this._loadPending(attemptId)
     this._syncing = Object.create(null)
     this._attemptLoaded = false
     this._reconnectSyncing = false
+    this._submitPromise = null
+    this._confirmingSubmit = false
     this._networkStatusHandler = (res) => {
       if (res && res.isConnected) this._recoverPendingAfterReconnect().catch(() => {})
     }
@@ -94,7 +121,12 @@ Page({
   },
 
   onShow() {
-    if (this._pageAlive && this._attemptLoaded) this._recoverPendingAfterReconnect().catch(() => {})
+    if (!this._pageAlive || !this._attemptLoaded) return
+    // setInterval can be suspended while WeChat is backgrounded. Re-evaluate
+    // against the server-synchronised wall clock immediately on resume so an
+    // elapsed exam cannot keep accepting input until the next timer callback.
+    this._tickTimer()
+    if (!this.data.timeExpired) this._recoverPendingAfterReconnect().catch(() => {})
   },
 
   onUnload() {
@@ -105,72 +137,157 @@ Page({
     }
     this._networkStatusHandler = null
     this._clearTimer()
-    this._settleCurrentTime({ sync: true })
+    // 页面销毁阶段只落本地草稿，不再发起可能触发二次跳转的网络请求。
+    // 已进入终态导航时也不再回写草稿，避免交卷成功后重新生成 pending 缓存。
+    if (!this._attemptTerminal && !this._terminalNavigation) this._settleCurrentTime({ sync: false })
   },
 
   _loadPending(attemptId) {
     try {
       let raw = wx.getStorageSync(cacheKey(attemptId))
-      if ((!raw || typeof raw !== 'object') && wx.getStorageSync) {
-        const legacy = wx.getStorageSync(legacyCacheKey(attemptId))
-        if (legacy && typeof legacy === 'object') {
-          raw = Object.assign({ schema_version: 1 }, legacy)
-          wx.setStorageSync(cacheKey(attemptId), Object.assign({}, raw, { schema_version: EXAM_CACHE_SCHEMA_VERSION }))
-          wx.removeStorageSync(legacyCacheKey(attemptId))
+      let savedAt = 0
+      let items = null
+      let submitPending = false
+
+      if (raw && typeof raw === 'object' && raw.items && typeof raw.items === 'object') {
+        savedAt = Number(raw.saved_at || 0)
+        items = sanitizePendingItems(raw.items)
+        submitPending = raw.submit_pending === true
+      } else {
+        // v2 stored metadata (schema_version/saved_at) beside numeric item IDs.
+        // That shape could accidentally make the sync loop PATCH pseudo item IDs
+        // such as /answers/saved_at after a restart. Migrate only numeric keys.
+        const v2 = wx.getStorageSync(v2CacheKey(attemptId))
+        const v1 = wx.getStorageSync(legacyCacheKey(attemptId))
+        const legacy = v2 && typeof v2 === 'object' ? v2 : (v1 && typeof v1 === 'object' ? v1 : null)
+        if (legacy) {
+          savedAt = Number(legacy.saved_at || 0)
+          items = sanitizePendingItems(legacy.items && typeof legacy.items === 'object' ? legacy.items : legacy)
+          submitPending = legacy.submit_pending === true
         }
       }
-      if (raw && typeof raw === 'object') {
-        const savedAt = Number(raw.saved_at || 0)
-        if (savedAt > 0 && api.now() - savedAt > EXAM_DRAFT_TTL_MS) {
-          // 草稿超过 60 分钟：清除本地缓存内容，进入页面后按“重新作答”处理
-          // （服务端答案仍以 loadAttempt 拉到的为准，但不再恢复本地草稿）。
-          wx.removeStorageSync(cacheKey(attemptId))
-          wx.removeStorageSync(legacyCacheKey(attemptId))
-          return Object.create(null)
-        }
+
+      if (!items) return Object.create(null)
+      const ttl = submitPending ? EXAM_SUBMIT_PENDING_TTL_MS : EXAM_DRAFT_TTL_MS
+      if (savedAt > 0 && api.now() - savedAt > ttl) {
+        this._clearPendingStorage(attemptId)
+        return Object.create(null)
       }
-      return raw && typeof raw === 'object' ? raw : Object.create(null)
+      this._retainPendingForSubmit = submitPending
+
+      try {
+        wx.setStorageSync(cacheKey(attemptId), {
+          schema_version: EXAM_CACHE_SCHEMA_VERSION,
+          saved_at: savedAt || api.now(),
+          submit_pending: submitPending,
+          items,
+        })
+        wx.removeStorageSync(v2CacheKey(attemptId))
+        wx.removeStorageSync(legacyCacheKey(attemptId))
+      } catch (_) {}
+      return items
     } catch (_) {
       return Object.create(null)
     }
   },
 
+  _clearPendingStorage(attemptId = this.data.attemptId) {
+    examAttemptCache.clearPendingAttempt(attemptId)
+  },
+
+  _pendingItemIds() {
+    return Object.keys(this._pending || {}).filter(isPendingItemKey)
+  },
+
   _persistPending() {
     try {
-      const keys = Object.keys(this._pending || {})
+      const keys = this._pendingItemIds()
       if (keys.length) {
-        wx.setStorageSync(cacheKey(this.data.attemptId), Object.assign({}, this._pending, {
+        const items = Object.create(null)
+        keys.forEach((key) => { items[key] = Object.assign({}, this._pending[key]) })
+        wx.setStorageSync(cacheKey(this.data.attemptId), {
           schema_version: EXAM_CACHE_SCHEMA_VERSION,
           saved_at: api.now(),
-        }))
-      } else wx.removeStorageSync(cacheKey(this.data.attemptId))
+          submit_pending: !!this._retainPendingForSubmit,
+          items,
+        })
+      } else this._clearPendingStorage()
     } catch (_) {}
+  },
+
+  _navigateToResult() {
+    if (!this._pageAlive || this._terminalNavigation) return
+    this._terminalNavigation = true
+    this._navigationLocked = true
+    this._clearTimer()
+    wx.redirectTo({
+      url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}`,
+      fail: () => {
+        this._terminalNavigation = false
+        this._navigationLocked = false
+        if (this._pageAlive) {
+          if (this.data.submitting) this.setData({ submitting: false })
+          wx.showToast({ title: '结果页打开失败，请重试', icon: 'none' })
+        }
+      },
+    })
+  },
+
+  _navigateToPaperList() {
+    if (!this._pageAlive || this._terminalNavigation) return
+    this._terminalNavigation = true
+    this._navigationLocked = true
+    this._clearTimer()
+    const targetRoute = 'subpackages/exam/paper-list/index'
+    const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+    let targetIndex = -1
+    for (let i = pages.length - 2; i >= 0; i -= 1) {
+      if (String((pages[i] || {}).route || '').replace(/^\//, '') === targetRoute) {
+        targetIndex = i
+        break
+      }
+    }
+    const fail = () => {
+      this._terminalNavigation = false
+      this._navigationLocked = false
+      if (this._pageAlive) wx.showToast({ title: '套卷列表打开失败，请重试', icon: 'none' })
+    }
+    if (targetIndex >= 0) {
+      wx.navigateBack({ delta: Math.max(1, pages.length - 1 - targetIndex), fail })
+      return
+    }
+    wx.redirectTo({ url: '/subpackages/exam/paper-list/index', fail })
   },
 
   async loadAttempt() {
     this.setData({ loading: true, errorText: '' })
     try {
       const payload = await api.get(`/exams/attempts/${this.data.attemptId}`)
+      if (!this._pageAlive) return
       if (payload.status === 'abandoned') {
         // 已放弃的草稿没有结果快照，回套卷列表重新开始而不是跳结果页。
         this._pending = Object.create(null)
         this._persistPending()
-        wx.redirectTo({ url: '/subpackages/exam/paper-list/index' })
+        this._navigateToPaperList()
         return
       }
       if (payload.status !== 'in_progress') {
         this._pending = Object.create(null)
         this._persistPending()
-        wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${payload.id}` })
+        this._attemptTerminal = true
+        this._navigateToResult()
         return
       }
       this._hydrate(payload)
       this._attemptLoaded = true
       this.setData({ loading: false })
       this._startTimer(payload.remaining_sec)
-      this._flushAllPending({ quiet: true }).catch(() => {})
+      // Normal in-exam recovery still drains PATCHes eagerly.  At the deadline
+      // pending rows are instead carried by the atomic submit request; trying to
+      // PATCH them first recreates the exact expiry race we want to avoid.
+      if (!this.data.timeExpired) this._flushAllPending({ quiet: true }).catch(() => {})
     } catch (error) {
-      this.setData({ loading: false, errorText: api.getErrorMessage(error) })
+      if (this._pageAlive) this.setData({ loading: false, errorText: api.getErrorMessage(error) })
     }
   },
 
@@ -243,23 +360,39 @@ Page({
     const remaining = initialRemaining == null ? null : Math.max(0, Number(initialRemaining || 0))
     this._timerBaseRemaining = remaining
     this._timerStartedAt = api.now()
-    const tick = () => {
-      if (!this._pageAlive) return
-      if (this._timerBaseRemaining == null) {
-        this.setData({ remainingText: '不限时' })
-        return
-      }
-      const elapsed = Math.max(0, Math.floor((api.now() - this._timerStartedAt) / 1000))
-      const left = Math.max(0, this._timerBaseRemaining - elapsed)
-      this.setData({ remainingText: `剩余 ${formatClock(left)}` })
-      if (left <= 0) {
-        this._clearTimer()
-        this.setData({ timeExpired: true, remainingText: '已到时 · 正在交卷' })
-        this.submitExam({ auto: true })
-      }
+    this._tickTimer()
+    if (!this.data.timeExpired && this._timerBaseRemaining != null) {
+      this._timer = setInterval(() => this._tickTimer(), 1000)
     }
-    tick()
-    this._timer = setInterval(tick, 1000)
+  },
+
+  _currentRemainingSec() {
+    if (this._timerBaseRemaining == null) return null
+    const elapsed = Math.max(0, Math.floor((api.now() - this._timerStartedAt) / 1000))
+    return Math.max(0, this._timerBaseRemaining - elapsed)
+  },
+
+  _tickTimer() {
+    if (!this._pageAlive || this._attemptTerminal || this._terminalNavigation) return
+    if (this._timerBaseRemaining == null) {
+      if (this.data.remainingText !== '不限时') this.setData({ remainingText: '不限时' })
+      return
+    }
+    const left = this._currentRemainingSec()
+    if (left > 0) {
+      const text = `剩余 ${formatClock(left)}`
+      if (this.data.remainingText !== text || this.data.timeExpired) {
+        this.setData({ remainingText: text, timeExpired: false })
+      }
+      return
+    }
+    this._clearTimer()
+    if (!this.data.timeExpired || this.data.remainingText !== '已到时 · 正在交卷') {
+      this.setData({ timeExpired: true, remainingText: '已到时 · 正在交卷' })
+    }
+    this._retainPendingForSubmit = true
+    this._persistPending()
+    this.submitExam({ auto: true }).catch(() => {})
   },
 
   _clearTimer() {
@@ -274,18 +407,20 @@ Page({
 
   _updateQuestionFlags(itemId) {
     const answer = this._answers[String(itemId)] || {}
-    const questions = (this.data.questions || []).map((q) => {
-      if (String(q._itemId) !== String(itemId)) return q
-      return Object.assign({}, q, {
-        _answered: !!answer.selected_answer,
-        _marked: !!answer.marked_for_review,
-      })
-    })
-    this.setData({ questions })
+    const questions = this.data.questions || []
+    const index = questions.findIndex(q => String(q._itemId) === String(itemId))
+    if (index < 0) return
+    const answered = !!answer.selected_answer
+    const marked = !!answer.marked_for_review
+    if (questions[index]._answered === answered && questions[index]._marked === marked) return
+    const update = {}
+    update[`questions[${index}]._answered`] = answered
+    update[`questions[${index}]._marked`] = marked
+    this.setData(update)
   },
 
   selectOption(e) {
-    if (this.data.timeExpired || this.data.submitting) return
+    if (this.data.timeExpired || this.data.submitting || this._navigationLocked) return
     const itemId = this._currentItemId()
     if (!itemId) return
     const answer = this._answers[itemId] || { used_time: 0 }
@@ -300,7 +435,7 @@ Page({
   },
 
   toggleMark() {
-    if (this.data.timeExpired || this.data.submitting) return
+    if (this.data.timeExpired || this.data.submitting || this._navigationLocked) return
     const itemId = this._currentItemId()
     if (!itemId) return
     const answer = this._answers[itemId] || { used_time: 0 }
@@ -357,7 +492,8 @@ Page({
           if (res && res.status && res.status !== 'in_progress') {
             delete this._pending[itemId]
             this._persistPending()
-            wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}` })
+            this._attemptTerminal = true
+            if (this._pageAlive && !this.data.submitting) this._navigateToResult()
             return
           }
           const current = this._pending[itemId]
@@ -381,7 +517,7 @@ Page({
       // an item can be queued while an earlier item is awaiting its PATCH.
       // Submission freezes editing, so the loop deterministically converges.
       while (true) {
-        const ids = Object.keys(this._pending || {})
+        const ids = this._pendingItemIds()
         if (!ids.length) return true
         for (let idIndex = 0; idIndex < ids.length; idIndex++) await this._syncItem(ids[idIndex])
       }
@@ -393,26 +529,95 @@ Page({
 
   async _resolveTerminalSyncConflict(error) {
     if (!error || Number(error.statusCode) !== 409) return false
+    return this._reconcileAttemptState()
+  },
+
+  async _reconcileAttemptState() {
+    if (!this._pageAlive) return false
     try {
-      const payload = await api.get(`/exams/attempts/${this.data.attemptId}`)
+      const payload = await api.get(
+        `/exams/attempts/${this.data.attemptId}`,
+        {},
+        { timeout: 10000, suppressNetworkToast: true }
+      )
       if (!payload || payload.status === 'in_progress') return false
-      this._pending = Object.create(null)
-      this._persistPending()
-      if (this._pageAlive && !this.data.submitting) {
-        wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}` })
+      if (payload.status === 'abandoned') {
+        this._pending = Object.create(null)
+        this._retainPendingForSubmit = false
+        this._clearPendingStorage()
+        this._attemptTerminal = true
+        this._attemptAbandoned = true
+        if (this._pageAlive && !this.data.submitting) this._navigateToPaperList()
+        return true
       }
+      if (payload.status !== 'submitted' && payload.status !== 'expired') return false
+      this._pending = Object.create(null)
+      this._retainPendingForSubmit = false
+      this._clearPendingStorage()
+      this._attemptTerminal = true
+      this._attemptAbandoned = false
+      if (this._pageAlive && !this.data.submitting) this._navigateToResult()
       return true
     } catch (_) {
       return false
     }
   },
 
+  _buildFinalSubmitAnswers() {
+    return this._pendingItemIds().map((itemId) => {
+      const value = this._pending[itemId] || {}
+      return {
+        item_id: Number(itemId),
+        selected_answer: String(value.selected_answer || '').trim().toUpperCase() || null,
+        marked_for_review: !!value.marked_for_review,
+        used_time: Math.min(6 * 60 * 60, Math.max(0, Number(value.used_time || 0))),
+      }
+    })
+  },
+
+  _isRetryableSubmitError(error) {
+    const status = Number(error && error.statusCode)
+    return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500
+  },
+
+  async _postSubmitWithRetry(finalAnswers) {
+    // POST /submit is server-idempotent: once the attempt is terminal it returns
+    // the immutable result snapshot. That lets us safely retry ambiguous network
+    // failures (request committed but response lost) without duplicate records.
+    const delays = [0, 450, 1200]
+    let lastError = null
+    for (let i = 0; i < delays.length; i += 1) {
+      if (!this._pageAlive || this._terminalNavigation) throw lastError || new Error('页面已关闭')
+      if (delays[i] > 0) await sleep(delays[i])
+      try {
+        return await api.post(
+          `/exams/attempts/${this.data.attemptId}/submit`,
+          { answers: finalAnswers },
+          { timeout: 12000, suppressNetworkToast: true }
+        )
+      } catch (error) {
+        lastError = error
+        if (!this._pageAlive) throw error
+        // First determine whether the previous POST actually committed.  The
+        // attempt GET is now side-effect free, so this reconciliation cannot
+        // accidentally grade an expired draft before its pending answers arrive.
+        if (await this._reconcileAttemptState()) return { _reconciled: true }
+        if (!this._isRetryableSubmitError(error) || i === delays.length - 1) throw error
+      }
+    }
+    throw lastError || new Error('交卷失败')
+  },
+
   async _recoverPendingAfterReconnect() {
-    if (!this._pageAlive || !this._attemptLoaded || this._reconnectSyncing) return
+    if (!this._pageAlive || !this._attemptLoaded || this._reconnectSyncing || this._attemptTerminal || this._terminalNavigation) return
     this._reconnectSyncing = true
     try {
-      await this._flushAllPending({ quiet: true })
-      if (this.data.timeExpired && !this.data.submitting) await this.submitExam({ auto: true })
+      this._tickTimer()
+      if (this.data.timeExpired) {
+        if (!this.data.submitting) await this.submitExam({ auto: true })
+      } else {
+        await this._flushAllPending({ quiet: true })
+      }
     } catch (_) {
       // 保留 pending，等待下一次网络恢复或用户操作再次同步。
     } finally {
@@ -421,7 +626,7 @@ Page({
   },
 
   _moveTo(index) {
-    if (this.data.timeExpired || this.data.submitting) return
+    if (this.data.timeExpired || this.data.submitting || this._navigationLocked) return
     const previousItemId = this._currentItemId()
     this._settleCurrentTime({ sync: false })
     if (previousItemId) this._syncItem(previousItemId).catch(() => {})
@@ -438,7 +643,7 @@ Page({
   },
 
   async requestExit() {
-    if (this.data.submitting) return
+    if (this.data.submitting || this._navigationLocked) return
     this._settleCurrentTime().catch(() => {})
     const confirmed = await this._showAppDialog({
       scenario: 'all-done',
@@ -452,44 +657,111 @@ Page({
   },
 
   async submitExam(options = {}) {
+    if (this._submitPromise) return this._submitPromise
     if (this.data.submitting) return
     const auto = !!options.auto || this.data.timeExpired
     if (!auto) {
+      if (this._confirmingSubmit) return
+      this._confirmingSubmit = true
       const unanswered = Math.max(0, this.data.totalCount - this.data.answeredCount)
       const marked = (this.data.questions || []).filter((q) => q._marked).length
-      const confirmed = await this._showAppDialog({
-        scenario: unanswered ? 'unanswered' : 'all-done',
-        title: '确认交卷',
-        message: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题待检查。` : ''}\n交卷后不可修改。`,
-        confirmText: '确认交卷',
-        cancelText: '继续检查',
-        hideEyebrow: true,
-      })
+      let confirmed = false
+      try {
+        confirmed = await this._showAppDialog({
+          scenario: unanswered ? 'unanswered' : 'all-done',
+          title: '确认交卷',
+          message: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题待检查。` : ''}\n交卷后不可修改。`,
+          confirmText: '确认交卷',
+          cancelText: '继续检查',
+          hideEyebrow: true,
+        })
+      } finally {
+        this._confirmingSubmit = false
+      }
       if (!confirmed) return
     }
 
     // The countdown can expire while the manual confirmation modal is open.
     // In that case the auto-submit path may already have started; do not launch
     // a second client-side flush/submit sequence after the modal resolves.
+    if (this._submitPromise) return this._submitPromise
     if (this.data.submitting) return
+
+    const task = this._performSubmit(auto)
+    this._submitPromise = task
+    try {
+      return await task
+    } finally {
+      if (this._submitPromise === task) this._submitPromise = null
+    }
+  },
+
+  async _performSubmit(auto) {
+    const remainingBeforeSubmit = this._currentRemainingSec()
+    auto = !!auto || this.data.timeExpired || (remainingBeforeSubmit != null && remainingBeforeSubmit <= 0)
+    if (auto) {
+      this._retainPendingForSubmit = true
+      this._persistPending()
+    }
     this.setData({ submitting: true })
     this._clearTimer()
     try {
-      await this._settleCurrentTime()
-      await this._flushAllPending()
-      await api.post(`/exams/attempts/${this.data.attemptId}/submit`, {})
-      try { wx.removeStorageSync(cacheKey(this.data.attemptId)) } catch (_) {}
-      try { wx.removeStorageSync(legacyCacheKey(this.data.attemptId)) } catch (_) {}
-      wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}` })
-    } catch (error) {
-      this.setData({ submitting: false })
-      if (auto) {
-        this.setData({ timeExpired: true, remainingText: '已到时 · 待联网交卷' })
-        wx.showToast({ title: '时间已到，请联网后再次交卷', icon: 'none' })
-      } else {
-        wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
-        this._startTimer(this._timerBaseRemaining == null ? null : Math.max(0, this._timerBaseRemaining - Math.floor((api.now() - this._timerStartedAt) / 1000)))
+      // Only settle the local final time slice.  Do not issue N PATCH requests
+      // here: all still-pending rows are embedded in the single submit request
+      // and persisted atomically with grading on the server.
+      await this._settleCurrentTime({ sync: false })
+      const finalAnswers = this._buildFinalSubmitAnswers()
+      const result = await this._postSubmitWithRetry(finalAnswers)
+      if (result && result._reconciled) {
+        this._attemptTerminal = true
+        if (this._pageAlive && !this._terminalNavigation) {
+          if (this._attemptAbandoned) this._navigateToPaperList()
+          else this._navigateToResult()
+        }
+        return
       }
+
+      this._pending = Object.create(null)
+      this._retainPendingForSubmit = false
+      this._clearPendingStorage()
+      this._attemptTerminal = true
+      this._navigateToResult()
+    } catch (error) {
+      // Keep the local pending snapshot intact on every uncertain failure.  A
+      // later reconnect can retry the same idempotent submit payload safely.
+      if (!this._pageAlive) return false
+      if (await this._reconcileAttemptState()) {
+        this._attemptTerminal = true
+        if (this._pageAlive && !this._terminalNavigation) {
+          if (this._attemptAbandoned) this._navigateToPaperList()
+          else this._navigateToResult()
+        }
+        return
+      }
+      if (this._pageAlive) this.setData({ submitting: false })
+      if (auto) {
+        if (this._pageAlive) {
+          this.setData({ timeExpired: true, remainingText: '已到时 · 待联网交卷' })
+          wx.showToast({ title: '时间已到，答案已保留，联网后将自动交卷', icon: 'none' })
+        }
+      } else {
+        if (this._pageAlive) {
+          wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+          const remaining = this._currentRemainingSec()
+          if (remaining == null || remaining > 0) this._startTimer(remaining)
+          else {
+            this.setData({ timeExpired: true, remainingText: '已到时 · 待联网交卷' })
+            // Run after the current single-flight promise releases; otherwise
+            // submitExam() would simply return the promise that is finishing now.
+            setTimeout(() => {
+              if (this._pageAlive && !this._attemptTerminal && !this._terminalNavigation) {
+                this.submitExam({ auto: true }).catch(() => {})
+              }
+            }, 0)
+          }
+        }
+      }
+      return false
     }
   },
 

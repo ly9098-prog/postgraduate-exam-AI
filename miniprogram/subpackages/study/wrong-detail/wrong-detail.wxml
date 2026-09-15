@@ -25,7 +25,7 @@
 <view class="error-mark">!</view>
 <text class="error-kicker">RECORD UNAVAILABLE</text>
 <text class="error-title">暂时无法打开这道错题。</text>
-<text class="error-desc">{{errorText}}，记录可能已被移出错题本。</text>
+<text user-select="true" class="error-desc">{{errorText}}，记录可能已被移出错题本。</text>
 <button class="error-primary" bindtap="reloadData">重新加载</button>
 <button class="error-secondary" bindtap="goBack">返回错题本</button>
 </view>
@@ -157,7 +157,7 @@
 <view class="ai-section-copy">
 <text class="ai-section-kicker">WHY IT HAPPENED</text>
 <text class="ai-section-title">错因诊断</text>
-<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.mistakeDiagnosis.needsRich}}" content="{{aiCards.mistakeDiagnosis.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text></view>
+<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.mistakeDiagnosis.needsRich}}" content="{{aiCards.mistakeDiagnosis.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text></view>
 </view>
 </view>
 <view class="ai-section knowledge" wx:if="{{aiCards.knowledgePatch.raw}}">
@@ -165,7 +165,7 @@
 <view class="ai-section-copy">
 <text class="ai-section-kicker">KNOWLEDGE PATCH</text>
 <text class="ai-section-title">补漏重点</text>
-<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.knowledgePatch.needsRich}}" content="{{aiCards.knowledgePatch.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text></view>
+<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.knowledgePatch.needsRich}}" content="{{aiCards.knowledgePatch.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text></view>
 </view>
 </view>
 <view class="ai-section task" wx:if="{{aiCards.reviewTask.raw}}">
@@ -173,7 +173,7 @@
 <view class="ai-section-copy">
 <text class="ai-section-kicker">NEXT ACTION</text>
 <text class="ai-section-title">复练任务</text>
-<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.reviewTask.needsRich}}" content="{{aiCards.reviewTask.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text wx:else class="ai-text">{{aiCards.reviewTask.text}}</text></view>
+<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.reviewTask.needsRich}}" content="{{aiCards.reviewTask.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.reviewTask.text}}</text></view>
 </view>
 </view>
 <button wx:if="{{aiCards.mistakeDiagnosis.raw || aiCards.knowledgePatch.raw || aiCards.reviewTask.raw}}" class="ai-expand-btn" hover-class="ai-expand-pressed" hover-stay-time="70" disabled="{{aiRegenerating}}" bindtap="toggleAiReview" aria-label="{{aiReviewExpanded ? '收起完整复盘' : '查看完整复盘'}}"><text>{{aiReviewExpanded ? '收起详情' : '查看完整复盘'}}</text><image class="ai-expand-arrow-icon {{aiReviewExpanded ? 'is-up' : ''}}" src="/assets/icons/wrong-detail/chevron-down.svg" mode="aspectFit" aria-hidden="true" /></button>
@@ -189,7 +189,7 @@
 <view wx:elif="{{aiFallback && !aiCards}}" class="ai-fallback">
 <view class="fallback-mark">!</view>
 <text class="fallback-title">AI 复盘暂时不可用</text>
-<text class="fallback-desc">{{aiErrorText || '先查看题目与答案，稍后再试。'}}</text>
+<text user-select="true" class="fallback-desc">{{aiErrorText || '先查看题目与答案，稍后再试。'}}</text>
 <button wx:if="{{aiRetryable}}" class="ai-action-btn" bindtap="regenerateAiAnalysis">重新生成</button>
 </view>
 <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle">
@@ -252,19 +252,19 @@
 <text>正在结合你的学习上下文生成…</text>
 </view>
 <view wx:elif="{{teacherErrorText}}" class="teacher-sheet-error">
-<text>{{teacherErrorText}}</text>
+<text user-select="true">{{teacherErrorText}}</text>
 <button class="teacher-retry" wx:if="{{teacherLastAction}}" data-action="{{teacherLastAction}}" bindtap="run408TeacherAction">重新尝试</button>
 </view>
 <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
 <view wx:if="{{teacherResult.summary}}" class="teacher-summary-card">
 <text class="teacher-summary-label">先看结论</text>
-<text class="teacher-summary" selectable="true">{{teacherResult.summary}}</text>
+<text class="teacher-summary" user-select="true">{{teacherResult.summary}}</text>
 </view>
 <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
 <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">{{item.heading}}</text></view>
 <view class="teacher-point-list">
 <view wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">
-<view class="teacher-point-dot"></view><text class="teacher-point-text" selectable="true">{{point}}</text>
+<view class="teacher-point-dot"></view><text class="teacher-point-text" user-select="true">{{point}}</text>
 </view>
 </view>
 </view>
@@ -287,12 +287,12 @@
 </view>
 <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section teacher-practice-card">
 <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">立即检验</text></view>
-<text class="teacher-practice-stem" selectable="true">{{teacherResult.practiceQuestion.stem}}</text>
+<text class="teacher-practice-stem" user-select="true">{{teacherResult.practiceQuestion.stem}}</text>
 <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option">
-<text class="teacher-practice-key">{{item.key}}</text><text class="teacher-practice-option-text">{{item.text}}</text>
+<text class="teacher-practice-key">{{item.key}}</text><text user-select="true" class="teacher-practice-option-text">{{item.text}}</text>
 </view>
 <view class="teacher-practice-answer-row"><text class="teacher-practice-answer-label">答案</text><text class="teacher-practice-answer">{{teacherResult.practiceQuestion.answer}}</text></view>
-<text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis" selectable="true">{{teacherResult.practiceQuestion.analysis}}</text>
+<text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis" user-select="true">{{teacherResult.practiceQuestion.analysis}}</text>
 </view>
 <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用可靠的已有内容兜底；AI 生成暂不可用。' : '内容由 AI 深入讲解生成，仅用于学习复盘。'}}</text>
 <view class="teacher-feedback-row">

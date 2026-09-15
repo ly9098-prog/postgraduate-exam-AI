@@ -50,6 +50,46 @@ class ExamAnswerSaveRequest(BaseModel):
         return self
 
 
+class ExamAttemptSubmitAnswer(BaseModel):
+    """Final local answer snapshot carried by the submit request.
+
+    Normal answer PATCHes remain the fast-path during an exam.  The submit
+    request also carries any still-pending local rows so the server can persist
+    them and grade the attempt in one transaction.  This removes the fragile
+    N-PATCH-then-submit dependency at the deadline and makes delayed/offline
+    auto-submit recoverable.
+    """
+
+    item_id: int = Field(gt=0)
+    selected_answer: str | None = Field(max_length=32)
+    marked_for_review: bool
+    used_time: int = Field(ge=0, le=6 * 60 * 60)
+
+    @model_validator(mode="after")
+    def normalize_answer(self):
+        if self.selected_answer is not None:
+            normalized = self.selected_answer.strip().upper()
+            self.selected_answer = normalized or None
+        return self
+
+
+class ExamAttemptSubmitRequest(BaseModel):
+    """Idempotent submit payload.
+
+    ``answers`` is intentionally optional/empty for backward compatibility
+    with older clients that submit ``{}`` after flushing answers separately.
+    """
+
+    answers: list[ExamAttemptSubmitAnswer] = Field(default_factory=list, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_items(self):
+        item_ids = [int(item.item_id) for item in self.answers]
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("交卷答案中存在重复题目")
+        return self
+
+
 class ExamQuestionView(BaseModel):
     item_id: int
     question_id: int
@@ -174,6 +214,26 @@ class ExamHistoryItem(BaseModel):
     question_count: int
     answered_count: int
     correct_count: int
+    wrong_count: int = 0
+    unanswered_count: int = 0
     choice_score: float
     total_choice_score: float
     accuracy: float
+
+
+class ExamHistorySummary(BaseModel):
+    completed_count: int = 0
+    average_choice_score: float = 0
+    average_total_choice_score: float = 0
+    average_accuracy: float = 0
+    best_choice_score: float = 0
+    best_accuracy: float = 0
+
+
+class ExamHistoryOverview(BaseModel):
+    summary: ExamHistorySummary
+    items: list[ExamHistoryItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+    has_more: bool = False

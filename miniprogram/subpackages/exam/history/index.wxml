@@ -1,18 +1,121 @@
 <view class="page">
   <premium-nav title="考试历史" variant="light" bind:back="goBack" />
-  <view class="header">
-    <text class="kicker">EXAM HISTORY</text>
-    <text class="title">每一次成绩都只统计选择题部分</text>
-  </view>
-  <view class="state" wx:if="{{loading}}">正在读取考试记录…</view>
-  <view class="state error" wx:elif="{{errorText}}" bindtap="loadHistory">{{errorText}} · 点击重试</view>
-  <view class="state" wx:elif="{{rows.length === 0}}">还没有已完成的选择题考试</view>
-  <view class="list" wx:else>
-    <view class="item" wx:for="{{rows}}" wx:key="attempt_id" data-id="{{item.attempt_id}}" bindtap="openResult" hover-class="pressed">
-      <view class="item-head"><text class="item-title">{{item.paper_title}}</text><text class="score">{{item.scoreText}} / {{item.totalScoreText}}</text></view>
-      <view class="meta"><text>{{item.startedText}}</text><text>{{item.correct_count}} / {{item.question_count}} 正确</text><text>{{item.accuracyText}}</text><text>{{item.durationText}}</text></view>
-      <view class="foot"><text>选择题部分得分</text><text>查看复盘 →</text></view>
+
+  <view class="history-shell">
+    <view class="overview-card" wx:if="{{rows.length}}">
+      <view class="overview-icon" aria-hidden="true">
+        <view class="bar bar-1"></view>
+        <view class="bar bar-2"></view>
+        <view class="bar bar-3"></view>
+        <view class="bar bar-4"></view>
+      </view>
+
+      <view class="overview-body">
+        <view class="overview-count">
+          <text>累计完成</text>
+          <text class="overview-highlight">{{summary.completedCount}}</text>
+          <text>套试卷</text>
+        </view>
+        <view class="overview-stats">
+          <view class="overview-stat">
+            <text class="overview-label">平均分</text>
+            <view class="overview-value-row">
+              <text class="overview-value">{{summary.averageScoreText}}</text>
+              <text class="overview-denominator">/ {{summary.averageTotalScoreText}}</text>
+            </view>
+          </view>
+          <view class="overview-divider"></view>
+          <view class="overview-stat overview-stat-accuracy">
+            <text class="overview-label">平均正确率</text>
+            <text class="overview-value">{{summary.averageAccuracyText}}</text>
+          </view>
+        </view>
+      </view>
+
+      <text class="overview-trend" aria-hidden="true">↗</text>
     </view>
+
+    <view class="state-card loading-state" wx:if="{{loading && !rows.length}}">
+      <view class="loading-dot"></view>
+      <text>正在整理考试记录…</text>
+    </view>
+
+    <view class="state-card error-state" wx:elif="{{errorText && !rows.length}}" bindtap="retryLoad">
+      <text class="state-title">记录加载失败</text>
+      <text class="state-copy">{{errorText}}</text>
+      <text class="state-action">点击重新加载</text>
+    </view>
+
+    <view class="empty-state" wx:elif="{{!loading && rows.length === 0}}">
+      <image
+        class="empty-illustration"
+        src="./assets/empty-history.png"
+        mode="widthFix"
+        lazy-load="false"
+        aria-role="img"
+        aria-label="暂无考试记录"
+      />
+      <text class="empty-title">还没有考试记录</text>
+      <view class="empty-copy">
+        <text>完成一套选择题试卷后，</text>
+        <text>这里会留下你的学习轨迹。</text>
+      </view>
+    </view>
+
+    <view class="timeline" wx:else>
+      <view
+        class="history-entry"
+        wx:for="{{rows}}"
+        wx:key="attempt_id"
+      >
+        <view class="timeline-meta">
+          <view class="timeline-line" wx:if="{{index !== rows.length - 1 || hasMore}}"></view>
+          <view class="timeline-dot"></view>
+          <view class="timeline-date-copy">
+            <text class="timeline-date">{{item.dateMonthDay}}</text>
+            <text class="timeline-year">{{item.dateYear}}</text>
+            <text class="timeline-time">{{item.submittedTimeText}}</text>
+          </view>
+        </view>
+
+        <view
+          class="record-card"
+          data-id="{{item.attempt_id}}"
+          bindtap="openResult"
+          hover-class="record-card-pressed"
+          hover-start-time="20"
+          hover-stay-time="70"
+          aria-role="button"
+          aria-label="查看 {{item.paperDisplayTitle}} 考试复盘"
+        >
+          <view class="record-title-row">
+            <text class="record-title">{{item.paperDisplayTitle}}</text>
+            <text class="record-arrow">›</text>
+          </view>
+
+          <view class="record-metrics">
+            <view class="record-metric">
+              <text class="record-label">总分</text>
+              <view class="record-score-row">
+                <text class="record-value">{{item.scoreText}}</text>
+                <text class="record-total">/ {{item.totalScoreText}}</text>
+              </view>
+            </view>
+            <view class="record-metric record-metric-accuracy">
+              <text class="record-label">正确率</text>
+              <text class="record-value">{{item.accuracyText}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="load-more" wx:if="{{loadingMore}}">
+      <view class="loading-dot small"></view>
+      <text>继续加载…</text>
+    </view>
+
   </view>
+
   <view class="safe-bottom"></view>
 </view>

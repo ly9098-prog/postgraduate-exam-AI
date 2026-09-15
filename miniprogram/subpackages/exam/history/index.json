@@ -1,6 +1,11 @@
 {
   "navigationStyle": "custom",
   "navigationBarTitleText": "考试历史",
-  "backgroundColor": "#F3F4F1",
-  "usingComponents": { "premium-nav": "/components/premium-nav/premium-nav" }
+  "backgroundColor": "#F8FCFA",
+  "backgroundTextStyle": "dark",
+  "enablePullDownRefresh": true,
+  "onReachBottomDistance": 220,
+  "usingComponents": {
+    "premium-nav": "/components/premium-nav/premium-nav"
+  }
 }

@@ -4,43 +4,6 @@
 
 var animationLoader = require('./utils/animation-loader')
 
-var _ANIM_LOADED = false
-var _ANIM_CALLBACKS = []
-var _animLoadPromise = null
-
-function onAnimReady(cb) {
-  if (_ANIM_LOADED) return cb()
-  _ANIM_CALLBACKS.push(cb)
-}
-
-/** 按需加载动画分包，避免重复并发加载 */
-function loadRewardAnimationPackage() {
-  if (_animLoadPromise) return _animLoadPromise
-  if (_ANIM_LOADED) {
-    _animLoadPromise = Promise.resolve()
-    return _animLoadPromise
-  }
-  _animLoadPromise = new Promise(function (resolve) {
-    if (typeof wx.loadSubpackage === 'function') {
-      wx.loadSubpackage({
-        root: 'subpackages/animation',
-        success: function () { _onAnimLoaded(); resolve() },
-        fail: function () { _animLoadPromise = null; resolve() }, // 不影响主流程，同时允许后续重试
-      })
-    } else {
-      // 基础库版本过低，不支持 wx.loadSubpackage，静默跳过
-      resolve()
-    }
-  })
-  return _animLoadPromise
-}
-
-function _onAnimLoaded() {
-  _ANIM_LOADED = true
-  _ANIM_CALLBACKS.forEach(function (cb) { try { cb() } catch (_) {} })
-  _ANIM_CALLBACKS = []
-}
-
 /**
  * Get safe (non-sensitive) page route info for error diagnostics.
  * Skips: token, user answers, full questions, AI analysis, PII.
@@ -64,6 +27,16 @@ function _safePageInfo() {
   }
 }
 
+function _getSDKVersion() {
+  try {
+    if (wx.getAppBaseInfo) {
+      var info = wx.getAppBaseInfo() || {}
+      return info.SDKVersion || ''
+    }
+  } catch (_) {}
+  return ''
+}
+
 /**
  * Strip sensitive data from error log context.
  */
@@ -79,11 +52,10 @@ function _sanitizeStack(stack) {
 
 App({
   onLaunch() {
-    // 不在启动时加载动画分包，改为在首次播放时由 getApp().loadRewardAnimationPackage() 按需加载
+    // 动画分包由 utils/animation-loader 通过跨包异步 require 按需加载。
     this._startPreviewTempFileCleanup()
   },
 
-  loadRewardAnimationPackage: loadRewardAnimationPackage,
   animationLoader: animationLoader,
 
   onShow() {
@@ -97,8 +69,7 @@ App({
 
   onError(err) {
     try {
-      var sdkVersion = ''
-      try { sdkVersion = wx.getSystemInfoSync ? (wx.getSystemInfoSync().SDKVersion || '') : '' } catch (_) {}
+      var sdkVersion = _getSDKVersion()
       var ctx = [
         'type:runtime',
         'SDK:' + sdkVersion,
@@ -115,8 +86,7 @@ App({
   onUnhandledRejection(err) {
     try {
       var reason = err && (err.reason || err.message || err)
-      var sdkVersion = ''
-      try { sdkVersion = wx.getSystemInfoSync ? (wx.getSystemInfoSync().SDKVersion || '') : '' } catch (_) {}
+      var sdkVersion = _getSDKVersion()
       var ctx = [
         'type:rejection',
         'SDK:' + sdkVersion,

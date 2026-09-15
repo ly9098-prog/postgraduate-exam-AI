@@ -10,7 +10,6 @@ function getSystemInfo() {
         SDKVersion: appBaseInfo.SDKVersion || '',
       }
     }
-    if (wx.getSystemInfoSync) return wx.getSystemInfoSync() || {}
   } catch (_) {}
   return {}
 }

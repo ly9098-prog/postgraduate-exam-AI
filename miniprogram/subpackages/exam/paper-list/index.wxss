@@ -325,7 +325,8 @@ page {
   box-shadow: 0 14rpx 34rpx rgba(42, 119, 89, .075);
 }
 
-.paper-card-starting {
+.paper-card-starting,
+.paper-card-cancelling {
   opacity: .72;
 }
 
@@ -468,13 +469,51 @@ page {
   line-height: 1.4;
 }
 
-.paper-source {
+.paper-foot-left {
   min-width: 0;
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.paper-source {
+  min-width: 0;
+  max-width: 180rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #829D94;
+}
+
+.paper-cancel-resume {
+  min-width: 104rpx;
+  height: 46rpx;
+  padding: 0 16rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #E3EBE6;
+  border-radius: 999rpx;
+  background: #F8FAF8;
+  color: #7C9189;
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity .14s ease, transform .14s ease, background .14s ease, border-color .14s ease;
+}
+
+.paper-cancel-resume-pressed {
+  opacity: .72;
+  transform: scale(.96);
+  background: #F2F5F3;
+  border-color: #D8E2DC;
+}
+
+.paper-cancel-resume.is-loading {
+  opacity: .58;
 }
 
 .paper-action-wrap {

@@ -326,7 +326,7 @@ Page({
   detectRuntime() {
     let platform = ''
     try {
-      const info = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
+      const info = wx.getDeviceInfo ? (wx.getDeviceInfo() || {}) : {}
       platform = String(info.platform || '').toLowerCase()
     } catch (_) {}
     this.setData({ isDevtools: platform === 'devtools' })
@@ -603,7 +603,7 @@ Page({
     let statusBarHeight = 20
     let windowWidth = 375
     try {
-      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+      const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
       statusBarHeight = Number(info.statusBarHeight || 20)
       windowWidth = Number(info.windowWidth || info.screenWidth || 375)
     } catch (_) {}

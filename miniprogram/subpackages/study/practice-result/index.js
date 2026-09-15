@@ -130,9 +130,7 @@ function getErrorDonutMetrics() {
 let windowWidth = 375;
 try {
 if (typeof wx !== 'undefined') {
-const info = wx.getWindowInfo
-? wx.getWindowInfo()
-: (wx.getSystemInfoSync ? wx.getSystemInfoSync() : null);
+const info = wx.getWindowInfo ? wx.getWindowInfo() : null;
 if (info && Number(info.windowWidth) > 0) windowWidth = Number(info.windowWidth);
 }
 } catch (e) {}
@@ -630,7 +628,7 @@ measureSafeNavigation() {
 let statusBarHeight = 20;
 let menuTop = 0;
 try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+const info = wx.getWindowInfo ? wx.getWindowInfo() : {};
 statusBarHeight = Math.max(0, Number(info.statusBarHeight) || 20);
 } catch (e) {}
 try {

@@ -14,6 +14,7 @@ import {
   ListOrdered,
   LoaderCircle,
   Plus,
+  RotateCw,
   Sigma,
   Timer,
   Save,
@@ -41,7 +42,6 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { Input } from "@/components/ui/input";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type {
-  AdminExamPastExamCandidatesResponse,
   AdminExamPaperDetail,
   AdminExamPaperQuestionItem,
   AdminExamPaperType,
@@ -50,6 +50,7 @@ import type {
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
+import { EXAM_YEAR_OPTIONS, isSupportedExamYear } from "@/lib/exam-years";
 import { ImportToast, type ImportToastTone } from "../../imports/components/import-toast";
 
 const typeOptions = [
@@ -161,8 +162,30 @@ function buildExamItemsPayload(items: DraftItem[]) {
 
 function statusMeta(status: AdminExamPaperDetail["status"]) {
   if (status === "published") return { label: "已发布", tone: "success" as const, summary: "题序与题目版本已冻结" };
-  if (status === "archived") return { label: "已归档", tone: "neutral" as const, summary: "不再出现在前台试卷列表" };
+  if (status === "archived") return { label: "已归档", tone: "neutral" as const, summary: "不再出现在前台；同年份无其他有效真题时可还原并重新发布" };
   return { label: "草稿", tone: "warning" as const, summary: "可继续编辑题目与基础信息" };
+}
+
+function validationToastMessage(errors: string[]) {
+  const visible = errors.slice(0, 6);
+  const remaining = errors.length - visible.length;
+  return [
+    ...visible.map((error) => `• ${error}`),
+    ...(remaining > 0 ? [`• 另有 ${remaining} 项，请按页面校验信息继续处理`] : []),
+  ].join("\n");
+}
+
+function stateActionErrorTitle(action: "publish" | "archive" | "restore", message: string) {
+  if (action === "restore") {
+    if (message.includes("同一年") || message.includes("同年份") || (message.includes("已存在") && message.includes("真题"))) {
+      return "无法还原：同年份试卷已存在";
+    }
+    if (message.includes("校验")) return "还原发布校验未通过";
+    if (message.includes("状态")) return "试卷状态已变化";
+    return "还原发布失败";
+  }
+  if (action === "publish") return message.includes("校验") ? "发布校验未通过" : "发布失败";
+  return message.includes("状态") ? "试卷状态已变化" : "归档失败";
 }
 
 export default function ExamPaperDetailPage() {
@@ -172,7 +195,9 @@ export default function ExamPaperDetailPage() {
   const paperRef = params.id;
   const isLegacyNumericRef = /^\d+$/.test(paperRef);
   const permissions = useAuthStore((state) => state.permissions);
+  const roleName = useAuthStore((state) => state.role?.name);
   const canWrite = hasPermission(permissions, "question:write");
+  const canManagePaper = roleName === "admin" || roleName === "super_admin";
   const [title, setTitle] = useState("");
   const [paperType, setPaperType] = useState<AdminExamPaperType>("past_exam_choice");
   const [year, setYear] = useState("");
@@ -182,7 +207,7 @@ export default function ExamPaperDetailPage() {
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [toast, setToast] = useState<ExamToastState | null>(null);
-  const [confirmAction, setConfirmAction] = useState<"publish" | "archive" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"publish" | "archive" | "restore" | "delete" | "refresh" | null>(null);
   const [highlightedQuestionIndex, setHighlightedQuestionIndex] = useState<number | null>(null);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [jumpDrawerOpen, setJumpDrawerOpen] = useState(false);
@@ -192,6 +217,7 @@ export default function ExamPaperDetailPage() {
   const rightRailRef = useRef<HTMLDivElement | null>(null);
   const announcedPaperNoticeRef = useRef("");
   const jumpHighlightTimerRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef(false);
 
   const paperQuery = useQuery({
     queryKey: ["exam-paper", paperRef],
@@ -202,6 +228,7 @@ export default function ExamPaperDetailPage() {
           : `/exams/papers/public/${encodeURIComponent(paperRef)}`,
       ),
     enabled: Boolean(paperRef),
+    staleTime: 20_000,
   });
   const paper = paperQuery.data;
   const isDraft = paper?.status === "draft";
@@ -233,7 +260,7 @@ export default function ExamPaperDetailPage() {
       setToast({
         tone: "warning",
         title: `发布前还有 ${paper.validation_errors.length} 项需要处理`,
-        message: paper.validation_errors.map((error) => `• ${error}`).join("\n"),
+        message: validationToastMessage(paper.validation_errors),
       });
       return;
     }
@@ -354,7 +381,8 @@ export default function ExamPaperDetailPage() {
           keyword: debouncedKeyword || undefined,
         })}`,
       ),
-    enabled: Boolean(isDraft && canWrite),
+    enabled: Boolean(isDraft && canWrite && paperType !== "past_exam_choice"),
+    staleTime: 30_000,
   });
 
   const selectedIds = useMemo(() => new Set(items.map((item) => item.question_id)), [items]);
@@ -411,6 +439,7 @@ export default function ExamPaperDetailPage() {
     mutationFn: () =>
       apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}`, {
         method: "PATCH",
+        exposeErrorDetail: true,
         body: JSON.stringify({
           title: title.trim(),
           paper_type: paperType,
@@ -419,9 +448,9 @@ export default function ExamPaperDetailPage() {
           duration_sec: durationMin ? Number(durationMin) * 60 : null,
         }),
       }),
-    onSuccess: async () => {
+    onSuccess: async (updatedPaper) => {
+      queryClient.setQueryData(["exam-paper", paperRef], updatedPaper);
       setToast({ tone: "success", title: "试卷信息已保存", message: "基础信息已同步。" });
-      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
     },
     onError: (error) => {
@@ -438,9 +467,9 @@ export default function ExamPaperDetailPage() {
         exposeErrorDetail: true,
       });
     },
-    onSuccess: async () => {
-      setToast({ tone: "success", title: "组卷已保存", message: `已固定 ${items.length} 道题的题序、分值与当前题目版本。` });
-      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
+    onSuccess: async (updatedPaper) => {
+      queryClient.setQueryData(["exam-paper", paperRef], updatedPaper);
+      setToast({ tone: "success", title: "组卷已保存", message: `已固定 ${updatedPaper.items.length} 道题的题序、分值与当前题目版本。` });
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
     },
     onError: (error) => {
@@ -449,71 +478,151 @@ export default function ExamPaperDetailPage() {
   });
 
   const stateMutation = useMutation({
-    mutationFn: (action: "publish" | "archive") =>
-      apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/${action}`, { method: "POST" }),
-    onSuccess: async (_, action) => {
+    onMutate: () => setToast(null),
+    mutationFn: (action: "publish" | "archive" | "restore") =>
+      apiRequest<AdminExamPaperDetail>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/${action}`, { method: "POST", exposeErrorDetail: true }),
+    onSuccess: async (updatedPaper, action) => {
+      queryClient.setQueryData(["exam-paper", paperRef], updatedPaper);
       setConfirmAction(null);
       setToast({
         tone: "success",
-        title: action === "publish" ? "试卷已发布" : "试卷已归档",
-        message: action === "publish" ? "题目版本与题序已冻结。" : "该试卷已从前台可用列表移除。",
+        title: action === "publish" ? "试卷已发布" : action === "restore" ? "试卷已还原并重新发布" : "试卷已归档",
+        message: action === "archive"
+          ? "该试卷已从前台可用列表移除，历史作答保持不变。"
+          : action === "restore"
+            ? "已恢复为前台可用状态，原题序与固定题目版本保持不变。"
+            : "题序与题目版本已冻结，试卷已进入前台可用状态。",
       });
-      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
       await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
     },
-    onError: (error, action) => {
+    onError: async (error, action) => {
+      const message = error instanceof Error ? error.message : "操作失败，请刷新后重试。";
       setConfirmAction(null);
       setToast({
         tone: "error",
-        title: action === "publish" ? "发布失败" : "归档失败",
+        title: stateActionErrorTitle(action, message),
+        message,
+      });
+
+      // A 409 can be caused by another administrator changing the same paper
+      // or creating a same-year paper. Re-fetch after any failed state action
+      // so the page does not keep showing stale buttons/status.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] }),
+        queryClient.invalidateQueries({ queryKey: ["exam-papers"] }),
+      ]);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<{ status: string; public_id: string }>(`/exams/papers/public/${encodeURIComponent(mutationPaperRef)}`, {
+        method: "DELETE",
+        exposeErrorDetail: true,
+      }),
+    onSuccess: async () => {
+      setConfirmAction(null);
+      queryClient.removeQueries({ queryKey: ["exam-paper", paperRef] });
+      await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
+      router.replace("/exams");
+    },
+    onError: (error) => {
+      setConfirmAction(null);
+      setToast({
+        tone: "error",
+        title: "删除试卷失败",
         message: error instanceof Error ? error.message : "请刷新后重试。",
       });
     },
   });
 
   const quickPastExamMutation = useMutation({
+    onMutate: () => setToast(null),
     mutationFn: async () => {
+      if (!paper) throw new Error("试卷信息尚未加载完成，请稍后重试。");
+      if (paper.items.length > 0 || items.length > 0) {
+        throw new Error("当前试卷已存在题目，快速添加只能使用一次；后续请使用“刷新题目”。");
+      }
       const normalizedYear = year.replace(/\D/g, "");
       if (normalizedYear.length !== 4) {
         throw new Error("请先在右侧试卷信息中填写 4 位年份，例如 2014。");
       }
       const targetYear = Number(normalizedYear);
-      if (!Number.isInteger(targetYear) || targetYear < 2000 || targetYear > 2100) {
-        throw new Error("试卷年份需在 2000–2100 之间。");
+      if (!Number.isInteger(targetYear) || !isSupportedExamYear(normalizedYear)) {
+        throw new Error("试卷年份仅支持 2009–2026。");
       }
-      return apiRequest<AdminExamPastExamCandidatesResponse>(
-        `/exams/past-exam-candidates${toQuery({ year: targetYear })}`,
+      if (paper.paper_type !== "past_exam_choice" || paperType !== paper.paper_type || targetYear !== paper.year) {
+        throw new Error("试卷类型或年份存在未保存修改，请先保存试卷信息后再快速添加题目。");
+      }
+      return apiRequest<AdminExamPaperDetail>(
+        `/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/items/quick-fill-past-exam`,
+        { method: "POST", exposeErrorDetail: true },
       );
     },
-    onSuccess: (result) => {
-      const existing = new Set(items.map((item) => item.question_id));
-      const addable = result.items.filter((item) => !existing.has(item.question_id));
-      if (addable.length) {
-        setItems((current) => [
-          ...current,
-          ...addable.map((item) => ({
-            question_id: item.question_id,
-            score: "2",
-            subject_name: item.subject_name,
-            subject_code: item.subject_code,
-            content: item.content,
-            year: item.year,
-            source: item.source,
-            version_is_current: true,
-          })),
-        ]);
-      }
-      const skipped = result.total - addable.length;
+    onSuccess: async (updatedPaper) => {
+      queryClient.setQueryData(["exam-paper", paperRef], updatedPaper);
       setToast({
-        tone: result.total ? "success" : "info",
-        title: result.total ? "真题匹配完成" : "未找到可用真题",
-        message: result.total
-          ? `已匹配 ${result.total} 道 ${result.year} 真题，新增 ${addable.length} 道${skipped ? `，跳过已添加 ${skipped} 道` : ""}。`
-          : `未找到与试卷年份 ${result.year} 匹配的可用单选题；已检查【${result.year}统考真题】与【${result.year} 统考真题】题干前缀。`,
+        tone: "success",
+        title: "真题已快速填入",
+        message: updatedPaper.items.length < 40
+          ? `已写入当前可可靠匹配的 ${updatedPaper.items.length} 道题；不足 40 道也可发布，后续题库补齐后可使用“刷新题目”更新。`
+          : `已按 ${updatedPaper.year} 年 408 结构写入 40 道题，后续请使用“刷新题目”更新整卷。`,
       });
+      await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
     },
     onError: (error) => {
-      setToast({ tone: "error", title: "真题匹配失败", message: error instanceof Error ? error.message : "请稍后重试。" });
+      setToast({ tone: "error", title: "快速添加题目失败", message: error instanceof Error ? error.message : "请稍后重试。" });
+    },
+  });
+
+  const refreshPastExamMutation = useMutation({
+    onMutate: () => setToast(null),
+    mutationFn: async () => {
+      if (!paper) throw new Error("试卷信息尚未加载完成，请稍后重试。");
+      if (paper.paper_type !== "past_exam_choice") {
+        throw new Error("仅历年真题选择题卷支持刷新题目。");
+      }
+      const targetYear = paper.year;
+      if (!targetYear || !isSupportedExamYear(String(targetYear))) {
+        throw new Error("当前试卷年份无效，请先保存 2009–2026 范围内的年份。");
+      }
+      if (paperType !== paper.paper_type || (year ? Number(year) : null) !== targetYear) {
+        throw new Error("试卷类型或年份存在未保存修改，请先保存试卷信息后再刷新题目。");
+      }
+
+      const previousCount = paper.items.length;
+      const updatedPaper = await apiRequest<AdminExamPaperDetail>(
+        `/exams/papers/public/${encodeURIComponent(mutationPaperRef)}/items/refresh-past-exam`,
+        { method: "POST", exposeErrorDetail: true },
+      );
+      if (updatedPaper.validation_errors.length > 0) {
+        throw new Error(`刷新结果仍有 ${updatedPaper.validation_errors.length} 项发布校验问题，请刷新页面后重试。`);
+      }
+      return { updatedPaper, previousCount };
+    },
+    onSuccess: async ({ updatedPaper, previousCount }) => {
+      queryClient.setQueryData(["exam-paper", paperRef], updatedPaper);
+      setToast({
+        tone: "success",
+        title: "试卷题目已刷新",
+        message: updatedPaper.items.length < 40
+          ? `已在同一事务中替换原有 ${previousCount} 道题，并写入当前可匹配的 ${updatedPaper.items.length} 道真题；不足 40 道也可发布。`
+          : `已在同一事务中替换原有 ${previousCount} 道题，并重新写入完整 40 道真题。`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
+    },
+    onError: async (error) => {
+      await queryClient.invalidateQueries({ queryKey: ["exam-paper", paperRef] });
+      await queryClient.invalidateQueries({ queryKey: ["exam-papers"] });
+      setToast({
+        tone: "error",
+        title: "刷新试卷题目失败",
+        message: error instanceof Error ? error.message : "刷新已回滚，原试卷题目保持不变，请检查后重试。",
+      });
+    },
+    onSettled: () => {
+      refreshInFlightRef.current = false;
+      setConfirmAction(null);
     },
   });
 
@@ -588,6 +697,7 @@ export default function ExamPaperDetailPage() {
   }
 
   const status = statusMeta(paper.status);
+  const pastExamItemsManaged = paper.paper_type === "past_exam_choice" || paperType === "past_exam_choice";
   const draftScore = items.reduce((total, item) => total + (Number(item.score) || 0), 0);
   const hasStaleVersion = items.some((item) => item.version_is_current === false);
   const metaDirty = Boolean(isDraft && (
@@ -604,6 +714,9 @@ export default function ExamPaperDetailPage() {
       return !saved || saved.question_id !== item.question_id || Number(saved.score) !== Number(item.score);
     })
   ));
+  const refreshMetadataSynced = paperType === paper.paper_type
+    && (year ? Number(year) : null) === (paper.year ?? null);
+  const paperItemsMutationPending = itemsMutation.isPending || quickPastExamMutation.isPending || refreshPastExamMutation.isPending;
 
   return (
     <ManagementPage className="space-y-6">
@@ -627,16 +740,37 @@ export default function ExamPaperDetailPage() {
             {paper.status === "draft" && canWrite ? (
               <Button
                 onClick={() => setConfirmAction("publish")}
-                disabled={paper.validation_errors.length > 0 || stateMutation.isPending}
-                title={paper.validation_errors.length ? paper.validation_errors.join("；") : undefined}
+                disabled={paper.validation_errors.length > 0 || stateMutation.isPending || refreshPastExamMutation.isPending}
+                title={paper.validation_errors.length ? validationToastMessage(paper.validation_errors) : undefined}
               >
                 <CheckCircle2 className="h-4 w-4" />
                 发布
               </Button>
             ) : null}
             {paper.status !== "archived" && canWrite ? (
-              <Button variant="secondary" onClick={() => setConfirmAction("archive")} disabled={stateMutation.isPending}>
+              <Button variant="secondary" onClick={() => setConfirmAction("archive")} disabled={stateMutation.isPending || refreshPastExamMutation.isPending}>
                 归档
+              </Button>
+            ) : null}
+            {paper.status === "archived" && canWrite ? (
+              <Button
+                onClick={() => setConfirmAction("restore")}
+                disabled={paper.validation_errors.length > 0 || stateMutation.isPending || deleteMutation.isPending}
+                title={paper.validation_errors.length ? validationToastMessage(paper.validation_errors) : "仅当不存在同年份的其他草稿或已发布真题试卷时可还原"}
+              >
+                <RotateCw className="h-4 w-4" />
+                还原并发布
+              </Button>
+            ) : null}
+            {canManagePaper ? (
+              <Button
+                variant="danger"
+                onClick={() => setConfirmAction("delete")}
+                disabled={deleteMutation.isPending || stateMutation.isPending || refreshPastExamMutation.isPending}
+                title="软删除试卷并保留历史作答与审计记录"
+              >
+                <Trash2 className="h-4 w-4" />
+                删除
               </Button>
             ) : null}
           </>
@@ -647,6 +781,8 @@ export default function ExamPaperDetailPage() {
         message={toast?.message ?? null}
         title={toast?.title}
         tone={toast?.tone ?? "info"}
+        duration={toast?.tone === "warning" ? 8000 : toast?.tone === "error" ? 6500 : 3600}
+        scrollable={false}
         onDismiss={() => setToast(null)}
       />
 
@@ -661,11 +797,15 @@ export default function ExamPaperDetailPage() {
         <ManagementPanel
           variant="focus"
           title="固定题序"
-          description="草稿阶段可调整题序与分值。保存组卷时会固定当前 QuestionVersion，发布后不再直接替换。"
+          description={pastExamItemsManaged
+            ? "历年真题按 408 科目顺序与 10/12/10/8 上限自动管理：空卷仅可快速添加一次，已有题目后仅通过刷新题目整卷更新；不足 40 道也可发布。"
+            : "草稿阶段可调整题序与分值。保存组卷时会固定当前 QuestionVersion，发布后不再直接替换。"}
           actions={(
             <>
-              {isDraft && canWrite ? (
+              {isDraft && canWrite && !pastExamItemsManaged ? (
                 <StatusBadge tone={itemsDirty ? "warning" : "success"}>{itemsDirty ? "题序未保存" : "题序已同步"}</StatusBadge>
+              ) : isDraft && canWrite && pastExamItemsManaged ? (
+                <StatusBadge tone="neutral">真题自动组卷</StatusBadge>
               ) : (
                 <StatusBadge tone="neutral">只读题序</StatusBadge>
               )}
@@ -683,20 +823,45 @@ export default function ExamPaperDetailPage() {
                   <span className="max-w-[86px] truncate text-[11px] font-medium text-[var(--color-text-secondary)]">{activeSubjectName}</span>
                 </Button>
               ) : null}
-              {isDraft && canWrite && paperType === "past_exam_choice" ? (
+              {isDraft && canWrite && paperType === "past_exam_choice" && items.length === 0 ? (
                 <Button
                   variant="secondary"
                   className="transition-transform active:scale-[0.98] motion-reduce:transform-none"
                   onClick={() => quickPastExamMutation.mutate()}
-                  disabled={quickPastExamMutation.isPending || year.replace(/\D/g, "").length !== 4}
-                  title={year.replace(/\D/g, "").length === 4 ? `按试卷年份 ${year} 快速匹配真题` : "请先填写 4 位试卷年份"}
+                  disabled={paperItemsMutationPending || !refreshMetadataSynced || year.replace(/\D/g, "").length !== 4}
+                  title={
+                    !refreshMetadataSynced
+                      ? "试卷类型或年份有未保存修改，请先保存试卷信息"
+                      : year.replace(/\D/g, "").length === 4
+                        ? `按 ${year} 年 408 科目顺序填入当前可匹配题目（最多 40 道）；填入后请使用刷新题目更新`
+                        : "请先填写 4 位试卷年份"
+                  }
                 >
                   <Plus className="h-4 w-4" />
-                  {quickPastExamMutation.isPending ? "匹配中" : "快速添加题目"}
+                  {quickPastExamMutation.isPending ? "填入中" : "快速添加题目"}
                 </Button>
               ) : null}
-              {isDraft && canWrite ? (
-                <Button className="transition-transform active:scale-[0.98] motion-reduce:transform-none" onClick={() => itemsMutation.mutate()} disabled={!items.length || !itemsDirty || itemsMutation.isPending || items.some((item) => Number(item.score) <= 0)}>
+              {isDraft && canWrite && paper.paper_type === "past_exam_choice" && items.length > 0 ? (
+                <Button
+                  variant="secondary"
+                  className="transition-transform active:scale-[0.98] motion-reduce:transform-none"
+                  onClick={() => {
+                    if (refreshInFlightRef.current || refreshPastExamMutation.isPending) return;
+                    setConfirmAction("refresh");
+                  }}
+                  disabled={paperItemsMutationPending || !refreshMetadataSynced || !paper.year}
+                  title={
+                    !refreshMetadataSynced
+                      ? "试卷类型或年份有未保存修改，请先保存试卷信息"
+                      : `删除当前题目后，按 ${paper.year} 年真题重新匹配并写入当前可用题目（最多 40 道）`
+                  }
+                >
+                  <RotateCw className={`h-4 w-4 ${refreshPastExamMutation.isPending ? "animate-spin" : ""}`} />
+                  {refreshPastExamMutation.isPending ? "刷新中" : "刷新题目"}
+                </Button>
+              ) : null}
+              {isDraft && canWrite && !pastExamItemsManaged ? (
+                <Button className="transition-transform active:scale-[0.98] motion-reduce:transform-none" onClick={() => itemsMutation.mutate()} disabled={!items.length || !itemsDirty || paperItemsMutationPending || items.some((item) => Number(item.score) <= 0)}>
                   <Save className="h-4 w-4" />
                   保存组卷
                 </Button>
@@ -727,24 +892,24 @@ export default function ExamPaperDetailPage() {
                   {item.source ? <p className="mt-1 truncate text-[11px] text-[var(--color-text-tertiary)]">来源：{item.source}</p> : null}
                 </div>
                 <div className="flex shrink-0 items-start gap-2.5">
-                  {isDraft && canWrite ? <GripVertical className="mt-8 hidden h-4 w-4 text-[var(--color-text-hint)] opacity-50 transition-opacity group-hover:opacity-100 lg:block" aria-hidden="true" /> : null}
+                  {isDraft && canWrite && !pastExamItemsManaged ? <GripVertical className="mt-8 hidden h-4 w-4 text-[var(--color-text-hint)] opacity-50 transition-opacity group-hover:opacity-100 lg:block" aria-hidden="true" /> : null}
                   <label className="w-20">
                     <FieldLabel>分值</FieldLabel>
                     <Input
                       className="text-center tabular-nums"
                       value={item.score}
-                      disabled={!isDraft || !canWrite}
+                      disabled={!isDraft || !canWrite || pastExamItemsManaged || paperItemsMutationPending}
                       onChange={(event) => setItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, score: event.target.value.replace(/[^\d.]/g, "") } : entry))}
                     />
                   </label>
-                  {isDraft && canWrite ? (
+                  {isDraft && canWrite && !pastExamItemsManaged ? (
                     <div className="flex flex-col gap-2 pt-[22px]">
                       <Button
                         className="h-11 w-11 rounded-xl border border-[var(--color-border-light)] bg-white/86 px-0 shadow-[0_2px_8px_rgba(31,49,61,0.035)] transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-[rgba(74,111,138,0.34)] active:translate-y-0 motion-reduce:transform-none"
                         size="sm"
                         variant="ghost"
                         onClick={() => moveItem(index, -1)}
-                        disabled={index === 0}
+                        disabled={index === 0 || refreshPastExamMutation.isPending}
                         aria-label="上移题目"
                         title="上移题目"
                       >
@@ -755,7 +920,7 @@ export default function ExamPaperDetailPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => moveItem(index, 1)}
-                        disabled={index === items.length - 1}
+                        disabled={index === items.length - 1 || refreshPastExamMutation.isPending}
                         aria-label="下移题目"
                         title="下移题目"
                       >
@@ -766,6 +931,7 @@ export default function ExamPaperDetailPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        disabled={refreshPastExamMutation.isPending}
                         aria-label="移除题目"
                         title="移除题目"
                       >
@@ -777,49 +943,67 @@ export default function ExamPaperDetailPage() {
               </div>
             ))}
           </div>
-          {!items.length ? <EmptyState>还没有题目。草稿阶段可从下方题库中添加单选题。</EmptyState> : null}
+          {!items.length ? (
+            <EmptyState>
+              {pastExamItemsManaged
+                ? "还没有题目。请使用“快速添加题目”按 408 固定结构一次性填入。"
+                : "还没有题目。草稿阶段可从下方题库中添加单选题。"}
+            </EmptyState>
+          ) : null}
         </ManagementPanel>
 
         <div ref={rightRailRef} className="space-y-5 xl:sticky xl:top-5 xl:self-start">
-          <ManagementPanel
-            variant="quiet"
-            title="试卷信息"
-            description={isDraft ? "基础信息可在草稿阶段修改。" : "当前试卷已锁定为只读。"}
-            actions={<StatusBadge tone={metaDirty ? "warning" : isDraft ? "success" : "neutral"}>{metaDirty ? "信息未保存" : isDraft ? "信息已同步" : "只读"}</StatusBadge>}
-          >
-          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+          <div>
+            <ManagementPanel
+              variant="quiet"
+              title="试卷信息"
+              description={isDraft ? (canManagePaper ? "基础信息可在草稿阶段修改。" : "仅管理员和超管可修改基础信息。") : "当前试卷已锁定为只读。"}
+              actions={<StatusBadge tone={metaDirty && canManagePaper ? "warning" : isDraft && canManagePaper ? "success" : "neutral"}>{metaDirty && canManagePaper ? "信息未保存" : isDraft && canManagePaper ? "信息已同步" : "只读"}</StatusBadge>}
+            >
+              <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
             <label className="sm:col-span-2">
               <FieldLabel>名称</FieldLabel>
-              <Input className="h-10" value={title} disabled={!isDraft || !canWrite} onChange={(event) => setTitle(event.target.value)} />
+              <Input className="h-10" value={title} disabled={!isDraft || !canManagePaper} onChange={(event) => setTitle(event.target.value)} />
             </label>
             <label>
               <FieldLabel>类型</FieldLabel>
-              <CustomSelect className="h-10" value={paperType} disabled={!isDraft || !canWrite} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} clearable={false} />
+              <CustomSelect className="h-10" value={paperType} disabled={!isDraft || !canManagePaper} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} clearable={false} />
             </label>
             <label>
               <FieldLabel>年份</FieldLabel>
-              <Input className="h-10 tabular-nums" value={year} disabled={!isDraft || !canWrite} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} />
+              <CustomSelect
+                className="h-10 tabular-nums"
+                value={year}
+                disabled={!isDraft || !canManagePaper}
+                options={[...EXAM_YEAR_OPTIONS]}
+                onChange={setYear}
+                placeholder="选择年份"
+                clearable={paperType !== "past_exam_choice"}
+              />
             </label>
             <label>
               <FieldLabel>建议时长（分钟）</FieldLabel>
-              <Input className="h-10 tabular-nums" value={durationMin} disabled={!isDraft || !canWrite} onChange={(event) => setDurationMin(event.target.value.replace(/\D/g, ""))} />
+              <Input className="h-10 tabular-nums" value={durationMin} disabled={!isDraft || !canManagePaper} onChange={(event) => setDurationMin(event.target.value.replace(/\D/g, ""))} />
             </label>
             <label>
               <FieldLabel>来源</FieldLabel>
-              <Input className="h-10" value={source} disabled={!isDraft || !canWrite} onChange={(event) => setSource(event.target.value)} placeholder="全国硕士研究生招生考试" />
+              <Input className="h-10" value={source} disabled={!isDraft || !canManagePaper} onChange={(event) => setSource(event.target.value)} placeholder="全国硕士研究生招生考试" />
             </label>
-            {isDraft && canWrite ? (
+            {isDraft && canManagePaper ? (
               <div className="flex justify-end border-t border-[var(--color-border-light)] pt-4 sm:col-span-2">
-                <Button className="w-full transition-transform active:scale-[0.99] motion-reduce:transform-none sm:w-auto" onClick={() => metaMutation.mutate()} disabled={!title.trim() || !metaDirty || metaMutation.isPending}>
+                <Button
+                  className="w-full transition-transform active:scale-[0.99] motion-reduce:transform-none sm:w-auto"
+                  onClick={() => metaMutation.mutate()}
+                  disabled={!title.trim() || !metaDirty || metaMutation.isPending || (paperType === "past_exam_choice" && !isSupportedExamYear(year))}
+                >
                   <Save className="h-4 w-4" />
                   保存信息
                 </Button>
               </div>
             ) : null}
-            </div>
-          </ManagementPanel>
-
-
+              </div>
+            </ManagementPanel>
+          </div>
         </div>
       </div>
 
@@ -938,7 +1122,7 @@ export default function ExamPaperDetailPage() {
           )
         : null}
 
-      {isDraft && canWrite ? (
+      {isDraft && canWrite && !pastExamItemsManaged ? (
         <ManagementPanel
           variant="quiet"
           title="从题库添加单选题"
@@ -1054,13 +1238,59 @@ export default function ExamPaperDetailPage() {
 
       <ConfirmDialog
         open={Boolean(confirmAction)}
-        title={confirmAction === "publish" ? "确认发布这份选择题卷？" : "确认归档这份试卷？"}
-        description={confirmAction === "publish" ? "发布后将冻结题目版本和题序，不能直接修改；如需调整应新建版本。" : "归档后不会再出现在小程序试卷列表，但历史考试结果仍可查看。"}
-        confirmText={confirmAction === "publish" ? "确认发布" : "确认归档"}
-        danger={confirmAction === "archive"}
-        loading={stateMutation.isPending}
+        title={
+          confirmAction === "publish"
+            ? "确认发布这份选择题卷？"
+            : confirmAction === "restore"
+              ? "确认还原并重新发布这份试卷？"
+              : confirmAction === "delete"
+                ? "确认删除这份试卷？"
+                : confirmAction === "refresh"
+                  ? "确认刷新当前试卷题目？"
+                  : "确认归档这份试卷？"
+        }
+        description={
+          confirmAction === "publish"
+            ? "题目不足 40 道也可以发布，但不能超过 40 道；发布后将冻结题目版本和题序。"
+            : confirmAction === "restore"
+              ? `系统会检查 ${paper.year ?? "当前年份"} 是否存在其他草稿或已发布真题试卷；无冲突时直接恢复为已发布状态，并保留原题序与固定题目版本。`
+              : confirmAction === "delete"
+                ? "这是软删除：试卷将从管理列表和前台可用列表隐藏，但历史作答、题目绑定和审计记录会保留。"
+                : confirmAction === "refresh"
+                  ? `将重新执行 ${paper.year ?? "当前"} 年真题匹配；会写入当前可可靠匹配的题目，最多 40 道，不足 40 道也会更新。整个替换在同一事务完成，失败自动回滚并保留原题目。`
+                  : "归档后不会再出现在小程序试卷列表，但历史考试结果仍可查看；同年份无其他有效真题时可还原并重新发布。"
+        }
+        confirmText={
+          confirmAction === "publish"
+            ? "确认发布"
+            : confirmAction === "restore"
+              ? "还原并发布"
+              : confirmAction === "delete"
+                ? "确认删除"
+                : confirmAction === "refresh"
+                  ? "确认刷新"
+                  : "确认归档"
+        }
+        danger={confirmAction === "archive" || confirmAction === "delete" || confirmAction === "refresh"}
+        loading={
+          confirmAction === "delete"
+            ? deleteMutation.isPending
+            : confirmAction === "refresh"
+              ? refreshPastExamMutation.isPending
+              : stateMutation.isPending
+        }
         onCancel={() => setConfirmAction(null)}
-        onConfirm={() => confirmAction && stateMutation.mutate(confirmAction)}
+        onConfirm={() => {
+          if (confirmAction === "delete") {
+            deleteMutation.mutate();
+          } else if (confirmAction === "refresh") {
+            if (refreshInFlightRef.current || refreshPastExamMutation.isPending) return;
+            refreshInFlightRef.current = true;
+            refreshPastExamMutation.mutate();
+          } else if (confirmAction) {
+            stateMutation.mutate(confirmAction);
+          }
+        }}
       />
     </ManagementPage>
   );

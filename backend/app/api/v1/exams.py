@@ -9,8 +9,10 @@ from app.schemas.exam import (
     ExamAnswerSaveResponse,
     ExamAttemptAbandonResponse,
     ExamAttemptStartRequest,
+    ExamAttemptSubmitRequest,
     ExamAttemptView,
     ExamHistoryItem,
+    ExamHistoryOverview,
     ExamPaperDetail,
     ExamPaperSummary,
     ExamResult,
@@ -126,11 +128,17 @@ async def abandon_attempt(
 @router.post("/attempts/{attempt_id}/submit", response_model=ExamResult)
 async def submit_attempt(
     attempt_id: int,
+    data: ExamAttemptSubmitRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return await exam_service.submit_attempt(db, attempt_id, current_user.id)
+        return await exam_service.submit_attempt(
+            db,
+            attempt_id,
+            current_user.id,
+            final_answers=[item.model_dump() for item in data.answers] if data else [],
+        )
     except ValueError as exc:
         _raise_exam_error(exc)
 
@@ -145,6 +153,18 @@ async def get_result(
         return await exam_service.get_attempt_result(db, attempt_id, current_user.id)
     except ValueError as exc:
         _raise_exam_error(exc)
+
+
+@router.get("/history/overview", response_model=ExamHistoryOverview)
+async def history_overview(
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0, le=100000),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await exam_service.get_exam_history_overview(
+        db, current_user.id, limit=limit, offset=offset
+    )
 
 
 @router.get("/history", response_model=list[ExamHistoryItem])

@@ -1,113 +1,167 @@
 <view class="page">
-  <app-dialog id="appDialog" />
-  <premium-nav title="选择题考试结果" variant="light" bind:back="goBack" />
-  <view class="state" wx:if="{{loading}}">正在生成选择题复盘…</view>
-  <view class="state error" wx:elif="{{errorText}}" bindtap="loadResult">{{errorText}} · 点击重试</view>
-
-  <block wx:elif="{{result}}">
-    <view class="score-hero">
-      <text class="kicker">CHOICE SECTION SCORE</text>
-      <view class="score-line"><text class="score-main">{{result.scoreText}}</text><text class="score-total">/ {{result.totalScoreText}}</text></view>
-      <text class="score-label">选择题部分得分</text>
-      <text class="score-note">该成绩仅统计本套选择题，仅代表本套选择题部分得分。</text>
-      <view class="hero-metrics">
-        <view><text class="metric-value">{{result.correct_count}}</text><text class="metric-label">答对</text></view>
-        <view><text class="metric-value">{{result.wrong_count}}</text><text class="metric-label">答错</text></view>
-        <view><text class="metric-value">{{result.unanswered_count}}</text><text class="metric-label">未答</text></view>
-        <view><text class="metric-value">{{result.accuracyText}}</text><text class="metric-label">正确率</text></view>
+  <view class="nav-shell" style="padding-top: {{statusBarHeightPx}}px; height: {{navBarHeightPx}}px;">
+    <view class="nav-bar" style="height: {{navBarHeightPx}}px;">
+      <view class="nav-back-hit" bindtap="handleBack" hover-class="nav-back-hit-pressed" aria-label="返回套卷列表">
+        <view class="nav-back-icon"></view>
       </view>
+      <text class="nav-title">考试结果</text>
+      <view class="nav-right-space"></view>
     </view>
-
-    <view class="section">
-      <view class="section-head"><text>四科表现</text><text>{{result.durationText}}</text></view>
-      <view class="subject-grid">
-        <view class="subject-card" wx:for="{{subjectRows}}" wx:key="subject_id">
-          <view class="subject-top"><text class="subject-name">{{item.subject_name}}</text><text class="subject-acc">{{item.accuracyText}}</text></view>
-          <text class="subject-score">{{item.scoreText}} / {{item.totalText}} 分</text>
-          <text class="subject-meta">{{item.correct_count}} / {{item.question_count}} 正确</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="section" wx:if="{{weakPoints.length}}">
-      <view class="section-head"><text>本次薄弱知识点</text><text>按错题聚合</text></view>
-      <view class="tag-row"><view class="tag" wx:for="{{weakPoints}}" wx:key="name">{{item.name}}{{item.wrongCount ? ' · ' + item.wrongCount : ''}}</view></view>
-    </view>
-
-    <view class="section">
-      <view class="section-head"><text>错题与未答</text><text>{{reviewRows.length}} 题</text></view>
-      <view class="empty-review" wx:if="{{reviewRows.length === 0}}">本套选择题全部答对</view>
-      <view class="review-card" wx:for="{{reviewRows}}" wx:key="item_id">
-        <view class="review-top"><text class="review-index">第 {{item.position}} 题 · {{item.subject_name}}</text><text class="status {{item.status}}">{{item.status === 'wrong' ? '答错' : '未答'}}</text></view>
-        <text class="stem">{{item.stemPreview}}</text>
-        <view class="answers"><text>你的答案：{{item.userAnswerText}}</text><text>正确答案：{{item.correct_answer}}</text></view>
-        <view class="exam-cause-row" wx:if="{{item.status === 'wrong'}}">
-          <view class="exam-cause-copy" data-wqid="{{item.wrong_question_id}}" bindtap="openWrongDetail">
-            <text class="exam-cause-kicker">错因</text>
-            <text class="exam-cause-value">{{item.errorDiagnosisLabel || '暂未分类'}}</text>
-            <text class="exam-cause-ai" wx:if="{{item.errorDiagnosis && !item.errorDiagnosis.userConfirmed && item.errorDiagnosis.effectiveSource === 'ai'}}">AI 建议</text>
-          </view>
-          <button class="exam-cause-action" data-wqid="{{item.wrong_question_id}}" catchtap="quickClassifyWrong">快速标记</button>
-        </view>
-        <text class="kp" wx:if="{{item.knowledgeText}}">{{item.knowledgeText}}</text>
-        <text class="analysis" wx:if="{{item.analysisPreview}}">{{item.analysisPreview}}</text>
-        <button class="exam-teacher-btn" data-itemid="{{item.item_id}}" catchtap="open408Teacher">问 AI 老师</button>
-      </view>
-      <button class="wrong-btn" wx:if="{{reviewRows.length}}" bindtap="goWrongBook">进入错题本继续复习</button>
-    </view>
-
-    <view class="actions">
-      <button class="secondary" bindtap="goHistory">考试历史</button>
-      <button class="primary" bindtap="goPaperList">返回套卷列表</button>
-    </view>
-  </block>
-  <view class="safe-bottom"></view>
-</view>
-
-<!-- 交卷后专项 AI 老师 -->
-<view class="teacher-modal-mask" wx:if="{{teacherSheetVisible}}" catchtouchmove="noop">
-  <view class="teacher-modal-backdrop" bindtap="close408Teacher"></view>
-  <view class="teacher-sheet" catchtap="noop">
-    <view class="teacher-sheet-head">
-      <view><text class="teacher-kicker">AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '专项 AI 老师'}}</text></view>
-      <text class="teacher-sheet-close" bindtap="close408Teacher">×</text>
-    </view>
-    <view wx:if="{{!teacherLoading && !teacherErrorText && !teacherResult}}" class="teacher-action-panel">
-      <text class="teacher-action-title">选择一个固定教学动作</text>
-      <button wx:for="{{teacherActions}}" wx:key="action" class="teacher-action-choice" data-action="{{item.action}}" bindtap="select408TeacherAction">{{item.label}}</button>
-    </view>
-    <view wx:elif="{{teacherLoading}}" class="teacher-sheet-loading"><view class="teacher-spinner"></view><text>正在结合本次考试结果与学习状态生成…</text></view>
-    <view wx:elif="{{teacherErrorText}}" class="teacher-sheet-error">{{teacherErrorText}}</view>
-    <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
-      <text wx:if="{{teacherResult.summary}}" class="teacher-summary">{{teacherResult.summary}}</text>
-      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
-        <text class="teacher-result-heading">{{item.heading}}</text>
-        <text wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">• {{point}}</text>
-      </view>
-      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-result-section">
-        <text class="teacher-result-heading">知识点串联</text>
-        <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
-          <text class="teacher-kp-name">{{item.name}}</text>
-          <text wx:if="{{item.relation}}" class="teacher-kp-note">{{item.relation}}</text>
-          <text wx:if="{{item.masteryHint}}" class="teacher-kp-note">{{item.masteryHint}}</text>
-        </view>
-      </view>
-      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section">
-        <text class="teacher-result-heading">练一题</text>
-        <text class="teacher-practice-stem">{{teacherResult.practiceQuestion.stem}}</text>
-        <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option"><text class="teacher-practice-key">{{item.key}}</text><text>{{item.text}}</text></view>
-        <text class="teacher-practice-answer">答案：{{teacherResult.practiceQuestion.answer}}</text>
-        <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
-      </view>
-      <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '考试已结束，当前 AI 讲解使用本次试卷固定题目版本。'}}</text>
-      <view class="teacher-feedback-row">
-        <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
-        <view class="teacher-feedback-actions">
-          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
-          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
-        </view>
-      </view>
-      <view class="teacher-scroll-space"></view>
-    </scroll-view>
   </view>
+
+  <scroll-view
+    class="page-scroll"
+    style="top: {{navTotalHeightPx}}px; height: calc(100vh - {{navTotalHeightPx}}px);"
+    scroll-y="{{false}}"
+    enhanced
+    bounces="{{false}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="content">
+      <view wx:if="{{loading}}" class="state-card">
+        <view class="state-spinner"></view>
+        <text class="state-title">正在生成考试结果</text>
+        <text class="state-desc">正在整理得分与知识掌握情况…</text>
+      </view>
+
+      <view wx:elif="{{errorText}}" class="state-card state-error" bindtap="loadResult">
+        <text class="state-title">结果加载失败</text>
+        <text class="state-desc">{{errorText}}</text>
+        <text class="state-action">点击重新加载</text>
+      </view>
+
+      <block wx:elif="{{result}}">
+        <view class="score-card">
+          <view class="score-main">
+            <view class="score-ring" style="background: conic-gradient(#37B987 0% {{result.scoreRatePct}}%, #E3F0EA {{result.scoreRatePct}}% 100%);">
+              <view wx:if="{{result.showScoreRingCaps}}" class="score-ring-cap score-ring-cap-start"></view>
+              <view wx:if="{{result.showScoreRingCaps}}" class="score-ring-cap score-ring-cap-end" style="{{result.scoreRingEndStyle}}"></view>
+              <view class="score-ring-inner">
+                <view class="score-value-row">
+                  <text class="score-value">{{result.scoreValue}}</text>
+                </view>
+                <text class="score-label">总分</text>
+              </view>
+            </view>
+
+            <view class="score-copy">
+              <view class="encourage-row">
+                <image class="encourage-icon" src="{{icons.sprout}}" mode="aspectFit" />
+                <text class="encourage-title">{{result.headline}}</text>
+              </view>
+              <view class="encourage-desc">
+                <text>本次正确率 </text>
+                <text class="encourage-highlight-value">{{result.accuracyPct}}</text><text class="encourage-highlight-sign">%</text>
+                <text>{{result.encourageTail}}</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="stats-panel">
+            <view class="stat-item">
+              <text class="stat-value">{{result.correctCount}}</text>
+              <text class="stat-label">答对</text>
+            </view>
+            <view class="stat-divider"></view>
+            <view class="stat-item">
+              <text class="stat-value stat-value-wrong">{{result.wrongCount}}</text>
+              <text class="stat-label">答错</text>
+            </view>
+            <view class="stat-divider"></view>
+            <view class="stat-item">
+              <view class="stat-value stat-value-percent"><text class="stat-percent-value">{{result.accuracyPct}}</text><text class="stat-percent-sign">%</text></view>
+              <text class="stat-label">正确率</text>
+            </view>
+            <view class="stat-divider"></view>
+            <view class="stat-item">
+              <text class="stat-value stat-value-time">{{result.durationText}}</text>
+              <text class="stat-label">用时</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="result-card radar-card">
+          <view class="card-head">
+            <view class="card-title-group">
+              <view class="card-icon-shell radar-icon-shell">
+                <view class="radar-mark">
+                  <view class="radar-mark-core"></view>
+                </view>
+              </view>
+              <text class="card-title">知识雷达</text>
+            </view>
+            <view
+              class="weak-badge"
+              bindtap="openWeakReview"
+              hover-class="weak-badge-pressed"
+            >
+              <text>{{weakCount ? '薄弱项 ' + weakCount + ' 项' : '整体良好'}}</text>
+            </view>
+          </view>
+
+          <view class="radar-stage">
+            <view
+              wx:for="{{radarItems}}"
+              wx:key="name"
+              class="radar-label radar-label-{{index}} {{item.wrongQuestionId ? 'radar-label-clickable' : ''}}"
+              data-wqid="{{item.wrongQuestionId}}"
+              bindtap="openRadarItem"
+            >
+              <text class="radar-label-name">{{item.displayName}}</text>
+              <view class="radar-label-score-row">
+                <text class="radar-label-score">{{item.accuracyPct}}%</text>
+                <text class="radar-tag radar-tag-{{item.tagTone}}">{{item.tagLabel}}</text>
+              </view>
+            </view>
+
+            <view class="radar-plot">
+              <image class="radar-grid-image" src="{{icons.radarGrid}}" mode="aspectFit" />
+              <view class="radar-data-fill" style="{{radarPolygonStyle}}"></view>
+              <view
+                wx:for="{{radarEdges}}"
+                wx:key="index"
+                class="radar-edge"
+                style="{{item.style}}"
+              ></view>
+              <view
+                wx:for="{{radarItems}}"
+                wx:key="name"
+                class="radar-point"
+                style="{{item.pointStyle}}"
+              ></view>
+              <view class="radar-center-dot"></view>
+              <view class="radar-axis-dot radar-axis-dot-0"></view>
+              <view class="radar-axis-dot radar-axis-dot-1"></view>
+              <view class="radar-axis-dot radar-axis-dot-2"></view>
+              <view class="radar-axis-dot radar-axis-dot-3"></view>
+              <view class="radar-axis-dot radar-axis-dot-4"></view>
+            </view>
+          </view>
+        </view>
+
+        <view class="result-card top-card">
+          <view class="card-head top-card-head">
+            <view class="card-title-group">
+              <view class="crown-title-icon crown-mark"></view>
+              <view class="card-title top-card-title"><text class="top-title-main">知识点掌握</text><text class="top-title-suffix">TOP3</text></view>
+            </view>
+          </view>
+
+          <view class="top-list">
+            <view wx:for="{{topItems}}" wx:key="name" class="top-row">
+              <text class="top-rank">{{item.rank}}</text>
+              <text class="top-name">{{item.displayName}}</text>
+              <view class="top-progress">
+                <view class="top-progress-fill" style="width: {{item.progressPct}}%;"></view>
+              </view>
+              <text class="top-percent">{{item.accuracyPct}}%</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="continue-button" bindtap="goPaperList" hover-class="continue-button-pressed">继续练习</view>
+        <view class="bottom-safe-space"></view>
+      </block>
+    </view>
+  </scroll-view>
 </view>

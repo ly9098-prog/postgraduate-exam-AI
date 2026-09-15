@@ -252,7 +252,7 @@ return
 }
 let questionIds = []
 try {
-if (options.source === 'wrong-book' || options.source === 'practice-result') {
+if (options.source === 'wrong-book' || options.source === 'practice-result' || options.source === 'exam-result') {
 const nav = wx.getStorageSync('wrong_detail_nav')
 if (nav && Array.isArray(nav.ids) && Date.now() - Number(nav.ts || 0) < 30 * 60 * 1000) {
 const normalized = nav.ids.map(Number).filter(Number.isFinite)

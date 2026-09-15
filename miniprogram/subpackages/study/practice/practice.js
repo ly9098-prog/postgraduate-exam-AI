@@ -806,7 +806,7 @@ recentSubjects,
 },
 _initCustomNavigation() {
 try {
-const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
 const statusBarHeight = Number(windowInfo.statusBarHeight || 20)
 let navBarHeight = 44
 if (wx.getMenuButtonBoundingClientRect) {

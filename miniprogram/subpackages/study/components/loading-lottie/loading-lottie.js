@@ -9,7 +9,6 @@ SDKVersion: appBaseInfo.SDKVersion || '',
 platform: (deviceInfo.platform || '').toLowerCase(),
 }
 }
-if (wx.getSystemInfoSync) return wx.getSystemInfoSync() || {}
 } catch (_) {}
 return {}
 }

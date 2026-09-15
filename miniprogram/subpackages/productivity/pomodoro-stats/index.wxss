@@ -1119,10 +1119,10 @@ page {
 
 .theme-light .overview-main-card {
   background:
-    radial-gradient(circle at 92% 0%, rgba(183, 232, 42, 0.19), transparent 210rpx),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 244, 231, 0.92));
-  border-color: #D6DFD2;
-  box-shadow: 0 18rpx 42rpx rgba(21, 51, 35, 0.075);
+    radial-gradient(circle at 92% 0%, rgba(183, 232, 42, 0.17), transparent 210rpx),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(238, 244, 231, 0.72));
+  border-color: rgba(214, 223, 210, 0.92);
+  box-shadow: 0 18rpx 42rpx rgba(21, 51, 35, 0.065);
 }
 
 .theme-light .overview-main-card::before {
@@ -1174,9 +1174,9 @@ page {
 }
 
 .theme-light .overview-secondary-card {
-  background: rgba(255, 255, 255, 0.82);
-  border-color: #DDE2DA;
-  box-shadow: 0 12rpx 28rpx rgba(21, 51, 35, 0.05);
+  background: rgba(255, 255, 255, 0.68);
+  border-color: rgba(221, 226, 218, 0.9);
+  box-shadow: 0 12rpx 28rpx rgba(21, 51, 35, 0.045);
 }
 
 .theme-light .overview-secondary-kicker {
@@ -1206,9 +1206,9 @@ page {
 }
 
 .theme-light .card-section {
-  background: rgba(255, 255, 255, 0.78);
-  border-color: #DDE2DA;
-  box-shadow: 0 14rpx 34rpx rgba(21, 51, 35, 0.055);
+  background: rgba(255, 255, 255, 0.64);
+  border-color: rgba(221, 226, 218, 0.88);
+  box-shadow: 0 14rpx 34rpx rgba(21, 51, 35, 0.05);
 }
 
 .theme-light .section-title {
@@ -1254,9 +1254,9 @@ page {
 }
 
 .theme-light .date-picker-btn {
-  background: rgba(255, 255, 255, 0.78);
-  border-color: #D8DED5;
-  box-shadow: 0 7rpx 18rpx rgba(21, 51, 35, 0.045);
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(216, 222, 213, 0.9);
+  box-shadow: 0 7rpx 18rpx rgba(21, 51, 35, 0.04);
 }
 
 .theme-light .pie-date-picker-btn {
@@ -1304,9 +1304,9 @@ page {
 }
 
 .theme-light .history-card-section {
-  background: rgba(255, 255, 255, 0.94);
-  border-color: #E1E6DE;
-  box-shadow: 0 12rpx 30rpx rgba(21, 51, 35, 0.05);
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(225, 230, 222, 0.9);
+  box-shadow: 0 12rpx 30rpx rgba(21, 51, 35, 0.045);
 }
 
 .theme-light .history-section-title {
@@ -1351,7 +1351,7 @@ page {
 }
 
 .theme-light .pie-loading-mask {
-  background: rgba(247, 247, 241, 0.82);
+  background: rgba(247, 247, 241, 0.76);
   color: #6F7C73;
   border: 1rpx solid rgba(21, 51, 35, 0.08);
 }
@@ -1838,8 +1838,8 @@ page {
 .theme-light .distribution-title { color: #294233; }
 .theme-light .cumulative-start-picker { color: #829087; }
 .theme-light .study-day-chip {
-  border-color: #DEE5DA;
-  background: #F2F5EE;
+  border-color: rgba(222, 229, 218, 0.92);
+  background: rgba(242, 245, 238, 0.76);
   color: #718078;
 }
 .theme-light .cumulative-metrics { color: #294233; }
@@ -1853,34 +1853,34 @@ page {
 .theme-light .daily-count-unit { color: #9AA49D; }
 .theme-light .cumulative-foot { border-top-color: #E3E8E1; color: #89958D; }
 .theme-light .daily-date-picker { color: #389B7D; }
-.theme-light .daily-date-nav { background: #F1F4EF; }
+.theme-light .daily-date-nav { background: rgba(241, 244, 239, 0.72); }
 .theme-light .daily-date-nav-btn { color: #63736A; }
 .theme-light .daily-date-nav-pressed { background: #E6ECE4; }
 .theme-light .daily-duration-metric {
-  border-color: #DDE9E1;
-  background: #EEF3EE;
+  border-color: rgba(221, 233, 225, 0.88);
+  background: rgba(238, 243, 238, 0.64);
 }
 .theme-light .chart-switch-btn {
-  border-color: #DCE4D9;
-  background: #F2F5EF;
+  border-color: rgba(220, 228, 217, 0.9);
+  background: rgba(242, 245, 239, 0.7);
   color: #62736A;
 }
 .theme-light .chart-switch-pressed { background: #E8EEE7; }
 .theme-light .distribution-period-shell {
-  border-color: #DCE4D8;
-  background: #F1F4EF;
-  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.86);
+  border-color: rgba(220, 228, 216, 0.9);
+  background: rgba(241, 244, 239, 0.72);
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.8);
 }
 .theme-light .period-segment { color: #819087; }
 .theme-light .period-segment-active {
-  border-color: #D8E8DF;
-  background: #E4F0EA;
+  border-color: rgba(216, 232, 223, 0.92);
+  background: rgba(228, 240, 234, 0.82);
   color: #348A70;
-  box-shadow: 0 4rpx 10rpx rgba(36,84,58,.045);
+  box-shadow: 0 4rpx 10rpx rgba(36,84,58,.04);
 }
 .theme-light .bar-loading-mask {
-  border: 1rpx solid #E1E7DF;
-  background: rgba(247,248,244,.88);
+  border: 1rpx solid rgba(225, 231, 223, 0.92);
+  background: rgba(247,248,244,.8);
   color: #7E8B83;
 }
 .theme-light .distribution-card .subject-legend-item { background: transparent; border: 0; }
@@ -3736,4 +3736,81 @@ page {
   width: 100%;
   height: 100%;
   min-height: 54rpx;
+}
+
+/* ============================================
+   Round 11: lighter glass cards for the light botanical theme.
+   Keep text contrast while allowing more of the background to remain visible.
+   ============================================ */
+.theme-light .card-section {
+  border-color: rgba(205, 219, 207, .76);
+  box-shadow: 0 10rpx 26rpx rgba(51, 82, 61, .042);
+}
+
+.theme-light .cumulative-focus-card,
+.theme-light .daily-focus-card {
+  background: rgba(255, 255, 252, .70);
+}
+
+.theme-light .distribution-card,
+.theme-light .history-card-section {
+  background: rgba(255, 255, 253, .78);
+}
+
+/* Controls should visually belong to the glass cards instead of looking pasted on. */
+.theme-light .study-day-chip {
+  border-color: rgba(210, 224, 212, .76);
+  background: rgba(242, 247, 240, .58);
+  box-shadow: 0 4rpx 12rpx rgba(21, 51, 35, .026);
+}
+
+.theme-light .chart-switch-btn {
+  border-color: rgba(211, 224, 213, .76);
+  background: rgba(247, 249, 245, .58);
+  box-shadow: 0 3rpx 8rpx rgba(21, 51, 35, .024);
+}
+
+.theme-light .chart-switch-icon-shell {
+  background: rgba(231, 240, 232, .62);
+}
+
+.theme-light .chart-switch-pressed {
+  background: rgba(233, 243, 236, .72);
+  border-color: rgba(199, 219, 204, .82);
+  box-shadow: 0 2rpx 5rpx rgba(21, 51, 35, .022);
+}
+
+.theme-light .distribution-period-shell {
+  border-color: rgba(207, 221, 209, .72);
+}
+
+.theme-light .period-segment-active {
+  background: rgba(220, 238, 227, .66);
+}
+
+.theme-light .period-slot-picker.period-slot-active {
+  background: rgba(220, 238, 227, .66);
+}
+
+/* Keep state badges readable without reintroducing opaque white/green blocks. */
+.theme-light .hist-status.status-done {
+  background: rgba(234, 246, 240, .68);
+}
+
+.theme-light .hist-status.status-interrupt {
+  background: rgba(252, 237, 238, .68);
+}
+
+/* Fine separators: visible enough for grouping, softer against the visible backdrop. */
+.theme-light .metric-divider {
+  background: rgba(193, 209, 197, .62);
+}
+
+.theme-light .cumulative-foot {
+  border-top-color: rgba(201, 216, 204, .66);
+}
+
+.theme-light .history-item,
+.theme-light .history-placeholder-row {
+  border-bottom-color: rgba(207, 220, 210, .62);
 }

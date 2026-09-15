@@ -9,6 +9,7 @@ const LIGHT_SUBJECT_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C477
 const LIGHT_PIE_COLORS = ['#E76F51', '#2A9D8F', '#457B9D', '#E9C46A', '#8E6BBE', '#F28482', '#6A994E', '#43AA8B', '#B56576', '#577590']
 const DARK_TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
 const LIGHT_TREND_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3']
+const STATS_DYNAMIC_REFRESH_MS = 60 * 1000
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -121,6 +122,8 @@ var pageConfig = {
     this._alive = true
     this._isVisible = false
     this._requestId = 0
+    this._dynamicRefreshTimer = null
+    this._statsLoadInFlight = 0
     this._viewReady = false
     this._hasData = false
     this._settingsLoaded = false
@@ -301,6 +304,7 @@ var pageConfig = {
     if (!this._viewReady) return
     this._requestId++
     this.loadData()
+    this._scheduleDynamicRefresh()
   },
 
   onReady() {
@@ -308,6 +312,7 @@ var pageConfig = {
     this._isVisible = true
     this._requestId++
     this.loadData()
+    this._scheduleDynamicRefresh()
     const warmCanvases = () => {
       if (!this._alive || !this._isVisible) return
       this._initCanvases(() => {})
@@ -318,6 +323,7 @@ var pageConfig = {
 
   onHide() {
     this._isVisible = false
+    this._clearDynamicRefresh()
     this._cancelDurationAnimation(false)
     this._cancelDeferredHistory(true)
   },
@@ -328,6 +334,35 @@ var pageConfig = {
     this._cancelPendingWork()
   },
 
+
+  _clearDynamicRefresh() {
+    if (this._dynamicRefreshTimer) {
+      clearTimeout(this._dynamicRefreshTimer)
+      this._dynamicRefreshTimer = null
+    }
+  },
+
+  _scheduleDynamicRefresh(delayMs) {
+    this._clearDynamicRefresh()
+    if (!this._alive || !this._isVisible || !this._viewReady) return
+    const delay = Math.max(1000, Number(delayMs) || STATS_DYNAMIC_REFRESH_MS)
+    this._dynamicRefreshTimer = setTimeout(async () => {
+      this._dynamicRefreshTimer = null
+      if (!this._alive || !this._isVisible || !this._viewReady) return
+      // Do not race a date/settings/manual refresh. Try again shortly instead of
+      // invalidating a user-triggered request with a background request id.
+      if ((this._statsLoadInFlight || 0) > 0 || this.data.cumulativeLoading) {
+        this._scheduleDynamicRefresh(3000)
+        return
+      }
+      this._requestId++
+      try {
+        await this.loadData({ background: true })
+      } finally {
+        this._scheduleDynamicRefresh()
+      }
+    }, delay)
+  },
 
   _syncThemeFromStorage() {
     const themeMode = pomodoroTheme.getTheme()
@@ -1069,7 +1104,8 @@ var pageConfig = {
 
   /* ==================== Data Loading ==================== */
 
-  async loadData() {
+  async loadData(options) {
+    const background = !!(options && options.background)
     await this._ensureSettings()
     const subjectMetaPromise = this._ensureSubjectMeta().catch(() => null)
     if (!this._alive) return
@@ -1078,7 +1114,8 @@ var pageConfig = {
     this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
     const dateSeq = this._dateRequestSeq
     if (this._hasData) this._cancelDeferredHistory(true)
-    this.setData({ loading: true, errorText: '' })
+    if (!background) this.setData({ loading: true, errorText: '' })
+    this._statsLoadInFlight = (this._statsLoadInFlight || 0) + 1
     const viewingToday = !requestedDate || requestedDate === this.data._todayDate
     try {
       const initialResponses = await Promise.all([
@@ -1234,7 +1271,16 @@ var pageConfig = {
         requestedDate !== this.data.selectedDate
       ) return
       console.error('加载统计失败', e)
-      this.setData({ loading: false, pieLoading: false, cumulativeLoading: false, errorText: '加载失败，请检查网络后重试' })
+      if (background && this.data.contentReady) {
+        // Keep the last valid snapshot visible when a periodic refresh briefly
+        // fails. A later tick/onShow will retry without turning the whole page into
+        // an error state.
+        this.setData({ loading: false, pieLoading: false, cumulativeLoading: false })
+      } else {
+        this.setData({ loading: false, pieLoading: false, cumulativeLoading: false, errorText: '加载失败，请检查网络后重试' })
+      }
+    } finally {
+      this._statsLoadInFlight = Math.max(0, (this._statsLoadInFlight || 1) - 1)
     }
   },
 
@@ -1525,6 +1571,7 @@ var pageConfig = {
   /* ==================== Animation Control ==================== */
 
   _cancelPendingWork() {
+    this._clearDynamicRefresh()
     this._cancelDurationAnimation(false)
     this._cancelDeferredHistory(true)
     this._animActive = false

@@ -234,7 +234,7 @@ Page({
   measureNavigation() {
     let statusBarHeight = 20
     try {
-      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+      const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
       statusBarHeight = Number(info.statusBarHeight || 20)
     } catch (_) {}
 

@@ -86,7 +86,7 @@ let windowWidth = 375
 let windowHeight = 667
 let safeBottom = 0
 try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
 windowWidth = Number(info.windowWidth || info.screenWidth || windowWidth)
 windowHeight = Number(info.windowHeight || info.screenHeight || windowHeight)
 if (info.safeArea && Number.isFinite(Number(info.safeArea.bottom))) {
