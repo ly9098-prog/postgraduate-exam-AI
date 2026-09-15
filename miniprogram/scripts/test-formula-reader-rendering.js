@@ -45,6 +45,7 @@ function collectClasses(nodes, result) {
   result = result || []
   ;(nodes || []).forEach((node) => {
     if (node && node.attrs && node.attrs.class) result.push(String(node.attrs.class))
+    if (node && node.classes) result.push(node.classes.join(' '))
     if (node && node.children) collectClasses(node.children, result)
   })
   return result
@@ -55,6 +56,9 @@ function collectText(nodes, result) {
   ;(nodes || []).forEach(function (node) {
     if (node && node.type === 'text') {
       result.push(String(node.text))
+    } else if (node && node.latexSource) {
+      // KaTeX DOM trees retain raw LaTeX only as defensive metadata.
+      collectText(node.children, result)
     } else if (node && node.children) {
       collectText(node.children, result)
     }

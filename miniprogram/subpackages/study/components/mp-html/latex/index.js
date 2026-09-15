@@ -27,11 +27,8 @@ Latex.prototype.onParse = function (node, vm) {
             // 安全解析：捕获 KaTeX 异常，失败时回退为纯文本
             let nodes
             try {
-              if (status === 1) {
-                nodes = parse.default(part[i])
-              } else {
-                nodes = parse.default(part[i], { displayMode: true })
-              }
+              var rendered = parse.__renderToDomTree(part[i], { displayMode: status === 2, throwOnError: true })
+              nodes = [Object.assign({}, rendered, { name: 'span', attrs: { class: 'katex' }, type: 'node' })]
             } catch (_e) {
               children.push({ type: 'text', text: part[i] })
               status = 0

@@ -1,5 +1,8 @@
 @import '../../../styles/tokens.wxss';
 @import '../utils/katex/katex.wxss';
+@import '../utils/katex/katex-fonts-1.wxss';
+@import '../utils/katex/katex-fonts-2.wxss';
+@import '../utils/katex/katex-fonts-3.wxss';
 
 page {
   min-height: 100vh;

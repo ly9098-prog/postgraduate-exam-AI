@@ -12,7 +12,7 @@ function isKatexDiagnosticText(value) {
   return /KaTeX\s+parse\s+error|Expected\s+['"]?EOF|Undefined\s+control\s+sequence|ParseError/i.test(String(value || ''))
 }
 
-function containsKatexError(nodes) {
+function containsKatexError(items) {
   var found = false
   function walk(items) {
     if (found || !Array.isArray(items)) return
@@ -38,7 +38,7 @@ function containsKatexError(nodes) {
       if (item.children) walk(item.children)
     }
   }
-  walk(nodes)
+  walk(items)
   return found
 }
 

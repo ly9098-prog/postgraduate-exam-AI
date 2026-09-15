@@ -310,7 +310,16 @@ function renderFormulaNodes(latex) {
     // Inline KaTeX plus \displaystyle gives display-size fractions and limits,
     // while keeping one natural-width tree. This avoids the block display tree
     // being split across recursive custom components on some Android clients.
-    var nodes = katex.default('\\displaystyle ' + source)
+    var rendered = katex.__renderToDomTree('\\displaystyle ' + source, {
+      displayMode: false,
+      output: 'html',
+      throwOnError: true,
+    })
+    var nodes = [Object.assign({}, rendered, {
+      name: 'span',
+      attrs: { class: 'katex' },
+      type: 'node',
+    })]
     if (Array.isArray(nodes) && nodes.length && !containsRenderError(nodes)) return stabilizeFormulaTree(nodes)
   } catch (err) {
     console.warn('Formula render failed, falling back to source text', err)
