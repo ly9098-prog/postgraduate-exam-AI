@@ -9,6 +9,7 @@ class EmbeddingBackfillRequest(BaseModel):
     subject: str | None = None
     limit: int = Field(default=100, ge=1, le=1000)
     force: bool = False
+    dry_run: bool = False
     after_id: int = Field(
         default=0, ge=0, description="游标：从此 question_id 之后开始"
     )
@@ -26,6 +27,12 @@ class EmbeddingBackfillResponse(BaseModel):
     updated: int
     skipped: int
     failed: int
+    dry_run: bool = False
+    would_create: int = 0
+    would_update: int = 0
+    would_skip: int = 0
+    model_id: int | None = None
+    embedding_dim: int | None = None
     errors: list = Field(default_factory=list)
     next_cursor: int | None = None
     has_more: bool = False

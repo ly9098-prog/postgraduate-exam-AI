@@ -4,8 +4,155 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.question import Question
+from app.services import vector_retrieval_service
 
 _SENTINEL = object()
+
+
+class TestEmbeddingIncrementalBackfill:
+    @staticmethod
+    def _question(question_id: int, content_text: str):
+        question = MagicMock()
+        question.id = question_id
+        question.subject_id = 1
+        question.question_type = "single_choice"
+        question.difficulty = 3
+        question.content = {"text": content_text}
+        question.options = {}
+        question.analysis = ""
+        return question
+
+    @staticmethod
+    def _mock_db(question_result, existing_rows=None):
+        db = AsyncMock()
+        db.bind = MagicMock()
+        db.bind.dialect.name = "postgresql"
+        db.get_bind.return_value = db.bind
+        db.begin_nested = MagicMock()
+        results = [question_result]
+        if existing_rows is not None:
+            mappings = MagicMock()
+            mappings.all.return_value = existing_rows
+            existing_result = MagicMock()
+            existing_result.mappings.return_value = mappings
+            results.append(existing_result)
+
+        async def execute(_statement, _params=None):
+            if results:
+                return results.pop(0)
+            return MagicMock()
+
+        db.execute = AsyncMock(side_effect=execute)
+        return db
+
+    async def _run_backfill(
+        self,
+        *,
+        existing_rows=None,
+        embeddings=None,
+        dry_run=False,
+    ):
+        question = self._question(10, "stem")
+        question_result = MagicMock()
+        question_result.scalars.return_value.all.return_value = [question]
+        db = self._mock_db(question_result, existing_rows=existing_rows)
+
+        with (
+            patch(
+                "app.services.vector_retrieval_service.is_vector_enabled",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                vector_retrieval_service._vs,
+                "_cached",
+                {
+                    "emb": MagicMock(
+                        model_config_id=7,
+                        dim=3,
+                        batch_size=10,
+                    )
+                },
+            ),
+            patch(
+                "app.services.vector_retrieval_service.load_question_kps",
+                new_callable=AsyncMock,
+                return_value={10: ["stack"]},
+            ),
+            patch(
+                "app.services.vector_retrieval_service._resolve_question_subject_code",
+                new_callable=AsyncMock,
+                return_value="data_structure",
+            ),
+            patch(
+                "app.services.vector_retrieval_service.embedding_service.get_embeddings_batch",
+                new_callable=AsyncMock,
+                return_value=embeddings,
+            ) as generate,
+        ):
+            result = await vector_retrieval_service.backfill_question_embeddings(
+                db,
+                dry_run=dry_run,
+            )
+
+        return result, generate, db
+
+    @pytest.mark.asyncio
+    async def test_creates_only_when_missing(self):
+        result, generate, db = await self._run_backfill(
+            existing_rows=[], embeddings=[[0.1, 0.2, 0.3]]
+        )
+        assert (result["created"], result["updated"], result["skipped"]) == (1, 0, 0)
+        generate.assert_awaited_once()
+        assert db.begin_nested.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_unchanged_without_api(self):
+        content = vector_retrieval_service.embedding_service.build_question_embedding_text(
+            self._question(10, "stem"),
+            subject_code="data_structure",
+            knowledge_points=["stack"],
+        )
+        hash_value = vector_retrieval_service.embedding_service.compute_content_hash(
+            content
+        )
+        row = {"question_id": 10, "content_hash": str(hash_value)}
+        result, generate, db = await self._run_backfill(
+            existing_rows=[row], embeddings=[]
+        )
+        assert result["errors"] == []
+        print("RESULT", result)
+        assert (result["created"], result["updated"], result["skipped"]) == (0, 0, 1)
+        generate.assert_not_called()
+        db.begin_nested.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_updates_changed_content(self):
+        row = {"question_id": 10, "content_hash": "old"}
+        result, generate, db = await self._run_backfill(
+            existing_rows=[row], embeddings=[[0.4, 0.5, 0.6]]
+        )
+        assert (result["created"], result["updated"], result["skipped"]) == (0, 1, 0)
+        generate.assert_awaited_once()
+        executed_sql = db.execute.await_args_list[-1].args[0]
+        assert "ON CONFLICT (question_id, model_id)" in str(executed_sql)
+
+    @pytest.mark.asyncio
+    async def test_dry_run_does_not_generate_or_write(self):
+        row = {"question_id": 10, "content_hash": "old"}
+        result, generate, db = await self._run_backfill(
+            existing_rows=[row],
+            embeddings=[],
+            dry_run=True,
+        )
+        assert result["dry_run"] is True
+        assert (result["would_create"], result["would_update"], result["would_skip"]) == (
+            0,
+            1,
+            0,
+        )
+        generate.assert_not_called()
+        db.begin_nested.assert_not_called()
 
 # --- helpers ---
 

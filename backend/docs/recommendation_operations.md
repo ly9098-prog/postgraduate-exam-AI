@@ -201,7 +201,21 @@ Redis 不可用时静默降级（不报错），缓存自然过期后生效。
 - 更换 `EMBEDDING_MODEL` 或 `EMBEDDING_DIM` 后，旧向量与新模型不兼容
 - 向量召回率异常偏低，怀疑大量题目未 embedding
 
-### 8.2 操作步骤
+### 8.2 增量构建逻辑
+
+回填接口按 `(question_id, model_id)` 判定向量版本。每道题先使用现有
+`build_question_embedding_text` 构建稳定文本并计算 `content_hash`：
+
+- 无记录：调用 embedding API 并 INSERT
+- 记录存在且 `content_hash` 不同：调用 embedding API 并通过
+  `ON CONFLICT (question_id, model_id)` UPDATE
+- 记录存在且 `content_hash` 相同：SKIP，不调用 API，不写库
+
+已有记录不会被删除或清空。表上已有 `UNIQUE(question_id, model_id)` 约束，
+可在并发 worker 冲突时兜底。批量流程先读取本批题目和现有 embedding，再统一
+调用批量 embedding API；写入仍按题目使用 SAVEPOINT，单题失败不会破坏原向量。
+
+### 8.3 操作步骤
 
 1. 确认 embedding 服务可用：
 
@@ -209,41 +223,47 @@ Redis 不可用时静默降级（不报错），缓存自然过期后生效。
 curl -s http://localhost:8000/api/v1/health | python -m json.tool
 ```
 
-2. 使用管理后台导题为存量题目触发 embedding（或编写一次性脚本）：
+2. 先预估影响范围，dry-run 不调用 embedding API，也不写数据库：
 
-```python
-# scripts/backfill_embeddings.py（示例）
-import asyncio
-from app.core.database import async_session
-from app.services.embedding_service import EmbeddingService
-from sqlalchemy import text
-
-async def backfill():
-    svc = EmbeddingService()
-    async with async_session() as session:
-        rows = await session.execute(
-            text("SELECT id, content FROM questions WHERE id NOT IN "
-                 "(SELECT question_id FROM question_embeddings)")
-        )
-        questions = rows.fetchall()
-    for q in questions:
-        await svc.embed_question(q.id, q.content)
-    print(f"backfilled {len(questions)} questions")
-
-asyncio.run(backfill())
+```bash
+curl -X POST 'http://localhost:8000/api/admin/v1/questions/embeddings/backfill' \
+  -H 'Authorization: Bearer <admin-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":200,"dry_run":true}'
 ```
 
-3. 验证：
+3. 确认结果后执行增量回填：
+
+```bash
+curl -X POST 'http://localhost:8000/api/admin/v1/questions/embeddings/backfill' \
+  -H 'Authorization: Bearer <admin-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":200,"dry_run":false}'
+```
+
+4. 验证重复、空 hash 和缺失记录：
 
 ```sql
-SELECT COUNT(*) FROM question_embeddings;
--- 应等于 questions 表总数
+SELECT question_id, model_id, COUNT(*)
+FROM question_embeddings
+GROUP BY question_id, model_id
+HAVING COUNT(*) > 1;
+
+SELECT COUNT(*)
+FROM question_embeddings
+WHERE content_hash IS NULL OR content_hash = '';
+
+SELECT COUNT(*)
+FROM questions q
+LEFT JOIN question_embeddings qe
+  ON qe.question_id = q.id AND qe.model_id = :model_id
+WHERE q.id IS NOT NULL AND qe.id IS NULL;
 ```
 
-### 8.3 注意事项
+### 8.4 注意事项
 
 - `EMBEDDING_BATCH_SIZE` 控制批量大小，默认 16，生产可提升到 32~64
-- 失败题目记录日志，不影响后续题目处理
+- embedding API 失败的题目记录日志并计为 `failed`，原 embedding 保持不变
 - embedding 写入使用 `flush` 而非 `commit`，由外层事务控制
 
 ---

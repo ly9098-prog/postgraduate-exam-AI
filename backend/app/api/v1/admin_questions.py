@@ -385,6 +385,7 @@ async def backfill_embeddings(
             limit=data.limit,
             force=data.force,
             after_id=data.after_id,
+            dry_run=data.dry_run,
         )
         await write_admin_audit(
             db,
@@ -398,6 +399,7 @@ async def backfill_embeddings(
                 "limit": data.limit,
                 "force": data.force,
                 "after_id": data.after_id or 0,
+                "dry_run": data.dry_run,
                 "processed": result.get("total", 0),
                 "success_count": (
                     result.get("created", 0)

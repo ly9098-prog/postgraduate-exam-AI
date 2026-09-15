@@ -510,7 +510,7 @@ async def upsert_question_embedding(
         return {"question_id": qid, "status": "failed", "reason": str(exc)[:200]}
 
 
-# ── 回填（游标分页 + savepoint） ──
+# ── 回填（批量增量 + 游标分页） ──
 
 
 async def backfill_question_embeddings(
@@ -519,11 +519,13 @@ async def backfill_question_embeddings(
     limit: int = 100,
     force: bool = False,
     after_id: int = 0,
+    dry_run: bool = False,
 ) -> dict:
-    """批量为题目生成 embedding（游标分页）。
+    """按 (question_id, model_id) 和 content_hash 增量构建 embedding。
 
     使用 Question.id 作为稳定排序和游标，支持多次运行覆盖全部题目。
-    每条题目使用 savepoint，单条失败不污染整个批次。
+    先批量比较 content_hash，只有缺失或内容变化时才调用 embedding API。
+    dry-run 只做影响范围计算，不调用模型且不写数据库。
 
     返回:
         processed, created, updated, skipped, failed, next_cursor, has_more, errors
@@ -554,42 +556,31 @@ async def backfill_question_embeddings(
         ids = await resolve_subject_ids(db, subject)
         conditions.append(Question.subject_id.in_(ids))
 
-    if not force:
-        # 查询当前 model 下缺少“可召回”embedding 的题目。历史版本可能
-        # 因 subject_ref 未预加载写入空 subject，也必须自动进入修复批次。
-        if _vs.emb.model_config_id is None:
-            logger.warning(
-                "embedding model config 未解析（model_id 未知），跳过回填查询过滤"
-            )
-            return {
-                "total": 0,
-                "created": 0,
-                "updated": 0,
-                "skipped": 0,
-                "failed": 0,
-                "enabled": True,
-                "errors": [
-                    {
-                        "question_id": None,
-                        "reason": "embedding model config not resolved (model_id unknown)",
-                    }
-                ],
-                "next_cursor": None,
-                "has_more": False,
-            }
-        conditions.append(
-            ~Question.id.in_(
-                select(text("question_id"))
-                .select_from(text("question_embeddings"))
-                .where(
-                    text(
-                        "model_id = :model_id "
-                        "AND embedding_dim = :embedding_dim "
-                        "AND subject_id IS NOT NULL"
-                    )
-                )
-            )
-        )
+    model_config_id = _vs.emb.model_config_id
+    if model_config_id is None:
+        logger.warning("embedding model config 未解析（model_id 未知）")
+        return {
+            "total": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "failed": 0,
+            "enabled": True,
+            "dry_run": dry_run,
+            "would_create": 0,
+            "would_update": 0,
+            "would_skip": 0,
+            "model_id": None,
+            "embedding_dim": _vs.emb.dim,
+            "errors": [
+                {
+                    "question_id": None,
+                    "reason": "embedding model config not resolved (model_id unknown)",
+                }
+            ],
+            "next_cursor": None,
+            "has_more": False,
+        }
 
     query = (
         select(Question)
@@ -599,15 +590,7 @@ async def backfill_question_embeddings(
         .limit(limit + 1)
     )
 
-    query_params = (
-        {
-            "model_id": _vs.emb.model_config_id,
-            "embedding_dim": _vs.emb.dim,
-        }
-        if not force
-        else {}
-    )
-    result = await db.execute(query, query_params)
+    result = await db.execute(query)
     fetched_questions = list(result.scalars().all())
     has_more = len(fetched_questions) > limit
     questions = fetched_questions[:limit]
@@ -621,31 +604,129 @@ async def backfill_question_embeddings(
     }
     errors: list[dict] = []
 
-    for q in questions:
-        # 每条题目使用 savepoint，单条失败不污染整个批次
+    if questions:
+        question_ids = [question.id for question in questions]
+        kp_map = await load_question_kps(db, question_ids)
+        texts: dict[int, str] = {}
+        hashes: dict[int, str] = {}
+        for question in questions:
+            subject_code = await _resolve_question_subject_code(db, question)
+            texts[question.id] = embedding_service.build_question_embedding_text(
+                question,
+                subject_code=subject_code,
+                knowledge_points=kp_map.get(question.id, []),
+            )
+            hashes[question.id] = embedding_service.compute_content_hash(
+                texts[question.id]
+            )
+
+        existing_result = await db.execute(
+            text(
+                "SELECT id, question_id, content_hash FROM question_embeddings "
+                "WHERE question_id IN :question_ids AND model_id = :model_id"
+            ),
+            {"question_ids": tuple(question_ids), "model_id": model_config_id},
+        )
+        existing_by_question_id = {
+            row["question_id"]: row
+            for row in (existing_result.mappings().all())
+            if row["question_id"] is not None
+        }
+        actions: list[tuple[Question, str]] = []
+        for question in questions:
+            existing = existing_by_question_id.get(question.id)
+            if existing is None:
+                status = "created"
+            elif force or existing["content_hash"] != hashes[question.id]:
+                status = "updated"
+            else:
+                status = "skipped"
+            actions.append((question, status))
+    else:
+        actions = []
+
+    if dry_run:
+        return {
+            **stats,
+            "enabled": True,
+            "dry_run": True,
+            "would_create": sum(status == "created" for _, status in actions),
+            "would_update": sum(status == "updated" for _, status in actions),
+            "would_skip": sum(status == "skipped" for _, status in actions),
+            "model_id": model_config_id,
+            "embedding_dim": _vs.emb.dim,
+            "errors": errors,
+            "next_cursor": questions[-1].id if questions else after_id,
+            "has_more": has_more,
+        }
+
+    pending = [question for question, status in actions if status != "skipped"]
+    generated: dict[int, list[float]] = {}
+    if pending:
+        embeddings = await embedding_service.get_embeddings_batch(
+            [texts[question.id] for question in pending],
+            config=_vs.emb,
+        )
+        for question, embedding in zip(pending, embeddings, strict=False):
+            if embedding is None:
+                errors.append(
+                    {"question_id": question.id, "reason": "embedding api failed"}
+                )
+                continue
+            try:
+                generated[question.id] = validate_embedding(embedding, _vs.emb.dim)
+            except ValueError as exc:
+                errors.append(
+                    {
+                        "question_id": question.id,
+                        "reason": f"invalid_embedding: {exc}",
+                    }
+                )
+
+    pg_literal_by_qid = {
+        question_id: embedding_service.vector_to_pg_literal(embedding)
+        for question_id, embedding in generated.items()
+    }
+    upsert_sql = (
+        "INSERT INTO question_embeddings "
+        "(question_id, subject_id, question_type, model_id, embedding_dim, "
+        "content_hash, content_text, embedding) "
+        "VALUES (:qid, :subject_id, :qtype, :model_id, :dim, :hash, :text, "
+        "CAST(:emb AS vector)) "
+        "ON CONFLICT (question_id, model_id) DO UPDATE SET "
+        "embedding = EXCLUDED.embedding, embedding_dim = EXCLUDED.embedding_dim, "
+        "content_hash = EXCLUDED.content_hash, content_text = EXCLUDED.content_text, "
+        "subject_id = EXCLUDED.subject_id, question_type = EXCLUDED.question_type, "
+        "updated_at = NOW(), embedded_at = NOW()"
+    )
+
+    for question, status in actions:
+        if status == "skipped":
+            stats["skipped"] += 1
+            continue
+        if question.id not in generated:
+            stats["failed"] += 1
+            continue
+        params = {
+            "qid": question.id,
+            "subject_id": question.subject_id,
+            "qtype": question.question_type,
+            "model_id": model_config_id,
+            "dim": _vs.emb.dim,
+            "hash": hashes[question.id],
+            "text": texts[question.id],
+            "emb": pg_literal_by_qid[question.id],
+        }
         try:
             async with db.begin_nested():
-                res = await upsert_question_embedding(db, q, force=force)
-                status = res["status"]
-                if status in stats:
-                    stats[status] += 1
-                if status == "failed" and res.get("reason"):
-                    errors.append(
-                        {
-                            "question_id": q.id,
-                            "reason": res["reason"][:200],
-                        }
-                    )
+                await db.execute(text(upsert_sql), params)
+                await db.flush()
+            stats[status] += 1
         except Exception as exc:
             stats["failed"] += 1
-            errors.append(
-                {
-                    "question_id": q.id,
-                    "reason": str(exc)[:200],
-                }
-            )
+            errors.append({"question_id": question.id, "reason": str(exc)[:200]})
             logger.warning(
-                "backfill savepoint 回滚 question_id=%d", q.id, exc_info=True
+                "backfill savepoint 回滚 question_id=%s", question.id, exc_info=True
             )
 
     # 计算游标
@@ -653,6 +734,12 @@ async def backfill_question_embeddings(
     return {
         **stats,
         "enabled": True,
+        "dry_run": dry_run,
+        "would_create": stats["created"],
+        "would_update": stats["updated"],
+        "would_skip": stats["skipped"],
+        "model_id": model_config_id,
+        "embedding_dim": _vs.emb.dim,
         "errors": errors,
         "next_cursor": last_qid if has_more else None,
         "has_more": has_more,
