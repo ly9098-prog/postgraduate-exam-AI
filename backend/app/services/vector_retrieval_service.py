@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import and_, bindparam, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -624,8 +624,8 @@ async def backfill_question_embeddings(
             text(
                 "SELECT id, question_id, content_hash FROM question_embeddings "
                 "WHERE question_id IN :question_ids AND model_id = :model_id"
-            ),
-            {"question_ids": tuple(question_ids), "model_id": model_config_id},
+            ).bindparams(bindparam("question_ids", expanding=True)),
+            {"question_ids": question_ids, "model_id": model_config_id},
         )
         existing_by_question_id = {
             row["question_id"]: row
