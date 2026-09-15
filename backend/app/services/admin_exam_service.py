@@ -31,6 +31,24 @@ class ExamPaperStateError(ValueError):
     pass
 
 
+# 408 统考计算机综合选择题固定结构：40 题 × 2 分 = 80 分。
+# 前 40 题必须严格按下列科目区间编排；当候选题超过 40 道时，
+# 额外题目再按目标占比、剩余题量和连续科目惩罚做稳定均衡排序。
+EXAM408_CHOICE_BLUEPRINT: tuple[tuple[str, int], ...] = (
+    ("data_structure", 10),
+    ("computer_organization", 12),
+    ("operating_system", 10),
+    ("computer_network", 8),
+)
+EXAM408_CHOICE_TOTAL = sum(count for _code, count in EXAM408_CHOICE_BLUEPRINT)
+EXAM408_CHOICE_SCORE = Decimal("2.00")
+EXAM408_CHOICE_TOTAL_SCORE = Decimal("80.00")
+EXAM408_CHOICE_SUBJECT_ORDER = {
+    code: index for index, (code, _count) in enumerate(EXAM408_CHOICE_BLUEPRINT)
+}
+EXAM408_CHOICE_TARGETS = dict(EXAM408_CHOICE_BLUEPRINT)
+
+
 def _money(value) -> float:
     return round(float(value or 0), 2)
 
@@ -228,8 +246,39 @@ async def validate_exam_paper(db: AsyncSession, paper_id: int) -> list[str]:
             errors.append(f"{prefix} 不属于 canonical 408 四科")
         if _money(item["score"]) <= 0:
             errors.append(f"{prefix} 分值必须大于 0")
-    if paper.paper_type == "past_exam_choice" and paper.year is None:
-        errors.append("真题选择题卷必须填写年份")
+    if paper.paper_type == "past_exam_choice":
+        if paper.year is None:
+            errors.append("真题选择题卷必须填写年份")
+
+        if len(items) != EXAM408_CHOICE_TOTAL:
+            errors.append(
+                f"408 统考选择题必须正好 {EXAM408_CHOICE_TOTAL} 道，当前 {len(items)} 道"
+            )
+
+        total_score = sum(Decimal(str(item["score"])) for item in items)
+        if total_score.quantize(Decimal("0.01")) != EXAM408_CHOICE_TOTAL_SCORE:
+            errors.append(
+                f"408 统考选择题总分必须为 80 分，当前 {_money(total_score)} 分"
+            )
+
+        fixed_ranges = (
+            (1, 10, "data_structure", "数据结构"),
+            (11, 22, "computer_organization", "计算机组成原理"),
+            (23, 32, "operating_system", "操作系统"),
+            (33, 40, "computer_network", "计算机网络"),
+        )
+        for start, end, expected_code, expected_name in fixed_ranges:
+            for item in items:
+                position = int(item["position"])
+                if position < start or position > end:
+                    continue
+                actual_code = canonical_408_code(item["subject_code"])
+                if actual_code != expected_code:
+                    errors.append(
+                        f"第 {position} 题应为{expected_name}（固定题号 {start}~{end}）"
+                    )
+                if Decimal(str(item["score"])).quantize(Decimal("0.01")) != EXAM408_CHOICE_SCORE:
+                    errors.append(f"第 {position} 题应为 2 分")
     return errors
 
 
@@ -250,6 +299,45 @@ def _question_stem(content: object) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def _coerce_source_question_no(value: object) -> int | None:
+    if value is None:
+        return None
+    match = re.match(r"^\s*(\d{1,3})(?:\D|$)", str(value))
+    if match is None:
+        return None
+    number = int(match.group(1))
+    return number if number > 0 else None
+
+
+def _source_question_no(content: object, raw_content: str | None) -> int | None:
+    """Best-effort recovery of the original exam question number.
+
+    Imported question numbers are intentionally stripped from the student-facing
+    stem, but modern import payloads keep ``source_question_no`` in raw metadata.
+    Recovering it here lets quick-add prefer the real 1..40 exam slot when more
+    than one eligible candidate exists for a year.
+    """
+    if isinstance(content, dict):
+        for key in ("source_question_no", "question_no", "number"):
+            number = _coerce_source_question_no(content.get(key))
+            if number is not None:
+                return number
+        source = content.get("source")
+        if isinstance(source, dict):
+            number = _coerce_source_question_no(source.get("source_question_no"))
+            if number is not None:
+                return number
+
+    if raw_content:
+        match = re.search(
+            r"[\"']source_question_no[\"']\s*:\s*[\"']?([0-9]{1,3})",
+            raw_content,
+        )
+        if match is not None:
+            return int(match.group(1))
+    return None
 
 
 def _matches_past_exam_prefix(stem: str, year: int) -> bool:
@@ -322,6 +410,121 @@ def _summarize_exam_item_errors(errors: list[tuple[int, str]]) -> str:
     return f"以下题目不能保存到试卷：{text}"
 
 
+def _arrange_408_candidates(items: list[dict]) -> list[dict]:
+    """Return quick-add candidates in a deterministic 408-friendly order.
+
+    The official source question number is the strongest signal when available;
+    subject quota is the hard layout constraint; stable source order is the
+    fallback.  The canonical first 40 slots are 10/12/10/8.  Overflow candidates
+    are then interleaved with weighted-fair scoring that considers target ratio,
+    remaining overflow pressure, and repeated-subject streaks.
+
+    A malformed/incomplete source pool cannot magically satisfy missing fixed
+    slots.  In that case all available candidates are still returned and draft
+    validation surfaces the shortage/mismatch before publication.
+    """
+    if not items:
+        return []
+
+    buckets: dict[str, list[dict]] = {
+        code: [] for code, _count in EXAM408_CHOICE_BLUEPRINT
+    }
+    unknown: list[dict] = []
+    for item in items:
+        code = canonical_408_code(item.get("subject_code"))
+        if code in buckets:
+            buckets[code].append(item)
+        else:
+            unknown.append(item)
+
+    arranged: list[dict] = []
+    selected_counts: dict[str, int] = {code: 0 for code in buckets}
+    remaining: dict[str, list[dict]] = {}
+    slot_start = 1
+
+    # Build the official 1..40 section.  Candidates carrying their original
+    # question number are reserved for that exact slot first.  Duplicate/number-
+    # less candidates only fill holes, so an extra Q1 cannot accidentally push
+    # the real Q10 outside the first ten data-structure positions.
+    for code, target in EXAM408_CHOICE_BLUEPRINT:
+        bucket = buckets[code]
+        slot_end = slot_start + target - 1
+        primary_by_number: dict[int, dict] = {}
+        for item in bucket:
+            number = _coerce_source_question_no(item.get("_source_question_no"))
+            if number is None or not (slot_start <= number <= slot_end):
+                continue
+            primary_by_number.setdefault(number, item)
+
+        reserved_ids = {id(item) for item in primary_by_number.values()}
+        fallback = [item for item in bucket if id(item) not in reserved_ids]
+        selected: list[dict] = []
+        fallback_index = 0
+        for position in range(slot_start, slot_end + 1):
+            item = primary_by_number.get(position)
+            if item is None and fallback_index < len(fallback):
+                item = fallback[fallback_index]
+                fallback_index += 1
+            if item is not None:
+                selected.append(item)
+
+        selected_ids = {id(item) for item in selected}
+        arranged.extend(selected)
+        selected_counts[code] = len(selected)
+        remaining[code] = [item for item in bucket if id(item) not in selected_ids]
+        slot_start = slot_end + 1
+
+    # Position 41+ is outside the official 408 choice section.  Keep surplus
+    # useful for admin review, but avoid a giant same-subject tail.
+    last_codes: list[str] = []
+    for item in arranged[-2:]:
+        code = canonical_408_code(item.get("subject_code"))
+        if code in buckets:
+            last_codes.append(code)
+
+    while any(remaining.values()):
+        total_after_pick = len(arranged) + 1
+        total_remaining = sum(len(values) for values in remaining.values())
+        best_code: str | None = None
+        best_score: tuple[float, float, float, int] | None = None
+
+        for code, values in remaining.items():
+            if not values:
+                continue
+            target = EXAM408_CHOICE_TARGETS[code]
+            weight = target / EXAM408_CHOICE_TOTAL
+            expected_count = total_after_pick * weight
+            ratio_deficit = expected_count - selected_counts[code]
+            overflow_pressure = len(values) / max(total_remaining, 1)
+
+            streak_penalty = 0.0
+            if last_codes and last_codes[-1] == code:
+                streak_penalty = 0.20
+                if len(last_codes) >= 2 and last_codes[-2] == code:
+                    streak_penalty = 1.00
+
+            score = (
+                ratio_deficit - streak_penalty,
+                overflow_pressure,
+                weight,
+                -EXAM408_CHOICE_SUBJECT_ORDER[code],
+            )
+            if best_score is None or score > best_score:
+                best_score = score
+                best_code = code
+
+        if best_code is None:
+            break
+        arranged.append(remaining[best_code].pop(0))
+        selected_counts[best_code] += 1
+        last_codes.append(best_code)
+        if len(last_codes) > 2:
+            last_codes.pop(0)
+
+    arranged.extend(unknown)
+    return arranged
+
+
 async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
     rows = await db.execute(
         select(Question, QuestionVersion, Subject)
@@ -355,9 +558,15 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
                 "content": content,
                 "year": int(year),
                 "source": revision.source or question.source,
+                "_source_question_no": _source_question_no(
+                    content, revision.raw_content or question.raw_content
+                ),
             }
         )
-    return {"year": int(year), "total": len(items), "items": items}
+    arranged_items = _arrange_408_candidates(items)
+    for item in arranged_items:
+        item.pop("_source_question_no", None)
+    return {"year": int(year), "total": len(arranged_items), "items": arranged_items}
 
 
 async def create_exam_paper(
@@ -475,16 +684,44 @@ async def replace_exam_paper_items(
     if validation_errors:
         raise ValueError(_summarize_exam_item_errors(validation_errors))
 
+    ordered_items = list(data.items)
+    if paper.paper_type == "past_exam_choice":
+        # The admin quick-add UI may submit candidates in discovery/database
+        # order.  Normalize again at the persistence boundary so the official
+        # 408 subject ranges stay correct even if a client is stale or manually
+        # reorders the candidate list before saving.
+        wrappers: list[dict] = []
+        for input_item in ordered_items:
+            _question, _revision, subject = by_id[input_item.question_id]
+            wrappers.append(
+                {
+                    "question_id": int(input_item.question_id),
+                    "subject_code": subject.code,
+                    "_source_question_no": _source_question_no(
+                        _revision.content, _revision.raw_content or _question.raw_content
+                    ),
+                    "_input": input_item,
+                }
+            )
+        ordered_items = [
+            wrapper["_input"] for wrapper in _arrange_408_candidates(wrappers)
+        ]
+
     new_rows: list[ExamPaperQuestion] = []
-    for position, input_item in enumerate(data.items, start=1):
+    for position, input_item in enumerate(ordered_items, start=1):
         question, revision, _subject = by_id[input_item.question_id]
+        score = (
+            EXAM408_CHOICE_SCORE
+            if paper.paper_type == "past_exam_choice"
+            else Decimal(str(input_item.score)).quantize(Decimal("0.01"))
+        )
         new_rows.append(
             ExamPaperQuestion(
                 paper_id=paper.id,
                 question_id=question.id,
                 question_version_id=revision.id,
                 position=position,
-                score=Decimal(str(input_item.score)).quantize(Decimal("0.01")),
+                score=score,
                 section_subject_id=question.subject_id,
             )
         )
@@ -502,7 +739,10 @@ async def replace_exam_paper_items(
         "exam_paper",
         paper.id,
         severity="important",
-        detail={"question_count": len(new_rows), "question_ids": ids},
+        detail={
+            "question_count": len(new_rows),
+            "question_ids": [int(item.question_id) for item in ordered_items],
+        },
         request=request,
     )
 
