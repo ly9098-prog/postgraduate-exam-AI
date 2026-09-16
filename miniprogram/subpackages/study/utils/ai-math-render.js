@@ -45,15 +45,29 @@ out += ' '
 }
 return out.replace(/[ \t]+/g, ' ').trim()
 }
-function repairAiLatexControlEscapes(value) {
+function normalizeAiMathDelimiters(value) {
 var source = String(value || '')
+if (!source) return source
+// AI providers commonly emit Markdown/LaTeX delimiters \(...\) and \[...\].
+// mp-html's bundled KaTeX plugin consumes $...$ / $$...$$ only, so normalize
+// these equivalent delimiters before repairing JSON control-escape damage.
+source = source.replace(/\\\[([\s\S]*?)\\\]/g, function (_, inner) {
+return '$$' + inner + '$$'
+})
+source = source.replace(/\\\(([\s\S]*?)\\\)/g, function (_, inner) {
+return '$' + inner + '$'
+})
+return source
+}
+function repairAiLatexControlEscapes(value) {
+var source = normalizeAiMathDelimiters(value)
 if (!source || source.indexOf('$') < 0) return source
 return source.replace(/(\$\$|\$)([\s\S]*?)\1/g, function (_, delimiter, inner) {
 return delimiter + _repairFormulaInner(inner) + delimiter
 })
 }
 function hasDelimitedMath(value) {
-return /(\$\$|\$)[\s\S]*?\1/.test(String(value || ''))
+return /(\$\$|\$)[\s\S]*?\1/.test(normalizeAiMathDelimiters(value))
 }
 function _plainMathFallback(value) {
 var source = String(value || '')
@@ -88,6 +102,7 @@ needsRich: needsRich,
 }
 }
 module.exports = {
+normalizeAiMathDelimiters: normalizeAiMathDelimiters,
 repairAiLatexControlEscapes: repairAiLatexControlEscapes,
 hasDelimitedMath: hasDelimitedMath,
 buildAiRichText: buildAiRichText,

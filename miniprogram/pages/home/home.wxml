@@ -33,7 +33,7 @@
 
   <!-- Top study card rebuilt to match the supplied reference composition -->
   <view class="focus-card page-enter delay-one">
-    <image class="focus-bg-art" src="/assets/icons/home-hero/top-card-background-cropped.png" mode="aspectFit" />
+    <image class="focus-bg-art" src="/assets/icons/home-hero/top-card-background-cropped.png" mode="scaleToFill" />
     <view class="focus-bg-wash" aria-hidden="true"></view>
     <view class="focus-hero-visual" aria-hidden="true">
       <image class="focus-curve-image" src="/assets/icons/home-hero/smart-study-curve.png" mode="aspectFit" />

@@ -3,26 +3,110 @@
  * katex.min.js来源 https://github.com/rojer95/katex-mini
  */
 const katex = require('./katex.min')
-const Parser = require('../parser')
 
-function parseKatexToNodes(source, options) {
-  // Native <rich-text> expects { name, attrs, children } / { type:'text', text }.
-  // KaTeX's private DOM tree exposes `attributes` as a plain object. Passing that
-  // tree through Object.assign makes WeChat call `attributes.forEach` and crash:
-  // [Component] <rich-text>: parse error TypeError: e.attributes.forEach is not a function
-  const markup = katex.renderToString(String(source || ''), Object.assign({}, options, {
-    output: 'html',
-  }))
-  const host = {
-    properties: {
-      editable: false,
-      containerStyle: '',
-      mathLayout: '',
-    },
-    imgList: [],
-    plugins: [],
+function hyphenateStyleName (name) {
+  return String(name || '').replace(/([A-Z])/g, '-$1').toLowerCase()
+}
+
+function encodeSvgDataUri (svg) {
+  return 'data:image/svg+xml,' + encodeURIComponent(String(svg || '').replace(/\s+/g, ' '))
+}
+
+function classNameOf (classes, includeKatexSpan) {
+  const list = Array.isArray(classes) ? classes.filter(Boolean).slice() : []
+  // katex.wxss intentionally targets .katex-span for anonymous KaTeX spans.
+  // renderToString + generic HTML parsing loses this compatibility class and
+  // breaks vlist positioning (subscripts/fractions appear in the wrong place).
+  if (includeKatexSpan && list.indexOf('katex-span') < 0) list.push('katex-span')
+  return list.join(' ')
+}
+
+function styleTextOf (dom, includeItalic) {
+  let style = ''
+  if (includeItalic && dom && Number(dom.italic) > 0) {
+    style += 'margin-right:' + dom.italic + 'em;'
   }
-  return new Parser(host).parse(markup)
+  const source = dom && dom.style && typeof dom.style === 'object' ? dom.style : {}
+  Object.keys(source).forEach(function (key) {
+    if (source[key] === undefined || source[key] === null || source[key] === '') return
+    style += hyphenateStyleName(key) + ':' + source[key] + ';'
+  })
+  return style
+}
+
+function attrsOf (dom, className, styleText) {
+  const attrs = {}
+  const source = dom && dom.attributes && typeof dom.attributes === 'object' ? dom.attributes : {}
+  Object.keys(source).forEach(function (key) {
+    if (source[key] !== undefined && source[key] !== null) attrs[key] = String(source[key])
+  })
+  if (className) attrs.class = className
+  if (styleText) attrs.style = styleText
+  return attrs
+}
+
+function katexDomToRichNodes (items) {
+  const result = []
+  const domTree = katex.__domTree || {}
+  const Span = domTree.Span
+  const SymbolNode = domTree.SymbolNode
+  const SvgNode = domTree.SvgNode
+
+  ;(Array.isArray(items) ? items : [items]).forEach(function (dom) {
+    if (!dom) return
+
+    // Keep SVG as one data-uri image. Converting its private Path/Line nodes
+    // directly would leak unsupported KaTeX internals into native rich-text.
+    if (SvgNode && dom instanceof SvgNode) {
+      result.push({
+        name: 'img',
+        attrs: {
+          src: encodeSvgDataUri(dom.toMarkup()),
+          class: 'katex-svg'
+        }
+      })
+      return
+    }
+
+    if (SymbolNode && dom instanceof SymbolNode) {
+      const className = classNameOf(dom.classes, false)
+      const styleText = styleTextOf(dom, true)
+      const textNode = { type: 'text', text: String(dom.text == null ? '' : dom.text) }
+      if (className || styleText) {
+        result.push({
+          name: 'span',
+          attrs: attrsOf(dom, className, styleText),
+          children: [textNode]
+        })
+      } else if (textNode.text) {
+        result.push(textNode)
+      }
+      return
+    }
+
+    const children = dom.children ? katexDomToRichNodes(dom.children) : []
+    if (Span && dom instanceof Span) {
+      result.push({
+        name: 'span',
+        attrs: attrsOf(dom, classNameOf(dom.classes, true), styleTextOf(dom, false)),
+        children: children
+      })
+      return
+    }
+
+    // Unknown wrapper nodes are flattened. Supported visual primitives either
+    // arrive as Span/SymbolNode or are contained by SvgNode above.
+    for (let i = 0; i < children.length; i++) result.push(children[i])
+  })
+
+  return result
+}
+
+function parseKatexToNodes (source, options) {
+  const tree = katex.__renderToDomTree(String(source || ''), Object.assign({}, options, {
+    output: 'html'
+  }))
+  return katexDomToRichNodes([tree])
 }
 
 function Latex () {
@@ -50,7 +134,7 @@ Latex.prototype.onParse = function (node, vm) {
             try {
               nodes = parseKatexToNodes(part[i], {
                 displayMode: status === 2,
-                throwOnError: true,
+                throwOnError: true
               })
             } catch (_e) {
               children.push({ type: 'text', text: part[i] })
@@ -68,7 +152,7 @@ Latex.prototype.onParse = function (node, vm) {
                 name: 'span',
                 attrs: {},
                 l: 'T',
-                f: 'display:inline-block',
+                f: 'display:inline-block;vertical-align:middle;line-height:normal',
                 children: nodes
               })
             } else {
@@ -116,5 +200,8 @@ Latex.prototype.onParse = function (node, vm) {
     node.children = children
   }
 }
+
+// Exposed only for regression tests; page code still uses the plugin lifecycle.
+Latex.parseKatexToNodes = parseKatexToNodes
 
 module.exports = Latex
