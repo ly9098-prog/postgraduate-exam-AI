@@ -1,4 +1,5 @@
 const api = require('../../../utils/api')
+const aiTeacher408 = require('../../study/utils/ai-teacher-408')
 
 const RADAR_SIZE = 5
 const RADAR_ANGLES = [-90, -18, 54, 126, 198]
@@ -258,6 +259,12 @@ Page({
     topItems: [],
     weakCount: 0,
     wrongDetailCount: 0,
+    teacherActions: aiTeacher408.ACTIONS,
+    teacherLoading: false,
+    teacherResult: null,
+    teacherErrorText: '',
+    teacherSheetVisible: false,
+    teacherFeedbackSent: '',
     icons: {
       sprout: '/subpackages/exam/result/assets/sprout.png',
       radarGrid: '/subpackages/exam/result/assets/radar-grid.png',
@@ -266,6 +273,11 @@ Page({
 
   onLoad(options) {
     this._pageAlive = true
+    this._teacherRequestSeq = 0
+    this._activeTeacherCacheKey = ''
+    this._teacherCache = Object.create(null)
+    this._teacherFeedbackCache = Object.create(null)
+    this._teacherInflight = Object.create(null)
     this._loadSeq = 0
     this._loadPromise = null
     this._navigationLocked = false
@@ -329,6 +341,9 @@ Page({
         const weakCount = metrics.filter(item => Number(item.accuracyPct) < 70).length
         this._wrongIds = collectWrongIds(response)
         this._diagnosisIdByWrongId = Object.create(null)
+        const resultQuestions = Array.isArray(response.questions) ? response.questions : []
+        const firstResultQuestion = resultQuestions[0] || null
+        this._firstQuestionId = Number(firstResultQuestion && firstResultQuestion.question_id) || 0
         ;(Array.isArray(response.questions) ? response.questions : []).forEach((question) => {
           const wrongId = firstWrongIdByQuestion(question)
           if (!wrongId) return
@@ -459,5 +474,101 @@ Page({
 
   goPaperList() {
     this._returnToPaperList()
+  },
+
+  open408Teacher() {
+    if (!this.data.attemptId) return
+    const questionId = Number(this._firstQuestionId || 0)
+    if (!questionId) {
+      wx.showToast({ title: '本次暂无可复盘题目', icon: 'none' })
+      return
+    }
+    const action = this.data.result && this.data.result.wrongCount > 0 ? 'core_concept' : 'explain_correct'
+    this.run408Teacher(action, questionId)
+  },
+
+  select408TeacherAction(e) {
+    const action = String(e.currentTarget.dataset.action || '')
+    if (action) this.run408Teacher(action)
+  },
+
+  async run408Teacher(action, questionId) {
+    if (this.data.teacherLoading) {
+      this.setData({ teacherSheetVisible: true })
+      return
+    }
+    if (!this.data.attemptId || !questionId) return
+    const cacheKey = [Number(this.data.attemptId || 0), Number(questionId || 0), String(action || '')].join('|')
+    const cached = this._teacherCache[cacheKey]
+    this._activeTeacherCacheKey = cacheKey
+    if (cached) {
+      this.setData({
+        teacherLoading: false,
+        teacherResult: cached,
+        teacherErrorText: '',
+        teacherSheetVisible: true,
+        teacherFeedbackSent: this._teacherFeedbackCache[cacheKey] || '',
+      })
+      return
+    }
+    const requestSeq = ++this._teacherRequestSeq
+    const payload = {
+      question_id: Number(questionId),
+      action,
+      exam_attempt_id: Number(this.data.attemptId),
+    }
+    let requestPromise = this._teacherInflight[cacheKey]
+    if (!requestPromise) {
+      requestPromise = api.post('/ai/408-teacher', payload, { timeout: 55000 })
+      this._teacherInflight[cacheKey] = requestPromise
+    }
+    this.setData({
+      teacherLoading: true,
+      teacherResult: null,
+      teacherErrorText: '',
+      teacherSheetVisible: true,
+      teacherFeedbackSent: '',
+    })
+    try {
+      const raw = await requestPromise
+      const normalized = aiTeacher408.normalizeResult(raw)
+      if (!normalized) throw new Error('AI 返回格式异常')
+      this._teacherCache[cacheKey] = normalized
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return
+      this._activeTeacherCacheKey = cacheKey
+      this.setData({ teacherLoading: false, teacherResult: normalized })
+    } catch (error) {
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return
+      this.setData({ teacherLoading: false, teacherErrorText: aiTeacher408.errorMessage(error, api) })
+    } finally {
+      if (this._teacherInflight[cacheKey] === requestPromise) delete this._teacherInflight[cacheKey]
+    }
+  },
+
+  close408Teacher() {
+    this.setData({ teacherSheetVisible: false })
+  },
+
+  async feedback408Teacher(e) {
+    if (this.data.teacherFeedbackSent || !this.data.teacherResult || !this.data.attemptId) return
+    const feedbackType = String(e.currentTarget.dataset.type || '')
+    if (!feedbackType) return
+    try {
+      await api.post('/ai/feedback', {
+        source: '408_teacher',
+        feedback_type: feedbackType,
+        exam_attempt_id: Number(this.data.attemptId),
+        detail: [
+          this.data.teacherResult.action ? `action=${this.data.teacherResult.action}` : '',
+          this.data.teacherResult.promptVersion ? `prompt_version=${this.data.teacherResult.promptVersion}` : '',
+          `fallback=${this.data.teacherResult.fromFallback ? 1 : 0}`,
+        ].filter(Boolean).join(';'),
+      })
+      if (this._activeTeacherCacheKey) this._teacherFeedbackCache[this._activeTeacherCacheKey] = feedbackType
+      this.setData({ teacherFeedbackSent: feedbackType })
+      wx.showToast({ title: '反馈已记录', icon: 'success' })
+    } catch (error) {
+      wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+    }
   },
 })

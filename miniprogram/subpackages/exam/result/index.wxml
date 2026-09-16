@@ -159,9 +159,61 @@
           </view>
         </view>
 
+        <view class="continue-button continue-button-secondary" bindtap="open408Teacher" hover-class="continue-button-pressed">交卷后专项 AI 老师</view>
         <view class="continue-button" bindtap="goPaperList" hover-class="continue-button-pressed">继续练习</view>
         <view class="bottom-safe-space"></view>
       </block>
     </view>
   </scroll-view>
+</view>
+<view class="teacher-modal-mask" wx:if="{{teacherSheetVisible}}" catchtouchmove="noop">
+  <view class="teacher-modal-backdrop" bindtap="close408Teacher"></view>
+  <view class="teacher-sheet" catchtap="noop">
+    <view class="teacher-sheet-head">
+      <view><text class="teacher-kicker">AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '专项 AI 老师'}}</text></view>
+      <text class="teacher-sheet-close" bindtap="close408Teacher">×</text>
+    </view>
+    <view wx:if="{{!teacherLoading && !teacherErrorText && !teacherResult}}" class="teacher-action-panel">
+      <text class="teacher-action-title">选择一个固定教学动作</text>
+      <button wx:for="{{teacherActions}}" wx:key="action" class="teacher-action-choice" data-action="{{item.action}}" bindtap="select408TeacherAction">{{item.label}}</button>
+    </view>
+    <view wx:elif="{{teacherLoading}}" class="teacher-sheet-loading"><view class="teacher-spinner"></view><text>正在结合本次考试生成…</text></view>
+    <view wx:elif="{{teacherErrorText}}" class="teacher-sheet-error">{{teacherErrorText}}</view>
+    <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+      <view wx:if="{{teacherResult.summary}}" class="teacher-summary-card"><text class="teacher-summary-label">先看结论</text><text class="teacher-summary">{{teacherResult.summary}}</text></view>
+      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">{{item.heading}}</text></view>
+        <view class="teacher-point-list">
+          <view wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point"><view class="teacher-point-dot"></view><text class="teacher-point-text" selectable="true">{{point}}</text></view>
+        </view>
+      </view>
+      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-result-section">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">知识点串联</text></view>
+        <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
+          <text class="teacher-kp-name">{{item.name}}</text>
+          <text wx:if="{{item.relation}}" class="teacher-kp-note">{{item.relation}}</text>
+          <text wx:if="{{item.masteryHint}}" class="teacher-kp-note mastery">{{item.masteryHint}}</text>
+        </view>
+      </view>
+      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">立即检验</text></view>
+        <text class="teacher-practice-stem">{{teacherResult.practiceQuestion.stem}}</text>
+        <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option"><text class="teacher-practice-key">{{item.key}}</text><text class="teacher-practice-option-text">{{item.text}}</text></view>
+        <view class="teacher-practice-answer-row"><text class="teacher-practice-answer-label">答案</text><text class="teacher-practice-answer">{{teacherResult.practiceQuestion.answer}}</text></view>
+        <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
+      </view>
+      <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '内容由专项 AI 老师生成，仅用于本次考试复盘。'}}</text>
+      <view class="teacher-feedback-row">
+        <view class="teacher-feedback-copy">
+          <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+          <text class="teacher-feedback-hint">你的反馈会用于改善后续讲解</text>
+        </view>
+        <view class="teacher-feedback-actions">
+          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
+          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+        </view>
+      </view>
+      <view class="teacher-scroll-space"></view>
+    </scroll-view>
+  </view>
 </view>
