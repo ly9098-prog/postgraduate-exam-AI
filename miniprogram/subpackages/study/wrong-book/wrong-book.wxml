@@ -1,7 +1,7 @@
 <page-meta page-style="{{!loading && list.length === 0 ? 'height: 100vh; overflow: hidden;' : ''}}" />
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
-<app-dialog id="appDialog" />
+<app-dialog id="appDialog"></app-dialog>
 <view class="page {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
 <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
 <block wx:if="{{!batchMode}}">

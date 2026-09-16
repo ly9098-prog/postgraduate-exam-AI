@@ -1,5 +1,5 @@
 <view class="page">
-<app-dialog id="appDialog" />
+<app-dialog id="appDialog"></app-dialog>
 <scroll-view
     class="page-scroll"
     scroll-y="{{!reviewDialogVisible}}"

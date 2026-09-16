@@ -1,5 +1,5 @@
 <view class="page">
-  <app-dialog id="appDialog" />
+  <app-dialog id="appDialog"></app-dialog>
   <view class="loading" wx:if="{{loading}}">正在恢复选择题考试…</view>
   <view class="error-card" wx:elif="{{errorText}}">
     <text>{{errorText}}</text>

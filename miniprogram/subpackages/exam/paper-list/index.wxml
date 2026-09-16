@@ -1,5 +1,5 @@
 <view class="page">
-  <app-dialog id="appDialog" />
+  <app-dialog id="appDialog"></app-dialog>
   <premium-nav title="选择题套卷" variant="light" bind:back="goBack" />
 
   <view class="hero-stage">

@@ -1,5 +1,5 @@
 <premium-nav title="学习报告" variant="light" bind:back="goBack" />
-<app-dialog id="appDialog" />
+<app-dialog id="appDialog"></app-dialog>
 <view class="dashboard-page {{pageReady ? 'ready' : ''}}">
   <!-- Initial loading -->
   <view class="dashboard-loading" wx:if="{{initialLoading && !pageReady}}">

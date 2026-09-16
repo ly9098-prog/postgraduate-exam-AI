@@ -130,5 +130,9 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "usingComponents": {
+    "app-dialog": "/components/app-dialog/index",
+    "premium-nav": "/components/premium-nav/premium-nav"
+  }
 }
