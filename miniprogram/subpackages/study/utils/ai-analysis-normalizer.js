@@ -21,18 +21,48 @@ var TEXT_SUB_KEYS = ['text', 'content', 'value', 'description']
 function _safeParse(str) {
 try { return JSON.parse(str) } catch (_) { return null }
 }
+function _hasQuotedAnalysisKey(str) {
+if (typeof str !== 'string' || !str) return false
+for (var i = 0; i < ALL_KNOWN_KEYS.length; i++) {
+var escaped = ALL_KNOWN_KEYS[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+var re = new RegExp("[\"']" + escaped + "[\"']\\s*:", 'i')
+if (re.test(str)) return true
+}
+return false
+}
 function _looksLikeJson(str) {
 if (typeof str !== 'string' || !str) return false
 var t = str.trim()
 if (!t) return false
 if (/^```(?:json|javascript|js)?/i.test(t)) return true
 if (t.charAt(0) === '{' || t.charAt(0) === '[') return true
+return _hasQuotedAnalysisKey(t)
+}
+function _hasDirectAnalysisField(obj) {
+if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false
 for (var i = 0; i < ALL_KNOWN_KEYS.length; i++) {
-var escaped = ALL_KNOWN_KEYS[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-var re = new RegExp("[\"']" + escaped + "[\"']\\s*:", 'i')
-if (re.test(t)) return true
+var val = obj[ALL_KNOWN_KEYS[i]]
+if (val !== undefined && val !== null && val !== '') return true
 }
 return false
+}
+function _isAnalysisShaped(obj) {
+if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false
+if (_hasDirectAnalysisField(obj)) return true
+for (var i = 0; i < WRAPPER_KEYS.length; i++) {
+if (obj[WRAPPER_KEYS[i]] !== undefined && obj[WRAPPER_KEYS[i]] !== null) return true
+}
+return false
+}
+function _isTruncatedAnalysisJson(str) {
+var raw = String(str || '').trim()
+if (!raw) return false
+var stripped = _stripFence(raw)
+if (!stripped) return false
+if (_safeParse(stripped) !== null) return false
+if (!_hasQuotedAnalysisKey(stripped) && !_hasQuotedAnalysisKey(raw)) return false
+var start = stripped.charAt(0)
+return start === '{' || start === '[' || /^```(?:json|javascript|js)?/i.test(raw)
 }
 function _stripFence(str) {
 var value = String(str || '').trim()
@@ -45,15 +75,17 @@ return value.trim()
 function _unwrapWrapper(obj, depth) {
 if (depth >= MAX_DEPTH) return obj
 if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj
+if (_hasDirectAnalysisField(obj)) return obj
 for (var i = 0; i < WRAPPER_KEYS.length; i++) {
 var val = obj[WRAPPER_KEYS[i]]
-if (val !== undefined && val !== null) {
+if (val === undefined || val === null) continue
 if (typeof val === 'string') {
 var parsed = _tryParseStructuredString(val)
-if (parsed && typeof parsed === 'object') return _unwrapWrapper(parsed, depth + 1)
+if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+return _unwrapWrapper(parsed, depth + 1)
+}
 } else if (typeof val === 'object' && !Array.isArray(val)) {
 return _unwrapWrapper(val, depth + 1)
-}
 }
 }
 return obj
@@ -108,13 +140,13 @@ if (typeof value !== 'string') return null
 var stripped = _stripFence(value)
 if (!stripped) return null
 var parsed = _safeParse(stripped)
-if (parsed && typeof parsed === 'object') return parsed
+if (parsed && _isAnalysisShaped(parsed)) return parsed
 var parts = _splitTopLevelJson(stripped)
 if (!parts.length) return null
 var candidates = []
 for (var i = 0; i < parts.length; i++) {
 var item = _safeParse(parts[i])
-if (item && typeof item === 'object') candidates.push(item)
+if (item && _isAnalysisShaped(item)) candidates.push(item)
 }
 if (!candidates.length) return null
 if (candidates.length === 1) return candidates[0]
@@ -123,10 +155,10 @@ return _pickBestObject(candidates) || candidates[0]
 function _pickBestObject(arr) {
 if (!arr || !arr.length) return null
 var best = null
-var bestScore = -1
+var bestScore = 0
 for (var i = 0; i < arr.length; i++) {
 var item = arr[i]
-if (!item || typeof item !== 'object') continue
+if (!item || typeof item !== 'object' || Array.isArray(item)) continue
 var score = 0
 if (item.mistake_diagnosis || item.error_analysis || item.diagnosis) score += 3
 if (item.knowledge_patch || item.knowledge_weakness || item.knowledge) score += 2
@@ -136,7 +168,7 @@ if (item.knowledgePatch) score += 1
 if (item.reviewTask) score += 1
 if (score > bestScore) { bestScore = score; best = item }
 }
-return best
+return bestScore > 0 ? best : null
 }
 function _extractField(obj, keys) {
 for (var i = 0; i < keys.length; i++) {
@@ -145,35 +177,59 @@ if (val !== undefined && val !== null) return val
 }
 return ''
 }
+function _joinExtractedFields(obj) {
+if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return ''
+var parts = []
+var diagnosis = _normalizeFieldValue(_extractField(obj, DIAGNOSIS_KEYS))
+var knowledge = _normalizeFieldValue(_extractField(obj, KNOWLEDGE_KEYS))
+var task = _normalizeFieldValue(_extractField(obj, TASK_KEYS))
+if (diagnosis) parts.push(diagnosis)
+if (knowledge) parts.push(knowledge)
+if (task) parts.push(task)
+return parts.join('\n')
+}
+function _formatErrorResult() {
+return { mistake_diagnosis: '', knowledge_patch: '', review_task: '', formatError: true }
+}
 function _normalizeFieldValue(raw) {
 if (raw === null || raw === undefined) return ''
-if (typeof raw === 'number') return String(raw)
+if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw)
 if (typeof raw === 'string') {
 var trimmed = raw.trim()
 if (!trimmed) return ''
-var result = _tryParseStructuredString(trimmed)
-if (result !== null && typeof result === 'object') {
-return _extractTextFromObject(result)
+var whole = _safeParse(_stripFence(trimmed))
+if (Array.isArray(whole)) return _normalizeFieldValue(whole)
+if (whole !== null && typeof whole === 'object') {
+if (_hasDirectAnalysisField(whole)) {
+var fromFields = _joinExtractedFields(whole)
+if (fromFields) return fromFields
 }
-if (_looksLikeJson(_stripFence(trimmed))) return ''
+var extracted = _extractTextFromObject(whole)
+if (extracted) return extracted
+return trimmed
+}
+if (typeof whole === 'string' && whole.trim() && whole !== trimmed) {
+return _normalizeFieldValue(whole)
+}
+if (_isTruncatedAnalysisJson(trimmed)) return ''
 return trimmed
 }
 if (typeof raw === 'object') {
 if (Array.isArray(raw)) {
 var strs = []
 for (var i = 0; i < raw.length; i++) {
-var v = raw[i]
-if (typeof v === 'string' && v.trim()) {
-var clean = v.trim()
-if (!_looksLikeJson(_stripFence(clean)) && strs.indexOf(clean) === -1) strs.push(clean)
-} else if (typeof v === 'object' && v !== null) {
-var t = _extractTextFromObject(v)
-if (t && strs.indexOf(t) === -1) strs.push(t)
-}
+var itemText = _normalizeFieldValue(raw[i])
+if (itemText && strs.indexOf(itemText) === -1) strs.push(itemText)
 }
 return strs.join('\n')
 }
-return _extractTextFromObject(raw)
+if (_hasDirectAnalysisField(raw)) {
+var fromObj = _joinExtractedFields(raw)
+if (fromObj) return fromObj
+}
+var fromObject = _extractTextFromObject(raw)
+if (fromObject) return fromObject
+return ''
 }
 return String(raw)
 }
@@ -188,7 +244,16 @@ if (parsed && typeof parsed === 'object') return parsed
 return str
 }
 function _extractTextFromObject(obj) {
-if (!obj || typeof obj !== 'object') return String(obj || '')
+if (obj === null || obj === undefined) return ''
+if (typeof obj !== 'object') return String(obj)
+if (Array.isArray(obj)) {
+var parts = []
+for (var i = 0; i < obj.length; i++) {
+var item = _extractTextFromObject(obj[i])
+if (item && parts.indexOf(item) === -1) parts.push(item)
+}
+return parts.join('\n')
+}
 for (var i = 0; i < TEXT_SUB_KEYS.length; i++) {
 var val = obj[TEXT_SUB_KEYS[i]]
 if (val !== undefined && val !== null) {
@@ -198,6 +263,8 @@ if (t) return t
 } else if (typeof val === 'object') {
 var r = _extractTextFromObject(val)
 if (r) return r
+} else if (typeof val === 'number') {
+return String(val)
 }
 }
 }
@@ -210,6 +277,46 @@ return !(
 (result.review_task && String(result.review_task).trim())
 )
 }
+function _collectArrayPayload(arr) {
+var arrText = []
+var arrayFormatError = false
+for (var ai = 0; ai < arr.length; ai++) {
+var item = arr[ai]
+if (item && typeof item === 'object' && !Array.isArray(item)) {
+var nestedObjResult = normalizeAiAnalysisPayload(item)
+if (hasAiAnalysisContent(nestedObjResult)) return nestedObjResult
+var nestedObjText = _extractTextFromObject(item)
+if (nestedObjText && arrText.indexOf(nestedObjText) === -1) arrText.push(nestedObjText)
+continue
+}
+if (typeof item === 'number' || typeof item === 'boolean') {
+var scalar = String(item)
+if (arrText.indexOf(scalar) === -1) arrText.push(scalar)
+continue
+}
+if (typeof item !== 'string' || !item.trim()) continue
+var arrayItem = item.trim()
+var parsedItem = _safeParse(_stripFence(arrayItem))
+if (typeof parsedItem === 'string' && parsedItem.trim()) {
+arrayItem = parsedItem.trim()
+parsedItem = _safeParse(_stripFence(arrayItem))
+}
+if (parsedItem && typeof parsedItem === 'object') {
+var nestedParsed = normalizeAiAnalysisPayload(parsedItem)
+if (hasAiAnalysisContent(nestedParsed)) return nestedParsed
+var nestedParsedText = _extractTextFromObject(parsedItem)
+if (nestedParsedText && arrText.indexOf(nestedParsedText) === -1) arrText.push(nestedParsedText)
+continue
+}
+if (_isTruncatedAnalysisJson(arrayItem)) {
+arrayFormatError = true
+continue
+}
+if (arrText.indexOf(arrayItem) === -1) arrText.push(arrayItem)
+}
+if (arrText.length) return { mistake_diagnosis: arrText.join('\n'), knowledge_patch: '', review_task: '' }
+return arrayFormatError ? _formatErrorResult() : EMPTY
+}
 function normalizeAiAnalysisPayload(input) {
 if (input === null || input === undefined) return EMPTY
 if (typeof input === 'string' && !input.trim()) return EMPTY
@@ -220,34 +327,24 @@ if (typeof obj === 'string') {
 var trimmed = obj.trim()
 var unfenced = _stripFence(trimmed)
 var parsed = _safeParse(unfenced)
+if (typeof parsed === 'string' && parsed.trim() && parsed.trim() !== trimmed) {
+return normalizeAiAnalysisPayload(parsed)
+}
 if (parsed && typeof parsed === 'object') {
 obj = parsed
 } else {
 var parts = _splitTopLevelJson(unfenced)
-if (parts.length > 0) {
-var best = null
-var bestScore = -1
+var partObjects = []
 for (var pi = 0; pi < parts.length; pi++) {
 var p = _safeParse(parts[pi])
-if (p && typeof p === 'object' && !Array.isArray(p)) {
-var score = 0
-if (p.mistake_diagnosis || p.error_analysis) score += 3
-if (p.knowledge_patch || p.knowledge_weakness) score += 2
-if (p.review_task || p.suggestion) score += 2
-if (score > bestScore) { bestScore = score; best = p }
+if (p && typeof p === 'object') partObjects.push(p)
 }
-}
+var best = _pickBestObject(partObjects)
 if (best) {
 obj = best
 } else {
-if (_looksLikeJson(trimmed)) {
-return { mistake_diagnosis: '', knowledge_patch: '', review_task: '', formatError: true }
-}
-return { mistake_diagnosis: trimmed, knowledge_patch: '', review_task: '' }
-}
-} else {
-if (_looksLikeJson(trimmed)) {
-return { mistake_diagnosis: '', knowledge_patch: '', review_task: '', formatError: true }
+if (_isTruncatedAnalysisJson(trimmed) || _isTruncatedAnalysisJson(unfenced)) {
+return _formatErrorResult()
 }
 return { mistake_diagnosis: trimmed, knowledge_patch: '', review_task: '' }
 }
@@ -258,33 +355,23 @@ var bestObj = _pickBestObject(obj)
 if (bestObj) {
 obj = bestObj
 } else {
-var arrText = []
-var arrayFormatError = false
-for (var ai = 0; ai < obj.length; ai++) {
-if (typeof obj[ai] === 'string' && obj[ai].trim()) {
-var arrayItem = obj[ai].trim()
-if (_looksLikeJson(_stripFence(arrayItem))) {
-arrayFormatError = true
-continue
-}
-if (arrText.indexOf(arrayItem) === -1) arrText.push(arrayItem)
-}
-}
-if (arrText.length) return { mistake_diagnosis: arrText.join('\n'), knowledge_patch: '', review_task: '' }
-return arrayFormatError
-? { mistake_diagnosis: '', knowledge_patch: '', review_task: '', formatError: true }
-: EMPTY
+return _collectArrayPayload(obj)
 }
 }
 obj = _unwrapWrapper(obj, 0)
 if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return EMPTY
 for (var eki = 0; eki < ALL_KNOWN_KEYS.length; eki++) {
 var embeddedRaw = obj[ALL_KNOWN_KEYS[eki]]
-if (typeof embeddedRaw !== 'string') continue
-var embeddedClean = _stripFence(embeddedRaw)
-if (!_looksLikeJson(embeddedClean)) continue
-var embeddedObj = _tryParseStructuredString(embeddedRaw)
-if (!embeddedObj || typeof embeddedObj !== 'object') continue
+var embeddedObj = null
+if (typeof embeddedRaw === 'string') {
+if (!_looksLikeJson(_stripFence(embeddedRaw)) && !_looksLikeJson(embeddedRaw)) continue
+embeddedObj = _tryParseStructuredString(embeddedRaw)
+} else if (embeddedRaw && typeof embeddedRaw === 'object' && !Array.isArray(embeddedRaw) && _hasDirectAnalysisField(embeddedRaw)) {
+embeddedObj = embeddedRaw
+} else {
+continue
+}
+if (!embeddedObj || typeof embeddedObj !== 'object' || Array.isArray(embeddedObj) || embeddedObj === obj) continue
 var embeddedResult = normalizeAiAnalysisPayload(embeddedObj)
 if (hasAiAnalysisContent(embeddedResult)) return embeddedResult
 }
@@ -302,9 +389,17 @@ mistake_diagnosis: diagnosis,
 knowledge_patch: knowledge,
 review_task: task,
 }
-if (_isEmptyResult(result) && _looksLikeJson(JSON.stringify(input))) {
-result.formatError = true
+if (!_isEmptyResult(result)) return result
+var fallbackText = _extractTextFromObject(obj)
+if (fallbackText) {
+result.mistake_diagnosis = fallbackText
+return result
 }
+if (typeof input === 'string' && !_isTruncatedAnalysisJson(input) && !_isTruncatedAnalysisJson(_stripFence(input))) {
+result.mistake_diagnosis = String(input).trim()
+return result
+}
+result.formatError = true
 return result
 }
 var EMPTY = { mistake_diagnosis: '', knowledge_patch: '', review_task: '' }
