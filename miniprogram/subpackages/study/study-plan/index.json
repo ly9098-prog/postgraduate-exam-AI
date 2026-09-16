@@ -5,6 +5,7 @@
   "backgroundColor": "#F4F4EE",
   "enablePullDownRefresh": false,
   "usingComponents": {
-    "app-dialog": "/components/app-dialog/index"
+    "app-dialog": "/components/app-dialog/index",
+    "premium-nav": "/components/premium-nav/premium-nav"
   }
 }
