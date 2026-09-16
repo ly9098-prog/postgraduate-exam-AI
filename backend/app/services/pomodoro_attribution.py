@@ -163,6 +163,72 @@ def split_session_duration_by_study_day(
     return _normalize(raw, actual_duration, start, day_start_minute)
 
 
+def split_session_duration_excluding_intervals(
+    session,
+    pause_intervals,
+    excluded_intervals: list[tuple[datetime, datetime | None]],
+    day_start_minute: int,
+) -> dict[date, int]:
+    """Attribute a pausable session after excluding already-counted wall spans.
+
+    This is the pausable counterpart of :func:`split_duration_excluding_intervals`.
+    The session's own pause intervals are removed first, then external intervals
+    (for example practice/exam windows) remove only the remaining active wall time.
+    ``actual_duration`` is scaled by the fraction of active wall time that remains,
+    so a pause is never subtracted twice and the returned total never exceeds the
+    persisted session duration.
+
+    The function intentionally returns ``{}`` when all active focus time is covered
+    by the external intervals.  Callers can therefore use the result as a pure
+    supplement to another authoritative activity clock without double counting.
+    """
+    start = session.start_time
+    end = session.end_time or start
+    actual_duration = max(0, int(session.actual_duration or 0))
+    if end <= start or actual_duration <= 0:
+        return {}
+
+    pauses = [
+        (i.started_at, i.ended_at)
+        for i in (pause_intervals or [])
+        if getattr(i, "started_at", None) is not None
+    ]
+    active_raw = _raw_overlap_by_study_day(start, end, pauses, day_start_minute)
+    active_raw_total = sum(active_raw.values())
+    if active_raw_total <= 0:
+        return {}
+
+    combined_exclusions = pauses + [
+        (s, e)
+        for s, e in (excluded_intervals or [])
+        if s is not None and e is not None and e > s
+    ]
+    uncovered_raw = _raw_overlap_by_study_day(
+        start,
+        end,
+        combined_exclusions,
+        day_start_minute,
+    )
+    uncovered_raw_total = sum(uncovered_raw.values())
+    if uncovered_raw_total <= 0:
+        return {}
+
+    # Scale against *active* wall time (after the session's own pauses), not the
+    # full wall span.  Otherwise a 25-minute active session with a 5-minute pause
+    # would lose the pause twice when external exclusions are applied.
+    effective_duration = int(
+        actual_duration * min(1.0, uncovered_raw_total / active_raw_total)
+    )
+    if effective_duration <= 0:
+        return {}
+    return _normalize(
+        uncovered_raw,
+        effective_duration,
+        start,
+        day_start_minute,
+    )
+
+
 def active_intervals_for_session(session) -> list[tuple[datetime, datetime]]:
     """Merged active (non-paused) wall-clock intervals for a session.
 

@@ -502,6 +502,10 @@ Page({
         // a compatibility request on every dashboard load.
         let choiceSubjectStats = []
         const subjectsResponse = res && res.subjects
+        const totalQuestions = Math.max(
+          0,
+          Number(res && res.overview && res.overview.total_questions) || 0
+        )
         const hasSubjectContract = Boolean(
           subjectsResponse && (
             (Array.isArray(subjectsResponse) && subjectsResponse.length) ||

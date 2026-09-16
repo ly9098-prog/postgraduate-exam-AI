@@ -283,14 +283,23 @@ Page({
     this._navigationLocked = false
     this._wrongIds = []
     this._diagnosisIdByWrongId = Object.create(null)
-    this.measureNavigation()
+
+    // onLoad 只做首屏必需的轻量初始化：导航栏测量结果和 attemptId
+    // 合并为一次 setData，避免连续两次数据同步；网络请求延后到首屏提交后再启动。
     const attemptId = Number(options && options.attempt_id)
-    this.setData({ attemptId })
+    const navigation = this.getNavigationMetrics()
     if (!attemptId) {
-      this.setData({ loading: false, errorText: '缺少考试记录 ID' })
+      this.setData({
+        ...navigation,
+        attemptId: 0,
+        loading: false,
+        errorText: '缺少考试记录 ID',
+      })
       return
     }
-    this.loadResult()
+
+    this.setData({ ...navigation, attemptId })
+    this.deferInitialLoad()
   },
 
   onShow() {
@@ -303,7 +312,7 @@ Page({
     this._loadPromise = null
   },
 
-  measureNavigation() {
+  getNavigationMetrics() {
     let statusBarHeight = 20
     let navBarHeight = 44
     try {
@@ -314,17 +323,35 @@ Page({
         navBarHeight = Math.max(40, Number(menu.height) + 2 * (Number(menu.top) - statusBarHeight))
       }
     } catch (_) {}
-    this.setData({
+    return {
       statusBarHeightPx: Math.round(statusBarHeight),
       navBarHeightPx: Math.round(navBarHeight),
       navTotalHeightPx: Math.round(statusBarHeight + navBarHeight),
-    })
+    }
   },
 
-  async loadResult() {
+  measureNavigation() {
+    this.setData(this.getNavigationMetrics())
+  },
+
+  deferInitialLoad() {
+    const run = () => {
+      if (!this._pageAlive || !this.data.attemptId) return
+      this.loadResult({ skipLoadingState: true })
+    }
+    if (typeof wx.nextTick === 'function') {
+      wx.nextTick(run)
+      return
+    }
+    setTimeout(run, 0)
+  },
+
+  async loadResult(options = {}) {
     if (this._loadPromise) return this._loadPromise
     const seq = ++this._loadSeq
-    this.setData({ loading: true, errorText: '' })
+    if (!options || options.skipLoadingState !== true) {
+      this.setData({ loading: true, errorText: '' })
+    }
     const request = (async () => {
       try {
         const response = await api.get(`/exams/attempts/${this.data.attemptId}/result`)

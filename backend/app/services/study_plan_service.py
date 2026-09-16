@@ -13,20 +13,27 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.subject_scope import EXAM408_ALL_CODES, EXAM408_CORE_CODES
 from app.core.time_utils import (
-    shanghai_date_for_utc,
-    shanghai_date_utc_range,
+    current_study_day,
     shanghai_today,
+    study_day_for_utc,
+    study_day_utc_range,
 )
 from app.models.admin import QuestionVersion, Subject
 from app.models.exam import ExamAttempt
-from app.models.pomodoro import PomodoroSession
+from app.models.pomodoro import PomodoroSession, UserPomodoroSettings
 from app.models.practice_session import PracticeSession
 from app.models.review_scheduler import ReviewRecord
 from app.models.study_plan import StudyPlan, StudyPlanDay
 from app.schemas.study_plan import StudyPlanUpsertRequest
+from app.services.pomodoro_attribution import (
+    split_duration_excluding_intervals,
+    split_session_duration_by_study_day,
+    split_session_duration_excluding_intervals,
+)
 
 CATEGORIES = ("review", "weakness", "new", "exam")
 PRIORITY_LABELS = {
@@ -113,6 +120,36 @@ def _ceil_minutes(seconds: int | float | None) -> int:
     return (value + 59) // 60 if value else 0
 
 
+async def _load_day_start_minute(db: AsyncSession, user_id: int) -> int:
+    value = await db.scalar(
+        select(UserPomodoroSettings.day_start_minute).where(
+            UserPomodoroSettings.user_id == user_id
+        )
+    )
+    return max(0, min(1439, int(value or 0)))
+
+
+def _study_day_seconds(
+    *,
+    start,
+    end,
+    duration_sec: int | None,
+    target_day: date,
+    day_start_minute: int,
+) -> int:
+    if start is None or end is None or end <= start:
+        return 0
+    return int(
+        split_duration_excluding_intervals(
+            start,
+            end,
+            max(0, int(duration_sec or 0)),
+            [],
+            day_start_minute,
+        ).get(target_day, 0)
+    )
+
+
 def _plan_select(db: AsyncSession, user_id: int, *, lock: bool = False):
     stmt = select(StudyPlan).where(StudyPlan.user_id == user_id)
     bind = db.get_bind()
@@ -180,75 +217,126 @@ async def _load_activity_dates(
     end_date: date,
     all_408_ids: list[int],
     core_408_ids: list[int],
+    day_start_minute: int,
 ) -> set[date]:
     if end_date < start_date:
         return set()
-    start_utc = shanghai_date_utc_range(start_date)[0]
-    end_utc = shanghai_date_utc_range(end_date + timedelta(days=1))[0]
-    timestamps = []
+    start_utc = study_day_utc_range(start_date, day_start_minute)[0]
+    end_utc = study_day_utc_range(end_date, day_start_minute)[1]
+    active_dates: set[date] = set()
+
+    if core_408_ids:
+        reviewed_at_values = (
+            await db.scalars(
+                select(ReviewRecord.reviewed_at)
+                .join(
+                    QuestionVersion,
+                    QuestionVersion.id == ReviewRecord.question_version_id,
+                )
+                .where(
+                    ReviewRecord.user_id == user_id,
+                    QuestionVersion.subject_id.in_(core_408_ids),
+                    ReviewRecord.reviewed_at >= start_utc,
+                    ReviewRecord.reviewed_at < end_utc,
+                )
+            )
+        ).all()
+        active_dates.update(
+            study_day_for_utc(value, day_start_minute)
+            for value in reviewed_at_values
+            if value is not None
+        )
 
     if all_408_ids:
-        timestamps.extend(
-            (
-                await db.scalars(
-                    select(PracticeSession.finished_at).where(
-                        PracticeSession.user_id == user_id,
-                        PracticeSession.subject_id.in_(all_408_ids),
-                        PracticeSession.finished_at >= start_utc,
-                        PracticeSession.finished_at < end_utc,
-                    )
+        practice_rows = (
+            await db.execute(
+                select(
+                    PracticeSession.started_at,
+                    PracticeSession.finished_at,
+                    PracticeSession.duration_sec,
+                ).where(
+                    PracticeSession.user_id == user_id,
+                    PracticeSession.subject_id.in_(all_408_ids),
+                    PracticeSession.status == "completed",
+                    PracticeSession.started_at < end_utc,
+                    PracticeSession.finished_at > start_utc,
                 )
-            ).all()
-        )
-        timestamps.extend(
+            )
+        ).all()
+        for row in practice_rows:
+            split = split_duration_excluding_intervals(
+                row.started_at,
+                row.finished_at,
+                max(0, int(row.duration_sec or 0)),
+                [],
+                day_start_minute,
+            )
+            active_dates.update(
+                day
+                for day, sec in split.items()
+                if start_date <= day <= end_date and sec > 0
+            )
+
+        pomodoro_rows = (
             (
-                await db.scalars(
-                    select(PomodoroSession.end_time).where(
+                await db.execute(
+                    select(PomodoroSession)
+                    .options(selectinload(PomodoroSession.pause_intervals))
+                    .where(
                         PomodoroSession.user_id == user_id,
                         PomodoroSession.subject_id.in_(all_408_ids),
                         PomodoroSession.status == "completed",
                         PomodoroSession.end_time.is_not(None),
-                        PomodoroSession.end_time >= start_utc,
-                        PomodoroSession.end_time < end_utc,
+                        PomodoroSession.start_time < end_utc,
+                        PomodoroSession.end_time > start_utc,
                     )
-                )
-            ).all()
-        )
-
-    if core_408_ids:
-        timestamps.extend(
-            (
-                await db.scalars(
-                    select(ReviewRecord.reviewed_at)
-                    .join(
-                        QuestionVersion,
-                        QuestionVersion.id == ReviewRecord.question_version_id,
-                    )
-                    .where(
-                        ReviewRecord.user_id == user_id,
-                        QuestionVersion.subject_id.in_(core_408_ids),
-                        ReviewRecord.reviewed_at >= start_utc,
-                        ReviewRecord.reviewed_at < end_utc,
-                    )
-                )
-            ).all()
-        )
-
-    timestamps.extend(
-        (
-            await db.scalars(
-                select(ExamAttempt.submitted_at).where(
-                    ExamAttempt.user_id == user_id,
-                    ExamAttempt.submitted_at.is_not(None),
-                    ExamAttempt.submitted_at >= start_utc,
-                    ExamAttempt.submitted_at < end_utc,
-                    ExamAttempt.status.in_(("submitted", "expired")),
                 )
             )
-        ).all()
-    )
+            .scalars()
+            .all()
+        )
+        for session in pomodoro_rows:
+            split = split_session_duration_by_study_day(
+                session,
+                session.pause_intervals,
+                day_start_minute,
+            )
+            active_dates.update(
+                day
+                for day, sec in split.items()
+                if start_date <= day <= end_date and sec > 0
+            )
 
-    return {shanghai_date_for_utc(value) for value in timestamps if value is not None}
+    exam_rows = (
+        await db.execute(
+            select(
+                ExamAttempt.started_at,
+                ExamAttempt.submitted_at,
+                ExamAttempt.duration_sec,
+            ).where(
+                ExamAttempt.user_id == user_id,
+                ExamAttempt.submitted_at.is_not(None),
+                ExamAttempt.status.in_(("submitted", "expired")),
+                ExamAttempt.started_at < end_utc,
+                ExamAttempt.submitted_at > start_utc,
+            )
+        )
+    ).all()
+    for row in exam_rows:
+        split = split_duration_excluding_intervals(
+            row.started_at,
+            row.submitted_at,
+            max(0, int(row.duration_sec or 0)),
+            [],
+            day_start_minute,
+        )
+        active_dates.update(
+            day
+            for day, sec in split.items()
+            if start_date <= day <= end_date and sec > 0
+        )
+
+    return active_dates
 
 
 async def _today_completion(
@@ -259,8 +347,9 @@ async def _today_completion(
     planned: dict[str, int],
     all_408_ids: list[int],
     core_408_ids: list[int],
-) -> tuple[dict[str, int], int]:
-    start_utc, end_utc = shanghai_date_utc_range(today)
+    day_start_minute: int,
+) -> tuple[dict[str, int], int, int]:
+    start_utc, end_utc = study_day_utc_range(today, day_start_minute)
 
     review_count = 0
     if core_408_ids:
@@ -283,67 +372,111 @@ async def _today_completion(
             or 0
         )
 
-    session_rows = []
+    practice_rows = []
     if all_408_ids:
-        session_rows = (
+        practice_rows = (
             await db.execute(
-                select(PracticeSession.mode, PracticeSession.duration_sec).where(
+                select(
+                    PracticeSession.started_at,
+                    PracticeSession.finished_at,
+                    PracticeSession.mode,
+                    PracticeSession.duration_sec,
+                ).where(
                     PracticeSession.user_id == user_id,
                     PracticeSession.subject_id.in_(all_408_ids),
-                    PracticeSession.finished_at >= start_utc,
-                    PracticeSession.finished_at < end_utc,
                     PracticeSession.status == "completed",
+                    PracticeSession.started_at < end_utc,
+                    PracticeSession.finished_at > start_utc,
                 )
             )
         ).all()
 
-    smart_sec = sum(
-        int(row.duration_sec or 0)
-        for row in session_rows
-        if str(row.mode or "") == "smart"
-    )
-    other_sec = sum(
-        int(row.duration_sec or 0)
-        for row in session_rows
-        if str(row.mode or "") != "smart"
-    )
+    smart_sec = 0
+    other_sec = 0
+    activity_spans: list[tuple] = []
+    for row in practice_rows:
+        contributed = _study_day_seconds(
+            start=row.started_at,
+            end=row.finished_at,
+            duration_sec=row.duration_sec,
+            target_day=today,
+            day_start_minute=day_start_minute,
+        )
+        if str(row.mode or "") == "smart":
+            smart_sec += contributed
+        else:
+            other_sec += contributed
+        if row.finished_at > row.started_at:
+            activity_spans.append((row.started_at, row.finished_at))
+
     smart_minutes = _ceil_minutes(smart_sec)
     other_minutes = _ceil_minutes(other_sec)
 
-    exam_sec = int(
-        (
-            await db.execute(
-                select(func.coalesce(func.sum(ExamAttempt.duration_sec), 0)).where(
-                    ExamAttempt.user_id == user_id,
-                    ExamAttempt.submitted_at.is_not(None),
-                    ExamAttempt.submitted_at >= start_utc,
-                    ExamAttempt.submitted_at < end_utc,
-                    ExamAttempt.status.in_(("submitted", "expired")),
-                )
+    exam_rows = (
+        await db.execute(
+            select(
+                ExamAttempt.started_at,
+                ExamAttempt.submitted_at,
+                ExamAttempt.duration_sec,
+            ).where(
+                ExamAttempt.user_id == user_id,
+                ExamAttempt.submitted_at.is_not(None),
+                ExamAttempt.status.in_(("submitted", "expired")),
+                ExamAttempt.started_at < end_utc,
+                ExamAttempt.submitted_at > start_utc,
             )
-        ).scalar_one()
-        or 0
-    )
+        )
+    ).all()
+    exam_sec = 0
+    for row in exam_rows:
+        exam_sec += _study_day_seconds(
+            start=row.started_at,
+            end=row.submitted_at,
+            duration_sec=row.duration_sec,
+            target_day=today,
+            day_start_minute=day_start_minute,
+        )
+        if row.submitted_at is not None and row.submitted_at > row.started_at:
+            activity_spans.append((row.started_at, row.submitted_at))
 
+    # Pomodoro focus is a *supplement* to durable practice/exam facts.  The raw
+    # focus total remains visible as focus_minutes, while only active focus wall
+    # time not covered by practice/exam intervals is eligible to advance the
+    # study-plan completion budget.  Session pauses are removed before coverage
+    # is applied, so paused minutes are never counted or subtracted twice.
     focus_sec = 0
+    focus_supplement_sec = 0
     if all_408_ids:
-        focus_sec = int(
+        pomodoro_rows = (
             (
                 await db.execute(
-                    select(
-                        func.coalesce(func.sum(PomodoroSession.actual_duration), 0)
-                    ).where(
+                    select(PomodoroSession)
+                    .options(selectinload(PomodoroSession.pause_intervals))
+                    .where(
                         PomodoroSession.user_id == user_id,
                         PomodoroSession.subject_id.in_(all_408_ids),
                         PomodoroSession.status == "completed",
                         PomodoroSession.end_time.is_not(None),
-                        PomodoroSession.end_time >= start_utc,
-                        PomodoroSession.end_time < end_utc,
+                        PomodoroSession.start_time < end_utc,
+                        PomodoroSession.end_time > start_utc,
                     )
                 )
-            ).scalar_one()
-            or 0
+            )
+            .scalars()
+            .all()
         )
+        for session in pomodoro_rows:
+            focus_sec += split_session_duration_by_study_day(
+                session,
+                session.pause_intervals,
+                day_start_minute,
+            ).get(today, 0)
+            focus_supplement_sec += split_session_duration_excluding_intervals(
+                session,
+                session.pause_intervals,
+                activity_spans,
+                day_start_minute,
+            ).get(today, 0)
 
     completed = {category: 0 for category in CATEGORIES}
     # Review runner has no server-side elapsed timer. Keep the same 2 questions /
@@ -370,7 +503,29 @@ async def _today_completion(
             completed["weakness"] += split["weakness"]
             completed["new"] += split["new"]
 
-    return completed, _ceil_minutes(focus_sec)
+    return completed, _ceil_minutes(focus_sec), _ceil_minutes(focus_supplement_sec)
+
+
+def _credit_supplemental_focus(
+    *,
+    completed: dict[str, int],
+    target_minutes: int,
+    supplement_minutes: int,
+) -> int:
+    """Return the de-duplicated Pomodoro minutes credited to today's target.
+
+    Pomodoro focus has no durable task-category intent, so it advances only the
+    headline time budget instead of being mislabeled as review/weakness/new/exam.
+    The credit is capped at the still-unfilled target after authoritative activity
+    minutes have been counted.
+    """
+    direct_total = sum(
+        max(0, int(completed.get(category) or 0)) for category in CATEGORIES
+    )
+    return min(
+        max(0, int(supplement_minutes)),
+        max(0, int(target_minutes) - direct_total),
+    )
 
 
 def _task_by_type(hub: dict, task_type: str) -> dict | None:
@@ -391,6 +546,7 @@ def _build_snapshot_payload(
     hub: dict,
     exam_suggestion: dict | None,
     prior_active_days: int,
+    day_start_minute: int,
 ) -> tuple[int, bool, dict[str, int], dict]:
     days_remaining_raw = (plan.target_date - today).days
     phase, _ = _phase_for_days(max(0, days_remaining_raw))
@@ -416,6 +572,7 @@ def _build_snapshot_payload(
         "availability": availability,
         "weights": {key: round(float(value), 4) for key, value in weights.items()},
         "prior_active_days": int(prior_active_days),
+        "day_start_minute": int(day_start_minute),
         "target_passed": bool(target_passed),
         "exam": exam_suggestion or {},
     }
@@ -430,6 +587,7 @@ async def _ensure_day_snapshot(
     hub: dict,
     exam_suggestion: dict | None,
     prior_active_days: int,
+    day_start_minute: int,
 ) -> StudyPlanDay:
     day_stmt = select(StudyPlanDay).where(
         StudyPlanDay.plan_id == int(plan.id),
@@ -440,7 +598,9 @@ async def _ensure_day_snapshot(
         day_stmt = day_stmt.with_for_update()
     row = await db.scalar(day_stmt)
     if row is not None and int(row.plan_revision) == int(plan.revision):
-        return row
+        snapshot_day_start = int((row.basis_json or {}).get("day_start_minute") or 0)
+        if snapshot_day_start == int(day_start_minute):
+            return row
 
     target_minutes, rest_day, allocation, basis = _build_snapshot_payload(
         plan=plan,
@@ -448,6 +608,7 @@ async def _ensure_day_snapshot(
         hub=hub,
         exam_suggestion=exam_suggestion,
         prior_active_days=prior_active_days,
+        day_start_minute=day_start_minute,
     )
     if row is not None:
         row.plan_revision = int(plan.revision)
@@ -493,12 +654,14 @@ def _dynamic_remaining(
     target_minutes: int,
     planned: dict[str, int],
     completed: dict[str, int],
+    extra_completed_minutes: int = 0,
     current_weights: dict[str, float],
     availability: dict[str, bool],
 ) -> dict[str, int]:
     completed_total = min(
         max(0, int(target_minutes)),
-        sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES),
+        sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES)
+        + max(0, int(extra_completed_minutes)),
     )
     budget = max(0, int(target_minutes) - completed_total)
     if budget <= 0:
@@ -700,7 +863,8 @@ async def deactivate_study_plan(db: AsyncSession, user_id: int) -> None:
 
 
 async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
-    today = shanghai_today()
+    day_start_minute = await _load_day_start_minute(db, user_id)
+    today = current_study_day(day_start_minute)
     plan = await db.scalar(
         select(StudyPlan).where(
             StudyPlan.user_id == user_id,
@@ -733,6 +897,7 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         end_date=today - timedelta(days=1),
         all_408_ids=all_408_ids,
         core_408_ids=core_408_ids,
+        day_start_minute=day_start_minute,
     )
 
     # Hub/exam aggregation above can take long enough for another device to save
@@ -759,6 +924,7 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         hub=hub,
         exam_suggestion=exam_suggestion,
         prior_active_days=len(prior_dates),
+        day_start_minute=day_start_minute,
     )
     # _ensure_day_snapshot may return an already-current row without committing;
     # release the plan row lock before the remaining read-only aggregation.
@@ -768,13 +934,19 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         category: int((day.allocation_json or {}).get(category) or 0)
         for category in CATEGORIES
     }
-    completed, focus_minutes = await _today_completion(
+    completed, focus_minutes, supplemental_focus_minutes = await _today_completion(
         db,
         user_id,
         today=today,
         planned=planned,
         all_408_ids=all_408_ids,
         core_408_ids=core_408_ids,
+        day_start_minute=day_start_minute,
+    )
+    credited_focus_minutes = _credit_supplemental_focus(
+        completed=completed,
+        target_minutes=int(day.target_minutes),
+        supplement_minutes=supplemental_focus_minutes,
     )
     current_availability = _category_availability(hub, exam_suggestion)
     days_remaining_raw = (plan.target_date - today).days
@@ -789,6 +961,7 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         target_minutes=int(day.target_minutes),
         planned=planned,
         completed=completed,
+        extra_completed_minutes=credited_focus_minutes,
         current_weights=current_weights,
         availability=current_availability,
     )
@@ -803,7 +976,8 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
 
     completed_total = min(
         int(day.target_minutes),
-        sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES),
+        sum(max(0, int(completed.get(category) or 0)) for category in CATEGORIES)
+        + max(0, int(credited_focus_minutes)),
     )
     remaining_total = max(0, int(day.target_minutes) - completed_total)
     completion_percent = (
