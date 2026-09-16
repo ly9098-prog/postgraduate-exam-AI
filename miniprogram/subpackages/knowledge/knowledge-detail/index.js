@@ -1,4 +1,5 @@
 const api = require('../../../utils/api')
+const { knowledgePracticeSync } = require('../../../utils/storage')
 const RELATION_META = {
 prerequisite: {
 label: '前置知识',
@@ -208,6 +209,7 @@ return
 const returnTo = encodeURIComponent(`/subpackages/knowledge/knowledge-detail/index?knowledge_point_id=${this.knowledgePointId}`)
 const subjectName = encodeURIComponent(String(d.subject_name || '专项练习'))
 const includeDescendants = Number(p.include_descendants || 0) === 1 || Boolean(d.is_parent_node)
+knowledgePracticeSync.setBaseline(Number(p.subject_id) || 0, Number(p.knowledge_point_id) || 0, Number(d.attempt_count) || 0)
 const url = `/subpackages/study/practice/practice?subject_id=${p.subject_id}&subject_name=${subjectName}&mode=random&count=${p.count || 10}&knowledge_point_id=${p.knowledge_point_id}&include_descendants=${includeDescendants ? 1 : 0}&include_children=1&allow_repeat=1&autostart=1&source=knowledge_map&return_to=${returnTo}`
 this._practiceNavigationPending = true
 if (this._practiceLaunchFeedbackTimer) clearTimeout(this._practiceLaunchFeedbackTimer)

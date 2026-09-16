@@ -145,8 +145,8 @@ const ACTIONS = {
     build: wq => ({ route: 'practice', routeParams: routeParamsForPractice(wq, 6, 'smart') }),
   },
   memory_error: {
-    title: '加入间隔复习',
-    reason: '记忆型错误优先交给今日复习循环，用时间间隔验证是否真正记住。',
+    title: '进入今日复习',
+    reason: '记忆型错误先进入今日复习循环，用时间间隔验证是否真正记住。',
     actionLabel: '去今日复习',
     build: () => ({ route: 'review_today', routeParams: {} }),
   },
@@ -189,11 +189,13 @@ const ACTIONS = {
 }
 
 function buildNextAction(wq, diagnosis) {
-  const primary = String(
+  // Legacy diagnosis records can still carry the old taxonomy name, so normalize
+  // before the ACTIONS lookup instead of falling through to the unknown action.
+  const primary = normalizeType(String(
     diagnosis && (diagnosis.primaryType || diagnosis.primary_type) ||
     wq && (wq.error_type || wq.errorType) ||
     'unknown'
-  )
+  ))
   const spec = ACTIONS[primary] || ACTIONS.unknown
   const route = spec.build(wq || {})
   return {

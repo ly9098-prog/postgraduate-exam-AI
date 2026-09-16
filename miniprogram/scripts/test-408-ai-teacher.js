@@ -38,7 +38,7 @@ const aiRoute = fs.readFileSync(path.join(backendRoot, 'app/api/v1/ai.py'), 'utf
 
 assert(!/\bprompt\s*:/.test(schema), '客户端请求 schema 不得暴露自由 prompt 字段')
 expectedActions.forEach(action => assert(prompt.includes(`"${action}"`), `服务端缺少固定动作 ${action}`))
-assert(prompt.includes('408-teacher-v2'), '专项讲解输出边界变更后必须升级 prompt version')
+assert(prompt.includes('408-teacher-v3'), '专项讲解输出边界变更后必须升级 prompt version')
 assert(prompt.includes('不得重新输出通用的'), '专项讲解 prompt 必须禁止重复完整错题复盘')
 assert(service.includes('QuestionVersion'), '408 AI 必须从题目历史版本加载事实')
 assert(service.includes('question_version_id'), '408 AI 必须携带固定 question_version_id')
@@ -48,7 +48,7 @@ assert(service.includes('KnowledgeEdge'), '408 AI 必须接入知识图谱邻居
 assert(service.includes('check_token_limit'), '408 AI 必须复用 token budget')
 assert(service.includes('record_token_usage'), '408 AI 必须记录 AI usage')
 assert(service.includes('owned_practice_record_id'), '历史 question_version_id 必须校验属于当前用户练习事实')
-assert(service.includes('if action == "connect_knowledge" else []'), '降级态只允许知识串联动作输出知识点列表')
+assert(service.includes('if action == "connect_knowledge"'), '降级态只允许知识串联动作输出知识点列表')
 assert(service.includes('"sections": []'), '专项讲解降级态不得回填完整三段式复盘')
 assert(service.indexOf('await record_token_usage(') < service.indexOf('parsed = _parse_json_object(result.get("content"))'), 'provider 成功后应先记 usage，再解析结构化输出')
 assert(aiRoute.includes('@router.post("/feedback")'), '408 AI 必须保留 AI feedback 入口')

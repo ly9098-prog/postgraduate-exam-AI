@@ -63,7 +63,6 @@ assert.strictEqual(verified.requires_review, false)
 const tableOnlyModel = stemRender.buildRenderModel({
   id: 9001,
   content: {
-    stem: '根据下表回答问题。',
     render_mode: 'segments',
     segments: [{
       type: 'table',
@@ -72,8 +71,7 @@ const tableOnlyModel = stemRender.buildRenderModel({
   },
 }, null, { enableMathImage: false, SAFE_MODE: false })
 assert.strictEqual(tableOnlyModel.mode, stemRender.RENDER_MODE.SEGMENTS)
-assert.strictEqual(tableOnlyModel.segments[0].type, 'text')
-assert.strictEqual(tableOnlyModel.segments[0].text, '根据下表回答问题。')
-assert.strictEqual(tableOnlyModel.segments[1].type, 'table')
+assert.strictEqual(tableOnlyModel.segments[0].type, 'table')
+assert.strictEqual(tableOnlyModel.segments.length, 1)
 
 console.log('table-structure tests passed')

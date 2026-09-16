@@ -65,7 +65,7 @@ const configMockPath = path.resolve(__dirname, '../config.js')
 const debugMockPath = path.resolve(__dirname, '../utils/debug.js')
 require.cache = require.cache || {}
 require.cache[apiMockPath] = { exports: { get: () => Promise.resolve({}), put: () => Promise.resolve({}) } }
-require.cache[storageMockPath] = { exports: { KEYS: {}, get: () => null, set() {} } }
+require.cache[storageMockPath] = { exports: { KEYS: {}, get: () => null, set() {}, pomodoroTaskTypes: { labelForSession() { return '' } } } }
 require.cache[configMockPath] = { exports: {} }
 require.cache[debugMockPath] = { exports: { debugLog() {}, isDebugMode: () => false, saveDebugSnapshot() {} } }
 
@@ -269,7 +269,8 @@ t('题目下发批次与交卷绑定，且存储失败不虚假承诺可跨进�
   const doSubmit = extractMethod(js, 'doSubmit')
   assert.ok(doSubmit.indexOf('submitPayload.batch_token = submission.batchToken') >= 0, '交卷必须携带冻结的 batch_token')
   assert.ok(doSubmit.indexOf('submission.pendingPersisted') >= 0, '必须记录待确认快照是否真正持久化')
-  assert.ok(doSubmit.indexOf('当前设备未能保存恢复快照') >= 0, '持久化失败时不得承诺关闭小程序后可恢复')
+  assert.ok(doSubmit.indexOf('submission.pendingPersisted') >= 0 && doSubmit.indexOf('?') >= 0, '持久化状态必须决定用户提示')
+  assert.ok(doSubmit.indexOf('暂未保存交卷进度，请保持当前页面并重试。') >= 0, '持久化失败必须要求用户保持页面重试')
 })
 
 

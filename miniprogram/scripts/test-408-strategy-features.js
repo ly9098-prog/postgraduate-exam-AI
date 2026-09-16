@@ -55,6 +55,39 @@ assert.strictEqual(onePctBudget.subjects[0].accuracyPct, 1, 'accuracyPct=1 must 
 const nullAccuracyBudget = strategy.buildChoiceLossBudget([{ subject_code: 'operating_system', totalQuestions: 12, accuracy: null, accuracyPct: null }])
 assert.strictEqual(nullAccuracyBudget.subjects.find(item => item.code === 'operating_system').hasData, false)
 
+// S1: a historical attempt cannot clear a pending practice receipt.
+assert.strictEqual(storage.knowledgePracticeSync.resolveReceipt({
+  subjectId: 3,
+  knowledgePointId: 7,
+  baselineAttemptCount: 10,
+  answeredCount: 2,
+}, 10), false, 'old attempt_count alone must not resolve the current session receipt')
+assert.strictEqual(storage.knowledgePracticeSync.resolveReceipt({
+  subjectId: 3,
+  knowledgePointId: 7,
+  baselineAttemptCount: 10,
+  answeredCount: 2,
+}, 12), true, 'direct attempt_count must reach baseline + answered count')
+const baselineOwner = { id: 9001 }
+memory.user = baselineOwner
+storage.knowledgePracticeSync.setBaseline(3, 7, 10)
+assert.strictEqual(storage.knowledgePracticeSync.consumeBaseline(3, 7), 10)
+assert.strictEqual(storage.knowledgePracticeSync.consumeBaseline(3, 7), 0, 'baseline must be consumed once')
+const receipt = storage.knowledgePracticeSync.record({
+  subjectId: 3,
+  knowledgePointId: 7,
+  answeredCount: 2,
+  correctCount: 1,
+  wrongCount: 1,
+  baselineAttemptCount: 10,
+})
+assert.strictEqual(receipt.expectedMinAttemptCount, 12)
+assert.deepStrictEqual(storage.knowledgePracticeSync.getForSubject(3).map(item => item.knowledgePointId), [7])
+assert.strictEqual(storage.knowledgePracticeSync.hasPending(4), false)
+storage.knowledgePracticeSync.remove([receipt])
+assert.strictEqual(storage.knowledgePracticeSync.hasPending(3), false)
+memory.user = { id: 1001 }
+
 // P0: error-cause -> next action router.
 const wq = { subject_id: 10, subject_code: 'operating_system', knowledge_point_id: 99 }
 const expectedRoutes = {

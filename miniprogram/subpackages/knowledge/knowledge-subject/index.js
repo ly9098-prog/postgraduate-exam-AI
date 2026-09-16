@@ -520,13 +520,15 @@ const backendAttemptCount = nonnegative(item.attempt_count)
 const backendStatus = STATUS_TEXT[item.status] ? item.status : 'no_data'
 const pointId = Number(item.knowledge_point_id) || 0
 const receipt = receiptByPointId.get(pointId) || null
-const backendHasEvidence = backendAttemptCount > 0 || backendAccuracy != null || backendStatus !== 'no_data'
-if (receipt && backendHasEvidence) resolvedReceipts.push(receipt)
-const pendingSync = Boolean(receipt && !backendHasEvidence)
+// A historical attempt is not proof that the latest session projected.
+// Only the direct counter reaching launch baseline + expected answers clears it.
+const receiptResolved = Boolean(receipt && knowledgePracticeSync.resolveReceipt(receipt, backendAttemptCount))
+if (receiptResolved) resolvedReceipts.push(receipt)
+const pendingSync = Boolean(receipt && !receiptResolved)
 const receiptAnswered = receipt ? Math.max(0, Number(receipt.correctCount) || 0) + Math.max(0, Number(receipt.wrongCount) || 0) : 0
 const receiptAccuracy = receiptAnswered > 0 ? percent((Number(receipt.correctCount) || 0) / receiptAnswered * 100) : null
 const status = pendingSync || (backendStatus === 'no_data' && backendAttemptCount > 0) ? 'insufficient' : backendStatus
-const attemptCount = pendingSync ? Math.max(backendAttemptCount, Number(receipt.answeredCount) || receiptAnswered) : backendAttemptCount
+const attemptCount = pendingSync ? Math.max(backendAttemptCount, receipt.expectedMinAttemptCount || receiptAnswered) : backendAttemptCount
 const aliases = Array.isArray(item.aliases)
 ? item.aliases.map(alias => String(alias || '').trim()).filter(Boolean)
 : []
@@ -1688,6 +1690,13 @@ this._persistViewState(state)
 const count = Math.min(10, Math.max(1, Math.floor(item.trainable_question_count)))
 const returnTo = encodeURIComponent(`/subpackages/knowledge/knowledge-subject/index?subject_id=${this.subjectId}&restore_state=1`)
 const subjectName = encodeURIComponent(String((this.data.subject && this.data.subject.subject_name) || item.groupName || '专项练习'))
+const pendingBaselineReceipt = knowledgePracticeSync.getForSubject(this.subjectId)
+  .find(receipt => Number(receipt.knowledgePointId) === Number(item.knowledge_point_id))
+knowledgePracticeSync.setBaseline(
+  this.subjectId,
+  item.knowledge_point_id,
+  pendingBaselineReceipt ? pendingBaselineReceipt.expectedMinAttemptCount : item.attempt_count,
+)
 const url = `/subpackages/study/practice/practice?subject_id=${this.subjectId}&subject_name=${subjectName}&mode=random&count=${count}&knowledge_point_id=${item.knowledge_point_id}&include_children=1&allow_repeat=1&autostart=1&source=knowledge_map&return_to=${returnTo}`
 this._practiceNavigationPending = true
 this._refreshAfterReturn = true

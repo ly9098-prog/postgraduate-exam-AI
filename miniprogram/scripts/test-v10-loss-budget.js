@@ -13,11 +13,11 @@ const processSlice = dashboard.slice(processStart, dashboard.indexOf('// ── 
 assert.ok(/const choiceLossBudget = buildChoiceBudgetWithFallback\(subjects, choiceSubjectStats\)/.test(processSlice), 'loss budget is not calculated from dashboard subjects')
 assert.ok(/this\.setData\(\{[\s\S]*?subjects,\s*choiceLossBudget,\s*reviewRisk,/.test(processSlice), 'calculated loss budget is not committed by setData')
 
-// Long-term compatibility: when dashboard-v2 subject rows are incomplete, use the
-// existing all-time /stats/dashboard subject_stats instead of leaving the card at 0/4.
+// Long-term compatibility: legacy subject_stats is reserved for a real v2 contract
+// gap (no subject rows), not for partial user coverage of 1-3 subjects.
 assert.ok(/api\.get\('\/stats\/dashboard'\)/.test(dashboard), 'legacy subject_stats fallback request missing')
 assert.ok(/legacyDashboard\.subject_stats/.test(dashboard), 'legacy subject_stats are not consumed')
-assert.ok(/previewBudget\.coveredSubjects < 4/.test(dashboard), 'fallback should run only when subject coverage is incomplete')
+assert.ok(/!hasSubjectContract/.test(dashboard), 'fallback should run only when the v2 subject contract is missing')
 assert.ok(/include_subjects:\s*true/.test(dashboard), 'dashboard-v2 should explicitly request subject statistics when supported')
 assert.ok(/insightChoiceBudget\.coveredSubjects >= currentChoiceBudget\.coveredSubjects/.test(dashboard), 'insight refresh must not downgrade an already better budget snapshot')
 
@@ -42,5 +42,11 @@ assert.strictEqual(budget.coveredSubjects, 4, 'legacy subject_stats should estab
 assert.strictEqual(budget.coveragePct, 100)
 assert.ok(budget.subjects.every(item => item.hasData), 'all four subject rows should have usable loss estimates')
 assert.ok(budget.projectedLoss > 0, 'projected loss should be calculated from real accuracy data')
+
+// Runtime helper regression: dashboard-v2 remains authoritative; legacy stats only
+// fills a missing subject instead of overwriting a valid primary row.
+const dashboardSource = fs.readFileSync(path.join(root, 'pages/dashboard/dashboard.js'), 'utf8')
+assert.ok(dashboardSource.includes('primaryCodes.has(code)'), 'legacy fallback must not overwrite an existing primary subject')
+assert.ok(dashboardSource.includes('!hasSubjectContract'), 'legacy fallback must detect a v2 contract gap, not user coverage')
 
 console.log('v10 choice loss budget regression checks passed')

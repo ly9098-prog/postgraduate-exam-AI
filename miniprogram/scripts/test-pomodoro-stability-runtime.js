@@ -58,7 +58,9 @@ const sandbox = {
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
-    if (request === '../../utils/pomodoro-theme') {
+    if (request === './utils/route-params') return { safeDecodeURIComponent: v => v }
+    if (request === './utils/subject-scope') return { filter408SubjectTree: value => value }
+    if (request === '../../utils/pomodoro-theme' || request === './utils/pomodoro-theme') {
       return {
         getTheme: () => 'light',
         normalizeTheme: v => v || 'light',
@@ -71,6 +73,19 @@ const sandbox = {
         parseServerUtc: value => Date.parse(value),
         getChinaWallParts: () => ({}),
         getChinaDayStartUtcMs: () => 0,
+      }
+    }
+    if (request === '../../utils/storage') {
+      return {
+        pomodoroTaskTypes: {
+          DEFAULT_TYPE: 'new_questions',
+          label(type) { return type === 'new_questions' ? '新题' : type },
+          getSelected() { return 'new_questions' },
+          setSelected(type) { return type },
+          recordSession() {},
+          typeForSession() { return '' },
+          labelForSession() { return '' },
+        },
       }
     }
     throw new Error('unexpected require: ' + request)

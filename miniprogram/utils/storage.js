@@ -385,7 +385,10 @@ function strategyCandidate(meta, strategy, mastery) {
   }
 
   const count = strategy.stage === 'maintenance' ? 10 : 20
-  const mode = strategy.stage === 'exam' ? 'smart' : 'smart'
+  // `exam_list` is only wired on the study-plan allocation route today.  The Home
+  // primary-task handler would silently ignore it, so keep exam detection on the
+  // stable smart-practice route until that navigation path is unified.
+  const mode = 'smart'
   const title = strategy.stage === 'maintenance'
     ? `${meta.shortName}保温 ${count} 题`
     : (strategy.stage === 'exam' ? `${meta.shortName}选择题检测` : `${meta.shortName}二轮专项 ${count} 题`)
@@ -560,6 +563,190 @@ function labelForSession(session) {
 // eslint-disable-next-line no-use-before-define
 const pomodoroTaskTypes = { STORAGE_KEY: POMODORO_TASK_RECORDS_STORAGE_KEY, SELECTION_KEY, TYPES, TYPE_MAP, DEFAULT_TYPE, normalize, label, getSelected, setSelected, recordSession, typeForSession, labelForSession }
 
+// ---------------------------------------------------------------------------
+// Knowledge-map practice receipts.
+//
+// A receipt intentionally tracks the direct attempt baseline of the node used to
+// launch the session (the backend knowledge-map node's ``attempt_count`` is also
+// direct, not subtree-aggregated).  A node is resolved only when that direct
+// counter has advanced by the receipt's expected answered count.  A mere
+// historical attempt cannot accidentally clear a pending session.
+// ---------------------------------------------------------------------------
+const KNOWLEDGE_PRACTICE_SYNC_STORAGE_KEY = 'knowledge_practice_sync_receipts_v1'
+const KNOWLEDGE_PRACTICE_SYNC_BASELINE_STORAGE_KEY = 'knowledge_practice_sync_baselines_v1'
+const KNOWLEDGE_PRACTICE_SYNC_MAX_RECEIPTS = 120
+
+function loadKnowledgePracticeSyncData() {
+  const raw = get(KNOWLEDGE_PRACTICE_SYNC_STORAGE_KEY)
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { version: 1, owner: '', receipts: [] }
+  const receipts = Array.isArray(raw.receipts) ? raw.receipts : []
+  return {
+    version: Number(raw.version) || 1,
+    owner: String(raw.owner || ''),
+    receipts,
+  }
+}
+
+function knowledgeOwnerFingerprint() {
+  return ownerFingerprint()
+}
+
+function saveKnowledgePracticeSyncData(data) {
+  set(KNOWLEDGE_PRACTICE_SYNC_STORAGE_KEY, data)
+}
+
+function knowledgePracticeReceiptKey(subjectId, knowledgePointId) {
+  return `${Math.max(0, Number(subjectId) || 0)}:${Math.max(0, Number(knowledgePointId) || 0)}`
+}
+
+function nonNegativeCount(value) {
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? Math.max(0, Math.floor(n)) : 0
+}
+
+function normalizeKnowledgePracticeReceipt(input) {
+  const source = input && typeof input === 'object' ? input : {}
+  const subjectId = Math.max(0, nonNegativeCount(source.subjectId))
+  const knowledgePointId = Math.max(0, nonNegativeCount(source.knowledgePointId))
+  const answeredCount = nonNegativeCount(source.answeredCount)
+  const correctCount = Math.min(answeredCount, Math.max(0, nonNegativeCount(source.correctCount)))
+  const wrongCount = Math.min(answeredCount - correctCount, Math.max(0, nonNegativeCount(source.wrongCount)))
+  const baselineAttemptCount = Math.max(0, nonNegativeCount(source.baselineAttemptCount))
+  return {
+    subjectId,
+    knowledgePointId,
+    includeDescendants: source.includeDescendants === true,
+    answeredCount,
+    correctCount,
+    wrongCount,
+    baselineAttemptCount,
+    expectedMinAttemptCount: baselineAttemptCount + answeredCount,
+    requestId: String(source.requestId || '').slice(0, 128),
+    rootName: String(source.rootName || '').slice(0, 80),
+    createdAt: Number(source.createdAt) || Date.now(),
+  }
+}
+
+const knowledgePracticeSync = {
+  STORAGE_KEY: KNOWLEDGE_PRACTICE_SYNC_STORAGE_KEY,
+  BASELINE_STORAGE_KEY: KNOWLEDGE_PRACTICE_SYNC_BASELINE_STORAGE_KEY,
+  setBaseline(subjectId, knowledgePointId, attemptCount) {
+    const key = knowledgePracticeReceiptKey(subjectId, knowledgePointId)
+    if (key === '0:0') return
+    const owner = knowledgeOwnerFingerprint()
+    const raw = get(KNOWLEDGE_PRACTICE_SYNC_BASELINE_STORAGE_KEY)
+    const data = raw && typeof raw === 'object' && !Array.isArray(raw) && String(raw.owner || '') === owner
+      ? raw
+      : { version: 1, owner, baselines: {} }
+    data.version = 1
+    data.owner = owner
+    data.baselines = data.baselines && typeof data.baselines === 'object' && !Array.isArray(data.baselines)
+      ? data.baselines
+      : {}
+    data.baselines[key] = Math.max(0, nonNegativeCount(attemptCount))
+    set(KNOWLEDGE_PRACTICE_SYNC_BASELINE_STORAGE_KEY, data)
+  },
+  consumeBaseline(subjectId, knowledgePointId) {
+    const key = knowledgePracticeReceiptKey(subjectId, knowledgePointId)
+    if (key === '0:0') return 0
+    const owner = knowledgeOwnerFingerprint()
+    const raw = get(KNOWLEDGE_PRACTICE_SYNC_BASELINE_STORAGE_KEY)
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || String(raw.owner || '') !== owner) return 0
+    const baselines = raw.baselines && typeof raw.baselines === 'object' && !Array.isArray(raw.baselines)
+      ? raw.baselines
+      : {}
+    const baseline = nonNegativeCount(baselines[key])
+    delete baselines[key]
+    set(KNOWLEDGE_PRACTICE_SYNC_BASELINE_STORAGE_KEY, raw)
+    return baseline
+  },
+  record(input) {
+    const receipt = normalizeKnowledgePracticeReceipt(input)
+    if (!receipt.subjectId || !receipt.knowledgePointId || !receipt.answeredCount) return null
+    const data = loadKnowledgePracticeSyncData()
+    const owner = knowledgeOwnerFingerprint()
+    const currentOwner = data.owner || owner
+    if (currentOwner !== owner) {
+      data.owner = owner
+      data.receipts = []
+    }
+    data.version = 1
+    data.owner = owner
+    const byKey = new Map()
+    data.receipts.forEach((item) => {
+      const normalized = normalizeKnowledgePracticeReceipt(item)
+      const key = knowledgePracticeReceiptKey(normalized.subjectId, normalized.knowledgePointId)
+      byKey.set(key, normalized)
+    })
+    const normalizedCurrent = normalizeKnowledgePracticeReceipt(receipt)
+    const currentKey = knowledgePracticeReceiptKey(
+      normalizedCurrent.subjectId,
+      normalizedCurrent.knowledgePointId
+    )
+    const existingCurrent = byKey.get(currentKey)
+    if (existingCurrent) {
+      // The latest launch wins, but a lower baseline is kept so a receipt can only
+      // resolve after every absorbed expected session has reached the map endpoint.
+      byKey.set(currentKey, {
+        ...normalizedCurrent,
+        baselineAttemptCount: Math.min(
+          normalizedCurrent.baselineAttemptCount,
+          existingCurrent.baselineAttemptCount
+        ),
+        expectedMinAttemptCount: Math.max(
+          normalizedCurrent.expectedMinAttemptCount,
+          existingCurrent.expectedMinAttemptCount
+        ),
+        createdAt: Math.max(normalizedCurrent.createdAt, existingCurrent.createdAt || 0),
+        requestId: normalizedCurrent.requestId || existingCurrent.requestId || '',
+      })
+    } else {
+      byKey.set(currentKey, normalizedCurrent)
+    }
+    data.receipts = Array.from(byKey.values())
+    if (data.receipts.length > KNOWLEDGE_PRACTICE_SYNC_MAX_RECEIPTS) {
+      data.receipts.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+      data.receipts = data.receipts.slice(0, KNOWLEDGE_PRACTICE_SYNC_MAX_RECEIPTS)
+    }
+    saveKnowledgePracticeSyncData(data)
+    return byKey.get(knowledgePracticeReceiptKey(receipt.subjectId, receipt.knowledgePointId)) || receipt
+  },
+  getForSubject(subjectId) {
+    const wanted = Math.max(0, Number(subjectId) || 0)
+    if (!wanted) return []
+    const data = loadKnowledgePracticeSyncData()
+    const owner = knowledgeOwnerFingerprint()
+    if (!data.owner || data.owner !== owner) return []
+    return data.receipts
+      .map(normalizeKnowledgePracticeReceipt)
+      .filter(item => item.subjectId === wanted && item.knowledgePointId > 0 && item.answeredCount > 0)
+  },
+  hasPending(subjectId) {
+    return this.getForSubject(subjectId).length > 0
+  },
+  remove(receipts) {
+    const list = Array.isArray(receipts) ? receipts : []
+    if (!list.length) return
+    const data = loadKnowledgePracticeSyncData()
+    const owner = knowledgeOwnerFingerprint()
+    if (!data.owner || data.owner !== owner) return
+    const removed = new Set(list.map(item => {
+      const receipt = item && typeof item === 'object' ? item : {}
+      return knowledgePracticeReceiptKey(receipt.subjectId, receipt.knowledgePointId)
+    }))
+    data.receipts = data.receipts.filter((item) => {
+      const normalized = normalizeKnowledgePracticeReceipt(item)
+      return !removed.has(knowledgePracticeReceiptKey(normalized.subjectId, normalized.knowledgePointId))
+    })
+    saveKnowledgePracticeSyncData(data)
+  },
+  resolveReceipt(receipt, backendAttemptCount) {
+    const normalized = normalizeKnowledgePracticeReceipt(receipt)
+    if (!normalized.knowledgePointId || !normalized.answeredCount) return false
+    return nonNegativeCount(backendAttemptCount) >= normalized.expectedMinAttemptCount
+  },
+}
+
 module.exports = {
   KEYS,
   get,
@@ -571,4 +758,5 @@ module.exports = {
   PROTECTED_KEYS,
   studyStrategy,
   pomodoroTaskTypes,
+  knowledgePracticeSync,
 }

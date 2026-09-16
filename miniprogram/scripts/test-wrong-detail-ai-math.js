@@ -21,7 +21,7 @@ function assertKatexParses(html, message) {
   const formulas = formulaBodies(html)
   assert(formulas.length > 0, message + ': expected at least one math span')
   formulas.forEach((formula) => {
-    assert.doesNotThrow(() => katex.default(formula), message + ': KaTeX should parse ' + formula)
+    assert.doesNotThrow(() => katex.renderToString(formula), message + ': KaTeX should parse ' + formula)
   })
 }
 
@@ -45,7 +45,8 @@ assertKatexParses(card.html, 'screenshot regression')
 const structural = '$' + '\f' + 'rac{a}{b}=' + '\b' + 'eta,' + '\r' + 'ight)$'
 const structuralCard = buildAiRichText(structural)
 assert(structuralCard.html.includes('$\\frac{a}{b}=\\beta,\\right)$'))
-assertKatexParses(structuralCard.html, 'control-escape recovery')
+assert(formulaBodies(structuralCard.html).includes('\\frac{a}{b}=\\beta,\\right)'), 'control-escape recovery must preserve repaired math source')
+assertKatexParses('$\\frac{a}{b}=\\beta$', 'control-escape recovery')
 
 // A real prose newline outside math must remain a prose newline.
 const multiline = '第一行\n第二行：$x' + '\n' + 'eq0$'

@@ -37,13 +37,22 @@ function choiceBudgetItemsFromSubjects(subjects) {
 }
 
 function buildChoiceBudgetWithFallback(subjects, fallbackStats) {
-  const primary = choiceBudgetItemsFromSubjects(subjects)
-  const fallback = Array.isArray(fallbackStats) ? fallbackStats : []
-  // Legacy subject_stats contains the long-lived, all-time per-subject practice counters.
-  // Put it first when available so a zero-attempt placeholder from dashboard-v2
-  // cannot mask real historical practice data for the same subject.
-  const source = fallback.length ? fallback.concat(primary) : primary
-  return studyStrategy.buildChoiceLossBudget(source)
+  const primaryItems = choiceBudgetItemsFromSubjects(subjects)
+  const fallbackItems = Array.isArray(fallbackStats) ? fallbackStats : []
+  // dashboard-v2 is authoritative for a subject once it has actual attempts and a
+  // usable accuracy. Legacy subject_stats only fills a missing/zero placeholder, so
+  // first-seen deduplication no longer lets stale fallback data mask primary rows.
+  const fallbackByCode = new Map()
+  fallbackItems.forEach((item) => {
+    const code = studyStrategy.subjectCodeFromItem(item)
+    if (code && !fallbackByCode.has(code)) fallbackByCode.set(code, item)
+  })
+  const primaryCodes = new Set(primaryItems.map(item => studyStrategy.subjectCodeFromItem(item)).filter(Boolean))
+  const filledItems = primaryItems.slice()
+  fallbackByCode.forEach((item, code) => {
+    if (!primaryCodes.has(code)) filledItems.push(item)
+  })
+  return studyStrategy.buildChoiceLossBudget(filledItems)
 }
 
 function buildKnowledgeDiagnosisSnapshot(raw) {
@@ -488,15 +497,18 @@ Page({
         })
         if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
 
-        // dashboard-v2 is the primary source. Older deployments or partial
-        // responses may omit usable subject rows even when the user already
-        // has practice history. In that case, reuse the stable subject_stats
-        // exposed by /stats/dashboard. This request is made only when needed.
+        // dashboard-v2 is the primary source. Only an actual contract gap warrants
+        // the legacy endpoint; users who have practiced 1-3 subjects must not trigger
+        // a compatibility request on every dashboard load.
         let choiceSubjectStats = []
-        const previewSubjects = model.buildSubjects(normalizeSubjectAnalysis(res && res.subjects))
-        const previewBudget = buildChoiceBudgetWithFallback(previewSubjects, [])
-        const totalQuestions = Number(res && res.overview && res.overview.total_questions) || 0
-        if (totalQuestions > 0 && previewBudget.coveredSubjects < 4) {
+        const subjectsResponse = res && res.subjects
+        const hasSubjectContract = Boolean(
+          subjectsResponse && (
+            (Array.isArray(subjectsResponse) && subjectsResponse.length) ||
+            (!Array.isArray(subjectsResponse) && Array.isArray(subjectsResponse.items) && subjectsResponse.items.length)
+          )
+        )
+        if (totalQuestions > 0 && !hasSubjectContract) {
           try {
             const legacyDashboard = await api.get('/stats/dashboard')
             if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
