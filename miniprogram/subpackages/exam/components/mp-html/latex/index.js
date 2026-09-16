@@ -2,7 +2,28 @@
  * @fileoverview latex 插件
  * katex.min.js来源 https://github.com/rojer95/katex-mini
  */
-const parse = require('./katex.min')
+const katex = require('./katex.min')
+const Parser = require('../parser')
+
+function parseKatexToNodes(source, options) {
+  // Native <rich-text> expects { name, attrs, children } / { type:'text', text }.
+  // KaTeX's private DOM tree exposes `attributes` as a plain object. Passing that
+  // tree through Object.assign makes WeChat call `attributes.forEach` and crash:
+  // [Component] <rich-text>: parse error TypeError: e.attributes.forEach is not a function
+  const markup = katex.renderToString(String(source || ''), Object.assign({}, options, {
+    output: 'html',
+  }))
+  const host = {
+    properties: {
+      editable: false,
+      containerStyle: '',
+      mathLayout: '',
+    },
+    imgList: [],
+    plugins: [],
+  }
+  return new Parser(host).parse(markup)
+}
 
 function Latex () {
 
@@ -27,9 +48,16 @@ Latex.prototype.onParse = function (node, vm) {
             // 安全解析：捕获 KaTeX 异常，失败时回退为纯文本
             let nodes
             try {
-              var rendered = parse.__renderToDomTree(part[i], { displayMode: status === 2, throwOnError: true })
-              nodes = [Object.assign({}, rendered, { name: 'span', attrs: { class: 'katex' }, type: 'node' })]
+              nodes = parseKatexToNodes(part[i], {
+                displayMode: status === 2,
+                throwOnError: true,
+              })
             } catch (_e) {
+              children.push({ type: 'text', text: part[i] })
+              status = 0
+              continue
+            }
+            if (!nodes || !nodes.length) {
               children.push({ type: 'text', text: part[i] })
               status = 0
               continue

@@ -8,6 +8,16 @@ const {
 } = require('../subpackages/study/utils/ai-math-render')
 const katex = require('../subpackages/study/components/mp-html/latex/katex.min')
 
+// mp-html parser reads platform information at require time.
+global.wx = global.wx || {
+  getWindowInfo() { return { windowWidth: 375, pixelRatio: 2 } },
+  getDeviceInfo() { return { system: 'Node.js regression test' } },
+  canIUse() { return true },
+  setNavigationBarTitle() {},
+}
+const StudyLatex = require('../subpackages/study/components/mp-html/latex/index')
+const ExamLatex = require('../subpackages/exam/components/mp-html/latex/index')
+
 function formulaBodies(html) {
   const text = String(html || '')
   const results = []
@@ -63,5 +73,61 @@ assert.strictEqual(prose.html, '')
 const wrongDetailJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/wrong-detail/wrong-detail.js'), 'utf8')
 assert(wrongDetailJs.includes("require('../utils/ai-math-render')"), 'wrong-detail must import ai-math-render')
 assert(wrongDetailJs.includes('return buildAiRichText(value)'), 'wrong-detail must delegate AI rich text rendering')
+
+function assertNativeRichTextTree(value, at) {
+  at = at || 'root'
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNativeRichTextTree(item, at + '[' + index + ']'))
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  assert.ok(!Object.prototype.hasOwnProperty.call(value, 'attributes'), at + ' leaked KaTeX private attributes')
+  assert.ok(!Object.prototype.hasOwnProperty.call(value, 'classes'), at + ' leaked KaTeX private classes')
+  if (value.name && value.attrs !== undefined) {
+    assert.strictEqual(typeof value.attrs, 'object', at + '.attrs must be an object')
+    assert.ok(!Array.isArray(value.attrs), at + '.attrs must not be an array')
+  }
+  if (value.children) assertNativeRichTextTree(value.children, at + '.children')
+}
+
+function parseAiHtmlThroughLatex(LatexPlugin, html) {
+  const Parser = require('../subpackages/study/components/mp-html/parser')
+  const host = {
+    properties: { editable: false, containerStyle: '', mathLayout: '' },
+    imgList: [],
+    plugins: [new LatexPlugin()],
+  }
+  return new Parser(host).parse(String(html || ''))
+}
+
+function countKatexNodes(value) {
+  var count = 0
+  function walk(item) {
+    if (Array.isArray(item)) {
+      item.forEach(walk)
+      return
+    }
+    if (!item || typeof item !== 'object') return
+    var className = item.attrs ? String(item.attrs.class || '') : ''
+    if (className.split(/\s+/).indexOf('katex') >= 0) count += 1
+    if (item.children) walk(item.children)
+  }
+  walk(value)
+  return count
+}
+
+const studyNodes = parseAiHtmlThroughLatex(StudyLatex, card.html)
+assertNativeRichTextTree(studyNodes)
+assert.ok(Array.isArray(studyNodes) && studyNodes.length > 0, 'study latex plugin must emit rich-text nodes')
+assert.ok(countKatexNodes(studyNodes) > 0, 'study latex plugin must render a katex tree')
+
+const examNodes = parseAiHtmlThroughLatex(ExamLatex, card.html)
+assertNativeRichTextTree(examNodes)
+assert.ok(countKatexNodes(examNodes) > 0, 'exam latex plugin must render a katex tree')
+
+const studyLatexSrc = fs.readFileSync(path.join(__dirname, '../subpackages/study/components/mp-html/latex/index.js'), 'utf8')
+const examLatexSrc = fs.readFileSync(path.join(__dirname, '../subpackages/exam/components/mp-html/latex/index.js'), 'utf8')
+assert(!studyLatexSrc.includes('__renderToDomTree'), 'study latex plugin must not pass KaTeX DOM trees to rich-text')
+assert(!examLatexSrc.includes('__renderToDomTree'), 'exam latex plugin must not pass KaTeX DOM trees to rich-text')
 
 console.log('✓ wrong-detail AI KaTeX regression tests passed')
