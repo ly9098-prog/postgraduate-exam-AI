@@ -43,9 +43,7 @@
       <view class="focus-topline">
         <view class="focus-status focus-status-light">
           <image class="focus-kicker-icon" src="/assets/icons/home-hero/smart-study-leaf.png" mode="aspectFit" />
-          <text>SMART STUDY</text>
-          <text class="focus-kicker-divider">·</text>
-          <text>今日优先</text>
+          <text>{{primaryTaskKicker}}</text>
         </view>
         <view class="focus-plan-anchor" bindtap="goStudyPlan" hover-class="soft-pressed" aria-role="button" aria-label="查看学习目标">
           <text class="focus-plan-anchor-label">目标</text>
@@ -53,14 +51,13 @@
       </view>
 
       <view class="focus-title-line">
-        <text class="focus-title">{{_animLevelProgress >= 100 ? '今日智能练习已完成' : '继续智能新题'}}</text>
-        <text class="focus-title-arrow">›</text>
+        <text class="focus-title">{{primaryTaskTitle}}</text>
       </view>
-      <text class="focus-desc">{{_animLevelProgress >= 100 ? '保持当前节奏，明天会自动生成新任务。' : '结合当前知识状态继续推进新题，避免旧错题循环。'}}</text>
+      <text class="focus-desc">{{primaryTaskDesc}}</text>
 
       <view class="progress-head">
         <view class="progress-head-copy">
-          <text class="progress-label">今日进度</text>
+          <text class="progress-label">今日刷题进度</text>
           <text class="progress-head-sub">目标题量 {{todayGoalTotal}} 题</text>
         </view>
         <view class="progress-pair">
@@ -77,7 +74,7 @@
 
       <view class="focus-actions">
         <view class="primary-action" bindtap="startPrimaryTask" hover-class="primary-action-pressed">
-          <text>开始智能练习</text>
+          <text>{{primaryTaskAction}}</text>
           <view class="primary-action-arrow">↗</view>
         </view>
         <view class="secondary-action" bindtap="startSecondaryTask" hover-class="secondary-action-pressed">

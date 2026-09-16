@@ -112,7 +112,7 @@
 .fc-reading-section.conditions .fc-section-index { color: #5B7044; }
 .fc-section-copy { min-width: 0; flex: 1; }
 .fc-section-copy .fc-section-title { margin-bottom: 10rpx; }
-.fc-section-copy mp-html { color: #334139; font-size: 25rpx; line-height: 1.72; }
+.fc-section-copy .fc-rich-text { color: #334139; font-size: 25rpx; line-height: 1.72; }
 
 .fc-collapse { margin-top: 20rpx; border: 1rpx solid #DEE3DC; border-radius: 28rpx; background: #F8F8F5; overflow: hidden; }
 .fc-error-collapse { border-color: #E8D4CB; background: #F8EFEB; }
@@ -309,9 +309,9 @@
   white-space: nowrap;
 }
 
-.fc-section-copy mp-html,
-.fc-collapse-content mp-html,
-.fc-example mp-html {
+.fc-section-copy .fc-rich-text,
+.fc-collapse-content .fc-rich-text,
+.fc-example .fc-rich-text {
   word-break: normal;
   overflow-wrap: break-word;
 }

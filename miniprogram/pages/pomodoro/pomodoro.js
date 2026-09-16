@@ -4,6 +4,7 @@ const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
+const { pomodoroTaskTypes } = require('../../utils/storage')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
@@ -112,6 +113,9 @@ Page({
     subjectsError: '',
     selectedSubjectId: null,
     selectedSubject: null,
+    taskTypes: pomodoroTaskTypes.TYPES,
+    selectedTaskType: pomodoroTaskTypes.DEFAULT_TYPE,
+    selectedTaskTypeLabel: pomodoroTaskTypes.label(pomodoroTaskTypes.DEFAULT_TYPE),
     presets: PRESETS,
     selectedPreset: 'standard',
     workDuration: 25,
@@ -136,13 +140,13 @@ Page({
     // timer display
     displayMin: '00',
     displaySec: '00',
-
     // today stats
     todaySessions: 0,
     todayDurationText: '0分钟',
 
     // practice page context
     fromSubjectId: null,
+    fromSubjectCode: '',
     fromChapterId: '',
     fromChapterName: '',
 
@@ -218,16 +222,18 @@ Page({
     this._registerNetworkStatusListener()
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
+    const routeTaskType = opts && opts.task_type ? pomodoroTaskTypes.normalize(String(opts.task_type)) : pomodoroTaskTypes.getSelected()
     this.setData({
       examDays: this._getExamDays(),
       fontSizeLevel: wx.getStorageSync('pomodoro_font_size') || 'medium',
+      selectedTaskType: routeTaskType,
+      selectedTaskTypeLabel: pomodoroTaskTypes.label(routeTaskType),
+      fromSubjectId: opts && opts.subject_id ? Number(opts.subject_id) : null,
+      fromSubjectCode: String((opts && opts.subject_code) || ''),
       ...this._getThemeViewModel(themeMode),
     })
     this._loadSubjects()
 
-    if (opts.subject_id) {
-      this.setData({ fromSubjectId: Number(opts.subject_id) })
-    }
     if (opts.chapterId) this.setData({ fromChapterId: opts.chapterId })
     if (opts.chapterName) this.setData({ fromChapterName: safeDecodeURIComponent(opts.chapterName, '') })
   },
@@ -301,6 +307,10 @@ Page({
           code: completionFlag.selectedSubjectCode || (this.data.selectedSubject && this.data.selectedSubject.code) || '',
           name: completionFlag.selectedSubjectName || (this.data.selectedSubject && this.data.selectedSubject.name) || '',
         } : this.data.selectedSubject
+        const completionHasTaskType = Object.prototype.hasOwnProperty.call(completionFlag, 'selectedTaskType')
+        const completionTaskType = completionHasTaskType && pomodoroTaskTypes.TYPE_MAP[completionFlag.selectedTaskType]
+          ? completionFlag.selectedTaskType
+          : ''
         if (!this.data.showCelebration) wx.vibrateLong()
         this.setData({
           phase: PHASE.IDLE,
@@ -314,6 +324,10 @@ Page({
           breakDuration: Number.isFinite(Number(completionFlag.breakDuration)) ? Number(completionFlag.breakDuration) : this.data.breakDuration,
           selectedSubjectId,
           selectedSubject,
+          selectedTaskType: completionHasTaskType ? completionTaskType : this.data.selectedTaskType,
+          selectedTaskTypeLabel: completionHasTaskType
+            ? (completionTaskType ? pomodoroTaskTypes.label(completionTaskType) : '未分类')
+            : this.data.selectedTaskTypeLabel,
         })
         // Celebration rendering must not suppress a pending completion retry.
         if (pendingSync) {
@@ -555,6 +569,7 @@ Page({
         selectedSubjectId: this.data.selectedSubjectId,
         selectedSubjectCode: this.data.selectedSubject ? this.data.selectedSubject.code : '',
         selectedSubjectName: this.data.selectedSubject ? this.data.selectedSubject.name : '',
+        selectedTaskType: this.data.selectedTaskType,
         isPaused: this.data.isPaused,
         totalPausedMs: this._timerState.totalPausedMs,
         pauseStartTime: this.data.isPaused ? (this._timerState.pauseStartTime || api.now()) : null,
@@ -715,9 +730,14 @@ Page({
       // 旧版 pomodoro_running_state 缓存可能只带 subject_code，用已加载列表迁移到 subject_id
       this._migrateRunningStateCache(flat)
 
-      // If coming from practice page with a subject_id, auto-select
-      if (this.data.fromSubjectId) {
-        const match = flat.find(s => s.id === this.data.fromSubjectId)
+      // Route presets can target either a stable subject_id or the canonical 408 subject_code.
+      // subject_code keeps strategy-driven Next Best Action usable before a subject has practice data.
+      if (this.data.fromSubjectId || this.data.fromSubjectCode) {
+        const match = flat.find(s => (
+          this.data.fromSubjectId
+            ? Number(s.id) === Number(this.data.fromSubjectId)
+            : String(s.code || '') === String(this.data.fromSubjectCode || '')
+        ))
         if (match) {
           this.setData({ selectedSubjectId: match.id, selectedSubject: match })
           this._updateComputedFields()
@@ -768,6 +788,12 @@ Page({
       this.setData({ selectedSubjectId: id, selectedSubject: subject })
       this._updateComputedFields()
     }
+  },
+
+  selectTaskType(e) {
+    const type = pomodoroTaskTypes.normalize(String(e.currentTarget.dataset.type || ''))
+    pomodoroTaskTypes.setSelected(type)
+    this.setData({ selectedTaskType: type, selectedTaskTypeLabel: pomodoroTaskTypes.label(type) })
   },
 
   onExamTap() {
@@ -857,6 +883,7 @@ Page({
       workDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
       breakDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
       notificationEnabled: false,
+      taskType: this.data.selectedTaskType,
       ...overrides,
     }
   },
@@ -935,6 +962,8 @@ Page({
         ? 'none'
         : 'storage_error'
     }
+
+    pomodoroTaskTypes.recordSession(session, attempt.taskType || this.data.selectedTaskType)
 
     if (attempt.cancelIfFound && (session.status === 'running' || session.status === 'paused')) {
       const cancelAt = this._startCancellationAt(session, attempt.cancelAt)
@@ -1123,6 +1152,7 @@ Page({
         break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
       }, startSeq)
       if (startResult.handled || !startResult.session) return
+      pomodoroTaskTypes.recordSession(startResult.session, this.data.selectedTaskType)
       this._beginCountdown(startResult.session)
     } catch (e) {
       if (!this._pageVisible || startSeq !== this._startRequestSeq) return
@@ -1176,6 +1206,7 @@ Page({
         break_duration: 0,
       }, startSeq)
       if (startResult.handled || !startResult.session) return
+      pomodoroTaskTypes.recordSession(startResult.session, this.data.selectedTaskType)
       this._beginFreeTimer(startResult.session)
     } catch (e) {
       if (!this._pageVisible || startSeq !== this._startRequestSeq) return
@@ -2793,9 +2824,18 @@ Page({
     const selectedPreset = options.selectedPreset || this.data.selectedPreset
     const selectedSubject = options.selectedSubject || this.data.selectedSubject
     const selectedSubjectId = options.selectedSubjectId || this.data.selectedSubjectId || (selectedSubject && selectedSubject.id) || null
+    const hasOptionTaskType = Object.prototype.hasOwnProperty.call(options, 'selectedTaskType')
+    const rawTaskType = hasOptionTaskType ? options.selectedTaskType : this.data.selectedTaskType
+    const selectedTaskType = pomodoroTaskTypes.TYPE_MAP[rawTaskType] ? rawTaskType : ''
+    const selectedTaskTypeLabel = selectedTaskType
+      ? (options.selectedTaskTypeLabel || pomodoroTaskTypes.label(selectedTaskType))
+      : '未分类'
     const breakSec = selectedPreset === 'debug' ? 5 : Math.max(0, breakDuration * 60)
     const motto = options.motto || MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
     const type = options.type || this._nextCelebrationType()
+    // Re-assert attribution at completion so history keeps the task type even if
+    // an earlier start-response mapping was interrupted by a restart.
+    if (selectedTaskType) pomodoroTaskTypes.recordSession({ id: sessionId }, selectedTaskType)
 
     // Completion is final locally immediately. Remove every running snapshot
     // before showing the animation so onHide cannot persist/resurrect this session.
@@ -2819,6 +2859,7 @@ Page({
       selectedSubjectId,
       selectedSubjectCode: selectedSubject ? selectedSubject.code || '' : '',
       selectedSubjectName: selectedSubject ? selectedSubject.name || '' : '',
+      selectedTaskType,
     }
     this._safeSetPomodoroStorage('pomodoro_completion', completionFlag, 'completion marker')
 
@@ -2844,6 +2885,8 @@ Page({
       breakDuration,
       selectedSubjectId,
       selectedSubject,
+      selectedTaskType,
+      selectedTaskTypeLabel,
     })
   },
 
@@ -3077,6 +3120,7 @@ Page({
       subject_id: local.selectedSubjectId,
       subject_code: local.selectedSubjectCode || '',
       subject_name: local.selectedSubjectName || '',
+      task_type: local.selectedTaskType || '',
       _local_elapsed_sec: local.isFreeTimer ? Number(local.elapsedSec || 0) : undefined,
     }
   },
@@ -3203,6 +3247,12 @@ Page({
     const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
+    const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
+    const activeTaskType = sessionTaskType || ''
+    const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
+    // Old sessions have no task-type metadata. Show them as unclassified rather
+    // than borrowing the user's current selector and corrupting history semantics.
+    if (sessionTaskType) pomodoroTaskTypes.recordSession(session, sessionTaskType)
 
     if (remaining <= 0) {
       this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
@@ -3224,6 +3274,8 @@ Page({
       this.setData({
         selectedSubjectId: subjectId,
         selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+        selectedTaskType: activeTaskType,
+        selectedTaskTypeLabel: activeTaskTypeLabel,
         selectedPreset: session.preset || 'standard',
         workDuration: session.work_duration,
         breakDuration: session.break_duration,
@@ -3238,6 +3290,8 @@ Page({
         breakDuration: session.break_duration,
         selectedSubjectId: subjectId,
         selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+        selectedTaskType: activeTaskType,
+        selectedTaskTypeLabel: activeTaskTypeLabel,
       })
       return true
     }
@@ -3253,6 +3307,8 @@ Page({
       ringCanvasVisible: true,
       selectedSubjectId: subjectId,
       selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+      selectedTaskType: activeTaskType,
+      selectedTaskTypeLabel: activeTaskTypeLabel,
       selectedPreset: session.preset || 'standard',
       workDuration: session.work_duration,
       breakDuration: session.break_duration,
@@ -3335,6 +3391,10 @@ Page({
     const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
+    const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
+    const activeTaskType = sessionTaskType || ''
+    const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
+    if (sessionTaskType) pomodoroTaskTypes.recordSession(session, sessionTaskType)
 
     this._clearTimer()
     this._timerState.elapsedSec = elapsed
@@ -3346,6 +3406,8 @@ Page({
       isFreeTimer: true,
       selectedSubjectId: subjectId,
       selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+      selectedTaskType: activeTaskType,
+      selectedTaskTypeLabel: activeTaskTypeLabel,
       selectedPreset: 'free',
       workDuration: 0,
       breakDuration: 0,
@@ -3642,8 +3704,11 @@ Page({
     this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
     this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
     this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
+    const preferredTaskType = pomodoroTaskTypes.getSelected()
     this.setData({
       phase: PHASE.IDLE,
+      selectedTaskType: preferredTaskType,
+      selectedTaskTypeLabel: pomodoroTaskTypes.label(preferredTaskType),
       displayMin: '00',
       displaySec: '00',
       isPaused: false,

@@ -87,26 +87,26 @@
 </view>
 <view class="overview-card">
 <view class="overview-item">
-<view class="overview-icon book"><text class="line-icon icon-list"></text></view>
+<view class="overview-icon book"><image class="overview-icon-image" src="/assets/icons/wrong-book/notebook-text.svg" mode="aspectFit" /></view>
 <view class="overview-text">
 <text class="overview-label">累计错题</text>
-<view><text class="overview-value">{{stats.total || 0}}</text><text class="overview-suffix">题</text></view>
+<view class="overview-number-line"><text class="overview-value">{{stats.total || 0}}</text><text class="overview-suffix">题</text></view>
 </view>
 </view>
 <view class="overview-divider"></view>
 <view class="overview-item">
-<view class="overview-icon mastered"><text class="line-icon icon-check"></text></view>
+<view class="overview-icon mastered"><image class="overview-icon-image" src="/assets/icons/wrong-book/badge-check.svg" mode="aspectFit" /></view>
 <view class="overview-text">
 <text class="overview-label">已经掌握</text>
-<view><text class="overview-value">{{masteredCount}}</text><text class="overview-suffix">题</text></view>
+<view class="overview-number-line"><text class="overview-value">{{masteredCount}}</text><text class="overview-suffix">题</text></view>
 </view>
 </view>
 <view class="overview-divider"></view>
 <view class="overview-item">
-<view class="overview-icon repeat"><text class="line-icon icon-trend"></text></view>
+<view class="overview-icon repeat"><image class="overview-icon-image" src="/assets/icons/wrong-book/chart-increasing.svg" mode="aspectFit" /></view>
 <view class="overview-text">
 <text class="overview-label">高频错题</text>
-<view><text class="overview-value">{{highFrequencyCount}}</text><text class="overview-suffix">题</text></view>
+<view class="overview-number-line"><text class="overview-value">{{highFrequencyCount}}</text><text class="overview-suffix">题</text></view>
 </view>
 </view>
 </view>

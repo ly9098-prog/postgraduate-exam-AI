@@ -55,6 +55,17 @@ EXAM408_CHOICE_SUBJECT_NAMES = {
 }
 
 
+def _expected_408_subject_code(position: int) -> str | None:
+    """Return the canonical 408 subject code for a 1-based choice position."""
+    slot_start = 1
+    for code, count in EXAM408_CHOICE_BLUEPRINT:
+        slot_end = slot_start + count - 1
+        if slot_start <= int(position) <= slot_end:
+            return code
+        slot_start = slot_end + 1
+    return None
+
+
 def _money(value) -> float:
     return round(float(value or 0), 2)
 
@@ -157,9 +168,7 @@ async def _get_paper(
     return paper
 
 
-async def get_exam_paper_id_by_public_id(
-    db: AsyncSession, public_id: str
-) -> int:
+async def get_exam_paper_id_by_public_id(db: AsyncSession, public_id: str) -> int:
     value = (public_id or "").strip()
     if not value:
         raise ExamPaperNotFoundError("试卷不存在")
@@ -206,6 +215,8 @@ async def _load_paper_items(db: AsyncSession, paper_id: int) -> list[dict]:
                 "source": revision.source,
                 "difficulty": int(revision.difficulty or 3),
                 "review_status": question.review_status,
+                "question_is_active": bool(question.is_active),
+                "revision_is_active": revision.is_active is True,
                 "is_active": bool(question.is_active and revision.is_active),
                 "current_version_id": int(question.current_version_id)
                 if question.current_version_id
@@ -258,13 +269,20 @@ async def validate_exam_paper(db: AsyncSession, paper_id: int) -> list[str]:
             or len(item["options"]) < 2
         ):
             errors.append(f"{prefix} 缺少有效选项")
-        # Draft papers are validated against current publishability.
-        # Published/archived papers are historical snapshots and must not fail
-        # only because the source question was later disabled or reviewed again.
-        if paper.status == "draft" and (
-            not item["is_active"] or item["review_status"] != "approved"
-        ):
-            errors.append(f"{prefix} 当前不是 approved + active 可发布题目")
+        # Ordinary draft papers require an approved + active mutable question.
+        # A past-exam paper is a historical source snapshot: an official question
+        # may later be deactivated by dedup/housekeeping without ceasing to belong
+        # to that year's exam.  For those papers keep review approval mandatory and
+        # require the pinned/current revision itself to remain active, but do not
+        # invalidate the paper solely because Question.is_active is false.
+        if paper.status == "draft":
+            if item["review_status"] != "approved":
+                errors.append(f"{prefix} 当前不是 approved 可发布题目")
+            elif paper.paper_type == "past_exam_choice":
+                if not item["revision_is_active"]:
+                    errors.append(f"{prefix} 当前题目版本未启用")
+            elif not item["is_active"]:
+                errors.append(f"{prefix} 当前不是 approved + active 可发布题目")
         # Draft validation protects against accidentally publishing against a
         # superseded mutable question projection. Published/archived papers are
         # historical snapshots and must continue to validate against their
@@ -287,7 +305,10 @@ async def validate_exam_paper(db: AsyncSession, paper_id: int) -> list[str]:
         score_mismatch_positions: list[int] = []
         for item in items:
             position = int(item["position"])
-            if Decimal(str(item["score"])).quantize(Decimal("0.01")) != EXAM408_CHOICE_SCORE:
+            if (
+                Decimal(str(item["score"])).quantize(Decimal("0.01"))
+                != EXAM408_CHOICE_SCORE
+            ):
                 score_mismatch_positions.append(position)
 
         # 不足 40 道时按“当前已有题目”直接允许发布，不再套用完整卷的
@@ -394,8 +415,10 @@ def _text_has_past_exam_marker(value: object, year: int) -> bool:
     text = re.sub(r"\s+", "", str(value))
     if str(year) not in text:
         return False
-    return "统考真题" in text or "408真题" in text or bool(
-        re.search(rf"{year}[^\n\r]{{0,12}}真题", text)
+    return (
+        "统考真题" in text
+        or "408真题" in text
+        or bool(re.search(rf"{year}[^\n\r]{{0,12}}真题", text))
     )
 
 
@@ -478,7 +501,9 @@ def _matching_past_exam_content(
     # label is stored separately.  Requiring both the exact year and an explicit
     # "真题" source marker avoids pulling ordinary practice questions from the same
     # year into the official-paper shortcut.
-    year_matches = int(revision.year or 0) == int(year) or int(question.year or 0) == int(year)
+    year_matches = int(revision.year or 0) == int(year) or int(
+        question.year or 0
+    ) == int(year)
     source_values = (
         revision.source,
         question.source,
@@ -501,16 +526,20 @@ def _exam_item_validation_error(
     question: Question,
     revision: QuestionVersion,
     subject: Subject,
+    *,
+    allow_inactive_question: bool = False,
 ) -> str | None:
     """Return a user-safe reason when a question cannot be pinned into a paper.
 
-    Quick-add and save must use exactly the same eligibility rules.  Keeping the
-    checks in one helper prevents candidates from appearing selectable only to be
-    rejected later by ``replace_exam_paper_items`` with a 422.
+    Normal paper editing remains strict about ``Question.is_active``.  Official
+    past-exam discovery/refresh may opt into historical-source semantics: a
+    reviewed real-exam question can remain usable even if the mutable Question
+    projection was later deactivated (for example by deduplication), as long as
+    its current revision is still active and otherwise valid.
     """
     if question.review_status != "approved":
         return "题目尚未审核通过"
-    if not question.is_active:
+    if not question.is_active and not allow_inactive_question:
         return "题目已停用"
     if revision.is_active is not True:
         return "当前题目版本未启用"
@@ -522,7 +551,10 @@ def _exam_item_validation_error(
         return "current revision 绑定异常"
     if int(revision.subject_id or 0) != int(question.subject_id):
         return "current revision 科目不一致"
-    if not subject.is_active or canonical_408_code(subject.code) not in EXAM408_CORE_CODES:
+    if (
+        not subject.is_active
+        or canonical_408_code(subject.code) not in EXAM408_CORE_CODES
+    ):
         return "不属于启用的 canonical 408 四科"
     if not isinstance(revision.options, dict) or len(revision.options) < 2:
         return "当前题目版本缺少有效选择题选项"
@@ -699,7 +731,10 @@ def _select_official_408_candidates(items: list[dict]) -> tuple[list[dict], list
         for position in range(slot_start, slot_end + 1):
             item = exact_by_number.get(position)
             if item is None:
-                while fallback_index < len(unnumbered) and id(unnumbered[fallback_index]) in used_ids:
+                while (
+                    fallback_index < len(unnumbered)
+                    and id(unnumbered[fallback_index]) in used_ids
+                ):
                     fallback_index += 1
                 if fallback_index < len(unnumbered):
                     item = unnumbered[fallback_index]
@@ -774,14 +809,102 @@ async def _load_question_import_hints(
     return result
 
 
-async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
+def _is_direct_past_exam_source(
+    question: Question, revision: QuestionVersion, year: int
+) -> bool:
+    expected_file = f"{int(year)}408.pdf".lower()
+    return any(
+        value is not None
+        and str(value).replace("\\", "/").rsplit("/", 1)[-1].lower() == expected_file
+        for value in (revision.source_file, question.source_file)
+    )
+
+
+def _past_exam_candidate_priority(
+    question: Question, revision: QuestionVersion, year: int
+) -> tuple[int, int, int, int, int]:
+    """Rank direct official-PDF imports ahead of derivative question-bank copies."""
+    direct_file = _is_direct_past_exam_source(question, revision, year)
+    source_types = {
+        str(value or "").strip().lower()
+        for value in (revision.source_type, question.source_type)
+    }
+    direct_type = "past_exam" in source_types
+    exact_year = int(revision.year or 0) == int(year) or int(question.year or 0) == int(
+        year
+    )
+    return (
+        0 if direct_file else 1,
+        0 if direct_type else 1,
+        0 if exact_year else 1,
+        0 if question.is_active else 1,
+        int(question.id),
+    )
+
+
+def _assign_direct_official_source_numbers(items: list[dict]) -> None:
+    """Recover 1..40 slots for complete direct-PDF imports lacking source numbers.
+
+    Some historical import batches stripped the source question number from every
+    row but kept exactly one direct ``YYYY408.pdf`` copy for each official slot.
+    When a subject has exactly its official quota of direct-source rows, their
+    stable import/id order can safely fill only the still-unclaimed slots.
+    """
+    slot_start = 1
+    for code, target in EXAM408_CHOICE_BLUEPRINT:
+        slot_end = slot_start + target - 1
+        direct_items = sorted(
+            [
+                item
+                for item in items
+                if item.get("_direct_official_source")
+                and canonical_408_code(item.get("subject_code")) == code
+            ],
+            key=lambda item: int(item["question_id"]),
+        )
+        if len(direct_items) != target:
+            slot_start = slot_end + 1
+            continue
+
+        claimed: set[int] = set()
+        pending: list[dict] = []
+        for item in direct_items:
+            number = _coerce_source_question_no(item.get("_source_question_no"))
+            if (
+                number is not None
+                and slot_start <= number <= slot_end
+                and number not in claimed
+            ):
+                claimed.add(number)
+            else:
+                pending.append(item)
+
+        missing_positions = [
+            position
+            for position in range(slot_start, slot_end + 1)
+            if position not in claimed
+        ]
+        if len(pending) == len(missing_positions):
+            for item, position in zip(pending, missing_positions):
+                item["_source_question_no"] = position
+        slot_start = slot_end + 1
+
+
+async def _discover_past_exam_candidate_pool(db: AsyncSession, year: int) -> list[dict]:
+    """Discover reviewed official-exam candidates, including inactive projections.
+
+    ``Question.is_active`` is deliberately not a hard filter here.  Historical
+    408 questions are sometimes deactivated after duplicate cleanup while their
+    approved current revision and provenance remain valid.  Direct imports from
+    ``YYYY408.pdf`` outrank derivative copies from topic question banks, so quick
+    fill reconstructs the official paper rather than whichever duplicate is active.
+    """
     rows = await db.execute(
         select(Question, QuestionVersion, Subject)
         .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
         .join(Subject, Subject.id == Question.subject_id)
         .where(
             Question.review_status == "approved",
-            Question.is_active.is_(True),
             QuestionVersion.is_active.is_(True),
             Question.question_type == QT_SINGLE_CHOICE,
             QuestionVersion.question_type == QT_SINGLE_CHOICE,
@@ -789,21 +912,32 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
         )
         .order_by(Question.id.asc())
     )
-    eligible_rows = list(rows.all())
+    eligible_rows = sorted(
+        rows.all(),
+        key=lambda row: _past_exam_candidate_priority(row[0], row[1], int(year)),
+    )
     import_hints_by_question = await _load_question_import_hints(
         db, [int(question.id) for question, _revision, _subject in eligible_rows]
     )
     items: list[dict] = []
     for question, revision, subject in eligible_rows:
-        # Keep the quick-add candidate contract identical to the final save
-        # contract.  A candidate returned here must be safe to pin immediately.
-        if _exam_item_validation_error(question, revision, subject) is not None:
-            continue
         import_hints = import_hints_by_question.get(int(question.id), [])
         content = _matching_past_exam_content(
             question, revision, year, import_hints=import_hints
         )
         if content is None:
+            continue
+        # Past-exam provenance has already been established above, so an inactive
+        # mutable projection is not by itself a reason to discard an official slot.
+        if (
+            _exam_item_validation_error(
+                question,
+                revision,
+                subject,
+                allow_inactive_question=True,
+            )
+            is not None
+        ):
             continue
         source_question_no = _source_question_no_from_hints(import_hints, year)
         if source_question_no is None:
@@ -820,12 +954,111 @@ async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
                 "year": int(year),
                 "source": revision.source or question.source,
                 "_source_question_no": source_question_no,
+                "_direct_official_source": _is_direct_past_exam_source(
+                    question, revision, year
+                ),
             }
         )
+    _assign_direct_official_source_numbers(items)
+    return items
+
+
+async def _load_existing_past_exam_refresh_candidates(
+    db: AsyncSession, paper: ExamPaper
+) -> list[dict]:
+    """Return existing official slots that are safe to preserve during refresh.
+
+    Existing ``exam_paper_questions.position`` is treated as the strongest source
+    of truth once year provenance and the canonical subject range agree.  The
+    question is repinned to its *current* active QuestionVersion.  If import
+    metadata explicitly carries an original source number, it must agree with the
+    existing paper position; otherwise that row is left for normal rediscovery.
+    """
+    if paper.year is None:
+        return []
+
+    rows = await db.execute(
+        select(ExamPaperQuestion, Question, QuestionVersion, Subject)
+        .join(Question, Question.id == ExamPaperQuestion.question_id)
+        .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
+        .join(Subject, Subject.id == Question.subject_id)
+        .where(ExamPaperQuestion.paper_id == paper.id)
+        .order_by(ExamPaperQuestion.position.asc(), ExamPaperQuestion.id.asc())
+    )
+    existing_rows = list(rows.all())
+    import_hints_by_question = await _load_question_import_hints(
+        db, [int(question.id) for _item, question, _revision, _subject in existing_rows]
+    )
+
+    preserved: list[dict] = []
+    seen_positions: set[int] = set()
+    seen_question_ids: set[int] = set()
+    for item, question, revision, subject in existing_rows:
+        position = int(item.position)
+        question_id = int(question.id)
+        if position in seen_positions or question_id in seen_question_ids:
+            continue
+        expected_code = _expected_408_subject_code(position)
+        actual_code = canonical_408_code(subject.code)
+        if expected_code is None or actual_code != expected_code:
+            continue
+
+        import_hints = import_hints_by_question.get(question_id, [])
+        content = _matching_past_exam_content(
+            question, revision, int(paper.year), import_hints=import_hints
+        )
+        if content is None:
+            continue
+        source_question_no = _source_question_no_from_hints(
+            import_hints, int(paper.year)
+        )
+        if source_question_no is None:
+            source_question_no = _source_question_no(
+                content, revision.raw_content or question.raw_content
+            )
+        if source_question_no is not None and int(source_question_no) != position:
+            continue
+        if (
+            _exam_item_validation_error(
+                question,
+                revision,
+                subject,
+                allow_inactive_question=True,
+            )
+            is not None
+        ):
+            continue
+
+        preserved.append(
+            {
+                "question_id": question_id,
+                "subject_id": int(question.subject_id),
+                "subject_code": subject.code,
+                "subject_name": subject.name,
+                "content": content,
+                "year": int(paper.year),
+                "source": revision.source or question.source,
+                # Existing canonical slot wins during refresh.
+                "_source_question_no": position,
+                "_preserved_existing": True,
+            }
+        )
+        seen_positions.add(position)
+        seen_question_ids.add(question_id)
+    return preserved
+
+
+async def list_past_exam_candidates(db: AsyncSession, year: int) -> dict:
+    items = await _discover_past_exam_candidate_pool(db, int(year))
     arranged_items, _diagnostics = _select_official_408_candidates(items)
+    public_items: list[dict] = []
     for item in arranged_items:
-        item.pop("_source_question_no", None)
-    return {"year": int(year), "total": len(arranged_items), "items": arranged_items}
+        public_item = dict(item)
+        public_item.pop("_source_question_no", None)
+        public_item.pop("_preserved_existing", None)
+        public_item.pop("_direct_official_source", None)
+        public_items.append(public_item)
+    return {"year": int(year), "total": len(public_items), "items": public_items}
 
 
 async def create_exam_paper(
@@ -957,7 +1190,8 @@ async def replace_exam_paper_items(
                     "question_id": int(input_item.question_id),
                     "subject_code": subject.code,
                     "_source_question_no": _source_question_no(
-                        _revision.content, _revision.raw_content or _question.raw_content
+                        _revision.content,
+                        _revision.raw_content or _question.raw_content,
                     ),
                     "_input": input_item,
                 }
@@ -1006,7 +1240,6 @@ async def replace_exam_paper_items(
     )
 
 
-
 async def _fill_past_exam_paper_items(
     db: AsyncSession,
     paper_id: int,
@@ -1047,8 +1280,24 @@ async def _fill_past_exam_paper_items(
             "当前试卷已存在题目，快速添加仅允许空试卷使用；请使用“刷新题目”更新整卷。"
         )
 
-    candidate_result = await list_past_exam_candidates(db, int(paper.year))
-    candidate_items = list(candidate_result.get("items") or [])
+    discovered_items = await _discover_past_exam_candidate_pool(db, int(paper.year))
+    preserved_items: list[dict] = []
+    if replace_existing and existing_count:
+        preserved_items = await _load_existing_past_exam_refresh_candidates(db, paper)
+
+    # Refresh gives already-pinned canonical slots priority, then fills only the
+    # missing/invalid slots from provenance-based discovery.  This prevents a
+    # later dedup/deactivation from silently shrinking or reshuffling a verified
+    # historical paper.
+    preserved_ids = {int(item["question_id"]) for item in preserved_items}
+    candidate_pool = preserved_items + [
+        item
+        for item in discovered_items
+        if int(item["question_id"]) not in preserved_ids
+    ]
+    candidate_items, _candidate_diagnostics = _select_official_408_candidates(
+        candidate_pool
+    )
     if not candidate_items:
         raise ValueError(
             f"未匹配到 {int(paper.year)} 年可用的 408 真题选择题，已保留当前试卷题目。"
@@ -1070,7 +1319,10 @@ async def _fill_past_exam_paper_items(
         .join(Subject, Subject.id == Question.subject_id)
         .where(Question.id.in_(candidate_ids))
     )
-    by_id = {int(question.id): (question, revision, subject) for question, revision, subject in rows.all()}
+    by_id = {
+        int(question.id): (question, revision, subject)
+        for question, revision, subject in rows.all()
+    }
     if len(by_id) != len(candidate_ids):
         raise ValueError("快速匹配题目在写入前发生变化，已取消操作并保留原试卷。")
 
@@ -1082,7 +1334,12 @@ async def _fill_past_exam_paper_items(
     new_rows: list[ExamPaperQuestion] = []
     for position, candidate in enumerate(candidate_items, start=1):
         question, revision, subject = by_id[int(candidate["question_id"])]
-        reason = _exam_item_validation_error(question, revision, subject)
+        reason = _exam_item_validation_error(
+            question,
+            revision,
+            subject,
+            allow_inactive_question=True,
+        )
         if reason is not None:
             raise ValueError(
                 f"快速匹配题目 Q#{int(question.id)} 当前不可写入：{reason}；已保留原试卷。"
@@ -1127,9 +1384,7 @@ async def _fill_past_exam_paper_items(
         shown = "；".join(validation_errors[:4])
         if len(validation_errors) > 4:
             shown += f"；另有 {len(validation_errors) - 4} 项"
-        raise ValueError(
-            f"自动组卷结果未通过发布校验，操作已回滚并保留原试卷：{shown}"
-        )
+        raise ValueError(f"自动组卷结果未通过发布校验，操作已回滚并保留原试卷：{shown}")
 
     action = (
         "exam.paper.items.refresh_past_exam"
@@ -1148,6 +1403,7 @@ async def _fill_past_exam_paper_items(
             "question_count_before": existing_count,
             "question_count_after": len(new_rows),
             "question_ids": candidate_ids,
+            "preserved_existing_count": len(preserved_items),
             "mode": "refresh" if replace_existing else "quick_fill_once",
         },
         request=request,
@@ -1331,7 +1587,9 @@ async def restore_and_publish_exam_paper(
     errors = await validate_exam_paper(db, paper_id)
     if errors:
         raise ValueError(
-            "当前归档试卷未通过发布校验：" + "；".join(errors) + "。请处理后再尝试还原发布。"
+            "当前归档试卷未通过发布校验："
+            + "；".join(errors)
+            + "。请处理后再尝试还原发布。"
         )
 
     before = {
@@ -1376,9 +1634,7 @@ async def publish_exam_paper(
         return paper
     if paper.status != "draft":
         raise ExamPaperStateError("只有草稿试卷可以发布")
-    conflict = await _same_year_past_exam_conflict(
-        db, paper, statuses=("published",)
-    )
+    conflict = await _same_year_past_exam_conflict(db, paper, statuses=("published",))
     if conflict is not None:
         raise ExamPaperStateError(
             f"{paper.year} 年已有已发布真题试卷《{conflict.title}》，请先归档后再发布当前试卷。"

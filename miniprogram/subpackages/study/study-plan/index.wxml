@@ -11,7 +11,7 @@
 <view class="plan-hero-stepper" aria-hidden="true">
 <text class="plan-hero-step-current">01</text>
 <text class="plan-hero-step-divider">/</text>
-<text class="plan-hero-step-total">05</text>
+<text class="plan-hero-step-total">06</text>
 </view>
 </view>
 <view wx:if="{{loading}}" class="state-card">正在生成今天的计划…</view>
@@ -103,9 +103,21 @@
 <text class="setting-arrow">›</text>
 </view>
 </picker>
-<picker class="setting-picker" range="{{weeklyOptions}}" value="{{weeklyIndex}}" bindchange="onWeeklyChange">
+<picker class="setting-picker" range="{{questionGoalOptions}}" value="{{questionGoalIndex}}" bindchange="onQuestionGoalChange">
 <view class="setting-row" hover-class="setting-row-pressed">
 <view class="setting-index">04</view>
+<view class="setting-icon setting-icon-question"></view>
+<view class="setting-copy">
+<text class="setting-label">每日目标题数</text>
+<text class="setting-desc">同步首页今日刷题目标</text>
+</view>
+<view class="setting-value">{{questionGoalOptions[questionGoalIndex]}} 题</view>
+<text class="setting-arrow">›</text>
+</view>
+</picker>
+<picker class="setting-picker" range="{{weeklyOptions}}" value="{{weeklyIndex}}" bindchange="onWeeklyChange">
+<view class="setting-row" hover-class="setting-row-pressed">
+<view class="setting-index">05</view>
 <view class="setting-icon setting-icon-week"></view>
 <view class="setting-copy">
 <text class="setting-label">每周学习天数</text>
@@ -117,7 +129,7 @@
 </picker>
 <picker class="setting-picker" range="{{priorityOptions}}" value="{{priorityIndex}}" bindchange="onPriorityChange">
 <view class="setting-row setting-row-last" hover-class="setting-row-pressed">
-<view class="setting-index">05</view>
+<view class="setting-index">06</view>
 <view class="setting-icon setting-icon-priority"></view>
 <view class="setting-copy">
 <text class="setting-label">目标优先级</text>
@@ -129,6 +141,25 @@
 </picker>
 </view>
 <view wx:if="{{configured}}" class="pause-link" bindtap="deletePlan">暂停长期计划</view>
+</view>
+<view class="strategy-card">
+<view class="strategy-head">
+<view><text class="settings-kicker">408 STRATEGY</text><text class="strategy-title">四科阶段与权重</text></view>
+<text class="strategy-total {{strategyWeightValid ? 'is-valid' : 'is-invalid'}}">合计 {{strategyWeightTotal}}%</text>
+</view>
+<text class="strategy-note">阶段决定推荐动作，权重决定科目优先级；四科权重合计需为 100%。</text>
+<view class="strategy-list">
+<view class="strategy-row" wx:for="{{subjectStrategies}}" wx:key="code">
+<view class="strategy-subject"><text class="strategy-name">{{item.name}}</text><text class="strategy-weight">{{item.weight}}%</text></view>
+<view class="strategy-controls">
+<picker class="strategy-stage-picker" range="{{stageOptions}}" value="{{item.stageIndex}}" data-index="{{index}}" bindchange="onStrategyStageChange">
+<view class="strategy-stage">{{item.stageLabel}}<text>›</text></view>
+</picker>
+<slider class="strategy-slider" min="0" max="100" step="5" value="{{item.weight}}" data-index="{{index}}" bindchanging="onStrategyWeightChange" bindchange="onStrategyWeightChange" aria-label="{{item.name}}权重 {{item.weight}}%" activeColor="#2F6F4A" backgroundColor="#E3EBE4" block-color="#FFFFFF" block-size="18" />
+</view>
+</view>
+</view>
+<text wx:if="{{!strategyWeightValid}}" class="strategy-warning">请调整为 100% 后保存</text>
 </view>
 <view class="allocation-section" wx:if="{{configured}}">
 <view class="section-head">
@@ -173,7 +204,7 @@
 </view>
 <movable-area class="fab-drag-layer">
 <movable-view wx:if="{{fabReady}}" class="fab-drag-view {{fabIdle ? 'fab-idle' : ''}}" direction="all" inertia="{{false}}" out-of-bounds="{{false}}" x="{{fabX}}" y="{{fabY}}" damping="40" friction="2" bindchange="onFabMove" bindtouchstart="onFabTouchStart" bindtouchend="onFabTouchEnd">
-<view class="save-fab {{saving ? 'is-saving' : ''}}" bindtap="onFabTap" hover-class="save-fab-pressed" aria-role="button" aria-label="保存学习计划，可拖动"><text wx:if="{{saving}}" class="save-fab-loading">…</text><image wx:else class="save-fab-icon" src="/assets/icons/study-plan/save-arrow.svg" mode="aspectFit" aria-hidden="true" /></view>
+<view class="save-fab {{saving ? 'is-saving' : ''}}" bindtap="onFabTap" hover-class="save-fab-pressed" aria-role="button" aria-label="保存四科策略和学习计划，可拖动"><text wx:if="{{saving}}" class="save-fab-loading">…</text><image wx:else class="save-fab-icon" src="/assets/icons/study-plan/save-arrow.svg" mode="aspectFit" aria-hidden="true" /></view>
 </movable-view>
 </movable-area>
 </block>

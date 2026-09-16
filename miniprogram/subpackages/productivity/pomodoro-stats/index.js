@@ -1,6 +1,7 @@
 const api = require('../../../utils/api')
 const pomodoroTheme = require('../utils/pomodoro-theme')
 const chinaTime = require('../utils/china-time')
+const storage = require('../../../utils/storage')
 
 const DARK_SUBJECT_COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
 const LIGHT_SUBJECT_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3', '#718C45', '#B45E46', '#876F8F']
@@ -1293,6 +1294,7 @@ var pageConfig = {
     const subjectKey = s.subject_code || ''
     const isPractice = s.record_type === 'practice'
     const isFree = s.preset === 'free'
+    const sessionTaskType = storage.pomodoroTaskTypes.labelForSession(s)
     const durationText = formatDuration(durSec)
     // 刷题会话：左侧明确标出「刷题」，状态为「刷题」而非「完成」，与番茄钟区分。
     let _subjectLabel, _statusLabel, _statusClass
@@ -1310,6 +1312,7 @@ var pageConfig = {
       _time: timeStr,
       _date: dateStr,
       _duration: durationText,
+      _taskTypeLabel: sessionTaskType,
       _subjectLabel,
       _color: getSubjectColor(s.subject_id != null ? String(s.subject_id) : (subjectKey || subjectName), this.data.themeMode),
       _statusLabel,

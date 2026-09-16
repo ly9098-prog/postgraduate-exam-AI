@@ -47,57 +47,125 @@
       <view class="report-period">近 {{trend ? trend.days : 7}} 天</view>
     </view>
 
-    <!-- Dark hero -->
-    <view class="hero-card" wx:if="{{hero}}">
+    <!-- Shared hero region: both panels stay mounted so switching never changes page height. -->
+    <view class="hero-card hero-card-{{heroCardMode}}" wx:if="{{hero}}">
       <view class="hero-glow hero-glow-primary"></view>
       <view class="hero-glow hero-glow-green"></view>
 
-      <view class="hero-topline">
-        <view class="hero-status-dot"></view>
-        <text class="hero-status">{{trend ? trend.statusTitle : '学习状态'}}</text>
-        <text class="hero-period">RECENT {{trend ? trend.days : 7}} DAYS</text>
-      </view>
-
-      <view class="hero-main">
-        <view class="hero-score-block">
-          <view class="hero-score-row">
-            <text class="hero-score">{{trend ? trend.avgAccuracyPct : hero.totalAccuracyPct}}</text>
-            <text class="hero-score-unit">%</text>
+      <view class="hero-card-deck">
+        <view class="hero-card-panel {{heroCardMode === 'summary' ? 'is-active' : 'is-inactive is-left'}}" aria-hidden="{{heroCardMode !== 'summary'}}">
+          <view class="hero-topline">
+            <view class="hero-status-dot"></view>
+            <text class="hero-status">{{trend ? trend.statusTitle : '学习状态'}}</text>
+            <view class="hero-top-actions">
+              <text class="hero-period">RECENT {{trend ? trend.days : 7}} DAYS</text>
+              <view class="hero-mode-switch" bindtap="toggleHeroCard" hover-class="surface-pressed" aria-role="button" aria-label="切换到选择题失分预算">
+                <text>失分预算</text>
+                <text class="line-icon icon-chevron-right"></text>
+              </view>
+            </view>
           </view>
-          <text class="hero-score-label">平均正确率</text>
-        </view>
-        <view class="hero-copy">
-          <text class="hero-copy-title">{{subtitle}}</text>
-          <text class="hero-copy-desc" wx:if="{{trend && trend.summary}}">{{trend.summary}}</text>
-          <text class="hero-copy-desc" wx:else>持续练习后，报告会越来越准确。</text>
-        </view>
-      </view>
 
-      <view class="hero-metrics">
-        <view class="hero-metric">
-          <text class="hero-metric-value">{{trend ? trend.totalQuestions : hero.totalQuestions}}</text>
-          <text class="hero-metric-label">累计做题</text>
-        </view>
-        <view class="hero-metric-divider"></view>
-        <view class="hero-metric">
-          <text class="hero-metric-value accent-green">{{trend ? trend.activeDays : hero.consecutiveDays}}</text>
-          <text class="hero-metric-label">活跃天数</text>
-        </view>
-        <view class="hero-metric-divider"></view>
-        <view class="hero-metric">
-          <text class="hero-metric-value accent-orange">{{hero.dueReviewCount}}</text>
-          <text class="hero-metric-label">待复习</text>
-        </view>
-      </view>
+          <view class="hero-main">
+            <view class="hero-score-block">
+              <view class="hero-score-row">
+                <text class="hero-score">{{trend ? trend.avgAccuracyPct : hero.totalAccuracyPct}}</text>
+                <text class="hero-score-unit">%</text>
+              </view>
+              <text class="hero-score-label">平均正确率</text>
+            </view>
+            <view class="hero-copy">
+              <text class="hero-copy-title">{{subtitle}}</text>
+              <text class="hero-copy-desc" wx:if="{{trend && trend.summary}}">{{trend.summary}}</text>
+              <text class="hero-copy-desc" wx:else>持续练习后，报告会越来越准确。</text>
+            </view>
+          </view>
 
-      <view class="hero-actions">
-        <button class="hero-primary-button" bindtap="goPractice" hover-class="button-pressed">
-          <text class="line-icon icon-play"></text>
-          <text>继续练习</text>
-        </button>
-        <view class="hero-secondary-button" bindtap="goReview" hover-class="surface-pressed">
-          <text>去复习</text>
-          <text class="line-icon icon-chevron-right"></text>
+          <view class="hero-metrics">
+            <view class="hero-metric">
+              <text class="hero-metric-value">{{trend ? trend.totalQuestions : hero.totalQuestions}}</text>
+              <text class="hero-metric-label">累计做题</text>
+            </view>
+            <view class="hero-metric-divider"></view>
+            <view class="hero-metric">
+              <text class="hero-metric-value accent-green">{{trend ? trend.activeDays : hero.consecutiveDays}}</text>
+              <text class="hero-metric-label">活跃天数</text>
+            </view>
+            <view class="hero-metric-divider"></view>
+            <view class="hero-metric">
+              <text class="hero-metric-value accent-orange">{{hero.dueReviewCount}}</text>
+              <text class="hero-metric-label">待复习</text>
+            </view>
+          </view>
+
+          <view class="hero-actions">
+            <button class="hero-primary-button" bindtap="goPractice" hover-class="button-pressed">
+              <text class="line-icon icon-play"></text>
+              <text>继续练习</text>
+            </button>
+            <view class="hero-secondary-button" bindtap="goReview" hover-class="surface-pressed">
+              <text>去复习</text>
+              <text class="line-icon icon-chevron-right"></text>
+            </view>
+          </view>
+        </view>
+
+        <view class="hero-card-panel {{heroCardMode === 'budget' ? 'is-active' : 'is-inactive is-right'}}" aria-hidden="{{heroCardMode !== 'budget'}}">
+          <view class="hero-topline">
+            <view class="hero-status-dot"></view>
+            <text class="hero-status">选择题失分预算</text>
+            <view class="hero-top-actions">
+              <text class="hero-period">TARGET 130 · CHOICE ONLY</text>
+              <view class="hero-mode-switch" bindtap="toggleHeroCard" hover-class="surface-pressed" aria-role="button" aria-label="切换到学习状态">
+                <text>学习状态</text>
+                <text class="line-icon icon-chevron-right"></text>
+              </view>
+            </view>
+          </view>
+
+          <view class="hero-budget-main">
+            <view class="hero-budget-score-block">
+              <view class="hero-budget-score-row">
+                <text class="hero-budget-prefix">≤</text>
+                <text class="hero-budget-score">{{choiceLossBudget.lossBudgetPoints}}</text>
+                <text class="hero-budget-unit">分</text>
+              </view>
+              <text class="hero-score-label">选择题允许失分</text>
+            </view>
+            <view class="hero-copy hero-budget-copy">
+              <text class="hero-copy-title">目标 ≥ {{choiceLossBudget.targetPoints}} / {{choiceLossBudget.totalPoints}} 分</text>
+              <text class="hero-copy-desc">{{choiceLossBudget.statusText}}</text>
+              <text class="hero-budget-note">130 分目标下建议最多错 {{choiceLossBudget.maxWrongQuestions}} 题；仅按已有四科选择题正确率估算。</text>
+            </view>
+          </view>
+
+          <view class="hero-budget-subjects">
+            <view class="hero-budget-subject" wx:for="{{choiceLossBudget.subjects}}" wx:key="code">
+              <text class="hero-budget-subject-name">{{item.name}}</text>
+              <text class="hero-budget-subject-value {{item.hasData ? '' : 'is-empty'}}">{{item.lossText}}</text>
+            </view>
+          </view>
+
+          <view class="hero-budget-coverage">
+            <view class="hero-budget-coverage-head">
+              <text>科目数据覆盖</text>
+              <text>{{choiceLossBudget.coveredSubjects}} / 4</text>
+            </view>
+            <view class="hero-budget-coverage-track">
+              <view class="hero-budget-coverage-fill" style="width: {{choiceLossBudget.coveragePct}}%;"></view>
+            </view>
+          </view>
+
+          <view class="hero-actions hero-budget-actions">
+            <button class="hero-primary-button" bindtap="goPractice" hover-class="button-pressed">
+              <text class="line-icon icon-play"></text>
+              <text>继续积累数据</text>
+            </button>
+            <view class="hero-secondary-button" bindtap="toggleHeroCard" hover-class="surface-pressed">
+              <text>返回学习状态</text>
+              <text class="line-icon icon-chevron-right"></text>
+            </view>
+          </view>
         </view>
       </view>
     </view>

@@ -303,24 +303,33 @@ function stabilizeRichMathTree(nodes) {
   return nodes
 }
 
+function parseStaticHtmlNodes(html) {
+  var host = {
+    properties: {
+      editable: false,
+      containerStyle: '',
+      mathLayout: '',
+    },
+    imgList: [],
+    plugins: [],
+  }
+  return new Parser(host).parse(String(html || ''))
+}
+
 function renderFormulaNodes(latex) {
   var source = String(latex || '').trim()
   if (!source) return []
   try {
-    // Inline KaTeX plus \displaystyle gives display-size fractions and limits,
-    // while keeping one natural-width tree. This avoids the block display tree
-    // being split across recursive custom components on some Android clients.
-    var rendered = katex.__renderToDomTree('\\displaystyle ' + source, {
+    // Do not feed KaTeX's private DOM objects directly to native <rich-text>.
+    // renderToString + Parser produces only WeChat's supported node schema and
+    // also normalizes KaTeX SVG fragments into renderable image nodes.
+    var markup = katex.renderToString('\\displaystyle ' + source, {
       displayMode: false,
       output: 'html',
       throwOnError: true,
     })
-    var nodes = [Object.assign({}, rendered, {
-      name: 'span',
-      attrs: { class: 'katex' },
-      type: 'node',
-    })]
-    if (Array.isArray(nodes) && nodes.length && !containsRenderError(nodes)) return stabilizeFormulaTree(nodes)
+    var nodes = stabilizeFormulaTree(parseStaticHtmlNodes(markup))
+    if (Array.isArray(nodes) && nodes.length && !containsRenderError(nodes)) return nodes
   } catch (err) {
     console.warn('Formula render failed, falling back to source text', err)
   }

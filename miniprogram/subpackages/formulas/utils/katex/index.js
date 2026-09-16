@@ -3,26 +3,29 @@
  * KaTeX split into chunks to satisfy the 200 KiB single-file limit.
  */
 const katex = require('./katex.min')
+const Parser = require('../mp-html-parser')
 
 function parseKatexToNodes(source, options) {
-  const tree = katex.__renderToDomTree(String(source || ''), {
+  // Native <rich-text> expects the documented node schema:
+  // { name, attrs, children } / { type:'text', text }. KaTeX's private DOM
+  // tree instead exposes `attributes` objects and class/style instances; passing
+  // that tree directly makes WeChat call `attributes.forEach` on a plain object.
+  // Render to ordinary HTML first, then reuse the project's hardened HTML parser
+  // to normalize it into native rich-text nodes (including SVG -> safe image).
+  const markup = katex.renderToString(String(source || ''), {
     ...options,
     output: 'html',
   })
-  const nodes = [Object.assign({}, tree, {
-    name: 'span',
-    attrs: { class: 'katex' },
-    type: 'node',
-  })]
-  ;(function convert(item) {
-    if (item instanceof katex.__domTree.SymbolNode) {
-      item.type = 'text'
-      item.children = undefined
-    } else if (Array.isArray(item.children)) {
-      item.children.forEach(convert)
-    }
-  })(nodes[0])
-  return nodes
+  const host = {
+    properties: {
+      editable: false,
+      containerStyle: '',
+      mathLayout: '',
+    },
+    imgList: [],
+    plugins: [],
+  }
+  return new Parser(host).parse(markup)
 }
 
 function Latex () {

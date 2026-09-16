@@ -1,7 +1,12 @@
 const api = require('../../../utils/api')
 const { getChinaDate } = require('../../../utils/china-time')
+const storage = require('../../../utils/storage')
+const { studyStrategy } = storage
 const DAILY_OPTIONS = [30, 45, 60, 90, 120, 150, 180, 240]
 const WEEKLY_OPTIONS = [3, 4, 5, 6, 7]
+const QUESTION_GOAL_OPTIONS = [10, 20, 30, 50]
+const QUESTION_GOAL_KEY = 'home_today_goal_total'
+const DEFAULT_QUESTION_GOAL = 30
 const FAB_IDLE_DELAY = 3000
 const FAB_SIZE_RPX = 120
 const FAB_RIGHT_RPX = 32
@@ -42,9 +47,11 @@ targetDateText: '请选择目标日期',
 minDate: '',
 dailyOptions: DAILY_OPTIONS,
 weeklyOptions: WEEKLY_OPTIONS,
+questionGoalOptions: QUESTION_GOAL_OPTIONS,
 priorityOptions: PRIORITY_OPTIONS.map(item => item.label),
 dailyIndex: 3,
 weeklyIndex: 3,
+questionGoalIndex: QUESTION_GOAL_OPTIONS.indexOf(DEFAULT_QUESTION_GOAL),
 priorityIndex: 0,
 daysRemaining: 0,
 phaseLabel: '',
@@ -55,17 +62,24 @@ todayProgressPercent: 0,
 focusMinutes: 0,
 isRestDay: false,
 allocations: [],
+stageOptions: studyStrategy.STAGES.map(item => item.label),
+subjectStrategies: [],
+strategyWeightTotal: 100,
+strategyWeightValid: true,
 fabX: 0,
 fabY: 0,
 fabReady: false,
 fabIdle: false,
 },
 onLoad() {
-this.setData({ minDate: getChinaDate(0) })
+this.setData({ minDate: getChinaDate(0), questionGoalIndex: this._getQuestionGoalIndex() })
+this._loadStudyStrategy()
 this._initFabPosition()
 this.loadOverview()
 },
 onShow() {
+this._loadStudyStrategy()
+this._syncQuestionGoalFromStorage()
 if (this._loadedOnce) this.loadOverview()
 this._showFabAndScheduleHide()
 },
@@ -262,12 +276,83 @@ isRestDay: !!today.is_rest_day,
 allocations,
 })
 },
+
+_getQuestionGoalIndex() {
+const stored = Number(storage.get(QUESTION_GOAL_KEY))
+const value = QUESTION_GOAL_OPTIONS.includes(stored) ? stored : DEFAULT_QUESTION_GOAL
+const index = QUESTION_GOAL_OPTIONS.indexOf(value)
+return index >= 0 ? index : 0
+},
+_syncQuestionGoalFromStorage() {
+const index = this._getQuestionGoalIndex()
+if (index !== this.data.questionGoalIndex) this.setData({ questionGoalIndex: index })
+},
+_saveQuestionGoal(index) {
+const safeIndex = clampIndex(index, QUESTION_GOAL_OPTIONS)
+const value = QUESTION_GOAL_OPTIONS[safeIndex]
+storage.set(QUESTION_GOAL_KEY, value)
+return safeIndex
+},
+_loadStudyStrategy() {
+const profile = studyStrategy.getProfile()
+const subjectStrategies = studyStrategy.SUBJECTS.map(meta => {
+const current = profile.subjects.find(item => item.code === meta.code) || {}
+const stageIndex = Math.max(0, studyStrategy.STAGES.findIndex(item => item.value === current.stage))
+return {
+code: meta.code,
+name: meta.shortName,
+stage: current.stage || meta.defaultStage,
+stageIndex,
+stageLabel: studyStrategy.stageLabel(current.stage || meta.defaultStage),
+weight: Number(current.weight == null ? meta.defaultWeight : current.weight),
+}
+})
+this._applySubjectStrategies(subjectStrategies)
+},
+_applySubjectStrategies(subjectStrategies) {
+const rows = Array.isArray(subjectStrategies) ? subjectStrategies : []
+const total = rows.reduce((sum, item) => sum + Number(item.weight || 0), 0)
+this.setData({
+subjectStrategies: rows,
+strategyWeightTotal: total,
+strategyWeightValid: total === 100,
+})
+},
+onStrategyStageChange(e) {
+const index = Number(e.currentTarget.dataset.index)
+const stageIndex = clampIndex(e.detail.value, studyStrategy.STAGES)
+if (!Number.isInteger(index) || index < 0 || index >= this.data.subjectStrategies.length) return
+const rows = this.data.subjectStrategies.map((item, rowIndex) => rowIndex === index ? {
+...item,
+stageIndex,
+stage: studyStrategy.STAGES[stageIndex].value,
+stageLabel: studyStrategy.STAGES[stageIndex].label,
+} : item)
+this._applySubjectStrategies(rows)
+},
+onStrategyWeightChange(e) {
+const index = Number(e.currentTarget.dataset.index)
+if (!Number.isInteger(index) || index < 0 || index >= this.data.subjectStrategies.length) return
+const value = Math.max(0, Math.min(100, Math.round((Number(e.detail.value) || 0) / 5) * 5))
+const rows = this.data.subjectStrategies.map((item, rowIndex) => rowIndex === index ? { ...item, weight: value } : item)
+this._applySubjectStrategies(rows)
+},
+_buildStrategyProfile() {
+return {
+version: studyStrategy.SCHEMA_VERSION,
+subjects: this.data.subjectStrategies.map(item => ({ code: item.code, stage: item.stage, weight: Number(item.weight || 0) })),
+}
+},
 onTargetDateChange(e) {
 const value = String(e.detail.value || '')
 this.setData({ targetDate: value, targetDateText: formatTargetDate(value) })
 },
 onDailyChange(e) {
 this.setData({ dailyIndex: clampIndex(e.detail.value, DAILY_OPTIONS) })
+},
+onQuestionGoalChange(e) {
+const questionGoalIndex = this._saveQuestionGoal(e.detail.value)
+this.setData({ questionGoalIndex })
 },
 onWeeklyChange(e) {
 this.setData({ weeklyIndex: clampIndex(e.detail.value, WEEKLY_OPTIONS) })
@@ -302,8 +387,20 @@ return dialog.show(opts || {})
 },
 async savePlan() {
 if (this.data.saving) return
+this._saveQuestionGoal(this.data.questionGoalIndex)
+const strategyValidation = studyStrategy.validateProfile(this._buildStrategyProfile())
+if (!strategyValidation.valid) {
+wx.showToast({ title: strategyValidation.message, icon: 'none' })
+return
+}
+try {
+studyStrategy.saveProfile(strategyValidation.profile)
+} catch (error) {
+wx.showToast({ title: error.message || '四科策略保存失败', icon: 'none' })
+return
+}
 if (!this.data.targetDate) {
-wx.showToast({ title: '请先选择目标日期', icon: 'none' })
+wx.showToast({ title: '四科策略已保存', icon: 'success' })
 return
 }
 const payload = {
@@ -318,7 +415,7 @@ await api.put('/study-plan', payload)
 wx.showToast({ title: this.data.configured ? '计划已更新' : '计划已创建', icon: 'success' })
 await this.loadOverview()
 } catch (error) {
-wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+wx.showToast({ title: `计划保存失败，四科策略已保留：${api.getErrorMessage(error)}`, icon: 'none', duration: 2600 })
 } finally {
 this.setData({ saving: false })
 }

@@ -3,6 +3,7 @@ const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
 const { getChinaDate, parseServerUtc } = require('../../utils/china-time')
 const errorDiagnosis = require('./utils/error-diagnosis')
+const { studyStrategy } = require('../../utils/storage')
 
 const DASHBOARD_AI_HTTP_TIMEOUT_MS = 55000
 const DASHBOARD_AI_SUCCESS_COOLDOWN_MS = 60000
@@ -21,6 +22,28 @@ function ratioPct(value) {
   if (value == null || !Number.isFinite(Number(value))) return 0
   const number = Number(value)
   return clampPct(Math.abs(number) <= 1 ? number * 100 : number)
+}
+
+function normalizeSubjectAnalysis(raw) {
+  if (Array.isArray(raw)) return { items: raw }
+  if (!raw || typeof raw !== 'object') return raw
+  if (Array.isArray(raw.items)) return raw
+  if (Array.isArray(raw.subject_stats)) return { ...raw, items: raw.subject_stats }
+  return raw
+}
+
+function choiceBudgetItemsFromSubjects(subjects) {
+  return subjects && Array.isArray(subjects.items) ? subjects.items : []
+}
+
+function buildChoiceBudgetWithFallback(subjects, fallbackStats) {
+  const primary = choiceBudgetItemsFromSubjects(subjects)
+  const fallback = Array.isArray(fallbackStats) ? fallbackStats : []
+  // Legacy subject_stats contains the long-lived, all-time per-subject practice counters.
+  // Put it first when available so a zero-attempt placeholder from dashboard-v2
+  // cannot mask real historical practice data for the same subject.
+  const source = fallback.length ? fallback.concat(primary) : primary
+  return studyStrategy.buildChoiceLossBudget(source)
 }
 
 function buildKnowledgeDiagnosisSnapshot(raw) {
@@ -218,6 +241,7 @@ Page({
     trend: null,
     trendError: null,
     subjects: null,
+    choiceLossBudget: studyStrategy.buildChoiceLossBudget([]),
     reviewRisk: null,
     growth: null,
     adaptive: null,
@@ -230,6 +254,7 @@ Page({
     masteryStatusText: '',
 
     // UI state
+    heroCardMode: 'summary',
     trendDays: 7,
     pendingTrendDays: null,
     _activeTabDays: 7,
@@ -459,11 +484,32 @@ Page({
           include_yearly_summary: true,
           include_growth: true,
           include_adaptive: true,
+          include_subjects: true,
         })
         if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
 
+        // dashboard-v2 is the primary source. Older deployments or partial
+        // responses may omit usable subject rows even when the user already
+        // has practice history. In that case, reuse the stable subject_stats
+        // exposed by /stats/dashboard. This request is made only when needed.
+        let choiceSubjectStats = []
+        const previewSubjects = model.buildSubjects(normalizeSubjectAnalysis(res && res.subjects))
+        const previewBudget = buildChoiceBudgetWithFallback(previewSubjects, [])
+        const totalQuestions = Number(res && res.overview && res.overview.total_questions) || 0
+        if (totalQuestions > 0 && previewBudget.coveredSubjects < 4) {
+          try {
+            const legacyDashboard = await api.get('/stats/dashboard')
+            if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
+            choiceSubjectStats = legacyDashboard && Array.isArray(legacyDashboard.subject_stats)
+              ? legacyDashboard.subject_stats
+              : []
+          } catch (fallbackError) {
+            console.warn('[dashboard] choice loss budget fallback unavailable', fallbackError)
+          }
+        }
+
         this._lastLoadAt = Date.now()
-        this._processDashboard(res, mode)
+        this._processDashboard(res, mode, choiceSubjectStats)
         this.loadErrorDiagnosisStats()
         return res
       } catch (e) {
@@ -665,13 +711,23 @@ Page({
         })
       }
       // Re-build subjects with enriched data and refresh the diagnosis view-model.
+      // Prefer fresh subject rows returned by dashboard-insights when present;
+      // otherwise enrich the already-rendered dashboard subject rows.
       let nextSubjects = this.data.subjects
-      if (this.data.subjects && this.data.subjects.items) {
+      const insightSubjectAnalysis = normalizeSubjectAnalysis(res && res.subjects)
+      if (insightSubjectAnalysis && Array.isArray(insightSubjectAnalysis.items) && insightSubjectAnalysis.items.length) {
+        nextSubjects = model.buildSubjects(insightSubjectAnalysis, enrichedMap)
+      } else if (this.data.subjects && this.data.subjects.items) {
         nextSubjects = model.buildSubjects(
           { items: this.data.subjects.items, strongest: this.data.subjects.strongest, weakest: this.data.subjects.weakest, totalQuestions: this.data.subjects.totalQuestions },
           enrichedMap
         )
       }
+      const currentChoiceBudget = this.data.choiceLossBudget || studyStrategy.buildChoiceLossBudget([])
+      const insightChoiceBudget = buildChoiceBudgetWithFallback(nextSubjects, [])
+      const nextChoiceLossBudget = insightChoiceBudget.coveredSubjects >= currentChoiceBudget.coveredSubjects
+        ? insightChoiceBudget
+        : currentChoiceBudget
       const deepState = buildDeepAnalysisState({
         hero: this.data.hero,
         trend: this.data.trend,
@@ -684,7 +740,7 @@ Page({
       })
       this._insightsLoading = false
       this._insightsError = null
-      this.setData({ subjects: nextSubjects, insights, ...deepState })
+      this.setData({ subjects: nextSubjects, choiceLossBudget: nextChoiceLossBudget, insights, ...deepState })
     } catch (e) {
       console.error('[dashboard] insights load failed', e)
       if (!this._alive || !this._visible || seq !== this._insightSeq) return
@@ -710,7 +766,7 @@ Page({
     }
   },
 
-  _processDashboard(res, mode = 'initial') {
+  _processDashboard(res, mode = 'initial', choiceSubjectStats = []) {
     // Kick off insights load (non-blocking, after main content renders)
     if (this._alive && this._visible) {
       clearTimeout(this._insightKickoffTimer)
@@ -723,7 +779,13 @@ Page({
     const hero = model.buildHero(res.overview)
     const rec = res.recommendation
     const trend = model.buildTrends(res.trends)
-    const subjects = model.buildSubjects(res.subjects)
+    let subjects = model.buildSubjects(normalizeSubjectAnalysis(res.subjects))
+    // If dashboard-v2 did not expose subject analysis, keep the dashboard
+    // useful by building the same subject view-model from legacy subject_stats.
+    if ((!subjects || !subjects.items || !subjects.items.length) && choiceSubjectStats.length) {
+      subjects = model.buildSubjects({ items: choiceSubjectStats })
+    }
+    const choiceLossBudget = buildChoiceBudgetWithFallback(subjects, choiceSubjectStats)
     const reviewRisk = model.buildReviewRisk(res.review_risk)
     const growth = model.buildGrowth(res.growth)
     const adaptive = model.buildAdaptive(res.adaptive)
@@ -741,6 +803,7 @@ Page({
       hero,
       trend,
       subjects,
+      choiceLossBudget,
       reviewRisk,
       growth,
       yearly,
@@ -780,6 +843,7 @@ Page({
       subtitle,
       trend,
       subjects,
+      choiceLossBudget,
       reviewRisk,
       growth,
       adaptive,
@@ -1037,6 +1101,13 @@ Page({
         wx.showToast({ title: '跳转失败', icon: 'none' })
       },
     })
+  },
+
+  toggleHeroCard() {
+    // Both reports remain mounted in the same CSS grid cell. A single state flip
+    // is enough; avoiding timer-driven unmount/remount keeps page height stable.
+    const nextMode = this.data.heroCardMode === 'budget' ? 'summary' : 'budget'
+    this.setData({ heroCardMode: nextMode })
   },
 
   goReview() {

@@ -254,7 +254,8 @@
               </view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>
-                <text class="hist-meta">{{item._time}} · {{item._duration}}</text>
+                <text class="hist-meta" wx:if="{{item._taskTypeLabel}}">{{item._taskTypeLabel}} · {{item._time}} · {{item._duration}}</text>
+                <text class="hist-meta" wx:else>{{item._time}} · {{item._duration}}</text>
               </view>
               <view class="hist-right">
                 <text class="hist-status {{item._statusClass}}">{{item._statusLabel}}</text>

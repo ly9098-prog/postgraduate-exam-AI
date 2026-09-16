@@ -73,9 +73,13 @@
 <view class="theme-card-icon" aria-hidden="true"><image class="theme-icon-image" src="{{item.iconSrc}}" mode="aspectFit" /></view>
 <view class="theme-card-copy"><text class="theme-quick-name">{{item.name}}</text><text class="theme-card-count">{{item.count}}</text></view>
 <view class="theme-card-arrow" aria-hidden="true"></view>
+<view class="theme-graduation-badge theme-graduation-{{item.graduationState}}" wx:if="{{item.graduationState === 'graduated' || item.graduationState === 'ready'}}">
+<text>{{item.graduationLabel}}</text>
+</view>
 </button>
 </view>
 <view class="theme-active-summary">
+<view class="theme-graduation-summary" wx:if="{{chapterGraduation && chapterGraduation.total}}"><text>章节毕业 {{chapterGraduation.text}}</text></view>
 <view class="theme-active-copy"><view class="current-scope-icon" aria-hidden="true"><view></view></view><text>当前范围</text><text class="theme-active-name">{{activeGroupKey ? activeGroupName : '全部主题'}}</text></view>
 <button class="theme-clear {{!activeGroupKey ? 'theme-clear-disabled' : ''}}" disabled="{{!activeGroupKey}}" bindtap="showOverview" hover-class="atlas-pressed">清除</button>
 </view>

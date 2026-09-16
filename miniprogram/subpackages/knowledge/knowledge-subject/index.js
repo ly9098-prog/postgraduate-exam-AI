@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
-const { buildKnowledgeGroups } = require('./tree-groups')
+const { knowledgePracticeSync } = require('../../../utils/storage')
+const { buildKnowledgeGroups, summarizeGroups } = require('./tree-groups')
 const { POINTS_PER_PAGE, buildScene, fitCamera, cameraLimits, clampCamera, zoomCamera, cameraStyle } = require('./graph-layout')
 const STATUS_TEXT = { no_data: '未开始', insufficient: '数据不足', weak: '薄弱', developing: '提升中', good: '良好', mastered: '已掌握' }
 const FILTERS = [
@@ -238,6 +239,7 @@ data: {
 loading: true, error: '', refreshError: '', subject: null, syllabusText: '',
 loadingMetrics: [1, 2, 3],
 stats: { total: 0, reliable: 0, weak: 0, coverage: 0 },
+chapterGraduation: summarizeGroups([]).summary,
 filters: FILTERS.map(item => ({ id: item.id, label: item.label, count: 0 })),
 filter: 'all', query: '', searchDraft: '', searchFocused: false, searchPending: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '', indexScopeGroupKey: '',
 groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '', themeSheetGroups: [],
@@ -257,6 +259,7 @@ this._viewStateStorageKey = Number.isInteger(this.subjectId) && this.subjectId >
 : ''
 this._pendingReturnState = null
 this._returnRefreshTimer = null
+this._returnSyncRetryTimer = null
 this._practiceLaunchFeedbackTimer = null
 this._practiceNavigationPending = false
 this._detailNavigationPending = false
@@ -332,9 +335,10 @@ this._refreshAfterReturn = false
 const restoreState = this._pendingReturnState || this._captureViewState()
 this._pendingReturnState = null
 clearTimeout(this._returnRefreshTimer)
+clearTimeout(this._returnSyncRetryTimer)
 this._returnRefreshTimer = setTimeout(() => {
 this._returnRefreshTimer = null
-if (!this._unloaded && this._pageVisible !== false) this.loadMap(false, { preserveViewState: restoreState })
+if (!this._unloaded && this._pageVisible !== false) this._refreshMapAfterPractice(restoreState, 0)
 }, RETURN_REFRESH_DELAY_MS)
 },
 onPageScroll(event) { this._scrollTop = Number(event.scrollTop) || 0 },
@@ -361,6 +365,8 @@ clearTimeout(this._labelSwitchTimer)
 clearTimeout(this._selectionSwitchTimer)
 clearTimeout(this._selectionSettleTimer)
 clearTimeout(this._returnRefreshTimer)
+clearTimeout(this._returnSyncRetryTimer)
+this._returnSyncRetryTimer = null
 clearTimeout(this._practiceLaunchFeedbackTimer)
 this._indexNavigateTimer = null
 this._practiceLaunchFeedbackTimer = null
@@ -390,10 +396,26 @@ clearTimeout(this._labelSwitchTimer)
 clearTimeout(this._selectionSwitchTimer)
 clearTimeout(this._selectionSettleTimer)
 clearTimeout(this._returnRefreshTimer)
+clearTimeout(this._returnSyncRetryTimer)
+this._returnSyncRetryTimer = null
 clearTimeout(this._practiceLaunchFeedbackTimer)
 this._practiceLaunchFeedbackTimer = null
 this._practiceNavigationPending = false
 this._detailNavigationPending = false
+},
+async _refreshMapAfterPractice(restoreState, attempt = 0) {
+if (this._unloaded || this._pageVisible === false) return
+try {
+await this.loadMap(false, { preserveViewState: restoreState })
+} catch (error) { }
+if (this._unloaded || this._pageVisible === false) return
+if (!knowledgePracticeSync.hasPending(this.subjectId) || attempt >= 2) return
+const delays = [900, 1800]
+clearTimeout(this._returnSyncRetryTimer)
+this._returnSyncRetryTimer = setTimeout(() => {
+this._returnSyncRetryTimer = null
+this._refreshMapAfterPractice(restoreState, attempt + 1)
+}, delays[attempt] || 1800)
 },
 onPullDownRefresh() {
 Promise.resolve(this.loadMap(false, { preserveViewState: this._captureViewState() })).then(() => wx.stopPullDownRefresh(), () => wx.stopPullDownRefresh())
@@ -484,24 +506,46 @@ try {
 const data = await api.get(`/knowledge-map/subjects/${this.subjectId}`)
 if (this._unloaded || this._pageVisible === false || requestId !== this._requestId) return
 if (!data || !data.subject) throw new Error('知识图谱暂不可用')
+const pendingReceipts = knowledgePracticeSync.getForSubject(this.subjectId)
+const receiptByPointId = new Map()
+pendingReceipts.forEach((receipt) => {
+const id = Number(receipt && receipt.knowledgePointId) || 0
+if (id && !receiptByPointId.has(id)) receiptByPointId.set(id, receipt)
+})
+const resolvedReceipts = []
 this._nodes = (Array.isArray(data.nodes) ? data.nodes : []).map((item) => {
 const score = percent(item.mastery_score)
-const accuracy = accuracyPercent(item.accuracy)
-const status = STATUS_TEXT[item.status] ? item.status : 'no_data'
+const backendAccuracy = accuracyPercent(item.accuracy)
+const backendAttemptCount = nonnegative(item.attempt_count)
+const backendStatus = STATUS_TEXT[item.status] ? item.status : 'no_data'
+const pointId = Number(item.knowledge_point_id) || 0
+const receipt = receiptByPointId.get(pointId) || null
+const backendHasEvidence = backendAttemptCount > 0 || backendAccuracy != null || backendStatus !== 'no_data'
+if (receipt && backendHasEvidence) resolvedReceipts.push(receipt)
+const pendingSync = Boolean(receipt && !backendHasEvidence)
+const receiptAnswered = receipt ? Math.max(0, Number(receipt.correctCount) || 0) + Math.max(0, Number(receipt.wrongCount) || 0) : 0
+const receiptAccuracy = receiptAnswered > 0 ? percent((Number(receipt.correctCount) || 0) / receiptAnswered * 100) : null
+const status = pendingSync || (backendStatus === 'no_data' && backendAttemptCount > 0) ? 'insufficient' : backendStatus
+const attemptCount = pendingSync ? Math.max(backendAttemptCount, Number(receipt.answeredCount) || receiptAnswered) : backendAttemptCount
 const aliases = Array.isArray(item.aliases)
 ? item.aliases.map(alias => String(alias || '').trim()).filter(Boolean)
 : []
 return {
-...item, aliases, name: String(item.name || '未命名知识点'), status, statusText: STATUS_TEXT[status],
+...item, aliases, name: String(item.name || '未命名知识点'), status,
+statusText: pendingSync ? '已作答 · 待更新' : STATUS_TEXT[status],
 tone: status === 'weak' || status === 'developing' ? 'weak' : (status === 'good' || status === 'mastered' ? 'stable' : 'unseen'),
 scoreText: score == null ? '待建立' : `${score}%`, hasScore: score != null,
-accuracyText: accuracy == null ? '暂无' : `${accuracy}%`,
-attempt_count: nonnegative(item.attempt_count),
+accuracyText: pendingSync ? (receiptAccuracy == null ? '已作答' : `${receiptAccuracy}%`) : (backendAccuracy == null ? '暂无' : `${backendAccuracy}%`),
+attempt_count: attemptCount,
+pendingSync,
 trainable_question_count: nonnegative(item.trainable_question_count),
 hasPractice: nonnegative(item.trainable_question_count) > 0,
 }
 })
+if (resolvedReceipts.length) knowledgePracticeSync.remove(resolvedReceipts)
 this._groups = buildKnowledgeGroups(this._nodes, data.subject)
+const graduation = summarizeGroups(this._groups)
+this._groups = graduation.items
 if (!this._loadedOnce && !(options && options.preserveViewState) && !(this._expandedNodeIds && this._expandedNodeIds.size)) {
 const firstStructuredGroup = this._groups.find(group => group && group.rootNode && group.rootNode.hasChildren)
 if (firstStructuredGroup) {
@@ -559,6 +603,7 @@ this.setData({
 loading: false, error: '', refreshError: '', subject: data.subject, filters,
 syllabusText: syllabus ? [syllabus.name, syllabus.effective_year].filter(Boolean).join(' · ') : '',
 stats: { total, reliable, weak, coverage: coverage == null ? 0 : coverage },
+chapterGraduation: graduation.summary,
 ...(preserveViewState ? this._viewStateDataPatch(preserveViewState) : {}),
 ...(preserveViewState ? this.cameraPayload(true) : {}),
 }, () => this.applyView(firstLoad && !preserveViewState, firstLoad && !preserveViewState, () => {
@@ -615,7 +660,9 @@ const indexExpanded = indexExpandable && (indexForcedOpen || this._expandedNodeI
 const subtreeNodes = fullNodes.filter(candidate => Array.isArray(candidate.pathIds) && candidate.pathIds.some(pathId => Number(pathId) === id))
 const subtreeTotal = Math.max(1, subtreeNodes.length || Number(node.descendantCount || 0) + 1)
 const establishedCount = subtreeNodes.reduce((count, candidate) => count + (isEstablishedNode(candidate) ? 1 : 0), 0)
-let indexMetaText = `${node.statusText} · ${node.trainable_question_count} 题可练`
+let indexMetaText = node.pendingSync
+? `${node.attempt_count} 题已记录 · 待后台汇总`
+: `${node.statusText} · ${node.trainable_question_count} 题可练`
 if (node.contextOnly) indexMetaText = `路径 · ${children.length || node.visibleChildCount || 1} 个匹配分支`
 else if (node.hasChildren) indexMetaText = `${node.childCount} 个子节点 · ${branchStatusText(node)} · 已建立 ${establishedCount}/${subtreeTotal}`
 const indexSelected = Number(this._selectedId) === id
@@ -742,6 +789,10 @@ nodeCount: Number(group.nodeCount || group.nodes.length || 0),
 descendantCount: Number(group.descendantCount || 0),
 directChildCount: Number(group.directChildCount || 0),
 orderIndex: index,
+graduationState: group.graduation ? group.graduation.state : 'unavailable',
+graduationLabel: group.graduation ? group.graduation.label : '暂无判定',
+graduationReason: group.graduation ? group.graduation.reason : '',
+graduated: Boolean(group.graduation && group.graduation.graduated),
 }
 })
 const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey, this._recentGroupKeys)

@@ -125,4 +125,107 @@ return groups.map((group, index) => ({
 number: String(index + 1).padStart(2, '0'),
 }))
 }
-module.exports = { buildKnowledgeGroups }
+// Chapter graduation is evaluated next to tree grouping so the subject map can
+// label whole chapters without importing page-level strategy modules.
+const GRADUATION_CRITERIA = {
+  evidenceCoveragePct: 80,
+  accuracyPct: 85,
+  stableCoveragePct: 80,
+  weakCount: 0,
+}
+
+function safeGraduationPct(value) {
+  if (value == null) return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return Math.max(0, Math.min(100, Math.abs(n) <= 1 ? n * 100 : n))
+}
+
+function evaluateChapter(group) {
+  const source = Array.isArray(group && group.nodes) ? group.nodes : []
+  const nodes = source.filter(node => Number(node && node.trainable_question_count) > 0)
+  const total = nodes.length
+  if (!total) {
+    return {
+      graduated: false,
+      state: 'unavailable',
+      label: '暂无可练',
+      total: 0,
+      evidenceCoveragePct: 0,
+      accuracyPct: null,
+      stableCoveragePct: 0,
+      weakCount: 0,
+      reason: '当前章节暂无可练知识点',
+    }
+  }
+  const established = nodes.filter(node => Number(node.attempt_count || 0) > 0 && node.status !== 'no_data')
+  const stable = nodes.filter(node => node.status === 'good' || node.status === 'mastered')
+  const weak = nodes.filter(node => node.status === 'weak')
+  const evidenceCoveragePct = Math.round(established.length / total * 100)
+  const stableCoveragePct = Math.round(stable.length / total * 100)
+  let weightedCorrect = 0
+  let weightedAttempts = 0
+  let hasMissingAccuracy = false
+  established.forEach(node => {
+    const attempts = Math.max(0, Number(node.attempt_count) || 0)
+    const acc = safeGraduationPct(node.accuracy)
+    if (acc == null) {
+      // A missing reading on any established node means the chapter accuracy is
+      // still unknown; averaging over only the measured nodes would hide it.
+      hasMissingAccuracy = true
+      return
+    }
+    if (attempts > 0) {
+      weightedAttempts += attempts
+      weightedCorrect += attempts * acc / 100
+    }
+  })
+  const accuracyPct = !hasMissingAccuracy && weightedAttempts > 0
+    ? Math.round(weightedCorrect / weightedAttempts * 100)
+    : null
+  const checks = {
+    evidence: evidenceCoveragePct >= GRADUATION_CRITERIA.evidenceCoveragePct,
+    accuracy: accuracyPct != null && accuracyPct >= GRADUATION_CRITERIA.accuracyPct,
+    stable: stableCoveragePct >= GRADUATION_CRITERIA.stableCoveragePct,
+    weak: weak.length <= GRADUATION_CRITERIA.weakCount,
+  }
+  const graduated = checks.evidence && checks.accuracy && checks.stable && checks.weak
+  let state = graduated ? 'graduated' : 'building'
+  let reason = graduated ? '已达到章节毕业标准' : ''
+  if (!graduated) {
+    if (!checks.evidence) reason = `检测覆盖 ${evidenceCoveragePct}% / ${GRADUATION_CRITERIA.evidenceCoveragePct}%`
+    else if (!checks.accuracy) reason = `正确率 ${accuracyPct == null ? '--' : accuracyPct + '%'} / ${GRADUATION_CRITERIA.accuracyPct}%`
+    else if (!checks.weak) reason = `仍有 ${weak.length} 个薄弱知识点`
+    else if (!checks.stable) reason = `稳定节点 ${stableCoveragePct}% / ${GRADUATION_CRITERIA.stableCoveragePct}%`
+    if (checks.evidence && checks.accuracy && weak.length <= 1) state = 'ready'
+  }
+  return {
+    graduated,
+    state,
+    label: graduated ? '已毕业' : (state === 'ready' ? '接近毕业' : '待毕业'),
+    total,
+    evidenceCoveragePct,
+    accuracyPct,
+    stableCoveragePct,
+    weakCount: weak.length,
+    reason,
+    checks,
+  }
+}
+
+function summarizeGroups(groups) {
+  const items = (Array.isArray(groups) ? groups : []).map(group => ({ ...group, graduation: evaluateChapter(group) }))
+  const eligible = items.filter(group => group.graduation.state !== 'unavailable')
+  const graduated = eligible.filter(group => group.graduation.graduated).length
+  return {
+    items,
+    summary: {
+      graduated,
+      total: eligible.length,
+      text: `${graduated}/${eligible.length} 章节毕业`,
+      criteriaText: `覆盖≥${GRADUATION_CRITERIA.evidenceCoveragePct}% · 正确率≥${GRADUATION_CRITERIA.accuracyPct}% · 稳定节点≥${GRADUATION_CRITERIA.stableCoveragePct}% · 无薄弱节点`,
+    },
+  }
+}
+
+module.exports = { CRITERIA: GRADUATION_CRITERIA, buildKnowledgeGroups, evaluateChapter, summarizeGroups }

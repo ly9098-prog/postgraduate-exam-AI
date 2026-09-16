@@ -582,6 +582,7 @@ if (!options.silent) wx.showToast({ title: '加载科目失败', icon: 'none' })
 },
 _parseLaunchPreset(options) {
 const subjectId = Number(options && options.subject_id)
+const subjectCode = String((options && options.subject_code) || '').trim().slice(0, 64)
 const modeValue = String((options && options.mode) || '').trim()
 const allowedModes = new Set(['random', 'smart', 'sequential'])
 const rawCount = Number(options && options.count)
@@ -612,6 +613,7 @@ planToken: String((options && options.plan_token) || '').trim().slice(0, 2048),
 subjectName: safeDecodeURIComponent(options && options.subject_name, '').trim().slice(0, 80),
 includeChildren: String((options && options.include_children) || '') === '1',
 includeDescendants: String((options && options.include_descendants) || '') === '1',
+subjectCode,
 returnTo: _normalizePracticeReturnRoute(options && options.return_to),
 }
 },
@@ -650,8 +652,12 @@ return true
 },
 async _applyLaunchPreset(subjectTree) {
 const preset = this._launchPreset
-if (!preset || !preset.subjectId) return false
 const available = this._flattenSelectableSubjects(subjectTree || [])
+if (preset && preset.subjectCode && !preset.subjectId) {
+const byCode = available.find(item => String(item.subject_code || '') === String(preset.subjectCode || ''))
+if (byCode) preset.subjectId = Number(byCode.subject_id)
+}
+if (!preset || !preset.subjectId) return false
 const target = available.find(item => Number(item.subject_id) === Number(preset.subjectId))
 if (!target) {
 console.warn('[PRACTICE_LAUNCH_PRESET] subject unavailable', preset.subjectId)

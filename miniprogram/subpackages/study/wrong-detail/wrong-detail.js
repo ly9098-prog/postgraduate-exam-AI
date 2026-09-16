@@ -185,8 +185,8 @@ diagnosisSheetVisible: false,
 diagnosisPrimary: 'unknown',
 diagnosisSecondaryMap: {},
 diagnosisSaving: false,
-diagnosisAiQueuing: false,
-diagnosisAiEnabled: false,
+diagnosisSyncing: false,
+nextErrorAction: null,
 teacherPrimaryActions: aiTeacher408.PRIMARY_ACTIONS,
 teacherMoreActions: aiTeacher408.MORE_ACTIONS,
 teacherActionsExpanded: false,
@@ -214,7 +214,7 @@ _aiSwipeStart: null,
 _contentTransitionStartedAt: 0,
 _contentTransitionDirection: '',
 _teacherRequestSeq: 0,
-_diagnosisAiRequestSeq: 0,
+_diagnosisRequestSeq: 0,
 _bottomActionsTimer: null,
 _bottomActionsLastActiveAt: 0,
 onLoad(options) {
@@ -229,7 +229,7 @@ this._aiSwipeStart = null
 this._contentTransitionStartedAt = 0
 this._contentTransitionDirection = ''
 this._teacherRequestSeq = 0
-this._diagnosisAiRequestSeq = 0
+this._diagnosisRequestSeq = 0
 this._teacherCache = Object.create(null)
 this._teacherInflight = Object.create(null)
 this._teacherFeedbackCache = Object.create(null)
@@ -313,7 +313,7 @@ onUnload() {
 this._alive = false
 this._aiRequestId++
 this._teacherRequestSeq++
-this._diagnosisAiRequestSeq++
+this._diagnosisRequestSeq++
 if (this._switchMaskTimer) {
 clearTimeout(this._switchMaskTimer)
 this._switchMaskTimer = null
@@ -361,10 +361,9 @@ masterSubmitting: false,
 removeSubmitting: false,
 diagnosisSheetVisible: false,
 diagnosisSaving: false,
-diagnosisAiQueuing: false,
-diagnosisAiEnabled: false,
+diagnosisSyncing: false,
 })
-this._diagnosisAiRequestSeq++
+this._diagnosisRequestSeq++
 this._teacherRequestSeq++
 try {
 const wq = await api.get(`/wrong-questions/${wqId}`)
@@ -386,7 +385,7 @@ for (var wi = 0; wi < totalQ; wi++) {
 wrongQuestions.push({ _answered: true })
 }
 this._currentWqId = wqId
-this._diagnosisAiRequestSeq++
+this._diagnosisRequestSeq++
 this._teacherRequestSeq++
 this._errorTypeLabelText = raw.errorTypeLabelText
 this._aiGenerationMarker = _generationMarker(wq)
@@ -412,7 +411,8 @@ isCurrentMastered: _isWqMastered(wq),
 masterSubmitting: false,
 removeSubmitting: false,
 errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
-diagnosisAiEnabled: false,
+nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),
+diagnosisSyncing: false,
 teacherLoadingAction: '',
 teacherLastAction: '',
 teacherResult: null,
@@ -445,6 +445,7 @@ data.aiErrorText = preferredNormalized && preferredNormalized.formatError
 }
 if (loadSeq !== this._aiRequestId || !this._alive) return
 this.setData(data)
+this._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
 const checkModel = data.currentQuestion && data.currentQuestion._renderModel
 if (checkModel) {
 this._checkRenderInvariant(checkModel)
@@ -1496,10 +1497,10 @@ isCurrentMastered: _isWqMastered(wq),
 masterSubmitting: false,
 removeSubmitting: false,
 errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
+nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),
 diagnosisSheetVisible: false,
 diagnosisSaving: false,
-diagnosisAiQueuing: false,
-diagnosisAiEnabled: false,
+diagnosisSyncing: false,
 teacherLoadingAction: '',
 teacherLastAction: '',
 teacherResult: null,
@@ -1527,6 +1528,7 @@ clearTimeout(this._switchMaskTimer)
 this._armSwitchWatchdog(QUESTION_SWITCH_ANIM_WATCHDOG_MS)
 this.setData(Object.assign({ showSwitchMask: false }, nextData), () => {
 this._finishContentSwitchTransition(switchDirection)
+this._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
 })
 this._checkRenderInvariant(raw._renderModel)
 } catch (e) {
@@ -1551,10 +1553,10 @@ openDiagnosisSheet() {
 const diagnosis = this.data.errorDiagnosis
 const primary = diagnosis && diagnosis.primaryType && diagnosis.primaryType !== 'unknown'
 ? diagnosis.primaryType
-: (this.data.diagnosisAiEnabled && diagnosis && diagnosis.aiPrimaryType && diagnosis.aiPrimaryType !== 'unknown' ? diagnosis.aiPrimaryType : 'knowledge_gap')
+: 'knowledge_gap'
 const secondary = diagnosis && diagnosis.secondaryTypes && diagnosis.secondaryTypes.length
 ? diagnosis.secondaryTypes
-: (this.data.diagnosisAiEnabled && diagnosis && diagnosis.aiSecondaryTypes || [])
+: []
 const secondaryMap = {}
 secondary.forEach(type => { if (type && type !== primary) secondaryMap[type] = true })
 this.setData({
@@ -1601,15 +1603,33 @@ primary_type: primaryType,
 secondary_types: secondaryTypes,
 })
 if (!this._alive || wqId !== Number(this._currentWqId)) return
-const normalized = errorDiagnosis.normalizeDiagnosis(raw)
+const responseDiagnosis = errorDiagnosis.normalizeDiagnosis(raw)
+// Saving is an explicit user confirmation. Keep that fact locally even when an
+// older backend response omits/temporarily misreports user_confirmed. Preserve
+// any server id so later edits still target the same occurrence diagnosis.
+const responseId = Number(raw && (raw.id || raw.diagnosis_id || (raw.diagnosis && raw.diagnosis.id)) || 0) || undefined
+const currentId = this.data.errorDiagnosis ? Number(this.data.errorDiagnosis.id || 0) || undefined : undefined
+const localDiagnosisRaw = Object.assign(
+{},
+responseDiagnosis && raw && raw.diagnosis ? raw.diagnosis : (responseDiagnosis ? raw : {}),
+{
+  id: responseId || currentId,
+  primary_type: primaryType,
+  secondary_types: secondaryTypes,
+  user_confirmed: true,
+  effective_source: 'user',
+}
+)
+const normalized = errorDiagnosis.normalizeDiagnosis(localDiagnosisRaw)
 const wq = Object.assign({}, this.data.wq || {}, {
 error_type: normalized ? normalized.primaryType : primaryType,
-error_diagnosis: raw,
+error_diagnosis: localDiagnosisRaw,
 })
 if (this._wqCache && this._wqCache[wqId]) this._wqCache[wqId] = { data: wq, ts: Date.now() }
 this.setData({
 wq,
 errorDiagnosis: normalized,
+nextErrorAction: errorDiagnosis.buildNextAction(wq, normalized),
 diagnosisSheetVisible: false,
 diagnosisSaving: false,
 })
@@ -1619,53 +1639,74 @@ this.setData({ diagnosisSaving: false })
 wx.showToast({ title: api.getErrorMessage(e) || '保存失败', icon: 'none' })
 }
 },
-async acceptAiDiagnosis() {
-const diagnosis = this.data.errorDiagnosis
-if (!diagnosis || !diagnosis.aiPrimaryType || diagnosis.aiPrimaryType === 'unknown') return
-const secondaryMap = {}
-;(diagnosis.aiSecondaryTypes || []).forEach(type => { secondaryMap[type] = true })
+openNextErrorAction() {
+const action = this.data.nextErrorAction
+if (!action) return
+if (action.route === 'diagnosis') {
+this.openDiagnosisSheet()
+return
+}
+if (action.route === 'review_today') {
+wx.navigateTo({ url: '/subpackages/study/review-today/review-today' })
+return
+}
+if (action.route === 'exam_list') {
+wx.navigateTo({ url: '/subpackages/exam/paper-list/index' })
+return
+}
+const params = action.routeParams && typeof action.routeParams === 'object' ? action.routeParams : {}
+const query = Object.keys(params)
+.filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+.map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
+.join('&')
+if (action.route === 'knowledge_detail') {
+wx.navigateTo({ url: `/subpackages/knowledge/knowledge-detail/index${query ? '?' + query : ''}` })
+return
+}
+if (action.route === 'knowledge_subject') {
+wx.navigateTo({ url: `/subpackages/knowledge/knowledge-subject/index${query ? '?' + query : ''}` })
+return
+}
+if (action.route === 'practice') {
+wx.navigateTo({ url: `/subpackages/study/practice/practice${query ? '?' + query : ''}` })
+}
+},
+async _refreshDiagnosisFromServer(wqId, fallbackRaw) {
+const id = Number(wqId)
+if (!id) return
+const requestSeq = ++this._diagnosisRequestSeq
+const fallback = errorDiagnosis.normalizeDiagnosis(fallbackRaw)
+if (fallback && id === Number(this._currentWqId)) {
+const currentWq = Object.assign({}, this.data.wq || {}, { error_diagnosis: fallbackRaw })
 this.setData({
-diagnosisPrimary: diagnosis.aiPrimaryType,
-diagnosisSecondaryMap: secondaryMap,
+wq: currentWq,
+errorDiagnosis: fallback,
+nextErrorAction: errorDiagnosis.buildNextAction(currentWq, fallback),
 })
-await this.saveDiagnosis()
-},
-enableDiagnosisAi() {
-if (this.data.diagnosisAiEnabled) return
-this.setData({ diagnosisAiEnabled: true })
-const diagnosis = this.data.errorDiagnosis
-if (!diagnosis || diagnosis.aiStatus === 'not_requested' || diagnosis.aiStatus === 'failed' || diagnosis.aiStatus === 'pending') {
-this.requestDiagnosisSuggestion()
 }
-},
-disableDiagnosisAi() {
-this._diagnosisAiRequestSeq++
-this.setData({ diagnosisAiEnabled: false, diagnosisAiQueuing: false })
-},
-async requestDiagnosisSuggestion() {
-const wqId = Number(this._currentWqId || (this.data.wq && this.data.wq.id))
-if (!wqId || !this.data.diagnosisAiEnabled || this.data.diagnosisAiQueuing) return
-const requestSeq = ++this._diagnosisAiRequestSeq
-this.setData({ diagnosisAiQueuing: true })
+this.setData({ diagnosisSyncing: true })
 try {
-const response = await api.post(`/wrong-questions/${wqId}/diagnosis/suggest`, {})
-if (requestSeq !== this._diagnosisAiRequestSeq || !this._alive || !this.data.diagnosisAiEnabled || wqId !== Number(this._currentWqId)) return
-this.setData({ errorDiagnosis: errorDiagnosis.normalizeDiagnosis(response && response.diagnosis) })
-for (let i = 0; i < 8; i += 1) {
-await _sleep(1500)
-if (requestSeq !== this._diagnosisAiRequestSeq || !this._alive || !this.data.diagnosisAiEnabled || wqId !== Number(this._currentWqId)) return
-const raw = await api.get(`/wrong-questions/${wqId}/diagnosis`, {}, { suppressNetworkToast: true }).catch(() => null)
-if (requestSeq !== this._diagnosisAiRequestSeq || !this.data.diagnosisAiEnabled) return
+const raw = await api.get(`/wrong-questions/${id}/diagnosis`, {}, { suppressNetworkToast: true })
+if (requestSeq !== this._diagnosisRequestSeq || !this._alive || id !== Number(this._currentWqId)) return
 const normalized = errorDiagnosis.normalizeDiagnosis(raw)
-if (normalized) this.setData({ errorDiagnosis: normalized })
-if (normalized && normalized.aiStatus !== 'pending') break
+if (!normalized) return
+// Never let a lagging/empty aggregate overwrite a locally embedded confirmed
+// diagnosis. The dedicated endpoint may trail the PUT response briefly.
+if (fallback && fallback.userConfirmed && (!normalized.userConfirmed || normalized.primaryType === 'unknown')) return
+const currentWq = Object.assign({}, this.data.wq || {}, { error_diagnosis: raw })
+if (this._wqCache && this._wqCache[id]) {
+this._wqCache[id] = { data: Object.assign({}, this._wqCache[id].data || {}, { error_diagnosis: raw }), ts: Date.now() }
 }
+this.setData({
+wq: currentWq,
+errorDiagnosis: normalized,
+nextErrorAction: errorDiagnosis.buildNextAction(currentWq, normalized),
+})
 } catch (e) {
-if (requestSeq === this._diagnosisAiRequestSeq && this.data.diagnosisAiEnabled) {
-wx.showToast({ title: api.getErrorMessage(e) || 'AI 错因建议暂不可用', icon: 'none' })
-}
+// The detail endpoint is the source of truth when available. A missing record
+// simply means no cause has been saved yet; keep the embedded fallback.
 } finally {
-if (requestSeq === this._diagnosisAiRequestSeq && this._alive) this.setData({ diagnosisAiQueuing: false })
+if (requestSeq === this._diagnosisRequestSeq && this._alive) this.setData({ diagnosisSyncing: false })
 }
 },
 scrollToAiCard() {

@@ -124,7 +124,6 @@ button::after { border: none; }
 .fr-swipe-copy { display: flex; flex-direction: column; align-items: center; gap: 3rpx; flex-shrink: 0; }
 .fr-swipe-sub { color: #A0A8A1; font-size: 16rpx; }
 .fr-swipe-line { flex: 1; height: 1rpx; background: #DDE2DA; }
-.fr-bottom-space { height: calc(190rpx + env(safe-area-inset-bottom)); }
 
 .fr-actions {
   position: fixed;
@@ -379,7 +378,7 @@ button::after { border: none; }
 .fr-card-favorite.disabled { opacity: .52; pointer-events: none; }
 
 .fr-swipe-note { margin-top: 20rpx; }
-.fr-bottom-space { height: calc(118rpx + env(safe-area-inset-bottom)); }
+.fr-bottom-space { height: calc(152rpx + env(safe-area-inset-bottom)); }
 
 .fr-nav-capsule {
   position: fixed;

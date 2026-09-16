@@ -4890,3 +4890,92 @@ page {
     border-radius: 25rpx;
   }
 }
+
+/* Home hero polish: remove ornamental dead space and keep copy clear of the trend artwork. */
+.focus-content {
+  padding-top: 12rpx;
+  padding-bottom: 8rpx;
+}
+.focus-title-line {
+  margin-top: 22rpx;
+  padding-right: 190rpx;
+}
+.focus-title-arrow {
+  position: relative;
+  z-index: 4;
+  transform: translate(-4rpx, -12rpx);
+}
+.focus-desc {
+  width: 344rpx;
+  max-width: 344rpx;
+  margin-top: 12rpx;
+  font-size: 21rpx;
+  line-height: 1.48;
+}
+.focus-hero-visual {
+  right: -18rpx;
+  top: 54rpx;
+  width: 314rpx;
+  height: 204rpx;
+  overflow: hidden;
+}
+.focus-curve-image {
+  right: -8rpx;
+  top: 82rpx;
+  width: 300rpx;
+  height: 126rpx;
+}
+.focus-metrics {
+  margin-top: 18rpx;
+  padding-bottom: 7rpx;
+}
+@media (max-width: 350px) {
+  .focus-content {
+    padding-top: 10rpx;
+    padding-bottom: 7rpx;
+  }
+  .focus-title-line {
+    padding-right: 158rpx;
+  }
+  .focus-desc {
+    width: 312rpx;
+    max-width: 312rpx;
+    font-size: 20rpx;
+  }
+  .focus-hero-visual {
+    right: -16rpx;
+    top: 56rpx;
+    width: 282rpx;
+    height: 190rpx;
+  }
+  .focus-curve-image {
+    right: -8rpx;
+    top: 80rpx;
+    width: 270rpx;
+    height: 114rpx;
+  }
+}
+
+
+/* v4 hero refinement: no chevron; trend artwork is longer and sits higher. */
+.focus-title-line {
+  padding-right: 208rpx;
+}
+.focus-hero-visual {
+  right: -28rpx;
+  top: 40rpx;
+  width: 356rpx;
+  height: 212rpx;
+  overflow: hidden;
+}
+.focus-curve-image {
+  right: -10rpx;
+  top: 52rpx;
+  width: 350rpx;
+  height: 150rpx;
+}
+@media (max-width: 350px) {
+  .focus-title-line { padding-right: 176rpx; }
+  .focus-hero-visual { right: -24rpx; top: 43rpx; width: 318rpx; height: 198rpx; }
+  .focus-curve-image { right: -10rpx; top: 54rpx; width: 312rpx; height: 134rpx; }
+}

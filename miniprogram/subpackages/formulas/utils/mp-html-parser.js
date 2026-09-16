@@ -720,7 +720,24 @@ Parser.prototype.popNode = function () {
   } else if (!config.trustTags[node.name] && !this.xml) {
     // 未知标签转为 span，避免无法显示
     node.name = 'span'
-  } else if (node.name === 'a' || node.name === 'ad') {
+  }
+
+  // Formula-reader KaTeX CSS cannot use tag-name selectors inside a custom
+  // component.  The stylesheet therefore rewrites KaTeX's `> span` rules to
+  // `> .katex-span`.  Attach that compatibility class to every parsed span.
+  // Outside a `.katex` ancestor the class has no styling effect, while inside
+  // KaTeX it restores the vertical-list/fraction/limits layout on real devices.
+  if (node.name === 'span') {
+    const classList = String(attrs.class || '').split(/\s+/).filter(Boolean)
+    const insideKatex = classList.includes('katex') || this.stack.some((ancestor) => {
+      const ancestorClasses = String((ancestor.attrs && ancestor.attrs.class) || '').split(/\s+/)
+      return ancestorClasses.includes('katex')
+    })
+    if (insideKatex && !classList.includes('katex-span')) classList.push('katex-span')
+    attrs.class = classList.join(' ') || undefined
+  }
+
+  if (node.name === 'a' || node.name === 'ad') {
     this.expose()
   } else if (node.name === 'video' || node.name === 'audio') {
     if ((styleObj.height || '').includes('auto')) {

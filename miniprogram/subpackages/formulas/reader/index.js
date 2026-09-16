@@ -80,6 +80,8 @@ Page({
   },
 
   onLoad(options = {}) {
+    this._readerAlive = true
+    this._navigatingBack = false
     const formulaId = normalizeId(options.id)
     const isRandom = options.random === '1'
     let sequenceIds = normalizeSequence(String(options.ids || '').split(',').filter(Boolean))
@@ -126,6 +128,7 @@ Page({
   },
 
   onUnload() {
+    this._readerAlive = false
     clearTimeout(this._transitionTimer)
     clearTimeout(this._transitionInTimer)
     clearTimeout(this._formulaGestureTimer)
@@ -136,9 +139,17 @@ Page({
   },
 
   goBack() {
+    // Prevent two fast taps from issuing overlapping navigation commands.
+    // WeChat can otherwise report `routeDone ... is not the current page` when
+    // the first navigation has already detached this reader webview.
+    if (this._navigatingBack) return
+    this._navigatingBack = true
     const pages = getCurrentPages()
-    if (pages.length > 1) wx.navigateBack()
-    else wx.reLaunch({ url: '/subpackages/formulas/library/index' })
+    const fail = () => {
+      if (this._readerAlive) this._navigatingBack = false
+    }
+    if (pages.length > 1) wx.navigateBack({ fail })
+    else wx.reLaunch({ url: '/subpackages/formulas/library/index', fail })
   },
 
   syncNavigationState() {
@@ -173,6 +184,7 @@ Page({
 
     this.setData({ transitionClass: outClass })
     this._transitionTimer = setTimeout(() => {
+      if (!this._readerAlive) return
       this.setData({
         ...patch,
         currentCard: card,
@@ -183,6 +195,7 @@ Page({
         this.resetReaderScroll()
         this.syncNavigationState()
         this._transitionInTimer = setTimeout(() => {
+          if (!this._readerAlive) return
           this.setData({ transitionClass: '' })
         }, TRANSITION_IN_DELAY_MS)
       })
@@ -265,6 +278,7 @@ Page({
     if (!subjectCode && !chapterId) return
 
     const data = await api.request('GET', '/formulas', params)
+    if (!this._readerAlive) return
     const ids = normalizeSequence((data && data.items ? data.items : []).map((item) => item.id))
     const index = ids.findIndex((id) => sameId(id, currentId))
     if (ids.length > 1 && index >= 0) {
@@ -359,7 +373,10 @@ Page({
   },
 
   resetReaderScroll() {
-    this.setData({ readerScrollTop: 1 }, () => this.setData({ readerScrollTop: 0 }))
+    if (!this._readerAlive) return
+    this.setData({ readerScrollTop: 1 }, () => {
+      if (this._readerAlive) this.setData({ readerScrollTop: 0 })
+    })
   },
 
   onFormulaGestureStart() {
@@ -483,6 +500,7 @@ Page({
     try {
       if (wasFavorited) await api.request('DELETE', `/formulas/${cardId}/favorite`)
       else await api.request('PUT', `/formulas/${cardId}/favorite`)
+      if (!this._readerAlive) return
 
       card.isFavorited = !wasFavorited
       cards[cardIndex] = card
@@ -498,6 +516,7 @@ Page({
       })
       wx.showToast({ title: wasFavorited ? '已取消收藏' : '已收藏', icon: 'none' })
     } catch (err) {
+      if (!this._readerAlive) return
       console.error('Toggle favorite failed', err)
       this.setData({ favoriteBusy: false })
       wx.showToast({ title: '操作失败，请重试', icon: 'none' })

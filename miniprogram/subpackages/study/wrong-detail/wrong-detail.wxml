@@ -87,7 +87,7 @@
   />
 <view class="diagnosis-card {{errorDiagnosis && errorDiagnosis.userConfirmed ? 'is-confirmed' : 'is-pending'}}">
 <view class="diagnosis-summary">
-<view class="diagnosis-symbol {{errorDiagnosis && errorDiagnosis.userConfirmed ? 'confirmed' : ''}}">{{errorDiagnosis && errorDiagnosis.userConfirmed ? '✓' : '因'}}</view>
+<view class="diagnosis-symbol {{errorDiagnosis && errorDiagnosis.userConfirmed ? 'confirmed' : ''}}" aria-hidden="true"><image class="diagnosis-symbol-image" src="{{errorDiagnosis && errorDiagnosis.userConfirmed ? '/assets/icons/wrong-detail/badge-check.svg' : '/assets/icons/wrong-detail/circle-question-mark.svg'}}" mode="aspectFit" /></view>
 <view class="diagnosis-content">
 <view class="diagnosis-title-row">
 <text class="diagnosis-title">我的错因</text>
@@ -104,23 +104,9 @@
 <text class="diagnosis-edit-arrow">›</text>
 </button>
 </view>
-<view class="diagnosis-ai-row">
-<view class="diagnosis-ai-suggestion" wx:if="{{diagnosisAiEnabled && errorDiagnosis && !errorDiagnosis.userConfirmed && errorDiagnosis.aiPrimaryType && errorDiagnosis.aiPrimaryType !== 'unknown'}}">
-<view class="diagnosis-ai-suggestion-copy">
-<text class="diagnosis-ai-suggestion-label">AI 推荐</text>
-<text class="diagnosis-ai-suggestion-value">{{errorDiagnosis.aiPrimaryLabel}}</text>
-</view>
-<button class="diagnosis-ai-accept" bindtap="acceptAiDiagnosis">采纳</button>
-</view>
-<view class="diagnosis-ai-state" wx:elif="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiStatus === 'pending'}}">
-<view class="diagnosis-ai-state-dot"></view><text>正在推荐标签</text>
-</view>
-<view class="diagnosis-ai-state failed" wx:elif="{{diagnosisAiEnabled && (!errorDiagnosis || errorDiagnosis.aiStatus === 'failed' || errorDiagnosis.aiStatus === 'not_requested')}}">
-<text>推荐暂不可用</text><text class="diagnosis-ai-retry" bindtap="requestDiagnosisSuggestion">重试</text>
-</view>
-<text wx:else class="diagnosis-ai-caption">{{diagnosisAiEnabled ? '暂未发现可靠推荐' : '需要时可由 AI 辅助推荐'}}</text>
-<button wx:if="{{diagnosisAiEnabled}}" class="diagnosis-ai-inline-action enabled" bindtap="disableDiagnosisAi">关闭推荐</button>
-<button wx:else class="diagnosis-ai-inline-action" bindtap="enableDiagnosisAi">AI 推荐</button>
+<view class="diagnosis-next-action" wx:if="{{errorDiagnosis && errorDiagnosis.userConfirmed && nextErrorAction}}" bindtap="openNextErrorAction" hover-class="diagnosis-next-action-pressed">
+<view class="diagnosis-next-copy"><text class="diagnosis-next-kicker">NEXT ACTION</text><text class="diagnosis-next-title">{{nextErrorAction.title}}</text><text class="diagnosis-next-reason">{{nextErrorAction.reason}}</text></view>
+<view class="diagnosis-next-cta" aria-label="{{nextErrorAction.actionLabel}}"><image class="diagnosis-next-icon" src="/assets/icons/wrong-detail/circle-arrow-right.svg" mode="aspectFit" aria-hidden="true" /></view>
 </view>
 </view>
 <view class="ai-card" id="ai-card" bindtouchstart="onAiSwipeStart" bindtouchend="onAiSwipeEnd" bindtouchcancel="onAiSwipeCancel">

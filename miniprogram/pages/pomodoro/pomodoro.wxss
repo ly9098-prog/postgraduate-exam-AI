@@ -1725,3 +1725,442 @@ page {
     height: 52rpx;
   }
 }
+
+/* Optional task dimension. Kept visually subordinate to subject and duration. */
+.task-type-section{margin-top:30rpx;}
+.task-type-scroll{width:100%;white-space:nowrap;}
+.task-type-row{display:inline-flex;min-width:100%;gap:14rpx;padding:4rpx 2rpx 8rpx;box-sizing:border-box;}
+.task-type-chip{flex:0 0 auto;min-width:92rpx;height:54rpx;padding:0 18rpx;display:flex;align-items:center;justify-content:center;border:1rpx solid var(--border-subtle,rgba(72,96,80,.16));border-radius:999rpx;background:var(--surface-soft,rgba(255,255,255,.55));color:var(--text-secondary,#718078);font-size:20rpx;font-weight:720;box-sizing:border-box;transition:transform .12s ease,background-color .16s ease,border-color .16s ease;}
+.task-type-chip.active{border-color:rgba(47,111,74,.34);background:rgba(47,111,74,.10);color:var(--text-primary,#153323);font-weight:850;}
+.task-type-chip-pressed{transform:scale(.97);opacity:.82;}
+
+
+/* v4 idle controls: airy section spacing and circular subject launchers. */
+.task-type-section {
+  width: 100%;
+  margin-top: 12rpx;
+  margin-bottom: 46rpx;
+}
+.mode-section {
+  margin-top: 0;
+}
+.section-label-divider {
+  margin-bottom: 26rpx;
+  letter-spacing: 2rpx;
+  font-size: 22rpx;
+  opacity: .88;
+}
+.subj-section {
+  margin-bottom: 36rpx;
+}
+.subj-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 12rpx;
+  row-gap: 22rpx;
+  width: 100%;
+  padding: 0 4rpx;
+  box-sizing: border-box;
+}
+.subj-card {
+  width: auto;
+  height: 142rpx;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 9rpx;
+  transform: none;
+}
+.subj-card.active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: translateY(-2rpx);
+}
+.subj-icon-wrap {
+  width: 92rpx;
+  height: 92rpx;
+  flex: 0 0 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(160, 184, 166, .28);
+  border-radius: 50%;
+  background: rgba(223, 238, 225, .66);
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.82), 0 7rpx 20rpx rgba(42,78,52,.045);
+  transition: transform .18s cubic-bezier(.22,1,.36,1), border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+.subj-card.active .subj-icon-wrap {
+  border-color: rgba(55, 151, 82, .46);
+  background: rgba(219, 242, 221, .96);
+  box-shadow: 0 0 0 7rpx rgba(72, 191, 98, .08), 0 10rpx 22rpx rgba(42, 112, 62, .08);
+  transform: translateY(-2rpx) scale(1.035);
+}
+.subj-card-pressed .subj-icon-wrap {
+  transform: scale(.94);
+}
+.subj-emoji {
+  font-size: 50rpx;
+  line-height: 1;
+}
+.subj-name {
+  width: 100%;
+  max-width: 146rpx;
+  padding: 0 4rpx;
+  color: rgba(255,255,255,.52);
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 650;
+  text-align: center;
+}
+.theme-light .subj-card,
+.theme-light .subj-card.active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.theme-light .subj-icon-wrap {
+  border-color: #DCE8DD;
+  background: linear-gradient(145deg, rgba(238,248,239,.96), rgba(224,240,226,.88));
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.98), 0 8rpx 22rpx rgba(44,84,53,.055);
+}
+.theme-light .subj-card.active .subj-icon-wrap {
+  border-color: rgba(48, 139, 72, .44);
+  background: linear-gradient(145deg,#E7F8E8,#D8F1DB);
+  box-shadow: 0 0 0 7rpx rgba(71,187,96,.075), 0 10rpx 24rpx rgba(48,111,68,.10);
+}
+.theme-light .subj-name { color: #627067; }
+.theme-light .subj-card.active .subj-name { color: #244C31; font-weight: 780; }
+@media (max-width: 350px) {
+  .subj-grid { column-gap: 6rpx; row-gap: 18rpx; }
+  .subj-card { height: 132rpx; }
+  .subj-icon-wrap { width: 84rpx; height: 84rpx; flex-basis: 84rpx; }
+  .subj-emoji { font-size: 45rpx; }
+  .subj-name { max-width: 132rpx; font-size: 20rpx; }
+  .task-type-section { margin-bottom: 40rpx; }
+}
+
+/* v9: obsolete CSS replacement-ring implementation removed.
+   The original Canvas dial is the single rendering path again. */
+
+/* v6 idle control refinement: compact subject matrix + true centered divider labels. */
+.control-section-title {
+  width: 100%;
+  min-height: 34rpx;
+  margin: 0 0 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  box-sizing: border-box;
+}
+.control-section-line {
+  width: 34rpx;
+  height: 1rpx;
+  flex: 0 0 34rpx;
+  border-radius: 999rpx;
+  background: rgba(197, 209, 203, .34);
+}
+.control-section-text {
+  display: block;
+  color: rgba(231, 238, 235, .45);
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 3rpx;
+  text-align: center;
+  white-space: nowrap;
+}
+.theme-light .control-section-line {
+  background: rgba(82, 111, 93, .34);
+}
+.theme-light .control-section-text {
+  color: #708078;
+}
+
+/* Keep the three idle selectors visually grouped instead of vertically scattered. */
+.subj-section {
+  margin-bottom: 24rpx;
+}
+.subj-grid {
+  width: calc(100% - 28rpx);
+  margin: 0 auto;
+  padding: 0;
+  column-gap: 0;
+  row-gap: 6rpx;
+}
+.subj-card {
+  height: 144rpx;
+  gap: 7rpx;
+}
+.subj-icon-wrap {
+  width: 104rpx;
+  height: 104rpx;
+  flex: 0 0 104rpx;
+}
+.subj-emoji {
+  font-size: 54rpx;
+}
+.subj-name {
+  max-width: 150rpx;
+  font-size: 21rpx;
+}
+.task-type-section {
+  margin-top: 0;
+  margin-bottom: 28rpx;
+}
+.task-type-scroll {
+  width: 100%;
+}
+.task-type-row {
+  display: flex;
+  width: 100%;
+  min-width: 100%;
+  justify-content: center;
+  align-items: center;
+  gap: 10rpx;
+  padding: 2rpx 0 4rpx;
+  box-sizing: border-box;
+}
+.task-type-chip {
+  min-width: 82rpx;
+  height: 50rpx;
+  padding: 0 13rpx;
+  font-size: 19rpx;
+}
+.mode-section {
+  margin-top: 0;
+  margin-bottom: 24rpx;
+}
+.mode-section .control-section-title {
+  margin-bottom: 20rpx;
+}
+.mode-row {
+  gap: 28rpx;
+}
+
+/* Dark theme: subject launchers use the same cool navy family as the page,
+   instead of inheriting the light mint circles. */
+.theme-dark .subj-card,
+.theme-dark .subj-card.active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.theme-dark .subj-icon-wrap {
+  border-color: rgba(155, 176, 181, .24);
+  background: linear-gradient(145deg, rgba(57, 68, 78, .96), rgba(39, 49, 60, .96));
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.08), 0 8rpx 22rpx rgba(0,0,0,.16);
+}
+.theme-dark .subj-card.active .subj-icon-wrap {
+  border-color: rgba(48, 179, 209, .55);
+  background: linear-gradient(145deg, rgba(38, 91, 112, .96), rgba(28, 67, 88, .96));
+  box-shadow: 0 0 0 7rpx rgba(36, 159, 196, .09), 0 10rpx 24rpx rgba(0,0,0,.20);
+}
+.theme-dark .subj-name {
+  color: rgba(209, 219, 220, .64);
+}
+.theme-dark .subj-card.active .subj-name {
+  color: #E8F6F8;
+  font-weight: 780;
+}
+.theme-dark .control-section-line {
+  background: rgba(151, 166, 176, .30);
+}
+.theme-dark .control-section-text {
+  color: rgba(194, 205, 211, .48);
+}
+
+@media (max-width: 350px) {
+  .subj-grid { width: calc(100% - 12rpx); row-gap: 4rpx; }
+  .subj-card { height: 136rpx; }
+  .subj-icon-wrap { width: 96rpx; height: 96rpx; flex-basis: 96rpx; }
+  .subj-emoji { font-size: 50rpx; }
+  .task-type-row { gap: 7rpx; }
+  .task-type-chip { min-width: 76rpx; height: 48rpx; padding: 0 10rpx; font-size: 18rpx; }
+}
+
+
+/* ==========================================================
+   v7 visual polish: stable timer dial + calmer selector rhythm
+   ========================================================== */
+
+/* Keep the timer text/status above the native Canvas layer. */
+.ring-center {
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Timer digits are display information, not body copy. Keep a luminous
+   treatment in both themes so the dial remains visually consistent with the
+   cyan/emerald progress ring. Free timing keeps the animated emerald text
+   gradient defined above; `color` is only its safe fallback. */
+.theme-light.page-focus .ring-time {
+  color: #168CB8;
+  text-shadow:
+    0 0 10rpx rgba(34, 184, 220, .24),
+    0 0 30rpx rgba(34, 184, 220, .12);
+}
+.theme-dark.page-focus .ring-time {
+  color: #72DDF2;
+  text-shadow:
+    0 0 12rpx rgba(74, 208, 235, .34),
+    0 0 34rpx rgba(59, 130, 246, .18);
+}
+.theme-light.page-break .ring-time {
+  color: #C66A1B;
+  text-shadow:
+    0 0 10rpx rgba(249, 115, 22, .20),
+    0 0 28rpx rgba(249, 115, 22, .10);
+}
+.theme-dark.page-break .ring-time {
+  color: #F8B96B;
+  text-shadow:
+    0 0 12rpx rgba(251, 146, 60, .30),
+    0 0 32rpx rgba(249, 115, 22, .16);
+}
+.theme-light.page-free .ring-time-free {
+  color: #10B981;
+  text-shadow:
+    0 0 12rpx rgba(16, 185, 129, .22),
+    0 0 34rpx rgba(16, 185, 129, .12);
+}
+.theme-dark.page-free .ring-time-free {
+  color: #6EE7B7;
+  text-shadow:
+    0 0 14rpx rgba(52, 211, 153, .34),
+    0 0 38rpx rgba(16, 185, 129, .18);
+}
+
+/* Idle controls: give each decision a clearer vertical beat while keeping the
+   whole setup compact enough to remain on one screen on common devices. */
+.subj-section {
+  margin-bottom: 36rpx;
+}
+.task-type-section {
+  margin-top: 2rpx;
+  margin-bottom: 40rpx;
+}
+.mode-section {
+  margin-top: 0;
+  margin-bottom: 30rpx;
+}
+.control-section-title {
+  margin-bottom: 24rpx;
+}
+.task-type-section .control-section-title {
+  margin-bottom: 22rpx;
+}
+.mode-section .control-section-title {
+  margin-bottom: 24rpx;
+}
+
+/* Task type is a first-class choice: slightly larger targets/text, still all
+   six options fit in one centered row on the target layout. */
+.task-type-row {
+  gap: 11rpx;
+  padding: 3rpx 0 5rpx;
+}
+.task-type-chip {
+  min-width: 88rpx;
+  height: 56rpx;
+  padding: 0 14rpx;
+  font-size: 22rpx;
+  line-height: 1;
+  font-weight: 740;
+}
+.task-type-chip.active {
+  font-weight: 850;
+}
+
+/* Light theme: neutral sage launchers sit inside the warm ivory page instead
+   of reading as eight separate mint cards. */
+.theme-light .subj-icon-wrap {
+  border-color: rgba(69, 101, 78, .13);
+  background: linear-gradient(145deg, rgba(244, 247, 241, .98), rgba(232, 238, 230, .94));
+  box-shadow:
+    inset 0 1rpx 0 rgba(255,255,255,.96),
+    0 7rpx 18rpx rgba(37, 63, 44, .045);
+}
+.theme-light .subj-card.active .subj-icon-wrap {
+  border-color: rgba(46, 125, 72, .34);
+  background: linear-gradient(145deg, rgba(235, 246, 234, .99), rgba(220, 238, 221, .97));
+  box-shadow:
+    0 0 0 6rpx rgba(55, 144, 78, .055),
+    0 9rpx 22rpx rgba(41, 91, 55, .075);
+}
+.theme-light .subj-name {
+  color: #657269;
+}
+.theme-light .subj-card.active .subj-name {
+  color: #24472F;
+}
+.theme-light .task-type-chip {
+  border-color: rgba(72, 96, 80, .15);
+  background: rgba(255, 255, 255, .66);
+  color: #6B776F;
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.88);
+}
+.theme-light .task-type-chip.active {
+  border-color: rgba(44, 117, 68, .28);
+  background: rgba(222, 239, 224, .78);
+  color: #214B30;
+}
+
+/* Dark theme: keep subject launchers and task chips in the same navy family as
+   the page.  Avoid the previous neutral-gray circles/chips that looked pasted
+   on top of the background. */
+.theme-dark .subj-icon-wrap {
+  border-color: rgba(111, 137, 166, .20);
+  background: linear-gradient(145deg, rgba(31, 43, 66, .96), rgba(23, 32, 51, .98));
+  box-shadow:
+    inset 0 1rpx 0 rgba(255,255,255,.055),
+    0 8rpx 22rpx rgba(0,0,0,.16);
+}
+.theme-dark .subj-card.active .subj-icon-wrap {
+  border-color: rgba(72, 153, 224, .46);
+  background: linear-gradient(145deg, rgba(29, 62, 91, .98), rgba(22, 48, 76, .98));
+  box-shadow:
+    0 0 0 6rpx rgba(55, 139, 214, .075),
+    0 10rpx 24rpx rgba(0,0,0,.20);
+}
+.theme-dark .subj-name {
+  color: rgba(207, 218, 232, .68);
+}
+.theme-dark .subj-card.active .subj-name {
+  color: #EEF6FF;
+}
+.theme-dark .task-type-chip {
+  border-color: rgba(118, 139, 164, .17);
+  background: rgba(255, 255, 255, .055);
+  color: rgba(213, 223, 235, .62);
+  box-shadow: inset 0 1rpx 0 rgba(255,255,255,.035);
+}
+.theme-dark .task-type-chip.active {
+  border-color: rgba(59, 145, 224, .36);
+  background: rgba(43, 119, 190, .14);
+  color: #E9F4FF;
+}
+.theme-dark .dot-label,
+.theme-dark .mode-info {
+  color: rgba(203, 214, 228, .48);
+}
+.theme-dark .mode-dot.active .dot-label {
+  color: rgba(239, 246, 255, .86);
+}
+
+/* A little more breathing room before the primary action, with compact-device
+   fallbacks so the button does not get pushed below the fold. */
+.btn-start {
+  margin-top: 4rpx;
+}
+@media (max-width: 350px) {
+  .subj-section { margin-bottom: 30rpx; }
+  .task-type-section { margin-bottom: 32rpx; }
+  .control-section-title { margin-bottom: 20rpx; }
+  .task-type-row { gap: 7rpx; }
+  .task-type-chip { min-width: 76rpx; height: 50rpx; padding: 0 10rpx; font-size: 19rpx; }
+}

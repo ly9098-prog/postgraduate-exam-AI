@@ -109,7 +109,7 @@ const storageMockPath = path.resolve(__dirname, '../utils/storage.js')
 const configMockPath = path.resolve(__dirname, '../config.js')
 const debugMockPath = path.resolve(__dirname, '../utils/debug.js')
 const apiMock = { get: () => Promise.resolve({}), put: () => Promise.resolve({}) }
-const storageMock = { KEYS: {}, get: () => null, set() {} }
+const storageMock = require('../utils/storage.js')
 const configMock = {}
 const debugMock = { debugLog() {}, isDebugMode: () => false, saveDebugSnapshot() {} }
 require.cache = require.cache || {}

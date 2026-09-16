@@ -44,7 +44,7 @@
         <view class="idle-wrap">
           <!-- Subject Grid -->
           <view class="subj-section">
-            <text class="section-label">选择科目</text>
+            <view class="control-section-title"><view class="control-section-line"></view><text class="control-section-text">选择科目</text><view class="control-section-line"></view></view>
             <view wx:if="{{subjectsLoading}}" class="subj-loading">
               <text class="subj-loading-text">科目加载中...</text>
             </view>
@@ -63,15 +63,31 @@
                 catchtap="selectSubject"
                 data-id="{{item.id}}"
               >
-                <text class="subj-emoji">{{item._emoji}}</text>
+                <view class="subj-icon-wrap"><text class="subj-emoji">{{item._emoji}}</text></view>
                 <text class="subj-name">{{item.name}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Task Type -->
+          <view class="task-type-section">
+            <view class="control-section-title"><view class="control-section-line"></view><text class="control-section-text">任务类型</text><view class="control-section-line"></view></view>
+            <view class="task-type-scroll">
+              <view class="task-type-row">
+                <view
+                  class="task-type-chip {{selectedTaskType === item.value ? 'active' : ''}}"
+                  wx:for="{{taskTypes}}" wx:key="value"
+                  data-type="{{item.value}}"
+                  catchtap="selectTaskType"
+                  hover-class="task-type-chip-pressed"
+                >{{item.label}}</view>
               </view>
             </view>
           </view>
 
           <!-- Mode Dots -->
           <view class="mode-section">
-            <text class="section-label">时长</text>
+            <view class="control-section-title"><view class="control-section-line"></view><text class="control-section-text">时长</text><view class="control-section-line"></view></view>
             <view class="mode-row">
               <view
                 class="mode-dot {{selectedPreset === item.key ? 'active' : ''}}"
@@ -137,7 +153,7 @@
       <block wx:if="{{phase === 'ceremony'}}">
         <view class="ceremony-wrap">
           <text class="ceremony-emoji">{{selectedSubjectEmoji}}</text>
-          <text class="ceremony-subject">{{selectedSubjectLabel}}</text>
+          <text class="ceremony-subject">{{selectedSubjectLabel}} · {{selectedTaskTypeLabel}}</text>
           <view class="ceremony-divider"></view>
           <text class="ceremony-duration">{{selectedPreset === 'debug' ? '10 秒' : workDuration + ' 分钟'}}</text>
           <text class="ceremony-preset">{{selectedPresetLabel}}</text>
@@ -152,7 +168,7 @@
       <block wx:if="{{phase === 'running' || phase === 'break'}}">
         <view class="timer-wrap">
           <view class="timer-header">
-            <text class="timer-subject">{{selectedSubjectEmoji}} {{selectedSubjectLabel}}</text>
+            <text class="timer-subject">{{selectedSubjectEmoji}} {{selectedSubjectLabel}} · {{selectedTaskTypeLabel}}</text>
             <block wx:if="{{isFreeTimer}}">
               <view class="free-status-wrap">
                 <view class="free-status-dot {{isPaused ? 'dot-paused' : ''}}"></view>
@@ -168,7 +184,12 @@
           <view class="ring-stage">
             <view class="ring-wrapper {{showEndConfirm ? 'ring-wrapper-confirming' : ''}}">
               <view class="ring-glow"></view>
-              <canvas hidden="{{showEndConfirm || !ringCanvasVisible}}" class="ring-canvas {{ringCanvasPaintReady ? 'ring-canvas-ready' : 'ring-canvas-preparing'}}" type="2d" id="progress-ring"></canvas>
+              <canvas
+                hidden="{{showEndConfirm || !ringCanvasVisible}}"
+                class="ring-canvas {{ringCanvasPaintReady ? 'ring-canvas-ready' : 'ring-canvas-preparing'}}"
+                type="2d"
+                id="progress-ring"
+              ></canvas>
               <view class="ring-center">
                 <block wx:if="{{isFreeTimer}}">
                   <text class="ring-time ring-time-free {{isPaused ? 'time-dim' : ''}}">{{freeDisplayTime}}</text>

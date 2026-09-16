@@ -1,6 +1,7 @@
 const auth = require('../../utils/auth')
 const api = require('../../utils/api')
 const storage = require('../../utils/storage')
+const { studyStrategy } = storage
 const { getChinaWallParts } = require('../../utils/china-time')
 
 const TODAY_GOAL_TOTAL = 30
@@ -780,6 +781,13 @@ Page({
     const taskSnapshot = hubDisplay.studyHubAvailable
       ? this.getHubPrimaryTaskSnapshot(hub, todayGoalDone, todayGoalTotal)
       : this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount)
+    const strategySnapshot = this.getStrategyPrimaryTaskSnapshot({
+      hub,
+      dueReviewCount,
+      todayGoalDone,
+      todayGoalTotal,
+      subjectMastery: hubDisplay.subjectMastery || [],
+    })
 
     this._growthTargets = { streakDays, todayGoalDone, levelProgress }
 
@@ -789,7 +797,7 @@ Page({
         studyLevel: growth.level_title || 'Lv1 起步',
         levelProgress,
         todayGoalTotal,
-        ...taskSnapshot,
+        ...(strategySnapshot || taskSnapshot),
         ...hubDisplay,
         ...planDisplay,
         expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
@@ -810,7 +818,7 @@ Page({
       studyLevel: levelMeta.studyLevel,
       levelProgress,
       todayGoalTotal,
-      ...taskSnapshot,
+      ...(strategySnapshot || taskSnapshot),
       ...hubDisplay,
       ...planDisplay,
       expText: levelMeta.expText,
@@ -1026,6 +1034,36 @@ Page({
     }
   },
 
+  // The manual 408 strategy profile can override the generic daily card when it
+  // has a concrete, scoreable next action (including a dedicated focus session).
+  getStrategyPrimaryTaskSnapshot(options) {
+    const opts = options || {}
+    try {
+      const task = studyStrategy.buildNextBestAction({
+        dueReviewCount: opts.dueReviewCount,
+        hub: opts.hub,
+        subjectMastery: opts.subjectMastery,
+      })
+      if (!task || !task.route) return null
+      const fallback = this.getPrimaryTaskSnapshot(opts.todayGoalDone || 0, opts.todayGoalTotal || 0, opts.dueReviewCount || 0)
+      return {
+        dueReviewCount: fallback.dueReviewCount,
+        remainingCount: fallback.remainingCount,
+        primaryTaskType: task.task_type || 'practice',
+        primaryTaskKicker: 'STRATEGY · 今日优先',
+        primaryTaskTitle: task.title || '继续今日学习',
+        primaryTaskDesc: task.reason || '根据四科学习策略安排下一项任务。',
+        primaryTaskAction: task.action_label || '开始学习',
+        primaryTaskRoute: task.route,
+        primaryTaskParams: task.route_params || {},
+        secondaryTaskAction: '查看学习报告',
+      }
+    } catch (error) {
+      console.warn('[HOME_STRATEGY_NBA] unavailable', error)
+      return null
+    }
+  },
+
   getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount) {
     const remainingCount = Math.max(0, todayGoalTotal - todayGoalDone)
 
@@ -1202,6 +1240,19 @@ Page({
     // backend plan-token validation simply drops attribution.
     if (this.data.studyHubAvailable && this.data.hubPrimaryTask) {
       this.openHubTaskByData(this.data.hubPrimaryTask)
+      return
+    }
+    if (task.route === 'pomodoro') {
+      const params = this.data.primaryTaskParams || {}
+      const query = Object.keys(params)
+        .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
+        .join('&')
+      wx.navigateTo({ url: `/pages/pomodoro/pomodoro${query ? '?' + query : ''}` })
+      return
+    }
+    if (this.data.primaryTaskRoute === 'practice') {
+      this.openHubTaskByData({ route: 'practice', route_params: this.data.primaryTaskParams || {} })
       return
     }
     if (this.data.primaryTaskType === 'review') {
