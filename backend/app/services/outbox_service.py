@@ -164,7 +164,7 @@ async def create_outbox(
     db.add(outbox)
     await db.flush()  # Get the ID assigned but caller still controls commit
     logger.info(
-        "Outbox created: task_id=%s type=%s id=%d", task_id, task_type, outbox.id
+        "Outbox created: task_id=%s type=%s id=%s", task_id, task_type, outbox.id
     )
     return outbox
 

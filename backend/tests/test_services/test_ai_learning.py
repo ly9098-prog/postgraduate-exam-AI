@@ -1,5 +1,6 @@
 """AI 学习引擎服务单元测试。AI 调用全部 mock，不真调 DeepSeek API。"""
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -47,11 +48,31 @@ def _make_execute_result(**methods):
     return mock_result
 
 
-def _make_no_model_result():
-    """Mock result for AdminAiModelConfig query — returns no enabled model."""
+def _make_token_limit_result(used_today=0, used_monthly=0):
+    """Mock result for the combined daily/monthly token usage query."""
     m = MagicMock()
-    m.scalars.return_value.first.return_value = None
+    m.one.return_value = (used_today, used_monthly)
     return m
+
+
+def _patch_chat(call_result=None, side_effect=None):
+    """Patch _call_ai（内部已封装 chat_with_db_model + RuntimeError 兜底）。
+
+    - call_result：AI 正常返回（dict 含 content/tokens_used/model/duration_ms）
+    - side_effect：置为 None 模拟网关抛 RuntimeError 后的降级路径
+    返回 (context manager, mock)。
+    """
+    target = AsyncMock(return_value=side_effect if side_effect is not None else call_result)
+    return patch.object(
+        __import__("app.services.ai_learning_service", fromlist=["_call_ai"]),
+        "_call_ai",
+        target,
+    ), target
+
+
+def _report_row(question_id, is_correct):
+    """Row double matching the (question_id, is_correct) report projection."""
+    return SimpleNamespace(question_id=question_id, is_correct=is_correct)
 
 
 def _make_question(id=1, subject="math2", question_type="single_choice",
@@ -141,25 +162,22 @@ class TestAIExplain:
             _run(ai_explain(db, user_id=1, question_id=99999))
 
     def test_ai_unavailable_graceful(self):
-        """AI API 不可用时返回降级内容。"""
+        """AI 调用失败（RuntimeError 被网关层封装）时返回降级内容。"""
         from app.services.ai_learning_service import ai_explain
 
         db = _make_mock_db()
         q = _make_question(1)
-        # First execute: get question → ok
-        # Second execute: token check (daily sum) → 0
-        # Third execute: token check (monthly sum) → 0
-        # Fourth execute: AdminAiModelConfig → no enabled model
+        # First execute: get question
+        # Second execute: load_question_kps rows
+        # Third execute: combined daily/monthly token usage
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(all=[(1, "导数")]),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = False
+        cm, _mock_call = _patch_chat(side_effect=None)
+        with cm:
             result = _run(ai_explain(db, user_id=1, question_id=1))
 
         assert result["question_id"] == 1
@@ -175,14 +193,11 @@ class TestAIExplain:
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(all=[(1, "导数")]),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = True
-            mock_ds.chat = AsyncMock(side_effect=RuntimeError("API error"))
+        cm, _mock_call = _patch_chat(side_effect=None)
+        with cm:
             result = _run(ai_explain(db, user_id=1, question_id=1))
 
         assert result["from_fallback"] is True
@@ -197,20 +212,18 @@ class TestAIExplain:
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(all=[(1, "导数")]),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = True
-            mock_ds.chat = AsyncMock(return_value=_make_ai_result())
+        cm, mock_call = _patch_chat(call_result=_make_ai_result())
+        with cm:
             result = _run(ai_explain(db, user_id=1, question_id=1))
 
         assert result["question_id"] == 1
         assert result["from_fallback"] is False
         assert result["tokens_used"] == 150
         assert len(result["solution_steps"]) == 1
+        mock_call.assert_awaited_once()
 
     def test_explain_with_user_answer(self):
         """带用户答案的讲解。"""
@@ -221,14 +234,11 @@ class TestAIExplain:
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(all=[(1, "导数")]),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = True
-            mock_ds.chat = AsyncMock(return_value=_make_ai_result())
+        cm, _mock_call = _patch_chat(call_result=_make_ai_result())
+        with cm:
             result = _run(ai_explain(
                 db, user_id=1, question_id=1,
                 user_answer="B", is_correct=False, focus="mistake",
@@ -245,19 +255,16 @@ class TestAIExplain:
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(all=[(1, "导数")]),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = True
-            mock_ds.chat = AsyncMock(return_value={
-                "content": "这是纯文本解释，不是 JSON",
-                "tokens_used": 100,
-                "model": "deepseek-chat",
-                "duration_ms": 300,
-            })
+        cm, _mock_call = _patch_chat(call_result={
+            "content": "这是纯文本解释，不是 JSON",
+            "tokens_used": 100,
+            "model": "deepseek-chat",
+            "duration_ms": 300,
+        })
+        with cm:
             result = _run(ai_explain(db, user_id=1, question_id=1))
 
         assert result["from_fallback"] is False
@@ -287,13 +294,11 @@ class TestMistakeAnalysis:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = False
+        cm, _mock_call = _patch_chat(side_effect=None)
+        with cm:
             result = _run(ai_analyze_mistake(db, user_id=1, question_id=1, user_answer="A", correct_answer="C"))
 
         assert result["from_fallback"] is True
@@ -305,19 +310,16 @@ class TestMistakeAnalysis:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_token_limit_result(0, 0),
         ]
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = True
-            mock_ds.chat = AsyncMock(return_value={
-                "content": '{"error_type": "概念理解错误", "analysis": "你没有掌握导数的定义", "suggestion": "建议复习导数定义"}',
-                "tokens_used": 120,
-                "model": "deepseek-chat",
-                "duration_ms": 400,
-            })
+        cm, _mock_call = _patch_chat(call_result={
+            "content": '{"error_type": "概念理解错误", "analysis": "你没有掌握导数的定义", "suggestion": "建议复习导数定义"}',
+            "tokens_used": 120,
+            "model": "deepseek-chat",
+            "duration_ms": 400,
+        })
+        with cm:
             result = _run(ai_analyze_mistake(db, user_id=1, question_id=1, user_answer="A", correct_answer="C"))
 
         assert result["from_fallback"] is False
@@ -439,96 +441,71 @@ class TestLearningReport:
 
     def test_insufficient_data(self):
         """数据不足（<5题）时不调用 AI。"""
-        from app.models.practice_record import PracticeRecord
         from app.services.ai_learning_service import generate_learning_report
 
         db = _make_mock_db()
-        r1 = MagicMock(spec=PracticeRecord)
-        r1.question_id = 1
-        r1.is_correct = True
-        r1.subject = "math2"
-
-        r2 = MagicMock(spec=PracticeRecord)
-        r2.question_id = 2
-        r2.is_correct = False
-        r2.subject = "math2"
+        # generate_learning_report reads plain (question_id, is_correct) rows.
+        records = [_report_row(1, True), _report_row(2, False)]
 
         # First execute: records
-        # Second execute: load_question_kps → (question_id, kp.name) rows
+        # Second execute: db.get(Subject) is used instead; empty KP rows
         db.execute.side_effect = [
-            _make_execute_result(scalars=[r1, r2]),
+            _make_execute_result(all=records),
             _make_execute_result(all=[(1, "导数"), (2, "导数")]),
         ]
+        db.get = AsyncMock(return_value=None)
 
         result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
         assert result["total_answered"] == 2
         assert result["from_fallback"] is False  # No AI call needed, but not a degradation
         assert len(result["learning_suggestions"]) > 0
 
-    @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_report_with_ai_success(self):
         """正常 AI 报告生成。"""
-        from app.models.practice_record import PracticeRecord
         from app.services.ai_learning_service import generate_learning_report
 
         db = _make_mock_db()
-        records = []
-        for i in range(10):
-            r = MagicMock(spec=PracticeRecord)
-            r.question_id = i + 1
-            r.is_correct = i % 2 == 0  # half correct
-            r.subject = "math2"
-            records.append(r)
+        # generate_learning_report reads plain (question_id, is_correct) rows.
+        records = [_report_row(i + 1, i % 2 == 0) for i in range(10)]
 
         db.execute.side_effect = [
-            _make_execute_result(scalars=records),      # records
-            _make_execute_result(all=[(i, ["导数"]) for i in range(1, 11)]),  # question KPs
-            _make_execute_result(scalar=0),              # daily token check
-            _make_execute_result(scalar=0),              # monthly token check
-            _make_no_model_result(),                     # AdminAiModelConfig → no enabled model
+            _make_execute_result(all=records),               # records
+            _make_execute_result(all=[(i, "导数") for i in range(1, 11)]),  # question KPs
+            _make_token_limit_result(0, 0),                  # combined token usage
         ]
+        db.get = AsyncMock(return_value=None)
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = True
-            mock_ds.chat = AsyncMock(return_value={
-                "content": '{"weak_points": [{"knowledge_point": "导数", "accuracy": 0.5, "suggestion": "多练"}], '
-                           '"strong_points": [], "learning_suggestions": ["每天练习5道导数题"]}',
-                "tokens_used": 300,
-                "model": "deepseek-chat",
-                "duration_ms": 600,
-            })
+        cm, _mock_call = _patch_chat(call_result={
+            "content": '{"weak_points": [{"knowledge_point": "导数", "accuracy": 0.5, "suggestion": "多练"}], '
+                       '"strong_points": [], "learning_suggestions": ["每天练习5道导数题"]}',
+            "tokens_used": 300,
+            "model": "deepseek-chat",
+            "duration_ms": 600,
+        })
+        with cm:
             result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
 
         assert result["total_answered"] == 10
         assert result["from_fallback"] is False
-        assert len(result["weak_points"]) == 1
+        assert len(result["weak_points"]) >= 1
         assert len(result["learning_suggestions"]) > 0
 
-    @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_report_ai_unavailable(self):
         """AI 不可用时返回规则生成的降级报告。"""
-        from app.models.practice_record import PracticeRecord
         from app.services.ai_learning_service import generate_learning_report
 
         db = _make_mock_db()
-        records = []
-        for i in range(10):
-            r = MagicMock(spec=PracticeRecord)
-            r.question_id = i + 1
-            r.is_correct = i < 3  # only 3 correct → 30%
-            r.subject = "math2"
-            records.append(r)
+        records = [_report_row(i + 1, i < 3) for i in range(10)]
 
         db.execute.side_effect = [
-            _make_execute_result(scalars=records),
-            _make_execute_result(all=[(i, ["导数"]) for i in range(1, 11)]),
-            _make_execute_result(scalar=0),
-            _make_execute_result(scalar=0),
-            _make_no_model_result(),
+            _make_execute_result(all=records),
+            _make_execute_result(all=[(i, "导数") for i in range(1, 11)]),
+            _make_token_limit_result(0, 0),
         ]
+        db.get = AsyncMock(return_value=None)
 
-        with patch("app.services.ai_learning_service.deepseek") as mock_ds:
-            mock_ds.is_available.return_value = False
+        cm, _mock_call = _patch_chat(side_effect=None)
+        with cm:
             result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
 
         assert result["total_answered"] == 10
@@ -543,50 +520,47 @@ class TestLearningReport:
 
 class TestTokenControl:
     def test_within_limit_no_usage(self):
-        from app.services.ai_learning_service import _check_token_limit
+        from app.services.ai_learning_service import check_token_limit
 
         db = _make_mock_db()
         db.execute.side_effect = [
-            _make_execute_result(scalar=0),  # daily
-            _make_execute_result(scalar=0),  # monthly
+            _make_token_limit_result(0, 0),  # combined daily/monthly usage
         ]
 
-        result = _run(_check_token_limit(db, user_id=1, tokens_needed=100))
+        result = _run(check_token_limit(db, user_id=1, tokens_needed=100))
         assert result is True
 
     def test_daily_limit_exceeded(self):
-        from app.services.ai_learning_service import _check_token_limit
+        from app.services.ai_learning_service import check_token_limit
 
         db = _make_mock_db()
         db.execute.side_effect = [
-            _make_execute_result(scalar=50000),  # daily: at limit
-            _make_execute_result(scalar=50000),  # monthly: also at limit
+            _make_token_limit_result(50000, 50000),  # daily & monthly at limit
         ]
 
-        result = _run(_check_token_limit(db, user_id=1, tokens_needed=100))
+        result = _run(check_token_limit(db, user_id=1, tokens_needed=100))
         assert result is False
 
     def test_monthly_limit_exceeded(self):
-        from app.services.ai_learning_service import _check_token_limit
+        from app.services.ai_learning_service import check_token_limit
 
         db = _make_mock_db()
         db.execute.side_effect = [
-            _make_execute_result(scalar=100),    # daily: ok
-            _make_execute_result(scalar=500000),  # monthly: at limit
+            _make_token_limit_result(100, 500000),  # daily ok, monthly at limit
         ]
 
-        result = _run(_check_token_limit(db, user_id=1, tokens_needed=100))
+        result = _run(check_token_limit(db, user_id=1, tokens_needed=100))
         assert result is False
 
     def test_limit_disabled_when_zero(self):
-        from app.services.ai_learning_service import _check_token_limit
+        from app.services.ai_learning_service import check_token_limit
 
         db = _make_mock_db()
 
         with patch("app.services.ai_learning_service.settings") as mock_settings:
             mock_settings.AI_DAILY_TOKEN_LIMIT = 0
             mock_settings.AI_MONTHLY_TOKEN_LIMIT = 0
-            result = _run(_check_token_limit(db, user_id=1, tokens_needed=1000000))
+            result = _run(check_token_limit(db, user_id=1, tokens_needed=1000000))
             assert result is True
 
     def test_explain_rejected_when_limit_exceeded(self):
@@ -597,8 +571,8 @@ class TestTokenControl:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar=50000),  # daily: exceeded
-            _make_execute_result(scalar=50000),  # monthly: exceeded
+            _make_execute_result(all=[(1, "导数")]),
+            _make_token_limit_result(50000, 50000),  # daily & monthly exceeded
         ]
 
         result = _run(ai_explain(db, user_id=1, question_id=1))

@@ -1,5 +1,7 @@
 """Stage 11 刷题系统 — 单元测试（mock DB session）。"""
 import asyncio
+import hashlib
+import hmac
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,6 +35,13 @@ def _make_mock_db():
     db.execute = AsyncMock()
     db.rollback = AsyncMock()
     db.flush = AsyncMock()
+    # _china_date_expr awaits db.connection() to pick the date dialect.
+    db.connection = AsyncMock()
+    bind = MagicMock()
+    bind.sync_connection.dialect.name = "sqlite"
+    db.connection.return_value = bind
+    # Leitner 取题 / sequential reset 走 await db.scalar(...)。
+    db.scalar = AsyncMock(return_value=0)
     return db
 
 
@@ -73,6 +82,112 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _make_batch_token(user_id=1, pairs=((1, 900001),), subject_id=1, mode="random"):
+    """Sign a practice batch token with the production key/format."""
+    import json
+    import time
+    import uuid
+
+    import app.services.practice_service as ps
+
+    rid = f"practice_{uuid.uuid4().hex}"
+    payload = {
+        "v": ps._PRACTICE_BATCH_TOKEN_VERSION,
+        "uid": user_id,
+        "rid": rid,
+        "rec_rid": None,
+        "sid": subject_id,
+        "mode": mode,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600,
+        "questions": [list(pair) for pair in pairs],
+    }
+    body = ps._urlsafe_b64encode(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    )
+    signature = ps._urlsafe_b64encode(
+        hmac.new(
+            ps._practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256
+        ).digest()
+    )
+    return body + "." + signature, rid
+
+
+def _make_batch_db(views, *, record_id=77):
+    """Mock db prepared for batch_submit_answers runs (no real revision rows)."""
+    db = _make_mock_db()
+    db.get = AsyncMock(return_value=None)
+
+    async def _execute(*_args, **_kwargs):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        result.scalars.return_value.first.return_value = None
+        result.scalar.return_value = None
+        result.scalar_one.return_value = None
+        result.scalar_one_or_none.return_value = None
+        result.all.return_value = []
+        result.one.return_value = (0, 0)
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    db.scalar = AsyncMock(return_value=None)
+
+    counter = [0]
+
+    def _add(obj):
+        if type(obj).__name__ == "PracticeRecord":
+            counter[0] += 1
+            obj.id = record_id + counter[0]
+
+    db.add = _add
+
+    views_by_revision = {}
+    for v in views:
+        v.question_id = v.id
+        v.question_version_id = 900000 + v.id
+        v.subject_id = v.subject_id or 1
+        views_by_revision[v.question_version_id] = v
+    return db, views_by_revision
+
+
+def _submit_batch(db, views_by_revision, answers, *, user_id=1, mode="random"):
+    """Run batch_submit_answers against a signed token; returns result."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.services import practice_service
+
+    pairs = [(v.id, v.question_version_id) for v in views_by_revision.values()]
+    token, rid = _make_batch_token(user_id=user_id, pairs=pairs, mode=mode)
+    start = datetime.now(timezone.utc)
+    finished = start + timedelta(seconds=30)
+
+    with patch(
+        "app.services.question_revision_service.load_revision_views",
+        new_callable=AsyncMock,
+        return_value=views_by_revision,
+    ), patch(
+        "app.services.question_revision_service.load_revision_kp_names",
+        new_callable=AsyncMock,
+        return_value={},
+    ):
+        return _run(practice_service.batch_submit_answers(
+            db,
+            user_id=user_id,
+            answers=answers,
+            session_meta={
+                "subject_id": 1,
+                "mode": mode,
+                "request_id": rid,
+                "started_at": start.isoformat(),
+                "finished_at": finished.isoformat(),
+                "duration_sec": 30,
+                "answered_count": len(answers),
+            },
+            skipped_question_ids=[],
+            batch_token=token,
+        ))
+
+
 # --- get_practice_questions ---
 
 class TestGetPracticeQuestions:
@@ -90,30 +205,53 @@ class TestGetPracticeQuestions:
             return empty
         return _side_effect
 
+    @staticmethod
+    def _make_db_for_list_query(questions):
+        """Mock db for get_practice_questions 单测。
+
+        db.execute 首次返回 questions、后续为空；db.scalar 首次（Leitner
+        count / sequential reset）返回 0，其后返回 None——顺序模式的
+        reservation 循环以 scalar 的候选探测结果退出，恒非 None 的 mock 会让
+        该防御性重试变成无限循环。
+        """
+        db = _make_mock_db()
+        db.execute.side_effect = TestGetPracticeQuestions._side_effect_once(questions)
+        scalar_results = [0, None]
+
+        async def _scalar(*_args, **_kwargs):
+            return scalar_results.pop(0) if len(scalar_results) > 1 else None
+
+        db.scalar = AsyncMock(side_effect=_scalar)
+        return db
+
     def test_random_mode(self):
         from app.services.practice_service import get_practice_questions
-        db = _make_mock_db()
-        q1, q2 = _make_question(1), _make_question(2)
-        db.execute.side_effect = self._side_effect_once([q1, q2])
+        db = self._make_db_for_list_query([_make_question(1), _make_question(2)])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="random"))
         assert len(result) == 2
         assert result[0].id == 1
 
     def test_sequential_mode(self):
+        """顺序模式委托给 sequential_service（db mock 无法模拟其原子预留语义）。"""
         from app.services.practice_service import get_practice_questions
-        db = _make_mock_db()
         q1, q2 = _make_question(1), _make_question(2)
-        db.execute.side_effect = self._side_effect_once([q1, q2])
-        with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
+        db = _make_mock_db()
+        with patch(
+            "app.services.practice_service.get_sequential_practice_questions",
+            new_callable=AsyncMock,
+            return_value=([q1, q2], {"total_questions": 2, "completed_questions": 0}),
+        ), patch(
+            "app.services.practice_service.resolve_subject_ids",
+            new_callable=AsyncMock,
+            return_value=[1],
+        ):
             result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="sequential"))
         assert len(result) == 2
 
     def test_filter_by_knowledge_point(self):
         from app.services.practice_service import get_practice_questions
-        db = _make_mock_db()
-        q1 = _make_question(1, knowledge_points=["导数", "极限"])
-        db.execute.side_effect = self._side_effect_once([q1])
+        db = self._make_db_for_list_query([_make_question(1, knowledge_points=["导数", "极限"])])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             result = _run(get_practice_questions(
                 db, user_id=1, subject_code="math2", count=5, knowledge_points=["导数"]
@@ -122,9 +260,7 @@ class TestGetPracticeQuestions:
 
     def test_exclude_answered(self):
         from app.services.practice_service import get_practice_questions
-        db = _make_mock_db()
-        q2 = _make_question(2)
-        db.execute.side_effect = self._side_effect_once([q2])
+        db = self._make_db_for_list_query([_make_question(2)])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             result = _run(get_practice_questions(
                 db, user_id=1, subject_code="math2", count=5, exclude_answered=True
@@ -133,8 +269,7 @@ class TestGetPracticeQuestions:
 
     def test_empty_result(self):
         from app.services.practice_service import get_practice_questions
-        db = _make_mock_db()
-        db.execute.side_effect = self._side_effect_once([])
+        db = self._make_db_for_list_query([])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5))
         assert result == []
@@ -166,262 +301,223 @@ class TestMultiBlankAnswerHelpers:
 # --- submit_answer ---
 
 class TestSubmitAnswer:
+    """提交链路测试。
+
+    单题 submit_answer 已被签名批次的 batch_submit_answers 取代（提交绑定
+    不可变 revision），评分/规范化语义通过批次路径验证。
+    """
+
     def test_correct_answer(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db([_make_question(1, answer="A")])
 
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=q)
-
-        with patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="A"))
-            assert result["is_correct"] is True
-            assert result["correct_answer"] == "A"
-            assert result["is_wrong_added"] is False
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(
+                db, views, [{"question_id": 1, "user_answer": "A", "used_time": 10}]
+            )
+        assert result["total_correct"] == 1
+        assert result["results"][0]["correct_answer"] == "A"
+        assert result["results"][0]["is_wrong_added"] is False
 
     def test_wrong_answer(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db([_make_question(1, answer="A")])
 
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-        # submit: get question (post-ops are patched, so no more db.execute needed)
-        db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-        ]
-
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="B"))
-            assert result["is_correct"] is False
-            assert result["correct_answer"] == "A"
-            assert result["is_wrong_added"] is True
+        wq = MagicMock()
+        wq.id = 55
+        with patch(
+            "app.services.wrong_question_service.record_wrong",
+            new_callable=AsyncMock,
+            return_value=wq,
+        ), patch(
+            "app.services.error_diagnosis_service.record_error_event",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                id=1,
+                wrong_question_id=55,
+                question_id=1,
+                question_version_id=900001,
+                practice_record_id=78,
+                user_confirmed_at=None,
+                user_primary_type=None,
+                ai_status=None,
+                ai_primary_type=None,
+                ai_secondary_types=None,
+            ),
+        ):
+            result = _submit_batch(
+                db, views, [{"question_id": 1, "user_answer": "B", "used_time": 10}]
+            )
+        assert result["total_wrong"] == 1
+        assert result["results"][0]["correct_answer"] == "A"
+        assert result["results"][0]["is_wrong_added"] is True
+        assert result["results"][0]["wrong_question_id"] == 55
 
     def test_case_insensitive(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db([_make_question(1, answer="A")])
 
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-        db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=None),
-        ]
-
-        with patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="a"))
-            assert result["is_correct"] is True
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(
+                db, views, [{"question_id": 1, "user_answer": "a", "used_time": 10}]
+            )
+        assert result["total_correct"] == 1
 
     def test_whitespace_trimmed(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db([_make_question(1, answer="A")])
 
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-        db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=None),
-        ]
-
-        with patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="  A  "))
-            assert result["is_correct"] is True
-
-    def test_question_not_found(self):
-        from app.services.practice_service import submit_answer
-
-        db = _make_mock_db()
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
-
-        with pytest.raises(ValueError, match="题目不存在"):
-            _run(submit_answer(db, user_id=1, question_id=999, user_answer="A"))
-
-    def test_inactive_question_ignored(self):
-        from app.services.practice_service import submit_answer
-
-        db = _make_mock_db()
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
-
-        with pytest.raises(ValueError, match="题目不存在"):
-            _run(submit_answer(db, user_id=1, question_id=1, user_answer="A"))
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(
+                db, views, [{"question_id": 1, "user_answer": "  A  ", "used_time": 10}]
+            )
+        assert result["total_correct"] == 1
 
     def test_used_time_optional(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db([_make_question(1, answer="A")])
 
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-        db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=None),
-        ]
-
-        with patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="A"))
-            assert result["is_correct"] is True
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(db, views, [{"question_id": 1, "user_answer": "A"}])
+        assert result["total_correct"] == 1
 
     def test_creates_practice_record(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db([_make_question(1, answer="A")])
 
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-        db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=None),
-        ]
-
-        with patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="A"))
-            db.add.assert_called()
-            db.commit.assert_called()
-            assert "record_id" in result
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(
+                db, views, [{"question_id": 1, "user_answer": "A", "used_time": 10}]
+            )
+        assert "record_id" in result["results"][0]
 
     def test_multi_blank_choice_order_insensitive_submit(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db(
+            [_make_question(1, question_type="multi_blank_choice", answer="①:A;②:C")]
+        )
 
-        db = _make_mock_db()
-        q = _make_question(1, question_type="multi_blank_choice", answer="①:A;②:C")
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=q)
-
-        with patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="②:C;①:A"))
-            assert result["is_correct"] is True
-            assert result["is_wrong_added"] is False
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(
+                db,
+                views,
+                [{"question_id": 1, "user_answer": "②:C;①:A", "used_time": 10}],
+            )
+        assert result["total_correct"] == 1
+        assert result["results"][0]["is_wrong_added"] is False
 
     def test_multi_blank_choice_partial_submit_is_wrong(self):
-        from app.services.practice_service import submit_answer
+        db, views = _make_batch_db(
+            [_make_question(1, question_type="multi_blank_choice", answer="①:A;②:C")]
+        )
 
-        db = _make_mock_db()
-        q = _make_question(1, question_type="multi_blank_choice", answer="①:A;②:C")
-        db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=None),
-            _make_execute_result(scalar_one_or_none=q),
-            _make_execute_result(scalar_one_or_none=None),
-        ]
-
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="①:A"))
-            assert result["is_correct"] is False
-            assert result["is_wrong_added"] is True
+        wq = MagicMock()
+        wq.id = 55
+        with patch(
+            "app.services.wrong_question_service.record_wrong",
+            new_callable=AsyncMock,
+            return_value=wq,
+        ), patch(
+            "app.services.error_diagnosis_service.record_error_event",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                id=1,
+                wrong_question_id=55,
+                question_id=1,
+                question_version_id=900001,
+                practice_record_id=78,
+                user_confirmed_at=None,
+                user_primary_type=None,
+                ai_status=None,
+                ai_primary_type=None,
+                ai_secondary_types=None,
+            ),
+        ):
+            result = _submit_batch(
+                db, views, [{"question_id": 1, "user_answer": "①:A", "used_time": 10}]
+            )
+        assert result["total_wrong"] == 1
+        assert result["results"][0]["is_wrong_added"] is True
 
 
 # --- batch_submit_answers ---
 
 class TestBatchSubmit:
     def test_batch_submit(self):
-        from app.services.practice_service import batch_submit_answers
+        db, views = _make_batch_db(
+            [_make_question(1, answer="A"), _make_question(2, answer="B")]
+        )
 
-        db = _make_mock_db()
-        q1, q2 = _make_question(1, answer="A"), _make_question(2, answer="B")
-
-        db.execute.side_effect = [
-            # Batch question load
-            _make_execute_result(scalars=[q1, q2]),
-            # submit_answer q1 (correct → 1 execute: get question)
-            _make_execute_result(scalar_one_or_none=q1),
-            # submit_answer q2 (wrong → 5 executes: get question + record_wrong + auto_schedule×2 + behavior)
-            _make_execute_result(scalar_one_or_none=q2),
-            _make_execute_result(scalar_one_or_none=None),  # no existing wrong question
-            _make_execute_result(scalar_one_or_none=None),  # no existing review schedule
-            _make_execute_result(scalar_one_or_none=q2),    # get question for subject
-            _make_execute_result(scalar_one_or_none=None),  # no existing behavior
-        ]
-
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(batch_submit_answers(db, user_id=1, answers=[
-                {"question_id": 1, "user_answer": "A"},
-                {"question_id": 2, "user_answer": "C"},
-            ]))
-            assert result["total_correct"] == 1
-            assert result["total_wrong"] == 1
-            assert len(result["results"]) == 2
+        wq = MagicMock()
+        wq.id = 55
+        with patch(
+            "app.services.wrong_question_service.record_wrong",
+            new_callable=AsyncMock,
+            return_value=wq,
+        ), patch(
+            "app.services.error_diagnosis_service.record_error_event",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                id=1,
+                wrong_question_id=55,
+                question_id=2,
+                question_version_id=900002,
+                practice_record_id=79,
+                user_confirmed_at=None,
+                user_primary_type=None,
+                ai_status=None,
+                ai_primary_type=None,
+                ai_secondary_types=None,
+            ),
+        ):
+            result = _submit_batch(db, views, [
+                {"question_id": 1, "user_answer": "A", "used_time": 5},
+                {"question_id": 2, "user_answer": "C", "used_time": 5},
+            ])
+        assert result["total_correct"] == 1
+        assert result["total_wrong"] == 1
+        assert len(result["results"]) == 2
 
     def test_batch_missing_question(self):
-        from app.services.practice_service import batch_submit_answers
+        """token 引用的 revision 缺失 → 拒绝提交（批次完整性校验）。"""
+        from datetime import datetime, timedelta, timezone
 
-        db = _make_mock_db()
-        q1 = _make_question(1, answer="A")
-        db.execute.return_value = _make_execute_result(scalars=[q1])
+        from app.services import practice_service
+        from app.services.practice_service import PracticeBatchTokenError
 
-        with pytest.raises(ValueError, match="题目不存在"):
-            _run(batch_submit_answers(db, user_id=1, answers=[
-                {"question_id": 1, "user_answer": "A"},
-                {"question_id": 999, "user_answer": "B"},
-            ]))
+        db, views = _make_batch_db([_make_question(1, answer="A")])
+
+        token, _rid = _make_batch_token(user_id=1, pairs=((1, 900001), (999, 900999)))
+        start = datetime.now(timezone.utc)
+        with patch(
+            "app.services.question_revision_service.load_revision_views",
+            new_callable=AsyncMock,
+            return_value={900001: views[900001]},
+        ):
+            with pytest.raises((PracticeBatchTokenError, ValueError)):
+                _run(practice_service.batch_submit_answers(
+                    db,
+                    user_id=1,
+                    answers=[
+                        {"question_id": 1, "user_answer": "A"},
+                        {"question_id": 999, "user_answer": "B"},
+                    ],
+                    session_meta={
+                        "subject_id": 1,
+                        "mode": "random",
+                        "request_id": "practice_missing_probe",
+                        "started_at": start.isoformat(),
+                        "finished_at": (start + timedelta(seconds=5)).isoformat(),
+                        "answered_count": 2,
+                    },
+                    skipped_question_ids=[],
+                    batch_token=token,
+                ))
 
 
 # --- get_practice_stats ---
@@ -431,16 +527,15 @@ class TestPracticeStats:
         from app.services.practice_service import get_practice_stats
 
         db = _make_mock_db()
-        date.today().isoformat()
         db.execute.side_effect = [
             # Total count + correct (base query)
             _make_execute_result(one=(10, 7)),
             # By subject
-            _make_execute_result(scalars=[]),
+            _make_execute_result(all=[]),
             # Daily stats
-            _make_execute_result(scalars=[]),
+            _make_execute_result(all=[]),
             # Streak query
-            _make_execute_result(scalars=[]),
+            _make_execute_result(all=[]),
         ]
 
         result = _run(get_practice_stats(db, user_id=1, days=7))
@@ -455,9 +550,9 @@ class TestPracticeStats:
         db = _make_mock_db()
         db.execute.side_effect = [
             _make_execute_result(one=(0, 0)),
-            _make_execute_result(scalars=[]),
-            _make_execute_result(scalars=[]),
-            _make_execute_result(scalars=[]),
+            _make_execute_result(all=[]),
+            _make_execute_result(all=[]),
+            _make_execute_result(all=[]),
         ]
 
         result = _run(get_practice_stats(db, user_id=1))
@@ -473,7 +568,7 @@ class TestPracticeStats:
             _make_execute_result(one=(5, 4)),
             _make_execute_result(all=[(1, "math2", "数学二", 5, 4)]),
             _make_execute_result(all=[]),
-            _make_execute_result(scalars=[]),
+            _make_execute_result(all=[]),
         ]
 
         result = _run(get_practice_stats(db, user_id=1))
@@ -652,7 +747,12 @@ class TestRoundRobinMergeWithMetadata:
 
 
 class TestResolvePracticeSubjectScope:
-    """resolve_practice_subject_scope 单元测试。"""
+    """resolve_practice_subject_scope 单元测试。
+
+    科目记录使用 canonical 408 code：学生端范围解析
+    （``is_study_subject_enabled`` / ``select_study_subject_records``）只放行
+    canonical 408 目录与显式额外科目，通用占位 code 会被过滤掉。
+    """
 
     def _make_subject(self, id, code, name, parent_id=None, level=1,
                       sort_order=0, is_active=True):
@@ -671,7 +771,7 @@ class TestResolvePracticeSubjectScope:
 
         resolve_practice_subject_scope 会做：
         1. db.get(Subject, subject_id) → 返回目标科目
-        2. db.execute(select Subject where is_active).scalars().all() → 返回全部启用科目
+        2. db.execute(select Subject).scalars().all() → 返回全部科目
         """
         async def fake_get(model, subject_id):
             for s in db_subjects:
@@ -700,11 +800,11 @@ class TestResolvePracticeSubjectScope:
         from app.services.practice_service import resolve_practice_subject_scope
 
         subjects = [
-            self._make_subject(1, "cs", "计算机", parent_id=None, level=1),
-            self._make_subject(2, "ds", "数据结构", parent_id=1, level=2),
-            self._make_subject(3, "co", "组成原理", parent_id=1, level=2),
-            self._make_subject(4, "os", "操作系统", parent_id=1, level=2),
-            self._make_subject(5, "cn", "计算机网络", parent_id=1, level=2),
+            self._make_subject(1, "exam408", "计算机", parent_id=None, level=1),
+            self._make_subject(2, "data_structure", "数据结构", parent_id=1, level=2, sort_order=10),
+            self._make_subject(3, "computer_organization", "组成原理", parent_id=1, level=2, sort_order=20),
+            self._make_subject(4, "operating_system", "操作系统", parent_id=1, level=2, sort_order=30),
+            self._make_subject(5, "computer_network", "计算机网络", parent_id=1, level=2, sort_order=40),
         ]
         db = self._setup_db(resolve_practice_subject_scope, subjects)
 
@@ -717,8 +817,8 @@ class TestResolvePracticeSubjectScope:
         from app.services.practice_service import resolve_practice_subject_scope
 
         subjects = [
-            self._make_subject(1, "cs", "计算机", parent_id=None, level=1),
-            self._make_subject(2, "ds", "数据结构", parent_id=1, level=2),
+            self._make_subject(1, "exam408", "计算机", parent_id=None, level=1),
+            self._make_subject(2, "data_structure", "数据结构", parent_id=1, level=2),
         ]
         db = self._setup_db(resolve_practice_subject_scope, subjects)
 
@@ -731,8 +831,8 @@ class TestResolvePracticeSubjectScope:
         from app.services.practice_service import resolve_practice_subject_scope
 
         subjects = [
-            self._make_subject(1, "cs", "计算机", parent_id=None, level=1),
-            self._make_subject(2, "ds", "数据结构", parent_id=1, level=2),
+            self._make_subject(1, "exam408", "计算机", parent_id=None, level=1),
+            self._make_subject(2, "data_structure", "数据结构", parent_id=1, level=2),
         ]
         db = self._setup_db(resolve_practice_subject_scope, subjects)
 
@@ -751,15 +851,15 @@ class TestResolvePracticeSubjectScope:
         from app.services.practice_service import resolve_practice_subject_scope
 
         subjects = [
-            self._make_subject(1, "cs", "计算机", parent_id=None, level=1),
-            self._make_subject(2, "ds", "数据结构", parent_id=1, level=2, is_active=True),
-            self._make_subject(3, "co", "组成原理", parent_id=1, level=2, is_active=False),
+            self._make_subject(1, "exam408", "计算机", parent_id=None, level=1),
+            self._make_subject(2, "data_structure", "数据结构", parent_id=1, level=2, sort_order=10, is_active=True),
+            self._make_subject(3, "computer_organization", "组成原理", parent_id=1, level=2, sort_order=20, is_active=False),
         ]
         db = self._setup_db(resolve_practice_subject_scope, subjects)
 
         has_children, ids = _run(resolve_practice_subject_scope(db, 1, include_children=True))
-        assert has_children is True  # ds 是启用的
-        assert 3 not in ids  # co 停用，不包含
+        assert has_children is True  # data_structure 是启用的
+        assert 3 not in ids  # computer_organization 停用，不包含
 
     def test_subject_not_found(self):
         """不存在的科目返回空。"""

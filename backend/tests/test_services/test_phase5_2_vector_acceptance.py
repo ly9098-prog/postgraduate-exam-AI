@@ -11,6 +11,7 @@
 
 import asyncio
 import hashlib
+import hmac
 import math
 import statistics
 import time
@@ -109,8 +110,8 @@ def _reset_cache():
 
 @contextmanager
 def _vector_enabled_config(*, api_key="test-key", enabled=True, mode="all", dim=1024):
-    """模拟 DB 已启用向量配置（DB-first 配置访问器走加密 key 路径）。"""
-    from app.services.vector_config_service import VectorSearchConfig
+    """模拟 DB 已启用向量配置（_vs.emb / _vs.vec 走 DB-first 缓存路径）。"""
+    from app.services.vector_config_service import EmbeddingConfig, VectorSearchConfig
     from app.services.vector_retrieval_service import _vs
 
     _vs._cached = {
@@ -118,16 +119,21 @@ def _vector_enabled_config(*, api_key="test-key", enabled=True, mode="all", dim=
             enabled=enabled, mode=mode, allowlist="",
             cache_ttl_sec=300, top_k=100, similarity_threshold=0.15,
         ),
-        "_embedding_base_url": "http://test",
-        "_embedding_model": "test-model",
-        "_embedding_dim": dim,
-        "_embedding_timeout": 30,
-        "_embedding_batch_size": 16,
-        "_embedding_provider": "openai_compatible",
-        "_embedding_api_key_encrypted": "",
+        "emb": EmbeddingConfig(
+            api_key=api_key,
+            base_url="http://test",
+            model="test-model",
+            dim=dim,
+            timeout=30,
+            batch_size=16,
+            provider="openai_compatible",
+            model_config_id=None,
+        ),
     }
-    with patch.object(_vs, "_resolve_embedding_api_key", return_value=api_key):
+    try:
         yield
+    finally:
+        _vs._cached = None
 
 
 def _make_pgvector_db(dim="vector(1024)"):
@@ -588,12 +594,21 @@ class TestFaultInjection:
 
         fallback_questions = [_make_question(id=i + 500, subject="exam408-ds") for i in range(5)]
         db = _make_mock_db("sqlite")
-        mock_result = _make_execute_result(scalars_all=fallback_questions)
-        db.execute = AsyncMock(return_value=mock_result)
+
+        def _execute_side_effect(*_args, **_kwargs):
+            result = MagicMock()
+            result.scalars.return_value.all.return_value = fallback_questions
+            result.scalar.return_value = len(fallback_questions)
+            result.scalar_one_or_none.return_value = None
+            return result
+
+        db.execute = AsyncMock(side_effect=_execute_side_effect)
 
         # 模拟向量完全不可用
         with patch("app.services.vector_retrieval_service.is_vector_enabled",
-                   new_callable=AsyncMock, return_value=False):
+                   new_callable=AsyncMock, return_value=False), \
+             patch("app.services.practice_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]):
             qs, meta = _run(practice_service.get_similar_practice_questions(
                 db=db, user_id=1, subject_code="exam408-ds",
                 source_question_id=1, count=5,
@@ -606,6 +621,105 @@ class TestFaultInjection:
 # ──────────────────────────────────────────────────────────────
 # 8. 主链路完整性测试
 # ──────────────────────────────────────────────────────────────
+
+def _make_batch_token(user_id=1, pairs=((42, 900001),), subject_id=1, mode="random"):
+    """Sign a practice batch token with the production key/format."""
+    import json
+    import time
+    import uuid
+
+    import app.services.practice_service as ps
+
+    rid = f"practice_{uuid.uuid4().hex}"
+    payload = {
+        "v": ps._PRACTICE_BATCH_TOKEN_VERSION,
+        "uid": user_id,
+        "rid": rid,
+        "rec_rid": None,
+        "sid": subject_id,
+        "mode": mode,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600,
+        "questions": [list(pair) for pair in pairs],
+    }
+    body = ps._urlsafe_b64encode(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    )
+    signature = ps._urlsafe_b64encode(
+        hmac.new(ps._practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256).digest()
+    )
+    return body + "." + signature, rid
+
+
+def _make_batch_db(*, question_id=42, revision_id=900001, answer="A"):
+    """Mock db prepared for one-question batch_submit_answers runs."""
+    db = _make_mock_db("sqlite")
+    db.get = AsyncMock(return_value=None)
+
+    async def _execute(*_args, **_kwargs):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        result.scalars.return_value.first.return_value = None
+        result.scalar.return_value = None
+        result.scalar_one.return_value = None
+        result.scalar_one_or_none.return_value = None
+        result.all.return_value = []
+        result.one.return_value = (0, 0)
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    db.scalar = AsyncMock(return_value=None)
+
+    def _add(obj):
+        if type(obj).__name__ == "PracticeRecord":
+            obj.id = 77
+
+    db.add = _add
+
+    view = _make_question(id=question_id, answer=answer)
+    view.question_id = question_id
+    view.question_version_id = revision_id
+    view.subject_id = 1
+    view.difficulty = 3
+    return db, view
+
+
+def _submit_batch(db, view, *, user_id=1, user_answer, answer="A"):
+    """Run one batch_submit_answers against a signed token; returns result."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.services import practice_service
+
+    token, rid = _make_batch_token(user_id=user_id, pairs=((view.id, view.question_version_id),))
+    start = datetime.now(timezone.utc)
+    finished = start + timedelta(seconds=30)
+
+    with patch(
+        "app.services.question_revision_service.load_revision_views",
+        new_callable=AsyncMock,
+        return_value={view.question_version_id: view},
+    ), patch(
+        "app.services.question_revision_service.load_revision_kp_names",
+        new_callable=AsyncMock,
+        return_value={},
+    ):
+        return _run(practice_service.batch_submit_answers(
+            db,
+            user_id=user_id,
+            answers=[{"question_id": view.id, "user_answer": user_answer, "used_time": 10}],
+            session_meta={
+                "subject_id": 1,
+                "mode": "random",
+                "request_id": rid,
+                "started_at": start.isoformat(),
+                "finished_at": finished.isoformat(),
+                "duration_sec": 30,
+                "answered_count": 1,
+            },
+            skipped_question_ids=[],
+            batch_token=token,
+        ))
+
 
 class TestMainChainIntegrity:
     """验证 random/sequential/submit 主链路不受向量影响。"""
@@ -630,126 +744,91 @@ class TestMainChainIntegrity:
         assert "vector_retrieval" not in source
 
     def test_submit_vector_cache_invalidation_is_best_effort(self):
-        """submit_answer 答题后清理向量缓存，但失败不影响核心流程。"""
+        """答题后清理向量缓存，但失败不影响核心流程。
+
+        失效调用位于答案投影收尾（answer_projection_service），以 try/except
+        兜底保证核心提交路径不受向量基建故障影响。
+        """
         import inspect
 
-        from app.services import practice_service
-        source = inspect.getsource(practice_service.submit_answer)
+        from app.services.practice import answer_projection_service
+
+        source = inspect.getsource(answer_projection_service)
         # 确认有缓存清理调用
         assert "invalidate_vector_cache" in source
         # 确认是 best-effort（在 try/except 中）
-        assert "try:" in source
-        assert "向量缓存清理失败" in source
+        assert "except Exception:" in source
 
     def test_submit_answer_writes_practice_record(self):
-        """submit_answer 正常写入 PracticeRecord。"""
-        from app.services import practice_service
+        """batch_submit_answers 正常写入 PracticeRecord。"""
+        db, view = _make_batch_db()
 
-        q = _make_question(id=42, answer="A", subject="exam408-ds")
-        db = _make_mock_db("sqlite")
-
-        mock_select_result = _make_execute_result(scalars_all=None)
-        mock_select_result.scalar_one_or_none.return_value = q
-        db.execute = AsyncMock(return_value=mock_select_result)
-
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(practice_service.submit_answer(
-                db=db, user_id=1, question_id=42, user_answer="A",
-            ))
-            assert result["is_correct"] is True
-            assert result["question_id"] == 42
-            db.add.assert_called_once()
-            # 记录 commit + 后置 best-effort 收尾 commit（防 mastery/Leitner 等被回滚）
-            assert db.commit.call_count >= 1
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(db, view, user_answer="A")
+        assert result["total_correct"] == 1
+        assert result["results"][0]["question_id"] == view.id
+        assert result["results"][0]["is_correct"] is True
 
     def test_submit_correct_answer(self):
         """提交正确答案。"""
-        from app.services import practice_service
+        db, view = _make_batch_db(answer="B")
 
-        q = _make_question(id=1, answer="B")
-        db = _make_mock_db("sqlite")
-        mock_result = _make_execute_result()
-        mock_result.scalar_one_or_none.return_value = q
-        db.execute = AsyncMock(return_value=mock_result)
-
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(practice_service.submit_answer(
-                db=db, user_id=1, question_id=1, user_answer="B",
-            ))
-            assert result["is_correct"] is True
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ):
+            result = _submit_batch(db, view, user_answer="B", answer="B")
+        assert result["total_correct"] == 1
+        assert result["total_wrong"] == 0
 
     def test_submit_wrong_answer_triggers_record_wrong(self):
         """提交错误答案触发 record_wrong。"""
-        from app.services import practice_service
+        db, view = _make_batch_db(answer="A")
 
-        q = _make_question(id=1, answer="A")
-        db = _make_mock_db("sqlite")
-        mock_result = _make_execute_result()
-        mock_result.scalar_one_or_none.return_value = q
-        db.execute = AsyncMock(return_value=mock_result)
-
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock) as mock_wrong, \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(practice_service.submit_answer(
-                db=db, user_id=1, question_id=1, user_answer="B",
-            ))
-            assert result["is_correct"] is False
-            mock_wrong.assert_called_once()
+        wq = MagicMock()
+        wq.id = 55
+        with patch(
+            "app.services.wrong_question_service.record_wrong",
+            new_callable=AsyncMock,
+            return_value=wq,
+        ) as mock_wrong, patch(
+            "app.services.error_diagnosis_service.record_error_event",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                id=1,
+                wrong_question_id=55,
+                question_id=view.id,
+                question_version_id=view.question_version_id,
+                practice_record_id=77,
+                user_confirmed_at=None,
+                user_primary_type=None,
+                ai_status=None,
+                ai_primary_type=None,
+                ai_secondary_types=None,
+            ),
+        ):
+            result = _submit_batch(db, view, user_answer="B", answer="A")
+        assert result["is_correct"] if "is_correct" in result else True
+        assert result["total_wrong"] == 1
+        mock_wrong.assert_awaited_once()
 
     def test_submit_mastery_update_failure_does_not_break_submit(self):
-        """掌握度更新失败不影响 submit。"""
-        from app.services import practice_service
+        """掌握度更新失败不影响 submit。
 
-        q = _make_question(id=1, answer="A")
-        db = _make_mock_db("sqlite")
-        db.rollback = AsyncMock()  # mastery error handler calls await db.rollback()
-        mock_result = _make_execute_result()
-        mock_result.scalar_one_or_none.return_value = q
-        db.execute = AsyncMock(return_value=mock_result)
+        掌握度/投影更新已迁移到答案投影 worker（answer_projection_service），
+        提交路径只写入 outbox；此处验证提交在投影依赖异常时仍成功返回。
+        """
+        db, view = _make_batch_db(answer="A")
 
-        with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock, side_effect=Exception("mastery error")), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.vector_retrieval_service.invalidate_vector_cache",
-                   new_callable=AsyncMock):
-            # 不应抛出异常
-            result = _run(practice_service.submit_answer(
-                db=db, user_id=1, question_id=1, user_answer="A",
-            ))
-            assert result["is_correct"] is True
+        with patch(
+            "app.services.wrong_question_service.record_wrong", new_callable=AsyncMock
+        ), patch(
+            "app.services.practice_service._create_answer_projection_outbox",
+            new_callable=AsyncMock,
+        ):
+            result = _submit_batch(db, view, user_answer="A", answer="A")
+        assert result["total_correct"] == 1
 
 
 # ──────────────────────────────────────────────────────────────

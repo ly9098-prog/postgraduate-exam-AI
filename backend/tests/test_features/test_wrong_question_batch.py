@@ -20,6 +20,13 @@ from app.services.wrong_question_service import (
     record_wrong,
 )
 
+# question_versions 非空外键（wrong_questions.question_version_id /
+# review_schedules.question_version_id）在测试里通过 _ensure_revision 按题目
+# 动态补种对应 QuestionVersion 行（auto_schedule 校验 revision.question_id
+# 必须与错题 question_id 一致，因此种子必须绑定同一题目）。
+_REVISION_ID_BASE = 900000
+
+
 # ── Helpers ──
 
 
@@ -42,6 +49,26 @@ async def _make_db():
     return engine, session, db_path
 
 
+async def _ensure_revision(session, question_id: int) -> int:
+    """Return a QuestionVersion id bound to this question, seeding if needed."""
+    from app.models.admin import QuestionVersion
+
+    revision_id = _REVISION_ID_BASE + int(question_id)
+    if await session.get(QuestionVersion, revision_id) is None:
+        session.add(
+            QuestionVersion(
+                id=revision_id,
+                question_id=int(question_id),
+                version=1,
+                content={"text": "seed"},
+                answer="A",
+                difficulty=3,
+            )
+        )
+        await session.commit()
+    return revision_id
+
+
 async def _close_db(engine, session, db_path):
     await session.close()
     await engine.dispose()
@@ -59,8 +86,13 @@ async def _add_user(session, user_id=1):
 
 
 async def _add_wq(session, user_id=1, question_id=1, **kw):
+    revision_id = kw.pop("question_version_id", None)
+    if revision_id is None:
+        revision_id = await _ensure_revision(session, question_id)
     wq = WrongQuestion(
-        user_id=user_id, question_id=question_id,
+        user_id=user_id,
+        question_id=question_id,
+        question_version_id=revision_id,
         error_type=kw.pop("error_type", "other"),
         wrong_answer=kw.pop("wrong_answer", "B"),
         review_count=kw.pop("review_count", 1),
@@ -251,7 +283,10 @@ class TestReactivateWrongQuestion:
             await _add_user(session, 1)
             wq = await _add_wq(session, 1, 100, is_active=False, removed_at=datetime(2026, 7, 5), review_count=3)
 
-            result = await record_wrong(session, user_id=1, question_id=100, wrong_answer="C")
+            result = await record_wrong(
+                session, user_id=1, question_id=100, wrong_answer="C",
+                question_version_id=wq.question_version_id,
+            )
 
             assert result.id == wq.id
             assert result.is_active is True
@@ -493,10 +528,17 @@ async def _add_schedule(session, user_id=1, question_id=1, *,
     """Create a ReviewSchedule that is already due (past)."""
     from app.core.time_utils import utcnow
     q = await session.get(Question, question_id)
+    if q is not None:
+        subject_id = q.subject_id
+        revision_id = await _ensure_revision(session, question_id)
+    else:
+        subject_id = None
+        revision_id = await _ensure_revision(session, question_id)
     schedule = ReviewSchedule(
         user_id=user_id,
         question_id=question_id,
-        subject_id=q.subject_id if q else None,
+        question_version_id=revision_id,
+        subject_id=subject_id,
         interval=1,
         ease_factor=2.5,
         repetitions=0,
@@ -608,8 +650,12 @@ class TestMasterUnmaster:
             await _close_db(engine, session, db_path)
 
     @pytest.mark.asyncio
-    async def test_batch_mark_fixes_wq_mastered_at_none(self):
-        """wq.mastered=True, mastered_at=None → mark_mastered 补全 mastered_at。"""
+    async def test_batch_mark_does_not_invent_mastered_at(self):
+        """wq.mastered=True, mastered_at=None → mark 不补时间戳、不算状态变化。
+
+        mastered_at 是事件时间戳：对已被另一端掌握的陈旧行补 now 会伪造
+        "今天掌握"事件污染当日复习任务统计，因此既不 updated 也不补全。
+        """
         engine, session, db_path = await _make_db()
         try:
             await _add_user(session, 1)
@@ -618,11 +664,12 @@ class TestMasterUnmaster:
 
             result = await batch_operate(session, user_id=1,
                                          action="mark_mastered", ids=[wq.id])
-            assert result["updated_count"] == 1
+            assert result["updated_count"] == 0
+            assert result["skipped_count"] == 1
 
             await session.refresh(wq)
             assert wq.mastered is True
-            assert wq.mastered_at is not None  # 补全
+            assert wq.mastered_at is None  # 不伪造事件时间
         finally:
             await _close_db(engine, session, db_path)
 
@@ -692,7 +739,11 @@ class TestMasterUnmaster:
 
     @pytest.mark.asyncio
     async def test_batch_unmark_does_not_reactivate_removed(self):
-        """已 remove_from_book 的 wq unmark 后不重新激活（不创建新 schedule）。"""
+        """已 remove_from_book 的 wq unmark 后不重新激活（mastery 跳过 inactive 行）。
+
+        Mastery 操作只作用于仍在错题本的行：陈旧页面对已移除行的 unmark
+        不能让客户端误以为发生了可见状态变化，重新激活必须走 add_to_review。
+        """
         from sqlalchemy import func, select
 
         engine, session, db_path = await _make_db()
@@ -704,12 +755,13 @@ class TestMasterUnmaster:
 
             result = await batch_operate(session, user_id=1,
                                          action="unmark_mastered", ids=[wq.id])
-            # mastered 字段确实有变化（True→False），所以 updated_count=1
-            assert result["updated_count"] == 1
+            # inactive 行被静默跳过，不算 updated
+            assert result["updated_count"] == 0
+            assert result["skipped_count"] == 1
             await session.refresh(wq)
-            assert wq.mastered is False
+            assert wq.mastered is True  # 未被改动
 
-            # 但不应该创建新 schedule
+            # 也不应该创建新 schedule
             cnt = await session.execute(
                 select(func.count(ReviewSchedule.id)).where(
                     ReviewSchedule.user_id == 1,

@@ -121,11 +121,19 @@ def build_report_prompt(
     accuracy: float,
     knowledge_point_stats: list[dict],
 ) -> list:
-    """构建学习报告 prompt。"""
+    """构建学习报告 prompt。
+
+    ``knowledge_point_stats`` 支持两种行形态（字段二选一，不能都缺）：
+    - 错题诊断口径：mastery_rate / mastered / total_wrong（stats_service）
+    - 练习正确率口径：accuracy / correct / total（ai_learning_service）
+    """
 
     kp_text = ""
     for kp in knowledge_point_stats:
-        kp_text += f"  - {kp['knowledge_point']}: 错题掌握率 {kp['mastery_rate']:.0%}（已掌握{kp['mastered']}/{kp['total_wrong']}道错题）\n"
+        if "mastery_rate" in kp:
+            kp_text += f"  - {kp['knowledge_point']}: 错题掌握率 {kp['mastery_rate']:.0%}（已掌握{kp['mastered']}/{kp['total_wrong']}道错题）\n"
+        else:
+            kp_text += f"  - {kp['knowledge_point']}: 正确率 {kp['accuracy']:.0%}（{kp['correct']}/{kp['total']}）\n"
 
     return [
         {"role": "system", "content": SYSTEM_REPORT},
@@ -136,7 +144,7 @@ def build_report_prompt(
                 f"统计周期：最近 {days} 天\n"
                 f"总做题数：{total}\n"
                 f"总正确率：{accuracy:.0%}\n"
-                f"各科目错题掌握率（注意：这是错题掌握进度，不是做题正确率）：\n{kp_text}\n"
+                f"各知识点表现（注意区分掌握进度与做题正确率）：\n{kp_text}\n"
                 "请生成学习报告，识别薄弱点和优势点，给出 3-5 条具体学习建议。"
             ),
         },
