@@ -14,6 +14,16 @@ from urllib.parse import unquote, urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.answer_grounding import (
+    build_answer_grounding,
+    build_revision_drift_analysis,
+    build_safe_grounded_analysis,
+    diagnosis_contradicts_grounding,
+    grounding_fact_signature,
+    grounding_prompt_payload,
+    grounding_verification_payload,
+    merge_grounded_diagnosis,
+)
 from app.ai.client import llm
 from app.ai.context import build_error_context
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
@@ -25,6 +35,7 @@ from app.ai.prompts import (
     build_visual_evidence_probe,
 )
 from app.core.config import settings
+from app.models.admin import QuestionVersion
 from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
@@ -854,6 +865,130 @@ def parse_error_analysis_content(raw: str) -> dict:
     return _extract_analysis_fields(decoded if decoded is not None else text)
 
 
+_ANSWER_CHECK_KEYS = ("answer_check", "answerCheck", "作答核对")
+_ROMAN_ECHO_TRANSLATION = str.maketrans(
+    {
+        "Ⅰ": "I",
+        "Ⅱ": "II",
+        "Ⅲ": "III",
+        "Ⅳ": "IV",
+        "Ⅴ": "V",
+        "Ⅵ": "VI",
+        "Ⅶ": "VII",
+        "Ⅷ": "VIII",
+        "Ⅸ": "IX",
+        "Ⅹ": "X",
+    }
+)
+
+
+def _extract_answer_check(value, depth: int = 0) -> dict | None:
+    """Find the machine-verifiable ``answer_check`` object in model output."""
+    if depth > 6 or value is None:
+        return None
+    if isinstance(value, str):
+        decoded = _decode_structured_content(value)
+        if decoded is None or decoded == value:
+            return None
+        return _extract_answer_check(decoded, depth + 1)
+    if isinstance(value, list):
+        for item in value:
+            found = _extract_answer_check(item, depth + 1)
+            if found is not None:
+                return found
+        return None
+    if not isinstance(value, dict):
+        return None
+    for key in _ANSWER_CHECK_KEYS:
+        candidate = value.get(key)
+        if isinstance(candidate, dict):
+            return candidate
+    for key in _ANALYSIS_WRAPPER_KEYS:
+        if key in value:
+            found = _extract_answer_check(value.get(key), depth + 1)
+            if found is not None:
+                return found
+    for nested in value.values():
+        if isinstance(nested, (dict, list, str)):
+            found = _extract_answer_check(nested, depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
+def _canonical_answer_echo(value, expected: str) -> str:
+    raw = str(value or "").strip().upper()
+    expected = str(expected or "").strip().upper()
+    # The deterministic contract serializes ordinary choice answers as B or
+    # A,C. Accept harmless delimiter/ordering differences from providers while
+    # still requiring the same selected option set.
+    if expected and re.fullmatch(r"[A-Z](?:,[A-Z])*", expected):
+        letters = sorted(set(re.findall(r"[A-Z]", raw)))
+        return ",".join(letters)
+    return raw.replace("，", ",").replace("；", ",").replace("、", ",")
+
+
+def _canonical_answer_check_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        items = [item for item in re.split(r"[,，、;；\s]+", value) if item]
+    elif isinstance(value, (list, tuple, set)):
+        items = list(value)
+    else:
+        items = [value]
+    result: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            item = item.get("label") or item.get("key") or item.get("id") or ""
+        text = str(item or "").strip().translate(_ROMAN_ECHO_TRANSLATION).upper()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _validate_answer_check(
+    raw_content: str, expected: dict
+) -> tuple[bool, str, dict | None]:
+    decoded = _decode_structured_content(raw_content)
+    actual = _extract_answer_check(decoded if decoded is not None else raw_content)
+    if actual is None:
+        return False, "answer_check_missing", None
+
+    correct_actual = _canonical_answer_echo(
+        actual.get("correct_answer", actual.get("correctAnswer", "")),
+        str(expected.get("correct_answer") or ""),
+    )
+    user_actual = _canonical_answer_echo(
+        actual.get("user_answer", actual.get("userAnswer", "")),
+        str(expected.get("user_answer") or ""),
+    )
+    correct_expected = _canonical_answer_echo(
+        expected.get("correct_answer", ""), str(expected.get("correct_answer") or "")
+    )
+    user_expected = _canonical_answer_echo(
+        expected.get("user_answer", ""), str(expected.get("user_answer") or "")
+    )
+    if correct_actual != correct_expected:
+        return False, "answer_check_correct_mismatch", actual
+    if user_actual != user_expected:
+        return False, "answer_check_user_mismatch", actual
+
+    missing_actual = _canonical_answer_check_list(
+        actual.get("missing", actual.get("missing_items", []))
+    )
+    extra_actual = _canonical_answer_check_list(
+        actual.get("extra", actual.get("extra_items", []))
+    )
+    missing_expected = _canonical_answer_check_list(expected.get("missing", []))
+    extra_expected = _canonical_answer_check_list(expected.get("extra", []))
+    if sorted(missing_actual) != sorted(missing_expected):
+        return False, "answer_check_missing_mismatch", actual
+    if sorted(extra_actual) != sorted(extra_expected):
+        return False, "answer_check_extra_mismatch", actual
+    return True, "", actual
+
+
 def is_valid_ai_analysis(content: dict) -> bool:
     return any(
         str(content.get(k, "")).strip()
@@ -884,12 +1019,14 @@ def _analysis_input_signature(
     payload = {
         "prompt_version": AI_ANALYSIS_PROMPT_VERSION,
         "question_id": q.id,
+        "wrong_question_version_id": getattr(wq, "question_version_id", None),
         "question_version_id": (
             getattr(q, "question_version_id", None)
             or getattr(q, "current_version_id", None)
         ),
         "question_sync_version": getattr(q, "sync_version", None),
         "question_updated_at": getattr(q, "updated_at", None),
+        "question_type": getattr(q, "question_type", None),
         "content": q.content,
         "options": q.options,
         "answer": q.answer,
@@ -956,6 +1093,8 @@ def _analysis_cache_stale_reason(
     meta = ai_analysis.get("_meta") or {}
     if meta.get("version", "") != AI_ANALYSIS_PROMPT_VERSION:
         return "prompt_version"
+    if meta.get("grounding_guard") not in {"passed", "repaired"}:
+        return "grounding_guard"
     if requires_visual:
         if int(meta.get("visual_input_count") or 0) <= 0:
             return "visual_input"
@@ -1148,13 +1287,73 @@ async def analyze_error(
     if not wq:
         raise ValueError("错题记录不存在")
 
-    # AI advice is rendered next to wrong-book detail, so analyze the same
-    # current question-bank projection that the learner sees. The immutable
-    # wrong-attempt revision remains available to review/history flows only.
+    # AI advice is rendered next to wrong-book detail, so the teaching context
+    # follows the current question-bank projection that the learner sees. The
+    # immutable wrong-attempt revision is still checked as a safety boundary:
+    # if option/answer semantics changed, an old answer key must never be
+    # reinterpreted against the new projection.
     q_result = await db.execute(select(Question).where(Question.id == wq.question_id))
     q = q_result.scalar_one_or_none()
     if q is None:
         raise ValueError("题目不存在")
+
+    current_answer_grounding = build_answer_grounding(
+        question_type=getattr(q, "question_type", None),
+        content=q.content,
+        options=q.options,
+        correct_answer=q.answer,
+        user_answer=wq.wrong_answer,
+    )
+    current_version_id = int(getattr(q, "current_version_id", 0) or 0)
+    wrong_version_id = int(getattr(wq, "question_version_id", 0) or 0)
+    if (
+        current_version_id
+        and wrong_version_id
+        and current_version_id != wrong_version_id
+    ):
+        revision = await db.scalar(
+            select(QuestionVersion).where(
+                QuestionVersion.id == wrong_version_id,
+                QuestionVersion.question_id == wq.question_id,
+            )
+        )
+        revision_semantics_match = False
+        if revision is not None:
+            historical_grounding = build_answer_grounding(
+                question_type=getattr(revision, "question_type", None)
+                or getattr(q, "question_type", None),
+                content=revision.content,
+                options=revision.options,
+                correct_answer=revision.answer,
+                user_answer=wq.wrong_answer,
+            )
+            revision_semantics_match = grounding_fact_signature(
+                current_answer_grounding
+            ) == grounding_fact_signature(historical_grounding)
+        if not revision_semantics_match:
+            logger.warning(
+                "ai.error_analysis.revision_guard wq_id=%s question_id=%s "
+                "wrong_version_id=%s current_version_id=%s revision_found=%s",
+                wq.id,
+                q.id,
+                wrong_version_id,
+                current_version_id,
+                revision is not None,
+            )
+            generated_at = datetime.now(UTC).isoformat()
+            return {
+                "content": build_revision_drift_analysis(),
+                "from_cache": False,
+                "from_fallback": False,
+                "tokens_used": 0,
+                "model": "revision_guard",
+                "duration_ms": 0,
+                "force_regenerated": False,
+                "visual_input_count": 0,
+                "input_mode": "text",
+                "generated_at": generated_at,
+                "revision_guarded": True,
+            }
 
     stored_visual_sources = _collect_question_visual_sources(q)
     requires_visual = bool(
@@ -1354,6 +1553,12 @@ async def analyze_error(
 
         context = build_error_context(wq, q, knowledge_points)
         context["question"]["structured_visual"] = structured_visual
+        answer_grounding = current_answer_grounding
+        prompt_grounding = grounding_prompt_payload(answer_grounding)
+        expected_answer_check = grounding_verification_payload(answer_grounding)
+        # Persist only compact deterministic facts in the audit snapshot. They
+        # contain no model reasoning and make future incident review reproducible.
+        context["answer_grounding"] = prompt_grounding
 
         # Text and multimodal calls get the same provider budget. The mini-program
         # cannot hold one wx.request open for this entire duration; it times out
@@ -1367,8 +1572,15 @@ async def analyze_error(
             failure_model: str,
             duration_ms: int = 0,
         ) -> dict:
-            old_cache = build_any_cached_error_analysis_response(wq)
+            old_cache = build_cached_error_analysis_response(
+                wq,
+                requires_visual=requires_visual,
+                expected_input_signature=input_signature,
+                expected_model_signature=model_signature,
+            )
             if effective_force and old_cache is not None:
+                old_cache["force_regenerated"] = False
+                old_cache["cache_preserved"] = True
                 old_cache["error_code"] = error_code
                 old_cache["retryable"] = retryable
                 return old_cache
@@ -1395,6 +1607,7 @@ async def analyze_error(
                 context["question"],
                 wq.wrong_answer,
                 q.answer,
+                answer_grounding=prompt_grounding,
                 image_data_urls=image_data_urls,
             )
             async with asyncio.timeout(
@@ -1556,6 +1769,23 @@ async def analyze_error(
         total_tokens_used = int(result.get("tokens_used") or 0)
         total_duration_ms = int(result.get("duration_ms") or 0)
 
+        grounding_valid = False
+        grounding_guard_reason = "analysis_invalid"
+        actual_answer_check = None
+        if parsed_valid:
+            grounding_valid, grounding_guard_reason, actual_answer_check = (
+                _validate_answer_check(raw_content, expected_answer_check)
+            )
+            if grounding_valid:
+                contradicts, contradiction_reason = diagnosis_contradicts_grounding(
+                    parsed.get("mistake_diagnosis", ""), answer_grounding
+                )
+                if contradicts:
+                    grounding_valid = False
+                    grounding_guard_reason = (
+                        contradiction_reason or "diagnosis_contradiction"
+                    )
+
         if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
             # A surprisingly common model-protocol failure is: the answer itself
             # clearly uses the image, all three analysis fields are valid, but the
@@ -1564,6 +1794,7 @@ async def analyze_error(
             # No OCR/VL routing is introduced.
             can_probe = (
                 parsed_valid
+                and grounding_valid
                 and total_duration_ms <= _ERROR_ANALYSIS_VISUAL_ACK_RETRY_MAIN_BUDGET_MS
             )
             if can_probe:
@@ -1662,6 +1893,89 @@ async def analyze_error(
             )
             return resp
 
+        if not grounding_valid:
+            # Fail closed: never persist/display an LLM response whose answer
+            # facts disagree with deterministic server-side grading.  A compact
+            # deterministic repair is still useful to the learner and prevents
+            # repeated paid calls on every page open. Manual regeneration can
+            # replace it once the configured model follows the contract.
+            safe = build_safe_grounded_analysis(answer_grounding)
+            generated_at = datetime.now(UTC).isoformat()
+            safe["_meta"] = {
+                "model": "grounding_guard",
+                "source_model": result.get("model", ""),
+                "provider": runtime.provider,
+                "model_config_id": runtime.model_config_id,
+                "generated_at": generated_at,
+                "version": AI_ANALYSIS_PROMPT_VERSION,
+                "from_fallback": False,
+                "force_regenerated": effective_force,
+                "visual_input_count": len(image_data_urls),
+                "visual_evidence": visual_evidence or None,
+                "visual_ack_retried": visual_ack_retried,
+                "visual_ack_retry_ms": visual_ack_retry_ms,
+                "input_mode": "vision" if image_data_urls else "text",
+                "input_signature": input_signature,
+                "model_signature": model_signature,
+                "answer_check": expected_answer_check,
+                "grounding_guard": "repaired",
+                "grounding_guard_reason": grounding_guard_reason,
+            }
+            wq.ai_analysis = safe
+            await db.commit()
+
+            context_snapshot = dict(context)
+            context_snapshot["visual_input_count"] = len(image_data_urls)
+            context_snapshot["visual_evidence"] = visual_evidence or None
+            context_snapshot["grounding_guard"] = {
+                "status": "repaired",
+                "reason": grounding_guard_reason,
+                "expected_answer_check": expected_answer_check,
+                "actual_answer_check": actual_answer_check,
+            }
+            db.add(
+                AiChat(
+                    user_id=user_id,
+                    session_type="error_analysis",
+                    user_message=str(context["question"]),
+                    ai_response=result.get("content", ""),
+                    context_snapshot=context_snapshot,
+                    tokens_used=total_tokens_used,
+                    model=result.get("model", ""),
+                    duration_ms=total_duration_ms,
+                )
+            )
+            await db.commit()
+            logger.warning(
+                "ai.error_analysis.grounding_repaired wq_id=%s force=%s model=%s reason=%s "
+                "expected=%s actual=%s",
+                wq.id,
+                effective_force,
+                result.get("model"),
+                grounding_guard_reason,
+                expected_answer_check,
+                actual_answer_check,
+            )
+            return {
+                "content": safe,
+                "from_cache": False,
+                "from_fallback": False,
+                "tokens_used": total_tokens_used,
+                "model": "grounding_guard",
+                "duration_ms": total_duration_ms,
+                "force_regenerated": effective_force,
+                "visual_input_count": len(image_data_urls),
+                "visual_evidence": visual_evidence or None,
+                "input_mode": "vision" if image_data_urls else "text",
+                "generated_at": generated_at,
+                "grounding_repaired": True,
+            }
+
+        # The answer-difference sentence is always server generated. The model
+        # contributes only the pedagogical reason after that authoritative fact.
+        parsed["mistake_diagnosis"] = merge_grounded_diagnosis(
+            answer_grounding, parsed.get("mistake_diagnosis", "")
+        )
         parsed["_meta"] = {
             "model": result.get("model", ""),
             "provider": runtime.provider,
@@ -1677,6 +1991,8 @@ async def analyze_error(
             "input_mode": "vision" if image_data_urls else "text",
             "input_signature": input_signature,
             "model_signature": model_signature,
+            "answer_check": expected_answer_check,
+            "grounding_guard": "passed",
         }
 
         wq.ai_analysis = parsed

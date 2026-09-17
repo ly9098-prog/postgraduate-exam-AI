@@ -63,6 +63,12 @@
 - 同一错题二次请求直接返回 `from_cache=True`，不调 API
 - 缓存无过期机制
 
+**错题分析作答事实锚定**（`app/ai/answer_grounding.py`，2026-09-17 引入）
+- 服务端先确定性推导漏选/错选事实（`missing_items` / `extra_items`），作为唯一答案事实源注入 prompt（v4-grounded-answer-facts），LLM 不得重新推断
+- 生成后校验模型回填的 `answer_check` 与服务端事实一致，且 `mistake_diagnosis` 不与漏选/错选事实矛盾；不一致时 fail-closed，改用确定性修复内容（`grounding_guard=repaired`）并缓存，不重复付费调用
+- 错题作答版本与题目当前版本不一致时做语义漂移守卫：历史版本答案语义无法映射到当前版本则返回版本提示分析（`revision_guarded`），不误判新选项
+- 展示的"作答核对"首句始终由服务端生成，模型只补充教学解释
+
 **调用记录**
 - AI 调用写入 `ai_chats` 表（session_type / messages / response / tokens / duration_ms / context_snapshot）
 - 用于成本核算和调用审计

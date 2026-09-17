@@ -6,7 +6,7 @@ from app.features.question_type import QT_SINGLE_CHOICE
 
 # 当前 AI 错题分析 prompt 版本。
 # 修改 prompt 后递增此版本号，已缓存旧版本分析会在下次读取时触发重新生成。
-AI_ANALYSIS_PROMPT_VERSION = "v3-vision"
+AI_ANALYSIS_PROMPT_VERSION = "v4-grounded-answer-facts"
 
 
 def _clip_text(value, limit=1200):
@@ -18,25 +18,31 @@ def _clip_text(value, limit=1200):
 
 SYSTEM_PROMPTS = {
     "error_analysis": (
-        "你是一个考研错题复盘教练。你的任务是结合题目、用户答案和正确答案，"
+        "你是一个考研错题复盘教练。你的任务是结合题目和服务端已核验的作答事实，"
         "帮助用户明确为什么错、需要补什么、接下来怎么练。\n"
         "要求：\n"
-        "1. 输出必须具体、简洁、可执行，不要重复题目原解析，不要输出空泛建议。\n"
-        "2. 不要输出思考过程、推理草稿或 reasoning 内容，直接返回最终 JSON。\n"
-        "3. 每个字段控制在 120 字以内，适合移动端阅读。\n"
-        "4. 不同学科适配不同表达：数学侧重公式、条件和步骤；英语侧重词汇、语法、"
+        "1. 【服务端已核验作答事实】是唯一答案事实源。不得修改、重新推断、反驳或与之矛盾；"
+        "不得把已选项说成漏选，也不得把未多选的项说成错选/多选。\n"
+        "2. mistake_diagnosis 只解释造成该已核验差异的认知原因或题目陷阱，"
+        "不要重复判断漏选/错选了哪个编号；服务端会在展示前补上权威作答差异。\n"
+        "3. 输出必须具体、简洁、可执行，不要重复题目原解析，不要输出空泛建议。\n"
+        "4. 不要输出思考过程、推理草稿或 reasoning 内容，直接返回最终 JSON。\n"
+        "5. 每个教学字段控制在 120 字以内，适合移动端阅读。\n"
+        "6. answer_check 必须逐字按服务端提供的 answer_check 回填，不得自行计算。\n"
+        "7. 不同学科适配不同表达：数学侧重公式、条件和步骤；英语侧重词汇、语法、"
         "句子结构和选项干扰；政治侧重概念辨析、关键词和材料逻辑；408 侧重概念、"
         "原理、模型和典型考法。\n"
-        "5. 数学公式约束：\n"
+        "8. 数学公式约束：\n"
         "   - 所有数学内容必须使用 LaTeX\n"
         "   - 行内公式用 $...$，块级公式用 $$...$$\n"
         "   - 禁止输出 Unicode 上下标和根号，例如不要写 x²、√x，应写 $x^2$、$\\sqrt{x}$\n"
         "   - 不要把公式写成纯文本，不要混用 Unicode 数学符号和 LaTeX\n"
         "   - 涉及极限、积分、矩阵、分式、求和、复杂上下标时必须使用标准 LaTeX 命令\n"
         "请用中文回答，严格以 JSON 格式输出：\n"
-        '{"mistake_diagnosis": "错因诊断：指出用户为什么错，包括错误类型、关键失分点和题目陷阱，最多120字", '
-        '"knowledge_patch": "补漏重点：指出本题暴露的薄弱考点、必补公式/定义/规则、适用条件或易混点，最多120字", '
-        '"review_task": "复练任务：给出下一步复练动作，包括重做、同类题、复刷间隔或下次检查点，最多120字", '
+        '{"mistake_diagnosis": "只解释原因，不重新判断漏选/错选项，最多120字", '
+        '"knowledge_patch": "补漏重点：指出薄弱考点、定义/规则/适用条件或易混点，最多120字", '
+        '"review_task": "复练任务：给出下一步复练动作，最多120字", '
+        '"answer_check": {"correct_answer": "必须原样回填", "user_answer": "必须原样回填", "missing": [], "extra": []}, '
         '"visual_evidence": "视觉题必须填写一个只能从图片直接观察到的关键事实；纯文本题填写空字符串"}'
     ),
     "study_advice": (
@@ -333,6 +339,7 @@ def build_error_analysis(
     user_answer: str,
     correct_answer: str,
     *,
+    answer_grounding: dict | None = None,
     image_data_urls: list[str] | None = None,
     image_max_pixels: int | None = None,
 ) -> list:
@@ -350,14 +357,19 @@ def build_error_analysis(
             "你必须先读取这些图片，再结合文字题干分析。\n"
         )
 
+    grounded = answer_grounding if isinstance(answer_grounding, dict) else {}
+    grounding_text = json.dumps(
+        grounded, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     user_text = (
         f"【题目】{stem}\n"
         f"【选项】{options_text}\n"
         f"【正确答案】{correct_answer}\n"
         f"【我的答案】{user_answer}\n"
         f"【知识点】{question.get('knowledge_points', [])}\n"
+        f"【服务端已核验作答事实】{grounding_text}\n"
         f"{visual_note}"
-        "请分析该错题，输出错因诊断、补漏重点和复练任务。"
+        "请严格基于已核验事实分析错因；不要重新计算漏选/错选项。"
     )
 
     system_prompt = SYSTEM_PROMPTS["error_analysis"]
