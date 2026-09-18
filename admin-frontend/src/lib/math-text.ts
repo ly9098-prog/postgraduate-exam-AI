@@ -21,7 +21,7 @@ const EXPLICIT_MATH_RE = /\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|\$\$[\s\S]*?\$\$|\$[
 
 // Chinese characters intentionally are not included: they naturally delimit
 // a formula from surrounding prose.
-const POSSIBLE_MATH_RUN_RE = /[A-Za-z0-9\\()[\]{}_^+\-*\/=<>≤≥≠≈∞→←±×÷′'.,:;|\sαβγδεζηθικλμνξοπρστυφχωψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ∀∃∍∂∇∈∉∋∏∑−√∛∜∫∬∭∮∯∰∥∦∅ℕℤℚℝℂℙℵℏ∠∡∢∘∙∟∣∤∵∴]+/g;
+const POSSIBLE_MATH_RUN_RE = /[A-Za-z0-9\\()[\]{}_^+\-*\/=<>≤≥≠≈∞→←±×÷′'.,:;|\sαβγδεζηθικλμνξοπρστυφχωψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ∀∃∍∂∇∈∉∋∏∑−√∛∜∫∬∭∮∯∰∥∦∅ℕℤℚℝℂℙℵℏ∠∡∢∘∙∟∣∤∵∴⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱʲᵗ₀₁₂₃₄₅₆₇₈₉₊₋ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜₓ]+/g;
 
 const PURE_NUMBER_RE = /^[+-]?\d+(?:\.\d+)?$/;
 const VERSION_RE = /^v?\d+(?:\.\d+){1,3}$/i;
@@ -109,6 +109,58 @@ export function stripMathDelimiters(value: string): string {
   return text;
 }
 
+const MATH_FUNCTION_WORDS = new Set([
+  "arcsin", "arccos", "arctan", "sin", "cos", "tan", "cot", "sec", "csc",
+  "ln", "log", "lg", "lim", "exp", "det", "max", "min", "sup", "inf", "deg",
+]);
+
+const NON_MATH_SLASH_TOKENS = new Set(["I/O", "C/S", "P/V", "R/W"]);
+
+function isNamedTextIdentifier(token: string): boolean {
+  const plain = token.replace(/^\\/, "");
+  return /^[A-Za-z]{2,}$/.test(plain) && !MATH_FUNCTION_WORDS.has(plain.toLowerCase());
+}
+
+function shouldKeepLiteralSlash(numerator: string, denominator: string): boolean {
+  return isNamedTextIdentifier(numerator) || isNamedTextIdentifier(denominator);
+}
+
+function hasFractionLikeSlash(value: string): boolean {
+  const text = value.trim();
+  if (!text.includes("/")) return false;
+  if (NON_MATH_SLASH_TOKENS.has(text.toUpperCase())) return false;
+
+  if (/\([^()]+\)\s*\/|\/\s*\([^()]+\)/.test(text)) return true;
+  if (/\b(?:sin|cos|tan|cot|sec|csc|ln|log|lg|det|exp)\b[^/]*\//i.test(text)) return true;
+  if (/\/[^/]*\b(?:sin|cos|tan|cot|sec|csc|ln|log|lg|det|exp)\b/i.test(text)) return true;
+
+  const matches = text.matchAll(/([A-Za-z0-9]+)\s*\/\s*([A-Za-z0-9]+)/g);
+  for (const match of matches) {
+    const whole = match[0].replace(/\s+/g, "").toUpperCase();
+    if (NON_MATH_SLASH_TOKENS.has(whole)) continue;
+    if (!shouldKeepLiteralSlash(match[1], match[2])) return true;
+  }
+  return false;
+}
+
+function normalizeUnicodeScripts(value: string): string {
+  const superscripts: Record<string, string> = {
+    "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6",
+    "⁷": "7", "⁸": "8", "⁹": "9", "⁺": "+", "⁻": "-", "ⁿ": "n", "ⁱ": "i",
+    "ʲ": "j", "ᵗ": "t",
+  };
+  const subscripts: Record<string, string> = {
+    "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6",
+    "₇": "7", "₈": "8", "₉": "9", "₊": "+", "₋": "-", "ₐ": "a", "ₑ": "e",
+    "ₕ": "h", "ᵢ": "i", "ⱼ": "j", "ₖ": "k", "ₗ": "l", "ₘ": "m", "ₙ": "n",
+    "ₒ": "o", "ₚ": "p", "ᵣ": "r", "ₛ": "s", "ₜ": "t", "ₓ": "x",
+  };
+
+  return value
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱʲᵗ]+/g, (run) => `^{${Array.from(run).map((char) => superscripts[char] ?? char).join("")}}`)
+    .replace(/[₀₁₂₃₄₅₆₇₈₉₊₋ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜₓ]+/g, (run) => `_{${Array.from(run).map((char) => subscripts[char] ?? char).join("")}}`);
+}
+
 function normalizeFractions(source: string): string {
   let text = source;
 
@@ -138,12 +190,15 @@ function normalizeFractions(source: string): string {
         `\\frac{${numerator.trim()}}{${denominator.trim()}}`,
     );
 
-    // b/a, c/a, 1/2. Avoid touching slash-based dates because this function
-    // is only called after a segment has already been classified as math.
+    // b/a, c/a, 1/2. Slash-separated CS identifiers such as
+    // insert/delete or average/worst are labels, not fractions.
     text = text.replace(
       /(-?(?:\\[A-Za-z]+|[A-Za-z0-9]+)(?:_\{[^{}]+\}|_[A-Za-z0-9]+)?(?:\^\{[^{}]+\}|\^[A-Za-z0-9]+)?)\s*\/\s*((?:\\[A-Za-z]+|[A-Za-z0-9]+)(?:_\{[^{}]+\}|_[A-Za-z0-9]+)?(?:\^\{[^{}]+\}|\^[A-Za-z0-9]+)?)/g,
-      (_match, numerator: string, denominator: string) =>
-        `\\frac{${numerator.trim()}}{${denominator.trim()}}`,
+      (match, numerator: string, denominator: string) => {
+        const compact = match.replace(/\s+/g, "").toUpperCase();
+        if (NON_MATH_SLASH_TOKENS.has(compact) || shouldKeepLiteralSlash(numerator, denominator)) return match;
+        return `\\frac{${numerator.trim()}}{${denominator.trim()}}`;
+      },
     );
 
     if (text === before) break;
@@ -156,6 +211,8 @@ function normalizeFractions(source: string): string {
 export function normalizeLatexExpression(value: unknown): string {
   let text = stripMathDelimiters(decodeApiText(value));
   if (!text) return "";
+
+  text = normalizeUnicodeScripts(text);
 
   text = text
     .replace(/−/g, "-")
@@ -186,11 +243,22 @@ export function normalizeLatexExpression(value: unknown): string {
   // into \\sin when the backend already supplied LaTeX.
   const functions = [
     "arcsin", "arccos", "arctan", "sin", "cos", "tan", "cot", "sec", "csc",
-    "ln", "log", "lg", "lim", "exp", "det", "max", "min", "sup", "inf",
+    "ln", "log", "lg", "lim", "exp", "det", "max", "min", "sup", "inf", "deg",
   ];
   for (const name of functions) {
     text = text.replace(new RegExp(`(?<!\\\\)\\b${name}\\b`, "g"), `\\${name}`);
   }
+
+  // 408 formula blocks often use operation names as labels. Render those
+  // names as named operators instead of a product of italic variables.
+  text = text.replace(
+    /(?<!\\)\b([A-Za-z][A-Za-z0-9_]{1,})\s*\/\s*([A-Za-z][A-Za-z0-9_]{1,})(?=\s*:)/g,
+    "\\operatorname{$1}/\\operatorname{$2}",
+  );
+  text = text.replace(
+    /(?<!\\)\b([A-Za-z][A-Za-z0-9_]{1,})(?=\s*:)/g,
+    "\\operatorname{$1}",
+  );
 
   // Unicode Greek / math symbol replacement (after normalizeFractions to avoid false fraction detection)
   text = text
@@ -296,8 +364,10 @@ function looksLikeMath(value: string): boolean {
   if (/\\[A-Za-z]+/.test(text)) return true;
   if (/[∞≤≥≠≈→←±×÷αβγδεζηθικλμνξοπρστυφχψω∀∃∂∇∈∉∏∑∫∬∭∮√∛∜∠∡∢∘∙∥∅ℕℤℚℝℂℙℵℏ∵∴]/.test(text)) return true;
   if (/[=<>]/.test(text) && /[A-Za-z0-9]/.test(text)) return true;
+  if (/(?:O|Θ|Ω)\s*\([^()]+\)/.test(text)) return true;
   if (/[\^_]/.test(text) && /[A-Za-z0-9]/.test(text)) return true;
-  if (/\//.test(text) && /[A-Za-z0-9()]/.test(text)) return true;
+  if (/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱʲᵗ₀₁₂₃₄₅₆₇₈₉₊₋ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜₓ]/.test(text)) return true;
+  if (hasFractionLikeSlash(text)) return true;
   if (/[A-Za-z](?:'{1,3})/.test(text)) return true;
 
   // Variables and monomials that occur between Chinese prose, such as
