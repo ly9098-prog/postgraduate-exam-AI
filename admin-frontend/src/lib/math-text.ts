@@ -310,7 +310,73 @@ function looksLikeMath(value: string): boolean {
   return false;
 }
 
-function splitPlainText(source: string): MathTextSegment[] {
+type RawSetSpan = { start: number; end: number };
+
+/**
+ * Locate raw set literals such as `E={<v0,V1>，<v0,V2>}`.
+ *
+ * These values are mathematical in meaning, but they are not LaTeX. Feeding
+ * them through KaTeX is lossy: `{` / `}` are interpreted as TeX grouping, and
+ * full-width Chinese separators can split one set into several fragments. The
+ * result is exactly the red / reordered text seen on the /questions page.
+ * Keep the whole literal as ordinary text so the stored question content is
+ * displayed verbatim.
+ */
+function findRawSetSpans(source: string): RawSetSpan[] {
+  const spans: RawSetSpan[] = [];
+  const startPattern = /\b[A-Za-z][A-Za-z0-9_]*\s*=\s*\{/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = startPattern.exec(source)) !== null) {
+    const openOffset = match[0].lastIndexOf("{");
+    const openIndex = match.index + openOffset;
+    let depth = 0;
+    let escaped = false;
+    let end = source.length;
+
+    for (let index = openIndex; index < source.length; index += 1) {
+      const char = source[index];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "{") {
+        depth += 1;
+        continue;
+      }
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = index + 1;
+          break;
+        }
+        continue;
+      }
+
+      // OCR/import data can occasionally lose the closing brace. Do not let an
+      // incomplete raw set consume the rest of a paragraph; stop at a strong
+      // sentence boundary and still render the malformed source verbatim.
+      if (depth > 0 && (char === "。" || char === "；" || char === ";" || char === "\n")) {
+        end = index;
+        break;
+      }
+    }
+
+    if (end > match.index) {
+      spans.push({ start: match.index, end });
+      startPattern.lastIndex = end;
+    }
+  }
+
+  return spans;
+}
+
+function splitMathRuns(source: string): MathTextSegment[] {
   const segments: MathTextSegment[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -326,9 +392,13 @@ function splitPlainText(source: string): MathTextSegment[] {
     const trailing = run.match(/[\s]+$/)?.[0] ?? "";
     const core = run.slice(leading.length, run.length - trailing.length);
 
-    if (leading) segments.push({ type: "text", value: leading, displayMode: false });
+    // A run consisting only of whitespace has the same leading and trailing
+    // slice. Emitting both duplicates spaces around protected text spans.
+    if (!core) {
+      segments.push({ type: "text", value: run, displayMode: false });
+    } else {
+      if (leading) segments.push({ type: "text", value: leading, displayMode: false });
 
-    if (core) {
       // Inline source-code fragments (for example `if (...) { for (...) ... }`)
       // can satisfy the generic math heuristics because they contain operators
       // such as `>=`, `<` and `=`. Never feed those runs to KaTeX: incomplete
@@ -341,14 +411,39 @@ function splitPlainText(source: string): MathTextSegment[] {
       } else {
         segments.push({ type: "text", value: core, displayMode: false });
       }
-    }
 
-    if (trailing) segments.push({ type: "text", value: trailing, displayMode: false });
+      if (trailing) segments.push({ type: "text", value: trailing, displayMode: false });
+    }
     lastIndex = match.index + run.length;
   }
 
   if (lastIndex < source.length) {
     segments.push({ type: "text", value: source.slice(lastIndex), displayMode: false });
+  }
+
+  return segments;
+}
+
+function splitPlainText(source: string): MathTextSegment[] {
+  const rawSetSpans = findRawSetSpans(source);
+  if (rawSetSpans.length === 0) return splitMathRuns(source);
+
+  const segments: MathTextSegment[] = [];
+  let cursor = 0;
+  rawSetSpans.forEach((span) => {
+    if (span.start > cursor) {
+      segments.push(...splitMathRuns(source.slice(cursor, span.start)));
+    }
+    segments.push({
+      type: "text",
+      value: source.slice(span.start, span.end),
+      displayMode: false,
+    });
+    cursor = span.end;
+  });
+
+  if (cursor < source.length) {
+    segments.push(...splitMathRuns(source.slice(cursor)));
   }
 
   return segments;
