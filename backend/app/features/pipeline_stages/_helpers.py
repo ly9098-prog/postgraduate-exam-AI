@@ -77,7 +77,14 @@ def _log_multi_blank_stage(stage: str, questions: list[dict], **context: Any) ->
             if isinstance(parsed_content, dict):
                 groups = parsed_content.get("blank_option_groups")
         summary = _blank_option_group_summary(groups)
-        if question.get("question_type") != "multi_blank_choice" and not summary:
+        if (
+            question.get("question_type")
+            not in (
+                "multi_blank_choice",
+                "multi_blank_multiple_choice",
+            )
+            and not summary
+        ):
             continue
         logger.warning(
             "multi_blank_choice pipeline stage",

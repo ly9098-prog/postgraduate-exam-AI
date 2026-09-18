@@ -825,13 +825,13 @@ async def update_import_question(
         qi.parsed_analysis = payload.pop("analysis")
 
     # ── Multi-blank choice handling ──
-    # When the question is or becomes multi_blank_choice:
+    # When the question is or becomes a multi-blank choice (single or multiple):
     # - parsed_options must be None (blank groups live in parsed_content)
     # - If flat options were provided, rebuild blank_option_groups from them
-    is_or_becomes_multi = (
-        payload.get("question_type") == "multi_blank_choice"
-        or qi.question_type == "multi_blank_choice"
-    )
+    is_or_becomes_multi = payload.get("question_type") in (
+        "multi_blank_choice",
+        "multi_blank_multiple_choice",
+    ) or qi.question_type in ("multi_blank_choice", "multi_blank_multiple_choice")
     if is_or_becomes_multi:
         qi.parsed_options = None
         # Rebuild blank_option_groups when options were provided in the payload

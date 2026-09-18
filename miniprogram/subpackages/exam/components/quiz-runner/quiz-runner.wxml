@@ -219,7 +219,7 @@
 <view class="runner-blank-group" wx:for="{{_blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <view class="runner-blank-group-head" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <text class="runner-blank-group-title" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{group.id}}</text>
-<text class="runner-blank-group-hint" wx:if="{{!readonly}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">请选择该空答案</text>
+<text class="runner-blank-group-hint" wx:if="{{!readonly}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{_isMultiBlankMultiple ? '该空可选择多个答案' : '请选择该空答案'}}</text>
 </view>
 <view class="runner-blank-group-options" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
 <view
@@ -233,7 +233,7 @@
               data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
             >
 <view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}} {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
-<text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+<text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon {{_isMultiBlankMultiple ? 'icon-check' : 'icon-dot'}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
 <text wx:elif="{{readonly && opt._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
 <text wx:elif="{{readonly && opt._isUserAnswer && !opt._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
 </view>

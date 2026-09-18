@@ -41,7 +41,8 @@ const FALLBACK_TYPES: QuestionTypeMetaItem[] = [
   { code: "multiple_choice", label: "多选题", sort_order: 20, capabilities: { has_options: true, answer_mode: "multiple_letters", allows_multi_blank: false, allows_multiple_answers: true } },
   { code: "true_false", label: "判断题", sort_order: 30, capabilities: { has_options: false, answer_mode: "true_false", allows_multi_blank: false, allows_multiple_answers: false } },
   { code: "fill_blank", label: "填空题", sort_order: 40, capabilities: { has_options: false, answer_mode: "text", allows_multi_blank: false, allows_multiple_answers: false } },
-  { code: "multi_blank_choice", label: "多空选择题", sort_order: 50, capabilities: { has_options: true, answer_mode: "multi_blank", allows_multi_blank: true, allows_multiple_answers: true } },
+  { code: "multi_blank_choice", label: "多空（单选）选择题", sort_order: 50, capabilities: { has_options: true, answer_mode: "multi_blank", allows_multi_blank: true, allows_multiple_answers: false } },
+  { code: "multi_blank_multiple_choice", label: "多空（多选）选择题", sort_order: 55, capabilities: { has_options: true, answer_mode: "multi_blank_multiple", allows_multi_blank: true, allows_multiple_answers: true } },
   { code: "subjective", label: "问答题", sort_order: 60, capabilities: { has_options: false, answer_mode: "free_text", allows_multi_blank: false, allows_multiple_answers: false } },
 ];
 

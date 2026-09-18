@@ -21,6 +21,7 @@ _VALID_QUESTION_TYPES = (
     "true_false",
     "fill_blank",
     "multi_blank_choice",
+    "multi_blank_multiple_choice",
     "subjective",
 )
 

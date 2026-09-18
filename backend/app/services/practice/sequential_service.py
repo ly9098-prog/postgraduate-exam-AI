@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from app.core.time_utils import utcnow
 from app.features.question_type import (
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
     QT_TRUE_FALSE,
@@ -50,6 +51,7 @@ SEQUENTIAL_ANSWERABLE_QUESTION_TYPES = frozenset(
         QT_MULTIPLE_CHOICE,
         QT_TRUE_FALSE,
         QT_MULTI_BLANK_CHOICE,
+        QT_MULTI_BLANK_MULTIPLE_CHOICE,
     }
 )
 

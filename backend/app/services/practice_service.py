@@ -33,6 +33,7 @@ from app.core.time_utils import (
 )
 from app.features.question_type import (
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
     QT_TRUE_FALSE,
@@ -116,6 +117,7 @@ PRACTICE_ANSWERABLE_QUESTION_TYPES = frozenset(
         QT_MULTIPLE_CHOICE,
         QT_TRUE_FALSE,
         QT_MULTI_BLANK_CHOICE,
+        QT_MULTI_BLANK_MULTIPLE_CHOICE,
     }
 )
 _PRACTICE_BATCH_TOKEN_VERSION = 2

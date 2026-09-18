@@ -30,9 +30,11 @@ down_revision = "v11_merge_heads"
 branch_labels = None
 depends_on = None
 
-# 6 个标准 QuestionType code
-# WARNING: 若修改 QuestionType 枚举，必须同步更新此列表。
-# tests/test_migration_question_types.py 会验证此列表与枚举一致。
+# 历史约束快照：v10 应用时的 6 个标准 QuestionType code。
+# v13_multi_blank_multiple_choice 迁移已将 CHECK 约束刷新为完整枚举
+# （新增 multi_blank_multiple_choice）。此列表保持 v10 原样以便 downgrade 重放。
+# tests/ocr_pipeline/test_migration_question_types.py 校验的是"历史快照 + 后续迁移"
+# 与枚举的并集一致性。
 CANONICAL_TYPES = [
     "single_choice",
     "multiple_choice",

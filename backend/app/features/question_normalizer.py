@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 from app.features.question_type import (
     QT_FILL_BLANK,
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
     QT_MULTIPLE_CHOICE,
     QT_SUBJECTIVE,
     QT_TRUE_FALSE,
@@ -1029,7 +1030,10 @@ def normalize_question(
             warnings.append("objective_signals_but_options_incomplete")
             failure_reasons.append("objective_signals_but_options_incomplete")
 
-    if question_type == QT_MULTI_BLANK_CHOICE and not blank_option_groups:
+    if (
+        question_type in (QT_MULTI_BLANK_CHOICE, QT_MULTI_BLANK_MULTIPLE_CHOICE)
+        and not blank_option_groups
+    ):
         errors.append("missing_blank_option_groups")
         failure_reasons.append("missing_blank_option_groups")
 

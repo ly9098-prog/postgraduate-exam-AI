@@ -35,7 +35,8 @@ function getStatus(
     const selected = answerMap[group.id];
     if (selected) {
       const validKeys = new Set(group.options.map((o) => o.key));
-      if (!validKeys.has(selected)) {
+      const letters = selected.split(",").filter(Boolean);
+      if (letters.some((l) => !validKeys.has(l))) {
         return {
           label: "非法答案",
           tone: "error",
@@ -104,12 +105,15 @@ export function MultiBlankAnswerSummary({
       <div className="divide-y divide-[var(--color-border)]/20">
         {groups.map((group) => {
           const answer = answerMap[group.id];
-          const hasAnswer = !!answer;
+          const letters = (answer ?? "").split(",").filter(Boolean);
+          const hasAnswer = letters.length > 0;
           const validAnswer =
-            hasAnswer && group.options.some((o) => o.key === answer);
-          const optionText = validAnswer
-            ? group.options.find((o) => o.key === answer)!.text
-            : null;
+            hasAnswer && letters.every((l) => group.options.some((o) => o.key === l));
+          const optionTexts = validAnswer
+            ? letters.map(
+                (l) => group.options.find((o) => o.key === l)!.text,
+              )
+            : [];
 
           let rowTone: "success" | "warning" | "error" | "empty" = "empty";
           if (!hasAnswer) rowTone = "warning";
@@ -141,12 +145,12 @@ export function MultiBlankAnswerSummary({
                       rowTone === "error" && "bg-red-50 text-red-600",
                     )}
                   >
-                    {answer}
+                    {letters.join(",")}
                   </span>
                 )}
-                {optionText ? (
+                {optionTexts.length > 0 ? (
                   <span className="truncate text-xs text-[var(--color-text-secondary)]">
-                    {optionText}
+                    {optionTexts.join("；")}
                   </span>
                 ) : null}
                 {!hasAnswer ? null : !validAnswer ? (

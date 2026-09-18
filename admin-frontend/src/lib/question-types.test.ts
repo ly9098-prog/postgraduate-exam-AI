@@ -14,13 +14,14 @@ import {
 // ── Canonical codes → labels ──
 
 describe("QUESTION_TYPE_LABELS", () => {
-  it("contains all 6 canonical types", () => {
+  it("contains all 7 canonical types", () => {
     const codes: QuestionTypeCode[] = [
       "single_choice",
       "multiple_choice",
       "true_false",
       "fill_blank",
       "multi_blank_choice",
+      "multi_blank_multiple_choice",
       "subjective",
     ];
     for (const code of codes) {
@@ -44,8 +45,12 @@ describe("QUESTION_TYPE_LABELS", () => {
     expect(QUESTION_TYPE_LABELS.fill_blank).toBe("填空题");
   });
 
-  it("multi_blank_choice → 多空选择题", () => {
-    expect(QUESTION_TYPE_LABELS.multi_blank_choice).toBe("多空选择题");
+  it("multi_blank_choice → 多空（单选）选择题", () => {
+    expect(QUESTION_TYPE_LABELS.multi_blank_choice).toBe("多空（单选）选择题");
+  });
+
+  it("multi_blank_multiple_choice → 多空（多选）选择题", () => {
+    expect(QUESTION_TYPE_LABELS.multi_blank_multiple_choice).toBe("多空（多选）选择题");
   });
 
   it("subjective → 问答题", () => {
@@ -91,8 +96,12 @@ describe("QUESTION_TYPE_SHORT_LABELS", () => {
     expect(QUESTION_TYPE_SHORT_LABELS.fill_blank).toBe("填空");
   });
 
-  it("multi_blank_choice → 多空", () => {
-    expect(QUESTION_TYPE_SHORT_LABELS.multi_blank_choice).toBe("多空");
+  it("multi_blank_choice → 多空单选", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.multi_blank_choice).toBe("多空单选");
+  });
+
+  it("multi_blank_multiple_choice → 多空多选", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.multi_blank_multiple_choice).toBe("多空多选");
   });
 
   it("subjective → 问答", () => {
@@ -108,7 +117,8 @@ describe("getQuestionTypeShortLabel", () => {
     expect(getQuestionTypeShortLabel("multiple_choice")).toBe("多选");
     expect(getQuestionTypeShortLabel("true_false")).toBe("判断");
     expect(getQuestionTypeShortLabel("fill_blank")).toBe("填空");
-    expect(getQuestionTypeShortLabel("multi_blank_choice")).toBe("多空");
+    expect(getQuestionTypeShortLabel("multi_blank_choice")).toBe("多空单选");
+    expect(getQuestionTypeShortLabel("multi_blank_multiple_choice")).toBe("多空多选");
     expect(getQuestionTypeShortLabel("subjective")).toBe("问答");
   });
 
@@ -152,8 +162,8 @@ describe("isValidQuestionType", () => {
 // ── QUESTION_TYPE_OPTIONS ──
 
 describe("QUESTION_TYPE_OPTIONS", () => {
-  it("has exactly 6 options", () => {
-    expect(QUESTION_TYPE_OPTIONS).toHaveLength(6);
+  it("has exactly 7 options", () => {
+    expect(QUESTION_TYPE_OPTIONS).toHaveLength(7);
   });
 
   it("each option has value and label", () => {
@@ -169,7 +179,8 @@ describe("QUESTION_TYPE_OPTIONS", () => {
     expect(QUESTION_TYPE_OPTIONS[2].value).toBe("true_false");
     expect(QUESTION_TYPE_OPTIONS[3].value).toBe("fill_blank");
     expect(QUESTION_TYPE_OPTIONS[4].value).toBe("multi_blank_choice");
-    expect(QUESTION_TYPE_OPTIONS[5].value).toBe("subjective");
+    expect(QUESTION_TYPE_OPTIONS[5].value).toBe("multi_blank_multiple_choice");
+    expect(QUESTION_TYPE_OPTIONS[6].value).toBe("subjective");
   });
 
   it("options match QUESTION_TYPE_CODES order", () => {

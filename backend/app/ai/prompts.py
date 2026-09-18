@@ -192,7 +192,9 @@ SYSTEM_PROMPTS = {
         "- 任何字段不确定 → 输出 null，绝不编造\n\n"
         "题型识别（question_type）取值：\n"
         "single_choice / multiple_choice / true_false / fill_blank / "
-        "multi_blank_choice / subjective\n"
+        "multi_blank_choice / multi_blank_multiple_choice / subjective\n"
+        "说明：multi_blank_choice 为多空（单选）选择题（每空一个选项）；"
+        "multi_blank_multiple_choice 为多空（多选）选择题（每空可选多个选项）。\n"
         "无法判断时输出 null。\n\n"
         "数学公式：保持原文 LaTeX/Unicode 形式，不要主动转换或重写。\n\n"
         "输出要求：必须严格 JSON，不允许任何自由文本、Markdown 代码块包裹或解释。\n"
@@ -200,7 +202,8 @@ SYSTEM_PROMPTS = {
         "{\n"
         '  "stem": "题干原文（可修复换行）",\n'
         '  "question_type": "single_choice | multiple_choice | true_false | '
-        'fill_blank | multi_blank_choice | subjective | null",\n'
+        "fill_blank | multi_blank_choice | multi_blank_multiple_choice | "
+        'subjective | null",\n'
         '  "options": [{"key": "A", "text": "选项A原文"}, ...],\n'
         '  "answer": "原文答案 | null",\n'
         '  "analysis": "原文解析 | null"\n'
@@ -274,7 +277,8 @@ SYSTEM_PROMPTS = {
         "- multiple_choice（多选题）\n"
         "- true_false（判断题）\n"
         "- fill_blank（填空题）\n"
-        "- multi_blank_choice（多空选择题）\n"
+        "- multi_blank_choice（多空（单选）选择题，每空一个选项）\n"
+        "- multi_blank_multiple_choice（多空（多选）选择题，每空可选多个选项）\n"
         "- subjective（主观题/简答题）\n\n"
         "推断规则：\n"
         "- 优先根据题干内容推断最具体的子学科，无法确定时使用大类\n"

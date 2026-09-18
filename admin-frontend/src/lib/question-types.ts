@@ -20,6 +20,7 @@ export type QuestionTypeCode =
   | "true_false"
   | "fill_blank"
   | "multi_blank_choice"
+  | "multi_blank_multiple_choice"
   | "subjective";
 
 // ── 规范值数组（用于遍历） ──
@@ -30,6 +31,7 @@ export const QUESTION_TYPE_CODES: QuestionTypeCode[] = [
   "true_false",
   "fill_blank",
   "multi_blank_choice",
+  "multi_blank_multiple_choice",
   "subjective",
 ];
 
@@ -40,7 +42,8 @@ export const QUESTION_TYPE_LABELS: Record<QuestionTypeCode, string> = {
   multiple_choice: "多选题",
   true_false: "判断题",
   fill_blank: "填空题",
-  multi_blank_choice: "多空选择题",
+  multi_blank_choice: "多空（单选）选择题",
+  multi_blank_multiple_choice: "多空（多选）选择题",
   subjective: "问答题",
 };
 
@@ -91,7 +94,8 @@ export const QUESTION_TYPE_SHORT_LABELS: Record<QuestionTypeCode, string> = {
   multiple_choice: "多选",
   true_false: "判断",
   fill_blank: "填空",
-  multi_blank_choice: "多空",
+  multi_blank_choice: "多空单选",
+  multi_blank_multiple_choice: "多空多选",
   subjective: "问答",
 };
 

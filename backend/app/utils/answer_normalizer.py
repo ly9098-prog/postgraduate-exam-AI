@@ -11,6 +11,9 @@ from app.features.multi_blank_choice import (
     parse_multi_blank_answer,
 )
 from app.features.question_type import (
+    is_multi_blank_multiple_type as _is_multi_blank_multiple_type,
+)
+from app.features.question_type import (
     is_multi_blank_type as _is_multi_blank_type,
 )
 from app.features.question_type import (
@@ -34,6 +37,15 @@ def is_true_false_type(question_type: str) -> bool:
 
 def is_multi_blank_type(question_type: str) -> bool:
     return _is_multi_blank_type(question_type)
+
+
+def is_multi_blank_multiple_type(question_type: str) -> bool:
+    return _is_multi_blank_multiple_type(question_type)
+
+
+def _slot_letter_set(value: str) -> set[str]:
+    """Normalize a slot value ("A,C" / "AC") to a set of uppercase letters."""
+    return {ch for ch in str(value).upper() if "A" <= ch <= "H"}
 
 
 def normalize_choice_answer(answer: str) -> list[str]:
@@ -165,7 +177,10 @@ def is_answer_correct(
 
     - multiple_choice: normalized set comparison (order-independent)
     - true_false: value normalized to A/B
-    - multi_blank_choice: slot-by-slot comparison (all required, no extras, order-independent)
+    - multi_blank_choice: slot-by-slot comparison (all required, no extras)
+      - multi_blank_choice: each slot holds exactly one letter
+      - multi_blank_multiple_choice: each slot is a letter set,
+        compared order-independently (subset semantics per slot)
     - single_choice / others: case-insensitive trim comparison
     """
     if not user_answer or not correct_answer:
@@ -185,7 +200,16 @@ def is_answer_correct(
         # and user answer must not have extra slots
         if set(user_map.keys()) != set(correct_map.keys()):
             return False
-        # Each slot value must match exactly
+        if is_multi_blank_multiple_type(question_type):
+            # Multi-select blank: each slot is a set of letters. The user's
+            # selection must contain every correct letter (extra wrong letters
+            # make the slot wrong via the subset check below failing only when
+            # user misses a letter; to also reject extras we require equality).
+            return all(
+                _slot_letter_set(user_map[slot]) == _slot_letter_set(correct_map[slot])
+                for slot in correct_map
+            )
+        # Single-select blank: each slot value must match exactly
         return user_map == correct_map
 
     if is_true_false_type(question_type):

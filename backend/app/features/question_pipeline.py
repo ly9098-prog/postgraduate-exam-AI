@@ -108,6 +108,13 @@ class QuestionNormalizer:
         "多空选择": "multi_blank_choice",
         "多空选择题": "multi_blank_choice",
         "multi_blank_choice": "multi_blank_choice",
+        "多空单选": "multi_blank_choice",
+        "多空单选题": "multi_blank_choice",
+        "多空单选选择题": "multi_blank_choice",
+        "多空多选": "multi_blank_multiple_choice",
+        "多空多选题": "multi_blank_multiple_choice",
+        "多空多选选择题": "multi_blank_multiple_choice",
+        "multi_blank_multiple_choice": "multi_blank_multiple_choice",
         "subjective": "subjective",
         "主观": "subjective",
         "主观题": "subjective",
@@ -344,7 +351,7 @@ class QuestionNormalizer:
             text = text.strip("。.;； ")
             if question_type == "multiple_choice":
                 values = [v for v in re.split(r"[,，、/\s]+", text.upper()) if v]
-            elif question_type == "multi_blank_choice":
+            elif question_type in ("multi_blank_choice", "multi_blank_multiple_choice"):
                 from app.features.multi_blank_choice import (
                     extract_blank_slots,
                     parse_multi_blank_answer,
@@ -562,9 +569,9 @@ class QuestionNormalizer:
         warnings: list[str] = []
         if not question.get("stem"):
             errors.append("stem_empty")
-        if (
-            not question.get("answer")
-            and question.get("question_type") != "multi_blank_choice"
+        if not question.get("answer") and question.get("question_type") not in (
+            "multi_blank_choice",
+            "multi_blank_multiple_choice",
         ):
             errors.append("answer_empty")
         if question.get("question_type") in {"single_choice", "multiple_choice"}:
@@ -585,7 +592,10 @@ class QuestionNormalizer:
 
                 _, opt_errors = _check_opts(question.get("question_type"), options)
                 errors.extend(opt_errors)
-        if question.get("question_type") == "multi_blank_choice":
+        if question.get("question_type") in (
+            "multi_blank_choice",
+            "multi_blank_multiple_choice",
+        ):
             groups = question.get("blank_option_groups") or []
             if not groups:
                 errors.append("missing_blank_option_groups")

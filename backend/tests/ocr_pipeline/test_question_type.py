@@ -19,6 +19,7 @@ from app.features.question_type import (
     CANONICAL_TYPES,
     QT_FILL_BLANK,
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
     QT_SUBJECTIVE,
@@ -41,8 +42,9 @@ from app.features.question_type import (
 class TestQuestionTypeEnum:
     """QuestionType 枚举完整性。"""
 
-    def test_has_exactly_6_members(self):
-        assert len(QuestionType) == 6
+    def test_has_exactly_7_members(self):
+        """6 基础题型 + multi_blank_multiple_choice（多空多选拆分）。"""
+        assert len(QuestionType) == 7
 
     def test_values_are_unique(self):
         values = [m.value for m in QuestionType]
@@ -82,7 +84,7 @@ class TestQuestionTypeEnum:
 
     def test_metadata_items_sorted(self):
         items = get_question_type_metadata_items()
-        assert len(items) == 6
+        assert len(items) == 7
         orders = [item["sort_order"] for item in items]
         assert orders == sorted(orders)
 
@@ -96,6 +98,10 @@ class TestValidateQuestionType:
         assert validate_question_type(QT_TRUE_FALSE) == QT_TRUE_FALSE
         assert validate_question_type(QT_FILL_BLANK) == QT_FILL_BLANK
         assert validate_question_type(QT_MULTI_BLANK_CHOICE) == QT_MULTI_BLANK_CHOICE
+        assert (
+            validate_question_type(QT_MULTI_BLANK_MULTIPLE_CHOICE)
+            == QT_MULTI_BLANK_MULTIPLE_CHOICE
+        )
         assert validate_question_type(QT_SUBJECTIVE) == QT_SUBJECTIVE
 
     def test_rejects_none(self):

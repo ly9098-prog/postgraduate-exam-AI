@@ -10,7 +10,7 @@ const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
-const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice'])
+const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice', 'multi_blank_multiple_choice'])
 function _normalizePracticeReturnRoute(value) {
 const route = safeDecodeURIComponent(value, '').trim().slice(0, 512)
 if (!route) return ''
@@ -2031,7 +2031,15 @@ if (!q || !adapter.isMultiBlankChoice(q) || !blankId || !opt) return
 const key = String(q.id)
 const prev = this._practiceSession.answerMap[key] || ''
 const blankAnswers = adapter.normalizeBlankAnswer(prev)
-if (blankAnswers[blankId] === opt) {
+if (typeof adapter.isMultiBlankMultipleChoice === 'function' && adapter.isMultiBlankMultipleChoice(q)) {
+// 多空（多选）：在空内 key 集合中切换
+const current = String(blankAnswers[blankId] || '').split(',').filter(Boolean)
+const next = current.indexOf(opt) >= 0
+? current.filter(function (k) { return k !== opt })
+: current.concat([opt]).sort()
+if (next.length > 0) blankAnswers[blankId] = next.join(',')
+else delete blankAnswers[blankId]
+} else if (blankAnswers[blankId] === opt) {
 delete blankAnswers[blankId]
 } else {
 blankAnswers[blankId] = opt

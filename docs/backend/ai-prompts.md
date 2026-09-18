@@ -110,7 +110,8 @@ type_detected / analysis_extracted / answer_filled
 - multiple_choice（多选题）
 - true_false（判断题）
 - fill_blank（填空题）
-- multi_blank_choice（多空选择题）
+- multi_blank_choice（多空（单选）选择题，每空一个选项）
+- multi_blank_multiple_choice（多空（多选）选择题，每空可选多个选项）
 - subjective（主观题/简答题）
 
 推断规则：

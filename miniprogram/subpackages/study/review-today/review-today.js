@@ -810,7 +810,15 @@ const q = this.data.currentQuestion
 if (!q || !adapter.isMultiBlankChoice(q) || !blankId || !opt) return
 const answer = this._reviewSession.answers[q.schedule_id] || ''
 const blankAnswers = adapter.normalizeBlankAnswer(answer)
-if (blankAnswers[blankId] === opt) {
+if (typeof adapter.isMultiBlankMultipleChoice === 'function' && adapter.isMultiBlankMultipleChoice(q)) {
+// 多空（多选）：在空内 key 集合中切换
+const current = String(blankAnswers[blankId] || '').split(',').filter(Boolean)
+const next = current.indexOf(opt) >= 0
+? current.filter(function (k) { return k !== opt })
+: current.concat([opt]).sort()
+if (next.length > 0) blankAnswers[blankId] = next.join(',')
+else delete blankAnswers[blankId]
+} else if (blankAnswers[blankId] === opt) {
 delete blankAnswers[blankId]
 } else {
 blankAnswers[blankId] = opt

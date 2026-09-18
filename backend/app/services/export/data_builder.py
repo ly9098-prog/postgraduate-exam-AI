@@ -7,6 +7,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.features.question_type import is_multi_blank_type
 from app.models.wrong_question import WrongQuestion
 from app.services.export.analysis_content import resolve_preferred_analysis
 from app.services.export.question_content import (
@@ -94,7 +95,7 @@ async def build_snapshot_data(
         # content.blank_option_groups by design and normally leave top-level
         # q.options empty, so they need a dedicated extraction path.
         is_standard_choice = q.question_type in ("single_choice", "multiple_choice")
-        is_multi_blank_choice = q.question_type == "multi_blank_choice"
+        is_multi_blank_choice = is_multi_blank_type(q.question_type)
         options = _normalize_options(q.options)
         blank_option_groups = (
             extract_blank_option_groups(q) if is_multi_blank_choice else []

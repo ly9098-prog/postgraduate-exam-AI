@@ -96,7 +96,7 @@ def _log_multi_blank_review_item(
     parsed_content = qi.parsed_content if isinstance(qi.parsed_content, dict) else {}
     parsed_groups = _get_blank_option_groups(parsed_content)
     if (
-        qi.question_type != "multi_blank_choice"
+        qi.question_type not in ("multi_blank_choice", "multi_blank_multiple_choice")
         and not raw_groups
         and not parsed_groups
     ):

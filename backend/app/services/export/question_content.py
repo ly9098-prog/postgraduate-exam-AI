@@ -491,7 +491,7 @@ def extract_blank_option_groups(question: Any) -> list[dict[str, Any]]:
     # Final compatibility path: some old multi-blank revisions kept one flat
     # shared A/B/C/D option map instead of materializing blank groups.
     question_type = str(_value(question, "question_type") or "")
-    if question_type != "multi_blank_choice":
+    if question_type not in ("multi_blank_choice", "multi_blank_multiple_choice"):
         return []
     shared_options = _normalize_option_collection(raw_options)
     if len(shared_options) < 2:
@@ -553,7 +553,10 @@ def format_question_answer(question: Any) -> str:
     """
     raw_answer = _value(question, "answer")
     fallback = _clean_text(raw_answer)
-    if str(_value(question, "question_type") or "") != "multi_blank_choice":
+    if str(_value(question, "question_type") or "") not in (
+        "multi_blank_choice",
+        "multi_blank_multiple_choice",
+    ):
         return fallback
 
     groups = extract_blank_option_groups(question)

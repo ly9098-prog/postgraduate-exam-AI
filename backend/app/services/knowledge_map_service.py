@@ -19,6 +19,7 @@ from app.core.subject_scope import (
 from app.core.time_utils import serialize_utc_datetime
 from app.features.question_type import (
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
     QT_TRUE_FALSE,
@@ -38,6 +39,7 @@ _ANSWERABLE_TYPES = (
     QT_MULTIPLE_CHOICE,
     QT_TRUE_FALSE,
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
 )
 
 _MIN_RELIABLE_CONFIDENCE = 0.30

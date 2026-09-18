@@ -575,7 +575,13 @@ function isMultiChoice(questionType: string): boolean {
 }
 
 function isMultiBlankChoice(questionType: string): boolean {
-  return canonicalizeQuestionType(questionType) === "multi_blank_choice";
+  const code = canonicalizeQuestionType(questionType);
+  return code === "multi_blank_choice" || code === "multi_blank_multiple_choice";
+}
+
+/** 多空（多选）选择题：每空可选多个选项 */
+function isMultiBlankMultipleChoice(questionType: string): boolean {
+  return canonicalizeQuestionType(questionType) === "multi_blank_multiple_choice";
 }
 
 function blankOptionGroupsStorageField(
@@ -624,12 +630,24 @@ function updateMultiBlankChoiceAnswer(
   blankIds: string[],
   targetBlankId: string,
   optionKey: string,
+  toggleMulti = false,
 ): string {
   const parsed = parseMultiBlankChoiceAnswer(answer);
   const values = new Map(parsed.map((item) => [item.blankId, item.optionKey]));
-  const nextOptionKey = optionKey.trim();
+  const nextOptionKey = optionKey.trim().toUpperCase();
 
-  if (nextOptionKey) values.set(targetBlankId, nextOptionKey);
+  if (toggleMulti) {
+    // Multi-select blank: toggle one letter within the slot's letter set.
+    const current = (values.get(targetBlankId) ?? "")
+      .split(",")
+      .map((l) => l.trim().toUpperCase())
+      .filter(Boolean);
+    const next = current.includes(nextOptionKey)
+      ? current.filter((l) => l !== nextOptionKey)
+      : [...current, nextOptionKey].sort();
+    if (next.length > 0) values.set(targetBlankId, next.join(","));
+    else values.delete(targetBlankId);
+  } else if (nextOptionKey) values.set(targetBlankId, nextOptionKey);
   else values.delete(targetBlankId);
 
   const orderedIds: string[] = [];
@@ -2955,7 +2973,7 @@ export default function QuestionsPage() {
                   {(() => {
                     const qtype = canonicalizeQuestionType(editForm.question_type ?? "");
 
-                    if (qtype === "multi_blank_choice") {
+                    if (qtype === "multi_blank_choice" || qtype === "multi_blank_multiple_choice") {
                       const groups = normalizeBlankOptionGroups(
                         resolveBlankOptionGroupsValue(editForm.content),
                       );
@@ -3117,6 +3135,9 @@ export default function QuestionsPage() {
                       const groups = normalizeBlankOptionGroups(
                         resolveBlankOptionGroupsValue(editForm.content),
                       );
+                      const multiSelect = isMultiBlankMultipleChoice(
+                        editForm.question_type ?? "",
+                      );
                       const parsedAnswer = parseMultiBlankChoiceAnswer(editForm.answer);
                       const parsedAnswerMap = new Map(
                         parsedAnswer.map((item) => [item.blankId, item.optionKey]),
@@ -3131,13 +3152,21 @@ export default function QuestionsPage() {
                           <div className="mb-4">
                             <p className="text-sm font-semibold text-slate-950">答案</p>
                             <p className="mt-1 text-[11px] text-slate-400">
-                              按空位分别编辑答案；保存时自动写回多空答案格式
+                              {multiSelect
+                                ? "按空位分别编辑答案；每空可填写多个选项字母，以逗号分隔（如 A,C）"
+                                : "按空位分别编辑答案；保存时自动写回多空答案格式"}
                             </p>
                           </div>
 
                           {blankIds.length > 0 ? (
                             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                              {blankIds.map((blankId, index) => (
+                              {blankIds.map((blankId, index) => {
+                                const group = groups.find((g) => g.id === blankId);
+                                const currentLetters = (parsedAnswerMap.get(blankId) ?? "")
+                                  .split(",")
+                                  .map((l) => l.trim().toUpperCase())
+                                  .filter(Boolean);
+                                return (
                                 <div
                                   key={`${blankId}-${index}`}
                                   className="flex items-center gap-4 border-b border-slate-100 px-4 py-3 last:border-b-0"
@@ -3145,24 +3174,60 @@ export default function QuestionsPage() {
                                   <span className="w-8 shrink-0 text-sm font-medium text-slate-900">
                                     {blankId}
                                   </span>
-                                  <Input
-                                    value={parsedAnswerMap.get(blankId) ?? ""}
-                                    aria-label={`${blankId} 答案`}
-                                    className="h-9 max-w-32 border-slate-200 bg-slate-50/60 text-center shadow-none focus:bg-white"
-                                    onChange={(e) =>
-                                      setEditForm({
-                                        ...editForm,
-                                        answer: updateMultiBlankChoiceAnswer(
-                                          editForm.answer,
-                                          blankIds,
-                                          blankId,
-                                          e.target.value,
-                                        ),
-                                      })
-                                    }
-                                  />
+                                  {multiSelect && group && group.options.length > 0 ? (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {group.options.map((opt) => {
+                                        const selected = currentLetters.includes(
+                                          opt.key.trim().toUpperCase(),
+                                        );
+                                        return (
+                                          <button
+                                            key={opt.key}
+                                            type="button"
+                                            className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition ${
+                                              selected
+                                                ? "border-slate-900 bg-slate-900 text-white"
+                                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
+                                            }`}
+                                            onClick={() =>
+                                              setEditForm({
+                                                ...editForm,
+                                                answer: updateMultiBlankChoiceAnswer(
+                                                  editForm.answer,
+                                                  blankIds,
+                                                  blankId,
+                                                  opt.key.trim().toUpperCase(),
+                                                  true,
+                                                ),
+                                              })
+                                            }
+                                          >
+                                            {opt.key}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={parsedAnswerMap.get(blankId) ?? ""}
+                                      aria-label={`${blankId} 答案`}
+                                      className="h-9 max-w-32 border-slate-200 bg-slate-50/60 text-center shadow-none focus:bg-white"
+                                      onChange={(e) =>
+                                        setEditForm({
+                                          ...editForm,
+                                          answer: updateMultiBlankChoiceAnswer(
+                                            editForm.answer,
+                                            blankIds,
+                                            blankId,
+                                            e.target.value,
+                                          ),
+                                        })
+                                      }
+                                    />
+                                  )}
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           ) : (
                             <Input

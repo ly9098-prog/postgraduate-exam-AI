@@ -33,7 +33,8 @@ _TYPE_LABELS = {
     "multiple_choice": "多选题",
     "true_false": "判断题",
     "fill_blank": "填空题",
-    "multi_blank_choice": "多空选择题",
+    "multi_blank_choice": "多空（单选）选择题",
+    "multi_blank_multiple_choice": "多空（多选）选择题",
     "subjective": "问答题",
 }
 _DIFFICULTY_LABELS = {1: "简单", 2: "较易", 3: "中等", 4: "较难", 5: "困难"}

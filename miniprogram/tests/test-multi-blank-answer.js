@@ -9,6 +9,7 @@ var {
   serializeBlankAnswer,
   isAnswerCorrect,
   isMultiBlankType,
+  isMultiBlankMultipleType,
 } = require('../subpackages/study/utils/answer')
 
 var passed = 0
@@ -178,6 +179,37 @@ assertEq(isMultiBlankType('multiple_choice'), false, 'rejects multiple_choice')
 assertEq(isMultiBlankType('true_false'), false, 'rejects true_false')
 assertEq(isMultiBlankType(''), false, 'rejects empty')
 assertEq(isMultiBlankType(null), false, 'rejects null')
+
+/* ==================== 多空（多选）选择题 ==================== */
+
+console.log('\n=== normalizeBlankAnswer (multi-select values) ===')
+
+assertDeepEq(normalizeBlankAnswer('①:A,C;②:B'), { '①': 'A,C', '②': 'B' }, 'multi-select canonical')
+assertDeepEq(normalizeBlankAnswer('①:C,A;②:B'), { '①': 'A,C', '②': 'B' }, 'multi-select sorted canonical')
+assertDeepEq(normalizeBlankAnswer('①AC、②D'), { '①': 'AC', '②': 'D' }, 'run-together kept as one key (multi-char key safety)')
+assertDeepEq(normalizeBlankAnswer('1:A,C;2:B,D'), { '1': 'A,C', '2': 'B,D' }, 'multi-select digit slots')
+assertDeepEq(normalizeBlankAnswer('①:B;②:D'), { '①': 'B', '②': 'D' }, 'single value unchanged')
+
+console.log('\n=== serializeBlankAnswer (multi-select values) ===')
+
+assertEq(serializeBlankAnswer(groups, { '①': 'A,C', '②': 'B' }), '①:A,C;②:B', 'serialize multi-select value')
+assertEq(serializeBlankAnswer(groups, { '①': 'C,A', '②': 'B' }), '①:A,C;②:B', 'serialize multi-select sorted')
+
+console.log('\n=== isAnswerCorrect (multi_blank_multiple_choice) ===')
+
+assertEq(isAnswerCorrect('①:A,C;②:B', '①:C,A;②:B', 'multi_blank_multiple_choice'), true, 'multi-select order independent')
+assertEq(isAnswerCorrect('①:I,III;②:VII', '①:III,I;②:VII', 'multi_blank_multiple_choice'), true, 'multi-select multi-char set compare')
+assertEq(isAnswerCorrect('①:A;②:B', '①:A,C;②:B', 'multi_blank_multiple_choice'), false, 'multi-select missing letter')
+assertEq(isAnswerCorrect('①:A,C,D;②:B', '①:A,C;②:B', 'multi_blank_multiple_choice'), false, 'multi-select extra letter')
+assertEq(isAnswerCorrect('①:A,C;②:D', '①:A,C;②:B', 'multi_blank_multiple_choice'), false, 'multi-select wrong slot value')
+assertEq(isAnswerCorrect('①:A,C;②:B', '①:A,C;②:B', 'multi_blank_multiple_choice'), true, 'multi-select exact')
+assertEq(isAnswerCorrect('①:I,III;②:VII', '①:III,I;②:VII', 'multi_blank_multiple_choice'), true, 'multi-select roman numeral keys')
+
+console.log('\n=== isMultiBlankType family ===')
+
+assertEq(isMultiBlankType('multi_blank_multiple_choice'), true, 'family includes multi_blank_multiple_choice')
+assertEq(isMultiBlankMultipleType('multi_blank_multiple_choice'), true, 'isMultiBlankMultipleType positive')
+assertEq(isMultiBlankMultipleType('multi_blank_choice'), false, 'isMultiBlankMultipleType negative')
 
 /* ==================== Summary ==================== */
 

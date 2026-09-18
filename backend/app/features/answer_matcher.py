@@ -43,11 +43,11 @@ _EXPLICIT_ANSWER_PATTERNS: list[tuple[re.Pattern, str | None]] = [
     ),
     # 【答案】A
     (re.compile(r"(?:^|\s)【(?:参考|正确)?答案】\s*([A-Da-d])\s*(?:\n|$)"), None),
-    # ①B、②D — 多空选择题答案
+    # ①B、②D / ①AC、②D — 多空选择题答案（每空可含 1-2 个字母，支持多空多选）
     (
         re.compile(
             r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*"
-            r"([①-⑳]\s*[A-Da-d](?:[、，,，\s]+[①-⑳]\s*[A-Da-d])+)"
+            r"([①-⑳]\s*[A-Da-d]{1,2}(?:[、，,，\s]+[①-⑳]\s*[A-Da-d]{1,2})+)"
             r"\s*(?:\n|$)"
         ),
         None,
@@ -89,7 +89,10 @@ def extract_explicit_answer(raw_text: str) -> ExplicitAnswerResult:
             # Emit in "①B、②D" format which parse_multi_blank_answer() handles
             if re.search(r"[①-⑳]", raw_answer):
                 cleaned = re.sub(r"\s+", "", raw_answer).upper()
-                if re.match(r"^[①-⑳][A-D](?:[、，][①-⑳][A-D])*[、，]?$", cleaned):
+                # Multi-letter slots allowed for multi-select blanks (e.g. ①AC、②D)
+                if re.match(
+                    r"^[①-⑳][A-D]{1,2}(?:[、，][①-⑳][A-D]{1,2})*[、，]?$", cleaned
+                ):
                     pattern_desc = pat.pattern[:60]
                     return ExplicitAnswerResult(
                         answer=cleaned,

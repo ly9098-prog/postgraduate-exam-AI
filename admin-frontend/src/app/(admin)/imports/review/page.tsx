@@ -209,7 +209,13 @@ function isStandardMultiChoice(questionType: string): boolean {
 }
 
 function isMultiBlankChoice(questionType: string): boolean {
-  return canonicalizeQuestionType(questionType) === "multi_blank_choice";
+  const code = canonicalizeQuestionType(questionType);
+  return code === "multi_blank_choice" || code === "multi_blank_multiple_choice";
+}
+
+/** 多空（多选）选择题：每空可选多个选项 */
+function isMultiBlankMultipleChoice(questionType: string): boolean {
+  return canonicalizeQuestionType(questionType) === "multi_blank_multiple_choice";
 }
 
 function textFromImport(item: ImportQuestionItem | null | undefined) {
@@ -782,6 +788,7 @@ export default function ImportReviewPage() {
           mb.groups,
           mb.answerMap,
           editState.stem,
+          editState.question_type,
         );
         if (payloadResult.errors.length > 0) {
           throw new Error(`保存校验失败：${payloadResult.errors.join("；")}`);
@@ -1150,15 +1157,13 @@ export default function ImportReviewPage() {
     setEditing(false);
   };
 
-  /** 安全切换题型：保护多空选择题结构化数据 */
+  /** 安全切换题型：保护多空选择题结构化数据；在单选/多选多空之间切换时保留分组 */
   const handleQuestionTypeChange = useCallback((newCode: string) => {
     if (!editState) return;
     if (editState.question_type === newCode) return;
-    if (
-      isMultiBlankChoice(editState.question_type) &&
-      editState.multiBlank?.groups &&
-      editState.multiBlank.groups.length > 0
-    ) {
+    const wasMultiBlank = isMultiBlankChoice(editState.question_type);
+    const isMultiBlankTarget = isMultiBlankChoice(newCode);
+    if (wasMultiBlank && !isMultiBlankTarget && editState.multiBlank?.groups && editState.multiBlank.groups.length > 0) {
       const confirmed = window.confirm("切换题型将清空多空选择分组数据，是否继续？");
       if (!confirmed) return;
       setEditState({
@@ -1169,7 +1174,12 @@ export default function ImportReviewPage() {
       });
       return;
     }
-    if (newCode === "multi_blank_choice") {
+    if (wasMultiBlank && isMultiBlankTarget) {
+      // 单选 ↔ 多选互转：保留分组数据，仅更新题型 code
+      setEditState({ ...editState, question_type: newCode });
+      return;
+    }
+    if (isMultiBlankTarget) {
       setEditState({
         ...editState,
         question_type: newCode,
@@ -2644,6 +2654,7 @@ export default function ImportReviewPage() {
                           answerMap={mb!.answerMap}
                           usesSharedOptions={mb!.usesSharedOptions}
                           sharedOptions={mb!.sharedOptions}
+                          multiSelect={isMultiBlankMultipleChoice(editState.question_type)}
                           dedupWarnings={mb!.dedupWarnings}
                           dedupErrors={mb!.dedupErrors}
                           hasUnappliedDraft={mb!.hasUnappliedDraft}

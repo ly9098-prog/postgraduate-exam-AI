@@ -408,7 +408,7 @@ class Question(Base):
 
     id: int                    # PK
     subject_id: int            # FK → subjects.id（NOT NULL、索引）
-    question_type: str         # choice / fill / subjective / multi_blank_choice / true_false
+    question_type: str         # choice / fill / subjective / multi_blank_choice / multi_blank_multiple_choice / true_false
     content: dict              # JSON: {"text":"...", "images":["url"], "latex":"..."}
     options: dict?             # JSON: {"A":"...", "B":"..."}（支持富格式 {key: {"text":..., "segments":[...]}}）
     answer: str                # 标准答案（Text 类型，支持长答案）
@@ -780,7 +780,7 @@ class PracticeRecord(Base):
     user_id: int            # FK → users.id（索引）
     question_id: int        # FK → questions.id（索引）
     subject_id: int         # FK → subjects.id
-    question_type: str      # choice / fill / subjective / multi_blank_choice
+    question_type: str      # choice / fill / subjective / multi_blank_choice / multi_blank_multiple_choice
     user_answer: str        # 用户提交的答案（Text）
     is_correct: bool        # 是否正确
     used_time: int?         # 耗时（秒），可为空
@@ -1405,12 +1405,13 @@ class AppUserAdminBinding(Base):
 
 **唯一约束**: `user_id` (`uq_app_user_admin_bindings_user_id`)、`admin_user_id` (`uq_app_user_admin_bindings_admin_user_id`)
 
-### 多空选择题（`multi_blank_choice`）
+### 多空（单选）选择题（`multi_blank_choice`）与多空（多选）选择题（`multi_blank_multiple_choice`）
 
-当 `question_type = "multi_blank_choice"` 时：
+当 `question_type = "multi_blank_choice"`（每空恰好一个选项）或 `question_type = "multi_blank_multiple_choice"`（每空可选多个选项）时：
 
 - `options` / `parsed_options` = `null`
-- `answer` 存储 canonical 格式：`"①:B;②:D"`（`slot:value` 对，英文分号分隔）
+- `answer` 存储 canonical 格式：`"①:B;②:D"`（`slot:value` 对，英文分号分隔）；
+  多空（多选）的空内多值用英文逗号连接：`"①:A,C;②:B"`
 - `content` / `parsed_content` 包含 `blank_option_groups`：
 
 ```json
@@ -1424,9 +1425,13 @@ class AppUserAdminBinding(Base):
 ```
 
 - 即使原题只展示一次公共选项，每个 `blank_option_groups` 条目都包含完整选项副本
-- 后端判题：所有槽位必须覆盖且值匹配，多余槽位拒绝，槽位顺序无关
-- 提交格式：`user_answer: "①:B;②:D"`
+- 后端判题：所有槽位必须覆盖，多余槽位拒绝，槽位顺序无关；
+  `multi_blank_choice` 每空单值精确匹配，`multi_blank_multiple_choice` 每空按选项集合比较（顺序无关）
+- 提交格式：`user_answer: "①:B;②:D"`，多空（多选）为 `user_answer: "①:A,C;②:B"`
 - 导入管线自动从 2+ 空 + 共享选项 + 多槽答案检测
+- 历史口径：`multi_blank_choice` 原名“多空选择题”；拆分后存量数据保持 `multi_blank_choice`
+  （每空单选语义），迁移 `v13_multi_blank_multiple_choice` 会把答案中含多字母槽位的
+  存量记录重分类为 `multi_blank_multiple_choice`，并刷新三张表的 `question_type` CHECK 约束
 
 ---
 
@@ -1453,4 +1458,6 @@ class AppUserAdminBinding(Base):
 - **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，`pomodoro_pause_intervals` 为暂停时长唯一真相源，支持微信订阅通知；学习时长统计混入 `practice_sessions.duration_sec`
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-08-10 — 知识点重构为关联表唯一事实源（移除 questions.knowledge_points JSON）；新增 knowledge_points/question_knowledge_points/practice_sessions/pomodoro_pause_intervals/user_pomodoro_settings 表；module 重构全部改为 subject_id
+> 上次更新：2026-09-19 — 多空选择题拆分为 multi_blank_choice（多空（单选））与 multi_blank_multiple_choice（多空（多选）），新增迁移 v13 刷新 question_type CHECK 约束并重分类多字母槽位存量记录
+>
+> 历史更新：2026-08-10 — 知识点重构为关联表唯一事实源（移除 questions.knowledge_points JSON）；新增 knowledge_points/question_knowledge_points/practice_sessions/pomodoro_pause_intervals/user_pomodoro_settings 表；module 重构全部改为 subject_id

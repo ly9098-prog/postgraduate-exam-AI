@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.features.question_type import (
     QT_FILL_BLANK,
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTI_BLANK_MULTIPLE_CHOICE,
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
     QT_SUBJECTIVE,
@@ -26,6 +27,7 @@ _SPACE_MM: dict[str, dict[str, float]] = {
         QT_TRUE_FALSE: 0,
         QT_FILL_BLANK: 8,
         QT_MULTI_BLANK_CHOICE: 0,
+        QT_MULTI_BLANK_MULTIPLE_CHOICE: 0,
         QT_SUBJECTIVE: 30,
     },
     ExportSpaceStyle.STANDARD: {
@@ -34,6 +36,7 @@ _SPACE_MM: dict[str, dict[str, float]] = {
         QT_TRUE_FALSE: 0,
         QT_FILL_BLANK: 15,
         QT_MULTI_BLANK_CHOICE: 0,
+        QT_MULTI_BLANK_MULTIPLE_CHOICE: 0,
         QT_SUBJECTIVE: 60,
     },
     ExportSpaceStyle.SPACIOUS: {
@@ -42,6 +45,7 @@ _SPACE_MM: dict[str, dict[str, float]] = {
         QT_TRUE_FALSE: 0,
         QT_FILL_BLANK: 25,
         QT_MULTI_BLANK_CHOICE: 0,
+        QT_MULTI_BLANK_MULTIPLE_CHOICE: 0,
         QT_SUBJECTIVE: 100,
     },
 }

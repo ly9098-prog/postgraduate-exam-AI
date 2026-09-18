@@ -271,7 +271,7 @@ for (var oi = 0; oi < optionCandidates.length; oi++) {
 var groupedOptions = _coerceBlankOptionGroups(optionCandidates[oi])
 if (groupedOptions.length) return groupedOptions
 }
-var isMultiBlank = q.question_type === 'multi_blank_choice'
+var isMultiBlank = q.question_type === 'multi_blank_choice' || q.question_type === 'multi_blank_multiple_choice'
 if (!isMultiBlank) return []
 for (var fi = 0; fi < optionCandidates.length; fi++) {
 var flatOptions = normalizeBlankOptionList(optionCandidates[fi])
@@ -327,7 +327,7 @@ id: groupId,
 options: normalizeBlankOptionList(group && group.options).map(function (opt) {
 var key = String((opt && opt.key) || '').trim().toUpperCase()
 return _decorateBlankOption(opt, key, {
-selected: blankAnswers[groupId] === key,
+selected: _slotValueHas(blankAnswers[groupId], key),
 })
 }).filter(function (opt) { return opt.key }),
 }
@@ -347,8 +347,8 @@ return {
 id: groupId,
 options: normalizeBlankOptionList(group && group.options).map(function (opt) {
 var key = String((opt && opt.key) || '').trim().toUpperCase()
-var isCorrect = blankAnswers[groupId] === key
-var isUser = wrongAnswers[groupId] === key
+var isCorrect = _slotValueHas(blankAnswers[groupId], key)
+var isUser = _slotValueHas(wrongAnswers[groupId], key)
 return _decorateBlankOption(opt, key, {
 mode: 'readonly',
 correct: isCorrect,
@@ -367,7 +367,15 @@ return Object.assign({}, group, { id: _groupId(group, String(index + 1)) })
 return answerLib.serializeBlankAnswer(normalizedGroups, normalizeBlankAnswer(blankAnswers))
 }
 function isMultiBlankChoice(q) {
-return q && (q.question_type === 'multi_blank_choice' || getBlankOptionGroups(q).length > 0)
+return q && (q.question_type === 'multi_blank_choice' || q.question_type === 'multi_blank_multiple_choice' || getBlankOptionGroups(q).length > 0)
+}
+function isMultiBlankMultipleChoice(q) {
+return q && q.question_type === 'multi_blank_multiple_choice'
+}
+// 空 value 可为逗号分隔的多 key（多空多选）：判断是否包含某个 key
+function _slotValueHas(value, key) {
+if (!value) return false
+return String(value).toUpperCase().split(',').indexOf(String(key).toUpperCase()) >= 0
 }
 function isQuestionAnswered(q, answerMap, keyField) {
 keyField = keyField || 'id'
@@ -377,7 +385,8 @@ var groups = getBlankOptionGroups(q)
 if (!groups.length) return !!answer
 var blankAnswers = normalizeBlankAnswer(answer)
 return groups.every(function (group) {
-return !!blankAnswers[String((group && group.id) || '').trim()]
+var value = blankAnswers[String((group && group.id) || '').trim()]
+return !!value && String(value).split(',').some(function (k) { return !!k.trim() })
 })
 }
 return !!answer
@@ -477,13 +486,13 @@ return q.answer || q.correct_answer || q.standard_answer || q.right_answer || ''
 function isAnswerCorrect(q, userAnswer) {
 var correct = getCorrectAnswer(q)
 if (!correct || !userAnswer) return null
-if (q && q.question_type === 'multi_blank_choice' &&
+if (q && (q.question_type === 'multi_blank_choice' || q.question_type === 'multi_blank_multiple_choice') &&
 !getBlankOptionGroups(q).length &&
 getQuestionOptions(q) &&
 !/[:：=;]/.test(String(correct))) {
 return answerLib.isAnswerCorrect(userAnswer, correct, 'single_choice')
 }
-var slotIds = q && q.question_type === 'multi_blank_choice'
+var slotIds = q && (q.question_type === 'multi_blank_choice' || q.question_type === 'multi_blank_multiple_choice')
 ? getBlankOptionGroups(q).map(function(group, index) { return _groupId(group, String(index + 1)) }).filter(Boolean)
 : null
 return answerLib.isAnswerCorrect(userAnswer, correct, q.question_type, slotIds)

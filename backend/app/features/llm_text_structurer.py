@@ -38,6 +38,7 @@ _VALID_QUESTION_TYPES = {
     "true_false",
     "fill_blank",
     "multi_blank_choice",
+    "multi_blank_multiple_choice",
     "subjective",
 }
 
@@ -82,7 +83,12 @@ def should_call_llm(block_text: str, parsed: dict[str, Any]) -> tuple[bool, str]
     option_line_count = sum(
         1 for line in block_text.split("\n") if _OPTION_LINE_RE.match(line.strip())
     )
-    if qt in ("single_choice", "multiple_choice", "multi_blank_choice"):
+    if qt in (
+        "single_choice",
+        "multiple_choice",
+        "multi_blank_choice",
+        "multi_blank_multiple_choice",
+    ):
         if len(options) < 2 and option_line_count >= 2:
             return True, "options_underdetected"
 
@@ -102,6 +108,7 @@ def should_call_llm(block_text: str, parsed: dict[str, Any]) -> tuple[bool, str]
     blank_count = len(_BLANK_MARK_RE.findall(block_text))
     if blank_count >= 2 and qt not in (
         "multi_blank_choice",
+        "multi_blank_multiple_choice",
         "fill_blank",
         "subjective",
     ):

@@ -21,6 +21,8 @@ export interface MultiBlankChoiceEditorProps {
   answerMap: BlankAnswerMap;
   usesSharedOptions: boolean;
   sharedOptions: BlankOption[];
+  /** Per-blank multi-select mode (multi_blank_multiple_choice). */
+  multiSelect?: boolean;
   dedupWarnings?: string[];
   dedupErrors?: string[];
   hasUnappliedDraft?: boolean;
@@ -37,6 +39,7 @@ export function MultiBlankChoiceEditor({
   answerMap,
   usesSharedOptions,
   sharedOptions,
+  multiSelect = false,
   dedupWarnings,
   dedupErrors,
   hasUnappliedDraft,
@@ -176,9 +179,14 @@ export function MultiBlankChoiceEditor({
     (slotId: string, key: string) => {
       hasUnappliedDraftRef.current = false;
       setRawAnswerError(null);
-      onAction({ type: "toggle_answer", groupId: slotId, optionKey: key });
+      onAction({
+        type: "toggle_answer",
+        groupId: slotId,
+        optionKey: key,
+        multi: multiSelect || undefined,
+      });
     },
-    [onAction],
+    [onAction, multiSelect],
   );
 
   // ── Per-group option editing ────────────────────────────────────────
@@ -348,21 +356,24 @@ export function MultiBlankChoiceEditor({
         <div className="space-y-3">
           {groups.map((group) => {
             const optsToUse = usesSharedOptions ? sharedOptions : group.options;
-            const hasAnswer = !!answerMap[group.id];
+            const selectedLetters = (answerMap[group.id] ?? "")
+              .split(",")
+              .filter(Boolean);
+            const hasAnswer = selectedLetters.length > 0;
             return (
               <div key={group.id}>
                 <div className="mb-1.5 flex items-center gap-2">
                   <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary)]/8 text-[10px] font-semibold text-[var(--color-primary-dark)]">{group.id}</span>
                   <span className="text-[10px] font-medium text-[var(--color-text-hint)] tracking-wide">空位</span>
                   {hasAnswer ? (
-                    <span className="ml-auto inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-600">已选 {answerMap[group.id]}</span>
+                    <span className="ml-auto inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-medium text-emerald-600">已选 {selectedLetters.join("、")}</span>
                   ) : (
                     <span className="ml-auto text-[9px] text-amber-500">未选择</span>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {optsToUse.map((opt) => {
-                    const selected = answerMap[group.id] === opt.key;
+                    const selected = selectedLetters.includes(opt.key);
                     return (
                       <button
                         key={`${group.id}-${opt.key}`}
@@ -377,7 +388,7 @@ export function MultiBlankChoiceEditor({
                         )}
                         onClick={() => handleSlotAnswerToggle(group.id, opt.key)}
                       >
-                        <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-colors", selected ? "bg-emerald-200/50 text-emerald-700" : "bg-[var(--color-primary)]/6 text-[var(--color-primary-dark)]")}>{opt.key}</span>
+                        <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-colors", selected ? "bg-emerald-200/50 text-emerald-700" : "bg-[var(--color-primary)]/6 text-[var(--color-primary-dark)]]")}>{opt.key}</span>
                         <span className="text-[11px] font-normal"><MathFormula text={opt.text} /></span>
                       </button>
                     );
@@ -472,7 +483,7 @@ export function MultiBlankChoiceEditor({
               </Button>
             </div>
             <p className="text-[9px] text-[var(--color-text-hint)]">
-              支持格式：①:B;②:D · ①B、②D · (1)B、(2)D · 第1空B，第2空D · 失焦或按 Enter 尝试应用
+              支持格式：①:B;②:D · ①:A,C;②:B · ①B、②D · ①AC、②D · (1)B、(2)D · 第1空B，第2空D · 失焦或按 Enter 尝试应用
             </p>
             {rawAnswerError ? (
               <p className="flex items-center gap-1 text-[10px] text-red-500">

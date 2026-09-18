@@ -15,7 +15,7 @@ export type NormalizeResult = {
   errors: string[];
 };
 
-export type BlankAnswerMap = Record<string, string>; // slotId -> key e.g. {"①": "B", "②": "D"}
+export type BlankAnswerMap = Record<string, string>; // slotId -> option key(s), e.g. {"①": "B", "②": "D"}; multi-select blanks join letters with "," e.g. {"①": "A,C"}
 
 /**
  * Normalize blank_option_groups from various input formats into a canonical
@@ -86,16 +86,27 @@ export function normalizeBlankOptionGroups(value: unknown): BlankOptionGroup[] {
 }
 
 /**
- * Parse a multi-blank answer string into a {slotId: answerKey} map.
+ * Normalize a slot value to canonical form: uppercase letters, deduplicated,
+ * sorted, comma-joined ("c,a" → "A,C", "AC" → "A,C"). Returns "" when no
+ * valid letter is present.
+ */
+export function normalizeSlotValue(raw: string): string {
+  const letters = raw.toUpperCase().match(/[A-H]/g) ?? [];
+  return [...new Set(letters)].sort().join(",");
+}
+
+/**
+ * Parse a multi-blank answer string into a {slotId: answerKey(s)} map.
  *
  * Supports:
- *  - Canonical: ①:B;②:D
- *  - OCR circled: ①B、②D
+ *  - Canonical: ①:B;②:D / ①:A,C;②:B
+ *  - OCR circled: ①B、②D / ①AC、②D
  *  - Parenthesized: (1)B、(2)D
- *  - Numbered colon: 1:B,2:D
+ *  - Numbered colon: 1:B,2:D / 1:A,C;2:B,D
  *  - Chinese: 第1空B
  *  - Positional B,D (only when parts count matches groupIds.length)
  *
+ * Multi-letter slot values are canonicalized to sorted comma-joined letters.
  * Falls back to an empty map if unparseable.
  */
 export function parseBlankAnswer(
@@ -107,45 +118,67 @@ export function parseBlankAnswer(
   const a = answer.trim();
   if (!a) return map;
 
+  // Value = one or more A-H letters, optionally comma/顿号 separated
+  // (only when the next char is another letter — a separator before a slot
+  // marker such as ② is a pair separator, not a value separator).
+  const VALUE = String.raw`[A-Ha-h](?:\s*[，,、](?=\s*[A-Ha-h])\s*[A-Ha-h])*`;
+
   // Try canonical "slot:value;slot:value" format
   for (const pair of a.split(/[;；]/)) {
-    const m = pair.match(/^\s*(.+?)\s*[:：]\s*([A-Ha-h])\s*$/);
-    if (m) map[m[1].trim()] = m[2].toUpperCase();
+    const m = pair.match(new RegExp(`^\\s*(.+?)\\s*[:：]\\s*(${VALUE})\\s*$`));
+    if (m) {
+      const val = normalizeSlotValue(m[2]);
+      if (val) map[m[1].trim()] = val;
+      else map[m[1].trim()] = "";
+    }
+  }
+  if (Object.keys(map).filter((k) => map[k]).length > 0) return map;
+
+  // Try OCR circled format ①B、②D / ①AC、②D (letters may run together)
+  const RUN_VALUE = String.raw`[A-Ha-h]{1,4}(?:\s*[，,、](?=\s*[A-Ha-h])\s*[A-Ha-h]{1,4})*`;
+  const circledRe = new RegExp(`([①-⑳])\\s*(${RUN_VALUE})`, "g");
+  let cm: RegExpExecArray | null;
+  while ((cm = circledRe.exec(a)) !== null) {
+    const val = normalizeSlotValue(cm[2]);
+    if (val) map[cm[1]] = val;
   }
   if (Object.keys(map).length > 0) return map;
 
-  // Try OCR circled format ①B、②D
-  const circledRe = /([①-⑳])\s*([A-Ha-h])/g;
-  let cm: RegExpExecArray | null;
-  while ((cm = circledRe.exec(a)) !== null) map[cm[1]] = cm[2].toUpperCase();
-  if (Object.keys(map).length > 0) return map;
-
   // Try parenthesized (1)B、(2)D
-  const parenRe = /[(（]\s*(\d+)\s*[)）]\s*([A-Ha-h])/g;
+  const parenRe = new RegExp(`[(（]\\s*(\\d+)\\s*[)）]\\s*(${RUN_VALUE})`, "g");
   let pm: RegExpExecArray | null;
-  while ((pm = parenRe.exec(a)) !== null) map[pm[1]] = pm[2].toUpperCase();
+  while ((pm = parenRe.exec(a)) !== null) {
+    const val = normalizeSlotValue(pm[2]);
+    if (val) map[pm[1]] = val;
+  }
   if (Object.keys(map).length > 0) return map;
 
   // Try 1:B,2:D format
-  const numColonRe = /(\d+)\s*[:：]\s*([A-Ha-h])/g;
+  const numColonRe = /(\d+)\s*[:：]\s*([A-Ha-h](?:\s*[，,、]\s*[A-Ha-h])*)/g;
   let nm: RegExpExecArray | null;
-  while ((nm = numColonRe.exec(a)) !== null) map[nm[1]] = nm[2].toUpperCase();
+  while ((nm = numColonRe.exec(a)) !== null) {
+    const val = normalizeSlotValue(nm[2]);
+    if (val) map[nm[1]] = val;
+  }
   if (Object.keys(map).length > 0) return map;
 
   // Try 第1空B
   const cnRe = /第\s*(\d+)\s*空\s*([A-Ha-h])/g;
   let cnm: RegExpExecArray | null;
-  while ((cnm = cnRe.exec(a)) !== null) map[cnm[1]] = cnm[2].toUpperCase();
+  while ((cnm = cnRe.exec(a)) !== null) {
+    const val = normalizeSlotValue(cnm[2]);
+    if (val) map[cnm[1]] = val;
+  }
   if (Object.keys(map).length > 0) return map;
 
   // Positional B,D only when parts count matches groupIds.length
   const parts = a
     .split(/[，,、\s]+/)
     .map((s) => s.trim().toUpperCase())
-    .filter((s) => /^[A-H]$/.test(s));
+    .filter((s) => /^[A-H](,[A-H])*$/.test(s));
   if (parts.length === groupIds.length && parts.length >= 2) {
     parts.forEach((v, i) => {
-      map[groupIds[i]] = v;
+      map[groupIds[i]] = normalizeSlotValue(v);
     });
   }
 
@@ -168,6 +201,11 @@ export function serializeBlankAnswer(
     .join(";");
 }
 
+/**
+ * Check if all groups have the exact same set of options (deep compare
+ * of key + text + segments). Returns false when groups.length < 2.
+ * Uses structured comparison, not JSON.stringify ordering tricks.
+ */
 /**
  * Check if all groups have the exact same set of options (deep compare
  * of key + text + segments). Returns false when groups.length < 2.
@@ -305,7 +343,9 @@ export function extractMultiBlankSource(
 }
 
 /**
- * Validate that an answer map covers every group with a valid option key.
+ * Validate that an answer map covers every group with valid option keys.
+ * Each slot value may be a single letter ("A") or a comma-joined letter set
+ * ("A,C") for multi-select blanks.
  */
 export function validateBlankAnswerMap(
   groups: BlankOptionGroup[],
@@ -334,8 +374,12 @@ export function validateBlankAnswerMap(
     const selected = answerMap[group.id];
     if (selected) {
       const validKeys = new Set(group.options.map((o) => o.key));
-      if (!validKeys.has(selected)) {
-        errors.push(`空 ${group.id} 的答案 "${selected}" 不在选项内`);
+      const letters = selected.split(",").filter(Boolean);
+      const invalid = letters.filter((l) => !validKeys.has(l));
+      if (letters.length === 0) {
+        errors.push(`空 ${group.id} 尚未选择答案`);
+      } else if (invalid.length > 0) {
+        errors.push(`空 ${group.id} 的答案 "${invalid.join(",")}" 不在选项内`);
       }
     }
   }
@@ -497,8 +541,12 @@ export function getMultiBlankSaveState(
     const selected = answerMap[group.id];
     if (selected) {
       const validKeys = new Set(group.options.map((o) => o.key));
-      if (!validKeys.has(selected)) {
-        errors.push(`空位 ${group.id} 的答案 "${selected}" 不在选项内`);
+      const letters = selected.split(",").filter(Boolean);
+      const invalid = letters.filter((l) => !validKeys.has(l));
+      if (letters.length === 0) {
+        errors.push(`空位 ${group.id} 尚未选择答案`);
+      } else if (invalid.length > 0) {
+        errors.push(`空位 ${group.id} 的答案 "${invalid.join(",")}" 不在选项内`);
       }
     }
   }
@@ -538,7 +586,7 @@ export type MultiBlankEditState = {
  * The reducer reads the latest state from its argument, not from a closure.
  */
 export type MultiBlankAction =
-  | { type: "toggle_answer"; groupId: string; optionKey: string }
+  | { type: "toggle_answer"; groupId: string; optionKey: string; multi?: boolean }
   | { type: "apply_answer_map"; answerMap: BlankAnswerMap }
   | { type: "update_shared_options"; options: BlankOption[] }
   | { type: "update_group_options"; groupId: string; options: BlankOption[] }
@@ -551,6 +599,8 @@ export type MultiBlankAction =
 
 /**
  * Remove answerMap entries whose value no longer exists in the group's options.
+ * Slot values may be comma-joined letter sets ("A,C"); each letter is checked
+ * independently and invalid letters are dropped (empty values removed).
  */
 function cleanAnswerMapForGroups(
   answerMap: BlankAnswerMap,
@@ -561,8 +611,9 @@ function cleanAnswerMapForGroups(
     const selected = answerMap[group.id];
     if (selected) {
       const validKeys = new Set(group.options.map((o) => o.key));
-      if (validKeys.has(selected)) {
-        cleaned[group.id] = selected;
+      const letters = selected.split(",").filter((l) => validKeys.has(l));
+      if (letters.length > 0) {
+        cleaned[group.id] = letters.join(",");
       }
     }
   }
@@ -608,7 +659,20 @@ export function reduceMultiBlankEditState(
   switch (action.type) {
     case "toggle_answer": {
       const newMap = { ...state.answerMap };
-      if (newMap[action.groupId] === action.optionKey) {
+      if (action.multi) {
+        // Multi-select blank: toggle one letter within the slot's letter set.
+        const current = (newMap[action.groupId] ?? "")
+          .split(",")
+          .filter(Boolean);
+        const next = current.includes(action.optionKey)
+          ? current.filter((k) => k !== action.optionKey)
+          : [...current, action.optionKey];
+        if (next.length === 0) {
+          delete newMap[action.groupId];
+        } else {
+          newMap[action.groupId] = next.sort().join(",");
+        }
+      } else if (newMap[action.groupId] === action.optionKey) {
         delete newMap[action.groupId];
       } else {
         newMap[action.groupId] = action.optionKey;
@@ -753,7 +817,7 @@ export type SavePayloadResult = {
 };
 
 /**
- * Validate edit state and build the save payload for multi_blank_choice.
+ * Validate edit state and build the save payload for a multi-blank choice.
  *
  * Checks:
  *  1. groups length >= 2
@@ -766,6 +830,8 @@ export type SavePayloadResult = {
  *  8. no extra slots in answerMap
  *
  * Produced payload:
+ *  - question_type = the passed questionType (multi_blank_choice or
+ *    multi_blank_multiple_choice)
  *  - parsed_content.blank_option_groups = deduplicated groups
  *  - parsed_content.text = stem (preserved from input)
  *  - answer = serialized canonical answer from answerMap
@@ -779,6 +845,7 @@ export function buildMultiBlankSavePayload(
   groups: BlankOptionGroup[],
   answerMap: BlankAnswerMap,
   stem: string,
+  questionType: string = "multi_blank_choice",
 ): SavePayloadResult {
   const errors: string[] = [];
 
@@ -846,7 +913,7 @@ export function buildMultiBlankSavePayload(
   }
 
   const payload: Record<string, unknown> = {
-    question_type: "multi_blank_choice",
+    question_type: questionType,
     answer: canonicalAnswer,
     parsed_options: null,
     parsed_content: newContent,

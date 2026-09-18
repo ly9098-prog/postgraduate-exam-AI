@@ -37,6 +37,7 @@ _ANSWERABLE_TYPES = (
     "multiple_choice",
     "true_false",
     "multi_blank_choice",
+    "multi_blank_multiple_choice",
 )
 
 

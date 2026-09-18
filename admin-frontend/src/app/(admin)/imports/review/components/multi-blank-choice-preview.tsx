@@ -43,19 +43,21 @@ function StemWithBlankMarkers({ text }: { text: string }) {
 
 /**
  * Per-slot answer card with left accent border and status color.
+ * `answer` holds the slot's selected letters (each may be a multi-select
+ * letter when the question is a multi-blank multiple choice).
  */
 function SlotCard({
   group,
   answer,
   validAnswer,
-  answerOption,
+  answerOptions,
 }: {
   group: BlankOptionGroup;
-  answer: string | undefined;
+  answer: string[];
   validAnswer: boolean;
-  answerOption: BlankOption | undefined;
+  answerOptions: BlankOption[];
 }) {
-  const hasAnswer = !!answer;
+  const hasAnswer = answer.length > 0;
   let accentColor: string;
   let borderColor: string;
   let bgHint: string;
@@ -97,20 +99,22 @@ function SlotCard({
       {hasAnswer && !validAnswer ? (
         <div className="mt-1 flex items-center gap-1.5">
           <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded bg-red-100 px-1 text-[11px] font-bold text-red-600">
-            {answer}
+            {answer.join(",")}
           </span>
           <span className="text-[11px] text-red-500">— 非法答案</span>
         </div>
-      ) : answerOption ? (
+      ) : hasAnswer && answerOptions.length > 0 ? (
         <div className="mt-1 space-y-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--color-success)]/10 text-[11px] font-bold text-[var(--color-success)]">
-              {answer}
-            </span>
-            <span className="text-sm text-[var(--color-text-secondary)]">
-              <MathFormula text={answerOption.text} />
-            </span>
-          </div>
+          {answerOptions.map((opt) => (
+            <div key={opt.key} className="flex items-center gap-1.5">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--color-success)]/10 text-[11px] font-bold text-[var(--color-success)]">
+                {opt.key}
+              </span>
+              <span className="text-sm text-[var(--color-text-secondary)]">
+                <MathFormula text={opt.text} />
+              </span>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="mt-1 flex items-center gap-1.5">
@@ -175,18 +179,21 @@ export function MultiBlankChoicePreview({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {groups.map((group) => {
           const answer = answerMap[group.id];
-          const hasAnswer = !!answer;
+          const letters = (answer ?? "").split(",").filter(Boolean);
+          const hasAnswer = letters.length > 0;
           const validAnswer =
-            hasAnswer && group.options.some((o) => o.key === answer);
-          const answerOption = group.options.find((o) => o.key === answer);
+            hasAnswer && letters.every((l) => group.options.some((o) => o.key === l));
+          const answerOptions = letters
+            .map((l) => group.options.find((o) => o.key === l))
+            .filter((o): o is BlankOption => o !== undefined);
 
           return (
             <SlotCard
               key={group.id}
               group={group}
-              answer={answer}
+              answer={letters}
               validAnswer={validAnswer}
-              answerOption={answerOption}
+              answerOptions={answerOptions}
             />
           );
         })}

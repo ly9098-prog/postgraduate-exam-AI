@@ -29,16 +29,36 @@ _CIRCLED_BLANK_RE = re.compile(r"[（(]\s*([①-⑳])\s*[）)]")
 _CIRCLED_NUM_RE = re.compile(r"[①-⑳]")
 _UNDERSCORE_BLANK_RE = re.compile(r"_{3,}")
 
+# Answer letter domain (single letter per capture; multi-letter slots are joined
+# with "," — e.g. "①:A,C" — so a value group never spans pair separators).
+# A separator between letters counts as an intra-value separator only when the
+# next non-space char is another letter; a separator before a slot marker
+# (circled digit / digit / （N）) is a pair separator.
+_ANSWER_LETTER = r"[A-Ha-h]"
+_ANSWER_LETTERS_ONE_OR_MORE = r"[A-Ha-h]+(?:\s*[，,、]\s*(?=[A-Ha-h])\s*[A-Ha-h]+)*"
+# Value group used with explicit slot:value pairs; a following "letters:colon"
+# run means the separator starts the next pair (e.g. "1:B,2:D").
+_ANSWER_LETTERS_PAIR = (
+    r"[A-Ha-h]+(?:\s*[，,、]\s*(?=\s*[A-Ha-h])(?!\s*[A-Ha-h]+\s*[:：])\s*[A-Ha-h]+)*"
+)
+
 # Answer patterns (in priority order)
-_RE_CANONICAL = re.compile(r"([^:：;；]+?)\s*[:：]\s*([A-Ha-h])\s*(?:[;；]|$)")
-_RE_CHINESE_COMMA = re.compile(r"([^，,、]+?)\s*[，,、]\s*([A-Ha-h])\s*(?:[，,、]|$)")
-_RE_CIRCLED_ANSWER = re.compile(r"([①-⑳])\s*([A-Ha-h])(?:[、，,，\s]|$)")
-_RE_PAREN_ANSWER = re.compile(r"[（(]\s*(\d+)\s*[）)]\s*([A-Ha-h])(?:[、，,，\s]|$)")
+_RE_CANONICAL = re.compile(
+    r"([^:：;；]+?)\s*[:：]\s*(" + _ANSWER_LETTERS_PAIR + r")\s*(?:[;；]|$)"
+)
+_RE_CIRCLED_ANSWER = re.compile(r"([①-⑳])\s*(" + _ANSWER_LETTERS_ONE_OR_MORE + ")")
+_RE_PAREN_ANSWER = re.compile(
+    r"[（(]\s*(\d+)\s*[）)]\s*(" + _ANSWER_LETTERS_ONE_OR_MORE + ")"
+)
 _RE_DIGIT_SLOT_ANSWER = re.compile(
-    r"(?:^|\s|第)(\d+)\s*(?:空|个|题)?\s*[：:是为]?\s*([A-Ha-h])(?:[、，,，};\s]|$)"
+    r"(?:^|\s|第)(\d+)\s*(?:空|个|题)?\s*[：:是为]?\s*("
+    + _ANSWER_LETTERS_ONE_OR_MORE
+    + r")(?:[;；]|$)"
 )
 _RE_CHINESE_SLOT_PREFIX = re.compile(
-    r"第\s*([一二三四五六七八九十\d]+)\s*空\s*[：:]?\s*([A-Ha-h])"
+    r"第\s*([一二三四五六七八九十\d]+)\s*空\s*[：:]?\s*("
+    + _ANSWER_LETTERS_ONE_OR_MORE
+    + r")"
 )
 
 
@@ -92,6 +112,20 @@ def extract_blank_slots(stem: str) -> list[str]:
     return slots
 
 
+def normalize_answer_value(raw_value: str) -> str:
+    """Normalize a slot value to canonical form.
+
+    Single letter → "A". Multi letters (comma/顿号 separated or run together,
+    e.g. "A,C" / "A、C" / "AC") → canonical comma-joined "A,C" (deduplicated,
+    option order preserved as entered order sorted by letter).
+    """
+    letters = re.findall(r"[A-Ha-h]", raw_value)
+    if not letters:
+        return ""
+    upper_sorted = sorted({ch.upper() for ch in letters})
+    return ",".join(upper_sorted)
+
+
 # ── Answer parsing ───────────────────────────────────────────────
 
 
@@ -104,7 +138,9 @@ def parse_multi_blank_answer(
 
     Compatible formats:
         "①:B;②:D"        — canonical
+        "①:B;②:A,C"      — canonical, multi-letter slot (multi-select blank)
         "①B、②D"          — Chinese comma
+        "① AC、② D"       — multi letters in one slot
         "① B，② D"        — with spaces
         "(1)B、(2)D"      — parenthesized digits
         "1:B,2:D"         — digit slots
@@ -116,9 +152,11 @@ def parse_multi_blank_answer(
     Returns:
         (slot_map, errors) where slot_map is {slot_id: value_letter}
         and errors is a list of error messages (empty on success).
+        Values outside A-H produce "invalid_value_for_slot_<slot>" errors.
 
     Rules:
-        - Answer letters are uppercased.
+        - Answer letters are uppercased; multi-letter slots are canonicalized
+          to comma-joined sorted letters (e.g. "C,A" → "A,C").
         - Duplicate slot IDs are deduplicated (last wins with a warning).
         - Unknown slot IDs are not included but produce warnings.
         - Positional "A,B" only accepted when slot_ids is provided,
@@ -134,8 +172,8 @@ def parse_multi_blank_answer(
         result: dict[str, str] = {}
         for k, v in answer.items():
             key = str(k).strip()
-            val = str(v).strip().upper()
-            if re.match(r"^[A-H]$", val):
+            val = normalize_answer_value(str(v))
+            if val:
                 result[key] = val
             else:
                 errors.append(f"invalid_value_for_slot_{key}: {v}")
@@ -149,7 +187,7 @@ def parse_multi_blank_answer(
         if (
             slot_ids
             and len(items) == len(slot_ids)
-            and all(re.match(r"^[A-H]$", i) for i in items)
+            and all(re.match(r"^[A-H](?:,[A-H])*$", i) for i in items)
         ):
             return dict(zip(slot_ids, items)), errors
         # Single element? Try parsing it as string
@@ -165,34 +203,39 @@ def parse_multi_blank_answer(
 
     result: dict[str, str] = {}
 
+    def _add_pair(slot: str, raw_val: str) -> None:
+        slot = slot.strip()
+        val = normalize_answer_value(raw_val)
+        if slot and val:
+            result[slot] = val
+        elif slot and raw_val.strip():
+            # Letters outside A-H (e.g. "①:X") — emit an invalid-value error
+            # instead of failing the whole answer as unparseable.
+            errors.append(f"invalid_value_for_slot_{slot}: {raw_val.strip()}")
+
     # -- Strategy 1: Canonical "slot:value; slot:value" OR "slot:value,slot:value" --
     # Split by semicolons or commas that appear between "letter" and "digit/circled" boundaries
     # Use a regex that handles both semicolons and commas as pair separators
     #
-    # Match: "slot:value" pairs — slot is any non-empty text up to :, value is A-H
+    # Match: "slot:value" pairs — slot is any non-empty text up to :, value is
+    # one or more letters (comma/顿号 separated allowed within a value)
     # Pairs can be separated by ; or ,
     all_pairs = list(
         re.finditer(
-            r"([^:：;；,，]+?)\s*[:：]\s*([A-Za-z])\s*(?:[;；,，]|$)",
+            r"([^:：;；]+?)\s*[:：]\s*([A-Za-z][A-Za-z\s，,、]*)\s*(?:[;；]|$)",
             text,
         )
     )
     if len(all_pairs) >= 2:
         for m in all_pairs:
-            slot = m.group(1).strip()
-            val = m.group(2).upper()
-            if slot:
-                result[slot] = val
+            _add_pair(m.group(1), m.group(2))
         if result:
             return result, errors
 
     # Single canonical pair with more than one colon/equals - try broader match
     if ":" in text or "：" in text:
-        for m in re.finditer(r"(.+?)\s*[:：]\s*([A-Za-z])\s*", text):
-            slot = m.group(1).strip()
-            val = m.group(2).upper()
-            if slot:
-                result[slot] = val
+        for m in re.finditer(r"(.+?)\s*[:：]\s*([A-Za-z][A-Za-z\s，,、]*)\s*", text):
+            _add_pair(m.group(1), m.group(2))
         if result:
             result.pop("", None)
             # If we got only 1 result but text clearly has multiple slots separated
@@ -200,32 +243,28 @@ def parse_multi_blank_answer(
             if len(result) == 1 and ("," in text or "，" in text):
                 parts = re.split(r"[，,]", text)
                 for part in parts:
-                    m2 = re.match(r"(.+?)\s*[:：]\s*([A-Za-z])\s*", part.strip())
+                    m2 = re.match(
+                        r"(.+?)\s*[:：]\s*([A-Za-z][A-Za-z\s，,、]*)\s*",
+                        part.strip(),
+                    )
                     if m2:
-                        slot = m2.group(1).strip()
-                        val = m2.group(2).upper()
-                        if slot:
-                            result[slot] = val
+                        _add_pair(m2.group(1), m2.group(2))
                 result.pop("", None)
             if result:
                 return result, errors
 
-    # -- Strategy 2: Circled answer "①B、②D" --
+    # -- Strategy 2: Circled answer "①B、②D" / "①AC、②D" --
     circled_matches = list(_RE_CIRCLED_ANSWER.finditer(text))
     if len(circled_matches) >= 2:
         for m in circled_matches:
-            slot = m.group(1)
-            val = m.group(2).upper()
-            result[slot] = val
+            _add_pair(m.group(1), m.group(2))
         return result, errors
 
     # -- Strategy 3: Parenthesized digits "(1)B、(2)D" --
     paren_matches = list(_RE_PAREN_ANSWER.finditer(text))
     if len(paren_matches) >= 2:
         for m in paren_matches:
-            slot = m.group(1)
-            val = m.group(2).upper()
-            result[slot] = val
+            _add_pair(m.group(1), m.group(2))
         return result, errors
 
     # -- Strategy 4: Chinese slot prefix "第1空B，第2空D" --
@@ -234,17 +273,14 @@ def parse_multi_blank_answer(
         for m in chinese_matches:
             cn_digit = m.group(1)
             slot = str(_CN_TO_INT.get(cn_digit, cn_digit))
-            val = m.group(2).upper()
-            result[slot] = val
+            _add_pair(slot, m.group(2))
         return result, errors
 
     # -- Strategy 5: Digit slot "第1空B，第2空D" (loose) --
     digit_matches = list(_RE_DIGIT_SLOT_ANSWER.finditer(text))
     if len(digit_matches) >= 2:
         for m in digit_matches:
-            slot = m.group(1)
-            val = m.group(2).upper()
-            result[slot] = val
+            _add_pair(m.group(1), m.group(2))
         return result, errors
 
     # -- Strategy 7: Positional "A,B" or "B,D" --
@@ -262,23 +298,37 @@ def parse_multi_blank_answer(
     # -- Strategy 8: Try single circled "①B" or "(1)B" pattern --
     single_circled = _RE_CIRCLED_ANSWER.match(text)
     if single_circled:
-        result[single_circled.group(1)] = single_circled.group(2).upper()
+        _add_pair(single_circled.group(1), single_circled.group(2))
         return result, errors
 
     single_paren = _RE_PAREN_ANSWER.match(text)
     if single_paren:
-        result[single_paren.group(1)] = single_paren.group(2).upper()
+        _add_pair(single_paren.group(1), single_paren.group(2))
         return result, errors
 
-    # -- Strategy 9: Just letters — "AB" or "A" —
-    letters_only = [ch for ch in text.upper() if "A" <= ch <= "H"]
-    if (
-        len(letters_only) >= 2
-        and slot_ids
-        and allow_positional
-        and len(letters_only) == len(slot_ids)
-    ):
-        return dict(zip(slot_ids, letters_only)), errors
+    # -- Strategy 9: Just letters — "AB" or "A" or "AC,BD" —
+    # "AC,BD" style: comma-separated letter groups, one per slot (positional).
+    # A single run like "BD" is positional when each letter maps to one slot.
+    letter_groups = [
+        normalize_answer_value(p)
+        for p in re.split(r"[，,、\s]+", text)
+        if p and re.fullmatch(r"[A-Ha-h]+", p)
+    ]
+    if slot_ids and allow_positional and ":" not in text and "：" not in text:
+        if len(letter_groups) == len(slot_ids) and all(letter_groups):
+            return dict(zip(slot_ids, letter_groups)), errors
+        # Contiguous run "BD" with N slots → one letter per slot
+        single_run = re.fullmatch(r"[A-Ha-h]+", text.strip())
+        if single_run and len(text.strip()) == len(slot_ids):
+            return (
+                dict(
+                    zip(
+                        slot_ids,
+                        [ch.upper() for ch in text.strip().upper()],
+                    )
+                ),
+                errors,
+            )
 
     errors.append(f"unparseable_answer: {text}")
     return {}, errors
@@ -325,7 +375,9 @@ def serialize_multi_blank_answer(
     for sid in slot_ids:
         val = answer_map.get(sid)
         if val:
-            parts.append(f"{sid}:{val.upper()}")
+            canonical = normalize_answer_value(str(val))
+            if canonical:
+                parts.append(f"{sid}:{canonical}")
     return ";".join(parts)
 
 
@@ -375,6 +427,16 @@ def build_blank_option_groups(
 
 
 # ── Validation ───────────────────────────────────────────────────
+
+
+def _group_option_keys(groups: list[dict], slot_id: str) -> set[str]:
+    """Return the option keys of the group with the given slot id."""
+    for group in groups:
+        if str(group.get("id") or "").strip() == slot_id:
+            return {
+                str(o.get("key") or "").upper() for o in (group.get("options") or [])
+            }
+    return set()
 
 
 def validate_multi_blank_question(
@@ -453,6 +515,20 @@ def validate_multi_blank_question(
         return False, errors
 
     if not answer_map:
+        # Invalid slot values (non A-H letters) surface as
+        # invalid_value_for_slot_<slot> errors; name the offending slot's
+        # option set so reviewers see which group is wrong.
+        for error in list(errors):
+            m = re.match(r"invalid_value_for_slot_(.+?):", error)
+            if m:
+                slot = m.group(1)
+                valid_keys = _group_option_keys(groups, slot)
+                if valid_keys:
+                    errors.append(
+                        f"answer_{slot}=not_in_group_options_{sorted(valid_keys)}"
+                    )
+        if any("not_in_group_options" in e for e in errors):
+            return False, errors
         if not any("unparseable" in e for e in errors):
             errors.append("multi_blank_choice_empty_answer_after_parse")
         return False, errors
@@ -478,7 +554,9 @@ def validate_multi_blank_question(
         if gid not in group_opts_map:
             continue
         valid_keys = group_opts_map[gid]
-        if val not in valid_keys:
+        letters = [v for v in str(val).split(",") if v]
+        invalid = [v for v in letters if v not in valid_keys]
+        if invalid:
             errors.append(
                 f"answer_{gid}={val}_not_in_group_options_{sorted(valid_keys)}"
             )
@@ -506,7 +584,8 @@ def detect_shared_option_multi_blank(
         stem: Question stem text (may contain blank markers)
         options: Parsed option list/dict (shared options)
         answer: Raw answer string
-        explicit_question_type: If explicitly "multi_blank_choice", skip detection
+        explicit_question_type: If explicitly a multi-blank choice type
+            (multi_blank_choice / multi_blank_multiple_choice), skip detection
 
     Returns:
         Detection result dict:
@@ -529,8 +608,11 @@ def detect_shared_option_multi_blank(
         "warnings": warnings,
     }
 
-    # If explicitly typed as multi_blank_choice, trust it
-    if explicit_question_type == "multi_blank_choice":
+    # If explicitly typed as a multi-blank choice, trust it
+    if explicit_question_type in (
+        "multi_blank_choice",
+        "multi_blank_multiple_choice",
+    ):
         result["reason"] = "explicit_question_type"
         # Try to extract slots from stem first, then reconcile with answer
         slot_ids = extract_blank_slots(stem)

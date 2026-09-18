@@ -66,6 +66,7 @@ _questionImages: [],
 _optionList: [],
 _blankOptionGroups: [],
 _hasBlankOptionGroups: false,
+_isMultiBlankMultiple: false,
 _renderUnknownMode: false,
 _renderFallbackText: '',
 },
@@ -80,7 +81,7 @@ this._heroCollapseLockUntil = 0
 observers: {
 'currentQuestion, answerState': function (q, answerState) {
 if (!q) {
-this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _optionList: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _renderUnknownMode: false, _renderFallbackText: '' })
+this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _optionList: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _isMultiBlankMultiple: false, _renderUnknownMode: false, _renderFallbackText: '' })
 this._lastRenderModel = null
 this._lastQuestionId = null
 this._hasRenderedQuestion = false
@@ -157,6 +158,7 @@ if (rawGroups.length) blankOptionGroups = rawGroups
 }
 data._blankOptionGroups = blankOptionGroups
 data._hasBlankOptionGroups = blankOptionGroups.length > 0
+data._isMultiBlankMultiple = q.question_type === 'multi_blank_multiple_choice'
 var optionList = answerStateMatches && Array.isArray(answerState.optionList)
 ? answerState.optionList
 : (Array.isArray(q._optionList) ? q._optionList : [])
@@ -206,7 +208,8 @@ self.setData({ questionScrollIntoView: '' })
 },
 _typeLabel: function (q) {
 if (!q) return ''
-if (q._hasBlankOptionGroups || q.question_type === 'multi_blank_choice') return '多空选择题'
+if (q._hasBlankOptionGroups || q.question_type === 'multi_blank_choice') return '多空（单选）选择题'
+if (q.question_type === 'multi_blank_multiple_choice') return '多空（多选）选择题'
 if (q.question_type === 'multiple_choice') return '多选题'
 if (q.question_type === 'true_false' || q.question_type === 'judgement') return '判断题'
 return '单选题'

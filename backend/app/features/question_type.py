@@ -39,6 +39,7 @@ class QuestionType(enum.StrEnum):
     TRUE_FALSE = "true_false"
     FILL_BLANK = "fill_blank"
     MULTI_BLANK_CHOICE = "multi_blank_choice"
+    MULTI_BLANK_MULTIPLE_CHOICE = "multi_blank_multiple_choice"
     SUBJECTIVE = "subjective"
 
 
@@ -48,6 +49,7 @@ QT_MULTIPLE_CHOICE = QuestionType.MULTIPLE_CHOICE.value
 QT_TRUE_FALSE = QuestionType.TRUE_FALSE.value
 QT_FILL_BLANK = QuestionType.FILL_BLANK.value
 QT_MULTI_BLANK_CHOICE = QuestionType.MULTI_BLANK_CHOICE.value
+QT_MULTI_BLANK_MULTIPLE_CHOICE = QuestionType.MULTI_BLANK_MULTIPLE_CHOICE.value
 QT_SUBJECTIVE = QuestionType.SUBJECTIVE.value
 
 # 规范 code 集合（用于快速检查）
@@ -64,7 +66,8 @@ QUESTION_TYPE_LABELS: dict[QuestionType, str] = {
     QuestionType.MULTIPLE_CHOICE: "多选题",
     QuestionType.TRUE_FALSE: "判断题",
     QuestionType.FILL_BLANK: "填空题",
-    QuestionType.MULTI_BLANK_CHOICE: "多空选择题",
+    QuestionType.MULTI_BLANK_CHOICE: "多空（单选）选择题",
+    QuestionType.MULTI_BLANK_MULTIPLE_CHOICE: "多空（多选）选择题",
     QuestionType.SUBJECTIVE: "问答题",
 }
 
@@ -98,6 +101,12 @@ QUESTION_TYPE_CAPABILITIES: dict[QuestionType, dict[str, Any]] = {
         "has_options": True,
         "answer_mode": "multi_blank",
         "allows_multi_blank": True,
+        "allows_multiple_answers": False,
+    },
+    QuestionType.MULTI_BLANK_MULTIPLE_CHOICE: {
+        "has_options": True,
+        "answer_mode": "multi_blank_multiple",
+        "allows_multi_blank": True,
         "allows_multiple_answers": True,
     },
     QuestionType.SUBJECTIVE: {
@@ -115,6 +124,7 @@ QUESTION_TYPE_SORT_ORDER: dict[QuestionType, int] = {
     QuestionType.TRUE_FALSE: 30,
     QuestionType.FILL_BLANK: 40,
     QuestionType.MULTI_BLANK_CHOICE: 50,
+    QuestionType.MULTI_BLANK_MULTIPLE_CHOICE: 55,
     QuestionType.SUBJECTIVE: 60,
 }
 
@@ -158,6 +168,16 @@ _RAW_ALIAS_MAP: dict[str, str] = {
     "填空题": QT_FILL_BLANK,
     "多空选择": QT_MULTI_BLANK_CHOICE,
     "多空选择题": QT_MULTI_BLANK_CHOICE,
+    "多空单选": QT_MULTI_BLANK_CHOICE,
+    "多空单选题": QT_MULTI_BLANK_CHOICE,
+    "多空单选选择题": QT_MULTI_BLANK_CHOICE,
+    "多空（单选）选择题": QT_MULTI_BLANK_CHOICE,
+    "多空多选": QT_MULTI_BLANK_MULTIPLE_CHOICE,
+    "多空多选题": QT_MULTI_BLANK_MULTIPLE_CHOICE,
+    "多空多选选择题": QT_MULTI_BLANK_MULTIPLE_CHOICE,
+    "多空（多选）选择题": QT_MULTI_BLANK_MULTIPLE_CHOICE,
+    "多空不定项选择": QT_MULTI_BLANK_MULTIPLE_CHOICE,
+    "多空不定项选择题": QT_MULTI_BLANK_MULTIPLE_CHOICE,
     "主观": QT_SUBJECTIVE,
     "主观题": QT_SUBJECTIVE,
     "简答": QT_SUBJECTIVE,
@@ -287,8 +307,18 @@ def is_canonical(value: str | None) -> bool:
 
 
 def is_multi_blank_type(value: str | None) -> bool:
-    """判断是否为多空选择题。"""
+    """判断是否为多空选择题（含单选与多选两种）。"""
+    return value in (QT_MULTI_BLANK_CHOICE, QT_MULTI_BLANK_MULTIPLE_CHOICE)
+
+
+def is_multi_blank_single_type(value: str | None) -> bool:
+    """判断是否为多空（单选）选择题：每空恰好一个选项。"""
     return value == QT_MULTI_BLANK_CHOICE
+
+
+def is_multi_blank_multiple_type(value: str | None) -> bool:
+    """判断是否为多空（多选）选择题：每空可选多个选项。"""
+    return value == QT_MULTI_BLANK_MULTIPLE_CHOICE
 
 
 def is_multiple_choice_type(value: str | None) -> bool:

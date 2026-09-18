@@ -284,6 +284,22 @@ describe("parseBlankAnswer", () => {
   it("handles semicolons and Chinese semicolons", () => {
     expect(parseBlankAnswer("①:A；②:D", groupIds)).toEqual({ "①": "A", "②": "D" });
   });
+
+  it("parses multi-letter canonical value ①:A,C;②:B", () => {
+    expect(parseBlankAnswer("①:A,C;②:B", groupIds)).toEqual({ "①": "A,C", "②": "B" });
+  });
+
+  it("sorts and dedupes multi-letter values ①:C,A;②:B", () => {
+    expect(parseBlankAnswer("①:C,A;②:B", groupIds)).toEqual({ "①": "A,C", "②": "B" });
+  });
+
+  it("parses run-together circled letters ①AC、②D", () => {
+    expect(parseBlankAnswer("①AC、②D", groupIds)).toEqual({ "①": "A,C", "②": "D" });
+  });
+
+  it("parses multi-letter digit slots 1:A,C;2:B,D", () => {
+    expect(parseBlankAnswer("1:A,C;2:B,D", groupIds)).toEqual({ "1": "A,C", "2": "B,D" });
+  });
 });
 
 // ── serializeBlankAnswer ──────────────────────────────────────────────────
