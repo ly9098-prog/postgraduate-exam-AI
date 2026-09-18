@@ -263,6 +263,10 @@ Page({
     const requestVersion = ++this._catalogRequestVersion
     try {
       var params = {}
+      // Keep the 408 catalog explicitly scoped. The public API also accepts
+      // subject_code, but exam_scope prevents unrelated formula trees from
+      // influencing 408 counts while the subject/chapter filters are applied.
+      if (this.data.activeSubject === EXAM408_FORMULA_SUBJECT) params.exam_scope = EXAM408_FORMULA_SUBJECT
       // Pass library_type so the catalog can show accurate available_count
       if (this.data.activeLibraryType && this.data.activeLibraryType !== LIBRARY_TYPE_FORMULA) {
         params.library_type = this.data.activeLibraryType
@@ -667,6 +671,7 @@ Page({
         page_size: pageSize,
         library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
       }
+      if (activeSubject === EXAM408_FORMULA_SUBJECT) baseParams.exam_scope = EXAM408_FORMULA_SUBJECT
       if (activeSubject === EXAM408_FORMULA_SUBJECT && activeStudyCardType) baseParams.study_card_type = activeStudyCardType
       if (activeChapterId) baseParams.chapter_id = activeChapterId
       if (activeTags.length) {
@@ -947,6 +952,7 @@ Page({
       subject_code: activeSubject,
       library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
     }
+    if (activeSubject === EXAM408_FORMULA_SUBJECT) params.exam_scope = EXAM408_FORMULA_SUBJECT
     if (activeSubject === EXAM408_FORMULA_SUBJECT && activeStudyCardType) params.study_card_type = activeStudyCardType
     if (activeChapterId) params.chapter_id = activeChapterId
     if (activeTags.length) {

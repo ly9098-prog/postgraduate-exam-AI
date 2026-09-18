@@ -106,6 +106,7 @@ Page({
     if (isRandom) {
       const params = {}
       if (options.subject_code) params.subject_code = options.subject_code
+      if (options.exam_scope) params.exam_scope = options.exam_scope
       if (options.chapter_id) params.chapter_id = options.chapter_id
       if (options.tags) params.tags = options.tags
       if (options.library_type) params.library_type = options.library_type

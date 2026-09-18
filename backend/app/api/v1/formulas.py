@@ -431,40 +431,46 @@ async def _validate_chapter(
 
 
 def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
-    """Apply shared formula list filters (subject, chapter, category, tags, search) to a query.
+    """Apply shared formula list filters (subject, chapter, category, tags, search).
 
-    Used by both /formulas and /formulas/favorites/list.
+    Formula cards historically lived under ``subject -> chapter -> group`` and
+    the original query therefore only selected group ids. 408 memory cards are
+    intentionally attached directly to the four chapter rows, so that old
+    assumption made ``subject_code=exam408`` and every 408 ``chapter_id`` return
+    an empty list even though the catalog correctly reported card counts.
+
+    Accept both supported storage shapes: cards may belong directly to a
+    chapter or to one of that chapter's groups.
     """
     if subject_code:
-        groups_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.is_active,
-                FormulaCategory.code == subject_code,
-                FormulaCategory.node_type == "subject",
-            )
-            .cte("list_subject_cte")
-        )
-        chapters_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == groups_subq.c.id,
-                FormulaCategory.is_active,
-            )
-            .cte("list_chapters_cte")
-        )
-        group_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.parent_id == chapters_subq.c.id,
+        subject_ids_subq = select(FormulaCategory.id).where(
             FormulaCategory.is_active,
+            FormulaCategory.code == subject_code,
+            FormulaCategory.node_type == "subject",
         )
-        query = query.where(FormulaCard.category_id.in_(group_ids_subq))
+        chapter_ids_subq = select(FormulaCategory.id).where(
+            FormulaCategory.parent_id.in_(subject_ids_subq),
+            FormulaCategory.is_active,
+            FormulaCategory.node_type == "chapter",
+        )
+        scoped_category_ids_subq = select(FormulaCategory.id).where(
+            FormulaCategory.is_active,
+            or_(
+                FormulaCategory.id.in_(chapter_ids_subq),
+                FormulaCategory.parent_id.in_(chapter_ids_subq),
+            ),
+        )
+        query = query.where(FormulaCard.category_id.in_(scoped_category_ids_subq))
 
     if chapter_id:
-        group_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.parent_id == chapter_id,
+        scoped_category_ids_subq = select(FormulaCategory.id).where(
             FormulaCategory.is_active,
+            or_(
+                FormulaCategory.id == chapter_id,
+                FormulaCategory.parent_id == chapter_id,
+            ),
         )
-        query = query.where(FormulaCard.category_id.in_(group_ids_subq))
+        query = query.where(FormulaCard.category_id.in_(scoped_category_ids_subq))
 
     if category_id:
         query = query.where(FormulaCard.category_id == category_id)
@@ -697,52 +703,12 @@ async def get_random_formula(
     base_query = _apply_library_type_filter(base_query, library_type)
     base_query = _apply_study_card_type_filter(base_query, study_card_type)
 
-    # Apply same filters as list
-    if subject_code:
-        groups_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.is_active,
-                FormulaCategory.code == subject_code,
-                FormulaCategory.node_type == "subject",
-            )
-            .cte("random_subject_cte")
-        )
-        chapters_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == groups_subq.c.id,
-                FormulaCategory.is_active,
-            )
-            .cte("random_chapters_cte")
-        )
-        group_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.parent_id == chapters_subq.c.id,
-            FormulaCategory.is_active,
-        )
-        base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
-
-    if chapter_id:
-        group_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.parent_id == chapter_id,
-            FormulaCategory.is_active,
-        )
-        base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
-
-    if category_id:
-        base_query = base_query.where(FormulaCard.category_id == category_id)
-
-    if tags:
-        tag_codes = [t.strip() for t in tags.split(",") if t.strip()]
-        if tag_codes:
-            matching_card_ids = (
-                select(FormulaCardTag.formula_card_id)
-                .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
-                .where(FormulaTag.code.in_(tag_codes))
-                .group_by(FormulaCardTag.formula_card_id)
-                .having(func.count(FormulaCardTag.formula_card_id) == len(tag_codes))
-            )
-            base_query = base_query.where(FormulaCard.id.in_(matching_card_ids))
+    # Keep random mode on exactly the same subject/chapter semantics as the
+    # normal and favorites lists. This is especially important for 408 cards,
+    # which are stored directly on chapter categories.
+    base_query = _apply_list_filters(
+        base_query, subject_code, chapter_id, category_id, tags, None
+    )
 
     # Exclude IDs (parse comma-separated string)
     if exclude_ids:
