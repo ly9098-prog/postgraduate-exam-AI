@@ -1,3 +1,4 @@
+<import src="../code-block/code-block.wxml" />
 <view class="math-question-wrap">
 <block wx:for="{{localSegments}}" wx:key="index">
 <text wx:if="{{item.type === 'text'}}" class="seg-text">{{item.text}}</text>
@@ -89,16 +90,9 @@
         />
 </view>
 </view>
-<view wx:elif="{{item.type === 'code'}}" class="seg-code-wrap">
-<view wx:if="{{item.caption || item.language}}" class="seg-code-header">
-<text wx:if="{{item.caption}}" class="seg-code-caption">{{item.caption}}</text>
-<text wx:if="{{item.language}}" class="seg-code-language">{{item.language}}</text>
-</view>
-<scroll-view scroll-x class="seg-code-scroll">
-<text wx:if="{{item.code}}" class="seg-code-text" user-select="{{true}}">{{item.code}}</text>
-<text wx:else class="seg-code-empty">代码块内容为空</text>
-</scroll-view>
-</view>
+<block wx:elif="{{item.type === 'code'}}">
+<template is="study-code-block" data="{{codeLines: item._codeLines}}" />
+</block>
 <view wx:elif="{{item.type === 'image' || item.type === 'table_image' || item.type === 'code_image'}}" class="seg-image-wrap">
 <image
         fade-in="{{false}}"

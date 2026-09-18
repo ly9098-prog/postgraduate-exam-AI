@@ -1,5 +1,6 @@
 var stemRender = require('../../utils/stem-render')
 var tableStructure = require('../../utils/table-structure')
+var codeBlockRender = require('../../utils/code-block-render')
 Component({
 properties: {
 segments: { type: Array, value: [] }
@@ -46,6 +47,7 @@ continue
 var copy = Object.assign({}, s, { type: type, _error: false })
 if (type === 'code') {
 copy.code = String(s.code != null ? s.code : (s.text != null ? s.text : ''))
+copy._codeLines = codeBlockRender.splitCodeLines(copy.code)
 copy.alt = String(s.alt != null ? s.alt : '')
 copy.caption = String(s.caption != null ? s.caption : '')
 copy.language = String(s.language || '')

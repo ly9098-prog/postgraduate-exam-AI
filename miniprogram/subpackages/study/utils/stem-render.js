@@ -350,7 +350,25 @@ var cleanedSegmentText = _cleanStemText(segmentText, options, optionKeys)
 var canonicalComparable = String(cleanedStem || '').replace(/\s+/g, '')
 var segmentComparable = String(cleanedSegmentText || '').replace(/\s+/g, '')
 if (!canonicalComparable || !segmentComparable) return canonicalComparable === segmentComparable
-return canonicalComparable === segmentComparable
+if (canonicalComparable === segmentComparable) return true
+
+// Structured questions may keep the prose stem in content.text/content.stem while
+// carrying the code as an additional segment.  In that shape, comparing the full
+// segment payload against the prose-only canonical stem rejects a valid SEGMENTS
+// render and silently drops the code block.  Keep the stale-segment guard for the
+// non-code content, but allow code segments to extend an otherwise matching stem.
+if (_hasCodeSegments(segments)) {
+var nonCodeSegments = segments.filter(function (segment) {
+return !segment || typeof segment !== 'object' || String(segment.type || '').trim().toLowerCase() !== 'code'
+})
+if (_segmentsHaveComparableStemPayload(nonCodeSegments)) {
+var nonCodeText = _repairFalseNumberMarkerBreaks(_segmentsToText(nonCodeSegments))
+var cleanedNonCodeText = _cleanStemText(nonCodeText, options, optionKeys)
+var nonCodeComparable = String(cleanedNonCodeText || '').replace(/\s+/g, '')
+if (canonicalComparable === nonCodeComparable) return true
+}
+}
+return false
 }
 function _textToSegments(text) {
 if (!text) return []

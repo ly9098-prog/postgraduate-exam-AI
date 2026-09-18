@@ -1,3 +1,4 @@
+<import src="../code-block/code-block.wxml" />
 <view class="quiz-runner runner-theme-{{theme}} runner-mode-{{mode}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}} {{!showNavigation ? 'runner-no-navigation' : ''}} {{_hasBlankOptionGroups ? 'runner-multi-blank' : ''}}">
 <view class="runner-hero {{heroCollapsed ? 'runner-hero-collapsed' : ''}}" wx:if="{{!compactReviewMode}}">
 <view class="runner-hero-glow"></view>
@@ -148,22 +149,12 @@
         class="runner-q-content"
         nodes="{{currentQuestion._renderModel.richTextNodes}}"
       ></rich-text>
-<scroll-view
+<block
         wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}"
         wx:key="code"
-        scroll-x
-        enhanced
-        show-scrollbar="{{false}}"
-        class="runner-code-wrapper"
-        data-swipe-block="1"
       >
-<view class="runner-code-lines" data-swipe-block="1">
-<view class="runner-code-line" wx:for="{{_codeLines}}" wx:key="no" data-swipe-block="1">
-<text class="runner-code-no" data-swipe-block="1">{{item.no}}</text>
-<text decode="false" space="preserve" class="runner-code-text" data-swipe-block="1">{{item.text}}</text>
-</view>
-</view>
-</scroll-view>
+<template is="study-code-block" data="{{codeLines: _codeLines}}" />
+</block>
 <mp-html
         wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}"
         wx:key="latex"
@@ -177,21 +168,9 @@
 <block wx:for="{{_mixedBlocks}}" wx:key="index">
 <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="runner-mixed-text-block" nodes="{{item.richTextNodes}}" />
 <mp-html wx:elif="{{item.type === 'LATEX'}}" class="runner-mixed-latex-block" content="{{item.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}" />
-<scroll-view
-            wx:elif="{{item.type === 'CODE'}}"
-            scroll-x
-            enhanced
-            show-scrollbar="{{false}}"
-            class="runner-code-wrapper runner-mixed-code-block"
-            data-swipe-block="1"
-          >
-<view class="runner-code-lines" data-swipe-block="1">
-<view class="runner-code-line" wx:for="{{item._codeLines}}" wx:key="no" data-swipe-block="1">
-<text class="runner-code-no" data-swipe-block="1">{{item.no}}</text>
-<text decode="false" space="preserve" class="runner-code-text" data-swipe-block="1">{{item.text}}</text>
-</view>
-</view>
-</scroll-view>
+<block wx:elif="{{item.type === 'CODE'}}">
+<template is="study-code-block" data="{{codeLines: item._codeLines, codeBlockClass: 'runner-mixed-code-block'}}" />
+</block>
 </block>
 </block>
 <view class="runner-question-images" wx:if="{{_questionImages && _questionImages.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">

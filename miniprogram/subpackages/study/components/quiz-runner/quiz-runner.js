@@ -1,4 +1,5 @@
 
+var codeBlockRender = require('../../utils/code-block-render')
 var questionAdapter = null
 try {
 questionAdapter = require('../../utils/question-runner-adapter')
@@ -211,14 +212,7 @@ if (q.question_type === 'true_false' || q.question_type === 'judgement') return 
 return '单选题'
 },
 _splitCodeLines: function (value) {
-var raw = String(value == null ? '' : value)
-.replace(/\r\n/g, '\n')
-.replace(/\r/g, '\n')
-var parts = raw.split('\n')
-if (!parts.length) parts = ['']
-return parts.map(function (text, index) {
-return { no: index + 1, text: text || ' ' }
-})
+return codeBlockRender.splitCodeLines(value)
 },
 _decorateMixedBlocks: function (blocks) {
 var self = this
