@@ -401,6 +401,48 @@ class TestSubjectBreakdown:
 
 
 class TestStatsAndTrends:
+    @pytest.mark.parametrize("active_status", ["running", "paused"])
+    @pytest.mark.asyncio
+    async def test_active_sessions_are_excluded_from_statistics(
+        self, isolated_db, monkeypatch, active_status
+    ):
+        from app.core import time_utils
+        from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(time_utils, "utcnow", lambda: _utc(2026, 8, 7, 10, 0, 0))
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_stats_active")
+            subj = await _make_subject(db)
+
+            # Only the completed session is a historical learning record. The
+            # active rows deliberately carry a stale duration to ensure the
+            # aggregate query filters by lifecycle status before attribution.
+            db.add(_make_session(
+                uid, subj, _utc(2026, 8, 7, 8, 0), _utc(2026, 8, 7, 8, 10), 600,
+            ))
+            db.add(_make_session(
+                uid, subj, _utc(2026, 8, 7, 8, 20), None, 1200, status=active_status,
+            ))
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            stats = await svc.get_stats(db, uid)
+            summary = await svc.get_daily_summary(db, uid, date(2026, 8, 7))
+            trends = await svc.get_trends(db, uid, days=7)
+            lifetime = await svc.get_lifetime_summary(db, uid)
+
+        assert stats["today_sessions"] == 1
+        assert stats["today_duration_sec"] == 600
+        assert summary["sessions"] == 1
+        assert summary["duration_sec"] == 600
+        assert sum(item["duration_sec"] for item in summary["subjects"]) == 600
+        today_trend = next(item for item in trends if item["date"] == "2026-08-07")
+        assert today_trend["sessions"] == 1
+        assert today_trend["duration_sec"] == 600
+        assert lifetime["sessions"] == 1
+        assert lifetime["duration_sec"] == 600
+
     @pytest.mark.asyncio
     async def test_stats_today_contribution(self, isolated_db, monkeypatch):
         from app.core import time_utils

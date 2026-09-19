@@ -997,7 +997,8 @@ AI 错因分析。
 
 ### GET `/pomodoro/stats`
 
-今日/本周番茄统计卡片（timer 页）。
+今日/本周番茄统计卡片（timer 页）。仅统计已结束的 `completed` / `interrupted`
+会话；仍处于 `running` / `paused` 的会话通过 `/pomodoro/active` 查询，不计入统计。
 
 ```json
 {
@@ -1014,7 +1015,8 @@ AI 错因分析。
 
 ### GET `/pomodoro/daily-summary`
 
-指定学习日的每日小结（含科目分组）。
+指定学习日的每日小结（含科目分组）。统计只包含已结束的 `completed` /
+`interrupted` 会话，运行中的计时不会提前计入。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -1036,7 +1038,7 @@ AI 错因分析。
 
 ### GET `/pomodoro/statistics-overview`
 
-统计页首屏聚合：`stats` + `trends` + `daily_summary` 一次返回（单次窗口加载 + 单次归因）。统计时长混入刷题会话（PracticeSession.duration_sec，排除番茄已计时区间避免 double count）。
+统计页首屏聚合：`stats` + `trends` + `daily_summary` 一次返回（单次窗口加载 + 单次归因）。统计时长混入刷题会话（PracticeSession.duration_sec，排除番茄已计时区间避免 double count）。统计只包含已结束的 `completed` / `interrupted` 会话；`running` / `paused` 会话结束后才进入聚合。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|

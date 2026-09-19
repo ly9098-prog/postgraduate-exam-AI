@@ -2,7 +2,7 @@ import logging
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
-from sqlalchemy import func, literal, null, or_, select
+from sqlalchemy import func, literal, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -41,12 +41,11 @@ COUNTDOWN_COMPLETE_EARLY_TOLERANCE_SEC = 2
 CLIENT_ACTION_FUTURE_TOLERANCE_SEC = 5
 CLIENT_ACTION_PAST_TOLERANCE_SEC = 5
 
-# Statistics include all persisted focus time. Interrupted sessions are terminal
-# records with valid duration; running/paused sessions contribute a live duration
-# snapshot but are not counted as a finished session until they become terminal.
+# Statistics represent persisted learning records only after a focus session has
+# ended. Running/paused sessions remain visible through the active-session API and
+# must not change historical or daily aggregates while the timer is still open.
 POMODORO_STATS_TERMINAL_STATUSES = ("completed", "interrupted")
-POMODORO_STATS_ACTIVE_STATUSES = ("running", "paused")
-POMODORO_STATS_STATUSES = POMODORO_STATS_TERMINAL_STATUSES + POMODORO_STATS_ACTIVE_STATUSES
+POMODORO_STATS_STATUSES = POMODORO_STATS_TERMINAL_STATUSES
 
 
 class PomodoroStaleActionError(ValueError):
@@ -852,52 +851,6 @@ class _LiteSession:
         self.pause_intervals = pause_intervals or []
 
 
-def _statistics_session_snapshot(session, pause_intervals, snapshot_now: datetime) -> _LiteSession:
-    """Build one immutable session view for a statistics request.
-
-    Finished sessions keep their persisted duration. Active sessions are cut at the
-    same server timestamp for the whole request, so cards on the statistics page
-    update consistently while a focus session is running or paused.
-    """
-    status = str(getattr(session, "status", "completed") or "completed")
-    end_time = getattr(session, "end_time", None)
-    actual_duration = getattr(session, "actual_duration", None)
-
-    if status in POMODORO_STATS_ACTIVE_STATUSES:
-        live_end = snapshot_now
-        expected_end = getattr(session, "expected_end_time", None)
-        if expected_end is not None and expected_end < live_end:
-            live_end = expected_end
-        if live_end < session.start_time:
-            live_end = session.start_time
-
-        duration_proxy = SimpleNamespace(
-            id=getattr(session, "id", None),
-            start_time=session.start_time,
-            pause_intervals=pause_intervals or [],
-            total_paused_sec=getattr(session, "total_paused_sec", 0) or 0,
-        )
-        actual_duration = _server_actual_duration(duration_proxy, live_end)
-        preset = str(getattr(session, "preset", "") or "")
-        if preset == "free":
-            actual_duration = min(actual_duration, FREE_TIMER_MAX_DURATION_SEC)
-        else:
-            work_cap_sec = max(0, int(getattr(session, "work_duration", 0) or 0) * 60)
-            if work_cap_sec > 0:
-                actual_duration = min(actual_duration, work_cap_sec)
-        end_time = live_end
-
-    return _LiteSession(
-        start_time=session.start_time,
-        end_time=end_time,
-        actual_duration=actual_duration,
-        status=status,
-        subject_id=getattr(session, "subject_id", None),
-        subject_ref=getattr(session, "subject_ref", None),
-        pause_intervals=list(pause_intervals or []),
-    )
-
-
 def _chunks(seq, size: int):
     for i in range(0, len(seq), size):
         yield seq[i : i + size]
@@ -910,13 +863,12 @@ async def _load_overlapping_sessions(
     period_end: datetime,
     *,
     with_subject: bool = False,
-    snapshot_now: datetime | None = None,
 ) -> list[_LiteSession]:
-    """Load focus sessions overlapping the half-open range [period_start, period_end).
+    """Load terminal focus sessions overlapping [period_start, period_end).
 
-    Interrupted sessions remain valid focus records. Running/paused sessions are
-    materialised at ``snapshot_now`` so statistics are live rather than frozen until
-    completion.
+    Running/paused sessions are intentionally excluded. They remain available from
+    the active-session endpoint and enter statistics only after a terminal action
+    persists their final duration.
 
     Scenario-aware payload: ``with_subject=False`` (stats/trends) fetches only the
     attribution columns via one query plus one batched pause query (chunked IN, never
@@ -924,15 +876,11 @@ async def _load_overlapping_sessions(
     The window is always bounded (single user, overlapping a requested range) — never
     the user's full history.
     """
-    snapshot_now = snapshot_now or utcnow()
     overlap = (
         PomodoroSession.user_id == user_id,
         PomodoroSession.status.in_(POMODORO_STATS_STATUSES),
         PomodoroSession.start_time < period_end,
-        or_(
-            PomodoroSession.end_time > period_start,
-            PomodoroSession.status.in_(POMODORO_STATS_ACTIVE_STATUSES),
-        ),
+        PomodoroSession.end_time > period_start,
     )
     if with_subject:
         result = await db.execute(
@@ -950,17 +898,25 @@ async def _load_overlapping_sessions(
                 SimpleNamespace(started_at=i.started_at, ended_at=i.ended_at)
                 for i in s.pause_intervals
             ]
-            snapshot = _statistics_session_snapshot(s, pause_intervals, snapshot_now)
-            snapshot.subject_ref = (
-                SimpleNamespace(
-                    code=ref.code or "",
-                    name=ref.name or "",
-                    is_active=ref.is_active,
+            out.append(
+                _LiteSession(
+                    start_time=s.start_time,
+                    end_time=s.end_time,
+                    actual_duration=s.actual_duration,
+                    status=s.status,
+                    subject_id=s.subject_id,
+                    subject_ref=(
+                        SimpleNamespace(
+                            code=ref.code or "",
+                            name=ref.name or "",
+                            is_active=ref.is_active,
+                        )
+                        if ref is not None
+                        else None
+                    ),
+                    pause_intervals=pause_intervals,
                 )
-                if ref is not None
-                else None
             )
-            out.append(snapshot)
         return out
 
     result = await db.execute(
@@ -970,10 +926,6 @@ async def _load_overlapping_sessions(
             PomodoroSession.end_time,
             PomodoroSession.actual_duration,
             PomodoroSession.status,
-            PomodoroSession.preset,
-            PomodoroSession.work_duration,
-            PomodoroSession.expected_end_time,
-            PomodoroSession.total_paused_sec,
         ).where(*overlap)
     )
     rows = result.all()
@@ -993,22 +945,12 @@ async def _load_overlapping_sessions(
                 SimpleNamespace(started_at=started_at, ended_at=ended_at)
             )
     return [
-        _statistics_session_snapshot(
-            SimpleNamespace(
-                id=r.id,
-                start_time=r.start_time,
-                end_time=r.end_time,
-                actual_duration=r.actual_duration,
-                status=r.status,
-                preset=r.preset,
-                work_duration=r.work_duration,
-                expected_end_time=r.expected_end_time,
-                total_paused_sec=r.total_paused_sec,
-                subject_id=None,
-                subject_ref=None,
-            ),
-            pauses.get(r.id, []),
-            snapshot_now,
+        _LiteSession(
+            start_time=r.start_time,
+            end_time=r.end_time,
+            actual_duration=r.actual_duration,
+            status=r.status,
+            pause_intervals=pauses.get(r.id, []),
         )
         for r in rows
     ]
@@ -1171,7 +1113,6 @@ async def build_pomodoro_statistics_snapshot(
         return {}
     period_start = min(r[0] for r in ranges)
     period_end = max(r[1] for r in ranges)
-    snapshot_now = utcnow()
     pomodoro_sessions = await _load_overlapping_sessions(
         db,
         user_id,
@@ -1180,7 +1121,6 @@ async def build_pomodoro_statistics_snapshot(
         with_subject=(
             need_daily_summary or (need_range_summary and range_include_subjects)
         ),
-        snapshot_now=snapshot_now,
     )
     practice_sessions = await _load_overlapping_practice_sessions(
         db,
@@ -1486,11 +1426,9 @@ async def get_range_summary(
 async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
     """Return a compact focus roll-up from the first recorded study day.
 
-    Terminal interrupted focus and the current active-session duration use the same
-    statistics path as day/range views, so the cumulative card can refresh live.
-    The actual duration is intentionally computed through the same attribution path
-    as day/range statistics so Pomodoro pause intervals and Practice/Pomodoro overlap
-    de-duplication stay identical across every statistics surface.
+    Terminal completed/interrupted focus uses the same attribution path as day/range
+    views, so the cumulative card stays consistent with the other statistics
+    surfaces. Active sessions are deliberately excluded until they are finished.
     """
     settings = await get_pomodoro_settings(db, user_id)
     dsm = settings["day_start_minute"]
