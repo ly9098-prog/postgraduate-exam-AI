@@ -79,16 +79,15 @@
       </view>
       <text class="fc-preview-hint">点击查看大图</text>
     </view>
-    <view class="fc-graph-viewport" bindtap="previewGraph">
-      <!-- Progressive load: thumbnail first (small/fast), swap to the full
-           image only after the hidden preloader confirms it finished
-           downloading, so the card never sits blank while a multi-megabyte
-           PNG is in flight. -->
+    <view class="fc-graph-viewport" style="padding-bottom:{{graphViewportRatio}}%;" bindtap="previewGraph">
+      <!-- Progressive load inside a fixed-ratio viewport: the thumbnail and the
+           master image letterbox into the same box (aspectFit), so the swap
+           never changes the section height and `widthFix` never lets an
+           unusually tall master image stretch the card. -->
       <image
         class="fc-graph-image"
         src="{{displayGraphUrl || graphImageUrl}}"
-        mode="{{displayGraphUrl === graphImageUrl ? 'widthFix' : 'aspectFit'}}"
-        style="{{displayGraphUrl === graphImageUrl ? '' : 'height:340rpx;'}}"
+        mode="aspectFit"
         lazy-load
         bindload="onGraphLoad"
         binderror="onGraphError"

@@ -164,7 +164,9 @@ assert(/labelNodes:\s*parseRichNodes\(formulaContent\.normalizeMixedContent\(blo
 assert(/nodes="\{\{block\.labelNodes\}\}"/.test(cardWxml), 'upper-left formula block label must render labelNodes')
 assert(!/<text class="fc-block-label"[^>]*>\{\{block\.label\}\}<\/text>/.test(cardWxml), 'raw block.label text rendering must be removed')
 assert(/class="fc-graph-viewport"/.test(cardWxml), 'graph image must be wrapped in a crop viewport')
-assert(/\.fc-graph-image\s*\{[\s\S]*transform:\s*scale\(1\.12\)/.test(cardWxss), 'graph image must be enlarged inside the reader')
+assert(/\.fc-graph-image\s*\{[\s\S]*?height:\s*100%/.test(cardWxss), 'graph image must fill the fixed-ratio viewport')
+assert(!/transform:\s*scale\(/.test(cardWxss), 'graph image must not be scaled up (causes zoomed-in rendering)')
+assert(/padding-bottom:\{\{graphViewportRatio\}\}%/.test(cardWxml), 'graph viewport height must be pinned by the image aspect ratio')
 
 console.log('✓ Existing regression tests passed')
 
@@ -798,6 +800,12 @@ function renderConditionNodesThroughFormulaCard(expression, id) {
     setData: function (patch) {
       this.data = Object.assign({}, this.data, patch)
     },
+  }
+  // The real runtime invokes observers on the component instance, so methods
+  // like _syncGraphViewportRatio are available on `this`.
+  var methods = capturedFormulaCardComponent.methods || {}
+  for (var name in methods) {
+    if (Object.prototype.hasOwnProperty.call(methods, name)) ctx[name] = methods[name]
   }
   observer.call(ctx, {
     id: id,

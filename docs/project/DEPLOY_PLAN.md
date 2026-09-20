@@ -720,7 +720,8 @@ OCR_EXECUTION_BACKEND: "disabled"
   # 确认后再 --apply
   ```
 - 小程序列表页：`graphPreviewUrl` 改为 `resolveGraphPreviewUrl()`（缩略图优先，无缩略图回退主图），逻辑收敛在 `subpackages/formulas/utils/formula-graph.js`。
-- 小程序阅读页：`formula-card` 组件渐进加载——先显示缩略图（固定高占位），页内隐藏 preloader `<image>` 预载主图，`bindload` 后切换为 `widthFix` 大图；主图失败时保留缩略图。状态机 `computeDisplayGraphUrl()` 与列表页共用。
+- 小程序阅读页：`formula-card` 组件渐进加载——先显示缩略图，页内隐藏 preloader `<image>` 预载主图，`bindload` 后切换为主图；主图失败时保留缩略图。状态机 `computeDisplayGraphUrl()` 与列表页共用。
+- 小程序阅读页图像显示比例（同日补充修复）：`.fc-graph-image` 曾带历史遗留的 `transform: scale(1.12)`（整体放大 12% 并被 `overflow:hidden` 裁边），且主图用 `widthFix` 按自然比例撑高，加载完成后区块突然变高。现改为**固定宽高比视口**：`fc-graph-viewport` 用内联 `padding-bottom:{{graphViewportRatio}}%` 钉住高度（比例取 `graph_asset.width/height`，钳制 25%–125%，缺元数据回退 75% 即 4:3），图像统一 `aspectFit` 填充（`computeGraphViewportRatio()` 位于 `formula-graph.js`）。缩略图→主图切换零布局跳动，异常长图在视口内 letterbox 显示而非拉伸卡片。
 - nginx `/static/formulas/` 已有 `expires 30d; Cache-Control public, immutable`（URL 含内容寻址段），压缩后字节数下降直接减少真机首屏流量；无需改动。
 
 **回填脚本提交注意：** `.gitignore` 第 98 行忽略 `backend/scripts/`，该目录既有脚本均为 `git add -f` 跟踪；新脚本需同样 `git add -f backend/scripts/backfill_formula_graph_image_size.py`。

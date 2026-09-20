@@ -107,10 +107,30 @@ function computeDisplayGraphUrl(fullUrl, thumbnailUrl, graphLoaded) {
   return thumb
 }
 
+/**
+ * Padding-top percentage that pins the graph viewport to the image's true
+ * aspect ratio, so switching thumbnail → master never changes the section
+ * height and `widthFix` never lets an unusually tall master stretch the card.
+ *
+ * Clamped to 25%–125% (aspect 4:1 … 1:1.25): taller images letterbox inside
+ * the fixed-ratio viewport instead of inflating it, matching the 600x450
+ * thumbnail shape. Falls back to 75% (4:3, the thumbnail ratio) when the
+ * backend metadata is missing.
+ */
+function computeGraphViewportRatio(width, height) {
+  const w = Number(width)
+  const h = Number(height)
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return 75
+  const ratio = (h / w) * 100
+  if (!Number.isFinite(ratio) || ratio <= 0) return 75
+  return Math.min(125, Math.max(25, Math.round(ratio * 10) / 10))
+}
+
 module.exports = {
   normalizeGraphAssetUrl,
   resolveGraphImageUrl,
   resolveGraphThumbnailUrl,
   resolveGraphPreviewUrl,
   computeDisplayGraphUrl,
+  computeGraphViewportRatio,
 }

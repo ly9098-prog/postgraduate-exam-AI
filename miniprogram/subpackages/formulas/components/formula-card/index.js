@@ -2,7 +2,7 @@ const formulaContent = require('../../utils/formula-content')
 const katex = require('../../utils/katex/katex.min')
 const Parser = require('../../utils/mp-html-parser')
 const LatexPlugin = require('../../utils/katex/index')
-const { computeDisplayGraphUrl } = require('../../utils/formula-graph')
+const { computeDisplayGraphUrl, computeGraphViewportRatio } = require('../../utils/formula-graph')
 
 /**
  * Check whether a rich-text node tree contains any KaTeX error indicator.
@@ -423,6 +423,8 @@ Component({
             patch.content = prepareContent(nextCard)
           }
 
+          this._syncGraphViewportRatio()
+
           if (idChanged) {
             patch.showSymbolNotes = false
             patch.showSecondary = false
@@ -451,6 +453,7 @@ Component({
     },
     graphImageUrl: { type: String, value: '' },
     graphThumbnailUrl: { type: String, value: '' },
+    graphViewportRatio: { type: Number, value: 75 },
   },
 
   data: {
@@ -487,6 +490,7 @@ Component({
 
   lifetimes: {
     attached() {
+      this._syncGraphViewportRatio()
       if (!this.data.cardRenderKey && this.data.card) {
         this.setData({
           cardRenderKey: formulaContent.createRenderKey(this.data.card),
@@ -502,6 +506,20 @@ Component({
       const key = e.currentTarget.dataset.key
       if (!key) return
       this.setData({ [key]: !this.data[key] })
+    },
+
+    // Keep the viewport ratio in sync with the card currently mounted. Called
+    // from the card observer so switching cards (reader swipes between cards
+    // with one persistent component instance) also swaps the ratio.
+    _syncGraphViewportRatio() {
+      const card = this.data.card || {}
+      const ratio = computeGraphViewportRatio(
+        card.graph_asset ? card.graph_asset.width : card.width,
+        card.graph_asset ? card.graph_asset.height : card.height
+      )
+      if (ratio !== this.data.graphViewportRatio) {
+        this.setData({ graphViewportRatio: ratio })
+      }
     },
 
     previewGraph() {

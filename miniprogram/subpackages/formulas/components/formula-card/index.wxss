@@ -77,7 +77,11 @@
   background: #F6F7F3;
 }
 .fc-preview-hint { color: #7F8A82; font-size: 18rpx; }
+/* Fixed-ratio viewport: height comes from the inline padding-bottom (image
+   aspect ratio, clamped 25%–125%), so thumbnail→master swaps cannot shift
+   layout and widthFix cannot stretch the card. */
 .fc-graph-viewport {
+  position: relative;
   width: 100%;
   overflow: hidden;
   border: 1rpx solid #E0E5DE;
@@ -86,11 +90,13 @@
   box-sizing: border-box;
 }
 .fc-graph-image {
+  position: absolute;
+  left: 0;
+  top: 0;
   display: block;
   width: 100%;
+  height: 100%;
   background: #FFFFFF;
-  transform: scale(1.12);
-  transform-origin: center center;
 }
 /* Hidden preloader for the full-size graph: kept off-screen rather than
    display:none so the native image fetch actually starts. */

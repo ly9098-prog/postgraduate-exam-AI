@@ -5,6 +5,7 @@ const {
   resolveGraphThumbnailUrl,
   resolveGraphPreviewUrl,
   computeDisplayGraphUrl,
+  computeGraphViewportRatio,
 } = require('../subpackages/formulas/utils/formula-graph')
 
 // Test 1: Standard backend response (graph_asset.image_url)
@@ -80,5 +81,20 @@ assert.strictEqual(computeDisplayGraphUrl(FULL, '', false), FULL)
 assert.strictEqual(computeDisplayGraphUrl(FULL, FULL, false), FULL)
 // Null inputs tolerated
 assert.strictEqual(computeDisplayGraphUrl(null, null, false), '')
+
+// Test 11: viewport ratio from graph_asset width/height metadata
+// 600x450 thumbnail ratio → 75% (h/w)
+assert.strictEqual(computeGraphViewportRatio(600, 450), 75)
+// Wider than 4:1 → clamped to the 25% lower bound
+assert.strictEqual(computeGraphViewportRatio(1600, 300), 25)
+// Taller than 1:1.25 → clamped to the 125% upper bound
+assert.strictEqual(computeGraphViewportRatio(800, 1200), 125)
+// Missing/invalid metadata → default 75% (4:3)
+assert.strictEqual(computeGraphViewportRatio(undefined, undefined), 75)
+assert.strictEqual(computeGraphViewportRatio(0, 450), 75)
+assert.strictEqual(computeGraphViewportRatio(null, null), 75)
+assert.strictEqual(computeGraphViewportRatio('abc', 'def'), 75)
+// 16:10 → 62.5%, rounded to one decimal
+assert.strictEqual(computeGraphViewportRatio(1600, 1000), 62.5)
 
 console.log('All formula-graph tests passed.')
