@@ -73,6 +73,7 @@
           <formula-card
             card="{{currentCard}}"
             graphImageUrl="{{currentCard.graphImageUrl}}"
+            graphThumbnailUrl="{{currentCard.graphThumbnailUrl}}"
             bind:formulastart="onFormulaGestureStart"
             bind:formulaend="onFormulaGestureEnd"
           />

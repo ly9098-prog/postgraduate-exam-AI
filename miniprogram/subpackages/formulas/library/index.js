@@ -3,7 +3,7 @@ const auth = require('../../../utils/auth')
 const formulaContent = require('../utils/formula-content')
 const Parser = require('../utils/mp-html-parser')
 const LatexPlugin = require('../utils/katex/index')
-const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
+const { resolveGraphImageUrl, resolveGraphThumbnailUrl, resolveGraphPreviewUrl } = require('../utils/formula-graph')
 const { parseServerUtc, getChinaWallParts } = require('../../../utils/china-time')
 
 function formulaNowMs() {
@@ -765,12 +765,15 @@ Page({
       const graphImageUrl = resolveGraphImageUrl(item)
       const graphThumbnailUrl = resolveGraphThumbnailUrl(item)
       const isFunctionGraph = isFunctionGraphItem(item)
+      // List cards render at ~360rpx height; loading the full-size master
+      // image there is the dominant source of slow graph rendering.
+      const graphPreviewUrl = resolveGraphPreviewUrl(item)
       return {
         ...item,
         titleNodes: renderFormulaTitleNodes(item.title),
         graphImageUrl,
         graphThumbnailUrl,
-        graphPreviewUrl: graphImageUrl || graphThumbnailUrl,
+        graphPreviewUrl,
         isFunctionGraph,
         studyCardTypeLabel: getStudyCardTypeLabel(item),
         // 速记业务时间统一按 Asia/Shanghai 展示；服务端无时区历史值

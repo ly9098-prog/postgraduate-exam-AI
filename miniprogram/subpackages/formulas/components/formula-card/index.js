@@ -2,6 +2,7 @@ const formulaContent = require('../../utils/formula-content')
 const katex = require('../../utils/katex/katex.min')
 const Parser = require('../../utils/mp-html-parser')
 const LatexPlugin = require('../../utils/katex/index')
+const { computeDisplayGraphUrl } = require('../../utils/formula-graph')
 
 /**
  * Check whether a rich-text node tree contains any KaTeX error indicator.
@@ -429,6 +430,7 @@ Component({
             patch.showExamples = false
             patch.graphLoadError = false
             patch.graphLoaded = false
+            patch.displayGraphUrl = ''
           }
 
           if (Object.keys(patch).length) this.setData(patch)
@@ -448,6 +450,7 @@ Component({
       },
     },
     graphImageUrl: { type: String, value: '' },
+    graphThumbnailUrl: { type: String, value: '' },
   },
 
   data: {
@@ -468,6 +471,18 @@ Component({
     showExamples: false,
     graphLoadError: false,
     graphLoaded: false,
+    // Progressive graph loading: show the small thumbnail immediately and
+    // swap in the full-size image only after it finishes downloading.
+    displayGraphUrl: '',
+  },
+
+  // Recompute the displayed graph URL whenever its inputs change. Component
+  // observers run after the whole setData batch (card + graph URLs), unlike
+  // property observers, so ordering between `card` and graphImageUrl is safe.
+  observers: {
+    'graphImageUrl, graphThumbnailUrl, graphLoaded': function () {
+      this._refreshDisplayGraph()
+    },
   },
 
   lifetimes: {
@@ -490,15 +505,43 @@ Component({
     },
 
     previewGraph() {
-      const url = this.data.graphImageUrl
+      const url = this.data.graphImageUrl || this.data.displayGraphUrl
       if (url) wx.previewImage({ urls: [url] })
     },
 
+    // Progressive load state machine (shared with the library page):
+    // thumbnail shows immediately; a hidden off-screen <image> preloads the
+    // master image and swaps in when its load event fires.
+    _refreshDisplayGraph() {
+      const next = computeDisplayGraphUrl(
+        this.data.graphImageUrl,
+        this.data.graphThumbnailUrl,
+        this.data.graphLoaded
+      )
+      if (next !== this.data.displayGraphUrl) {
+        this.setData({ displayGraphUrl: next })
+      }
+    },
+
     onGraphLoad() {
+      // Load event of whichever src is currently displayed (thumbnail or
+      // master). The master is marked ready only by its own preloader.
+      this.setData({ graphLoadError: false })
+    },
+
+    onFullGraphLoad() {
       this.setData({ graphLoadError: false, graphLoaded: true })
+      this._refreshDisplayGraph()
+    },
+
+    onFullGraphError() {
+      // Master image failed to download — keep the thumbnail visible.
+      this.setData({ graphLoaded: false })
     },
 
     onGraphError() {
+      // The actively displayed image failed (usually the thumbnail itself).
+      // If we have not fallen back anywhere else, surface the error state.
       this.setData({ graphLoadError: true, graphLoaded: false })
     },
 

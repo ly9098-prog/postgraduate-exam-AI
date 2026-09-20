@@ -92,6 +92,15 @@
   transform: scale(1.12);
   transform-origin: center center;
 }
+/* Hidden preloader for the full-size graph: kept off-screen rather than
+   display:none so the native image fetch actually starts. */
+.fc-graph-preload {
+  position: absolute;
+  left: -9999rpx;
+  top: 0;
+  width: 10rpx;
+  height: 10rpx;
+}
 .fc-graph-error { border-color: #E5E6E0; background: #F6F6F2; }
 .fc-graph-fallback { padding: 30rpx 0; text-align: center; }
 .fc-graph-fallback-title { display: block; color: #8A938B; font-size: 22rpx; font-weight: 800; }

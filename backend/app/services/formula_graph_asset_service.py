@@ -29,6 +29,27 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_WIDTH = 8000
 MAX_HEIGHT = 8000
 THUMBNAIL_SIZE = (600, 450)
+# Function graphs are viewed on phone screens; serving multi-megabyte full-size
+# PNGs is the dominant cause of slow rendering in the miniprogram. Cap the
+# stored master image and re-encode it losslessly-optimized.
+MAX_STORED_DIMENSION = 1600
+PNG_OPTIMIZE = True
+
+
+def _resize_within(img: Image.Image, max_dimension: int) -> Image.Image:
+    """Downscale so that max(width, height) <= max_dimension (aspect preserved)."""
+    if max(img.size) <= max_dimension:
+        return img
+    ratio = max_dimension / max(img.size)
+    new_size = (max(1, int(img.width * ratio)), max(1, int(img.height * ratio)))
+    return img.resize(new_size, Image.LANCZOS)
+
+
+def _encode_stored_image(img: Image.Image) -> bytes:
+    """Encode an image for storage as the main graph asset PNG."""
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=PNG_OPTIMIZE)
+    return buf.getvalue()
 
 
 def resolve_graph_asset_public_url(url: str | None) -> str | None:
@@ -208,16 +229,15 @@ def _validate_image(data: bytes, filename: str) -> tuple[Image.Image, str]:
 
 
 def _process_image(img: Image.Image) -> bytes:
-    """Standardize image: handle EXIF orientation, convert to RGB/RGBA, save as PNG."""
+    """Standardize image: handle EXIF orientation, downscale, save as PNG."""
     img = ImageOps.exif_transpose(img) or img
 
     # Keep RGBA for transparency, convert others to RGB
     if img.mode not in ("RGB", "RGBA"):
         img = img.convert("RGBA")
 
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    img = _resize_within(img, MAX_STORED_DIMENSION)
+    return _encode_stored_image(img)
 
 
 def _create_thumbnail(img: Image.Image) -> bytes:
@@ -241,9 +261,7 @@ def _create_thumbnail(img: Image.Image) -> bytes:
     else:
         thumb.paste(img, (x, y))
 
-    buf = BytesIO()
-    thumb.save(buf, format="PNG")
-    return buf.getvalue()
+    return _encode_stored_image(thumb)
 
 
 def _safe_delete_file(file_url: str) -> None:
@@ -358,8 +376,12 @@ async def upload_graph_asset(
     thumb_filename = f"{asset_dir}/{file_uuid}-thumb.png"
 
     # Upload files
-    image_url = resolve_graph_asset_public_url(await storage.upload(main_filename, image_bytes))
-    thumbnail_url = resolve_graph_asset_public_url(await storage.upload(thumb_filename, thumbnail_bytes))
+    image_url = resolve_graph_asset_public_url(
+        await storage.upload(main_filename, image_bytes)
+    )
+    thumbnail_url = resolve_graph_asset_public_url(
+        await storage.upload(thumb_filename, thumbnail_bytes)
+    )
 
     old_image_url = None
     old_thumbnail_url = None

@@ -71,7 +71,7 @@
     </view>
   </view>
 
-  <view class="fc-graph-section" wx:if="{{(card.card_type === 'function_graph' || card.is_function_graph || card.isFunctionGraph) && graphImageUrl && !graphLoadError}}">
+  <view class="fc-graph-section" wx:if="{{(card.card_type === 'function_graph' || card.is_function_graph || card.isFunctionGraph) && (displayGraphUrl || graphImageUrl) && !graphLoadError}}">
     <view class="fc-section-heading">
       <view>
         <text class="fc-section-kicker">FUNCTION GRAPH</text>
@@ -80,11 +80,30 @@
       <text class="fc-preview-hint">点击查看大图</text>
     </view>
     <view class="fc-graph-viewport" bindtap="previewGraph">
-      <image class="fc-graph-image" src="{{graphImageUrl}}" mode="widthFix" lazy-load bindload="onGraphLoad" binderror="onGraphError" />
+      <!-- Progressive load: thumbnail first (small/fast), swap to the full
+           image only after the hidden preloader confirms it finished
+           downloading, so the card never sits blank while a multi-megabyte
+           PNG is in flight. -->
+      <image
+        class="fc-graph-image"
+        src="{{displayGraphUrl || graphImageUrl}}"
+        mode="{{displayGraphUrl === graphImageUrl ? 'widthFix' : 'aspectFit'}}"
+        style="{{displayGraphUrl === graphImageUrl ? '' : 'height:340rpx;'}}"
+        lazy-load
+        bindload="onGraphLoad"
+        binderror="onGraphError"
+      />
+      <image
+        class="fc-graph-preload"
+        wx:if="{{graphImageUrl && displayGraphUrl !== graphImageUrl}}"
+        src="{{graphImageUrl}}"
+        bindload="onFullGraphLoad"
+        binderror="onFullGraphError"
+      />
     </view>
   </view>
 
-  <view class="fc-graph-section fc-graph-error" wx:elif="{{(card.card_type === 'function_graph' || card.is_function_graph || card.isFunctionGraph) && (graphLoadError || !graphImageUrl)}}">
+  <view class="fc-graph-section fc-graph-error" wx:elif="{{(card.card_type === 'function_graph' || card.is_function_graph || card.isFunctionGraph) && (graphLoadError || (!displayGraphUrl && !graphImageUrl))}}">
     <view class="fc-section-heading">
       <view>
         <text class="fc-section-kicker">FUNCTION GRAPH</text>

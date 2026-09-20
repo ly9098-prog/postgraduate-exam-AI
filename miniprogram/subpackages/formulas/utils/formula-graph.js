@@ -81,8 +81,36 @@ function resolveGraphThumbnailUrl(card) {
   )
 }
 
+/**
+ * URL to show in list/grid previews (~360rpx tall cards). The 600x450
+ * thumbnail downloads several times faster than the full-size master image,
+ * so it wins unless the card only has the master image.
+ */
+function resolveGraphPreviewUrl(card) {
+  const thumbnail = resolveGraphThumbnailUrl(card)
+  return thumbnail || resolveGraphImageUrl(card)
+}
+
+/**
+ * Progressive-load state machine for the reader's graph section.
+ *
+ * Returns which URL the <image> should display right now: the thumbnail
+ * immediately, then the master image once the hidden preloader confirmed it
+ * finished downloading (graphLoaded). Cards without a distinct thumbnail just
+ * show the master image directly.
+ */
+function computeDisplayGraphUrl(fullUrl, thumbnailUrl, graphLoaded) {
+  const full = String(fullUrl || '')
+  const thumb = String(thumbnailUrl || '')
+  if (!full) return thumb
+  if (!thumb || thumb === full || graphLoaded) return full
+  return thumb
+}
+
 module.exports = {
   normalizeGraphAssetUrl,
   resolveGraphImageUrl,
   resolveGraphThumbnailUrl,
+  resolveGraphPreviewUrl,
+  computeDisplayGraphUrl,
 }
