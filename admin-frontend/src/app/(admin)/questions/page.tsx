@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import {
   Check,
   ChevronDown,
@@ -91,6 +92,62 @@ const pageSizeOptions = [
   { label: "50 条/页", value: "50" },
   { label: "100 条/页", value: "100" },
 ];
+
+type QuestionListFilters = {
+  subject_id: string;
+  is_active: string;
+  question_type: string;
+  keyword: string;
+  year: string;
+  difficulty: string;
+  import_batch_id: string;
+  knowledge_point_id: string;
+};
+
+const DEFAULT_QUESTION_FILTERS: QuestionListFilters = {
+  subject_id: "",
+  is_active: "true",
+  question_type: "",
+  keyword: "",
+  year: "",
+  difficulty: "",
+  import_batch_id: "",
+  knowledge_point_id: "",
+};
+
+function positiveInt(value: string | null, fallback: number | null = null): number | null {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeQuestionPageSize(value: string | null): number {
+  const parsed = positiveInt(value, 20) ?? 20;
+  return [20, 50, 100].includes(parsed) ? parsed : 20;
+}
+
+function buildQuestionListHref(
+  filters: QuestionListFilters,
+  page: number,
+  pageSize: number,
+  selectedQuestionId: number | null,
+): string {
+  const params = new URLSearchParams();
+  if (filters.subject_id) params.set("subject_id", filters.subject_id);
+  if (filters.is_active !== DEFAULT_QUESTION_FILTERS.is_active) {
+    params.set("is_active", filters.is_active);
+  }
+  if (filters.question_type) params.set("question_type", filters.question_type);
+  if (filters.keyword) params.set("keyword", filters.keyword);
+  if (filters.year) params.set("year", filters.year);
+  if (filters.difficulty) params.set("difficulty", filters.difficulty);
+  if (filters.import_batch_id) params.set("import_batch_id", filters.import_batch_id);
+  if (filters.knowledge_point_id) params.set("knowledge_point_id", filters.knowledge_point_id);
+  if (page > 1) params.set("page", String(page));
+  if (pageSize !== 20) params.set("page_size", String(pageSize));
+  if (selectedQuestionId) params.set("selected_id", String(selectedQuestionId));
+  const query = params.toString();
+  return query ? `/questions?${query}` : "/questions";
+}
 
 const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
@@ -884,39 +941,24 @@ function CustomCheckbox({
 
 export default function QuestionsPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
-  const [filters, setFilters] = useState({
-    subject_id: "",
-    // /questions is the active question bank. Soft-deleted rows use
-    // is_active=false and must not reappear in the default list.
-    is_active: "true",
-    question_type: "",
-    keyword: "",
-    year: "",
-    difficulty: "",
-    import_batch_id: "",
-    knowledge_point_id: "",
-  });
+  const [filters, setFilters] = useState<QuestionListFilters>(() => ({
+    ...DEFAULT_QUESTION_FILTERS,
+    subject_id: searchParams.get("subject_id") ?? "",
+    is_active: searchParams.has("is_active")
+      ? (searchParams.get("is_active") ?? "")
+      : DEFAULT_QUESTION_FILTERS.is_active,
+    question_type: searchParams.get("question_type") ?? "",
+    keyword: searchParams.get("keyword") ?? "",
+    year: searchParams.get("year") ?? "",
+    difficulty: searchParams.get("difficulty") ?? "",
+    import_batch_id: searchParams.get("import_batch_id") ?? "",
+    knowledge_point_id: searchParams.get("knowledge_point_id") ?? "",
+  }));
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
   const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [importBatchInput, setImportBatchInput] = useState(filters.import_batch_id);
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const patch = {
-      subject_id: params.get("subject_id") ?? "",
-      is_active: params.has("is_active") ? (params.get("is_active") ?? "") : "true",
-      question_type: params.get("question_type") ?? "",
-      keyword: params.get("keyword") ?? "",
-      year: params.get("year") ?? "",
-      difficulty: params.get("difficulty") ?? "",
-      import_batch_id: params.get("import_batch_id") ?? "",
-      knowledge_point_id: params.get("knowledge_point_id") ?? "",
-    };
-    if (!Object.values(patch).some(Boolean) && patch.is_active === "true") return;
-    setFilters(patch);
-    setKeywordInput(patch.keyword);
-    setImportBatchInput(patch.import_batch_id);
-  }, []);
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
   >([]);
@@ -941,10 +983,10 @@ export default function QuestionsPage() {
       .catch(() => {});
   }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(
-    null,
+  const [page, setPage] = useState(() => positiveInt(searchParams.get("page"), 1) ?? 1);
+  const [pageSize, setPageSize] = useState(() => normalizeQuestionPageSize(searchParams.get("page_size")));
+  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(() =>
+    positiveInt(searchParams.get("selected_id")),
   );
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [baseVersion, setBaseVersion] = useState<QuestionVersionSelection>("current");
@@ -974,6 +1016,16 @@ export default function QuestionsPage() {
 
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
+
+  // Keep the list context in the address bar so leaving for a detail/editor page
+  // and returning restores the exact filter/page/selection instead of resetting.
+  useEffect(() => {
+    const nextHref = buildQuestionListHref(filters, page, pageSize, selectedQuestionId);
+    const currentHref = `${window.location.pathname}${window.location.search}`;
+    if (currentHref !== nextHref) {
+      window.history.replaceState(window.history.state, "", nextHref);
+    }
+  }, [filters, page, pageSize, selectedQuestionId]);
 
   const queryParams = useMemo(
     () => ({
@@ -1475,16 +1527,7 @@ export default function QuestionsPage() {
     setKeywordInput("");
     setSearchDebouncing(false);
     setImportBatchInput("");
-    setFilters({
-      subject_id: "",
-      is_active: "true",
-      question_type: "",
-      keyword: "",
-      year: "",
-      difficulty: "",
-      import_batch_id: "",
-      knowledge_point_id: "",
-    });
+    setFilters({ ...DEFAULT_QUESTION_FILTERS });
     setPage(1);
     setSelectedIds(new Set());
     setIsDetailDrawerOpen(false);
@@ -1500,15 +1543,8 @@ export default function QuestionsPage() {
   ) => {
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
     if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
-    const next = {
-      subject_id: "",
-      is_active: "true",
-      question_type: "",
-      keyword: "",
-      year: "",
-      difficulty: "",
-      import_batch_id: "",
-      knowledge_point_id: "",
+    const next: QuestionListFilters = {
+      ...DEFAULT_QUESTION_FILTERS,
       ...patch,
     };
     setFilters(next);

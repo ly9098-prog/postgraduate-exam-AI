@@ -42,6 +42,7 @@ import { apiRequest, toQuery } from "@/lib/api/client";
 import type { PaginatedResponse, FormulaGraphAsset } from "@/lib/api/types";
 import { normalizeLatexExpression } from "@/lib/math-text";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 /* ── Structured content renderers for JSON-encoded conditions/error_tips ── */
 
@@ -226,20 +227,60 @@ const GRAPH_STATUS_LABEL: Record<string, string> = {
 
 /* ── Main page ── */
 
+type FormulaListFilters = {
+  status: string;
+  category_id: string;
+  q: string;
+  tags: string;
+  library_type: string;
+  study_card_type: string;
+  graph_status: string;
+};
+
+const EMPTY_FORMULA_FILTERS: FormulaListFilters = {
+  status: "", category_id: "", q: "", tags: "", library_type: "", study_card_type: "", graph_status: "",
+};
+
+function positiveInt(value: string | null, fallback: number | null = null): number | null {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildFormulaListHref(filters: FormulaListFilters, page: number, selectedId: number | null): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  if (page > 1) params.set("page", String(page));
+  if (selectedId) params.set("selected_id", String(selectedId));
+  const query = params.toString();
+  return query ? `/formulas?${query}` : "/formulas";
+}
+
 export default function FormulasPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
 
-  const [filters, setFilters] = useState({ status: "", category_id: "", q: "", tags: "", library_type: "", study_card_type: "", graph_status: "" });
-  const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [filters, setFilters] = useState<FormulaListFilters>(() => ({
+    ...EMPTY_FORMULA_FILTERS,
+    status: searchParams.get("status") || "",
+    category_id: String(positiveInt(searchParams.get("category_id")) || ""),
+    q: searchParams.get("q") || "",
+    tags: searchParams.get("tags") || "",
+    library_type: searchParams.get("library_type") || "",
+    study_card_type: searchParams.get("study_card_type") || "",
+    graph_status: searchParams.get("graph_status") || "",
+  }));
+  const [page, setPage] = useState(() => positiveInt(searchParams.get("page"), 1) || 1);
+  const [selectedId, setSelectedId] = useState<number | null>(() => positiveInt(searchParams.get("selected_id")));
   const [message, setMessage] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     action: string; cardId: number; title: string;
   } | null>(null);
   const [reviewReason, setReviewReason] = useState("");
   const [categorySearch, setCategorySearch] = useState("");
-  const [searchDraft, setSearchDraft] = useState("");
+  const [searchDraft, setSearchDraft] = useState(() => searchParams.get("q") || "");
   const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const detailScrollRef = useRef<HTMLDivElement>(null);
@@ -526,7 +567,11 @@ export default function FormulasPage() {
     () => (categories.data?.items ?? []).reduce((sum, node) => sum + (node.subtree_formula_count ?? node.formula_count ?? 0), 0),
     [categories.data?.items],
   );
-  const hasActiveFilters = Boolean(filters.status || filters.category_id || filters.q || filters.library_type || filters.graph_status);
+  const hasActiveFilters = Boolean(filters.status || filters.category_id || filters.q || filters.library_type || filters.study_card_type || filters.graph_status);
+  const listReturnHref = useMemo(
+    () => buildFormulaListHref(filters, page, selectedId),
+    [filters, page, selectedId],
+  );
 
   const prefetchDetail = useCallback((id: number) => {
     void queryClient.prefetchQuery({
@@ -589,7 +634,7 @@ export default function FormulasPage() {
 
   const clearFilters = () => {
     setSearchDraft("");
-    setFilters({ status: "", category_id: "", q: "", tags: "", library_type: "", study_card_type: "", graph_status: "" });
+    setFilters({ ...EMPTY_FORMULA_FILTERS });
     setPage(1);
     setSelectedIds(new Set());
   };
@@ -961,7 +1006,7 @@ export default function FormulasPage() {
                     <h2 className="mt-2 text-base font-bold leading-6 text-[var(--ink)]"><MixedLatexRenderer text={selectedCard.title} /></h2>
                   </div>
                   {canUpdate ? (
-                    <Link href={`/formulas/${selectedCard.id}`}>
+                    <Link href={`/formulas/${selectedCard.id}?returnTo=${encodeURIComponent(listReturnHref)}`}>
                       <Button variant="secondary" size="sm">
                         <ExternalLink className="h-3.5 w-3.5" /> 编辑
                       </Button>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Trash2, ArrowLeft, Eye, EyeOff, Send, CheckCircle, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { apiRequest } from "@/lib/api/client";
 import type { FormulaGraphAsset } from "@/lib/api/types";
 import { decodeApiText, normalizeLatexExpression } from "@/lib/math-text";
 import { formatChinaDate } from "@/lib/time";
+import { safeInternalRedirect } from "@/lib/safe-redirect";
 import Link from "next/link";
 
 /* ── Structured content renderers for JSON-encoded fields ── */
@@ -168,9 +169,14 @@ const STATUS_LABEL: Record<string, string> = {
 export default function EditFormulaPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const permissions = useAuthStore((state) => state.permissions);
   const cardId = Number(params.id);
+  const requestedReturnTo = safeInternalRedirect(searchParams.get("returnTo"), "/formulas");
+  const returnTo = requestedReturnTo === "/formulas" || requestedReturnTo.startsWith("/formulas?")
+    ? requestedReturnTo
+    : "/formulas";
 
   const canUpdate = hasPermission(permissions, "formula:update");
   const canReview = hasPermission(permissions, "formula:review");
@@ -214,7 +220,7 @@ export default function EditFormulaPage() {
     mutationFn: () => apiRequest(`/formulas/${cardId}`, { method: "DELETE" }),
     onSuccess: () => {
       setMessage("已删除");
-      setTimeout(() => router.push("/formulas"), 1000);
+      setTimeout(() => router.push(returnTo), 1000);
     },
     onError: (e) => setMessage(e instanceof Error ? e.message : "删除失败"),
   });
@@ -259,7 +265,7 @@ export default function EditFormulaPage() {
           updatedAt: card.updated_at,
           updatedBy: card.updated_by,
         }}
-        onClose={() => router.push("/formulas")}
+        onClose={() => router.push(returnTo)}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ["admin-formulas", cardId] });
           queryClient.invalidateQueries({ queryKey: ["admin-formulas"] });
@@ -275,7 +281,7 @@ export default function EditFormulaPage() {
         <CardHeader className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/formulas">
+              <Link href={returnTo}>
                 <Button variant="ghost" size="sm">
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
@@ -309,7 +315,7 @@ export default function EditFormulaPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Link href="/formulas">
+              <Link href={returnTo}>
                 <Button variant="ghost">返回列表</Button>
               </Link>
             </div>
