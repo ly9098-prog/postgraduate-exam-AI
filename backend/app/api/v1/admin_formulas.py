@@ -41,6 +41,7 @@ from app.services.formula_graph_asset_service import (
     delete_asset_by_source_type,
     get_graph_assets_for_card,
     is_function_graph,
+    resolve_graph_asset_public_url,
     upload_graph_asset,
 )
 from app.services.formula_graph_spec_service import (
@@ -378,7 +379,7 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
     def _asset_to_min(a):
         if not a:
             return None
-        return FormulaGraphAssetResponse.model_validate(a).model_dump(
+        payload = FormulaGraphAssetResponse.model_validate(a).model_dump(
             mode="json",
             exclude={
                 "template_type",
@@ -388,11 +389,15 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
                 "formula_card_id",
             },
         )
+        for key in ("image_url", "thumbnail_url"):
+            payload[key] = resolve_graph_asset_public_url(payload.get(key))
+        return payload
 
-    base["graph_asset"] = _asset_to_min(effective)
+    effective_payload = _asset_to_min(effective)
+    base["graph_asset"] = effective_payload
     base["graph_assets"] = [_asset_to_min(a) for a in assets]
-    base["graph_image_url"] = effective.image_url if effective else None
-    base["graph_thumbnail_url"] = effective.thumbnail_url if effective else None
+    base["graph_image_url"] = effective_payload.get("image_url") if effective_payload else None
+    base["graph_thumbnail_url"] = effective_payload.get("thumbnail_url") if effective_payload else None
     base["is_function_graph"] = is_function_graph(card, effective_asset=effective)
 
     # Load multi-graph specs (FormulaGraphSpec)
@@ -1399,7 +1404,10 @@ async def review_formula_import_item(
 
 
 def _graph_asset_to_dict(asset: FormulaGraphAsset) -> dict:
-    return FormulaGraphAssetResponse.model_validate(asset).model_dump()
+    payload = FormulaGraphAssetResponse.model_validate(asset).model_dump()
+    for key in ("image_url", "thumbnail_url", "original_svg_url"):
+        payload[key] = resolve_graph_asset_public_url(payload.get(key))
+    return payload
 
 
 @router.get("/{card_id}/graph-assets")

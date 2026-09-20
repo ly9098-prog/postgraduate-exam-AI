@@ -71,7 +71,7 @@
     </view>
   </view>
 
-  <view class="fc-graph-section" wx:if="{{card.card_type === 'function_graph' && graphImageUrl && !graphLoadError}}">
+  <view class="fc-graph-section" wx:if="{{(card.card_type === 'function_graph' || card.is_function_graph || card.isFunctionGraph) && graphImageUrl && !graphLoadError}}">
     <view class="fc-section-heading">
       <view>
         <text class="fc-section-kicker">FUNCTION GRAPH</text>
@@ -84,7 +84,7 @@
     </view>
   </view>
 
-  <view class="fc-graph-section fc-graph-error" wx:elif="{{card.card_type === 'function_graph' && (graphLoadError || !graphImageUrl)}}">
+  <view class="fc-graph-section fc-graph-error" wx:elif="{{(card.card_type === 'function_graph' || card.is_function_graph || card.isFunctionGraph) && (graphLoadError || !graphImageUrl)}}">
     <view class="fc-section-heading">
       <view>
         <text class="fc-section-kicker">FUNCTION GRAPH</text>

@@ -24,6 +24,7 @@ from app.services.formula_graph_asset_service import (
     choose_effective_graph_asset,
     is_function_graph,
     load_graph_assets_map,
+    resolve_graph_asset_public_url,
 )
 from app.services.formula_study_card_service import (
     public_card_type_catalog,
@@ -126,6 +127,11 @@ async def _card_to_response(
         effective = await get_effective_graph_asset_for_card(db, card.id)
         if effective:
             graph_asset_resp = FormulaGraphAssetResponse.model_validate(effective)
+
+    if graph_asset_resp:
+        graph_asset_resp.image_url = resolve_graph_asset_public_url(graph_asset_resp.image_url)
+        graph_asset_resp.thumbnail_url = resolve_graph_asset_public_url(graph_asset_resp.thumbnail_url)
+        graph_asset_resp.original_svg_url = resolve_graph_asset_public_url(graph_asset_resp.original_svg_url)
 
     # Load multi-graph specs (FormulaGraphSpec)
     graph_specs = (specs_map or {}).get(card.id)

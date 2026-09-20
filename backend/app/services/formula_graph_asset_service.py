@@ -6,6 +6,7 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from urllib.parse import urlsplit
 
 from PIL import Image, ImageOps
 from sqlalchemy import select
@@ -28,6 +29,62 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_WIDTH = 8000
 MAX_HEIGHT = 8000
 THUMBNAIL_SIZE = (600, 450)
+
+
+def resolve_graph_asset_public_url(url: str | None) -> str | None:
+    """Return a client-reachable URL for formula graph assets.
+
+    Historical/local uploads may contain ``PUBLIC_BASE_URL`` with an API path
+    (for example ``https://host/api/v1``) or a development host such as
+    ``localhost``. Formula graph files are actually mounted at
+    ``/static/formulas/...``. Rebase only those local-static URLs onto the
+    current public origin, while leaving external object-storage/CDN URLs
+    untouched.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return None
+
+    marker = "/static/formulas/"
+    if raw.startswith("static/formulas/"):
+        asset_path = "/" + raw
+    elif marker in raw:
+        asset_path = marker + raw.split(marker, 1)[1].lstrip("/")
+    else:
+        return raw
+
+    base_raw = str(settings.PUBLIC_BASE_URL or "").strip()
+    try:
+        base = urlsplit(base_raw)
+    except ValueError:
+        base = None
+
+    if not base or not base.scheme or not base.netloc:
+        return asset_path
+
+    # Root-relative paths and local/dev URLs are ours and should always use the
+    # configured public origin. For an absolute URL on another host, preserve
+    # it (e.g. COS/CDN) even if its object key contains /static/formulas/.
+    try:
+        source = urlsplit(raw)
+    except ValueError:
+        source = None
+
+    source_host = (source.hostname or "").lower() if source else ""
+    base_host = (base.hostname or "").lower()
+    local_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+    should_rebase = (
+        settings.STORAGE_BACKEND == "local"
+        or not source
+        or not source.scheme
+        or not source.netloc
+        or source_host in local_hosts
+        or source_host == base_host
+    )
+    if not should_rebase:
+        return raw
+
+    return f"{base.scheme}://{base.netloc}{asset_path}"
 
 
 def choose_effective_graph_asset(
@@ -301,8 +358,8 @@ async def upload_graph_asset(
     thumb_filename = f"{asset_dir}/{file_uuid}-thumb.png"
 
     # Upload files
-    image_url = await storage.upload(main_filename, image_bytes)
-    thumbnail_url = await storage.upload(thumb_filename, thumbnail_bytes)
+    image_url = resolve_graph_asset_public_url(await storage.upload(main_filename, image_bytes))
+    thumbnail_url = resolve_graph_asset_public_url(await storage.upload(thumb_filename, thumbnail_bytes))
 
     old_image_url = None
     old_thumbnail_url = None
