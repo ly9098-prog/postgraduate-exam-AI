@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiRequest } from "@/lib/api/client";
 import { formatChinaDateTime } from "@/lib/time";
 import type { FormulaGraphAsset } from "@/lib/api/types";
+import { resolveAssetUrl } from "@/lib/asset-url";
 
 type Props = {
   cardId: number;
@@ -15,10 +16,12 @@ type Props = {
 };
 
 function getDisplayUrl(asset: FormulaGraphAsset): string {
-  const base = asset.image_url || "";
+  const base = resolveAssetUrl(asset.image_url);
   if (!base) return base;
   const ts = asset.updated_at || asset.checksum || "";
-  return ts ? `${base}?v=${encodeURIComponent(ts)}` : base;
+  if (!ts) return base;
+  const separator = base.includes("?") ? "&" : "?";
+  return `${base}${separator}v=${encodeURIComponent(ts)}`;
 }
 
 function formatDt(d: string | null | undefined) {
@@ -103,6 +106,56 @@ function AltDescEditor({
           {saveMutation.isPending ? <><Loader2 className="h-3 w-3 animate-spin" /> 保存中</> : <><Save className="h-3 w-3" /> 保存</>}
         </Button>
         {dirty && <span className="text-[10px] text-amber-500">有未保存的修改</span>}
+      </div>
+    </div>
+  );
+}
+
+function PendingUploadPanel({
+  file,
+  previewUrl,
+  replacing,
+  pending,
+  onCancel,
+  onSave,
+}: {
+  file: File;
+  previewUrl: string;
+  replacing: boolean;
+  pending: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary-light)]/35 p-3 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex h-16 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-white">
+            <img src={previewUrl} alt="待上传图片预览" className="h-full w-full object-contain" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-[var(--color-primary-dark)]">待保存图片</span>
+              <span className="rounded-md bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-hint)]">
+                {replacing ? "将替换当前手工图" : "上传后立即生效"}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs font-medium text-[var(--ink)]">{file.name}</p>
+            <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">{(file.size / 1024 / 1024).toFixed(2)} MB · PNG / JPEG / WebP</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={pending}>
+            <X className="h-3.5 w-3.5" /> 取消
+          </Button>
+          <Button type="button" size="sm" onClick={onSave} disabled={pending}>
+            {pending ? (
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> 保存中…</>
+            ) : (
+              <><Save className="h-3.5 w-3.5" /> 保存图片</>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -247,8 +300,9 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
   }, [clearFileSelection]);
 
   const openImage = useCallback(() => {
-    if (effective?.image_url) {
-      window.open(effective.image_url, "_blank");
+    const url = resolveAssetUrl(effective?.image_url);
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   }, [effective]);
 
@@ -288,74 +342,13 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
   return (
     <section id="graph-assets" className="scroll-mt-28 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white/60">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+      <div className="flex flex-col gap-1 border-b border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <ImageIcon className="h-4 w-4 text-[var(--color-text-secondary)]" />
-          <span className="text-sm font-semibold text-[var(--ink)]">函数图像</span>
-          <span className="text-[11px] text-[var(--color-text-hint)]">
-            管理该公式卡片在小程序中展示的函数图
-          </span>
+          <ImageIcon className="h-4 w-4 text-[var(--color-primary)]" />
+          <span className="text-sm font-semibold text-[var(--ink)]">展示图片</span>
         </div>
+        <span className="text-[11px] text-[var(--color-text-hint)]">上传后独立保存并立即用于小程序展示</span>
       </div>
-
-      {/* ── Message ── */}
-      {message && (
-        <div className={`flex items-center justify-between px-4 py-2 text-sm ${
-          messageType === "success"
-            ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
-            : "bg-red-50 text-red-600"
-        }`}>
-          <span>{message}</span>
-          <button type="button" className="ml-3 shrink-0" onClick={() => setMessage(null)}>✕</button>
-        </div>
-      )}
-
-      {/* ── Local preview (file selected, not yet uploaded) ── */}
-      {selectedFile && previewUrl && (
-        <div className="border-b border-[var(--color-border)] p-4">
-          <div className="mb-3 rounded-lg border bg-white p-2">
-            <img
-              src={previewUrl}
-              alt="本地预览"
-              className="max-h-64 w-full object-contain"
-            />
-          </div>
-          <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-[var(--color-text-secondary)]">
-            <div><span className="font-semibold">文件名：</span>{selectedFile.name}</div>
-            <div><span className="font-semibold">大小：</span>{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleCancelPreview}
-              disabled={pendingUpload}
-            >
-              <X className="h-3.5 w-3.5" /> 取消
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleConfirmUpload}
-              disabled={pendingUpload}
-            >
-              {pendingUpload ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在上传</>
-              ) : (
-                <><Upload className="h-3.5 w-3.5" /> 确认上传</>
-              )}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Upload progress (file already selected and uploading) ── */}
-      {pendingUpload && !selectedFile && (
-        <div className="flex items-center gap-2 border-b border-[var(--color-border)] p-4 text-sm text-[var(--color-text-secondary)]">
-          <Loader2 className="h-4 w-4 animate-spin" /> 上传中...
-        </div>
-      )}
 
       {/* ── Image preview area ── */}
       <div className="p-4">
@@ -457,44 +450,79 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
               )}
             </div>
 
-            {/* Action buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={openImage}>
-                <ExternalLink className="h-3.5 w-3.5" /> 打开原图
-              </Button>
-              {canUpdate && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="hidden"
-                    onChange={handleFileSelect}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={pendingUpload || !!selectedFile}
-                  >
-                    <Upload className="h-3.5 w-3.5" />
-                    {hasUploaded ? "替换手工图片" : "上传函数图像"}
-                  </Button>
-                  {hasUploaded && (
+            {message && (
+              <div role="status" aria-live="polite" className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${
+                messageType === "success"
+                  ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
+                  : "bg-red-50 text-red-600"
+              }`}>
+                <span>{message}</span>
+                <button type="button" className="ml-3 shrink-0 rounded p-0.5 hover:bg-white/60" onClick={() => setMessage(null)} aria-label="关闭提示"><X className="h-3 w-3" /></button>
+              </div>
+            )}
+
+            {/* Keep the image-save action exactly where the upload action was invoked.
+                Selecting a file no longer inserts controls above a tall preview and forces
+                the user to scroll backwards to find the confirm button. */}
+            {selectedFile && previewUrl ? (
+              <PendingUploadPanel
+                file={selectedFile}
+                previewUrl={previewUrl}
+                replacing={hasUploaded}
+                pending={pendingUpload}
+                onCancel={handleCancelPreview}
+                onSave={handleConfirmUpload}
+              />
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={openImage}>
+                  <ExternalLink className="h-3.5 w-3.5" /> 打开原图
+                </Button>
+                {canUpdate && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleFileSelect}
+                    />
                     <Button
                       type="button"
-                      variant="danger"
+                      variant="secondary"
                       size="sm"
-                      onClick={() => setShowDeleteConfirm(true)}
-                      disabled={pendingDelete}
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={pendingUpload}
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> 删除手工图片
+                      <Upload className="h-3.5 w-3.5" />
+                      {hasUploaded ? "替换手工图片" : "上传函数图像"}
                     </Button>
-                  )}
-                </>
-              )}
-            </div>
+                    {hasUploaded && (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => setShowDeleteConfirm(true)}
+                        disabled={pendingDelete}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> 删除手工图片
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ) : selectedFile && previewUrl ? (
+          <div className="py-2">
+            <PendingUploadPanel
+              file={selectedFile}
+              previewUrl={previewUrl}
+              replacing={false}
+              pending={pendingUpload}
+              onCancel={handleCancelPreview}
+              onSave={handleConfirmUpload}
+            />
           </div>
         ) : (
           /* ── Empty state ── */
@@ -504,6 +532,9 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
               <p className="text-sm font-semibold text-[var(--color-text-secondary)]">尚未上传函数图像</p>
               <p className="mt-1 text-xs text-[var(--color-text-hint)]">支持 PNG、JPEG、WebP，单张不超过 10MB。</p>
             </div>
+            {message && (
+              <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs ${messageType === "success" ? "bg-[var(--color-success-light)] text-[var(--color-success)]" : "bg-red-50 text-red-600"}`}>{message}</div>
+            )}
             {canUpdate && (
               <>
                 <input

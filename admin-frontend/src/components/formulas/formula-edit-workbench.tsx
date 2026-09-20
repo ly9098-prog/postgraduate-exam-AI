@@ -935,18 +935,41 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
             )}
 
             {workspaceTab === "graph" && cardType === "function_graph" && (
-              <div className="animate-fade-in space-y-4 p-3.5 lg:p-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">函数表达式</label><Input value={funcExpression} onChange={(event) => setFuncExpression(event.target.value)} placeholder="f(x) = x^2" /></div>
-                  <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">模板类型</label><Input value={funcTemplate} onChange={(event) => setFuncTemplate(event.target.value)} placeholder="quadratic / sine / logarithmic" /></div>
-                  <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">定义域</label><Input value={funcDomain} onChange={(event) => setFuncDomain(event.target.value)} placeholder="(-\\infty,+\\infty)" /></div>
-                  <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">值域</label><Input value={funcRange} onChange={(event) => setFuncRange(event.target.value)} placeholder="[0,+\\infty)" /></div>
-                  <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">奇偶性</label><Input value={funcParity} onChange={(event) => setFuncParity(event.target.value)} placeholder="偶函数 / 奇函数" /></div>
-                  <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">周期</label><Input value={funcPeriod} onChange={(event) => setFuncPeriod(event.target.value)} placeholder="T = 2\\pi" /></div>
-                  <div className="md:col-span-2"><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">导数与临界点</label><CompactTextarea value={funcDerivative} onChange={setFuncDerivative} placeholder="导数、临界点和单调性摘要" rows={3} /></div>
-                  <div className="md:col-span-2"><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">一行特征</label><CompactTextarea value={funcFeature} onChange={setFuncFeature} placeholder="用于卡片快速说明图像特征" rows={2} /></div>
+              <div className="animate-fade-in p-3.5 lg:p-4">
+                <div className="mb-4 flex flex-col gap-2 border-b border-[var(--color-border-light)] pb-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">函数图像配置</p>
+                    <p className="mt-1 max-w-2xl text-[11px] leading-5 text-[var(--color-text-hint)]">
+                      左侧维护函数属性，右侧直接管理小程序展示图片。图片上传采用独立保存，不必先提交整张公式卡。
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-[var(--color-border-light)] bg-[var(--porcelain)] px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-hint)]">
+                    <ImageIcon className="h-3 w-3 text-[var(--color-primary)]" /> 图片操作即时保存
+                  </span>
                 </div>
-                <FormulaGraphAssetPanel cardId={cardId} canUpdate={true} />
+
+                <div className="grid items-start gap-4 xl:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.18fr)]">
+                  <section className="min-w-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--porcelain)]/35">
+                    <div className="border-b border-[var(--color-border-light)] px-3.5 py-3">
+                      <SectionLabel icon={<Settings2 className="h-3.5 w-3.5" />}>函数参数</SectionLabel>
+                      <p className="-mt-1 text-[10px] leading-4 text-[var(--color-text-hint)]">用于公式卡描述、检索与图像语义，不影响右侧图片的独立保存。</p>
+                    </div>
+                    <div className="grid gap-3 p-3.5 md:grid-cols-2 xl:grid-cols-1">
+                      <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">函数表达式</label><Input value={funcExpression} onChange={(event) => setFuncExpression(event.target.value)} placeholder="f(x) = x^2" /></div>
+                      <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">模板类型</label><Input value={funcTemplate} onChange={(event) => setFuncTemplate(event.target.value)} placeholder="quadratic / sine / logarithmic" /></div>
+                      <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">定义域</label><Input value={funcDomain} onChange={(event) => setFuncDomain(event.target.value)} placeholder="(-\\infty,+\\infty)" /></div>
+                      <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">值域</label><Input value={funcRange} onChange={(event) => setFuncRange(event.target.value)} placeholder="[0,+\\infty)" /></div>
+                      <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">奇偶性</label><Input value={funcParity} onChange={(event) => setFuncParity(event.target.value)} placeholder="偶函数 / 奇函数" /></div>
+                      <div><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">周期</label><Input value={funcPeriod} onChange={(event) => setFuncPeriod(event.target.value)} placeholder="T = 2\\pi" /></div>
+                      <div className="md:col-span-2 xl:col-span-1"><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">导数与临界点</label><CompactTextarea value={funcDerivative} onChange={setFuncDerivative} placeholder="导数、临界点和单调性摘要" rows={3} /></div>
+                      <div className="md:col-span-2 xl:col-span-1"><label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">一行特征</label><CompactTextarea value={funcFeature} onChange={setFuncFeature} placeholder="用于卡片快速说明图像特征" rows={2} /></div>
+                    </div>
+                  </section>
+
+                  <div className="min-w-0 xl:sticky xl:top-0">
+                    <FormulaGraphAssetPanel cardId={cardId} canUpdate={true} />
+                  </div>
+                </div>
               </div>
             )}
           </section>
