@@ -852,6 +852,94 @@ assert(/function\s+shouldScrollInlineFormula\s*\(/.test(cardJs), 'formula-card m
 console.log('✓ Inline KaTeX gray-underline scrollbar regression tests passed')
 
 // =============================
+// KaTeX radical SVG containment
+// =============================
+// katex-mini intentionally emits a 400em SVG for radicals and clips it with a
+// `.hide-tail` span. mp-html converts that SVG to an image node; without an
+// explicit image viewport, native rich-text can lay out the intrinsic 400em
+// width and render the root bar as a long horizontal line across the card.
+function renderFormulaBlockNodesThroughFormulaCard(latex, id) {
+  var observer = capturedFormulaCardComponent.properties.card.observer
+  var ctx = {
+    data: { cardRenderKey: '', card: null },
+    setData: function (patch) {
+      this.data = Object.assign({}, this.data, patch)
+    },
+  }
+  var methods = capturedFormulaCardComponent.methods || {}
+  for (var name in methods) {
+    if (Object.prototype.hasOwnProperty.call(methods, name)) ctx[name] = methods[name]
+  }
+  observer.call(ctx, {
+    id: id,
+    title: '根号回归测试',
+    formula_blocks: [{ label: '幂函数展开', latex: latex }],
+  }, null)
+  return ctx.data.formulaBlocks[0].mathNodes
+}
+
+function findNodeByClass(nodes, targetClass) {
+  var found = null
+  function walk(items) {
+    if (found || !Array.isArray(items)) return
+    for (var i = 0; i < items.length; i++) {
+      var node = items[i] || {}
+      var className = String((node.attrs && node.attrs.class) || '')
+      if (className.split(/\s+/).indexOf(targetClass) >= 0) {
+        found = node
+        return
+      }
+      if (node.children) walk(node.children)
+      if (found) return
+    }
+  }
+  walk(nodes)
+  return found
+}
+
+;['\\sqrt{1+x}', '\\sqrt[n]{1+x}'].forEach(function (latex, index) {
+  var radicalNodes = renderFormulaBlockNodesThroughFormulaCard(latex, 96001 + index)
+  var hideTail = findNodeByClass(radicalNodes, 'hide-tail')
+  assert(hideTail, 'radical must preserve KaTeX hide-tail clipping wrapper: ' + latex)
+
+  var hideTailStyle = String((hideTail.attrs && hideTail.attrs.style) || '')
+  assert(/width\s*:\s*100%/.test(hideTailStyle), 'radical clipping wrapper must keep a 100% viewport: ' + latex)
+  assert(/overflow\s*:\s*hidden/.test(hideTailStyle), 'radical clipping wrapper must hide the unused SVG tail: ' + latex)
+
+  var radicalImage = (hideTail.children || []).find(function (node) {
+    return node && node.name === 'img' && /^data:image\/svg\+xml/i.test(String((node.attrs && node.attrs.src) || ''))
+  })
+  assert(radicalImage, 'radical SVG must be converted to a native rich-text image: ' + latex)
+  var radicalImageStyle = String((radicalImage.attrs && radicalImage.attrs.style) || '')
+  assert(/position\s*:\s*absolute/.test(radicalImageStyle), 'radical image must stay out of intrinsic-width layout: ' + latex)
+  assert(/width\s*:\s*100%/.test(radicalImageStyle), 'radical image must fill only the clipping viewport: ' + latex)
+  assert(/height\s*:\s*100%/.test(radicalImageStyle), 'radical image must fill the KaTeX clipping viewport height: ' + latex)
+  var radicalImageSrc = String((radicalImage.attrs && radicalImage.attrs.src) || '')
+  assert(!/width=["']400em["']/i.test(radicalImageSrc), 'radical SVG must not retain KaTeX\'s 400em intrinsic width: ' + latex)
+  assert(/width=["']1em["']/i.test(radicalImageSrc), 'radical SVG must use a bounded intrinsic fallback width after conversion: ' + latex)
+})
+
+// Reproduce the real card formula from the screenshot: the radical shares a
+// line with trailing relation/fraction content. The radical image must remain
+// out of flow so it cannot stretch across `~ 1 + x/n`.
+var expansionRadicalNodes = renderFormulaBlockNodesThroughFormulaCard('\\sqrt[n]{1+x} \\sim 1+\\frac{x}{n}', 96003)
+var expansionHideTail = findNodeByClass(expansionRadicalNodes, 'hide-tail')
+assert(expansionHideTail, 'binomial expansion radical must preserve clipping wrapper')
+var expansionRadicalImage = (expansionHideTail.children || []).find(function (node) { return node && node.name === 'img' })
+assert(expansionRadicalImage, 'binomial expansion radical must contain converted SVG image')
+assert(/position\s*:\s*absolute/.test(String((expansionRadicalImage.attrs && expansionRadicalImage.attrs.style) || '')), 'binomial expansion radical SVG must not affect width of trailing formula content')
+assert(!/width=["']400em["']/i.test(String((expansionRadicalImage.attrs && expansionRadicalImage.attrs.src) || '')), 'binomial expansion radical must remove 400em intrinsic SVG width')
+
+var inlineRadicalNodes = renderConditionNodesThroughFormulaCard('\\sqrt[n]{1+x}', 96004)
+var inlineHideTail = findNodeByClass(inlineRadicalNodes, 'hide-tail')
+assert(inlineHideTail, 'inline radical must receive the same SVG containment fix')
+var inlineRadicalImage = (inlineHideTail.children || []).find(function (node) { return node && node.name === 'img' })
+assert(/width\s*:\s*100%/.test(String((inlineRadicalImage.attrs && inlineRadicalImage.attrs.style) || '')), 'inline radical image must be constrained to its clipping viewport')
+
+assert(/function\s+stabilizeRadicalSvg\s*\(/.test(cardJs), 'formula-card must stabilize converted radical SVG images')
+console.log('✓ KaTeX radical SVG containment regression tests passed')
+
+// =============================
 // Summary
 // =============================
 

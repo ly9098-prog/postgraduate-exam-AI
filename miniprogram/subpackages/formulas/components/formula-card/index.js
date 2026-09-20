@@ -179,6 +179,47 @@ function _xRepeat(count) {
 }
 
 /**
+ * Keep KaTeX's radical SVG inside the natural width of the radicand.
+ *
+ * katex-mini draws square roots with a deliberately huge (400em) SVG and
+ * relies on `.hide-tail { width:100%; overflow:hidden }` to clip the unused
+ * tail. After mp-html converts that SVG to an <img>, native WeChat rich-text
+ * can use the image's intrinsic 400em width during layout instead of honoring
+ * the clip first. The result is the long horizontal bar seen after √(1+x).
+ *
+ * Giving the converted image an explicit 100% viewport makes the SVG crop
+ * against the already-computed `.hide-tail` box, matching KaTeX's browser
+ * layout without changing the formula source or other stretchy constructs.
+ */
+function stabilizeRadicalSvg(node, classes) {
+  if (classes.indexOf('hide-tail') < 0) return
+
+  // The radical SVG must not participate in intrinsic-width calculation.
+  // KaTeX deliberately makes it 400em wide and clips it to the width of the
+  // radicand. In WeChat rich-text an <img> is a replaced element, so even a
+  // `width:100%` image can feed its 400em intrinsic width back into the
+  // surrounding table-cell and make that 100% resolve to the whole formula.
+  // Keep the clip wrapper in normal flow, but absolutely position the image
+  // inside it. Then the sibling radicand alone determines the vlist width.
+  appendNodeStyle(node, 'display:inline-block;width:100%;max-width:100%;overflow:hidden;box-sizing:border-box;')
+
+  var children = Array.isArray(node.children) ? node.children : []
+  for (var i = 0; i < children.length; i++) {
+    var child = children[i] || {}
+    var attrs = child.attrs || {}
+    if (child.name === 'img' && /^data:image\/svg\+xml/i.test(String(attrs.src || ''))) {
+      // Remove the 400em intrinsic width from the serialized SVG as a second
+      // guard for rich-text implementations that still inspect image metadata
+      // while laying out absolutely-positioned replaced elements. A small
+      // finite intrinsic width is only a fallback; CSS still stretches the
+      // image to the clipping wrapper's resolved width.
+      attrs.src = String(attrs.src || '').replace(/width=["']400em["']/i, 'width="1em"')
+      appendNodeStyle(child, 'position:absolute;left:0;top:0;display:block;width:100%;max-width:100%;height:100%;min-width:0;')
+    }
+  }
+}
+
+/**
  * Estimate the rendered visual width of an inline formula (in glyph units).
  *
  * The naive approach of collapsing every `\command` to a single glyph
@@ -237,6 +278,7 @@ function stabilizeFormulaTree(nodes) {
       var node = items[i] || {}
       var className = node.attrs ? String(node.attrs.class || '') : ''
       var classes = className ? className.split(/\s+/) : []
+      stabilizeRadicalSvg(node, classes)
       if (classes.indexOf('katex') >= 0) {
         appendNodeStyle(node, 'display:inline-block;width:auto;max-width:none;white-space:nowrap;')
       }
@@ -271,6 +313,7 @@ function stabilizeRichMathTree(nodes) {
       var node = items[i] || {}
       var className = node.attrs ? String(node.attrs.class || '') : ''
       var classes = className ? className.split(/\s+/) : []
+      stabilizeRadicalSvg(node, classes)
 
       // Only the wrapper created for this exact formula is atomic. Never mark
       // an ancestor span merely because it contains KaTeX: doing that turns the
