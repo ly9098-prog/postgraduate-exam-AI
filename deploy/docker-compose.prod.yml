@@ -115,6 +115,9 @@ services:
       - exports_data:/opt/2240ai-v2/exports
       # 题图持久化：运行期上传写入命名卷，容器重建后不丢失（镜像内烘焙图由空卷首挂自动拷入）
       - question_assets_data:/app/static/question-assets
+      # 公式图持久化：运行期上传写入 /app/static/formulas/graphs/{id}/uploaded，
+      # 命名卷挂载保证容器重建后不丢失（镜像内烘焙图由空卷首挂自动拷入）
+      - formulas_data:/app/static/formulas
       # 用户头像持久化：命名卷挂 /app/static/avatars（Dockerfile 已预建 app 属主目录）
       - avatars_data:/app/static/avatars
     healthcheck:
@@ -187,6 +190,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - exports_data:/opt/2240ai-v2/exports
+      # 公式图持久化：与 app 一致，公式图渲染/预览写入 /app/static/formulas
+      - formulas_data:/app/static/formulas
     # Override CMD: run scheduler_main instead of gunicorn (no HTTP server)
     command: ["python", "-m", "app.scheduler_main"]
 
@@ -249,6 +254,8 @@ services:
       # exports 卷与 scheduler 一致：校验器会检查 EXPORT_DIR 可写，且容器以
       # 非 root 用户运行，需挂载镜像已 chown 的卷（首次挂载继承 app:app）。
       - exports_data:/opt/2240ai-v2/exports
+      # 公式图持久化：与 app 一致，公式图渲染/预览写入 /app/static/formulas
+      - formulas_data:/app/static/formulas
     # Override CMD: run worker_main — consumes the Redis v2 task queue
     # (pipeline dispatcher + reaper + AI prewarm). Without this process the
     # outbox-published answer_projection and pipeline tasks never execute.
@@ -327,3 +334,4 @@ volumes:
   exports_data:
   question_assets_data:
   avatars_data:
+  formulas_data:
