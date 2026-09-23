@@ -49,8 +49,8 @@
 >
 > | 表名 | 用途 | 核心字段 |
 > |------|------|----------|
-> | exam_papers / exam_paper_questions | 408 选择题试卷域（真题/模拟） | paper_type, year, status, version, question_version_id 绑定 |
-> | exam_attempts / exam_answers | 考试作答事实（不可变） | attempt_id, score, answered, paper_version |
+> | exam_papers / exam_paper_questions | 408 选择题试卷域（真题/模拟） | public_id, paper_type, year, status, version, deleted_at, question_version_id 绑定 |
+> | exam_attempts / exam_answers | 考试作答。进行中可改答案；交卷/超时/放弃后进入终态 | status, request_id, result_snapshot, answer_revision, paper_version |
 > | wrong_question_error_diagnoses | 错因诊断（AI + 规则） | source_context, ai_status, ai_confidence, classification_version |
 > | study_plans / study_plan_days | 学习计划 | daily_minutes, weekly_days, priority_mode, target |
 > | syllabus_versions / syllabus_knowledge_points / syllabus_knowledge_point_mappings | 408 大纲版本化 | year, status, KP 映射 |
@@ -566,7 +566,7 @@ class KnowledgePoint(Base):
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
 
-**唯一约束**: `(subject_id, normalized_name)` — `uq_kp_subject_id_normalized_name`
+**索引（非唯一）**: `(subject_id, normalized_name)` — `ix_kp_subject_normalized_name`。迁移 `r408kpunique20260912` 已去掉这份唯一约束。同科目同名节点合法，节点用 `id` 区分。
 
 ---
 
@@ -1435,12 +1435,78 @@ class AppUserAdminBinding(Base):
 
 ---
 
+## exam_papers / exam_paper_questions / exam_attempts / exam_answers
+
+408 选择题考试。模型：`backend/app/models/exam.py`。
+
+### exam_papers
+
+| 字段 | 约束 |
+|------|------|
+| id | PK |
+| public_id | String(32)，唯一，默认 `uuid4().hex` |
+| title | String(128)，NOT NULL |
+| paper_type | `past_exam_choice` / `mock_choice` |
+| year | SmallInteger，可空 |
+| source | String(128)，可空 |
+| duration_sec | 可空；非空则必须 > 0。用户端用它判断 `expired` |
+| version | Integer ≥ 1，默认 1 |
+| status | `draft` / `published` / `archived` |
+| is_active | Boolean，默认 true。软删除时置 false |
+| published_at | 可空 |
+| deleted_at | 可空，有索引。非空表示已软删除 |
+| created_by / updated_by | FK → admin_users.id，可空 |
+| created_at / updated_at | DateTime |
+
+### exam_paper_questions
+
+| 字段 | 约束 |
+|------|------|
+| paper_id | FK → exam_papers.id，ON DELETE CASCADE |
+| question_id | FK → questions.id，ON DELETE RESTRICT |
+| question_version_id | FK → question_versions.id，ON DELETE RESTRICT |
+| position | > 0。与 paper_id 联合唯一 |
+| score | Numeric(8,2) > 0 |
+| section_subject_id | FK → subjects.id |
+
+同一试卷内 `question_id` 唯一。
+
+### exam_attempts
+
+| 字段 | 约束 |
+|------|------|
+| paper_id / paper_version | 开考时绑定的试卷版本，version ≥ 1 |
+| user_id | FK → users.id，ON DELETE CASCADE |
+| status | `in_progress` / `submitted` / `expired` / `abandoned` |
+| request_id | String(128)。与 user_id 联合唯一，用于开始作答幂等 |
+| started_at / submitted_at | submitted_at 可空 |
+| duration_sec / answered_count / correct_count | ≥ 0 |
+| score | Numeric(8,2) ≥ 0 |
+| result_snapshot | JSON，可空。终态成绩快照 |
+
+同一用户同一试卷在 `status='in_progress'` 时唯一（部分唯一索引 `uq_exam_attempts_user_paper_in_progress`）。
+
+### exam_answers
+
+| 字段 | 约束 |
+|------|------|
+| attempt_id + exam_paper_question_id | 联合唯一 |
+| question_id / question_version_id | 与试卷题目绑定的版本 |
+| selected_answer | String(32)，可空 |
+| answer_revision | Integer，默认 0 |
+| is_correct / score | 交卷前可空；score 非空则 ≥ 0 |
+| used_time | ≥ 0 |
+| marked_for_review | Boolean，默认 false |
+| practice_record_id | FK → practice_records.id，唯一，可空 |
+
+---
+
 ## 设计原则
 
 - **用户唯一标识**：微信 openid（不使用 email/username/password）
 - **系统不保存密码**，不存在密码字段（管理员表除外，存 password_hash）
 - `content` 为 JSON：`{"text":"...", "images":["url"], "latex":"..."}`
-- 题目知识点关系以 `question_knowledge_points` 关联表为唯一事实源（`questions.knowledge_points` JSON 列已移除）；`KnowledgePoint` 主表 + `normalized_name` 唯一约束保证知识点规范化、杜绝重复
+- 题目知识点关系以 `question_knowledge_points` 关联表为唯一事实源（`questions.knowledge_points` JSON 列已移除）。`normalized_name` 只做非唯一索引，同科目允许同名节点（迁移 `r408kpunique20260912`）
 - 不拆选择题/填空题子表，用 `question_type` 区分
 - `source_type` + `source_file` + `import_batch_id` 三位一体追溯来源
 - Level 1 题库去重使用 `question_hash`：导入阶段只标记 `question_imports.duplicate_status`，发布/审核通过阶段按 `subject + question_hash` 完全匹配拦截，不自动删除历史题目
@@ -1458,6 +1524,6 @@ class AppUserAdminBinding(Base):
 - **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，`pomodoro_pause_intervals` 为暂停时长唯一真相源，支持微信订阅通知；学习时长统计混入 `practice_sessions.duration_sec`
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-09-19 — 多空选择题拆分为 multi_blank_choice（多空（单选））与 multi_blank_multiple_choice（多空（多选）），新增迁移 v13 刷新 question_type CHECK 约束并重分类多字母槽位存量记录
+> 上次更新：2026-09-23 — 补齐 408 考试四表（public_id、deleted_at、attempt 状态）；知识点 (subject_id, normalized_name) 改为非唯一索引。2026-09-19 的多空题型拆分仍然有效。
 >
 > 历史更新：2026-08-10 — 知识点重构为关联表唯一事实源（移除 questions.knowledge_points JSON）；新增 knowledge_points/question_knowledge_points/practice_sessions/pomodoro_pause_intervals/user_pomodoro_settings 表；module 重构全部改为 subject_id

@@ -3,7 +3,7 @@
 - **Status**: Deferred
 - **Date**: 2026-06-20
 - **Deciders**: AI audit + user confirmation
-- **Supersedes**: `prompts/tasks/content_block_phase_2._task.md`
+- **Supersedes**: `prompts/tasks/reference/content_block_phase_2_task.md`
 
 ---
 
@@ -40,10 +40,10 @@ OCR → code_detector → text_normalizer → AI修复 → pipeline → hybrid_c
 
 | 资产 | 位置 | 内容 |
 |------|------|------|
-| 架构分析与设计报告 | `prompts/tasks/content_block_phase_2._task.md` | 完整数据流分析、Markdown 围栏方案评估、type=code 设计、实施路径 |
+| 架构分析与设计报告 | `prompts/tasks/reference/content_block_phase_2_task.md` | 完整数据流分析、Markdown 围栏方案评估、type=code 设计、实施路径 |
 | 表格恢复能力审计 | 同上 Appendix A | OCR → Pipeline → DB 全链路表格结构追踪，定位 `formula_normalizer.parse_latex_table()` 为断点 |
 | 性能基准 | `backend/tests/benchmarks/bench_unified_content_builder.py` | P50=1.19µs, P95=1.27µs, P99=1.28µs（10000 题） |
-| Segment Schema 规范 | `prompts/tasks/segment_schema_v1.md` | 8 种 SegmentType 枚举、JSON Schema、扩展规则、废弃策略 |
+| Segment Schema 规范 | `prompts/tasks/reference/segment_schema_v1.md` | 8 种 SegmentType 枚举、JSON Schema、扩展规则、废弃策略 |
 | 回归测试套件 | `backend/tests/test_content_block.py` + `backend/tests/content_block_cases.py` | 30 用例 / 150 测试 / 5 类覆盖（正向、负向、边界、混排、异常围栏） |
 
 ---
@@ -103,8 +103,8 @@ OCR → code_detector → text_normalizer → AI修复 → pipeline → hybrid_c
 
 | 复用项 | 说明 |
 |--------|------|
-| `prompts/tasks/content_block_phase_2._task.md` | 架构分析、数据流、设计决策 |
-| `prompts/tasks/segment_schema_v1.md` | 8 种 SegmentType + JSON Schema + 扩展规则 |
+| `prompts/tasks/reference/content_block_phase_2_task.md` | 架构分析、数据流、设计决策 |
+| `prompts/tasks/reference/segment_schema_v1.md` | 8 种 SegmentType + JSON Schema + 扩展规则 |
 | `backend/tests/content_block_cases.py` | 30 用例定义 |
 | `backend/tests/test_content_block.py` | 150 条回归测试 |
 | `backend/tests/benchmarks/bench_unified_content_builder.py` | 性能基准 |

@@ -39,7 +39,7 @@
 | `docs/achieve/` | 已完成阶段归档 | 阶段完成后归档 |
 | 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
 
-> 2026-09-02 更新原因：按当前代码同步安全边界、Admin 运维权限、路由聚合结构、题目渲染与图片预加载状态；历史阶段文档不改写为未来承诺。
+> 2026-09-23 更新原因：补齐 9 月 13 日之后的 408 考试、题目 CSV、多空题型与公式图卷事实。历史阶段文档和审计报告不改写成当前承诺。
 
 ---
 
@@ -68,8 +68,7 @@
 | `docs/backend/DB_SCHEMA.md` | App 数据库 schema |
 | `docs/backend/STORAGE_DESIGN.md` | 文件 / 图片 / 存储设计 |
 | `docs/backend/SYNC_LOCAL_TO_CLOUD.md` | 本地到云端同步方案 |
-| `docs/backend/REVIEW_API_CONTRACT.md` | 复习模块 API 合约 |
-| `docs/backend/SM2_MIGRATION_CHECKLIST.md` | SM-2 复习算法迁移检查清单 |
+| `docs/backend/API_SPEC.md` 复习章节 | 现行复习接口。`REVIEW_API_CONTRACT.md` 与 `SM2_MIGRATION_CHECKLIST.md` 已丢失，不要当作现行合约 |
 
 ### AI / OCR / 导入
 

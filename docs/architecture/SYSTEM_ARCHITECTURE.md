@@ -90,7 +90,7 @@ postgraduate-ai/
 | 编程题渲染 | ✅ 已接入 | Admin 专用代码渲染；小程序 CODE 渲染路径 |
 | 题目图片预加载 | ✅ 已接入 | `question-image-cache.js` 会话级预解码缓存 |
 | Admin 运维中心 | ✅ 已接入 | 系统健康、任务、队列、追踪、备份权限隔离 |
-| 408 选择题考试域 | ✅ 已部署 | `features/exam/`, `models/exam.py`（exam_papers / attempts / answers，题目绑定 question_version_id） |
+| 408 选择题考试域 | ✅ 已部署 | `models/exam.py`、`/api/v1/exams`、`/api/admin/v1/exams`。试卷有 `public_id` 与软删除；作答绑定 `question_version_id`，可放弃或按时长过期 |
 | 408 学习体系 | ✅ 已部署 | 学习计划（study_plan）、错因诊断（error_diagnosis）、408 大纲（syllabus）、知识地图 |
 | 刷题稳定性 | ✅ 已部署 | 顺序预约（sequential_reservation）、答案投影 outbox（task_outbox）、会话 scope（practice_sessions.syllabus_version_id） |
 

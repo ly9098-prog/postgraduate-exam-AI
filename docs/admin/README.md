@@ -52,7 +52,7 @@
 | RBAC_RULES.md | v2.2 | Phase 7 AI 设置权限同步（未变化） |
 | DB_SCHEMA_ADMIN.md | v2.4 | Phase 7+ AI 模型配置表与配置键值表同步 |
 | REDIS_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
-| ADMIN_API_SPEC.md | v2.7 | 运维 API、安全边界与题目管理同步 |
+| ADMIN_API_SPEC.md | v2.8 | 408 考试、题目 CSV 导入与生产 Base URL |
 | ADMIN_UI_RULES.md | v1.3 | Phase 7+ AI 模型与配置 UI 同步 |
 | REVIEW_FLOW.md | v2.0 | 已修订，可启动 |
 | AUDIT_LOG.md | v2.3 | 运维操作与安全审计同步 |

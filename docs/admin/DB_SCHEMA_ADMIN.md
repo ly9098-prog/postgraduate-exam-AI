@@ -377,7 +377,7 @@ OCR 管线相关：   ocr_correction_prompt, ocr_strategy_math_formula,
 
 约束与语义：
 - 唯一约束 `(question_id, knowledge_point_id)`（`uq_qkp_question_kp`）。
-- 知识点按 `subject_id + normalized_name` 归一化去重（`knowledge_points` 唯一约束 `uq_kp_subject_id_normalized_name`）。
+- `normalized_name` 仍按科目规范化，但 `(subject_id, normalized_name)` 已不是唯一约束（迁移 `r408kpunique20260912`，索引 `ix_kp_subject_normalized_name`）。同科目允许同名节点，节点以 `id` 区分。
 - 硬删题目由 DB `ON DELETE CASCADE` 清理关联行。
 - 读：`load_question_kps` 一次查询按 `position,id` 批量加载展示名；写：`sync_question_knowledge_points`（additive / replace 语义），`replace=True` 时先删后 flush 再两阶段更新 position 避免唯一约束瞬时冲突。
 

@@ -13,7 +13,7 @@
 3. 点击底部"导出"按钮（或直接在顶部点击"导出记录"查看历史）
 4. 在导出设置页配置:
    - 导出范围（全部/当前筛选/已选）
-   - 文件格式（PDF 默认选中；Word 不可选，标记"即将支持"）
+   - 文件格式（PDF 默认。Word 是否可选取决于服务端 `docx_enabled`；未开放时提示「Word 导出暂未开放」）
    - 试卷标题（可编辑，默认按学科生成）
    - 日期（默认当天，可编辑、可关闭）
    - 排序方式（6种）
@@ -34,7 +34,7 @@ cd backend
 alembic upgrade head
 
 # 生产环境
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
+cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate
 ```
 
 迁移文件: `backend/alembic/versions/v10_export_tasks.py`
@@ -186,8 +186,8 @@ python3 -m pytest tests/test_services/test_wrong_question_service.py -v
 - 订阅消息通知
 - 导出完成后推送更高效的状态通知
 
-## DOCX 尚未实现
+## DOCX
 
-- 导出器接口（`Exporter` ABC）已预留
-- `DocxExporter` 可实现 `Exporter` 接口
-- Word 选项在前端显示但禁用，标记"即将支持"
+- `backend/app/services/export/docx_exporter.py` 已实现 `DocxExporter`。
+- 是否开放由服务端能力 `docx_enabled`（`EXPORT_DOCX_ENABLED`）决定，不是前端写死禁用。
+- 小程序在 `docx_enabled !== true` 时禁用 Word，并提示「Word 导出暂未开放」。

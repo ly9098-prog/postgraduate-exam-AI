@@ -1,7 +1,7 @@
 # OCR Pipeline 架构文档
 
 > 维护时间：2026-08-24（基于当前 `app.zip` 代码审计）
-> 审计参考：`docs/audit/OCR_PIPELINE_AUDIT_RECORDS.md`、`prompts/tasks/fix_task.md`
+> 审计参考：`docs/audit/OCR_PIPELINE_AUDIT_RECORDS.md`、`prompts/tasks/done/export-release-audit.md`
 >
 > **表格渲染约定**：表格控制在 2–3 列；长路径/标识符提供软换行点；复杂说明放到表格下方，避免 GitHub、文档站和窄屏预览横向溢出。
 >

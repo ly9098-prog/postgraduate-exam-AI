@@ -1,5 +1,7 @@
 # Multi-Blank Choice Release Runbook
 
+> **不要按本文中的旧服务器地址操作。** 文中 IP `8.163.56.109` 与目录 `/opt/2240ai-v2` 属于已停用环境。当前生产见 `docs/project/DEPLOY_PLAN.md`（`/opt/22408-ai`）。
+
 > 多空选择题（`multi_blank_choice`）功能上线指导。
 
 ---

@@ -1106,6 +1106,33 @@ AI 错因分析。
 
 ---
 
+## 408 考试
+
+用户 JWT。前缀 `/api/v1/exams`。只服务已发布且 `is_active` 的选择题卷。试卷类型 `past_exam_choice` / `mock_choice`。作答状态 `in_progress` / `submitted` / `expired` / `abandoned`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/exams/papers` | 已发布试卷摘要：题量、总分、最近一次非 abandoned 尝试、最好成绩 |
+| GET | `/exams/papers/{paper_id}` | 试卷详情，含科目分布 |
+| POST | `/exams/papers/{paper_id}/attempts` | 开始或幂等恢复。body：`request_id`（去空白后 8–128 字符）。同一用户同一试卷同时只能有一份 `in_progress` |
+| GET | `/exams/attempts/{attempt_id}` | 作答视图：题目（不含答案）、已保存答案、剩余时间 |
+| PATCH | `/exams/attempts/{attempt_id}/answers/{item_id}` | 保存一题。`selected_answer` / `marked_for_review` / `used_time` 至少一项；用时上限 6 小时 |
+| POST | `/exams/attempts/{attempt_id}/abandon` | 放弃进行中的尝试，返回 `{id, status:"abandoned"}` |
+| POST | `/exams/attempts/{attempt_id}/submit` | 交卷。`answers` 可空；非空时在同一事务写入尚未单独保存的答案再判分 |
+| GET | `/exams/attempts/{attempt_id}/result` | 成绩、科目分解、逐题对错与解析 |
+| GET | `/exams/history/overview` | 汇总 + 分页历史。`limit` 1–50 默认 20，`offset` ≥ 0 |
+| GET | `/exams/history` | 历史列表。`limit` 1–100 默认 50 |
+
+规则：
+
+- 找不到试卷或尝试：404。状态不允许（已交卷再改答案、重复放弃等）：409。参数不合法：422。
+- 超过试卷 `duration_sec` 后，读/写入口会把进行中的尝试收成 `expired`。没有时长的试卷不会按这个规则过期。
+- `abandoned` 不作为「最近尝试」，也不出现在历史列表。小程序本地草稿离开作答页 60 分钟失效；这是客户端缓存，不是服务端定时任务。待提交快照在本地保留 7 天。
+- 作答题目绑定 `question_version_id`。V1 试卷题只接受 `single_choice`。
+- 软删除的试卷不会出现在已发布列表（删除时改为非 active，且状态变为 `archived`）。
+
+---
+
 ## 健康检查
 
 ### GET `/health`

@@ -1,6 +1,6 @@
 # 错题导出功能 — 发布与回滚手册
 
-> 适用范围：生产服务器 8.163.56.109，部署于 `/opt/2240ai-v2`
+> 适用范围：当前生产机，部署目录 `/opt/22408-ai`。旧服务器已停用，不要再按历史 IP 或 `/opt/2240ai-v2` 操作。服务器身份见 `docs/project/DEPLOY_PLAN.md`。
 
 ---
 
@@ -83,7 +83,7 @@ P4 — 数据库表保留，不提交流程破坏性变更
 EXPORT_FEATURE_ENABLED=false
 
 # 2. 重启 API 容器
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh update"
+cd /opt/22408-ai && bash deploy/scripts/deploy.sh update
 
 # 3. 验证
 curl https://xzshub.top/api/v1/exports/capabilities

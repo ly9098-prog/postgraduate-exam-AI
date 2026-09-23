@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-09-13 ~ 2026-09-21
+
+对照 `e8beb2e2` 之后已落地的实现补记。历史审计报告不改写。
+
+- **408 考试域**
+  - 试卷增加稳定 `public_id`（32 位 hex，迁移 `e408examref20260913`）。管理端按数字 id 与 `public_id` 都能读、改、换题、发布、归档、恢复。
+  - 用户端 `/api/v1/exams`：已发布试卷列表与详情、开始作答（`request_id`）、逐题保存、交卷、结果、历史。交卷可携带尚未单独 PATCH 的本地答案，同一事务落库并判分。
+  - 未完成草稿：服务端按试卷 `duration_sec` 超时后记为 `expired`。小程序本地草稿离开作答页 60 分钟失效（`EXAM_DRAFT_TTL_MS`）；待提交快照保留 7 天。`POST /exams/attempts/{id}/abandon` 释放进行中的尝试，`abandoned` 不作为可续答记录，也不进历史列表。
+  - 软删除（迁移 `e408examdelete20260915`）：写 `deleted_at`，`is_active=false`，非归档状态改为 `archived`；作答与审计保留。管理端列表排除已删除试卷。
+  - 408 选择题卷结构：40 题 × 2 分。真题必须正好 40 道 `single_choice`，题号区间为数据结构 1–10、组成原理 11–22、操作系统 23–32、计算机网络 33–40。模拟卷最多 40 道。同一年未删除的真题，发布时不能已有另一份已发布试卷；从归档恢复时不能已有另一份草稿或已发布试卷。
+  - 管理端 `POST /api/admin/v1/imports/questions-csv`（`import:write`）把导出的题目 CSV 直接写入题库，校验失败返回 `QUESTION_CSV_VALIDATION_ERROR` / `QUESTION_CSV_TOO_LARGE`，不是 AI/OCR 绕过人工审核的路径。
+- **多空题型拆分**（`48c2cb60`，迁移 `v13_multi_blank_multiple_choice`）
+  - `multi_blank_choice` 为每空单选；`multi_blank_multiple_choice` 为每空多选，答案形如 `①:A,C;②:B`。存量多字母槽位重分类为后者。判题按槽位集合比较，顺序无关。
+- **错题分析锚定**（`c417af4c`）
+  - `app/ai/answer_grounding.py` 用服务端已核对的漏选/错选事实约束模型；`answer_check` 不一致或诊断与事实矛盾时 fail-closed 修复后再缓存。细则见 `docs/ai/AI_PIPELINE.md`。
+- **向量**
+  - embedding 按 `(question_id, model_id)` 与 `content_hash` 增量写入，内容未变不重复调用模型。
+- **番茄钟统计**（`b1685daa`）
+  - `stats` / `daily-summary` / `statistics-overview` 只统计已结束的 `completed` / `interrupted`。`running` / `paused` 只走 `/pomodoro/active`。
+- **公式图**
+  - 生产 compose 的 app、scheduler、worker 挂载命名卷 `formulas_data:/app/static/formulas`，容器重建不丢上传图。
+  - 新上传主图长边压到 ≤1600 并 PNG optimize；列表优先缩略图；阅读页固定宽高比视口，不再自动放大裁边。
+  - 挂在章节上的卡片计入 408 科目与章节筛选。管理端公式/题目列表的筛选与选中态写入 URL。
+- **小程序渲染**
+  - 代码块抽成共享组件，SEGMENTS 模式保留 code segment。KaTeX 转原生 rich-text，并拆分过大的 vendor 文件。
+
 ## 2026-09-12 / 2026-09-13
 
 - **AI 模型配置软删除（稳定模型 ID）**

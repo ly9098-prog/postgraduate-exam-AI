@@ -9,27 +9,11 @@
 
 ---
 
-## 0. 服务器迁移（2026-08-06 切流，2026-08-07 旧机停用）
+## 0. 服务器迁移状态
 
-生产已从旧服务器迁移至新服务器。**2026-08-06 完成 DNS 切流**，新服务器 `101.33.231.186` 为当前唯一生产入口。**2026-08-07 旧机服务已停用**（`docker compose stop`，数据卷保留），旧机作**冷备**——需要回滚时 `docker compose start` 即可恢复。
+生产已迁移至 `101.33.231.186`，该服务器是当前唯一生产入口。旧服务器已停用，不再作为生产、冷备或回滚目标；本文不保留其连接信息。
 
-| 项目 | 旧服务器（迁移源 / 当前运行） | 新服务器（迁移目标） |
-|------|-------------------------------|----------------------|
-| 公网 IP | `8.163.56.109` | `101.33.231.186` |
-| 内网 IP | `172.18.50.44` | `10.1.0.13` |
-| 部署目录 | `/opt/2240ai-v2` | `/opt/22408-ai` |
-| 本地连接密钥 | `loginkey.pem` | `Linux_connect.pem` |
-| 域名 | `xzshub.top`（DNS 当前指向旧服务器） | `xzshub.top`（迁移完成后 DNS 改指） |
-| 服务器规格 | 2 核 / 1.8 GB | 4 核 / 3.6 GiB / 40G 磁盘 |
-
-迁移内容清单（按顺序）：
-1. 应用代码 + Docker 镜像构建（app / scheduler / admin）
-2. PostgreSQL 数据（`pg_dump` custom format 备份 → `pg_restore` 恢复）
-3. Redis 数据（`redis-cli SAVE` 的 RDB）
-4. nginx 配置 + SSL 证书（`www.xzshub.top.pem` / `.key`）
-5. 服务器侧 `backend/.env`（生产密钥，从旧服务器复制）
-6. 验证生产启动自检（见 §7.4）与核心链路（SSE / 导入 / OCR / 刷题）
-7. DNS 切换到新服务器，旧服务器保持可用数日作回滚
+迁移期间完成的事项：应用代码与镜像、PostgreSQL 数据、Redis 数据、Nginx 配置与 SSL 证书、服务器环境配置迁移，以及生产自检和核心链路验证（SSE / 导入 / OCR / 刷题）。
 
 ---
 
@@ -66,30 +50,19 @@ scheduler（无 HTTP）→ postgres + redis（后台任务 + export processor）
 | `backend/docker/Dockerfile` | app + scheduler 共用镜像 Dockerfile（含 PaddleOCR） |
 | `backend/.env` | 服务器侧环境变量（独立维护） |
 
-### 服务器信息
+### 当前生产服务器
 
-> 2026-08-06 起，新服务器为迁移目标（迁移后生产入口）；旧服务器当前仍运行，保留作回滚参考（迁移见 §0）。
+| 项目 | 当前生产服务器 |
+|------|----------------|
+| 公网 IP | `101.33.231.186` |
+| 内网 IP | `10.1.0.13` |
+| 部署目录 | `/opt/22408-ai` |
+| 本地连接密钥 | `Linux_connect.pem` |
+| 域名 | `xzshub.top` |
+| 证书目录 | `/opt/22408-ai/cert` → 容器内 `/etc/nginx/ssl` |
+| 证书文件 | `/opt/22408-ai/cert/www.xzshub.top.pem` + `.key` |
 
-| 项目 | 新服务器（迁移目标） | 旧服务器（当前运行） |
-|------|---------------------|----------------------|
-| 公网 IP | `101.33.231.186` | `8.163.56.109` |
-| 内网 IP | `10.1.0.13` | `172.18.50.44` |
-| 域名 | `xzshub.top`（DNS 迁移后改指） | `xzshub.top`（曾指向） |
-| 部署目录 | `/opt/22408-ai` | `/opt/2240ai-v2` |
-| 本地连接密钥 | `Linux_connect.pem` | `loginkey.pem` |
-| 证书目录 | `/opt/22408-ai/cert` → 容器内 `/etc/nginx/ssl` | `/opt/2240ai-v2/cert` → 容器内 `/etc/nginx/ssl` |
-| 证书文件 | `/opt/22408-ai/cert/www.xzshub.top.pem` + `.key` | `/opt/2240ai-v2/cert/www.xzshub.top.pem` + `.key` |
-
-### 服务器规格
-
-| 资源 | 新服务器 | 旧服务器 |
-|------|----------|----------|
-| CPU | 4 核（AMD EPYC 7K62） | 2 核 |
-| 内存 | 3.6 GiB | 1.8 GB |
-| 磁盘 | 40 GB（3.6G 已用 / 37G 可用） | — |
-| OS | OpenCloudOS 9.6（RPM 系） | Linux (Debian) |
-
-> 新服务器 40G 磁盘与旧服务器相当，Docker 镜像/缓存易占满，构建前先 `df -h` 检查（沿用旧服务器经验）。主机 OS 为 RPM 系 OpenCloudOS，与旧 Debian 不同；部署为 Docker 隔离，应用侧无影响，但主机级操作（包管理、firewalld、certbot）命令需按 RPM 系调整。
+服务器规格：4 核 / 3.6 GiB 内存 / 40 GB 磁盘，OpenCloudOS 9.6（RPM 系）。构建前先 `df -h` 检查磁盘空间；主机级操作（包管理、firewalld、certbot）使用 RPM 系对应命令。
 
 ---
 
@@ -176,11 +149,11 @@ bash deploy/scripts/deploy.sh migrate
 
 ### 2.6 Admin 前端构建注意事项（内存）
 
-新服务器规格为 4 核 / 3.6 GB 内存（旧机为 2 核 / 1.8 GB）。Admin 前端 Next.js 构建是内存敏感操作：
+生产服务器规格为 4 核 / 3.6 GB 内存。Admin 前端 Next.js 构建是内存敏感操作：
 
 | 措施 | 说明 |
 |------|------|
-| `NODE_OPTIONS=--max-old-space-size=2048` | Dockerfile 中限制 Node.js 堆上限，防止 OOM（新机 3.6G 用 2048；旧机 1.8G 时用 1536） |
+| `NODE_OPTIONS=--max-old-space-size=2048` | Dockerfile 中限制 Node.js 堆上限，防止 OOM（3.6G 环境使用 2048） |
 | `output: "standalone"` | 产物仅包含必要文件，减少磁盘占用 |
 | 构建超时 | 首次构建约 1-3 分钟，峰值 RSS 约 800–1200 MB |
 | 构建产物 | `.next/standalone` + `.next/static`，总计约 50–80 MB |
@@ -415,7 +388,7 @@ RUN pip install --no-cache-dir --user \
 
 ## 7. 本次生产强化部署说明（2026-07-25）
 
-> 本节为 2026-07 在**旧服务器**（`8.163.56.109` / `/opt/2240ai-v2`）上的历史部署记录，仅供迁移参考。
+> 本节记录 2026-07 的历史生产强化部署事项；服务器已停用，以下内容仅供技术背景参考，不作为当前服务器操作步骤。
 
 ### 7.1 新增环境变量
 
@@ -446,7 +419,7 @@ RUN pip install --no-cache-dir --user \
 2. **备份** — `bash deploy/scripts/backup.sh` + Redis RDB（`redis-cli SAVE`）
 3. **数据库迁移**：
    ```bash
-   cd /opt/2240ai-v2
+   cd /opt/22408-ai
    bash deploy/scripts/deploy.sh migrate
    ```
    v10 迁移创建 5 个复合索引（带 `CONCURRENTLY`），不阻塞生产读写。
@@ -491,7 +464,7 @@ RUN pip install --no-cache-dir --user \
 
 ## 8. 生产强化 Batch 8–11 更新事项（2026-07-26）
 
-> 本节为 2026-07 在**旧服务器**（`8.163.56.109` / `/opt/2240ai-v2`）上的历史部署记录，仅供迁移参考。
+> 本节记录 2026-07 的历史生产强化部署事项；服务器已停用，以下内容仅供技术背景参考，不作为当前服务器操作步骤。
 
 ### 8.1 新增环境变量
 
@@ -689,7 +662,7 @@ worker 启动经过两道校验，缺一不可：
 | 校验 | 要求 | 坑 |
 |------|------|-----|
 | `production_config_validator` | `OCR_USE_GPU` 必须显式 `false`（对所有角色强制，config 默认 True） | 漏配即拒绝启动 |
-| 同上 | `EXPORT_DIR` 目录可写 | 必须显式 `EXPORT_DIR=/opt/2240ai-v2/exports` 且挂 `exports_data` 卷（首次挂载继承镜像 chown 的 app:app）；漏配会按相对路径 `var/exports` 创建失败 |
+| 同上 | `EXPORT_DIR` 目录可写 | 必须显式 `EXPORT_DIR=/opt/22408-ai/exports` 且挂 `exports_data` 卷（首次挂载继承镜像 chown 的 app:app）；漏配会按相对路径 `var/exports` 创建失败 |
 | `OcrRuntimeConfig`（`_init_worker_dependencies` 无条件调用 `get_runtime_config()`） | `OCR_EXECUTION_BACKEND=disabled` 时无需 remote token | 若为 `paddlex_http` 且 production，强制要求 `remote_auth_token` |
 
 **OCR 配置原则：** 服务器 OCR 仅由 **web 进程经外部 API**（PaddleOCR-VL aistudio，paddlex_http）完成，worker 不承载 OCR。因此 worker 环境硬编码：
@@ -723,6 +696,8 @@ OCR_EXECUTION_BACKEND: "disabled"
 - 小程序阅读页：`formula-card` 组件渐进加载——先显示缩略图，页内隐藏 preloader `<image>` 预载主图，`bindload` 后切换为主图；主图失败时保留缩略图。状态机 `computeDisplayGraphUrl()` 与列表页共用。
 - 小程序阅读页图像显示比例（同日补充修复）：`.fc-graph-image` 曾带历史遗留的 `transform: scale(1.12)`（整体放大 12% 并被 `overflow:hidden` 裁边），且主图用 `widthFix` 按自然比例撑高，加载完成后区块突然变高。现改为**固定宽高比视口**：`fc-graph-viewport` 用内联 `padding-bottom:{{graphViewportRatio}}%` 钉住高度（比例取 `graph_asset.width/height`，钳制 25%–125%，缺元数据回退 75% 即 4:3），图像统一 `aspectFit` 填充（`computeGraphViewportRatio()` 位于 `formula-graph.js`）。缩略图→主图切换零布局跳动，异常长图在视口内 letterbox 显示而非拉伸卡片。
 - nginx `/static/formulas/` 已有 `expires 30d; Cache-Control public, immutable`（URL 含内容寻址段），压缩后字节数下降直接减少真机首屏流量；无需改动。
+
+**持久化：** `deploy/docker-compose.prod.yml` 中 app、scheduler、worker 都挂载命名卷 `formulas_data:/app/static/formulas`。运行期上传写在卷内 `graphs/{id}/uploaded`，容器重建不丢图。空卷首次挂载会带入镜像里已有的公式静态文件。
 
 **回填脚本提交注意：** `.gitignore` 第 98 行忽略 `backend/scripts/`，该目录既有脚本均为 `git add -f` 跟踪；新脚本需同样 `git add -f backend/scripts/backfill_formula_graph_image_size.py`。
 

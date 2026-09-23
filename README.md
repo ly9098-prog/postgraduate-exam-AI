@@ -6,7 +6,7 @@ MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统�
 
 > 本 README 面向「首次运行项目、日常开发、CI 排错和部署维护」。API 的完整字段与协议应以运行时 OpenAPI 和 `docs/` 中的专项文档为准。
 
-> 当前实现快照（2026-09-07）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2 + React 19.2；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`；用户与 Admin JWT 签名域隔离。错题展示、统计和 AI 分析会跟随当前题库内容，同时保留错题产生时的历史版本供复习记录使用；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底；番茄钟统计页已完善历史记录占位和图标展示，并规避部分微信开发者工具运行时辅助模块兼容问题。
+> 当前实现快照（2026-09-23）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2.12 + React 19.2.4；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`，当前唯一生产入口是 `xzshub.top`（`/opt/22408-ai`）；用户与 Admin JWT 签名域隔离。408 选择题考试（试卷、作答、成绩、历史、管理端组卷）已接入。多空题分为每空单选 `multi_blank_choice` 与每空多选 `multi_blank_multiple_choice`。公式卡支持函数图，生产用命名卷 `formulas_data` 持久化上传图。错题展示、统计和 AI 分析会跟随当前题库内容，错因分析以服务端核对过的作答事实为准，同时保留错题产生时的历史版本；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底。番茄钟统计只计入已结束会话。
 
 ## 目录
 
@@ -75,8 +75,9 @@ flowchart LR
 - 学习报告、趋势、知识掌握分析
 - AI 题目讲解、错因分析、学习建议
 - 番茄钟、暂停/恢复、专注统计与历史记录
-- 公式卡浏览、收藏、分类与公式渲染
-- 错题/学习数据导出
+- 408 选择题考试：试卷列表、作答、成绩与历史
+- 公式卡浏览、收藏、分类、函数图与公式渲染
+- 错题/学习数据导出（PDF；Word 由服务端 `docx_enabled` 决定是否开放）
 - KaTeX / mp-html 富文本与数学公式渲染
 
 ### 管理后台
@@ -86,8 +87,9 @@ flowchart LR
 - 小程序用户管理、封禁/解封、管理员绑定
 - 管理员账号、角色与权限矩阵（RBAC）
 - 题库查询、编辑、上下架、版本与图片/选项管理
-- OCR / AI 导题、文本导入、批量图片导入与审核发布
-- 公式卡、分类、版本、审核状态与图形资源管理
+- 408 选择题试卷：组卷、发布、归档与软删除
+- OCR / AI 导题、文本导入、题目 CSV 导入、批量图片导入与审核发布
+- 公式卡、分类、版本、审核状态与函数图资源管理
 - 知识图谱、知识质量报告
 - 推荐策略、实验、指标与报表
 - AI 模型、OCR、向量检索配置与连接测试
@@ -139,11 +141,13 @@ flowchart LR
 │   └── src/lib/                 # API client、鉴权、权限、工具
 │
 ├── miniprogram/                 # 微信小程序
-│   ├── pages/                   # 登录、协议、首页、Dashboard、番茄钟
+│   ├── pages/                   # 主包：登录、首页；协议、Dashboard、番茄钟另作分包
 │   ├── subpackages/
-│   │   ├── study/               # 刷题、复习、错题
+│   │   ├── study/               # 刷题、复习、错题、学习计划
+│   │   ├── exam/                # 408 选择题考试
+│   │   ├── knowledge/           # 知识地图
 │   │   ├── productivity/        # 番茄钟统计
-│   │   ├── formulas/            # 公式卡
+│   │   ├── formulas/            # 公式卡与函数图
 │   │   ├── export/              # 导出
 │   │   └── animation/           # Lottie 动画
 │   ├── components/
@@ -187,7 +191,7 @@ flowchart LR
 
 ### 管理后台
 
-- Next.js + React 19
+- Next.js 16.2 + React 19.2
 - TypeScript
 - TanStack Query / TanStack Table
 - Zustand
@@ -371,7 +375,7 @@ http://localhost:3000
 NEXT_PUBLIC_ADMIN_API_BASE_URL=http://localhost:8000/api/admin/v1
 ```
 
-管理后台使用 App Router，主要页面包括 Dashboard、用户、管理员、角色、题库、导入审核、公式卡、知识图谱、推荐策略、AI 设置、审计日志和系统任务等。
+管理后台使用 App Router，主要页面包括 Dashboard、用户、管理员、角色、题库、408 试卷、导入审核、公式卡、知识图谱、推荐策略、AI 设置、审计日志和系统任务等。
 
 ### 5.4 启动微信小程序
 
@@ -537,6 +541,7 @@ WECHAT_APP_SECRET=...
 | AI / RAG | `/ai/*`, `/rag/*` |
 | 知识与自适应 | `/knowledge-*`, `/adaptive-learning/*` |
 | 公式卡 | `/formulas/*` |
+| 408 考试 | `/exams/*` |
 | 番茄钟 | `/pomodoro/*` |
 | 导入 / 导出 | `/import/*`, `/exports/*` |
 | 同步 / 缓存 | `/sync/*`, `/cache/*` |
@@ -624,6 +629,7 @@ CI 的 Reliability Gate 会执行全部迁移，并校验数据库 revision 与�
 - AI：`admin_ai_model_configs`, `admin_ai_configs`, AI usage / feedback logs
 - 导题：import pipeline / batch job / OCR job 相关表
 - 公式卡：formula card / version / tag / graph / import 相关表
+- 408 考试：`exam_papers`, `exam_paper_questions`, `exam_attempts`, `exam_answers`
 - 推荐：strategy / experiment / assignment / metrics / logs
 - 异步任务：`task_outbox` 等任务基础设施表
 
@@ -767,7 +773,7 @@ bash deploy/scripts/deploy.sh update
 | 服务       | 说明                              |
 | ---------- | --------------------------------- |
 | `app`      | FastAPI + Gunicorn Web 进程       |
-| `worker`   | OCR/AI/导入等异步任务 worker      |
+| `worker`   | Redis 任务消费者（投影、AI 预热等）；生产 OCR 不在此进程执行 |
 | `scheduler`| 定时任务、导出与清理 scheduler    |
 | `nginx`    | nginx HTTPS 反向代理              |
 | `postgres` | pgvector/PostgreSQL 15 持久卷     |
@@ -778,26 +784,26 @@ bash deploy/scripts/deploy.sh update
 网络拓扑：
 
 ```
-用户 → nginx:443 (HTTPS) → app:8000 (HTTP)
-                      → postgres:5432（仅 app 可访问）
-                      → redis:6379（仅 app 可访问）
+用户 → nginx:443 (HTTPS) → app:8000（/api、/health、/static）
+                         → admin:3000（/admin）
+app / worker / scheduler / backup → postgres:5432
+app / worker / scheduler → redis:6379
 ```
 
 ### 10.4 服务器信息
 
-> 2026-08-06 生产已迁移至新服务器并完成 DNS 切流；2026-08-07 旧机服务已停用（数据卷保留，可回滚）。新服务器为当前唯一生产。
+当前唯一生产入口。旧服务器已停用，不再作为冷备或回滚目标，这里不保留它的连接信息。细节以 `docs/project/DEPLOY_PLAN.md` 为准。
 
-| 项目     | 新服务器（当前生产）                                      | 旧服务器（冷备）                   |
-| -------- | --------------------------------------------------------- | ---------------------------------- |
-| 域名     | `xzshub.top`                                              | `xzshub.top`（DNS 已改指新服务器） |
-| 公网 IP  | `101.33.231.186`                                          | `8.163.56.109`                     |
-| 内网 IP  | `10.1.0.13`                                               | `172.18.50.44`                     |
-| 部署目录 | `/opt/22408-ai`                                           | `/opt/2240ai-v2`                   |
-| 连接密钥 | `Linux_connect.pem`                                       | `loginkey.pem`                     |
-| CPU      | 4 核（AMD EPYC 7K62）                                     | 2 核                               |
-| 内存     | 3.6 GiB                                                   | 1.8 GB                             |
-| 磁盘     | 40 GB（注意 Docker 镜像/缓存占用，构建前先 `df -h` 检查） | —                                  |
-| OS       | OpenCloudOS 9.6（RPM 系）                                 | Linux (Debian)                     |
+| 项目     | 当前生产 |
+| -------- | -------- |
+| 域名     | `xzshub.top`（`www` 与 `api` 子域同一 Nginx） |
+| 公网 IP  | `101.33.231.186` |
+| 内网 IP  | `10.1.0.13` |
+| 部署目录 | `/opt/22408-ai` |
+| 连接密钥 | `Linux_connect.pem` |
+| 规格     | 4 核 / 3.6 GiB / 40 GB，OpenCloudOS 9.6 |
+
+构建前先 `df -h`。主机级操作按 RPM 系命令执行。
 
 ### 10.5 部署流程
 

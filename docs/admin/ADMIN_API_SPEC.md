@@ -1,6 +1,6 @@
 # Admin API 规范
 
-> 版本：v2.7（运维 API、安全边界与题目管理同步版） | 状态：核心 Admin API 已实施 | 更新：2026-09-02
+> 版本：v2.8（408 考试与题目 CSV 导入） | 状态：核心 Admin API 已实施 | 更新：2026-09-23
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
@@ -8,6 +8,7 @@
 > - **变更原因**：2026-06-10 同步 AI 解析设置页面配置接口（`/ai-models`、`/ai-configs`）。
 > - **变更原因**：2026-08-10 同步题目图片上传/替换/删除、快捷添加选项、keyword 匹配知识点名与别名，以及公式卡 API 与 PUT 版本号推导（行锁 + max 版本）。
 > - **变更原因**：2026-08-29 同步系统运维细粒度权限、备份响应脱敏、用户/Admin JWT 签名域隔离与生产健康端点收敛。
+- **变更原因**：2026-09-23 同步 408 考试管理接口、题目 CSV 直导入，以及生产 Base URL（`xzshub.top` / `api.xzshub.top`，不再使用 `api.2240ai.com`）。
 
 ---
 
@@ -16,7 +17,7 @@
 ### Base URL
 ```
 开发：http://localhost:8000/api/admin/v1
-生产：https://api.2240ai.com/api/admin/v1
+生产：https://xzshub.top/api/admin/v1（`www.xzshub.top`、`api.xzshub.top` 同一 Nginx `server_name`）
 ```
 
 ### 认证
@@ -240,6 +241,7 @@ POST   /v1/auth/refresh
 | GET | `/imports/{batchId}/status` | 读取该批次最新 AI 任务进度（Redis/cache） | import:read |
 | DELETE | `/imports/questions/{importId}` | 删除导入题 | import:write |
 | DELETE | `/imports/{batchId}` | 删除整个批次 | import:write |
+| POST | `/imports/questions-csv` | 导入题目导出 CSV，直接写入 `questions`（非 AI/OCR，不经 `question_imports` 审核） | import:write |
 
 **查询参数（Phase 4 实现，2026-05-29）**：
 - `GET /imports`：`page`（默认 1，≥1）、`page_size`（默认 20，1-100）、`status`、`source_type`、`keyword`。
@@ -262,6 +264,13 @@ POST   /v1/auth/refresh
 - 不得直接调用小程序端 API；如需复用 AI/OCR 逻辑，必须先确认 service/worker 边界。
 - AI/OCR 结果只能作为辅助任务状态或待确认字段，AI 失败只更新任务为 `failed`，不得影响 `question_imports` 人工确认流程。
 - 不得绕过 `question_imports + 人工确认` 直接写入 `questions`。
+
+**`POST /imports/questions-csv`（2026-09-13）**：
+
+- 仅接受 `.csv`，否则 415。
+- 权限 `import:write`。成功响应：`total_rows`、`inserted_count`、`skipped_count`、`first_question_id`、`last_question_id`。
+- 文件过大：413，`error.code=QUESTION_CSV_TOO_LARGE`。行级校验失败：400，`error.code=QUESTION_CSV_VALIDATION_ERROR`，`detail` 为可展示的行/字段说明（该接口不走全局 detail 脱敏）。
+- 这是题库导出 CSV 的回灌，不是把 AI/OCR 结果直接入库。
 
 ### 3.9 科目管理 `/subjects`
 
@@ -490,6 +499,43 @@ completion_auto_answer_reasoning, completion_auto_knowledge_tags
   3. 写 `FormulaCardVersion`（action=update）与审计 `formula.update` 在同一事务内。
 - 内容字段（formula_blocks）变更时重算 `content_hash`（SHA-256）。
 - 状态为 `approved` / `rejected` 的卡片内容更新后重置为 `draft`。
+
+### 3.16 408 考试 `/exams`（2026-09-23 同步）
+
+前缀 `/api/admin/v1/exams`。试卷类型 `past_exam_choice` / `mock_choice`，状态 `draft` / `published` / `archived`。列表默认排除 `deleted_at` 非空的试卷。数字 `paper_id` 与 `public_id`（32 位 hex）各有一套等价路径。
+
+| 方法 | 路径 | 描述 | 权限 |
+|------|------|------|------|
+| GET | `/exams/papers` | 列表。查询 `status`、`paper_type`、`year`（2000–2100） | question:read |
+| POST | `/exams/papers` | 创建草稿 | question:write |
+| GET | `/exams/papers/{paper_id}` | 详情 | question:read |
+| GET | `/exams/papers/public/{public_id}` | 按 public_id 取详情 | question:read |
+| GET | `/exams/past-exam-candidates` | 某年真题候选题。查询 `year` 必填 | question:read |
+| PATCH | `/exams/papers/{paper_id}` | 更新元数据 | 角色 `admin` 或 `super_admin` |
+| PATCH | `/exams/papers/public/{public_id}` | 按 public_id 更新元数据 | 角色 `admin` 或 `super_admin` |
+| DELETE | `/exams/papers/{paper_id}` | 软删除 | 角色 `admin` 或 `super_admin` |
+| DELETE | `/exams/papers/public/{public_id}` | 按 public_id 软删除 | 角色 `admin` 或 `super_admin` |
+| PUT | `/exams/papers/{paper_id}/items` | 整卷替换题目 | question:write |
+| PUT | `/exams/papers/public/{public_id}/items` | 按 public_id 替换题目 | question:write |
+| POST | `/exams/papers/{paper_id}/items/quick-fill-past-exam` | 按年份候选快速组真题 | question:write |
+| POST | `/exams/papers/public/{public_id}/items/quick-fill-past-exam` | 同上，public_id | question:write |
+| POST | `/exams/papers/{paper_id}/items/refresh-past-exam` | 按当前题库刷新真题题目 | question:write |
+| POST | `/exams/papers/public/{public_id}/items/refresh-past-exam` | 同上，public_id | question:write |
+| DELETE | `/exams/papers/{paper_id}/items` | 清空题目 | question:write |
+| DELETE | `/exams/papers/public/{public_id}/items` | 按 public_id 清空题目 | question:write |
+| POST | `/exams/papers/{paper_id}/publish` | 发布 | question:write |
+| POST | `/exams/papers/public/{public_id}/publish` | 按 public_id 发布 | question:write |
+| POST | `/exams/papers/{paper_id}/restore` | 从归档恢复 | question:write |
+| POST | `/exams/papers/public/{public_id}/restore` | 按 public_id 恢复 | question:write |
+| POST | `/exams/papers/{paper_id}/archive` | 归档 | question:write |
+| POST | `/exams/papers/public/{public_id}/archive` | 按 public_id 归档 | question:write |
+
+规则：
+
+- 软删除写 `deleted_at`，`is_active=false`，若当前不是 `archived` 则改为 `archived`。作答记录与审计保留。响应 `{status:"ok", public_id}`。审计动作 `exam.paper.delete`，严重级别 `critical`。
+- 同一年未删除的真题：发布时不能已有另一份 `published`；从归档恢复时不能已有另一份 `draft` 或 `published`。
+- 真题选择题必须正好 40 道 `single_choice`，每题 2 分。题号区间：数据结构 1–10、组成原理 11–22、操作系统 23–32、计算机网络 33–40。模拟卷最多 40 道，同样只允许 `single_choice`。
+- 换题与状态动作的失败不走全局 detail 脱敏。换题校验失败时 `error.code` 为 `EXAM_PAPER_ITEMS_INVALID`（或 `EXAM_PAPER_NOT_FOUND` / `EXAM_PAPER_STATE_ERROR`）。状态动作失败时为 `EXAM_PAPER_ACTION_INVALID` 或上述 not-found / state 码。HTTP 仍是 404 / 409 / 422。
 
 ---
 
