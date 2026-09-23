@@ -40,6 +40,7 @@
 | 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
 
 > 2026-09-23 更新原因：补齐 9 月 13 日之后的 408 考试、题目 CSV、多空题型与公式图卷事实。历史阶段文档和审计报告不改写成当前承诺。
+> 同日重写 `docs/project/ROADMAP.md` 与 `docs/project/MVP_SCOPE.md`：去掉「导入管线开发中」，并标明 `prompts/tasks/backlog/` 不是施工单。
 
 ---
 
@@ -50,8 +51,8 @@
 | 文档 | 作用 |
 |------|------|
 | `docs/project/PROJECT_RULES.md` | 长期项目规则与明确不做事项 |
-| `docs/project/MVP_SCOPE.md` | MVP 范围 |
-| `docs/project/ROADMAP.md` | 路线图 |
+| `docs/project/MVP_SCOPE.md` | 原 MVP 清单（已完成；现行范围见路线图） |
+| `docs/project/ROADMAP.md` | 现行范围。不排新功能，也不要把 backlog 当待办 |
 | `docs/project/CHANGELOG.md` | 项目变更记录 |
 | `docs/project/BUGS.md` | Bug 完整记录 |
 | `docs/project/BUGS_HISTORY.md` | Bug 历史归档 |

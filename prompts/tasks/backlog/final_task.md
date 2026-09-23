@@ -1,3 +1,5 @@
+> **不要按本文施工（2026-09-23）。** 这是收进 `backlog/` 的历史任务书，不代表当前工作。现行范围见 `docs/project/ROADMAP.md`。
+
 # 🚀 OCR Pipeline RC Final Task（优化完整版）
 
 ------

@@ -6,7 +6,7 @@
 |------|------|
 | `current_task.md` / `next_task.md` / `fix_task.md` | 已完成。只留完成记录，步骤在 `done/` |
 | `reference/` | 仍被文档引用的结构说明，例如 segment schema |
-| `backlog/` | 从 `not_sorted/` 收进来的未归类任务，不代表正在做 |
+| `backlog/` | 历史任务书。每个文件开头标明不要施工；不代表待办，也不要按正文改代码 |
 | `done/` | 已结束的任务书和审计记录 |
 | `archive/repair-briefs/` | 早期全仓修复任务书（原 `on_repair/`） |
 | `upgrade/` | 2026-09-07 的 408 总控计划，不是自动施工单 |

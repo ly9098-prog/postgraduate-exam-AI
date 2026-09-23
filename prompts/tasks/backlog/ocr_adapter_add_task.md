@@ -1,3 +1,5 @@
+> **不要按本文施工（2026-09-23）。** 这是收进 `backlog/` 的历史任务书，不代表当前工作。现行范围见 `docs/project/ROADMAP.md`。
+
 你现在需要在一个现有 OCR Pipeline 工程中进行一次“最小侵入式扩展”，新增一个 PaddleOCR-VL Adapter，并将其接入系统的 AI OCR 模型配置体系，同时支持在 admin 前端 ai-settings 页面中配置和切换使用 PaddleOCR-VL-1.6 模型。
 
 ========================

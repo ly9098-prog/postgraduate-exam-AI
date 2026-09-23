@@ -2,7 +2,7 @@
 
 > 已完成开发阶段归档。每个阶段的设计目标、功能范围、技术方案。
 >
-> 当前活跃开发任务见 `/prompt.md`，详细设计文档见 `/docs/`。
+> 这里只归档历史阶段，不是当前施工单。仓库里没有 `/prompt.md`。现行范围见 `docs/project/ROADMAP.md`。
 
 ---
 
@@ -15,7 +15,7 @@
 | 5 | 学习数据分析看板 | ✅ | [phase-5-dashboard.md](phase-5-dashboard.md) |
 | 6 | 生产部署 + 上线 | ✅ | [phase-6-deployment.md](phase-6-deployment.md) |
 | 7 | AI 辅助导题与智能题库 | ✅ | [phase-7-ai-import.md](phase-7-ai-import.md) |
-| 8 | OCR 扫描版 PDF 支持 | ✅（待 E2E 验证） | [phase-8-ocr.md](phase-8-ocr.md) |
+| 8 | OCR 扫描版 PDF 支持 | 管线已实现；全量 E2E 仍待确认 | [phase-8-ocr.md](phase-8-ocr.md) |
 
 ---
 
