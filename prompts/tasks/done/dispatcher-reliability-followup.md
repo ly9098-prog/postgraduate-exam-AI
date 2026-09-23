@@ -1,3 +1,5 @@
+> **状态：已完成。** 下文是当时的任务书，只作记录。不要再按其中的步骤执行。
+
 你是一名资深 Python/FastAPI、SQLAlchemy Async、PostgreSQL、Redis、分布式任务系统和生产可靠性工程师。
 
 当前项目已完成 P0.5 修复，已报告：

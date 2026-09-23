@@ -1,5 +1,7 @@
 # 基础系统 Prompt
 
+> 状态：早期导入管线 Prompt，不是当前最高规则。以根目录 `AGENTS.md`、`docs/project/PROJECT_RULES.md` 和代码为准。下文里的模型、JWT 天数和目录树可能已过时。
+
 > 长期稳定的项目规则和开发规范。每次新会话开始时读取。
 
 ---

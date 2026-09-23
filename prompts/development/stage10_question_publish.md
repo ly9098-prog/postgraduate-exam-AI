@@ -479,7 +479,7 @@ class ApproveAndPublishResponse(BaseModel):
 
 - 更新 `/docs/database/` 相关文档
 - 更新 `/docs/api/` 相关文档
-- 更新 `/prompts/tasks/current-task.md`
+- 更新 `/prompts/tasks/current_task.md`
 - 更新 changelog
 
 ## 13. 验收标准

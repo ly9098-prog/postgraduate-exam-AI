@@ -4,7 +4,7 @@ A "multi-blank choice" (多空选择题) is a question with multiple blank slots
 each blank having its own set of options (or sharing one set), and each blank has a
 separate answer. This module provides parsing, serialization, validation, and detection.
 
-Data contract (see prompts/tasks/current_task.md §二):
+Data contract (also summarized in docs/backend/DB_SCHEMA.md):
 
     question_type = "multi_blank_choice"
     content.text = stem with blank slots

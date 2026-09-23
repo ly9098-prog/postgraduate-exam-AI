@@ -1,12 +1,14 @@
 # 任务执行规范
 
+> 状态：早期导入管线 Prompt，不是当前最高规则。以根目录 `AGENTS.md`、`docs/project/PROJECT_RULES.md` 和代码为准。下文里的模型、JWT 天数和目录树可能已过时。
+
 > 如何拆分任务、编码、测试、提交。
 
 ---
 
 ## 任务拆解
 
-1. 先读 `tasks/current-task.md` 确认当前目标
+1. 先读 `prompts/README.md`。`tasks/current_task.md` 只表示有没有被明确打开的一次性任务，没有就不要发明任务
 2. 复杂任务拆分为 ≤5 步的可执行子任务
 3. 每一步完成后运行测试确认
 4. 每步提交一次（`feat:` / `fix:` / `refactor:` / `docs:`）

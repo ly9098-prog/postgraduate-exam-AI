@@ -1,0 +1,21 @@
+# 任务 Prompt
+
+一次性任务书。不要把这些文件当成仍在执行的命令。
+
+| 目录 | 内容 |
+|------|------|
+| `current_task.md` / `next_task.md` / `fix_task.md` | 已完成。只留完成记录，步骤在 `done/` |
+| `reference/` | 仍被文档引用的结构说明，例如 segment schema |
+| `backlog/` | 从 `not_sorted/` 收进来的未归类任务，不代表正在做 |
+| `done/` | 已结束的任务书和审计记录 |
+| `archive/repair-briefs/` | 早期全仓修复任务书（原 `on_repair/`） |
+| `upgrade/` | 2026-09-07 的 408 总控计划，不是自动施工单 |
+| `OCR_fix/` | OCR 整改分阶段任务，`phase_5.md` 修正了原来的文件名拼写 |
+| `PDF_import/` | 各科 PDF 导入任务 |
+| `fast_fill_answer/` | 按科目整理的答案批次，不是系统规则 |
+| `questions_import/` | 题目答案批次 |
+| `math_chart/` | 公式函数图目录。现行文本是 `*_v2.1.md`，更早版本在 `previous/` |
+| `mini_ui_fix/` | 小程序 UI 任务。`past/`、`past_1/` 是旧轮次 |
+| `practice_no_repeat/` | 练习去重方案 |
+
+代码若写 `ocr_book_pdf_non_question_filter_plan.md`，正文在 `done/done-ocr_book_pdf_non_question_filter_plan.md`。

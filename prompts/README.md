@@ -1,64 +1,31 @@
 # Prompts 目录
 
-> 2240AI 项目 Prompt 工程系统 — 面向 Claude Code 的长期可维护 Prompt 体系。
+一次性任务书和早期系统 Prompt。当前仓库规则以根目录 `AGENTS.md` 和 `docs/project/PROJECT_RULES.md` 为准，不要把本目录里的旧任务当成必须执行的步骤。
 
----
+## 目录
 
-## 目录结构
-
-```
-/prompts
-├── README.md                   # 本文件，Prompt 系统索引
-├── system/                     # 系统级规则（长期稳定，每次任务前读取）
-│   ├── base-system-prompt.md   # 基础系统 Prompt：项目规则/开发规范/AI行为
-│   ├── task-execution.md       # 任务执行规范：如何拆任务/写代码/测试
-│   ├── coding-rules.md         # 编码规则：风格/模块化/可测试性
-│   └── debug-rules.md          # 调试/测试规则
-├── development/                # 阶段开发 Prompt（当前开发任务）
-│   ├── standardization.md      # 导入管线主规划
-│   ├── stage1_text_normalizer.md  # 文本标准化
-│   ├── stage2_structure_analysis.md
-│   ├── stage3_question_splitter.md
-│   ├── stage4_answer_matcher.md
-│   ├── stage5_question_normalizer.md
-│   ├── stage6_ai_repair.md
-│   ├── stage7_review_system.md
-│   ├── stage8_pipeline_integration.md
-│   └── stage9_ocr_enhancement.md
-├── tasks/                      # 单任务 Prompt（一次性任务）
-│   └── current-task.md         # 当前正在执行的任务
-└── templates/                  # Prompt 模板
-    ├── feature-template.md     # 新功能开发模板
-    ├── bugfix-template.md      # Bug 修复模板
-    └── refactor-template.md    # 重构模板
+```text
+prompts/
+├── README.md
+├── system/           # 早期系统 Prompt。文件开头已标明不是当前最高规则
+├── development/      # stage1–stage15 导入管线阶段任务书（历史）
+├── templates/        # feature / bugfix / refactor 模板
+└── tasks/            # 一次性任务，分区见 tasks/README.md
 ```
 
----
+## 怎么用
 
-## 读取策略
+| 需要 | 读 |
+|------|----|
+| 项目长期约束 | `AGENTS.md`、`docs/project/PROJECT_RULES.md` |
+| 写新任务 | `templates/`，放进 `tasks/backlog/` |
+| 看现在有没有指定任务 | `tasks/current_task.md` |
+| 查某次旧任务怎么写的 | `tasks/done/`、`tasks/archive/`、各主题目录 |
 
-| Prompt | 读取时机 | 是否必须 |
-|--------|---------|---------|
-| `system/base-system-prompt.md` | 每次新会话开始 | 是 |
-| `system/task-execution.md` | 每次新会话开始 | 是 |
-| `system/coding-rules.md` | 开始编码前 | 是 |
-| `system/debug-rules.md` | 调试阶段 | 按需 |
-| `development/*.md` | 当前开发阶段 | 按需 |
-| `tasks/current-task.md` | 每次任务开始 | 是 |
-| 其他 | 按需读取 | 否 |
+`system/` 里仍有「只调 DeepSeek、JWT 7 天、每次会话必须读 current-task」这类旧句子。那些句子不要覆盖代码和 `docs/`。
 
----
+## 这次整理留在原处的原因
 
-## Prompt 分层
-
-1. **系统层**（`system/`）：长期稳定，不随开发阶段变化
-2. **开发层**（`development/`）：当前阶段的开发任务，完成即归档
-3. **任务层**（`tasks/`）：一次性具体任务，完成即更新或删除
-
-## 关联文档
-
-- `/docs/architecture/`：系统架构参考
-- `/docs/backend/`：API/DB 参考
-- `/docs/frontend/`：UI/组件参考
-- `/docs/project/`：项目规则/路线图
-- `/docs/ai/`：AI/OCR 参考
+- 答案批次、PDF 导入稿、UI 旧轮次数量大，只按目录归类，不改正文。
+- `tasks/current_task.md`、`tasks/next_task.md`、`tasks/fix_task.md` 保留路径，因为代码和文档注释还指向它们。三份任务都已完成，文件里只留完成记录和归档位置。
+- 公式图目录只把 `v2.1` 留在 `math_chart/` 根上，更早的 `directory_*.md` 移到 `previous/`。

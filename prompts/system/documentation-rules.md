@@ -1,5 +1,7 @@
 # Documentation Rules — 导入管线系统
 
+> 状态：早期导入管线 Prompt，不是当前最高规则。以根目录 `AGENTS.md`、`docs/project/PROJECT_RULES.md` 和代码为准。下文里的模型、JWT 天数和目录树可能已过时。
+
 ## 每阶段完成后必须更新的文档
 
 | 文档 | 更新时机 | 更新内容 |
@@ -12,7 +14,7 @@
 | `docs/project/PROJECT_RULES.md` | 任何阶段 | 目录结构变更、技术栈变更、管线阶段说明 |
 | `docs/backend/API_SPEC.md` | stage4/5/7/8 完成后 | 新增模块、审核接口说明 |
 | `docs/frontend/UI_RULES.md` | stage7 完成后 | 新增审核页面交互规则 |
-| `prompts/tasks/current-task.md` | 每阶段开始前 | 更新当前任务描述 |
+| `prompts/tasks/current_task.md` | 每阶段开始前 | 更新当前任务描述 |
 
 ## 文档更新规范
 
