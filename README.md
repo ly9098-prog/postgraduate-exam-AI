@@ -614,7 +614,7 @@ alembic current
 alembic heads
 ```
 
-CI 的 Reliability Gate 会执行全部迁移，并校验数据库 revision 与仓库 Alembic heads 一致。
+CI 的 Reliability Gate 会在 PostgreSQL 上执行全部迁移，并校验数据库 revision 与仓库 Alembic heads 一致。SQLite 上的升级/降级循环和历史检查点矩阵见 §9.3。
 
 ### 8.3 核心数据域
 
@@ -699,21 +699,66 @@ cd backend
 
 > 注意：全量本地 pytest 包含依赖 PostgreSQL/Redis/外部 OCR 服务的用例，失败不代表代码有问题；CI 只跑固定清单。
 
-### 9.3 Reliability Gate
+### 9.3 迁移测试
+
+迁移检查不在 `lint-and-audit` 的固定 pytest 清单里。`push` / `pull_request` 到 `main` 时，`.github/workflows/ci.yml` 另有两个 job；`.github/workflows/reliability.yml` 再在 PostgreSQL 上做一次全量迁移。
+
+`migration-cycle` 使用 `sqlite:///migration-ci.db`，工作目录是 `backend/`：
+
+1. `alembic heads` 必须正好一个 head。
+2. `alembic upgrade head`。
+3. `alembic downgrade -1`，然后再 `alembic upgrade head`。
+
+`migration-history-matrix` 使用 `sqlite:///migration-history-ci.db`：
+
+1. `python scripts/ci_collect_migration_checkpoints.py` 从唯一 head 沿第一条 parent 链取样，每 10 个 revision 取一个检查点，并带上链尾。
+2. `python scripts/ci_migration_matrix_check.py migration-checkpoints.json` 对每个检查点执行 `upgrade`、`downgrade -1`、再 `upgrade`，最后 `upgrade head`。
+
+矩阵不把整条历史做成一次线性降级，因此不会主动走过标记为不可逆的旧迁移。
+
+在 `backend/` 且依赖已安装时，可以本地复现：
+
+```bash
+DATABASE_URL=sqlite:///migration-ci.db alembic heads
+DATABASE_URL=sqlite:///migration-ci.db alembic upgrade head
+DATABASE_URL=sqlite:///migration-ci.db alembic downgrade -1
+DATABASE_URL=sqlite:///migration-ci.db alembic upgrade head
+
+DATABASE_URL=sqlite:///migration-history-ci.db python scripts/ci_collect_migration_checkpoints.py > migration-checkpoints.json
+DATABASE_URL=sqlite:///migration-history-ci.db python scripts/ci_migration_matrix_check.py migration-checkpoints.json
+```
+
+Reliability Gate 与上面两组 SQLite job 不同：它在 `pgvector/pgvector:pg15` 上执行 `alembic upgrade head`，并断言数据库 revision 等于仓库 Alembic heads。同一步里的 `alembic check` 只报告 ORM 与迁移漂移，`continue-on-error: true`，失败不阻断该 workflow。
+
+仓库里还有针对迁移的 pytest。它们不在 `ci.yml` 的固定清单中。`tests/test_features/` 和 `tests/test_services/` 写在 `backend/pytest.ini` 的 `testpaths` 里，默认 `pytest` 会跑到其中一部分。
+
+| 测试 | 覆盖 |
+|---|---|
+| `tests/test_features/test_migration_smoke.py` | 单一 head；空 SQLite 可 `upgrade head`。降级循环只在 `DATABASE_URL` 指向 PostgreSQL 时运行 |
+| `tests/test_features/test_migration_ci_scripts.py` | 检查点列表非空、不重复，并拒绝非法 JSON。文件仍断言最后一个检查点是 `s408seq20260911`；2026-09-23 采集结果的链尾已是 `v13_multi_blank_multiple_choice`，该断言与当前图不一致 |
+| `tests/test_services/test_p5_0_schema_baseline_migration.py` | `p5_0_schema_baseline` 迁移文件和相关 ORM 声明 |
+| `tests/test_services/test_pomodoro_v2_migration.py` | 番茄钟 V2 回填、幂等和迁移后校验 |
+| `tests/integration/test_pomodoro_constraints_migration.py`、`tests/integration/test_pomodoro_constraint_definition_migration.py` | 在内存 SQLite 上执行对应迁移操作 |
+| `tests/ocr_pipeline/test_migration_question_types.py` | 迁移文件中的 `CANONICAL_TYPES` 与 `QuestionType` 一致 |
+| `tests/integration/test_alembic_fresh_database.py` | 空库只走 Alembic，不调用 `create_all`。需要 `--run-integration` |
+| `tests/integration/test_migration_subject_id.py`、`tests/integration/test_migration_question_embeddings.py`、`tests/integration/test_migration_question_embeddings_model_fk.py` | 在真实 PostgreSQL 上验证科目 ID 与 embedding 外键迁移。需要 `--run-integration`，测试文件默认连 `localhost:5433` |
+
+`--run-integration` 的跳过逻辑在 `backend/tests/integration/conftest.py`。没有 PostgreSQL 时，这些集成失败不代表 SQLite 迁移 job 失败。
+
+### 9.4 Reliability Gate
 
 Reliability workflow 会覆盖：
 
 - PostgreSQL + pgvector service
 - Redis service
-- Alembic 全量迁移
-- Alembic head 一致性校验
+- Alembic 全量迁移与 head 一致性校验（SQLite 循环见 §9.3）
 - 后端 reliability unit / integration tests
 - OpenAPI contract 导出与校验
 - FastAPI OpenAPI → TypeScript contract
 - 管理后台 TypeScript contract 检查
 - 管理后台构建
 
-### 9.4 前端与小程序
+### 9.5 前端与小程序
 
 管理后台：
 
