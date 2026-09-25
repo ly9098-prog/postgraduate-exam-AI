@@ -4,9 +4,11 @@ import {
   addBlankOptionToGroup,
   extractBlankSlotIds,
   normalizeBlankOptionGroups,
+  parseMultiBlankChoiceAnswer,
   resolveQuestionOptions,
   normalizeQuestionOptions,
   reuseFirstBlankOptions,
+  updateMultiBlankChoiceAnswer,
 } from "./question-options";
 import type { NormalizedQuestionOption } from "./question-options";
 
@@ -46,6 +48,33 @@ describe("addBlankOptionToAllGroups", () => {
     expect(addBlankOptionToAllGroups(groups, [])).toEqual([
       { id: "1", options: [{ key: "A", text: "甲" }, { key: "B", text: "" }] },
       { id: "2", options: [{ key: "A", text: "乙" }, { key: "B", text: "" }] },
+    ]);
+  });
+});
+
+describe("multi-blank answer quick selection", () => {
+  const blankIds = ["①", "②"];
+
+  it("fills and replaces a single-choice answer for one blank", () => {
+    expect(updateMultiBlankChoiceAnswer("①:A;②:B", blankIds, "②", "C")).toBe(
+      "①:A;②:C",
+    );
+  });
+
+  it("clears a single-choice answer without disturbing other blanks", () => {
+    expect(updateMultiBlankChoiceAnswer("①:A;②:B", blankIds, "②", "")).toBe("①:A");
+  });
+
+  it("toggles multiple-choice answers in sorted order", () => {
+    const selected = updateMultiBlankChoiceAnswer("①:C", blankIds, "①", "A", true);
+    expect(selected).toBe("①:A,C");
+    expect(updateMultiBlankChoiceAnswer(selected, blankIds, "①", "C", true)).toBe("①:A");
+  });
+
+  it("parses the serialized value used to highlight quick-select buttons", () => {
+    expect(parseMultiBlankChoiceAnswer("①:A;②:B,D")).toEqual([
+      { blankId: "①", optionKey: "A" },
+      { blankId: "②", optionKey: "B,D" },
     ]);
   });
 });

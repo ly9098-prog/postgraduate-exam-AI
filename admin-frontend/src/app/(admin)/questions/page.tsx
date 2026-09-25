@@ -53,11 +53,13 @@ import {
   extractBlankSlotIds,
   normalizeBlankOptionGroups,
   normalizeQuestionOptions,
+  parseMultiBlankChoiceAnswer,
   resolveBlankOptionGroupsValue,
   resolveQuestionBlankOptionGroups,
   resolveQuestionOptions,
   reuseFirstBlankOptions,
   updateBlankOptionGroupText,
+  updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, apiRequestBlob, toQuery } from "@/lib/api/client";
@@ -665,68 +667,6 @@ function normalizedChoiceAnswerKeys(answer: string | null | undefined): string[]
       seen.add(key);
       return true;
     });
-}
-
-function parseMultiBlankChoiceAnswer(
-  answer: string | null | undefined,
-): Array<{ blankId: string; optionKey: string }> {
-  return String(answer ?? "")
-    .split(/[;；]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const separatorIndex = entry.search(/[:：]/);
-      if (separatorIndex < 0) return null;
-
-      const blankId = entry.slice(0, separatorIndex).trim();
-      const optionKey = entry.slice(separatorIndex + 1).trim();
-      if (!blankId || !optionKey) return null;
-
-      return { blankId, optionKey };
-    })
-    .filter((item): item is { blankId: string; optionKey: string } => item !== null);
-}
-
-function updateMultiBlankChoiceAnswer(
-  answer: string | null | undefined,
-  blankIds: string[],
-  targetBlankId: string,
-  optionKey: string,
-  toggleMulti = false,
-): string {
-  const parsed = parseMultiBlankChoiceAnswer(answer);
-  const values = new Map(parsed.map((item) => [item.blankId, item.optionKey]));
-  const nextOptionKey = optionKey.trim().toUpperCase();
-
-  if (toggleMulti) {
-    // Multi-select blank: toggle one letter within the slot's letter set.
-    const current = (values.get(targetBlankId) ?? "")
-      .split(",")
-      .map((l) => l.trim().toUpperCase())
-      .filter(Boolean);
-    const next = current.includes(nextOptionKey)
-      ? current.filter((l) => l !== nextOptionKey)
-      : [...current, nextOptionKey].sort();
-    if (next.length > 0) values.set(targetBlankId, next.join(","));
-    else values.delete(targetBlankId);
-  } else if (nextOptionKey) values.set(targetBlankId, nextOptionKey);
-  else values.delete(targetBlankId);
-
-  const orderedIds: string[] = [];
-  const seen = new Set<string>();
-  for (const id of [...blankIds, ...parsed.map((item) => item.blankId)]) {
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    orderedIds.push(id);
-  }
-
-  return orderedIds
-    .map((blankId) => {
-      const value = values.get(blankId)?.trim();
-      return value ? `${blankId}:${value}` : "";
-    })
-    .filter(Boolean)
-    .join(";");
 }
 
 function QuestionAnswerDisplay({
@@ -3300,8 +3240,8 @@ export default function QuestionsPage() {
                             <p className="text-sm font-semibold text-slate-950">答案</p>
                             <p className="mt-1 text-[11px] text-slate-400">
                               {multiSelect
-                                ? "按空位分别编辑答案；每空可填写多个选项字母，以逗号分隔（如 A,C）"
-                                : "按空位分别编辑答案；保存时自动写回多空答案格式"}
+                                ? "点击选项可快速多选或取消；也可手动填写多个字母（如 A,C）"
+                                : "点击选项可快速填入单选答案；再次点击已选项可清空"}
                             </p>
                           </div>
 
@@ -3321,57 +3261,60 @@ export default function QuestionsPage() {
                                   <span className="w-8 shrink-0 text-sm font-medium text-slate-900">
                                     {blankId}
                                   </span>
-                                  {multiSelect && group && group.options.length > 0 ? (
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      {group.options.map((opt) => {
-                                        const selected = currentLetters.includes(
-                                          opt.key.trim().toUpperCase(),
-                                        );
-                                        return (
-                                          <button
-                                            key={opt.key}
-                                            type="button"
-                                            className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition ${
-                                              selected
-                                                ? "border-slate-900 bg-slate-900 text-white"
-                                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
-                                            }`}
-                                            onClick={() =>
-                                              setEditForm({
-                                                ...editForm,
-                                                answer: updateMultiBlankChoiceAnswer(
-                                                  editForm.answer,
-                                                  blankIds,
-                                                  blankId,
-                                                  opt.key.trim().toUpperCase(),
-                                                  true,
-                                                ),
-                                              })
-                                            }
-                                          >
-                                            {opt.key}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
+                                  <div className="min-w-0 flex-1 space-y-2">
+                                    {group && group.options.length > 0 ? (
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        {group.options.map((opt) => {
+                                          const normalizedKey = opt.key.trim().toUpperCase();
+                                          const selected = currentLetters.includes(normalizedKey);
+                                          return (
+                                            <button
+                                              key={opt.key}
+                                              type="button"
+                                              className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition ${
+                                                selected
+                                                  ? "border-slate-900 bg-slate-900 text-white"
+                                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
+                                              }`}
+                                              title={opt.text ? `${opt.key}. ${opt.text}` : `选择 ${opt.key}`}
+                                              aria-pressed={selected}
+                                              onClick={() =>
+                                                setEditForm((current) => ({
+                                                  ...current,
+                                                  answer: updateMultiBlankChoiceAnswer(
+                                                    current.answer,
+                                                    blankIds,
+                                                    blankId,
+                                                    !multiSelect && selected ? "" : normalizedKey,
+                                                    multiSelect,
+                                                  ),
+                                                }))
+                                              }
+                                            >
+                                              {opt.key}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : null}
                                     <Input
                                       value={parsedAnswerMap.get(blankId) ?? ""}
                                       aria-label={`${blankId} 答案`}
-                                      className="h-9 max-w-32 border-slate-200 bg-slate-50/60 text-center shadow-none focus:bg-white"
+                                      placeholder={multiSelect ? "如 A,C" : "如 A"}
+                                      className="h-8 max-w-32 border-slate-200 bg-slate-50/60 text-center text-xs shadow-none focus:bg-white"
                                       onChange={(e) =>
-                                        setEditForm({
-                                          ...editForm,
+                                        setEditForm((current) => ({
+                                          ...current,
                                           answer: updateMultiBlankChoiceAnswer(
-                                            editForm.answer,
+                                            current.answer,
                                             blankIds,
                                             blankId,
                                             e.target.value,
                                           ),
-                                        })
+                                        }))
                                       }
                                     />
-                                  )}
+                                  </div>
                                 </div>
                                 );
                               })}

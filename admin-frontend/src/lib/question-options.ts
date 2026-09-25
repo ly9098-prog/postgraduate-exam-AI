@@ -276,6 +276,72 @@ export function updateBlankOptionGroupText(
   });
 }
 
+/** Parse a canonical multi-blank answer such as "①:A;②:B,C". */
+export function parseMultiBlankChoiceAnswer(
+  answer: string | null | undefined,
+): Array<{ blankId: string; optionKey: string }> {
+  return String(answer ?? "")
+    .split(/[;；]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separatorIndex = entry.search(/[:：]/);
+      if (separatorIndex < 0) return null;
+
+      const blankId = entry.slice(0, separatorIndex).trim();
+      const optionKey = entry.slice(separatorIndex + 1).trim();
+      if (!blankId || !optionKey) return null;
+
+      return { blankId, optionKey };
+    })
+    .filter((item): item is { blankId: string; optionKey: string } => item !== null);
+}
+
+/** Fill or toggle one blank answer and serialize it in stable blank order. */
+export function updateMultiBlankChoiceAnswer(
+  answer: string | null | undefined,
+  blankIds: string[],
+  targetBlankId: string,
+  optionKey: string,
+  toggleMulti = false,
+): string {
+  const parsed = parseMultiBlankChoiceAnswer(answer);
+  const values = new Map(parsed.map((item) => [item.blankId, item.optionKey]));
+  const nextOptionKey = optionKey.trim().toUpperCase();
+
+  if (toggleMulti) {
+    const current = (values.get(targetBlankId) ?? "")
+      .split(",")
+      .map((letter) => letter.trim().toUpperCase())
+      .filter(Boolean);
+    const next = current.includes(nextOptionKey)
+      ? current.filter((letter) => letter !== nextOptionKey)
+      : [...current, nextOptionKey].sort();
+    if (next.length > 0) values.set(targetBlankId, next.join(","));
+    else values.delete(targetBlankId);
+  } else if (nextOptionKey) {
+    values.set(targetBlankId, nextOptionKey);
+  } else {
+    values.delete(targetBlankId);
+  }
+
+  const orderedIds: string[] = [];
+  const seen = new Set<string>();
+  for (const id of [...blankIds, ...parsed.map((item) => item.blankId)]) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    orderedIds.push(id);
+  }
+
+  return orderedIds
+    .map((blankId) => {
+      const value = values.get(blankId)?.trim();
+      return value ? `${blankId}:${value}` : "";
+    })
+    .filter(Boolean)
+    .join(";");
+}
+
 /** True when every blank uses the same keys/text/images. */
 export function haveIdenticalBlankOptionSets(groups: NormalizedBlankOptionGroup[]): boolean {
   if (groups.length < 2) return false;
