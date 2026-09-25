@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  addBlankOptionToAllGroups,
   addBlankOptionToGroup,
+  extractBlankSlotIds,
   normalizeBlankOptionGroups,
   resolveQuestionOptions,
   normalizeQuestionOptions,
@@ -9,6 +11,43 @@ import type { NormalizedQuestionOption } from "./question-options";
 
 
 // ─── grouped option mutations ─────────────────────────────────────
+
+describe("extractBlankSlotIds", () => {
+  it("extracts anonymous parentheses like the empty-state question", () => {
+    expect(extractBlankSlotIds("交互系统称为（ ），批处理称为（ ），实时系统为（ ）。")).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+  });
+
+  it("uses the backend marker priority", () => {
+    expect(extractBlankSlotIds("① 第一空；② 第二空；___")).toEqual(["①", "②"]);
+    expect(extractBlankSlotIds("(1)甲 (2)乙")).toEqual(["1", "2"]);
+    expect(extractBlankSlotIds("___ 和 ____")).toEqual(["1", "2"]);
+  });
+});
+
+describe("addBlankOptionToAllGroups", () => {
+  it("creates missing groups so the empty state can add its first option", () => {
+    expect(addBlankOptionToAllGroups(null, ["1", "2", "2"])).toEqual([
+      { id: "1", options: [{ key: "A", text: "" }] },
+      { id: "2", options: [{ key: "A", text: "" }] },
+    ]);
+  });
+
+  it("adds the same next available key to every existing group", () => {
+    const groups = [
+      { id: "1", options: [{ key: "A", text: "甲" }] },
+      { id: "2", options: [{ key: "A", text: "乙" }] },
+    ];
+
+    expect(addBlankOptionToAllGroups(groups, [])).toEqual([
+      { id: "1", options: [{ key: "A", text: "甲" }, { key: "B", text: "" }] },
+      { id: "2", options: [{ key: "A", text: "乙" }, { key: "B", text: "" }] },
+    ]);
+  });
+});
 
 describe("addBlankOptionToGroup", () => {
   it("appends the next free letter to array options without changing other groups", () => {

@@ -111,6 +111,50 @@ function stripBlankGroupPrefix(key: string): string {
   return key.trim().replace(/^[①-⑳]/, "").replace(/^\d+(?=[A-Za-z])/, "");
 }
 
+/** Extract ordered multi-blank slot IDs using the same marker priority as the backend. */
+export function extractBlankSlotIds(stem: string): string[] {
+  if (!stem) return [];
+
+  const circledWithParentheses = [...stem.matchAll(/[（(]\s*([①-⑳])\s*[）)]/g)];
+  if (circledWithParentheses.length > 0) {
+    return circledWithParentheses.map((match) => match[1]);
+  }
+
+  const standaloneCircled = stem.match(/[①-⑳]/g);
+  if (standaloneCircled?.length) return standaloneCircled;
+
+  const numberedParentheses = [...stem.matchAll(/[（(]\s*(\d+)\s*[）)]/g)];
+  if (numberedParentheses.length > 0) {
+    return numberedParentheses.map((match) => match[1]);
+  }
+
+  const anonymousParentheses = stem.match(/[（(]\s*[）)]/g);
+  if (anonymousParentheses?.length) {
+    return anonymousParentheses.map((_, index) => String(index + 1));
+  }
+
+  const underscoreBlanks = stem.match(/_{3,}/g);
+  return underscoreBlanks?.map((_, index) => String(index + 1)) ?? [];
+}
+
+/** Add the next shared option to every group, creating groups from the stem when absent. */
+export function addBlankOptionToAllGroups(rawGroups: unknown, slotIds: string[]): unknown {
+  const uniqueSlotIds = [...new Set(slotIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (!Array.isArray(rawGroups) || rawGroups.length === 0) {
+    return uniqueSlotIds.map((id) => ({ id, options: [{ key: "A", text: "" }] }));
+  }
+
+  return rawGroups.reduce<unknown>(
+    (current, group) => {
+      if (!group || typeof group !== "object" || Array.isArray(group)) return current;
+      const record = group as Record<string, unknown>;
+      const id = String(record.id ?? record.marker ?? "").trim();
+      return id ? addBlankOptionToGroup(current, id) : current;
+    },
+    rawGroups,
+  );
+}
+
 /** Append an empty option to one blank group, preserving its array or record storage shape. */
 export function addBlankOptionToGroup(rawGroups: unknown, groupId: string): unknown {
   if (!Array.isArray(rawGroups)) return rawGroups;

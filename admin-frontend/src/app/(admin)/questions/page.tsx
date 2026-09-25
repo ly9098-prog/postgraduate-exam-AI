@@ -47,7 +47,9 @@ import {
 } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
+  addBlankOptionToAllGroups,
   addBlankOptionToGroup,
+  extractBlankSlotIds,
   normalizeBlankOptionGroups,
   normalizeQuestionOptions,
   resolveBlankOptionGroupsValue,
@@ -3018,25 +3020,60 @@ export default function QuestionsPage() {
                         (sum, group) => sum + group.options.length,
                         0,
                       );
+                      const inferredBlankIds = extractBlankSlotIds(editStemText);
+                      const canAddSharedOption =
+                        groups.length > 0 || inferredBlankIds.length > 0;
+                      const addSharedOption = () => {
+                        setEditForm((current) => {
+                          const currentContent = contentRecord(current.content);
+                          const field = blankOptionGroupsStorageField(currentContent);
+                          const rawGroups = resolveBlankOptionGroupsValue(currentContent);
+                          return {
+                            ...current,
+                            content: {
+                              ...currentContent,
+                              [field]: addBlankOptionToAllGroups(
+                                rawGroups,
+                                extractBlankSlotIds(editStemText),
+                              ),
+                            },
+                          };
+                        });
+                      };
 
                       return (
                         <section className="border-b border-slate-200 py-5">
-                          <div className="mb-4 flex items-end justify-between gap-4">
+                          <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
                             <div>
                               <p className="text-sm font-semibold text-slate-950">选项</p>
                               <p className="mt-1 text-[11px] text-slate-400">
-                                按空位编辑分组选项；保存后写回题目的分组选项数据
+                                按空位编辑分组选项；顶部按钮会向所有空位添加同一字母选项
                               </p>
                             </div>
-                            <span className="text-[11px] tabular-nums text-slate-400">
-                              {groups.length} 个空位 · {totalOptions} 个选项
-                            </span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[11px] tabular-nums text-slate-400">
+                                {groups.length} 个空位 · {totalOptions} 个选项
+                              </span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
+                                disabled={!canAddSharedOption || groups.some((group) => group.options.length >= 26)}
+                                onClick={addSharedOption}
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                添加选项
+                              </Button>
+                            </div>
                           </div>
 
                           {groups.length === 0 ? (
-                            <p className="mb-3 text-sm text-[var(--color-text-hint)]">
-                              暂无可编辑的分组选项
-                            </p>
+                            <div className="mb-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-4 text-sm text-[var(--color-text-hint)]">
+                              {inferredBlankIds.length > 0
+                                ? `已从题干识别 ${inferredBlankIds.length} 个空位，点击“添加选项”创建分组选项。`
+                                : "未从题干识别到空位标记，请先使用（ ）、① 或 ___ 标记空位。"}
+                            </div>
                           ) : (
                             <div className="space-y-3">
                               {groups.map((group) => (
