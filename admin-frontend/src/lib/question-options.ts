@@ -155,6 +155,35 @@ export function addBlankOptionToAllGroups(rawGroups: unknown, slotIds: string[])
   );
 }
 
+/** Copy the first blank's option data to one target blank or every remaining blank. */
+export function reuseFirstBlankOptions(rawGroups: unknown, targetGroupId?: string): unknown {
+  if (!Array.isArray(rawGroups) || rawGroups.length < 2) return rawGroups;
+
+  const sourceIndex = rawGroups.findIndex((group) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) return false;
+    return normalizeBlankGroupOptions((group as Record<string, unknown>).options).length > 0;
+  });
+  if (sourceIndex < 0) return rawGroups;
+
+  const source = rawGroups[sourceIndex] as Record<string, unknown>;
+  const sourceOptions = source.options;
+
+  const wantedId = targetGroupId?.trim();
+  return rawGroups.map((group, index) => {
+    if (index === sourceIndex || !group || typeof group !== "object" || Array.isArray(group)) {
+      return group;
+    }
+    const groupRecord = group as Record<string, unknown>;
+    const id = String(groupRecord.id ?? groupRecord.marker ?? "").trim();
+    if (wantedId && id !== wantedId) return group;
+
+    return {
+      ...groupRecord,
+      options: structuredClone(sourceOptions),
+    };
+  });
+}
+
 /** Append an empty option to one blank group, preserving its array or record storage shape. */
 export function addBlankOptionToGroup(rawGroups: unknown, groupId: string): unknown {
   if (!Array.isArray(rawGroups)) return rawGroups;

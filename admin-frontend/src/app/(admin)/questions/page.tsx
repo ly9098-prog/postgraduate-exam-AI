@@ -17,6 +17,7 @@ import {
   Tag,
   Layers,
   Clock,
+  Copy,
   Pencil,
   Trash2,
   Save,
@@ -55,6 +56,7 @@ import {
   resolveBlankOptionGroupsValue,
   resolveQuestionBlankOptionGroups,
   resolveQuestionOptions,
+  reuseFirstBlankOptions,
   updateBlankOptionGroupText,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
@@ -3040,6 +3042,20 @@ export default function QuestionsPage() {
                           };
                         });
                       };
+                      const reuseFirstOptions = (targetGroupId?: string) => {
+                        setEditForm((current) => {
+                          const currentContent = contentRecord(current.content);
+                          const field = blankOptionGroupsStorageField(currentContent);
+                          const rawGroups = resolveBlankOptionGroupsValue(currentContent);
+                          return {
+                            ...current,
+                            content: {
+                              ...currentContent,
+                              [field]: reuseFirstBlankOptions(rawGroups, targetGroupId),
+                            },
+                          };
+                        });
+                      };
 
                       return (
                         <section className="border-b border-slate-200 py-5">
@@ -3050,10 +3066,24 @@ export default function QuestionsPage() {
                                 按空位编辑分组选项；顶部按钮会向所有空位添加同一字母选项
                               </p>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-[11px] tabular-nums text-slate-400">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <span className="mr-1 text-[11px] tabular-nums text-slate-400">
                                 {groups.length} 个空位 · {totalOptions} 个选项
                               </span>
+                              {groups.length > 1 ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
+                                  disabled={groups[0].options.length === 0}
+                                  title="用第一空的选项覆盖其余所有空位的选项"
+                                  onClick={() => reuseFirstOptions()}
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                  全部复用第一空
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 size="sm"
@@ -3081,16 +3111,29 @@ export default function QuestionsPage() {
                                   key={group.id}
                                   className="overflow-hidden rounded-lg border border-slate-200 bg-white"
                                 >
-                                  <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+                                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
                                     <div className="flex items-center gap-2">
                                       <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
                                         {group.id}
                                       </span>
                                       <span className="text-xs font-medium text-slate-600">该空选项</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400">
-                                      {group.options.length} 项
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      {group.id !== groups[0].id ? (
+                                        <button
+                                          type="button"
+                                          className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+                                          title={`用第一空（${groups[0].id}）的选项覆盖当前空位`}
+                                          onClick={() => reuseFirstOptions(group.id)}
+                                        >
+                                          <Copy className="h-3 w-3" />
+                                          复用第一空
+                                        </button>
+                                      ) : null}
+                                      <span className="text-[10px] text-slate-400">
+                                        {group.options.length} 项
+                                      </span>
+                                    </div>
                                   </div>
                                   {group.options.map((opt) => (
                                     <div

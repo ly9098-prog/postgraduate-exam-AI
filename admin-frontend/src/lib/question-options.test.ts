@@ -6,6 +6,7 @@ import {
   normalizeBlankOptionGroups,
   resolveQuestionOptions,
   normalizeQuestionOptions,
+  reuseFirstBlankOptions,
 } from "./question-options";
 import type { NormalizedQuestionOption } from "./question-options";
 
@@ -46,6 +47,48 @@ describe("addBlankOptionToAllGroups", () => {
       { id: "1", options: [{ key: "A", text: "甲" }, { key: "B", text: "" }] },
       { id: "2", options: [{ key: "A", text: "乙" }, { key: "B", text: "" }] },
     ]);
+  });
+});
+
+describe("reuseFirstBlankOptions", () => {
+  it("copies rich first-blank options to one selected blank", () => {
+    const groups = [
+      {
+        id: "①",
+        options: [
+          { key: "A", text: "公共甲", segments: [{ type: "image", url: "/a.png" }] },
+          { key: "B", text: "公共乙" },
+        ],
+      },
+      { id: "②", options: [{ key: "X", text: "旧内容" }] },
+      { id: "③", options: [{ key: "Y", text: "保留内容" }] },
+    ];
+
+    const result = reuseFirstBlankOptions(groups, "②") as typeof groups;
+
+    expect(result[1].options).toEqual(groups[0].options);
+    expect(result[1].options).not.toBe(groups[0].options);
+    expect(result[1].options[0]).not.toBe(groups[0].options[0]);
+    expect(result[2]).toBe(groups[2]);
+  });
+
+  it("copies the first blank to every remaining blank", () => {
+    const groups = [
+      { id: "1", options: { A: "甲", B: { text: "乙", url: "/b.png" } } },
+      { id: "2", options: { C: "旧值" } },
+      { id: "3", options: [{ key: "D", text: "旧值" }] },
+    ];
+
+    expect(reuseFirstBlankOptions(groups)).toEqual([
+      groups[0],
+      { id: "2", options: { A: "甲", B: { text: "乙", url: "/b.png" } } },
+      { id: "3", options: { A: "甲", B: { text: "乙", url: "/b.png" } } },
+    ]);
+  });
+
+  it("keeps data unchanged when fewer than two groups exist", () => {
+    const groups = [{ id: "1", options: [{ key: "A", text: "甲" }] }];
+    expect(reuseFirstBlankOptions(groups)).toBe(groups);
   });
 });
 
