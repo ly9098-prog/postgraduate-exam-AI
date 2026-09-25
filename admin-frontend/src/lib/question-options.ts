@@ -111,6 +111,44 @@ function stripBlankGroupPrefix(key: string): string {
   return key.trim().replace(/^[①-⑳]/, "").replace(/^\d+(?=[A-Za-z])/, "");
 }
 
+/** Append an empty option to one blank group, preserving its array or record storage shape. */
+export function addBlankOptionToGroup(rawGroups: unknown, groupId: string): unknown {
+  if (!Array.isArray(rawGroups)) return rawGroups;
+  const wantedGroup = String(groupId).trim();
+
+  return rawGroups.map((group) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) return group;
+    const groupRecord = group as Record<string, unknown>;
+    const currentId = String(groupRecord.id ?? groupRecord.marker ?? "").trim();
+    if (currentId !== wantedGroup) return group;
+
+    const rawOptions = groupRecord.options;
+    const usedKeys = new Set(
+      normalizeBlankGroupOptions(rawOptions).map((option) => option.key.trim().toUpperCase()),
+    );
+    const nextKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      .split("")
+      .find((candidate) => !usedKeys.has(candidate));
+    if (!nextKey) return group;
+
+    if (Array.isArray(rawOptions)) {
+      return {
+        ...groupRecord,
+        options: [...rawOptions, { key: nextKey, text: "" }],
+      };
+    }
+
+    if (rawOptions && typeof rawOptions === "object") {
+      return {
+        ...groupRecord,
+        options: { ...(rawOptions as Record<string, unknown>), [nextKey]: "" },
+      };
+    }
+
+    return { ...groupRecord, options: [{ key: nextKey, text: "" }] };
+  });
+}
+
 /** Update one grouped option's text without discarding unrelated fields such as segments/images. */
 export function updateBlankOptionGroupText(
   rawGroups: unknown,

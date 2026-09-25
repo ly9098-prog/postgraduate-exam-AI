@@ -1,9 +1,56 @@
 import { describe, it, expect } from "vitest";
 import {
+  addBlankOptionToGroup,
+  normalizeBlankOptionGroups,
   resolveQuestionOptions,
   normalizeQuestionOptions,
 } from "./question-options";
 import type { NormalizedQuestionOption } from "./question-options";
+
+
+// ─── grouped option mutations ─────────────────────────────────────
+
+describe("addBlankOptionToGroup", () => {
+  it("appends the next free letter to array options without changing other groups", () => {
+    const groups = [
+      {
+        id: "①",
+        options: [
+          { key: "A", text: "甲", segments: [{ type: "text", text: "甲" }] },
+          { key: "C", text: "丙" },
+        ],
+      },
+      { id: "②", options: [{ key: "A", text: "另一空" }] },
+    ];
+
+    const result = addBlankOptionToGroup(groups, "①");
+
+    expect(normalizeBlankOptionGroups(result)[0].options).toEqual([
+      { key: "A", text: "甲" },
+      { key: "C", text: "丙" },
+      { key: "B", text: "" },
+    ]);
+    expect((result as typeof groups)[0].options[0].segments).toEqual([
+      { type: "text", text: "甲" },
+    ]);
+    expect((result as typeof groups)[1]).toBe(groups[1]);
+  });
+
+  it("preserves record-style options", () => {
+    const groups = [{ id: "①", options: { A: "甲", B: { text: "乙", url: "/b.png" } } }];
+
+    expect(addBlankOptionToGroup(groups, "①")).toEqual([
+      { id: "①", options: { A: "甲", B: { text: "乙", url: "/b.png" }, C: "" } },
+    ]);
+  });
+
+  it("does not add beyond Z", () => {
+    const options = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((key) => ({ key, text: key }));
+    const groups = [{ id: "①", options }];
+
+    expect(addBlankOptionToGroup(groups, "①")).toEqual(groups);
+  });
+});
 
 // ─── resolveQuestionOptions ───────────────────────────────────────
 

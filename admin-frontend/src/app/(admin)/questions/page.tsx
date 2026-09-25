@@ -47,6 +47,7 @@ import {
 } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
+  addBlankOptionToGroup,
   normalizeBlankOptionGroups,
   normalizeQuestionOptions,
   resolveBlankOptionGroupsValue,
@@ -3057,7 +3058,7 @@ export default function QuestionsPage() {
                                   {group.options.map((opt) => (
                                     <div
                                       key={`${group.id}-${opt.key}`}
-                                      className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0"
+                                      className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5"
                                     >
                                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">
                                         {opt.key}
@@ -3065,6 +3066,7 @@ export default function QuestionsPage() {
                                       <input
                                         className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm text-slate-800 outline-none placeholder:text-slate-300 focus:ring-0"
                                         value={opt.text ?? ""}
+                                        placeholder="请输入选项内容"
                                         onChange={(e) => {
                                           const nextText = e.target.value;
                                           setEditForm((current) => {
@@ -3088,6 +3090,35 @@ export default function QuestionsPage() {
                                       />
                                     </div>
                                   ))}
+                                  <div className="flex items-center justify-between gap-3 bg-slate-50/40 px-3 py-2.5">
+                                    <span className="text-[10px] text-slate-400">
+                                      自动使用下一个可用字母
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
+                                      disabled={group.options.length >= 26}
+                                      onClick={() => {
+                                        setEditForm((current) => {
+                                          const currentContent = contentRecord(current.content);
+                                          const field = blankOptionGroupsStorageField(currentContent);
+                                          const rawGroups = resolveBlankOptionGroupsValue(currentContent);
+                                          return {
+                                            ...current,
+                                            content: {
+                                              ...currentContent,
+                                              [field]: addBlankOptionToGroup(rawGroups, group.id),
+                                            },
+                                          };
+                                        });
+                                      }}
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                      添加选项
+                                    </Button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
