@@ -30,7 +30,7 @@ class Question(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     subject_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+        Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=False, index=True
     )
 
     subject_ref = relationship("Subject", back_populates="questions", lazy="noload")

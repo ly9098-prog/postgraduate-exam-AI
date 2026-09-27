@@ -30,10 +30,13 @@ Key design properties
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -60,19 +63,24 @@ from app.core.database import Base
 
 class TaskOutbox(Base):
     __tablename__ = "task_outbox"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="uq_task_outbox_task_id"),
+        Index("ix_task_outbox_type_status", "task_type", "status"),
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     task_id: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        unique=True,
-        index=True,
         comment="Idempotent task ID (e.g. import:{pipeline_id})",
     )
     task_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        index=True,
         comment="Queue task type (import_pipeline, image_pipeline, etc.)",
     )
     payload: Mapped[dict] = mapped_column(

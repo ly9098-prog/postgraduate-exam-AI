@@ -17,10 +17,10 @@ class AppUserAdminBinding(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     admin_user_id: Mapped[int] = mapped_column(
-        ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False
     )
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True

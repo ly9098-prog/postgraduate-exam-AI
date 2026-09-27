@@ -47,7 +47,7 @@ class PracticeRecord(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
     question_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("questions.id"), nullable=False, index=True
+        Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     question_version_id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
@@ -56,7 +56,7 @@ class PracticeRecord(Base):
         index=True,
     )
     subject_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=False
+        Integer, ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False
     )
     subject_ref = relationship(
         "Subject", back_populates="practice_records", lazy="noload"

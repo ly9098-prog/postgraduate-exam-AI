@@ -112,7 +112,6 @@ class ExamPaperQuestion(Base):
             "position > 0", name="ck_exam_paper_questions_position_positive"
         ),
         CheckConstraint("score > 0", name="ck_exam_paper_questions_score_positive"),
-        Index("ix_exam_paper_questions_paper_position", "paper_id", "position"),
     )
 
     id: Mapped[int] = mapped_column(
@@ -248,7 +247,6 @@ class ExamAnswer(Base):
         CheckConstraint(
             "score IS NULL OR score >= 0", name="ck_exam_answers_score_nonnegative"
         ),
-        Index("ix_exam_answers_attempt_item", "attempt_id", "exam_paper_question_id"),
         Index("ix_exam_answers_revision", "id", "answer_revision"),
     )
 
@@ -297,7 +295,6 @@ class ExamAnswer(Base):
         ForeignKey("practice_records.id", ondelete="SET NULL"),
         nullable=True,
         unique=True,
-        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -110,13 +110,11 @@ class WrongQuestionErrorDiagnosis(Base):
         Integer,
         ForeignKey("practice_records.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     exam_answer_id: Mapped[int | None] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("exam_answers.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     source_context: Mapped[str] = mapped_column(String(16), nullable=False)
     user_answer: Mapped[str | None] = mapped_column(Text, nullable=True)

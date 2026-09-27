@@ -31,7 +31,7 @@ class SyllabusVersion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(
-        String(64), nullable=False, unique=True, index=True
+        String(64), nullable=False, unique=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     root_subject_id: Mapped[int] = mapped_column(

@@ -44,7 +44,7 @@ class QuestionImport(Base):
     source_type: Mapped[str] = mapped_column(String(16), nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
     subject_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=True, index=True
+        Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     subject_ref = relationship(

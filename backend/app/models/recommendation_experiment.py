@@ -23,7 +23,7 @@ class RecommendationExperiment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(
-        String(128), unique=True, index=True, nullable=False
+        String(128), unique=True, nullable=False
     )
 
     # practice_smart / similar / knowledge_path

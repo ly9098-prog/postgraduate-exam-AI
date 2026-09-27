@@ -15,7 +15,7 @@ class Tag(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     subject_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+        Integer, ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     subject_ref = relationship("Subject", back_populates="tags", lazy="noload")
     parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)

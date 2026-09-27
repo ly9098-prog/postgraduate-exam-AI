@@ -30,7 +30,7 @@ class UserKnowledgeState(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
     subject_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+        Integer, ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     subject_ref = relationship(
         "Subject", back_populates="user_knowledge_states", lazy="noload"

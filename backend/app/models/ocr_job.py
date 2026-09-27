@@ -41,7 +41,7 @@ class OCRJob(Base):
 
     # ── Identity ─────────────────────────────────────────
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
     document_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
 

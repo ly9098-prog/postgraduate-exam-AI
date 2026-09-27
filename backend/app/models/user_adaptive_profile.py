@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, UniqueConstraint, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -25,7 +25,6 @@ class UserAdaptiveProfile(Base):
         Integer,
         ForeignKey("users.id"),
         nullable=False,
-        index=True,
     )
 
     interval_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -52,4 +51,4 @@ class UserAdaptiveProfile(Base):
         onupdate=func.now(),
     )
 
-    __table_args__ = (UniqueConstraint("user_id", name="uq_uap_user_id"),)
+    __table_args__ = (Index("ix_uap_user_id", "user_id", unique=True),)

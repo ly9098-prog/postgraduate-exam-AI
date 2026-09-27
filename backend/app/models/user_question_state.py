@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -58,5 +66,10 @@ class UserQuestionState(Base):
             "user_id",
             "question_id",
             name="uq_user_question_state_user_question",
+        ),
+        Index(
+            "ix_user_question_state_user_next_review",
+            "user_id",
+            "next_review_at",
         ),
     )

@@ -21,10 +21,11 @@ from app.core.database import Base
 
 class Role(Base):
     __tablename__ = "roles"
+    __table_args__ = (UniqueConstraint("name", name="roles_name_key"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, index=True
+        String(64), nullable=False
     )
     display_name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -43,10 +44,11 @@ class Role(Base):
 
 class Permission(Base):
     __tablename__ = "permissions"
+    __table_args__ = (UniqueConstraint("name", name="permissions_name_key"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(
-        String(128), unique=True, nullable=False, index=True
+        String(128), nullable=False
     )
     resource: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -83,10 +85,13 @@ class RolePermission(Base):
 
 class AdminUser(Base):
     __tablename__ = "admin_users"
+    __table_args__ = (
+        UniqueConstraint("username", name="admin_users_username_key"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, index=True
+        String(64), nullable=False
     )
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -141,12 +146,13 @@ class AuditLog(Base):
 
 class Subject(Base):
     __tablename__ = "subjects"
+    __table_args__ = (UniqueConstraint("code", name="subjects_code_key"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("subjects.id"), nullable=True, index=True
     )
     code: Mapped[str] = mapped_column(
-        String(32), unique=True, nullable=False, index=True
+        String(32), nullable=False
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     level: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)

@@ -48,4 +48,7 @@ class QuestionKnowledgePoint(Base):
         UniqueConstraint(
             "question_id", "knowledge_point_id", name="uq_qkp_question_kp"
         ),
+        UniqueConstraint(
+            "question_id", "position", name="uq_qkp_question_position"
+        ),
     )

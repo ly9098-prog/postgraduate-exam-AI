@@ -54,7 +54,7 @@ class PomodoroSession(Base):
         ForeignKey("users.id"), nullable=False, index=True
     )
     subject_id: Mapped[int | None] = mapped_column(
-        ForeignKey("subjects.id"), nullable=True, index=True
+        ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True
     )
     chapter_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Client-generated idempotency key for /start. It lets a mobile client retry an
