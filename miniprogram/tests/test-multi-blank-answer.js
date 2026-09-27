@@ -211,6 +211,74 @@ assertEq(isMultiBlankType('multi_blank_multiple_choice'), true, 'family includes
 assertEq(isMultiBlankMultipleType('multi_blank_multiple_choice'), true, 'isMultiBlankMultipleType positive')
 assertEq(isMultiBlankMultipleType('multi_blank_choice'), false, 'isMultiBlankMultipleType negative')
 
+/* ==================== Runner adapter contract ==================== */
+
+// practice.js / review-today.js both gate the in-blank multi-select toggle on
+// `typeof adapter.isMultiBlankMultipleChoice === 'function'`. The helper existed
+// but was never added to module.exports, so the guard silently took the
+// single-select branch and every tap replaced the blank's answer instead of
+// accumulating letters. Guard the export itself so that cannot regress.
+console.log('\n=== runner adapter multi-blank exports ===')
+
+var studyAdapter = require('../subpackages/study/utils/question-runner-adapter')
+var examAdapter = require('../subpackages/exam/utils/question-runner-adapter')
+
+assertEq(typeof studyAdapter.isMultiBlankMultipleChoice, 'function', 'study adapter exports isMultiBlankMultipleChoice')
+assertEq(typeof examAdapter.isMultiBlankMultipleChoice, 'function', 'exam adapter exports isMultiBlankMultipleChoice')
+
+// Only exercise the predicate once the export exists, so a missing export
+// reports the assertions above rather than a raw TypeError stack.
+if (typeof studyAdapter.isMultiBlankMultipleChoice === 'function') {
+  assertEq(studyAdapter.isMultiBlankMultipleChoice({ question_type: 'multi_blank_multiple_choice' }), true, 'study adapter detects multi_blank_multiple_choice')
+  assertEq(studyAdapter.isMultiBlankMultipleChoice({ question_type: 'multi_blank_choice' }), false, 'study adapter rejects multi_blank_choice')
+}
+
+var multiQ = {
+  id: 1,
+  question_type: 'multi_blank_multiple_choice',
+  content: {
+    blank_option_groups: [
+      { id: '①', options: [{ key: 'A', text: '甲' }, { key: 'B', text: '乙' }, { key: 'C', text: '丙' }] },
+      { id: '②', options: [{ key: 'A', text: '丁' }, { key: 'B', text: '戊' }] },
+    ],
+  },
+}
+
+// Mirror practice.js selectBlankOption so the accumulate/toggle behaviour is
+// pinned at the same level the page implements it — including the
+// `typeof adapter.x === 'function'` guard that made the missing export fail
+// silently rather than throwing.
+function tapBlankOption(prevAnswer, blankId, opt) {
+  var blankAnswers = studyAdapter.normalizeBlankAnswer(prevAnswer)
+  if (typeof studyAdapter.isMultiBlankMultipleChoice === 'function' && studyAdapter.isMultiBlankMultipleChoice(multiQ)) {
+    var current = String(blankAnswers[blankId] || '').split(',').filter(Boolean)
+    var next = current.indexOf(opt) >= 0
+      ? current.filter(function (k) { return k !== opt })
+      : current.concat([opt]).sort()
+    if (next.length > 0) blankAnswers[blankId] = next.join(',')
+    else delete blankAnswers[blankId]
+  } else if (blankAnswers[blankId] === opt) {
+    delete blankAnswers[blankId]
+  } else {
+    blankAnswers[blankId] = opt
+  }
+  return studyAdapter.serializeBlankAnswer(studyAdapter.getBlankOptionGroups(multiQ), blankAnswers)
+}
+
+var tapped = tapBlankOption('', '①', 'A')
+tapped = tapBlankOption(tapped, '①', 'C')
+assertEq(tapped, '①:A,C', 'second tap in the same blank accumulates instead of replacing')
+
+tapped = tapBlankOption(tapped, '②', 'B')
+assertEq(tapped, '①:A,C;②:B', 'independent blanks keep their own selections')
+
+tapped = tapBlankOption(tapped, '①', 'A')
+assertEq(tapped, '①:C;②:B', 're-tapping a selected letter deselects only that letter')
+
+var enriched = studyAdapter.enrichBlankOptionGroups(studyAdapter.getBlankOptionGroups(multiQ), '①:A,C;②:B')
+assertEq(enriched[0].options.filter(function (o) { return o._selected }).map(function (o) { return o.key }).join(''), 'AC', 'both letters in a multi-select blank render selected')
+assertEq(enriched[1].options.filter(function (o) { return o._selected }).map(function (o) { return o.key }).join(''), 'B', 'sibling blank keeps a single selection')
+
 /* ==================== Summary ==================== */
 
 console.log('\n====================')
