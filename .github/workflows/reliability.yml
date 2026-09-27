@@ -111,12 +111,9 @@ jobs:
               raise SystemExit("Database revision does not match repository Alembic heads")
           PY
 
-      - name: Report ORM-to-migration drift
-        # `alembic check` can be noisy on a legacy schema. Keep the diagnostic,
-        # while the applied-head check above remains the deterministic hard gate.
+      - name: Verify ORM-to-migration schema contract
         working-directory: backend
         run: alembic check
-        continue-on-error: true
 
       - name: Run reliability unit and integration tests
         shell: bash

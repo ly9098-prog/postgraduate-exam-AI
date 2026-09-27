@@ -62,6 +62,51 @@
 
 ---
 
+
+## 完整物理表注册表（2026-09-27）
+
+SQLAlchemy 的规范注册入口是 `app.models`，当前共 **78 张 ORM 表**。下表补齐此前正文未展开的表；其余核心表继续见后续各节。生产 PostgreSQL 还包含 Alembic 自身的 `alembic_version`，以及下文说明的 SQL/pgvector 专用 `question_embeddings`。
+
+| 表名 | 领域职责 | 关键约束或事实源 |
+|------|----------|------------------|
+| ai_feedback_logs | 小程序 AI 结果反馈 | 每次反馈一条；`user_id` 索引 |
+| worker_credentials | OCR Worker API Key 摘要与轮换 | `id` PK；只保存 SHA-256，按 `worker_id` 查询 |
+| export_tasks / export_snapshots | 异步导出任务与不可变快照 | 任务状态、用户维度索引；快照绑定任务 |
+| ocr_jobs | 外部 OCR worker 控制面 | `request_id`、完成幂等键唯一；lease/重试索引 |
+| formula_categories / formula_tags | 公式分类与标签 | 分类树、标签规范名 |
+| formula_card_tags / formula_card_versions | 公式卡标签关联与版本快照 | card+tag、card+version 唯一 |
+| formula_graph_assets / formula_graph_previews / formula_graph_specs | 公式图资产、临时预览与多图规格 | spec `id` PK；card+slug 唯一；reviewer FK |
+| formula_import_jobs / formula_import_items | 公式批量导入 | job/item 归属和执行状态 |
+| user_formula_favorites | 用户公式收藏 | user+card 唯一 |
+| knowledge_edges | 知识图谱有向边 | source+target+relation 唯一 |
+| question_version_knowledge_points | 题目版本知识点快照 | 版本发布后的不可变关联；不替代当前题关联 |
+| recommendation_experiments / recommendation_experiment_assignments | 推荐 A/B 实验与稳定分桶 | 实验名唯一；用户实验分配唯一 |
+| recommendation_strategy_configs | 推荐策略参数 | name 唯一 |
+| recommendation_logs / recommendation_metrics_daily | 推荐事实日志与每日聚合 | 原始日志为事实源，daily 为聚合投影 |
+| user_adaptive_profile | 用户级间隔倍率 | user 唯一 |
+| user_knowledge_adaptive_state | 知识点级间隔倍率 | user+knowledge_point 唯一 |
+| user_question_difficulty_state | 用户题目难度观测 | user+question 唯一 |
+| user_recommend_preference | 用户推荐权重 | user 唯一 |
+| user_knowledge_states | 知识点掌握度投影 | user+knowledge_point 唯一 |
+| user_question_state | Leitner/题目复习调度投影 | user+question 唯一 |
+| sequential_reservations | 顺序刷题并发 reservation | user+question 唯一；request_id 幂等 |
+| study_plans / study_plan_days | 长期学习计划与每日快照 | user 唯一计划；plan+date 唯一 |
+| syllabus_versions / syllabus_knowledge_points / syllabus_knowledge_point_mappings | 408 大纲版本、成员和跨版映射 | 版本 code、成员及映射唯一约束 |
+| task_outbox | DB→Redis 事务 outbox | `task_id` 唯一；状态/类型索引 |
+| wrong_question_error_diagnoses | 错答发生级错因诊断 | practice_record、exam_answer 各自唯一 |
+| review_sessions | 今日复习分组时长事实 | user+request 唯一，按科目拆分 |
+
+### PostgreSQL 专用 `question_embeddings`
+
+`question_embeddings` 使用 pgvector 的 `vector` 物理类型，由专用 Alembic revisions 与 `vector_retrieval_service` 的 SQL 维护，不建立 SQLAlchemy ORM 映射。Alembic autogenerate 只排除这张表及其子对象，避免误删；其他表仍必须通过 `alembic check` 零漂移。核心约束为 `question_id`、`subject_id`、`model_id` 外键，当前模型配置引用使用 `model_id → admin_ai_model_configs.id`。
+
+### 状态表语义边界
+
+- `user_question_state` 是 Leitner/复习调度投影；`user_question_difficulty_state` 是个人难度观测。两表的计数口径服务于各自算法，不得跨表覆盖或把任一表当作另一表的替代品。
+- `user_knowledge_states` 保存掌握度；`user_knowledge_adaptive_state` 保存遗忘间隔倍率。
+- `question_knowledge_points` 是当前题目关联事实源；`question_version_knowledge_points` 是历史版本快照。
+- `practice_sessions` 记录刷题会话，`review_sessions` 记录今日复习分组时长；两者都进入学习时长统计，但保持独立来源和幂等键。
+
 ## users
 
 ```python
@@ -1521,9 +1566,11 @@ class AppUserAdminBinding(Base):
 - `session_type` 区分 AI 对话场景
 - **RBAC 权限系统**：`admin_users` → `roles` ↔ `permissions`（多对多），所有管理操作记入 `audit_logs`
 - **批量导入**：`import_batch_jobs` 管理多图片任务，`import_pipeline` 管理 PDF 分片任务，各自独立
-- **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，`pomodoro_pause_intervals` 为暂停时长唯一真相源，支持微信订阅通知；学习时长统计混入 `practice_sessions.duration_sec`
+- **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，`pomodoro_pause_intervals` 为暂停时长唯一真相源，支持微信订阅通知；学习时长统计合并 `practice_sessions.duration_sec` 与 `review_sessions.duration_sec`
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-09-23 — 补齐 408 考试四表（public_id、deleted_at、attempt 状态）；知识点 (subject_id, normalized_name) 改为非唯一索引。2026-09-19 的多空题型拆分仍然有效。
+> 上次更新：2026-09-27 — 补齐完整 ORM 表注册表、review_sessions、pgvector 专用表边界与状态表事实源；完成 Schema 一致性修复。
+>
+> 历史更新：2026-09-23 — 补齐 408 考试四表（public_id、deleted_at、attempt 状态）；知识点 (subject_id, normalized_name) 改为非唯一索引。2026-09-19 的多空题型拆分仍然有效。
 >
 > 历史更新：2026-08-10 — 知识点重构为关联表唯一事实源（移除 questions.knowledge_points JSON）；新增 knowledge_points/question_knowledge_points/practice_sessions/pomodoro_pause_intervals/user_pomodoro_settings 表；module 重构全部改为 subject_id

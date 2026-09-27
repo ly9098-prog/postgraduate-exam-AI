@@ -34,63 +34,12 @@ TEST_POSTGRES_SYNC_URL = os.environ.get(
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Tables expected after alembic upgrade head.
-# Only tables created by the Alembic chain belong here. Tables built by runtime
-# init_db()/_ensure_* DDL (cloud profile skips init_db) are intentionally absent:
-# admins (actual alembic table is admin_users), admin_sessions, admin_vector_configs
-# (dropped by b7c8d9e0f1a2), ai_feedback_logs, export_task_files, import_pipeline_pages,
-# practice_sessions, practice_session_items, question_tags.
-EXPECTED_TABLES = {
-    # Core
-    "users",
-    "questions",
-    "tags",
-    "review_records",
-    "wrong_questions",
-    # Import
-    "question_imports",
-    "import_pipelines",
-    "import_pipeline_chunks",
-    "import_batch_jobs",
-    "import_batch_job_items",
-    # Admin
-    "admin_users",
-    "audit_logs",
-    "question_versions",
-    "app_user_admin_bindings",
-    # Auth
-    "refresh_tokens",
-    # Export
-    "export_tasks",
-    "export_snapshots",
-    # Knowledge
-    "knowledge_points",
-    "knowledge_edges",
-    "question_knowledge_points",
-    "user_knowledge_states",
-    # Formulas
-    "formula_categories",
-    "formula_tags",
-    "formula_cards",
-    "formula_card_tags",
-    "formula_card_versions",
-    "formula_graph_specs",
-    "formula_graph_assets",
-    "formula_graph_previews",
-    "formula_import_jobs",
-    "formula_import_items",
-    "user_formula_favorites",
-    # Recommendations
-    "recommendation_experiments",
-    "recommendation_experiment_assignments",
-    "recommendation_logs",
-    "recommendation_metrics_daily",
-    "recommendation_strategy_configs",
-    # Pomodoro
-    "pomodoro_sessions",
-    # Alembic
-    "alembic_version",
-}
+# Every ORM table must be created by Alembic. PostgreSQL also owns the
+# pgvector table and Alembic revision table.
+import app.models  # noqa: E402,F401
+from app.core.database import Base  # noqa: E402
+
+EXPECTED_TABLES = set(Base.metadata.tables) | {"question_embeddings", "alembic_version"}
 
 # Fencing columns that must exist on specific tables
 FENCING_COLUMNS = {
@@ -261,6 +210,33 @@ class TestFreshAlembicMigration:
 
         missing = set(EXPECTED_INDEXES) - existing_indexes
         assert not missing, f"Missing indexes: {sorted(missing)}"
+
+    def test_schema_contract_has_no_autogenerate_drift(self, fresh_db):
+        """ORM metadata and the migrated PostgreSQL schema must agree."""
+        result = _run_alembic(["check"], {"DATABASE_URL": TEST_POSTGRES_SYNC_URL})
+        assert result.returncode == 0, (
+            f"alembic check failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
+
+    def test_no_exact_duplicate_indexes(self, fresh_db):
+        """A unique index must not be shadowed by an identical ordinary index."""
+        rows = _run(_fetch(
+            """
+            WITH indexes AS (
+                SELECT indrelid, indkey, indclass, indcollation, indoption,
+                       COALESCE(pg_get_expr(indexprs, indrelid), '') AS expressions,
+                       COALESCE(pg_get_expr(indpred, indrelid), '') AS predicate
+                FROM pg_index
+                WHERE indisvalid
+            )
+            SELECT indrelid::regclass::text AS table_name
+            FROM indexes
+            GROUP BY indrelid, indkey, indclass, indcollation, indoption,
+                     expressions, predicate
+            HAVING COUNT(*) > 1
+            """
+        ))
+        assert not rows, f"Exact duplicate index groups: {rows}"
 
     def test_application_boots_against_migrated_db(self, fresh_db):
         """The application's table metadata should be compatible with the migrated DB."""
