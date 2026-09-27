@@ -664,6 +664,7 @@ async def init_db():
     from app.models.review_scheduler import (  # noqa: F401 — Subject relationship target
         ReviewRecord,
         ReviewSchedule,
+        ReviewSession,
     )
     from app.models.study_plan import (  # noqa: F401 — registered for create_all
         StudyPlan,

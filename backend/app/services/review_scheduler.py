@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.subject_scope import selected_408_subject_ids
 from app.core.time_utils import (
+    normalize_to_naive_utc,
     shanghai_date_utc_range,
     shanghai_today,
     shanghai_today_boundaries,
@@ -15,7 +16,8 @@ from app.core.time_utils import (
 )
 from app.features.text_normalizer import _split_inline_roman_subitems
 from app.models.admin import QuestionVersion, Subject
-from app.models.review_scheduler import ReviewRecord, ReviewSchedule
+from app.models.question import Question
+from app.models.review_scheduler import ReviewRecord, ReviewSchedule, ReviewSession
 from app.models.wrong_question import WrongQuestion
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.services.question_revision_service import (
@@ -778,15 +780,178 @@ def _review_item_error_meta(message: str) -> tuple[str, bool, bool]:
     return "REVIEW_ITEM_REJECTED", False, True
 
 
+# 单组复习计时上限（与刷题会话一致），异常大的值按上限截断。
+REVIEW_SESSION_MAX_DURATION_SEC = 6 * 60 * 60
+# 客户端校准时钟与服务端的允许误差；超出的 finished_at 按服务端当前时间截断。
+_REVIEW_SESSION_CLOCK_TOLERANCE_SEC = 5
+
+
+def _parse_review_session_datetime(value) -> datetime | None:
+    text_val = str(value or "").strip()
+    if not text_val:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text_val.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return normalize_to_naive_utc(parsed)
+
+
+def _normalize_review_session(session_meta: dict | None) -> dict | None:
+    """Return a sanitized timing window, or ``None`` when nothing should be recorded.
+
+    Review timing only feeds learning-time statistics, so malformed metadata is
+    dropped/clamped instead of rejecting the graded batch.
+    """
+    if not session_meta:
+        return None
+    request_id = str(session_meta.get("request_id") or "").strip()
+    if not request_id:
+        return None
+    try:
+        duration_sec = int(session_meta.get("duration_sec"))
+    except (TypeError, ValueError):
+        return None
+    duration_sec = min(duration_sec, REVIEW_SESSION_MAX_DURATION_SEC)
+    if duration_sec <= 0:
+        return None
+
+    now = utcnow()
+    finished_at = _parse_review_session_datetime(session_meta.get("finished_at"))
+    if finished_at is None or finished_at > now + timedelta(
+        seconds=_REVIEW_SESSION_CLOCK_TOLERANCE_SEC
+    ):
+        finished_at = now
+    started_at = _parse_review_session_datetime(session_meta.get("started_at"))
+    earliest = finished_at - timedelta(seconds=REVIEW_SESSION_MAX_DURATION_SEC)
+    if started_at is None or started_at > finished_at or started_at < earliest:
+        started_at = finished_at - timedelta(seconds=duration_sec)
+    wall_sec = int((finished_at - started_at).total_seconds())
+    if duration_sec > wall_sec:
+        # 前台时长不可能超过墙钟窗口：扩展起点而非丢弃时长（时钟校准漂移）。
+        started_at = finished_at - timedelta(seconds=duration_sec)
+    return {
+        "request_id": request_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_sec": duration_sec,
+    }
+
+
+def _allocate_review_session_duration(
+    groups: list[tuple[int | None, int]], duration_sec: int
+) -> list[int]:
+    """Split duration by successful question count; remainders go to larger groups."""
+    total = sum(count for _, count in groups)
+    shares = [duration_sec * count // total for _, count in groups]
+    remainder = duration_sec - sum(shares)
+    order = sorted(
+        range(len(groups)),
+        key=lambda i: (-groups[i][1], groups[i][0] is None, groups[i][0] or 0),
+    )
+    for i in order[:remainder]:
+        shares[i] += 1
+    return shares
+
+
+async def _record_review_session(
+    db: AsyncSession,
+    user_id: int,
+    session_meta: dict | None,
+    results: list[dict],
+) -> None:
+    """Persist per-subject ReviewSession rows for one graded group (best effort).
+
+    Runs after the grading transaction commits: a statistics write failure must
+    never undo SM-2 progress.  Replays of the same client segment id are no-ops.
+    """
+    window = _normalize_review_session(session_meta)
+    if window is None:
+        return
+    succeeded = [item for item in results if item.get("success")]
+    if not succeeded:
+        return
+    try:
+        schedule_ids = sorted({int(item["schedule_id"]) for item in succeeded})
+        subject_rows = await db.execute(
+            select(
+                ReviewSchedule.id,
+                func.coalesce(ReviewSchedule.subject_id, Question.subject_id),
+            )
+            .outerjoin(Question, Question.id == ReviewSchedule.question_id)
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.id.in_(schedule_ids),
+            )
+        )
+        subject_by_schedule = {int(sid): subj for sid, subj in subject_rows.all()}
+
+        stats_by_subject: dict[int | None, dict] = {}
+        for item in succeeded:
+            subject_id = subject_by_schedule.get(int(item["schedule_id"]))
+            bucket = stats_by_subject.setdefault(
+                subject_id, {"question_count": 0, "correct_count": 0, "wrong_count": 0}
+            )
+            bucket["question_count"] += 1
+            if item.get("is_correct"):
+                bucket["correct_count"] += 1
+            else:
+                bucket["wrong_count"] += 1
+
+        base_request_id = window["request_id"]
+        existing = await db.scalar(
+            select(func.count(ReviewSession.id)).where(
+                ReviewSession.user_id == user_id,
+                ReviewSession.request_id.startswith(
+                    base_request_id + ":", autoescape=True
+                ),
+            )
+        )
+        if existing:
+            return
+
+        groups = [
+            (subject_id, bucket["question_count"])
+            for subject_id, bucket in stats_by_subject.items()
+        ]
+        shares = _allocate_review_session_duration(groups, window["duration_sec"])
+        for (subject_id, _), share in zip(groups, shares):
+            bucket = stats_by_subject[subject_id]
+            db.add(
+                ReviewSession(
+                    user_id=user_id,
+                    subject_id=subject_id,
+                    request_id=f"{base_request_id}:{subject_id if subject_id is not None else 'none'}",
+                    started_at=window["started_at"],
+                    finished_at=window["finished_at"],
+                    duration_sec=share,
+                    question_count=bucket["question_count"],
+                    correct_count=bucket["correct_count"],
+                    wrong_count=bucket["wrong_count"],
+                    status="completed",
+                )
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning(
+            "review session timing record failed uid=%s", user_id, exc_info=True
+        )
+
+
 async def grade_batch_review(
     db: AsyncSession,
     user_id: int,
     reviews: list[dict],
+    *,
+    session_meta: dict | None = None,
 ) -> dict:
     """Grade and persist one review batch against immutable revisions.
 
     Each item has its own request_id.  Replaying the same item is exact-idempotent;
-    reusing that id for another answer/version is rejected.
+    reusing that id for another answer/version is rejected.  ``session_meta`` (the
+    client's foreground timing for this group) is recorded afterwards as
+    ReviewSession rows for learning-time statistics.
     """
     if not reviews:
         raise ValueError("复习列表不能为空")
@@ -956,6 +1121,7 @@ async def grade_batch_review(
     results = [
         payload for _, payload in sorted(results_by_index, key=lambda pair: pair[0])
     ]
+    await _record_review_session(db, user_id, session_meta, results)
     # Counts describe successful submissions only.
     correct_count = sum(1 for item in results if item["success"] and item["is_correct"])
     wrong_count = sum(

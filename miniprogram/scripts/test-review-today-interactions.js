@@ -278,7 +278,7 @@ if (!capturedPageConfig) {
   var methodsToBind = [
     '_safeTickDelta', '_getReviewRequestId',
     '_startReviewTimer', '_pauseReviewTimer', '_resumeReviewTimer',
-    '_resetReviewTimer', '_clearReviewTimer',
+    '_resetReviewTimer', '_clearReviewTimer', '_buildReviewTimingSession',
     'showBatchSizeSelector', 'closeBatchSizeSheet',
     'selectPendingBatchSize', 'confirmBatchSize',
   ]
@@ -322,6 +322,51 @@ if (!capturedPageConfig) {
     mockPage._clearReviewTimer()
     assert.strictEqual(mockPage._timerInterval, null)
     assert.strictEqual(mockPage._reviewSession.timerRunning, false)
+  })
+
+  // ═══ Review timing → 番茄钟统计刷题时长 ═══
+
+  t('_buildReviewTimingSession returns null before any foreground time', function () {
+    mockPage._clearReviewTimer()
+    mockPage._resetReviewTimer()
+    mockPage._startReviewTimer()
+    assert.strictEqual(mockPage._buildReviewTimingSession(), null)
+    mockPage._clearReviewTimer()
+  })
+
+  t('_buildReviewTimingSession reports foreground seconds with a stable segment id', function () {
+    mockPage._clearReviewTimer()
+    mockPage._resetReviewTimer()
+    mockPage._startReviewTimer()
+    mockPage._pauseReviewTimer()
+    mockPage._reviewSession.timerElapsedMs = 95500 // 95.5s foreground only
+    var first = mockPage._buildReviewTimingSession()
+    assert.ok(first, 'session payload expected')
+    assert.strictEqual(first.duration_sec, 95)
+    assert.ok(first.request_id.length >= 8, 'request_id must satisfy server min length')
+    var wallSec = (Date.parse(first.finished_at) - Date.parse(first.started_at)) / 1000
+    assert.ok(wallSec >= 95, 'wall window must cover foreground duration')
+    // 提交失败后重试：同一分段 id，服务端幂等只记一次
+    var retry = mockPage._buildReviewTimingSession()
+    assert.strictEqual(retry.request_id, first.request_id)
+    // 下一组重新开始计时：新分段 id
+    mockPage._startReviewTimer()
+    mockPage._pauseReviewTimer()
+    mockPage._reviewSession.timerElapsedMs = 2000
+    var next = mockPage._buildReviewTimingSession()
+    assert.notStrictEqual(next.request_id, first.request_id)
+    assert.strictEqual(next.duration_sec, 2)
+  })
+
+  t('_buildReviewTimingSession does not stop the running timer', function () {
+    mockPage._clearReviewTimer()
+    mockPage._resetReviewTimer()
+    mockPage._startReviewTimer()
+    mockPage._reviewSession.timerElapsedMs = 3000
+    mockPage._buildReviewTimingSession()
+    assert.strictEqual(mockPage._reviewSession.timerRunning, true)
+    assert.ok(mockPage._timerInterval !== null)
+    mockPage._clearReviewTimer()
   })
 
   // ═══ Batch size — custom bottom sheet tests ═══
@@ -546,7 +591,14 @@ t('review grading payload binds immutable revision, occurrence and request id', 
   assert.ok(reviewTodayJs.indexOf('question_version_id: q.question_version_id') >= 0)
   assert.ok(reviewTodayJs.indexOf('occurrence_seq: q.occurrence_seq') >= 0)
   assert.ok(reviewTodayJs.indexOf('request_id: requestId') >= 0)
-  assert.ok(reviewTodayJs.indexOf("api.post('/review/grade-batch', { reviews })") >= 0)
+  assert.ok(reviewTodayJs.indexOf("api.post('/review/grade-batch', gradePayload)") >= 0)
+  assert.ok(reviewTodayJs.indexOf('{ reviews, session: timingSession }') >= 0)
+})
+
+t('review timing session is frozen before grade-batch request (network time excluded)', function () {
+  var timingIdx = reviewTodayJs.indexOf('const timingSession = this._buildReviewTimingSession()')
+  var postIdx = reviewTodayJs.indexOf("api.post('/review/grade-batch', gradePayload)")
+  assert.ok(timingIdx >= 0 && postIdx > timingIdx)
 })
 
 t('review timer prefers wx.getPerformance monotonic clock', function () {

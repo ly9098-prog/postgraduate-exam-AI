@@ -121,7 +121,12 @@ async def grade_batch(
     """批量自动批改；所有判题均绑定 ReviewSchedule 的不可变题目版本。"""
     try:
         reviews = [item.model_dump() for item in data.reviews]
-        result = await review_scheduler.grade_batch_review(db, current_user.id, reviews)
+        result = await review_scheduler.grade_batch_review(
+            db,
+            current_user.id,
+            reviews,
+            session_meta=data.session.model_dump() if data.session else None,
+        )
         await cache.delete(f"review:*:{current_user.id}*")
         await cache.delete(f"stats:*:{current_user.id}*")
         return result

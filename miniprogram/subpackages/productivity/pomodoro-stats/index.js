@@ -1292,15 +1292,17 @@ var pageConfig = {
     const durSec = s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0
     const subjectName = s.subject_name || '未分类'
     const subjectKey = s.subject_code || ''
-    const isPractice = s.record_type === 'practice'
+    const isReview = s.record_type === 'review'
+    const isPractice = s.record_type === 'practice' || isReview
     const isFree = s.preset === 'free'
     const sessionTaskType = storage.pomodoroTaskTypes.labelForSession(s)
     const durationText = formatDuration(durSec)
     // 刷题会话：左侧明确标出「刷题」，状态为「刷题」而非「完成」，与番茄钟区分。
     let _subjectLabel, _statusLabel, _statusClass
+    // 今日复习同样计入刷题时长，标签区分为「复习」。
     if (isPractice) {
-      _subjectLabel = '刷题 · ' + subjectName
-      _statusLabel = '刷题'
+      _subjectLabel = (isReview ? '复习 · ' : '刷题 · ') + subjectName
+      _statusLabel = isReview ? '复习' : '刷题'
       _statusClass = 'status-done'
     } else {
       _subjectLabel = isFree ? '自由计时 · ' + subjectName : subjectName

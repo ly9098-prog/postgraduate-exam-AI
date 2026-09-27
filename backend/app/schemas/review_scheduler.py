@@ -72,8 +72,18 @@ class BatchGradeItem(BaseModel):
     user_answer: str = Field(default="", max_length=4096)
 
 
+class ReviewSessionMeta(BaseModel):
+    """本组复习的前台计时，仅用于学习时长统计；非法值由服务层静默丢弃，不影响判题。"""
+
+    request_id: str = Field(..., min_length=8, max_length=128)
+    started_at: str | None = Field(default=None, max_length=64)
+    finished_at: str | None = Field(default=None, max_length=64)
+    duration_sec: int | None = None
+
+
 class BatchGradeRequest(BaseModel):
     reviews: list[BatchGradeItem] = Field(..., min_length=1, max_length=40)
+    session: ReviewSessionMeta | None = None
 
 
 class BatchGradeResult(BaseModel):

@@ -39,7 +39,11 @@ from app.models.recommendation_log import RecommendationLog  # noqa: F401
 from app.models.recommendation_metrics_daily import (
     RecommendationMetricsDaily,  # noqa: F401
 )
-from app.models.review_scheduler import ReviewRecord, ReviewSchedule  # noqa: F401
+from app.models.review_scheduler import (  # noqa: F401
+    ReviewRecord,
+    ReviewSchedule,
+    ReviewSession,
+)
 from app.models.sequential_reservation import SequentialReservation  # noqa: F401
 from app.models.study_plan import StudyPlan, StudyPlanDay  # noqa: F401
 from app.models.syllabus import (  # noqa: F401

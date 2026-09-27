@@ -82,6 +82,29 @@ class TestGradeBatchAPI:
         assert body["results"][0]["occurrence_seq"] == 2
         assert body["results"][0]["request_id"] == "review-request-123"
         service.assert_awaited_once()
+        assert service.await_args.kwargs["session_meta"] is None
+
+    def test_forwards_review_timing_session(self, monkeypatch):
+        service = AsyncMock(return_value={
+            "results": [_grade_result()],
+            "total": 1,
+            "correct_count": 1,
+            "wrong_count": 0,
+        })
+        monkeypatch.setattr(review.review_scheduler, "grade_batch_review", service)
+        session = {
+            "request_id": "req_segment_01",
+            "started_at": "2026-08-08T02:00:00.000Z",
+            "finished_at": "2026-08-08T02:05:00.000Z",
+            "duration_sec": 280,
+        }
+        response = client.post(
+            "/api/v1/review/grade-batch",
+            json={"reviews": [_review_item()], "session": session},
+        )
+
+        assert response.status_code == 200
+        assert service.await_args.kwargs["session_meta"] == session
 
     def test_rejects_missing_immutable_identity(self):
         item = _review_item()

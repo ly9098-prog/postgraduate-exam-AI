@@ -126,3 +126,45 @@ class ReviewRecord(Base):
     ease_factor_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     ease_factor_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     reviewed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ReviewSession(Base):
+    """一次今日复习分组提交的学习时长 — 并入番茄钟统计页的刷题时长。
+
+    与 PracticeSession 语义对齐（started_at / finished_at / duration_sec），但
+    独立成表，避免复习时长混入刷题记录的诊断/学习计划口径。
+
+    一组复习可能跨多个科目：按成功提交题数把时长拆成每科目一条记录，
+    ``request_id`` 形如 ``<客户端分段 id>:<subject_id|none>``，由
+    ``(user_id, request_id)`` 唯一约束保证网络重放不重复计时。
+    """
+
+    __tablename__ = "review_sessions"
+    __table_args__ = (
+        Index("ix_review_sessions_user_started", "user_id", "started_at"),
+        Index("ix_review_sessions_user_finished", "user_id", "finished_at"),
+        UniqueConstraint(
+            "user_id", "request_id", name="uq_review_sessions_user_request"
+        ),
+        CheckConstraint("duration_sec >= 0", name="ck_review_sessions_duration_sec"),
+        CheckConstraint(
+            "finished_at >= started_at", name="ck_review_sessions_finished_at"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
+    subject_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
+    )
+    request_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    duration_sec: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    correct_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    wrong_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="completed")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

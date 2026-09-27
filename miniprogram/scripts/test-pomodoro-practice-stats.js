@@ -154,6 +154,24 @@ assertEqual(mixed[0]._subjectLabel, '刷题 · 高等数学', '刷题在最前')
 assertEqual(mixed[0]._statusLabel, '刷题', '刷题状态')
 assertEqual(mixed[1]._statusLabel, '完成', '番茄状态')
 
+console.log('\n=== _formatSession: 今日复习计入刷题时长 ===')
+
+const fmtReview = inst._formatSession({
+  record_key: 'review:7',
+  record_type: 'review',
+  id: 7,
+  start_time: '2026-08-08T02:00:00', // 中国 10:00
+  actual_duration: 600,
+  subject_name: '数据结构',
+  subject_id: 4,
+  status: 'completed',
+})
+assertEqual(fmtReview._subjectLabel, '复习 · 数据结构', '复习标签为「复习 · 科目」')
+assertEqual(fmtReview._statusLabel, '复习', '复习状态为「复习」')
+assertEqual(fmtReview._statusClass, 'status-done', '复习状态 class 为 status-done')
+assertEqual(fmtReview._iconType, 'practice', '复习沿用刷题图标')
+assertEqual(fmtReview._duration, '10分钟', '复习时长 600s -> 10分钟')
+
 console.log('\n=== record_key 不冲突 ===')
 
 const k1 = inst._formatSession({ record_key: 'pomodoro:10', record_type: 'pomodoro', id: 10, start_time: '2026-08-08T01:00:00', actual_duration: 600, subject_name: '数学', subject_id: 1, preset: 'standard', status: 'completed' })

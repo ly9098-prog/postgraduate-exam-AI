@@ -27,6 +27,7 @@ from app.models.pomodoro import (
     UserPomodoroSettings,
 )
 from app.models.practice_session import PracticeSession
+from app.models.review_scheduler import ReviewSession
 from app.models.user import User
 from app.services.pomodoro_attribution import (
     active_intervals_for_session,
@@ -964,7 +965,7 @@ async def _load_overlapping_practice_sessions(
     *,
     with_subject: bool = False,
 ) -> list[_LiteSession]:
-    """Load completed practice sessions overlapping the half-open range.
+    """Load completed practice + today-review sessions overlapping the half-open range.
 
     Practice sessions never pause, so ``pause_intervals`` is empty; the row's
     wall clock ``[started_at, finished_at)`` is the raw learning window and
@@ -972,74 +973,79 @@ async def _load_overlapping_practice_sessions(
     be less than the wall span (foreground-only client timing subtracts
     background time), so attribution must scale exclusion proportionally
     (:func:`split_duration_excluding_intervals`), never by flat wall overlap.
+
+    ReviewSession (今日复习) shares the same column contract and counts toward
+    刷题时长 exactly like PracticeSession; both tables are read in one UNION ALL
+    statement so the snapshot query budget stays fixed.
     """
-    overlap = (
-        PracticeSession.user_id == user_id,
-        PracticeSession.status == "completed",
-        PracticeSession.started_at < period_end,
-        PracticeSession.finished_at > period_start,
-    )
-    if with_subject:
-        # Select only attribution columns. PracticeSession now carries a potentially
+
+    def _cols(model):
+        # Select only attribution columns. PracticeSession carries a potentially
         # large submission_response JSON used for idempotent result replay; loading
         # full ORM rows here would deserialize that payload for every stats query
         # even though attribution never reads it.
-        result = await db.execute(
-            select(
-                PracticeSession.started_at,
-                PracticeSession.finished_at,
-                PracticeSession.duration_sec,
-                PracticeSession.subject_id,
-                Subject.code,
-                Subject.name,
-                Subject.is_active,
-            )
-            .outerjoin(Subject, Subject.id == PracticeSession.subject_id)
-            .where(*overlap)
+        return select(
+            model.started_at.label("started_at"),
+            model.finished_at.label("finished_at"),
+            model.duration_sec.label("duration_sec"),
+            model.subject_id.label("subject_id"),
+        ).where(
+            model.user_id == user_id,
+            model.status == "completed",
+            model.started_at < period_end,
+            model.finished_at > period_start,
         )
-        out: list[_LiteSession] = []
-        for row in result.all():
-            has_subject = (
-                row.code is not None
-                or row.name is not None
-                or row.is_active is not None
+
+    merged = _cols(PracticeSession).union_all(_cols(ReviewSession)).subquery()
+    if not with_subject:
+        result = await db.execute(
+            select(merged.c.started_at, merged.c.finished_at, merged.c.duration_sec)
+        )
+        return [
+            _LiteSession(
+                start_time=r.started_at,
+                end_time=r.finished_at,
+                actual_duration=r.duration_sec,
+                pause_intervals=[],
             )
-            out.append(
-                _LiteSession(
-                    start_time=row.started_at,
-                    end_time=row.finished_at,
-                    actual_duration=row.duration_sec,
-                    subject_id=row.subject_id,
-                    subject_ref=(
-                        SimpleNamespace(
-                            code=row.code or "",
-                            name=row.name or "",
-                            is_active=bool(row.is_active),
-                        )
-                        if has_subject
-                        else None
-                    ),
-                    pause_intervals=[],
-                )
-            )
-        return out
+            for r in result.all()
+        ]
 
     result = await db.execute(
         select(
-            PracticeSession.started_at,
-            PracticeSession.finished_at,
-            PracticeSession.duration_sec,
-        ).where(*overlap)
+            merged.c.started_at,
+            merged.c.finished_at,
+            merged.c.duration_sec,
+            merged.c.subject_id,
+            Subject.code,
+            Subject.name,
+            Subject.is_active,
+        ).outerjoin(Subject, Subject.id == merged.c.subject_id)
     )
-    return [
-        _LiteSession(
-            start_time=r.started_at,
-            end_time=r.finished_at,
-            actual_duration=r.duration_sec,
-            pause_intervals=[],
+    out: list[_LiteSession] = []
+    for row in result.all():
+        has_subject = (
+            row.code is not None or row.name is not None or row.is_active is not None
         )
-        for r in result.all()
-    ]
+        out.append(
+            _LiteSession(
+                start_time=row.started_at,
+                end_time=row.finished_at,
+                actual_duration=row.duration_sec,
+                subject_id=row.subject_id,
+                subject_ref=(
+                    SimpleNamespace(
+                        code=row.code or "",
+                        name=row.name or "",
+                        is_active=bool(row.is_active),
+                    )
+                    if has_subject
+                    else None
+                ),
+                pause_intervals=[],
+            )
+        )
+    return out
 
 
 def _resolve_subject(session) -> tuple[int | None, str, str]:
@@ -1122,6 +1128,7 @@ async def build_pomodoro_statistics_snapshot(
             need_daily_summary or (need_range_summary and range_include_subjects)
         ),
     )
+    # 今日复习（ReviewSession）与刷题会话同口径并入：仅补充时长，不计番茄次数。
     practice_sessions = await _load_overlapping_practice_sessions(
         db,
         user_id,
@@ -1446,8 +1453,16 @@ async def get_lifetime_summary(db: AsyncSession, user_id: int) -> dict:
             PracticeSession.status == "completed",
         )
     )
+    review_first = await db.scalar(
+        select(func.min(ReviewSession.started_at)).where(
+            ReviewSession.user_id == user_id,
+            ReviewSession.status == "completed",
+        )
+    )
     first_candidates = [
-        value for value in (pomo_first, practice_first) if value is not None
+        value
+        for value in (pomo_first, practice_first, review_first)
+        if value is not None
     ]
     start_date = (
         study_day_for_utc(min(first_candidates), dsm) if first_candidates else today
@@ -1478,12 +1493,12 @@ async def get_history(
     page_size: int = 20,
     filter_date: date | None = None,
 ) -> tuple[list[dict], int]:
-    """统计页统一学习记录 history — PomodoroSession + PracticeSession 混排。
+    """统计页统一学习记录 history — PomodoroSession + PracticeSession + ReviewSession 混排。
 
-    - 两种来源统一按 start_time DESC 排序后做全局 offset/limit（UNION 子查询），
-      保证分页与 total 严格正确，不存在"两来源各自取 N 条再拼接"丢页问题。
+    - 各来源统一按 start_time DESC 排序后做全局 offset/limit（UNION 子查询），
+      保证分页与 total 严格正确，不存在"各来源各自取 N 条再拼接"丢页问题。
     - 按 start_time / started_at 对应的统计日过滤（遵守用户 day_start_minute）。
-    - 每条记录带唯一 record_key（``pomodoro:<id>`` / ``practice:<id>``）。
+    - 每条记录带唯一 record_key（``pomodoro:<id>`` / ``practice:<id>`` / ``review:<id>``）。
     """
     pomo_where = [
         PomodoroSession.user_id == user_id,
@@ -1492,6 +1507,10 @@ async def get_history(
     practice_where = [
         PracticeSession.user_id == user_id,
         PracticeSession.status == "completed",
+    ]
+    review_where = [
+        ReviewSession.user_id == user_id,
+        ReviewSession.status == "completed",
     ]
     if filter_date is not None:
         dsm = (await get_pomodoro_settings(db, user_id))["day_start_minute"]
@@ -1506,6 +1525,12 @@ async def get_history(
             [
                 PracticeSession.started_at >= start_utc,
                 PracticeSession.started_at < end_utc,
+            ]
+        )
+        review_where.extend(
+            [
+                ReviewSession.started_at >= start_utc,
+                ReviewSession.started_at < end_utc,
             ]
         )
 
@@ -1533,7 +1558,19 @@ async def get_history(
         null().label("preset"),
     ).where(*practice_where)
 
-    merged = pomo_cols.union_all(practice_cols).subquery()
+    review_cols = select(
+        literal("review").label("record_type"),
+        ReviewSession.id.label("id"),
+        ReviewSession.user_id.label("user_id"),
+        ReviewSession.subject_id.label("subject_id"),
+        ReviewSession.started_at.label("start_time"),
+        ReviewSession.finished_at.label("end_time"),
+        ReviewSession.duration_sec.label("actual_duration"),
+        ReviewSession.status.label("status"),
+        null().label("preset"),
+    ).where(*review_where)
+
+    merged = pomo_cols.union_all(practice_cols, review_cols).subquery()
 
     total = (await db.execute(select(func.count()).select_from(merged))).scalar() or 0
 

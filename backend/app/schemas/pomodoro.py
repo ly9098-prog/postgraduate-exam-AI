@@ -189,12 +189,12 @@ class PomodoroStatisticsOverviewResponse(BaseModel):
 class LearningHistoryItem(BaseModel):
     """统计页统一学习记录 — 番茄钟与刷题会话混排。
 
-    ``record_key`` 跨来源唯一（``pomodoro:<id>`` / ``practice:<id>``），供前端
-    WXML ``wx:key`` 使用，避免两张表 id 相同产生 key 冲突。
+    ``record_key`` 跨来源唯一（``pomodoro:<id>`` / ``practice:<id>`` /
+    ``review:<id>``），供前端 WXML ``wx:key`` 使用，避免多张表 id 相同产生 key 冲突。
     """
 
     record_key: str
-    record_type: Literal["pomodoro", "practice"]
+    record_type: Literal["pomodoro", "practice", "review"]
     id: int
     user_id: int
     subject_id: int | None = None
