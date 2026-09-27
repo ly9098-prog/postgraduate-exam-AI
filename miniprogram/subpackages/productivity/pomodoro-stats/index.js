@@ -1629,7 +1629,10 @@ var pageConfig = {
       callbacks.forEach(cb => cb())
     }
     const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-    const dpr = Math.min(2, windowInfo.pixelRatio || 2)
+    // Use the real device pixel ratio. Clamping to 2 left 3x devices rendering a
+    // 2x backing store upscaled to the panel, which is exactly what blurred the
+    // small percentage digits inside the leader-line badges.
+    const dpr = windowInfo.pixelRatio || 2
     wx.createSelectorQuery().in(this)
       .select('#pie-canvas')
       .fields({ node: true, size: true })
@@ -1648,6 +1651,7 @@ var pageConfig = {
         this._pieCanvasNode = node
         this._pieCtx = ctx
         this._pieRect = { width: w, height: h }
+        this._pieDpr = dpr
         finish()
       })
   },
@@ -1676,7 +1680,8 @@ var pageConfig = {
       callbacks.forEach(cb => cb())
     }
     const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-    const dpr = Math.min(2, windowInfo.pixelRatio || 2)
+    // Match the pie canvas: no clamp, so the bar labels stay crisp on 3x screens.
+    const dpr = windowInfo.pixelRatio || 2
     wx.createSelectorQuery().in(this)
       .select('#trend-bars-canvas')
       .fields({ node: true, size: true })
@@ -2209,6 +2214,12 @@ var pageConfig = {
   _drawPieLabels(ctx, geometry, layout, reveal, startIndex = 0, endIndex = layout ? layout.length : 0) {
     if (!layout || !layout.length || reveal <= 0) return
     const palette = this._getCanvasPalette()
+    // Badge positions come from the collision solver, so they are fractional.
+    // Drawing the box and a 10px label on a fractional device-pixel boundary is
+    // the other half of the blur problem: snap them so both land on whole
+    // device pixels.
+    const dpr = this._pieDpr || 1
+    const snap = (value) => Math.round(value * dpr) / dpr
     ctx.save()
     ctx.globalAlpha = Math.max(0, Math.min(1, reveal))
     ctx.lineCap = 'round'
@@ -2232,7 +2243,9 @@ var pageConfig = {
       ctx.arc(item.startX, item.startY, 2.1, 0, Math.PI * 2)
       ctx.fill()
 
-      this._roundRectPath(ctx, item.badgeX, item.badgeY, item.badgeW, item.badgeH, 8)
+      const badgeX = snap(item.badgeX)
+      const badgeY = snap(item.badgeY)
+      this._roundRectPath(ctx, badgeX, badgeY, item.badgeW, item.badgeH, 8)
       ctx.fillStyle = palette.badgeFill
       ctx.fill()
       ctx.strokeStyle = sec.color
@@ -2243,7 +2256,14 @@ var pageConfig = {
       ctx.font = '600 10px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(sec.subject._durationBadgeText || '0时0分', item.badgeCenterX, item.badgeCenterY + 0.5)
+      // Snap only the glyph origin horizontally: horizontal subpixel offsets are
+      // what smear the stroke edges. The vertical +0.5 is the existing optical
+      // nudge for CJK under textBaseline:'middle' and is left untouched.
+      ctx.fillText(
+        sec.subject._durationBadgeText || '0时0分',
+        snap(badgeX + item.badgeW / 2),
+        badgeY + item.badgeH / 2 + 0.5
+      )
     }
     ctx.restore()
   },

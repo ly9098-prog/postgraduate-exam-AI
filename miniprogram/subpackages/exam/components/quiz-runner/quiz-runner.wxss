@@ -72,6 +72,12 @@ to{opacity: 1;transform: translateY(0);}
 .runner-option-indicator.runner-indicator-user{border-color: #F05A51;background: #F05A51;}
 .runner-check-mark{width: 18rpx;height: 18rpx;color: #10251A;}
 .runner-indicator-correct .runner-check-mark,.runner-indicator-user .runner-check-mark{color: #FFFFFF;}
+/* .icon-check/.icon-exclamation are drawn for the 30rpx token box (left 8/top 12),
+   which lands the glyph below-right of centre once .runner-check-mark shrinks the
+   box to 18rpx. Re-centre both marks against the indicator instead. */
+.runner-check-mark.icon-check::before{left: 50%;top: 50%;width: 6rpx;height: 11rpx;transform: translate(-50%,-56%) rotate(45deg);}
+.runner-check-mark.icon-exclamation::before{left: 50%;top: 2rpx;width: 3rpx;height: 10rpx;transform: translateX(-50%);}
+.runner-check-mark.icon-exclamation::after{left: 50%;top: 13rpx;width: 3rpx;height: 3rpx;transform: translateX(-50%);}
 .runner-option-body{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10rpx;}
 .runner-option-content{flex:1;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:10rpx;}
 .runner-option-key{flex-shrink: 0;color: #527D00;font-size: 27rpx;line-height: 1.62;font-weight: 900;}
