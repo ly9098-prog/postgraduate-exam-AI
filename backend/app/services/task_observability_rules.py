@@ -40,6 +40,70 @@ def evaluate_task_health(
                 "error",
                 "Redis 当前不可用，异步任务已无法正常投递或消费。",
             )
+        else:
+            memory = redis.get("memory")
+            if memory is None:
+                issue(
+                    "REDIS_MEMORY_METRICS_UNAVAILABLE",
+                    "warning",
+                    "Redis 队列可用，但内存指标暂不可观测。",
+                )
+            elif int(memory.get("max_bytes") or 0) <= 0:
+                issue(
+                    "REDIS_MEMORY_LIMIT_UNSET",
+                    "warning",
+                    "Redis 未设置内存上限，无法预警容量耗尽。",
+                )
+            else:
+                usage_pct = round(
+                    100 * int(memory.get("used_bytes") or 0) / int(memory["max_bytes"]),
+                    2,
+                )
+                if usage_pct >= settings.TASK_HEALTH_REDIS_MEMORY_ERROR_PCT:
+                    issue(
+                        "REDIS_MEMORY_CRITICAL",
+                        "error",
+                        "Redis 内存占用达到严重阈值，noeviction 模式下写入可能失败。",
+                        usage_pct,
+                    )
+                elif usage_pct >= settings.TASK_HEALTH_REDIS_MEMORY_WARN_PCT:
+                    issue(
+                        "REDIS_MEMORY_HIGH",
+                        "warning",
+                        "Redis 内存占用达到预警阈值。",
+                        usage_pct,
+                    )
+            if memory is not None and int(memory.get("evicted_keys") or 0) > 0:
+                issue(
+                    "REDIS_KEYS_EVICTED",
+                    "warning",
+                    "Redis 已出现键淘汰，请检查内存策略和历史事件。",
+                    int(memory["evicted_keys"]),
+                )
+
+            key_sample = redis.get("projection_keys")
+            if key_sample is not None:
+                if not key_sample.get("available"):
+                    issue(
+                        "REDIS_PROJECTION_SCAN_UNAVAILABLE",
+                        "warning",
+                        "答题投影键巡检失败，键数量和 TTL 状态暂不可观测。",
+                    )
+                else:
+                    no_ttl = int(key_sample.get("idempotent_no_ttl") or 0)
+                    if no_ttl:
+                        issue(
+                            "REDIS_PROJECTION_GUARD_NO_TTL",
+                            "error",
+                            "答题投影幂等键缺少 TTL，可能持续占用 Redis 内存。",
+                            no_ttl,
+                        )
+                    if not key_sample.get("complete"):
+                        issue(
+                            "REDIS_PROJECTION_SCAN_INCOMPLETE",
+                            "warning",
+                            "答题投影键巡检达到扫描预算，部分计数不是全量结果。",
+                        )
 
         oldest_outbox = int(outbox.get("oldest_unpublished_seconds") or 0)
         if oldest_outbox >= settings.TASK_HEALTH_OUTBOX_OLDEST_ERROR_SEC:

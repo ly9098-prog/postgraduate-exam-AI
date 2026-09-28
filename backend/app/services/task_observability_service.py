@@ -32,6 +32,7 @@ from app.core.time_utils import (
     utcnow,
 )
 from app.models.answer_behavior import AnswerBehavior
+from app.models.practice_record import PracticeRecord
 from app.models.task_outbox import TaskOutbox
 from app.services.practice.projection_reconciliation_service import (
     get_projection_backlog_metrics,
@@ -53,6 +54,10 @@ OBSERVED_TASK_TYPES: tuple[str, ...] = (
     "answer_projection",
     "error_diagnosis",
 )
+
+_PROJECTION_KEY_PATTERN = "taskq:v2:*:answer_projection:*"
+_PROJECTION_SCAN_MAX_PAGES = 4096  # Never run an unbounded SCAN in the monitor.
+_PROJECTION_SCAN_TIMEOUT_SEC = 5
 
 
 def _empty_queue_rows() -> list[dict[str, Any]]:
@@ -183,6 +188,29 @@ async def _collect_queue_metrics() -> dict[str, Any]:
             raise RuntimeError("redis_client_unavailable")
         await client.ping()
 
+        # INFO is constant cost; unlike a keyspace scan it is safe on each
+        # diagnostics request and on each health-monitor poll.
+        try:
+            memory_info = await client.info("memory")
+            stats_info = await client.info("stats")
+            used_bytes = int(memory_info["used_memory"])
+            max_bytes = int(memory_info["maxmemory"])
+            memory = {
+                "used_bytes": used_bytes,
+                "max_bytes": max_bytes,
+                "used_percent": round(100 * used_bytes / max_bytes, 2)
+                if max_bytes
+                else None,
+                "evicted_keys": int(stats_info["evicted_keys"]),
+                "warning_percent": settings.TASK_HEALTH_REDIS_MEMORY_WARN_PCT,
+                "error_percent": settings.TASK_HEALTH_REDIS_MEMORY_ERROR_PCT,
+            }
+        except Exception as exc:
+            # INFO may fail independently of the queue commands.  Missing
+            # telemetry is not evidence that the queue itself is down.
+            logger.debug("Redis memory telemetry unavailable: %s", type(exc).__name__)
+            memory = None
+
         pipe = client.pipeline(transaction=False)
         for task_type in OBSERVED_TASK_TYPES:
             pipe.llen(_v2_q_key(task_type))
@@ -248,6 +276,7 @@ async def _collect_queue_metrics() -> dict[str, Any]:
             "queues": rows,
             "totals": totals,
             "oldest_ready_seconds": oldest_ready,
+            "memory": memory,
         }
     except Exception as exc:
         logger.debug("task diagnostics Redis snapshot failed", exc_info=True)
@@ -271,6 +300,77 @@ async def _collect_queue_metrics() -> dict[str, Any]:
                 await client.aclose()
             except Exception:
                 pass
+
+
+async def _collect_projection_key_metrics() -> dict[str, Any]:
+    """Low-frequency, bounded SCAN of per-answer keys; never fetch task bodies.
+
+    SCAN may return duplicate keys and a key may expire mid-pass, so counts are
+    approximate.  Partial counts are never presented as full keyspace totals.
+    Only idempotency keys MUST have a TTL: active fencing/task hashes may not.
+    """
+    from app.services.task_queue_service import task_queue
+
+    client = None
+    counts = {"idempotent": 0, "fencing": 0, "task": 0, "idempotent_no_ttl": 0}
+    try:
+        client = await task_queue._get_script_client()
+        if client is None:
+            raise RuntimeError("redis_client_unavailable")
+
+        cursor = 0
+        async with asyncio.timeout(_PROJECTION_SCAN_TIMEOUT_SEC):
+            for _ in range(_PROJECTION_SCAN_MAX_PAGES):
+                cursor, keys = await client.scan(
+                    cursor=cursor, match=_PROJECTION_KEY_PATTERN, count=256
+                )
+                guard_keys = []
+                for key in keys:
+                    # Redis clients may return either bytes or decoded strings.
+                    name = key.decode() if isinstance(key, bytes) else str(key)
+                    if name.startswith("taskq:v2:idempotent:answer_projection:"):
+                        counts["idempotent"] += 1
+                        guard_keys.append(key)
+                    elif name.startswith("taskq:v2:fencing:answer_projection:"):
+                        counts["fencing"] += 1
+                    elif name.startswith("taskq:v2:task:answer_projection:"):
+                        counts["task"] += 1
+                if guard_keys:
+                    pipe = client.pipeline(transaction=False)
+                    for key in guard_keys:
+                        pipe.ttl(key)
+                    counts["idempotent_no_ttl"] += sum(
+                        int(ttl) == -1 for ttl in await pipe.execute()
+                    )
+                if int(cursor) == 0:
+                    return {"available": True, "complete": True, **counts}
+        return {"available": True, "complete": False, **counts}
+    except Exception as exc:
+        # The memory alert remains usable if the secondary, more expensive
+        # keyspace sample fails. Do not report partial results as healthy.
+        logger.debug("Redis projection key scan failed: %s", type(exc).__name__)
+        return {"available": False, "complete": False, **counts}
+    finally:
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+
+async def _count_recent_answers(db: AsyncSession) -> int:
+    """Count durable answer rows using the (projection_state, answered_at) index."""
+    return int(
+        await db.scalar(
+            select(func.count(PracticeRecord.id)).where(
+                PracticeRecord.projection_state.in_(
+                    ["pending", "completed", "revision_only", "archived"]
+                ),
+                PracticeRecord.answered_at >= utcnow() - timedelta(hours=24),
+            )
+        )
+        or 0
+    )
 
 
 async def _collect_projection_metrics(db: AsyncSession) -> dict[str, Any]:
@@ -380,11 +480,15 @@ def _async_runtime_expected() -> bool:
     return True
 
 
-async def collect_task_diagnostics(db: AsyncSession) -> dict[str, Any]:
+async def collect_task_diagnostics(
+    db: AsyncSession, *, projection_keys: dict[str, Any] | None = None
+) -> dict[str, Any]:
     outbox = await _collect_outbox_metrics(db)
     projection = await _collect_projection_metrics(db)
     trend = await _collect_activity_trend(db)
     redis = await _collect_queue_metrics()
+    if projection_keys is not None:
+        redis["projection_keys"] = projection_keys
     async_runtime_expected = _async_runtime_expected()
     health = evaluate_task_health(
         outbox=outbox,
@@ -535,11 +639,41 @@ async def run_task_health_monitor() -> None:
     interval = max(30.0, float(settings.TASK_HEALTH_MONITOR_INTERVAL_SEC))
     await asyncio.sleep(min(30.0, interval))
     last_signature: tuple[str, tuple[str, ...]] | None = None
+    next_projection_scan = 0.0
+    projection_keys: dict[str, Any] | None = None
 
     while True:
         try:
+            scan_due = time.monotonic() >= next_projection_scan
+            if scan_due:
+                projection_keys = await _collect_projection_key_metrics()
+                next_projection_scan = time.monotonic() + max(
+                    60, int(settings.TASK_HEALTH_REDIS_PROJECTION_SCAN_INTERVAL_SEC)
+                )
+                if projection_keys["available"]:
+                    logger.info(
+                        "Redis answer_projection key scan: complete=%s idempotent=%d "
+                        "fencing=%d task=%d idempotent_no_ttl=%d",
+                        projection_keys["complete"],
+                        projection_keys["idempotent"],
+                        projection_keys["fencing"],
+                        projection_keys["task"],
+                        projection_keys["idempotent_no_ttl"],
+                    )
             async with async_session() as db:
-                snapshot = await collect_task_diagnostics(db)
+                snapshot = await collect_task_diagnostics(
+                    db, projection_keys=projection_keys
+                )
+                if scan_due:
+                    try:
+                        logger.info(
+                            "Practice answer submissions in last 24h: %d",
+                            await _count_recent_answers(db),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Practice answer rate unavailable: %s", type(exc).__name__
+                        )
             health = snapshot["health"]
             codes = tuple(sorted(item["code"] for item in health["issues"]))
             signature = (str(health["severity"]), codes)

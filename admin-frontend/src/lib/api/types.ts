@@ -1239,6 +1239,14 @@ export type TaskDiagnosticsResponse = {
       corrupt: number;
     };
     oldest_ready_seconds: number;
+    memory?: {
+      used_bytes: number;
+      max_bytes: number;
+      used_percent: number | null;
+      evicted_keys: number;
+      warning_percent: number;
+      error_percent: number;
+    } | null;
   };
   projection: {
     unprojected: number;

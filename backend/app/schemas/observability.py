@@ -83,6 +83,15 @@ class TaskQueueTotalsResponse(BaseModel):
     corrupt: int = 0
 
 
+class TaskRedisMemoryResponse(BaseModel):
+    used_bytes: int
+    max_bytes: int
+    used_percent: float | None = None
+    evicted_keys: int = 0
+    warning_percent: int = 50
+    error_percent: int = 75
+
+
 class TaskRedisDiagnosticsResponse(BaseModel):
     configured: bool
     available: bool
@@ -90,6 +99,7 @@ class TaskRedisDiagnosticsResponse(BaseModel):
     queues: list[TaskQueueDiagnosticResponse] = Field(default_factory=list)
     totals: TaskQueueTotalsResponse
     oldest_ready_seconds: int = 0
+    memory: TaskRedisMemoryResponse | None = None
 
 
 class TaskProjectionDiagnosticsResponse(BaseModel):

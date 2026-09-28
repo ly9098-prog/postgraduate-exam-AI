@@ -48,7 +48,7 @@ Redis 在本项目中不是可选缓存，而是生产环境的核心基础设�
 | `taskq:v2:task:{id}` | Hash | 负载/元数据 |
 | `taskq:v2:heartbeat:{id}` | String | owner token，TTL=租约 |
 | `taskq:v2:idempotent:{id}` | String | 幂等守卫，TTL=8d |
-| `taskq:v2:fencing:{id}` | String | 单调代数，TTL=7d |
+| `taskq:v2:fencing:{id}` | Hash | 单调代数；任务终态后 TTL=7d，执行中无 TTL |
 
 - 入队/认领/心跳/完成/重试/死信/回收均通过 Lua 原子执行。
 - `owner_token` + generation 拒绝过期 worker 写入。
@@ -204,7 +204,13 @@ Admin 已实现的完整键空间（与代码同步）：
 | P3 | 多套客户端与连接池分散 | 建议统一客户端封装（超时、重试、关闭策略） |
 | P4 | AI 并发信号量为进程内 | 多实例下 AI 总并发上限不可控，可评估迁移到 Redis |
 | P5 | Admin 规划键与实现偏差 | 已在 `docs/admin/REDIS_PLAN.md` 顶部和第 2 节标注设计稿/未实现项；当前实现清单见本文 3.4 节 |
-| P6 | 监控告警 | 建议接入 `used_memory`、`evicted_keys`、`rejected_connections`、慢日志、AOF 重写状态告警 |
+| P6 | 监控告警 | 已接入任务健康监控的 `used_memory/maxmemory`、`evicted_keys` 与答题投影键巡检；`rejected_connections`、慢日志、AOF 重写状态告警仍待接入 |
+
+### 答题投影 Redis 容量监控
+
+- 管理端「系统 / 任务」的 Redis 内存卡片及 `GET /api/admin/v1/tasks/diagnostics` 返回 `redis.memory`：已用字节、配置上限、占用率、累计淘汰键数及阈值。定期任务健康监控沿用状态变化才记录日志 / 发 Sentry 事件的机制；默认占用率 **50% 预警、75% 错误**，内存未设限、出现淘汰也预警。阈值可分别由 `TASK_HEALTH_REDIS_MEMORY_WARN_PCT`、`TASK_HEALTH_REDIS_MEMORY_ERROR_PCT` 配置。Redis 不可用时容量不伪报为零，仍由 `REDIS_UNAVAILABLE` 报警。
+- scheduler 的任务健康监控默认**每 15 分钟**只读 `SCAN` 一次答题投影的 `idempotent`、`fencing`、`task` 键，记录按类型的近似数量与**缺 TTL 的幂等键**，同时从 `practice_records`（已有 `projection_state, answered_at` 索引）记录过去 24 小时答题量。幂等键缺 TTL 为错误；任务进行中的 fencing / task 键允许无 TTL，不触发该错误。扫描最多 4096 页 / 5 秒；超预算则明确提示巡检未完成，**部分数量不得视为总数**，内存占用告警仍然有效。可用 `TASK_HEALTH_REDIS_PROJECTION_SCAN_INTERVAL_SEC` 调整巡检间隔；不在每次管理端请求中扫描全库。
+- 以上只提供当前读数和状态变化告警，**不存储历史曲线，也不自动删除 Redis 键**。需分析增长率时结合 Redis 外部时序监控或定期留存健康指标；幂等键保留 8 天，不能仅为压缩内存直接缩短 TTL（Outbox 对账依赖该保留期）。
 
 ## 8. 运维命令速查
 

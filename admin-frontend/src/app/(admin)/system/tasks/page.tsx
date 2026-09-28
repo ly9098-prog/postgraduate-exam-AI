@@ -157,6 +157,14 @@ function severityLabelZh(value?: string | null) {
 const ISSUE_CODE_LABELS_ZH: Record<string, string> = {
   REDIS_NOT_CONFIGURED: "Redis 未配置",
   REDIS_UNAVAILABLE: "Redis 不可用",
+  REDIS_MEMORY_LIMIT_UNSET: "Redis 内存未设限",
+  REDIS_MEMORY_METRICS_UNAVAILABLE: "Redis 内存指标不可用",
+  REDIS_MEMORY_HIGH: "Redis 内存预警",
+  REDIS_MEMORY_CRITICAL: "Redis 内存不足",
+  REDIS_KEYS_EVICTED: "Redis 发生键淘汰",
+  REDIS_PROJECTION_SCAN_UNAVAILABLE: "投影键巡检失败",
+  REDIS_PROJECTION_SCAN_INCOMPLETE: "投影键巡检未完成",
+  REDIS_PROJECTION_GUARD_NO_TTL: "投影幂等键缺少 TTL",
   OUTBOX_STALLED: "Outbox 严重积压",
   OUTBOX_DELAYED: "Outbox 发布延迟",
   QUEUE_STALLED: "队列严重积压",
@@ -852,7 +860,7 @@ export default function SystemTasksPage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard
               label="Outbox 未发布"
               value={data.outbox.unpublished}
@@ -866,6 +874,15 @@ export default function SystemTasksPage() {
               hint={data.redis.available ? `最老等待 ${duration(data.redis.oldest_ready_seconds)}` : "Redis 不可用，队列表改用 Outbox 数据补位"}
               icon={<Workflow className="h-4 w-4" />}
               tone={data.redis.available ? (data.redis.totals.ready > 0 ? "primary" : "success") : "danger"}
+            />
+            <MetricCard
+              label="Redis 内存"
+              value={data.redis.memory?.used_percent != null ? `${data.redis.memory.used_percent.toFixed(1)}%` : "—"}
+              hint={data.redis.memory
+                ? `${(data.redis.memory.used_bytes / 1048576).toFixed(1)} / ${data.redis.memory.max_bytes ? (data.redis.memory.max_bytes / 1048576).toFixed(0) : "未设限"} MiB · 淘汰 ${data.redis.memory.evicted_keys}`
+                : "Redis 容量暂不可观测"}
+              icon={<Database className="h-4 w-4" />}
+              tone={!data.redis.memory || !data.redis.memory.max_bytes ? "warning" : data.redis.memory.used_percent != null && data.redis.memory.used_percent >= data.redis.memory.error_percent ? "danger" : data.redis.memory.used_percent != null && data.redis.memory.used_percent >= data.redis.memory.warning_percent ? "warning" : "success"}
             />
             <MetricCard
               label="重试 / 死信"

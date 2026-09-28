@@ -119,7 +119,7 @@ POST   /v1/auth/refresh
 | GET | `/system/health` | DB、Redis、AI 等系统健康聚合 | `system:read` |
 | GET | `/tasks` | 查询任务及队列位置 | `system:read` |
 | GET | `/tasks/{task_id}` | 查看任务详情 | `system:read` |
-| GET | `/tasks/diagnostics` | 任务/Outbox/投影诊断 | `system:read` |
+| GET | `/tasks/diagnostics` | 任务/Outbox/投影诊断；`redis.memory` 提供容量、上限、阈值及淘汰键读数（不可用时为 `null`） | `system:read` |
 | GET | `/tasks/trace/{trace_id}` | 查询任务生命周期 | `system:read` |
 | GET | `/tasks/queue-status` | 队列计数 | `system:read` |
 | GET | `/tasks/scheduled` | 查看 scheduler 任务 | `system:read` |
