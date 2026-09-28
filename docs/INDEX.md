@@ -143,6 +143,8 @@
 | `docs/architecture/MEMORY_SYSTEM.md` | 记忆系统设计 |
 | `docs/architecture/MATH_IMAGE_ARCHITECTURE.md` | 数学公式图片架构 |
 | `docs/architecture/refresh_token_architecture.md` | Refresh Token 架构 |
+| `docs/architecture/REDIS_USAGE.md` | Redis 使用情况、失败降级矩阵与稳定性修复记录 |
+| `docs/project/DEPLOY_PLAN.md` | 生产部署、Redis 持久化/备份与 AOF 安全恢复流程 |
 | `docs/architecture/POMODORO_NOTIFICATION.md` | 番茄钟通知设计 |
 
 ### 一级目录兼容入口

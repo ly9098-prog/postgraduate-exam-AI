@@ -1,5 +1,6 @@
 from datetime import datetime
 from unittest.mock import AsyncMock
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -47,6 +48,15 @@ class _Db:
         self.deleted = []
         self.flush = AsyncMock()
 
+    def get_bind(self):
+        """Match AsyncSession's dialect helper used for PostgreSQL row locks."""
+        return _Bind()
+
+    @asynccontextmanager
+    async def begin_nested(self):
+        """Test double for the savepoint used when persisting a new subject."""
+        yield self
+
     async def get(self, model, item_id):
         if model is Subject:
             return next((item for item in self.subjects if item.id == item_id), None)
@@ -69,6 +79,14 @@ class _Db:
         text = str(statement)
         if "questions" in text:
             return self.question_count
+        # ``get_subject`` loads a single Subject; child counting returns an
+        # integer. Keep both contracts distinct in this lightweight double.
+        if "subjects.id = " in text and "count" not in text.lower():
+            subject_id = next(iter(statement.compile().params.values()), None)
+            return next(
+                (item for item in self.subjects if item.id == subject_id),
+                None,
+            )
         if "subjects" in text:
             return sum(1 for item in self.subjects if item.parent_id == 1)
         return 0
@@ -84,6 +102,13 @@ class _Db:
     async def delete(self, item):
         self.deleted.append(item)
         self.subjects.remove(item)
+
+
+class _Bind:
+    class _Dialect:
+        name = "sqlite"
+
+    dialect = _Dialect()
 
 
 def _principal():
@@ -167,7 +192,7 @@ async def test_update_subject_rejects_referenced_code_change():
     db = _Db([_subject(1, "math", "数学")], question_count=1)
 
     with pytest.raises(ValueError, match="已有题目使用该科目，不能修改编码"):
-        await update_subject(db, 1, AdminSubjectUpdateRequest(code="new-math"), _principal())
+        await update_subject(db, 1, AdminSubjectUpdateRequest(code="new_math"), _principal())
 
 
 @pytest.mark.asyncio

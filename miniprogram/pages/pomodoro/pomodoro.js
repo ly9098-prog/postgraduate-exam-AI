@@ -1,5 +1,9 @@
 const api = require('../../utils/api')
 const { filter408SubjectTree } = require('./utils/subject-scope')
+const {
+  readSubjectCache,
+  writeSubjectCache,
+} = require('./utils/subject-cache')
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
@@ -715,6 +719,14 @@ Page({
   /* ==================== Subject Loading ==================== */
 
   async _loadSubjects() {
+    // Local 24h cache: the pomodoro page only needs a stable subject list and
+    // the backend invalidates its own cache on Admin subject writes.
+    const cached = readSubjectCache()
+    if (cached && cached.length > 0) {
+      this._applySubjects(cached)
+      return
+    }
+
     this.setData({ subjectsLoading: true, subjectsError: '' })
     try {
       const rawTree = await api.get('/practice/subjects')
@@ -726,35 +738,40 @@ Page({
         ...s,
         _emoji: subjectEmojiByCode(s.code),
       }))
-      this.setData({ subjects: flat, subjectsLoading: false, subjectsError: '' })
-      // 旧版 pomodoro_running_state 缓存可能只带 subject_code，用已加载列表迁移到 subject_id
-      this._migrateRunningStateCache(flat)
-
-      // Route presets can target either a stable subject_id or the canonical 408 subject_code.
-      // subject_code keeps strategy-driven Next Best Action usable before a subject has practice data.
-      if (this.data.fromSubjectId || this.data.fromSubjectCode) {
-        const match = flat.find(s => (
-          this.data.fromSubjectId
-            ? Number(s.id) === Number(this.data.fromSubjectId)
-            : String(s.code || '') === String(this.data.fromSubjectCode || '')
-        ))
-        if (match) {
-          this.setData({ selectedSubjectId: match.id, selectedSubject: match })
-          this._updateComputedFields()
-        }
-      }
-      // 恢复的旧会话可能只有 subject_code（无 subject_id），用已加载列表回填
-      const restored = this.data.selectedSubject
-      if (restored && !restored.id && restored.code) {
-        const match = flat.find(s => s.code === restored.code)
-        if (match) {
-          this.setData({ selectedSubjectId: match.id, selectedSubject: match })
-          this._updateComputedFields()
-        }
-      }
+      writeSubjectCache(flat)
+      this._applySubjects(flat)
     } catch (e) {
       console.error('加载科目失败', e)
       this.setData({ subjectsLoading: false, subjectsError: '科目加载失败，请稍后重试' })
+    }
+  },
+
+  _applySubjects(flat) {
+    this.setData({ subjects: flat, subjectsLoading: false, subjectsError: '' })
+    // 旧版 pomodoro_running_state 缓存可能只带 subject_code，用已加载列表迁移到 subject_id
+    this._migrateRunningStateCache(flat)
+
+    // Route presets can target either a stable subject_id or the canonical 408 subject_code.
+    // subject_code keeps strategy-driven Next Best Action usable before a subject has practice data.
+    if (this.data.fromSubjectId || this.data.fromSubjectCode) {
+      const match = flat.find(s => (
+        this.data.fromSubjectId
+          ? Number(s.id) === Number(this.data.fromSubjectId)
+          : String(s.code || '') === String(this.data.fromSubjectCode || '')
+      ))
+      if (match) {
+        this.setData({ selectedSubjectId: match.id, selectedSubject: match })
+        this._updateComputedFields()
+      }
+    }
+    // 恢复的旧会话可能只有 subject_code（无 subject_id），用已加载列表回填
+    const restored = this.data.selectedSubject
+    if (restored && !restored.id && restored.code) {
+      const match = flat.find(s => s.code === restored.code)
+      if (match) {
+        this.setData({ selectedSubjectId: match.id, selectedSubject: match })
+        this._updateComputedFields()
+      }
     }
   },
 

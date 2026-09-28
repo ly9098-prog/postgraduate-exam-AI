@@ -5,6 +5,7 @@
 #   日常更新:  sudo bash deploy/scripts/deploy.sh update
 #   仅构建:    sudo bash deploy/scripts/deploy.sh build
 #   显式迁移:  sudo bash deploy/scripts/deploy.sh migrate
+#   Redis 恢复: sudo bash deploy/scripts/deploy.sh redis-restore <backup.rdb>
 
 set -euo pipefail
 
@@ -222,7 +223,17 @@ do_backup() {
   check_prereqs
   info "执行 PostgreSQL 备份（Docker 模式）..."
   compose run --rm backup
+  info "执行 Redis RDB 备份..."
+  bash deploy/scripts/redis_backup.sh backup
   info "=== 备份完成 ==="
+}
+
+do_restore_redis() {
+  local backup="${1:-}"
+  [ -n "$backup" ] || error "用法: $0 redis-restore <backup.rdb>"
+  check_prereqs
+  warn "即将停止 Redis 并从备份恢复；请确认当前处于维护窗口且已有最新备份。"
+  bash deploy/scripts/redis_restore.sh "$backup"
 }
 
 case "${1:-help}" in
@@ -234,10 +245,12 @@ case "${1:-help}" in
   build)        check_prereqs; do_build ;;
   build-admin)  check_prereqs; do_build_admin ;;
   backup)       do_backup ;;
+  backup-redis) bash deploy/scripts/redis_backup.sh backup ;;
+  redis-restore) do_restore_redis "${2:-}" ;;
   status)       do_status ;;
   migrate)      do_migrate ;;
   *)
-    echo "使用方法: $0 {init|update|update-admin|update-scheduler|update-all|build|build-admin|backup|status|migrate}"
+    echo "使用方法: $0 {init|update|update-admin|update-scheduler|update-all|build|build-admin|backup|backup-redis|redis-restore|status|migrate}"
     echo ""
     echo "  init              首次部署（构建 + 启动 + 显式初始化迁移）"
     echo "  update            日常更新（缓存构建 + 替换 app + scheduler，不 git pull，不默认迁移）"
@@ -246,7 +259,9 @@ case "${1:-help}" in
     echo "  update-all        全量更新（app + admin + scheduler，不 git pull，不默认迁移）"
     echo "  build             仅重新构建 app 镜像"
     echo "  build-admin       仅重新构建 admin 前端镜像"
-    echo "  backup            执行 PostgreSQL 备份（Docker 模式）"
+    echo "  backup            执行 PostgreSQL + Redis 备份（Docker 模式）"
+    echo "  backup-redis      仅执行 Redis RDB 备份"
+    echo "  redis-restore     从指定 RDB 安全恢复 Redis（AOF-safe，会短暂停止 Redis）"
     echo "  status        查看服务状态和健康检查"
     echo "  migrate       显式运行数据库迁移"
     ;;

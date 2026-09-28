@@ -121,6 +121,24 @@ class CacheClient:
             self._client = None
         return self._client
 
+    async def ping(self) -> bool:
+        """Return True only if a real Redis PING succeeds.
+
+        ``get``/``set`` deliberately fall back to the in-process cache, which
+        means they can report success while Redis is down.  Readiness and
+        health probes must never be masked by that fallback, so they use this
+        method instead.
+        """
+        if not self._enabled:
+            return False
+        try:
+            client = await self._ensure_client()
+            if client is None:
+                return False
+            return bool(await client.ping())
+        except Exception:
+            return False
+
     async def get(self, key: str) -> Any | None:
         if not self._enabled:
             return self._local_get(key)

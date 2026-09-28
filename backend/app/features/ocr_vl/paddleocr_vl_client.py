@@ -21,6 +21,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.core.log_context import get_trace_headers
 
 logger = logging.getLogger(__name__)
@@ -562,14 +563,30 @@ class PaddleOCRVLClient:
             await self._client.aclose()
             self._client = None
 
+    @staticmethod
+    def _restricted() -> bool:
+        """Return True when the distributed OCR limit must fail closed."""
+        from app.core.config import settings
+
+        if str(settings.APP_ENV).strip().lower() == "production":
+            return True
+        try:
+            return detect_deployment_profile() == DeploymentProfile.CLOUD_API
+        except Exception:
+            return True
+
     async def _acquire_semaphore(self) -> str | bool | None:
         """Acquire one expiring cross-process lease for an OCR operation.
 
         Returns the unique Redis lease token when acquired, ``False`` when
-        capacity is full, and ``None`` when Redis is unavailable and the
-        request is allowed to proceed in best-effort local mode.  A sorted-set
-        lease is used instead of a shared counter so a crashed request expires
-        independently and cannot leak capacity under sustained traffic.
+        capacity is full, and ``None`` for the single-request local mode where
+        no global limit exists.  A sorted-set lease is used instead of a shared
+        counter so a crashed request expires independently and cannot leak
+        capacity under sustained traffic.
+
+        In production/cloud_api a Redis failure is fail-closed: it raises
+        instead of silently dropping the global concurrency limit, which would
+        otherwise let a Redis outage overload the external OCR service.
         """
         if not _OCR_VL_SEM_KEY:
             return None
@@ -580,6 +597,8 @@ class PaddleOCRVLClient:
 
             client = await cache._ensure_client()
             if client is None:
+                if self._restricted():
+                    raise RuntimeError("Redis client unavailable")
                 return None
             acquired = await client.eval(
                 """
@@ -601,6 +620,16 @@ class PaddleOCRVLClient:
             )
             return token if int(acquired) == 1 else False
         except Exception as exc:
+            if self._restricted():
+                logger.error(
+                    "[PaddleOCR-VL] distributed semaphore unavailable in "
+                    "restricted environment; refusing OCR to protect the "
+                    "external service: %s",
+                    exc,
+                )
+                raise JobSubmissionError(
+                    "PaddleOCR-VL distributed concurrency unavailable"
+                ) from exc
             logger.warning(
                 "[PaddleOCR-VL] distributed semaphore unavailable; "
                 "continuing without global limit: %s",

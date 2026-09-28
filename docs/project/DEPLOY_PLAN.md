@@ -27,7 +27,7 @@
 | `scheduler` | deploy-scheduler-1 | 后台调度器（定时任务 + export processor），与 app 共用镜像但无 HTTP |
 | `nginx` | deploy-nginx-1 | nginx:1.25-alpine，HTTPS 反代 |
 | `postgres` | deploy-postgres-1 | PostgreSQL 15，持久卷 pgdata_prod |
-| `redis` | deploy-redis-1 | Redis 7，持久卷 redisdata_prod |
+| `redis` | deploy-redis-1 | Redis 7，持久卷 redisdata_prod，AOF everysec + noeviction |
 | `admin` | deploy-admin-1 | Next.js 管理前端（仅内网 3000） |
 
 ### 网络拓扑
@@ -296,6 +296,54 @@ RUN pip install --no-cache-dir --user \
 - 清华：`https://pypi.tuna.tsinghua.edu.cn/simple/`
 - 中科大：`https://pypi.mirrors.ustc.edu.cn/simple/`
 
+### Redis 持久化、容量与备份
+
+生产 Redis 显式配置（`deploy/docker-compose.prod.yml`）：
+
+```yaml
+command:
+  - redis-server
+  - --appendonly
+  - "yes"
+  - --appendfsync
+  - everysec
+  - --maxmemory
+  - 192mb
+  - --maxmemory-policy
+  - noeviction
+```
+
+设计要点：
+
+- **AOF everysec**：任务队列、JWT 黑名单/nbf、fencing 计数、暂存引用计数都是不可丢失状态；崩溃最多丢约 1 秒写入。
+- **noeviction**：禁止因内存压力淘汰队列/锁/黑名单键。达到 `maxmemory` 时写入失败，由上层 fail-closed 并告警，而不是静默丢数据。
+- **容器上限 256m / maxmemory 192mb**：差值留给 AOF 重写缓冲、分配器碎片。生产实测数据仅约 2.3MB，192MB 有充足余量。
+
+备份与还原：
+
+```bash
+cd /opt/22408-ai
+
+# 备份 PostgreSQL + Redis（推荐）
+bash deploy/scripts/deploy.sh backup
+
+# 仅备份 Redis
+bash deploy/scripts/deploy.sh backup-redis
+bash deploy/scripts/redis_backup.sh list
+
+# 从 RDB 安全恢复（脚本会停止 Redis、快照旧数据、重建 AOF 后再启动）
+bash deploy/scripts/deploy.sh redis-restore /data/backups/redis/<backup>.rdb
+
+# 也可通过 Makefile 调用
+cd deploy && make redis-restore BACKUP=/data/backups/redis/<backup>.rdb
+```
+
+> Redis 备份通过 `BGSAVE` 生成原生 RDB 快照；脚本校验文件头并以时间戳归档，默认保留 14 天（`REDIS_BACKUP_RETENTION_DAYS`）。请将 Redis 备份纳入与 PostgreSQL 相同的异地/离线保留策略。
+>
+> **为什么需要专用恢复脚本**：生产已开启 AOF，直接替换 `/data/dump.rdb` 后 `docker restart` 会优先加载 `appendonlydir`，可能表现为恢复后 `DBSIZE=0`。`redis_restore.sh` 会先保留旧数据目录快照，清空旧 AOF/RDB，使用临时 Redis 从 RDB 加载并校验 `DBSIZE>0`，再触发 AOF 重写，最后恢复生产容器并校验 `PING`、`DBSIZE`、`INFO persistence`。
+>
+> 详细键空间、失败降级矩阵与遗留风险见 **[docs/architecture/REDIS_USAGE.md](../architecture/REDIS_USAGE.md)**。
+
 ### Docker layer cache 保留
 
 - `requirements.txt` → `pip install` 在 builder 前一阶段
@@ -416,7 +464,7 @@ RUN pip install --no-cache-dir --user \
 本次引入 `PROCESS_ROLE` 和 `BoundedExecutor`，推荐按以下顺序部署：
 
 1. **停止新导入** — 前端灰度停止或 API 返回 503（可选，非必需）
-2. **备份** — `bash deploy/scripts/backup.sh` + Redis RDB（`redis-cli SAVE`）
+2. **备份** — `bash deploy/scripts/deploy.sh backup`（PostgreSQL + Redis RDB）
 3. **数据库迁移**：
    ```bash
    cd /opt/22408-ai
@@ -505,7 +553,7 @@ RUN pip install --no-cache-dir --user \
 ### 8.4 部署顺序
 
 ```
-1. 备份: bash deploy/scripts/backup.sh + redis-cli SAVE
+1. 备份: bash deploy/scripts/deploy.sh backup   # PostgreSQL + Redis RDB
 2. 数据库迁移: bash deploy/scripts/deploy.sh migrate
 3. 部署 app (任意 PROCESS_ROLE):
    - scheduler → 验证 /health/ready

@@ -26,8 +26,24 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
-    mem_limit: 128m
-    mem_reservation: 64m
+    # Redis carries the durable task queue, JWT blacklist/nbf, distributed
+    # locks and staging refcounts. Enlarge the limit and keep an explicit
+    # noeviction policy so queue/security keys are never silently evicted.
+    mem_limit: 256m
+    mem_reservation: 128m
+    # appendonly: crash-safe task queue / security state.
+    # maxmemory leaves headroom below mem_limit for AOF rewrite buffers,
+    # replication state and allocator fragmentation.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 192mb
+      - --maxmemory-policy
+      - noeviction
     ports:
       - "127.0.0.1:6379:6379"
     volumes:

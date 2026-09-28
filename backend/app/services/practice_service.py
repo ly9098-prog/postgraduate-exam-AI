@@ -523,8 +523,19 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
     ``subjects.id`` 是唯一业务 ID；运行时仅接受规范化后的 canonical code。
     若 408 根科目缺失、重复或被停用，公共入口直接关闭，不再按名称/旧编码
     进行兼容回退。
+
+    科目树变化只来自 Admin 科目写接口，因此这里使用 24h 共享缓存；
+    Admin 写路径会调用 ``invalidate_subject_tree_cache()`` 立即失效。
     """
     from app.models.admin import Subject
+    from app.services.subject_tree_cache import (
+        get_cached_subject_tree,
+        set_cached_subject_tree,
+    )
+
+    cached = await get_cached_subject_tree()
+    if cached is not None:
+        return cached
 
     result = await db.execute(
         select(Subject).order_by(
@@ -573,6 +584,7 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
             _sort_tree(item["children"])
 
     _sort_tree(roots)
+    await set_cached_subject_tree(roots)
     return roots
 
 

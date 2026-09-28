@@ -17,6 +17,7 @@ from app.services.admin_subject_service import (
     list_subject_tree,
     update_subject,
 )
+from app.services.subject_tree_cache import invalidate_subject_tree_cache
 
 router = APIRouter(prefix="/api/admin/v1/subjects", tags=["admin-subjects"])
 
@@ -64,6 +65,7 @@ async def create_subject_endpoint(
         subject = await create_subject(db, data, current_admin, request)
         await db.commit()
         await db.refresh(subject)
+        await invalidate_subject_tree_cache()
         return subject
     except ValueError as exc:
         await db.rollback()
@@ -82,6 +84,7 @@ async def patch_subject(
         subject = await update_subject(db, subject_id, data, current_admin, request)
         await db.commit()
         await db.refresh(subject)
+        await invalidate_subject_tree_cache()
         return subject
     except ValueError as exc:
         await db.rollback()
@@ -98,6 +101,7 @@ async def delete_subject_endpoint(
     try:
         await delete_subject(db, subject_id, current_admin, request)
         await db.commit()
+        await invalidate_subject_tree_cache()
         return {"deleted": True}
     except ValueError as exc:
         await db.rollback()

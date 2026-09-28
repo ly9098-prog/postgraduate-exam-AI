@@ -1592,9 +1592,10 @@ async def _check_redis() -> bool:
     try:
         from app.core.cache import cache
 
-        await cache.set("health:ping", "pong", ttl=10)
-        pong = await cache.get("health:ping")
-        return pong == "pong"
+        # Must be a real Redis PING: cache.set/get silently fall back to the
+        # in-process cache, which would report "ok" during a Redis outage and
+        # keep the instance in the load balancer.
+        return await cache.ping()
     except Exception:
         return False
 

@@ -1,6 +1,11 @@
 # Redis 使用规划
 
-> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> ⚠️ **本文件是设计稿，不是当前实现的完整清单。** 其中 `admin:perm:*`、`admin:role:version:*`、
+> `admin:online:*`、`admin:stats:*`、`admin:ratelimit:*`、`admin:idempotency:*`、`admin:ocr:task:*` 等键
+> 在代码中尚未实现或未完整实现。当前已落地的 Redis 键空间与失败语义见
+> **[docs/architecture/REDIS_USAGE.md](../architecture/REDIS_USAGE.md)**。
+>
+> 版本：v2.1（FastAPI 方案确认版） | 状态：设计稿（部分未实现） | 更新：2026-09-28
 > 修订自审计报告 I4（TTL 抖动 + 防穿透锁）、I5（双维度限流）、I6（role-version）、I9（用户级 nbf）
 >
 > - **变更原因**：2026-05-29 同步 Admin Backend Phase 4 导入管理实现，补充 `admin:ai:batch:{batchId}:task` 最新任务指针，并将 AI enrich 任务 TTL 校正为当前代码使用的 86400 秒。
@@ -23,6 +28,11 @@ Admin 端：admin:jwt:*       /  admin:perm:*  /  admin:role:*  /  admin:stats:*
 ---
 
 ## 二、Key 设计总表
+
+> 当前实现清单及失败语义以 **[docs/architecture/REDIS_USAGE.md](../architecture/REDIS_USAGE.md) 3.4 节**为准。
+> 下表是完整设计目标：只有 JWT 黑名单、用户级 nbf、登录失败/锁定、AI 任务状态、AI 批次指针、
+> Dashboard overview、Dashboard 锁、health ping、refresh 单次消费和调度 telemetry 已在代码中落地；
+> 其余行仍为规划项。
 
 | 用途 | Key | Value | TTL |
 |------|-----|-------|-----|
