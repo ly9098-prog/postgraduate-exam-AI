@@ -104,8 +104,8 @@ def _version():
         answer="A",
         analysis="旧解析",
         difficulty=3,
-        knowledge_points=["函数"],
         edited_by=1,
+        change_source="admin",
         edit_reason="修正",
         created_at=datetime(2026, 5, 29),
     )

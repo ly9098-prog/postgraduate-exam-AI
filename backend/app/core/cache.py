@@ -30,6 +30,14 @@ end
 return 0
 """
 
+_COMPARE_AND_SET_SCRIPT = """
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    redis.call("SET", KEYS[1], ARGV[2], "EX", ARGV[3])
+    return 1
+end
+return 0
+"""
+
 
 class CacheUnavailableError(RuntimeError):
     """Raised when a security-sensitive Redis operation cannot be completed."""
@@ -64,7 +72,7 @@ class CacheClient:
         self._stats["hits"] += 1
         return value
 
-    def _local_set(self, key: str, value: Any, ttl: int = 300) -> None:
+    def _local_set(self, key: str, value: Any, ttl: int | None = 300) -> None:
         if len(self._local) >= self._local_max_size:
             # 简单清理：清空过期条目
             now = __import__("time").time()
@@ -78,7 +86,7 @@ class CacheClient:
             # 如果仍然超出容量，放弃缓存此条目
             if len(self._local) >= self._local_max_size:
                 return
-        expiry = __import__("time").time() + _safe_ttl(ttl)
+        expiry = None if ttl is None else __import__("time").time() + _safe_ttl(ttl)
         self._local[key] = (expiry, value)
 
     def _local_delete(self, pattern: str) -> int:
@@ -182,8 +190,9 @@ class CacheClient:
         except Exception:
             self._local_set(key, value, ttl)
 
-    async def set_strict(self, key: str, value: Any, ttl: int = 300) -> None:
-        ttl = _safe_ttl(ttl)
+    async def set_strict(self, key: str, value: Any, ttl: int | None = 300) -> None:
+        # None is reserved for low-cardinality, persistent security markers.
+        ttl = _safe_ttl(ttl) if ttl is not None else None
         if not self._enabled:
             self._local_set(key, value, ttl)
             return
@@ -192,6 +201,39 @@ class CacheClient:
             raise CacheUnavailableError("Redis unavailable")
         try:
             await client.set(key, json.dumps(value, default=str), ex=ttl)
+        except Exception as exc:
+            raise CacheUnavailableError("Redis unavailable") from exc
+
+    async def compare_and_set_strict(
+        self, key: str, expected: str, value: Any, *, ttl: int
+    ) -> bool:
+        """Replace a claimed key only if its original raw value is unchanged."""
+        ttl = _safe_ttl(ttl)
+        if not self._enabled:
+            entry = self._local.get(key)
+            if entry is None:
+                return False
+            expiry, stored = entry
+            if (
+                expiry is not None and expiry <= __import__("time").time()
+            ) or stored != expected:
+                return False
+            self._local_set(key, value, ttl)
+            return True
+        client = await self._ensure_client()
+        if client is None:
+            raise CacheUnavailableError("Redis unavailable")
+        try:
+            return bool(
+                await client.eval(
+                    _COMPARE_AND_SET_SCRIPT,
+                    1,
+                    key,
+                    expected,
+                    json.dumps(value, default=str),
+                    ttl,
+                )
+            )
         except Exception as exc:
             raise CacheUnavailableError("Redis unavailable") from exc
 

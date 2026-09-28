@@ -36,8 +36,32 @@ let accessTokenProvider: (() => string | null) | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 let onAuthExpired: (() => void) | null = null;
 
+// sessionStorage backing so a page reload reuses the still-valid token
+// instead of consuming a refresh rotation on every load (each rotation
+// writes an admin:refresh:used marker in Redis). Centralized here so every
+// write path (login, bootstrap, auto-refresh) stays in sync.
+const ACCESS_TOKEN_STORAGE_KEY = "admin_access_token";
+
+function persistApiAccessToken(token: string | null) {
+  try {
+    if (token) sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+    else sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    // Storage unavailable (private mode etc.) — memory-only fallback is fine.
+  }
+}
+
+export function readStoredApiAccessToken(): string | null {
+  try {
+    return sessionStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function setApiAccessToken(token: string | null) {
   accessToken = token;
+  persistApiAccessToken(token);
 }
 
 export function setApiAccessTokenProvider(provider: (() => string | null) | null) {

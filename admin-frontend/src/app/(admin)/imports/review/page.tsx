@@ -660,6 +660,18 @@ export default function ImportReviewPage() {
   );
   const allChecked = items.length > 0 && items.every((item) => selectedIds.has(item.id));
 
+  // Keep the key on a failed/ambiguous response so an explicit retry can replay it.
+  const batchIdempotencyKeysRef = useRef(new Map<string, string>());
+  const batchIdempotencyKeyFor = (operation: string) => {
+    const keys = batchIdempotencyKeysRef.current;
+    let key = keys.get(operation);
+    if (!key) {
+      key = crypto.randomUUID();
+      keys.set(operation, key);
+    }
+    return key;
+  };
+
   const actionMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
       if (state.action === "approve") {
@@ -690,7 +702,7 @@ export default function ImportReviewPage() {
           });
           return { affected_count: affected, errors } as BatchActionResult;
         }
-        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/approve`, { method: "POST" });
+        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/approve`, { method: "POST", headers: { "Idempotency-Key": batchIdempotencyKeyFor(`approve:${filters.batch_id}`) } });
       }
       if (state.action === "batch-reject") {
         if (selectedIds.size > 0) {
@@ -706,7 +718,7 @@ export default function ImportReviewPage() {
           });
           return { affected_count: affected, errors } as BatchActionResult;
         }
-        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
+        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", headers: { "Idempotency-Key": batchIdempotencyKeyFor(`reject:${filters.batch_id}:${rejectReason}`) }, body: JSON.stringify({ reason: rejectReason }) });
       }
       if (state.action === "low-risk-batch-approve") {
         const bid = filters.batch_id || batchIdParam;
@@ -721,6 +733,7 @@ export default function ImportReviewPage() {
       throw new Error("未知操作");
     },
     onSuccess: (result, variables) => {
+      batchIdempotencyKeysRef.current.clear();
       if (variables.action === "approve") {
         setMessage(`导入题目 #${variables.id} 已通过审核。`);
         closeDrawer();

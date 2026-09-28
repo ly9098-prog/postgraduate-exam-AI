@@ -237,7 +237,10 @@ def test_upload_segment_image_rejects_non_image(monkeypatch):
         app.dependency_overrides.clear()
 
     assert resp.status_code == 400
-    assert "图片" in resp.json()["detail"]
+    error = resp.json()["error"]
+    assert error["code"] == "HTTP_400"
+    assert error["retryable"] is False
+    assert "仅支持图片文件" not in str(resp.json())
 
 
 def test_question_content_sanitizer():
@@ -257,7 +260,9 @@ def test_question_content_sanitizer():
 
     assert result is not None
     assert result["text"] == "题目内容"
-    assert result["stem"] == "题目题干"
+    # text is canonical when the legacy stem contains different wording.
+    assert result["stem"] == result["text"] == "题目内容"
+    assert raw["stem"] == "题目题干"  # sanitization must not mutate ORM JSON
     assert len(result["segments"]) == 1
     # Admin-only fields must be stripped
     assert "source_snapshot_url" not in result

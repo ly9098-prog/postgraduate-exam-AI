@@ -93,7 +93,7 @@ Admin 已实现的完整键空间（与代码同步）：
 |------|-----|------------|----------------|
 | JWT 黑名单 | `admin:jwt:blacklist:{jti}` | 剩余 token 有效期 | 503 |
 | 用户级 nbf | `admin:user:nbf:{user_id}` | 30d，覆盖式 | 503 |
-| Refresh token 单次消费 | `admin:refresh:used:{jti}` | 剩余 refresh 有效期，值为 owner token | 503 |
+| Refresh token 单次消费 | `admin:refresh:used:{jti}` | 剩余 refresh 有效期（最长 7d，消费标记不得早于 token 过期），值为 owner token | 503 |
 | 登录失败（IP + 用户名哈希） | `admin:login:fail:{sha256}` | 15min，计数 | 503 |
 | 账号级失败计数 | `admin:login:account_fail:{username}` | 15min，计数 | 503 |
 | 账号临时锁 | `admin:login:account_lock:{username}` | 15min，值为 1 | 503 |
@@ -104,8 +104,16 @@ Admin 已实现的完整键空间（与代码同步）：
 | AI enrich 批次最新任务指针 | `admin:ai:batch:{batch_id}:task` | 86400s，task_id | 可能读不到；不替代 DB 权威记录 |
 | 调度任务心跳 | `admin:system-task:scheduler-heartbeat` | 75s，Hash；每 20s 更新 | 仅影响调度器状态观测 |
 | 调度任务执行 telemetry | `admin:system-task:{task_id}` | 30d，Hash | 仅影响后台任务状态显示 |
+| 角色权限版本 | `admin:role:version:{role_id}` | 永久（覆盖式 uuid），角色权限变更时刷新 | 权限缓存停用，退化为每次查 DB |
+| 角色权限集缓存 | `admin:perm:role:{role_id}` | 900s ± 10% 抖动，`{version, permissions}` | 每次查 DB（与历史行为一致） |
+| 在线状态 | `admin:online:{user_id}` | 300s，每次鉴权请求续期；仅观测用 | 在线快照为空，鉴权不受影响 |
+| 接口限流 | `admin:ratelimit:{user_id}:{class}` | 60s 固定窗口；batch=10/min、stats=30/min、默认 60/min，super_admin ×2 | 放行（不限流） |
+| 幂等请求 | `admin:idempotency:{user_id}:{key}` | 执行中预约 3600s，完成响应 600s；路径/方法/请求体指纹绑定，同键并发返回 409 | 关键批量写返回 503（fail-closed） |
+| 限流豁免 | `admin:bypass:{sha256(token)}` | 30d（可自定义），经 `X-Admin-Bypass-Token` 提交；仅 `/dashboard/overview`、`/dashboard/daily`、`/redis/online` 可豁免限流，不豁免 JWT/RBAC | 视为无豁免（fail-closed）；增删需 system:write + critical 审计 |
+| OCR 任务进度快照 | `admin:ocr:task:{task_id}` | 3600s，轮询用 JSON；DB 仍为权威 | 快照读不到，接口回退 DB 记录 |
+| Dashboard daily 统计 | `admin:stats:daily:{from}:{to}` | 300s ± 10% 抖动（跨度 ≤31 天才缓存） | 直接查 DB |
 
-**仅在 `docs/admin/REDIS_PLAN.md` / `docs/admin/ADMIN_ARCHITECTURE.md` 规划、尚未实现**：`admin:perm:user:*`、`admin:role:version:*`、`admin:online:*`、`admin:stats:*`、`admin:ratelimit:*`、`admin:idempotency:*`、`admin:bypass:*`、`admin:ocr:task:*`。当前权限校验每次查 DB；不得按这些规划键编写运维脚本或告警。
+原规划中 `admin:perm:user:{userId}` 实现为按角色聚合的 `admin:perm:role:{roleId}`（同一角色权限集相同，命中率和失效成本更优；用户到角色的映射本就每次实时读取）。幂等当前仅接入 batch-delete 与 imports 批量 approve/reject；其余批量写端点可按需复用 `require_idempotency` 依赖。
 
 ### 3.5 AI 限流与 Token 预算
 
@@ -161,6 +169,8 @@ Admin 已实现的完整键空间（与代码同步）：
 3. **备份与还原入口**：新增 `deploy/scripts/redis_backup.sh`（BGSAVE + 原生 RDB 归档 + 文件头校验 + 保留期清理）和 `deploy/scripts/redis_restore.sh`（AOF-safe 恢复）；`deploy.sh backup` 现在同时备份 PostgreSQL 与 Redis，另有 `backup-redis`、`redis-restore` 子命令。
 4. **OCR 信号量语义对齐**：PaddleOCR-VL 在 production/cloud_api 下 Redis 失败改为抛错拒绝，只有本地开发降级。
 5. **番茄钟科目树缓存**：新增 `practice:subject_tree:*` 24h 共享缓存；Admin 科目创建/修改/删除后立即失效。小程序侧新增 `pomodoro_subject_cache_v1` 本地 24h 缓存，减少进入页面时的网络请求。
+6. **admin:refresh:used 堆积修复**：管理端前端将 access token 持久化到 sessionStorage，页面刷新复用未过期 token、减少 rotate；消费标记仍须保留至 refresh token 过期（最长 7 天），否则旧 token 可在标记过期后重放（修复前生产 329 条、约 35 万~53 万秒 TTL）。
+7. **REDIS_PLAN 规划键落地**：`admin:role:version:*`/`admin:perm:role:*`（角色权限缓存 + bump 失效）、`admin:online:*`（鉴权请求续期 + `/api/admin/v1/redis/online` 快照）、`admin:stats:daily:*`（daily 统计缓存）、`admin:ratelimit:*`（依赖注入式限流）、`admin:idempotency:*`（batch-delete、imports 批量 approve/reject，Redis 不可用 503）、`admin:bypass:*`（sha256 存储豁免 token，critical 审计）、`admin:ocr:task:*`（OCR job 轮询快照，DB 仍权威）。回归测试见 `backend/tests/test_api/test_admin_redis_plan.py`。
 
 ## 6. 生产配置与实测
 

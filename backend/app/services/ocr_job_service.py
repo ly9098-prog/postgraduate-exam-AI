@@ -43,6 +43,40 @@ NON_RETRYABLE_ERROR_CODES: set[str] = {
     "ENCRYPTED_PDF_UNSUPPORTED",
 }
 
+# Redis progress snapshot (admin:ocr:task:{job_id}) — read-optimised status for
+# admin/frontend polling. The database remains the authoritative record; this
+# cache is best-effort and its absence must never fail an API path.
+OCR_TASK_SNAPSHOT_TTL_SEC = 3600
+
+
+def _ocr_task_snapshot_key(job_id: str) -> str:
+    return f"admin:ocr:task:{job_id}"
+
+
+async def _write_ocr_task_snapshot(job: OCRJob) -> None:
+    """Mirror a job's polling-relevant state into Redis (best-effort)."""
+    from app.core.cache import cache
+
+    progress = 100 if job.status == OCRJobStatus.COMPLETED.value else 0
+    try:
+        await cache.set(
+            _ocr_task_snapshot_key(job.id),
+            {
+                "task_id": job.id,
+                "request_id": job.request_id,
+                "status": job.status,
+                "progress": progress,
+                "attempt_count": job.attempt_count,
+                "max_attempts": job.max_attempts,
+                "error_code": job.last_error_code,
+                "error": job.last_error_message,
+                "updated_at": _now().isoformat(),
+            },
+            ttl=OCR_TASK_SNAPSHOT_TTL_SEC,
+        )
+    except Exception:
+        pass  # snapshot is optional; DB remains authoritative
+
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -308,6 +342,7 @@ async def start_job(
     if model_fingerprint is not None:
         job.model_fingerprint = model_fingerprint
     await db.flush()
+    await _write_ocr_task_snapshot(job)
     return job
 
 
@@ -362,6 +397,7 @@ async def complete_job(
     if model_fingerprint is not None:
         job.model_fingerprint = model_fingerprint
     await db.flush()
+    await _write_ocr_task_snapshot(job)
     return job
 
 
@@ -417,6 +453,7 @@ async def fail_job(
         job.worker_fingerprint = worker_fingerprint
 
     await db.flush()
+    await _write_ocr_task_snapshot(job)
     return job
 
 
@@ -477,6 +514,7 @@ async def cancel_job(
     job.next_retry_at = None
     job.completed_at = _now()
     await db.flush()
+    await _write_ocr_task_snapshot(job)
     return job
 
 

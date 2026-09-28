@@ -18,6 +18,7 @@ from app.api.v1.admin_metadata import router as admin_metadata_router
 from app.api.v1.admin_questions import router as admin_questions_router
 from app.api.v1.admin_rbac import router as admin_rbac_router
 from app.api.v1.admin_recommendation import router as admin_recommendation_router
+from app.api.v1.admin_redis import router as admin_redis_router
 from app.api.v1.admin_subjects import router as admin_subjects_router
 from app.api.v1.admin_syllabus import router as admin_syllabus_router
 from app.api.v1.admin_system_health import router as admin_system_health_router
@@ -48,6 +49,7 @@ admin_api_router.include_router(admin_system_health_router)
 admin_api_router.include_router(admin_tasks_router)
 admin_api_router.include_router(admin_knowledge_router)
 admin_api_router.include_router(admin_recommendation_router)
+admin_api_router.include_router(admin_redis_router)
 admin_api_router.include_router(admin_formulas_router)
 admin_api_router.include_router(admin_metadata_router)
 admin_api_router.include_router(admin_vector_config_router)

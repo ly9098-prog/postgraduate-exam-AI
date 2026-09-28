@@ -1,7 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import { apiRequest, setApiAccessToken, setApiAccessTokenProvider, setOnAuthExpired } from "@/lib/api/client";
+import {
+  apiRequest,
+  readStoredApiAccessToken,
+  setApiAccessToken,
+  setApiAccessTokenProvider,
+  setOnAuthExpired,
+} from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import type { AuthUser, LoginResponse, MeResponse, Role } from "@/lib/api/types";
 
@@ -20,7 +26,7 @@ type AuthState = {
 };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  accessToken: null,
+  accessToken: readStoredApiAccessToken(),
   user: null,
   role: null,
   permissions: [],

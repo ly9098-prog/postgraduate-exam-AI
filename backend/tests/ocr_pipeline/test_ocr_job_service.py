@@ -211,6 +211,11 @@ async def test_complete_happy_path():
                                         output_artifact_key="out.json",
                                         output_sha256=_SAMPLE_OUTPUT_SHA)
         assert completed.status == OCRJobStatus.COMPLETED.value
+        from app.core.cache import cache
+
+        snapshot = await cache.get(f"admin:ocr:task:{job.id}")
+        assert snapshot["status"] == OCRJobStatus.COMPLETED.value
+        assert snapshot["progress"] == 100
 
 
 @pytest.mark.asyncio

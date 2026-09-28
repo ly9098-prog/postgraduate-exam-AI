@@ -3,7 +3,22 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.cache import cache
 from tests.fixtures.pdf_helper import make_minimal_pdf
+
+
+@pytest.fixture(autouse=True)
+def _isolate_local_cache():
+    """Reset the in-process cache fallback around every test.
+
+    Security keys (permission cache, role versions, rate-limit counters)
+    persist in the local fallback within one process; without this reset a
+    fake DB result from one test leaks into the next via a cached entry.
+    Real Redis deployments are unaffected — this only touches the fallback.
+    """
+    cache._local.clear()
+    yield
+    cache._local.clear()
 
 
 @pytest.fixture

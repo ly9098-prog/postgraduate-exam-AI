@@ -5,7 +5,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import require_permissions, require_roles
+from app.core.admin_security import (
+    bump_role_version,
+    require_permissions,
+    require_roles,
+)
 from app.core.database import get_db
 from app.models.admin import Permission, Role, RolePermission
 from app.services.admin_auth_service import update_role_permissions
@@ -111,6 +115,8 @@ async def replace_role_permissions(
             request=request,
         )
         await db.commit()
+        # Readers must not observe the new cache version before the DB commit.
+        await bump_role_version(db, role_id)
         await db.refresh(role)
         return {"status": "ok", "permission_ids": sorted(set(data.permission_ids))}
     except PermissionError as exc:

@@ -1074,6 +1074,19 @@ export default function QuestionsPage() {
     }
   }, [compareVersion, versionHistoryOpen, versions.data?.items]);
 
+  // Retry an ambiguous chunk with its original key, not a new operation.
+  const batchDeleteKeysRef = useRef(new Map<string, string>());
+  const batchDeleteKeyFor = (ids: number[]) => {
+    const operation = ids.join(",");
+    const keys = batchDeleteKeysRef.current;
+    let key = keys.get(operation);
+    if (!key) {
+      key = crypto.randomUUID();
+      keys.set(operation, key);
+    }
+    return key;
+  };
+
   const deleteMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
       if (state.action === "batch-delete") {
@@ -1088,6 +1101,7 @@ export default function QuestionsPage() {
               "/questions/batch-delete",
               {
                 method: "POST",
+                headers: { "Idempotency-Key": batchDeleteKeyFor(chunk) },
                 body: JSON.stringify({ ids: chunk }),
               },
             );
@@ -1112,6 +1126,7 @@ export default function QuestionsPage() {
       });
     },
     onSuccess: (result, variables: Exclude<ConfirmState, null>) => {
+      batchDeleteKeysRef.current.clear();
       if (variables.action === "delete") {
         setMessage(`题目 #${variables.id} 已删除。`);
         setSelectedQuestionId(null);

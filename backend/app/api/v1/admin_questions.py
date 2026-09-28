@@ -16,7 +16,13 @@ from fastapi import (
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import require_permissions
+from app.core.admin_guards import (
+    admin_rate_limit,
+    finish_idempotency,
+    require_idempotency,
+)
+from app.core.admin_redis import IdempotencyClaim, release_idempotent_request
+from app.core.admin_security import AdminPrincipal, require_permissions
 from app.core.database import get_db
 from app.schemas.admin_questions import (
     AdminQuestionAddOptionsRequest,
@@ -354,11 +360,24 @@ async def export_questions(
 async def batch_delete_questions(
     data: AdminQuestionBatchRequest,
     request: Request,
-    current_admin=Depends(require_permissions("question:delete")),
+    current_admin: AdminPrincipal = Depends(
+        require_permissions("question:delete")
+    ),
+    _: None = Depends(admin_rate_limit),
+    idem: IdempotencyClaim = Depends(require_idempotency),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await batch_delete_admin_questions(db, data.ids, current_admin, request)
-    await db.commit()
+    if idem.response is not None:
+        return AdminQuestionBatchResult(**idem.response)
+    try:
+        result = await batch_delete_admin_questions(db, data.ids, current_admin, request)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await release_idempotent_request(idem)
+        raise
+    # Once committed, retain the pending reservation if Redis is unavailable.
+    await finish_idempotency(idem, result.model_dump(mode="json"))
     return result
 
 

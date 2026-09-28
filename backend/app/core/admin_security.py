@@ -13,6 +13,7 @@ from pwdlib.hashers.bcrypt import BcryptHasher
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.admin_redis import online_presence
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
@@ -329,12 +330,88 @@ async def consume_admin_refresh_token(
 
 
 async def _get_permission_names(db: AsyncSession, role_id: int) -> set[str]:
+    """Return granted permission names for a role, cached via role-version.
+
+    Cache entry (``admin:perm:role:{roleId}``) carries the role version it was
+    built from; on mismatch (or miss) it is rebuilt from DB. Version bumps are
+    best-effort — when Redis is unavailable this degrades to a per-request DB
+    query, which is the pre-caching behavior.
+    """
+    version = await _get_role_version(role_id)
+    if version is not None:
+        cache_key = f"admin:perm:role:{role_id}"
+        try:
+            cached = await cache.get(cache_key)
+        except Exception:
+            cached = None
+        if (
+            isinstance(cached, dict)
+            and cached.get("version") == version
+            and isinstance(cached.get("permissions"), list)
+        ):
+            return set(cached["permissions"])
+
+    names = await _load_permission_names(db, role_id)
+
+    if version is not None:
+        try:
+            await cache.set(
+                cache_key,
+                {"version": version, "permissions": sorted(names)},
+                ttl=cache.jitter_ttl(900, 0.1),
+            )
+        except Exception:
+            pass
+    return names
+
+
+async def _load_permission_names(db: AsyncSession, role_id: int) -> set[str]:
     result = await db.execute(
         select(Permission.name)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
         .where(RolePermission.role_id == role_id)
     )
     return set(result.scalars().all())
+
+
+async def _get_role_version(role_id: int) -> str | None:
+    """Return the role's permission-set version, creating the marker lazily.
+
+    Returns ``None`` when configured Redis is unavailable; callers then load
+    permissions from the DB. In local development without Redis, the cache
+    client uses its in-process fallback and role bumps invalidate it.
+    """
+    key = f"admin:role:version:{role_id}"
+    try:
+        version = await cache.get_strict(key)
+        if version:
+            return str(version)
+        version = uuid4().hex
+        await cache.set_strict(key, version, ttl=None)
+        return version
+    except CacheUnavailableError:
+        return None
+
+
+async def bump_role_version(db: AsyncSession, role_id: int) -> None:
+    """Invalidate cached permissions after a role's permission set changed.
+
+    Best-effort: if Redis is down, cached entries simply expire with their TTL
+    (stale window ≤ ~15min); the DB write itself is unaffected. Roles whose
+    version marker doesn't exist yet are skipped — no cache can reference them.
+    """
+    key = f"admin:role:version:{role_id}"
+    try:
+        current = await cache.get_strict(key)
+    except CacheUnavailableError:
+        return
+    if not current:
+        return
+    try:
+        await cache.set_strict(key, uuid4().hex, ttl=None)
+        await cache.delete_strict(f"admin:perm:role:{role_id}")
+    except CacheUnavailableError:
+        pass
 
 
 async def get_current_admin(
@@ -370,6 +447,12 @@ async def get_current_admin(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
         )
+
+    # Online presence marker (admin:online:{userId}) — refreshed on every
+    # authenticated request, TTL 5min. Strictly best-effort observability:
+    # a Redis outage must never affect authentication itself.
+    if online_presence is not None:
+        await online_presence.record(user.id)
 
     # Bind admin identity to log context for trace correlation
     try:

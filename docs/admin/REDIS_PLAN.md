@@ -1,11 +1,10 @@
 # Redis 使用规划
 
-> ⚠️ **本文件是设计稿，不是当前实现的完整清单。** 其中 `admin:perm:*`、`admin:role:version:*`、
-> `admin:online:*`、`admin:stats:*`、`admin:ratelimit:*`、`admin:idempotency:*`、`admin:ocr:task:*` 等键
-> 在代码中尚未实现或未完整实现。当前已落地的 Redis 键空间与失败语义见
-> **[docs/architecture/REDIS_USAGE.md](../architecture/REDIS_USAGE.md)**。
+> ✅ **2026-09-28 更新**：本规划中的键已全部落地（`admin:perm:*` 以按角色的
+> `admin:perm:role:{roleId}` 形式实现，幂等先接入 batch-delete 与 imports 批量 approve/reject）。
+> 键空间与失败语义的权威清单见 **[docs/architecture/REDIS_USAGE.md](../architecture/REDIS_USAGE.md) 3.4 节**。
 >
-> 版本：v2.1（FastAPI 方案确认版） | 状态：设计稿（部分未实现） | 更新：2026-09-28
+> 版本：v2.1（FastAPI 方案确认版） | 状态：历史设计参考（运行时以实现清单为准） | 更新：2026-09-28
 > 修订自审计报告 I4（TTL 抖动 + 防穿透锁）、I5（双维度限流）、I6（role-version）、I9（用户级 nbf）
 >
 > - **变更原因**：2026-05-29 同步 Admin Backend Phase 4 导入管理实现，补充 `admin:ai:batch:{batchId}:task` 最新任务指针，并将 AI enrich 任务 TTL 校正为当前代码使用的 86400 秒。
@@ -30,9 +29,8 @@ Admin 端：admin:jwt:*       /  admin:perm:*  /  admin:role:*  /  admin:stats:*
 ## 二、Key 设计总表
 
 > 当前实现清单及失败语义以 **[docs/architecture/REDIS_USAGE.md](../architecture/REDIS_USAGE.md) 3.4 节**为准。
-> 下表是完整设计目标：只有 JWT 黑名单、用户级 nbf、登录失败/锁定、AI 任务状态、AI 批次指针、
-> Dashboard overview、Dashboard 锁、health ping、refresh 单次消费和调度 telemetry 已在代码中落地；
-> 其余行仍为规划项。
+> 下表保留原设计目标；实现后的实际键名、有效期和失败语义请以
+> `docs/architecture/REDIS_USAGE.md` 3.4 节为准，不要把历史伪代码当作运行时实现。
 
 | 用途 | Key | Value | TTL |
 |------|-----|-------|-----|
@@ -49,8 +47,8 @@ Admin 端：admin:jwt:*       /  admin:perm:*  /  admin:role:*  /  admin:stats:*
 | Dashboard 统计 | `admin:stats:overview:{date}` | JSON | 5min ± 抖动 |
 | 防穿透锁 | `admin:stats:lock:{key}` | uuid | 10s |
 | 接口限流 | `admin:ratelimit:{userId}:{endpoint}` | counter | 60s |
-| 幂等请求 | `admin:idempotency:{userId}:{key}` | response/result | 10min |
-| 全局豁免标识 | `admin:bypass:{token}` | meta | 按需 |
+| 幂等请求 | `admin:idempotency:{userId}:{key}` | 指纹 + 执行中/已完成响应 | 执行中 1h、完成 10min |
+| 全局豁免标识 | `admin:bypass:{sha256(token)}` | meta；经 `X-Admin-Bypass-Token` 请求头使用 | 默认 30d |
 
 ---
 
@@ -313,13 +311,13 @@ TTL:    60s（滑动窗口）
 
 ```
 Key:    admin:idempotency:{userId}:{key}
-Value:  已完成请求的 response/result
-TTL:    600s
+Value:  { fingerprint, state: pending | complete, response? }
+TTL:    执行中 3600s；已完成 600s
 ```
 
 **规则**：
 - 仅用于关键写操作（如 batch-approve / batch-reject）。
-- 同一 userId + Idempotency-Key 重复请求返回相同结果。
+- 同一 userId + Idempotency-Key + 方法/路径/请求体重复请求在完成后返回相同结果；执行中返回 409，不同请求复用同键返回 409。
 - Redis 不可用时，关键批量写 / 关键幂等写接口返回 503；如个别接口选择降级执行，必须在接口文档明确“不提供幂等保证”。
 
 ### 3.11 全局豁免名单（O9）
@@ -334,7 +332,7 @@ TTL:    自定义
 
 **强制约束**：
 - bypass token 只能豁免接口限流，不能跳过 JWT 认证、RBAC 权限或 audit_log 写入。
-- 仅允许 health/monitoring allowlist 使用，不得开放给普通后台接口。
+- 仅允许观测类 allowlist（dashboard overview/daily 和 redis online）使用，不得对批量写等普通后台接口开放。
 - 创建 / 删除 bypass token 属于 critical 操作，必须写 audit_log。
 
 ---

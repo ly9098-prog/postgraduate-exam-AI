@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.admin_guards import admin_rate_limit
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.schemas.admin_ai_settings import AdminAIStatsResponse
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/api/admin/v1/dashboard", tags=["admin-dashboard"])
 @router.get("/overview", response_model=AdminDashboardOverview)
 async def overview(
     _=Depends(require_permissions("dashboard:read")),
+    __=Depends(admin_rate_limit),
     db: AsyncSession = Depends(get_db),
 ):
     return await get_dashboard_overview(db)
@@ -34,6 +36,7 @@ async def daily(
     created_from: date | None = Query(default=None, alias="from"),
     created_to: date | None = Query(default=None, alias="to"),
     _=Depends(require_permissions("dashboard:read")),
+    __=Depends(admin_rate_limit),
     db: AsyncSession = Depends(get_db),
 ):
     try:

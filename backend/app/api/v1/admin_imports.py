@@ -20,7 +20,13 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import require_permissions
+from app.core.admin_guards import (
+    admin_rate_limit,
+    finish_idempotency,
+    require_idempotency,
+)
+from app.core.admin_redis import IdempotencyClaim, release_idempotent_request
+from app.core.admin_security import AdminPrincipal, require_permissions
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.time_utils import serialize_utc_datetime, utcnow
@@ -632,18 +638,31 @@ async def reject_import_question_item(
 @router.post("/{batch_id}/approve", response_model=AdminImportActionResponse)
 async def approve_import_batch_items(
     batch_id: str,
-    current_admin=Depends(require_permissions("import:write")),
+    request: Request,
+    current_admin: AdminPrincipal = Depends(require_permissions("import:write")),
+    _: None = Depends(admin_rate_limit),
+    idem: IdempotencyClaim = Depends(require_idempotency),
     db: AsyncSession = Depends(get_db),
 ):
+    if idem.response is not None:
+        return AdminImportActionResponse(**idem.response)
     try:
         count = await approve_import_batch(db, batch_id, current_admin.id)
         await db.commit()
-        return AdminImportActionResponse(
-            batch_id=batch_id, status="approved", affected_count=count
-        )
     except ValueError as exc:
         await db.rollback()
+        await release_idempotent_request(idem)
         _raise_import_error(exc)
+    except Exception:
+        await db.rollback()
+        await release_idempotent_request(idem)
+        raise
+    # A committed operation must keep its pending claim if result storage fails.
+    response = AdminImportActionResponse(
+        batch_id=batch_id, status="approved", affected_count=count
+    )
+    await finish_idempotency(idem, response.model_dump(mode="json"))
+    return response
 
 
 @router.post("/{batch_id}/approve-low-risk")
@@ -664,21 +683,34 @@ async def approve_low_risk_batch_items(
 @router.post("/{batch_id}/reject", response_model=AdminImportActionResponse)
 async def reject_import_batch_items(
     batch_id: str,
+    request: Request,
     data: AdminImportRejectRequest | None = None,
-    current_admin=Depends(require_permissions("import:write")),
+    current_admin: AdminPrincipal = Depends(require_permissions("import:write")),
+    _: None = Depends(admin_rate_limit),
+    idem: IdempotencyClaim = Depends(require_idempotency),
     db: AsyncSession = Depends(get_db),
 ):
+    if idem.response is not None:
+        return AdminImportActionResponse(**idem.response)
     try:
         count = await reject_import_batch(
             db, batch_id, current_admin.id, data.reason if data else None
         )
         await db.commit()
-        return AdminImportActionResponse(
-            batch_id=batch_id, status="rejected", affected_count=count
-        )
     except ValueError as exc:
         await db.rollback()
+        await release_idempotent_request(idem)
         _raise_import_error(exc)
+    except Exception:
+        await db.rollback()
+        await release_idempotent_request(idem)
+        raise
+    # A committed operation must keep its pending claim if result storage fails.
+    response = AdminImportActionResponse(
+        batch_id=batch_id, status="rejected", affected_count=count
+    )
+    await finish_idempotency(idem, response.model_dump(mode="json"))
+    return response
 
 
 @router.post("/{batch_id}/publish", response_model=PublishResponse)

@@ -109,6 +109,40 @@ async def get_dashboard_daily(
     db: AsyncSession, created_from: date | None, created_to: date | None
 ) -> list[dict]:
     start, end = _normalize_daily_range(created_from, created_to)
+
+    # admin:stats:daily:{from}:{to} — short-range windows are cache-friendly;
+    # long custom ranges share the same TTL + jitter to avoid stampedes.
+    if (end - start).days <= 31:
+        stats_key = f"admin:stats:daily:{start.isoformat()}:{end.isoformat()}"
+        try:
+            cached_daily = await cache.get(stats_key)
+        except Exception:
+            cached_daily = None
+        if cached_daily is not None:
+            return [
+                {**item, "date": date.fromisoformat(item["date"])}
+                for item in cached_daily
+            ]
+    else:
+        stats_key = None
+
+    items = await _compute_dashboard_daily(db, start, end)
+
+    if stats_key is not None:
+        try:
+            await cache.set(
+                stats_key,
+                [{**item, "date": item["date"].isoformat()} for item in items],
+                ttl=cache.jitter_ttl(300, 0.1),
+            )
+        except Exception:
+            pass
+    return items
+
+
+async def _compute_dashboard_daily(
+    db: AsyncSession, start: date, end: date
+) -> list[dict]:
     start_dt = shanghai_date_utc_range(start)[0]
     end_dt = shanghai_date_utc_range(end + timedelta(days=1))[0]
 
