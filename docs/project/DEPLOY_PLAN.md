@@ -747,7 +747,7 @@ OCR_EXECUTION_BACKEND: "disabled"
 
 **持久化：** `deploy/docker-compose.prod.yml` 中 app、scheduler、worker 都挂载命名卷 `formulas_data:/app/static/formulas`。运行期上传写在卷内 `graphs/{id}/uploaded`，容器重建不丢图。空卷首次挂载会带入镜像里已有的公式静态文件。
 
-**AI 预热题图：** `prewarm_analysis` 在 worker 中运行，必须与 app 共享 `question_assets_data` 卷；app 负责写入，worker 以只读方式挂载 `/app/static/question-assets`。否则 worker 无法从本地读取运行期上传的题图，在远程抓取不可用时会将有题图的题目误判为 `vision_input_missing`。仅修改 Compose 文件不会更新运行中的容器；应用时需单独重建 worker 容器（不删除卷），并按需手动重试已经进入死信队列的任务。
+**AI 预热题图：** `prewarm_analysis` 在 worker 中运行，必须与 app 共享 `question_assets_data` 卷；app 与 worker 共同挂载 `/app/static/question-assets`（生产启动校验要求该目录可写）。否则 worker 无法从本地读取运行期上传的题图，在远程抓取不可用时会将有题图的题目误判为 `vision_input_missing`。仅修改 Compose 文件不会更新运行中的容器；应用时需单独重建 worker 容器（不删除卷），并按需手动重试已经进入死信队列的任务。
 
 **回填脚本提交注意：** `.gitignore` 第 98 行忽略 `backend/scripts/`，该目录既有脚本均为 `git add -f` 跟踪；新脚本需同样 `git add -f backend/scripts/backfill_formula_graph_image_size.py`。
 

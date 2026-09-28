@@ -270,8 +270,8 @@ services:
       # exports 卷与 scheduler 一致：校验器会检查 EXPORT_DIR 可写，且容器以
       # 非 root 用户运行，需挂载镜像已 chown 的卷（首次挂载继承 app:app）。
       - exports_data:/opt/2240ai-v2/exports
-      # prewarm_analysis 读取与 app 相同的题图；只读挂载防止 worker 误写素材。
-      - question_assets_data:/app/static/question-assets:ro
+      # prewarm_analysis 需要与 app 共享运行期上传的题图；生产启动校验要求该目录可写。
+      - question_assets_data:/app/static/question-assets
       # 公式图持久化：与 app 一致，公式图渲染/预览写入 /app/static/formulas
       - formulas_data:/app/static/formulas
     # Override CMD: run worker_main — consumes the Redis v2 task queue
