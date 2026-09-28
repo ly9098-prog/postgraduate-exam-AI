@@ -83,7 +83,10 @@ def test_admin_login_failure_returns_401(monkeypatch):
         app.dependency_overrides.pop(get_db, None)
 
     assert resp.status_code == 401
-    assert resp.json()["detail"] == "用户名或密码错误"
+    error = resp.json()["error"]
+    assert error["code"] == "HTTP_401"
+    assert error["retryable"] is False
+    assert "用户名或密码错误" not in str(resp.json())
 
 
 def test_admin_me_rejects_app_token():
@@ -313,10 +316,11 @@ def test_admin_refresh_returns_token(monkeypatch):
 
     app.dependency_overrides[get_db] = _override_db
     try:
-        resp = client.post(
-            "/api/admin/v1/auth/refresh",
-            cookies={"admin_refresh_token": "valid-refresh-token"},
+        refresh_client = TestClient(app)
+        refresh_client.cookies.set(
+            REFRESH_COOKIE_KEY, "valid-refresh-token", path="/api/admin/v1/auth"
         )
+        resp = refresh_client.post("/api/admin/v1/auth/refresh")
     finally:
         app.dependency_overrides.pop(get_db, None)
 
@@ -347,10 +351,11 @@ def test_admin_refresh_invalid_token_returns_401(monkeypatch):
 
     app.dependency_overrides[get_db] = _override_db
     try:
-        resp = client.post(
-            "/api/admin/v1/auth/refresh",
-            cookies={"admin_refresh_token": "garbage-token"},
+        refresh_client = TestClient(app)
+        refresh_client.cookies.set(
+            REFRESH_COOKIE_KEY, "garbage-token", path="/api/admin/v1/auth"
         )
+        resp = refresh_client.post("/api/admin/v1/auth/refresh")
     finally:
         app.dependency_overrides.pop(get_db, None)
 
@@ -404,10 +409,11 @@ def test_admin_bootstrap_refresh_after_token_loss(monkeypatch):
     try:
         # No Authorization header (simulates lost in-memory token).
         # Only the refresh cookie is present.
-        resp = client.post(
-            "/api/admin/v1/auth/refresh",
-            cookies={"admin_refresh_token": "valid-refresh-token"},
+        refresh_client = TestClient(app)
+        refresh_client.cookies.set(
+            REFRESH_COOKIE_KEY, "valid-refresh-token", path="/api/admin/v1/auth"
         )
+        resp = refresh_client.post("/api/admin/v1/auth/refresh")
     finally:
         app.dependency_overrides.pop(get_db, None)
 
@@ -462,7 +468,10 @@ def test_login_blocked_when_account_locked(monkeypatch):
         asyncio.run(cache.delete_strict("admin:login:account_lock:admin"))
 
     assert resp.status_code == 429
-    assert "临时锁定" in resp.json()["detail"]
+    error = resp.json()["error"]
+    assert error["code"] == "HTTP_429"
+    assert error["retryable"] is True
+    assert "临时锁定" not in str(resp.json())
 
 
 # ── 密码策略 ──
@@ -490,6 +499,9 @@ def test_change_password_weak_password_returns_400(monkeypatch):
         app.dependency_overrides.pop(admin_auth.get_current_admin, None)
 
     assert resp.status_code == 400
-    assert "大写" in resp.json()["detail"]
+    error = resp.json()["error"]
+    assert error["code"] == "HTTP_400"
+    assert error["retryable"] is False
+    assert "大写" not in str(resp.json())
 
 
