@@ -13,9 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import inspect, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
-from app.core import admin_security
+from app.core import admin_guards, admin_security
 from app.core.admin_guards import admin_rate_limit, require_idempotency
 from app.core.admin_redis import (
     IdempotencyClaim,
@@ -37,6 +39,7 @@ from app.core.admin_security import (
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.time_utils import unix_timestamp, utcnow
+from app.models.admin import AdminUser, Role
 
 
 @pytest.fixture(autouse=True)
@@ -172,9 +175,66 @@ async def test_admin_rate_limit_dependency_raises_429(monkeypatch):
     for _ in range(10):
         await check_admin_ratelimit(13, "/api/admin/v1/imports/batch")
 
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=MagicMock(scalar_one_or_none=lambda: "operator")
+    )
     with pytest.raises(HTTPException) as exc_info:
-        await admin_rate_limit(request, current_admin=principal)
+        await admin_rate_limit(request, current_admin=principal, db=db)
     assert exc_info.value.status_code == 429
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("role_id", "role_name", "is_super"),
+    [(1, "super_admin", True), (2, "operator", False), (3, "super_admin", True)],
+)
+async def test_admin_rate_limit_unloaded_role_does_not_lazy_load(
+    monkeypatch, role_id, role_name, is_super
+):
+    """An authenticated admin has an unloaded role in get_current_admin."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Role.__table__.create)
+            await conn.run_sync(AdminUser.__table__.create)
+        session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_maker() as db:
+            db.add_all(
+                [
+                    Role(id=role_id, name=role_name, display_name=role_name),
+                    AdminUser(
+                        id=42,
+                        username="rate-limit-admin",
+                        password_hash="test-only",
+                        role_id=role_id,
+                    ),
+                ]
+            )
+            await db.commit()
+        async with session_maker() as db:
+            user = (
+                await db.execute(select(AdminUser).where(AdminUser.id == 42))
+            ).scalar_one()
+            assert "role" in inspect(user).unloaded
+            checker = AsyncMock(return_value=True)
+            monkeypatch.setattr(admin_guards, "check_admin_ratelimit", checker)
+
+            await admin_rate_limit(
+                make_admin_request(path="/api/admin/v1/dashboard/daily"),
+                current_admin=admin_security.AdminPrincipal(user, {}),
+                db=db,
+            )
+
+            checker.assert_awaited_once_with(
+                42,
+                "/api/admin/v1/dashboard/daily",
+                is_super_admin=is_super,
+                bypass_token=None,
+            )
+            assert "role" in inspect(user).unloaded
+    finally:
+        await engine.dispose()
 
 
 # ── Idempotency ──────────────────────────────────────────────────
@@ -413,17 +473,20 @@ async def test_bypass_header_skips_only_allowlisted_observability_rate_limit():
     principal = MagicMock()
     principal.id = 10
     principal.role_id = 2
-    principal.user.role = None
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=MagicMock(scalar_one_or_none=lambda: "operator")
+    )
     stats_path = "/api/admin/v1/dashboard/daily"
     request = make_admin_request(path=stats_path)
     for _ in range(30):
-        await admin_rate_limit(request, current_admin=principal)
+        await admin_rate_limit(request, current_admin=principal, db=db)
     with pytest.raises(HTTPException) as error:
-        await admin_rate_limit(request, current_admin=principal)
+        await admin_rate_limit(request, current_admin=principal, db=db)
     assert error.value.status_code == 429
     await create_bypass_token(token, type_="monitor")
     bypass_request = make_admin_request(path=stats_path, bypass_token=token)
-    await admin_rate_limit(bypass_request, current_admin=principal)
+    await admin_rate_limit(bypass_request, current_admin=principal, db=db)
     # A monitoring token must not bypass limits on critical batch writes.
     batch_path = "/api/admin/v1/imports/batch"
     for _ in range(10):
@@ -432,6 +495,7 @@ async def test_bypass_header_skips_only_allowlisted_observability_rate_limit():
         await admin_rate_limit(
             make_admin_request(path=batch_path, bypass_token=token),
             current_admin=principal,
+            db=db,
         )
     assert error.value.status_code == 429
 

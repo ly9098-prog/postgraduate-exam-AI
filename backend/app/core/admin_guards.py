@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_redis import (
     IdempotencyClaim,
@@ -16,6 +18,8 @@ from app.core.admin_redis import (
 )
 from app.core.admin_security import AdminPrincipal, get_current_admin
 from app.core.cache import CacheUnavailableError
+from app.core.database import get_db
+from app.models.admin import Role
 
 _IDEMPOTENCY_HEADER = "Idempotency-Key"
 _BYPASS_HEADER = "X-Admin-Bypass-Token"
@@ -24,12 +28,17 @@ _BYPASS_HEADER = "X-Admin-Bypass-Token"
 async def admin_rate_limit(
     request: Request,
     current_admin: AdminPrincipal = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
 ) -> None:
-    role_name = getattr(current_admin.user, "role", None)
-    is_super = (
-        getattr(role_name, "name", None) == "super_admin"
-        or current_admin.role_id == 1  # super_admin is the seeded role id 1
-    )
+    # Async ORM relationships cannot be lazy-loaded by attribute access here.
+    # The seeded super_admin has role id 1; also support roles named super_admin
+    # with a different id without triggering implicit synchronous database IO.
+    is_super = current_admin.role_id == 1
+    if not is_super:
+        result = await db.execute(
+            select(Role.name).where(Role.id == current_admin.role_id)
+        )
+        is_super = result.scalar_one_or_none() == "super_admin"
     allowed = await check_admin_ratelimit(
         current_admin.id,
         request.url.path,

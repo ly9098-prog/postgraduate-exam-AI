@@ -265,12 +265,14 @@ class TestCategoryCreate:
         finally:
             app.dependency_overrides.clear()
         assert resp.status_code == 422
-        assert "Cannot create" in resp.json()["detail"]
+        assert resp.json()["error"]["code"] == "HTTP_422"
+        db.add.assert_not_called()
 
     def test_create_duplicate_code_under_parent(self):
         existing = _category(id=2, parent_id=1, code="dup")
+        db = _Db(_permissions(), [existing])
         app.dependency_overrides[get_current_admin] = _override_current_admin
-        app.dependency_overrides[get_db] = _db_lambda(_permissions(), existing)
+        app.dependency_overrides[get_db] = _db_lambda(db)
         try:
             resp = client.post(
                 "/api/admin/v1/formulas/categories",
@@ -279,7 +281,8 @@ class TestCategoryCreate:
         finally:
             app.dependency_overrides.clear()
         assert resp.status_code == 409
-        assert "already exists" in resp.json()["detail"]
+        assert resp.json()["error"]["code"] == "HTTP_409"
+        db.add.assert_not_called()
 
     def test_create_no_permission(self):
         app.dependency_overrides[get_current_admin] = _override_current_admin
@@ -338,7 +341,7 @@ class TestCategoryUpdate:
         finally:
             app.dependency_overrides.clear()
         assert resp.status_code == 422
-        assert "No fields" in resp.json()["detail"]
+        assert resp.json()["error"]["code"] == "HTTP_422"
 
 
 # ── Tags Tests ──
@@ -425,20 +428,32 @@ class TestCardCreate:
         finally:
             app.dependency_overrides.clear()
         assert resp.status_code == 422
-        assert "Invalid or inactive" in resp.json()["detail"]
+        assert resp.json()["error"]["code"] == "HTTP_422"
+        db.add.assert_not_called()
 
     def test_create_card_no_blocks(self):
-        """formula_blocks must have at least 1 block."""
+        """Non-formula study cards may be created without LaTeX blocks."""
+        cat = _category(id=1, is_active=True)
+        card = _card(formula_blocks=[])
+        db = _Db(_permissions(), reload_card=card)
+        db.get = AsyncMock(return_value=cat)
         app.dependency_overrides[get_current_admin] = _override_current_admin
-        app.dependency_overrides[get_db] = _db_lambda(_permissions())
+        app.dependency_overrides[get_db] = lambda: db
         try:
             resp = client.post(
                 "/api/admin/v1/formulas",
-                json={"category_id": 1, "title": "测试", "formula_blocks": []},
+                json={
+                    "category_id": 1,
+                    "title": "测试",
+                    "study_card_type": "definition",
+                    "formula_blocks": [],
+                },
             )
         finally:
             app.dependency_overrides.clear()
-        assert resp.status_code == 422
+        assert resp.status_code == 200
+        assert db.add.call_args_list[0].args[0].formula_blocks == []
+        assert db.add.call_args_list[0].args[0].study_card_type == "definition"
 
     def test_create_card_too_many_blocks(self):
         """formula_blocks max 8."""
@@ -655,7 +670,8 @@ class TestCardDelete:
         finally:
             app.dependency_overrides.clear()
         assert resp.status_code == 422
-        assert "offline" in resp.json()["detail"]
+        assert resp.json()["error"]["code"] == "HTTP_422"
+        db.commit.assert_not_awaited()
 
     def test_soft_delete_not_found(self):
         db = _Db(_permissions())

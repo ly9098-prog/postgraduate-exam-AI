@@ -169,8 +169,9 @@ def test_admin_change_password_success(monkeypatch):
 # ── Cookie helper tests ──
 
 
-def test_set_refresh_cookie_uses_consistent_attributes():
+def test_set_refresh_cookie_uses_consistent_attributes(monkeypatch):
     """set_refresh_cookie always produces HttpOnly + correct SameSite + matching Secure per env."""
+    monkeypatch.setattr(settings, "APP_ENV", "development")
     response = FastAPIResponse()
 
     set_refresh_cookie(response, "test-token-value")
@@ -180,14 +181,15 @@ def test_set_refresh_cookie_uses_consistent_attributes():
     assert "HttpOnly" in header
     assert "Path=/api/admin/v1/auth" in header
     assert "Max-Age=" in header
-    # No request passed → defaults to production=False for dev
+    # Explicitly run the development branch independent of the local .env
     assert "Secure" not in header or "Secure=false" in header
     # dev env → SameSite=lax
     assert "SameSite=lax" in header
 
 
-def test_set_refresh_cookie_lax_for_http():
+def test_set_refresh_cookie_lax_for_http(monkeypatch):
     """SameSite=Lax when secure=False (local HTTP)."""
+    monkeypatch.setattr(settings, "APP_ENV", "development")
     response = FastAPIResponse()
     request = MagicMock()
     request.url.scheme = "http"
@@ -223,8 +225,9 @@ def test_set_refresh_cookie_x_forwarded_proto():
     assert "SameSite=none" in header
 
 
-def test_set_refresh_cookie_x_forwarded_proto_http():
+def test_set_refresh_cookie_x_forwarded_proto_http(monkeypatch):
     """Secure=false when X-Forwarded-Proto is http."""
+    monkeypatch.setattr(settings, "APP_ENV", "development")
     response = FastAPIResponse()
     request = MagicMock()
     request.url.scheme = "http"
@@ -262,8 +265,9 @@ def test_refresh_cookie_secure_in_production_env(monkeypatch):
     assert "HttpOnly" in header
 
 
-def test_refresh_cookie_not_secure_in_development_env():
+def test_refresh_cookie_not_secure_in_development_env(monkeypatch):
     """When no request is given and APP_ENV=development, Secure=false."""
+    monkeypatch.setattr(settings, "APP_ENV", "development")
     response = FastAPIResponse()
 
     set_refresh_cookie(response, "dev-token")
@@ -456,17 +460,24 @@ def test_login_consecutive_failures_set_account_lock(monkeypatch):
 
 
 def test_login_blocked_when_account_locked(monkeypatch):
-    """A locked account is rejected before password verification."""
+    """Locked accounts reject bad credentials without consulting a real DB."""
     import asyncio
 
     from app.core.cache import cache
 
+    authenticate = AsyncMock(side_effect=ValueError("用户名或密码错误"))
+    monkeypatch.setattr(admin_auth, "authenticate_admin", authenticate)
+    app.dependency_overrides[get_db] = _override_db
     asyncio.run(cache.set_strict("admin:login:account_lock:admin", 1, ttl=900))
     try:
         resp = client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "x"})
     finally:
         asyncio.run(cache.delete_strict("admin:login:account_lock:admin"))
+        asyncio.run(cache.delete_strict("admin:login:account_fail:admin"))
+        asyncio.run(cache.delete_strict(_ip_rate_key("admin")))
+        app.dependency_overrides.pop(get_db, None)
 
+    authenticate.assert_awaited_once()
     assert resp.status_code == 429
     error = resp.json()["error"]
     assert error["code"] == "HTTP_429"

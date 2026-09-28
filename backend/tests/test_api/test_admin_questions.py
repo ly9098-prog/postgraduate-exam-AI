@@ -349,6 +349,7 @@ def test_upload_question_image_rejects_non_image(monkeypatch):
     q = _choice_question()
     monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
     app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
     try:
         resp = client.post(
             "/api/admin/v1/questions/1/images",
@@ -364,6 +365,7 @@ def test_upload_question_image_rejects_non_image(monkeypatch):
 def test_upload_question_image_rejects_bad_target(monkeypatch):
     monkeypatch.setattr(admin_questions, "_upload_question_asset", AsyncMock())
     app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
     try:
         resp = client.post(
             "/api/admin/v1/questions/1/images",
