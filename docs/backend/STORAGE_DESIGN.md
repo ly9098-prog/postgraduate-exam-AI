@@ -59,7 +59,8 @@ Redis 用于任务队列、缓存、限流、幂等、JWT 黑名单/用户 nbf�
 - 题目图片：`get_question_assets_storage()`，key 为 `static/question-assets/{question_id}/{uuid}.{ext}`；生产 Compose 挂载命名卷 `question_assets_data` 到 `/app/static/question-assets`
 - 用户头像：`get_user_avatar_storage()`，命名空间为 `static/avatars/{user_id}/{uuid}.jpg`；旧 `static/formulas/avatars` 仅用于兼容清理
 - 导出文件：`get_export_storage()` 管理 `export_tasks.file_key` 对应文件；生产可使用本地命名卷或 COS
-- 题目图片删除前由 `AssetReferenceService` 检查引用计数；版本快照保留旧 URL，不参与当前引用计数
+- 题目图片删除前由 `AssetReferenceService` 检查引用；包括当前题目、导入记录，以及被试卷/练习/错题/复习记录引用的历史版本。未被持久记录引用的旧草稿版本不阻止删除。
+- 引用扫描失败时保留文件；单次查询使用保存点隔离数据库异常，以免后续请求查询因事务中止而失败。PostgreSQL 版本快照的 `content`、`image_url`、`options` 为 JSON，筛选时统一转为 TEXT；不对 JSON 列去重，也不与空字符串合并。
 
 生产 Compose 当前使用独立命名卷保存 PostgreSQL、Redis、题目图片、导出文件和备份数据；备份服务将 PostgreSQL 备份写入 `backup_data`。
 

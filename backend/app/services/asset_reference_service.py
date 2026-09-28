@@ -204,21 +204,25 @@ class AssetReferenceService:
 
             for col in columns:
                 try:
-                    refs = await self._scan_column(
-                        entity_type,
-                        table,
-                        col,
-                        id_col,
-                        storage_key,
-                    )
+                    # PostgreSQL leaves the outer transaction aborted after a
+                    # failed SELECT. Roll back just this scan so later scans and
+                    # the caller's follow-up queries remain usable.
+                    async with self._db.begin_nested():
+                        refs = await self._scan_column(
+                            entity_type,
+                            table,
+                            col,
+                            id_col,
+                            storage_key,
+                        )
                     report.references.extend(refs)
                 except Exception as e:
                     report.errors.append(f"scan {table}.{col}: {e}")
 
         try:
-            report.references.extend(
-                await self._scan_pinned_question_versions(storage_key)
-            )
+            async with self._db.begin_nested():
+                refs = await self._scan_pinned_question_versions(storage_key)
+            report.references.extend(refs)
         except Exception as e:
             # Reference-resolution errors are fail-safe: callers see errors and
             # the deletion state machine must not treat the asset as proven safe.
@@ -309,7 +313,7 @@ class AssetReferenceService:
         """
         raw = await self._db.execute(
             text("""
-            SELECT DISTINCT qv.id, qv.content, qv.image_url, qv.options
+            SELECT qv.id, qv.content, qv.image_url, qv.options
             FROM question_versions AS qv
             WHERE (
                 EXISTS (
@@ -335,7 +339,7 @@ class AssetReferenceService:
             )
             AND (
                 CAST(qv.content AS TEXT) LIKE :needle
-                OR COALESCE(qv.image_url, '') LIKE :needle
+                OR CAST(qv.image_url AS TEXT) LIKE :needle
                 OR CAST(qv.options AS TEXT) LIKE :needle
             )
         """),
