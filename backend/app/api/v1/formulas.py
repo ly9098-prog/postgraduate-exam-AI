@@ -30,6 +30,12 @@ from app.services.formula_study_card_service import (
     public_card_type_catalog,
     validate_study_card_type,
 )
+from app.services.formula_subject_scope import (
+    apply_formula_subject_filter,
+    collapse_formula_catalog_subjects,
+    expand_formula_subject_code,
+    formula_catalog_category_ids,
+)
 
 router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
 
@@ -78,13 +84,20 @@ def _exam_scope_values(exam_scope: str | None) -> tuple[str, ...] | None:
 
 
 async def _get_active_categories(
-    db: AsyncSession, exam_scope: str | None = None
+    db: AsyncSession,
+    exam_scope: str | None = None,
+    subject_code: str | None = None,
 ) -> list[FormulaCategory]:
     query = select(FormulaCategory).where(FormulaCategory.is_active)
     scope_values = _exam_scope_values(exam_scope)
     if scope_values:
         query = query.where(FormulaCategory.exam_scope.in_(scope_values))
-    result = await db.execute(query.order_by(FormulaCategory.sort_order.asc()))
+    category_ids = formula_catalog_category_ids(subject_code)
+    if category_ids is not None:
+        query = query.where(FormulaCategory.id.in_(category_ids))
+    result = await db.execute(
+        query.order_by(FormulaCategory.sort_order.asc(), FormulaCategory.id.asc())
+    )
     return list(result.scalars().all())
 
 
@@ -250,6 +263,7 @@ def _apply_library_type_filter(query, library_type: str | None):
 
 @router.get("/catalog")
 async def get_formula_catalog(
+    subject_code: str | None = Query(None, alias="subject_code"),
     library_type: str | None = Query(None),
     study_card_type: str | None = Query(None, alias="study_card_type"),
     favorite_only: bool = Query(False, alias="favorite_only"),
@@ -262,7 +276,7 @@ async def get_formula_catalog(
     Only includes chapters that have at least one published, non-deleted card
     matching the optional library_type and favorite_only filters.
     """
-    categories = await _get_active_categories(db, exam_scope)
+    categories = await _get_active_categories(db, exam_scope, subject_code)
     tree = _build_category_tree(categories)
 
     # Count published + non-deleted cards per category_id
@@ -281,6 +295,7 @@ async def get_formula_catalog(
     if library_type:
         count_query = _apply_library_type_filter(count_query, library_type)
     count_query = _apply_study_card_type_filter(count_query, study_card_type)
+    count_query = apply_formula_subject_filter(count_query, subject_code)
 
     if favorite_only and current_user:
         fav_subq = select(UserFormulaFavorite.formula_card_id).where(
@@ -312,7 +327,7 @@ async def get_formula_catalog(
                 ch for ch in subject["children"] if ch.get("available_count", 0) > 0
             ]
 
-    return {"items": tree}
+    return {"items": collapse_formula_catalog_subjects(tree, subject_code)}
 
 
 # ── Batch loading helpers (eliminate N+1) ──
@@ -419,17 +434,18 @@ async def _validate_chapter(
             detail=f"章节 ID {chapter_id} 不存在或不是章节目录",
         )
 
-    # Verify chapter belongs to the specified subject
-    if subject_code:
+    # Verify chapter belongs to any stored subject in the logical request scope.
+    subject_codes = expand_formula_subject_code(subject_code)
+    if subject_codes:
         subject_result = await db.execute(
-            select(FormulaCategory).where(
+            select(FormulaCategory.id).where(
                 FormulaCategory.is_active,
-                FormulaCategory.code == subject_code,
+                FormulaCategory.code.in_(subject_codes),
                 FormulaCategory.node_type == "subject",
             )
         )
-        subject = subject_result.scalar_one_or_none()
-        if subject and chapter.parent_id != subject.id:
+        subject_ids = set(subject_result.scalars().all())
+        if subject_ids and chapter.parent_id not in subject_ids:
             raise HTTPException(
                 status_code=400,
                 detail=f"章节 ID {chapter_id} 不属于学科 {subject_code}",
@@ -448,25 +464,7 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
     Accept both supported storage shapes: cards may belong directly to a
     chapter or to one of that chapter's groups.
     """
-    if subject_code:
-        subject_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.is_active,
-            FormulaCategory.code == subject_code,
-            FormulaCategory.node_type == "subject",
-        )
-        chapter_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.parent_id.in_(subject_ids_subq),
-            FormulaCategory.is_active,
-            FormulaCategory.node_type == "chapter",
-        )
-        scoped_category_ids_subq = select(FormulaCategory.id).where(
-            FormulaCategory.is_active,
-            or_(
-                FormulaCategory.id.in_(chapter_ids_subq),
-                FormulaCategory.parent_id.in_(chapter_ids_subq),
-            ),
-        )
-        query = query.where(FormulaCard.category_id.in_(scoped_category_ids_subq))
+    query = apply_formula_subject_filter(query, subject_code)
 
     if chapter_id:
         scoped_category_ids_subq = select(FormulaCategory.id).where(

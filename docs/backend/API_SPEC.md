@@ -1133,6 +1133,33 @@ AI 错因分析。
 
 ---
 
+## 公式与速记卡
+
+用户端前缀 `/api/v1/formulas`。公式数据仍按数据库中的真实 subject 分类存储；查询层额外支持逻辑学科 `math`。
+
+### 数学逻辑学科契约
+
+| 展示名 | 查询 `subject_code` | 实际查询范围 |
+|--------|---------------------|--------------|
+| 数学 | `math` | `elementary_math` + `math2_high_math` |
+
+- `math` 只用于查询聚合，不会创建或迁移公式分类数据。
+- `elementary_math`、`math2_high_math` 的原有精确查询行为保持不变。
+- 聚合范围在同一 SQL 查询中参与其他过滤、全局排序、分页和 `total` 统计；不是分别分页后在应用层拼接。
+
+| 方法 | 路径 | `subject_code=math` 行为 |
+|------|------|--------------------------|
+| GET | `/formulas` | 在初等数学与高等数学联合结果集中执行搜索、标签/分类、卡片类型、收藏、排序和分页 |
+| GET | `/formulas/favorites/list` | 返回当前用户在联合范围内的收藏公式 |
+| GET | `/formulas/random/next` | 从联合范围内随机选择下一条，保留 `exclude_ids` 等过滤 |
+| GET | `/formulas/catalog` | 返回单一逻辑 subject 节点 `{code: "math", name: "数学"}`，其章节同时覆盖两个真实 subject |
+
+`GET /formulas/catalog` 新增可选查询参数 `subject_code`。不传该参数时保持原有完整目录响应；传 `math` 时只返回聚合后的“数学”根节点。该逻辑根节点使用保留的合成 `id=0`，子章节继续返回真实数据库 category id。按公式 ID 获取详情不依赖 `subject_code`，无需改变。
+
+> 2026-09-29 更新原因：新增公式逻辑学科 `math`，统一聚合初等数学与高等数学查询范围。
+
+---
+
 ## 健康检查
 
 ### GET `/health`
