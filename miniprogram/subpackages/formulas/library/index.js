@@ -48,19 +48,20 @@ const MAX_GRAPH_FALLBACK_PAGES = 10
 const MAX_FAVORITE_PAGES = 50
 const FAVORITE_PAGE_SIZE = 200
 
+const MATH_FORMULA_SUBJECT = 'math'
 const BASE_FORMULA_SUBJECTS = [
-  { code: 'math2_high_math', name: '高等数学' },
+  { code: MATH_FORMULA_SUBJECT, name: '数学' },
   { code: 'math2_linear_algebra', name: '线性代数' },
   { code: 'exam408', name: '计算机综合' },
 ]
-const DEFAULT_FORMULA_SUBJECT = 'math2_high_math'
+const DEFAULT_FORMULA_SUBJECT = MATH_FORMULA_SUBJECT
 const EXAM408_FORMULA_SUBJECT = 'exam408'
-const HIDDEN_FORMULA_SUBJECT_CODES = new Set(['elementary_math'])
+const HIDDEN_FORMULA_SUBJECT_CODES = new Set(['elementary_math', 'math2_high_math'])
 
 function isVisibleFormulaSubject(subject) {
   const code = String(subject && (subject.code || subject.subject_code || subject.key) || '').trim().toLowerCase()
   const name = String(subject && (subject.name || subject.title || subject.label || subject.subject_name) || '').trim()
-  return !HIDDEN_FORMULA_SUBJECT_CODES.has(code) && name !== '初等数学'
+  return !HIDDEN_FORMULA_SUBJECT_CODES.has(code) && name !== '初等数学' && name !== '高等数学'
 }
 
 function mergeFormulaSubjects(catalog, activeCode) {
@@ -145,7 +146,7 @@ Page({
       return { ...subject, active: subject.code === DEFAULT_FORMULA_SUBJECT }
     }),
     activeSubject: DEFAULT_FORMULA_SUBJECT,
-    activeSubjectName: '高等数学',
+    activeSubjectName: '数学',
 
     // Content type tabs
     libraryTabs: [
@@ -263,9 +264,11 @@ Page({
     const requestVersion = ++this._catalogRequestVersion
     try {
       var params = {}
-      // Keep the 408 catalog explicitly scoped. The public API also accepts
-      // subject_code, but exam_scope prevents unrelated formula trees from
-      // influencing 408 counts while the subject/chapter filters are applied.
+      // Ask the backend for the selected subject's catalog. For math this
+      // returns the logical root that combines elementary and high math.
+      if (this.data.activeSubject === MATH_FORMULA_SUBJECT) params.subject_code = MATH_FORMULA_SUBJECT
+      // Keep the 408 catalog explicitly scoped. exam_scope prevents unrelated
+      // formula trees from influencing 408 counts while filters are applied.
       if (this.data.activeSubject === EXAM408_FORMULA_SUBJECT) params.exam_scope = EXAM408_FORMULA_SUBJECT
       // Pass library_type so the catalog can show accurate available_count
       if (this.data.activeLibraryType && this.data.activeLibraryType !== LIBRARY_TYPE_FORMULA) {
@@ -295,7 +298,7 @@ Page({
         catalog,
         subjects,
         activeSubject,
-        activeSubjectName: activeMeta ? activeMeta.name : '高等数学',
+        activeSubjectName: activeMeta ? activeMeta.name : '数学',
       }, () => {
         this.updateChapters()
         if (subjectChanged) this.loadFormulas(true)
