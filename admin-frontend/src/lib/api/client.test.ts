@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { apiRequest, setApiAccessToken, setApiAccessTokenProvider, setOnAuthExpired } from "./client";
+import { apiRequest, setApiAccessToken, setApiAccessTokenProvider, setOnAuthExpired, setOnAccessTokenChanged } from "./client";
 import { ApiError } from "./errors";
 
 beforeEach(() => {
+  setOnAccessTokenChanged(null);
   setApiAccessToken("test-token");
   setApiAccessTokenProvider(null);
   setOnAuthExpired(null);

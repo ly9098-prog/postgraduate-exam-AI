@@ -6,6 +6,7 @@ import {
   readStoredApiAccessToken,
   setApiAccessToken,
   setApiAccessTokenProvider,
+  setOnAccessTokenChanged,
   setOnAuthExpired,
 } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
@@ -112,6 +113,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 }));
 
+// The API client also rotates tokens outside store actions. Synchronize before
+// the next request reads the store-backed token provider; never call the setter
+// from this callback (that would recurse).
+setOnAccessTokenChanged((accessToken) => {
+  useAuthStore.setState({ accessToken });
+});
 setApiAccessTokenProvider(() => useAuthStore.getState().accessToken);
 
 // When the API client detects an expired session during automated refresh,

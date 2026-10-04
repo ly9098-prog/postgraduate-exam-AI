@@ -31,6 +31,7 @@ function readResponseHeader(response: Response, name: string) {
 
 let accessToken: string | null = null;
 let accessTokenProvider: (() => string | null) | null = null;
+let onAccessTokenChanged: ((token: string | null) => void) | null = null;
 
 // Single-flight refresh state
 let refreshPromise: Promise<string | null> | null = null;
@@ -62,10 +63,16 @@ export function readStoredApiAccessToken(): string | null {
 export function setApiAccessToken(token: string | null) {
   accessToken = token;
   persistApiAccessToken(token);
+  onAccessTokenChanged?.(token);
 }
 
 export function setApiAccessTokenProvider(provider: (() => string | null) | null) {
   accessTokenProvider = provider;
+}
+
+/** Keep the auth store in sync with login, rotation, and token clearing. */
+export function setOnAccessTokenChanged(callback: ((token: string | null) => void) | null) {
+  onAccessTokenChanged = callback;
 }
 
 export function getApiAccessToken() {

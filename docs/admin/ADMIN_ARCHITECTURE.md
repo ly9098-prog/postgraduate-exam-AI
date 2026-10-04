@@ -138,6 +138,13 @@ backend/alembic/               # Alembic migrations
 - 前端阶段只消费 `/api/admin/v1`，不修改后端 API、DB schema 或权限语义；audit-log 查询参数已按后端别名使用 `pageSize`、`resourceType`、`from`、`to`。
 - 已通过 `npm --prefix admin-frontend run lint` 与 `npm --prefix admin-frontend run build`。
 
+**Access token 同步（2026-10-02）**：
+- API client 默认 base URL 为 `/api/admin/v1`，可由 `NEXT_PUBLIC_ADMIN_API_BASE_URL` 覆盖。
+- Access token 保存在 API client 内存、Zustand 登录状态及当前标签页的 `sessionStorage`。页面重载复用已有 token，初始化优先请求 `/auth/me`；refresh token 仍由 HttpOnly cookie 承载。
+- 登录、自动刷新及清除 token 统一经过 `setApiAccessToken`，其变更回调同步更新 Zustand，避免刷新成功后后续请求仍携带旧 token、反复触发 `401 → /auth/refresh`。JSON 请求与文件下载共用此逻辑，同一时间的刷新仍使用 single-flight。
+- `admin:refresh:used:{jti}` 是服务端的 refresh token 防重放标记，保留至被消费的旧 token 到期；不能通过删除标记来替代前端修复，也不应缩短其安全保留时间。
+- 回归测试位于 `admin-frontend/src/lib/auth/auth-store.test.ts`，覆盖连续 JSON / 文件下载请求、并发 401、token 清除、刷新失败及 bootstrap 复用。
+
 ```
 src/
 ├── app/
