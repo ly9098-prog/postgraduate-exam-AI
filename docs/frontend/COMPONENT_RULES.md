@@ -85,6 +85,20 @@
 
 ---
 
+## 跨分包共享组件注册
+
+主包共享组件 `app-dialog` 和 `premium-nav` 在 `miniprogram/app.json` 的
+`usingComponents` 中全局注册，分别指向 `/components/app-dialog/index` 和
+`/components/premium-nav/premium-nav`；页面已有的局部声明保留。
+
+- 当前配置使用 `lazyCodeLoading: requiredComponents` 和 `ignoreDevUnusedFiles: true`；
+  全局注册与组件路径由 `cd miniprogram && node tests/test-component-paths.js` 检查。
+- `app-dialog` 使用显式闭合标签（`<app-dialog ...></app-dialog>`），不使用自闭合写法。
+- 修改共享组件注册后，仍需在微信开发者工具编译并验证分包页面；
+  Node 检查不代表开发者工具打包、模拟器或真机已验证。
+
+---
+
 ## 组件契约：quiz-runner（统一答题 UI）
 
 `miniprogram/subpackages/study/components/quiz-runner/` 是 practice、review-today、wrong-detail 共用的统一答题组件。
