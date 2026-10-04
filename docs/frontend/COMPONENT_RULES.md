@@ -122,3 +122,38 @@ wrong-detail 使用此模式：题目区 + AI 学习建议放在同一个父容�
 - 所有混合文字 + LaTeX 内容经 `formula-content.normalizeMixedContent` → HTML → `mp-html-parser` + KaTeX 插件渲染，链路见 `render-invariant.md`
 - **行内公式横向滚动**：`shouldScrollInlineFormula`——仅当行内公式真正超长（估算可视宽度 > 34 字符）或为 array/matrix 等块环境时才加 `overflow-x:auto` 滚动容器；短公式保持 `overflow:visible`，避免 Android/微信下原生滚动条像灰色下划线出现在短公式下方
 - 公式块复杂度阈值（`prepareFormulaBlocks`）：`complexity > 200` 才 `isScrollable`；`> 185` `is-dense`、`> 120` `is-compact`
+
+---
+
+## 小程序代码质量：包体与媒体预算
+
+2026-10-04 在微信开发者工具 RC `2.02.2607271`、基础库 `3.6.6` 上验证：
+
+- 扫描界面的「主包大小」项实际检查每个编译包，不仅检查主包。修复前超限的是
+  `study` 分包（约 1597 KiB），而不是主包；修复后约 1439 KiB，两项大小检查均通过。
+- 「图片和音频资源」项按全包媒体文件合计检查 200 KiB，而非检查单文件大小。
+  本次按现有 `packOptions.ignore` 统计的媒体从约 500 KiB 降至约 165 KiB。
+- 仅对 `study/components/mp-html/latex/` 中六个已预构建的 `katex*.js` 文件设置
+  `babelSetting.ignore`，避免增强编译将已压缩 vendor 二次展开。
+  不忽略 `latex/index.js` 或其他业务文件，不关闭 ES6/增强编译或代码质量检查。
+- `katex-part-64.js` 的数组单元格分配使用标准 JS `new Array(a.length)`；
+  `study`、`exam` 与 `formulas` 三份 vendor 保持该行为一致。矩阵和 array 公式必须纳入回归，
+  不能只验证简单公式就认定 vendor 可以直接运行。
+- 图片保留 PNG/JPEG 格式、原路径与宽高比，按现有显示尺寸缩小并优化编码；
+  PNG 保留透明通道。它们是有损体积优化，后续替换资源需做视觉检查。
+
+回归入口：
+
+```bash
+cd miniprogram
+node tests/test-main-package-size.js
+node tests/test-package-quality.js
+node tests/test-katex-vendor-runtime.js
+node tests/test-component-paths.js
+```
+
+大小脚本按实际 `packOptions.ignore` 排除文件，对主包/分包设置保守源码预算，
+并将媒体源码合计预算限制为 190 KiB，为开发者工具的 200 KiB 阈值留余量。
+该脚本不是编译器，不能用源码统计替代开发者工具的「重新扫描」；
+本次另在模拟器实际 JS 上下文验证了六个公式的 HTML/DOM-tree 渲染。
+Android/iOS 真机渲染仍未验证。
