@@ -2,5 +2,8 @@
   "name": "MemoGrad-miniprogram",
   "version": "1.0.0",
   "description": "考研智能刷题小程序",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "acorn": "8.16.0"
+  }
 }

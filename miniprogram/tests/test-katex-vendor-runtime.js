@@ -18,6 +18,11 @@ const cases = [
   '\\sum_{i=1}^{n}i',
   '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
   '\\begin{array}{cc}a&b\\\\c&d\\end{array}',
+  '\\hat{x}+\\widehat{xyz}+\\overrightarrow{AB}',
+  '\\underbrace{x+y}_{z}+\\overset{a}{b}',
+  '\\sqrt[3]{x}+\\left(\\frac{x}{y}\\right)',
+  '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}',
+  '\\begin{array}{c|c}a&b\\\\c&d\\end{array}',
 ]
 const run = `
 try {

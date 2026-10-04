@@ -66,6 +66,8 @@ assert.equal(config.setting.enhance, true, 'business code still needs enhanced c
 assert.equal(config.setting.minified, true)
 assert.equal(config.setting.ignoreCodeQuality, undefined, 'quality checks must not be bypassed')
 for (const file of expected) assert.ok(fs.existsSync(path.join(miniRoot, file)))
+// Skipping Babel is safe only when the vendor also satisfies upload grammar.
+require('./test-katex-upload-syntax')
 const app = readJson('app.json')
 assert.equal(app.usingComponents['app-dialog'], '/components/app-dialog/index')
 assert.equal(app.usingComponents['premium-nav'], '/components/premium-nav/premium-nav')

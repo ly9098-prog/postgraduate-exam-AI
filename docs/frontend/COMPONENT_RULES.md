@@ -130,12 +130,17 @@ wrong-detail 使用此模式：题目区 + AI 学习建议放在同一个父容�
 2026-10-04 在微信开发者工具 RC `2.02.2607271`、基础库 `3.6.6` 上验证：
 
 - 扫描界面的「主包大小」项实际检查每个编译包，不仅检查主包。修复前超限的是
-  `study` 分包（约 1597 KiB），而不是主包；修复后约 1439 KiB，两项大小检查均通过。
+  `study` 分包（约 1597 KiB），而不是主包；修复包体与上传语法后约 1440 KiB，两项大小检查均通过。
 - 「图片和音频资源」项按全包媒体文件合计检查 200 KiB，而非检查单文件大小。
   本次按现有 `packOptions.ignore` 统计的媒体从约 500 KiB 降至约 165 KiB。
 - 仅对 `study/components/mp-html/latex/` 中六个已预构建的 `katex*.js` 文件设置
   `babelSetting.ignore`，避免增强编译将已压缩 vendor 二次展开。
   不忽略 `latex/index.js` 或其他业务文件，不关闭 ES6/增强编译或代码质量检查。
+- 跳过 Babel 的 vendor 必须预先满足上传语法要求。2026-10-04 的上传错误
+  `katex-core.js:1:16623 Unexpected token .` 对应 `i?.type`：现代 Node 与模拟器能运行，
+  不代表上传校验能接受。三份 vendor 的 `katex-core.js`、`katex-part-64.js`、
+  `katex-part-970.js` 已仅对可选链/空值合并做标准语法降级，保留空值判断、单次求值语义，
+  没有对整个 vendor 做 ES5 重编译。升级 vendor 时必须同步三份文件并再次运行语法检查。
 - `katex-part-64.js` 的数组单元格分配使用标准 JS `new Array(a.length)`；
   `study`、`exam` 与 `formulas` 三份 vendor 保持该行为一致。矩阵和 array 公式必须纳入回归，
   不能只验证简单公式就认定 vendor 可以直接运行。
@@ -146,14 +151,21 @@ wrong-detail 使用此模式：题目区 + AI 学习建议放在同一个父容�
 
 ```bash
 cd miniprogram
+npm ci  # 安装测试专用 Acorn；node_modules 不参与小程序打包
 node tests/test-main-package-size.js
 node tests/test-package-quality.js
 node tests/test-katex-vendor-runtime.js
+node tests/test-katex-upload-syntax.js
 node tests/test-component-paths.js
 ```
 
 大小脚本按实际 `packOptions.ignore` 排除文件，对主包/分包设置保守源码预算，
 并将媒体源码合计预算限制为 190 KiB，为开发者工具的 200 KiB 阈值留余量。
 该脚本不是编译器，不能用源码统计替代开发者工具的「重新扫描」；
-本次另在模拟器实际 JS 上下文验证了六个公式的 HTML/DOM-tree 渲染。
+本次另在模拟器实际 JS 上下文验证了 11 个公式的 HTML/DOM-tree 渲染。
+`test-katex-upload-syntax.js` 使用 Acorn 的保守 ES2015 语法检查全部 18 个 vendor JS，
+并校验三份文件字节一致；`test-package-quality.js` 同时调用此语法检查。
+Node 回归在独立进程测试 33 个公式案例，包含重音、上下标、矩阵、带分隔线数组和 aligned；
+本次临时对比确认修复前后 HTML 完全一致。语法回归与质量扫描不能代替微信服务器实际上传，
+本次未执行新的版本上传或发布。
 Android/iOS 真机渲染仍未验证。
