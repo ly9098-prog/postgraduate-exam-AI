@@ -167,7 +167,6 @@ aiFromQuestionAnalysis: false,
 aiRegenerating: false,
 aiSkeletonVisible: false,
 aiInlineNotice: '',
-aiReviewExpanded: false,
 contentTransitionClass: '',
 showSwitchMask: false,
 renderTraces: [],
@@ -406,7 +405,6 @@ aiFromQuestionAnalysis: false,
 aiFallback: false,
 aiErrorText: '',
 aiRetryable: true,
-aiReviewExpanded: false,
 isCurrentMastered: _isWqMastered(wq),
 masterSubmitting: false,
 removeSubmitting: false,
@@ -528,10 +526,6 @@ wx.showToast({ title: '缺少错题ID', icon: 'none' })
 return
 }
 this.loadAiAnalysis(wqId)
-},
-toggleAiReview() {
-if (!this.data.aiCards || this.data.aiRegenerating) return
-this.setData({ aiReviewExpanded: !this.data.aiReviewExpanded })
 },
 toggleTeacherActions() {
 if (this.data.teacherLoadingAction) return
@@ -710,7 +704,6 @@ const latestWq = recovered.latestWq || this.data.wq
 this.setData({
 wq: latestWq,
 aiCards: _normalizeAiResult(recovered.normalized),
-aiReviewExpanded: false,
 aiFallback: false,
 aiFromCache: !applyOptions.fromRegeneration,
 aiFromQuestionAnalysis: false,
@@ -770,7 +763,6 @@ this._aiGenerationMarker = String((result && result.generated_at) || this._aiGen
 this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
 this.setData({
 aiCards: _normalizeAiResult(normalized),
-aiReviewExpanded: false,
 aiFallback: false,
 aiFromCache: !!(result && result.from_cache),
 aiFromQuestionAnalysis: false,
@@ -887,7 +879,6 @@ this._aiGenerationMarker = String((result && result.generated_at) || this._aiGen
 this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
 this.setData({
 aiCards: _normalizeAiResult(normalized),
-aiReviewExpanded: false,
 aiFallback: false,
 aiFromCache: !!(result && result.from_cache),
 aiFromQuestionAnalysis: false,
@@ -1492,7 +1483,6 @@ aiFromQuestionAnalysis: false,
 aiFallback: false,
 aiErrorText: '',
 aiRetryable: true,
-aiReviewExpanded: false,
 isCurrentMastered: _isWqMastered(wq),
 masterSubmitting: false,
 removeSubmitting: false,

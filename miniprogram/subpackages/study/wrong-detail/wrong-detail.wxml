@@ -115,7 +115,7 @@
 <view class="ai-brand-icon" aria-hidden="true"><image class="ai-brand-icon-image" src="/assets/icons/wrong-detail/ai-review.png" mode="aspectFit" /></view>
 <view class="ai-head-copy">
 <text class="ai-title">AI 复盘</text>
-<text class="ai-subtitle">先抓住关键，再按需深入</text>
+<text class="ai-subtitle">完整展示错因、补漏重点与复练任务</text>
 </view>
 </view>
 <view class="ai-mark {{aiCards && !aiFallback && !aiCards.formatError ? 'is-ready' : ''}}"><view class="ai-mark-dot"></view><text>{{aiCards && !aiFallback ? (aiCards.formatError ? '需更新' : '已生成') : 'AI'}}</text></view>
@@ -128,7 +128,7 @@
 <view class="skeleton-line short"></view>
 </view>
 </view>
-<view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}} {{aiReviewExpanded ? 'is-expanded' : 'is-collapsed'}}">
+<view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}}">
 <view wx:if="{{aiRegenerating}}" class="ai-regenerating-banner">
 <view class="loading-spinner mini"></view>
 <text>正在重新生成，先保留当前解析</text>
@@ -143,7 +143,7 @@
 <view class="ai-section-copy">
 <text class="ai-section-kicker">WHY IT HAPPENED</text>
 <text class="ai-section-title">错因诊断</text>
-<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.mistakeDiagnosis.needsRich}}" content="{{aiCards.mistakeDiagnosis.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text></view>
+<view class="ai-section-body"><mp-html wx:if="{{aiCards.mistakeDiagnosis.needsRich}}" content="{{aiCards.mistakeDiagnosis.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text></view>
 </view>
 </view>
 <view class="ai-section knowledge" wx:if="{{aiCards.knowledgePatch.raw}}">
@@ -151,7 +151,7 @@
 <view class="ai-section-copy">
 <text class="ai-section-kicker">KNOWLEDGE PATCH</text>
 <text class="ai-section-title">补漏重点</text>
-<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.knowledgePatch.needsRich}}" content="{{aiCards.knowledgePatch.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text></view>
+<view class="ai-section-body"><mp-html wx:if="{{aiCards.knowledgePatch.needsRich}}" content="{{aiCards.knowledgePatch.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text></view>
 </view>
 </view>
 <view class="ai-section task" wx:if="{{aiCards.reviewTask.raw}}">
@@ -159,10 +159,9 @@
 <view class="ai-section-copy">
 <text class="ai-section-kicker">NEXT ACTION</text>
 <text class="ai-section-title">复练任务</text>
-<view class="ai-section-body {{aiReviewExpanded ? '' : 'is-clamped'}}"><mp-html wx:if="{{aiCards.reviewTask.needsRich}}" content="{{aiCards.reviewTask.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.reviewTask.text}}</text></view>
+<view class="ai-section-body"><mp-html wx:if="{{aiCards.reviewTask.needsRich}}" content="{{aiCards.reviewTask.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" /><text user-select="true" wx:else class="ai-text">{{aiCards.reviewTask.text}}</text></view>
 </view>
 </view>
-<button wx:if="{{aiCards.mistakeDiagnosis.raw || aiCards.knowledgePatch.raw || aiCards.reviewTask.raw}}" class="ai-expand-btn" hover-class="ai-expand-pressed" hover-stay-time="70" disabled="{{aiRegenerating}}" bindtap="toggleAiReview" aria-label="{{aiReviewExpanded ? '收起完整复盘' : '查看完整复盘'}}"><text>{{aiReviewExpanded ? '收起详情' : '查看完整复盘'}}</text><image class="ai-expand-arrow-icon {{aiReviewExpanded ? 'is-up' : ''}}" src="/assets/icons/wrong-detail/chevron-down.svg" mode="aspectFit" aria-hidden="true" /></button>
 <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
 <view class="ai-result-tools">
 <view class="ai-hint-row">
