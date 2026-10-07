@@ -1,5 +1,5 @@
 <view class="fr-page">
-  <premium-nav title="速记" variant="light" bind:back="goBack" />
+  <premium-nav title="速记" variant="mint" bind:back="goBack" />
 
   <view class="fr-loading" wx:if="{{loading}}">
     <view class="fr-loading-mark">
@@ -71,9 +71,11 @@
             <view class="fr-bookmark-icon"></view>
           </view>
           <formula-card
+            id="readerFormulaCard"
             card="{{currentCard}}"
             graphImageUrl="{{currentCard.graphImageUrl}}"
             graphThumbnailUrl="{{currentCard.graphThumbnailUrl}}"
+            bind:readingchange="onFormulaReadingChange"
             bind:formulastart="onFormulaGestureStart"
             bind:formulaend="onFormulaGestureEnd"
           />
@@ -92,7 +94,7 @@
     </view>
   </scroll-view>
 
-  <view class="fr-nav-capsule" wx:if="{{!loading && !loadError && currentCard}}">
+  <view class="fr-nav-capsule" wx:if="{{!loading && !loadError && currentCard && !formulaReadingExpanded}}">
     <view
       class="fr-nav-hit {{!canGoPrev || loadingNext ? 'disabled' : ''}}"
       hover-class="fr-nav-pressed"

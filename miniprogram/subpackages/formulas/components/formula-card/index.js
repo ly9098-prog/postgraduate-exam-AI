@@ -1,4 +1,5 @@
 const formulaContent = require('../../utils/formula-content')
+const { prepareReadingLayout, readingViewport } = require('../../utils/formula-reading-layout')
 const katex = require('../../utils/katex/katex.min')
 const Parser = require('../../utils/mp-html-parser')
 const LatexPlugin = require('../../utils/katex/index')
@@ -420,9 +421,17 @@ function prepareFormulaBlocks(card) {
       noteNodes: block.note
         ? parseRichNodes(formulaContent.normalizeMixedContent(block.note))
         : [],
-      mathNodes: renderFormulaNodes(block.latex),
-      formulaItems: (block.formulaParts || []).map(function (item) {
-        return Object.assign({}, item, { mathNodes: renderFormulaNodes(item.latex) })
+      hasWideRows: block.readingRows.some(function (row) { return row.isScrollable }),
+      readingRows: block.readingRows.map(function (row) {
+        var items = row.lines.map(function (latex, index) {
+          return { _key: row._key + '-' + index, mathNodes: renderFormulaNodes(latex) }
+        })
+        return Object.assign({}, row, {
+          lineItems: items,
+          fullLineItem: items.length === 1 ? items[0] : {
+            _key: row._key + '-full', mathNodes: renderFormulaNodes(row.latex),
+          },
+        })
       }),
     })
   })
@@ -461,6 +470,8 @@ Component({
           var patch = {}
 
           if (renderKey !== this.data.cardRenderKey) {
+            if (this.data.expandedBlock || this._readingOpening) this.closeFormulaReading()
+            this._readingLayouts = {}
             patch.cardRenderKey = renderKey
             patch.formulaBlocks = prepareFormulaBlocks(nextCard)
             patch.content = prepareContent(nextCard)
@@ -500,6 +511,10 @@ Component({
   },
 
   data: {
+    expandedBlock: null,
+    expandedHeight: 0,
+    expandedScrollHeight: 0,
+    expandedHeaderHeight: 0,
     cardRenderKey: '',
     formulaBlocks: [],
     content: {
@@ -532,6 +547,11 @@ Component({
   },
 
   lifetimes: {
+    detached() {
+      this._readingToken = (this._readingToken || 0) + 1
+      this._readingOpening = false
+      this._readingLayouts = null
+    },
     attached() {
       this._syncGraphViewportRatio()
       if (!this.data.cardRenderKey && this.data.card) {
@@ -545,6 +565,55 @@ Component({
   },
 
   methods: {
+    openFormulaReading(event) {
+      var index = Number(event.currentTarget.dataset.index)
+      var block = this.data.formulaBlocks[index]
+      if (!Number.isInteger(index) || !block || this._readingOpening || this.data.expandedBlock) return
+      var info = {}
+      try { info = wx.getWindowInfo() } catch (_) {}
+      var viewport = readingViewport(info)
+      var token = this._readingToken = (this._readingToken || 0) + 1
+      this._readingOpening = true
+      this.onFormulaTouchStart()
+      var cache = this._readingLayouts && this._readingLayouts[index]
+      var cacheKey = [viewport.width, viewport.maxHeight, viewport.bottomInset].join(':')
+      var show = (measurements) => {
+        if (token !== this._readingToken || !this._readingOpening) return
+        var layout = cache && cache.source === block && cache.key === cacheKey
+          ? cache.layout : prepareReadingLayout(block, measurements, viewport)
+        this._readingLayouts = this._readingLayouts || {}
+        this._readingLayouts[index] = { source: block, key: cacheKey, layout: layout }
+        this._readingOpening = false
+        // One update supplies final nodes, header and height before native entry.
+        this.setData(layout)
+        this.triggerEvent('readingchange', { expanded: true })
+      }
+      if ((cache && cache.source === block && cache.key === cacheKey) || !this.createSelectorQuery) {
+        show(null)
+        return
+      }
+      var prefix = '.fc-formula-block-' + index
+      var query = this.createSelectorQuery()
+      query.selectAll(prefix + ' .fc-formula-rich').boundingClientRect()
+      query.select(prefix + ' .fc-block-label').boundingClientRect()
+      query.select(prefix + ' .fc-block-note').boundingClientRect()
+      query.exec(show)
+    },
+
+    closeFormulaReading() {
+      if (!this.data.expandedBlock && !this._readingOpening) return
+      var wasVisible = Boolean(this.data.expandedBlock)
+      this._readingToken = (this._readingToken || 0) + 1
+      this._readingOpening = false
+      if (wasVisible) {
+        this.setData({ expandedBlock: null })
+        this.triggerEvent('readingchange', { expanded: false })
+      }
+      this.onFormulaTouchEnd()
+    },
+
+    containFormulaReading() {},
+
     toggleSection(e) {
       const key = e.currentTarget.dataset.key
       if (!key) return

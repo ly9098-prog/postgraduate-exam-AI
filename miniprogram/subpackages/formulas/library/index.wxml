@@ -1,5 +1,5 @@
 <view class="fl-page">
-  <premium-nav title="速记卡" variant="light" bind:back="goBack" />
+  <premium-nav title="速记卡" variant="mint" bind:back="goBack" />
 
   <view class="fl-content">
     <view class="fl-compact-head">

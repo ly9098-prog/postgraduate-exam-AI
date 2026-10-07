@@ -73,6 +73,7 @@ Page({
     canGoPrev: false,
     canGoNext: false,
     readerScrollTop: 0,
+    formulaReadingExpanded: false,
     transitionClass: '',
 
     isRandom: false,
@@ -378,6 +379,10 @@ Page({
     this.setData({ readerScrollTop: 1 }, () => {
       if (this._readerAlive) this.setData({ readerScrollTop: 0 })
     })
+  },
+
+  onFormulaReadingChange(event) {
+    this.setData({ formulaReadingExpanded: Boolean(event.detail && event.detail.expanded) })
   },
 
   onFormulaGestureStart() {

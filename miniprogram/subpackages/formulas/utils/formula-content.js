@@ -1234,6 +1234,45 @@ function normalizeStructuredContent(value, kind) {
   return '<div class="fc-structured-list ' + (isBulleted ? 'is-bulleted' : 'is-plain') + '">' + rows.join('') + '</div>'
 }
 
+/** Split only independent rows, never a derivation, cases or matrix body. */
+function splitIndependentFormulaRows(latex) {
+  var match = latex.match(/^\\begin\{(?:aligned|gathered)\}([\s\S]*)\\end\{(?:aligned|gathered)\}$/)
+  if (!match || /\\(?:begin|end)\{|\\(?:text[A-Za-z]*|substack|subarray|shortstack)\b/.test(match[1])) return []
+  var rows = match[1].split(/\\\\(?:\s*\[[^\]]*\])?/).map(function (row) {
+    return row.trim().replace(/&\s*=/g, '=')
+  }).filter(Boolean)
+  if (rows.length < 2 || rows.some(function (row) {
+    return /&/.test(row) || /^[=+\-]/.test(row) || row.indexOf('=') < 1
+  })) return []
+  return rows
+}
+
+/** Keep both sides verbatim; break only at a single top-level equality. */
+function formulaReadingLines(latex) {
+  if (formulaComplexity(latex) <= 120 || /\\(?:begin|end|verb|langle|rangle|lvert|rvert)\b|\\[{}|]/.test(latex)) return [latex]
+  var depth = 0
+  var equality = -1
+  var inAbsolute = false
+  for (var i = 0; i < latex.length; i++) {
+    var ch = latex.charAt(i)
+    if (ch === '\\') {
+      var command = latex.slice(i).match(/^\\(?:[A-Za-z]+|.)/)
+      if (command) i += command[0].length - 1
+      continue
+    }
+    if (ch === '|') inAbsolute = !inAbsolute
+    if ('{(['.indexOf(ch) >= 0) depth += 1
+    else if ('})]'.indexOf(ch) >= 0) depth -= 1
+    else if (ch === '=' && depth === 0 && !inAbsolute) {
+      if (equality !== -1 || /[<>!:]/.test(latex.slice(0, i).trim().slice(-1))) return [latex]
+      equality = i
+    }
+    if (depth < 0) return [latex]
+  }
+  if (depth !== 0 || inAbsolute || equality <= 0 || equality >= latex.length - 1) return [latex]
+  return [latex.slice(0, equality).trim(), latex.slice(equality).trim()]
+}
+
 function prepareFormulaBlocks(card) {
   var blocks = card && Array.isArray(card.formula_blocks) ? card.formula_blocks : []
   var prepared = []
@@ -1252,8 +1291,9 @@ function prepareFormulaBlocks(card) {
     var rowComplexities = visualRows.map(formulaComplexity)
     var complexity = rowComplexities.length ? Math.max.apply(Math, rowComplexities) : formulaComplexity(latex)
     var isMultiline = visualRows.length > 1
-    var groupedLatex = splitFormulaGroup(latex)
-    var isGrouped = groupedLatex.length >= 3
+    var groupedLatex = splitIndependentFormulaRows(latex)
+    if (!groupedLatex.length) groupedLatex = splitFormulaGroup(latex)
+    var isGrouped = groupedLatex.length >= 2
     prepared.push(Object.assign({}, normalized, {
       latex: latex,
       _key: String(normalized.id || normalized.label || index) + '-' + index + '-' + latex.length,
@@ -1264,7 +1304,15 @@ function prepareFormulaBlocks(card) {
           _key: String(index) + '-' + String(partIndex) + '-' + String(part.length),
         }
       }),
-      // 阈值 200：长但能放进手机宽度的公式（如基本积分公式的根式/有理分式）不再强制横向滚动
+      readingRows: (isGrouped ? groupedLatex : [latex]).map(function (part, partIndex) {
+        return {
+          _key: String(index) + '-reading-' + String(partIndex),
+          latex: part,
+          lines: formulaReadingLines(part),
+          isScrollable: formulaComplexity(part) > 120,
+        }
+      }),
+      // Complexity is a hint, not a width measurement; every row can scroll.
       isScrollable: !isGrouped && complexity > 200,
       sizeClass: !isGrouped && complexity > 185 ? 'is-dense' : (!isGrouped && complexity > 120 ? 'is-compact' : ''),
       isMultiline: !isGrouped && isMultiline,
@@ -1326,6 +1374,7 @@ module.exports = {
   prepareContentHtml: prepareContentHtml,
   prepareFormulaBlocks: prepareFormulaBlocks,
   splitFormulaGroup: splitFormulaGroup,
+  formulaReadingLines: formulaReadingLines,
   sanitizeLatexContent: sanitizeLatexContent,
   normalizeDeterminantNotation: normalizeDeterminantNotation,
   normalizeEnvironmentCommands: normalizeEnvironmentCommands,

@@ -20,7 +20,7 @@
       <view class="fc-core-mark">Σ</view>
     </view>
 
-    <view class="fc-formula-block" wx:for="{{formulaBlocks}}" wx:for-item="block" wx:key="_key">
+    <view class="fc-formula-block fc-formula-block-{{blockIndex}}" wx:for="{{formulaBlocks}}" wx:for-item="block" wx:for-index="blockIndex" wx:key="_key">
       <view class="fc-block-head">
         <rich-text
           class="fc-block-label fc-block-label-rich"
@@ -28,40 +28,23 @@
           nodes="{{block.labelNodes}}"
           user-select="{{true}}"
         />
-        <text class="fc-formula-scroll-hint" wx:if="{{block.isScrollable}}">左右滑动查看完整公式</text>
+        <view class="fc-expand-button" data-index="{{blockIndex}}" bindtap="openFormulaReading" hover-class="fc-control-pressed" role="button" aria-label="放大查看公式"><text>放大查看</text></view>
       </view>
-      <view class="fc-formula-group" wx:if="{{block.isGrouped}}">
-        <view class="fc-formula-group-item" wx:for="{{block.formulaItems}}" wx:for-item="formulaItem" wx:key="_key">
-          <rich-text
-            class="fc-formula-rich"
-            nodes="{{formulaItem.mathNodes}}"
-            user-select="{{true}}"
-          />
+      <view class="fc-formula-list">
+        <view class="fc-formula-row" wx:for="{{block.readingRows}}" wx:for-item="row" wx:key="_key">
+          <scroll-view
+            class="fc-formula-line-scroll"
+            wx:for="{{row.lineItems}}" wx:for-item="line" wx:for-index="lineIndex" wx:key="_key"
+            scroll-x enhanced show-scrollbar="{{false}}" bounces="{{false}}"
+            bindtouchstart="onFormulaTouchStart" bindtouchend="onFormulaTouchEnd" bindtouchcancel="onFormulaTouchEnd"
+          >
+            <view class="fc-reading-line {{row.isScrollable ? 'is-long' : ''}} {{lineIndex > 0 ? 'is-continuation' : ''}}">
+              <rich-text class="fc-formula-rich" nodes="{{line.mathNodes}}" user-select="{{true}}" />
+            </view>
+          </scroll-view>
         </view>
       </view>
-      <view class="fc-formula-scroll-shell {{block.isScrollable ? 'is-scrollable' : ''}} {{block.isMultiline ? 'is-multiline' : ''}} {{block.lineCount >= 3 ? 'has-many-lines' : ''}}" wx:else>
-        <scroll-view
-          class="fc-formula-scroll {{block.isMultiline ? 'is-multiline' : ''}} {{block.lineCount >= 3 ? 'has-many-lines' : ''}}"
-          scroll-x
-          enhanced
-          scroll-left="{{block.scrollLeft}}"
-          show-scrollbar="{{false}}"
-          bounces="{{false}}"
-          bindtouchstart="onFormulaTouchStart"
-          bindtouchend="onFormulaTouchEnd"
-          bindtouchcancel="onFormulaTouchEnd"
-        >
-          <view class="fc-formula-track {{block.isScrollable ? 'is-long' : ''}} {{block.isMultiline ? 'is-multiline' : ''}} {{block.lineCount >= 3 ? 'has-many-lines' : ''}} {{block.sizeClass}}">
-            <rich-text
-              class="fc-formula-rich"
-              nodes="{{block.mathNodes}}"
-              user-select="{{true}}"
-            />
-          </view>
-        </scroll-view>
-        <view class="fc-scroll-edge fc-scroll-edge-left" wx:if="{{block.isScrollable}}"></view>
-        <view class="fc-scroll-edge fc-scroll-edge-right" wx:if="{{block.isScrollable}}"></view>
-      </view>
+      <text class="fc-row-scroll-hint" wx:if="{{block.hasWideRows}}">超出屏幕的部分可左右滑动查看</text>
       <rich-text
         class="fc-block-note"
         wx:if="{{block.noteNodes && block.noteNodes.length}}"
@@ -209,3 +192,37 @@
     </view>
   </view>
 </view>
+
+<!-- Native page-container consumes Back while expanded; the reader's scroll
+     position remains unchanged because its card is never replaced. -->
+<page-container
+  show="{{!!expandedBlock}}" position="bottom" round="{{false}}"
+  close-on-slide-down="{{false}}" bind:afterleave="closeFormulaReading"
+  custom-style="height:{{expandedHeight}}px;background:#FBFFFD;border-radius:24px 24px 0 0;overflow:hidden;"
+>
+  <view class="fc-expanded-reading" catchtap="containFormulaReading" catchtouchmove="containFormulaReading">
+    <view class="fc-expanded-header" style="height:{{expandedHeaderHeight}}px;">
+      <view class="fc-expanded-heading">
+        <rich-text class="fc-expanded-title" wx:if="{{expandedBlock.labelNodes.length}}" nodes="{{expandedBlock.labelNodes}}" />
+        <text class="fc-expanded-title" wx:else>公式阅读</text>
+        <text class="fc-expanded-subtitle" wx:if="{{expandedBlock.hasWideRows}}">保留完整公式，超宽部分可左右滑动</text>
+      </view>
+      <view class="fc-reading-close" bindtap="closeFormulaReading" hover-class="fc-control-pressed" role="button" aria-label="关闭公式阅读"><view class="fc-close-icon" aria-hidden="true"></view></view>
+    </view>
+    <scroll-view class="fc-expanded-scroll" style="height:{{expandedScrollHeight}}px;" scroll-y enhanced show-scrollbar="{{false}}">
+      <view class="fc-expanded-content">
+        <view class="fc-formula-row" wx:for="{{expandedBlock.readingRows}}" wx:for-item="row" wx:key="_key">
+          <scroll-view class="fc-formula-line-scroll"
+            wx:for="{{row.lineItems}}" wx:for-item="line" wx:for-index="lineIndex" wx:key="_key"
+            scroll-x enhanced show-scrollbar="{{false}}" bounces="{{false}}"
+          >
+            <view class="fc-reading-line {{row.isScrollable ? 'is-long' : ''}} {{lineIndex > 0 ? 'is-continuation' : ''}}">
+              <rich-text class="fc-formula-rich" nodes="{{line.mathNodes}}" user-select="{{true}}" />
+            </view>
+          </scroll-view>
+        </view>
+        <rich-text class="fc-block-note" wx:if="{{expandedBlock.noteNodes.length}}" nodes="{{expandedBlock.noteNodes}}" user-select="{{true}}" />
+      </view>
+    </scroll-view>
+  </view>
+</page-container>
