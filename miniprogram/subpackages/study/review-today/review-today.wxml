@@ -1,7 +1,7 @@
-<page-meta page-style="{{phase === 'overview' || phase === 'empty' ? 'height: 100vh; overflow: hidden;' : ''}}" />
+<page-meta page-style="{{phase === 'overview' || phase === 'empty' || phase === 'reviewing' ? 'height: 100vh; overflow: hidden;' : ''}}" />
 <premium-nav
   title="今日复习"
-  variant="{{phase === 'reviewing' ? 'dark' : 'light'}}"
+  variant="mint"
   bind:back="onNavBack"
 />
 <view wx:if="{{phase === 'loading'}}" class="page state-page loading-page">
@@ -101,7 +101,7 @@
 </button>
 </view>
 </view>
-<view wx:elif="{{phase === 'reviewing'}}" class="page reviewing-page">
+<view wx:elif="{{phase === 'reviewing'}}" class="page reviewing-page" style="height: calc(100vh - {{reviewNavigationHeight}}px);">
 <view class="review-context-bar">
 <text class="review-context-group">第 {{currentBatchNo}} / {{totalBatchCount}} 组</text>
 <text class="review-context-progress">今日已完成 {{todayCompletedCount}} / {{todayDueCount}}</text>
@@ -116,8 +116,8 @@
 </view>
 </view>
 <view class="review-practice-content" wx:else>
-<quiz-runner
-      theme="premium-review"
+<quiz-runner class="review-runner"
+      theme="default"
       mode="review"
       title="今日复习"
       subtitle="{{runnerSubtitle}}"
@@ -135,8 +135,8 @@
       submitText="提交本组复盘"
       showMasterButton="{{true}}"
       swipeThroughOptions="{{true}}"
-      flowLayout="{{true}}"
-      compactBottom="{{true}}"
+      flowLayout="{{false}}"
+      compactBottom="{{false}}"
       bind:selectoption="selectOption"
       bind:selectblankoption="selectBlankOption"
       bind:prev="goPrev"

@@ -74,6 +74,7 @@ function sanitizePendingItems(raw) {
 Page({
   data: {
     statusBarHeight: 0,
+    navBarHeight: 44,
     loading: true,
     errorText: '',
     submitting: false,
@@ -94,7 +95,15 @@ Page({
   onLoad(options) {
     const sys = wx.getWindowInfo ? (wx.getWindowInfo() || {}) : {}
     const attemptId = Number(options && options.attempt_id)
-    this.setData({ statusBarHeight: Number(sys.statusBarHeight || 0), attemptId })
+    const statusBarHeight = Number(sys.statusBarHeight || 0)
+    let navBarHeight = 44
+    try {
+      const menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect()
+      if (menu && menu.height > 0 && menu.top >= statusBarHeight) {
+        navBarHeight = Math.max(40, (menu.top - statusBarHeight) * 2 + menu.height)
+      }
+    } catch (e) {}
+    this.setData({ statusBarHeight, navBarHeight, attemptId })
     if (!attemptId) {
       this.setData({ loading: false, errorText: '缺少考试记录 ID' })
       return

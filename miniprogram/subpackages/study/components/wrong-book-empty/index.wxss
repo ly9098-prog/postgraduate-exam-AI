@@ -1,0 +1,17 @@
+.empty-state {
+  padding: 38rpx 24rpx 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.empty-image { width: 430rpx; max-width: 100%; height: auto; display: block; }
+.empty-title { margin-top: 56rpx; color: #27343F; font-size: 44rpx; font-weight: 800; line-height: 1.28; }
+.empty-desc { margin-top: 18rpx; color: #89949E; font-size: 28rpx; line-height: 1.7; }
+.empty-desc-line { display: block; }
+
+/* Result panels use the same illustration at an inset, supporting scale. */
+.empty-compact{padding:20rpx 16rpx 24rpx}
+.empty-compact .empty-image{width:224rpx}
+.empty-compact .empty-title{margin-top:16rpx;font-size:30rpx;font-weight:700;line-height:1.4}
+.empty-compact .empty-desc{max-width:460rpx;margin-top:10rpx;font-size:22rpx;line-height:1.6}

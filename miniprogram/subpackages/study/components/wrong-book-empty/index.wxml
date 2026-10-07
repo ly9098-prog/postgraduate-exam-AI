@@ -1,0 +1,8 @@
+<view class="empty-state {{variant === 'compact' ? 'empty-compact' : ''}}">
+  <image class="empty-image" src="/assets/images/wrong-book-empty.png" mode="widthFix" aria-label="暂无错题" />
+  <text class="empty-title">{{title}}</text>
+  <view class="empty-desc">
+    <text class="empty-desc-line">{{description}}</text>
+    <text class="empty-desc-line" wx:if="{{secondaryDescription}}">{{secondaryDescription}}</text>
+  </view>
+</view>

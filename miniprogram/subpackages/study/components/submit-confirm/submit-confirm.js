@@ -1,8 +1,10 @@
 
 Component({
+properties: { theme: { type: String, value: 'default' } },
 data: {
 visible: false,
 scenario: 'all-done',
+layout: 'default',
 title: '',
 message: '',
 confirmText: '确定提交',
@@ -17,6 +19,7 @@ if (this._confirmResolve) return Promise.resolve(false)
 this.setData({
 visible: true,
 scenario: opts.scenario || 'all-done',
+layout: opts.layout === 'minimal' ? 'minimal' : 'default',
 title: opts.title || '',
 message: opts.message || '',
 confirmText: opts.confirmText || '确定提交',

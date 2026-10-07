@@ -1,5 +1,5 @@
 <view class="page">
-<submit-confirm id="submitConfirm" />
+<submit-confirm id="submitConfirm" theme="mint" />
 <page-container
     show="{{practiceExitGuardVisible}}"
     position="bottom"
@@ -20,7 +20,7 @@
 </view>
 </view>
 <view class="setup" wx:if="{{entryResolved && !started && !launchingPreset}}">
-<premium-nav title="刷题" variant="light" bind:back="goBack" />
+<premium-nav title="刷题" variant="mint" bind:back="goBack" />
 <view class="setup-error-card" wx:if="{{errorText}}">
 <text class="setup-error-icon">⚠</text>
 <text class="setup-error-text">{{errorText}}</text>
@@ -34,7 +34,7 @@
 <text class="hero-eyebrow">PRACTICE 01</text>
 <view class="hero-subject-action" hover-class="soft-pressed" bindtap="openSubjectSheet">
 <text class="hero-subject">{{selectedSubjectName || '选择科目'}}</text>
-<text class="hero-subject-arrow">›</text>
+<text class="hero-subject-arrow line-icon icon-chevron-right" aria-hidden="true"></text>
 </view>
 </view>
 <view class="hero-metrics">
@@ -66,13 +66,13 @@
           bindtap="startPractice"
         >
 <text>{{selectedSubjectId ? '开始本组练习' : '请先选择科目'}}</text>
-<view class="hero-start-arrow"><text>›</text></view>
+<view class="hero-start-arrow"><text class="line-icon icon-chevron-right" aria-hidden="true"></text></view>
 </button>
 <view class="hero-config" hover-class="soft-pressed" bindtap="toggleSettings">
-<text class="hero-config-text">{{selectedModeLabel}} · {{count}}题 · 约{{estimatedMinutes}}分钟</text>
+<view class="hero-config-icon"><image src="/assets/icons/practice/{{selectedMode === 'sequential' ? 'list-ordered' : (selectedMode === 'smart' ? 'target' : 'shuffle')}}.svg" mode="aspectFit" aria-hidden="true"></image></view><text class="hero-config-text">{{selectedModeLabel}} · {{count}}题 · 约{{estimatedMinutes}}分钟</text>
 <view class="hero-config-edit">
 <text>{{settingsExpanded ? '收起' : '调整'}}</text>
-<text class="config-chevron {{settingsExpanded ? 'up' : ''}}">⌄</text>
+<text class="config-chevron line-icon icon-chevron-down {{settingsExpanded ? 'up' : ''}}" aria-hidden="true"></text>
 </view>
 </view>
 </view>
@@ -83,7 +83,7 @@
 <text class="panel-kicker">CONTROL PANEL</text>
 </view>
 <view class="panel-collapse" hover-class="soft-pressed" bindtap="toggleSettings">
-<text>收起</text><text class="panel-collapse-arrow">⌃</text>
+<text>收起</text><text class="panel-collapse-arrow line-icon icon-chevron-down up" aria-hidden="true"></text>
 </view>
 </view>
 <view class="setting-block">
@@ -93,22 +93,22 @@
 </view>
 <view class="mode-row">
 <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="random">
-<text class="mode-icon">↝</text>
+<image class="mode-icon-image" src="/assets/icons/practice/shuffle.svg" mode="aspectFit" aria-hidden="true"></image>
 <text class="mode-title">随机挑战</text>
 <text class="mode-desc">综合查漏</text>
-<view class="option-check" wx:if="{{selectedMode==='random'}}">✓</view>
+<view class="option-check" wx:if="{{selectedMode==='random'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="sequential">
-<text class="mode-icon">≡</text>
+<image class="mode-icon-image" src="/assets/icons/practice/list-ordered.svg" mode="aspectFit" aria-hidden="true"></image>
 <text class="mode-title">顺序推进</text>
 <text class="mode-desc">按题库顺序续刷</text>
-<view class="option-check" wx:if="{{selectedMode==='sequential'}}">✓</view>
+<view class="option-check" wx:if="{{selectedMode==='sequential'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 <view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="smart">
-<text class="mode-icon">◎</text>
+<image class="mode-icon-image" src="/assets/icons/practice/target.svg" mode="aspectFit" aria-hidden="true"></image>
 <text class="mode-title">智能推荐</text>
 <text class="mode-desc">薄弱优先</text>
-<view class="option-check" wx:if="{{selectedMode==='smart'}}">✓</view>
+<view class="option-check" wx:if="{{selectedMode==='smart'}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 </view>
 </view>
@@ -120,15 +120,15 @@
 <view class="count-row">
 <view class="count-btn {{count===5 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="5">
 <text class="count-main">5题</text><text class="count-time">约10分钟</text>
-<view class="option-check count-check" wx:if="{{count===5}}">✓</view>
+<view class="option-check count-check" wx:if="{{count===5}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 <view class="count-btn {{count===10 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="10">
 <text class="count-main">10题</text><text class="count-time">约20分钟</text>
-<view class="option-check count-check" wx:if="{{count===10}}">✓</view>
+<view class="option-check count-check" wx:if="{{count===10}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 <view class="count-btn {{count===20 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="20">
 <text class="count-main">20题</text><text class="count-time">约40分钟</text>
-<view class="option-check count-check" wx:if="{{count===20}}">✓</view>
+<view class="option-check count-check" wx:if="{{count===20}}"><text class="setting-check-icon line-icon icon-check" aria-hidden="true"></text></view>
 </view>
 </view>
 </view>
@@ -136,11 +136,11 @@
 <view class="recent-section" wx:if="{{recentSubjects && recentSubjects.length > 0}}">
 <view class="section-heading-row">
 <view>
-<text class="surface-title">最近使用科目</text>
 <text class="surface-kicker">RECENT SUBJECTS</text>
+<text class="surface-title">最近使用科目</text>
 </view>
 <view class="surface-action" hover-class="soft-pressed" bindtap="openSubjectSheet">
-<text>科目</text><text>›</text>
+<text>科目</text><text class="line-icon icon-chevron-right surface-action-arrow" aria-hidden="true"></text>
 </view>
 </view>
 <scroll-view scroll-x enhanced enable-flex bounces="{{false}}" show-scrollbar="{{false}}" class="recent-scroll">
@@ -149,23 +149,23 @@
               wx:for="{{recentSubjects}}"
               wx:key="subject_id"
               class="recent-card {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
+              aria-role="button"
+              aria-label="{{item.display_name}}，{{selectedSubjectId === item.subject_id ? '当前科目' : '切换科目'}}"
+              aria-pressed="{{selectedSubjectId === item.subject_id}}"
               hover-class="recent-card-pressed"
               bindtap="chooseRecentSubject"
               data-subject-id="{{item.subject_id}}"
               data-subject-name="{{item.display_name}}"
               data-has-children="{{item.has_children}}"
             >
-<view class="recent-card-top">
-<view class="recent-mark"><text>{{item.mark}}</text></view>
-<view class="recent-selected-badge {{selectedSubjectId === item.subject_id ? 'visible' : ''}}">✓</view>
+<view class="recent-mark">
+<image wx:if="{{item.icon_src}}" class="recent-subject-icon" src="{{item.icon_src}}" mode="aspectFit" aria-hidden="true" />
+<text wx:else>{{item.mark}}</text>
 </view>
 <view class="recent-card-copy">
 <text class="recent-name">{{item.display_name}}</text>
 </view>
-<view class="recent-card-footer">
-<view class="recent-status-dot"></view>
-<text class="recent-status-text">{{selectedSubjectId === item.subject_id ? '当前科目' : item.scope_label}}</text>
-</view>
+<view class="recent-arrow" aria-hidden="true"><view class="recent-arrow-line"></view></view>
 </view>
 </view>
 </scroll-view>
@@ -251,9 +251,9 @@
                     data-subject-id="{{item.subject_id}}"
                     wx:if="{{item.children && item.children.length > 0}}"
                   >
-<text class="parent-arrow {{expandedSubjectId === item.subject_id ? 'up' : ''}}">›</text>
+<text class="parent-arrow line-icon icon-chevron-right {{expandedSubjectId === item.subject_id ? 'up' : ''}}" aria-hidden="true"></text>
 </view>
-<text class="parent-arrow parent-leaf-arrow" wx:else>›</text>
+<text class="parent-arrow parent-leaf-arrow line-icon icon-chevron-right" wx:else aria-hidden="true"></text>
 </view>
 </view>
 <view class="child-subject-wrap" wx:if="{{expandedSubjectId === item.subject_id && item.flat_children && item.flat_children.length > 0}}">
@@ -301,7 +301,7 @@
       submitDisabled="{{submitted}}"
       showBackButton="{{true}}"
       customNavigation="{{true}}"
-      heroCollapseEnabled="{{true}}"
+      navigationBarHeight="{{navBarHeight}}"
       swipeThroughOptions="{{true}}"
       bind:selectoption="selectOption"
       bind:selectblankoption="selectBlankOption"

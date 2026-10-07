@@ -891,6 +891,9 @@ display_name: item.display_name,
 parent_subject_id: Number(item.parent_subject_id || item.subject_id),
 has_children: hasChildren,
 mark: this._subjectMark(item.display_name),
+icon_src: this._subjectMark(item.display_name) === '</>'
+? '/assets/icons/practice-subject/code-xml.svg'
+: this._subjectIconMeta(item.display_name).src,
 scope_label: hasChildren ? '全部范围' : '继续练习',
 }
 })
@@ -1928,7 +1931,8 @@ const showExitConfirm = hasPendingSubmit
 ? this._showSubmitConfirm.bind(this)
 : this._showSubmitConfirmPaused.bind(this)
 confirmed = await showExitConfirm({
-scenario: 'danger',
+scenario: 'info',
+layout: 'minimal',
 title: '退出练习？',
 message: retryBlocked
 ? '本次提交未通过，退出后可重新开始。'
@@ -1954,7 +1958,38 @@ this._feedbackTimer = null
 }
 this._resetSession()
 this._pendingResultUrl = ''
-this._returnToLaunchOrigin()
+this._submittedResultPayload = null
+// The runner lives inside this page. Restore its setup surface rather than
+// popping the page back to home (or a knowledge-map launch origin).
+this._launchPreset = null
+this._fastLaunchEligible = false
+this._launchKnowledgePoint = ''
+this._launchKnowledgePointId = null
+this._launchIncludeDescendants = false
+this._launchQuestionIds = ''
+this._launchAllowRepeat = false
+this._launchSource = ''
+this._launchPlanToken = ''
+this._launchReturnTo = ''
+this.setData({
+started: false,
+loading: false,
+launchingPreset: false,
+submitting: false,
+submitted: false,
+practiceExitGuardVisible: false,
+questions: [],
+currentQuestion: null,
+currentAnswerState: null,
+currentIndex: 0,
+totalQuestions: 0,
+answeredCount: 0,
+progressPercent: 0,
+elapsedText: '00:00',
+errorText: '',
+feedbackVisible: false,
+})
+if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ scrollTop: 0, duration: 0 })
 },
 _isSubmissionLocked() {
 if (!this._practiceSession || !this._practiceSession.submissionSnapshot) return false

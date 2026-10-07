@@ -1,11 +1,12 @@
 {
   "navigationStyle": "custom",
   "navigationBarTitleText": "练习结果",
-  "backgroundColor": "#F3F4F1",
-  "backgroundColorTop": "#10251A",
-  "backgroundColorBottom": "#F3F4F1",
+  "backgroundColor": "#F3FBF8",
+  "backgroundColorTop": "#EAF9F4",
+  "backgroundColorBottom": "#F3FBF8",
   "disableScroll": true,
   "usingComponents": {
-    "app-dialog": "/components/app-dialog/index"
+    "app-dialog": "/components/app-dialog/index",
+    "wrong-book-empty": "../components/wrong-book-empty/index"
   }
 }

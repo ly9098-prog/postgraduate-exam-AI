@@ -1,4 +1,4 @@
-<view class="sc-overlay {{visible ? 'sc-visible' : ''}}" catchtap="onMaskTap" catchtouchmove="noop">
+<view class="sc-overlay sc-theme-{{theme}} {{visible ? 'sc-visible' : ''}}" catchtap="onMaskTap" catchtouchmove="noop">
   <view class="sc-card scenario-{{scenario}} {{mode === 'options' ? 'sc-card-options' : ''}} sc-card-layout-{{layout}}" catchtap="noop">
     <view class="sc-top-accent" wx:if="{{mode === 'options' || layout !== 'exam-start'}}"></view>
 

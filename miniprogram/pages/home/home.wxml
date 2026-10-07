@@ -293,7 +293,6 @@
   </view>
 
   <view class="growth-note page-enter delay-three">
-    <view class="growth-note-line"></view>
     <view class="growth-note-copy">
       <text class="growth-note-label">TODAY'S NOTE</text>
       <text class="growth-note-text">{{dailyBoostText}}</text>

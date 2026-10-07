@@ -1,8 +1,8 @@
 {
   "navigationStyle": "custom",
-  "backgroundColor": "#F4F4EE",
-  "backgroundColorTop": "#F4F4EE",
-  "backgroundColorBottom": "#F4F4EE",
+  "backgroundColor": "#F3FBF8",
+  "backgroundColorTop": "#F3FBF8",
+  "backgroundColorBottom": "#F3FBF8",
   "usingComponents": {
     "math-question": "/subpackages/study/components/math-question/math-question",
     "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",

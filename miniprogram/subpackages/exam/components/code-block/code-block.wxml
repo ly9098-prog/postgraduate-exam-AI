@@ -1,0 +1,16 @@
+<template name="study-code-block">
+<scroll-view
+    scroll-x
+    enhanced
+    show-scrollbar="{{false}}"
+    class="runner-code-wrapper {{codeBlockClass || ''}}"
+    data-swipe-block="1"
+  >
+<view class="runner-code-lines" data-swipe-block="1">
+<view class="runner-code-line" wx:for="{{codeLines}}" wx:for-item="codeLine" wx:key="no" data-swipe-block="1">
+<text class="runner-code-no" data-swipe-block="1">{{codeLine.no}}</text>
+<text decode="false" space="preserve" class="runner-code-text" data-swipe-block="1">{{codeLine.text}}</text>
+</view>
+</view>
+</scroll-view>
+</template>

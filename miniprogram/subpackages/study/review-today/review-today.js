@@ -105,6 +105,7 @@ ease_factor: raw.ease_factor || 2.5,
 }
 Page({
 data: {
+reviewNavigationHeight: 64,
 phase: 'loading',
 elapsedText: '00:00',
 todayDueCount: 0,
@@ -288,6 +289,17 @@ if (position && successfulIds.has(String(position.schedule_id))) position = null
 this._writeReviewDraft({ answers: entries, position })
 },
 onLoad(options) {
+let statusBar = 20
+try {
+  const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
+  statusBar = Number(info.statusBarHeight || 20)
+} catch (_) {}
+let menu = null
+try { menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect() } catch (_) {}
+const menuTop = menu && menu.top ? Number(menu.top) : statusBar + 6
+const menuHeight = menu && menu.height ? Number(menu.height) : 32
+this.setData({ reviewNavigationHeight: statusBar + menuHeight + Math.max(4, menuTop - statusBar) * 2 })
+
 this._alive = true
 this._overviewRequestSeq = 0
 this._flowRequestSeq = 0

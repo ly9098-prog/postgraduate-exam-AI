@@ -422,3 +422,15 @@
     font-size: 20rpx;
   }
 }
+
+/* Opt-in mint study result dialogs; unrelated/default callers are unchanged. */
+.sc-theme-mint { background: rgba(35,72,60,.42); }
+.sc-theme-mint .sc-top-accent { background: linear-gradient(90deg,#3A6F5B,#7ED8B5); }
+.sc-theme-mint .sc-icon-circle { background: #EAF9F4; box-shadow: 0 0 0 12rpx rgba(126,216,181,.12); }
+.sc-theme-mint .sc-icon-line { color: #3A6F5B; }
+.sc-theme-mint .sc-title { color: #23483C; }
+.sc-theme-mint .sc-msg, .sc-theme-mint .sc-eyebrow { color: #507568; }
+.sc-theme-mint .sc-btn-cancel { background: #EAF9F4; color: #3A6F5B; border-color: #D8EEE6; }
+.sc-theme-mint .sc-btn-confirm { color: #FFFFFF; background: #3A6F5B; box-shadow: 0 10rpx 24rpx rgba(58,111,91,.15); }
+.sc-theme-mint .sc-confirm-arrow { background: #7ED8B5; color: #23483C; }
+.sc-theme-mint .scenario-danger .sc-btn-confirm { background: #C95D52; }

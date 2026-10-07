@@ -36,6 +36,7 @@ showSubmitButton: { type: Boolean, value: true },
 showNavigation: { type: Boolean, value: true },
 showBackButton: { type: Boolean, value: false },
 customNavigation: { type: Boolean, value: false },
+navigationBarHeight: { type: Number, value: 44 },
 swipeEnabled: { type: Boolean, value: true },
 swipeThroughOptions: { type: Boolean, value: false },
 allowSwipeInReadonly: { type: Boolean, value: false },
@@ -43,7 +44,6 @@ compactReviewMode: { type: Boolean, value: false },
 externalSwitchAnimation: { type: Boolean, value: false },
 flowLayout: { type: Boolean, value: false },
 compactBottom: { type: Boolean, value: false },
-heroCollapseEnabled: { type: Boolean, value: true },
 loading: { type: Boolean, value: false },
 errorText: { type: String, value: '' },
 emptyText: { type: String, value: '' },
@@ -51,9 +51,10 @@ renderErrorText: { type: String, value: '' },
 },
 data: {
 showSheet: false,
-heroCollapsed: false,
 questionScrollIntoView: '',
 animClass: '',
+questionDirection: 'left',
+_displayQuestion: null,
 _animating: false,
 _touchX: undefined,
 _touchY: undefined,
@@ -74,14 +75,27 @@ created: function () {
 this._lastRenderModel = null
 this._lastQuestionId = null
 this._hasRenderedQuestion = false
-this._questionResetPending = false
 this._lastQuestionScrollTop = 0
-this._heroCollapseLockUntil = 0
+this._switchTargetIndex = null
+this._switchDirection = 'left'
+this._switchPhase = ''
+this._switchTimer = null
+this._viewportResetTimer = null
+this._switchFallbackTimer = null
+this._detached = false
+},
+lifetimes: {
+detached: function () {
+this._detached = true
+clearTimeout(this._switchTimer)
+clearTimeout(this._switchFallbackTimer)
+clearTimeout(this._viewportResetTimer)
+},
 },
 observers: {
 'currentQuestion, answerState': function (q, answerState) {
 if (!q) {
-this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _optionList: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _isMultiBlankMultiple: false, _renderUnknownMode: false, _renderFallbackText: '' })
+this.setData({ _displayQuestion: null, _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _optionList: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _isMultiBlankMultiple: false, _renderUnknownMode: false, _renderFallbackText: '' })
 this._lastRenderModel = null
 this._lastQuestionId = null
 this._hasRenderedQuestion = false
@@ -99,7 +113,7 @@ var renderModelChanged = this._lastRenderModel !== model
 var shouldResetViewport = wasRendered && questionChanged
 this._hasRenderedQuestion = true
 this._lastRenderModel = model
-var data = {}
+var data = { _displayQuestion: q }
 if (renderModelChanged) {
 var label = q._typeLabel || this._typeLabel(q)
 var codeLines = model.mode === 'CODE' ? this._splitCodeLines(model.rawText) : []
@@ -184,28 +198,36 @@ q._selectedFlags || {}
 }
 }
 data._optionList = optionList
-if (shouldResetViewport) data.heroCollapsed = false
-this.setData(data)
-if (shouldResetViewport) this._requestQuestionViewportReset()
+// Render from a local snapshot, never directly from the incoming property.
+// This keeps the stem, options and motion in the same view-layer commit.
+var resetViewport = shouldResetViewport && !this.data.flowLayout && !this.data.compactReviewMode && Number(this._lastQuestionScrollTop || 0) > 1
+if (resetViewport) {
+this._lastQuestionScrollTop = 0
+data.questionScrollIntoView = 'runner-scroll-top-anchor'
+}
+var switching = questionChanged && this._switchTargetIndex !== null
+if (switching) {
+clearTimeout(this._switchFallbackTimer)
+this._switchTargetIndex = null
+this._switchPhase = 'enter'
+data.animClass = this._switchDirection === 'left' ? 'slide-in-left' : 'slide-in-right'
+}
+var self = this
+this.setData(data, function () {
+if (self._detached) return
+if (resetViewport) {
+clearTimeout(self._viewportResetTimer)
+self._viewportResetTimer = setTimeout(function () {
+if (!self._detached) self.setData({ questionScrollIntoView: '' })
+}, 0)
+}
+if (switching && self._switchPhase === 'enter') {
+self._switchTimer = setTimeout(function () { self._finishQuestionSwitch() }, 300)
+}
+})
 },
 },
 methods: {
-_requestQuestionViewportReset: function () {
-var self = this
-if (this._questionResetPending) return
-this._questionResetPending = true
-this._lastQuestionScrollTop = 0
-this._heroCollapseLockUntil = 0
-setTimeout(function () {
-self._questionResetPending = false
-self.setData({
-heroCollapsed: false,
-questionScrollIntoView: 'runner-scroll-top-anchor',
-}, function () {
-self.setData({ questionScrollIntoView: '' })
-})
-}, 0)
-},
 _typeLabel: function (q) {
 if (!q) return ''
 if (q._hasBlankOptionGroups || q.question_type === 'multi_blank_choice') return '多空（单选）选择题'
@@ -262,6 +284,7 @@ if (this.data.currentIndex >= this.data.totalCount - 1) return
 this._slideTo(this.data.currentIndex + 1, 'left')
 },
 goQuestion: function (e) {
+if (this.data._animating) return
 var idx = parseInt(e.currentTarget.dataset.index, 10)
 if (isNaN(idx) || idx < 0 || idx >= this.data.totalCount) return
 if (idx === this.data.currentIndex) {
@@ -269,25 +292,44 @@ this.setData({ showSheet: false })
 return
 }
 this.setData({ showSheet: false })
-this.triggerEvent('jump', { index: idx })
+this._slideTo(idx, idx > this.data.currentIndex ? 'left' : 'right', 'jump')
 },
-_slideTo: function (nextIdx, dir) {
-var self = this
-if (this.data.externalSwitchAnimation) {
-this.triggerEvent(dir === 'left' ? 'next' : 'prev', { index: nextIdx })
+onQuestionAnimationEnd: function (e) {
+var name = e && e.detail && e.detail.animationName
+if (this._switchPhase === 'enter' && (name === 'runnerQuestionInLeft' || name === 'runnerQuestionInRight')) {
+this._finishQuestionSwitch()
+}
+},
+_finishQuestionSwitch: function () {
+this._switchPhase = ''
+clearTimeout(this._switchTimer)
+clearTimeout(this._switchFallbackTimer)
+this._switchTargetIndex = null
+if (this._detached) return
+this.setData({ animClass: '', _animating: false })
+},
+_slideTo: function (nextIdx, dir, eventName) {
+if (this.data._animating) return
+var event = eventName || (dir === 'left' ? 'next' : 'prev')
+// Compact review and parents with their own animation keep their existing flow.
+if (this.data.externalSwitchAnimation || this.data.compactReviewMode ||
+(this.data.mode !== 'practice' && this.data.mode !== 'review' && this.data.mode !== 'exam')) {
+this.triggerEvent(event, { index: nextIdx })
 return
 }
-this.data._animating = true
-this.setData({ animClass: dir === 'left' ? 'slide-out-left' : 'slide-out-right' })
-setTimeout(function () {
-self.triggerEvent(dir === 'left' ? 'next' : 'prev', { index: nextIdx })
-self.setData({ animClass: 'slide-in' }, function () {
-self.data._animating = false
+var self = this
+this._switchTargetIndex = nextIdx
+this._switchDirection = dir
+this._switchPhase = 'exit'
+this.setData({ _animating: true, animClass: 'question-fade-out', questionDirection: dir }, function () {
+if (self._detached) return
+self._switchTimer = setTimeout(function () {
+if (self._detached) return
+// Recover visibility and unlock input if a parent rejects the switch.
+self._switchFallbackTimer = setTimeout(function () { self._finishQuestionSwitch() }, 800)
+self.triggerEvent(event, { index: nextIdx })
+}, 100)
 })
-setTimeout(function () {
-self.setData({ animClass: '' })
-}, 150)
-}, 110)
 },
 onTouchStart: function (e) {
 if (!this.data.swipeEnabled || this.data._animating) return
@@ -338,33 +380,6 @@ if (this.data.flowLayout || this.data.compactReviewMode) return
 var top = e && e.detail ? Number(e.detail.scrollTop || 0) : 0
 if (!isFinite(top) || top < 0) top = 0
 this._lastQuestionScrollTop = top
-if (this.data.heroCollapseEnabled === false) {
-if (this.data.heroCollapsed) this.setData({ heroCollapsed: false })
-return
-}
-var now = Date.now()
-if (this.data.heroCollapsed) return
-if (top > 34 && now >= this._heroCollapseLockUntil) {
-this._heroCollapseLockUntil = now + 260
-this.setData({ heroCollapsed: true })
-}
-},
-_expandHero: function () {
-if (!this.data.heroCollapsed) return
-var self = this
-this._heroCollapseLockUntil = Date.now() + 420
-this._lastQuestionScrollTop = 0
-this.setData({
-heroCollapsed: false,
-questionScrollIntoView: 'runner-scroll-top-anchor',
-}, function () {
-setTimeout(function () {
-self.setData({ questionScrollIntoView: '' })
-}, 0)
-})
-},
-expandHero: function () {
-this._expandHero()
 },
 toggleSheet: function () {
 this.setData({ showSheet: !this.data.showSheet })
@@ -374,7 +389,7 @@ closeSheet: function () {
 this.setData({ showSheet: false })
 },
 toggleMark: function () {
-if (this.data.readonly || this.data.submitted) return
+if (this.data._animating || this.data.readonly || this.data.submitted) return
 this.triggerEvent('togglemark', {
 marked: !this.data.markedForReview,
 question: this.data.currentQuestion,
@@ -382,14 +397,14 @@ index: this.data.currentIndex,
 })
 },
 onMaster: function () {
-if (this.data.readonly) return
+if (this.data._animating || this.data.readonly || this.data.submitted) return
 this.triggerEvent('master', {
 question: this.data.currentQuestion,
 index: this.data.currentIndex,
 })
 },
 onSubmit: function () {
-if (this.data.submitting || this.data.submitDisabled) return
+if (this.data._animating || this.data.submitted || this.data.submitting || this.data.submitDisabled || this.data.totalCount <= 0) return
 this.triggerEvent('submit', {
 questions: this.data.questions,
 currentIndex: this.data.currentIndex,

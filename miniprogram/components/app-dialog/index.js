@@ -4,6 +4,7 @@
  * platform modal/action-sheet UI.
  */
 Component({
+  properties: { theme: { type: String, value: 'default' } },
   data: {
     visible: false,
     mode: 'confirm',

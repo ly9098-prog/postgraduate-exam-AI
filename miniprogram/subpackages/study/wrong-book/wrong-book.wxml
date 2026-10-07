@@ -214,19 +214,7 @@
 <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
 <loading-lottie text="正在整理错题任务..." size="large" />
 </view>
-<view wx:if="{{!loading && list.length === 0}}" class="empty-state">
-<image
-      class="empty-image"
-      src="/assets/images/wrong-book-empty.png"
-      mode="widthFix"
-      aria-label="暂无错题"
-    />
-<text class="empty-title">这里暂时没有错题</text>
-<view class="empty-desc">
-<text class="empty-desc-line">新产生的错题会自动进入任务流，</text>
-<text class="empty-desc-line">并按照复习时间排序</text>
-</view>
-</view>
+<wrong-book-empty wx:if="{{!loading && list.length === 0}}" />
 <view class="task-flow" wx:if="{{list.length > 0 && activeView === 'task'}}">
 <view class="section-title-row">
 <view>

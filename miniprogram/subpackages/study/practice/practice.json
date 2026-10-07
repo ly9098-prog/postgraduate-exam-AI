@@ -1,9 +1,9 @@
 {
   "navigationStyle": "custom",
   "navigationBarTitleText": "刷题",
-  "backgroundColor": "#F3F4F1",
-  "backgroundColorTop": "#F3F4F1",
-  "backgroundColorBottom": "#F3F4F1",
+  "backgroundColor": "#F3FBF8",
+  "backgroundColorTop": "#F3FBF8",
+  "backgroundColorBottom": "#F3FBF8",
   "usingComponents": {
     "loading-lottie": "/subpackages/study/components/loading-lottie/loading-lottie",
     "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",

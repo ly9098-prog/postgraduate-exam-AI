@@ -113,3 +113,8 @@
     transition: none !important;
   }
 }
+
+/* Opt-in mint study navigation; dark exam/other callers are unchanged. */
+.premium-nav-mint { background: #F3FBF8; color: #23483C; box-shadow: 0 1rpx 0 #D8EEE6; }
+.premium-nav-mint .premium-nav-back { background: #FFFFFF; border: 1rpx solid #D8EEE6; }
+.premium-nav-mint .premium-nav-caption { color: #507568; }

@@ -1,5 +1,5 @@
 <view class="page">
-<app-dialog id="appDialog"></app-dialog>
+<app-dialog id="appDialog" theme="mint"></app-dialog>
 <scroll-view
     class="page-scroll"
     scroll-y="{{!reviewDialogVisible}}"
@@ -27,7 +27,7 @@
 </view>
 <view
         class="accuracy-ring"
-        style="background: conic-gradient(#B8FF13 0% {{accuracyPct}}%, rgba(255,255,255,.16) {{accuracyPct}}% 100%);"
+        style="background: conic-gradient(#55C89B 0% {{accuracyPct}}%, #D8EEE6 {{accuracyPct}}% 100%);"
       >
 <view class="ring-halo"></view>
 <view class="ring-inner">
@@ -308,11 +308,12 @@
 </view>
 </view>
 </view>
-<view wx:else class="success-empty">
-<view class="success-empty-icon">✓</view>
-<text class="success-empty-title">{{(skippedCount > 0 || partialCount > 0) ? '本组没有答错题' : '本组全部答对'}}</text>
-<text class="success-empty-desc">{{partialCount > 0 ? '还有未完成题，请在题目详情中补充复盘' : (skippedCount > 0 ? '跳过题可在题目详情中单独复盘' : '继续保持当前节奏')}}</text>
-</view>
+<wrong-book-empty variant="compact"
+  wx:else
+  title="{{(skippedCount > 0 || partialCount > 0) ? '本组没有答错题' : '本组全部答对'}}"
+  description="{{partialCount > 0 ? '还有未完成题，请在题目详情中补充复盘' : (skippedCount > 0 ? '跳过题可在题目详情中单独复盘' : '继续保持当前节奏')}}"
+  secondaryDescription=""
+/>
 </view>
 </block>
 <block wx:else>

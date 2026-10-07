@@ -1,0 +1,5 @@
+.runner-code-wrapper{display:block;width:100%;max-width:100%;margin:12rpx 0 30rpx;padding:22rpx 0;border-radius:18rpx;background:linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0)),#17211B;border:1rpx solid rgba(215,255,104,0.12);overflow:hidden;box-sizing:border-box;}
+.runner-code-lines{display:inline-block;min-width:100%;padding-right:26rpx;box-sizing:border-box;}
+.runner-code-line{display:flex;align-items:flex-start;min-height:42rpx;white-space:nowrap;}
+.runner-code-no{width:62rpx;padding-right:16rpx;border-right:1rpx solid rgba(255,255,255,0.1);color:#AEEF00;opacity:.78;text-align:right;font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:23rpx;line-height:1.72;font-variant-numeric:tabular-nums;flex-shrink:0;box-sizing:border-box;user-select:none;}
+.runner-code-text{display:block;padding-left:18rpx;color:#F2F5F0;font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:25rpx;line-height:1.72;white-space:pre;}

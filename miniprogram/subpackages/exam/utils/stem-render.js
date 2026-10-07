@@ -350,7 +350,25 @@ var cleanedSegmentText = _cleanStemText(segmentText, options, optionKeys)
 var canonicalComparable = String(cleanedStem || '').replace(/\s+/g, '')
 var segmentComparable = String(cleanedSegmentText || '').replace(/\s+/g, '')
 if (!canonicalComparable || !segmentComparable) return canonicalComparable === segmentComparable
-return canonicalComparable === segmentComparable
+if (canonicalComparable === segmentComparable) return true
+
+// Structured questions may keep the prose stem in content.text/content.stem while
+// carrying the code as an additional segment.  In that shape, comparing the full
+// segment payload against the prose-only canonical stem rejects a valid SEGMENTS
+// render and silently drops the code block.  Keep the stale-segment guard for the
+// non-code content, but allow code segments to extend an otherwise matching stem.
+if (_hasCodeSegments(segments)) {
+var nonCodeSegments = segments.filter(function (segment) {
+return !segment || typeof segment !== 'object' || String(segment.type || '').trim().toLowerCase() !== 'code'
+})
+if (_segmentsHaveComparableStemPayload(nonCodeSegments)) {
+var nonCodeText = _repairFalseNumberMarkerBreaks(_segmentsToText(nonCodeSegments))
+var cleanedNonCodeText = _cleanStemText(nonCodeText, options, optionKeys)
+var nonCodeComparable = String(cleanedNonCodeText || '').replace(/\s+/g, '')
+if (canonicalComparable === nonCodeComparable) return true
+}
+}
+return false
 }
 function _textToSegments(text) {
 if (!text) return []
@@ -668,7 +686,7 @@ var m = model || {}
 var mode = m.mode
 var active = 0
 if (mode === RENDER_MODE.RICH_TEXT) {
-active += m.plainText ? 1 : 0
+active += m.richTextNodes && m.richTextNodes.length ? 1 : 0
 if (m.html || m.rawText || (m.blocks && m.blocks.length)) {
 console.error('[RENDER_PAYLOAD_CONFLICT] RICH_TEXT has extra payload')
 }
@@ -705,8 +723,8 @@ function _assertBlockPayloadIntegrity(blocks) {
 if (!appConfig.DEV || !Array.isArray(blocks)) return
 for (var i = 0; i < blocks.length; i++) {
 var b = blocks[i]
-if (b.type === 'RICH_TEXT' && !String(b.plainText || '')) {
-console.error('[BLOCK_PAYLOAD] RICH_TEXT block #' + i + ' missing plainText')
+if (b.type === 'RICH_TEXT' && !(b.richTextNodes && b.richTextNodes.length)) {
+console.error('[BLOCK_PAYLOAD] RICH_TEXT block #' + i + ' missing richTextNodes')
 }
 if (b.type === 'LATEX' && !b.html) {
 console.error('[BLOCK_PAYLOAD] LATEX block #' + i + ' missing html')
@@ -742,8 +760,7 @@ function _renderRichTextBlock(text) {
 var plain = _toPlainInlineMathText(text) || _toPlainSimpleInlineMathText(text) || text
 return {
 type: 'RICH_TEXT',
-plainText: String(plain || ''),
-richTextNodes: [],
+richTextNodes: _buildRichTextNodes(plain),
 }
 }
 function _renderLatexBlock(text) {
@@ -776,7 +793,7 @@ var sourceStemText = stemText || (content && _segmentsToText(content.segments)) 
 sourceStemText = _repairFalseNumberMarkerBreaks(sourceStemText)
 var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
 var stemHash = _hashStem(cleanedStem)
-var mode, richTextNodes, html, segments, rawText, blocks, plainText
+var mode, richTextNodes, html, segments, rawText, blocks
 var segmentsAgreeWithStem = !content || _segmentsAgreeWithCanonicalStem(content.segments, cleanedStem, options, optionKeys)
 if (content && content.render_mode === 'segments' && segmentsAgreeWithStem && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments) || _hasCodeSegments(content.segments))) {
 mode = RENDER_MODE.SEGMENTS
@@ -791,7 +808,6 @@ if (!hasTextualSegment && stemText && cleanedStem && !_stemIsRepresentedByCodeSe
 segments = _textToSegments(cleanedStem).concat(segments)
 }
 richTextNodes = []
-plainText = ''
 html = ''
 blocks = []
 } else {
@@ -815,7 +831,6 @@ blocks.push(_renderRichTextBlock(sb.text))
 }
 }
 richTextNodes = []
-plainText = ''
 html = ''
 rawText = ''
 segments = []
@@ -836,22 +851,19 @@ var plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathT
 var plainConversionSucceeded = typeof plainStem === 'string' && plainStem.length > 0 && !containsUnresolvedLatex(plainStem)
 if (plainConversionSucceeded && !containsCode(cleanedStem)) {
 mode = RENDER_MODE.RICH_TEXT
-plainText = String(plainStem || '')
-richTextNodes = []
+richTextNodes = _buildRichTextNodes(plainStem)
 html = ''
 segments = []
 blocks = []
 rawText = ''
 } else if (hasLatex && !selfHealCode) {
 mode = RENDER_MODE.LATEX
-plainText = ''
 html = _textToHtml(cleanedStem)
 richTextNodes = []
 segments = []
 blocks = []
 } else if (containsCode(cleanedStem)) {
 mode = RENDER_MODE.CODE
-plainText = ''
 var sanitizedCode = sanitizeImportedCodeArtifacts(cleanedStem)
 var codeText = sanitizedCode
 if (!effectiveConfig.DISABLE_CODE_RECONSTRUCT && shouldReconstructCode(sanitizedCode)) {
@@ -869,8 +881,7 @@ _reportDiff(diffIssues, q && q.id)
 } else {
 mode = RENDER_MODE.RICH_TEXT
 var plainStemFallback = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem) || cleanedStem
-plainText = String(plainStemFallback || '')
-richTextNodes = []
+richTextNodes = _buildRichTextNodes(plainStemFallback)
 html = ''
 segments = []
 blocks = []
@@ -885,7 +896,6 @@ _renderGuardCheck(q && q.id, stemHash, mode)
 var renderTrace = _buildRenderTrace(q && q.id, sourceStemText, mode, cleanedStem, blocks)
 var model = {
 mode: mode,
-plainText: plainText || '',
 richTextNodes: richTextNodes || [],
 html: html || '',
 segments: segments || [],
