@@ -165,7 +165,7 @@
 <view class="recent-card-copy">
 <text class="recent-name">{{item.display_name}}</text>
 </view>
-<view class="recent-arrow" aria-hidden="true"><view class="recent-arrow-line"></view></view>
+
 </view>
 </view>
 </scroll-view>

@@ -403,6 +403,15 @@ question: this.data.currentQuestion,
 index: this.data.currentIndex,
 })
 },
+onPrimaryNavigation: function () {
+if (this.data._animating || this.data.submitted || this.data.submitting || this.data.totalCount <= 0) return
+if (this.data.currentIndex >= this.data.totalCount - 1) {
+this.onSubmit()
+return
+}
+if (this.data.nextDisabled) return
+this.goNext()
+},
 onSubmit: function () {
 if (this.data._animating || this.data.submitted || this.data.submitting || this.data.submitDisabled || this.data.totalCount <= 0) return
 this.triggerEvent('submit', {

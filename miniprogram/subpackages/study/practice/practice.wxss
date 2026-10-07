@@ -258,7 +258,7 @@ to{transform:translateY(36rpx);opacity:.76}
 .recent-section .surface-title{color:#23483C;font-size:30rpx;line-height:1.3}
 .recent-scroll{margin-top:14rpx;width:100%;white-space:nowrap;overflow:hidden}
 .recent-list{display:inline-flex;gap:14rpx;padding:2rpx 2rpx 16rpx}
-.recent-card{position:relative;box-sizing:border-box;width:330rpx;height:96rpx;padding:14rpx 18rpx;display:inline-flex;align-items:center;gap:12rpx;overflow:hidden;border:1rpx solid #DCEEE6;border-radius:999rpx;background:#FAFFFD;box-shadow:none;transition:transform 150ms cubic-bezier(.16,1,.3,1),opacity 150ms ease}
+.recent-card{position:relative;box-sizing:border-box;width:280rpx;height:88rpx;padding:12rpx 16rpx;display:inline-flex;align-items:center;gap:12rpx;overflow:hidden;border:1rpx solid #DCEEE6;border-radius:999rpx;background:#FAFFFD;box-shadow:none;transition:transform 150ms cubic-bezier(.16,1,.3,1),opacity 150ms ease}
 .recent-card.active{border-color:transparent;background:linear-gradient(115deg,#245D4D,#438F78)}
 .recent-mark{width:48rpx;height:48rpx;border-radius:50%;background:#E3F5EE;color:#245D4D;font-size:23rpx;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;font-weight:700}
 .recent-card.active .recent-mark{background:rgba(126,216,181,.22);color:#FFF}
@@ -267,9 +267,6 @@ to{transform:translateY(36rpx);opacity:.76}
 .recent-card-copy{flex:1;min-width:0}
 .recent-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#23483C;font-size:24rpx;line-height:1.4;font-weight:600}
 .recent-card.active .recent-name{color:#FFF}
-.recent-arrow{position:relative;flex:0 0 20rpx;width:20rpx;height:24rpx;color:#527F70}
-.recent-card.active .recent-arrow{color:#C6EBDD}
-.recent-arrow-line{position:absolute;left:0;top:11rpx;width:18rpx;height:2rpx;background:currentColor}
 .recent-arrow-line::after{content:'';position:absolute;right:0;top:-5rpx;width:10rpx;height:10rpx;border-top:2rpx solid currentColor;border-right:2rpx solid currentColor;transform:rotate(45deg)}
 .recent-card.recent-card-pressed{opacity:.9;transform:scale(.98)}
 @media (prefers-reduced-motion:reduce){.recent-card,.recent-card.recent-card-pressed{transition:none;transform:none}}

@@ -22,6 +22,7 @@ for (const pkg of ['study', 'exam']) {
   const primaryOpening = navTemplate.match(/<view[\s\S]*?runner-primary-action[\s\S]*?>/)
   assert.ok(primaryOpening && !/wx:if/.test(primaryOpening[0]), 'action node is never destroyed during a question switch')
   assert.ok(wxml.includes('bindtap="onPrimaryNavigation"'), 'primary action delegates without replacing its node')
+  assert.ok(js.includes('onPrimaryNavigation: function'), 'primary action tap handler exists')
   const navShell = wxml.slice(0, wxml.indexOf('</template>'))
   assert.ok(!navShell.includes('_animating'), 'navigation shell does not visually react to transient animation lock')
   assert.strictEqual((wxml.match(/wx:for="{{\[_displayQuestion\]}}" wx:key="id"/g) || []).length, 2, 'CODE and MIXED remount on question identity, resetting horizontal code scroll')
@@ -37,6 +38,19 @@ for (const pkg of ['study', 'exam']) {
   const writes = [], events = []
   const target = Object.assign({ data, setData(patch, cb) { writes.push(patch); Object.assign(data, patch); if (cb) cb() }, triggerEvent(name, detail) { events.push({ name, detail }) } }, definition.methods)
   definition.created.call(target)
+  const originalGoNext = target.goNext
+  const originalOnSubmit = target.onSubmit
+  let primaryAction = ''
+  target.goNext = () => { primaryAction = 'next' }
+  target.onSubmit = () => { primaryAction = 'submit' }
+  target.onPrimaryNavigation()
+  assert.strictEqual(primaryAction, 'next', 'primary action advances before final question')
+  data.currentIndex = 2
+  target.onPrimaryNavigation()
+  assert.strictEqual(primaryAction, 'submit', 'primary action submits on final question')
+  target.goNext = originalGoNext
+  target.onSubmit = originalOnSubmit
+  data.currentIndex = 0
   const q = id => ({ id, question_type: 'single_choice', _renderModel: { mode: 'RICH_TEXT', richTextNodes: [{ type: 'text', text: 'Question ' + id }] } })
   const observe = definition.observers['currentQuestion, answerState']
   const first = q(1), second = q(2)
