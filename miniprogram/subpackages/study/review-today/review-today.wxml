@@ -292,7 +292,7 @@
 <button class="primary-action" bindtap="retryLoad" hover-class="primary-action-pressed"><text>重新加载</text><text class="primary-action-arrow">↗</text></button>
 </view>
 </view>
-<submit-confirm id="submitConfirm" />
+<submit-confirm id="submitConfirm" theme="mint" />
 <view class="modal-overlay" wx:if="{{masterConfirmId}}" catchtap="cancelMaster" catchtouchmove="noop">
 <view class="decision-sheet" catchtap="noop">
 <view class="sheet-handle"></view>

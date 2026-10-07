@@ -1093,41 +1093,52 @@ session.reviewRequestIds[key] = `review_${Date.now().toString(36)}_${randomPart}
 return session.reviewRequestIds[key]
 },
 async submitGroup() {
-this._clearMasterUndo()
 const { groupQuestions, submittingGroup } = this.data
-const answers = this._reviewSession.answers
-if (submittingGroup) return
-const answeredCount = adapter.computeAnsweredCount(groupQuestions, answers, KF)
+if (submittingGroup || this._submitConfirmPending || this.data.masterSubmitting || this._masterUndoInFlight || !groupQuestions.length) return
 const totalCount = groupQuestions.length
+const answeredCount = adapter.computeAnsweredCount(groupQuestions, this._reviewSession.answers, KF)
 const unansweredCount = totalCount - answeredCount
-let treatUnansweredAsWrong = false
+const confirm = this.selectComponent('#submitConfirm')
+if (!confirm) return
+this._submitConfirmPending = true
+try {
 if (unansweredCount > 0) {
-try {
-const confirm = this.selectComponent('#submitConfirm')
-if (!confirm) return
-const choice = await confirm.show({
+const continueReview = await confirm.show({
 scenario: 'unanswered',
-title: '还有未作答题目',
-message: `共 ${totalCount} 题，已作答 ${answeredCount} 题，还有 ${unansweredCount} 题未作答。选择「按不会处理」将把未答题判为错误并进入复习。`,
-confirmText: '按不会处理',
-cancelText: '仅提交已答',
+layout: 'minimal',
+title: '请先完成本组复习',
+message: `还有 ${unansweredCount} 题未完成作答。请填写全部题目后再提交，多空题需要填写每一空。`,
+confirmText: '继续作答',
+showCancel: false,
 })
-treatUnansweredAsWrong = !!choice
-} catch (_) { return }
-} else {
-try {
-const confirm = this.selectComponent('#submitConfirm')
-if (!confirm) return
+if (continueReview && this._alive && this.data.phase === 'reviewing') {
+const index = this.data.groupQuestions.findIndex(q => !adapter.isQuestionAnswered(q, this._reviewSession.answers, KF))
+if (index >= 0) this._showQuestion(index)
+}
+return
+}
 const confirmed = await confirm.show({
 scenario: 'all-done',
-title: '确认提交',
-message: `共 ${totalCount} 题，已全部作答。确认提交并复盘？`,
-confirmText: '确定提交',
+layout: 'minimal',
+title: '提交本组复习？',
+message: `本组 ${totalCount} 题已全部作答，提交后查看复盘结果。`,
+confirmText: '提交复习',
 cancelText: '继续检查',
 })
-if (!confirmed) return
-} catch (_) { return }
+if (!confirmed || !this._alive || this.data.phase !== 'reviewing') return
+} catch (_) {
+return
+} finally {
+this._submitConfirmPending = false
 }
+// Revalidate after the asynchronous dialog; never submit a changed/incomplete batch.
+if (this.data.submittingGroup || this.data.groupQuestions !== groupQuestions) return
+const answers = { ...this._reviewSession.answers }
+if (adapter.computeAnsweredCount(groupQuestions, answers, KF) !== totalCount) {
+wx.showToast({ title: '请完成全部题目后再提交', icon: 'none' })
+return
+}
+this._clearMasterUndo()
 this.setData({ submittingGroup: true })
 if (!await this._syncReviewSessionDayIfNeeded()) {
 if (this._alive) this.setData({ submittingGroup: false })
@@ -1137,7 +1148,10 @@ const reviews = []
 for (let questionIndex = 0; questionIndex < groupQuestions.length; questionIndex++) {
 const q = groupQuestions[questionIndex]
 const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
-if (!isAnswered && !treatUnansweredAsWrong) continue
+if (!isAnswered) {
+this.setData({ submittingGroup: false })
+return
+}
 const requestId = this._getReviewRequestId(q)
 if (!q.question_version_id || q.occurrence_seq === undefined || q.occurrence_seq === null || !requestId) {
 wx.showToast({ title: '复习任务版本信息缺失，请刷新后重试', icon: 'none' })
@@ -1150,11 +1164,11 @@ question_id: q.question_id,
 question_version_id: q.question_version_id,
 occurrence_seq: q.occurrence_seq,
 request_id: requestId,
-user_answer: isAnswered ? (answers[q.schedule_id] || '') : '',
+user_answer: answers[q.schedule_id] || '',
 })
 }
 if (reviews.length === 0) {
-wx.showToast({ title: '请至少作答 1 题，或选择按不会处理', icon: 'none' })
+wx.showToast({ title: '请完成全部题目后再提交', icon: 'none' })
 this.setData({ submittingGroup: false })
 return
 }
