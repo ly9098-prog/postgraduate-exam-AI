@@ -572,6 +572,8 @@ heroTopPaddingPx: 28
 },
 onLoad(options) {
 this._pageAlive = true;
+this._resultVisible = false;
+this._diagnosisRefreshSeq = 0;
 this._returnTo = normalizePracticeReturnRoute((options || {}).return_to);
 this._launchSource = String((options || {}).source || '').trim().slice(0, 32);
 this._launchSubjectId = Number((options || {}).subject_id) || 0;
@@ -605,12 +607,57 @@ this.loadDashboardData();
 },
 onUnload() {
 this._pageAlive = false;
+this._diagnosisRefreshSeq++;
 this._dashboardLoadId++;
 this._teacherRequestSeq++;
 this._teacherInflight = null;
 },
 onShow() {
 this._navigationLocked = false;
+this._resultVisible = true;
+this.refreshWrongDiagnoses();
+},
+onHide() {
+this._resultVisible = false;
+this._diagnosisRefreshSeq++;
+},
+async refreshWrongDiagnoses() {
+if (!this._pageAlive || this.data.batchDiagnosisSaving) return;
+const seq = this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1;
+const ids = [...new Set((this.data.wrongReviewItems || [])
+.map(item => Number(item.wrongQuestionId)).filter(id => Number.isInteger(id) && id > 0))];
+if (!ids.length) return;
+const diagnoses = new Map();
+let cursor = 0;
+const isCurrent = () => this._pageAlive && seq === this._diagnosisRefreshSeq;
+// Fetch only the diagnosis contract, with bounded concurrency for long result lists.
+const worker = async () => {
+while (cursor < ids.length && isCurrent()) {
+const id = ids[cursor++];
+try {
+const raw = await api.get(`/wrong-questions/${id}/diagnosis`, {}, { suppressNetworkToast: true });
+const diagnosis = errorDiagnosis.normalizeDiagnosis(raw);
+if (diagnosis && isCurrent()) diagnoses.set(id, diagnosis);
+} catch (_) {
+// A failed refresh must not erase an already-recorded diagnosis.
+}
+}
+};
+await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker));
+if (!isCurrent() || !diagnoses.size || this.data.batchDiagnosisSaving) return;
+const update = list => (list || []).map(item => {
+const diagnosis = diagnoses.get(Number(item.wrongQuestionId));
+return diagnosis ? Object.assign({}, item, {
+errorDiagnosis: diagnosis,
+errorDiagnosisLabel: diagnosis.primaryLabel,
+}) : item;
+});
+// Preserve current filters, batch selections and the rest of the result dashboard.
+this.setData({
+reviewItems: update(this.data.reviewItems),
+filteredReviewItems: update(this.data.filteredReviewItems),
+wrongReviewItems: update(this.data.wrongReviewItems),
+});
 },
 measureSafeNavigation() {
 let statusBarHeight = 20;
@@ -862,6 +909,7 @@ wx.showToast({ title: '详细复盘恢复失败，可稍后重试', icon: 'none'
 }
 },
 applyPracticePayload(payload) {
+this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1;
 const source = payload && payload.data && !payload.results && typeof payload.data === 'object'
 ? payload.data
 : (payload || {});
@@ -1021,6 +1069,7 @@ errorDistribution: localErrorDistribution,
 errorDonutGradient: buildErrorDonutGradient(localErrorDistribution),
 errorDonutSvg: buildErrorDonutSvg(localErrorDistribution)
 });
+if (this._resultVisible) this.refreshWrongDiagnoses();
 },
 buildReviewItem(question, result, answer, index) {
 const questionId =
@@ -1030,6 +1079,7 @@ question.questionId ??
 result.question_id ??
 result.questionId ??
 index + 1;
+const normalizedDiagnosis = errorDiagnosis.normalizeDiagnosis(result.error_diagnosis ?? result.errorDiagnosis);
 const isCorrectRaw =
 result.is_correct ??
 result.isCorrect ??
@@ -1061,15 +1111,12 @@ correctAnswer: formatAnswerPreview(result.correct_answer ?? result.correctAnswer
 analysis: result.analysis ?? question.analysis ?? '',
 knowledgePoints: kpList,
 knowledgePoint: kpList[0] || '未标注知识点',
-errorDiagnosis: errorDiagnosis.normalizeDiagnosis(result.error_diagnosis ?? result.errorDiagnosis),
-errorDiagnosisLabel: errorDiagnosis.labelOf(
-(result.error_diagnosis && result.error_diagnosis.primary_type) ||
-(result.errorDiagnosis && result.errorDiagnosis.primaryType) ||
-'unknown'
-)
+errorDiagnosis: normalizedDiagnosis,
+errorDiagnosisLabel: normalizedDiagnosis ? normalizedDiagnosis.primaryLabel : errorDiagnosis.labelOf('unknown')
 };
 },
 normalizeReviewItem(item, index) {
+const normalizedDiagnosis = errorDiagnosis.normalizeDiagnosis(item.errorDiagnosis ?? item.error_diagnosis);
 const isCorrectRaw = item.is_correct ?? item.isCorrect ?? item.correct ?? false;
 const status = normalizeReviewStatus(item, !!isCorrectRaw);
 const kpList = normalizeKpList(item.knowledge_points ?? item.knowledgePoints ?? item.knowledgePoint);
@@ -1088,12 +1135,8 @@ correctAnswer: formatAnswerPreview(item.correctAnswer ?? item.correct_answer ?? 
 analysis: item.analysis ?? '',
 knowledgePoints: kpList,
 knowledgePoint: item.knowledgePoint || kpList[0] || '未标注知识点',
-errorDiagnosis: errorDiagnosis.normalizeDiagnosis(item.errorDiagnosis ?? item.error_diagnosis),
-errorDiagnosisLabel: errorDiagnosis.labelOf(
-(item.errorDiagnosis && item.errorDiagnosis.primaryType) ||
-(item.error_diagnosis && item.error_diagnosis.primary_type) ||
-item.error_type || 'unknown'
-)
+errorDiagnosis: normalizedDiagnosis,
+errorDiagnosisLabel: normalizedDiagnosis ? normalizedDiagnosis.primaryLabel : errorDiagnosis.labelOf(item.error_type || 'unknown')
 };
 },
 _showAppOptions(opts) {
@@ -1154,6 +1197,7 @@ items: options.map(item => item.label),
 });
 const picked = options[index];
 if (!picked) return;
+this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1;
 const byId = {};
 ;(this.data.wrongReviewItems || []).forEach(item => {
 const id = Number(item.wrongQuestionId || 0);

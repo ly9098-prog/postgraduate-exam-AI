@@ -969,6 +969,20 @@ page {
   transition: opacity 0.4s ease, filter 0.4s ease;
 }
 
+/* Countdown alone reuses the free timer's motion, not its green palette. */
+.ring-time-timed {
+  background-image: linear-gradient(90deg, currentColor 0%, currentColor 35%, var(--timer-shimmer-highlight, currentColor) 47%, var(--timer-shimmer-highlight, currentColor) 53%, currentColor 65%, currentColor 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: free-shimmer 4s linear infinite;
+}
+
+.ring-time-timed.time-dim {
+  animation: none;
+}
+
 @keyframes free-shimmer {
   0% { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
@@ -2163,4 +2177,30 @@ page {
   .control-section-title { margin-bottom: 20rpx; }
   .task-type-row { gap: 7rpx; }
   .task-type-chip { min-width: 76rpx; height: 50rpx; padding: 0 10rpx; font-size: 19rpx; }
+}
+
+/* Countdown-only highlight palette; existing free-timer rules stay untouched. */
+.theme-light.page-focus .ring-time-timed {
+  --timer-shimmer-highlight: #67D8F1;
+}
+.theme-dark.page-focus .ring-time-timed {
+  --timer-shimmer-highlight: #D0F8FF;
+}
+.theme-light.page-break .ring-time-timed {
+  --timer-shimmer-highlight: #F5BA70;
+}
+.theme-dark.page-break .ring-time-timed {
+  --timer-shimmer-highlight: #FFE6C5;
+}
+
+/* Keep timer digits static when the system requests reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .ring-time-timed {
+    animation: none !important;
+    transition: none !important;
+  }
+  .ring-time-timed {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
 }

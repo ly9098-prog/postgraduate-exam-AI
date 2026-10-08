@@ -195,7 +195,7 @@
                   <text class="ring-time ring-time-free {{isPaused ? 'time-dim' : ''}}">{{freeDisplayTime}}</text>
                 </block>
                 <block wx:else>
-                  <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
+                  <text class="ring-time ring-time-timed {{isPaused ? 'time-dim' : ''}} {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
                 </block>
                 <text class="ring-status" wx:if="{{isPaused}}">已暂停</text>
               </view>
