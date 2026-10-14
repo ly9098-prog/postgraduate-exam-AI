@@ -313,53 +313,69 @@
     </view>
 
     <!-- Knowledge hierarchy diagnosis · full analysis belongs in this existing report page -->
-    <view id="knowledge-diagnosis-section" class="dashboard-section knowledge-diagnosis-section" wx:if="{{knowledgeDiagnosisLoading || knowledgeDiagnosis || knowledgeDiagnosisError}}">
-      <view class="knowledge-diagnosis-card is-loading" wx:if="{{knowledgeDiagnosisLoading && !knowledgeDiagnosis}}">
-        <view class="knowledge-diagnosis-skeleton skeleton-title"></view>
-        <view class="knowledge-diagnosis-skeleton skeleton-line"></view>
-        <view class="knowledge-diagnosis-skeleton skeleton-line short"></view>
-      </view>
-
-      <view class="knowledge-diagnosis-card is-error" wx:elif="{{knowledgeDiagnosisError && !knowledgeDiagnosis}}">
-        <view class="knowledge-diagnosis-copy">
-          <text class="knowledge-diagnosis-title">章节诊断暂不可用</text>
-          <text class="knowledge-diagnosis-reason">知识图谱与其他学习报告不受影响。</text>
-        </view>
-        <view class="knowledge-diagnosis-link" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">重试</view>
-      </view>
-
-      <view class="knowledge-diagnosis-card" wx:elif="{{knowledgeDiagnosis && knowledgeDiagnosis.primary}}">
+    <view id="knowledge-diagnosis-section" class="dashboard-section knowledge-diagnosis-section">
+      <view class="knowledge-diagnosis-card">
         <view class="knowledge-diagnosis-card-heading">
-          <view>
-            <text class="knowledge-diagnosis-kicker">KNOWLEDGE DIAGNOSIS</text>
-            <text class="knowledge-diagnosis-card-title">章节学习诊断</text>
-          </view>
-          <text class="knowledge-diagnosis-period">{{knowledgeDiagnosis.subjectName}} · 近{{knowledgeDiagnosis.periodDays}}天</text>
+          <text class="knowledge-diagnosis-card-title">章节学习诊断</text>
+          <text class="knowledge-diagnosis-period">近{{knowledgeDiagnosis ? knowledgeDiagnosis.periodDays : 30}}天</text>
         </view>
-        <view class="knowledge-diagnosis-head">
-          <view class="knowledge-diagnosis-icon">
-            <image src="/assets/icons/dashboard/knowledge-diagnosis.png" mode="aspectFit" />
+        <view class="knowledge-subject-filter">
+          <text class="knowledge-subject-label">推荐学科</text>
+          <view class="knowledge-subject-skeleton" wx:if="{{knowledgeDiagnosisSubjectsLoading && !knowledgeDiagnosisSubjects.length}}">
+            <view></view><view></view><view></view><view></view>
           </view>
-          <view class="knowledge-diagnosis-divider"></view>
-          <view class="knowledge-diagnosis-copy">
-            <text class="knowledge-diagnosis-label">当前优先章节</text>
-            <text class="knowledge-diagnosis-title">{{knowledgeDiagnosis.primary.title}}</text>
-            <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.primary.reason}}</text>
+          <view class="knowledge-subject-options" wx:else>
+            <button wx:for="{{knowledgeDiagnosisSubjects}}" wx:key="subjectId"
+              class="knowledge-subject-chip {{knowledgeDiagnosisSubjectId === item.subjectId ? 'is-selected' : ''}}"
+              bindtap="selectKnowledgeDiagnosisSubject" data-subject-id="{{item.subjectId}}"
+              aria-label="{{item.name}}" hover-class="surface-pressed">{{item.label}}</button>
           </view>
-        </view>
-
-        <view class="knowledge-diagnosis-metrics">
-          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.masteryText}}</text><text class="metric-sub">掌握</text></view>
-          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.coverageText}}</text><text class="metric-sub">覆盖</text></view>
-          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.weakCount}}</text><text class="metric-sub">薄弱点</text></view>
-          <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.report.sessionCount}}</text><text class="metric-sub">章节专项</text></view>
+          <button class="knowledge-subject-retry" wx:if="{{knowledgeDiagnosisSubjectsError}}" bindtap="loadKnowledgeDiagnosisSubjects" hover-class="surface-pressed">{{knowledgeDiagnosisSubjectsError}}</button>
+          <text class="knowledge-subject-empty" wx:elif="{{knowledgeDiagnosisSubjectsLoaded && !knowledgeDiagnosisSubjects.length}}">暂无可选学科</text>
         </view>
 
-        <view class="knowledge-diagnosis-actions">
-          <view class="knowledge-diagnosis-primary" bindtap="startKnowledgeDiagnosisPractice" hover-class="primary-action-pressed">
-            <text>{{knowledgeDiagnosis.primary.actionLabel}}</text><text class="knowledge-diagnosis-primary-arrow">→</text>
+        <view class="knowledge-diagnosis-loading-body" wx:if="{{knowledgeDiagnosisLoading && !knowledgeDiagnosis}}">
+          <view class="knowledge-diagnosis-skeleton skeleton-title"></view>
+          <view class="knowledge-diagnosis-skeleton skeleton-line"></view>
+          <view class="knowledge-diagnosis-skeleton skeleton-line short"></view>
+          <text class="knowledge-subject-empty">正在生成该学科的章节推荐…</text>
+        </view>
+        <view class="knowledge-diagnosis-empty-body" wx:elif="{{knowledgeDiagnosisError && !knowledgeDiagnosis}}">
+          <text class="knowledge-diagnosis-title">{{knowledgeDiagnosisError}}</text>
+          <text class="knowledge-diagnosis-reason">请重试，或切换其他学科。</text>
+          <button class="knowledge-subject-retry" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">重新推荐</button>
+        </view>
+        <block wx:elif="{{knowledgeDiagnosis && knowledgeDiagnosis.primary}}">
+          <text class="knowledge-diagnosis-refresh" wx:if="{{knowledgeDiagnosisLoading}}">正在更新推荐…</text>
+          <button class="knowledge-subject-retry" wx:elif="{{knowledgeDiagnosisError}}" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">推荐更新失败，点击重试</button>
+          <view class="knowledge-diagnosis-head">
+            <view class="knowledge-diagnosis-icon">
+              <image src="/assets/icons/dashboard/knowledge-diagnosis.png" mode="aspectFit" />
+            </view>
+            <view class="knowledge-diagnosis-divider"></view>
+            <view class="knowledge-diagnosis-copy">
+              <text class="knowledge-diagnosis-label">{{knowledgeDiagnosis.subjectName}} · 当前优先章节</text>
+              <text class="knowledge-diagnosis-title">{{knowledgeDiagnosis.primary.title}}</text>
+              <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.primary.reason}}</text>
+            </view>
           </view>
-          <view class="knowledge-diagnosis-secondary" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱 ›</view>
+          <view class="knowledge-diagnosis-metrics">
+            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.masteryText}}</text><text class="metric-sub">掌握</text></view>
+            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.coverageText}}</text><text class="metric-sub">覆盖</text></view>
+            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.weakCount}}</text><text class="metric-sub">薄弱点</text></view>
+            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.report.sessionCount}}</text><text class="metric-sub">章节专项</text></view>
+          </view>
+          <view class="knowledge-diagnosis-actions">
+            <view class="knowledge-diagnosis-primary" bindtap="startKnowledgeDiagnosisPractice" hover-class="primary-action-pressed">
+              <text>{{knowledgeDiagnosis.primary.actionLabel}}</text><text class="knowledge-diagnosis-primary-arrow">→</text>
+            </view>
+            <view class="knowledge-diagnosis-secondary" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱 ›</view>
+          </view>
+        </block>
+        <view class="knowledge-diagnosis-empty-body" wx:elif="{{knowledgeDiagnosis}}">
+          <text class="knowledge-diagnosis-title">暂无可推荐章节</text>
+          <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.subjectName}}暂未找到可练习的章节，可以先查看知识图谱。</text>
+          <button class="knowledge-subject-retry" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱</button>
         </view>
       </view>
     </view>

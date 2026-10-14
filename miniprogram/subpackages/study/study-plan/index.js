@@ -1,5 +1,5 @@
 const api = require('../../../utils/api')
-const { getChinaDate } = require('../../../utils/china-time')
+const { getChinaDate, getChinaDayStartUtcMs } = require('../../../utils/china-time')
 const storage = require('../../../utils/storage')
 const { studyStrategy } = storage
 const DAILY_OPTIONS = [30, 45, 60, 90, 120, 150, 180, 240]
@@ -72,12 +72,14 @@ fabReady: false,
 fabIdle: false,
 },
 onLoad() {
-this.setData({ minDate: getChinaDate(0), questionGoalIndex: this._getQuestionGoalIndex() })
+this._syncMinDate()
+this.setData({ questionGoalIndex: this._getQuestionGoalIndex() })
 this._loadStudyStrategy()
 this._initFabPosition()
 this.loadOverview()
 },
 onShow() {
+this._syncMinDate()
 this._loadStudyStrategy()
 this._syncQuestionGoalFromStorage()
 if (this._loadedOnce) this.loadOverview()
@@ -194,10 +196,16 @@ this.savePlan()
 onPullDownRefresh() {
 this.loadOverview().finally(() => wx.stopPullDownRefresh())
 },
+_syncMinDate() {
+const today = getChinaDate(0, api.now())
+if (this.data.minDate !== today) this.setData({ minDate: today })
+return today
+},
 async loadOverview() {
 this.setData({ loading: true, errorText: '' })
 try {
 const overview = await api.get('/study-plan/overview')
+this._syncMinDate()
 this.applyOverview(overview)
 } catch (error) {
 this.setData({ errorText: api.getErrorMessage(error) })
@@ -399,12 +407,23 @@ studyStrategy.saveProfile(strategyValidation.profile)
 wx.showToast({ title: error.message || '四科策略保存失败', icon: 'none' })
 return
 }
-if (!this.data.targetDate) {
+const today = this._syncMinDate()
+const targetDate = String(this.data.targetDate || '')
+if (!targetDate) {
 wx.showToast({ title: '四科策略已保存', icon: 'success' })
 return
 }
+const targetDateMs = getChinaDayStartUtcMs(targetDate)
+if (!Number.isFinite(targetDateMs) || getChinaDate(0, targetDateMs) !== targetDate) {
+wx.showToast({ title: '请选择有效的目标日期', icon: 'none' })
+return
+}
+if (targetDate < today) {
+wx.showToast({ title: '目标日期已过期，请重新选择', icon: 'none' })
+return
+}
 const payload = {
-target_date: this.data.targetDate,
+target_date: targetDate,
 daily_minutes: DAILY_OPTIONS[this.data.dailyIndex],
 weekly_days: WEEKLY_OPTIONS[this.data.weeklyIndex],
 priority_mode: PRIORITY_OPTIONS[this.data.priorityIndex].value,
@@ -415,7 +434,13 @@ await api.put('/study-plan', payload)
 wx.showToast({ title: this.data.configured ? '计划已更新' : '计划已创建', icon: 'success' })
 await this.loadOverview()
 } catch (error) {
-wx.showToast({ title: `计划保存失败，四科策略已保留：${api.getErrorMessage(error)}`, icon: 'none', duration: 2600 })
+const today = this._syncMinDate()
+const expired = error.statusCode === 422 && payload.target_date < today
+wx.showToast({
+title: expired ? '目标日期已过期，请重新选择' : `计划保存失败，四科策略已保留：${api.getErrorMessage(error)}`,
+icon: 'none',
+duration: 2600,
+})
 } finally {
 this.setData({ saving: false })
 }

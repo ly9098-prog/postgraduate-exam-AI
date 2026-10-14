@@ -2923,3 +2923,19 @@ page { background:#F2F3EF; background-color:#F2F3EF; }
 @media (prefers-reduced-motion: reduce) {
   .hero-card-panel { transition: none !important; transform: none !important; }
 }
+
+/* Recommendation subject controls use the dashboard's existing green state. */
+.knowledge-diagnosis-card-heading{align-items:center;padding-bottom:24rpx}
+.knowledge-diagnosis-card-title{margin-top:0;font-size:36rpx}
+.knowledge-diagnosis-period{color:#58676D;font-size:22rpx;white-space:nowrap}
+.knowledge-subject-filter{position:relative;z-index:1;padding-top:22rpx}
+.knowledge-subject-label{display:block;margin-bottom:12rpx;color:#58676D;font-size:23rpx;font-weight:600}
+.knowledge-subject-options,.knowledge-subject-skeleton{display:flex;gap:10rpx;flex-wrap:wrap}
+.knowledge-subject-chip{flex:1;min-width:0;min-height:72rpx;margin:0;padding:16rpx 12rpx;border:1rpx solid #DDE5E0;border-radius:16rpx;background:#F6F8F6;color:#46594D;font-size:23rpx;line-height:1.5;white-space:nowrap}
+.knowledge-subject-chip::after,.knowledge-subject-retry::after{border:0}
+.knowledge-subject-chip.is-selected{border-color:#B4DCC1;background:#E8F8ED;color:#17693A;font-weight:700}
+.knowledge-subject-skeleton view{flex:1;min-height:72rpx;border-radius:16rpx;background:#E9EEEB}
+.knowledge-subject-retry{display:inline-flex;align-items:center;justify-content:center;min-height:72rpx;margin:12rpx 0 0;padding:12rpx 18rpx;border:0;border-radius:16rpx;background:#E8F8ED;color:#17693A;font-size:23rpx;line-height:1.5}
+.knowledge-subject-empty,.knowledge-diagnosis-refresh{display:block;margin-top:18rpx;color:#58676D;font-size:23rpx;line-height:1.5}
+.knowledge-diagnosis-loading-body,.knowledge-diagnosis-empty-body{position:relative;z-index:1;padding-top:30rpx}
+@media (max-width:350px){.knowledge-subject-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.knowledge-subject-chip{width:100%;box-sizing:border-box;font-size:24rpx}.knowledge-diagnosis-card-title{font-size:32rpx}}

@@ -130,7 +130,8 @@
   },
   "usingComponents": {
     "app-dialog": "/components/app-dialog/index",
-    "premium-nav": "/components/premium-nav/premium-nav"
+    "premium-nav": "/components/premium-nav/premium-nav",
+    "question-filter-panel": "/components/question-filter-panel/index"
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",

@@ -205,6 +205,9 @@
 - **加载态**：所有列表页支持下拉刷新 + 上拉加载更多（分页）
 - **空态**：无数据时显示友好提示，如"还没有错题，继续加油！"
 - **错误态**：网络错误显示重试按钮，API 错误显示错误信息
+- **错题本日期筛选**：筛选控件封装在主包共享组件 `components/question-filter-panel`，通过 `app.json` 注册供 study 分包使用；页面保留筛选条件与请求逻辑，维持分包源码预算。筛选面板提供“不限 / 今天 / 近7天 / 近30天 / 自定义”，按加入错题本日期（`created_at`）和北京时间筛选。近7天、近30天均包含今天；快捷范围使用 API 同步时钟计算，跨午夜继续加载时从第一页重新查询。自定义开始/结束日期点击“应用日期”后生效，反向范围在页面内提示；重置会清除日期条件和草稿。日期条件与学科、错因、知识点组合，并同步传给 `/wrong-questions` 和 `/wrong-questions/task-flow`；无匹配结果可重置，加载失败可重试。日期作为一个筛选维度计入角标。顶部全局统计仍表示完整错题本，列表/任务流表示筛选结果。回归：`node tests/test-wrong-book-date-filter.js`（在 `miniprogram/` 执行）。
+- **章节诊断学科选择**：`pages/dashboard/dashboard` 的章节学习诊断模块提供四个 408 叶子学科按钮，业务 ID 来自 `/practice/subjects` 的有效目录，包含尚无练习历史的学科，不将 408 根学科作为章节推荐对象。初次优先使用路由指定学科或薄弱学科，用户选择在本页刷新与练习返回后保留；切换后以所选 `subject_id` 请求 `/study-hub/knowledge-diagnosis`。加载时清除其他学科的旧推荐，旧请求不能覆盖新选择；学科加载、推荐失败和暂无推荐分别提供恢复入口。专项练习、返回地址和知识图谱使用当前推荐学科。回归：`node tests/test-dashboard-diagnosis-subject.js`（在 `miniprogram/` 执行）。
+- **学习计划保存日期**：`subpackages/study/study-plan/index` 使用 `utils/api.js` 同步的服务端时钟计算北京时间日期下限，在页面进入、重新显示、概览加载后和提交前刷新。提交前校验日期格式、真实日历日期及是否过期；过期目标提示“目标日期已过期，请重新选择”，改选当天或未来日期后可继续保存，不放宽后端 `PUT /api/v1/study-plan` 的日期校验。未设置目标日期时仍只保存本地四科策略；远端保存失败不回滚本地策略。自动回归：`cd miniprogram && node tests/test-study-plan-save.js`；后端接口边界：`cd backend && python -m pytest tests/test_features/test_study_plan_save.py`。微信开发者工具/真机上的日期选择与保存仍需人工验证。
 - **所有 API 调用**走 `utils/api.js` 封装，自动携带 token、统一错误处理（例外：practice-result 内嵌独立 `requestApi`，为兼容多环境 API 基址 / token 来源）
 
 ---

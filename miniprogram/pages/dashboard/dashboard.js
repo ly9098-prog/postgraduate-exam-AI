@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
+const { buildDiagnosisSubjectOptions } = require('./dashboard.diagnosis')
 const { getChinaDate, parseServerUtc } = require('../../utils/china-time')
 const errorDiagnosis = require('./utils/error-diagnosis')
 const { studyStrategy } = require('../../utils/storage')
@@ -326,6 +327,10 @@ Page({
     knowledgeDiagnosisError: '',
     knowledgeDiagnosis: null,
     knowledgeDiagnosisSubjectId: 0,
+    knowledgeDiagnosisSubjects: [],
+    knowledgeDiagnosisSubjectsLoading: false,
+    knowledgeDiagnosisSubjectsError: '',
+    knowledgeDiagnosisSubjectsLoaded: false,
   },
 
   _alive: false,
@@ -354,6 +359,8 @@ Page({
   _errorDiagnosisSeq: 0,
   _knowledgeDiagnosisSeq: 0,
   _knowledgeDiagnosisLoadedAt: 0,
+  _knowledgeSubjectsSeq: 0,
+  _selectedKnowledgeSubjectId: 0,
   _chapterPracticeNavigationPending: false,
   _insightRetryTimer: null,
   _insightKickoffTimer: null,
@@ -361,6 +368,7 @@ Page({
   onLoad(options) {
     this._focusSubjectId = Math.max(0, Number(options && options.focus_subject_id) || 0)
     this._focusDiagnosisOnLoad = String((options && options.section) || '') === 'knowledge_diagnosis'
+    this._selectedKnowledgeSubjectId = 0
     this._diagnosisAutoScrolled = false
     this._chapterPracticeNavigationPending = false
   },
@@ -373,6 +381,7 @@ Page({
     this._alive = true
     this._visible = true
     this._chapterPracticeNavigationPending = false
+    this.loadKnowledgeDiagnosisSubjects()
 
     var forceRefresh = this._forceRefreshOnNextShow
     this._forceRefreshOnNextShow = false
@@ -410,6 +419,7 @@ Page({
     this._insightSeq++
     this._errorDiagnosisSeq++
     this._knowledgeDiagnosisSeq++
+    this._knowledgeSubjectsSeq++
     this._loadPromise = null  // 页面隐藏后使当前加载失效，允许下一次 onShow 发起新请求
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -435,6 +445,7 @@ Page({
       _activeTabDays: this.data.trendDays,
       yearlyLoading: false,
       knowledgeDiagnosisLoading: false,
+      knowledgeDiagnosisSubjectsLoading: false,
     })
   },
 
@@ -447,6 +458,7 @@ Page({
     this._insightSeq++
     this._errorDiagnosisSeq++
     this._knowledgeDiagnosisSeq++
+    this._knowledgeSubjectsSeq++
     this._loadPromise = null
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -606,17 +618,67 @@ Page({
     }
   },
 
+  _preferredKnowledgeSubjectId(subjects = this.data.subjects) {
+    const options = this.data.knowledgeDiagnosisSubjects || []
+    const preferred = [
+      this._selectedKnowledgeSubjectId,
+      this._focusSubjectId,
+      subjects && subjects.focusItem && subjects.focusItem.subjectId,
+      this.data.knowledgeDiagnosisSubjectId,
+    ].map(Number)
+    return preferred.find(id => id > 0 && (!options.length || options.some(item => item.subjectId === id)))
+      || (options[0] && options[0].subjectId) || 0
+  },
+
+  async loadKnowledgeDiagnosisSubjects() {
+    if (!this._alive || !this._visible || this.data.knowledgeDiagnosisSubjectsLoading) return
+    if (this.data.knowledgeDiagnosisSubjectsLoaded) {
+      return this.loadKnowledgeDiagnosis(this._preferredKnowledgeSubjectId())
+    }
+    const seq = ++this._knowledgeSubjectsSeq
+    this.setData({ knowledgeDiagnosisSubjectsLoading: true, knowledgeDiagnosisSubjectsError: '' })
+    try {
+      const raw = await api.get('/practice/subjects')
+      if (!this._alive || !this._visible || seq !== this._knowledgeSubjectsSeq) return
+      this.setData({
+        knowledgeDiagnosisSubjects: buildDiagnosisSubjectOptions(raw),
+        knowledgeDiagnosisSubjectsLoading: false,
+        knowledgeDiagnosisSubjectsLoaded: true,
+        knowledgeDiagnosisSubjectsError: '',
+      })
+      if (this.data.knowledgeDiagnosisSubjects.length) {
+        return this.loadKnowledgeDiagnosis(this._preferredKnowledgeSubjectId())
+      }
+    } catch (e) {
+      if (!this._alive || !this._visible || seq !== this._knowledgeSubjectsSeq) return
+      this.setData({ knowledgeDiagnosisSubjectsLoading: false, knowledgeDiagnosisSubjectsError: '学科加载失败，请重试' })
+    }
+  },
+
+  selectKnowledgeDiagnosisSubject(e) {
+    const id = Number(e.currentTarget.dataset.subjectId)
+    if (!(this.data.knowledgeDiagnosisSubjects || []).some(item => item.subjectId === id)) return
+    this._selectedKnowledgeSubjectId = id
+    return this.loadKnowledgeDiagnosis(id)
+  },
+
   async loadKnowledgeDiagnosis(subjectId, options = {}) {
     const id = Math.max(0, Number(subjectId) || 0)
     if (!id || !this._alive || !this._visible) return null
     const force = Boolean(options && options.force)
+    if (!force && this.data.knowledgeDiagnosisLoading && this.data.knowledgeDiagnosisSubjectId === id) return null
     if (!force && this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis && Date.now() - this._knowledgeDiagnosisLoadedAt < 30000) {
       return this.data.knowledgeDiagnosis
     }
 
     const seq = ++this._knowledgeDiagnosisSeq
     const keepCurrent = this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis
-    if (!keepCurrent) this.setData({ knowledgeDiagnosisLoading: true, knowledgeDiagnosisError: '', knowledgeDiagnosisSubjectId: id })
+    this.setData({
+      knowledgeDiagnosisLoading: true,
+      knowledgeDiagnosisError: '',
+      knowledgeDiagnosisSubjectId: id,
+      knowledgeDiagnosis: keepCurrent || null,
+    })
     try {
       const raw = await api.get('/study-hub/knowledge-diagnosis', { subject_id: id, days: 30 })
       if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
@@ -639,18 +701,18 @@ Page({
     } catch (e) {
       if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
       console.warn('[dashboard] knowledge diagnosis load failed', e)
-      if (!keepCurrent) this.setData({ knowledgeDiagnosisLoading: false, knowledgeDiagnosisError: '章节诊断暂不可用' })
+      this.setData({ knowledgeDiagnosisLoading: false, knowledgeDiagnosisError: '章节诊断暂不可用' })
       return null
     }
   },
 
   retryKnowledgeDiagnosis() {
-    const id = this.data.knowledgeDiagnosisSubjectId || this._focusSubjectId || (this.data.subjects && this.data.subjects.focusItem && this.data.subjects.focusItem.subjectId)
+    const id = this._preferredKnowledgeSubjectId()
     return this.loadKnowledgeDiagnosis(id, { force: true })
   },
 
   startKnowledgeDiagnosisPractice() {
-    if (this._chapterPracticeNavigationPending) return
+    if (this._chapterPracticeNavigationPending || this.data.knowledgeDiagnosisLoading) return
     const diagnosis = this.data.knowledgeDiagnosis
     const item = diagnosis && diagnosis.primary
     if (!item || !diagnosis.subjectId || !item.knowledgePointId) return
@@ -673,6 +735,7 @@ Page({
   },
 
   openKnowledgeDiagnosisMap() {
+    if (this.data.knowledgeDiagnosisLoading) return
     const diagnosis = this.data.knowledgeDiagnosis
     const subjectId = Number(diagnosis && diagnosis.subjectId) || Number(this.data.knowledgeDiagnosisSubjectId) || 0
     if (!subjectId) return
@@ -877,7 +940,7 @@ Page({
     }, () => {
       if (!this._alive) return
 
-      const diagnosisSubjectId = this._focusSubjectId || (subjects && subjects.focusItem && subjects.focusItem.subjectId) || 0
+      const diagnosisSubjectId = this._preferredKnowledgeSubjectId(subjects)
       if (diagnosisSubjectId) {
         this.loadKnowledgeDiagnosis(diagnosisSubjectId, { force: mode !== 'initial' })
       }

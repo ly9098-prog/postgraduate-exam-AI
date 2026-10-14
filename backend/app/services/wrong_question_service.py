@@ -1,10 +1,10 @@
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import shanghai_today_boundaries, utcnow
+from app.core.time_utils import shanghai_today_boundaries, study_day_utc_range, utcnow
 from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
@@ -260,6 +260,8 @@ async def list_wrong_enriched(
     page: int = 1,
     page_size: int = 20,
     allowed_subject_ids: set[int] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> tuple[list[dict], int]:
     """Enhanced WQ list avoiding N+1 via correlated scalar subqueries."""
 
@@ -272,6 +274,12 @@ async def list_wrong_enriched(
         )
     if error_type:
         conditions.append(WrongQuestion.error_type == error_type)
+
+    # Inclusive China calendar dates map to a half-open naive UTC range.
+    if date_from is not None:
+        conditions.append(WrongQuestion.created_at >= study_day_utc_range(date_from)[0])
+    if date_to is not None:
+        conditions.append(WrongQuestion.created_at < study_day_utc_range(date_to)[1])
 
     # Correlated subqueries
     review_record_sub = (
@@ -657,6 +665,8 @@ async def get_task_flow(
     topic: str | None = None,
     preview_size: int = 3,
     allowed_subject_ids: set[int] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict:
     """Group wrong questions into priority-deduplicated buckets."""
 
@@ -680,6 +690,8 @@ async def get_task_flow(
             page=page,
             page_size=page_size,
             allowed_subject_ids=allowed_subject_ids,
+            date_from=date_from,
+            date_to=date_to,
         )
         all_items.extend(page_items)
         if not page_items or len(all_items) >= total_count:

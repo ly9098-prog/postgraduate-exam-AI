@@ -1,0 +1,26 @@
+:host{display:block}
+.filter-panel{margin-bottom:22rpx;padding:28rpx;border:1rpx solid #DDE2DA;border-radius:30rpx;background:rgba(255,255,255,0.94);box-shadow:0 18rpx 48rpx rgba(22,44,31,0.07)}
+.filter-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22rpx}
+.filter-title{color:#18231D;font-size:28rpx;font-weight:800}
+.filter-reset,.topic-clear{color:#17693A;font-size:23rpx;font-weight:700}
+.filter-section + .filter-section{margin-top:20rpx}
+.filter-label{display:block;margin-bottom:12rpx;color:#58655D;font-size:22rpx}
+.filter-scroll{width:100%;white-space:nowrap}
+.filter-row{display:inline-flex;gap:12rpx;padding-right:20rpx}
+.filter-inline-state{height:54rpx;padding:0 18rpx;display:inline-flex;align-items:center;border-radius:999rpx;background:#F1F4F1;color:#7C8780;font-size:21rpx;white-space:nowrap}
+.filter-inline-state.error{background:#FFF4EA;color:#B96B2B}
+.filter-chip{min-width:92rpx;height:54rpx;padding:0 20rpx;display:inline-flex;align-items:center;justify-content:center;border:1rpx solid #E7EBE7;border-radius:999rpx;background:#F8FAF8;color:#68716C;font-size:22rpx}
+.filter-chip.active{border-color:rgba(37,194,99,0.28);background:#E8F8ED;color:#168547;font-weight:700}
+.topic-active{margin-top:20rpx;padding:16rpx 20rpx;display:flex;align-items:center;justify-content:space-between;border-radius:18rpx;background:#F1F6F2;color:#536058;font-size:22rpx}
+
+.date-range-form{margin-top:20rpx}
+.date-range-fields{display:flex;gap:16rpx}
+.date-range-field{flex:1;min-width:0}
+.date-range-label{display:block;margin-bottom:10rpx;color:#58655D;font-size:22rpx}
+.date-range-input{min-height:76rpx;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:12rpx 10rpx;border:1rpx solid #DDE5DE;border-radius:16rpx;background:#F8FAF8;color:#263D2E;font-size:24rpx;white-space:nowrap}
+.date-range-error{display:block;margin-top:12rpx;color:#A5382E;font-size:23rpx;line-height:1.5}
+.date-range-apply{min-height:76rpx;margin:18rpx 0 0;padding:14rpx 24rpx;display:flex;align-items:center;justify-content:center;border:0;border-radius:16rpx;background:#E8F8ED;color:#17693A;font-size:24rpx;font-weight:700;line-height:1.4;white-space:nowrap}
+.date-range-apply::after{border:0}
+.date-range-summary{display:block;margin-top:14rpx;color:#476550;font-size:22rpx;line-height:1.5}
+.date-control-pressed{opacity:.8}
+@media (max-width:350px){.date-range-fields{gap:12rpx}.date-range-input{font-size:22rpx;padding-right:6rpx;padding-left:6rpx}}

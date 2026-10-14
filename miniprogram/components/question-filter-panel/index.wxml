@@ -1,0 +1,67 @@
+<view class="filter-panel">
+<view class="filter-head">
+<text class="filter-title">筛选错题</text>
+<text class="filter-reset" bindtap="reset">重置</text>
+</view>
+<view class="filter-section">
+<text class="filter-label">学科</text>
+<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
+<view class="filter-row">
+<view class="filter-inline-state" wx:if="{{subjectsLoading}}">正在加载学科…</view>
+<view class="filter-inline-state error" wx:elif="{{subjectsError}}" bindtap="retrySubjects">加载失败，点击重试</view>
+<view
+            wx:for="{{subjects}}"
+            wx:key="value"
+            class="filter-chip {{(subjectId || '') === item.value ? 'active' : ''}}"
+            bindtap="selectSubject"
+            data-value="{{item.value}}"
+          >{{item.label}}</view>
+</view>
+</scroll-view>
+</view>
+<view class="filter-section">
+<text class="filter-label">错因</text>
+<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
+<view class="filter-row">
+<view
+            wx:for="{{errorTypes}}"
+            wx:key="value"
+            class="filter-chip {{errorType === item.value ? 'active' : ''}}"
+            bindtap="selectErrorType"
+            data-value="{{item.value}}"
+          >{{item.label}}</view>
+</view>
+</scroll-view>
+</view>
+<view class="filter-section">
+<text class="filter-label">加入错题本日期（北京时间）</text>
+<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
+<view class="filter-row">
+<view wx:for="{{datePresets}}" wx:key="value" class="filter-chip {{selectedDatePreset === item.value ? 'active' : ''}}" bindtap="selectDatePreset" data-value="{{item.value}}" hover-class="date-control-pressed">{{item.label}}</view>
+</view>
+</scroll-view>
+<view class="date-range-form" wx:if="{{selectedDatePreset === 'custom'}}">
+<view class="date-range-fields">
+<view class="date-range-field">
+<text class="date-range-label">开始日期</text>
+<picker mode="date" value="{{draftDateFrom}}" end="{{filterToday}}" bindchange="onDateFromChange">
+<view class="date-range-input" hover-class="date-control-pressed">{{draftDateFrom || '选择开始日期'}}</view>
+</picker>
+</view>
+<view class="date-range-field">
+<text class="date-range-label">结束日期</text>
+<picker mode="date" value="{{draftDateTo}}" end="{{filterToday}}" bindchange="onDateToChange">
+<view class="date-range-input" hover-class="date-control-pressed">{{draftDateTo || '选择结束日期'}}</view>
+</picker>
+</view>
+</view>
+<text class="date-range-error" wx:if="{{dateFilterError}}" role="alert">{{dateFilterError}}</text>
+<button class="date-range-apply" bindtap="applyDateRange" hover-class="date-control-pressed">应用日期</button>
+</view>
+<text class="date-range-summary" wx:if="{{dateRangeText}}">已筛选 {{dateRangeText}}</text>
+</view>
+<view class="topic-active" wx:if="{{topic}}">
+<text>知识点 · {{topic}}</text>
+<text class="topic-clear" bindtap="clearTopic">清除</text>
+</view>
+</view>

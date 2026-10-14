@@ -1,4 +1,5 @@
 import re
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
@@ -375,6 +376,11 @@ async def _enrich_single_wq_extra(
     }
 
 
+def _validate_wrong_book_dates(date_from: date | None, date_to: date | None) -> None:
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(status_code=422, detail="开始日期不能晚于结束日期")
+
+
 @router.get("", response_model=RawPaginatedResponse)
 async def list_wrong(
     subject_id: int | None = Query(None),
@@ -383,9 +389,12 @@ async def list_wrong(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     product_scope: str | None = Query(None),
+    date_from: date | None = Query(None, description="加入错题本的起始日期（北京时间，含当天）"),
+    date_to: date | None = Query(None, description="加入错题本的结束日期（北京时间，含当天）"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _validate_wrong_book_dates(date_from, date_to)
     allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
     items, total = await svc.list_wrong_enriched(
         db,
@@ -396,6 +405,8 @@ async def list_wrong(
         page,
         page_size,
         allowed_subject_ids=allowed_subject_ids,
+        date_from=date_from,
+        date_to=date_to,
     )
 
     # Apply text sanitization
@@ -431,10 +442,13 @@ async def get_task_flow(
     topic: str | None = Query(None),
     preview_size: int = Query(3, ge=1, le=10),
     product_scope: str | None = Query(None),
+    date_from: date | None = Query(None, description="加入错题本的起始日期（北京时间，含当天）"),
+    date_to: date | None = Query(None, description="加入错题本的结束日期（北京时间，含当天）"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """错题任务流分组：今日应复习 → 高频错题 → 最近新增 → 待巩固 → 已掌握."""
+    _validate_wrong_book_dates(date_from, date_to)
     allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
     result = await svc.get_task_flow(
         db,
@@ -444,6 +458,8 @@ async def get_task_flow(
         topic,
         preview_size,
         allowed_subject_ids=allowed_subject_ids,
+        date_from=date_from,
+        date_to=date_to,
     )
     # Keep task-flow preview rows byte-for-byte compatible with the ordinary
     # wrong-question list rendering contract.  Without this, switching views

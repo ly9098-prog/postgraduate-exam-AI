@@ -7,6 +7,7 @@ const aiCache = require('../utils/ai-diagnosis-cache')
 const errorDiagnosis = require('../utils/error-diagnosis')
 const { getSubjectName, getSubjectShortName } = require('../utils/subject-meta')
 const exportApi = require('../utils/export-capability')
+const dateFilter = require('../../../components/question-filter-panel/date-range')
 const { parseServerUtc, getChinaDayRangeUtcMs, chinaCalendarDayDiff, formatChinaMonthDayCn } = require('../../../utils/china-time')
 const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
 const BATCH_CAPSULE_IDLE_MS = 5000
@@ -72,6 +73,10 @@ exportUnavailableText: '当前导出功能不可用',
 selectedSubjectId: null,
 selectedErrorType: '',
 selectedTopic: '',
+selectedDatePreset: '',
+dateFrom: '',
+dateTo: '',
+listError: '',
 showFilter: false,
 filterCount: 0,
 subjects: [{ value: '', label: '全部' }],
@@ -81,8 +86,28 @@ subjectsLoaded: false,
 errorTypes: ERROR_TYPES,
 },
 _updateFilterCount() {
-const count = (this.data.selectedSubjectId ? 1 : 0) + (this.data.selectedErrorType ? 1 : 0) + (this.data.selectedTopic ? 1 : 0)
+const count = (this.data.selectedSubjectId ? 1 : 0) + (this.data.selectedErrorType ? 1 : 0) + (this.data.selectedTopic ? 1 : 0) + (this.data.dateFrom || this.data.dateTo ? 1 : 0)
 this.setData({ filterCount: count })
+},
+_hasFilters() {
+return !!(this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic || this.data.dateFrom || this.data.dateTo)
+},
+_syncDateFilter() {
+const now = api.now()
+const patch = {}
+if (this.data.selectedDatePreset !== 'custom') {
+Object.assign(patch, dateFilter.presetRange(this.data.selectedDatePreset, now))
+}
+this.setData(patch)
+},
+_filterParams() {
+const params = { product_scope: 'exam408' }
+if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
+if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
+if (this.data.selectedTopic) params.topic = this.data.selectedTopic
+if (this.data.dateFrom) params.date_from = this.data.dateFrom
+if (this.data.dateTo) params.date_to = this.data.dateTo
+return params
 },
 _beginFilterReload(patch) {
 this._listRequestSeq++
@@ -93,6 +118,7 @@ listTotal: 0,
 page: 1,
 hasMore: false,
 loading: true,
+listError: '',
 taskGroups: [],
 ungroupedCount: 0,
 selectedIds: [],
@@ -130,6 +156,7 @@ this._subjectsRequestSeq = 0
 this._taskFlowRequestSeq = 0
 this._batchMasterUndoInFlight = false
 this.setData({ enableMathImage: config.enableMathImage || false })
+this._syncDateFilter()
 const subjectId = options && options.subject_id != null ? Number(options.subject_id) : null
 const topic = safeDecodeURIComponent(options && options.topic, '')
 if (subjectId && Number.isFinite(subjectId)) {
@@ -150,6 +177,7 @@ this._loadPage()
 },
 onShow() {
 this._alive = true
+this._syncDateFilter()
 if (this.data.batchMode) this._showBatchCapsuleAndRefreshTimer()
 if (!this._ready) return
 Promise.all([
@@ -323,7 +351,7 @@ this.data.highFrequencyCount || 0
 ),
 }
 this.setData(patch)
-const hasFilter = this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic
+const hasFilter = this._hasFilters()
 if (!hasFilter && this.data.list.length > 0) {
 const analysis = this._buildAnalysis(stats, this.data.list)
 this.setData({
@@ -339,19 +367,22 @@ console.error('加载错题统计失败', e)
 }
 },
 async loadList(reset = false) {
+const previousRange = `${this.data.dateFrom}/${this.data.dateTo}`
+this._syncDateFilter()
+if (previousRange !== `${this.data.dateFrom}/${this.data.dateTo}`) {
+reset = true
+this._taskFlowRequestSeq++
+}
 const page = reset ? 1 : this.data.page
 const seq = ++this._listRequestSeq
-this.setData({ loading: true })
+this.setData({ loading: true, listError: '' })
 try {
-const params = { page, page_size: 20, product_scope: 'exam408' }
-if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
-if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
-if (this.data.selectedTopic) params.topic = this.data.selectedTopic
+const params = Object.assign({ page, page_size: 20 }, this._filterParams())
 const data = await api.get('/wrong-questions', params)
 if (seq !== this._listRequestSeq || !this._alive) return
 const items = (data.items || []).map(item => this._decorateItem(item))
 const nextList = reset ? items : (this.data.list || []).concat(items)
-const hasFilter = this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic
+const hasFilter = this._hasFilters()
 const statsForAnalysis = hasFilter ? {} : (this.data.stats || {})
 if (seq !== this._listRequestSeq || !this._alive) return
 const analysis = this._buildAnalysis(statsForAnalysis, nextList)
@@ -379,16 +410,13 @@ if (reset) this.loadTaskFlow()
 } catch (e) {
 console.error('加载错题列表失败', e)
 if (seq === this._listRequestSeq && this._alive) {
-this.setData({ loading: false })
+this.setData({ loading: false, listError: api.getErrorMessage(e) })
 }
 }
 },
 async loadTaskFlow() {
 const requestSeq = ++this._taskFlowRequestSeq
-const params = { preview_size: 3, product_scope: 'exam408' }
-if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
-if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
-if (this.data.selectedTopic) params.topic = this.data.selectedTopic
+const params = Object.assign({ preview_size: 3 }, this._filterParams())
 try {
 const data = await api.get('/wrong-questions/task-flow', params)
 if (this._destroyed || !this._alive || requestSeq !== this._taskFlowRequestSeq) return
@@ -414,7 +442,7 @@ tone: cfg.tone,
 const summary = data.summary || {}
 const totalCount = Math.max(0, Number(summary.total_count) || 0)
 const previewCount = groups.reduce((sum, group) => sum + group.items.length, 0)
-const hasFilter = !!(this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic)
+const hasFilter = this._hasFilters()
 const globalHighFrequency = Number((this.data.stats || {}).high_frequency_count)
 const highFrequencyCount = Number.isFinite(globalHighFrequency)
 ? Math.max(0, Math.round(globalHighFrequency))
@@ -487,17 +515,25 @@ goBack() {
 wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
 },
 toggleFilter() {
+this._syncDateFilter()
 if (!this.data.subjectsLoaded && !this.data.subjectsLoading) this.loadSubjects()
 this.setData({ showFilter: !this.data.showFilter })
 },
 selectSubject(e) {
-const val = e.currentTarget.dataset.value
+const val = e.detail.value
 const subjectId = (val === '' || val === null || val === undefined) ? null : Number(val)
 this._beginFilterReload({ selectedSubjectId: subjectId })
 },
 selectErrorType(e) {
-const val = e.currentTarget.dataset.value
+const val = e.detail.value
 this._beginFilterReload({ selectedErrorType: val })
+},
+onDateFilterChange(e) {
+const range = e.detail || {}
+this._beginFilterReload({ selectedDatePreset: range.preset || '', dateFrom: range.dateFrom || '', dateTo: range.dateTo || '' })
+},
+retryList() {
+return this.loadList(this.data.list.length === 0)
 },
 clearTopic() {
 this._beginFilterReload({ selectedTopic: '' })
@@ -511,6 +547,9 @@ this._beginFilterReload({
 selectedSubjectId: null,
 selectedErrorType: '',
 selectedTopic: '',
+selectedDatePreset: '',
+dateFrom: '',
+dateTo: '',
 filterCount: 0,
 })
 },

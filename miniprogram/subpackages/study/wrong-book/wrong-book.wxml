@@ -2,7 +2,7 @@
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
 <app-dialog id="appDialog"></app-dialog>
-<view class="page {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
+<view class="page {{batchMode ? 'page-batch-padding' : ''}} {{!loading && list.length === 0 && !showFilter && filterCount === 0 && !listError ? 'page-empty' : ''}}" bindtouchstart="onPageInteraction">
 <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
 <block wx:if="{{!batchMode}}">
 <view class="view-tabs" role="tablist">
@@ -45,46 +45,7 @@
 <view class="edit-complete" hover-class="edit-complete-pressed" bindtap="toggleBatchMode">完成</view>
 </block>
 </view>
-<view class="filter-panel" wx:if="{{showFilter}}">
-<view class="filter-head">
-<text class="filter-title">筛选错题</text>
-<text class="filter-reset" bindtap="resetFilters">重置</text>
-</view>
-<view class="filter-section">
-<text class="filter-label">学科</text>
-<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
-<view class="filter-row">
-<view class="filter-inline-state" wx:if="{{subjectsLoading}}">正在加载学科…</view>
-<view class="filter-inline-state error" wx:elif="{{subjectsError}}" bindtap="loadSubjects">加载失败，点击重试</view>
-<view
-            wx:for="{{subjects}}"
-            wx:key="value"
-            class="filter-chip {{(selectedSubjectId || '') === item.value ? 'active' : ''}}"
-            bindtap="selectSubject"
-            data-value="{{item.value}}"
-          >{{item.label}}</view>
-</view>
-</scroll-view>
-</view>
-<view class="filter-section">
-<text class="filter-label">错因</text>
-<scroll-view scroll-x class="filter-scroll" enhanced show-scrollbar="{{false}}">
-<view class="filter-row">
-<view
-            wx:for="{{errorTypes}}"
-            wx:key="value"
-            class="filter-chip {{selectedErrorType === item.value ? 'active' : ''}}"
-            bindtap="selectErrorType"
-            data-value="{{item.value}}"
-          >{{item.label}}</view>
-</view>
-</scroll-view>
-</view>
-<view class="topic-active" wx:if="{{selectedTopic}}">
-<text>知识点 · {{selectedTopic}}</text>
-<text class="topic-clear" bindtap="clearTopic">清除</text>
-</view>
-</view>
+<question-filter-panel wx:if="{{showFilter}}" subjects="{{subjects}}" subjects-loading="{{subjectsLoading}}" subjects-error="{{subjectsError}}" subject-id="{{selectedSubjectId || 0}}" error-types="{{errorTypes}}" error-type="{{selectedErrorType}}" topic="{{selectedTopic}}" preset="{{selectedDatePreset}}" date-from="{{dateFrom}}" date-to="{{dateTo}}" bind:subjectchange="selectSubject" bind:errorchange="selectErrorType" bind:datechange="onDateFilterChange" bind:cleartopic="clearTopic" bind:reset="resetFilters" bind:retrysubjects="loadSubjects" />
 <view class="overview-card">
 <view class="overview-item">
 <view class="overview-icon book"><image class="overview-icon-image" src="/assets/icons/wrong-book/notebook-text.svg" mode="aspectFit" /></view>
@@ -214,7 +175,17 @@
 <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
 <loading-lottie text="正在整理错题任务..." size="large" />
 </view>
-<wrong-book-empty wx:if="{{!loading && list.length === 0}}" />
+<view class="filter-result-state" wx:if="{{!loading && listError}}">
+<text class="filter-result-title">错题加载失败</text>
+<text class="filter-result-desc">{{listError}}</text>
+<button class="filter-result-action" bindtap="retryList" hover-class="date-control-pressed">重新加载</button>
+</view>
+<view class="filter-result-state" wx:elif="{{!loading && list.length === 0 && filterCount > 0}}">
+<text class="filter-result-title">没有符合条件的错题</text>
+<text class="filter-result-desc">可以扩大日期范围，或重置筛选。</text>
+<button class="filter-result-action" bindtap="resetFilters" hover-class="date-control-pressed">重置筛选</button>
+</view>
+<wrong-book-empty wx:elif="{{!loading && list.length === 0}}" />
 <view class="task-flow" wx:if="{{list.length > 0 && activeView === 'task'}}">
 <view class="section-title-row">
 <view>

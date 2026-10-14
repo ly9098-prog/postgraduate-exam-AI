@@ -376,8 +376,16 @@ Authorization: Bearer <jwt_token>
 | subject_id | int? | 筛选科目 |
 | error_type | string? | 筛选错误类型 |
 | topic | string? | 筛选知识点主题 |
+| date_from | date? | 加入错题本的开始日期，`YYYY-MM-DD`，北京时间，包含当天 |
+| date_to | date? | 加入错题本的结束日期，`YYYY-MM-DD`，北京时间，包含当天 |
 | page | int | 默认 1 |
 | page_size | int | 默认 20（1-100） |
+
+日期条件作用于 `WrongQuestion.created_at`，与学科、错因和知识点条件组合使用；查询总数与分页使用同一组条件。结束日期覆盖当天最后一刻（内部使用次日北京时间零点之前的 UTC 范围）。日期参数均可省略；无效日期或开始日期晚于结束日期返回 422。
+
+### GET `/wrong-questions/task-flow`
+
+错题任务流，按今日应复习、高频错题、最近新增、待巩固、已掌握分组。支持与列表一致的 `subject_id`、`error_type`、`topic`、`product_scope`、`date_from`、`date_to` 参数；`preview_size` 默认 3，范围 1-10。日期筛选同时作用于分组总数、预览条目和 `summary`；不是只过滤当前页或预览条目。无日期条件时保持原有完整错题本统计。
 
 ### GET `/wrong-questions/stats`
 
