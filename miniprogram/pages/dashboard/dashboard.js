@@ -9,6 +9,7 @@ const { studyStrategy } = require('../../utils/storage')
 const DASHBOARD_AI_HTTP_TIMEOUT_MS = 55000
 const DASHBOARD_AI_SUCCESS_COOLDOWN_MS = 60000
 const DASHBOARD_AI_FALLBACK_COOLDOWN_MS = 15000
+const KNOWLEDGE_SUBJECT_SHEET_EXIT_MS = 180
 
 function clampPct(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
@@ -327,6 +328,11 @@ Page({
     knowledgeDiagnosisError: '',
     knowledgeDiagnosis: null,
     knowledgeDiagnosisSubjectId: 0,
+    knowledgeDiagnosisSubjectName: '',
+    knowledgeDiagnosisBodyHeight: 0,
+    knowledgeSubjectSheetVisible: false,
+    knowledgeSubjectSheetClosing: false,
+    knowledgeSubjectSheetSelectedId: 0,
     knowledgeDiagnosisSubjects: [],
     knowledgeDiagnosisSubjectsLoading: false,
     knowledgeDiagnosisSubjectsError: '',
@@ -371,6 +377,7 @@ Page({
     this._selectedKnowledgeSubjectId = 0
     this._diagnosisAutoScrolled = false
     this._chapterPracticeNavigationPending = false
+    this._knowledgeDiagnosisCache = new Map()
   },
 
   goBack() {
@@ -420,6 +427,7 @@ Page({
     this._errorDiagnosisSeq++
     this._knowledgeDiagnosisSeq++
     this._knowledgeSubjectsSeq++
+    this._cancelKnowledgeSubjectSheetClose()
     this._loadPromise = null  // 页面隐藏后使当前加载失效，允许下一次 onShow 发起新请求
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -446,6 +454,8 @@ Page({
       yearlyLoading: false,
       knowledgeDiagnosisLoading: false,
       knowledgeDiagnosisSubjectsLoading: false,
+      knowledgeSubjectSheetVisible: false,
+      knowledgeSubjectSheetClosing: false,
     })
   },
 
@@ -459,6 +469,7 @@ Page({
     this._errorDiagnosisSeq++
     this._knowledgeDiagnosisSeq++
     this._knowledgeSubjectsSeq++
+    this._cancelKnowledgeSubjectSheetClose()
     this._loadPromise = null
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -655,53 +666,147 @@ Page({
     }
   },
 
+  openKnowledgeSubjectSheet() {
+    if (!this._alive || !this._visible || this.data.knowledgeSubjectSheetClosing || !this.data.knowledgeDiagnosisSubjects.length) return
+    this._reserveKnowledgeDiagnosisHeight()
+    this.setData({
+      knowledgeSubjectSheetVisible: true,
+      knowledgeSubjectSheetSelectedId: this.data.knowledgeDiagnosisSubjectId,
+    })
+  },
+
+  _reserveKnowledgeDiagnosisHeight() {
+    if (typeof this.createSelectorQuery !== 'function') return
+    this.createSelectorQuery().select('.knowledge-diagnosis-body').boundingClientRect(rect => {
+      if (!this._alive || !this._visible || !rect) return
+      const height = Math.ceil(rect.height)
+      if (height > this.data.knowledgeDiagnosisBodyHeight) {
+        this.setData({ knowledgeDiagnosisBodyHeight: height })
+      }
+    }).exec()
+  },
+
+  closeKnowledgeSubjectSheet() {
+    if (this._knowledgeSubjectSheetClosePromise) return this._knowledgeSubjectSheetClosePromise
+    if (!this.data.knowledgeSubjectSheetVisible) return Promise.resolve()
+    this.setData({ knowledgeSubjectSheetClosing: true })
+    this._knowledgeSubjectSheetClosePromise = new Promise(resolve => {
+      this._resolveKnowledgeSubjectSheetClose = resolve
+      this._knowledgeSubjectSheetCloseTimer = setTimeout(() => {
+        if (this._alive && this._visible) {
+          this.setData({ knowledgeSubjectSheetVisible: false, knowledgeSubjectSheetClosing: false })
+        }
+        this._cancelKnowledgeSubjectSheetClose()
+      }, KNOWLEDGE_SUBJECT_SHEET_EXIT_MS)
+    })
+    return this._knowledgeSubjectSheetClosePromise
+  },
+
+  _cancelKnowledgeSubjectSheetClose() {
+    clearTimeout(this._knowledgeSubjectSheetCloseTimer)
+    this._knowledgeSubjectSheetCloseTimer = null
+    const resolve = this._resolveKnowledgeSubjectSheetClose
+    this._resolveKnowledgeSubjectSheetClose = null
+    this._knowledgeSubjectSheetClosePromise = null
+    if (resolve) resolve()
+  },
+
+  preventKnowledgeSubjectSheetScroll() {},
+
   selectKnowledgeDiagnosisSubject(e) {
+    if (!this._alive || !this._visible || this.data.knowledgeSubjectSheetClosing) return
     const id = Number(e.currentTarget.dataset.subjectId)
     if (!(this.data.knowledgeDiagnosisSubjects || []).some(item => item.subjectId === id)) return
+    if (id === this.data.knowledgeDiagnosisSubjectId) return this.closeKnowledgeSubjectSheet()
     this._selectedKnowledgeSubjectId = id
-    return this.loadKnowledgeDiagnosis(id)
+    this.setData({ knowledgeSubjectSheetSelectedId: id })
+    return this.loadKnowledgeDiagnosis(id, { closeSheet: true })
   },
 
   async loadKnowledgeDiagnosis(subjectId, options = {}) {
     const id = Math.max(0, Number(subjectId) || 0)
     if (!id || !this._alive || !this._visible) return null
+    const subject = this.data.knowledgeDiagnosisSubjects.find(item => item.subjectId === id)
+    const subjectName = subject ? subject.name : ''
+    const selection = { knowledgeDiagnosisSubjectName: subjectName }
+    const sheetClosed = options.closeSheet && this.data.knowledgeSubjectSheetVisible
+      ? this.closeKnowledgeSubjectSheet() : null
     const force = Boolean(options && options.force)
-    if (!force && this.data.knowledgeDiagnosisLoading && this.data.knowledgeDiagnosisSubjectId === id) return null
-    if (!force && this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis && Date.now() - this._knowledgeDiagnosisLoadedAt < 30000) {
-      return this.data.knowledgeDiagnosis
+    if (!force && this.data.knowledgeDiagnosisLoading && this.data.knowledgeDiagnosisSubjectId === id) {
+      this.setData(selection)
+      return null
     }
 
+    const cached = this._knowledgeDiagnosisCache.get(id)
+    // A cached selection must also invalidate any other subject's pending response.
     const seq = ++this._knowledgeDiagnosisSeq
+    if (!force && cached && Date.now() - cached.loadedAt < 30000) {
+      if (sheetClosed) await sheetClosed
+      if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
+      this.setData({
+        ...selection,
+        knowledgeDiagnosisLoading: false,
+        knowledgeDiagnosisError: '',
+        knowledgeDiagnosisSubjectId: id,
+        knowledgeDiagnosis: cached.snapshot,
+      }, () => this._reserveKnowledgeDiagnosisHeight())
+      return cached.snapshot
+    }
     const keepCurrent = this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis
-    this.setData({
-      knowledgeDiagnosisLoading: true,
-      knowledgeDiagnosisError: '',
-      knowledgeDiagnosisSubjectId: id,
-      knowledgeDiagnosis: keepCurrent || null,
-    })
     try {
-      const raw = await api.get('/study-hub/knowledge-diagnosis', { subject_id: id, days: 30 })
+      let settled = false
+      const request = api.get('/study-hub/knowledge-diagnosis', { subject_id: id, days: 30 }).then(
+        raw => { settled = true; return raw },
+        error => { settled = true; throw error },
+      )
+      const showLoading = () => {
+        if (settled || !this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return
+        this.setData({
+          ...selection,
+          knowledgeDiagnosisLoading: true,
+          knowledgeDiagnosisError: '',
+          knowledgeDiagnosisSubjectId: id,
+          knowledgeDiagnosis: keepCurrent || null,
+        })
+      }
+      // Fetch during the exit; fast results replace the card without a skeleton frame.
+      const ready = sheetClosed ? sheetClosed.then(showLoading) : showLoading()
+      const [raw] = await Promise.all([request, ready])
       if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
       const snapshot = buildKnowledgeDiagnosisSnapshot(raw)
       this._knowledgeDiagnosisLoadedAt = Date.now()
+      this._knowledgeDiagnosisCache.set(id, { snapshot, loadedAt: this._knowledgeDiagnosisLoadedAt })
       this.setData({
+        ...selection,
         knowledgeDiagnosisLoading: false,
         knowledgeDiagnosisError: '',
         knowledgeDiagnosis: snapshot,
         knowledgeDiagnosisSubjectId: id,
       }, () => {
+        this._reserveKnowledgeDiagnosisHeight()
         if (this._focusDiagnosisOnLoad && !this._diagnosisAutoScrolled && typeof wx.pageScrollTo === 'function') {
           this._diagnosisAutoScrolled = true
-          const scroll = () => wx.pageScrollTo({ selector: '#knowledge-diagnosis-section', duration: 180 })
+          const scroll = () => {
+            if (this._alive && this._visible && seq === this._knowledgeDiagnosisSeq) {
+              wx.pageScrollTo({ selector: '#knowledge-diagnosis-section', duration: 180 })
+            }
+          }
           if (typeof wx.nextTick === 'function') wx.nextTick(scroll)
           else setTimeout(scroll, 0)
         }
       })
       return snapshot
     } catch (e) {
+      if (sheetClosed) await sheetClosed
       if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
       console.warn('[dashboard] knowledge diagnosis load failed', e)
-      this.setData({ knowledgeDiagnosisLoading: false, knowledgeDiagnosisError: '章节诊断暂不可用' })
+      this.setData({
+        ...selection,
+        knowledgeDiagnosisSubjectId: id,
+        knowledgeDiagnosis: keepCurrent || null,
+        knowledgeDiagnosisLoading: false,
+        knowledgeDiagnosisError: '章节诊断暂不可用',
+      })
       return null
     }
   },

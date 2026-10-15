@@ -19,6 +19,8 @@ function buildDiagnosisSubjectOptions(raw) {
       code: meta.code,
       label: meta.shortName,
       name: String(node.subject_name || node.display_name || node.name || meta.name),
+      icon: `/assets/icons/diagnosis-subject/${meta.code.replace(/_/g, '-')}.svg`,
+      selectedIcon: `/assets/icons/diagnosis-subject/${meta.code.replace(/_/g, '-')}-selected.svg`,
     }
   })
 }

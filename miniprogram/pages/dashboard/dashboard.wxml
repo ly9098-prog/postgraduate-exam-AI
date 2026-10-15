@@ -320,62 +320,70 @@
           <text class="knowledge-diagnosis-period">近{{knowledgeDiagnosis ? knowledgeDiagnosis.periodDays : 30}}天</text>
         </view>
         <view class="knowledge-subject-filter">
-          <text class="knowledge-subject-label">推荐学科</text>
-          <view class="knowledge-subject-skeleton" wx:if="{{knowledgeDiagnosisSubjectsLoading && !knowledgeDiagnosisSubjects.length}}">
-            <view></view><view></view><view></view><view></view>
-          </view>
-          <view class="knowledge-subject-options" wx:else>
-            <button wx:for="{{knowledgeDiagnosisSubjects}}" wx:key="subjectId"
-              class="knowledge-subject-chip {{knowledgeDiagnosisSubjectId === item.subjectId ? 'is-selected' : ''}}"
-              bindtap="selectKnowledgeDiagnosisSubject" data-subject-id="{{item.subjectId}}"
-              aria-label="{{item.name}}" hover-class="surface-pressed">{{item.label}}</button>
-          </view>
+          <button class="knowledge-subject-entry" bindtap="openKnowledgeSubjectSheet"
+            disabled="{{!knowledgeDiagnosisSubjects.length}}" hover-class="surface-pressed"
+            aria-label="选择推荐学科，当前{{knowledgeDiagnosisSubjectName || '未选择'}}">
+            <text class="knowledge-subject-label">推荐学科</text>
+            <view class="knowledge-subject-entry-value">
+              <view class="knowledge-subject-skeleton" wx:if="{{knowledgeDiagnosisSubjectsLoading && !knowledgeDiagnosisSubjects.length}}"></view>
+              <text class="knowledge-subject-current" wx:else>{{knowledgeDiagnosisSubjectName || '选择学科'}}</text>
+              <text class="line-icon icon-chevron-right" aria-hidden="true"></text>
+            </view>
+          </button>
           <button class="knowledge-subject-retry" wx:if="{{knowledgeDiagnosisSubjectsError}}" bindtap="loadKnowledgeDiagnosisSubjects" hover-class="surface-pressed">{{knowledgeDiagnosisSubjectsError}}</button>
           <text class="knowledge-subject-empty" wx:elif="{{knowledgeDiagnosisSubjectsLoaded && !knowledgeDiagnosisSubjects.length}}">暂无可选学科</text>
         </view>
 
-        <view class="knowledge-diagnosis-loading-body" wx:if="{{knowledgeDiagnosisLoading && !knowledgeDiagnosis}}">
-          <view class="knowledge-diagnosis-skeleton skeleton-title"></view>
-          <view class="knowledge-diagnosis-skeleton skeleton-line"></view>
-          <view class="knowledge-diagnosis-skeleton skeleton-line short"></view>
-          <text class="knowledge-subject-empty">正在生成该学科的章节推荐…</text>
-        </view>
-        <view class="knowledge-diagnosis-empty-body" wx:elif="{{knowledgeDiagnosisError && !knowledgeDiagnosis}}">
-          <text class="knowledge-diagnosis-title">{{knowledgeDiagnosisError}}</text>
-          <text class="knowledge-diagnosis-reason">请重试，或切换其他学科。</text>
-          <button class="knowledge-subject-retry" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">重新推荐</button>
-        </view>
-        <block wx:elif="{{knowledgeDiagnosis && knowledgeDiagnosis.primary}}">
-          <text class="knowledge-diagnosis-refresh" wx:if="{{knowledgeDiagnosisLoading}}">正在更新推荐…</text>
-          <button class="knowledge-subject-retry" wx:elif="{{knowledgeDiagnosisError}}" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">推荐更新失败，点击重试</button>
-          <view class="knowledge-diagnosis-head">
-            <view class="knowledge-diagnosis-icon">
-              <image src="/assets/icons/dashboard/knowledge-diagnosis.png" mode="aspectFit" />
+        <view class="knowledge-diagnosis-body" style="{{knowledgeDiagnosisBodyHeight ? 'min-height:' + knowledgeDiagnosisBodyHeight + 'px;' : ''}}">
+          <view class="knowledge-diagnosis-loading-body" wx:if="{{knowledgeDiagnosisLoading && !knowledgeDiagnosis}}" aria-role="status" aria-label="正在加载章节推荐">
+            <view class="knowledge-diagnosis-loading-head" aria-hidden="true">
+              <view class="knowledge-diagnosis-loading-icon"></view>
+              <view class="knowledge-diagnosis-loading-copy">
+                <view class="knowledge-diagnosis-skeleton skeleton-title"></view>
+                <view class="knowledge-diagnosis-skeleton skeleton-line"></view>
+                <view class="knowledge-diagnosis-skeleton skeleton-line short"></view>
+              </view>
             </view>
-            <view class="knowledge-diagnosis-divider"></view>
-            <view class="knowledge-diagnosis-copy">
-              <text class="knowledge-diagnosis-label">{{knowledgeDiagnosis.subjectName}} · 当前优先章节</text>
-              <text class="knowledge-diagnosis-title">{{knowledgeDiagnosis.primary.title}}</text>
-              <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.primary.reason}}</text>
+            <view class="knowledge-diagnosis-loading-metrics" aria-hidden="true"></view>
+            <view class="knowledge-diagnosis-loading-action" aria-hidden="true"></view>
+          </view>
+          <view class="knowledge-diagnosis-empty-body" wx:elif="{{knowledgeDiagnosisError && !knowledgeDiagnosis}}">
+            <text class="knowledge-diagnosis-title">{{knowledgeDiagnosisError}}</text>
+            <text class="knowledge-diagnosis-reason">请重试，或切换其他学科。</text>
+            <button class="knowledge-subject-retry" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">重新推荐</button>
+          </view>
+          <block wx:elif="{{knowledgeDiagnosis && knowledgeDiagnosis.primary}}">
+            <text class="knowledge-diagnosis-refresh" wx:if="{{knowledgeDiagnosisLoading}}">正在更新推荐…</text>
+            <button class="knowledge-subject-retry knowledge-diagnosis-refresh-error" wx:elif="{{knowledgeDiagnosisError}}" bindtap="retryKnowledgeDiagnosis" hover-class="surface-pressed">推荐更新失败，点击重试</button>
+            <view class="knowledge-diagnosis-head">
+              <view class="knowledge-diagnosis-icon">
+                <image src="/assets/icons/dashboard/knowledge-diagnosis.png" mode="aspectFit" />
+              </view>
+              <view class="knowledge-diagnosis-divider"></view>
+              <view class="knowledge-diagnosis-copy">
+                <text class="knowledge-diagnosis-label">{{knowledgeDiagnosis.subjectName}} · 当前优先章节</text>
+                <text class="knowledge-diagnosis-title">{{knowledgeDiagnosis.primary.title}}</text>
+                <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.primary.reason}}</text>
+              </view>
             </view>
-          </view>
-          <view class="knowledge-diagnosis-metrics">
-            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.masteryText}}</text><text class="metric-sub">掌握</text></view>
-            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.coverageText}}</text><text class="metric-sub">覆盖</text></view>
-            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.weakCount}}</text><text class="metric-sub">薄弱点</text></view>
-            <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.report.sessionCount}}</text><text class="metric-sub">章节专项</text></view>
-          </view>
-          <view class="knowledge-diagnosis-actions">
-            <view class="knowledge-diagnosis-primary" bindtap="startKnowledgeDiagnosisPractice" hover-class="primary-action-pressed">
-              <text>{{knowledgeDiagnosis.primary.actionLabel}}</text><text class="knowledge-diagnosis-primary-arrow">→</text>
+            <view class="knowledge-diagnosis-metrics">
+              <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.masteryText}}</text><text class="metric-sub">掌握</text></view>
+              <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.coverageText}}</text><text class="metric-sub">覆盖</text></view>
+              <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.primary.weakCount}}</text><text class="metric-sub">薄弱点</text></view>
+              <view class="knowledge-diagnosis-metric"><text class="metric-main">{{knowledgeDiagnosis.report.sessionCount}}</text><text class="metric-sub">章节专项</text></view>
             </view>
-            <view class="knowledge-diagnosis-secondary" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱 ›</view>
+            <view class="knowledge-diagnosis-actions">
+              <view class="knowledge-diagnosis-primary" bindtap="startKnowledgeDiagnosisPractice" hover-class="primary-action-pressed">
+                <text>{{knowledgeDiagnosis.primary.actionLabel}}</text><text class="knowledge-diagnosis-primary-arrow">→</text>
+              </view>
+              <view class="knowledge-diagnosis-secondary" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱 ›</view>
+            </view>
+          </block>
+          <view class="knowledge-diagnosis-empty-body" wx:elif="{{knowledgeDiagnosis}}">
+            <text class="knowledge-diagnosis-title">暂无可推荐章节</text>
+            <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.subjectName}}暂未找到可练习的章节，可以先查看知识图谱。</text>
+            <button class="knowledge-subject-retry" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱</button>
           </view>
-        </block>
-        <view class="knowledge-diagnosis-empty-body" wx:elif="{{knowledgeDiagnosis}}">
-          <text class="knowledge-diagnosis-title">暂无可推荐章节</text>
-          <text class="knowledge-diagnosis-reason">{{knowledgeDiagnosis.subjectName}}暂未找到可练习的章节，可以先查看知识图谱。</text>
-          <button class="knowledge-subject-retry" bindtap="openKnowledgeDiagnosisMap" hover-class="surface-pressed">查看知识图谱</button>
         </view>
       </view>
     </view>
@@ -700,4 +708,28 @@
 
     <view class="footer-safe"></view>
   </block>
+</view>
+
+<!-- Keep fixed overlays outside the animated dashboard container. -->
+<view class="knowledge-subject-sheet-layer {{knowledgeSubjectSheetClosing ? 'is-closing' : ''}}" wx:if="{{knowledgeSubjectSheetVisible}}" catchtouchmove="preventKnowledgeSubjectSheetScroll">
+  <view class="knowledge-subject-sheet-backdrop" catchtap="closeKnowledgeSubjectSheet"></view>
+  <view class="knowledge-subject-sheet" aria-role="dialog" aria-label="选择学科">
+    <view class="knowledge-subject-sheet-header">
+      <text class="knowledge-subject-sheet-title">选择学科</text>
+      <button class="knowledge-subject-sheet-close" bindtap="closeKnowledgeSubjectSheet"
+        hover-class="surface-pressed" aria-label="关闭学科选择">
+        <text class="line-icon icon-close" aria-hidden="true"></text>
+      </button>
+    </view>
+    <view class="knowledge-subject-grid">
+      <button wx:for="{{knowledgeDiagnosisSubjects}}" wx:key="subjectId"
+        class="knowledge-subject-tile {{knowledgeSubjectSheetSelectedId === item.subjectId ? 'is-selected' : ''}}"
+        bindtap="selectKnowledgeDiagnosisSubject" data-subject-id="{{item.subjectId}}"
+        aria-label="{{item.name}}{{knowledgeSubjectSheetSelectedId === item.subjectId ? '，当前已选' : ''}}"
+        hover-class="surface-pressed">
+        <image class="knowledge-subject-tile-icon" src="{{knowledgeSubjectSheetSelectedId === item.subjectId ? item.selectedIcon : item.icon}}" mode="aspectFit" aria-hidden="true" />
+        <text class="knowledge-subject-tile-name">{{item.name}}</text>
+      </button>
+    </view>
+  </view>
 </view>

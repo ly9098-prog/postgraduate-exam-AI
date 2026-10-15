@@ -28,6 +28,11 @@ function harness(options = {}) {
   const calls = []
   const pending = []
   const navigation = []
+  const patches = []
+  const timers = new Map()
+  let timerId = 0
+  let now = Date.now()
+  let bodyHeight = 245
   let hold = false
   let fail = false
   let empty = false
@@ -45,35 +50,98 @@ function harness(options = {}) {
       if (name === '../../utils/api') return api
       return require(path.resolve(path.dirname(filename), name))
     },
-    setTimeout: () => 1, clearTimeout() {},
+    setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, at: now + ms }); return id },
+    clearTimeout(id) { timers.delete(id) },
+    Date: class extends Date { static now() { return now } },
     wx: { navigateTo: value => navigation.push(value.url), showToast() {} },
     console: { warn() {}, error() {}, log() {} },
   }, { filename })
   const page = Object.assign({}, definition, {
     data: clone(definition.data), _alive: true, _visible: true,
-    setData(patch, callback) { Object.assign(this.data, patch); if (callback) callback() },
+    setData(patch, callback) {
+      patches.push(clone(patch))
+      Object.assign(this.data, patch)
+      if (callback) callback()
+    },
+    createSelectorQuery() {
+      let callback
+      return {
+        select() { return this },
+        boundingClientRect(fn) { callback = fn; return this },
+        exec() { callback({ height: bodyHeight }) },
+      }
+    },
   })
   page.onLoad(options)
   page.data.subjects = { focusItem: { subjectId: 302 } }
   return {
-    page, calls, pending, navigation,
+    page, calls, pending, navigation, patches,
+    now() { return now },
+    advance(ms) {
+      now += ms
+      for (const [id, timer] of timers) {
+        if (timer.at <= now) { timers.delete(id); timer.fn() }
+      }
+    },
+    bodyHeight(value) { bodyHeight = value },
     hold(value) { hold = value }, fail(value) { fail = value }, empty(value) { empty = value },
   }
 }
 const select = subjectId => ({ currentTarget: { dataset: { subjectId } } })
 const tick = () => new Promise(resolve => setImmediate(resolve))
+async function choose(h, id) {
+  const result = h.page.selectKnowledgeDiagnosisSubject(select(id))
+  h.advance(180)
+  return result
+}
 
 async function run() {
   const opts = buildDiagnosisSubjectOptions(catalog)
   assert.deepStrictEqual(opts.map(item => item.subjectId), [301, 302, 303, 304])
   assert(!opts.some(item => item.subjectId === 900 || item.subjectId === 305))
+  opts.forEach(item => {
+    for (const icon of [item.icon, item.selectedIcon]) {
+      assert(fs.existsSync(path.resolve(__dirname, '..', '.' + icon)), `subject icon exists: ${icon}`)
+    }
+  })
   assert.strictEqual(buildDiagnosisSubjectOptions([{ subject_id: 900, is_active: false, children: catalog[0].children }]).length, 0)
 
+  const early = harness()
+  await early.page.loadKnowledgeDiagnosis(302)
+  const beforeCatalog = early.calls.length
+  await early.page.loadKnowledgeDiagnosisSubjects()
+  assert.strictEqual(early.page.data.knowledgeDiagnosisSubjectName, '计算机组成原理', 'catalog supplies entry name even when diagnosis arrived first')
+  assert.strictEqual(early.calls.length, beforeCatalog + 1, 'catalog name update reuses the cached diagnosis')
+
   let h = harness({ focus_subject_id: '301' })
+  h.page.openKnowledgeSubjectSheet()
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false, 'cannot open before subjects are available')
   await h.page.loadKnowledgeDiagnosisSubjects()
   assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectId, 301, 'route focus takes precedence initially')
+  assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectName, '数据结构')
   assert.strictEqual(h.page.data.knowledgeDiagnosisSubjects.length, 4, 'include subjects without practice history')
-  await h.page.selectKnowledgeDiagnosisSubject(select(303))
+  const beforeCancel = h.calls.length
+  h.page.openKnowledgeSubjectSheet()
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, true)
+  h.page.closeKnowledgeSubjectSheet()
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetClosing, true, 'dismissal plays exit before unmounting')
+  h.advance(180)
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false)
+  assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectId, 301, 'dismissing the sheet preserves selection')
+  assert.strictEqual(h.calls.length, beforeCancel, 'opening and dismissing must not request new recommendations')
+  h.page.openKnowledgeSubjectSheet()
+  await choose(h, 301)
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false, 'selecting current subject also dismisses the sheet')
+  assert.strictEqual(h.calls.length, beforeCancel, 'selecting current cached subject does not refetch')
+  h.page.openKnowledgeSubjectSheet()
+  await h.page.selectKnowledgeDiagnosisSubject(select(900))
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, true, 'invalid subject does not dismiss or alter selection')
+  const fastPatchesStart = h.patches.length
+  await choose(h, 303)
+  assert(!h.patches.slice(fastPatchesStart).some(patch => patch.knowledgeDiagnosisLoading === true),
+    'a response received during sheet exit skips the skeleton')
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false)
+  assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectName, '操作系统')
   assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 303)
   assert.strictEqual(h.page._preferredKnowledgeSubjectId({ focusItem: { subjectId: 301 } }), 303)
   const count = h.calls.length
@@ -94,7 +162,25 @@ async function run() {
   await h.page.loadKnowledgeDiagnosisSubjects()
   assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectId, 302, 'default recommendation follows weak subject')
   h.hold(true)
+  h.page.openKnowledgeSubjectSheet()
   const first = h.page.selectKnowledgeDiagnosisSubject(select(301))
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetSelectedId, 301, 'selected tile responds before exit ends')
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetClosing, true)
+  assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectId, 302, 'entry and content remain coherent during exit')
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302)
+  const beforeDoubleTap = h.calls.length
+  h.page.selectKnowledgeDiagnosisSubject(select(304))
+  assert.strictEqual(h.calls.length, beforeDoubleTap, 'repeated taps during exit do not start another switch')
+  h.advance(179)
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, true)
+  h.advance(1)
+  await tick()
+  const switchPatch = h.patches.at(-1)
+  assert.strictEqual(switchPatch.knowledgeDiagnosisSubjectId, 301)
+  assert.strictEqual(switchPatch.knowledgeDiagnosisLoading, true)
+  assert.strictEqual(h.page.data.knowledgeDiagnosisBodyHeight, 245, 'loading preserves measured content height')
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false, 'sheet closes before recommendation request resolves')
+  assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectName, '数据结构', 'entry updates immediately with the selected subject')
   assert.strictEqual(h.page.data.knowledgeDiagnosis, null, 'old recommendation cleared on subject switch')
   h.page.startKnowledgeDiagnosisPractice()
   assert.strictEqual(h.navigation.length, 0, 'cannot start stale-subject practice while loading')
@@ -105,6 +191,25 @@ async function run() {
   await first
   assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 304, 'slower old response cannot overwrite latest choice')
   assert.strictEqual(h.page.data.knowledgeDiagnosisLoading, false)
+
+  const beforeCached = h.calls.length
+  const third = h.page.selectKnowledgeDiagnosisSubject(select(303))
+  await h.page.selectKnowledgeDiagnosisSubject(select(302))
+  assert.strictEqual(h.calls.length, beforeCached + 1, 'switching back to a fresh cached subject makes no request')
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302)
+  assert.strictEqual(h.page.data.knowledgeDiagnosisLoading, false, 'cache selection never enters skeleton state')
+  h.pending.at(-1).resolve(diagnosis(303))
+  await third
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302, 'cache selection invalidates pending responses too')
+  h.bodyHeight(180)
+  h.page.openKnowledgeSubjectSheet()
+  assert.strictEqual(h.page.data.knowledgeDiagnosisBodyHeight, 245, 'shorter content cannot collapse reserved height')
+  await choose(h, 302)
+  h.advance(30001)
+  h.page.openKnowledgeSubjectSheet()
+  const beforeCurrent = h.calls.length
+  await choose(h, 302)
+  assert.strictEqual(h.calls.length, beforeCurrent, 'current subject is dismissal only even after cache expiry')
 
   h.hold(false)
   h.fail(true)
@@ -120,19 +225,61 @@ async function run() {
   assert.strictEqual(h.page.data.knowledgeDiagnosis.primary, null, 'empty chapter recommendation remains a valid subject state')
   h.empty(false)
 
+  h.advance(30001)
   h.hold(true)
   const hiddenRequest = h.page.selectKnowledgeDiagnosisSubject(select(304))
+  h.page.openKnowledgeSubjectSheet()
   h.page.onHide()
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false, 'leaving the page dismisses the sheet')
   h.pending.at(-1).resolve(diagnosis(304))
   await hiddenRequest
   assert.strictEqual(h.page.data.knowledgeDiagnosis, null)
   assert.strictEqual(h.page.data.knowledgeDiagnosisLoading, false)
   h.hold(false)
   h.page.data.pageReady = true
-  h.page._lastLoadAt = Date.now()
+  h.page._lastLoadAt = h.now()
   h.page.onShow()
   await tick()
   assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 304, 'return within dashboard debounce restarts interrupted subject request')
+
+  h = harness()
+  await h.page.loadKnowledgeDiagnosisSubjects()
+  h.page.openKnowledgeSubjectSheet()
+  const interrupted = h.page.selectKnowledgeDiagnosisSubject(select(301))
+  h.page.onHide()
+  await interrupted
+  h.advance(180)
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetClosing, false, 'hide cancels exit state and timer')
+  assert.strictEqual(h.page.data.knowledgeSubjectSheetVisible, false)
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302, 'hidden completion cannot commit a pending switch')
+  h.page._alive = true
+  h.page._visible = true
+  h.page.openKnowledgeSubjectSheet()
+  const dismiss = h.page.closeKnowledgeSubjectSheet()
+  h.page.onUnload()
+  await dismiss
+
+  h = harness()
+  await h.page.loadKnowledgeDiagnosisSubjects()
+  await h.page.loadKnowledgeDiagnosis(301)
+  h.page.openKnowledgeSubjectSheet()
+  const cachePatchesStart = h.patches.length
+  const cachedSwitch = h.page.selectKnowledgeDiagnosisSubject(select(302))
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 301, 'cache hit also respects sheet exit')
+  h.advance(180)
+  await cachedSwitch
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302)
+  assert(!h.patches.slice(cachePatchesStart).some(patch => patch.knowledgeDiagnosisLoading === true))
+  h.fail(true)
+  h.page.openKnowledgeSubjectSheet()
+  const failedSwitch = h.page.selectKnowledgeDiagnosisSubject(select(303))
+  await tick()
+  assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302, 'fast failure waits for sheet exit too')
+  h.advance(180)
+  await failedSwitch
+  assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectId, 303)
+  assert.strictEqual(h.page.data.knowledgeDiagnosis, null, 'failure cannot leave another subject recommendation visible')
+  assert.strictEqual(h.page.data.knowledgeDiagnosisError, '章节诊断暂不可用')
 
   h = harness()
   h.fail(true)
@@ -143,6 +290,6 @@ async function run() {
   await h.page.loadKnowledgeDiagnosisSubjects()
   assert.strictEqual(h.page.data.knowledgeDiagnosisSubjectsError, '')
   assert.strictEqual(h.page.data.knowledgeDiagnosis.subjectId, 302)
-  console.log('PASS: dashboard subject catalog, selection, refresh, races, empty/error and return-to-practice')
+  console.log('PASS: dashboard subject sheet, catalog, selection, refresh, races, empty/error and return-to-practice')
 }
 run().catch(error => { console.error(error); process.exitCode = 1 })
