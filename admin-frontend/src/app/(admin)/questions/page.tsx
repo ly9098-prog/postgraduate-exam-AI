@@ -68,6 +68,8 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
+import { buildQuestionCopyText } from "@/lib/question-copy";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import type {
   AdminQuestion,
   AdminQuestionDetail,
@@ -940,6 +942,7 @@ export default function QuestionsPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [unsavedIntent, setUnsavedIntent] = useState<UnsavedIntent>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [copyingQuestion, setCopyingQuestion] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isCommonFilterMenuOpen, setIsCommonFilterMenuOpen] = useState(false);
   const [isMoreFilterOpen, setIsMoreFilterOpen] = useState(false);
@@ -1203,6 +1206,31 @@ export default function QuestionsPage() {
   const allChecked =
     items.length > 0 && items.every((item) => selectedIds.has(item.id));
   const selectedQuestion = detail.data;
+  const handleCopyQuestion = async () => {
+    if (!selectedQuestion || copyingQuestion) return;
+    setCopyingQuestion(true);
+    try {
+      await copyTextToClipboard(buildQuestionCopyText(selectedQuestion));
+      setMessage("题干和选项已复制。");
+    } catch {
+      setMessage("复制失败，请检查浏览器剪贴板权限后重试。");
+    } finally {
+      setCopyingQuestion(false);
+    }
+  };
+  const copyQuestionButton = (
+    <button
+      type="button"
+      onClick={handleCopyQuestion}
+      disabled={!selectedQuestion || copyingQuestion}
+      aria-label="复制题干和选项"
+      aria-busy={copyingQuestion}
+      title="复制题干和选项（保留 LaTeX）"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <Copy className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
   const baseVersionData =
     baseVersion === "current" ? selectedQuestion : baseVersionDetail.data;
   const compareVersionData =
@@ -2119,26 +2147,6 @@ export default function QuestionsPage() {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {message ? (
-            <div className="fixed right-6 top-24 z-[60] animate-fade-in">
-              <div
-                role="status"
-                aria-live="polite"
-                className="flex max-w-sm items-center gap-3 rounded-full border border-[var(--color-success)]/30 bg-white/92 py-2 pl-5 pr-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)] backdrop-blur-xl"
-              >
-                <span>{message}</span>
-                <button
-                  type="button"
-                  onClick={() => setMessage(null)}
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-text-hint)] transition hover:bg-[var(--color-success-light)] hover:text-[var(--color-success)]"
-                  aria-label="关闭提示"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          ) : null}
-
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
             <section className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm">
@@ -2469,14 +2477,17 @@ export default function QuestionsPage() {
                           <DifficultyBadge difficulty={selectedQuestion.difficulty} />
                         </div>
                       </div>
-                      <Button
-                        variant="secondary"
-                        onClick={() => setIsDetailDrawerOpen(true)}
-                        className="shrink-0 rounded-lg border-slate-200 bg-white shadow-none transition hover:bg-slate-50"
-                      >
-                        <FileQuestion className="h-4 w-4" />
-                        完整详情
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {copyQuestionButton}
+                        <Button
+                          variant="secondary"
+                          onClick={() => setIsDetailDrawerOpen(true)}
+                          className="shrink-0 rounded-lg border-slate-200 bg-white shadow-none transition hover:bg-slate-50"
+                        >
+                          <FileQuestion className="h-4 w-4" />
+                          完整详情
+                        </Button>
+                      </div>
                     </div>
 
                     <section className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
@@ -2578,6 +2589,26 @@ export default function QuestionsPage() {
         </CardContent>
       </Card>
 
+      {message ? (
+        <div className="fixed right-6 top-24 z-[60] max-w-[calc(100vw-3rem)] animate-fade-in">
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex max-w-sm items-center gap-3 rounded-full border border-[var(--color-success)]/30 bg-white/92 py-2 pl-5 pr-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)] backdrop-blur-xl"
+          >
+            <span>{message}</span>
+            <button
+              type="button"
+              onClick={() => setMessage(null)}
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-text-hint)] transition hover:bg-[var(--color-success-light)] hover:text-[var(--color-success)]"
+              aria-label="关闭提示"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {selectedIds.size > 0 ? (
         <div className="fixed bottom-8 left-1/2 z-30 -translate-x-1/2 animate-drop-in">
           <div className="flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-white/94 py-2 pl-4 pr-2 shadow-[var(--shadow-floating)] backdrop-blur-xl">
@@ -2621,7 +2652,7 @@ export default function QuestionsPage() {
             className="question-detail-drawer h-full w-full max-w-[880px] overflow-y-auto overscroll-contain border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] animate-drop-in"
             onClick={(event) => event.stopPropagation()}
           >
-            <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/95 px-7 py-3 backdrop-blur-xl">
+            <header className="sticky top-0 z-20 flex min-h-16 flex-col items-stretch justify-between gap-3 border-b border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:gap-4 sm:px-7">
               <div className="flex min-w-0 items-center gap-3">
                 {editing ? (
                   <button
@@ -2652,7 +2683,8 @@ export default function QuestionsPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
+                {!editing ? copyQuestionButton : null}
                 {!editing && canWrite ? (
                   <Button variant="secondary" size="sm" onClick={startEditing} className="border-slate-200 bg-white shadow-none">
                     <Pencil className="h-3.5 w-3.5" />
