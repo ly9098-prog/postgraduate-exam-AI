@@ -7,7 +7,7 @@
  * 失败策略：任何读写/解析失败都当作“无缓存”，绝不因为缓存损坏阻塞页面。
  */
 
-const SUBJECT_CACHE_KEY = 'pomodoro_subject_cache_v1'
+const SUBJECT_CACHE_KEY = 'pomodoro_subject_cache_v2'
 const SUBJECT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 function isCacheValid(entry, now) {

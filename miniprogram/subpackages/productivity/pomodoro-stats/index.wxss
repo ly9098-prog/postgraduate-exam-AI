@@ -1686,11 +1686,23 @@ page {
 
 .distribution-card { padding: 28rpx 24rpx 25rpx; overflow: hidden; }
 .distribution-section-header { margin-bottom: 22rpx; padding: 0 4rpx; }
+.distribution-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
 .distribution-title {
   color: rgba(255,255,255,.9);
   font-size: 29rpx;
   font-weight: 750;
   letter-spacing: .2rpx;
+}
+.distribution-note {
+  max-width: 520rpx;
+  color: rgba(255,255,255,.60);
+  font-size: 19rpx;
+  line-height: 1.35;
 }
 .chart-switch-btn {
   flex-shrink: 0;
@@ -1836,6 +1848,7 @@ page {
 /* Light: match the warm paper + green hierarchy already used by the timer page. */
 .theme-light .focus-card-title,
 .theme-light .distribution-title { color: #294233; }
+.theme-light .distribution-note { color: #596B5D; }
 .theme-light .cumulative-start-picker { color: #829087; }
 .theme-light .study-day-chip {
   border-color: rgba(222, 229, 218, 0.92);

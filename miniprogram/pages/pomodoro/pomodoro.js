@@ -12,27 +12,18 @@ const { pomodoroTaskTypes } = require('../../utils/storage')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
-const SUBJECT_EMOJI = {
-  // New codes
-  data_structure: '📃',
-  computer_organization: '💻',
-  operating_system: '⚙️',
-  computer_network: '🌐',
-  'math2-calculus': '📐',
-  'math2-linalg': '📏',
-  english: '📖',
-  pol: '📜',
-  math2: '📐',
-  exam408: '📚',
-  // Legacy codes (backward compat)
-  data_structure: '📃',
-  computer_organization: '💻',
-  operating_system: '⚙️',
-  computer_network: '🌐',
-  math: '📐',
-  advanced_math: '📐',
-  linear_algebra: '📏',
-  politics: '📜',
+const SUBJECT_ICON = {
+  data_structure: '/assets/icons/diagnosis-subject/data-structure.svg',
+  computer_organization: '/assets/icons/diagnosis-subject/computer-organization.svg',
+  operating_system: '/assets/icons/diagnosis-subject/operating-system.svg',
+  computer_network: '/assets/icons/diagnosis-subject/computer-network.svg',
+  'math2-calculus': '/assets/icons/pomodoro-subject/square-function.svg',
+  advanced_math: '/assets/icons/pomodoro-subject/square-function.svg',
+  'math2-linalg': '/assets/icons/pomodoro-subject/grid-2x2.svg',
+  linear_algebra: '/assets/icons/pomodoro-subject/grid-2x2.svg',
+  english: '/assets/icons/pomodoro-subject/languages.svg',
+  pol: '/assets/icons/pomodoro-subject/landmark.svg',
+  politics: '/assets/icons/pomodoro-subject/landmark.svg',
 }
 
 const PRESETS = [
@@ -90,8 +81,8 @@ function flattenSubjectTree(tree) {
   return result
 }
 
-function subjectEmojiByCode(code) {
-  return SUBJECT_EMOJI[code] || '📚'
+function subjectIconByCode(code) {
+  return SUBJECT_ICON[code] || '/assets/icons/pomodoro-subject/book-open.svg'
 }
 
 function formatElapsedSec(sec) {
@@ -117,6 +108,9 @@ Page({
     subjectsError: '',
     selectedSubjectId: null,
     selectedSubject: null,
+    allocationMode: 'single',
+    aggregateAvailable: false,
+    coreSubjects: [],
     taskTypes: pomodoroTaskTypes.TYPES,
     selectedTaskType: pomodoroTaskTypes.DEFAULT_TYPE,
     selectedTaskTypeLabel: pomodoroTaskTypes.label(pomodoroTaskTypes.DEFAULT_TYPE),
@@ -174,7 +168,6 @@ Page({
     ringCanvasVisible: true,
     ringCanvasPaintReady: false,
     selectedSubjectLabel: '',
-    selectedSubjectEmoji: '📚',
     selectedPresetLabel: '',
   },
 
@@ -306,10 +299,12 @@ Page({
           ? Math.max(0, Number(completionFlag.breakSec))
           : null
         const selectedSubjectId = completionFlag.selectedSubjectId || this.data.selectedSubjectId
+        const completionAggregate = completionFlag.allocationMode === 'equal_408_core_v1'
         const selectedSubject = selectedSubjectId ? {
           id: selectedSubjectId,
           code: completionFlag.selectedSubjectCode || (this.data.selectedSubject && this.data.selectedSubject.code) || '',
           name: completionFlag.selectedSubjectName || (this.data.selectedSubject && this.data.selectedSubject.name) || '',
+          _isAggregate: completionAggregate,
         } : this.data.selectedSubject
         const completionHasTaskType = Object.prototype.hasOwnProperty.call(completionFlag, 'selectedTaskType')
         const completionTaskType = completionHasTaskType && pomodoroTaskTypes.TYPE_MAP[completionFlag.selectedTaskType]
@@ -328,6 +323,7 @@ Page({
           breakDuration: Number.isFinite(Number(completionFlag.breakDuration)) ? Number(completionFlag.breakDuration) : this.data.breakDuration,
           selectedSubjectId,
           selectedSubject,
+          allocationMode: completionAggregate ? 'equal_408_core_v1' : 'single',
           selectedTaskType: completionHasTaskType ? completionTaskType : this.data.selectedTaskType,
           selectedTaskTypeLabel: completionHasTaskType
             ? (completionTaskType ? pomodoroTaskTypes.label(completionTaskType) : '未分类')
@@ -573,6 +569,7 @@ Page({
         selectedSubjectId: this.data.selectedSubjectId,
         selectedSubjectCode: this.data.selectedSubject ? this.data.selectedSubject.code : '',
         selectedSubjectName: this.data.selectedSubject ? this.data.selectedSubject.name : '',
+        allocationMode: this.data.allocationMode,
         selectedTaskType: this.data.selectedTaskType,
         isPaused: this.data.isPaused,
         totalPausedMs: this._timerState.totalPausedMs,
@@ -736,10 +733,26 @@ Page({
       }
       const flat = flattenSubjectTree(tree).map(s => ({
         ...s,
-        _emoji: subjectEmojiByCode(s.code),
+        _icon: subjectIconByCode(s.code),
+        _iconDark: subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
       }))
-      writeSubjectCache(flat)
-      this._applySubjects(flat)
+      const root = (tree || []).find(item => item && item.subject_code === 'exam408')
+      const coreSubjects = ['data_structure', 'computer_organization', 'operating_system', 'computer_network']
+        .map(code => flat.find(item => item.code === code))
+      const aggregate = root
+        ? [{
+          id: root.subject_id,
+          code: root.subject_code,
+          name: root.subject_name || root.display_name || '计算机综合',
+          _isAggregate: true,
+          _disabled: !coreSubjects.every(Boolean),
+          _icon: '',
+          _iconDark: '',
+        }]
+        : []
+      const choices = aggregate.concat(flat)
+      writeSubjectCache(choices)
+      this._applySubjects(choices)
     } catch (e) {
       console.error('加载科目失败', e)
       this.setData({ subjectsLoading: false, subjectsError: '科目加载失败，请稍后重试' })
@@ -747,27 +760,56 @@ Page({
   },
 
   _applySubjects(flat) {
-    this.setData({ subjects: flat, subjectsLoading: false, subjectsError: '' })
+    const choices = Array.isArray(flat) ? flat : []
+    const aggregate = choices.find(s => s && s._isAggregate)
+    const leaves = choices.filter(s => s && !s._isAggregate).map(s => ({
+      ...s,
+      _icon: s._icon || subjectIconByCode(s.code),
+      _iconDark: s._iconDark || subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
+    }))
+    const coreSubjects = ['data_structure', 'computer_organization', 'operating_system', 'computer_network']
+      .map(code => leaves.find(item => item.code === code))
+      .filter(Boolean)
+    this.setData({
+      subjects: choices.map(s => s && s._isAggregate ? { ...s, _icon: '', _iconDark: '' } : {
+        ...s,
+        _icon: s._icon || subjectIconByCode(s.code),
+        _iconDark: s._iconDark || subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
+      }),
+      aggregateAvailable: !!aggregate && coreSubjects.length === 4,
+      coreSubjects,
+      subjectsLoading: false,
+      subjectsError: '',
+    })
     // 旧版 pomodoro_running_state 缓存可能只带 subject_code，用已加载列表迁移到 subject_id
-    this._migrateRunningStateCache(flat)
+    this._migrateRunningStateCache(leaves)
 
     // Route presets can target either a stable subject_id or the canonical 408 subject_code.
     // subject_code keeps strategy-driven Next Best Action usable before a subject has practice data.
     if (this.data.fromSubjectId || this.data.fromSubjectCode) {
-      const match = flat.find(s => (
+      const matchesRoute = s => (
         this.data.fromSubjectId
           ? Number(s.id) === Number(this.data.fromSubjectId)
           : String(s.code || '') === String(this.data.fromSubjectCode || '')
-      ))
+      )
+      const aggregateMatch = aggregate && !aggregate._disabled && coreSubjects.length === 4 &&
+        matchesRoute(aggregate)
+        ? aggregate
+        : null
+      const match = aggregateMatch || leaves.find(matchesRoute)
       if (match) {
-        this.setData({ selectedSubjectId: match.id, selectedSubject: match })
+        this.setData({
+          selectedSubjectId: match.id,
+          selectedSubject: match,
+          allocationMode: match._isAggregate ? 'equal_408_core_v1' : 'single',
+        })
         this._updateComputedFields()
       }
     }
     // 恢复的旧会话可能只有 subject_code（无 subject_id），用已加载列表回填
     const restored = this.data.selectedSubject
     if (restored && !restored.id && restored.code) {
-      const match = flat.find(s => s.code === restored.code)
+      const match = leaves.find(s => s.code === restored.code)
       if (match) {
         this.setData({ selectedSubjectId: match.id, selectedSubject: match })
         this._updateComputedFields()
@@ -799,10 +841,16 @@ Page({
   /* ==================== UI Handlers ==================== */
 
   selectSubject(e) {
+    const disabled = e.currentTarget.dataset.disabled
+    if (disabled === true || disabled === 'true') return
     const id = parseInt(e.currentTarget.dataset.id, 10) || null
-    const subject = id ? this.data.subjects.find(s => s.id === id) : null
+    const subject = id ? this.data.subjects.find(s => Number(s.id) === id) : null
     if (subject) {
-      this.setData({ selectedSubjectId: id, selectedSubject: subject })
+      this.setData({
+        selectedSubjectId: id,
+        selectedSubject: subject,
+        allocationMode: subject._isAggregate ? 'equal_408_core_v1' : 'single',
+      })
       this._updateComputedFields()
     }
   },
@@ -899,6 +947,7 @@ Page({
       preset: this.data.selectedPreset,
       workDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
       breakDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
+      allocationMode: this.data.allocationMode,
       notificationEnabled: false,
       taskType: this.data.selectedTaskType,
       ...overrides,
@@ -909,6 +958,7 @@ Page({
     if (!attempt || !attempt.clientStartId) return null
     return {
       subject_id: attempt.subjectId,
+      allocation_mode: attempt.allocationMode || 'single',
       chapter_id: attempt.chapterId || null,
       preset: attempt.preset,
       work_duration: Number(attempt.workDuration || 0),
@@ -1163,6 +1213,7 @@ Page({
 
       const startResult = await this._postPomodoroStartWithReconciliation({
         subject_id: this.data.selectedSubjectId,
+        allocation_mode: this.data.allocationMode,
         chapter_id: this.data.fromChapterId || null,
         preset: this.data.selectedPreset,
         work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
@@ -1217,6 +1268,7 @@ Page({
     try {
       const startResult = await this._postPomodoroStartWithReconciliation({
         subject_id: this.data.selectedSubjectId,
+        allocation_mode: this.data.allocationMode,
         chapter_id: this.data.fromChapterId || null,
         preset: 'free',
         work_duration: 0,
@@ -2876,6 +2928,9 @@ Page({
       selectedSubjectId,
       selectedSubjectCode: selectedSubject ? selectedSubject.code || '' : '',
       selectedSubjectName: selectedSubject ? selectedSubject.name || '' : '',
+      allocationMode: selectedSubject && selectedSubject._isAggregate
+        ? 'equal_408_core_v1'
+        : 'single',
       selectedTaskType,
     }
     this._safeSetPomodoroStorage('pomodoro_completion', completionFlag, 'completion marker')
@@ -3047,6 +3102,22 @@ Page({
     if (Number.isFinite(serverStartTime) && serverStartTime > 0) {
       this._timerState.sessionStartTime = serverStartTime
     }
+    const allocationMode = active.allocation_mode === 'equal_408_core_v1'
+      ? 'equal_408_core_v1'
+      : 'single'
+    if (allocationMode !== this.data.allocationMode) {
+      const subjectId = active.subject_id || this.data.selectedSubjectId
+      const subject = (this.data.subjects || []).find(
+        item => Number(item.id) === Number(subjectId)
+      ) || this.data.selectedSubject
+      this.setData({
+        allocationMode,
+        selectedSubject: subject
+          ? { ...subject, _isAggregate: allocationMode === 'equal_408_core_v1' }
+          : subject,
+      })
+      this._updateComputedFields()
+    }
 
     const serverPausedMs = Math.max(0, Number(active.total_paused_sec || 0) * 1000)
     const localPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0))
@@ -3137,6 +3208,7 @@ Page({
       subject_id: local.selectedSubjectId,
       subject_code: local.selectedSubjectCode || '',
       subject_name: local.selectedSubjectName || '',
+      allocation_mode: local.allocationMode || 'single',
       task_type: local.selectedTaskType || '',
       _local_elapsed_sec: local.isFreeTimer ? Number(local.elapsedSec || 0) : undefined,
     }
@@ -3264,6 +3336,14 @@ Page({
     const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
+    const aggregateSession = session.allocation_mode === 'equal_408_core_v1'
+    const restoredSubject = (this.data.subjects || []).find(item => Number(item.id) === Number(subjectId))
+    const selectedSubject = restoredSubject || {
+      id: subjectId,
+      code: subjectCode,
+      name: subjectName,
+      _isAggregate: aggregateSession,
+    }
     const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
     const activeTaskType = sessionTaskType || ''
     const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
@@ -3290,7 +3370,8 @@ Page({
       this._timerState.pauseStartTime = null
       this.setData({
         selectedSubjectId: subjectId,
-        selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+        selectedSubject: subjectId ? selectedSubject : null,
+        allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
         selectedTaskType: activeTaskType,
         selectedTaskTypeLabel: activeTaskTypeLabel,
         selectedPreset: session.preset || 'standard',
@@ -3306,7 +3387,7 @@ Page({
         workDuration: session.work_duration,
         breakDuration: session.break_duration,
         selectedSubjectId: subjectId,
-        selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+        selectedSubject: subjectId ? selectedSubject : null,
         selectedTaskType: activeTaskType,
         selectedTaskTypeLabel: activeTaskTypeLabel,
       })
@@ -3323,7 +3404,8 @@ Page({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
       selectedSubjectId: subjectId,
-      selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+      selectedSubject: subjectId ? selectedSubject : null,
+      allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
       selectedTaskType: activeTaskType,
       selectedTaskTypeLabel: activeTaskTypeLabel,
       selectedPreset: session.preset || 'standard',
@@ -3408,6 +3490,8 @@ Page({
     const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
+    const aggregateSession = session.allocation_mode === 'equal_408_core_v1'
+    const restoredSubject = (this.data.subjects || []).find(item => Number(item.id) === Number(subjectId))
     const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
     const activeTaskType = sessionTaskType || ''
     const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
@@ -3422,7 +3506,13 @@ Page({
       ringCanvasVisible: true,
       isFreeTimer: true,
       selectedSubjectId: subjectId,
-      selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+      selectedSubject: subjectId ? (restoredSubject || {
+        id: subjectId,
+        code: subjectCode,
+        name: subjectName,
+        _isAggregate: aggregateSession,
+      }) : null,
+      allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
       selectedTaskType: activeTaskType,
       selectedTaskTypeLabel: activeTaskTypeLabel,
       selectedPreset: 'free',
@@ -3840,7 +3930,10 @@ Page({
     const subj = this.data.selectedSubject
     this.setData({
       selectedSubjectLabel: subj ? subj.name : '',
-      selectedSubjectEmoji: subj ? subjectEmojiByCode(subj.code) : '📚',
+      selectedSubjectIcon: subj && subj._isAggregate
+        ? '/assets/icons/diagnosis-subject/data-structure.svg'
+        : subjectIconByCode(subj && subj.code),
+      selectedAllocationLabel: subj && subj._isAggregate ? '四科均分' : '',
       selectedPresetLabel: this.presetLabel(this.data.selectedPreset),
     })
   },
@@ -3857,9 +3950,6 @@ Page({
     return '#3B82F6'
   },
 
-  subjectEmoji(key) {
-    return subjectEmojiByCode(key)
-  },
 
   presetLabel(key) {
     const p = PRESETS.find(p => p.key === key)

@@ -87,11 +87,13 @@ async def reset_tables(isolated_db):
         from app.models.pomodoro import (
             PomodoroPauseInterval,
             PomodoroSession,
+            PomodoroSubjectAllocation,
             UserPomodoroSettings,
         )
         from app.models.user import User
 
         await db.execute(delete(PomodoroPauseInterval))
+        await db.execute(delete(PomodoroSubjectAllocation))
         await db.execute(delete(PomodoroSession))
         await db.execute(delete(UserPomodoroSettings))
         await db.execute(delete(User))
@@ -115,6 +117,165 @@ async def _make_subject(db, code: str | None = None) -> int:
     db.add(subj)
     await db.flush()
     return subj.id
+
+
+class TestSubjectAllocation:
+    @pytest.mark.asyncio
+    async def test_history_does_not_copy_pomodoro_allocations_to_other_record_types(
+        self, db_session
+    ):
+        from app.models.admin import Subject
+        from app.models.practice_session import PracticeSession
+        from app.services import pomodoro_service as svc
+
+        uid = await _make_user(db_session, "u_history_allocation_collision")
+        root = Subject(
+            code="exam408", name="计算机综合", level=1, path="exam408", is_active=True
+        )
+        english = Subject(
+            code="english", name="英语", level=1, path="english", is_active=True
+        )
+        db_session.add_all([root, english])
+        await db_session.flush()
+        for code in (
+            "data_structure",
+            "computer_organization",
+            "operating_system",
+            "computer_network",
+        ):
+            db_session.add(
+                Subject(
+                    code=code,
+                    name=code,
+                    level=2,
+                    path=f"exam408.{code}",
+                    parent_id=root.id,
+                    is_active=True,
+                )
+            )
+        await db_session.flush()
+
+        session = await svc.start_session(
+            db_session,
+            uid,
+            root.id,
+            None,
+            "free",
+            0,
+            0,
+            allocation_mode="equal_408_core_v1",
+        )
+        session_id = session.id
+        await svc.interrupt_session(db_session, session_id, uid)
+        db_session.add(
+            PracticeSession(
+                id=session_id,
+                user_id=uid,
+                subject_id=english.id,
+                request_id="history-allocation-collision",
+                started_at=session.start_time,
+                finished_at=session.end_time,
+                duration_sec=0,
+                status="completed",
+            )
+        )
+        await db_session.flush()
+
+        rows, _ = await svc.get_history(db_session, uid)
+        by_key = {row["record_key"]: row for row in rows}
+        assert len(by_key[f"pomodoro:{session_id}"]["subject_allocations"]) == 4
+        assert by_key[f"practice:{session_id}"]["subject_allocations"] == []
+
+    @pytest.mark.asyncio
+    async def test_equal_408_start_persists_four_canonical_allocations(self, db_session):
+        from sqlalchemy import select
+
+        from app.models.admin import Subject
+        from app.schemas.pomodoro import PomodoroSessionResponse
+        from app.services import pomodoro_service as svc
+
+        uid = await _make_user(db_session, "u_equal_408")
+        root = Subject(
+            code="exam408", name="计算机综合", level=1, path="exam408", is_active=True
+        )
+        db_session.add(root)
+        await db_session.flush()
+        codes = (
+            "data_structure",
+            "computer_organization",
+            "operating_system",
+            "computer_network",
+        )
+        for code in codes:
+            db_session.add(
+                Subject(
+                    code=code,
+                    name=code,
+                    level=2,
+                    path=f"exam408.{code}",
+                    parent_id=root.id,
+                    is_active=True,
+                )
+            )
+        await db_session.flush()
+
+        session = await svc.start_session(
+            db_session,
+            uid,
+            root.id,
+            None,
+            "standard",
+            25,
+            5,
+            allocation_mode="equal_408_core_v1",
+        )
+
+        assert session.subject_id == root.id
+        assert [
+            (allocation.subject_code_snapshot, allocation.weight_basis_points)
+            for allocation in session.subject_allocations
+        ] == [(code, 2500) for code in codes]
+        response = PomodoroSessionResponse.from_orm_with_subject(session)
+        assert response.allocation_mode == "equal_408_core_v1"
+        assert len(response.subject_allocations) == 4
+        interrupted = await svc.interrupt_session(db_session, session.id, uid)
+        terminal_response = PomodoroSessionResponse.from_orm_with_subject(interrupted)
+        assert terminal_response.allocation_mode == "equal_408_core_v1"
+        assert len(terminal_response.subject_allocations) == 4
+        from app.core.time_utils import current_study_day
+
+        interrupted.actual_duration = 3601
+        await db_session.flush()
+        summary = await svc.get_daily_summary(
+            db_session, uid, current_study_day(0)
+        )
+        assert summary["sessions"] == 1
+        assert summary["duration_sec"] == 3601
+        assert sum(item["duration_sec"] for item in summary["subjects"]) == 3601
+        assert [item["duration_sec"] for item in summary["subjects"]] == [
+            901, 900, 900, 900
+        ]
+        assert all(item["participation_sessions"] == 1 for item in summary["subjects"])
+        await db_session.delete(interrupted)
+        await db_session.flush()
+        for leaf in list((await db_session.execute(
+            select(Subject).where(Subject.parent_id == root.id)
+        )).scalars()):
+            await db_session.delete(leaf)
+        await db_session.flush()
+
+        with pytest.raises(ValueError, match="配置不完整"):
+            await svc.start_session(
+                db_session,
+                uid,
+                root.id,
+                None,
+                "standard",
+                25,
+                5,
+                allocation_mode="equal_408_core_v1",
+            )
+        await db_session.commit()
 
 
 def _utc(*parts):

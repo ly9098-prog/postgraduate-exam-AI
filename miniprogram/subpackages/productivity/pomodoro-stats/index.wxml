@@ -98,7 +98,10 @@
         <!-- ===== 专注时长分布：默认扇形图，柱状图按需挂载 ===== -->
         <view class="card-section pie-card-section distribution-card">
           <view class="section-header distribution-section-header">
-            <text class="section-title distribution-title">专注时长分布</text>
+            <view class="distribution-heading">
+              <text class="section-title distribution-title">专注时长分布</text>
+              <text class="distribution-note">综合番茄会分别计入四科参与次数，不能相加为总番茄数。</text>
+            </view>
             <view class="chart-switch-btn" hover-class="chart-switch-pressed" hover-start-time="20" hover-stay-time="80" catchtap="toggleChartMode" aria-role="button" aria-label="{{chartMode === 'pie' ? '切换到柱状图' : '切换到扇形图'}}">
               <view class="chart-switch-icon-shell" aria-hidden="true">
                 <view class="chart-switch-icon chart-switch-icon-bars" wx:if="{{chartMode === 'pie'}}">
@@ -288,8 +291,8 @@
           <text class="detail-value">{{selectedSubjectDetail._pctText}}</text>
         </view>
         <view class="detail-item">
-          <text class="detail-label">{{distributionPeriod === 'day' ? '当日开始次数' : '区间开始次数'}}</text>
-          <text class="detail-value">{{selectedSubjectDetail.sessions || 0}} 次</text>
+          <text class="detail-label">参与专注次数</text>
+          <text class="detail-value">{{selectedSubjectDetail.participation_sessions || 0}} 次</text>
         </view>
       </view>
       <view class="detail-close-wrap" catchtap="closeDetail">

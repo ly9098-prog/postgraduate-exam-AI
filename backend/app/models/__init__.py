@@ -59,6 +59,7 @@ from app.models.ocr_job import OCRJob  # noqa: F401
 from app.models.pomodoro import (  # noqa: F401
     PomodoroPauseInterval,
     PomodoroSession,
+    PomodoroSubjectAllocation,
     UserPomodoroSettings,
 )
 from app.models.practice_record import PracticeRecord  # noqa: F401

@@ -966,6 +966,7 @@ AI 错因分析。
 // Request
 {
   "subject_id": 2,
+  "allocation_mode": "single",
   "chapter_id": null,
   "preset": "standard",        // standard / long / custom / debug / free
   "work_duration": 25,
@@ -973,6 +974,14 @@ AI 错因分析。
   "notification_enabled": false
 }
 ```
+
+`allocation_mode` 可省略，默认 `single`。选择 408 父级进行综合计时时传
+`equal_408_core_v1`；服务端校验四个有效核心叶子，并在同一事务写入四条
+`2500` 基点分配。会话响应、活动会话和历史中的 `subject_allocations` 保存科目
+快照。科目分布按实际专注秒数逐统计日拆分后再按权重分配；全局会话次数仍只计
+一个番茄。科目汇总的 `participation_sessions` 表示参与专注次数，综合番茄会在
+四科各参与一次，因此不能相加推导全局番茄数。旧会话仍按原 `subject_id` 单科
+100% 统计。
 
 ### POST `/pomodoro/{session_id}/complete`
 
@@ -1039,7 +1048,7 @@ AI 错因分析。
   "sessions": 5,
   "duration_sec": 3600,
   "subjects": [
-    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "sessions": 3, "duration_sec": 2400}
+    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "sessions": 3, "participation_sessions": 3, "duration_sec": 2400}
   ]
 }
 ```

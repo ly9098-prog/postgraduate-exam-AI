@@ -8,6 +8,7 @@ from app.schemas.base import BaseModel
 
 class PomodoroStartRequest(BaseModel):
     subject_id: int
+    allocation_mode: Literal["single", "equal_408_core_v1"] = "single"
     chapter_id: str | None = None
     preset: Literal["standard", "long", "custom", "debug", "free"] = "standard"
     work_duration: int = Field(default=25, ge=0, le=120)
@@ -44,12 +45,21 @@ class PomodoroPauseRequest(PomodoroActionRequest):
     pass
 
 
+class PomodoroSubjectAllocationResponse(BaseModel):
+    subject_id: int | None = None
+    subject_code: str
+    subject_name: str
+    weight_basis_points: int
+
+
 class PomodoroSessionResponse(BaseModel):
     id: int
     user_id: int
     subject_id: int | None = None
     subject_code: str = ""
     subject_name: str = ""
+    allocation_mode: Literal["single", "equal_408_core_v1"] = "single"
+    subject_allocations: list["PomodoroSubjectAllocationResponse"] = []
     chapter_id: str | None = None
     client_start_id: str | None = None
     preset: str
@@ -76,6 +86,20 @@ class PomodoroSessionResponse(BaseModel):
             "id": session.id,
             "user_id": session.user_id,
             "subject_id": session.subject_id,
+            "allocation_mode": (
+                "equal_408_core_v1"
+                if len(getattr(session, "subject_allocations", []) or []) > 1
+                else "single"
+            ),
+            "subject_allocations": [
+                {
+                    "subject_id": item.subject_id,
+                    "subject_code": item.subject_code_snapshot,
+                    "subject_name": item.subject_name_snapshot,
+                    "weight_basis_points": item.weight_basis_points,
+                }
+                for item in (getattr(session, "subject_allocations", []) or [])
+            ],
             "chapter_id": session.chapter_id,
             "client_start_id": session.client_start_id,
             "preset": session.preset,
@@ -129,6 +153,7 @@ class PomodoroDailySummarySubject(BaseModel):
     subject_code: str = ""
     subject_name: str = ""
     sessions: int = 0
+    participation_sessions: int = 0
     duration_sec: int = 0
 
 
@@ -205,6 +230,8 @@ class LearningHistoryItem(BaseModel):
     actual_duration: int | None = None
     status: str
     preset: str | None = None
+    allocation_mode: Literal["single", "equal_408_core_v1"] | None = None
+    subject_allocations: list[PomodoroSubjectAllocationResponse] = []
 
 
 class PomodoroHistoryResponse(BaseModel):

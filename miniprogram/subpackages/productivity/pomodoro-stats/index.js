@@ -653,6 +653,7 @@ var pageConfig = {
           subject_code: metaNode.code || String((fallbackItem && fallbackItem.subject_code) || ''),
           subject_name: metaNode.name || String((fallbackItem && fallbackItem.subject_name) || '未分类'),
           sessions: 0,
+          participation_sessions: 0,
           duration_sec: 0,
         }
       }
@@ -663,12 +664,19 @@ var pageConfig = {
       const subjectId = item && item.subject_id != null ? Number(item.subject_id) : null
       const durationSec = Math.max(0, Number(item && item.duration_sec) || 0)
       const sessions = Math.max(0, Number(item && item.sessions) || 0)
+      const participationSessions = Math.max(
+        0,
+        Number(item && item.participation_sessions != null
+          ? item.participation_sessions
+          : sessions) || 0
+      )
       if (subjectId == null || !meta.byId[subjectId]) {
         passthrough.push({
           subject_id: item && item.subject_id != null ? item.subject_id : null,
           subject_code: String((item && item.subject_code) || ''),
           subject_name: String((item && item.subject_name) || '未分类'),
           sessions,
+          participation_sessions: participationSessions,
           duration_sec: durationSec,
         })
         return
@@ -677,6 +685,7 @@ var pageConfig = {
       if (node.isLeaf) {
         const bucket = upsertLeaf(subjectId, item)
         bucket.sessions += sessions
+        bucket.participation_sessions += participationSessions
         bucket.duration_sec += durationSec
         return
       }
@@ -687,11 +696,12 @@ var pageConfig = {
           subject_code: node.code || String((item && item.subject_code) || ''),
           subject_name: node.name || String((item && item.subject_name) || '未分类'),
           sessions,
+          participation_sessions: participationSessions,
           duration_sec: durationSec,
         })
         return
       }
-      parentBuckets.push({ item, leafIds, durationSec, sessions })
+      parentBuckets.push({ item, leafIds, durationSec, sessions, participationSessions })
     })
 
     parentBuckets.forEach(entry => {
@@ -703,6 +713,9 @@ var pageConfig = {
       })
       const durationShares = this._distributeAggregateValue(entry.durationSec, entry.leafIds, currentDurations)
       const sessionShares = this._distributeAggregateValue(entry.sessions, entry.leafIds, currentSessions)
+      const participationShares = this._distributeAggregateValue(
+        entry.participationSessions, entry.leafIds, currentSessions
+      )
       durationShares.forEach(share => {
         const bucket = upsertLeaf(share.id, entry.item)
         bucket.duration_sec += share.value
@@ -710,6 +723,10 @@ var pageConfig = {
       sessionShares.forEach(share => {
         const bucket = upsertLeaf(share.id, entry.item)
         bucket.sessions += share.value
+      })
+      participationShares.forEach(share => {
+        const bucket = upsertLeaf(share.id, entry.item)
+        bucket.participation_sessions += share.value
       })
     })
 
@@ -738,6 +755,7 @@ var pageConfig = {
         subject_code: code,
         duration_sec: dur,
         sessions: item.sessions || 0,
+        participation_sessions: item.participation_sessions || 0,
         _label: item.subject_name || '未分类',
         _color: getPieSubjectColor(subjectId != null ? String(subjectId) : (code || '未分类'), this.data.themeMode),
         _durationText: this._fmtMin(dur),
@@ -1295,6 +1313,7 @@ var pageConfig = {
     const isReview = s.record_type === 'review'
     const isPractice = s.record_type === 'practice' || isReview
     const isFree = s.preset === 'free'
+    const isEqualCore = s.allocation_mode === 'equal_408_core_v1'
     const sessionTaskType = storage.pomodoroTaskTypes.labelForSession(s)
     const durationText = formatDuration(durSec)
     // 刷题会话：左侧明确标出「刷题」，状态为「刷题」而非「完成」，与番茄钟区分。
@@ -1305,7 +1324,8 @@ var pageConfig = {
       _statusLabel = isReview ? '复习' : '刷题'
       _statusClass = 'status-done'
     } else {
-      _subjectLabel = isFree ? '自由计时 · ' + subjectName : subjectName
+      const attributedName = isEqualCore ? subjectName + '（四科均分）' : subjectName
+      _subjectLabel = isFree ? '自由计时 · ' + attributedName : attributedName
       _statusLabel = s.status === 'completed' ? '完成' : '中断'
       _statusClass = s.status === 'completed' ? 'status-done' : 'status-interrupt'
     }

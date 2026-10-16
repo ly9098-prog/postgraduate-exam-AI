@@ -57,14 +57,25 @@
             </view>
             <view wx:else class="subj-grid">
               <view
-                class="subj-card {{selectedSubjectId === item.id ? 'active' : ''}}"
+                class="subj-card {{selectedSubjectId === item.id ? 'active' : ''}} {{item._disabled ? 'disabled' : ''}}"
                 wx:for="{{subjects}}" wx:key="id"
                 hover-class="subj-card-pressed" hover-start-time="20" hover-stay-time="80"
                 catchtap="selectSubject"
                 data-id="{{item.id}}"
+                data-disabled="{{item._disabled}}"
+                aria-role="button"
+                aria-selected="{{selectedSubjectId === item.id}}"
+                aria-disabled="{{item._disabled}}"
+                aria-label="{{item.name}}{{item._isAggregate ? (item._disabled ? '，科目配置不可用' : '，四科各占百分之二十五') : ''}}"
               >
-                <view class="subj-icon-wrap"><text class="subj-emoji">{{item._emoji}}</text></view>
+                <view class="subj-icon-wrap">
+                  <view wx:if="{{item._isAggregate}}" class="aggregate-icon-grid">
+                    <image wx:for="{{coreSubjects}}" wx:for-item="core" wx:key="code" class="subj-icon aggregate-icon" src="{{themeMode === 'dark' ? core._iconDark : core._icon}}" mode="aspectFit" aria-hidden="true"></image>
+                  </view>
+                  <image wx:else class="subj-icon" src="{{themeMode === 'dark' ? item._iconDark : item._icon}}" mode="aspectFit" aria-hidden="true"></image>
+                </view>
                 <text class="subj-name">{{item.name}}</text>
+                <text wx:if="{{item._isAggregate}}" class="subj-subtitle">{{item._disabled ? '科目配置不可用' : '四科各 25%'}}</text>
               </view>
             </view>
           </view>
@@ -152,8 +163,7 @@
       <!-- ===== CEREMONY STATE ===== -->
       <block wx:if="{{phase === 'ceremony'}}">
         <view class="ceremony-wrap">
-          <text class="ceremony-emoji">{{selectedSubjectEmoji}}</text>
-          <text class="ceremony-subject">{{selectedSubjectLabel}} · {{selectedTaskTypeLabel}}</text>
+          <text class="ceremony-subject">{{selectedSubjectLabel}}{{selectedAllocationLabel ? '（' + selectedAllocationLabel + '）' : ''}} · {{selectedTaskTypeLabel}}</text>
           <view class="ceremony-divider"></view>
           <text class="ceremony-duration">{{selectedPreset === 'debug' ? '10 秒' : workDuration + ' 分钟'}}</text>
           <text class="ceremony-preset">{{selectedPresetLabel}}</text>
@@ -168,7 +178,7 @@
       <block wx:if="{{phase === 'running' || phase === 'break'}}">
         <view class="timer-wrap">
           <view class="timer-header">
-            <text class="timer-subject">{{selectedSubjectEmoji}} {{selectedSubjectLabel}} · {{selectedTaskTypeLabel}}</text>
+            <text class="timer-subject">{{selectedSubjectLabel}}{{selectedAllocationLabel ? '（' + selectedAllocationLabel + '）' : ''}} · {{selectedTaskTypeLabel}}</text>
             <block wx:if="{{isFreeTimer}}">
               <view class="free-status-wrap">
                 <view class="free-status-dot {{isPaused ? 'dot-paused' : ''}}"></view>

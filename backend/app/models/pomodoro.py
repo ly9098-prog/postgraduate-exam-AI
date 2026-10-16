@@ -69,6 +69,12 @@ class PomodoroSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
     )
+    subject_allocations = relationship(
+        "PomodoroSubjectAllocation",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="noload",
+    )
     preset: Mapped[str] = mapped_column(String(16), nullable=False, default="standard")
     work_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
     break_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
@@ -95,6 +101,42 @@ class PomodoroSession(Base):
     # computed from pomodoro_pause_intervals (the single source of truth).
     total_paused_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PomodoroSubjectAllocation(Base):
+    __tablename__ = "pomodoro_subject_allocations"
+    __table_args__ = (
+        Index(
+            "ux_pomodoro_subject_allocations_session_subject",
+            "session_id",
+            "subject_id",
+            unique=True,
+        ),
+        Index(
+            "ux_pomodoro_subject_allocations_session_code",
+            "session_id",
+            "subject_code_snapshot",
+            unique=True,
+        ),
+        Index("ix_pomodoro_subject_allocations_subject", "subject_id"),
+        CheckConstraint("weight_basis_points > 0", name="ck_pomodoro_allocation_weight_positive"),
+        CheckConstraint("subject_code_snapshot <> ''", name="ck_pomodoro_allocation_code_present"),
+        CheckConstraint("subject_name_snapshot <> ''", name="ck_pomodoro_allocation_name_present"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("pomodoro_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    subject_id: Mapped[int] = mapped_column(
+        ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
+    )
+    weight_basis_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    subject_code_snapshot: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_name_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
+    session = relationship("PomodoroSession", back_populates="subject_allocations")
+    subject_ref = relationship("Subject")
 
 
 class PomodoroPauseInterval(Base):

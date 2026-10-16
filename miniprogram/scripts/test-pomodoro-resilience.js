@@ -24,7 +24,7 @@ const backendSchemaSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/
 const backendMigrationSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/alembic/versions/x8y9z0a1b2c3_add_pomodoro_client_start_id.py'), 'utf8')
 const backendCorrectiveMigrationSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/alembic/versions/y9z0a1b2c3d4_repair_pomodoro_constraints.py'), 'utf8')
 const backendDefinitionMigrationSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/alembic/versions/z0a1b2c3d4e5_verify_pomodoro_constraint_definitions.py'), 'utf8')
-const backendPostgresConcurrencyTestSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/tests/test_pomodoro_postgres_concurrency.py'), 'utf8')
+const backendPostgresConcurrencyTestSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/tests/integration/test_pomodoro_postgres_concurrency.py'), 'utf8')
 function method(name) {
   const startToken = `  ${name}(`
   const asyncToken = `  async ${name}(`

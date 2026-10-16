@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,7 +24,11 @@ from app.core.time_utils import (
 )
 from app.models.admin import QuestionVersion, Subject
 from app.models.exam import ExamAttempt
-from app.models.pomodoro import PomodoroSession, UserPomodoroSettings
+from app.models.pomodoro import (
+    PomodoroSession,
+    PomodoroSubjectAllocation,
+    UserPomodoroSettings,
+)
 from app.models.practice_session import PracticeSession
 from app.models.review_scheduler import ReviewRecord
 from app.models.study_plan import StudyPlan, StudyPlanDay
@@ -43,6 +47,31 @@ PRIORITY_LABELS = {
     "new": "新知识推进优先",
     "exam": "真题检测优先",
 }
+
+
+def _focus_duration_for_subject_scope(session, split: dict, subject_ids: set[int]) -> int:
+    allocations = list(getattr(session, "subject_allocations", []) or [])
+    total = 0
+    for seconds in split.values():
+        if allocations:
+            weights = [max(0, int(item.weight_basis_points or 0)) for item in allocations]
+            denominator = sum(int(item.weight_basis_points or 0) for item in allocations)
+            if denominator <= 0:
+                continue
+            exact = [seconds * weight / denominator for weight in weights]
+            parts = [int(value) for value in exact]
+            remainder = seconds - sum(parts)
+            order = sorted(range(len(parts)), key=lambda i: (-(exact[i] - parts[i]), i))
+            for index in order[:remainder]:
+                parts[index] += 1
+            total += sum(
+                value
+                for item, value in zip(allocations, parts)
+                if item.subject_id in subject_ids
+            )
+        elif session.subject_id in subject_ids:
+            total += seconds
+    return total
 
 
 def _phase_for_days(days_remaining: int) -> tuple[str, str]:
@@ -281,10 +310,20 @@ async def _load_activity_dates(
             (
                 await db.execute(
                     select(PomodoroSession)
-                    .options(selectinload(PomodoroSession.pause_intervals))
+                    .options(
+                        selectinload(PomodoroSession.pause_intervals),
+                        selectinload(PomodoroSession.subject_allocations),
+                    )
                     .where(
                         PomodoroSession.user_id == user_id,
-                        PomodoroSession.subject_id.in_(all_408_ids),
+                        or_(
+                            PomodoroSession.subject_id.in_(all_408_ids),
+                            PomodoroSession.id.in_(
+                                select(PomodoroSubjectAllocation.session_id).where(
+                                    PomodoroSubjectAllocation.subject_id.in_(all_408_ids)
+                                )
+                            ),
+                        ),
                         PomodoroSession.status == "completed",
                         PomodoroSession.end_time.is_not(None),
                         PomodoroSession.start_time < end_utc,
@@ -304,7 +343,10 @@ async def _load_activity_dates(
             active_dates.update(
                 day
                 for day, sec in split.items()
-                if start_date <= day <= end_date and sec > 0
+                if start_date <= day <= end_date
+                and _focus_duration_for_subject_scope(
+                    session, {day: sec}, set(all_408_ids)
+                ) > 0
             )
 
     exam_rows = (
@@ -451,10 +493,20 @@ async def _today_completion(
             (
                 await db.execute(
                     select(PomodoroSession)
-                    .options(selectinload(PomodoroSession.pause_intervals))
+                    .options(
+                        selectinload(PomodoroSession.pause_intervals),
+                        selectinload(PomodoroSession.subject_allocations),
+                    )
                     .where(
                         PomodoroSession.user_id == user_id,
-                        PomodoroSession.subject_id.in_(all_408_ids),
+                        or_(
+                            PomodoroSession.subject_id.in_(all_408_ids),
+                            PomodoroSession.id.in_(
+                                select(PomodoroSubjectAllocation.session_id).where(
+                                    PomodoroSubjectAllocation.subject_id.in_(all_408_ids)
+                                )
+                            ),
+                        ),
                         PomodoroSession.status == "completed",
                         PomodoroSession.end_time.is_not(None),
                         PomodoroSession.start_time < end_utc,
@@ -466,17 +518,23 @@ async def _today_completion(
             .all()
         )
         for session in pomodoro_rows:
-            focus_sec += split_session_duration_by_study_day(
+            split = split_session_duration_by_study_day(
                 session,
                 session.pause_intervals,
                 day_start_minute,
-            ).get(today, 0)
-            focus_supplement_sec += split_session_duration_excluding_intervals(
+            )
+            focus_sec += _focus_duration_for_subject_scope(
+                session, {today: split.get(today, 0)}, set(all_408_ids)
+            )
+            supplement_split = split_session_duration_excluding_intervals(
                 session,
                 session.pause_intervals,
                 activity_spans,
                 day_start_minute,
-            ).get(today, 0)
+            )
+            focus_supplement_sec += _focus_duration_for_subject_scope(
+                session, {today: supplement_split.get(today, 0)}, set(all_408_ids)
+            )
 
     completed = {category: 0 for category in CATEGORIES}
     # Review runner has no server-side elapsed timer. Keep the same 2 questions /

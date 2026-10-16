@@ -1251,6 +1251,84 @@ page {
   }
 }
 
+/* Nine compact, equal-width choices: eight leaves plus one 408 distribution. */
+.subj-grid {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  column-gap: 12rpx;
+  row-gap: 14rpx;
+  flex-wrap: wrap;
+}
+.subj-card {
+  width: 31%;
+  flex: 0 0 31%;
+  min-width: 0;
+  height: 168rpx;
+  gap: 9rpx;
+  border-radius: 20rpx;
+  padding: 10rpx 6rpx;
+  box-sizing: border-box;
+  transition: background-color .16s ease, border-color .16s ease, opacity .16s ease;
+}
+.subj-card-pressed { transform: none; opacity: .78; }
+.subj-card.disabled { opacity: .48; }
+.subj-icon-wrap {
+  width: 68rpx;
+  height: 68rpx;
+  flex: 0 0 68rpx;
+}
+.subj-icon {
+  width: 46rpx;
+  height: 46rpx;
+  display: block;
+}
+.aggregate-icon-grid {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 2rpx;
+}
+.subj-icon.aggregate-icon {
+  width: 22rpx;
+  height: 22rpx;
+  flex: 0 0 22rpx;
+}
+.subj-name {
+  max-width: 100%;
+  padding: 0;
+  font-size: 22rpx;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.subj-subtitle {
+  max-width: 100%;
+  color: var(--text-secondary, #657269);
+  font-size: 17rpx;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-dark .subj-subtitle { color: rgba(213, 223, 235, .72); }
+.theme-light .subj-card.disabled,
+.theme-dark .subj-card.disabled { box-shadow: none; }
+@media (max-width: 350px) {
+  .subj-grid { column-gap: 8rpx; row-gap: 10rpx; }
+  .subj-card { height: 158rpx; padding-left: 3rpx; padding-right: 3rpx; }
+  .subj-name { font-size: 20rpx; }
+  .subj-subtitle { font-size: 15rpx; }
+}
+
 /* ============================================
    LIGHT / DARK THEME BRIDGE
    Light palette follows the Home study-desk language.
@@ -2191,6 +2269,43 @@ page {
 }
 .theme-dark.page-break .ring-time-timed {
   --timer-shimmer-highlight: #FFE6C5;
+}
+
+/* Keep the nine subject choices in three columns after the legacy overrides. */
+.subj-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  row-gap: 14rpx;
+}
+.subj-card {
+  width: auto;
+  height: 204rpx;
+}
+.size-large .subj-card {
+  width: auto;
+  height: 204rpx;
+}
+.subj-icon-wrap {
+  width: 80rpx;
+  height: 80rpx;
+  flex-basis: 80rpx;
+}
+.subj-name {
+  max-width: 100%;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+@media (max-width: 350px) {
+  .subj-card,
+  .size-large .subj-card {
+    height: 190rpx;
+  }
+  .subj-icon-wrap {
+    width: 72rpx;
+    height: 72rpx;
+    flex-basis: 72rpx;
+  }
 }
 
 /* Keep timer digits static when the system requests reduced motion. */

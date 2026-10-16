@@ -60,6 +60,12 @@ const sandbox = {
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
     if (request === './utils/route-params') return { safeDecodeURIComponent: v => v }
     if (request === './utils/subject-scope') return { filter408SubjectTree: value => value }
+    if (request === './utils/subject-cache') {
+      return {
+        readSubjectCache: () => null,
+        writeSubjectCache: () => true,
+      }
+    }
     if (request === '../../utils/pomodoro-theme' || request === './utils/pomodoro-theme') {
       return {
         getTheme: () => 'light',
@@ -129,6 +135,58 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('408 parent route selects the enabled four-subject allocation', async () => {
+    const subjects = [
+      { id: 10, code: 'exam408', name: '计算机', _isAggregate: true, _disabled: false },
+      { id: 11, code: 'data_structure', name: '数据结构' },
+      { id: 12, code: 'computer_organization', name: '计算机组成原理' },
+      { id: 13, code: 'operating_system', name: '操作系统' },
+      { id: 14, code: 'computer_network', name: '计算机网络' },
+    ]
+    for (const route of [{ fromSubjectCode: 'exam408' }, { fromSubjectId: 10 }]) {
+      const page = createPage()
+      Object.assign(page.data, route)
+      page._applySubjects(subjects)
+      assert.strictEqual(page.data.selectedSubjectId, 10)
+      assert.strictEqual(page.data.selectedSubject._isAggregate, true)
+      assert.strictEqual(page.data.allocationMode, 'equal_408_core_v1')
+    }
+  })
+
+  await test('cached and server-restored sessions retain the 408 allocation mode', async () => {
+    const page = createPage()
+    page.data.subjects = [
+      { id: 10, code: 'exam408', name: '计算机', _isAggregate: true },
+    ]
+    page._mergeLocalPauseAdjustment = (_id, value) => value
+    page._startTimer = () => {}
+    page._pageVisible = true
+    const cached = page._buildCachedActiveSession({
+      sessionId: 88,
+      sessionStartTime: nowMs - 60_000,
+      workDuration: 25,
+      breakDuration: 5,
+      selectedPreset: 'standard',
+      selectedSubjectId: 10,
+      selectedSubjectCode: 'exam408',
+      selectedSubjectName: '计算机',
+      allocationMode: 'equal_408_core_v1',
+    })
+    assert.strictEqual(cached.allocation_mode, 'equal_408_core_v1')
+    page._restoreSession(cached)
+    assert.strictEqual(page.data.allocationMode, 'equal_408_core_v1')
+    assert.strictEqual(page.data.selectedSubject._isAggregate, true)
+
+    page.data.allocationMode = 'single'
+    page.data.selectedSubject._isAggregate = false
+    page._syncActiveSessionLight({
+      ...cached,
+      allocation_mode: 'equal_408_core_v1',
+    })
+    assert.strictEqual(page.data.allocationMode, 'equal_408_core_v1')
+    assert.strictEqual(page.data.selectedSubject._isAggregate, true)
+  })
 
   await test('pause stays fail-closed when pending intent cannot be persisted', async () => {
     storage.clear(); toasts.length = 0

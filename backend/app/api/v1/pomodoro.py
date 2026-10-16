@@ -54,6 +54,7 @@ async def start_session(
             req.break_duration,
             notification_enabled=req.notification_enabled,
             client_start_id=req.client_start_id,
+            allocation_mode=req.allocation_mode,
         )
     except svc.PomodoroStartIdempotencyConflictError:
         raise HTTPException(
@@ -181,7 +182,9 @@ async def get_active(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.get_active_session(db, current_user.id)
+    session = await svc.get_active_session(
+        db, current_user.id, include_allocations=True
+    )
     if session is None:
         return None
     return PomodoroSessionResponse.from_orm_with_subject(session)

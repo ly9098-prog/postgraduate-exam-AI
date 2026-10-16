@@ -6,6 +6,7 @@ from sqlalchemy import func, literal, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.subject_scope import (
     is_study_subject_enabled,
@@ -24,6 +25,7 @@ from app.models.admin import Subject
 from app.models.pomodoro import (
     PomodoroPauseInterval,
     PomodoroSession,
+    PomodoroSubjectAllocation,
     UserPomodoroSettings,
 )
 from app.models.practice_session import PracticeSession
@@ -41,6 +43,13 @@ FREE_TIMER_MAX_DURATION_SEC = 5 * 60 * 60
 COUNTDOWN_COMPLETE_EARLY_TOLERANCE_SEC = 2
 CLIENT_ACTION_FUTURE_TOLERANCE_SEC = 5
 CLIENT_ACTION_PAST_TOLERANCE_SEC = 5
+EQUAL_408_MODE = "equal_408_core_v1"
+EQUAL_408_CODES = (
+    "data_structure",
+    "computer_organization",
+    "operating_system",
+    "computer_network",
+)
 
 # Statistics represent persisted learning records only after a focus session has
 # ended. Running/paused sessions remain visible through the active-session API and
@@ -63,6 +72,16 @@ class PomodoroClockSkewError(ValueError):
 
 class PomodoroStartIdempotencyConflictError(ValueError):
     """A client_start_id was reused with a different start payload."""
+
+
+async def _refresh_session_state(db: AsyncSession, session: PomodoroSession) -> None:
+    await db.refresh(session)
+    rows = await db.execute(
+        select(PomodoroSubjectAllocation)
+        .where(PomodoroSubjectAllocation.session_id == session.id)
+        .order_by(PomodoroSubjectAllocation.subject_code_snapshot)
+    )
+    set_committed_value(session, "subject_allocations", list(rows.scalars().all()))
 
 
 def _effective_paused_sec(session, now) -> int:
@@ -226,7 +245,10 @@ async def _get_session_by_client_start_id(
         return None
     result = await db.execute(
         select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.subject_allocations),
+        )
         .where(
             PomodoroSession.user_id == user_id,
             PomodoroSession.client_start_id == client_start_id,
@@ -245,6 +267,7 @@ def _start_payload_matches(
     work_duration: int,
     break_duration: int,
     notification_enabled: bool,
+    allocation_mode: str = "single",
 ) -> bool:
     expected_work = 0 if preset == "free" else work_duration
     expected_break = 0 if preset == "free" else break_duration
@@ -256,6 +279,9 @@ def _start_payload_matches(
         and int(session.work_duration or 0) == int(expected_work or 0)
         and int(session.break_duration or 0) == int(expected_break or 0)
         and bool(session.notification_enabled) == expected_notification
+        and (
+            len(getattr(session, "subject_allocations", []) or []) > 1
+        ) == (allocation_mode == EQUAL_408_MODE)
     )
 
 
@@ -269,7 +295,11 @@ async def start_session(
     break_duration: int,
     notification_enabled: bool = False,
     client_start_id: str | None = None,
+    allocation_mode: str = "single",
 ) -> PomodoroSession:
+    if allocation_mode not in ("single", EQUAL_408_MODE):
+        raise ValueError("不支持的科目分配模式")
+
     # True idempotency must be checked before the active-session guard. If the
     # original /start committed but its response was lost, retrying the same key
     # returns that exact row instead of colliding with the row it just created.
@@ -283,6 +313,7 @@ async def start_session(
             work_duration=work_duration,
             break_duration=break_duration,
             notification_enabled=notification_enabled,
+            allocation_mode=allocation_mode,
         ):
             raise PomodoroStartIdempotencyConflictError(
                 "POMODORO_START_IDEMPOTENCY_CONFLICT"
@@ -310,7 +341,7 @@ async def start_session(
         start + timedelta(minutes=max(0, work_duration)) if work_duration > 0 else None
     )
 
-    # Validate subject_id
+    # Resolve the selected subject and the immutable attribution snapshot.
     subj = await db.get(Subject, subject_id)
     if subj is None:
         raise ValueError(f"科目不存在: subject_id={subject_id}")
@@ -318,13 +349,35 @@ async def start_session(
         raise ValueError(f"科目不可用: {subj.name}")
     all_subjects = list((await db.execute(select(Subject))).scalars().all())
     enabled_ids = {item.id for item in select_study_subject_records(all_subjects)}
-    child_count = sum(
-        1
-        for item in all_subjects
-        if item.parent_id == subject_id and item.id in enabled_ids
-    )
-    if child_count and child_count > 0:
-        raise ValueError(f"请选择具体子科目，不能选择父级科目: {subj.name}")
+    allocation_subjects: list[Subject]
+    if allocation_mode == EQUAL_408_MODE:
+        if subj.code != "exam408":
+            raise ValueError("四科均分模式只能选择 408 父级科目")
+        children_by_code = {
+            item.code: item
+            for item in all_subjects
+            if item.parent_id == subj.id
+            and item.code in EQUAL_408_CODES
+            and item.id in enabled_ids
+        }
+        if set(children_by_code) != set(EQUAL_408_CODES):
+            raise ValueError("408 四科配置不完整或不可用，暂不能使用四科均分")
+        allocation_subjects = [children_by_code[code] for code in EQUAL_408_CODES]
+        if any(
+            item.parent_id != subj.id
+            or any(child.parent_id == item.id and child.id in enabled_ids for child in all_subjects)
+            for item in allocation_subjects
+        ):
+            raise ValueError("408 四科配置无效，暂不能使用四科均分")
+    elif allocation_mode == "single":
+        if any(
+            item.parent_id == subject_id and item.id in enabled_ids
+            for item in all_subjects
+        ):
+            raise ValueError(f"请选择具体子科目，不能选择父级科目: {subj.name}")
+        allocation_subjects = [subj]
+    else:
+        raise ValueError("不支持的科目分配模式")
 
     session = PomodoroSession(
         user_id=user_id,
@@ -341,6 +394,15 @@ async def start_session(
         notification_sent=False,
         openid_snapshot=openid_snapshot,
     )
+    session.subject_allocations = [
+        PomodoroSubjectAllocation(
+            subject_id=item.id,
+            weight_basis_points=2500 if allocation_mode == EQUAL_408_MODE else 10000,
+            subject_code_snapshot=item.code,
+            subject_name_snapshot=item.name,
+        )
+        for item in allocation_subjects
+    ]
     try:
         async with db.begin_nested():
             db.add(session)
@@ -358,6 +420,7 @@ async def start_session(
                 work_duration=work_duration,
                 break_duration=break_duration,
                 notification_enabled=notification_enabled,
+                allocation_mode=allocation_mode,
             ):
                 raise PomodoroStartIdempotencyConflictError(
                     "POMODORO_START_IDEMPOTENCY_CONFLICT"
@@ -373,7 +436,7 @@ async def start_session(
             raise ValueError("当前已有进行中的专注，请先结束后再开始") from exc
         raise
 
-    await db.refresh(session)
+    await db.refresh(session, attribute_names=["created_at"])
     session.subject_ref = subj
     return session
 
@@ -476,6 +539,7 @@ async def complete_session(
         .options(
             joinedload(PomodoroSession.subject_ref),
             selectinload(PomodoroSession.pause_intervals),
+            selectinload(PomodoroSession.subject_allocations),
         )
         .where(
             PomodoroSession.id == session_id,
@@ -518,7 +582,7 @@ async def complete_session(
         server_now=now,
     )
     await db.flush()
-    await db.refresh(session)
+    await _refresh_session_state(db, session)
     return session
 
 
@@ -533,6 +597,7 @@ async def interrupt_session(
         .options(
             joinedload(PomodoroSession.subject_ref),
             selectinload(PomodoroSession.pause_intervals),
+            selectinload(PomodoroSession.subject_allocations),
         )
         .where(
             PomodoroSession.id == session_id,
@@ -568,7 +633,7 @@ async def interrupt_session(
         server_now=now,
     )
     await db.flush()
-    await db.refresh(session)
+    await _refresh_session_state(db, session)
     return session
 
 
@@ -583,6 +648,7 @@ async def pause_session(
         .options(
             joinedload(PomodoroSession.subject_ref),
             selectinload(PomodoroSession.pause_intervals),
+            selectinload(PomodoroSession.subject_allocations),
         )
         .where(
             PomodoroSession.id == session_id,
@@ -604,7 +670,7 @@ async def pause_session(
             (i for i in session.pause_intervals if i.ended_at is None), None
         )
         if client_action_at is None or open_interval is None:
-            await db.refresh(session)
+            await _refresh_session_state(db, session)
             return session
 
         prior_latest = session.start_time
@@ -626,7 +692,7 @@ async def pause_session(
             open_interval.started_at = action_time
             session.paused_at = action_time
             await db.flush()
-            await db.refresh(session)
+            await _refresh_session_state(db, session)
         return session
 
     latest_event = _latest_session_event_time(session)
@@ -658,7 +724,7 @@ async def pause_session(
         ]
         session.paused_at = None
         session.status = "running"
-        await db.refresh(session)
+        await _refresh_session_state(db, session)
     return session
 
 
@@ -673,6 +739,7 @@ async def resume_session(
         .options(
             joinedload(PomodoroSession.subject_ref),
             selectinload(PomodoroSession.pause_intervals),
+            selectinload(PomodoroSession.subject_allocations),
         )
         .where(
             PomodoroSession.id == session_id,
@@ -735,7 +802,7 @@ async def resume_session(
                 + timedelta(seconds=session.total_paused_sec)
             )
         await db.flush()
-        await db.refresh(session)
+        await _refresh_session_state(db, session)
         return session
 
     floor = _latest_session_event_time(session)
@@ -765,14 +832,19 @@ async def resume_session(
         )
 
     await db.flush()
-    await db.refresh(session)
+    await _refresh_session_state(db, session)
     return session
 
 
-async def get_active_session(db: AsyncSession, user_id: int) -> PomodoroSession | None:
+async def get_active_session(
+    db: AsyncSession, user_id: int, *, include_allocations: bool = False
+) -> PomodoroSession | None:
+    options = [joinedload(PomodoroSession.subject_ref)]
+    if include_allocations:
+        options.append(selectinload(PomodoroSession.subject_allocations))
     result = await db.execute(
         select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
+        .options(*options)
         .where(
             PomodoroSession.user_id == user_id,
             PomodoroSession.status.in_(["running", "paused"]),
@@ -831,6 +903,7 @@ class _LiteSession:
         "subject_id",
         "subject_ref",
         "pause_intervals",
+        "subject_allocations",
     )
 
     def __init__(
@@ -842,6 +915,7 @@ class _LiteSession:
         subject_id: int | None = None,
         subject_ref=None,
         pause_intervals: list | None = None,
+        subject_allocations: list | None = None,
     ):
         self.start_time = start_time
         self.end_time = end_time
@@ -850,6 +924,7 @@ class _LiteSession:
         self.subject_id = subject_id
         self.subject_ref = subject_ref
         self.pause_intervals = pause_intervals or []
+        self.subject_allocations = subject_allocations or []
 
 
 def _chunks(seq, size: int):
@@ -888,12 +963,13 @@ async def _load_overlapping_sessions(
             select(PomodoroSession)
             .options(
                 joinedload(PomodoroSession.subject_ref),
+                joinedload(PomodoroSession.subject_allocations),
                 selectinload(PomodoroSession.pause_intervals),
             )
             .where(*overlap)
         )
         out: list[_LiteSession] = []
-        for s in result.scalars().all():
+        for s in result.unique().scalars().all():
             ref = s.subject_ref
             pause_intervals = [
                 SimpleNamespace(started_at=i.started_at, ended_at=i.ended_at)
@@ -916,6 +992,15 @@ async def _load_overlapping_sessions(
                         else None
                     ),
                     pause_intervals=pause_intervals,
+                    subject_allocations=[
+                        SimpleNamespace(
+                            subject_id=a.subject_id,
+                            subject_code=a.subject_code_snapshot,
+                            subject_name=a.subject_name_snapshot,
+                            weight_basis_points=a.weight_basis_points,
+                        )
+                        for a in (s.subject_allocations or [])
+                    ],
                 )
             )
         return out
@@ -1065,6 +1150,59 @@ def _resolve_subject(session) -> tuple[int | None, str, str]:
     return None, "", "未分类"
 
 
+def _resolve_allocations(session) -> list[tuple[int | None, str, str, int]]:
+    """Resolve persisted attribution rows; legacy sessions remain single-subject."""
+    rows = list(getattr(session, "subject_allocations", []) or [])
+    if not rows:
+        key, code, name = _resolve_subject(session)
+        return [(key, code, name, 10000)]
+    order = {code: index for index, code in enumerate(EQUAL_408_CODES)}
+    def allocation_code(row) -> str:
+        return getattr(row, "subject_code_snapshot", getattr(row, "subject_code", ""))
+
+    def allocation_name(row) -> str:
+        return getattr(row, "subject_name_snapshot", getattr(row, "subject_name", ""))
+
+    rows.sort(
+        key=lambda row: (
+            order.get(allocation_code(row), len(order)),
+            allocation_code(row),
+        )
+    )
+    return [
+        (
+            row.subject_id,
+            allocation_code(row),
+            allocation_name(row),
+            row.weight_basis_points,
+        )
+        for row in rows
+    ]
+
+
+def _allocation_group_key(subject_id: int | None, code: str):
+    if subject_id is not None or not code:
+        return subject_id
+    return ("deleted-subject", code)
+
+
+def _allocate_seconds_by_weight(total_sec: int, rows: list[tuple[int | None, str, str, int]]) -> list[int]:
+    """Largest-remainder allocation with row-order tie breaking and exact conservation."""
+    total_sec = max(0, int(total_sec))
+    if not rows:
+        return []
+    weight_sum = sum(max(0, int(row[3])) for row in rows)
+    if weight_sum <= 0:
+        raise ValueError("科目分配权重无效")
+    exact = [total_sec * max(0, int(row[3])) / weight_sum for row in rows]
+    allocated = [int(value) for value in exact]
+    remaining = total_sec - sum(allocated)
+    order = sorted(range(len(rows)), key=lambda i: (-(exact[i] - allocated[i]), i))
+    for index in order[:remaining]:
+        allocated[index] += 1
+    return allocated
+
+
 async def build_pomodoro_statistics_snapshot(
     db: AsyncSession,
     user_id: int,
@@ -1200,20 +1338,36 @@ async def build_pomodoro_statistics_snapshot(
                     if sec > 0:
                         range_active_day_set.add(day)
             if range_include_subjects and range_contrib > 0:
-                key, code, name = _resolve_subject(s)
-                g = range_groups.setdefault(
-                    key,
-                    {
-                        "subject_id": key,
-                        "subject_code": code,
-                        "subject_name": name,
-                        "duration_sec": 0,
-                        "sessions": 0,
-                    },
-                )
-                g["duration_sec"] += range_contrib
-                if is_terminal and range_start <= start_day <= range_end:
-                    g["sessions"] += 1
+                allocations = _resolve_allocations(s)
+                allocated_by_subject = {
+                    _allocation_group_key(row[0], row[1]): 0 for row in allocations
+                }
+                for day, sec in split.items():
+                    if range_start <= day <= range_end:
+                        for row, allocated_sec in zip(
+                            allocations, _allocate_seconds_by_weight(sec, allocations)
+                        ):
+                            allocated_by_subject[
+                                _allocation_group_key(row[0], row[1])
+                            ] += allocated_sec
+                for subject_id, code, name, _ in allocations:
+                    key = _allocation_group_key(subject_id, code)
+                    allocated_sec = allocated_by_subject[key]
+                    g = range_groups.setdefault(
+                        key,
+                        {
+                            "subject_id": subject_id,
+                            "subject_code": code,
+                            "subject_name": name,
+                            "duration_sec": 0,
+                            "sessions": 0,
+                            "participation_sessions": 0,
+                        },
+                    )
+                    g["duration_sec"] += allocated_sec
+                    if is_terminal and range_start <= start_day <= range_end:
+                        g["sessions"] += 1
+                        g["participation_sessions"] += 1
         if need_trends:
             if is_terminal and start_day in trend_agg:
                 trend_agg[start_day]["sessions"] += 1
@@ -1230,20 +1384,25 @@ async def build_pomodoro_statistics_snapshot(
             if day_contrib <= 0:
                 # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
                 continue
-            key, code, name = _resolve_subject(s)
-            g = target_groups.setdefault(
-                key,
-                {
-                    "subject_id": key,
-                    "subject_code": code,
-                    "subject_name": name,
-                    "duration_sec": 0,
-                    "sessions": 0,
-                },
-            )
-            g["duration_sec"] += day_contrib
-            if is_terminal and start_day == target:
-                g["sessions"] += 1
+            allocations = _resolve_allocations(s)
+            seconds = _allocate_seconds_by_weight(day_contrib, allocations)
+            for (subject_id, code, name, _), allocated_sec in zip(allocations, seconds):
+                key = _allocation_group_key(subject_id, code)
+                g = target_groups.setdefault(
+                    key,
+                    {
+                        "subject_id": subject_id,
+                        "subject_code": code,
+                        "subject_name": name,
+                        "duration_sec": 0,
+                        "sessions": 0,
+                        "participation_sessions": 0,
+                    },
+                )
+                g["duration_sec"] += allocated_sec
+                if is_terminal and start_day == target:
+                    g["sessions"] += 1
+                    g["participation_sessions"] += 1
 
     # ── PracticeSession：仅补充时长（与 Pomodoro 重叠部分被排除）──
     # 顶层 sessions（stats/trends/daily_summary.sessions）保持番茄次数；
@@ -1282,6 +1441,7 @@ async def build_pomodoro_statistics_snapshot(
                         "subject_name": name,
                         "duration_sec": 0,
                         "sessions": 0,
+                        "participation_sessions": 0,
                     },
                 )
                 g["duration_sec"] += range_contrib
@@ -1306,6 +1466,7 @@ async def build_pomodoro_statistics_snapshot(
                     "subject_name": name,
                     "duration_sec": 0,
                     "sessions": 0,
+                    "participation_sessions": 0,
                 },
             )
             g["duration_sec"] += day_contrib
@@ -1336,10 +1497,11 @@ async def build_pomodoro_statistics_snapshot(
     if need_daily_summary:
         subjects = [
             {
-                "subject_id": key,
+                "subject_id": g["subject_id"],
                 "subject_code": g["subject_code"],
                 "subject_name": g["subject_name"],
                 "sessions": g["sessions"],
+                "participation_sessions": g["participation_sessions"],
                 "duration_sec": g["duration_sec"],
             }
             for key, g in target_groups.items()
@@ -1357,10 +1519,11 @@ async def build_pomodoro_statistics_snapshot(
     if need_range_summary:
         range_subjects = [
             {
-                "subject_id": key,
+                "subject_id": g["subject_id"],
                 "subject_code": g["subject_code"],
                 "subject_name": g["subject_name"],
                 "sessions": g["sessions"],
+                "participation_sessions": g["participation_sessions"],
                 "duration_sec": g["duration_sec"],
             }
             for key, g in range_groups.items()
@@ -1595,9 +1758,48 @@ async def get_history(
         )
         subject_map = {s.id: s for s in subj_result.scalars().all()}
 
+    pomodoro_ids = [r.id for r in rows if r.record_type == "pomodoro"]
+    allocation_map: dict[int, list[dict]] = {}
+    if pomodoro_ids:
+        allocation_rows = (
+            await db.execute(
+                select(
+                    PomodoroSubjectAllocation.session_id,
+                    PomodoroSubjectAllocation.subject_id,
+                    PomodoroSubjectAllocation.subject_code_snapshot,
+                    PomodoroSubjectAllocation.subject_name_snapshot,
+                    PomodoroSubjectAllocation.weight_basis_points,
+                )
+                .where(PomodoroSubjectAllocation.session_id.in_(pomodoro_ids))
+                .order_by(
+                    PomodoroSubjectAllocation.session_id,
+                    PomodoroSubjectAllocation.subject_code_snapshot,
+                )
+            )
+        ).all()
+        for allocation in allocation_rows:
+            allocation_map.setdefault(allocation.session_id, []).append(
+                {
+                    "subject_id": allocation.subject_id,
+                    "subject_code": allocation.subject_code_snapshot,
+                    "subject_name": allocation.subject_name_snapshot,
+                    "weight_basis_points": allocation.weight_basis_points,
+                }
+            )
+
     items: list[dict] = []
     for r in rows:
         subj = subject_map.get(r.subject_id) if r.subject_id is not None else None
+        allocations = allocation_map.get(r.id, []) if r.record_type == "pomodoro" else []
+        if r.record_type == "pomodoro" and not allocations:
+            allocations = [
+                {
+                    "subject_id": r.subject_id,
+                    "subject_code": subj.code if subj else "",
+                    "subject_name": subj.name if subj else "未分类",
+                    "weight_basis_points": 10000,
+                }
+            ]
         items.append(
             {
                 "record_key": f"{r.record_type}:{r.id}",
@@ -1612,6 +1814,12 @@ async def get_history(
                 "actual_duration": r.actual_duration,
                 "status": r.status,
                 "preset": r.preset,
+                "allocation_mode": (
+                    EQUAL_408_MODE
+                    if len(allocations) > 1
+                    else "single"
+                ) if r.record_type == "pomodoro" else None,
+                "subject_allocations": allocations,
             }
         )
     return items, total

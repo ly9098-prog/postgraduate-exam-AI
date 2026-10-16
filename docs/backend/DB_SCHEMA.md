@@ -1292,7 +1292,7 @@ class BatchJobTraceEvent(Base):
 
 ---
 
-## pomodoro_sessions / pomodoro_pause_intervals / user_pomodoro_settings
+## pomodoro_sessions / pomodoro_subject_allocations / pomodoro_pause_intervals / user_pomodoro_settings
 
 ### pomodoro_sessions
 
@@ -1321,6 +1321,26 @@ class PomodoroSession(Base):
     total_paused_sec: int   # 暂停总秒数（派生缓存，真相源为 pause_intervals）
     created_at: datetime
 ```
+
+`pomodoro_sessions.subject_id` 保留用户选择的归属入口。每个新会话在
+`pomodoro_subject_allocations` 保存统计归属：单科会话写一条 10000 基点记录；
+408 四科均分会话保留父级 `subject_id`，并写四条各 2500 基点的叶子快照。
+历史旧记录没有明细时，统计按原 `subject_id` 单科解释，不回填历史。
+
+### pomodoro_subject_allocations
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| id | Integer | PK, autoincrement |
+| session_id | Integer | FK(pomodoro_sessions.id, ondelete=CASCADE), NOT NULL |
+| subject_id | Integer | FK(subjects.id, ondelete=SET NULL), NULLABLE |
+| weight_basis_points | Integer | NOT NULL, > 0 |
+| subject_code_snapshot | String(32) | NOT NULL, 非空 |
+| subject_name_snapshot | String(64) | NOT NULL, 非空 |
+
+- `ux_pomodoro_subject_allocations_session_subject` — `(session_id, subject_id)` 唯一
+- `ux_pomodoro_subject_allocations_session_code` — `(session_id, subject_code_snapshot)` 唯一，科目删除后仍保护快照唯一性
+- `ix_pomodoro_subject_allocations_subject` — `(subject_id)`
 
 | 字段 | 类型 | 约束 |
 |------|------|------|
