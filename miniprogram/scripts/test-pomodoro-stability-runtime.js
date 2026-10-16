@@ -136,6 +136,58 @@ async function test(name, fn) {
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
 
+  await test('current single subject icons replace stale cached paths in both themes', () => {
+    const subjects = [
+      { id: 10, code: 'exam408', name: '计算机', _isAggregate: true, _disabled: false, _icon: '', _iconDark: '' },
+      { id: 11, code: 'data_structure', name: '数据结构', _icon: '/assets/icons/diagnosis-subject/data-structure.svg', _iconDark: '/assets/icons/diagnosis-subject/data-structure-dark.svg' },
+      { id: 12, code: 'computer_organization', name: '计算机组成原理' },
+      { id: 13, code: 'operating_system', name: '操作系统' },
+      { id: 14, code: 'computer_network', name: '计算机网络' },
+    ]
+    const page = createPage()
+    page._applySubjects(subjects)
+    assert.strictEqual(page.data.aggregateAvailable, true)
+    assert.strictEqual(page.data.coreSubjects.length, 4)
+    for (const [code, icon] of [['exam408', 'monitor'], ['data_structure', 'list-tree']]) {
+      const subject = page.data.subjects.find(item => item.code === code)
+      for (const [field, suffix] of [['_icon', ''], ['_iconDark', '-dark']]) {
+        const expected = `/assets/icons/pomodoro-subject/${icon}${suffix}.svg`
+        assert.strictEqual(subject[field], expected)
+        const svg = fs.readFileSync(path.resolve(__dirname, '..', expected.slice(1)), 'utf8')
+        assert.ok(svg.includes('fill="none"') && svg.includes('stroke-width="2"'))
+        assert.ok(svg.includes(suffix ? '#A5CBA8' : '#27634B'))
+      }
+      page.data.selectedSubject = subject
+      capturedPage._updateComputedFields.call(page)
+      assert.strictEqual(page.data.selectedSubjectIcon, subject._icon)
+    }
+    assert.strictEqual(subjects[0]._icon, '', 'cached input is not mutated')
+    assert.strictEqual(subjects[1]._icon, '/assets/icons/diagnosis-subject/data-structure.svg')
+    const wxml = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.wxml'), 'utf8')
+    assert.ok(!wxml.includes('aggregate-icon'))
+    assert.ok(!wxml.includes('wx:for="{{coreSubjects}}"'))
+    assert.ok(wxml.includes("themeMode === 'dark' ? item._iconDark : item._icon"))
+  })
+
+  await test('fresh subject loading supplies independent aggregate and data-structure icons', async () => {
+    const previousGet = api.get
+    api.get = async () => [{
+      subject_id: 10, subject_code: 'exam408', subject_name: '计算机',
+      children: ['data_structure', 'computer_organization', 'operating_system', 'computer_network']
+        .map((code, index) => ({ subject_id: 11 + index, subject_code: code, subject_name: code })),
+    }]
+    try {
+      const page = createPage()
+      await page._loadSubjects()
+      assert.strictEqual(page.data.subjects[0]._icon, '/assets/icons/pomodoro-subject/monitor.svg')
+      assert.strictEqual(page.data.subjects[1]._icon, '/assets/icons/pomodoro-subject/list-tree.svg')
+      assert.strictEqual(page.data.subjects[0]._disabled, false)
+      assert.strictEqual(page.data.aggregateAvailable, true)
+    } finally {
+      api.get = previousGet
+    }
+  })
+
   await test('408 parent route selects the enabled four-subject allocation', async () => {
     const subjects = [
       { id: 10, code: 'exam408', name: '计算机', _isAggregate: true, _disabled: false },

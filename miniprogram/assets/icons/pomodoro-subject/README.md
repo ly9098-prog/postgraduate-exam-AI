@@ -3,7 +3,8 @@
 Source: Lucide official icon set, https://github.com/lucide-icons/lucide/tree/main/icons
 License: ISC; see LICENSE.
 
-- data_structure: workflow
+- exam408: monitor
+- data_structure: list-tree
 - computer_organization: cpu
 - operating_system: panels-top-left
 - computer_network: network
@@ -13,4 +14,7 @@ License: ISC; see LICENSE.
 - politics / pol: landmark
 - fallback: book-open
 
-The four 408 leaf icons in `../diagnosis-subject/` are reused for the combined 2x2 mark.
+The exam408 choice uses a single monitor icon, not a combined 2x2 mark.
+The monitor and list-tree SVGs are sourced from the official Lucide repository;
+light/dark variants only replace the stroke color with the existing palette.
+The other three 408 leaf icons continue to reuse `../diagnosis-subject/`.

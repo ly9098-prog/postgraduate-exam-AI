@@ -65,14 +65,12 @@
                 data-disabled="{{item._disabled}}"
                 aria-role="button"
                 aria-selected="{{selectedSubjectId === item.id}}"
+                aria-pressed="{{selectedSubjectId === item.id}}"
                 aria-disabled="{{item._disabled}}"
                 aria-label="{{item.name}}{{item._isAggregate ? (item._disabled ? '，科目配置不可用' : '，四科各占百分之二十五') : ''}}"
               >
                 <view class="subj-icon-wrap">
-                  <view wx:if="{{item._isAggregate}}" class="aggregate-icon-grid">
-                    <image wx:for="{{coreSubjects}}" wx:for-item="core" wx:key="code" class="subj-icon aggregate-icon" src="{{themeMode === 'dark' ? core._iconDark : core._icon}}" mode="aspectFit" aria-hidden="true"></image>
-                  </view>
-                  <image wx:else class="subj-icon" src="{{themeMode === 'dark' ? item._iconDark : item._icon}}" mode="aspectFit" aria-hidden="true"></image>
+                  <image class="subj-icon" src="{{themeMode === 'dark' ? item._iconDark : item._icon}}" mode="aspectFit" aria-hidden="true"></image>
                 </view>
                 <text class="subj-name">{{item.name}}</text>
                 <text wx:if="{{item._isAggregate}}" class="subj-subtitle">{{item._disabled ? '科目配置不可用' : '四科各 25%'}}</text>
@@ -91,7 +89,11 @@
                   data-type="{{item.value}}"
                   catchtap="selectTaskType"
                   hover-class="task-type-chip-pressed"
-                >{{item.label}}</view>
+                  aria-role="button"
+                  aria-pressed="{{selectedTaskType === item.value}}"
+                >
+                  <text>{{item.label}}</text>
+                </view>
               </view>
             </view>
           </view>
@@ -106,6 +108,8 @@
                 hover-class="mode-dot-pressed" hover-start-time="20" hover-stay-time="80"
                 catchtap="selectPreset"
                 data-key="{{item.key}}"
+                aria-role="radio"
+                aria-checked="{{selectedPreset === item.key}}"
               >
                 <view class="dot-ring {{item.key === 'free' ? 'dot-ring-free' : ''}}">
                   <view class="dot-fill {{item.key === 'free' ? 'dot-fill-free' : ''}}"></view>

@@ -13,7 +13,8 @@ const { pomodoroTaskTypes } = require('../../utils/storage')
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
 const SUBJECT_ICON = {
-  data_structure: '/assets/icons/diagnosis-subject/data-structure.svg',
+  exam408: '/assets/icons/pomodoro-subject/monitor.svg',
+  data_structure: '/assets/icons/pomodoro-subject/list-tree.svg',
   computer_organization: '/assets/icons/diagnosis-subject/computer-organization.svg',
   operating_system: '/assets/icons/diagnosis-subject/operating-system.svg',
   computer_network: '/assets/icons/diagnosis-subject/computer-network.svg',
@@ -746,8 +747,8 @@ Page({
           name: root.subject_name || root.display_name || '计算机综合',
           _isAggregate: true,
           _disabled: !coreSubjects.every(Boolean),
-          _icon: '',
-          _iconDark: '',
+          _icon: subjectIconByCode(root.subject_code),
+          _iconDark: subjectIconByCode(root.subject_code).replace('.svg', '-dark.svg'),
         }]
         : []
       const choices = aggregate.concat(flat)
@@ -760,22 +761,19 @@ Page({
   },
 
   _applySubjects(flat) {
-    const choices = Array.isArray(flat) ? flat : []
-    const aggregate = choices.find(s => s && s._isAggregate)
-    const leaves = choices.filter(s => s && !s._isAggregate).map(s => ({
+    // Resolve presentation from current assets, not the cached icon paths.
+    const choices = (Array.isArray(flat) ? flat : []).map(s => ({
       ...s,
-      _icon: s._icon || subjectIconByCode(s.code),
-      _iconDark: s._iconDark || subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
+      _icon: subjectIconByCode(s.code),
+      _iconDark: subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
     }))
+    const aggregate = choices.find(s => s && s._isAggregate)
+    const leaves = choices.filter(s => s && !s._isAggregate)
     const coreSubjects = ['data_structure', 'computer_organization', 'operating_system', 'computer_network']
       .map(code => leaves.find(item => item.code === code))
       .filter(Boolean)
     this.setData({
-      subjects: choices.map(s => s && s._isAggregate ? { ...s, _icon: '', _iconDark: '' } : {
-        ...s,
-        _icon: s._icon || subjectIconByCode(s.code),
-        _iconDark: s._iconDark || subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
-      }),
+      subjects: choices,
       aggregateAvailable: !!aggregate && coreSubjects.length === 4,
       coreSubjects,
       subjectsLoading: false,
@@ -3930,9 +3928,7 @@ Page({
     const subj = this.data.selectedSubject
     this.setData({
       selectedSubjectLabel: subj ? subj.name : '',
-      selectedSubjectIcon: subj && subj._isAggregate
-        ? '/assets/icons/diagnosis-subject/data-structure.svg'
-        : subjectIconByCode(subj && subj.code),
+      selectedSubjectIcon: subjectIconByCode(subj && subj.code),
       selectedAllocationLabel: subj && subj._isAggregate ? '四科均分' : '',
       selectedPresetLabel: this.presetLabel(this.data.selectedPreset),
     })

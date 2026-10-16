@@ -1283,20 +1283,6 @@ page {
   height: 46rpx;
   display: block;
 }
-.aggregate-icon-grid {
-  width: 48rpx;
-  height: 48rpx;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  justify-content: center;
-  gap: 2rpx;
-}
-.subj-icon.aggregate-icon {
-  width: 22rpx;
-  height: 22rpx;
-  flex: 0 0 22rpx;
-}
 .subj-name {
   max-width: 100%;
   padding: 0;
@@ -2271,40 +2257,129 @@ page {
   --timer-shimmer-highlight: #FFE6C5;
 }
 
-/* Keep the nine subject choices in three columns after the legacy overrides. */
+/* Restore the circular subject launchers while keeping the full tile tappable. */
+.subj-section {
+  margin-bottom: 24rpx;
+}
 .subj-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  row-gap: 14rpx;
+  width: calc(100% - 8rpx);
+  margin: 0 auto;
+  padding: 0;
+  column-gap: 10rpx;
+  row-gap: 4rpx;
 }
 .subj-card {
+  position: relative;
   width: auto;
-  height: 204rpx;
+  height: auto;
+  min-height: 144rpx;
+  min-width: 0;
+  padding: 6rpx 4rpx;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  gap: 6rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  transition: opacity .12s ease;
 }
-.size-large .subj-card {
-  width: auto;
-  height: 204rpx;
+.subj-card-pressed {
+  opacity: .72;
+  transform: none;
+}
+.subj-card.active.subj-card-pressed {
+  opacity: .72;
+}
+.subj-card.active {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  transform: none;
+}
+.subj-card.disabled {
+  opacity: .48;
+  box-shadow: none;
 }
 .subj-icon-wrap {
   width: 80rpx;
   height: 80rpx;
-  flex-basis: 80rpx;
+  flex: 0 0 80rpx;
+}
+.subj-icon {
+  width: 46rpx;
+  height: 46rpx;
 }
 .subj-name {
   max-width: 100%;
+  padding: 0 2rpx;
+  font-size: 22rpx;
+  line-height: 1.25;
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.subj-subtitle {
+  max-width: 100%;
+  font-size: 16rpx;
+  line-height: 1.1;
+}
+.theme-light .subj-card,
+.theme-light .subj-card.active,
+.theme-dark .subj-card,
+.theme-dark .subj-card.active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.size-large .subj-card {
+  width: auto;
+  height: auto;
+  min-height: 154rpx;
+}
+.mode-dot {
+  min-width: 72rpx;
+  min-height: 76rpx;
+  padding: 8rpx 4rpx;
+  box-sizing: border-box;
+  border-radius: 18rpx;
+}
+.mode-dot.active {
+  background: transparent;
+}
+.theme-dark .mode-dot.active {
+  background: transparent;
 }
 @media (max-width: 350px) {
-  .subj-card,
+  .subj-card {
+    min-height: 136rpx;
+    padding-left: 2rpx;
+    padding-right: 2rpx;
+  }
   .size-large .subj-card {
-    height: 190rpx;
+    min-height: 154rpx;
   }
   .subj-icon-wrap {
     width: 72rpx;
     height: 72rpx;
     flex-basis: 72rpx;
+  }
+  .subj-icon {
+    width: 42rpx;
+    height: 42rpx;
+  }
+  .subj-name {
+    font-size: 20rpx;
+  }
+  .subj-subtitle {
+    font-size: 15rpx;
+  }
+  .mode-dot {
+    min-width: 66rpx;
   }
 }
 
