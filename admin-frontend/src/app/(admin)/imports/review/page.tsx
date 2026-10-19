@@ -22,10 +22,6 @@ import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, 
 import type { SelectOption } from "@/components/ui/custom-select";
 import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
-  deduplicateGroupOptions,
-  serializeBlankAnswer,
-  validateBlankAnswerMap,
-  buildMultiBlankSavePayload,
   getMultiBlankSaveState,
   reduceMultiBlankEditState,
   syncDerivedMultiBlankFields,
@@ -43,6 +39,7 @@ import {
   type ReviewBatchActionResult,
 } from "./review-action-requests";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
+import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -559,84 +556,29 @@ export default function ImportReviewPage() {
       },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async () => {
-      if (!previewId || !editState) throw new Error("请选择要编辑的题目");
-      // Block save when visual issues are unresolved
-      if (isBlockedByVisualIssues) {
-        const reasons: string[] = [];
-        if (optionVisualModel.mode === "placeholder_missing") reasons.push("选项图片缺失");
-        if (optionVisualModel.mode === "unknown_visual") reasons.push("选项状态未知，需人工确认");
-        if (unresolvedTableCount > 0) reasons.push(`${unresolvedTableCount} 个结构化表格尚未人工核验`);
-        if (runtimeIssues.length > 0) reasons.push(...runtimeIssues);
-        throw new Error(`无法保存：${reasons.join("；")}。请先完成视觉内容和表格结构核验。`);
-      }
-      const { options: _, multiBlank: __, ...rest } = editState;
-      const hasSegmentEdits = editedSegments !== null && Boolean(previewItem?.parsed_content);
+  const visualBlockReasons = isBlockedByVisualIssues ? [
+    ...(optionVisualModel.mode === "placeholder_missing" ? ["选项图片缺失"] : []),
+    ...(optionVisualModel.mode === "unknown_visual" ? ["选项状态未知，需人工确认"] : []),
+    ...(unresolvedTableCount > 0 ? [`${unresolvedTableCount} 个结构化表格尚未人工核验`] : []),
+    ...runtimeIssues,
+  ] : null;
 
-      if (isMultiBlankChoice(editState.question_type) && editState.multiBlank) {
-        const mb = editState.multiBlank;
-
-        // Validate before saving — blocked entirely if invalid
-        const payloadResult = buildMultiBlankSavePayload(
-          previewItem as unknown as Record<string, unknown>,
-          mb.groups,
-          mb.answerMap,
-          editState.stem,
-          editState.question_type,
-        );
-        if (payloadResult.errors.length > 0) {
-          throw new Error(`保存校验失败：${payloadResult.errors.join("；")}`);
-        }
-        const payload = payloadResult.payload!;
-        // Override with user-edited values from editState
-        payload.subject_id = rest.subject_id;
-        payload.analysis = rest.analysis || "";
-        if (hasSegmentEdits) {
-          const pc = payload.parsed_content as Record<string, unknown>;
-          pc.segments = editedSegments;
-        }
-        return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
-      }
-
-      const basePayload: Record<string, unknown> = hasSegmentEdits
-        ? {
-            subject_id: rest.subject_id,
-            question_type: rest.question_type,
-            stem: rest.stem,
-            answer: rest.answer,
-            analysis: rest.analysis,
-            parsed_content: {
-              ...previewItem!.parsed_content,
-              stem: rest.stem,
-              text: rest.stem,
-              render_mode: "segments",
-              segments: editedSegments,
-            },
-          }
-        : { ...rest, subject_id: rest.subject_id };
-      basePayload.options = editState.options.map((o) => {
-        const entry: Record<string, unknown> = { key: o.key, text: o.text };
-        if (o.segments && o.segments.length > 0) {
-          entry.segments = o.segments;
-        }
-        return entry;
-      });
-      return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, { method: "PUT", body: JSON.stringify(basePayload) });
-    },
-    onSuccess: (result) => {
+  const updateMutation = useReviewUpdateMutation({
+    previewId,
+    editState,
+    previewItem,
+    editedSegments,
+    visualBlockReasons,
+    request: apiRequest,
+  }, {
+    onSaved: (result) => {
       setMessage(`导入题目 #${result.id} 已保存。`);
       setEditState(editStateFromItem(result));
       setEditedSegments(null);
       setCompletedItem(result);
       syncedDetailRef.current.delete(result.id);
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["import-question-detail", previewId] });
-      setEditing(false);
     },
+    onAfterInvalidation: () => setEditing(false),
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
     },

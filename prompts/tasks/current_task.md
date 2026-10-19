@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前二十批已提交；第二十一批导入审核 mutation hook 已实现并验证；阶段 0/1 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前二十一批已提交；第二十二批导入审核保存请求与 mutation hook 已实现并验证；阶段 0/1 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -477,3 +477,11 @@
 - 新增真实 QueryClient/Mutation 回归 3 项与依赖/预算边界测试 2 项；定向审核测试 9 项通过，全量管理端为 37 个测试文件、703 项通过；`npm run typecheck`、`npm run lint`、`npm run build` 均通过。全量 ESLint 仍为 0 错误/137 条既有警告；新 hook、测试和边界文件以严格 ESLint 通过。
 - 按 `review-agent` 对本批完整 diff、调用点、请求执行器、hook 和新增测试做只读审查：No findings。后端 `python3 -m compileall -q app` 与 `ruff check app/ --ignore I001,F401,N818` 通过；未运行后台浏览器人工交互、后端集成、微信开发者工具/真机、PostgreSQL/Redis 或生产集成。
 - 本批待独立本地提交，不推送、不夹带工作区原有文档、日志、小程序配置与资源删除。导入审核编辑/展示职责、小程序 controller、全量业务盘点及后端学习/运行时/OCR 高风险治理仍待继续。
+
+## 二十八、第二十二批执行记录：导入审核保存请求与 mutation hook（2026-10-20）
+
+- 新增 `imports/review/review-save-request.ts`，集中普通题、多空题保存 payload、选项段落元数据、题干段落编辑写回、视觉/结构化表格阻断和多空答案校验；生产规则继续复用已有 `buildMultiBlankSavePayload`，不改变字段优先级、答案序列化或 PUT 路径。
+- 新增 `imports/review/hooks/use-review-update-mutation.ts`，承接保存请求、审核队列/详情缓存失效及 mutation 错误边界；页面继续计算视觉模型、未核验表格和运行时问题，保留编辑草稿、成功提示、详情状态接纳与保存后关闭时序。
+- 页面移除保存 payload 与视觉阻断请求实现，仅保留 `visualBlockReasons` 投影和 UI 编排。新增普通/段落/视觉阻断/多空 payload 回归 3 项、真实 QueryClient mutation 回归 2 项及依赖/预算门禁；全量管理端 39 个测试文件、710 项通过，typecheck/build 通过，lint 0 错误/132 警告。
+- 后端 `python3 -m compileall -q app` 与 `ruff check app/ --ignore I001,F401,N818` 通过。按 `review-agent` 对本批完整 diff、保存请求、mutation hook、页面调用点和测试做只读审查：No findings。未运行真实后台浏览器、后端集成、微信开发者工具/真机、PostgreSQL/Redis 或生产集成。
+- 本批待独立本地提交，不推送、不夹带工作区原有文档、日志、小程序配置与资源删除。导入审核补全/答案/图片操作、展示组件、小程序 controller、全量业务盘点及后端学习/运行时/OCR 高风险治理仍待继续。

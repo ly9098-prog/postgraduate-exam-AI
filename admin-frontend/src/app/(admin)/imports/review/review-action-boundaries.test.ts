@@ -7,6 +7,18 @@ const modules = [
     path: "./hooks/use-review-action-mutation.ts",
     imports: ["react", "@tanstack/react-query", "../review-action-requests"],
   },
+  {
+    path: "./hooks/use-review-update-mutation.ts",
+    imports: ["@tanstack/react-query", "@/lib/api/types", "../review-save-request"],
+  },
+  {
+    path: "./review-save-request.ts",
+    imports: [
+      "@/lib/api/types",
+      "./components/multi-blank-choice-utils",
+      "./review-edit-state",
+    ],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
@@ -47,5 +59,6 @@ describe("review action feature boundaries", () => {
     const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
     expect(source).not.toContain("executeReviewActionRequest");
     expect(source).not.toContain("batchIdempotencyKeysRef");
+    expect(source).not.toContain("buildMultiBlankSavePayload");
   });
 });
