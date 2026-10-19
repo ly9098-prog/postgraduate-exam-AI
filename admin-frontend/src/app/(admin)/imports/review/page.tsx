@@ -39,10 +39,10 @@ import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
 import {
-  executeReviewActionRequest,
   type ReviewActionState,
   type ReviewBatchActionResult,
 } from "./review-action-requests";
+import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -511,71 +511,52 @@ export default function ImportReviewPage() {
   );
   const allChecked = items.length > 0 && items.every((item) => selectedIds.has(item.id));
 
-  // Keep the key on a failed/ambiguous response so an explicit retry can replay it.
-  const batchIdempotencyKeysRef = useRef(new Map<string, string>());
-  const batchIdempotencyKeyFor = (operation: string) => {
-    const keys = batchIdempotencyKeysRef.current;
-    let key = keys.get(operation);
-    if (!key) {
-      key = crypto.randomUUID();
-      keys.set(operation, key);
-    }
-    return key;
-  };
-
-  const actionMutation = useMutation({
-    mutationFn: (state: Exclude<ConfirmState, null>) => executeReviewActionRequest({
-      action: state,
+  const actionMutation = useReviewActionMutation({
       batchId: filters.batch_id,
       batchIdParam,
-      selectedIds: Array.from(selectedIds),
+      selectedIds,
       rejectReason,
-      batchIdempotencyKeyFor,
       request: apiRequest,
-    }),
-    onSuccess: (result, variables) => {
-      batchIdempotencyKeysRef.current.clear();
-      if (variables.action === "approve") {
-        setMessage(`导入题目 #${variables.id} 已通过审核。`);
-        closeDrawer();
-      } else if (variables.action === "reject") {
-        setMessage(`导入题目 #${variables.id} 已驳回。`);
-        closeDrawer();
-      } else if (variables.action === "batch-approve") {
-        const affected = "affected_count" in result ? result.affected_count : 0;
-        const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
-        if (errors && errors.length > 0) {
-          const failedIds = errors.map((e) => `#${e.id}`).join("、");
-          setMessage(`批量审核通过部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
-        } else {
-          setMessage(`批量审核通过完成，影响 ${affected} 条导入题目。`);
+    }, {
+      onSuccess: (result, action) => {
+        if (action.action === "approve") {
+          setMessage(`导入题目 #${action.id} 已通过审核。`);
+          closeDrawer();
+        } else if (action.action === "reject") {
+          setMessage(`导入题目 #${action.id} 已驳回。`);
+          closeDrawer();
+        } else if (action.action === "batch-approve") {
+          const affected = "affected_count" in result ? result.affected_count : 0;
+          const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
+          if (errors && errors.length > 0) {
+            const failedIds = errors.map((e) => `#${e.id}`).join("、");
+            setMessage(`批量审核通过部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
+          } else {
+            setMessage(`批量审核通过完成，影响 ${affected} 条导入题目。`);
+          }
+        } else if (action.action === "batch-reject") {
+          const affected = "affected_count" in result ? result.affected_count : 0;
+          const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
+          if (errors && errors.length > 0) {
+            const failedIds = errors.map((e) => `#${e.id}`).join("、");
+            setMessage(`批量驳回部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
+          } else {
+            setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
+          }
+        } else if (action.action === "low-risk-batch-approve") {
+          const res = result as { affected_count: number; skipped_count: number; skipped_reasons: string[] };
+          const msg = `低风险批量通过完成：通过 ${res.affected_count} 题，跳过 ${res.skipped_count} 题`;
+          setMessage(res.skipped_count > 0 ? `${msg}（部分高风险/需检查题已跳过）` : msg);
         }
-      } else if (variables.action === "batch-reject") {
-        const affected = "affected_count" in result ? result.affected_count : 0;
-        const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
-        if (errors && errors.length > 0) {
-          const failedIds = errors.map((e) => `#${e.id}`).join("、");
-          setMessage(`批量驳回部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
-        } else {
-          setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
-        }
-      } else if (variables.action === "low-risk-batch-approve") {
-        const res = result as { affected_count: number; skipped_count: number; skipped_reasons: string[] };
-        const msg = `低风险批量通过完成：通过 ${res.affected_count} 题，跳过 ${res.skipped_count} 题`;
-        setMessage(res.skipped_count > 0 ? `${msg}（部分高风险/需检查题已跳过）` : msg);
-      }
-      setSelectedIds(new Set());
-      setConfirmState(null);
-      setRejectReason("");
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["import-batches"] });
-      if (variables.action !== "reject" && variables.action !== "batch-reject") {
-        queryClient.invalidateQueries({ queryKey: ["questions"] });
-      }
-    },
-    onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
-    },
+      },
+      onReset: () => {
+        setSelectedIds(new Set());
+        setConfirmState(null);
+        setRejectReason("");
+      },
+      onError: (error) => {
+        setMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
+      },
   });
 
   const updateMutation = useMutation({

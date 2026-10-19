@@ -1,0 +1,51 @@
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { describe, expect, it } from "vitest";
+
+const modules = [
+  {
+    path: "./hooks/use-review-action-mutation.ts",
+    imports: ["react", "@tanstack/react-query", "../review-action-requests"],
+  },
+];
+
+function violations(source: string, allowed: string[]) {
+  const file = ts.createSourceFile("review-action.ts", source, ts.ScriptTarget.Latest, true);
+  const result: string[] = [];
+  function walk(node: ts.Node) {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      if (!allowed.includes(node.moduleSpecifier.text)) result.push(node.moduleSpecifier.text);
+    }
+    if (ts.isCallExpression(node) &&
+      ["fetch", "window.fetch", "globalThis.fetch"].includes(node.expression.getText(file))) {
+      result.push(node.expression.getText(file));
+    }
+    ts.forEachChild(node, walk);
+  }
+  walk(file);
+  return result;
+}
+
+describe("review action feature boundaries", () => {
+  it.each(modules)("keeps $path inside its feature dependencies and size budget", (module) => {
+    const source = readFileSync(new URL(module.path, import.meta.url), "utf8");
+    expect(violations(source, module.imports)).toEqual([]);
+    expect(source.trimEnd().split("\n").length).toBeLessThanOrEqual(300);
+    const file = ts.createSourceFile(module.path, source, ts.ScriptTarget.Latest, true);
+    function walk(node: ts.Node) {
+      if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node)) {
+        const start = file.getLineAndCharacterOfPosition(node.getStart(file)).line;
+        const end = file.getLineAndCharacterOfPosition(node.end).line;
+        expect(end - start + 1, node.getText(file)).toBeLessThanOrEqual(50);
+      }
+      ts.forEachChild(node, walk);
+    }
+    walk(file);
+  });
+
+  it("keeps the review page free of inline action mutation ownership", () => {
+    const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("executeReviewActionRequest");
+    expect(source).not.toContain("batchIdempotencyKeysRef");
+  });
+});
