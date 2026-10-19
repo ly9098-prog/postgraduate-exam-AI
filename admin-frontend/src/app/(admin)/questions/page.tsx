@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
   Check,
@@ -78,14 +78,15 @@ import type {
 } from "@/lib/api/types";
 
 import {
-  deleteQuestion,
-  deleteQuestionBatch,
   exportQuestions,
   fetchSubjectOptions,
   updateQuestion,
   type BatchDeleteResult,
 } from "./question-api";
 
+import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
+import { useQuestionUpdate } from "./hooks/use-question-update";
+import { buildQuestionEditPatch } from "./question-edit-patch";
 import { questionDetailOptions, questionKeys } from "./question-queries";
 import {
   useQuestionDetail,
@@ -111,12 +112,10 @@ import {
   isCodeSegment,
   isPlainImageSegment,
   isStemTextSegment,
-  nonStemContentSegments,
   normalizeStemForEditing,
   segmentType,
   textForStemEditor,
   textFromContent,
-  updateStemInContent,
 } from "./question-content-editing";
 
 const activeOptions = [
@@ -143,10 +142,7 @@ const pageSizeOptions = [
 const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
 
-type ConfirmState =
-  | { action: "batch-delete" }
-  | { action: "delete"; id: number }
-  | null;
+type ConfirmState = QuestionDeleteIntent | null;
 
 type UnsavedIntent = "cancel-edit" | "close-drawer" | null;
 
@@ -193,60 +189,6 @@ function fallbackQuestionImageUrls(
     fallbackUrls.set(key, raw);
   });
   return Array.from(fallbackUrls.values());
-}
-
-/** Build a minimal PATCH payload from what is actually editable/visible.
- * This avoids persisting legacy normalization side effects (for example an
- * OCR-only content.stem differing from the structured text) when the user only
- * changes an unrelated field. */
-function buildQuestionEditPatch(
-  form: QuestionEditRequest,
-  question: AdminQuestion,
-  currentStemText?: string,
-): QuestionEditRequest {
-  const patch: QuestionEditRequest = {};
-
-  if ((form.answer ?? "") !== (question.answer ?? "")) patch.answer = form.answer ?? "";
-  if ((form.analysis ?? "") !== (question.analysis ?? "")) patch.analysis = form.analysis ?? "";
-  if ((form.difficulty ?? null) !== (question.difficulty ?? null) && form.difficulty !== undefined) {
-    patch.difficulty = form.difficulty;
-  }
-  if ((form.question_type ?? "") !== (question.question_type ?? "")) {
-    patch.question_type = form.question_type ?? "";
-  }
-  if ((form.subject_id ?? null) !== (question.subject_id ?? null)) {
-    patch.subject_id = form.subject_id ?? null;
-  }
-
-  const baselineStem = normalizeStemForEditing(textForStemEditor(question.content));
-  const editorStem = currentStemText ?? textForStemEditor(form.content);
-  const stemChanged = editorStem !== baselineStem;
-  const structuredContentChanged =
-    JSON.stringify(nonStemContentSegments(form.content)) !==
-    JSON.stringify(nonStemContentSegments(question.content));
-  const blankOptionGroupsChanged =
-    JSON.stringify(resolveBlankOptionGroupsValue(form.content) ?? null) !==
-    JSON.stringify(resolveBlankOptionGroupsValue(question.content) ?? null);
-  if (stemChanged || structuredContentChanged || blankOptionGroupsChanged) {
-    patch.content = stemChanged
-      ? updateStemInContent(form.content, editorStem)
-      : contentRecord(form.content);
-  }
-
-  if (
-    comparableOptionState(form.options) !==
-    comparableOptionState(resolveQuestionOptions(question) ?? undefined)
-  ) {
-    patch.options = form.options ?? null;
-  }
-  if (
-    JSON.stringify(form.knowledge_points ?? null) !==
-    JSON.stringify(question.knowledge_points ?? null)
-  ) {
-    patch.knowledge_points = form.knowledge_points ?? [];
-  }
-
-  return patch;
 }
 
 function renderJson(value: unknown) {
@@ -430,16 +372,6 @@ function QuestionAnswerDisplay({
   }
 
   return <MathFormula text={answer || "—"} />;
-}
-
-function comparableOptionState(options: QuestionOptionsValue | undefined): string {
-  return JSON.stringify(
-    normalizeQuestionOptions(options).map((option) => ({
-      key: option.key,
-      text: option.text ?? "",
-      imageUrl: option.imageUrl ?? "",
-    })),
-  );
 }
 
 function optionsToKeyValueList(
@@ -708,28 +640,8 @@ export default function QuestionsPage() {
     }
   }, [compareVersion, versionHistoryOpen, versions.data?.items]);
 
-  // Retry an ambiguous chunk with its original key, not a new operation.
-  const batchDeleteKeysRef = useRef(new Map<string, string>());
-  const batchDeleteKeyFor = (ids: number[]) => {
-    const operation = ids.join(",");
-    const keys = batchDeleteKeysRef.current;
-    let key = keys.get(operation);
-    if (!key) {
-      key = crypto.randomUUID();
-      keys.set(operation, key);
-    }
-    return key;
-  };
-
-  const deleteMutation = useMutation({
-    mutationFn: async (state: Exclude<ConfirmState, null>) => {
-      if (state.action === "batch-delete") {
-        return deleteQuestionBatch(Array.from(selectedIds), batchDeleteKeyFor);
-      }
-      return deleteQuestion(state.id);
-    },
-    onSuccess: (result, variables: Exclude<ConfirmState, null>) => {
-      batchDeleteKeysRef.current.clear();
+  const deleteMutation = useQuestionDelete(selectedIds, {
+    onDeleted: (result, variables) => {
       if (variables.action === "delete") {
         setMessage(`题目 #${variables.id} 已删除。`);
         setSelectedQuestionId(null);
@@ -753,7 +665,6 @@ export default function QuestionsPage() {
       }
       setSelectedIds(new Set());
       setConfirmState(null);
-      queryClient.invalidateQueries({ queryKey: questionKeys.all });
     },
     onError: (error) => {
       setMessage(
@@ -762,22 +673,15 @@ export default function QuestionsPage() {
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedQuestionId) throw new Error("未选中题目");
-      const baseline = detail.data;
-      if (!baseline) throw new Error("题目详情尚未加载完成");
-      const patch = buildQuestionEditPatch(editForm, baseline, editStemText);
-      if (Object.keys(patch).length === 0) throw new Error("没有需要保存的修改");
-      return updateQuestion(selectedQuestionId, patch);
-    },
-    onSuccess: () => {
+  const updateMutation = useQuestionUpdate({
+    questionId: selectedQuestionId,
+    baseline: detail.data,
+    form: editForm,
+    stemText: editStemText,
+  }, {
+    onSaved: () => {
       setMessage("题目已更新。");
       setEditing(false);
-      queryClient.invalidateQueries({ queryKey: questionKeys.all });
-      queryClient.invalidateQueries({
-        queryKey: questionKeys.scope(selectedQuestionId),
-      });
     },
     onError: (error) => {
       setMessage(

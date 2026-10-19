@@ -4,12 +4,27 @@ import { describe, expect, it } from "vitest";
 
 const modules = [
   {
+    path: "./question-edit-patch.ts",
+    imports: ["@/lib/api/types", "@/lib/question-options", "./question-content-editing"],
+  },
+  {
     path: "./question-queries.ts",
     imports: ["@tanstack/react-query", "./question-api"],
   },
   {
     path: "./hooks/use-question-queries.ts",
     imports: ["@tanstack/react-query", "../question-api", "../question-queries"],
+  },
+  {
+    path: "./hooks/use-question-update.ts",
+    imports: [
+      "@tanstack/react-query", "@/lib/api/types", "../question-api",
+      "../question-edit-patch", "../question-queries",
+    ],
+  },
+  {
+    path: "./hooks/use-question-delete.ts",
+    imports: ["react", "@tanstack/react-query", "../question-api", "../question-queries"],
   },
 ];
 
@@ -59,7 +74,8 @@ describe("question query feature boundaries", () => {
     const file = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const forbidden = new Set([
       "useQuery", "fetchQuestions", "fetchQuestionDetail",
-      "fetchQuestionVersions", "fetchQuestionVersionDetail",
+      "fetchQuestionVersions", "fetchQuestionVersionDetail", "useMutation",
+      "deleteQuestion", "deleteQuestionBatch",
     ]);
     const calls: string[] = [];
     function walk(node: ts.Node) {
