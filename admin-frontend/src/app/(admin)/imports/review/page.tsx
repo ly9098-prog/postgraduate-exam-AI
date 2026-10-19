@@ -37,6 +37,7 @@ import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview
 import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
 import { buildReviewQueueParams } from "./review-query-state";
+import { getLeafSubjectOptions } from "./review-subject-state";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -515,25 +516,8 @@ export default function ImportReviewPage() {
     enabled: batchDropdownOpen,
   });
 
-  // ── 过滤出叶子科目（排除父级目录科目） ──
-  function isLeafByPath(subject: {id: number; path?: string | null}, allSubjects: Array<{id: number; path?: string | null}>): boolean {
-    const currentId = String(subject.id);
-    return !allSubjects.some((item) => {
-      if (!item.path) return false;
-      const parts = String(item.path).split("/").map((p) => p.trim()).filter(Boolean);
-      return parts.slice(0, -1).includes(currentId);
-    });
-  }
   const leafSubjectOptions = useMemo(() => {
-    const all = subjectOptions ?? [];
-    if (!all.length) return [];
-    if (all.some((s) => typeof s.is_leaf === "boolean")) return all.filter((s) => s.is_leaf === true);
-    if (all.some((s) => s.parent_id !== undefined)) {
-      const parentIds = new Set(all.map((s) => s.parent_id).filter((id): id is number => id !== null && id !== undefined));
-      return all.filter((s) => !parentIds.has(s.id));
-    }
-    if (all.some((s) => s.path)) return all.filter((s) => isLeafByPath(s, all));
-    return all;
+    return getLeafSubjectOptions(subjectOptions ?? []);
   }, [subjectOptions]);
 
   const completeSuggestion = completeSuggestionFromItem(previewItem);
