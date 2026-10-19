@@ -70,7 +70,6 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import type {
   AdminQuestion,
   AdminQuestionImportSummary,
-  QuestionEditRequest,
   QuestionOptionsValue,
 } from "@/lib/api/types";
 
@@ -83,13 +82,12 @@ import {
 import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
 import { useQuestionUpdate } from "./hooks/use-question-update";
 import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
-import { createQuestionEditDraft } from "./question-edit-draft";
+import { useQuestionEditor } from "./hooks/use-question-editor";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionTableEditors } from "./components/question-table-editors";
 import { DifficultyBadge } from "./components/question-difficulty-badge";
 import { QuestionVersionComparison } from "./components/question-version-comparison";
-import { buildQuestionEditPatch } from "./question-edit-patch";
 import { questionDetailOptions } from "./question-queries";
 import {
   useQuestionDetail,
@@ -143,8 +141,6 @@ const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
 
 type ConfirmState = QuestionDeleteIntent | null;
-
-type UnsavedIntent = "cancel-edit" | "close-drawer" | null;
 
 function imageUrlFromUnknown(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -432,16 +428,12 @@ export default function QuestionsPage() {
   const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
-  const [unsavedIntent, setUnsavedIntent] = useState<UnsavedIntent>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [copyingQuestion, setCopyingQuestion] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isCommonFilterMenuOpen, setIsCommonFilterMenuOpen] = useState(false);
   const [isMoreFilterOpen, setIsMoreFilterOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState<QuestionEditRequest>({});
-  const [editStemText, setEditStemText] = useState("");
 
   useEffect(() => {
     setVersionHistoryOpen(false);
@@ -487,6 +479,13 @@ export default function QuestionsPage() {
   const versions = useQuestionVersions(selectedQuestionId);
   const baseVersionDetail = useQuestionVersion(selectedQuestionId, baseVersion);
   const compareVersionDetail = useQuestionVersion(selectedQuestionId, compareVersion);
+  const {
+    editing, setEditing, editForm, setEditForm, editStemText, setEditStemText,
+    dirty, unsavedIntent, setUnsavedIntent, startEditing, cancelEditing,
+    closeDetailDrawer, finishCancelEditing, finishCloseDetailDrawer,
+  } = useQuestionEditor(detail.data, {
+    isDetailDrawerOpen, setIsDetailDrawerOpen, confirmState, detailScrollRef,
+  });
 
   useEffect(() => {
     if (!versionHistoryOpen || compareVersion !== null) return;
@@ -648,17 +647,12 @@ export default function QuestionsPage() {
     (segments: Array<Record<string, unknown>>) => {
       setEditForm((current) => replaceQuestionSegments(current, segments));
     },
-    [],
+    [setEditForm],
   );
 
   const addEditingCodeSegment = useCallback(() => {
     setEditForm(addQuestionCodeSegment);
-  }, []);
-
-  const dirty = useMemo(() => {
-    if (!selectedQuestion) return false;
-    return Object.keys(buildQuestionEditPatch(editForm, selectedQuestion, editStemText)).length > 0;
-  }, [editForm, editStemText, selectedQuestion]);
+  }, [setEditForm]);
 
   const { handleQuestionMutated, prepareImmediateQuestionMutation } = useQuestionImmediateMutations({
     questionId: selectedQuestionId,
@@ -926,7 +920,7 @@ export default function QuestionsPage() {
     setSelectedQuestionId(id);
     setEditing(false);
     setEditForm({});
-  }, []);
+  }, [setEditForm, setEditing]);
 
   const openDetail = useCallback(
     (id: number) => {
@@ -956,7 +950,7 @@ export default function QuestionsPage() {
       setEditing(false);
       setEditForm({});
     }
-  }, [items, questions.isFetching, selectedQuestionId]);
+  }, [items, questions.isFetching, selectedQuestionId, setEditForm, setEditing]);
 
   useEffect(() => {
     if (selectedQuestionId === null) return;
@@ -965,97 +959,6 @@ export default function QuestionsPage() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [selectedQuestionId]);
-
-  const startEditing = () => {
-    if (!selectedQuestion) return;
-    const draft = createQuestionEditDraft(selectedQuestion);
-    setEditStemText(draft.stemText);
-    setEditForm(draft.form);
-    setEditing(true);
-    window.requestAnimationFrame(() => {
-      detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    });
-  };
-
-  const finishCancelEditing = useCallback(() => {
-    setEditing(false);
-    setEditForm({});
-    setEditStemText("");
-    setUnsavedIntent(null);
-  }, []);
-
-  const finishCloseDetailDrawer = useCallback(() => {
-    setEditing(false);
-    setEditForm({});
-    setEditStemText("");
-    setUnsavedIntent(null);
-    setIsDetailDrawerOpen(false);
-  }, []);
-
-  const cancelEditing = () => {
-    if (dirty) {
-      setUnsavedIntent("cancel-edit");
-      return;
-    }
-    finishCancelEditing();
-  };
-
-  const closeDetailDrawer = () => {
-    if (editing && dirty) {
-      setUnsavedIntent("close-drawer");
-      return;
-    }
-    finishCloseDetailDrawer();
-  };
-
-  useEffect(() => {
-    if (!isDetailDrawerOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isDetailDrawerOpen]);
-
-  useEffect(() => {
-    if (!(editing && dirty)) return;
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [dirty, editing]);
-
-  useEffect(() => {
-    if (!isDetailDrawerOpen) return;
-    const handleDrawerEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      // CustomSelect portals handle Escape themselves. Do not let the same key
-      // press also exit edit mode or close the drawer.
-      if (document.querySelector('[role="combobox"][aria-expanded="true"]')) return;
-      if (document.querySelector('[data-confirm-dialog="true"]')) return;
-      if (confirmState !== null || unsavedIntent !== null) return;
-
-      event.preventDefault();
-      if (editing) {
-        if (dirty) setUnsavedIntent("cancel-edit");
-        else finishCancelEditing();
-      } else {
-        finishCloseDetailDrawer();
-      }
-    };
-    document.addEventListener("keydown", handleDrawerEscape);
-    return () => document.removeEventListener("keydown", handleDrawerEscape);
-  }, [
-    confirmState,
-    dirty,
-    editing,
-    finishCancelEditing,
-    finishCloseDetailDrawer,
-    isDetailDrawerOpen,
-    unsavedIntent,
-  ]);
 
   const confirmDescription =
     confirmState?.action === "batch-delete"

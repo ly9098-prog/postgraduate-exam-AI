@@ -4,6 +4,17 @@ import { describe, expect, it } from "vitest";
 
 const modules = [
   {
+    path: "./question-editor-events.ts",
+    imports: [],
+  },
+  {
+    path: "./hooks/use-question-editor.ts",
+    imports: [
+      "react", "@/lib/api/types", "../question-edit-draft", "../question-edit-patch",
+      "../question-editor-events",
+    ],
+  },
+  {
     path: "./question-version-comparison.ts",
     imports: ["@/lib/api/types", "@/lib/question-options", "@/lib/question-types"],
   },
