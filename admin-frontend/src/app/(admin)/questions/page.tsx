@@ -35,7 +35,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
-import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { MultiBlankQuestionOptions, QuestionOptions } from "@/components/question-options";
 import { QuestionImageField } from "@/components/questions/question-image-field";
 import { QuestionAnalysis } from "@/components/questions/question-analysis";
@@ -65,7 +64,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
-import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
+import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { buildQuestionCopyText } from "@/lib/question-copy";
 import { copyTextToClipboard } from "@/lib/clipboard";
@@ -86,6 +85,9 @@ import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-questi
 import { useQuestionUpdate } from "./hooks/use-question-update";
 import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
 import { createQuestionEditDraft } from "./question-edit-draft";
+import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
+import { QuestionCodeEditor } from "./components/question-code-editor";
+import { QuestionTableEditors } from "./components/question-table-editors";
 import { buildQuestionEditPatch } from "./question-edit-patch";
 import { questionDetailOptions } from "./question-queries";
 import {
@@ -104,14 +106,12 @@ import {
   type QuestionListFilters,
 } from "./question-list-state";
 import {
-  canonicalStemAfterSegmentUpdate,
   codeSegmentText,
   comparableText,
   contentRecord,
   contentSegments,
   isCodeSegment,
   isPlainImageSegment,
-  isStemTextSegment,
   segmentType,
   textForStemEditor,
   textFromContent,
@@ -788,58 +788,13 @@ export default function QuestionsPage() {
 
   const replaceEditingSegments = useCallback(
     (segments: Array<Record<string, unknown>>) => {
-      setEditForm((current) => {
-        const currentContent = contentRecord(current.content);
-        const stem = canonicalStemAfterSegmentUpdate(currentContent, segments);
-        return {
-          ...current,
-          content: {
-            ...currentContent,
-            stem,
-            text: stem,
-            render_mode: "segments",
-            segments,
-          },
-        };
-      });
+      setEditForm((current) => replaceQuestionSegments(current, segments));
     },
     [],
   );
 
   const addEditingCodeSegment = useCallback(() => {
-    setEditForm((current) => {
-      const currentContent = contentRecord(current.content);
-      const segments = contentSegments(current.content);
-      // Keep manually added code adjacent to the stem. If code blocks already
-      // exist, append after the last one; otherwise insert before image/table
-      // regions so a newly added code sample does not unexpectedly render below
-      // a stem illustration that was imported earlier.
-      let insertAt = segments.reduce(
-        (lastCodeIndex, segment, index) => isCodeSegment(segment) ? index + 1 : lastCodeIndex,
-        -1,
-      );
-      if (insertAt < 0) {
-        insertAt = segments.findIndex((segment) => !isStemTextSegment(segment));
-        if (insertAt < 0) insertAt = segments.length;
-      }
-      const nextSegments = [...segments];
-      nextSegments.splice(insertAt, 0, {
-        type: "code",
-        code: "",
-        language: "",
-      });
-      const stem = canonicalStemAfterSegmentUpdate(currentContent, nextSegments);
-      return {
-        ...current,
-        content: {
-          ...currentContent,
-          stem,
-          text: stem,
-          render_mode: "segments",
-          segments: nextSegments,
-        },
-      };
-    });
+    setEditForm(addQuestionCodeSegment);
   }, []);
 
   const dirty = useMemo(() => {
@@ -2195,166 +2150,15 @@ export default function QuestionsPage() {
                     </div>
                   </section>
 
-                  {editingSegments.some((segment) => isTableSegment(segment)) ? (
-                    <div className="space-y-4">
-                      {editingSegments.map((segment, segmentIndex) => {
-                        const table = normalizeStructuredTableSegment(segment);
-                        if (!table) return null;
-                        return (
-                          <StructuredTableEditor
-                            key={table.table_id || segmentIndex}
-                            segment={table}
-                            onChange={(nextTable) => {
-                              const next = [...editingSegments];
-                              next[segmentIndex] = nextTable;
-                              replaceEditingSegments(next);
-                            }}
-                            onDelete={() => {
-                              replaceEditingSegments(
-                                editingSegments.filter((_, index) => index !== segmentIndex),
-                              );
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  ) : null}
-
-                  <section className="border-b border-slate-200 py-5">
-                    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">代码块</p>
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          可手动插入代码内容；只有显式 caption 才作为可见标题，segment.alt 仅保留为辅助描述。
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] tabular-nums text-slate-400">
-                          {editingSegments.filter(isCodeSegment).length} 个代码块
-                        </span>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
-                          onClick={addEditingCodeSegment}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          添加代码块
-                        </Button>
-                      </div>
-                    </div>
-
-                    {editingSegments.some(isCodeSegment) ? (
-                      <div className="space-y-4">
-                        {editingSegments.map((segment, segmentIndex) => {
-                          if (!isCodeSegment(segment)) return null;
-                          const caption = String(segment.caption ?? "");
-                          const language = String(segment.language ?? "");
-                          const code = codeSegmentText(segment);
-                          return (
-                            <div
-                              key={String(segment.region_id ?? `code-${segmentIndex}`)}
-                              className={`overflow-hidden rounded-xl border bg-slate-50/50 ${
-                                comparableText(code) ? "border-slate-200" : "border-amber-300"
-                              }`}
-                            >
-                              <div className="grid gap-3 border-b border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-                                <label className="space-y-1">
-                                  <span className="text-[11px] font-medium text-slate-500">显示标题（可选）</span>
-                                  <input
-                                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
-                                    value={caption}
-                                    placeholder="留空则不在题干中显示标题"
-                                    onChange={(e) => {
-                                      const next = [...editingSegments];
-                                      const nextSegment: Record<string, unknown> = {
-                                        ...segment,
-                                      };
-                                      const nextCaption = e.target.value;
-                                      if (nextCaption) nextSegment.caption = nextCaption;
-                                      else delete nextSegment.caption;
-                                      next[segmentIndex] = nextSegment;
-                                      replaceEditingSegments(next);
-                                    }}
-                                  />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-[11px] font-medium text-slate-500">语言（可选）</span>
-                                  <input
-                                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 font-mono text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
-                                    value={language}
-                                    placeholder="assembly / c / cpp"
-                                    onChange={(e) => {
-                                      const next = [...editingSegments];
-                                      const nextSegment: Record<string, unknown> = { ...segment };
-                                      const nextLanguage = e.target.value;
-                                      if (nextLanguage) nextSegment.language = nextLanguage;
-                                      else delete nextSegment.language;
-                                      next[segmentIndex] = nextSegment;
-                                      replaceEditingSegments(next);
-                                    }}
-                                  />
-                                </label>
-                                <div className="flex items-end">
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    className="h-9 border-red-100 bg-white px-3 text-xs text-red-600 shadow-none hover:border-red-200 hover:bg-red-50"
-                                    onClick={() => {
-                                      replaceEditingSegments(
-                                        editingSegments.filter((_, index) => index !== segmentIndex),
-                                      );
-                                    }}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    删除
-                                  </Button>
-                                </div>
-                              </div>
-                              <textarea
-                                wrap="off"
-                                spellCheck={false}
-                                className="min-h-48 w-full resize-y overflow-auto whitespace-pre border-0 bg-slate-950 px-4 py-4 font-mono text-[13px] leading-6 text-slate-100 outline-none [tab-size:2]"
-                                value={code}
-                                placeholder="在这里输入代码内容……"
-                                onChange={(e) => {
-                                  const next = [...editingSegments];
-                                  const nextSegment: Record<string, unknown> = {
-                                    ...segment,
-                                    code: e.target.value,
-                                  };
-                                  // `code` is the canonical field for textual code segments.
-                                  // Remove a legacy duplicate `text` field so future reads cannot
-                                  // accidentally prefer stale code from another property.
-                                  if (Object.prototype.hasOwnProperty.call(nextSegment, "text")) {
-                                    delete nextSegment.text;
-                                  }
-                                  next[segmentIndex] = nextSegment;
-                                  replaceEditingSegments(next);
-                                }}
-                              />
-                              {!comparableText(code) ? (
-                                <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11px] text-amber-800">
-                                  代码正文不能为空。输入内容后即可保存，或删除该空代码块。
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={addEditingCodeSegment}
-                        className="flex min-h-24 w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 text-sm text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
-                      >
-                        <span className="flex items-center gap-2">
-                          <Plus className="h-4 w-4" />
-                          插入代码块
-                        </span>
-                      </button>
-                    )}
-                  </section>
+                  <QuestionTableEditors
+                    segments={editingSegments}
+                    onReplace={replaceEditingSegments}
+                  />
+                  <QuestionCodeEditor
+                    segments={editingSegments}
+                    onReplace={replaceEditingSegments}
+                    onAdd={addEditingCodeSegment}
+                  />
 
                   {/* Options inline editor */}
                   {(() => {
