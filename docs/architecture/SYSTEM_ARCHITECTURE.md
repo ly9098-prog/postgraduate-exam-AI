@@ -29,6 +29,7 @@
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `review-edit-state.ts` | 编辑状态类型、导入题干与选项旧字段解析、多空题状态初始化由无页面/网络/浏览器依赖的适配模块承接；审核草稿、交互状态及页面编排仍由页面拥有 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `review-query-state.ts` | review-queue 参数投影为纯函数，页面仍拥有筛选、分页、debounce、query key、请求生命周期及 API 调用 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `review-subject-state.ts` | 科目叶节点优先读取显式 `is_leaf`，再按 `parent_id`、路径祖先推断；缺少层级元数据时保留全部候选。查询生命周期与下拉 UI 仍由页面持有 |
+| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `review-action-requests.ts` | 单题、批次与低风险审核请求路径、批量并发分块、部分失败汇总及幂等键参数由独立请求执行器承接；TanStack mutation、确认状态、提示、缓存失效和抽屉控制仍由页面持有 |
 | `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js` | 时间计算、存储异常适配和待同步队列分别由无页面依赖模块负责；Page 仍负责 `api.now()`、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
 
 这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；GET 发题入口已收敛，提交链路和番茄钟 Page controller 仍待后续治理。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列模块不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。

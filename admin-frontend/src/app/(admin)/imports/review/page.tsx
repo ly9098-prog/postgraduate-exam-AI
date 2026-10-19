@@ -20,7 +20,7 @@ import { apiRequest, toQuery } from "@/lib/api/client";
 import { hasVisualSegments, isImageSegmentType, getSegmentTypeLabel, reorderSegmentUp, reorderSegmentDown, moveSegment, deleteSegmentAtIndex, updateSegOptionKey, updateSegUrl } from "@/lib/segment-utils";
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
 import type { SelectOption } from "@/components/ui/custom-select";
-import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
   deduplicateGroupOptions,
   serializeBlankAnswer,
@@ -38,6 +38,11 @@ import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
+import {
+  executeReviewActionRequest,
+  type ReviewActionState,
+  type ReviewBatchActionResult,
+} from "./review-action-requests";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -119,18 +124,7 @@ function FilterDropdown({
   );
 }
 
-type ConfirmState =
-  | { action: "approve"; id: number }
-  | { action: "reject"; id: number }
-  | { action: "batch-approve" }
-  | { action: "batch-reject" }
-  | { action: "low-risk-batch-approve" }
-  | null;
-
-type BatchActionResult = {
-  affected_count: number;
-  errors?: Array<{ id: number; message: string }>;
-};
+type ConfirmState = ReviewActionState | null;
 
 function isStandardMultiChoice(questionType: string): boolean {
   return canonicalizeQuestionType(questionType) === "multiple_choice";
@@ -257,16 +251,6 @@ function statusTone(status: string) {
   if (status === "rejected") return "danger";
   if (status === "published") return "primary";
   return "warning";
-}
-
-async function _batchExecute<T>(ids: number[], concurrency: number, fn: (id: number) => Promise<T>): Promise<PromiseSettledResult<T>[]> {
-  const results: PromiseSettledResult<T>[] = [];
-  for (let i = 0; i < ids.length; i += concurrency) {
-    const chunk = ids.slice(i, i + concurrency);
-    const settled = await Promise.allSettled(chunk.map(fn));
-    results.push(...settled);
-  }
-  return results;
 }
 
 export default function ImportReviewPage() {
@@ -540,65 +524,15 @@ export default function ImportReviewPage() {
   };
 
   const actionMutation = useMutation({
-    mutationFn: async (state: Exclude<ConfirmState, null>) => {
-      if (state.action === "approve") {
-        try {
-          return await apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/approve`, { method: "POST" });
-        } catch (e) {
-          throw new Error(`题目 #${state.id} 审核通过失败：${e instanceof Error ? e.message : "未知错误"}`);
-        }
-      }
-      if (state.action === "reject") {
-        try {
-          return await apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
-        } catch (e) {
-          throw new Error(`题目 #${state.id} 驳回失败：${e instanceof Error ? e.message : "未知错误"}`);
-        }
-      }
-      if (state.action === "batch-approve") {
-        if (selectedIds.size > 0) {
-          const ids = Array.from(selectedIds);
-          const settled = await _batchExecute(ids, 6, (id) =>
-            apiRequest<ImportActionResponse>(`/imports/questions/${id}/approve`, { method: "POST" })
-          );
-          const errors: Array<{ id: number; message: string }> = [];
-          let affected = 0;
-          settled.forEach((r, i) => {
-            if (r.status === "fulfilled") { affected++; }
-            else { errors.push({ id: ids[i], message: r.reason instanceof Error ? r.reason.message : String(r.reason) }); }
-          });
-          return { affected_count: affected, errors } as BatchActionResult;
-        }
-        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/approve`, { method: "POST", headers: { "Idempotency-Key": batchIdempotencyKeyFor(`approve:${filters.batch_id}`) } });
-      }
-      if (state.action === "batch-reject") {
-        if (selectedIds.size > 0) {
-          const ids = Array.from(selectedIds);
-          const settled = await _batchExecute(ids, 6, (id) =>
-            apiRequest<ImportActionResponse>(`/imports/questions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) })
-          );
-          const errors: Array<{ id: number; message: string }> = [];
-          let affected = 0;
-          settled.forEach((r, i) => {
-            if (r.status === "fulfilled") { affected++; }
-            else { errors.push({ id: ids[i], message: r.reason instanceof Error ? r.reason.message : String(r.reason) }); }
-          });
-          return { affected_count: affected, errors } as BatchActionResult;
-        }
-        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", headers: { "Idempotency-Key": batchIdempotencyKeyFor(`reject:${filters.batch_id}:${rejectReason}`) }, body: JSON.stringify({ reason: rejectReason }) });
-      }
-      if (state.action === "low-risk-batch-approve") {
-        const bid = filters.batch_id || batchIdParam;
-        if (!bid) throw new Error("请先选择导入批次");
-        // Backend handles visual issue filtering for low-risk batch approval
-        const res = await apiRequest<{ affected_count: number; skipped_count: number; skipped_reasons: string[] }>(
-          `/imports/${bid}/approve-low-risk`, { method: "POST" }
-        );
-        return res;
-      }
-      // no other batch actions handled here
-      throw new Error("未知操作");
-    },
+    mutationFn: (state: Exclude<ConfirmState, null>) => executeReviewActionRequest({
+      action: state,
+      batchId: filters.batch_id,
+      batchIdParam,
+      selectedIds: Array.from(selectedIds),
+      rejectReason,
+      batchIdempotencyKeyFor,
+      request: apiRequest,
+    }),
     onSuccess: (result, variables) => {
       batchIdempotencyKeysRef.current.clear();
       if (variables.action === "approve") {
@@ -609,7 +543,7 @@ export default function ImportReviewPage() {
         closeDrawer();
       } else if (variables.action === "batch-approve") {
         const affected = "affected_count" in result ? result.affected_count : 0;
-        const errors = "errors" in result ? (result as BatchActionResult).errors : undefined;
+        const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
         if (errors && errors.length > 0) {
           const failedIds = errors.map((e) => `#${e.id}`).join("、");
           setMessage(`批量审核通过部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
@@ -618,7 +552,7 @@ export default function ImportReviewPage() {
         }
       } else if (variables.action === "batch-reject") {
         const affected = "affected_count" in result ? result.affected_count : 0;
-        const errors = "errors" in result ? (result as BatchActionResult).errors : undefined;
+        const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
         if (errors && errors.length > 0) {
           const failedIds = errors.map((e) => `#${e.id}`).join("、");
           setMessage(`批量驳回部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
