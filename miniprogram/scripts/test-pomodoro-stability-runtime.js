@@ -55,6 +55,9 @@ const sandbox = {
   wx,
   Page(definition) { capturedPage = definition },
   require(request) {
+    if (request === './utils/timer-math') return require('../pages/pomodoro/utils/timer-math')
+    if (request === './utils/session-storage') return require('../pages/pomodoro/utils/session-storage')
+    if (request === './utils/pending-sync-queue') return require('../pages/pomodoro/utils/pending-sync-queue')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -135,6 +138,68 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('pending queue adapters belong to their Page instance and observe live storage', () => {
+    storage.clear()
+    const first = createPage()
+    const second = createPage()
+    assert.notStrictEqual(first._getPendingSyncStore(), second._getPendingSyncStore())
+    assert.strictEqual(first._getPendingSyncStore(), first._getPendingSyncStore())
+    const pending = first._setPendingPomodoroSync('pause', 91, nowMs - 10)
+    assert.strictEqual(second._getPendingPomodoroSync().nonce, pending.nonce)
+    assert.strictEqual(second._clearPendingPomodoroSync(pending), true)
+    assert.strictEqual(first._getPendingPomodoroSync(), null)
+    first._safeGetPomodoroStorage = () => ({ ok: false, value: null })
+    assert.strictEqual(first._getPendingPomodoroSync().storageUnreadable, true)
+    assert.strictEqual(second._getPendingPomodoroSync(), null)
+  })
+
+  await test('pending queue wrappers retain timestamps, updates and acknowledgements', () => {
+    storage.clear()
+    const page = createPage()
+    const pending = page._setPendingPomodoroSync('pause', 92, nowMs - 50)
+    assert.strictEqual(pending.clientActionAt, nowMs - 50)
+    assert.strictEqual(page._hasPendingPomodoroAction(92, 'pause'), true)
+    assert.strictEqual(page._updatePendingPomodoroSync(pending, { attempts: 2 }).attempts, 2)
+    assert.strictEqual(page._getPendingPomodoroSyncQueue().length, 1)
+    assert.strictEqual(page._clearPendingPomodoroSync(pending), true)
+    assert.strictEqual(page._hasPendingPomodoroAction(92, 'pause'), false)
+  })
+
+  await test('timer wrappers keep the API clock and local pause adjustment', () => {
+    storage.clear()
+    const page = createPage()
+    page._timerState.sessionId = 'timer-math-session'
+    page._timerState.sessionStartTime = nowMs - 10000
+    page._timerState.totalPausedMs = 1000
+    storage.set('pomodoro_pause_adjustment', {
+      sessionId: 'timer-math-session', totalPausedMs: 3000,
+    })
+    assert.strictEqual(page._getFreeElapsedMs(), 9000)
+    assert.strictEqual(page._getEffectiveFreeElapsedMs(), 7000)
+    assert.strictEqual(page._getFreeElapsedMs(nowMs + 1000), 10000)
+    assert.strictEqual(page._getFreeElapsedMs(0), 0)
+    const display = page._formatCountdownDisplay(61)
+    assert.strictEqual(display.min, '01')
+    assert.strictEqual(display.sec, '01')
+    storage.clear()
+  })
+
+  await test('invalid session starts do not read pause storage', () => {
+    const page = createPage()
+    page._timerState.sessionStartTime = 'invalid'
+    page._mergeLocalPauseAdjustment = () => { throw new Error('unexpected storage read') }
+    assert.strictEqual(page._getFreeElapsedMs(nowMs), 0)
+    assert.strictEqual(page._getEffectiveFreeElapsedMs(nowMs), 0)
+  })
+
+  await test('invalid merged pauses retain the original NaN result', () => {
+    const page = createPage()
+    page._timerState.sessionStartTime = nowMs - 10000
+    page._timerState.totalPausedMs = 'invalid'
+    page._mergeLocalPauseAdjustment = (_sessionId, pause) => pause
+    assert.ok(Number.isNaN(page._getEffectiveFreeElapsedMs(nowMs)))
+  })
 
   await test('current single subject icons replace stale cached paths in both themes', () => {
     const subjects = [

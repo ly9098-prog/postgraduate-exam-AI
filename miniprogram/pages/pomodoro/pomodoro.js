@@ -1,4 +1,6 @@
 const api = require('../../utils/api')
+const { readStorage, writeStorage, removeStorage } = require('./utils/session-storage')
+const { createPendingSyncQueue } = require('./utils/pending-sync-queue')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -7,6 +9,7 @@ const {
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
+const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -35,13 +38,10 @@ const PRESETS = [
 ]
 
 const FREE_TIMER_MAX_MS = 5 * 60 * 60 * 1000 // 5 hours max for free timer
-const POMODORO_PENDING_SYNC_KEY = 'pomodoro_pending_sync' // v2 stores an ordered array; legacy object is migrated on read
 const POMODORO_UNKNOWN_START_KEY = 'pomodoro_unknown_start'
 const POMODORO_TERMINAL_CONFLICT_KEY = 'pomodoro_terminal_conflict'
 const CANVAS_INIT_MAX_RETRIES = 16
 const POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500
-const POMODORO_PENDING_SYNC_MAX_ACTIONS = 200
-const POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT = 196 // reserve terminal slots so completion/interrupt can still persist
 const POMODORO_SYNC_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000, 60000]
 
 function parseServerTime(value) {
@@ -84,21 +84,6 @@ function flattenSubjectTree(tree) {
 
 function subjectIconByCode(code) {
   return SUBJECT_ICON[code] || '/assets/icons/pomodoro-subject/book-open.svg'
-}
-
-function formatElapsedSec(sec) {
-  const s = Math.max(0, sec || 0)
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const secs = s % 60
-  return {
-    display: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(secs).padStart(2, '0')}`,
-    friendly: h > 0
-      ? `${h}小时${String(m).padStart(2, '0')}分${String(secs).padStart(2, '0')}秒`
-      : m > 0
-        ? `${m}分${String(secs).padStart(2, '0')}秒`
-        : `${secs}秒`,
-  }
 }
 
 Page({
@@ -2210,44 +2195,21 @@ Page({
   },
 
   _formatCountdownDisplay(sec) {
-    const safe = Math.max(0, Number(sec) || 0)
-    const m = Math.floor(safe / 60)
-    const s = safe % 60
-    return {
-      min: String(m).padStart(2, '0'),
-      sec: String(s).padStart(2, '0'),
-    }
+    return formatCountdownDisplay(sec)
   },
 
   /* ==================== Pending Network Sync ==================== */
 
   _safeGetPomodoroStorage(key, context = '') {
-    try {
-      return { ok: true, value: wx.getStorageSync(key) }
-    } catch (error) {
-      console.error(`pomodoro storage read failed${context ? ` (${context})` : ''}: ${key}`, error)
-      return { ok: false, value: null }
-    }
+    return readStorage(wx, key, context)
   },
 
   _safeSetPomodoroStorage(key, value, context = '') {
-    try {
-      wx.setStorageSync(key, value)
-      return true
-    } catch (error) {
-      console.error(`pomodoro storage write failed${context ? ` (${context})` : ''}: ${key}`, error)
-      return false
-    }
+    return writeStorage(wx, key, value, context)
   },
 
   _safeRemovePomodoroStorage(key, context = '') {
-    try {
-      wx.removeStorageSync(key)
-      return true
-    } catch (error) {
-      console.warn(`pomodoro storage remove failed${context ? ` (${context})` : ''}: ${key}`, error)
-      return false
-    }
+    return removeStorage(wx, key, context)
   },
 
   _showPomodoroPersistenceError() {
@@ -2258,123 +2220,46 @@ Page({
     })
   },
 
+  _getPendingSyncStore() {
+    if (!this._pendingSyncStore) {
+      this._pendingSyncStore = createPendingSyncQueue({
+        storage: {
+          read: (key, context) => this._safeGetPomodoroStorage(key, context),
+          write: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
+          remove: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        },
+        now: () => api.now(),
+      })
+    }
+    return this._pendingSyncStore
+  },
+
   _writePendingPomodoroSyncQueue(queue) {
-    if (!Array.isArray(queue)) return false
-    if (!queue.length) return this._safeRemovePomodoroStorage(POMODORO_PENDING_SYNC_KEY, 'pending queue')
-    return this._safeSetPomodoroStorage(POMODORO_PENDING_SYNC_KEY, queue, 'pending queue')
+    return this._getPendingSyncStore().write(queue)
   },
 
   _getPendingPomodoroSyncQueue() {
-    const stored = this._safeGetPomodoroStorage(POMODORO_PENDING_SYNC_KEY, 'pending queue')
-    if (!stored.ok) return null
-    const raw = stored.value
-    if (!raw) return []
-
-    let list
-    if (Array.isArray(raw)) {
-      list = raw
-    } else {
-      // Migrate the previous single-slot format. The old implementation could
-      // encode "pause/resume then complete" as completeAfter=true; preserve that
-      // terminal action instead of silently dropping it during upgrade.
-      list = [raw]
-      if (raw.completeAfter && raw.sessionId && raw.action !== 'complete') {
-        list.push({
-          action: 'complete',
-          sessionId: raw.sessionId,
-          savedAt: Number(raw.savedAt || api.now()),
-          clientActionAt: Number(raw.savedAt || api.now()),
-          nonce: `${raw.nonce || 'legacy'}-complete`,
-        })
-      }
-    }
-
-    const validActions = ['pause', 'resume', 'complete', 'interrupt']
-    const valid = list.filter(item => {
-      const savedAt = Number(item && item.savedAt)
-      return !!(
-        item && item.sessionId && validActions.includes(item.action) &&
-        Number.isFinite(savedAt) && savedAt > 0
-      )
-    })
-    if (valid.length !== list.length || !Array.isArray(raw)) {
-      // Never report a repaired in-memory queue as durable if the cleanup write
-      // failed. Returning null makes every caller fail closed instead of later
-      // overwriting an unreadable/corrupt queue with a newly created action.
-      if (!this._writePendingPomodoroSyncQueue(valid)) return null
-    }
-    return valid
+    return this._getPendingSyncStore().read()
   },
 
   _getPendingPomodoroSync() {
-    const queue = this._getPendingPomodoroSyncQueue()
-    // A truthy sentinel keeps reconnect/retry guards conservative: unreadable
-    // storage is not the same thing as an empty queue.
-    if (queue === null) return { storageUnreadable: true }
-    return queue[0] || null
+    return this._getPendingSyncStore().head()
   },
 
   _hasPendingPomodoroAction(sessionId, actions) {
-    const queue = this._getPendingPomodoroSyncQueue()
-    if (queue === null) return true
-    const allowed = Array.isArray(actions) ? actions : [actions]
-    return queue.some(item => (
-      item.sessionId === sessionId && allowed.includes(item.action)
-    ))
+    return this._getPendingSyncStore().has(sessionId, actions)
   },
 
   _setPendingPomodoroSync(action, sessionId, clientActionAt) {
-    const queue = this._getPendingPomodoroSyncQueue()
-    if (queue === null) return null
-    const last = queue[queue.length - 1]
-    if (last && last.sessionId === sessionId && last.action === action) return last
-
-    // complete/interrupt are terminal for a session. Reuse an already queued
-    // terminal action instead of sending duplicate terminal mutations.
-    const terminal = action === 'complete' || action === 'interrupt'
-    if (terminal) {
-      const existing = queue.find(item => item.sessionId === sessionId && item.action === action)
-      if (existing) return existing
-    }
-
-    // Never truncate already persisted actions: that would change study duration.
-    // Instead stop accepting additional non-terminal toggles before the hard cap
-    // and reserve a few slots for terminal actions so the user can still finish.
-    const limit = terminal
-      ? POMODORO_PENDING_SYNC_MAX_ACTIONS
-      : POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT
-    if (queue.length >= limit) {
-      console.warn('pomodoro pending queue safety valve reached', { action, sessionId, length: queue.length })
-      return null
-    }
-
-    const pending = {
-      action,
-      sessionId,
-      savedAt: api.now(),
-      clientActionAt: Number.isFinite(clientActionAt) ? clientActionAt : api.now(),
-      nonce: `${api.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    }
-    queue.push(pending)
-    if (!this._writePendingPomodoroSyncQueue(queue)) return null
-    return pending
+    return this._getPendingSyncStore().enqueue(action, sessionId, clientActionAt)
   },
 
   _clearPendingPomodoroSync(expected) {
-    if (!expected) return this._writePendingPomodoroSyncQueue([])
-    const queue = this._getPendingPomodoroSyncQueue()
-    if (queue === null) return false
-    return this._writePendingPomodoroSyncQueue(
-      queue.filter(item => item.nonce !== expected.nonce)
-    )
+    return this._getPendingSyncStore().clear(expected)
   },
 
   _updatePendingPomodoroSync(expected, patch) {
-    const queue = this._getPendingPomodoroSyncQueue()
-    if (queue === null) return null
-    const next = queue.map(item => item.nonce === expected.nonce ? { ...item, ...patch } : item)
-    if (!this._writePendingPomodoroSyncQueue(next)) return null
-    return next.find(item => item.nonce === expected.nonce) || null
+    return this._getPendingSyncStore().update(expected, patch)
   },
 
   _dropPendingPomodoroSessionActions(sessionId) {
@@ -2720,10 +2605,7 @@ Page({
 
   _getFreeElapsedMs(now) {
     if (typeof now !== 'number') now = api.now()
-    const startTime = Number(this._timerState.sessionStartTime)
-    if (!Number.isFinite(startTime) || startTime <= 0) return 0
-    const totalPausedMs = Number(this._timerState.totalPausedMs || 0)
-    return Math.max(0, now - startTime - totalPausedMs)
+    return calculateElapsedMs(now, this._timerState.sessionStartTime, this._timerState.totalPausedMs || 0)
   },
 
   _getEffectiveFreeElapsedMs(now) {
@@ -2732,7 +2614,7 @@ Page({
     if (!Number.isFinite(startTime) || startTime <= 0) return 0
     let totalPausedMs = Number(this._timerState.totalPausedMs || 0)
     totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
-    return Math.max(0, now - startTime - totalPausedMs)
+    return calculateElapsedMs(now, startTime, totalPausedMs)
   },
 
   _checkFreeTimerLimitAndAutoEnd() {

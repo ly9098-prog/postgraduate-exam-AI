@@ -62,7 +62,6 @@ import {
   updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { apiRequest, apiRequestBlob, toQuery } from "@/lib/api/client";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
@@ -74,12 +73,47 @@ import type {
   AdminQuestion,
   AdminQuestionDetail,
   AdminQuestionImportSummary,
-  PaginatedResponse,
   QuestionEditRequest,
   QuestionOptionsValue,
-  QuestionVersion,
-  QuestionVersionDetail,
 } from "@/lib/api/types";
+
+import {
+  deleteQuestion,
+  deleteQuestionBatch,
+  exportQuestions,
+  fetchQuestionDetail,
+  fetchQuestions,
+  fetchQuestionVersionDetail,
+  fetchQuestionVersions,
+  fetchSubjectOptions,
+  updateQuestion,
+  type BatchDeleteResult,
+} from "./question-api";
+
+import {
+  buildQuestionListHref,
+  DEFAULT_QUESTION_FILTERS,
+  normalizeQuestionPageSize,
+  positiveInt,
+  readQuestionListFilters,
+  type QuestionListFilters,
+} from "./question-list-state";
+import {
+  canonicalStemAfterSegmentUpdate,
+  codeSegmentText,
+  comparableText,
+  contentRecord,
+  contentSegments,
+  isCodeSegment,
+  isPlainImageSegment,
+  isStemTextSegment,
+  nonStemContentSegments,
+  normalizeStemForEditing,
+  segmentType,
+  textForStemEditor,
+  textFromContent,
+  updateStemInContent,
+} from "./question-content-editing";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -102,66 +136,8 @@ const pageSizeOptions = [
   { label: "100 条/页", value: "100" },
 ];
 
-type QuestionListFilters = {
-  subject_id: string;
-  is_active: string;
-  question_type: string;
-  keyword: string;
-  year: string;
-  difficulty: string;
-  import_batch_id: string;
-  knowledge_point_id: string;
-};
-
-const DEFAULT_QUESTION_FILTERS: QuestionListFilters = {
-  subject_id: "",
-  is_active: "true",
-  question_type: "",
-  keyword: "",
-  year: "",
-  difficulty: "",
-  import_batch_id: "",
-  knowledge_point_id: "",
-};
-
-function positiveInt(value: string | null, fallback: number | null = null): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function normalizeQuestionPageSize(value: string | null): number {
-  const parsed = positiveInt(value, 20) ?? 20;
-  return [20, 50, 100].includes(parsed) ? parsed : 20;
-}
-
-function buildQuestionListHref(
-  filters: QuestionListFilters,
-  page: number,
-  pageSize: number,
-  selectedQuestionId: number | null,
-): string {
-  const params = new URLSearchParams();
-  if (filters.subject_id) params.set("subject_id", filters.subject_id);
-  if (filters.is_active !== DEFAULT_QUESTION_FILTERS.is_active) {
-    params.set("is_active", filters.is_active);
-  }
-  if (filters.question_type) params.set("question_type", filters.question_type);
-  if (filters.keyword) params.set("keyword", filters.keyword);
-  if (filters.year) params.set("year", filters.year);
-  if (filters.difficulty) params.set("difficulty", filters.difficulty);
-  if (filters.import_batch_id) params.set("import_batch_id", filters.import_batch_id);
-  if (filters.knowledge_point_id) params.set("knowledge_point_id", filters.knowledge_point_id);
-  if (page > 1) params.set("page", String(page));
-  if (pageSize !== 20) params.set("page_size", String(pageSize));
-  if (selectedQuestionId) params.set("selected_id", String(selectedQuestionId));
-  const query = params.toString();
-  return query ? `/questions?${query}` : "/questions";
-}
-
 const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
-const BATCH_DELETE_CHUNK_SIZE = 50;
-const VERSION_HISTORY_PAGE_SIZE = 100;
 
 type ConfirmState =
   | { action: "batch-delete" }
@@ -169,45 +145,6 @@ type ConfirmState =
   | null;
 
 type UnsavedIntent = "cancel-edit" | "close-drawer" | null;
-
-type BatchDeleteResult = {
-  success_ids?: number[];
-  successIds?: number[];
-  failed_items?: Array<{ id: number; error: string }>;
-  failedItems?: Array<{ id: number; error: string }>;
-};
-
-function contentRecord(content: unknown): Record<string, unknown> {
-  return content && typeof content === "object" && !Array.isArray(content)
-    ? (content as Record<string, unknown>)
-    : {};
-}
-
-function contentSegments(content: unknown): Array<Record<string, unknown>> {
-  const record = contentRecord(content);
-  if (!Array.isArray(record.segments)) return [];
-  return record.segments.filter(
-    (segment): segment is Record<string, unknown> =>
-      Boolean(segment) && typeof segment === "object" && !Array.isArray(segment),
-  );
-}
-
-/** Only literal "image" segments are editable here; formula/table/code image
- * segments (math_image/table_image/code_image) are generated content the
- * backend upsert/remove helpers do not touch. */
-function segmentType(segment: Record<string, unknown> | null | undefined): string {
-  return segment && typeof segment === "object" && !Array.isArray(segment)
-    ? String(segment.type ?? "").trim().toLowerCase()
-    : "";
-}
-
-function isPlainImageSegment(segment: Record<string, unknown>): boolean {
-  return segmentType(segment) === "image";
-}
-
-function isCodeSegment(segment: Record<string, unknown>): boolean {
-  return segmentType(segment) === "code";
-}
 
 function imageUrlFromUnknown(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -252,217 +189,6 @@ function fallbackQuestionImageUrls(
     fallbackUrls.set(key, raw);
   });
   return Array.from(fallbackUrls.values());
-}
-
-function codeSegmentText(segment: Record<string, unknown>): string {
-  return String(segment.code ?? segment.text ?? "");
-}
-
-function comparableText(value: unknown): string {
-  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
-}
-
-function visibleCodeSegmentText(segment: Record<string, unknown>): string {
-  const code = comparableText(codeSegmentText(segment));
-  const caption = comparableText(segment.caption);
-  return caption && code ? `${caption}\n${code}` : (caption || code);
-}
-
-function canonicalStemAfterSegmentUpdate(
-  content: Record<string, unknown>,
-  nextSegments: Array<Record<string, unknown>>,
-): string {
-  const currentStem = textFromContent(content);
-  const normalizedStem = comparableText(currentStem);
-  if (!normalizedStem) return currentStem;
-
-  const currentSegments = contentSegments(content);
-  const matchedIndex = currentSegments.findIndex(
-    (segment) => isCodeSegment(segment) && (
-      normalizedStem === comparableText(codeSegmentText(segment)) ||
-      normalizedStem === comparableText(visibleCodeSegmentText(segment))
-    ),
-  );
-  if (matchedIndex < 0) return currentStem;
-
-  const matchedSegment = currentSegments[matchedIndex];
-  // Prefer object identity for insert/delete operations because unchanged
-  // segments are carried into the next array by reference. For an in-place
-  // editor change, the segment object itself is replaced but the array length
-  // and index stay stable, so the index is the safe fallback.
-  let nextSegment = nextSegments.find((segment) => segment === matchedSegment);
-  if (!nextSegment && nextSegments.length === currentSegments.length) {
-    const sameIndexSegment = nextSegments[matchedIndex];
-    if (sameIndexSegment && isCodeSegment(sameIndexSegment)) {
-      nextSegment = sameIndexSegment;
-    }
-  }
-
-  // Legacy code-only records sometimes duplicated the code into content.stem.
-  // Keep that fallback synchronized when the structured code segment changes.
-  // If that exact code segment is deleted, clear the duplicated fallback too;
-  // otherwise the deleted code would continue to render from stale stem text.
-  return nextSegment && isCodeSegment(nextSegment)
-    ? visibleCodeSegmentText(nextSegment)
-    : "";
-}
-
-/** text/newline segments carry the stem text. The edit form edits the stem as a
- * single textarea (content.stem/text); the text segments must be rebuilt to
- * match, or segments-based renderers (admin detail, miniprogram SEGMENTS mode)
- * keep showing the pre-edit snapshot. */
-function isStemTextSegment(
-  segment: Record<string, unknown> | null | undefined,
-): boolean {
-  if (!segment || segment.option_key) return false;
-  const type = segmentType(segment);
-  return type === "text" || type === "newline";
-}
-
-function stemTextToSegments(text: string): Array<Record<string, unknown>> {
-  const lines = String(text ?? "").split("\n");
-  const segments: Array<Record<string, unknown>> = [];
-  lines.forEach((line, index) => {
-    if (line) segments.push({ type: "text", text: line });
-    if (index < lines.length - 1) segments.push({ type: "newline" });
-  });
-  return segments;
-}
-
-function isMathWrapBoundary(left: string, right: string): boolean {
-  const leftChar = left.match(/\S(?=\s*$)/)?.[0] ?? "";
-  const rightChar = right.match(/^\s*(\S)/)?.[1] ?? "";
-  // MathFormula/KaTeX treats whitespace inside an expression as layout
-  // whitespace, but textarea renders the same OCR newline as a hard break.
-  // Only collapse boundaries that clearly continue an expression so ordinary
-  // prose/paragraph line breaks remain editable and persistable.
-  const mathContinuationLeft = /[=<>≤≥≠≈→←±×÷+\-*/^_,:([{\\]/;
-  const mathContinuationRight = /[=<>≤≥≠≈→←±×÷+\-*/^_,:)\]}]/;
-  return mathContinuationLeft.test(leftChar) || mathContinuationRight.test(rightChar);
-}
-
-function normalizeStemForEditing(value: string): string {
-  const text = String(value ?? "").replace(/\r\n?/g, "\n");
-  if (!text.includes("\n") || looksLikeProgrammingCode(text)) return text;
-
-  const lines = text.split("\n");
-  let result = lines[0] ?? "";
-  for (let index = 1; index < lines.length; index += 1) {
-    const right = lines[index] ?? "";
-    // Empty adjacent lines are semantic paragraph breaks, never OCR row wraps.
-    if (!result || result.endsWith("\n") || !right.trim()) {
-      result += `\n${right}`;
-      continue;
-    }
-    if (isMathWrapBoundary(result, right)) {
-      result = `${result.replace(/[ \t]+$/, "")}${right.replace(/^[ \t]+/, "")}`;
-    } else {
-      result += `\n${right}`;
-    }
-  }
-  return result;
-}
-
-function updateStemInContent(
-  content: unknown,
-  newStem: string,
-): Record<string, unknown> {
-  const record = contentRecord(content);
-  const next: Record<string, unknown> = { ...record, stem: newStem, text: newStem };
-  if (Array.isArray(record.segments)) {
-    const segments = record.segments as Array<Record<string, unknown>>;
-    const firstStemIndex = segments.findIndex(isStemTextSegment);
-    const insertAt = firstStemIndex < 0
-      ? 0
-      : segments.slice(0, firstStemIndex).filter((segment) => !isStemTextSegment(segment)).length;
-    const nonText = segments.filter((segment) => !isStemTextSegment(segment));
-    next.segments = [
-      ...nonText.slice(0, insertAt),
-      ...stemTextToSegments(newStem),
-      ...nonText.slice(insertAt),
-    ];
-  }
-  return next;
-}
-
-function textFromContent(
-  content: Record<string, unknown> | string | null | undefined,
-) {
-  if (!content) return "";
-  if (typeof content === "string") return content;
-  const candidate = [content.stem, content.text, content.question, content.title]
-    .find((value) => typeof value === "string" && value.length > 0);
-  if (typeof candidate === "string") return candidate;
-
-  // Segment-only records are valid. Derive only their literal stem text here;
-  // code/table/image segments are rendered by their dedicated editors/renderers.
-  // Falling back to JSON.stringify(content) made raw JSON appear as the stem
-  // and could duplicate code-only questions in the detail view.
-  if (Array.isArray(content.segments)) {
-    return content.segments
-      .map((rawSegment) => {
-        if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return "";
-        const segment = rawSegment as Record<string, unknown>;
-        if (segment.option_key) return "";
-        const type = segmentType(segment);
-        if (type === "text") return String(segment.text ?? "");
-        if (type === "newline") return "\n";
-        return "";
-      })
-      .join("");
-  }
-  return "";
-}
-
-/**
- * The detail renderer treats structured text/newline segments as the visible
- * stem. Some imported records keep an older OCR snapshot in content.stem,
- * including layout-only line breaks, so using content.stem in the textarea can
- * show breaks that are not present in the detail drawer. Prefer the same
- * structured stem text for editing whenever it exists.
- */
-function textForStemEditor(
-  content: Record<string, unknown> | string | null | undefined,
-): string {
-  if (!content || typeof content === "string" || !Array.isArray(content.segments)) {
-    return textFromContent(content);
-  }
-
-  const canonicalText = textFromContent(content);
-  const visibleStemSegments = contentSegments(content).filter(
-    (segment) => !segment.option_key,
-  );
-  const hasOnlyTextStemSegments =
-    visibleStemSegments.length > 0 && visibleStemSegments.every(isStemTextSegment);
-
-  // Keep the editor aligned with QuestionContentRenderer: text-only programming
-  // questions intentionally render the canonical stem because OCR segment order
-  // can be region-order rather than reading-order.
-  if (
-    canonicalText &&
-    hasOnlyTextStemSegments &&
-    looksLikeProgrammingCode(canonicalText)
-  ) {
-    return canonicalText;
-  }
-
-  let hasStemTextSegment = false;
-  const segmentText = content.segments
-    .map((rawSegment) => {
-      if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return "";
-      const segment = rawSegment as Record<string, unknown>;
-      if (!isStemTextSegment(segment)) return "";
-      const type = segmentType(segment);
-      hasStemTextSegment = true;
-      return type === "newline" ? "\n" : String(segment.text ?? "");
-    })
-    .join("");
-
-  return hasStemTextSegment ? segmentText : canonicalText;
-}
-
-function nonStemContentSegments(content: unknown): Array<Record<string, unknown>> {
-  return contentSegments(content).filter((segment) => !isStemTextSegment(segment));
 }
 
 /** Build a minimal PATCH payload from what is actually editable/visible.
@@ -890,19 +616,7 @@ export default function QuestionsPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
-  const [filters, setFilters] = useState<QuestionListFilters>(() => ({
-    ...DEFAULT_QUESTION_FILTERS,
-    subject_id: searchParams.get("subject_id") ?? "",
-    is_active: searchParams.has("is_active")
-      ? (searchParams.get("is_active") ?? "")
-      : DEFAULT_QUESTION_FILTERS.is_active,
-    question_type: searchParams.get("question_type") ?? "",
-    keyword: searchParams.get("keyword") ?? "",
-    year: searchParams.get("year") ?? "",
-    difficulty: searchParams.get("difficulty") ?? "",
-    import_batch_id: searchParams.get("import_batch_id") ?? "",
-    knowledge_point_id: searchParams.get("knowledge_point_id") ?? "",
-  }));
+  const [filters, setFilters] = useState<QuestionListFilters>(() => readQuestionListFilters(searchParams));
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
   const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [importBatchInput, setImportBatchInput] = useState(filters.import_batch_id);
@@ -910,23 +624,8 @@ export default function QuestionsPage() {
     Array<{ id: number; code: string; name: string }>
   >([]);
   useEffect(() => {
-    type SubjectNode = {
-      id: number;
-      code: string;
-      name: string;
-      path: string;
-      level: number;
-      children?: SubjectNode[];
-    };
-    const flattenSubjects = (items: SubjectNode[]): SubjectNode[] =>
-      items.flatMap((item) => [item, ...flattenSubjects(item.children ?? [])]);
-
-    apiRequest<{ items: SubjectNode[] }>("/subjects")
-      .then((response) =>
-        setSubjectOptions(
-          flattenSubjects(response.items ?? []).filter((subject) => subject.level > 1),
-        ),
-      )
+    fetchSubjectOptions()
+      .then(setSubjectOptions)
       .catch(() => {});
   }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -993,63 +692,28 @@ export default function QuestionsPage() {
 
   const questions = useQuery({
     queryKey: ["questions", queryParams],
-    queryFn: () =>
-      apiRequest<PaginatedResponse<AdminQuestion>>(
-        `/questions${toQuery(queryParams)}`,
-      ),
+    queryFn: () => fetchQuestions(queryParams),
     placeholderData: (previousData) => previousData,
     retry: false,
   });
 
   const detail = useQuery({
     queryKey: ["questions", selectedQuestionId, "detail"],
-    queryFn: () =>
-      apiRequest<AdminQuestionDetail>(`/questions/${selectedQuestionId}`),
+    queryFn: () => fetchQuestionDetail(selectedQuestionId!),
     enabled: selectedQuestionId !== null,
     retry: false,
   });
 
   const versions = useQuery({
     queryKey: ["questions", selectedQuestionId, "versions"],
-    queryFn: async () => {
-      const firstPage = await apiRequest<PaginatedResponse<QuestionVersion>>(
-        `/questions/${selectedQuestionId}/versions${toQuery({
-          page: 1,
-          page_size: VERSION_HISTORY_PAGE_SIZE,
-        })}`,
-      );
-      if (firstPage.total_pages <= 1) return firstPage;
-
-      // 通常只有几十个版本；超过 100 个时在后台并行补齐后续页，
-      // 选择器仍呈现为一条连续的时间轴，不把“页”的概念暴露给用户。
-      const remainingPages = await Promise.all(
-        Array.from({ length: firstPage.total_pages - 1 }, (_, index) =>
-          apiRequest<PaginatedResponse<QuestionVersion>>(
-            `/questions/${selectedQuestionId}/versions${toQuery({
-              page: index + 2,
-              page_size: VERSION_HISTORY_PAGE_SIZE,
-            })}`,
-          ),
-        ),
-      );
-      return {
-        ...firstPage,
-        items: [
-          ...firstPage.items,
-          ...remainingPages.flatMap((response) => response.items),
-        ],
-      };
-    },
+    queryFn: () => fetchQuestionVersions(selectedQuestionId!),
     enabled: selectedQuestionId !== null,
     retry: false,
   });
 
   const baseVersionDetail = useQuery({
     queryKey: ["questions", selectedQuestionId, "versions", baseVersion],
-    queryFn: () =>
-      apiRequest<QuestionVersionDetail>(
-        `/questions/${selectedQuestionId}/versions/${baseVersion}`,
-      ),
+    queryFn: () => fetchQuestionVersionDetail(selectedQuestionId!, baseVersion as number),
     enabled: selectedQuestionId !== null && typeof baseVersion === "number",
     // 切换版本时保留上一份已完成的数据，避免对比区域先塌缩成 loading 再重新撑开。
     placeholderData: (previousData) =>
@@ -1059,10 +723,7 @@ export default function QuestionsPage() {
 
   const compareVersionDetail = useQuery({
     queryKey: ["questions", selectedQuestionId, "versions", compareVersion],
-    queryFn: () =>
-      apiRequest<QuestionVersionDetail>(
-        `/questions/${selectedQuestionId}/versions/${compareVersion}`,
-      ),
+    queryFn: () => fetchQuestionVersionDetail(selectedQuestionId!, compareVersion as number),
     enabled: selectedQuestionId !== null && typeof compareVersion === "number",
     placeholderData: (previousData) =>
       previousData?.question_id === selectedQuestionId ? previousData : undefined,
@@ -1093,40 +754,9 @@ export default function QuestionsPage() {
   const deleteMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
       if (state.action === "batch-delete") {
-        const ids = Array.from(selectedIds);
-        const aggregate: BatchDeleteResult = { success_ids: [], failed_items: [] };
-
-        // 后端单次批量删除最多接收 50 条；前端分块执行，避免 50/100 条每页时直接 422。
-        for (let start = 0; start < ids.length; start += BATCH_DELETE_CHUNK_SIZE) {
-          const chunk = ids.slice(start, start + BATCH_DELETE_CHUNK_SIZE);
-          try {
-            const result = await apiRequest<BatchDeleteResult>(
-              "/questions/batch-delete",
-              {
-                method: "POST",
-                headers: { "Idempotency-Key": batchDeleteKeyFor(chunk) },
-                body: JSON.stringify({ ids: chunk }),
-              },
-            );
-            aggregate.success_ids?.push(
-              ...(result.success_ids ?? result.successIds ?? []),
-            );
-            aggregate.failed_items?.push(
-              ...(result.failed_items ?? result.failedItems ?? []),
-            );
-          } catch (error) {
-            const errorText =
-              error instanceof Error ? error.message : "批量删除请求失败";
-            aggregate.failed_items?.push(
-              ...chunk.map((id) => ({ id, error: errorText })),
-            );
-          }
-        }
-        return aggregate;
+        return deleteQuestionBatch(Array.from(selectedIds), batchDeleteKeyFor);
       }
-      return apiRequest<{ status: string }>(`/questions/${state.id}`, {
-        method: "DELETE",
-      });
+      return deleteQuestion(state.id);
     },
     onSuccess: (result, variables: Exclude<ConfirmState, null>) => {
       batchDeleteKeysRef.current.clear();
@@ -1169,10 +799,7 @@ export default function QuestionsPage() {
       if (!baseline) throw new Error("题目详情尚未加载完成");
       const patch = buildQuestionEditPatch(editForm, baseline, editStemText);
       if (Object.keys(patch).length === 0) throw new Error("没有需要保存的修改");
-      return apiRequest<AdminQuestion>(`/questions/${selectedQuestionId}`, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      });
+      return updateQuestion(selectedQuestionId, patch);
     },
     onSuccess: () => {
       setMessage("题目已更新。");
@@ -1405,13 +1032,7 @@ export default function QuestionsPage() {
         }
         const patch = buildQuestionEditPatch(editForm, selectedQuestion, editStemText);
         if (Object.keys(patch).length === 0) return true;
-        const question = await apiRequest<AdminQuestion>(
-          `/questions/${selectedQuestionId}`,
-          {
-            method: "PATCH",
-            body: JSON.stringify(patch),
-          },
-        );
+        const question = await updateQuestion(selectedQuestionId, patch);
         mergeQuestionIntoDetailCache(question);
         setEditForm({
           subject_id: question.subject_id ?? null,
@@ -1649,26 +1270,22 @@ export default function QuestionsPage() {
     try {
       setExportingFormat(format);
       setIsExportMenuOpen(false);
-      const response = await apiRequestBlob("/questions/export", {
-        method: "POST",
-        timeoutMs: 120_000,
-        body: JSON.stringify({
-          format,
-          ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
-          subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
-          is_active:
-            filters.is_active === ""
-              ? undefined
-              : filters.is_active === "true",
-          question_type: filters.question_type || undefined,
-          keyword: filters.keyword || undefined,
-          year: filters.year ? Number(filters.year) : undefined,
-          difficulty: filters.difficulty
-            ? Number(filters.difficulty)
-            : undefined,
-          import_batch_id: filters.import_batch_id || undefined,
-          knowledge_point_id: filters.knowledge_point_id ? Number(filters.knowledge_point_id) : undefined,
-        }),
+      const response = await exportQuestions({
+        format,
+        ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
+        subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
+        is_active:
+          filters.is_active === ""
+            ? undefined
+            : filters.is_active === "true",
+        question_type: filters.question_type || undefined,
+        keyword: filters.keyword || undefined,
+        year: filters.year ? Number(filters.year) : undefined,
+        difficulty: filters.difficulty
+          ? Number(filters.difficulty)
+          : undefined,
+        import_batch_id: filters.import_batch_id || undefined,
+        knowledge_point_id: filters.knowledge_point_id ? Number(filters.knowledge_point_id) : undefined,
       });
       const url = URL.createObjectURL(response.blob);
       const link = document.createElement("a");
@@ -1730,7 +1347,7 @@ export default function QuestionsPage() {
     (id: number) => {
       void queryClient.prefetchQuery({
         queryKey: ["questions", id, "detail"],
-        queryFn: () => apiRequest<AdminQuestionDetail>(`/questions/${id}`),
+        queryFn: () => fetchQuestionDetail(id),
         staleTime: 30_000,
       });
     },

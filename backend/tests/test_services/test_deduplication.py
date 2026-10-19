@@ -7,18 +7,18 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.api.v1.practice import (
-    _contains_code,
-    _ensure_true_false_options,
-    _sanitize_question_content,
-    _sanitize_question_options,
-    _sanitize_text_field,
-)
 from app.features.question_pipeline import _parse_pdf, process_question_pipeline
 from app.services.pdf_text_normalizer import (
     _should_merge,
     deduplicate_repeated_text,
     normalize_pdf_text,
+)
+from app.services.practice.response_content import (
+    contains_code,
+    ensure_true_false_options,
+    sanitize_question_content,
+    sanitize_question_options,
+    sanitize_text_field,
 )
 
 # ─── deduplicate_repeated_text ────────────────────────────────────────────────
@@ -192,10 +192,10 @@ class TestPracticeResponseSanitizer:
             "analysis": "解析\n解析",
         }
 
-        result = _sanitize_question_content(content)
+        result = sanitize_question_content(content)
 
-        # stem-preference: text is overwritten with stem's value
-        assert result["text"] == result["stem"] == "另一段题干"
+        # The current authoring field wins over a stale historical stem.
+        assert result["text"] == result["stem"] == "题干内容"
         assert result["analysis"] == "解析\n解析"
         assert content["text"] == "题干内容\n题干内容"
         assert result is not content
@@ -204,7 +204,7 @@ class TestPracticeResponseSanitizer:
         """Option values must not be split by _split_inline_roman_subitems."""
         options = {"A": "I、II、III", "B": "II、IV", "C": "II、III", "D": "I、IV"}
 
-        result = _sanitize_question_options(options)
+        result = sanitize_question_options(options)
 
         assert result["A"] == "I、II、III"
         assert all("\n" not in v for v in result.values())
@@ -214,21 +214,21 @@ class TestPracticeResponseSanitizer:
         """Option values have embedded newlines collapsed to space (OCR artifact cleanup)."""
         options = {"A": "1\n1", "B": "2\n2", "C": "正常选项"}
 
-        result = _sanitize_question_options(options)
+        result = sanitize_question_options(options)
 
         assert result == {"A": "1 1", "B": "2 2", "C": "正常选项"}
         assert options["A"] == "1\n1"
         assert result is not options
 
     def test_practice_true_false_fallback_options_preserved(self):
-        options = _ensure_true_false_options("true_false", None)
+        options = ensure_true_false_options("true_false", None)
 
-        result = _sanitize_question_options(options)
+        result = sanitize_question_options(options)
 
         assert result == {"A": "正确", "B": "错误"}
 
 
-# ─── _contains_code / 代码块格式保留 ──────────────────────────────────────────
+# ─── contains_code / 代码块格式保留 ──────────────────────────────────────────
 
 CODE_WITH_INDENT = """typedef struct BiTNode {
     int data;
@@ -262,69 +262,69 @@ CODE_WIN_LINE_ENDINGS = "int a = 1;\r\nint b = 2;\r\n"
 class TestSanitizeTextFieldForCode:
 
     def test_contains_code_detects_c_code(self):
-        assert _contains_code(CODE_MULTI_LINE) is True
+        assert contains_code(CODE_MULTI_LINE) is True
 
     def test_contains_code_detects_short_code(self):
-        assert _contains_code(CODE_SHORT) is True
+        assert contains_code(CODE_SHORT) is True
 
     def test_contains_code_detects_typedef_code(self):
-        assert _contains_code(CODE_WITH_INDENT) is True
+        assert contains_code(CODE_WITH_INDENT) is True
 
     def test_contains_code_rejects_plain_text(self):
-        assert _contains_code("这是一个普通的题干文本") is False
+        assert contains_code("这是一个普通的题干文本") is False
 
     def test_contains_code_rejects_math_text(self):
-        assert _contains_code("设 f(x) 在 [0,1] 上连续，则下列结论正确的是") is False
+        assert contains_code("设 f(x) 在 [0,1] 上连续，则下列结论正确的是") is False
 
     def test_code_indentation_preserved_after_sanitize(self):
-        result = _sanitize_text_field(CODE_WITH_INDENT)
+        result = sanitize_text_field(CODE_WITH_INDENT)
         assert "    int data;" in result, f"缩进丢失: {repr(result)}"
         assert "    struct BiTNode *lchild, *rchild;" in result
 
     def test_code_blank_lines_preserved(self):
-        result = _sanitize_text_field(CODE_WITH_BLANK_LINES)
+        result = sanitize_text_field(CODE_WITH_BLANK_LINES)
         assert "\n\n" in result, f"空行丢失: {repr(result)}"
 
     def test_code_multi_line_preserved(self):
-        result = _sanitize_text_field(CODE_MULTI_LINE)
+        result = sanitize_text_field(CODE_MULTI_LINE)
         lines = result.split("\n")
         assert len(lines) >= 3, f"行数减少: {len(lines)}"
         assert "    sum += i;" in result
 
     def test_code_short_loop_preserved(self):
-        result = _sanitize_text_field(CODE_SHORT)
+        result = sanitize_text_field(CODE_SHORT)
         assert "\n" in result
         assert "    n++;" in result
 
     def test_code_condition_not_broken(self):
         """if 条件括号内的 >, <, && 不应被破坏。"""
-        result = _sanitize_text_field(CODE_CONDITION)
+        result = sanitize_text_field(CODE_CONDITION)
         assert " > " in result
         assert " && " in result
         assert " < " in result
 
     def test_code_special_chars_preserved(self):
         """<, >, &&, \\n 字符串常量保持原样。"""
-        result = _sanitize_text_field(CODE_SPECIAL_CHARS)
+        result = sanitize_text_field(CODE_SPECIAL_CHARS)
         assert "<" in result
         assert ">" in result
         assert "&&" in result
         assert '\\n' in result, f"\\\\\\\\n 被转换: {repr(result)}"
 
     def test_code_windows_line_endings_normalized_to_unix(self):
-        result = _sanitize_text_field(CODE_WIN_LINE_ENDINGS)
+        result = sanitize_text_field(CODE_WIN_LINE_ENDINGS)
         assert "\r\n" not in result
         assert "\r" not in result
 
     def test_code_sanitize_idempotent(self):
-        once = _sanitize_text_field(CODE_MULTI_LINE)
-        twice = _sanitize_text_field(once)
+        once = sanitize_text_field(CODE_MULTI_LINE)
+        twice = sanitize_text_field(once)
         assert once == twice
 
     def test_code_repeated_lines_preserved(self):
         """相同内容的代码行（如两个 n++）不能被去重。"""
         code = "while (x > 0) {\n    x--;\n    x--;\n}"
-        result = _sanitize_text_field(code)
+        result = sanitize_text_field(code)
         assert result.count("x--") == 2, f"重复行被去重: {repr(result)}"
 
     def test_stem_with_code_and_options_strip_options(self):
@@ -335,16 +335,16 @@ class TestSanitizeTextFieldForCode:
             "printf(\"%d\", ++x);\n"
             "A. 4\nB. 5\nC. 6\nD. 7"
         )
-        result = _sanitize_question_content({"text": stem, "stem": stem})
+        result = sanitize_question_content({"text": stem, "stem": stem})
         # 选项剥离由前端 _cleanStemText 处理，后端只做字段清洗
         # 确保代码缩进和换行保留
         assert "int x = 10;" in result["text"]
         assert "++x" in result["text"]
 
     def test_sanitize_question_content_code_stem(self):
-        """_sanitize_question_content 处理含代码的 content。"""
+        """sanitize_question_content 处理含代码的 content。"""
         content = {"text": CODE_MULTI_LINE, "stem": CODE_MULTI_LINE}
-        result = _sanitize_question_content(content)
+        result = sanitize_question_content(content)
         lines = result["text"].split("\n")
         assert len(lines) >= 3, f"行数减少: {len(lines)}"
         assert "    sum += i;" in result["text"]

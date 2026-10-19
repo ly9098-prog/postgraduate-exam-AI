@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException, Response
 
 from app.api.v1 import practice as practice_router
+from app.services.practice import issued_response
 
 
 class _User:
@@ -64,12 +65,12 @@ def _patch_issue_pipeline(monkeypatch, question_ids, *, filter_fn=None):
         ),
     )
     monkeypatch.setattr(
-        practice_router,
+        issued_response,
         "load_revision_views",
         AsyncMock(return_value={rid: _revision(qid, rid) for qid, rid in revisions.items()}),
     )
     monkeypatch.setattr(
-        practice_router,
+        issued_response,
         "load_revision_kp_names",
         AsyncMock(return_value={rid: [] for rid in revisions.values()}),
     )

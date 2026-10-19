@@ -20,6 +20,7 @@
 const assert = require('assert')
 const path = require('path')
 const fs = require('fs')
+const { formatElapsedSec } = require('../pages/pomodoro/utils/timer-math')
 
 var testsPassed = 0
 var testsFailed = 0
@@ -186,22 +187,22 @@ t('Mode info text references free preset selection', function () {
 console.log('\n--- 3. Display cap ---')
 
 t('formatElapsedSec(18000) produces display 05:00:00', function () {
-  var fmtResult = evaluateFormatElapsedSec(js, 18000)
+  var fmtResult = formatElapsedSec(18000)
   assert.strictEqual(fmtResult.display, '05:00:00', 'got ' + fmtResult.display)
 })
 
 t('formatElapsedSec(17999) produces display 04:59:59', function () {
-  var fmtResult = evaluateFormatElapsedSec(js, 17999)
+  var fmtResult = formatElapsedSec(17999)
   assert.strictEqual(fmtResult.display, '04:59:59', 'got ' + fmtResult.display)
 })
 
 t('formatElapsedSec(0) produces display 00:00:00', function () {
-  var fmtResult = evaluateFormatElapsedSec(js, 0)
+  var fmtResult = formatElapsedSec(0)
   assert.strictEqual(fmtResult.display, '00:00:00', 'got ' + fmtResult.display)
 })
 
 t('formatElapsedSec handles negative gracefully', function () {
-  var fmtResult = evaluateFormatElapsedSec(js, -100)
+  var fmtResult = formatElapsedSec(-100)
   assert.strictEqual(fmtResult.display, '00:00:00', 'got ' + fmtResult.display)
 })
 
@@ -323,18 +324,6 @@ console.log('Passed:', testsPassed, ' Failed:', testsFailed)
 console.log('==============================\n')
 
 if (testsFailed > 0) process.exit(1)
-
-// ── Helper: evaluate formatElapsedSec(sec).display from source ──
-function evaluateFormatElapsedSec(src, sec) {
-  var fnMatch = src.match(/function formatElapsedSec\(sec\)\s*\{([\s\S]*?)\n\}/)
-  if (!fnMatch) return {}
-  try {
-    var fn = new Function('sec', 'return (function(sec){' + fnMatch[1].trim() + '})(sec)')
-    return fn(sec)
-  } catch (e) {
-    return {}
-  }
-}
 
 // ── Helper: extract a method body from Page({...}) by name ──
 function extractMethod(src, name) {

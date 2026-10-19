@@ -1,6 +1,6 @@
 # 2240AI 系统架构
 
-> 基于当前代码与运行时索引（Codebase Memory）整理，不含未来设计。最后更新：2026-09-02
+> 基于代码与运行时索引（Codebase Memory）整理，不含未来设计。全篇核对：2026-09-02；2026-10-19/20 仅补充分批职责拆分说明，不代表全篇重新验收。
 
 ---
 
@@ -14,6 +14,21 @@
                                │              ├─ Redis 任务队列 / 缓存
                                │              └─ 本地 / 云端存储
 ```
+
+### 分批职责拆分（更新于 2026-10-20）
+
+| 入口 | 规则归属 | 边界 |
+| --- | --- | --- |
+| `backend/app/api/v1/practice.py` | `backend/app/services/practice/response_content.py` | 学员题干/选项投影、代码格式保护与判断题选项回退集中在纯转换模块；继续复用既有正文协调与元数据裁剪规则，不持有 HTTP/数据库状态 |
+| `backend/app/api/v1/practice.py` | `backend/app/services/practice/request_filters.py`、`request_scope.py` | 请求筛选解析、学科/知识点范围解析与错误优先级由无路由依赖的模块负责；路由保留 HTTP 映射，范围模块复用既有 `practice_service` 查询，不新增事务所有者 |
+| `backend/app/api/v1/practice.py` | `backend/app/services/practice/candidate_selection.py`、`candidate_schedule.py` | 显式候选请求/结果承接策略分流及推荐日志容错；到期筛选负责 Leitner 复核与补题。复用既有 provider，不持有 HTTP 或最终发题事务 |
+| `backend/app/api/v1/practice.py` | `backend/app/services/practice/final_candidates.py`、`batch_issuance.py`、`issued_response.py` | 最终守卫校验版本/学科及定向集合并对齐曝光；签名模块构建知识与计划归因上下文；响应模块只消费签发版本。路由保留 HTTP 映射、观测及响应成功后的顺序预约清理/提交 |
+| `admin-frontend/src/app/(admin)/questions/page.tsx` | 同目录 `question-list-state.ts`、`question-api.ts`、`question-content-editing.ts` | URL/筛选、请求协议和题干编辑规则分别就近聚合；内容模块仅依赖已有代码识别规则，负责结构化文本、旧字段回退及代码块同步。页面保留 Query 缓存、mutation 回调、最小 PATCH、幂等键生命周期、权限、草稿与下载 UI；尚未抽取 hooks |
+| `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js` | 时间计算、存储异常适配和待同步队列分别由无页面依赖模块负责；Page 仍负责 `api.now()`、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
+
+这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；发题路由仍有请求装配和观测编排待收敛，番茄钟 Page controller 仍待后续拆分。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列模块不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。
+
+OCR 架构测试 `backend/tests/architecture/test_architecture_boundaries.py` 已修正仓库根路径；源码扫描必须发现非空 Python 文件集合，缺失/空目录直接失败，注入越界导入的测试验证扫描器能检出违规。刷题投影和请求筛选纯规则另有 AST 检查，禁止直接依赖路由、FastAPI、SQLAlchemy 或数据库会话模块；请求范围、候选策略、到期筛选、最终守卫和签名响应编排允许数据库会话类型，但禁止路由、FastAPI、数据库会话工厂依赖及 `commit`/`rollback` 调用。管理端新增 API 边界测试，限制题库 API 模块依赖既有 client/types，并检查不直接调用原生 fetch 和新增业务文件/函数预算。实际回归结果与历史失败修复见 `prompts/tasks/current_task.md` 执行记录。
 
 ### 核心设计原则
 

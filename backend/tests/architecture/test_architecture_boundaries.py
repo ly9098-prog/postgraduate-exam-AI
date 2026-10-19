@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-BACKEND = Path(__file__).resolve().parent.parent.parent / "app"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+BACKEND = PROJECT_ROOT / "backend" / "app"
 
 # ── Whitelists for allowed imports ───────────────────────────────────────────
 
@@ -87,7 +87,86 @@ def _module_name(path: Path) -> str:
 
 
 def _py_files_under(dir: Path) -> list[Path]:
-    return sorted(dir.rglob("*.py"))
+    assert dir.is_dir(), f"Architecture scan directory does not exist: {dir}"
+    files = sorted(dir.rglob("*.py"))
+    assert files, f"Architecture scan found no Python files: {dir}"
+    return files
+
+
+def test_architecture_scan_covers_real_application_sources():
+    files = _py_files_under(BACKEND)
+    assert BACKEND / "main.py" in files
+    assert _module_name(BACKEND / "services" / "ocr_service.py") == "app.services.ocr_service"
+
+
+@pytest.mark.parametrize("filename", ["response_content.py", "request_filters.py"])
+def test_practice_pure_rules_avoid_transport_and_database_imports(filename):
+    target = BACKEND / "services" / "practice" / filename
+    tree = ast.parse(target.read_text(encoding="utf-8"))
+    forbidden = ("app.api", "fastapi", "sqlalchemy", "app.core.database")
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imports.append(node.module or "")
+        elif isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+    assert not [
+        name for name in imports
+        if any(name == prefix or name.startswith(prefix + ".") for prefix in forbidden)
+    ], "Practice pure rules must remain independent of HTTP and database state"
+
+
+@pytest.mark.parametrize("filename", [
+    "request_scope.py", "candidate_selection.py", "candidate_schedule.py",
+    "final_candidates.py", "batch_issuance.py", "issued_response.py",
+])
+def test_practice_orchestration_avoids_transport_imports(filename):
+    target = BACKEND / "services" / "practice" / filename
+    tree = ast.parse(target.read_text(encoding="utf-8"))
+    forbidden = ("app.api", "fastapi", "app.core.database")
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imports.append(node.module or "")
+        elif isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+    assert not [
+        name for name in imports
+        if any(name == prefix or name.startswith(prefix + ".") for prefix in forbidden)
+    ], "Practice scope orchestration must leave HTTP translation to the route"
+    assert not [
+        node.func.attr for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"commit", "rollback"}
+    ], "Practice orchestration must not take ownership of the request transaction"
+
+
+@pytest.mark.parametrize("exists", [False, True])
+def test_architecture_scan_rejects_missing_or_empty_directory(tmp_path, exists):
+    directory = tmp_path / "app"
+    if exists:
+        directory.mkdir()
+    with pytest.raises(AssertionError, match="Architecture scan"):
+        _py_files_under(directory)
+
+
+@pytest.mark.parametrize(
+    ("source", "scanner", "expected"),
+    [
+        ("from app.services.ocr_service import _get_ocr", "ocr", "_get_ocr"),
+        ("import app.services.ocr_service", "ocr", "app.services.ocr_service (module import)"),
+        ("from app.features.ai_safety import evaluate", "safety", "app.features.ai_safety"),
+    ],
+)
+def test_architecture_scan_detects_injected_violation(tmp_path, monkeypatch, source, scanner, expected):
+    app_dir = tmp_path / "backend" / "app"
+    app_dir.mkdir(parents=True)
+    target = app_dir / "boundary_probe.py"
+    target.write_text(source, encoding="utf-8")
+    monkeypatch.setitem(globals(), "PROJECT_ROOT", tmp_path)
+    monkeypatch.setitem(globals(), "BACKEND", app_dir)
+    checker = TestOcrServiceImportBoundary() if scanner == "ocr" else TestAiSafetyImportBoundary()
+    assert checker._find_violations() == [{"file": str(target), "line": 1, "name": expected}]
 
 
 # ── Test 1: Private ocr_service import boundary ────────────────────────────
@@ -149,7 +228,7 @@ class TestOcrServiceImportBoundary:
         """AST-scan all non-test, non-privileged modules for disallowed imports."""
         violations: list[dict] = []
 
-        for py_file in _py_files_under(PROJECT_ROOT / "backend" / "app"):
+        for py_file in _py_files_under(BACKEND):
             if "__pycache__" in str(py_file):
                 continue
             mod = _module_name(py_file)
@@ -216,7 +295,7 @@ class TestAiSafetyImportBoundary:
     def _find_violations(self) -> list[dict]:
         violations: list[dict] = []
 
-        for py_file in _py_files_under(PROJECT_ROOT / "backend" / "app"):
+        for py_file in _py_files_under(BACKEND):
             if "__pycache__" in str(py_file):
                 continue
             mod = _module_name(py_file)
@@ -403,11 +482,8 @@ class TestCompileAll:
     def test_all_py_files_compile(self):
         import py_compile
 
-        backend_root = PROJECT_ROOT / "backend"
-        source_dir = backend_root / "app"
-
         errors: list[str] = []
-        for py_file in sorted(source_dir.rglob("*.py")):
+        for py_file in _py_files_under(BACKEND):
             if "__pycache__" in str(py_file):
                 continue
             try:

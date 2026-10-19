@@ -15,6 +15,7 @@ function t(name, fn) {
 }
 
 const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
@@ -25,16 +26,16 @@ const backendMigrationSrc = fs.readFileSync(path.resolve(__dirname, '../../backe
 const backendCorrectiveMigrationSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/alembic/versions/y9z0a1b2c3d4_repair_pomodoro_constraints.py'), 'utf8')
 const backendDefinitionMigrationSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/alembic/versions/z0a1b2c3d4e5_verify_pomodoro_constraint_definitions.py'), 'utf8')
 const backendPostgresConcurrencyTestSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/tests/integration/test_pomodoro_postgres_concurrency.py'), 'utf8')
-function method(name) {
-  const startToken = `  ${name}(`
+function method(name, source = src, declaration = false) {
+  const startToken = declaration ? `function ${name}(` : `  ${name}(`
   const asyncToken = `  async ${name}(`
-  let start = src.indexOf(startToken)
-  if (start < 0) start = src.indexOf(asyncToken)
+  let start = source.indexOf(startToken)
+  if (start < 0) start = source.indexOf(asyncToken)
   assert.ok(start >= 0, 'missing method ' + name)
-  let brace = src.indexOf('{', start)
+  let brace = source.indexOf('{', start)
   let depth = 0, quote = '', escaped = false, line = false, block = false
-  for (let i = brace; i < src.length; i++) {
-    const ch = src[i], nx = src[i + 1]
+  for (let i = brace; i < source.length; i++) {
+    const ch = source[i], nx = source[i + 1]
     if (line) { if (ch === '\n') line = false; continue }
     if (block) { if (ch === '*' && nx === '/') { block = false; i++ } continue }
     if (quote) {
@@ -47,7 +48,7 @@ function method(name) {
     if (ch === '/' && nx === '*') { block = true; i++; continue }
     if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue }
     if (ch === '{') depth++
-    if (ch === '}' && --depth === 0) return src.slice(start, i + 1)
+    if (ch === '}' && --depth === 0) return source.slice(start, i + 1)
   }
   return ''
 }
@@ -160,7 +161,8 @@ for (const name of ['_resumeSession', '_resumeFreeTimer']) {
 console.log('\n--- Pending completion reliability ---')
 const retry = method('_retryPendingPomodoroSync')
 const complete = method('_completePomodoroWithRetry')
-const queueReader = method('_getPendingPomodoroSyncQueue')
+const queueReader = method('readQueue', queueSrc, true)
+const queueMigration = method('migrateLegacyEntry', queueSrc, true)
 t('all pending session mutations persist until server reconciliation', () => {
   assert.ok(!src.includes('POMODORO_PENDING_SYNC_TTL_MS'))
   assert.ok(!queueReader.includes('now - savedAt'))
@@ -180,15 +182,15 @@ t('terminal response conflicts are reconciled by returned server status', () => 
 })
 t('pending sync storage is an ordered queue and migrates legacy single-slot data', () => {
   assert.ok(queueReader.includes('Array.isArray(raw)'))
-  assert.ok(queueReader.includes('list = [raw]'))
-  assert.ok(method('_setPendingPomodoroSync').includes('queue.push(pending)'))
+  assert.ok(queueMigration.includes('list = [raw]'))
+  assert.ok(queueSrc.includes('queue.push(pending)'))
 })
 t('legacy completeAfter is migrated into a terminal queue item', () => {
-  assert.ok(queueReader.includes('raw.completeAfter'))
-  assert.ok(queueReader.includes("action: 'complete'"))
+  assert.ok(queueMigration.includes('raw.completeAfter'))
+  assert.ok(queueMigration.includes("action: 'complete'"))
 })
 t('queued mutations preserve client event timestamps for offline replay', () => {
-  assert.ok(method('_setPendingPomodoroSync').includes('clientActionAt'))
+  assert.ok(queueSrc.includes('clientActionAt'))
   assert.ok(retry.includes('client_action_at'))
 })
 t('pending queue drains strictly from the head', () => {
@@ -261,15 +263,15 @@ t('expired countdown restore consumes terminal conflict from retry result', () =
 })
 
 console.log('\n--- Long-term stability hardening ---')
-const queueWriter = method('_writePendingPomodoroSyncQueue')
-const queueSetter = method('_setPendingPomodoroSync')
+const queueWriter = method('writeQueue', queueSrc, true)
+const queueSetter = method('enqueueAction', queueSrc, true)
 const retryScheduler = method('_schedulePendingPomodoroSyncRetry')
 const retryClassifier = method('_isRetryablePomodoroSyncError')
 const restoreCountdown = method('_restoreSession')
 const statsLoader = method('loadTodayStats')
 t('pending queue has a non-destructive safety valve and reserves terminal capacity', () => {
-  assert.ok(src.includes('POMODORO_PENDING_SYNC_MAX_ACTIONS = 200'))
-  assert.ok(src.includes('POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT = 196'))
+  assert.ok(queueSrc.includes('POMODORO_PENDING_SYNC_MAX_ACTIONS = 200'))
+  assert.ok(queueSrc.includes('POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT = 196'))
   assert.ok(queueSetter.includes('const terminal ='))
   assert.ok(queueSetter.includes('queue.length >= limit'))
   assert.ok(queueSetter.includes('return null'))
@@ -277,9 +279,9 @@ t('pending queue has a non-destructive safety valve and reserves terminal capaci
   assert.ok(!queueSetter.includes('splice('))
 })
 t('pending queue persistence failures are surfaced instead of silently accepted', () => {
-  assert.ok(queueWriter.includes('_safeSetPomodoroStorage'))
-  assert.ok(queueSetter.includes('if (!this._writePendingPomodoroSyncQueue(queue)) return null'))
-  assert.ok(method('_clearPendingPomodoroSync').includes('return false'))
+  assert.ok(queueWriter.includes('ctx.storage.write('))
+  assert.ok(queueSetter.includes('return writeQueue(ctx, queue) ? pending : null'))
+  assert.ok(queueSrc.includes('if (queue === null) return false'))
   assert.ok(retry.includes('local acknowledgement could not be persisted'))
 })
 t('online transient failures use bounded exponential backoff', () => {
@@ -366,7 +368,7 @@ t('terminal conflict acknowledgement is durable and happens after cleanup', () =
 
 t('pending queue read failures fail closed instead of masquerading as empty', () => {
   assert.ok(queueReader.includes("if (!stored.ok) return null"))
-  assert.ok(method('_setPendingPomodoroSync').includes('if (queue === null) return null'))
+  assert.ok(queueSrc.includes('if (queue === null) return null'))
   assert.ok(retry.includes('if (queue === null)'))
   assert.ok(onShow.includes('pendingSync.storageUnreadable'))
   assert.ok(onShow.indexOf('pendingSync.storageUnreadable') < onShow.indexOf('_reconcileUnknownStartAttempt()'))
