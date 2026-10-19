@@ -22,23 +22,17 @@ import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, 
 import type { SelectOption } from "@/components/ui/custom-select";
 import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
-  normalizeBlankOptionGroups,
   deduplicateGroupOptions,
-  extractMultiBlankSource,
-  parseBlankAnswer,
   serializeBlankAnswer,
-  haveIdenticalOptionSets,
-  getSharedOptions,
   validateBlankAnswerMap,
   buildMultiBlankSavePayload,
   getMultiBlankSaveState,
   reduceMultiBlankEditState,
   syncDerivedMultiBlankFields,
-  type BlankOptionGroup,
-  type BlankAnswerMap,
   type MultiBlankAction,
   type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
+import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
 import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
 import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
@@ -136,95 +130,13 @@ type BatchActionResult = {
   errors?: Array<{ id: number; message: string }>;
 };
 
-type EditState = {
-  subject_id: number | null;
-  question_type: string;
-  stem: string;
-  options: Array<{ key: string; text: string; segments?: Array<Record<string, unknown>> }>;
-  answer: string;
-  analysis: string;
-  multiBlank?: {
-    groups: BlankOptionGroup[];
-    answerMap: BlankAnswerMap;
-    usesSharedOptions: boolean;
-    sharedOptions: import("./components/multi-blank-choice-utils").BlankOption[];
-    dedupWarnings?: string[];
-    dedupErrors?: string[];
-    hasUnappliedDraft?: boolean;
-  };
-};
-
-function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Array<{ key: string; text: string; segments?: Array<Record<string, unknown>> }> {
-  if (!item) return [];
-  const raw = item.raw_data;
-  const source = item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
-  if (!source || (Array.isArray(source) && source.length === 0)) {
-    if (isMultiBlankChoice(item.question_type ?? "")) {
-      const groups = normalizeBlankOptionGroups(
-        item.parsed_content?.blank_option_groups ?? (item.raw_data as Record<string, unknown> | undefined)?.blank_option_groups,
-      );
-      return groups.flatMap((g) => g.options);
-    }
-    return [];
-  }
-  if (Array.isArray(source)) {
-    return source
-      .map((entry, index) => {
-        if (typeof entry === "string") {
-          const key = String.fromCharCode(65 + index);
-          return { key, text: entry };
-        }
-        if (entry && typeof entry === "object") {
-          const obj = entry as Record<string, unknown>;
-          const key = String(obj.key ?? obj.label ?? obj.name ?? String.fromCharCode(65 + index));
-          const text = String(obj.text ?? obj.content ?? obj.value ?? obj.stem ?? "");
-          const segments = obj.segments && Array.isArray(obj.segments) && obj.segments.length > 0 ? obj.segments : undefined;
-          return { key, text, segments };
-        }
-        return { key: String.fromCharCode(65 + index), text: "" };
-      })
-      .filter((opt) => Boolean(opt.key));
-  }
-  if (typeof source === "object") {
-    return Object.entries(source as Record<string, unknown>)
-      .map(([key, value]) => {
-        if (value && typeof value === "object" && "text" in (value as Record<string, unknown>)) {
-          // Rich format: {"A": {"text": "...", "segments": [...]}}
-          const v = value as Record<string, unknown>;
-          return {
-            key,
-            text: String(v.text ?? value ?? ""),
-            segments: v.segments && Array.isArray(v.segments) && v.segments.length > 0 ? v.segments : undefined,
-          };
-        }
-        return { key, text: typeof value === "string" ? value : String(value ?? "") };
-      })
-      .filter((opt) => Boolean(opt.key));
-  }
-  return [];
-}
-
 function isStandardMultiChoice(questionType: string): boolean {
   return canonicalizeQuestionType(questionType) === "multiple_choice";
-}
-
-function isMultiBlankChoice(questionType: string): boolean {
-  const code = canonicalizeQuestionType(questionType);
-  return code === "multi_blank_choice" || code === "multi_blank_multiple_choice";
 }
 
 /** 多空（多选）选择题：每空可选多个选项 */
 function isMultiBlankMultipleChoice(questionType: string): boolean {
   return canonicalizeQuestionType(questionType) === "multi_blank_multiple_choice";
-}
-
-function textFromImport(item: ImportQuestionItem | null | undefined) {
-  if (!item) return "";
-  const content = item.parsed_content;
-  const raw = item.raw_data;
-  const candidate = content?.stem ?? content?.text ?? content?.question ?? raw?.stem ?? raw?.text ?? raw?.question;
-  if (typeof candidate === "string") return candidate;
-  return "";
 }
 
 function renderJson(value: unknown) {
@@ -343,43 +255,6 @@ function statusTone(status: string) {
   if (status === "rejected") return "danger";
   if (status === "published") return "primary";
   return "warning";
-}
-
-function editStateFromItem(item: ImportQuestionItem): EditState {
-  const state: EditState = {
-    subject_id: item.subject_id ?? null,
-    question_type: item.question_type || "",
-    stem: textFromImport(item),
-    options: parseOptionsToEditable(item),
-    answer: item.parsed_answer || "",
-    analysis: item.parsed_analysis || "",
-  };
-  if (isMultiBlankChoice(state.question_type)) {
-    const extracted = extractMultiBlankSource(item as unknown as Record<string, unknown>);
-    if (extracted.groups.length >= 2) {
-      const groupIds = extracted.groups.map((g) => g.id);
-      const answerMap = parseBlankAnswer(extracted.answer, groupIds);
-      const shared = groupIds.length >= 2 && haveIdenticalOptionSets(extracted.groups);
-      state.multiBlank = {
-        groups: extracted.groups,
-        answerMap,
-        usesSharedOptions: shared,
-        sharedOptions: shared ? getSharedOptions(extracted.groups) : [],
-        dedupWarnings: extracted.warnings.length > 0 ? extracted.warnings : undefined,
-        dedupErrors: extracted.errors.length > 0 ? extracted.errors : undefined,
-      };
-    } else {
-      // Fallback: use raw parsed_answer and empty groups
-      state.multiBlank = {
-        groups: [],
-        answerMap: {},
-        usesSharedOptions: false,
-        sharedOptions: [],
-        dedupErrors: extracted.errors.length > 0 ? extracted.errors : undefined,
-      };
-    }
-  }
-  return state;
 }
 
 async function _batchExecute<T>(ids: number[], concurrency: number, fn: (id: number) => Promise<T>): Promise<PromiseSettledResult<T>[]> {
