@@ -4,6 +4,50 @@ import { describe, expect, it } from "vitest";
 
 const modules = [
   {
+    path: "./question-version-comparison.ts",
+    imports: ["@/lib/api/types", "@/lib/question-options", "@/lib/question-types"],
+  },
+  {
+    path: "./components/question-difficulty-badge.tsx",
+    imports: ["lucide-react"],
+  },
+  {
+    path: "./components/question-version-value.tsx",
+    imports: [
+      "@/components/ui/math-formula", "@/components/question-content-renderer",
+      "@/components/question-options", "@/components/questions/question-analysis",
+      "@/components/questions/question-knowledge-points-editor",
+      "@/lib/question-options", "@/lib/api/types", "../question-content-editing",
+      "../question-version-comparison", "./question-difficulty-badge",
+    ],
+  },
+  {
+    path: "./components/question-version-diff.tsx",
+    imports: ["../question-version-comparison", "./question-version-value"],
+  },
+  {
+    path: "./components/question-version-comparison.tsx",
+    imports: ["lucide-react", "../question-version-comparison", "./question-version-diff"],
+  },
+  {
+    path: "./question-segment-editing.ts",
+    imports: ["@/lib/api/types", "./question-content-editing"],
+  },
+  {
+    path: "./components/question-code-editor.tsx",
+    imports: [
+      "lucide-react", "@/components/ui/button",
+      "../question-content-editing", "../question-segment-editing",
+    ],
+  },
+  {
+    path: "./components/question-table-editors.tsx",
+    imports: [
+      "@/components/structured-table-editor", "@/lib/structured-table",
+      "../question-content-editing",
+    ],
+  },
+  {
     path: "./question-edit-draft.ts",
     imports: ["@/lib/api/types", "@/lib/question-options", "./question-content-editing"],
   },
@@ -41,7 +85,7 @@ const modules = [
 ];
 
 function violations(source: string, allowed: string[]) {
-  const file = ts.createSourceFile("query.ts", source, ts.ScriptTarget.Latest, true);
+  const file = ts.createSourceFile("query.tsx", source, ts.ScriptTarget.Latest, true);
   const result: string[] = [];
   function walk(node: ts.Node) {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -77,6 +121,10 @@ describe("question query feature boundaries", () => {
   it.each(modules)("detects reverse imports and request bypasses for $path", (module) => {
     expect(violations('import Page from "./page";', module.imports)).toEqual(["./page"]);
     expect(violations('fetch("/questions");', module.imports)).toEqual(["fetch"]);
+    expect(violations(
+      'const View = () => <button onClick={() => fetch("/questions")} />;',
+      module.imports,
+    )).toEqual(["fetch"]);
     expect(violations('import Store from "@/lib/auth/auth-store";', module.imports))
       .toEqual(["@/lib/auth/auth-store"]);
   });

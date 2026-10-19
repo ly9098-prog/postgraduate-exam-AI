@@ -13,7 +13,6 @@ import {
   AlertCircle,
   Search,
   BookOpen,
-  BarChart3,
   Tag,
   Layers,
   Clock,
@@ -88,6 +87,8 @@ import { createQuestionEditDraft } from "./question-edit-draft";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionTableEditors } from "./components/question-table-editors";
+import { DifficultyBadge } from "./components/question-difficulty-badge";
+import { QuestionVersionComparison } from "./components/question-version-comparison";
 import { buildQuestionEditPatch } from "./question-edit-patch";
 import { questionDetailOptions } from "./question-queries";
 import {
@@ -188,123 +189,6 @@ function fallbackQuestionImageUrls(
     fallbackUrls.set(key, raw);
   });
   return Array.from(fallbackUrls.values());
-}
-
-function renderJson(value: unknown) {
-  if (value === undefined || value === null || value === "") return "—";
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  )
-    return String(value);
-  return JSON.stringify(value, null, 2);
-}
-
-function renderVersionValue(label: string, value: unknown, emphasized = false) {
-  if (label === "题干") {
-    const content = value as Record<string, unknown> | string | null | undefined;
-    return (
-      <div className={`min-w-0 text-slate-600 [overflow-wrap:anywhere] ${emphasized ? "text-sm leading-7" : "text-xs leading-6"}`}>
-        <QuestionContentRenderer
-          content={content}
-          fallbackText={textFromContent(content)}
-          preserveCodeText
-        />
-      </div>
-    );
-  }
-
-  if (label === "选项") {
-    const blankGroups = normalizeBlankOptionGroups(value);
-    if (blankGroups.length > 0) {
-      return <MultiBlankQuestionOptions groups={blankGroups} />;
-    }
-
-    const options = normalizeQuestionOptions(value as QuestionOptionsValue | undefined);
-    if (options.length === 0) return <span className="text-xs text-slate-400">—</span>;
-    return (
-      <div className="space-y-1.5">
-        {options.map((option) => (
-          <div key={option.key} className="flex items-start gap-2 text-xs leading-5 text-slate-600">
-            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded bg-slate-100 font-semibold text-slate-500">
-              {option.key}
-            </span>
-            <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-              <MathFormula text={option.text || "—"} />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (label === "答案") {
-    return (
-      <div className="min-w-0 text-xs leading-6 text-slate-600 [overflow-wrap:anywhere]">
-        <MathFormula text={value == null || value === "" ? "—" : String(value)} />
-      </div>
-    );
-  }
-
-  if (label === "解析") {
-    return (
-      <div className="min-w-0 text-xs [&_*]:max-w-full">
-        <QuestionAnalysis
-          value={typeof value === "string" ? value : value ? JSON.stringify(value) : ""}
-          compact
-        />
-      </div>
-    );
-  }
-
-  if (label === "知识点") {
-    return <QuestionKnowledgePointsDisplay value={Array.isArray(value) ? value : []} />;
-  }
-
-  if (label === "难度") {
-    const difficulty = Number(value);
-    return Number.isFinite(difficulty) ? <DifficultyBadge difficulty={difficulty} /> : <span className="text-xs text-slate-400">—</span>;
-  }
-
-  const text = renderJson(value);
-  return <div className="whitespace-pre-wrap break-words text-xs leading-6 text-slate-600">{text}</div>;
-}
-
-function renderDiff(
-  label: string,
-  leftValue: unknown,
-  rightValue: unknown,
-  leftTitle: string,
-  rightTitle: string,
-) {
-  const left = renderJson(leftValue);
-  const right = renderJson(rightValue);
-  const changed = left !== right;
-  return (
-    <section key={label} className={`rounded-xl border border-slate-200 bg-white ${label === "解析" ? "p-3" : "p-4"}`}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-slate-900">{label}</p>
-        <span className={`rounded-md px-2 py-1 text-[10px] font-medium ${changed ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
-          {changed ? "有变更" : "无变更"}
-        </span>
-      </div>
-      {changed ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className={`min-w-0 rounded-lg bg-amber-50/70 ${label === "解析" ? "p-2.5" : "p-3"}`}>
-            <p className="mb-2 text-[10px] font-semibold tracking-wide text-amber-700">{leftTitle}</p>
-            {renderVersionValue(label, leftValue)}
-          </div>
-          <div className={`min-w-0 rounded-lg bg-emerald-50/60 ${label === "解析" ? "p-2.5" : "p-3"}`}>
-            <p className="mb-2 text-[10px] font-semibold tracking-wide text-emerald-700">{rightTitle}</p>
-            {renderVersionValue(label, rightValue)}
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-lg bg-slate-50 p-3">{renderVersionValue(label, leftValue, label === "题干")}</div>
-      )}
-    </section>
-  );
 }
 
 function isMultiChoice(questionType: string): boolean {
@@ -482,32 +366,6 @@ function renderSecondaryQuestionInfo(question: QuestionWithImport) {
         </div>
       ) : null}
     </details>
-  );
-}
-
-/** Difficulty pill */
-function DifficultyBadge({
-  difficulty,
-}: {
-  difficulty: number | string | null | undefined;
-}) {
-  const d = Number(difficulty) || 0;
-  const colors = [
-    "bg-emerald-50 text-emerald-700 border-emerald-200",
-    "bg-green-50 text-green-700 border-green-200",
-    "bg-amber-50 text-amber-700 border-amber-200",
-    "bg-orange-50 text-orange-700 border-orange-200",
-    "bg-red-50 text-red-700 border-red-200",
-  ];
-  const idx = Math.min(Math.max(Math.round(d) - 1, 0), colors.length - 1);
-  const label = ["简单", "较易", "中等", "较难", "困难"];
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${colors[idx]}`}
-    >
-      <BarChart3 className="h-3 w-3" />
-      {label[idx] ?? d}
-    </span>
   );
 }
 
@@ -2859,92 +2717,16 @@ export default function QuestionsPage() {
                               </p>
                             </div>
 
-                            {compareVersion !== null && baseVersionData && compareVersionData ? (
-                              <div className="relative mt-4 [overflow-anchor:none]">
-                                {versionComparisonLoading ? (
-                                  <div className="mb-2 flex justify-end">
-                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-500">
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                      正在切换到 {pendingVersionLabel ?? "所选版本"}
-                                    </span>
-                                  </div>
-                                ) : null}
-                                <div
-                                  key={`${baseVersionLabel}-${compareVersionLabel}`}
-                                  className={`space-y-3 transition-opacity duration-200 ${
-                                    versionComparisonLoading ? "opacity-60" : "animate-fade-in opacity-100"
-                                  }`}
-                                >
-                                  {renderDiff(
-                                    "题干",
-                                    baseVersionData.content,
-                                    compareVersionData.content,
-                                    baseVersionLabel,
-                                    compareVersionLabel,
-                                  )}
-                                  {renderDiff(
-                                    "选项",
-                                    isMultiBlankChoice(selectedQuestion.question_type)
-                                      ? resolveBlankOptionGroupsValue(baseVersionData.content)
-                                      : (baseVersionData.options ?? null),
-                                    isMultiBlankChoice(selectedQuestion.question_type)
-                                      ? resolveBlankOptionGroupsValue(compareVersionData.content)
-                                      : (compareVersionData.options ?? null),
-                                    baseVersionLabel,
-                                    compareVersionLabel,
-                                  )}
-                                  {renderDiff(
-                                    "答案",
-                                    baseVersionData.answer,
-                                    compareVersionData.answer,
-                                    baseVersionLabel,
-                                    compareVersionLabel,
-                                  )}
-                                  {renderDiff(
-                                    "解析",
-                                    baseVersionData.analysis ?? null,
-                                    compareVersionData.analysis ?? null,
-                                    baseVersionLabel,
-                                    compareVersionLabel,
-                                  )}
-                                  {renderDiff(
-                                    "难度",
-                                    baseVersionData.difficulty,
-                                    compareVersionData.difficulty,
-                                    baseVersionLabel,
-                                    compareVersionLabel,
-                                  )}
-                                  {renderDiff(
-                                    "知识点",
-                                    baseVersionData.knowledge_points ?? null,
-                                    compareVersionData.knowledge_points ?? null,
-                                    baseVersionLabel,
-                                    compareVersionLabel,
-                                  )}
-                                  <details className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 transition-colors hover:border-slate-300">
-                                    <summary className="cursor-pointer select-none text-xs font-medium text-slate-500 hover:text-slate-700">
-                                      查看原始版本数据
-                                    </summary>
-                                    <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-white p-3 text-[11px] leading-5 text-slate-500">
-                                      {JSON.stringify(
-                                        {
-                                          [baseVersionLabel]: baseVersionData,
-                                          [compareVersionLabel]: compareVersionData,
-                                        },
-                                        null,
-                                        2,
-                                      )}
-                                    </pre>
-                                  </details>
-                                </div>
-                              </div>
-                            ) : versionComparisonLoading ? (
-                              <div className="mt-4 space-y-3 animate-pulse">
-                                <div className="h-24 rounded-xl border border-slate-200 bg-slate-50/60" />
-                                <div className="h-20 rounded-xl border border-slate-200 bg-slate-50/60" />
-                                <div className="h-20 rounded-xl border border-slate-200 bg-slate-50/60" />
-                              </div>
-                            ) : null}
+                            <QuestionVersionComparison
+                              enabled={compareVersion !== null}
+                              questionType={selectedQuestion.question_type}
+                              left={baseVersionData}
+                              right={compareVersionData}
+                              leftTitle={baseVersionLabel}
+                              rightTitle={compareVersionLabel}
+                              loading={versionComparisonLoading}
+                              pendingLabel={pendingVersionLabel}
+                            />
                           </>
                         )}
                       </div>
