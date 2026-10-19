@@ -9,7 +9,13 @@ from pydantic import ValidationError
 
 from app.api.v1 import practice as route
 from app.services import recommendation_log_service
-from app.services.practice import batch_issuance, final_candidates, issued_response
+from app.services.practice import (
+    batch_issuance,
+    final_candidates,
+    issued_response,
+    question_issuance,
+    request_observability,
+)
 from app.services.practice.candidate_selection import (
     PracticeCandidateRequest,
     PracticeCandidates,
@@ -112,10 +118,10 @@ def pipeline(monkeypatch):
     signer = Mock(side_effect=sign)
     monkeypatch.setattr(route.svc, "create_practice_batch_token", signer)
     monkeypatch.setattr(
-        route, "debug_log", Mock(side_effect=lambda *a: events.append("debug"))
+        request_observability, "debug_log", Mock(side_effect=lambda *a: events.append("debug"))
     )
     monkeypatch.setattr(
-        route,
+        request_observability,
         "save_debug_snapshot",
         Mock(side_effect=lambda *a: events.append("snapshot")),
     )
@@ -222,8 +228,8 @@ async def test_failure_never_commits_early(pipeline, failure):
         "sign": pipeline.signer,
         "views": pipeline.views,
         "kps": pipeline.kps,
-        "debug": route.debug_log,
-        "snapshot": route.save_debug_snapshot,
+        "debug": request_observability.debug_log,
+        "snapshot": request_observability.save_debug_snapshot,
         "cleanup": pipeline.db.execute,
         "commit": pipeline.db.commit,
     }[failure]
@@ -364,6 +370,35 @@ async def test_cleanup_uses_final_signed_set(pipeline):
     ) == {1}
     assert [q.id for q in pipeline.signer.call_args.kwargs["questions"]] == [1]
     pipeline.db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_empty_sequential_batch_releases_all_unused_claims(pipeline):
+    pipeline.guard.side_effect = lambda *args, **kwargs: []
+    response = await call_route(pipeline)
+    assert response.total == 0
+    assert not pipeline.db.execute.call_args.args[0].compile().params["question_id_1"]
+    assert pipeline.events[-4:] == ["debug", "snapshot", "cleanup", "commit"]
+
+
+@pytest.mark.asyncio
+async def test_scope_logging_failure_precedes_signing_and_commit(pipeline, monkeypatch):
+    monkeypatch.setattr(
+        question_issuance, "log_practice_scope", Mock(side_effect=RuntimeError("scope log")),
+    )
+    with pytest.raises(RuntimeError, match="scope log"):
+        await call_route(pipeline)
+    pipeline.signer.assert_not_called()
+    pipeline.db.execute.assert_not_awaited()
+    pipeline.db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_similar_fallback_uses_effective_mode_without_commit(pipeline):
+    response = await call_route(pipeline, mode="similar", source_question_id=None)
+    assert response.mode == "random"
+    assert pipeline.signer.call_args.kwargs["mode"] == "random"
+    pipeline.db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

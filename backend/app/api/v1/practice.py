@@ -1,14 +1,12 @@
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
-from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.log_context import get_log_context, normalize_trace_id
 from app.core.security import get_current_user
-from app.models.sequential_reservation import SequentialReservation
 from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.practice import (
@@ -26,33 +24,16 @@ from app.schemas.practice import (
 )
 from app.services import practice_service as svc
 from app.services.knowledge_point_service import load_question_kps  # noqa: F401
-from app.services.practice.batch_issuance import (
-    PracticeIssueContext,
-    build_signed_practice_response,
+from app.services.practice.candidate_selection import PracticeCandidateError
+from app.services.practice.final_candidates import PracticeCandidateConflictError
+from app.services.practice.issued_response import IncompletePracticeRevisionError
+from app.services.practice.question_issuance import (
+    issue_practice_questions,
+    release_unissued_reservations,
 )
-from app.services.practice.candidate_schedule import filter_due_candidates
-from app.services.practice.candidate_selection import (
-    PracticeCandidateError,
-    PracticeCandidateRequest,
-    select_practice_candidates,
-)
-from app.services.practice.final_candidates import (
-    PracticeCandidateConflictError,
-    prepare_final_candidates,
-)
-from app.services.practice.issued_response import (
-    IncompletePracticeRevisionError,
-)
-from app.services.practice.request_filters import (
-    PracticeRequestFilterError,
-    parse_targeted_question_ids,
-    validate_knowledge_point_filters,
-)
-from app.services.practice.request_scope import (
-    PracticeScopeNotFoundError,
-    resolve_knowledge_filter,
-    resolve_subject_scope,
-)
+from app.services.practice.request_assembly import PracticeQuestionsRequest
+from app.services.practice.request_filters import PracticeRequestFilterError
+from app.services.practice.request_scope import PracticeScopeNotFoundError
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 logger = logging.getLogger(__name__)
@@ -99,186 +80,49 @@ async def get_practice_questions(
     response.headers["Cache-Control"] = "private, no-store, max-age=0"
     response.headers["Pragma"] = "no-cache"
 
-    try:
-        subject_scope = await resolve_subject_scope(
-            db, subject_id=subject_id, include_children=include_children, mode=mode,
-        )
-    except PracticeScopeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except PracticeRequestFilterError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    subject_code = subject_scope.code
-    has_enabled_children = subject_scope.has_enabled_children
-    scope_subject_ids = subject_scope.subject_ids
-
-    # 始终使用 subject_code（字符串）作查询参数，避免与 VARCHAR 列比较时类型不匹配
-    subject_for_query: str = subject_code
-
-    trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
-    try:
-        validate_knowledge_point_filters(
-            knowledge_point=knowledge_point,
-            knowledge_point_id=knowledge_point_id,
-            include_descendants=include_descendants,
-            mode=mode,
-        )
-    except PracticeRequestFilterError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    try:
-        knowledge_filter = await resolve_knowledge_filter(
-            db,
-            knowledge_point=knowledge_point,
-            knowledge_point_id=knowledge_point_id,
-            subject_ids=scope_subject_ids,
-            include_descendants=include_descendants,
-        )
-    except PracticeScopeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    knowledge_scope = knowledge_filter.scope
-    knowledge_point_ids = knowledge_filter.point_ids
-    kps = knowledge_filter.names
-
-    try:
-        targeted_question_ids = parse_targeted_question_ids(
-            question_ids,
-            source_question_id=source_question_id,
-            knowledge_points=kps,
-            knowledge_point_ids=knowledge_point_ids,
-            mode=mode,
-        )
-    except PracticeRequestFilterError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if targeted_question_ids:
-        # A targeted retry is an explicit set, not a candidate pool.  Honour
-        # every requested id (the client may omit ``count`` or leave its
-        # generic default in place) and make the signed session count match
-        # that immutable set instead of silently truncating it.
-        count = len(targeted_question_ids)
-
-    candidate_request = PracticeCandidateRequest(
+    request = PracticeQuestionsRequest(
         user_id=current_user.id,
         subject_id=subject_id,
-        subject_code=subject_for_query,
-        subject_ids=scope_subject_ids,
+        include_children=include_children,
         count=count,
         mode=mode,
-        knowledge_points=kps,
-        knowledge_point_ids=knowledge_point_ids,
+        knowledge_point=knowledge_point,
+        knowledge_point_id=knowledge_point_id,
         include_descendants=include_descendants,
         exclude_answered=exclude_answered,
         no_repeat_days=no_repeat_days,
         use_leitner=use_leitner,
         source_question_id=source_question_id,
-        targeted_question_ids=targeted_question_ids,
+        question_ids=question_ids,
         start_request_id=start_request_id,
         smart_strategy=smart_strategy,
+        plan_token=plan_token,
+        trace_header=x_trace_id,
     )
-    try:
-        candidates = await select_practice_candidates(db, candidate_request)
-    except PracticeCandidateError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await _issue_questions_response(db, request)
 
-    mode = candidates.mode
-    questions = await filter_due_candidates(
-        db,
-        candidate_request,
-        candidates.questions,
-        mode=mode,
-    )
-    question_metadata = candidates.metadata
-    request_id = candidates.request_id
-    sequential_reservation_request_id = candidates.reservation_request_id
-    # Validate immutable revisions and the final subject scope before signing.
+
+async def _issue_questions_response(
+    db: AsyncSession, request: PracticeQuestionsRequest,
+) -> PracticeQuestionsResponse:
     try:
-        final_candidates = await prepare_final_candidates(
-            db,
-            candidate_request,
-            questions,
-            mode=mode,
-            metadata=question_metadata,
-            request_id=request_id,
-        )
+        batch = await issue_practice_questions(db, request)
+    except PracticeScopeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (PracticeRequestFilterError, PracticeCandidateError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PracticeCandidateConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    questions = final_candidates.questions
-    final_question_ids = {int(question.id) for question in questions}
-    # ── 结构化日志：刷题请求范围与分布 ──
-    scope_desc = "聚合" if len(scope_subject_ids) > 1 else "精确"
-    from collections import Counter
-
-    subject_distribution = dict(Counter(q.subject_id for q in questions))
-    logger.info(
-        "[PRACTICE_SCOPE] subject_id=%s subject_code=%s include_children=%s "
-        "include_descendants=%s knowledge_scope_size=%d has_children=%s "
-        "scope=%s scope_ids=%s mode=%s count=%d result_count=%d subject_distribution=%s",
-        subject_id,
-        subject_code,
-        include_children,
-        include_descendants,
-        len(knowledge_point_ids or []),
-        has_enabled_children,
-        scope_desc,
-        scope_subject_ids,
-        mode,
-        count,
-        len(questions),
-        subject_distribution,
-    )
-    try:
-        response = await build_signed_practice_response(
-            db,
-            candidate_request,
-            candidates,
-            final_candidates,
-            PracticeIssueContext(
-                trace_id=trace_id,
-                knowledge_scope=knowledge_scope,
-                knowledge_point_id=knowledge_point_id,
-                plan_token=plan_token,
-                question_ids=question_ids,
-            ),
-        )
     except IncompletePracticeRevisionError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    debug_log(
-        trace_id,
-        "API_RESPONSE",
-        {
-            "endpoint": "practice/questions",
-            "subject_id": subject_id,
-            "count": len(questions),
-        },
-    )
-    save_debug_snapshot(
-        trace_id,
-        "api_response",
-        {
-            "endpoint": "practice/questions",
-            "subject_id": subject_id,
-            "question_ids": [q.id for q in questions],
-            "total": len(questions),
-        },
-    )
-    if mode == "sequential":
-        # A revision/scope guard may remove a question after reservation.  Do
-        # not leave a lease for an item that was never included in the signed
-        # response; the whole cleanup remains in this request transaction.
-        await db.execute(
-            delete(SequentialReservation).where(
-                SequentialReservation.user_id == current_user.id,
-                SequentialReservation.subject_id == subject_id,
-                SequentialReservation.start_request_id
-                == sequential_reservation_request_id,
-                SequentialReservation.question_id.notin_(final_question_ids),
-            )
+    if batch.mode == "sequential":
+        await release_unissued_reservations(
+            db, user_id=request.user_id, subject_id=request.subject_id, batch=batch,
         )
-        # Reservation writes are intentionally committed only after the full
-        # response has been assembled. Any exception before this point causes
-        # the request transaction to roll back and leaves no ghost claims.
+        # Commit only after signing, serialization and diagnostics all succeed.
+        # The request dependency rolls back failures before this point.
         await db.commit()
-    return response
+    return batch.response
 
 
 @router.post(

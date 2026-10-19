@@ -119,6 +119,7 @@ def test_practice_pure_rules_avoid_transport_and_database_imports(filename):
 @pytest.mark.parametrize("filename", [
     "request_scope.py", "candidate_selection.py", "candidate_schedule.py",
     "final_candidates.py", "batch_issuance.py", "issued_response.py",
+    "request_assembly.py", "request_observability.py", "question_issuance.py",
 ])
 def test_practice_orchestration_avoids_transport_imports(filename):
     target = BACKEND / "services" / "practice" / filename
@@ -139,6 +140,32 @@ def test_practice_orchestration_avoids_transport_imports(filename):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
         and node.func.attr in {"commit", "rollback"}
     ], "Practice orchestration must not take ownership of the request transaction"
+
+
+@pytest.mark.parametrize("filename", [
+    "request_assembly.py", "request_observability.py", "question_issuance.py",
+])
+def test_practice_issuance_module_size(filename):
+    source = (BACKEND / "services" / "practice" / filename).read_text(encoding="utf-8")
+    assert len(source.splitlines()) <= 300
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.end_lineno - node.lineno + 1 <= 50
+
+
+def test_practice_get_route_only_adapts_protocol_and_inputs():
+    source = (BACKEND / "api" / "v1" / "practice.py").read_text(encoding="utf-8")
+    route = next(
+        node for node in ast.parse(source).body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "get_practice_questions"
+    )
+    assert route.end_lineno - route.lineno + 1 <= 50
+    calls = [node.func for stmt in route.body for node in ast.walk(stmt)
+             if isinstance(node, ast.Call)]
+    assert all(isinstance(call, ast.Name) for call in calls)
+    assert {call.id for call in calls} == {
+        "PracticeQuestionsRequest", "_issue_questions_response",
+    }
 
 
 @pytest.mark.parametrize("exists", [False, True])
