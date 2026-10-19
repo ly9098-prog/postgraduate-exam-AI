@@ -4,6 +4,19 @@ import { describe, expect, it } from "vitest";
 
 const modules = [
   {
+    path: "./question-option-editing.ts",
+    imports: ["@/lib/api/types", "@/lib/question-options", "./question-content-editing"],
+  },
+  {
+    path: "./components/question-option-editor.tsx",
+    imports: [
+      "lucide-react", "@/components/ui/button",
+      "@/components/questions/question-image-field", "@/components/questions/quick-add-options",
+      "../question-option-editing", "@/lib/question-options", "@/lib/question-types",
+      "@/lib/api/types", "react",
+    ],
+  },
+  {
     path: "./question-editor-events.ts",
     imports: [],
   },

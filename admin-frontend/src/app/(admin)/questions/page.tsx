@@ -26,7 +26,6 @@ import {
   Star,
   ArrowLeft,
   ArrowLeftRight,
-  Plus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -39,24 +38,18 @@ import { QuestionImageField } from "@/components/questions/question-image-field"
 import { QuestionAnalysis } from "@/components/questions/question-analysis";
 import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
 import { QuestionKnowledgePointsDisplay, QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
-import { QuickAddOptions } from "@/components/questions/quick-add-options";
 import {
   QuestionVersionPicker,
   type QuestionVersionSelection,
 } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
-  addBlankOptionToAllGroups,
-  addBlankOptionToGroup,
-  extractBlankSlotIds,
   normalizeBlankOptionGroups,
   normalizeQuestionOptions,
   parseMultiBlankChoiceAnswer,
   resolveBlankOptionGroupsValue,
   resolveQuestionBlankOptionGroups,
   resolveQuestionOptions,
-  reuseFirstBlankOptions,
-  updateBlankOptionGroupText,
   updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
@@ -70,7 +63,6 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import type {
   AdminQuestion,
   AdminQuestionImportSummary,
-  QuestionOptionsValue,
 } from "@/lib/api/types";
 
 import {
@@ -85,6 +77,7 @@ import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mu
 import { useQuestionEditor } from "./hooks/use-question-editor";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
+import { QuestionOptionEditor } from "./components/question-option-editor";
 import { QuestionTableEditors } from "./components/question-table-editors";
 import { DifficultyBadge } from "./components/question-difficulty-badge";
 import { QuestionVersionComparison } from "./components/question-version-comparison";
@@ -107,7 +100,6 @@ import {
 import {
   codeSegmentText,
   comparableText,
-  contentRecord,
   contentSegments,
   isCodeSegment,
   isPlainImageSegment,
@@ -115,6 +107,7 @@ import {
   textForStemEditor,
   textFromContent,
 } from "./question-content-editing";
+import { optionsToKeyValueList } from "./question-option-editing";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -201,15 +194,6 @@ function isMultiBlankMultipleChoice(questionType: string): boolean {
   return canonicalizeQuestionType(questionType) === "multi_blank_multiple_choice";
 }
 
-function blankOptionGroupsStorageField(
-  content: unknown,
-): "blank_option_groups" | "blank_groups" {
-  const record = contentRecord(content);
-  if (record.blank_option_groups != null) return "blank_option_groups";
-  if (record.blank_groups != null) return "blank_groups";
-  return "blank_option_groups";
-}
-
 function normalizedChoiceAnswerKeys(answer: string | null | undefined): string[] {
   const seen = new Set<string>();
   return String(answer ?? "")
@@ -251,40 +235,6 @@ function QuestionAnswerDisplay({
   }
 
   return <MathFormula text={answer || "—"} />;
-}
-
-function optionsToKeyValueList(
-  options: QuestionOptionsValue | undefined,
-): Array<{ key: string; text: string }> {
-  return normalizeQuestionOptions(options).map((option) => ({
-    key: option.key,
-    text: option.text ?? "",
-  }));
-}
-
-function optionStorageKey(
-  options: QuestionOptionsValue | undefined,
-  key: string,
-): string {
-  if (!options || typeof options !== "object" || Array.isArray(options)) return key;
-  const normalizedKey = key.trim().toUpperCase();
-  return (
-    Object.keys(options).find(
-      (candidate) => candidate.trim().toUpperCase() === normalizedKey,
-    ) ?? key
-  );
-}
-
-function optionImageUrl(
-  options: QuestionOptionsValue | undefined,
-  key: string,
-): string | null {
-  if (!options || typeof options !== "object" || Array.isArray(options)) return null;
-  const storageKey = optionStorageKey(options, key);
-  const value = (options as Record<string, unknown>)[storageKey];
-  if (!value || typeof value !== "object") return null;
-  const norm = normalizeQuestionOptions({ [storageKey]: value });
-  return norm[0]?.imageUrl ?? null;
 }
 
 type QuestionWithImport = AdminQuestion & {
@@ -1921,271 +1871,15 @@ export default function QuestionsPage() {
                     onAdd={addEditingCodeSegment}
                   />
 
-                  {/* Options inline editor */}
-                  {(() => {
-                    const qtype = canonicalizeQuestionType(editForm.question_type ?? "");
-
-                    if (qtype === "multi_blank_choice" || qtype === "multi_blank_multiple_choice") {
-                      const groups = normalizeBlankOptionGroups(
-                        resolveBlankOptionGroupsValue(editForm.content),
-                      );
-                      const totalOptions = groups.reduce(
-                        (sum, group) => sum + group.options.length,
-                        0,
-                      );
-                      const inferredBlankIds = extractBlankSlotIds(editStemText);
-                      const canAddSharedOption =
-                        groups.length > 0 || inferredBlankIds.length > 0;
-                      const addSharedOption = () => {
-                        setEditForm((current) => {
-                          const currentContent = contentRecord(current.content);
-                          const field = blankOptionGroupsStorageField(currentContent);
-                          const rawGroups = resolveBlankOptionGroupsValue(currentContent);
-                          return {
-                            ...current,
-                            content: {
-                              ...currentContent,
-                              [field]: addBlankOptionToAllGroups(
-                                rawGroups,
-                                extractBlankSlotIds(editStemText),
-                              ),
-                            },
-                          };
-                        });
-                      };
-                      const reuseFirstOptions = (targetGroupId?: string) => {
-                        setEditForm((current) => {
-                          const currentContent = contentRecord(current.content);
-                          const field = blankOptionGroupsStorageField(currentContent);
-                          const rawGroups = resolveBlankOptionGroupsValue(currentContent);
-                          return {
-                            ...current,
-                            content: {
-                              ...currentContent,
-                              [field]: reuseFirstBlankOptions(rawGroups, targetGroupId),
-                            },
-                          };
-                        });
-                      };
-
-                      return (
-                        <section className="border-b border-slate-200 py-5">
-                          <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-950">选项</p>
-                              <p className="mt-1 text-[11px] text-slate-400">
-                                按空位编辑分组选项；顶部按钮会向所有空位添加同一字母选项
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                              <span className="mr-1 text-[11px] tabular-nums text-slate-400">
-                                {groups.length} 个空位 · {totalOptions} 个选项
-                              </span>
-                              {groups.length > 1 ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="secondary"
-                                  className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
-                                  disabled={groups[0].options.length === 0}
-                                  title="用第一空的选项覆盖其余所有空位的选项"
-                                  onClick={() => reuseFirstOptions()}
-                                >
-                                  <Copy className="h-3.5 w-3.5" />
-                                  全部复用第一空
-                                </Button>
-                              ) : null}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
-                                disabled={!canAddSharedOption || groups.some((group) => group.options.length >= 26)}
-                                onClick={addSharedOption}
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                                添加选项
-                              </Button>
-                            </div>
-                          </div>
-
-                          {groups.length === 0 ? (
-                            <div className="mb-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-4 text-sm text-[var(--color-text-hint)]">
-                              {inferredBlankIds.length > 0
-                                ? `已从题干识别 ${inferredBlankIds.length} 个空位，点击“添加选项”创建分组选项。`
-                                : "未从题干识别到空位标记，请先使用（ ）、① 或 ___ 标记空位。"}
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {groups.map((group) => (
-                                <div
-                                  key={group.id}
-                                  className="overflow-hidden rounded-lg border border-slate-200 bg-white"
-                                >
-                                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
-                                        {group.id}
-                                      </span>
-                                      <span className="text-xs font-medium text-slate-600">该空选项</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      {group.id !== groups[0].id ? (
-                                        <button
-                                          type="button"
-                                          className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
-                                          title={`用第一空（${groups[0].id}）的选项覆盖当前空位`}
-                                          onClick={() => reuseFirstOptions(group.id)}
-                                        >
-                                          <Copy className="h-3 w-3" />
-                                          复用第一空
-                                        </button>
-                                      ) : null}
-                                      <span className="text-[10px] text-slate-400">
-                                        {group.options.length} 项
-                                      </span>
-                                    </div>
-                                  </div>
-                                  {group.options.map((opt) => (
-                                    <div
-                                      key={`${group.id}-${opt.key}`}
-                                      className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5"
-                                    >
-                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">
-                                        {opt.key}
-                                      </span>
-                                      <input
-                                        className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm text-slate-800 outline-none placeholder:text-slate-300 focus:ring-0"
-                                        value={opt.text ?? ""}
-                                        placeholder="请输入选项内容"
-                                        onChange={(e) => {
-                                          const nextText = e.target.value;
-                                          setEditForm((current) => {
-                                            const currentContent = contentRecord(current.content);
-                                            const field = blankOptionGroupsStorageField(currentContent);
-                                            const rawGroups = resolveBlankOptionGroupsValue(currentContent);
-                                            return {
-                                              ...current,
-                                              content: {
-                                                ...currentContent,
-                                                [field]: updateBlankOptionGroupText(
-                                                  rawGroups,
-                                                  group.id,
-                                                  opt.key,
-                                                  nextText,
-                                                ),
-                                              },
-                                            };
-                                          });
-                                        }}
-                                      />
-                                    </div>
-                                  ))}
-                                  <div className="flex items-center justify-between gap-3 bg-slate-50/40 px-3 py-2.5">
-                                    <span className="text-[10px] text-slate-400">
-                                      自动使用下一个可用字母
-                                    </span>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
-                                      disabled={group.options.length >= 26}
-                                      onClick={() => {
-                                        setEditForm((current) => {
-                                          const currentContent = contentRecord(current.content);
-                                          const field = blankOptionGroupsStorageField(currentContent);
-                                          const rawGroups = resolveBlankOptionGroupsValue(currentContent);
-                                          return {
-                                            ...current,
-                                            content: {
-                                              ...currentContent,
-                                              [field]: addBlankOptionToGroup(rawGroups, group.id),
-                                            },
-                                          };
-                                        });
-                                      }}
-                                    >
-                                      <Plus className="h-3.5 w-3.5" />
-                                      添加选项
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    }
-
-                    const optList = optionsToKeyValueList(editForm.options);
-                    const isChoiceType = qtype === "single_choice" || qtype === "multiple_choice";
-                    return (
-                      <section className="border-b border-slate-200 py-5">
-                        <div className="mb-4 flex items-end justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-950">选项</p>
-                            <p className="mt-1 text-[11px] text-slate-400">逐项编辑文字或补充选项图片</p>
-                          </div>
-                          <span className="text-[11px] tabular-nums text-slate-400">{optList.length} 个选项</span>
-                        </div>
-                        {optList.length === 0 ? (
-                          <p className="mb-3 text-sm text-[var(--color-text-hint)]">
-                            暂无可编辑选项
-                          </p>
-                        ) : (
-                          <div className="mb-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                            {optList.map((opt, index) => {
-                              const imgUrl = optionImageUrl(editForm.options, opt.key);
-                              return (
-                                <div key={index} className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0">
-                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">
-                                    {opt.key}
-                                  </span>
-                                  <input
-                                    className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm text-slate-800 outline-none placeholder:text-slate-300 focus:ring-0"
-                                    value={opt.text}
-                                    onChange={(e) => {
-                                      const currentOptions = (editForm.options ?? {}) as Record<string, unknown>;
-                                      const storageKey = optionStorageKey(editForm.options, opt.key);
-                                      const prevValue = currentOptions[storageKey];
-                                      const nextValue =
-                                        prevValue && typeof prevValue === "object" && !Array.isArray(prevValue)
-                                          ? { ...(prevValue as Record<string, unknown>), text: e.target.value }
-                                          : e.target.value;
-                                      setEditForm({
-                                        ...editForm,
-                                        options: { ...currentOptions, [storageKey]: nextValue },
-                                      });
-                                    }}
-                                  />
-                                  <QuestionImageField
-                                    questionId={selectedQuestionId!}
-                                    target={`option:${opt.key}`}
-                                    valueUrl={imgUrl}
-                                    canDelete={!!imgUrl}
-                                    addLabel="上传图片"
-                                    dirty={dirty}
-                                    beforeDirtyMutation={prepareImmediateQuestionMutation}
-                                    variant="row"
-                                    onMutated={handleQuestionMutated}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <QuickAddOptions
-                          questionId={selectedQuestionId!}
-                          existingKeys={optList.map((o) => o.key)}
-                          disabled={!isChoiceType}
-                          dirty={dirty}
-                          beforeDirtyMutation={prepareImmediateQuestionMutation}
-                          onMutated={handleQuestionMutated}
-                        />
-                      </section>
-                    );
-                  })()}
+                  <QuestionOptionEditor
+                    editForm={editForm}
+                    editStemText={editStemText}
+                    setEditForm={setEditForm}
+                    selectedQuestionId={selectedQuestionId!}
+                    dirty={dirty}
+                    beforeDirtyMutation={prepareImmediateQuestionMutation}
+                    onMutated={handleQuestionMutated}
+                  />
 
                   {/* Answer editor */}
                   {isMultiBlankChoice(editForm.question_type ?? "") ? (
