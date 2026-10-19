@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前二十四批已提交；阶段 0/1 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前二十五批已提交；阶段 0/1 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -502,3 +502,12 @@
 - 管理端 `npm run typecheck`、`npm run test`（41 个文件/717 项）、`npm run lint`（0 错误/132 警告）及 `npm run build` 通过；定向 2 个测试文件/8 项通过。严格 ESLint 对新增 hook、测试与边界文件为 0 警告，页面现有 18 条警告与此前该文件基线一致。后端 `python3 -m compileall -q app`、`ruff check app/ --ignore I001,F401,N818` 和 `git diff --check` 通过。
 - 按 review-agent 的只读缺陷审查流程核对完整 diff、请求错误包装、回调与缓存写入顺序、页面调用点及 QueryClient 测试：No findings。未运行真实后台浏览器人工交互、后端集成、微信开发者工具/真机、PostgreSQL/Redis 或生产集成。
 - 本批独立本地提交，仅含管理端页面/hook/测试与架构/任务记录；不推送、不夹带工作区既有文档、日志、小程序配置和资源删除。批量答案、图片导入、页面展示职责与全栈其余阶段仍待继续。
+
+## 三十一、第二十五批执行记录：导入审核文本批量答案 mutation
+
+- 新增 `imports/review/hooks/use-review-batch-answer-mutations.ts`，承接文本批量答案预览/应用请求、加载/错误生命周期与审核队列缓存失效；页面继续拥有原始文本草稿、预览/结果状态和展示。图片答案导入仍是独立工作流，本批不合并两个协议。
+- 保留预览路径、POST 方法、trim 后的 `raw_text` 与 `allow_partial_prefix: true`；应用继续发送预览 token 与空字符串回退的 operation id。应用成功先接纳结果，再失效 `import-review-queue`；失败保留预览并展示原错误，不触发缓存失效。pending 状态从 mutation 派生，事件处理使用不向 React 事件回调泄漏 rejection 的 `mutate`。
+- 新增 4 项真实 QueryClient mutation 回归，覆盖预览请求/生命周期、预览失败、应用请求及结果/失效顺序、应用失败不失效；扩展审核页边界测试，禁止页面重新内联文本批量答案接口。
+- 验证：管理端 `npm run check` 通过，含 typecheck、全量 test（42 个文件/722 项）、lint（0 错误/132 警告）和 production build；后端全应用 Ruff 与 compileall 通过；`git diff --cached --check` 通过。新增 hook、测试与边界测试严格 ESLint 检查通过。
+- 按 review-agent 只读缺陷审查流程核对完整暂存 diff、请求协议、hook 回调/缓存时序、页面调用点和新增 QueryClient 测试：No findings。该结论不代表真实后台浏览器、后端集成、微信开发者工具/真机、PostgreSQL/Redis 或生产集成已验证。
+- 本批不改后端 API、图片导入、小程序、数据库或生产配置。独立本地提交，不推送；完整目标仍未完成：全量业务盘点、审核图片/展示职责、小程序 controller、后端学习域/队列/OCR 与阶段 4 长期门禁继续待实施。

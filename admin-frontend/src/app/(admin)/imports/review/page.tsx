@@ -42,6 +42,7 @@ import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
+import { useReviewBatchAnswerMutations } from "./hooks/use-review-batch-answer-mutations";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -317,7 +318,6 @@ export default function ImportReviewPage() {
   const [batchAnswerRawText, setBatchAnswerRawText] = useState("");
   const [batchAnswerPreview, setBatchAnswerPreview] = useState<BatchAnswerPreviewResponse | null>(null);
   const [batchAnswerApplyResult, setBatchAnswerApplyResult] = useState<BatchAnswerApplyResponse | null>(null);
-  const [batchAnswerExecuting, setBatchAnswerExecuting] = useState(false);
   const [batchAnswerError, setBatchAnswerError] = useState<string | null>(null);
 
   // Phase 2: 图片导入
@@ -631,48 +631,36 @@ export default function ImportReviewPage() {
     },
   );
 
-  const handleBatchAnswerPreview = useCallback(async () => {
-    if (!currentBatchId || !batchAnswerRawText.trim()) return;
-    setBatchAnswerExecuting(true);
-    setBatchAnswerError(null);
-    setBatchAnswerPreview(null);
-    setBatchAnswerApplyResult(null);
-    try {
-      const result = await apiRequest<BatchAnswerPreviewResponse>(`/imports/${currentBatchId}/answers/preview`, {
-        method: "POST",
-        body: JSON.stringify({ raw_text: batchAnswerRawText.trim(), allow_partial_prefix: true }),
-      });
-      setBatchAnswerPreview(result);
-    } catch (error) {
-      // 处理结构化错误（error_code + detail）和普通错误
-      const msg = error instanceof Error ? error.message : "预览失败";
-      setBatchAnswerError(msg);
-    } finally {
-      setBatchAnswerExecuting(false);
-    }
-  }, [currentBatchId, batchAnswerRawText]);
+  const { preview: previewBatchAnswerMutation, apply: applyBatchAnswerMutation } =
+    useReviewBatchAnswerMutations(apiRequest, {
+      onPreviewStarted: () => {
+        setBatchAnswerError(null);
+        setBatchAnswerPreview(null);
+        setBatchAnswerApplyResult(null);
+      },
+      onPreviewed: setBatchAnswerPreview,
+      onPreviewError: (error) => setBatchAnswerError(error instanceof Error ? error.message : "预览失败"),
+      onApplyStarted: () => setBatchAnswerError(null),
+      onApplied: setBatchAnswerApplyResult,
+      onApplyError: (error) => setBatchAnswerError(error instanceof Error ? error.message : "写入失败"),
+    });
+  const { mutate: previewBatchAnswers, isPending: isPreviewingBatchAnswers } = previewBatchAnswerMutation;
+  const { mutate: applyBatchAnswers, isPending: isApplyingBatchAnswers } = applyBatchAnswerMutation;
+  const batchAnswerExecuting = isPreviewingBatchAnswers || isApplyingBatchAnswers;
 
-  const handleBatchAnswerApply = useCallback(async () => {
-    if (!batchAnswerPreview?.preview_token) return;
-    setBatchAnswerExecuting(true);
-    setBatchAnswerError(null);
-    try {
-      const result = await apiRequest<BatchAnswerApplyResponse>(`/imports/${currentBatchId}/answers/apply`, {
-        method: "POST",
-        body: JSON.stringify({
-          preview_token: batchAnswerPreview.preview_token,
-          operation_id: batchAnswerPreview.operation_id || "",
-        }),
-      });
-      setBatchAnswerApplyResult(result);
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "写入失败";
-      setBatchAnswerError(msg);
-    } finally {
-      setBatchAnswerExecuting(false);
-    }
-  }, [currentBatchId, batchAnswerPreview, queryClient]);
+  const handleBatchAnswerPreview = useCallback(() => {
+    if (!currentBatchId || !batchAnswerRawText.trim()) return;
+    previewBatchAnswers({ batchId: currentBatchId, rawText: batchAnswerRawText });
+  }, [currentBatchId, batchAnswerRawText, previewBatchAnswers]);
+
+  const handleBatchAnswerApply = useCallback(() => {
+    if (!currentBatchId || !batchAnswerPreview?.preview_token) return;
+    applyBatchAnswers({
+      batchId: currentBatchId,
+      previewToken: batchAnswerPreview.preview_token,
+      operationId: batchAnswerPreview.operation_id || "",
+    });
+  }, [currentBatchId, batchAnswerPreview, applyBatchAnswers]);
 
   const handleBatchAnswerReset = useCallback(() => {
     setBatchAnswerRawText("");

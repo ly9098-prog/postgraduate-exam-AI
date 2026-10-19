@@ -20,6 +20,10 @@ const modules = [
     imports: ["@tanstack/react-query", "@/lib/api/types"],
   },
   {
+    path: "./hooks/use-review-batch-answer-mutations.ts",
+    imports: ["@tanstack/react-query", "@/lib/api/types"],
+  },
+  {
     path: "./review-save-request.ts",
     imports: [
       "@/lib/api/types",
@@ -69,5 +73,7 @@ describe("review action feature boundaries", () => {
     expect(source).not.toContain("batchIdempotencyKeysRef");
     expect(source).not.toContain("buildMultiBlankSavePayload");
     expect(source).not.toContain('answer_status: "manual_verified"');
+    expect(source).not.toContain("/answers/preview");
+    expect(source).not.toContain("/answers/apply");
   });
 });
