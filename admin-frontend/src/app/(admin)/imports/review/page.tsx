@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, Upload, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import { apiRequest, toQuery } from "@/lib/api/client";
 import { hasVisualSegments, isImageSegmentType, getSegmentTypeLabel, reorderSegmentUp, reorderSegmentDown, moveSegment, deleteSegmentAtIndex, updateSegOptionKey, updateSegUrl } from "@/lib/segment-utils";
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
 import type { SelectOption } from "@/components/ui/custom-select";
-import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
   getMultiBlankSaveState,
   reduceMultiBlankEditState,
@@ -41,6 +41,7 @@ import {
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
+import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -585,34 +586,25 @@ export default function ImportReviewPage() {
     },
   });
 
-  const completeMutation = useMutation({
-    mutationFn: async (id: number) => {
-      try {
-        return await apiRequest<AdminImportCompleteResponse>(`/imports/questions/${id}/complete`, { method: "POST" });
-      } catch (e) {
-        throw new Error(`题目 #${id} 补全失败：${e instanceof Error ? e.message : "未知错误"}`);
-      }
-    },
-    onSuccess: (result) => {
+  const completeMutation = useReviewCompleteMutation(apiRequest, {
+    onCompleted: (result) => {
       const missingFields = result.missing.length > 0 ? `（补全字段：${result.missing.join("、")}）` : "";
       setMessage(
         result.missing.length === 0
           ? "当前题目信息已完整，无需补全。"
           : `AI 补全完成${missingFields}，请复核后保存/通过。`,
       );
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+    },
+    onDetailSynced: (result) => {
       // Keep the active drawer in sync immediately.  The detail query has higher
       // precedence than completedItem, so leaving its old cache entry in place
       // makes freshly completed parsed_analysis look as if it was never saved.
-      queryClient.setQueryData(["import-question-detail", result.item.id], result.item);
       syncedDetailRef.current.add(result.item.id);
       setPreviewId(result.item.id);
       setCompletedItem(result.item);
       setEditState(editStateFromItem(result.item));
     },
-    onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。");
-    },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。"),
   });
 
   const { quickAnswer: quickAnswerMutation, verifyAnswer: verifyAnswerMutation } = useReviewAnswerMutations(

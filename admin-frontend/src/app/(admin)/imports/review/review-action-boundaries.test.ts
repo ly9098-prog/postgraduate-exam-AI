@@ -16,6 +16,10 @@ const modules = [
     imports: ["@tanstack/react-query", "@/lib/api/types"],
   },
   {
+    path: "./hooks/use-review-complete-mutation.ts",
+    imports: ["@tanstack/react-query", "@/lib/api/types"],
+  },
+  {
     path: "./review-save-request.ts",
     imports: [
       "@/lib/api/types",
