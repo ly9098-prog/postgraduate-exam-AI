@@ -71,7 +71,6 @@ import { buildQuestionCopyText } from "@/lib/question-copy";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import type {
   AdminQuestion,
-  AdminQuestionDetail,
   AdminQuestionImportSummary,
   QuestionEditRequest,
   QuestionOptionsValue,
@@ -80,14 +79,15 @@ import type {
 import {
   exportQuestions,
   fetchSubjectOptions,
-  updateQuestion,
   type BatchDeleteResult,
 } from "./question-api";
 
 import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
 import { useQuestionUpdate } from "./hooks/use-question-update";
+import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
+import { createQuestionEditDraft } from "./question-edit-draft";
 import { buildQuestionEditPatch } from "./question-edit-patch";
-import { questionDetailOptions, questionKeys } from "./question-queries";
+import { questionDetailOptions } from "./question-queries";
 import {
   useQuestionDetail,
   useQuestionList,
@@ -112,7 +112,6 @@ import {
   isCodeSegment,
   isPlainImageSegment,
   isStemTextSegment,
-  normalizeStemForEditing,
   segmentType,
   textForStemEditor,
   textFromContent,
@@ -595,7 +594,6 @@ export default function QuestionsPage() {
   const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const moreFilterRef = useRef<HTMLDivElement | null>(null);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
-  const draftSavePromiseRef = useRef<Promise<boolean> | null>(null);
 
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
@@ -849,107 +847,15 @@ export default function QuestionsPage() {
     return Object.keys(buildQuestionEditPatch(editForm, selectedQuestion, editStemText)).length > 0;
   }, [editForm, editStemText, selectedQuestion]);
 
-  const mergeQuestionIntoDetailCache = useCallback(
-    (question: AdminQuestion) => {
-      if (selectedQuestionId === null) return;
-      queryClient.setQueryData<AdminQuestionDetail>(
-        questionKeys.detail(selectedQuestionId),
-        (current) =>
-          current
-            ? { ...current, ...question, import_record: current.import_record ?? null }
-            : (question as AdminQuestionDetail),
-      );
-    },
-    [queryClient, selectedQuestionId],
-  );
-
-  // Called after an immediate-write image/option mutation: adopt the fresh
-  // content/options so the next "保存" does not overwrite the just-written change.
-  const handleQuestionMutated = useCallback(
-    (question: AdminQuestion) => {
-      setEditForm((current) => ({
-        ...current,
-        content: contentRecord(question.content),
-        options: question.options ?? undefined,
-      }));
-      // Keep detail-only fields (notably import_record) while adopting the
-      // mutation response. Replacing the detail cache with a list-item response
-      // temporarily erased that metadata until the refetch completed.
-      mergeQuestionIntoDetailCache(question);
-      queryClient.invalidateQueries({ queryKey: questionKeys.scope(selectedQuestionId) });
-      queryClient.invalidateQueries({ queryKey: questionKeys.all });
-    },
-    [mergeQuestionIntoDetailCache, queryClient, selectedQuestionId],
-  );
-
-  const prepareImmediateQuestionMutation = useCallback(async (): Promise<boolean> => {
-    if (!dirty) return true;
-    if (selectedQuestionId === null) {
-      setMessage("未选中题目，无法保存当前修改。");
-      return false;
-    }
-    if (unresolvedEditingTableCount > 0) {
-      setMessage("请先完成结构化表格核验，再继续图片或选项操作。");
-      return false;
-    }
-    if (emptyEditingCodeCount > 0) {
-      setMessage("请先填写或删除空代码块，再继续图片或选项操作。");
-      return false;
-    }
-    if (draftSavePromiseRef.current) return draftSavePromiseRef.current;
-
-    const task = (async () => {
-      try {
-        if (!selectedQuestion) {
-          setMessage("题目详情尚未加载完成，无法保存当前修改。");
-          return false;
-        }
-        const patch = buildQuestionEditPatch(editForm, selectedQuestion, editStemText);
-        if (Object.keys(patch).length === 0) return true;
-        const question = await updateQuestion(selectedQuestionId, patch);
-        mergeQuestionIntoDetailCache(question);
-        setEditForm({
-          subject_id: question.subject_id ?? null,
-          question_type: question.question_type || "",
-          difficulty: question.difficulty,
-          answer: question.answer || "",
-          analysis: question.analysis || "",
-          options: question.options ?? undefined,
-          content: contentRecord(question.content),
-          knowledge_points: question.knowledge_points ?? undefined,
-        });
-        setEditStemText(normalizeStemForEditing(textForStemEditor(question.content)));
-        queryClient.invalidateQueries({ queryKey: questionKeys.all });
-        queryClient.invalidateQueries({ queryKey: questionKeys.scope(selectedQuestionId) });
-        setMessage("已先保存当前修改，将继续执行该操作。");
-        return true;
-      } catch (error) {
-        setMessage(
-          error instanceof Error
-            ? `当前修改保存失败：${error.message}`
-            : "当前修改保存失败，请稍后重试。",
-        );
-        return false;
-      }
-    })();
-
-    draftSavePromiseRef.current = task;
-    try {
-      return await task;
-    } finally {
-      draftSavePromiseRef.current = null;
-    }
-  }, [
+  const { handleQuestionMutated, prepareImmediateQuestionMutation } = useQuestionImmediateMutations({
+    questionId: selectedQuestionId,
+    question: selectedQuestion,
     dirty,
-    editForm,
-    editStemText,
-    emptyEditingCodeCount,
-    mergeQuestionIntoDetailCache,
-    queryClient,
-    selectedQuestion,
-    selectedQuestionId,
-    unresolvedEditingTableCount,
-  ]);
+    form: editForm,
+    stemText: editStemText,
+    unresolvedTableCount: unresolvedEditingTableCount,
+    emptyCodeCount: emptyEditingCodeCount,
+  }, { setForm: setEditForm, setStemText: setEditStemText, setMessage });
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -1249,46 +1155,9 @@ export default function QuestionsPage() {
 
   const startEditing = () => {
     if (!selectedQuestion) return;
-    // Pre-fill form from current question data
-    const content = selectedQuestion.content;
-    // Legacy questions can still store content as a plain string. Spreading a
-    // cloned string into an object produces numeric character keys ("0",
-    // "1", ...), which are then persisted on save. Normalize that legacy
-    // shape before constructing the edit form so opening the editor can never
-    // corrupt otherwise valid content.
-    const clonedRaw = JSON.parse(JSON.stringify(content ?? {})) as unknown;
-    const clonedContent = contentRecord(clonedRaw);
-    // Keep the persisted content snapshot untouched. The textarea has its own
-    // display/edit state so OCR layout-only newlines can be hidden without
-    // making the form dirty or rewriting content on unrelated edits.
-    const editableContent = typeof clonedRaw === "string"
-      ? { stem: clonedRaw, text: clonedRaw }
-      : clonedContent;
-    setEditStemText(normalizeStemForEditing(textForStemEditor(editableContent)));
-    const rawOpts = resolveQuestionOptions(selectedQuestion);
-    let editOpts: Record<string, unknown> | undefined;
-    if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
-      editOpts = rawOpts as Record<string, unknown>;
-    } else if (rawOpts) {
-      // Convert array/string to Record for editing compatibility
-      const norm = normalizeQuestionOptions(rawOpts);
-      editOpts = Object.fromEntries(
-        norm.map((o) => [
-          o.key,
-          o.imageUrl ? { text: o.text ?? "", url: o.imageUrl } : (o.text ?? ""),
-        ]),
-      );
-    }
-    setEditForm({
-      subject_id: selectedQuestion.subject_id ?? null,
-      question_type: selectedQuestion.question_type || "",
-      difficulty: selectedQuestion.difficulty,
-      answer: selectedQuestion.answer || "",
-      analysis: selectedQuestion.analysis || "",
-      options: editOpts,
-      content: editableContent,
-      knowledge_points: selectedQuestion.knowledge_points ?? undefined,
-    });
+    const draft = createQuestionEditDraft(selectedQuestion);
+    setEditStemText(draft.stemText);
+    setEditForm(draft.form);
     setEditing(true);
     window.requestAnimationFrame(() => {
       detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });

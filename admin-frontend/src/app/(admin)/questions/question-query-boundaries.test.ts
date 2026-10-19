@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 
 const modules = [
   {
+    path: "./question-edit-draft.ts",
+    imports: ["@/lib/api/types", "@/lib/question-options", "./question-content-editing"],
+  },
+  {
     path: "./question-edit-patch.ts",
     imports: ["@/lib/api/types", "@/lib/question-options", "./question-content-editing"],
   },
@@ -25,6 +29,14 @@ const modules = [
   {
     path: "./hooks/use-question-delete.ts",
     imports: ["react", "@tanstack/react-query", "../question-api", "../question-queries"],
+  },
+  {
+    path: "./hooks/use-question-immediate-mutations.ts",
+    imports: [
+      "react", "@tanstack/react-query", "@/lib/api/types", "../question-api",
+      "../question-content-editing", "../question-edit-draft",
+      "../question-edit-patch", "../question-queries",
+    ],
   },
 ];
 
@@ -75,7 +87,7 @@ describe("question query feature boundaries", () => {
     const forbidden = new Set([
       "useQuery", "fetchQuestions", "fetchQuestionDetail",
       "fetchQuestionVersions", "fetchQuestionVersionDetail", "useMutation",
-      "deleteQuestion", "deleteQuestionBatch",
+      "deleteQuestion", "deleteQuestionBatch", "updateQuestion",
     ]);
     const calls: string[] = [];
     function walk(node: ts.Node) {
