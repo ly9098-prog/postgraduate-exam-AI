@@ -26,8 +26,8 @@ from app.core.time_utils import shanghai_date_utc_range, shanghai_today, utcnow
 from app.models.ai_chat import AiChat
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
-from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import load_question_kps
+from app.services.subject_resolution import resolve_subject_ids
 
 # ============================================================
 # Token 用量控制

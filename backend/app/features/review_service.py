@@ -137,7 +137,7 @@ async def _batch_find_duplicate_questions(
 
     # Resolve legacy string subjects to IDs (batch)
     str_subjects = list({s for s, _ in unique_pairs if isinstance(s, str)})
-    from app.services.admin_subject_service import resolve_subject_id
+    from app.services.subject_resolution import resolve_subject_id
 
     subject_code_map: dict[str, int] = {}
     for code in str_subjects:
@@ -195,7 +195,7 @@ async def _batch_find_duplicate_imports(
 
     # Resolve legacy string subjects to IDs (batch)
     str_subjects = list({s for s, _ in unique_pairs if isinstance(s, str)})
-    from app.services.admin_subject_service import resolve_subject_id
+    from app.services.subject_resolution import resolve_subject_id
 
     subject_code_map: dict[str, int] = {}
     for code in str_subjects:
@@ -289,7 +289,7 @@ async def submit_to_review(
     # Resolve legacy subject string to subject_id if needed (once per batch)
     if not subject_id and subject:
         try:
-            from app.services.admin_subject_service import resolve_subject_id
+            from app.services.subject_resolution import resolve_subject_id
 
             resolved = await resolve_subject_id(db, subject)
             if resolved is not None:

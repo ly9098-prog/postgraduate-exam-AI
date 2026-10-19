@@ -133,7 +133,7 @@ async def enrich_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
 
     normalized = normalize_enrich(extract_json(raw) or {})
     if normalized.get("subject") and not qi.subject_id:
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         resolved = await resolve_subject_id(db, normalized["subject"])
         if resolved is not None:
@@ -225,7 +225,7 @@ async def generate_drafts(
         raise ValueError("question_type 仅支持 choice / fill / subjective")
     count = max(1, min(10, count))
 
-    from app.services.admin_subject_service import resolve_subject_id
+    from app.services.subject_resolution import resolve_subject_id
 
     resolved_subject_id = await resolve_subject_id(db, subject_code)
     if resolved_subject_id is None:
@@ -438,7 +438,7 @@ async def _apply_complete_suggestion(
     suggestion: dict = {}
     if "subject_id" in missing and parsed.get("subject") in SUBJECT_VALUES:
         if db is not None:
-            from app.services.admin_subject_service import resolve_subject_id
+            from app.services.subject_resolution import resolve_subject_id
 
             resolved = await resolve_subject_id(db, parsed["subject"])
         else:

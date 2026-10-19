@@ -1041,13 +1041,13 @@ class TestResolveSubjectIdsIncludeDescendants:
 
     def test_include_descendants_false_returns_exact(self):
         """include_descendants=False 只返回当前 subject_id。"""
-        from app.services.admin_subject_service import resolve_subject_ids
+        from app.services.subject_resolution import resolve_subject_ids
 
         db = MagicMock()
         db.get = AsyncMock(return_value=self._make_subject(10, "ds", parent_id=1))
 
         with patch(
-            "app.services.admin_subject_service.resolve_subject_id",
+            "app.services.subject_resolution.resolve_subject_id",
             new_callable=AsyncMock,
             return_value=10,
         ):
@@ -1056,7 +1056,7 @@ class TestResolveSubjectIdsIncludeDescendants:
 
     def test_include_descendants_true_includes_children(self):
         """include_descendants=True（默认）包含后代。"""
-        from app.services.admin_subject_service import resolve_subject_ids
+        from app.services.subject_resolution import resolve_subject_ids
 
         subjects = [
             self._make_subject(1, "cs", parent_id=None),
@@ -1067,7 +1067,7 @@ class TestResolveSubjectIdsIncludeDescendants:
         db = MagicMock()
         # resolve_subject_id → 1
         with patch(
-            "app.services.admin_subject_service.resolve_subject_id",
+            "app.services.subject_resolution.resolve_subject_id",
             new_callable=AsyncMock,
             return_value=1,
         ):
@@ -1089,11 +1089,11 @@ class TestResolveSubjectIdsIncludeDescendants:
 
 def test_resolve_subject_ids_default_include_descendants():
     """resolve_subject_ids 无 include_descendants 参数时保持向后兼容。"""
-    from app.services.admin_subject_service import resolve_subject_ids
+    from app.services.subject_resolution import resolve_subject_ids
 
     db = MagicMock()
     with patch(
-        "app.services.admin_subject_service.resolve_subject_id",
+        "app.services.subject_resolution.resolve_subject_id",
         new_callable=AsyncMock,
         return_value=1,
     ):

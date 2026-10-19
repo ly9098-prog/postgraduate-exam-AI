@@ -11,11 +11,11 @@ from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
-from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import (
     load_question_kps,
     normalize_knowledge_name,
 )
+from app.services.subject_resolution import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 

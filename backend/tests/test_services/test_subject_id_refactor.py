@@ -207,7 +207,7 @@ class TestAICompleteSubjectId:
 
         mock_db = AsyncMock()
         with patch(
-            "app.services.admin_subject_service.resolve_subject_id",
+            "app.services.subject_resolution.resolve_subject_id",
             AsyncMock(return_value=7),
         ):
             completed = await _apply_batch_complete_result(
@@ -232,7 +232,7 @@ class TestAICompleteSubjectId:
 
         mock_db = AsyncMock()
         with patch(
-            "app.services.admin_subject_service.resolve_subject_id",
+            "app.services.subject_resolution.resolve_subject_id",
             AsyncMock(return_value=None),
         ):
             completed = await _apply_batch_complete_result(

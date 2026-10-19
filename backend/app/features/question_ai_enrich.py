@@ -128,7 +128,7 @@ async def enrich_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
         if normalized.get("subject_id"):
             qi.subject_id = normalized["subject_id"]
         elif normalized.get("subject"):
-            from app.services.admin_subject_service import resolve_subject_id
+            from app.services.subject_resolution import resolve_subject_id
 
             resolved = await resolve_subject_id(db, normalized["subject"])
             if resolved is not None:
@@ -333,7 +333,7 @@ async def enrich_batch(
             if normalized.get("subject_id"):
                 qi.subject_id = normalized["subject_id"]
             elif normalized.get("subject"):
-                from app.services.admin_subject_service import resolve_subject_id
+                from app.services.subject_resolution import resolve_subject_id
 
                 resolved = await resolve_subject_id(db, normalized["subject"])
                 if resolved is not None:

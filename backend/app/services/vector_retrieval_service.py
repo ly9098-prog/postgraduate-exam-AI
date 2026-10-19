@@ -18,8 +18,8 @@ from app.core.config import settings
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.services import embedding_service
-from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import load_question_kps
+from app.services.subject_resolution import resolve_subject_ids
 from app.services.vector_config_service import EmbeddingConfig, VectorSearchConfig
 
 logger = logging.getLogger("postgraduate-ai.vector_retrieval")

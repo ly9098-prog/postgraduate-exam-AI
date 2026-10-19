@@ -48,7 +48,6 @@ from app.models.question_import import (
 )
 from app.models.sequential_reservation import SequentialReservation
 from app.models.syllabus import SyllabusKnowledgePoint
-from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import (
     kp_any_condition,
     kp_exact_conditions,
@@ -82,6 +81,7 @@ from app.services.question_revision_service import (
     latest_question_revision_scope_condition,
     load_latest_question_revision_ids,
 )
+from app.services.subject_resolution import resolve_subject_ids
 from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
     is_answer_correct,

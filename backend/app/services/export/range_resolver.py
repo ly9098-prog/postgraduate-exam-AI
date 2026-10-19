@@ -46,7 +46,7 @@ async def _apply_filters(
         return query
 
     if subject := filters.get("subject"):
-        from app.services.admin_subject_service import resolve_subject_ids
+        from app.services.subject_resolution import resolve_subject_ids
 
         subject_ids = await resolve_subject_ids(db, subject)
         if subject_ids:

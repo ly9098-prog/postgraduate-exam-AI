@@ -221,7 +221,7 @@ class GlobalHashIndex:
             return self._question_index.get((subject, question_hash))
 
         from app.models.question import Question
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         resolved = await resolve_subject_id(db, subject)
         if resolved is None:
@@ -251,7 +251,7 @@ class GlobalHashIndex:
             return self._import_index.get((subject, question_hash))
 
         from app.models.question_import import QuestionImport
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         resolved = await resolve_subject_id(db, subject)
         if resolved is None:

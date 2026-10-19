@@ -10,7 +10,7 @@ from app.core.time_utils import shanghai_date_utc_range, shanghai_today
 from app.models.recommendation_experiment import RecommendationExperiment
 from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
-from app.services.admin_subject_service import resolve_subject_ids
+from app.services.subject_resolution import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 

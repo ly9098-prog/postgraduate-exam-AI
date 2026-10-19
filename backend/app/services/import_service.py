@@ -661,7 +661,7 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
     subject_id = data.get("subject_id") or qi.subject_id
     if not subject_id and data.get("subject"):
         # Legacy subject string → resolve to subject_id
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         subject_id = await resolve_subject_id(db, data["subject"])
     question_type = data.get("question_type", qi.question_type)

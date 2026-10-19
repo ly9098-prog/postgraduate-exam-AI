@@ -17,7 +17,7 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
-from app.services.admin_subject_service import resolve_subject_ids
+from app.services.subject_resolution import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.question import Question
-from app.services.admin_subject_service import resolve_subject_ids
+from app.services.subject_resolution import resolve_subject_ids
 from app.utils.question_content import reconcile_student_stem_fields
 
 

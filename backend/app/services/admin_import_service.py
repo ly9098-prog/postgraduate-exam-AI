@@ -703,7 +703,7 @@ async def list_review_queue(
     sort: str | None = None,
 ) -> tuple[list[AdminImportQuestionItemBrief], int]:
     from app.models.admin import Subject
-    from app.services.admin_subject_service import resolve_subject_id
+    from app.services.subject_resolution import resolve_subject_id
 
     if subject and subject_id is None:
         resolved = await resolve_subject_id(db, subject)
@@ -852,7 +852,7 @@ async def update_import_question(
 
     # Legacy subject → subject_id conversion
     if "subject" in payload and "subject_id" not in payload:
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         resolved = await resolve_subject_id(db, payload.pop("subject"))
         if resolved is not None:

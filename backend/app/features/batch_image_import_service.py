@@ -1696,7 +1696,7 @@ async def reparse_item_from_cache(
     # If still no subject_id, try resolving legacy subject string
     if not effective_subject_id and effective_subject_code:
         try:
-            from app.services.admin_subject_service import resolve_subject_id
+            from app.services.subject_resolution import resolve_subject_id
 
             effective_subject_id = await resolve_subject_id(db, effective_subject_code)
         except Exception:

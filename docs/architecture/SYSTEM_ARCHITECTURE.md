@@ -23,6 +23,7 @@
 | `backend/app/api/v1/practice.py` | `backend/app/services/practice/request_filters.py`、`request_scope.py` | 请求筛选解析、学科/知识点范围解析与错误优先级由无路由依赖的模块负责；路由保留 HTTP 映射，范围模块复用既有 `practice_service` 查询，不新增事务所有者 |
 | `backend/app/api/v1/practice.py` | `backend/app/services/practice/candidate_selection.py`、`candidate_schedule.py` | 显式候选请求/结果承接策略分流及推荐日志容错；到期筛选负责 Leitner 复核与补题。复用既有 provider，不持有 HTTP 或最终发题事务 |
 | `backend/app/api/v1/practice.py` | `backend/app/services/practice/final_candidates.py`、`batch_issuance.py`、`issued_response.py` | 最终守卫校验版本/学科及定向集合并对齐曝光；签名模块构建知识与计划归因上下文；响应模块只消费签发版本。路由保留 HTTP 映射、观测及响应成功后的顺序预约清理/提交 |
+| 公共学习、共享查询与导入服务的科目解析 | `backend/app/services/subject_resolution.py` | 严格 ID/code 解析及包含停用后代的范围查询由中立模块提供；不依赖 Admin service、HTTP 或会话工厂，不写库/提交事务。Admin 写入与审计仍留在 `admin_subject_service.py` |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 同目录 `question-list-state.ts`、`question-api.ts`、`question-content-editing.ts` | URL/筛选、请求协议和题干编辑规则分别就近聚合；内容模块仅依赖已有代码识别规则，负责结构化文本、旧字段回退及代码块同步。页面保留 Query 缓存、mutation 回调、最小 PATCH、幂等键生命周期、权限、草稿与下载 UI；尚未抽取 hooks |
 | `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js` | 时间计算、存储异常适配和待同步队列分别由无页面依赖模块负责；Page 仍负责 `api.now()`、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
 

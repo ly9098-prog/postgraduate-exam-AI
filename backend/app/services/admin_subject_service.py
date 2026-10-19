@@ -432,67 +432,6 @@ def _sync_descendant_paths(subjects: list[Subject], root: Subject) -> None:
     walk(root)
 
 
-# ---------------------------------------------------------------------------
-# Strict subject resolver
-# ---------------------------------------------------------------------------
-
-
-async def resolve_subject_id(db: AsyncSession, subject: str | int | None) -> int | None:
-    """Resolve a subject id or an exact canonical ``subjects.code`` value.
-
-    No suffix, name, or alias fallback is performed. Invalid/stale codes return
-    ``None`` so callers fail visibly instead of masking data-contract drift.
-    """
-    if subject is None:
-        return None
-    if isinstance(subject, int):
-        subj = await db.get(Subject, subject)
-        return subject if subj else None
-
-    key = str(subject).strip().lower()
-    if not key:
-        return None
-    return (
-        await db.execute(select(Subject.id).where(Subject.code == key).limit(1))
-    ).scalar_one_or_none()
-
-
-async def resolve_subject_ids(
-    db: AsyncSession,
-    subject: str | int | None,
-    include_descendants: bool = True,
-) -> list[int]:
-    """Resolve a canonical subject and optionally its descendants."""
-    sid = await resolve_subject_id(db, subject)
-    if sid is None:
-        return []
-    if not include_descendants:
-        return [sid]
-
-    all_subjs = (
-        (
-            await db.execute(
-                select(Subject).order_by(
-                    Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc()
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    subjects_list = list(all_subjs)
-
-    descendant_ids = {sid}
-    children = _children_by_parent(subjects_list)
-    stack = list(children.get(sid, []))
-    while stack:
-        node = stack.pop()
-        descendant_ids.add(node.id)
-        stack.extend(children.get(node.id, []))
-
-    return list(descendant_ids)
-
-
 def _validate_subject_code(code: str) -> None:
     raw = str(code or "").strip()
     if not raw:

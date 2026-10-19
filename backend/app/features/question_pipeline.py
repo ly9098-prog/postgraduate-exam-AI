@@ -1112,7 +1112,7 @@ async def _find_duplicate_by_hash(
     if subject_id is not None:
         conditions.append(Question.subject_id == subject_id)
     elif subject_code:
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         resolved = await resolve_subject_id(db, subject_code)
         if resolved is not None:
@@ -1140,7 +1140,7 @@ async def _find_import_duplicate_by_hash(
     if subject_id is not None:
         conditions.append(QuestionImport.subject_id == subject_id)
     elif subject_code:
-        from app.services.admin_subject_service import resolve_subject_id
+        from app.services.subject_resolution import resolve_subject_id
 
         resolved = await resolve_subject_id(db, subject_code)
         if resolved is not None:
@@ -1167,7 +1167,7 @@ async def find_duplicate_question(
     """兼容旧调用：同 subject_code 下用 stem hash + 相似度查疑似重复题。"""
     if not subject_code or not stem:
         return None
-    from app.services.admin_subject_service import resolve_subject_id
+    from app.services.subject_resolution import resolve_subject_id
 
     resolved_id = await resolve_subject_id(db, subject_code)
     if resolved_id is None:

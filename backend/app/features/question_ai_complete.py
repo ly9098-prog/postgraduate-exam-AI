@@ -568,7 +568,7 @@ async def _apply_batch_complete_result(
             completed.append("subject_id")
         elif parsed.get("subject") in SUBJECT_VALUES and db is not None:
             # Backward compat: AI returned old-style subject string → resolve to subject_id
-            from app.services.admin_subject_service import resolve_subject_id
+            from app.services.subject_resolution import resolve_subject_id
 
             resolved = await resolve_subject_id(db, parsed["subject"])
             if resolved is not None:
