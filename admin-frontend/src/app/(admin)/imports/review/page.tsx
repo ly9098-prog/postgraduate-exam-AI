@@ -36,6 +36,7 @@ import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState }
 import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
 import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
+import { buildReviewQueueParams } from "./review-query-state";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -435,7 +436,14 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id ? Number(filters.subject_id) : undefined, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined, answer_status: filters.answer_status || undefined }),
+    () => buildReviewQueueParams({
+      batch_id: filters.batch_id,
+      status: filters.status,
+      subject_id: filters.subject_id,
+      source_type: filters.source_type,
+      risk_level: filters.risk_level,
+      answer_status: filters.answer_status,
+    }, page, batchIdParam, debouncedKeyword),
     [page, batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, filters.answer_status, debouncedKeyword],
   );
 
