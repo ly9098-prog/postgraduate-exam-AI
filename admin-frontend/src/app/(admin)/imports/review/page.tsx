@@ -40,6 +40,7 @@ import {
 } from "./review-action-requests";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
+import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -614,28 +615,29 @@ export default function ImportReviewPage() {
     },
   });
 
-  const quickAnswerMutation = useMutation({
-    mutationFn: async ({ id, answer }: { id: number; answer: string }) => {
-      return apiRequest<ImportQuestionItem>(`/imports/questions/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ answer }),
-      });
+  const { quickAnswer: quickAnswerMutation, verifyAnswer: verifyAnswerMutation } = useReviewAnswerMutations(
+    apiRequest,
+    {
+      onQuickAnswerSaved: (result) => {
+        const srcNo = getSourceQuestionNo(result);
+        setMessage(srcNo ? `原题${srcNo} 答案已保存` : `导入题目 #${result.id} 答案已保存`);
+        setQuickAnswerDrafts((prev) => {
+          const next = { ...prev };
+          delete next[result.id];
+          return next;
+        });
+      },
+      onAnswerVerified: (result) => {
+        const srcNo = getSourceQuestionNo(result);
+        setMessage(srcNo ? `原题${srcNo} 答案已确认为正确` : `导入题目 #${result.id} 答案已确认为正确`);
+      },
+      onError: (error, action) => {
+        setMessage(error instanceof Error
+          ? error.message
+          : action === "save" ? "保存失败，请稍后重试。" : "确认失败，请稍后重试。");
+      },
     },
-    onSuccess: (result) => {
-      const srcNo = getSourceQuestionNo(result);
-      setMessage(srcNo ? `原题${srcNo} 答案已保存` : `导入题目 #${result.id} 答案已保存`);
-      setQuickAnswerDrafts((prev) => {
-        const next = { ...prev };
-        delete next[result.id];
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["import-question-detail", result.id] });
-    },
-    onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
-    },
-  });
+  );
 
   const handleBatchAnswerPreview = useCallback(async () => {
     if (!currentBatchId || !batchAnswerRawText.trim()) return;
@@ -758,24 +760,6 @@ export default function ImportReviewPage() {
     setImageApplyResult(null);
     setImageError(null);
   }, []);
-
-  const verifyAnswerMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return apiRequest<ImportQuestionItem>(`/imports/questions/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ answer_status: "manual_verified" }),
-      });
-    },
-    onSuccess: (result) => {
-      const srcNo = getSourceQuestionNo(result);
-      setMessage(srcNo ? `原题${srcNo} 答案已确认为正确` : `导入题目 #${result.id} 答案已确认为正确`);
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["import-question-detail", result.id] });
-    },
-    onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "确认失败，请稍后重试。");
-    },
-  });
 
   const toggleBatchField = (field: string) => {
     setDraftRestored(false);

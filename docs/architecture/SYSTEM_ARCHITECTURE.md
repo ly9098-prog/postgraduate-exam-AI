@@ -32,6 +32,7 @@
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `review-action-requests.ts` | 单题、批次与低风险审核请求路径、批量并发分块、部分失败汇总及幂等键参数由独立请求执行器承接；TanStack mutation、确认状态、提示、缓存失效和抽屉控制仍由页面持有 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-action-mutation.ts` | 审核 mutation 的请求执行、实例级幂等键、成功后的回调/选择重置及 review/batch/question 缓存失效由页面 feature hook 承接；页面仍拥有中文反馈、抽屉关闭和确认状态展示 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `review-save-request.ts`、`hooks/use-review-update-mutation.ts` | 普通/多空题保存 payload、段落编辑写回、视觉/表格阻断和保存 mutation 的请求/缓存生命周期由请求模块与 feature hook 承接；页面保留视觉状态计算、编辑草稿和保存后的 UI 状态 |
+| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-answer-mutations.ts` | 快速答案保存与人工确认的 PUT 请求、成功/失败回调和审核队列/详情缓存失效由 feature hook 承接；答案提示和快速答案草稿清理由页面提供回调 |
 | `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js` | 时间计算、存储异常适配和待同步队列分别由无页面依赖模块负责；Page 仍负责 `api.now()`、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
 
 这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；GET 发题入口已收敛，提交链路和番茄钟 Page controller 仍待后续治理。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列模块不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。
