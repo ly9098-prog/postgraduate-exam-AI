@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
   Check,
@@ -81,14 +81,18 @@ import {
   deleteQuestion,
   deleteQuestionBatch,
   exportQuestions,
-  fetchQuestionDetail,
-  fetchQuestions,
-  fetchQuestionVersionDetail,
-  fetchQuestionVersions,
   fetchSubjectOptions,
   updateQuestion,
   type BatchDeleteResult,
 } from "./question-api";
+
+import { questionDetailOptions, questionKeys } from "./question-queries";
+import {
+  useQuestionDetail,
+  useQuestionList,
+  useQuestionVersion,
+  useQuestionVersions,
+} from "./hooks/use-question-queries";
 
 import {
   buildQuestionListHref,
@@ -690,45 +694,11 @@ export default function QuestionsPage() {
     [page, pageSize, filters],
   );
 
-  const questions = useQuery({
-    queryKey: ["questions", queryParams],
-    queryFn: () => fetchQuestions(queryParams),
-    placeholderData: (previousData) => previousData,
-    retry: false,
-  });
-
-  const detail = useQuery({
-    queryKey: ["questions", selectedQuestionId, "detail"],
-    queryFn: () => fetchQuestionDetail(selectedQuestionId!),
-    enabled: selectedQuestionId !== null,
-    retry: false,
-  });
-
-  const versions = useQuery({
-    queryKey: ["questions", selectedQuestionId, "versions"],
-    queryFn: () => fetchQuestionVersions(selectedQuestionId!),
-    enabled: selectedQuestionId !== null,
-    retry: false,
-  });
-
-  const baseVersionDetail = useQuery({
-    queryKey: ["questions", selectedQuestionId, "versions", baseVersion],
-    queryFn: () => fetchQuestionVersionDetail(selectedQuestionId!, baseVersion as number),
-    enabled: selectedQuestionId !== null && typeof baseVersion === "number",
-    // 切换版本时保留上一份已完成的数据，避免对比区域先塌缩成 loading 再重新撑开。
-    placeholderData: (previousData) =>
-      previousData?.question_id === selectedQuestionId ? previousData : undefined,
-    retry: false,
-  });
-
-  const compareVersionDetail = useQuery({
-    queryKey: ["questions", selectedQuestionId, "versions", compareVersion],
-    queryFn: () => fetchQuestionVersionDetail(selectedQuestionId!, compareVersion as number),
-    enabled: selectedQuestionId !== null && typeof compareVersion === "number",
-    placeholderData: (previousData) =>
-      previousData?.question_id === selectedQuestionId ? previousData : undefined,
-    retry: false,
-  });
+  const questions = useQuestionList(queryParams);
+  const detail = useQuestionDetail(selectedQuestionId);
+  const versions = useQuestionVersions(selectedQuestionId);
+  const baseVersionDetail = useQuestionVersion(selectedQuestionId, baseVersion);
+  const compareVersionDetail = useQuestionVersion(selectedQuestionId, compareVersion);
 
   useEffect(() => {
     if (!versionHistoryOpen || compareVersion !== null) return;
@@ -783,7 +753,7 @@ export default function QuestionsPage() {
       }
       setSelectedIds(new Set());
       setConfirmState(null);
-      queryClient.invalidateQueries({ queryKey: ["questions"] });
+      queryClient.invalidateQueries({ queryKey: questionKeys.all });
     },
     onError: (error) => {
       setMessage(
@@ -804,9 +774,9 @@ export default function QuestionsPage() {
     onSuccess: () => {
       setMessage("题目已更新。");
       setEditing(false);
-      queryClient.invalidateQueries({ queryKey: ["questions"] });
+      queryClient.invalidateQueries({ queryKey: questionKeys.all });
       queryClient.invalidateQueries({
-        queryKey: ["questions", selectedQuestionId],
+        queryKey: questionKeys.scope(selectedQuestionId),
       });
     },
     onError: (error) => {
@@ -979,7 +949,7 @@ export default function QuestionsPage() {
     (question: AdminQuestion) => {
       if (selectedQuestionId === null) return;
       queryClient.setQueryData<AdminQuestionDetail>(
-        ["questions", selectedQuestionId, "detail"],
+        questionKeys.detail(selectedQuestionId),
         (current) =>
           current
             ? { ...current, ...question, import_record: current.import_record ?? null }
@@ -1002,8 +972,8 @@ export default function QuestionsPage() {
       // mutation response. Replacing the detail cache with a list-item response
       // temporarily erased that metadata until the refetch completed.
       mergeQuestionIntoDetailCache(question);
-      queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
-      queryClient.invalidateQueries({ queryKey: ["questions"] });
+      queryClient.invalidateQueries({ queryKey: questionKeys.scope(selectedQuestionId) });
+      queryClient.invalidateQueries({ queryKey: questionKeys.all });
     },
     [mergeQuestionIntoDetailCache, queryClient, selectedQuestionId],
   );
@@ -1045,8 +1015,8 @@ export default function QuestionsPage() {
           knowledge_points: question.knowledge_points ?? undefined,
         });
         setEditStemText(normalizeStemForEditing(textForStemEditor(question.content)));
-        queryClient.invalidateQueries({ queryKey: ["questions"] });
-        queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
+        queryClient.invalidateQueries({ queryKey: questionKeys.all });
+        queryClient.invalidateQueries({ queryKey: questionKeys.scope(selectedQuestionId) });
         setMessage("已先保存当前修改，将继续执行该操作。");
         return true;
       } catch (error) {
@@ -1346,8 +1316,7 @@ export default function QuestionsPage() {
   const prefetchDetail = useCallback(
     (id: number) => {
       void queryClient.prefetchQuery({
-        queryKey: ["questions", id, "detail"],
-        queryFn: () => fetchQuestionDetail(id),
+        ...questionDetailOptions(id),
         staleTime: 30_000,
       });
     },
