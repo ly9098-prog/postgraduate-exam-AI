@@ -15,6 +15,11 @@ from app.core.deployment_profile import is_restricted_environment
 from app.core.event_loop_health import event_loop_health, monitor_event_loop_lag
 from app.core.http_error_handlers import register_http_exception_handlers
 from app.core.http_middleware import register_http_middleware
+from app.core.http_runtime_policy import (
+    assert_http_ocr_isolation,
+    prepare_http_runtime_role,
+    report_http_startup_failure,
+)
 from app.core.logging_config import setup_logging
 from app.core.observability_access import require_observability_access
 from app.core.ocr_isolation import (
@@ -111,53 +116,9 @@ async def _periodic_export_cleanup() -> None:
     await _run_registered_periodic_task("export_cleanup", "Export cleanup")
 
 
-def _report_startup_failure(component: str, exc: Exception) -> None:
-    """Log component startup failure.
-
-    In production, any core component startup failure is fatal.
-    """
-    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
-
-    try:
-        is_prod = (
-            detect_deployment_profile() == DeploymentProfile.CLOUD_API
-            or _production_mode
-        )
-    except Exception:
-        is_prod = False
-    if is_prod:
-        logger.critical("%s start failed — fatal in production", component)
-        raise SystemError(f"{component} start failed: {exc}") from exc
-    logger.warning("%s start failed (non-fatal): %s", component, exc)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configured_role = settings.PROCESS_ROLE
-    role = resolve_effective_process_role(
-        settings.APP_ENV,
-        configured_role,
-        settings.LOCAL_ASYNC_RUNTIME_ENABLED,
-    )
-    if role != configured_role:
-        logger.info(
-            "Local async runtime disabled: configured PROCESS_ROLE=%s -> effective role=%s. "
-            "Set LOCAL_ASYNC_RUNTIME_ENABLED=true only for full local worker/scheduler debugging.",
-            configured_role,
-            role,
-        )
-        # Keep downstream role-aware code (metrics, DB pool diagnostics, health
-        # checks) consistent with the process that is actually running.
-        settings.PROCESS_ROLE = role
-        os.environ["PROCESS_ROLE"] = role
-
-    # Guard: worker/scheduler roles should not serve HTTP.
-    # Use app.worker_main or app.scheduler_main entry points instead.
-    if role in ("worker", "scheduler"):
-        raise SystemError(
-            f"PROCESS_ROLE={role} must not start the FastAPI HTTP application; "
-            f"use python -m app.{role}_main"
-        )
+    role = prepare_http_runtime_role(settings, resolve_effective_process_role)
 
     # Background asyncio task references (initialized per role block)
     cleanup_task = None
@@ -184,29 +145,7 @@ async def lifespan(app: FastAPI):
     validate_production_config()
     await validate_production_config_async()
 
-    # Check sys.modules for banned OCR packages in cloud_api
-    try:
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-
-        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
-            loaded = loaded_local_ocr_modules()
-            if loaded:
-                logger.critical(
-                    "cloud_api deployment detected banned modules in sys.modules: %s",
-                    loaded,
-                )
-                raise SystemError(
-                    f"Banned local OCR modules loaded in cloud_api: {loaded}"
-                )
-    except SystemError:
-        raise
-    except Exception as e:
-        if is_restricted_ocr_environment():
-            raise SystemError(f"OCR module isolation check failed: {e}") from e
-        logger.warning("OCR module isolation check failed: %s", e)
+    assert_http_ocr_isolation(loaded_local_ocr_modules, is_restricted_ocr_environment)
 
     from app.core.ocr_profile import get_ocr_profile
 
@@ -314,7 +253,7 @@ async def lifespan(app: FastAPI):
             {k: v.name for k, v in _executors.items()},
         )
     except Exception as e:
-        _report_startup_failure("Executors", e)
+        report_http_startup_failure("Executors", e, _production_mode)
     _pipeline_worker_task: asyncio.Task | None = None
     _reaper_task: asyncio.Task | None = None
     _lag_monitor_task: asyncio.Task | None = None
@@ -377,7 +316,7 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("OCR not enabled, skipping Gateway initialization")
         except Exception as e:
-            _report_startup_failure("OCR Gateway", e)
+            report_http_startup_failure("OCR Gateway", e, _production_mode)
 
     # Local web development still needs a runnable export processor. Starting
     # only this processor avoids enabling the full Redis-dependent async runtime
@@ -397,7 +336,7 @@ async def lifespan(app: FastAPI):
                 run_dispatcher_v2(), name="pipeline-dispatcher-v2"
             )
         except Exception as e:
-            _report_startup_failure("Pipeline dispatcher v2", e)
+            report_http_startup_failure("Pipeline dispatcher v2", e, _production_mode)
 
         try:
             from app.services.task_queue_worker import run_reaper_loop_v2
@@ -406,7 +345,7 @@ async def lifespan(app: FastAPI):
                 run_reaper_loop_v2(), name="task-reaper-v2"
             )
         except Exception as e:
-            _report_startup_failure("Reaper", e)
+            report_http_startup_failure("Reaper", e, _production_mode)
 
         # AI prewarm worker — uses DurableTaskQueue (moved from scheduler per P0-2)
         try:
@@ -415,7 +354,7 @@ async def lifespan(app: FastAPI):
             await start_worker()
             logger.info("AI prewarm worker started")
         except Exception as e:
-            _report_startup_failure("AI prewarm worker", e)
+            report_http_startup_failure("AI prewarm worker", e, _production_mode)
 
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
@@ -426,7 +365,7 @@ async def lifespan(app: FastAPI):
                 run_scheduler_heartbeat(), name="scheduler-heartbeat"
             )
         except Exception as e:
-            _report_startup_failure("Scheduler heartbeat", e)
+            report_http_startup_failure("Scheduler heartbeat", e, _production_mode)
 
         try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
@@ -434,7 +373,7 @@ async def lifespan(app: FastAPI):
             await audit_log_cleanup_scheduler.start()
             logger.info("Audit log cleanup scheduler started")
         except Exception as e:
-            _report_startup_failure("Audit log cleanup scheduler", e)
+            report_http_startup_failure("Audit log cleanup scheduler", e, _production_mode)
 
         try:
             from app.services.recommendation_metrics_scheduler import (
@@ -444,7 +383,7 @@ async def lifespan(app: FastAPI):
             await recommendation_metrics_scheduler.start()
             logger.info("Recommendation metrics scheduler started")
         except Exception as e:
-            _report_startup_failure("Recommendation metrics scheduler", e)
+            report_http_startup_failure("Recommendation metrics scheduler", e, _production_mode)
 
         # Periodic cleanup tasks belong in the scheduler role only
         cleanup_task = asyncio.create_task(

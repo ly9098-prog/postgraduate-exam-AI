@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十六批已提交，第七十七批分离启动schema兼容与差异诊断；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十七批已提交，第七十八批分离HTTP启动角色与隔离策略；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1009,3 +1009,14 @@
 - 新增3项依赖/预算/真实调用顺序/事务归属及新进程无app/配置/数据库加载或engine/task创建门禁，旧启动位置门禁跟随实际定义。完整静态CI本地1,118项通过、2条既有弃用警告；独立readiness69项通过。严格Ruff/全应用Ruff/compileall/diff/CI YAML与路径、33项保护哈希通过；完整lifespan33项全局状态恢复再通过（包装进程2条rewrite警告）。
 - 两模块141/67行，函数最长31行；main930→769行/lifespan620→458行，图556模块/2,199边/零循环/反向API。按review-agent只读核对完整差异、原反射/SQL/事务/错误/取消/导入顺序、真实SQLite数据及故障/重试、完整lifespan和CI：No findings。
 - 仅本地提交相关代码/测试/CI/任务/盘点，保留其他工作区改动及删除，不推送、不操作生产。SQLite测试只使用pytest临时库；PostgreSQL为受控会话，真实PostgreSQL schema修复、DDL执行中断、独立角色和外部服务/客户端/远端CI仍未验收。yield前失败不清理与shared client关闭失败阻断后续清理仍作为独立待办；资源/角色启动及其他全栈治理继续。
+
+
+## 八十四、第七十八批执行记录：HTTP 启动角色与隔离策略
+
+- `core/http_runtime_policy.py`拥有HTTP角色归一化/配置与env写回/worker和scheduler拒绝、云OCR已加载模块隔离、组件启动失败报告。main传原Settings、角色解析函数、OCR探针和实时production mode，直接消费真实定义；移除旧`_report_startup_failure`，原8类组件标签和位置不变，不为独立worker/scheduler建立第二套运行入口。
+- 原完整AST片段/原函数先通过132项刻画：6类env/8类role/async开关、仅归一化后写回、日志失败阻止写回、云模块列表及错误/取消、SystemError链、profile普通异常的原False回退和report部署模块import在try外的原边界。迁移后相关策略/完整lifespan/架构168项通过；未夹带强化或放宽角色/隔离/失败策略。
+- 角色配置/env写回、OCR隔离及report完整函数按显式端口绑定后AST、展开完整main/lifespan AST与328路径OpenAPI一致；258组原/新状态、探针、异常/取消、cause和日志轨迹一致。原Unicode fatal日志正文保持，新增源码用ASCII转义表达。新增3项依赖/尺寸、实际调用/原8标签/参数/顺序和新进程无配置/资源加载、无env写入/任务创建门禁，接入CI。
+- 完整静态CI本地1,253项通过、2条既有弃用警告；独立readiness69项通过。严格Ruff/全应用Ruff/compileall/diff、CI YAML/路径与33项保护哈希通过；完整lifespan33项状态恢复再通过（包装进程2条rewrite警告），含新policy logger和production mode。
+- 额外运行旧云隔离7项为3通过/4失败，失败均是旧fixture的APP_ENV=test与cloud_api组合触发现有profile冲突校验。validator/profile/config/该测试文件与`632ec9a2`字节一致，单独复现进程未导入app.main或新策略模块，确认是既有基线；其中全新解释器cloud_api配置/无Paddle导入检查通过。下一批单独修复测试夹具/预期，不修改生产guard，不用skip/xfail或弱化校验掩盖。
+- 模块90行、函数23/26/22行；main769→708行/lifespan458→412行；图557模块/2,202边/零循环/反向API。按review-agent只读核对完整差异、原配置/env更新时机、隔离/取消/import/fallback/cause、实际8组件和完整lifespan及额外旧基线：No findings。
+- 仅本地提交相关代码/测试/CI/任务/盘点，保留其他改动和删除，不推送、不操作生产。独立角色/真实外部依赖和客户端完整验收未完成；yield前失败不清理及shared client关闭错误阻断后续清理仍保持独立待办，资源和角色启动及全栈治理继续。
