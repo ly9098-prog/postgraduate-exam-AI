@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：562 个模块、2,213 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：563 个模块、2,216 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,8 +35,8 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 614 | `lifespan` 334 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
-| `backend/app/core/bootstrap.py` | 560 | `shutdown_role` 157 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口，OS信号/真实进程退出待验收。 |
+| `backend/app/main.py` | 604 | `lifespan` 323 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
+| `backend/app/core/bootstrap.py` | 550 | `shutdown_role` 157 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口，OS信号/真实进程退出待验收。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -198,3 +198,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第八十六批独立worker OCR块迁至已有runtime_ocr_startup的具体函数，原已解析profile和bootstrap logger显式传入，scratch/executor→OCR→orphan/任务/prewarm顺序保持。HTTP数据类/装配AST不变；worker factory仍无共享client参数，保留其连接所有权。原20项块刻画先过，新增部分OCR失败6项后完整角色38项；同20+38项对旧3fe28948完整bootstrap/原块通过。原块/展开整个bootstrap AST、120组画像/配置/import/构建/发布/log/错误/取消轨迹一致，相关127项、混合139项全局状态恢复通过。真实PaddleX/gateway构建并验证worker拥有client、gateway关闭client、singleton恢复、无网络/Paddle且无OCR请求。原YAML静态1,477项（2既有弃用警告）/readiness69/云30通过，扩展原消费/位置/预算/惰性门禁，严格检查/33保护哈希/review-agent只读No findings。OCR模块89行/HTTP41与worker23，bootstrap560/worker init49，main614/lifespan334保持；562模块/2,213边/零循环/反向API。未发布worker资源/runner清理缺口保持独立待办，OS信号/CLI/真实服务及全栈验收仍未完成。
+
+
+第八十七批HTTP/独立scheduler相同outbox闭包收敛至outbox_queue_adapter的具体工厂，捕获queue对象并于每次await时解析当前enqueue_v2；原ID/type/payload/schema映射和返回/异常/取消保持，入口仍拥有原导入/任务创建/日志/部分失败与关闭。原52项刻画先过且对旧138414df完整闭包52通过，相关133项通过；原闭包/展开两个完整模块AST与50组轨迹一致。真实临时Redis7 Unix socket（port0/无持久化/独立测试实例）验证v2 Lua接受数据/schema落库、幂等、容量拒绝、校验错误和实例停止后的不可用结果；无现有/外部Redis连接，测试进程已退出，不代表outbox DB发布/租约/重试或生产验收。原YAML静态1,532项（2既有弃用警告）/readiness69/云30通过，混合191项状态恢复、严格检查/33保护哈希/review-agent只读No findings。模块28/工厂17，main604/lifespan323、bootstrap550/scheduler init82，563模块/2,216边/零循环/反向API。其余生命周期/失败清理/真实角色与全栈验收仍待完成。

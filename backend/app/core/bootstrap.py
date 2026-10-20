@@ -27,6 +27,7 @@ import sys
 
 from app.core.config import settings
 from app.core.runtime_task_registry import TaskRegistry
+from app.services.outbox_queue_adapter import build_outbox_enqueue
 from app.services.runtime_ocr_startup import initialize_worker_ocr_gateway
 from app.services.runtime_periodic_tasks import (
     run_export_cleanup,
@@ -195,18 +196,7 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
         )
         from app.services.task_queue_service import task_queue
 
-        async def _enqueue_from_outbox(
-            task_id: str,
-            task_type: str,
-            payload: dict,
-            schema_version: int,
-        ) -> object:
-            return await task_queue.enqueue_v2(
-                task_type,
-                payload,
-                task_id=task_id,
-                schema_version=schema_version,
-            )
+        _enqueue_from_outbox = build_outbox_enqueue(task_queue)
 
         registry.create(
             run_outbox_dispatcher(_enqueue_from_outbox), "outbox-dispatcher"

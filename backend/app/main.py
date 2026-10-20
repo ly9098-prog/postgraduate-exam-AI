@@ -44,6 +44,7 @@ from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.export.schema_compatibility import repair_export_idempotency_schema
 from app.services.ocr_readiness import OcrReadinessState, check_ocr_config
+from app.services.outbox_queue_adapter import build_outbox_enqueue
 from app.services.production_config_validator import (
     validate_production_config,
     validate_production_config_async,
@@ -324,18 +325,7 @@ async def lifespan(app: FastAPI):
             )
             from app.services.task_queue_service import task_queue
 
-            async def _enqueue_from_outbox(
-                task_id: str,
-                task_type: str,
-                payload: dict,
-                schema_version: int,
-            ) -> object:
-                return await task_queue.enqueue_v2(
-                    task_type,
-                    payload,
-                    task_id=task_id,
-                    schema_version=schema_version,
-                )
+            _enqueue_from_outbox = build_outbox_enqueue(task_queue)
 
             _outbox_dispatcher_task = asyncio.create_task(
                 run_outbox_dispatcher(_enqueue_from_outbox), name="outbox-dispatcher"

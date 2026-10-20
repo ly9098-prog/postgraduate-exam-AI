@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十五批已提交，第八十六批分离独立worker OCR装配与所有权；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十六批已提交，第八十七批共用outbox v2入队适配；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1103,3 +1103,13 @@
 - 现有OCR架构门禁扩展真实worker消费/原画像/logger/注册后和orphan前位置/worker init≤50行/惰性导入；原YAML完整静态CI1,477项（2既有弃用警告）、readiness69项、云OCR30项通过。额外真实PaddleX worker/gateway装配与关闭：worker._http_client_owned为True，gateway.shutdown关闭其实际HTTP client，singleton恢复，无socket/Paddle导入、未发起OCR请求。
 - 严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过；按review-agent只读审查原profile解析/执行器/装配/orphan顺序、真实factory/gateway/单例/关闭消费者、所有权和异常/取消、完整角色与旧新证据：No findings。OCR模块63→89行，HTTP41/worker23行，bootstrap580→560行/worker init70→49行；main614/lifespan334保持，图562模块/2,213边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。worker构建后未发布资源的失败清理、独立runner/HTTP yield前缺口和client关闭阻断等既有行为未修；真实OS信号/CLI进程/外部依赖/客户端与全栈其他阶段继续待办。
+
+
+## 九十三、第八十七批执行记录：outbox v2 入队适配唯一实现
+
+- HTTP all与独立scheduler原相同_enqueue_from_outbox闭包迁至`services/outbox_queue_adapter.py`的build_outbox_enqueue(task_queue)；两个入口在原task_queue导入后构建回调并传给dispatcher。捕获原queue对象，await时仍动态查找其enqueue_v2方法；原task_id/type/payload/schema参数映射、结果对象/异常/取消原样返回，未增加校验/复制/retry/commit。原outbox导入、dispatcher→reconciler任务创建、部分启动失败日志与TaskRegistry/asyncio/关闭归属保持。
+- 原两处闭包52项刻画先过，迁移后相同52项对旧`138414df`原完整闭包通过（包装进程1条rewrite警告）。覆盖两入口×5类schema×接受/拒绝/None/错误/取消、payload对象身份/不变性、多个queue回调隔离与方法替换后延迟查找；相关回调/完整HTTP/独立scheduler/完整角色133项通过。
+- 原闭包AST与展开main、bootstrap两个完整模块AST一致；50组ID/type/payload identity/schema/result/error/cancel轨迹一致。新增3项依赖/预算/两个真实消费者及原queue导入后/dispatcher前位置/原Exception边界/无资源惰性导入门禁接入CI。原YAML静态1,532项（2既有弃用警告）、readiness69项、云OCR30项通过。
+- 额外本地真实Redis 7.2.5一次性实例测试（port=0、仅/tmp Unix socket、无持久化）通过：两个入口适配器调用真实DurableTaskQueue/v2 Lua，已接受payload/schema写入哈希、重复任务幂等不重复排队、queue_full拒绝与retry_after、schema错误传播、终止该测试实例后redis_unavailable结构化结果均验证。只允许该临时socket，无外部/现有Redis连接；队列/control连接关闭且测试实例退出，日志在/tmp/outbox-adapter-redis-6wjts01z。不代表完整outbox DB发布/租约/重试或生产Redis验收。
+- 混合191项单进程确认Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过。依review-agent只读核对完整diff、真实dispatcher消费返回对象/queue.enqueue_v2校验与Lua分支、闭包捕获/方法lookup/错误和原任务归属及全部证据：No findings。
+- 模块28行/工厂17行；main614→604行/lifespan334→323行，bootstrap560→550行/scheduler init93→82行，图563模块/2,216边/零循环/反向API。仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。启动失败清理、真实OS信号/CLI进程、outbox完整持久化/外部服务/客户端及其余全栈计划仍待继续。
