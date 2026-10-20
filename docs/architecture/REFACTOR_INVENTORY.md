@@ -231,3 +231,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第九十七批（2026-10-21）HTTP lifespan 的 lag 监控停止与导出处理器停止两段迁至 core/runtime_http_shutdown.py 的 stop_lag_monitor(task) 与 stop_export_processor(role)，main 直接消费模块函数；原 drain→lag→export→cancel 顺序和异常/取消边界保持。保留 lag 监控 CancelledError 静默通过、export 处理器普通错误 warning 和 import 边界；caller 仍持有 _lag_monitor_task 和 _scheduler_tasks.export_processor_task 的 None/done 守卫。原 51 项受影响测试先过；新增 6 项单元契约覆盖 None/done/pending task 和 success/import/runtime/cancel 边界后全过。更新 2 项架构门禁跟随新调用位置；完整静态 232 项 architecture + 389 项 lifespan/startup + 133 项 resource/task + 223 项 standalone + 408 项 runtime = 1,385 项通过，无新增失败。33 保护哈希/review-agent 只读 No findings。module 27 行/函数 8、9 行，main 436→429/lifespan 147→136 行；571 模块/2,240 边/零循环/反向 API。既有 yield 前失败清理、shared client 关闭阻断等行为缺口不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段继续。
+
+
+第九十八批（2026-10-21）practice_service.py 的 get_smart_scored_questions 内 4 处重复元数据构建（2 处 smart_scored + random_fallback + repeat_window_fallback）提取为模块级 _build_scored_metadata 和 _build_fallback_metadata 两个私有函数；保留原字段集、round 精度、reason 构建调用和所有 kwargs。函数从 540 行降至 516 行；新增两个 helper 各 28/8 行。原 208 项 practice 测试 + 621 项 architecture/lifecycle + 232 项 architecture = 1,061 项通过，4 项既有 MagicMock 失败经 stash 验证为基线。0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。practice_service.py 4117 行，函数仍超 50 行预算——后续继续按阶段提取候选构建/评分/降级编排。

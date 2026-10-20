@@ -2929,6 +2929,46 @@ async def _smart_weakness_vector(
 
 
 # ── V4: 智能推荐综合打分 ─────────────────────────────────────────
+def _build_scored_metadata(
+    score: float,
+    reasons: list[str],
+    question_kp_ids: list[int],
+    kp_names: dict[int, str],
+    *,
+    graph_candidates: dict,
+    blocked_kps: dict,
+    kp_mastery: dict,
+    kp_observations: dict,
+    strategy_config_id: int | None,
+) -> dict:
+    """Build a smart-scored metadata entry preserving the original field set."""
+    return {
+        "recommend_score": round(score, 2),
+        "recommend_reason": _build_smart_recommendation_reason(
+            reasons,
+            question_kp_ids,
+            kp_names,
+            graph_candidates=graph_candidates,
+            blocked_kps=blocked_kps,
+            kp_mastery=kp_mastery,
+            kp_observations=kp_observations,
+        ),
+        "strategy": "smart_scored",
+        "strategy_config_id": strategy_config_id,
+        "similarity": None,
+    }
+
+
+def _build_fallback_metadata(reason: str, strategy: str) -> dict:
+    """Build a random/repeat-window fallback metadata entry."""
+    return {
+        "recommend_score": None,
+        "recommend_reason": reason,
+        "strategy": strategy,
+        "similarity": None,
+    }
+
+
 
 
 async def get_smart_scored_questions(
@@ -3329,21 +3369,14 @@ async def get_smart_scored_questions(
         selected_ids.add(q.id)
         for k in kp_ids:
             kp_counter[k] = kp_counter.get(k, 0) + 1
-        metadata[q.id] = {
-            "recommend_score": round(sc, 2),
-            "recommend_reason": _build_smart_recommendation_reason(
-                reasons,
-                kp_ids,
-                kp_names,
-                graph_candidates=graph_candidates,
-                blocked_kps=blocked_kps,
-                kp_mastery=kp_mastery,
-                kp_observations=kp_observations,
-            ),
-            "strategy": "smart_scored",
-            "strategy_config_id": scored_runtime.get("strategy_config_id"),
-            "similarity": None,
-        }
+        metadata[q.id] = _build_scored_metadata(
+            sc, reasons, kp_ids, kp_names,
+            graph_candidates=graph_candidates,
+            blocked_kps=blocked_kps,
+            kp_mastery=kp_mastery,
+            kp_observations=kp_observations,
+            strategy_config_id=scored_runtime.get("strategy_config_id"),
+        )
         if len(selected) >= count:
             break
 
@@ -3355,21 +3388,14 @@ async def get_smart_scored_questions(
                 continue
             selected.append(q)
             selected_ids.add(q.id)
-            metadata[q.id] = {
-                "recommend_score": round(sc, 2),
-                "recommend_reason": _build_smart_recommendation_reason(
-                    reasons,
-                    q_kp_map.get(q.id, []),
-                    kp_names,
-                    graph_candidates=graph_candidates,
-                    blocked_kps=blocked_kps,
-                    kp_mastery=kp_mastery,
-                    kp_observations=kp_observations,
-                ),
-                "strategy": "smart_scored",
-                "strategy_config_id": scored_runtime.get("strategy_config_id"),
-                "similarity": None,
-            }
+            metadata[q.id] = _build_scored_metadata(
+                sc, reasons, q_kp_map.get(q.id, []), kp_names,
+                graph_candidates=graph_candidates,
+                blocked_kps=blocked_kps,
+                kp_mastery=kp_mastery,
+                kp_observations=kp_observations,
+                strategy_config_id=scored_runtime.get("strategy_config_id"),
+            )
             if len(selected) >= count:
                 break
 
@@ -3418,12 +3444,7 @@ async def get_smart_scored_questions(
         for fq in fill_result.scalars().all():
             selected.append(fq)
             selected_ids.add(fq.id)
-            metadata[fq.id] = {
-                "recommend_score": None,
-                "recommend_reason": "随机补齐",
-                "strategy": "random_fallback",
-                "similarity": None,
-            }
+            metadata[fq.id] = _build_fallback_metadata("随机补齐", "random_fallback")
 
     # ── 降级 4: 最终兜底，才放宽 exclude_answered/no_repeat_days ──
     if len(selected) < count:
@@ -3452,12 +3473,7 @@ async def get_smart_scored_questions(
                 continue
             selected.append(fq)
             selected_ids.add(fq.id)
-            metadata[fq.id] = {
-                "recommend_score": None,
-                "recommend_reason": "题量不足，放宽重复限制补齐",
-                "strategy": "repeat_window_fallback",
-                "similarity": None,
-            }
+            metadata[fq.id] = _build_fallback_metadata("题量不足，放宽重复限制补齐", "repeat_window_fallback")
 
     logger.info(
         "[smart_recommend] user_id=%s subject_id=%s candidates=%s selected=%s fallback=%s",
