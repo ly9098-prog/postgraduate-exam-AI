@@ -266,6 +266,7 @@ jobs:
             tests/architecture/test_question_writer_boundaries.py \
             tests/architecture/test_formula_batch_boundaries.py \
             tests/architecture/test_import_upload_boundaries.py \
+            tests/architecture/test_http_error_boundaries.py \
             tests/architecture/test_gateway_bypass_zero.py \
             tests/architecture/test_document_ir_production_write_zero.py \
             tests/core/test_artifact_path_traversal.py \
@@ -281,6 +282,7 @@ jobs:
             tests/test_services/test_ai_prewarm_protocol.py \
             tests/export/test_docx_fonts.py \
             tests/core/test_code_integrity.py \
+            tests/core/test_http_error_contract.py \
             tests/core/test_orm_registry.py \
             tests/test_ocr_fix/test_adapter_contract.py \
             tests/test_services/test_question_draft_fallback.py \

@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：536 个模块、2,139 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：538 个模块、2,145 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 2156 | `lifespan` 870 | 资源初始化、任务启停与 app 装配混合，按角色生命周期迁移。 |
+| `backend/app/main.py` | 1843 | `lifespan` 870 | HTTP 错误契约/处理器已独立，资源初始化、任务启停、中间件及健康/指标仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -124,3 +124,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第五十八批拆出 Public/Admin 唯一上传入口、不可变输入快照及图片/Excel/文档 admission 模块，后台执行服务不再导入 worker；移除最后 4 条循环基线边。输入只保留原 12 个参数，不新增业务状态。原后台服务剩余非导入/说明 AST 不变，完整 328 路径 OpenAPI 一致；160 组响应/异常及校验、资源预留、暂存、状态、队列、释放调用对照一致。新增 29 项 admission 和 4 项架构/新进程回归通过；扩大架构、上传/API、故障注入与公式队列交接为 226 通过、8 项相同既有失败。新增第 4 项首导入测试后定向 33 项通过。8 项失败涉及旧权限夹具、错误脱敏预期及直接调用路由缺少用户参数，未通过修改生产行为或 skip/xfail 掩盖。保留原队列取消不释放预留的行为；真实 Redis/PostgreSQL、OCR/模型、完整角色生命周期与客户端仍未验证，零静态循环不关闭阶段 0/1/3/4 的其他待办。
 
 第五十九批恢复上述 8 项上传/状态 API 测试失败：权限缓存 miss 下执行真实权限判断，HTTP 400 按当前脱敏 envelope 检查；状态路由使用真实 SQLite 所有权查询与显式用户。新增 4 项权限/他人记录/缺失状态回归，两文件 22 项通过；完整架构/admission/上传/API/故障与公式交接共 239 项通过。两文件已接入现有 CI，不修改生产权限、错误或业务语义；本地 SQLite/替身端口证据不证明真实 PostgreSQL/Redis/部署角色和客户端完成。
+
+第六十批从 main 抽取 `core/http_error_contract.py` 和 `core/http_error_handlers.py`，分别拥有公开策略和异常适配；装配保留原位置与注册顺序，不反向引用 main、不保留转发。10 个迁移函数 AST 与其余 main AST 对照一致，792 组旧/新响应、头、日志和 context 轨迹一致，运行时 OpenAPI 328 路径一致。69 项 HTTP 契约/边界测试接入既有 CI；本轮完整架构及上传/状态/公式批次/隐私/AI 能力回归 322 项通过。静态图 538 模块、2,145 条边且无循环；新模块满足 300/50 预算。main 仍有 1,843 行，lifespan、中间件、健康/指标及完整角色退出待治理；真实 PostgreSQL/Redis、外部服务、客户端和远端 CI 未验证。
