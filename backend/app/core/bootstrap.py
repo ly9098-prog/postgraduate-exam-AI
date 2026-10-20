@@ -27,7 +27,6 @@ import sys
 
 from app.core.config import settings
 from app.core.runtime_task_registry import TaskRegistry
-from app.services.outbox_queue_adapter import build_outbox_enqueue
 from app.services.runtime_ocr_startup import initialize_worker_ocr_gateway
 from app.services.runtime_periodic_tasks import (
     run_export_cleanup,
@@ -36,8 +35,11 @@ from app.services.runtime_periodic_tasks import (
     run_token_cleanup,
 )
 from app.services.runtime_scheduler_startup import (
+    start_answer_projection_task,
     start_audit_cleanup_scheduler,
     start_recommendation_metrics_scheduler,
+    start_scheduler_health_task,
+    start_scheduler_outbox_tasks,
 )
 
 logger = logging.getLogger("postgraduate-ai.bootstrap")
@@ -189,49 +191,17 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     registry.create(run_export_cleanup(), "export-cleanup")
 
     # Outbox dispatcher + DB/Redis reconciler
-    try:
-        from app.services.outbox_service import (
-            run_outbox_dispatcher,
-            run_outbox_reconciler,
-        )
-        from app.services.task_queue_service import task_queue
-
-        _enqueue_from_outbox = build_outbox_enqueue(task_queue)
-
-        registry.create(
-            run_outbox_dispatcher(_enqueue_from_outbox), "outbox-dispatcher"
-        )
-        registry.create(run_outbox_reconciler(), "outbox-reconciler")
-        logger.info("Outbox dispatcher + DB/Redis reconciler started")
-    except Exception as e:
-        logger.warning("Outbox init failed (non-fatal): %s", e)
+    start_scheduler_outbox_tasks(registry, logger)
 
     # Business-level answer projection reconciler.  Keep this safety net
     # independent from the generic DB/Redis outbox reconciler so one component
     # failing to initialize cannot disable the other.
-    try:
-        from app.services.practice.projection_reconciliation_service import (
-            run_answer_projection_reconciler,
-        )
-
-        registry.create(
-            run_answer_projection_reconciler(),
-            "answer-projection-reconciler",
-        )
-        logger.info("Answer projection business reconciler started")
-    except Exception as e:
-        logger.warning("Answer projection reconciler init failed (non-fatal): %s", e)
+    start_answer_projection_task(registry, logger)
 
     # Production async-task health monitor.  It derives state from PostgreSQL
     # and Redis and only logs/reports when the health signature changes, so a
     # persistent incident does not create one alert per polling interval.
-    try:
-        from app.services.task_observability_service import run_task_health_monitor
-
-        registry.create(run_task_health_monitor(), "async-task-health-monitor")
-        logger.info("Async task health monitor started")
-    except Exception as e:
-        logger.warning("Async task health monitor init failed (non-fatal): %s", e)
+    start_scheduler_health_task(registry, logger)
 
 
 # ── Startup helpers ──

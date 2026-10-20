@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十六批已提交，第八十七批共用outbox v2入队适配；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十七批已提交，第八十八批分离scheduler可选后台组件启动；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1113,3 +1113,14 @@
 - 额外本地真实Redis 7.2.5一次性实例测试（port=0、仅/tmp Unix socket、无持久化）通过：两个入口适配器调用真实DurableTaskQueue/v2 Lua，已接受payload/schema写入哈希、重复任务幂等不重复排队、queue_full拒绝与retry_after、schema错误传播、终止该测试实例后redis_unavailable结构化结果均验证。只允许该临时socket，无外部/现有Redis连接；队列/control连接关闭且测试实例退出，日志在/tmp/outbox-adapter-redis-6wjts01z。不代表完整outbox DB发布/租约/重试或生产Redis验收。
 - 混合191项单进程确认Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过。依review-agent只读核对完整diff、真实dispatcher消费返回对象/queue.enqueue_v2校验与Lua分支、闭包捕获/方法lookup/错误和原任务归属及全部证据：No findings。
 - 模块28行/工厂17行；main614→604行/lifespan334→323行，bootstrap560→550行/scheduler init93→82行，图563模块/2,216边/零循环/反向API。仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。启动失败清理、真实OS信号/CLI进程、outbox完整持久化/外部服务/客户端及其余全栈计划仍待继续。
+
+
+## 九十四、第八十八批执行记录：scheduler 可选后台组件启动
+
+- 将独立scheduler原三个完整try块迁至已有`services/runtime_scheduler_startup.py`的start_scheduler_outbox_tasks、start_answer_projection_task、start_scheduler_health_task；均为同步装配函数，显式接收原TaskRegistry与caller logger。原outbox双任务→独立答题投影→健康监测顺序、导入/任务名/日志/普通错误warning/取消传播和部分注册状态保持；bootstrap继续创建registry并拥有完整运行/关闭边界，没有第二套任务管理协议。
+- 新18项完整scheduler基线先在原实现通过：云画像下4种工厂位置的RuntimeError/ImportError/CancelledError，3个实际导入点的ImportError/取消；第二个outbox任务失败保留第一个和enqueue callback，普通错误继续后续独立组件，取消只保留此前任务。任务均由真实TaskRegistry/asyncio拥有并由fixture收尾。连同38项完整角色/10项scheduler共66项对旧`f2c440a5`完整bootstrap通过。
+- 三个完整try块和展开整个bootstrap AST一致，135组import/create/partial registry/log/error/cancel轨迹一致；更新后相关125项通过。首次1个旧依赖门禁失败确认是scheduler模块增加明确依赖，更新依赖清单并新增实际消费/registry与logger/原顺序/独立Exception边界/初始化≤50行检查；outbox adapter旧消费者门禁跟随真实新owner，不保留bootstrap重导出壳。
+- 原YAML完整静态CI1,551项（2既有弃用警告）、readiness69项、云OCR30项通过；混合209项单进程确认Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过。
+- 额外用真实新outbox helper/真实run_outbox_dispatcher coroutine捕获enqueue callback，两个coroutine在执行DB工作前关闭；该真实回调与HTTP入口在独立临时Redis7 Unix socket上通过v2 Lua接受/幂等/容量/schema错误/停机结果验证。无DB发布工作、无现有/外部Redis连接，queue/control关闭、测试Redis实例退出，日志/tmp/outbox-adapter-redis-ep5_l1tm；不据此宣称完整outbox持久化/租约/重试验收。
+- 依review-agent只读检查完整差异、实际TaskRegistry/dispatcher/投影和健康消费者、原catch/取消/日志/部分任务归属、完整角色和旧新证据：No findings。scheduler模块19→71行/新增函数17、13、8行；bootstrap550→520行/scheduler init82→50行，main604/lifespan323保持，图563模块/2,218边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。独立runner/HTTP失败清理等行为待办、其余shutdown/信号/CLI/真实服务/客户端及全栈阶段仍未完成。

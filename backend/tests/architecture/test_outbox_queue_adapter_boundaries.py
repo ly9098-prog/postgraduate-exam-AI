@@ -13,7 +13,7 @@ APP = Path(__file__).resolve().parents[2] / "app"
 def test_outbox_adapter_dependencies_and_budgets():
     graph, _ = scan_application(APP)
     assert graph["app.services.outbox_queue_adapter"] == {"app.services.task_queue_service"}
-    for module in ["app.main", "app.core.bootstrap"]:
+    for module in ["app.main", "app.services.runtime_scheduler_startup"]:
         assert "app.services.outbox_queue_adapter" in graph[module]
     source = (APP / "services/outbox_queue_adapter.py").read_text()
     assert len(source.splitlines()) <= 300
@@ -24,16 +24,16 @@ def test_outbox_adapter_dependencies_and_budgets():
 
 def test_both_runtimes_capture_original_queue_after_import_before_dispatcher_creation():
     from app import main
-    from app.core import bootstrap
+    from app.services import runtime_scheduler_startup
     from app.services.outbox_queue_adapter import build_outbox_enqueue
 
     for module, filename, function in [
         (main, "main.py", "lifespan"),
-        (bootstrap, "core/bootstrap.py", "_init_scheduler_dependencies"),
+        (runtime_scheduler_startup, "services/runtime_scheduler_startup.py", "start_scheduler_outbox_tasks"),
     ]:
         assert module.build_outbox_enqueue is build_outbox_enqueue
         tree = ast.parse((APP / filename).read_text())
-        runtime = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == function)
+        runtime = next(node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function)
         calls = [node for node in ast.walk(runtime) if isinstance(node, ast.Call)]
         builds = [node for node in calls if getattr(node.func, "id", None) == "build_outbox_enqueue"]
         assert len(builds) == 1

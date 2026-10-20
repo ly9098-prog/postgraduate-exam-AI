@@ -15,6 +15,9 @@ def test_scheduler_startup_dependencies_and_function_budgets():
     graph, _ = scan_application(APP)
     assert graph["app.services.runtime_scheduler_startup"] == {
         "app.services.audit_cleanup_scheduler", "app.services.recommendation_metrics_scheduler",
+        "app.core.runtime_task_registry", "app.services.outbox_queue_adapter",
+        "app.services.outbox_service", "app.services.task_queue_service",
+        "app.services.practice.projection_reconciliation_service", "app.services.task_observability_service",
     }
     for module in ["app.main", "app.core.bootstrap"]:
         assert "app.services.runtime_scheduler_startup" in graph[module]
@@ -51,6 +54,36 @@ def test_both_entries_use_real_helpers_caller_logger_and_original_error_handlers
         assert calls[0].lineno < calls[1].lineno
 
 
+def test_standalone_scheduler_passes_original_registry_logger_to_independent_optional_tasks():
+    from app.core import bootstrap
+    from app.services import runtime_scheduler_startup
+
+    helpers = [
+        "start_scheduler_outbox_tasks", "start_answer_projection_task",
+        "start_scheduler_health_task",
+    ]
+    runtime = next(
+        node for node in ast.parse((APP / "core/bootstrap.py").read_text()).body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_init_scheduler_dependencies"
+    )
+    calls = [
+        node for node in ast.walk(runtime) if isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) in helpers
+    ]
+    assert [node.func.id for node in calls] == helpers
+    for call in calls:
+        assert getattr(bootstrap, call.func.id) is getattr(runtime_scheduler_startup, call.func.id)
+        assert [ast.unparse(arg) for arg in call.args] == ["registry", "logger"]
+        assert not call.keywords
+    assert runtime.end_lineno - runtime.lineno + 1 <= 50
+    helper_tree = ast.parse((APP / "services/runtime_scheduler_startup.py").read_text())
+    for name in helpers:
+        function = next(node for node in helper_tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+        assert len(function.body) == 1 and isinstance(function.body[0], ast.Try)
+        assert len(function.body[0].handlers) == 1
+        assert ast.unparse(function.body[0].handlers[0].type) == "Exception"
+
+
 def test_importing_scheduler_startup_does_not_load_services_config_or_start_tasks():
     probe = """
 import asyncio
@@ -67,6 +100,8 @@ assert before == dict(os.environ)
 for name in (
     'app.main', 'app.core.bootstrap', 'app.core.config', 'app.core.database',
     'app.services.audit_cleanup_scheduler', 'app.services.recommendation_metrics_scheduler',
+    'app.core.runtime_task_registry', 'app.services.task_queue_service', 'app.services.outbox_service',
+    'app.services.practice.projection_reconciliation_service', 'app.services.task_observability_service',
 ):
     assert name not in sys.modules, name
 """
