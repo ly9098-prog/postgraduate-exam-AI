@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：570 个模块、2,238 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：571 个模块、2,240 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -23,7 +23,7 @@
 | 学习闭环 | `practice.py`、`wrong_questions.py`、`review.py`、`exams.py`、`study_plan.py`、`study_hub.py`、`adaptive_learning.py`；`services/practice_service.py`、`wrong_question_service.py`、`review_scheduler.py`、`exam_service.py`、`study_plan_service.py` | `exams`、`exams/[id]`、`recommendation/*`、题库配置 | `subpackages/study` 的刷题/结果/错题/今日复习/学习计划，`subpackages/exam` | GET 发题编排已治理；提交、错题/复习、考试、计划/推荐仍待迁移。刷题 `_loadQuestions` 342 行、今日复习 `submitGroup` 207 行，先刻画会话/答案/完成口径，不搬进万能 runner。回归入口：后端 `tests/practice`、`test_practice_chain_regressions.py`、`test_review_api.py`；小程序 `test-review-submit-completion.js`、`test-practice-result-diagnosis.js`。 |
 | 学习数据 | `pomodoro.py`、`stats.py`、`study_report.py`、`sync.py`；`services/pomodoro_service.py`、`pomodoro_normalization.py`、`pomodoro_attribution.py`、`stats_service.py`、`study_report_service.py` | `dashboard`、`app-users` 中已有展示 | `pages/home`、`pages/dashboard`、番茄钟和 `productivity/pomodoro-stats` | 番茄钟纯计算/持久化/待同步队列已接入，Page controller 与统计响应转换待治理。后端统计快照函数 338 行；必须保留多学科归因、暂停、跨日和幂等口径。现有番茄钟独立 Node 脚本及 `test_pomodoro_study_day_stats.py`、PostgreSQL 并发测试为入口。 |
 | 公式与导出 | `formulas.py`、`admin_formulas.py`、`exports.py`；`services/formula_*`、`services/export/*` | `formulas`、`formulas/[id]`、`formulas/new`、`formulas/categories` | `subpackages/formulas`、`subpackages/export` | 保留已有公式编辑 workbench/图谱辅助模块；列表页与导出记录页转换/查询职责待核查。DOCX/OMML 与 export service/processor 既有局部互引按具体边登记，不新增第二套导出器。回归入口：后端 `tests/export`、`test_admin_formulas.py`；小程序公式脚本、`test-export-capability-error.js`。 |
-| 公共运行时 | `main.py`、`worker_main.py`、`scheduler_main.py`；`services/task_queue_service.py`、`task_queue_worker.py`、缓存/存储/健康服务 | `lib/api/client.ts`、`lib/api/sse.ts`、`system/tasks`、`imports/tasks` | `app.js`、`utils/api.js`、`utils/storage.js`、现有内容渲染器 | 主入口 lifespan 174 行、任务消费 `_process_task_v2` 307 行，按角色/状态机拆分。HTTP、worker、scheduler 的退出与失败路径分别验证；新门禁不证明运行时安全。回归入口：`test_worker_sigterm.py`、`test_worker_kill.py`、任务队列测试及客户端 API/SSE 测试。 |
+| 公共运行时 | `main.py`、`worker_main.py`、`scheduler_main.py`；`services/task_queue_service.py`、`task_queue_worker.py`、缓存/存储/健康服务 | `lib/api/client.ts`、`lib/api/sse.ts`、`system/tasks`、`imports/tasks` | `app.js`、`utils/api.js`、`utils/storage.js`、现有内容渲染器 | 主入口 lifespan 136 行、任务消费 `_process_task_v2` 307 行，按角色/状态机拆分。HTTP、worker、scheduler 的退出与失败路径分别验证；新门禁不证明运行时安全。回归入口：`test_worker_sigterm.py`、`test_worker_kill.py`、任务队列测试及客户端 API/SSE 测试。 |
 
 ## 3. 当前热点的具体处理依据
 
@@ -32,7 +32,7 @@
 | 路径 | 文件行数 | 候选函数/方法及行数 | 已确认职责或待分离边界 |
 | --- | ---: | --- | --- |
 | `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
-| `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
+| `backend/app/services/practice_service.py` | 4254 | `get_smart_scored_questions` 239 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
@@ -234,3 +234,7 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第九十八批（2026-10-21）practice_service.py 的 get_smart_scored_questions 内 4 处重复元数据构建（2 处 smart_scored + random_fallback + repeat_window_fallback）提取为模块级 _build_scored_metadata 和 _build_fallback_metadata 两个私有函数；保留原字段集、round 精度、reason 构建调用和所有 kwargs。函数从 540 行降至 516 行；新增两个 helper 各 28/8 行。原 208 项 practice 测试 + 621 项 architecture/lifecycle + 232 项 architecture = 1,061 项通过，4 项既有 MagicMock 失败经 stash 验证为基线。0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。practice_service.py 4117 行，函数仍超 50 行预算——后续继续按阶段提取候选构建/评分/降级编排。
+
+
+第一百零二批（2026-10-21）scored状态/近期KP/QKP、KP名称及用户权重加载分离为具体helper，原session/查询顺序与权重await保留。直接入口测试发现第一百零一批图谱抽取的请求题量上限和provider对象归属回归，恢复原 `max(count * 3, 30)` 与赋值语义；此前外围208项通过及“No findings”不能证明该路径等价，旧记录须结合本条更正阅读。新增16项完整scored入口/状态契约并接入CI，15组对抽取前e8a045c0完整函数的结果、元数据、SQL轨迹、图谱参数与错误/取消一致；练习域混合224项通过（10条既有弃用/线程收尾警告）。SQL与SAVEPOINT均为端口替身，未验证真实PG/Redis/OCR。practice_service仍有4千余行，评分/多样性/补齐编排及全栈其余阶段继续，不以行数或零静态循环认定完成。
+最终按原YAML本地重放静态2,015（2条既有警告）/readiness69/云OCR30均通过；严格Ruff/compileall/diff与33保护哈希通过。四个新增helper47/17/7/33行，practice_service4,254/入口239行。下一步先刻画评分、多样性、补齐的真实分支，再调整业务职责；不继续以外围测试通过数替代直接行为证据。

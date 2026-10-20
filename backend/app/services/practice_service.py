@@ -3141,7 +3141,7 @@ async def _load_knowledge_and_graph_context(
         from app.core.config import settings as _settings
 
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
-            await _expand_graph_candidates(
+            graph_context = await _expand_graph_candidates(
                 db, user_id, scope_ids, candidates,
                 active_candidate_conditions, kp_mastery,
                 graph_runtime, count, graph_context,
@@ -3164,24 +3164,21 @@ async def _fetch_graph_context(
     target_kp_ids: list[int],
     subject_ids: list[int],
     graph_runtime: dict,
-    graph_context: dict,
-) -> None:
-    """Fetch adaptive prerequisite context and merge into graph_context."""
-    graph_context.update(
-        await adaptive_learning_service.get_recommendation_graph_context(
-            db=db,
-            user_id=user_id,
-            target_kp_ids=target_kp_ids,
-            subject_ids=subject_ids,
-            max_depth=int(graph_runtime.get("max_depth", 2)),
-            max_nodes=int(graph_runtime.get("max_nodes", 24)),
-            min_mastery=float(
-                graph_runtime.get("prerequisite_mastery_threshold", 60.0)
-            ),
-            min_confidence=float(
-                graph_runtime.get("prerequisite_confidence_threshold", 0.3)
-            ),
-        )
+) -> dict:
+    """Fetch adaptive prerequisite context without copying the provider result."""
+    return await adaptive_learning_service.get_recommendation_graph_context(
+        db=db,
+        user_id=user_id,
+        target_kp_ids=target_kp_ids,
+        subject_ids=subject_ids,
+        max_depth=int(graph_runtime.get("max_depth", 2)),
+        max_nodes=int(graph_runtime.get("max_nodes", 24)),
+        min_mastery=float(
+            graph_runtime.get("prerequisite_mastery_threshold", 60.0)
+        ),
+        min_confidence=float(
+            graph_runtime.get("prerequisite_confidence_threshold", 0.3)
+        ),
     )
 
 
@@ -3193,12 +3190,13 @@ async def _extend_with_graph_question_candidates(
     active_candidate_conditions: list,
     graph_candidate_ids: list[int],
     weak_target_ids: list[int],
+    count: int,
 ) -> None:
     """Query prerequisite-linked questions and extend the candidate list."""
     from app.models.question_knowledge_point import QuestionKnowledgePoint
 
     existing_ids = {q.id for q in candidates}
-    graph_limit = max(len(candidates) * 3, 30)
+    graph_limit = max(count * 3, 30)
     graph_question_ids = select(
         QuestionKnowledgePoint.question_id
     ).where(
@@ -3242,9 +3240,11 @@ async def _expand_graph_candidates(
     graph_runtime: dict,
     count: int,
     graph_context: dict,
-) -> None:
+) -> dict:
     """Expand candidates via adaptive prerequisite graph (SAVEPOINT isolated)."""
-    from app.models.question_knowledge_point import QuestionKnowledgePoint
+    from app.models.question_knowledge_point import (
+        QuestionKnowledgePoint,  # noqa: F401 - preserve pre-savepoint import
+    )
 
     async with db.begin_nested():
         weak_target_ids = _pick_graph_target_kps(
@@ -3252,22 +3252,136 @@ async def _expand_graph_candidates(
             limit=int(graph_runtime.get("weak_target_limit", 5)),
         )
         if not weak_target_ids:
-            return
+            return graph_context
         from app.services import adaptive_learning_service
 
-        await _fetch_graph_context(
+        graph_context = await _fetch_graph_context(
             adaptive_learning_service, db, user_id,
-            weak_target_ids, scope_ids, graph_runtime, graph_context,
+            weak_target_ids, scope_ids, graph_runtime,
         )
         graph_candidate_ids = list(
             graph_context.get("prerequisite_candidates", {}).keys()
         )
         if not graph_candidate_ids:
-            return
+            return graph_context
         await _extend_with_graph_question_candidates(
             db, user_id, candidates, active_candidate_conditions,
-            graph_candidate_ids, weak_target_ids,
+            graph_candidate_ids, weak_target_ids, count,
         )
+    return graph_context
+
+
+
+async def _load_candidate_states(
+    db: AsyncSession,
+    user_id: int,
+    cand_ids: set[int],
+    scope_ids: list[int],
+) -> tuple[dict[int, object], set[int], dict[int, list[int]]]:
+    """Load user question state, recent knowledge points, and QKP mapping."""
+    from app.models.user_question_state import UserQuestionState
+
+    qs_result = await db.execute(
+        select(UserQuestionState).where(
+            UserQuestionState.user_id == user_id,
+            UserQuestionState.question_id.in_(cand_ids),
+        )
+    )
+    q_state_map: dict[int, object] = {
+        s.question_id: s for s in qs_result.scalars().all()
+    }
+
+    recent_kp_result = await db.execute(
+        select(QuestionVersionKnowledgePoint.knowledge_point_id)
+        .join(
+            PracticeRecord,
+            PracticeRecord.question_version_id
+            == QuestionVersionKnowledgePoint.question_version_id,
+        )
+        .where(
+            PracticeRecord.user_id == user_id,
+            PracticeRecord.subject_id.in_(scope_ids),
+        )
+        .order_by(PracticeRecord.answered_at.desc())
+        .limit(20)
+    )
+    recent_kp_ids: set[int] = {r[0] for r in recent_kp_result.all()}
+
+    from app.models.question_knowledge_point import QuestionKnowledgePoint
+
+    qkp_result = await db.execute(
+        select(
+            QuestionKnowledgePoint.question_id,
+            QuestionKnowledgePoint.knowledge_point_id,
+        ).where(QuestionKnowledgePoint.question_id.in_(cand_ids))
+    )
+    q_kp_map: dict[int, list[int]] = {}
+    for qid, kid in qkp_result.all():
+        q_kp_map.setdefault(qid, []).append(kid)
+    return q_state_map, recent_kp_ids, q_kp_map
+
+
+async def _load_kp_names(
+    db: AsyncSession, q_kp_map: dict[int, list[int]], scope_ids: list[int],
+) -> dict[int, str]:
+    """Load KP names for all candidate knowledge points."""
+    all_candidate_kp_ids = list({kid for kids in q_kp_map.values() for kid in kids})
+    if not all_candidate_kp_ids:
+        return {}
+    from app.models.knowledge_point import KnowledgePoint
+
+    kp_name_result = await db.execute(
+        select(KnowledgePoint.id, KnowledgePoint.name).where(
+            KnowledgePoint.id.in_(all_candidate_kp_ids),
+            KnowledgePoint.subject_id.in_(scope_ids),
+            KnowledgePoint.is_active == True,  # noqa: E712
+        )
+    )
+    return {row.id: row.name for row in kp_name_result.all()}
+
+
+def _extract_graph_context(graph_context: dict) -> tuple[dict, dict, dict]:
+    """Unpack graph context fields with empty defaults."""
+    return (
+        graph_context.get("blocked_targets", {}),
+        graph_context.get("prerequisite_candidates", {}),
+        graph_context.get("prerequisites_by_target", {}),
+    )
+
+
+async def _compute_recommendation_weights(
+    db: AsyncSession,
+    user_id: int,
+    system_weights: dict,
+) -> dict[str, float]:
+    """Merge admin system weights with user adaptive weights."""
+    user_weights: dict[str, float] = {key: 1.0 for key in system_weights}
+    try:
+        from app.core.config import settings as _settings
+
+        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_WEIGHT_ENABLED:
+            from app.services import adaptive_learning_service
+
+            user_weights = await adaptive_learning_service.get_recommend_weights(
+                db, user_id
+            )
+    except Exception:
+        logger.debug(
+            "V6.4 用户权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True
+        )
+
+    weight_keys = {
+        "due_weight",
+        "weakness_weight",
+        "wrong_weight",
+        "new_question_weight",
+        "diversity_weight",
+        "path_weight",
+    }
+    return {
+        key: float(system_weights.get(key, 1.0)) * float(user_weights.get(key, 1.0))
+        for key in weight_keys
+    }
 
 
 
@@ -3295,9 +3409,15 @@ async def get_smart_scored_questions(
     降级链:
       高分候选 → 放宽多样性 → 随机补齐(含24h内) → 放弃24h限制重查 → 最终随机
     """
-    from app.models.question_knowledge_point import QuestionKnowledgePoint
-    from app.models.user_knowledge_state import UserKnowledgeState
-    from app.models.user_question_state import UserQuestionState
+    from app.models.question_knowledge_point import (
+        QuestionKnowledgePoint,  # noqa: F401 - preserve entry import boundary
+    )
+    from app.models.user_knowledge_state import (
+        UserKnowledgeState,  # noqa: F401 - preserve entry import boundary
+    )
+    from app.models.user_question_state import (
+        UserQuestionState,  # noqa: F401 - preserve entry import boundary
+    )
 
     now = utcnow()
     metadata: dict[int, dict] = {}
@@ -3328,99 +3448,14 @@ async def get_smart_scored_questions(
     )
 
     cand_ids = {q.id for q in candidates}
-
-    # ── 2. 批量加载状态 ──
-    qs_result = await db.execute(
-        select(UserQuestionState).where(
-            UserQuestionState.user_id == user_id,
-            UserQuestionState.question_id.in_(cand_ids),
-        )
+    q_state_map, recent_kp_ids, q_kp_map = await _load_candidate_states(
+        db, user_id, cand_ids, scope_ids,
     )
-    q_state_map: dict[int, object] = {
-        s.question_id: s for s in qs_result.scalars().all()
-    }
-
-    # ── 3. 最近练习知识点 (diversity) ──
-    recent_kp_result = await db.execute(
-        select(QuestionVersionKnowledgePoint.knowledge_point_id)
-        .join(
-            PracticeRecord,
-            PracticeRecord.question_version_id
-            == QuestionVersionKnowledgePoint.question_version_id,
-        )
-        .where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.subject_id.in_(scope_ids),
-        )
-        .order_by(PracticeRecord.answered_at.desc())
-        .limit(20)
+    blocked_kps, graph_candidates, prerequisites_by_target = _extract_graph_context(graph_context)
+    kp_names = await _load_kp_names(db, q_kp_map, scope_ids)
+    rec_weights = await _compute_recommendation_weights(
+        db, user_id, system_weights,
     )
-    recent_kp_ids: set[int] = {r[0] for r in recent_kp_result.all()}
-
-    # ── 4. 批量加载 QKP 映射 ──
-    qkp_result = await db.execute(
-        select(
-            QuestionKnowledgePoint.question_id,
-            QuestionKnowledgePoint.knowledge_point_id,
-        ).where(QuestionKnowledgePoint.question_id.in_(cand_ids))
-    )
-    q_kp_map: dict[int, list[int]] = {}
-    for qid, kid in qkp_result.all():
-        q_kp_map.setdefault(qid, []).append(kid)
-
-    # ── 4.5 图谱上下文 (V6.5) ──
-    blocked_kps: dict[int, list[dict]] = graph_context.get("blocked_targets", {})
-    graph_candidates: dict[int, dict] = graph_context.get("prerequisite_candidates", {})
-    prerequisites_by_target: dict[int, list[dict]] = graph_context.get(
-        "prerequisites_by_target", {}
-    )
-
-    # Names are needed only for the user-facing explanation; load them once for
-    # all candidate KPs instead of querying while building each reason.
-    all_candidate_kp_ids = list({kid for kids in q_kp_map.values() for kid in kids})
-    kp_names: dict[int, str] = {}
-    if all_candidate_kp_ids:
-        from app.models.knowledge_point import KnowledgePoint
-
-        kp_name_result = await db.execute(
-            select(KnowledgePoint.id, KnowledgePoint.name).where(
-                KnowledgePoint.id.in_(all_candidate_kp_ids),
-                KnowledgePoint.subject_id.in_(scope_ids),
-                KnowledgePoint.is_active == True,  # noqa: E712
-            )
-        )
-        kp_names = {row.id: row.name for row in kp_name_result.all()}
-
-    # ── 4.6 加载用户推荐权重 (V6.4) + Admin 系统权重 ──
-    # final_weight = system_weight × user_weight。系统层用于运营调参，用户层
-    # 用于自适应个性化；任意一层读取失败都回退到 1.0。
-    user_weights: dict[str, float] = {key: 1.0 for key in system_weights}
-    try:
-        from app.core.config import settings as _settings
-
-        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_WEIGHT_ENABLED:
-            from app.services import adaptive_learning_service
-
-            user_weights = await adaptive_learning_service.get_recommend_weights(
-                db, user_id
-            )
-    except Exception:
-        logger.debug(
-            "V6.4 用户权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True
-        )
-
-    weight_keys = {
-        "due_weight",
-        "weakness_weight",
-        "wrong_weight",
-        "new_question_weight",
-        "diversity_weight",
-        "path_weight",
-    }
-    rec_weights = {
-        key: float(system_weights.get(key, 1.0)) * float(user_weights.get(key, 1.0))
-        for key in weight_keys
-    }
 
     # ── 5. 逐题打分 ──
     scored: list[tuple[Question, float, list[str]]] = []
