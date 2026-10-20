@@ -59,6 +59,18 @@ const modules = [
     path: "./components/review-visual-segment-editor.tsx",
     imports: ["react", "lucide-react", "@/lib/segment-utils", "../hooks/use-review-segment-drag"],
   },
+  {
+    path: "./review-option-editing.ts",
+    imports: ["./review-edit-state"],
+  },
+  {
+    path: "./components/review-option-editor.tsx",
+    imports: [
+      "@/lib/question-types", "@/lib/option-visual-utils", "../review-edit-state",
+      "../review-option-editing", "./multi-blank-choice-editor", "./multi-blank-choice-utils",
+      "./option-visual-editor",
+    ],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {

@@ -30,7 +30,6 @@ import {
 } from "./components/multi-blank-choice-utils";
 import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
 import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
-import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
@@ -50,7 +49,7 @@ import { ReviewAnswerEditor } from "./components/review-answer-editor";
 import { ImageAnswerPreview, ImageAnswerResult } from "./components/image-answer-results";
 import { BatchAnswerPreview, BatchAnswerResult } from "./components/batch-answer-results";
 import { OptionVisualPreview } from "./components/option-visual-preview";
-import { OptionVisualEditor } from "./components/option-visual-editor";
+import { ReviewOptionEditor } from "./components/review-option-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
 import { extractOptionVisualModel, normalizeOptionTextForDisplay, type OptionVisualModel } from "@/lib/option-visual-utils";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
@@ -131,11 +130,6 @@ function FilterDropdown({
 }
 
 type ConfirmState = ReviewActionState | null;
-
-/** 多空（多选）选择题：每空可选多个选项 */
-function isMultiBlankMultipleChoice(questionType: string): boolean {
-  return canonicalizeQuestionType(questionType) === "multi_blank_multiple_choice";
-}
 
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
@@ -2175,90 +2169,17 @@ export default function ImportReviewPage() {
                   />
 
                   {/* Options edit */}
-                  <section className="animate-fade-up drawer-section-delay-3 rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
-                    <div className="mb-3 flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
-                        <span className="text-[10px] font-bold" style={{ color: "#c49a6b" }}>选</span>
-                      </span>
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">选项</p>
-                    </div>
-                    {(() => {
-                      const mb = isMultiBlankChoice(editState.question_type) ? (editState.multiBlank ?? null) : null;
-                      const hasMultiBlank = mb != null && mb.groups.length >= 2;
-                      return hasMultiBlank ? (
-                        <MultiBlankChoiceEditor
-                          groups={mb!.groups}
-                          answerMap={mb!.answerMap}
-                          usesSharedOptions={mb!.usesSharedOptions}
-                          sharedOptions={mb!.sharedOptions}
-                          multiSelect={isMultiBlankMultipleChoice(editState.question_type)}
-                          dedupWarnings={mb!.dedupWarnings}
-                          dedupErrors={mb!.dedupErrors}
-                          hasUnappliedDraft={mb!.hasUnappliedDraft}
-                          onAction={onMultiBlankAction}
-                        />
-                      ) : optionVisualModel.mode !== "none" ? (
-                        <OptionVisualEditor
-                          model={optionVisualModel}
-                          options={editState.options}
-                          onChange={(newOpts) => setEditState({ ...editState, options: newOpts })}
-                          onRequestTextModeOverride={() => {
-                            setRuntimeIssues((prev) => [...prev, "placeholder_missing → text mode override requires explicit confirmation"]);
-                          }}
-                        />
-                      ) : (
-                      <div className="space-y-2">
-                        {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
-                        {editState.options.map((opt, index) => (
-                          <div key={index} className="flex items-start gap-2">
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center option-chip mt-1">{opt.key}</span>
-                            <div className="flex-1 space-y-1.5">
-                              <input
-                                className="h-9 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
-                                value={opt.text}
-                                onChange={(event) => {
-                                  const next = [...editState.options];
-                                  next[index] = { ...next[index], text: event.target.value };
-                                  setEditState({ ...editState, options: next });
-                                }}
-                              />
-                              {opt.segments && opt.segments.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {opt.segments.map((seg, si) => {
-                                    const segType = String(seg.type ?? "").toLowerCase();
-                                    if (segType === "text") return null;
-                                    const isImg = ["image", "math_image", "table_image", "code_image"].includes(segType);
-                                    if (!isImg && segType !== "newline") return null;
-                                    const label = segType === "math_image" ? "公式" : segType === "table_image" ? "表格" : segType === "code_image" ? "代码" : segType === "newline" ? "换行" : "图片";
-                                    return (
-                                      <div key={si} className="flex items-center gap-1 rounded-md border border-[var(--color-border)]/50 bg-white/70 px-2 py-1">
-                                        {isImg && seg.url ? (
-                                          <img src={String(seg.url)} alt="" className="h-8 w-8 rounded object-cover" />
-                                        ) : null}
-                                        <span className="text-[10px] text-[var(--color-text-hint)]">{label}</span>
-                                        <button
-                                          type="button"
-                                          className="ml-0.5 flex h-4 w-4 items-center justify-center rounded text-[9px] text-red-400 hover:bg-red-50 hover:text-red-600"
-                                          onClick={() => {
-                                            const next = [...editState.options];
-                                            const segs = next[index].segments?.filter((_, i) => i !== si) ?? [];
-                                            next[index] = { ...next[index], segments: segs.length > 0 ? segs : undefined };
-                                            setEditState({ ...editState, options: next });
-                                          }}
-                                          title="移除该片段"
-                                        >✕</button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  </section>
+                  <ReviewOptionEditor
+                    questionType={editState.question_type}
+                    options={editState.options}
+                    multiBlank={editState.multiBlank}
+                    visualModel={optionVisualModel}
+                    onOptionsChange={(options) => setEditState({ ...editState, options })}
+                    onMultiBlankAction={onMultiBlankAction}
+                    onRequestTextModeOverride={() => {
+                      setRuntimeIssues((prev) => [...prev, "placeholder_missing → text mode override requires explicit confirmation"]);
+                    }}
+                  />
 
                   {/* Answer & Analysis edit */}
                   <ReviewAnswerEditor
