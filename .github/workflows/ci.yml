@@ -359,6 +359,19 @@ jobs:
           python -m pytest tests/test_api/test_health.py tests/test_api/test_admin_health.py \
             tests/integration/test_readiness.py --run-integration -v --tb=short
 
+      - name: Cloud OCR profile boundary regression
+        env:
+          APP_ENV: test
+          DEPLOYMENT_PROFILE: local_import
+          APP_SECRET: ci-secret-key-not-for-production-use-12345678
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          REDIS_URL: ""
+          SENTRY_DSN: ""
+          OCR_ENABLED: "false"
+          STAGING_STORAGE_DIR: ${{ runner.temp }}/cloud-profile-staging
+        run: |
+          python -m pytest tests/cloud_isolation/test_cloud_ocr_isolation.py -v --tb=short
+
       - name: Import smoke test
         run: |
           python -c "

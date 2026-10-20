@@ -173,3 +173,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第七十八批`core/http_runtime_policy.py`拥有HTTP角色归一化与配置/env写回、云OCR模块隔离及组件启动失败报告，main仍传原Settings/解析器/探针/production mode，原8组件标签和顺序不变；旧私有report入口移除。132项原刻画先过，相关168项通过；258组状态/env/probe/error/cancel/cause/log、完整函数/展开main AST和328路径OpenAPI一致。完整静态CI1,253项（2既有弃用警告）/readiness69项通过，完整lifespan33项状态恢复再通过。模块90行/函数23、26、22行，main708行/lifespan412行，557模块/2,202边/零循环。额外旧云隔离测试4失败/3通过：test env与cloud profile不兼容，相关文件与旧提交相同且复现未加载main/新policy，确认既有fixture缺口；新进程cloud配置/无Paddle导入检查通过，下一批修复测试而不放宽生产guard。完整独立角色/启动失败清理仍未完成。
+
+
+第七十九批独立恢复旧云OCR测试基线（原8失败/15通过），不修改app生产源码：一致的安全画像、隔离并恢复runtime singleton/SDK对象、清空profile cache，移除pipeline/staging强制重导入。真实legacy wrapper/诊断/远端执行编排/gateway过滤由替身端口验证，云成功/失败/异常/取消均校验识别与shutdown；混合画像必须拒绝。四类新解释器探针在临时cwd使用合成Fernet key、拒绝socket连接，包含真实HTTP装配/OpenAPI无Paddle；不等同于实际lifespan启动。云30项、与完整lifespan/策略混合195项、额外全局状态恢复通过；原YAML静态1,253项（2既有弃用警告）/readiness69项/新增独立云步骤30项通过。严格Ruff/compileall/diff/保护哈希与只读审查通过，No findings。生产图保持557模块/2,202边/零循环，main708行/lifespan412行；启动资源/角色治理及既有清理缺口、真实依赖/客户端验收仍待完成。

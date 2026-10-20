@@ -1,522 +1,208 @@
-"""Cloud OCR isolation tests — verify cloud_api profile never uses local OCR.
-
-Required by the production safety specification:
-- No paddleocr/paddle imports during startup
-- No local OCR subprocess creation
-- No local OCR adapter fallback after remote failure
-- Import pipeline doesn't check local PaddleOCR installation
-- Startup config validation rejects local profile in production
-"""
+"""Cloud OCR profile boundaries with real guards and isolated backend ports."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def _patch_settings():
-    """Patch settings for production-mode tests.
-
-    Pydantic settings are loaded at import time, so changing os.environ
-    doesn't affect the already-loaded settings object. This fixture
-    patches settings.APP_ENV when needed.
-    """
-    from app.core.config import settings
-
-    original = settings.APP_ENV
-    yield
-    settings.APP_ENV = original
-    # get_ocr_profile() is lru_cached from the current settings; a production
-    # profile cached here would leak into later tests, so drop it on teardown.
-    from app.core.ocr_profile import get_ocr_profile
-    get_ocr_profile.cache_clear()
-
-
-@pytest.fixture(autouse=True)
-def _unload_paddle_modules():
-    """Remove paddle/paddleocr from sys.modules so cloud isolation tests pass.
-
-    ``test_process_pool_lifecycle.py`` runs before this file and loads
-    ``paddle`` / ``paddleocr`` into ``sys.modules``.  Those modules are
-    legitimately installed in the dev environment but must not appear
-    *loaded* when the cloud_api config validator checks for local OCR deps.
-
-    This fixture temporarily removes every ``paddle*`` key (top-level and all
-    submodules such as ``paddle._C`` / ``paddle.base.libpaddle.pir``) before
-    each test, then restores the original state so other test files are
-    unaffected.
-    """
-    saved = {}
-    for mod in list(sys.modules):
-        if mod.startswith(("paddle", "paddleocr")):
-            saved[mod] = sys.modules.pop(mod)
-    yield
-    # Always restore the original module objects. If any module was re-imported
-    # during the test (e.g. paddleocr_vl_client), sys.modules now holds a NEW
-    # instance while code imported earlier still references the old one — that
-    # split state breaks patch() identity later (e.g. test_p5_ssrf). Restoring
-    # the originals keeps every import on the same module instance.
-    for mod, obj in saved.items():
-        sys.modules[mod] = obj
+from app.core.config import settings
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+from app.core.ocr_types import WorkerResult
+from app.services import import_pipeline_service as pipeline
+from app.services import ocr_service, ocr_worker_client, production_config_validator
+from tests.cloud_isolation.cloud_subprocess_scripts import (
+    HTTP_IMPORT_PROBE,
+    INVALID_LOCAL_BACKEND_PROBE,
+    LOCAL_IMPORT_PROBE,
+    VALID_CLOUD_PROBE,
+)
+from tests.cloud_isolation.cloud_test_ports import cloud_settings as cloud_settings
+from tests.cloud_isolation.cloud_test_ports import forbid_local_ocr as forbid_local_ocr
+from tests.cloud_isolation.cloud_test_ports import (
+    install_paddle_probe,
+    run_script,
+)
+from tests.cloud_isolation.cloud_test_ports import (
+    isolated_cloud_settings as isolated_cloud_settings,
+)
+from tests.cloud_isolation.cloud_test_ports import (
+    production_app_env as production_app_env,
+)
 
 
 class TestCloudProfileDetection:
-    """detect_deployment_profile() returns correct values."""
-
-    def test_cloud_api_when_env_set(self):
-        from app.core.deployment_profile import DeploymentProfile
-        from app.services.production_config_validator import detect_deployment_profile
-
-        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False):
+    def test_cloud_api_when_env_set(self, production_app_env):
+        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}):
             assert detect_deployment_profile() == DeploymentProfile.CLOUD_API
 
     def test_local_import_when_env_set(self):
-        from app.core.deployment_profile import DeploymentProfile
-        from app.services.production_config_validator import detect_deployment_profile
-
-        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "local_import"}, clear=False):
+        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "local_import"}):
             assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
 
-    def test_cloud_api_when_app_env_production(self):
-        from app.core.config import settings
-        from app.core.deployment_profile import DeploymentProfile
-        from app.services.production_config_validator import detect_deployment_profile
+    def test_cloud_api_when_app_env_production(self, production_app_env):
+        assert detect_deployment_profile() == DeploymentProfile.CLOUD_API
 
-        original = settings.APP_ENV
-        settings.APP_ENV = "production"
-        try:
-            with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "", "DEPLOY_PROFILE": ""}, clear=False):
-                assert detect_deployment_profile() == DeploymentProfile.CLOUD_API
-        finally:
-            settings.APP_ENV = original
+    def test_local_import_when_app_env_development(self, monkeypatch):
+        monkeypatch.setattr(settings, "APP_ENV", "development")
+        assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
 
-    def test_local_import_when_app_env_development(self):
-        from app.core.deployment_profile import DeploymentProfile
-        from app.services.production_config_validator import detect_deployment_profile
-
-        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "", "DEPLOY_PROFILE": ""}, clear=False):
-            assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
+    @pytest.mark.parametrize("app_env,profile", [
+        ("test", "cloud_api"), ("development", "cloud_api"), ("production", "local_import"),
+    ])
+    def test_mixed_security_environment_is_rejected(self, monkeypatch, app_env, profile):
+        monkeypatch.setattr(settings, "APP_ENV", app_env)
+        monkeypatch.setenv("DEPLOYMENT_PROFILE", profile)
+        with pytest.raises(ValueError, match="部署档案冲突"):
+            detect_deployment_profile()
 
 
 class TestCloudOcrLegacyFunctionsRejected:
-    """Legacy OCR functions must refuse in cloud_api mode."""
-
-    @patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False)
-    def test_legacy_ocr_pages_rejected_in_cloud(self):
-        from app.services.ocr_service import _legacy_ocr_pages
-
+    def test_legacy_ocr_pages_rejected_in_cloud(self, cloud_settings, forbid_local_ocr):
         with pytest.raises(RuntimeError, match="cloud_api"):
-            _legacy_ocr_pages([])
+            ocr_service._legacy_ocr_pages([(1, b"synthetic-image")])
 
-    @patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False)
-    def test_legacy_ocr_pages_with_boxes_rejected_in_cloud(self):
-        from app.services.ocr_service import _legacy_ocr_pages_with_boxes
-
+    def test_legacy_ocr_pages_with_boxes_rejected_in_cloud(self, cloud_settings, forbid_local_ocr):
         with pytest.raises(RuntimeError, match="cloud_api"):
-            _legacy_ocr_pages_with_boxes([])
+            ocr_service._legacy_ocr_pages_with_boxes([(1, b"synthetic-image")])
 
-    @patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False)
-    def test_legacy_ocr_raw_text_rejected_in_cloud(self):
-        from app.services.ocr_service import _legacy_ocr_raw_text
-
+    def test_legacy_ocr_raw_text_rejected_in_cloud(self, cloud_settings, forbid_local_ocr):
         with pytest.raises(RuntimeError, match="cloud_api"):
-            _legacy_ocr_raw_text(b"")
+            ocr_service._legacy_ocr_raw_text(b"synthetic-image")
 
-    @patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False)
-    def test_reset_ocr_engine_rejected_in_cloud(self):
-        from app.services.ocr_service import reset_ocr_engine
-
+    def test_reset_ocr_engine_rejected_in_cloud(self, cloud_settings, forbid_local_ocr):
         with pytest.raises(RuntimeError, match="cloud_api"):
-            reset_ocr_engine()
+            ocr_service.reset_ocr_engine()
 
-    @patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "local_import"}, clear=False)
-    def test_legacy_ocr_pages_allowed_in_local(self):
-        """In local_import mode, legacy functions should not be rejected by the cloud guard."""
-        from app.services.ocr_service import _legacy_ocr_pages
-
-        # Should raise RuntimeError about executor, not about cloud_api
-        try:
-            _legacy_ocr_pages([])
-        except RuntimeError as e:
-            assert "cloud_api" not in str(e).lower()
+    def test_legacy_ocr_pages_allowed_in_local(self, monkeypatch):
+        recognize = AsyncMock(return_value={1: "synthetic OCR text"})
+        monkeypatch.setitem(sys.modules, "app.services.ocr_executor_service", SimpleNamespace(
+            ocr_executor=SimpleNamespace(run_ocr_pages=recognize),
+        ))
+        pages = [(1, b"synthetic-image")]
+        assert ocr_service._legacy_ocr_pages(pages) == {1: "synthetic OCR text"}
+        recognize.assert_awaited_once_with(pages)
 
 
 class TestCloudOcrNoPaddleSpec:
-    """Import pipeline must not check for PaddleOCR in cloud mode."""
-
-    def _import_with_staging(self, env_patch: dict) -> None:
-        """Hack: force fresh import of staging_storage under patched env + settings."""
-        import sys
-
-        from app.core.config import settings
-
-        # Ensure the staging dir parent exists
-        staging_dir = env_patch.get("STAGING_STORAGE_DIR", "/tmp/test_staging")
-        # Popping forces a fresh import under the patched env, but the re-import
-        # replaces the sys.modules entries with NEW module objects. Restore the
-        # originals afterwards so modules imported earlier in the suite (e.g.
-        # app.api.v1.imports) keep the same function objects — otherwise
-        # identity checks against the service module fail later.
-        saved = {}
-        for mod in ("app.services.staging_storage", "app.services.import_pipeline_service"):
-            saved[mod] = sys.modules.pop(mod, None)
-        try:
-            with patch.object(settings, "STAGING_STORAGE_DIR", staging_dir):
-                with patch.dict(os.environ, env_patch, clear=False):
-                    from app.services.import_pipeline_service import (
-                        _build_ocr_runtime_diagnostics,
-                    )
-
-                    return _build_ocr_runtime_diagnostics()
-        finally:
-            for mod, obj in saved.items():
-                if obj is None:
-                    sys.modules.pop(mod, None)
-                else:
-                    # Always restore the original module object. Without this,
-                    # the fresh import leaves a NEW module in sys.modules, and
-                    # modules imported before (top-level) point at the old one
-                    # while run-time imports get the new one — split state.
-                    sys.modules[mod] = obj
-
-    def test_build_ocr_diagnostics_no_paddle_check_in_cloud(self):
-        """In cloud_api mode, diagnostics report paddleocr as unavailable without checking."""
-        result = self._import_with_staging({
-            "DEPLOYMENT_PROFILE": "cloud_api",
-            "STAGING_STORAGE_DIR": "/tmp/test_staging",
-        })
-        assert result.get("paddleocr_available") is False
-
-    def test_build_ocr_diagnostics_checks_paddle_in_local(self):
-        """In local_import mode, diagnostics check for paddleocr."""
-        result = self._import_with_staging({
-            "DEPLOYMENT_PROFILE": "local_import",
-            "STAGING_STORAGE_DIR": "/tmp/test_staging",
-        })
-        assert "paddleocr_available" in result
-
-    def test_image_import_no_paddle_check_in_cloud(self):
-        """In cloud_api mode, image import validation doesn't check for paddleocr."""
-        result = self._import_with_staging({
-            "DEPLOYMENT_PROFILE": "cloud_api",
-            "STAGING_STORAGE_DIR": "/tmp/test_staging",
-        })
+    def test_build_ocr_diagnostics_no_paddle_check_in_cloud(self, cloud_settings, monkeypatch):
+        probes = install_paddle_probe(monkeypatch, forbidden=True)
+        result = pipeline._build_ocr_runtime_diagnostics()
         assert result["paddleocr_available"] is False
+        assert result["execution_backend"] == "paddlex_http"
+        assert result["use_gpu"] is False
+        assert probes == []
+
+    def test_build_ocr_diagnostics_checks_paddle_in_local(self, monkeypatch):
+        probes = install_paddle_probe(monkeypatch, available=True)
+        result = pipeline._build_ocr_runtime_diagnostics()
+        assert result["paddleocr_available"] is True
+        assert probes == ["paddleocr"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outcome", ["success", "failed", "error", "cancel"])
+    async def test_image_import_no_paddle_check_in_cloud(
+        self, cloud_settings, forbid_local_ocr, monkeypatch, outcome,
+    ):
+        probes = install_paddle_probe(monkeypatch, forbidden=True)
+        result = {"text": "synthetic remote OCR text", "lines": []}
+        worker_result = WorkerResult(status="success", result=result)
+        client = SimpleNamespace(recognize_batch=AsyncMock(return_value=[worker_result]), shutdown=AsyncMock())
+        if outcome == "failed":
+            worker_result.status = "failed"
+            worker_result.stable_error_code = "ocr.synthetic_failure"
+        error = asyncio.CancelledError() if outcome == "cancel" else RuntimeError("synthetic remote error")
+        if outcome in {"error", "cancel"}:
+            client.recognize_batch.side_effect = error
+        create = Mock(return_value=client)
+        monkeypatch.setattr(ocr_service, "get_gateway", lambda: None)
+        monkeypatch.setattr(ocr_worker_client, "create_ocr_worker_client", create)
+        if outcome == "success":
+            assert await pipeline._run_ocr_via_configured_backend(b"synthetic-image") is result
+        elif outcome == "failed":
+            with pytest.raises(RuntimeError, match="ocr.synthetic_failure"):
+                await pipeline._run_ocr_via_configured_backend(b"synthetic-image")
+        else:
+            with pytest.raises(type(error)) as caught:
+                await pipeline._run_ocr_via_configured_backend(b"synthetic-image")
+            assert caught.value is error
+        client.recognize_batch.assert_awaited_once_with([(1, b"synthetic-image")])
+        client.shutdown.assert_awaited_once()
+        create.assert_called_once()
+        config = create.call_args.args[0]
+        assert config.profile == "cloud_api" and config.execution_backend == "paddlex_http"
+        assert probes == []
 
 
 class TestCloudOcrSubprocessIsolation:
-    """Subprocess-level isolation tests — verify cloud_api in a clean interpreter.
+    def test_subprocess_cloud_api_no_paddle_imported(self, tmp_path):
+        assert "SUCCESS: No local OCR modules" in run_script(VALID_CLOUD_PROBE, tmp_path)
 
-    These tests start a fresh Python subprocess with cloud_api environment
-    variables to ensure no paddle/paddleocr modules leak at any point during
-    application startup or import.
-    """
+    def test_subprocess_http_assembly_does_not_import_paddle(self, tmp_path):
+        output = run_script(HTTP_IMPORT_PROBE, tmp_path)
+        assert "HTTP_IMPORT_OK" in output
+        assert "SUCCESS: No local OCR modules" in output
 
-    SUBPROCESS_SCRIPT = """
-import os
-import sys
+    def test_subprocess_cloud_api_config_validator_rejects_local(self, tmp_path):
+        assert "CORRECTLY_REJECTED" in run_script(INVALID_LOCAL_BACKEND_PROBE, tmp_path)
 
-# Must be set before any imports
-os.environ["APP_ENV"] = "production"
-os.environ["DEPLOYMENT_PROFILE"] = "cloud_api"
-os.environ["PROCESS_ROLE"] = "worker"
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://u:p@localhost:5432/db"
-os.environ["REDIS_URL"] = "redis://localhost:6379/0"
-os.environ["APP_SECRET"] = "a" * 32
-os.environ["CORS_ORIGINS"] = '["https://example.com"]'
-os.environ["ALLOWED_HOSTS"] = '["example.com"]'
-os.environ["PUBLIC_BASE_URL"] = "https://example.com"
-os.environ["WECHAT_APP_ID"] = "wx-test-app-id"
-os.environ["WECHAT_APP_SECRET"] = "wx-test-app-secret"
-os.environ["STAGING_STORAGE_DIR"] = "/tmp"
-os.environ["WORKER_SCRATCH_DIR"] = "/tmp/worker-scratch-test"
-# Cloud OCR config
-os.environ["OCR_ENABLED"] = "true"
-os.environ["OCR_USE_GPU"] = "false"
-os.environ["OCR_EXECUTION_BACKEND"] = "paddlex_http"
-os.environ["OCR_REMOTE_URL"] = "https://ocr.example.com/api"
-os.environ["OCR_REMOTE_TOKEN"] = "test-token-123"
-os.environ["VECTOR_ENABLED"] = "false"
-
-# Cloud-appropriate PDF settings (must pass production validator)
-os.environ["PDF_RENDER_PAGE_WINDOW"] = "1"
-os.environ["PDF_MAX_RENDER_PAGES_CONCURRENT"] = "1"
-os.environ["PDF_MAX_PAGES"] = "30"
-os.environ["PDF_MAX_FILE_SIZE_BYTES"] = str(5 * 1024 * 1024)
-
-# Wipe any cached modules from parent process
-for mod in list(sys.modules.keys()):
-    if "paddle" in mod or "ocr" in mod:
-        del sys.modules[mod]
-
-# Now import app core
-from app.core.config import settings
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
-from app.services.production_config_validator import validate_production_config
-
-# Verify profile
-profile = detect_deployment_profile()
-assert profile == DeploymentProfile.CLOUD_API, f"Expected CLOUD_API, got {profile}"
-
-# Sync validation must pass for valid cloud config
-validate_production_config()
-
-# Check no paddle/paddleocr modules loaded
-banned = [m for m in sys.modules if m.startswith(("paddle", "paddleocr"))]
-if banned:
-    print(f"BANNED_MODULES_LOADED: {banned}", file=sys.stderr)
-    sys.exit(1)
-
-print("SUCCESS: No local OCR modules loaded in cloud_api subprocess")
-sys.exit(0)
-"""
-
-    def test_subprocess_cloud_api_no_paddle_imported(self):
-        """Start a clean interpreter with cloud_api env; verify no paddle modules."""
-        import subprocess
-        import sys
-
-        proc = subprocess.run(
-            [sys.executable, "-c", self.SUBPROCESS_SCRIPT],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
-        )
-        stdout = proc.stdout.strip()
-        stderr = proc.stderr.strip()
-        if stderr:
-            print(f"Subprocess stderr:\n{stderr}")
-        print(f"Subprocess stdout:\n{stdout}")
-        assert proc.returncode == 0, (
-            f"Subprocess exited with code {proc.returncode}. "
-            f"stdout: {stdout}\nstderr: {stderr}"
-        )
-        assert "SUCCESS" in stdout
-
-    def test_subprocess_cloud_api_config_validator_rejects_local(self):
-        """Subprocess: verify config validator rejects local_process in cloud."""
-        import subprocess
-        import sys
-
-        script = """
-import os, sys
-os.environ["APP_ENV"] = "production"
-os.environ["DEPLOYMENT_PROFILE"] = "cloud_api"
-os.environ["PROCESS_ROLE"] = "worker"
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://u:p@localhost:5432/db"
-os.environ["APP_SECRET"] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-os.environ["CORS_ORIGINS"] = '["https://example.com"]'
-os.environ["ALLOWED_HOSTS"] = '["example.com"]'
-os.environ["PUBLIC_BASE_URL"] = "https://example.com"
-os.environ["WECHAT_APP_ID"] = "wx-test-app-id"
-os.environ["WECHAT_APP_SECRET"] = "wx-test-app-secret"
-os.environ["STAGING_STORAGE_DIR"] = "/tmp"
-os.environ["VECTOR_ENABLED"] = "false"
-os.environ["REDIS_URL"] = "redis://localhost:6379/0"
-os.environ["OCR_ENABLED"] = "true"
-os.environ["OCR_USE_GPU"] = "true"  # must be rejected
-os.environ["OCR_EXECUTION_BACKEND"] = "local_process"  # must be rejected
-os.environ["OCR_REMOTE_URL"] = "https://ocr.example.com/api"
-os.environ["OCR_REMOTE_TOKEN"] = "test-token-123"
-for mod in list(sys.modules.keys()):
-    if "paddle" in mod or "ocr" in mod:
-        del sys.modules[mod]
-try:
-    from app.services.production_config_validator import validate_production_config
-    validate_production_config()
-    print("VALIDATION_PASSED_UNEXPECTEDLY")
-    sys.exit(2)
-except SystemError as e:
-    error_text = str(e)
-    if "GPU" in error_text or "local_process" in error_text:
-        print("CORRECTLY_REJECTED")
-        sys.exit(0)
-    else:
-        print(f"UNEXPECTED_ERROR: {error_text}")
-        sys.exit(3)
-"""
-        proc = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
-        )
-        stdout = proc.stdout.strip()
-        stderr = proc.stderr.strip()
-        if stderr:
-            print(f"Subprocess stderr:\n{stderr}")
-        print(f"Subprocess stdout:\n{stdout}")
-        assert proc.returncode == 0, (
-            f"Subprocess exited with code {proc.returncode}. "
-            f"stdout: {stdout}\nstderr: {stderr}"
-        )
-        assert "CORRECTLY_REJECTED" in stdout
-
-    def test_subprocess_local_import_allows_local_ocr(self):
-        """Subprocess: verify local_import profile does NOT block local OCR."""
-        import subprocess
-        import sys
-
-        script = """
-import os, sys
-os.environ["APP_ENV"] = "development"
-os.environ["DEPLOYMENT_PROFILE"] = "local_import"
-os.environ["PROCESS_ROLE"] = "all"
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///test_isolation.db"
-os.environ["APP_SECRET"] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-os.environ["CORS_ORIGINS"] = '["https://example.com"]'
-os.environ["STAGING_STORAGE_DIR"] = "/tmp"
-os.environ["VECTOR_ENABLED"] = "false"
-os.environ["OCR_ENABLED"] = "true"
-os.environ["OCR_USE_GPU"] = "false"
-os.environ["OCR_EXECUTION_BACKEND"] = "local_process"
-os.environ["REDIS_URL"] = ""
-for mod in list(sys.modules.keys()):
-    if "paddle" in mod or "ocr" in mod:
-        del sys.modules[mod]
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
-profile = detect_deployment_profile()
-assert profile == DeploymentProfile.LOCAL_IMPORT, f"Expected LOCAL_IMPORT, got {profile}"
-# local_import should validate without error for local_process backend
-from app.services.production_config_validator import validate_production_config
-validate_production_config()
-print("LOCAL_IMPORT_OK")
-sys.exit(0)
-"""
-        proc = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
-        )
-        stdout = proc.stdout.strip()
-        stderr = proc.stderr.strip()
-        if stderr:
-            print(f"Subprocess stderr:\n{stderr}")
-        print(f"Subprocess stdout:\n{stdout}")
-        assert proc.returncode == 0, (
-            f"Subprocess exited with code {proc.returncode}. "
-            f"stdout: {stdout}\nstderr: {stderr}"
-        )
-        assert "LOCAL_IMPORT_OK" in stdout
+    def test_subprocess_local_import_allows_local_ocr(self, tmp_path):
+        assert "LOCAL_IMPORT_OK" in run_script(LOCAL_IMPORT_PROBE, tmp_path)
 
 
 class TestProductionConfigValidatorOcr:
-    """Production config validator catches cloud OCR violations."""
-
     def _run_checks(self, **overrides) -> list[str]:
-        """Run OCR-related checks with patched settings and env."""
-        from app.core.config import settings
-        from app.services import production_config_validator as validator
-
-        # Default: valid cloud config
-        env_vals = {"DEPLOYMENT_PROFILE": "cloud_api"}
-        set_vals = {
-            "OCR_ENABLED": True,
-            "OCR_USE_GPU": False,
-            "OCR_EXECUTION_BACKEND": "paddlex_http",
-            "OCR_REMOTE_URL": "https://ocr.example.com/api",
-            "OCR_REMOTE_TOKEN": "test-token-123",
+        fields = {
+            "APP_ENV": "production", "OCR_ENABLED": True, "OCR_USE_GPU": False,
+            "OCR_EXECUTION_BACKEND": "paddlex_http", "OCR_REMOTE_URL": "https://ocr.example.com/api",
+            "OCR_REMOTE_TOKEN": "synthetic-ocr-token",
         }
-        env_vals.update({k: str(v) for k, v in overrides.items() if k in ("DEPLOYMENT_PROFILE",)})
-        set_vals.update({k: v for k, v in overrides.items() if k not in ("DEPLOYMENT_PROFILE",)})
-
-        errors: list[str] = []
-        with patch.dict(os.environ, env_vals, clear=False):
-            with patch.object(settings, "OCR_ENABLED", set_vals["OCR_ENABLED"]):
-                with patch.object(settings, "OCR_USE_GPU", set_vals["OCR_USE_GPU"]):
-                    with patch.object(settings, "OCR_EXECUTION_BACKEND", set_vals["OCR_EXECUTION_BACKEND"]):
-                        with patch.object(settings, "OCR_REMOTE_URL", set_vals.get("OCR_REMOTE_URL", "")):
-                            with patch.object(settings, "OCR_REMOTE_TOKEN", set_vals.get("OCR_REMOTE_TOKEN", "")):
-                                # Clear OCR profile cache — lru_cache may return stale value
-                                from app.core.ocr_profile import get_ocr_profile
-                                get_ocr_profile.cache_clear()
-                                validator._check_deployment_profile(errors)
-                                validator._check_ocr_production_rules(errors)
-                                validator._check_ocr_no_local_deps(errors)
+        fields.update({key: value for key, value in overrides.items() if key != "DEPLOYMENT_PROFILE"})
+        profile = overrides.get("DEPLOYMENT_PROFILE", "cloud_api")
+        errors = []
+        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": profile}):
+            with patch.multiple(settings, **fields):
+                production_config_validator._check_deployment_profile(errors)
+                production_config_validator._check_ocr_production_rules(errors)
+                production_config_validator._check_ocr_no_local_deps(errors)
         return errors
 
     def test_valid_cloud_config_passes(self):
-        errors = self._run_checks()
-        assert len(errors) == 0, f"Unexpected errors: {errors}"
+        assert self._run_checks() == []
 
     def test_gpu_enabled_fails(self):
-        errors = self._run_checks(OCR_USE_GPU=True)
-        gpu_errors = [e for e in errors if "GPU" in e or "gpu" in e]
-        assert len(gpu_errors) > 0, f"Expected GPU error. Errors: {errors}"
+        assert any("OCR_USE_GPU=false" in error for error in self._run_checks(OCR_USE_GPU=True))
 
     def test_local_profile_fails(self):
-        errors = self._run_checks(DEPLOYMENT_PROFILE="local_import")
-        profile_errors = [e for e in errors if "cloud_api" in e]
-        assert len(profile_errors) > 0, f"Expected profile error. Errors: {errors}"
+        with pytest.raises(ValueError, match="APP_ENV='production'.*cloud_api"):
+            self._run_checks(DEPLOYMENT_PROFILE="local_import")
 
     def test_local_process_backend_fails(self):
-        errors = self._run_checks(OCR_EXECUTION_BACKEND="local_process")
-        backend_errors = [e for e in errors if "local_process" in e.lower()]
-        assert len(backend_errors) > 0, f"Expected local_process error. Errors: {errors}"
+        assert any("local_process" in error for error in self._run_checks(OCR_EXECUTION_BACKEND="local_process"))
 
     def test_missing_remote_token_fails_when_ocr_enabled(self):
-        """OCR_REMOTE_TOKEN must be set when external OCR is enabled."""
-        errors = self._run_checks(
-            OCR_ENABLED=True,
-            OCR_EXECUTION_BACKEND="paddlex_http",
-            OCR_REMOTE_URL="https://ocr.example.com/api",
-            OCR_REMOTE_TOKEN="",
-        )
-        token_errors = [e for e in errors if "TOKEN" in e or "token" in e]
-        assert len(token_errors) > 0, f"Expected token error. Errors: {errors}"
+        assert "OCR_EXECUTION_BACKEND=paddlex_http 时必须设置 OCR_REMOTE_TOKEN" in self._run_checks(OCR_REMOTE_TOKEN="")
 
     def test_invalid_explicit_profile_fails(self):
-        """Invalid DEPLOYMENT_PROFILE raises ValueError."""
-        import os
-        from unittest.mock import patch
-        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "invalid_profile"}, clear=False):
-            import pytest
-
-            from app.core.deployment_profile import detect_deployment_profile
+        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "invalid_profile"}):
             with pytest.raises(ValueError, match="无效的 DEPLOYMENT_PROFILE"):
                 detect_deployment_profile()
 
 
 class TestCloudOcrNoImportFallback:
-    """Verify cloud_api never falls back to local OCR imports."""
+    def test_no_local_adapter_import_on_cloud_profile(self, cloud_settings, forbid_local_ocr):
+        from app.features.ocr_gateway import OCRGateway
 
-    def test_no_local_adapter_import_on_cloud_profile(self):
-        """cloud_api profile does NOT import paddleocr adapter modules."""
-        import os
-        from unittest.mock import patch
-        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False):
-            from app.core.deployment_profile import (
-                DeploymentProfile,
-                detect_deployment_profile,
-            )
-            profile = detect_deployment_profile()
-            assert profile == DeploymentProfile.CLOUD_API
+        gateway = OCRGateway(profile=detect_deployment_profile(), mode="shadow")
+        assert gateway._registry.get_ocr("paddleocr") is None
+        assert gateway._get_forbidden_fallback() == ["paddleocr", "rule_fallback"]
+        assert gateway._enforce_fallback_policy(["paddleocr", "paddleocr-vl", "rule_fallback"]) == ["paddleocr-vl"]
 
     def test_startup_rejects_local_backend_and_gpu_combination(self):
-        """Config validator rejects local_process + GPU in restricted env."""
-        from unittest.mock import patch
-
-        from app.core.config import settings
-        from app.services import production_config_validator as validator
-
-        def _check():
-            errors = []
-            with patch.object(settings, "OCR_ENABLED", True):
-                with patch.object(settings, "OCR_USE_GPU", True):
-                    with patch.object(settings, "OCR_EXECUTION_BACKEND", "local_process"):
-                        validator._check_ocr_production_rules(errors)
-            return errors
-
-        errors = _check()
-        gpu_errors = [e for e in errors if "GPU" in e]
-        backend_errors = [e for e in errors if "local_process" in e]
-        assert len(gpu_errors) > 0, f"Expected GPU error. Errors: {errors}"
-        assert len(backend_errors) > 0, f"Expected local_process error. Errors: {errors}"
+        errors = TestProductionConfigValidatorOcr()._run_checks(OCR_USE_GPU=True, OCR_EXECUTION_BACKEND="local_process")
+        assert any("OCR_USE_GPU=false" in error for error in errors)
+        assert any("local_process" in error for error in errors)

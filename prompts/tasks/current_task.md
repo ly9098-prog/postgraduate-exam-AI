@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十七批已提交，第七十八批分离HTTP启动角色与隔离策略；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十八批已提交，第七十九批恢复云OCR隔离测试与独立回归门禁；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1020,3 +1020,13 @@
 - 额外运行旧云隔离7项为3通过/4失败，失败均是旧fixture的APP_ENV=test与cloud_api组合触发现有profile冲突校验。validator/profile/config/该测试文件与`632ec9a2`字节一致，单独复现进程未导入app.main或新策略模块，确认是既有基线；其中全新解释器cloud_api配置/无Paddle导入检查通过。下一批单独修复测试夹具/预期，不修改生产guard，不用skip/xfail或弱化校验掩盖。
 - 模块90行、函数23/26/22行；main769→708行/lifespan458→412行；图557模块/2,202边/零循环/反向API。按review-agent只读核对完整差异、原配置/env更新时机、隔离/取消/import/fallback/cause、实际8组件和完整lifespan及额外旧基线：No findings。
 - 仅本地提交相关代码/测试/CI/任务/盘点，保留其他改动和删除，不推送、不操作生产。独立角色/真实外部依赖和客户端完整验收未完成；yield前失败不清理及shared client关闭错误阻断后续清理仍保持独立待办，资源和角色启动及全栈治理继续。
+
+
+## 八十五、第七十九批执行记录：恢复云 OCR 隔离测试与独立回归门禁
+
+- 独立修复旧云隔离基线（原8失败/15通过）：正例使用一致的production/cloud_api或test/local_import配置，自动检测测试同时清空env和Settings画像；每例隔离/恢复OCR runtime singleton并清理profile cache。未改生产guard或任何app源码，无skip/xfail。
+- 移除流水线/staging模块强制重导入；保留真实wrapper/配置/诊断/gateway，只有执行器和远端client替身。非空本地请求断言真实await，云端成功/失败/异常/取消均断言一次识别及一次shutdown；跟踪本地SDK import/find_spec，校验真实fallback过滤。新增3种冲突环境拒绝与真实HTTP装配/OpenAPI无Paddle新进程检查。
+- 4种独立解释器探针使用pytest临时cwd及生成的合成Fernet key，不读取backend真实.env；父/子进程拒绝socket连接。HTTP探针仅证明模块装配/OpenAPI，不代表实际lifespan或外部服务启动。
+- 云隔离30项、同进程云隔离/完整lifespan/角色策略195项通过；单进程额外核验Settings/env/cwd/import/find_spec/socket/runtime config与9模块对象/父别名/SDK恢复、cache清空通过。完整CI原YAML步骤本地重放：静态1,253项（2条既有弃用警告）、readiness69项、新独立云隔离步骤30项均通过。严格Ruff/全应用Ruff/compileall/diff/CI YAML路径与33项保护哈希通过。
+- 按review-agent只读检查完整测试/CI差异、夹具恢复、真实消费路径与配置安全边界：No findings。测试文件208行，端口/脚本各130/142行；生产图保持557模块/2,202边/零循环，main708行/lifespan412行。
+- 仅本地提交测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。既有yield前失败不清理、shared client关闭错误阻断后续清理、真实独立角色/外部依赖及全栈完整治理仍未完成；下一批继续资源/角色启动边界。
