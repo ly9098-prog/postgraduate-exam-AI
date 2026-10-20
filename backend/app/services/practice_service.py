@@ -3108,6 +3108,169 @@ async def _execute_candidate_query(
 
 
 
+async def _load_knowledge_and_graph_context(
+    db: AsyncSession,
+    user_id: int,
+    scope_ids: list[int],
+    candidates: list[Question],
+    active_candidate_conditions: list,
+    graph_runtime: dict,
+    count: int,
+) -> tuple[dict[int, tuple], dict[int, tuple[int, int]], dict]:
+    """Load user knowledge state and optional adaptive graph expansion."""
+    from app.models.user_knowledge_state import UserKnowledgeState
+
+    ks_result = await db.execute(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.subject_id.in_(scope_ids),
+        )
+    )
+    knowledge_states = list(ks_result.scalars().all())
+    kp_mastery: dict[int, tuple] = {
+        s.knowledge_point_id: (s.mastery_score, s.confidence) for s in knowledge_states
+    }
+    kp_observations: dict[int, tuple[int, int]] = {
+        s.knowledge_point_id: (s.attempt_count, s.wrong_count) for s in knowledge_states
+    }
+
+    graph_context: dict = {
+        "blocked_targets": {}, "prerequisite_candidates": {}, "prerequisites_by_target": {},
+    }
+    try:
+        from app.core.config import settings as _settings
+
+        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
+            await _expand_graph_candidates(
+                db, user_id, scope_ids, candidates,
+                active_candidate_conditions, kp_mastery,
+                graph_runtime, count, graph_context,
+            )
+    except Exception:
+        # Graph is an enhancement, never a single point of failure.
+        logger.warning(
+            "V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True
+        )
+        graph_context = {
+            "blocked_targets": {}, "prerequisite_candidates": {}, "prerequisites_by_target": {},
+        }
+    return kp_mastery, kp_observations, graph_context
+
+
+async def _fetch_graph_context(
+    adaptive_learning_service: object,
+    db: AsyncSession,
+    user_id: int,
+    target_kp_ids: list[int],
+    subject_ids: list[int],
+    graph_runtime: dict,
+    graph_context: dict,
+) -> None:
+    """Fetch adaptive prerequisite context and merge into graph_context."""
+    graph_context.update(
+        await adaptive_learning_service.get_recommendation_graph_context(
+            db=db,
+            user_id=user_id,
+            target_kp_ids=target_kp_ids,
+            subject_ids=subject_ids,
+            max_depth=int(graph_runtime.get("max_depth", 2)),
+            max_nodes=int(graph_runtime.get("max_nodes", 24)),
+            min_mastery=float(
+                graph_runtime.get("prerequisite_mastery_threshold", 60.0)
+            ),
+            min_confidence=float(
+                graph_runtime.get("prerequisite_confidence_threshold", 0.3)
+            ),
+        )
+    )
+
+
+
+async def _extend_with_graph_question_candidates(
+    db: AsyncSession,
+    user_id: int,
+    candidates: list[Question],
+    active_candidate_conditions: list,
+    graph_candidate_ids: list[int],
+    weak_target_ids: list[int],
+) -> None:
+    """Query prerequisite-linked questions and extend the candidate list."""
+    from app.models.question_knowledge_point import QuestionKnowledgePoint
+
+    existing_ids = {q.id for q in candidates}
+    graph_limit = max(len(candidates) * 3, 30)
+    graph_question_ids = select(
+        QuestionKnowledgePoint.question_id
+    ).where(
+        QuestionKnowledgePoint.knowledge_point_id.in_(
+            graph_candidate_ids
+        )
+    )
+    graph_query = (
+        select(Question)
+        .where(
+            and_(
+                *active_candidate_conditions,
+                Question.id.in_(graph_question_ids),
+                Question.id.notin_(existing_ids),
+            )
+        )
+        .options(selectinload(Question.subject_ref))
+        .limit(graph_limit)
+    )
+    graph_result = await db.execute(graph_query)
+    graph_questions = list(graph_result.scalars().all())
+    candidates.extend(graph_questions)
+    if graph_questions:
+        logger.info(
+            "[smart_scored_graph] uid=%s targets=%s prereq_kps=%s expanded_questions=%d",
+            user_id,
+            weak_target_ids,
+            graph_candidate_ids,
+            len(graph_questions),
+        )
+
+
+
+async def _expand_graph_candidates(
+    db: AsyncSession,
+    user_id: int,
+    scope_ids: list[int],
+    candidates: list[Question],
+    active_candidate_conditions: list,
+    kp_mastery: dict[int, tuple],
+    graph_runtime: dict,
+    count: int,
+    graph_context: dict,
+) -> None:
+    """Expand candidates via adaptive prerequisite graph (SAVEPOINT isolated)."""
+    from app.models.question_knowledge_point import QuestionKnowledgePoint
+
+    async with db.begin_nested():
+        weak_target_ids = _pick_graph_target_kps(
+            kp_mastery,
+            limit=int(graph_runtime.get("weak_target_limit", 5)),
+        )
+        if not weak_target_ids:
+            return
+        from app.services import adaptive_learning_service
+
+        await _fetch_graph_context(
+            adaptive_learning_service, db, user_id,
+            weak_target_ids, scope_ids, graph_runtime, graph_context,
+        )
+        graph_candidate_ids = list(
+            graph_context.get("prerequisite_candidates", {}).keys()
+        )
+        if not graph_candidate_ids:
+            return
+        await _extend_with_graph_question_candidates(
+            db, user_id, candidates, active_candidate_conditions,
+            graph_candidate_ids, weak_target_ids,
+        )
+
+
+
 async def get_smart_scored_questions(
     db: AsyncSession,
     user_id: int,
@@ -3159,104 +3322,10 @@ async def get_smart_scored_questions(
         )
         return [], metadata
 
-    # ── 1.5 用户知识状态 + 图谱候选扩展 (V6.5) ──
-    # Knowledge state is loaded before question state because graph expansion
-    # starts from the user's weak KPs, not from whichever questions happened to
-    # be in the first DB page.
-    ks_result = await db.execute(
-        select(UserKnowledgeState).where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.subject_id.in_(scope_ids),
-        )
+    kp_mastery, kp_observations, graph_context = await _load_knowledge_and_graph_context(
+        db, user_id, scope_ids, candidates, active_candidate_conditions,
+        graph_runtime, count,
     )
-    knowledge_states = list(ks_result.scalars().all())
-    kp_mastery: dict[int, tuple] = {
-        s.knowledge_point_id: (s.mastery_score, s.confidence) for s in knowledge_states
-    }
-    kp_observations: dict[int, tuple[int, int]] = {
-        s.knowledge_point_id: (s.attempt_count, s.wrong_count) for s in knowledge_states
-    }
-
-    graph_context: dict = {
-        "blocked_targets": {},
-        "prerequisite_candidates": {},
-        "prerequisites_by_target": {},
-    }
-    try:
-        from app.core.config import settings as _settings
-
-        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
-            # 图谱扩展属于可选增强能力。使用 SAVEPOINT 隔离其数据库错误，
-            # 避免 PostgreSQL 在任一图谱查询失败后把整个请求事务标记为 aborted。
-            async with db.begin_nested():
-                weak_target_ids = _pick_graph_target_kps(
-                    kp_mastery,
-                    limit=int(graph_runtime.get("weak_target_limit", 5)),
-                )
-                if weak_target_ids:
-                    from app.services import adaptive_learning_service
-
-                    graph_context = await adaptive_learning_service.get_recommendation_graph_context(
-                        db=db,
-                        user_id=user_id,
-                        target_kp_ids=weak_target_ids,
-                        subject_ids=scope_ids,
-                        max_depth=int(graph_runtime.get("max_depth", 2)),
-                        max_nodes=int(graph_runtime.get("max_nodes", 24)),
-                        min_mastery=float(
-                            graph_runtime.get("prerequisite_mastery_threshold", 60.0)
-                        ),
-                        min_confidence=float(
-                            graph_runtime.get("prerequisite_confidence_threshold", 0.3)
-                        ),
-                    )
-
-                    graph_candidate_ids = list(
-                        graph_context.get("prerequisite_candidates", {}).keys()
-                    )
-                    if graph_candidate_ids:
-                        existing_ids = {q.id for q in candidates}
-                        graph_limit = max(count * 3, 30)
-                        graph_question_ids = select(
-                            QuestionKnowledgePoint.question_id
-                        ).where(
-                            QuestionKnowledgePoint.knowledge_point_id.in_(
-                                graph_candidate_ids
-                            )
-                        )
-                        graph_query = (
-                            select(Question)
-                            .where(
-                                and_(
-                                    *active_candidate_conditions,
-                                    Question.id.in_(graph_question_ids),
-                                    Question.id.notin_(existing_ids),
-                                )
-                            )
-                            .options(selectinload(Question.subject_ref))
-                            .limit(graph_limit)
-                        )
-                        graph_result = await db.execute(graph_query)
-                        graph_questions = list(graph_result.scalars().all())
-                        candidates.extend(graph_questions)
-                        if graph_questions:
-                            logger.info(
-                                "[smart_scored_graph] uid=%s targets=%s prereq_kps=%s expanded_questions=%d",
-                                user_id,
-                                weak_target_ids,
-                                graph_candidate_ids,
-                                len(graph_questions),
-                            )
-    except Exception:
-        # Graph is an enhancement, never a single point of failure.
-        logger.warning(
-            "V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True
-        )
-        graph_context = {
-            "blocked_targets": {},
-            "prerequisite_candidates": {},
-            "prerequisites_by_target": {},
-        }
 
     cand_ids = {q.id for q in candidates}
 

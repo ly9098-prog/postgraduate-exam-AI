@@ -1232,3 +1232,11 @@
 - 保留原条件顺序、24h 硬排除、excluded_sub 构建、fallback 1 放宽逻辑（去掉最后条件重查）；`subject_cond` 在 caller 从 scope_ids 重建。函数从 488 行降至 412 行。
 - 原 208 项 practice 测试通过，0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。严格 Ruff/compileall/diff 通过。
 - 仅本地提交，不推送、不操作生产。`get_smart_scored_questions` 仍超 50 行预算——后续继续提取图谱扩展/状态加载/评分/降级编排。
+
+
+## 一百零七、第一百零一批执行记录：知识状态与图谱扩展提取（2026-10-21）
+
+- `get_smart_scored_questions` 的知识状态加载和图谱候选扩展阶段拆分为四个模块级函数：`_load_knowledge_and_graph_context`（47 行，加载 UserKnowledgeState 并编排图谱扩展）、`_expand_graph_candidates`（36 行，SAVEPOINT 隔离的弱 KP 选择+图谱获取+候选扩展）、`_fetch_graph_context`（26 行，调用 adaptive_learning_service）、`_extend_with_graph_question_candidates`（43 行，查询前置链题目并扩展候选列表）。所有函数≤50 行。
+- 保留原 SAVEPOINT 隔离、Settings 开关检查、异常回退到空 graph_context、弱目标选择和图谱候选查询。函数从 412 行降至 318 行。
+- 原 208 项 practice 测试通过，0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。严格 Ruff/compileall/diff 通过。
+- 仅本地提交，不推送、不操作生产。`get_smart_scored_questions` 仍超 50 行预算——后续继续提取状态加载/评分/降级编排。
