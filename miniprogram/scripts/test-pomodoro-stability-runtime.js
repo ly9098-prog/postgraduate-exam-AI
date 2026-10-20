@@ -63,6 +63,7 @@ const sandbox = {
     if (request === './utils/sync-retry-controller') return require('../pages/pomodoro/utils/sync-retry-controller')
     if (request === './utils/active-session-recovery') return require('../pages/pomodoro/utils/active-session-recovery')
     if (request === './utils/completion-recovery') return require('../pages/pomodoro/utils/completion-recovery')
+    if (request === './utils/confirm-recovery') return require('../pages/pomodoro/utils/confirm-recovery')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -145,6 +146,94 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('onShow restores both valid confirmation modes and acknowledges the pause', async () => {
+    for (const mode of ['free-complete', 'countdown-interrupt']) {
+      storage.clear()
+      const page = createPage()
+      const snapshot = {
+        sessionId: 101, mode, openedAt: nowMs - 1000, sessionStartTime: nowMs - 60000,
+        elapsedSec: 65, remainingSec: 75, progress: 0.5, totalSec: 150,
+        totalPausedMs: 300, phase: 'break', pausedByConfirm: true,
+      }
+      storage.set('pomodoro_confirm_pause', snapshot)
+      page._syncThemeFromStorage = () => {}
+      page._reconcileUnknownStartAttempt = async () => 'none'
+      const calls = []
+      page._initCanvas = force => calls.push(['canvas', force])
+      page.drawRing = (total, isBreak) => calls.push(['ring', total, isBreak])
+      page._postPauseWithRetry = async (id, at) => { calls.push(['pause', id, at]) }
+      page._fetchActiveSession = async () => { throw new Error('confirmation must skip active fetch') }
+      await page.onShow()
+      await new Promise(resolve => setImmediate(resolve))
+      assert.strictEqual(page._confirmTimerSnapshot, snapshot)
+      assert.strictEqual(page._timerState.endConfirmMode, mode)
+      assert.strictEqual(page.data.showEndConfirm, true)
+      assert.strictEqual(page.data.isPaused, true)
+      assert.strictEqual(snapshot.backendPauseDone, true)
+      assert.strictEqual(storage.get('pomodoro_confirm_pause'), snapshot)
+      assert.strictEqual(scheduledDelay, 200)
+      if (mode === 'free-complete') {
+        assert.strictEqual(page.data.freeDisplayTime, '00:01:05')
+        assert.deepStrictEqual(calls, [['pause', 101, snapshot.openedAt]])
+      } else {
+        assert.strictEqual(page.data.displayMin, '01')
+        assert.strictEqual(page.data.displaySec, '15')
+        assert.deepStrictEqual(calls, [
+          ['canvas', true], ['ring', 150, true], ['pause', 101, snapshot.openedAt],
+        ])
+      }
+    }
+  })
+
+  await test('page confirmation acknowledgement ignores a later action sequence', async () => {
+    storage.clear()
+    const page = createPage()
+    let resolvePause
+    page._postPauseWithRetry = () => new Promise(resolve => { resolvePause = resolve })
+    const snapshot = { sessionId: 102, mode: 'free-complete', pausedByConfirm: true }
+    page._restoreConfirmSnapshot(snapshot)
+    page._confirmActionSeq++
+    resolvePause()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.strictEqual(snapshot.backendPauseDone, undefined)
+    assert.strictEqual(storage.has('pomodoro_confirm_pause'), false)
+  })
+
+  await test('unreadable confirmation storage stops onShow without active fetch', async () => {
+    storage.clear()
+    const page = createPage()
+    page._syncThemeFromStorage = () => {}
+    page._reconcileUnknownStartAttempt = async () => 'none'
+    let fetched = false
+    page._fetchActiveSession = async () => { fetched = true }
+    failReadStorageKey = 'pomodoro_confirm_pause'
+    try {
+      await page.onShow()
+      assert.strictEqual(fetched, false)
+    } finally {
+      failReadStorageKey = ''
+    }
+  })
+
+  await test('invalid confirmation is removed before normal active recovery', async () => {
+    storage.clear()
+    const page = createPage()
+    storage.set('pomodoro_confirm_pause', {
+      sessionId: 103, mode: 'free-complete', openedAt: nowMs - 3600001,
+    })
+    page._syncThemeFromStorage = () => {}
+    page._reconcileUnknownStartAttempt = async () => 'none'
+    let recovered = false
+    page._recoverActiveSession = async () => {
+      recovered = true
+      assert.strictEqual(storage.has('pomodoro_confirm_pause'), false)
+      assert.strictEqual(page._confirmTimerSnapshot, null)
+      assert.strictEqual(page._timerState.endConfirmMode, '')
+    }
+    await page.onShow()
+    assert.strictEqual(recovered, true)
+  })
 
   await test('completion recovery keeps marker authoritative across repeated shows', async () => {
     storage.clear()

@@ -4,6 +4,7 @@ const { createPendingSyncQueue } = require('./utils/pending-sync-queue')
 const { createSyncRetryController, isRetryableSyncError } = require('./utils/sync-retry-controller')
 const { recoverActiveSession } = require('./utils/active-session-recovery')
 const { buildCompletionRecovery } = require('./utils/completion-recovery')
+const { restoreConfirmSnapshot } = require('./utils/confirm-recovery')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -324,82 +325,42 @@ Page({
       }
       if (confirmSnapshot && confirmSnapshot.sessionId) {
         if (this._isValidConfirmSnapshot(confirmSnapshot)) {
-      const restoredConfirmSeq = (this._confirmActionSeq || 0) + 1
-      this._confirmActionSeq = restoredConfirmSeq
-      confirmSnapshot.confirmActionSeq = restoredConfirmSeq
-      this._confirmTimerSnapshot = confirmSnapshot
-
-      if (confirmSnapshot.mode === 'free-complete') {
-        const fmt = formatElapsedSec(confirmSnapshot.elapsedSec || 0)
-        this._timerState.sessionId = confirmSnapshot.sessionId
-        this._timerState.sessionStartTime = confirmSnapshot.sessionStartTime || this._timerState.sessionStartTime
-        this._timerState.endConfirmMode = 'free-complete'
-        this._timerState.elapsedSec = confirmSnapshot.elapsedSec || 0
-        this._timerState.freeFriendlyText = fmt.friendly
-        this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
-        this._timerState.freeDisplayOffsetMs = 0
-        this.setData({
-          ...this._buildEndConfirmViewModel('free-complete', confirmSnapshot),
-          phase: PHASE.RUNNING,
-          isFreeTimer: true,
-          isPaused: true,
-          ringCanvasVisible: true,
-          freeDisplayTime: fmt.display,
-        })
-        if (confirmSnapshot.pausedByConfirm && !confirmSnapshot.backendPauseDone) {
-          this._postPauseWithRetry(confirmSnapshot.sessionId, confirmSnapshot.openedAt)
-            .then(() => {
-              if (confirmSnapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
-              confirmSnapshot.backendPauseDone = true
-              this._safeSetPomodoroStorage('pomodoro_confirm_pause', confirmSnapshot, 'confirm snapshot refresh')
-            })
-            .catch(() => {})
+          this._restoreConfirmSnapshot(confirmSnapshot)
+          return
         }
-        setTimeout(() => this.loadTodayStats(), 200)
-        return
+        // Snapshot exists but is invalid — clean up stale data
+        this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
+        this._confirmTimerSnapshot = null
+        this._timerState.endConfirmMode = ''
+        this.setData({ showEndConfirm: false })
       }
-
-      const fmt = this._formatCountdownDisplay(confirmSnapshot.remainingSec)
-      this._timerState.sessionId = confirmSnapshot.sessionId
-      this._timerState.sessionStartTime = confirmSnapshot.sessionStartTime || this._timerState.sessionStartTime
-      this._timerState.endConfirmMode = 'countdown-interrupt'
-      this._timerState.remainingSec = confirmSnapshot.remainingSec
-      this._timerState.progress = confirmSnapshot.progress
-      this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
-      this.setData({
-        ...this._buildEndConfirmViewModel('countdown-interrupt', confirmSnapshot),
-        phase: confirmSnapshot.phase || PHASE.RUNNING,
-        isPaused: true,
-        ringCanvasVisible: true,
-        displayMin: fmt.min,
-        displaySec: fmt.sec,
-      })
-      wx.nextTick(() => {
-        this._initCanvas(true)
-        this.drawRing(confirmSnapshot.totalSec, confirmSnapshot.phase === 'break')
-      })
-      // If backend pause wasn't done, try now (fire-and-forget)
-      if (confirmSnapshot.pausedByConfirm && !confirmSnapshot.backendPauseDone) {
-        this._postPauseWithRetry(confirmSnapshot.sessionId, confirmSnapshot.openedAt)
-          .then(() => {
-            if (confirmSnapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
-            confirmSnapshot.backendPauseDone = true
-            this._safeSetPomodoroStorage('pomodoro_confirm_pause', confirmSnapshot, 'confirm snapshot refresh')
-          })
-          .catch(() => {})
-      }
-      setTimeout(() => this.loadTodayStats(), 200)
-      return
-    }
-      // Snapshot exists but is invalid — clean up stale data
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-      this._confirmTimerSnapshot = null
-      this._timerState.endConfirmMode = ''
-      this.setData({ showEndConfirm: false })
-    }
     }
 
     await this._recoverActiveSession(pendingSync, activeSyncSeq)
+  },
+
+  _restoreConfirmSnapshot(snapshot) {
+    return restoreConfirmSnapshot({
+      nextSequence: () => {
+        this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
+        return this._confirmActionSeq
+      },
+      setSnapshot: value => { this._confirmTimerSnapshot = value },
+      sessionStartTime: () => this._timerState.sessionStartTime,
+      applyTimer: patch => Object.assign(this._timerState, patch),
+      buildView: (mode, value) => this._buildEndConfirmViewModel(mode, value),
+      applyView: patch => this.setData(patch),
+      nextTick: callback => wx.nextTick(callback),
+      draw: value => {
+        this._initCanvas(true)
+        this.drawRing(value.totalSec, value.phase === 'break')
+      },
+      pause: (sessionId, openedAt) => this._postPauseWithRetry(sessionId, openedAt),
+      currentSequence: () => this._confirmActionSeq,
+      isConfirmVisible: () => this.data.showEndConfirm,
+      persist: value => this._safeSetPomodoroStorage('pomodoro_confirm_pause', value, 'confirm snapshot refresh'),
+      deferStats: () => setTimeout(() => this.loadTodayStats(), 200),
+    }, snapshot)
   },
 
   _recoverActiveSession(pendingSync, activeSyncSeq) {
