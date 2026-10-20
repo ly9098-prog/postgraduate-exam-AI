@@ -7,7 +7,6 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, Upload, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -28,6 +27,7 @@ import {
 } from "./components/multi-blank-choice-utils";
 import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
 import { ReviewAnswerPreview } from "./components/review-answer-preview";
+import { ReviewStemEditor } from "./components/review-stem-editor";
 import { isMeaningfulText } from "./review-display-text";
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
@@ -52,7 +52,7 @@ import { ReviewSourceEvidence } from "./components/review-source-evidence";
 import { ReviewJsonView } from "./components/review-json-view";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
 import { extractOptionVisualModel, type OptionVisualModel } from "@/lib/option-visual-utils";
-import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
+import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 
 type FilterDropdownOption = {
   value: string;
@@ -1849,37 +1849,12 @@ export default function ImportReviewPage() {
                     </div>
                   </div>
                   {/* Stem edit */}
-                  <label className="block space-y-1.5 animate-fade-up drawer-section-delay-2">
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]/60" />
-                      题干
-                    </span>
-                    <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-white/90 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
-                  </label>
-
-                  {/* ── Structured Table Editor ── */}
-                  {editedSegments && editedSegments.some((segment) => isTableSegment(segment)) ? (
-                    <div className="space-y-4 animate-fade-up drawer-section-delay-3">
-                      {editedSegments.map((segment, segmentIndex) => {
-                        const table = normalizeStructuredTableSegment(segment);
-                        if (!table) return null;
-                        return (
-                          <StructuredTableEditor
-                            key={table.table_id || segmentIndex}
-                            segment={table}
-                            onChange={(nextTable) => {
-                              const next = [...editedSegments];
-                              next[segmentIndex] = nextTable;
-                              setEditedSegments(next);
-                            }}
-                            onDelete={() => {
-                              setEditedSegments(editedSegments.filter((_, index) => index !== segmentIndex));
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                  <ReviewStemEditor
+                    stem={editState.stem}
+                    segments={editedSegments}
+                    onStemChange={(stem) => setEditState({ ...editState, stem })}
+                    onSegmentsChange={setEditedSegments}
+                  />
 
                   {/* ── Visual Segment Editor (stem) ── */}
                   <ReviewVisualSegmentEditor

@@ -84,6 +84,10 @@ const modules = [
     imports: [],
   },
   {
+    path: "./components/review-stem-editor.tsx",
+    imports: ["@/components/structured-table-editor", "@/lib/structured-table"],
+  },
+  {
     path: "./components/review-answer-preview.tsx",
     imports: [
       "@/components/ui/math-formula", "@/lib/api/types", "../review-edit-state",
