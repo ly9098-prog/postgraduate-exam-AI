@@ -122,3 +122,22 @@ async def test_unknown_standalone_role_is_rejected_after_common_checks(role_runt
     assert isinstance(caught.value.__cause__, ValueError)
     assert state.events == ["logging.setup", "config.sync", "config.async", "staging.sweep"]
     assert len(state.registries) == 1 and not state.registries[0]._tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed", ["ocr.worker.create", "ocr.gateway.create", "ocr.gateway.publish"])
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_worker_partial_ocr_failure_keeps_runner_error_and_no_shutdown_boundary(role_runtime, failed, error_type):
+    state = role_runtime
+    state.cloud, state.ocr_enabled = True, True
+    error = error_type("synthetic partial worker OCR startup failure")
+    state.failures[failed] = error
+    wrapped = error_type is RuntimeError
+    with pytest.raises(SystemError if wrapped else error_type) as caught:
+        await bootstrap._run_role_async("worker")
+    assert (caught.value.__cause__ if wrapped else caught.value) is error
+    assert ("ocr.gateway.publish" in state.events) is (failed == "ocr.gateway.publish")
+    assert (state.gateway is not None) is (failed == "ocr.gateway.publish")
+    assert "orphans.start" not in state.events and "signals.install" not in state.events
+    assert not [event for event in state.events if event in COMMON_STOP]
+    assert len(state.registries) == 1 and not state.registries[0]._tasks

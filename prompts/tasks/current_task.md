@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十四批已提交，第八十五批分离通用后台任务注册与等待；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十五批已提交，第八十六批分离独立worker OCR装配与所有权；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1093,3 +1093,13 @@
 - 新3项无应用依赖/预算/实际TaskRegistry消费与唯一类定义/原实例位置/导入无配置资源或task/env副作用门禁接入CI；旧scheduler和完整role测试端口同时patch新模块logger并恢复。原YAML静态1,450项（2既有弃用警告）、readiness69项、云OCR30项通过。HTTP/独立角色/任务管理混合113项单进程确认新logger、Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块及父别名恢复，逐fixture sys.path稳定（包装进程2条rewrite警告）。
 - 严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；按review-agent只读检查完整类迁移、所有调用方/异常callback/原logger及取消/等待/timeout/二次cancel边界和全生命周期证据：No findings。模块114行/最长方法22行；bootstrap688→580行，main614/lifespan334保持，图562模块/2,215边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。ManagedTask.wait原本吞等待者取消、pending二次cancel后不再等待，以及HTTP/独立runner失败不清理仍为既有行为；真实OS信号/CLI进程/外部服务/客户端及其他全栈计划继续待办。
+
+
+## 九十二、第八十六批执行记录：独立 worker OCR 装配与所有权
+
+- 原worker OCR完整配置/worker client/gateway/发布/日志块迁至已有`services/runtime_ocr_startup.py`的具体`initialize_worker_ocr_gateway(profile, logger)`，bootstrap直接消费真实定义，传原已解析画像与caller logger；位置仍scratch/executors之后、orphan reconciler/dispatcher/reaper/prewarm之前。HTTP共享client装配函数和资源数据类AST不变，worker仍不传http_client，由worker client拥有连接，不强行合并两种所有权。
+- 原块20项刻画先过：已解析profile身份/配置profile日志独立、factory无共享client参数、禁用仍导入原三个依赖、4步骤/4导入点普通错误和取消、发布后日志错误。新增6项完整独立runner部分OCR失败及不进入shutdown边界，原32→38项完整角色契约；相同20+38项对旧`3fe28948`完整bootstrap与原块通过。
+- 原完整worker装配块、展开整个bootstrap AST一致，HTTP数据类与装配AST保持；120组画像/配置/导入/构建/发布/日志/错误/取消轨迹一致。相关worker/HTTP OCR/完整角色/完整HTTP/架构127项通过；混合139项同进程确认Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。
+- 现有OCR架构门禁扩展真实worker消费/原画像/logger/注册后和orphan前位置/worker init≤50行/惰性导入；原YAML完整静态CI1,477项（2既有弃用警告）、readiness69项、云OCR30项通过。额外真实PaddleX worker/gateway装配与关闭：worker._http_client_owned为True，gateway.shutdown关闭其实际HTTP client，singleton恢复，无socket/Paddle导入、未发起OCR请求。
+- 严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过；按review-agent只读审查原profile解析/执行器/装配/orphan顺序、真实factory/gateway/单例/关闭消费者、所有权和异常/取消、完整角色与旧新证据：No findings。OCR模块63→89行，HTTP41/worker23行，bootstrap580→560行/worker init70→49行；main614/lifespan334保持，图562模块/2,213边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。worker构建后未发布资源的失败清理、独立runner/HTTP yield前缺口和client关闭阻断等既有行为未修；真实OS信号/CLI进程/外部依赖/客户端与全栈其他阶段继续待办。

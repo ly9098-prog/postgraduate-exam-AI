@@ -330,6 +330,7 @@ jobs:
             tests/core/test_http_runtime_policy.py \
             tests/core/test_runtime_resource_startup.py \
             tests/core/test_runtime_ocr_startup.py \
+            tests/core/test_runtime_worker_ocr_startup.py \
             tests/core/test_http_ocr_lifespan_contract.py \
             tests/core/test_runtime_scheduler_startup.py \
             tests/core/test_standalone_scheduler_startup.py \

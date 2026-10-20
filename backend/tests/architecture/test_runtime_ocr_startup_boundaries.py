@@ -17,6 +17,7 @@ def test_ocr_startup_dependencies_and_budgets():
         "app.features.ocr_gateway", "app.services.ocr_worker_client", "app.services.ocr_service",
     }
     assert "app.services.runtime_ocr_startup" in graph["app.main"]
+    assert "app.services.runtime_ocr_startup" in graph["app.core.bootstrap"]
     source = (APP / "services/runtime_ocr_startup.py").read_text()
     assert len(source.splitlines()) <= 300
     for node in ast.walk(ast.parse(source)):
@@ -53,6 +54,28 @@ def test_lifespan_owns_resource_state_and_original_startup_failure_position():
     assert second.gateway is None
 
 
+def test_worker_uses_real_assembly_with_pre_resolved_profile_logger_and_original_position():
+    from app.core import bootstrap
+    from app.services import runtime_ocr_startup
+
+    assert bootstrap.initialize_worker_ocr_gateway is runtime_ocr_startup.initialize_worker_ocr_gateway
+    source = (APP / "core/bootstrap.py").read_text()
+    runtime = next(
+        node for node in ast.parse(source).body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_init_worker_dependencies"
+    )
+    calls = [node for node in ast.walk(runtime) if isinstance(node, ast.Call)]
+    initialize = [node for node in calls if getattr(node.func, "id", None) == "initialize_worker_ocr_gateway"]
+    assert len(initialize) == 1
+    assert [ast.unparse(arg) for arg in initialize[0].args] == ["profile", "logger"]
+    assert not initialize[0].keywords
+    register = next(node for node in calls if getattr(node.func, "id", None) == "init_executor_registry")
+    reconciler = next(node for node in calls if getattr(node.func, "attr", None) == "start_orphan_reconciler")
+    assert register.lineno < initialize[0].lineno < reconciler.lineno
+    assert runtime.end_lineno - runtime.lineno + 1 <= 50
+    assert not any(isinstance(node, ast.ImportFrom) and node.module == "app.core.ocr_runtime_config" for node in ast.walk(runtime))
+
+
 def test_importing_ocr_startup_does_not_load_resources_or_create_tasks():
     probe = """
 import asyncio
@@ -62,9 +85,12 @@ before = dict(os.environ)
 def forbidden(*args, **kwargs):
     raise AssertionError('import must not create tasks')
 asyncio.create_task = forbidden
-from app.services.runtime_ocr_startup import HttpOcrResources, initialize_http_ocr_gateway
+from app.services.runtime_ocr_startup import (
+    HttpOcrResources, initialize_http_ocr_gateway, initialize_worker_ocr_gateway,
+)
 assert HttpOcrResources().gateway is None
 assert callable(initialize_http_ocr_gateway)
+assert callable(initialize_worker_ocr_gateway)
 assert before == dict(os.environ)
 for name in (
     'app.main', 'app.core.config', 'app.core.database', 'httpx', 'app.core.ocr_runtime_config',

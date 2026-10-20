@@ -27,6 +27,7 @@ import sys
 
 from app.core.config import settings
 from app.core.runtime_task_registry import TaskRegistry
+from app.services.runtime_ocr_startup import initialize_worker_ocr_gateway
 from app.services.runtime_periodic_tasks import (
     run_export_cleanup,
     run_export_processor_loop,
@@ -123,28 +124,7 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
 
     # OCR Gateway (external HTTP client only — no local Paddle).
     # Let the worker client own its AsyncClient so gateway.shutdown() closes it.
-    from app.core.ocr_runtime_config import get_runtime_config
-    from app.features.ocr_gateway import OCRGateway
-    from app.services.ocr_worker_client import create_ocr_worker_client
-
-    cfg = get_runtime_config()
-    if cfg.enabled:
-        worker_client = create_ocr_worker_client(cfg)
-        ocr_gateway = OCRGateway(
-            mode="gateway",
-            profile=profile,
-            worker_client=worker_client,
-        )
-        from app.services.ocr_service import set_gateway
-
-        set_gateway(ocr_gateway)
-        logger.info(
-            "OCR Gateway initialized (role=worker exec_backend=%s profile=%s)",
-            cfg.execution_backend,
-            cfg.profile,
-        )
-    else:
-        logger.info("OCR not enabled on worker, skipping Gateway")
+    initialize_worker_ocr_gateway(profile, logger)
 
     # Staging orphan reconciler
     from app.core.resource_guard import resource_guard

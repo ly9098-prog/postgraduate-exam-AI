@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import httpx
 
+    from app.core.deployment_profile import DeploymentProfile
     from app.features.ocr_gateway import OCRGateway
 
 logger = logging.getLogger("postgraduate-ai")
@@ -61,3 +62,28 @@ def initialize_http_ocr_gateway(resources: HttpOcrResources, role: str) -> None:
         )
     else:
         logger.info("OCR not enabled, skipping Gateway initialization")
+
+
+def initialize_worker_ocr_gateway(profile: DeploymentProfile, logger: logging.Logger) -> None:
+    from app.core.ocr_runtime_config import get_runtime_config
+    from app.features.ocr_gateway import OCRGateway
+    from app.services.ocr_worker_client import create_ocr_worker_client
+
+    cfg = get_runtime_config()
+    if cfg.enabled:
+        worker_client = create_ocr_worker_client(cfg)
+        ocr_gateway = OCRGateway(
+            mode="gateway",
+            profile=profile,
+            worker_client=worker_client,
+        )
+        from app.services.ocr_service import set_gateway
+
+        set_gateway(ocr_gateway)
+        logger.info(
+            "OCR Gateway initialized (role=worker exec_backend=%s profile=%s)",
+            cfg.execution_backend,
+            cfg.profile,
+        )
+    else:
+        logger.info("OCR not enabled on worker, skipping Gateway")
