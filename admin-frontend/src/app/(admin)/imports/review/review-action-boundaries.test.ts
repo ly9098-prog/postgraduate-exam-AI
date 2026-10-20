@@ -75,6 +75,10 @@ const modules = [
     path: "./components/review-json-view.tsx",
     imports: ["@/lib/api/types"],
   },
+  {
+    path: "./components/review-source-evidence.tsx",
+    imports: ["@/lib/api/types"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
