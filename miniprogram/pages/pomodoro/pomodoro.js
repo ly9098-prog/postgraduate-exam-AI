@@ -6,6 +6,7 @@ const { recoverActiveSession } = require('./utils/active-session-recovery')
 const { buildCompletionRecovery } = require('./utils/completion-recovery')
 const { restoreConfirmSnapshot } = require('./utils/confirm-recovery')
 const { recoverOnShow } = require('./utils/show-recovery')
+const { cancelUnknownStartOnHide, persistSessionOnHide } = require('./utils/hide-storage')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -333,14 +334,8 @@ Page({
     this._startRequestSeq = (this._startRequestSeq || 0) + 1
     this._clearPendingPomodoroSyncRetryTimer()
 
-    const unknownStart = this._safeGetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'onHide unknown start')
-    if (unknownStart.ok && unknownStart.value) {
-      this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, {
-        ...unknownStart.value,
-        cancelIfFound: true,
-        cancelAt: api.now(),
-      }, 'onHide cancel unknown start')
-    }
+    const persistence = this._hidePersistenceOptions()
+    cancelUnknownStartOnHide(persistence)
 
     // Native 2D canvas backing surfaces may be recreated while a Mini Program page
     // is hidden. Never reuse a context across onHide/onShow, even when selector
@@ -359,38 +354,20 @@ Page({
     // callback cannot create a hidden server session.
     if (this.data.phase === PHASE.CEREMONY) this.setData({ phase: PHASE.IDLE })
 
-    // Persist confirm snapshot before it's lost
-    if (this.data.showEndConfirm && this._confirmTimerSnapshot) {
-      this._safeSetPomodoroStorage('pomodoro_confirm_pause', this._confirmTimerSnapshot, 'onHide confirm snapshot')
-    }
-
-    const completionOnHide = this._safeGetPomodoroStorage('pomodoro_completion', 'onHide completion')
-    if (
-      completionOnHide.ok && !completionOnHide.value &&
-      this.data.phase === PHASE.RUNNING && this._timerState.sessionId && !this.data.showCelebration
-    ) {
-      this._safeSetPomodoroStorage('pomodoro_running_state', {
-        sessionStartTime: this._timerState.sessionStartTime,
-        workDuration: this.data.workDuration,
-        breakDuration: this.data.breakDuration,
-        selectedPreset: this.data.selectedPreset,
-        selectedSubjectId: this.data.selectedSubjectId,
-        selectedSubjectCode: this.data.selectedSubject ? this.data.selectedSubject.code : '',
-        selectedSubjectName: this.data.selectedSubject ? this.data.selectedSubject.name : '',
-        allocationMode: this.data.allocationMode,
-        selectedTaskType: this.data.selectedTaskType,
-        isPaused: this.data.isPaused,
-        totalPausedMs: this._timerState.totalPausedMs,
-        pauseStartTime: this.data.isPaused ? (this._timerState.pauseStartTime || api.now()) : null,
-        sessionId: this._timerState.sessionId,
-        isFreeTimer: this.data.isFreeTimer,
-        elapsedSec: this._timerState.elapsedSec,
-        freeDisplayOffsetMs: 0,
-        savedAt: api.now(),
-      }, 'onHide running snapshot')
-    }
+    persistSessionOnHide(persistence)
     // Single cleanup call — _clearTimer already clears free interval too
     this._clearTimer()
+  },
+
+  _hidePersistenceOptions() {
+    return {
+      readStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+      writeStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
+      view: () => this.data,
+      timer: () => this._timerState,
+      confirmSnapshot: () => this._confirmTimerSnapshot,
+      now: () => api.now(),
+    }
   },
 
   onUnload() {

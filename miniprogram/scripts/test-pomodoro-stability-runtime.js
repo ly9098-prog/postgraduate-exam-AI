@@ -65,6 +65,7 @@ const sandbox = {
     if (request === './utils/completion-recovery') return require('../pages/pomodoro/utils/completion-recovery')
     if (request === './utils/confirm-recovery') return require('../pages/pomodoro/utils/confirm-recovery')
     if (request === './utils/show-recovery') return require('../pages/pomodoro/utils/show-recovery')
+    if (request === './utils/hide-storage') return require('../pages/pomodoro/utils/hide-storage')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -147,6 +148,90 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('onHide preserves cancellation and confirmation before running state and timer cleanup', () => {
+    storage.clear()
+    const page = createPage()
+    const unknown = { clientStartId: 'synthetic-hide', payload: { subject_id: 4 } }
+    const confirm = { sessionId: 120, mode: 'free-complete' }
+    storage.set('pomodoro_unknown_start', unknown)
+    page._confirmTimerSnapshot = confirm
+    page.data.phase = 'running'
+    page.data.showEndConfirm = true
+    page.data.isPaused = true
+    page.data.allocationMode = 'equal_408_core_v1'
+    page.data.selectedTaskType = 'review'
+    page._timerState.sessionId = 120
+    page._timerState.pauseStartTime = null
+    const calls = []
+    const write = page._safeSetPomodoroStorage
+    page._safeSetPomodoroStorage = function(key, value, context) {
+      calls.push(key)
+      return write.call(this, key, value, context)
+    }
+    page._clearTimer = () => calls.push('clear-timer')
+    page.onHide()
+    assert.deepStrictEqual(calls, [
+      'pomodoro_unknown_start', 'pomodoro_confirm_pause', 'pomodoro_running_state', 'clear-timer',
+    ])
+    assert.strictEqual(storage.get('pomodoro_unknown_start').clientStartId, unknown.clientStartId)
+    assert.strictEqual(storage.get('pomodoro_unknown_start').cancelIfFound, true)
+    assert.strictEqual(storage.get('pomodoro_unknown_start').cancelAt, nowMs)
+    assert.strictEqual(storage.get('pomodoro_confirm_pause'), confirm)
+    const running = storage.get('pomodoro_running_state')
+    assert.strictEqual(running.sessionId, 120)
+    assert.strictEqual(running.allocationMode, 'equal_408_core_v1')
+    assert.strictEqual(running.selectedTaskType, 'review')
+    assert.strictEqual(running.pauseStartTime, nowMs)
+    assert.strictEqual(running.savedAt, nowMs)
+    assert.strictEqual(page._pageVisible, false)
+  })
+
+  await test('onHide completion read failure never overwrites running snapshot and still clears timer', () => {
+    storage.clear()
+    const page = createPage()
+    const previous = { sessionId: 121 }
+    storage.set('pomodoro_running_state', previous)
+    page.data.phase = 'running'
+    page._timerState.sessionId = 122
+    failReadStorageKey = 'pomodoro_completion'
+    try {
+      page.onHide()
+      assert.strictEqual(storage.get('pomodoro_running_state'), previous)
+      assert.strictEqual(page._clearTimerCalls, 1)
+    } finally {
+      failReadStorageKey = ''
+    }
+  })
+
+  await test('onHide confirmation write failure still saves running state and clears timer', () => {
+    storage.clear()
+    const page = createPage()
+    page.data.phase = 'running'
+    page.data.showEndConfirm = true
+    page._confirmTimerSnapshot = { sessionId: 123 }
+    page._timerState.sessionId = 123
+    failSetStorageKey = 'pomodoro_confirm_pause'
+    try {
+      page.onHide()
+      assert.strictEqual(storage.has('pomodoro_confirm_pause'), false)
+      assert.strictEqual(storage.get('pomodoro_running_state').sessionId, 123)
+      assert.strictEqual(page._clearTimerCalls, 1)
+    } finally {
+      failSetStorageKey = ''
+    }
+  })
+
+  await test('onHide cancels ceremony before deciding whether to persist running state', () => {
+    storage.clear()
+    const page = createPage()
+    page.data.phase = 'ceremony'
+    page._timerState.sessionId = 124
+    page.onHide()
+    assert.strictEqual(page.data.phase, 'idle')
+    assert.strictEqual(storage.has('pomodoro_running_state'), false)
+    assert.strictEqual(page._clearTimerCalls, 1)
+  })
 
   await test('unknown start short-circuits completion and active recovery', async () => {
     for (const resolution of ['storage_error', 'cancelled', 'restored']) {

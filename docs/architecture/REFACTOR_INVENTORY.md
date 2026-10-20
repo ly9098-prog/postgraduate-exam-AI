@@ -41,7 +41,7 @@
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
 | `admin-frontend/src/app/(admin)/knowledge-graph/page.tsx` | 1809 | `KnowledgeGraphPage` 613 | 图谱转换和交互已有页面外函数；继续核查请求/布局/选择状态。 |
 | `admin-frontend/src/app/(admin)/system/tasks/page.tsx` | 1599 | `SystemTasksPage` 1121 | 任务列表/详情/事件消费与 UI 编排边界待核查。 |
-| `miniprogram/pages/pomodoro/pomodoro.js` | 3654 | `onShow` 18 | show-recovery 组合未知启动/冲突/庆祝/确认/活动恢复；onHide、确认操作、计时/画布及其他职责仍待治理。 |
+| `miniprogram/pages/pomodoro/pomodoro.js` | 3631 | `onShow` 18 / `onHide` 30 | 展示恢复与离页持久化已独立；确认操作、计时/画布、统计及其他职责仍待治理。 |
 | `miniprogram/subpackages/study/practice/practice.js` | 2633 | `_loadQuestions` 342 | 会话加载、响应转换与页面写回待分离，保留分包与渲染契约。 |
 | `miniprogram/subpackages/productivity/pomodoro-stats/index.js` | 2570 | `_renderTrendBars` 182 | 统计映射/图形派生与视图写回待分离。 |
 
@@ -83,6 +83,7 @@ CI 已将新测试加入原有 Static architecture & non-GPU regression tests �
 - 第四十四批完成标记的视图转换下沉到纯函数 `pages/pomodoro/utils/completion-recovery.js`；6 项独立测试、Page VM 35 项运行回归和 1,920 组旧/新结果对照通过。完成标记校验、振动、同步和延迟统计仍由原页面执行，结束确认及剩余生命周期编排未完成。
 - 第四十五批 `pages/pomodoro/utils/confirm-recovery.js` 组合确认快照恢复，复用 timer-math，合并自由/倒计时暂停补偿回执逻辑；7 项模块测试、Page VM 39 项回归及 864 组旧/新状态和回调轨迹对照通过。有效性、导航保护和失效清理留在页面；确认取消/提交及剩余页面职责未完成治理，真实微信运行尚未验证。
 - 第四十六批 `pages/pomodoro/utils/show-recovery.js` 收敛 onShow 优先级，完成与确认分支独立，页面仅持有生命周期状态和能力接线。11 项入口测试、Page VM 42 项运行回归及 12,288 组完整旧/新 onShow 轨迹和状态对照通过；恢复入口治理有本地证据，整个页面、其他生命周期和真实微信行为仍未完成验收。
+- 第四十七批 `pages/pomodoro/utils/hide-storage.js` 集中离页取消意图、确认持久化及运行快照构建，保留存储上下文、时钟取值和清理顺序。8 项模块测试、Page VM 46 项运行回归及 13,824 组完整旧/新 onHide 对照通过；生命周期局部有本地证据，确认操作、计时/画布和整个页面仍未治理完毕。
 
 - 本清单完成注册入口枚举和后端静态依赖基线，仍需逐用例核对全部消费者、事务/状态机和异常行为。阶段 0 的全量语义审查保持未完成。
 - 上表的“待核查/待迁移”必须有代码与回归证据后才能改为完成；行数下降、文件移动、AST 解析成功均不能单独满足治理验收。

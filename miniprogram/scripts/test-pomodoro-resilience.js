@@ -466,8 +466,8 @@ t('backend persists a per-user client_start_id unique key and checks it before a
   assert.ok(backendApiSrc.includes('client_start_id=req.client_start_id'))
 })
 t('leaving during an uncertain start only cancels the exact idempotent session', () => {
-  assert.ok(onHide.includes('cancelIfFound: true'))
-  assert.ok(onHide.includes('cancelAt: api.now()'))
+  assert.ok(onHide.includes('cancelUnknownStartOnHide(persistence)'))
+  assert.ok(method('_hidePersistenceOptions').includes('now: () => api.now()'))
   assert.ok(reconcileStart.includes('storedAttempt.clientStartId === attempt.clientStartId'))
   assert.ok(reconcileStart.includes('attempt.cancelIfFound &&'))
   assert.ok(reconcileStart.includes('_matchesUnknownStartAttempt(session, attempt)'))
