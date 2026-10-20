@@ -43,6 +43,14 @@ const modules = [
     path: "./components/image-answer-results.tsx",
     imports: ["lucide-react", "@/components/ui/button", "@/lib/api/types"],
   },
+  {
+    path: "./review-answer-selection.ts",
+    imports: ["@/lib/question-types"],
+  },
+  {
+    path: "./components/review-answer-editor.tsx",
+    imports: ["@/components/ui/input", "../review-edit-state", "../review-answer-selection"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {

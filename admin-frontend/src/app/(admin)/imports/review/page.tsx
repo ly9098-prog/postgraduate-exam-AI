@@ -44,6 +44,7 @@ import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
 import { useReviewBatchAnswerMutations } from "./hooks/use-review-batch-answer-mutations";
 import { useReviewImageAnswerMutations } from "./hooks/use-review-image-answer-mutations";
+import { ReviewAnswerEditor } from "./components/review-answer-editor";
 import { ImageAnswerPreview, ImageAnswerResult } from "./components/image-answer-results";
 import { BatchAnswerPreview, BatchAnswerResult } from "./components/batch-answer-results";
 import { OptionVisualPreview } from "./components/option-visual-preview";
@@ -128,10 +129,6 @@ function FilterDropdown({
 }
 
 type ConfirmState = ReviewActionState | null;
-
-function isStandardMultiChoice(questionType: string): boolean {
-  return canonicalizeQuestionType(questionType) === "multiple_choice";
-}
 
 /** 多空（多选）选择题：每空可选多个选项 */
 function isMultiBlankMultipleChoice(questionType: string): boolean {
@@ -2411,66 +2408,14 @@ export default function ImportReviewPage() {
                   </section>
 
                   {/* Answer & Analysis edit */}
-                  <section className="animate-fade-up drawer-section-delay-4 rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
-                    <div className="mb-3 flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md" style={{ backgroundColor: "rgba(107,155,107,0.12)" }}>
-                        <span className="text-[10px] font-bold text-[var(--color-success)]">签</span>
-                      </span>
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">答案与解析</p>
-                    </div>
-                    {/* ── Quick answer selection ── */}
-                    {!isMultiBlankChoice(editState.question_type) ? (
-                      <>
-                        {editState.options.length === 0 ? <p className="mb-2 text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
-                        {editState.options.length > 0 ? (
-                          <div className="mb-4 flex flex-wrap gap-2">
-                            {editState.options.map((opt) => {
-                              const selected = isStandardMultiChoice(editState.question_type)
-                                ? editState.answer.split(/[,，\s]+/).includes(opt.key)
-                                : editState.answer === opt.key;
-                              return (
-                                <button
-                                  key={opt.key}
-                                  type="button"
-                                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
-                                    selected
-                                      ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
-                                      : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
-                                  }`}
-                                  onClick={() => {
-                                    if (isStandardMultiChoice(editState.question_type)) {
-                                      const keys = editState.answer.split(/[,，\s]+/).filter(Boolean);
-                                      const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
-                                      setEditState({ ...editState, answer: next.join(",") });
-                                    } else {
-                                      setEditState({ ...editState, answer: editState.answer === opt.key ? "" : opt.key });
-                                    }
-                                  }}
-                                >
-                                  {opt.key}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
-                    <label className="mb-3 block space-y-1">
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-success)]/60" />
-                        答案
-                      </span>
-                      <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
-                      {isMultiBlankChoice(editState.question_type) ? <p className="mt-1 text-[10px] text-amber-600">多空选择题的答案由上方各空位的答案选择器生成；展开高级答案输入后，也可以使用槽位格式手动修改。</p> : null}
-                    </label>
-                    <label className="block space-y-1">
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-success)]/60" />
-                        解析
-                      </span>
-                      <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
-                    </label>
-                  </section>
+                  <ReviewAnswerEditor
+                    questionType={editState.question_type}
+                    options={editState.options}
+                    answer={editState.answer}
+                    analysis={editState.analysis}
+                    onAnswerChange={(answer) => setEditState({ ...editState, answer })}
+                    onAnalysisChange={(analysis) => setEditState({ ...editState, analysis })}
+                  />
 
                   {/* AI suggestion in edit mode */}
                   {completeSuggestion ? (
