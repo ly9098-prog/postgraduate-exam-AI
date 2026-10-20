@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：553 个模块、2,192 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：553 个模块、2,193 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -23,7 +23,7 @@
 | 学习闭环 | `practice.py`、`wrong_questions.py`、`review.py`、`exams.py`、`study_plan.py`、`study_hub.py`、`adaptive_learning.py`；`services/practice_service.py`、`wrong_question_service.py`、`review_scheduler.py`、`exam_service.py`、`study_plan_service.py` | `exams`、`exams/[id]`、`recommendation/*`、题库配置 | `subpackages/study` 的刷题/结果/错题/今日复习/学习计划，`subpackages/exam` | GET 发题编排已治理；提交、错题/复习、考试、计划/推荐仍待迁移。刷题 `_loadQuestions` 342 行、今日复习 `submitGroup` 207 行，先刻画会话/答案/完成口径，不搬进万能 runner。回归入口：后端 `tests/practice`、`test_practice_chain_regressions.py`、`test_review_api.py`；小程序 `test-review-submit-completion.js`、`test-practice-result-diagnosis.js`。 |
 | 学习数据 | `pomodoro.py`、`stats.py`、`study_report.py`、`sync.py`；`services/pomodoro_service.py`、`pomodoro_normalization.py`、`pomodoro_attribution.py`、`stats_service.py`、`study_report_service.py` | `dashboard`、`app-users` 中已有展示 | `pages/home`、`pages/dashboard`、番茄钟和 `productivity/pomodoro-stats` | 番茄钟纯计算/持久化/待同步队列已接入，Page controller 与统计响应转换待治理。后端统计快照函数 338 行；必须保留多学科归因、暂停、跨日和幂等口径。现有番茄钟独立 Node 脚本及 `test_pomodoro_study_day_stats.py`、PostgreSQL 并发测试为入口。 |
 | 公式与导出 | `formulas.py`、`admin_formulas.py`、`exports.py`；`services/formula_*`、`services/export/*` | `formulas`、`formulas/[id]`、`formulas/new`、`formulas/categories` | `subpackages/formulas`、`subpackages/export` | 保留已有公式编辑 workbench/图谱辅助模块；列表页与导出记录页转换/查询职责待核查。DOCX/OMML 与 export service/processor 既有局部互引按具体边登记，不新增第二套导出器。回归入口：后端 `tests/export`、`test_admin_formulas.py`；小程序公式脚本、`test-export-capability-error.js`。 |
-| 公共运行时 | `main.py`、`worker_main.py`、`scheduler_main.py`；`services/task_queue_service.py`、`task_queue_worker.py`、缓存/存储/健康服务 | `lib/api/client.ts`、`lib/api/sse.ts`、`system/tasks`、`imports/tasks` | `app.js`、`utils/api.js`、`utils/storage.js`、现有内容渲染器 | 主入口 lifespan 695 行、任务消费 `_process_task_v2` 307 行，按角色/状态机拆分。HTTP、worker、scheduler 的退出与失败路径分别验证；新门禁不证明运行时安全。回归入口：`test_worker_sigterm.py`、`test_worker_kill.py`、任务队列测试及客户端 API/SSE 测试。 |
+| 公共运行时 | `main.py`、`worker_main.py`、`scheduler_main.py`；`services/task_queue_service.py`、`task_queue_worker.py`、缓存/存储/健康服务 | `lib/api/client.ts`、`lib/api/sse.ts`、`system/tasks`、`imports/tasks` | `app.js`、`utils/api.js`、`utils/storage.js`、现有内容渲染器 | 主入口 lifespan 676 行、任务消费 `_process_task_v2` 307 行，按角色/状态机拆分。HTTP、worker、scheduler 的退出与失败路径分别验证；新门禁不证明运行时安全。回归入口：`test_worker_sigterm.py`、`test_worker_kill.py`、任务队列测试及客户端 API/SSE 测试。 |
 
 ## 3. 当前热点的具体处理依据
 
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 999 | `lifespan` 695 | HTTP/指标/探针/lag、任务/共享资源/角色/公式池关闭已独立；OCR、启动、失败清理及角色生命周期仍待治理。 |
+| `backend/app/main.py` | 981 | `lifespan` 676 | HTTP/指标/探针/lag、任务/共享资源/角色/公式与OCR执行器关闭已独立；启动、失败清理及完整角色生命周期仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -156,3 +156,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第七十三批`core/runtime_role_shutdown.py`拥有role显式分流的drain/reaper及scheduler/prewarm停止；formula pool关闭复用已有资源关闭模块，main原相对顺序不变。72项原刻画先过，迁移后定向120项；3,645组角色/错误/取消轨迹与48组公式超时/force轨迹、完整块/展开main AST及328路径OpenAPI一致。既有公式池真实生命周期9项通过，完整静态CI946项（2条既有弃用警告）/readiness69项通过。角色模块63行/函数23和31行，资源模块97行/formula25行；main999行/lifespan695行，553模块/2,192边/零循环。HTTP原本拒绝worker/scheduler，片段测试不证明独立角色完整启停；真实依赖/失败恢复/客户端验收仍待完成。
+
+
+第七十四批原OCR执行器云判断/惰性导入/30秒关闭迁至已有资源模块；main原web/all分流和formula→executor→gateway→shared client顺序保持，gateway/client原错误传播不变。35项原片段刻画先过，迁移后相关132项通过，3,000组角色/画像/导入/错误/取消/日志、完整块/展开main AST及328路径OpenAPI一致。完整静态CI983项（2条既有弃用警告）/readiness69项通过。模块120行、OCR helper21行；main981行/lifespan676行，553模块/2,193边/零循环。替身执行器/HTTP不证明真实OCR或完整角色退出；启动及yield前失败清理继续待办。

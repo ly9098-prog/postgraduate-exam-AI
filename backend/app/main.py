@@ -26,6 +26,7 @@ from app.core.readiness_response import ReadinessSnapshot, build_readiness_respo
 from app.core.runtime_resource_shutdown import (
     close_runtime_connections,
     shutdown_formula_pool,
+    shutdown_ocr_executor,
     shutdown_render_resources,
     stop_resource_reconciler,
 )
@@ -762,26 +763,7 @@ async def lifespan(app: FastAPI):
         # 6. Shutdown OCR infrastructure (only if this role uses it)
         # Cloud profile: skip OCR executor shutdown — it imports local PaddleOCR modules.
         if role in ("web", "all"):
-            try:
-                from app.core.deployment_profile import (
-                    DeploymentProfile,
-                    detect_deployment_profile,
-                )
-
-                if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
-                    from app.services.ocr_executor_service import ocr_executor
-
-                    await asyncio.wait_for(
-                        ocr_executor.shutdown(wait=True),
-                        timeout=30,
-                    )
-                    logger.info("OCR executor shut down")
-                else:
-                    logger.info("OCR executor shutdown skipped (cloud profile)")
-            except TimeoutError:
-                logger.warning("OCR executor shutdown timed out")
-            except Exception:
-                logger.exception("OCR executor shutdown error")
+            await shutdown_ocr_executor()
 
             try:
                 from app.features.ocr_gateway import OCRGateway

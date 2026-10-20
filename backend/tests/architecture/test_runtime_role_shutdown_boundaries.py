@@ -48,7 +48,7 @@ def test_lifespan_keeps_role_protocols_and_formula_pool_in_original_positions():
         "await drain_queue_for_role(role)", "_lag_monitor_task.cancel()",
         "await stop_processor()", "await cancel_and_wait_runtime_tasks",
         "await stop_role_services(role)", "await shutdown_formula_pool()",
-        "ocr_executor.shutdown(wait=True)", "await shutdown_render_resources()",
+        "await shutdown_ocr_executor()", "await shutdown_render_resources()",
     ]]
     assert positions == sorted(positions)
 

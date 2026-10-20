@@ -18,6 +18,7 @@ def test_resource_shutdown_dependencies_and_function_budgets():
         "app.core.database", "app.core.resource_guard", "app.features.token_budget",
         "app.services.pdf_renderer_service", "app.services.task_queue_service",
         "app.services.formula_graph_spec_renderer",
+        "app.core.deployment_profile", "app.services.ocr_executor_service",
     }
     assert "app.core.runtime_resource_shutdown" in graph["app.main"]
     source = (APP / "core/runtime_resource_shutdown.py").read_text()

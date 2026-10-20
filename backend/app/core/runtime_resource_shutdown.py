@@ -95,3 +95,26 @@ async def shutdown_formula_pool() -> None:
             logger.exception("Formula render pool forced shutdown error: %s", exc2)
     except Exception:
         logger.exception("Formula render pool shutdown error")
+
+
+async def shutdown_ocr_executor() -> None:
+    try:
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
+
+        if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
+            from app.services.ocr_executor_service import ocr_executor
+
+            await asyncio.wait_for(
+                ocr_executor.shutdown(wait=True),
+                timeout=30,
+            )
+            logger.info("OCR executor shut down")
+        else:
+            logger.info("OCR executor shutdown skipped (cloud profile)")
+    except TimeoutError:
+        logger.warning("OCR executor shutdown timed out")
+    except Exception:
+        logger.exception("OCR executor shutdown error")
