@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十二批已提交，第九十三批分离HTTP启动诊断与目录准备；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十三批已提交，第九十四批分离HTTP worker启动与任务引用；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1173,3 +1173,12 @@
 - 三原完整块/展开整个main AST及资源模块原有两个函数AST一致，328路径OpenAPI一致，73组配置/画像读取/日志/import/capability变更/目录/错误/context/cancel轨迹一致。保留四mkdir逐次调用、前三次成功后才读EXPORT_DIR；capability在REDIS_URL读取前执行，普通日志错误不新增吞异常。main模块导入时原三次静态目录创建保持；local web原export_processor_enabled=false日志仍按原role口径，实际本地processor fallback启动逻辑不变。
 - 新3项诊断依赖/预算/唯一真实消费和原参数/调用顺序/无main副本/导入不加载配置画像资源或产生日志目录的门禁接入CI；已有resource门禁扩展真实目录owner与TYPE_CHECKING config依赖，staging门禁跟随真实新下游。main≤545/lifespan≤258新增收缩预算。迁移后相关direct/资源/完整HTTP/独立角色/4真实OS信号child/三个架构门禁213项通过；混合538项单进程确认新resource.os、原Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/周期端口/30模块与父别名及policy/shutdown端口恢复（包装进程2条rewrite警告）。
 - 原YAML完整静态CI1,895项（2既有弃用警告）/readiness69项/云OCR30项通过，所有本批用例均已包含在该轮collection。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；由主agent按review-agent只读流程审查完整diff/实际调用方/读取与日志顺序/原catch/取消/部分目录副作用及全部等价与回归证据：No findings，无子agent。只显式暂存本批12文件并本地提交，不推送、不操作生产或清理现有资源。新诊断模块74行/函数36、24行，资源模块35→48行/新函数6行，main597→545行/lifespan315→258行；bootstrap282/runner50保持，图568模块/2,233边/零循环/反向API。33项既有工作区路径保护状态不变；HTTP/独立runner既有清理缺口、完整外部服务/持久化/客户端及全栈其余阶段继续待办。
+
+
+## 一百、第九十四批执行记录：HTTP worker 启动与任务引用（2026-10-21）
+
+- 原 HTTP lifespan 的 worker dispatcher/reaper/AI prewarm 三段完整 try 块迁至 `services/runtime_http_worker_startup.py` 的 `start_http_worker_tasks`，新增 `HttpWorkerTasks` 数据类持有两个任务引用。main 直接消费真实函数和状态类，显式传原 `_production_mode`/`logger`/`report_http_startup_failure`；原 local web export processor → worker → scheduler 顺序和 shutdown 标签/引用归属保持，不引入第二套 TaskRegistry。
+- 原 33 项直接契约、36 项完整 HTTP 生命周期、8 项 HTTP scheduler 共 114 项先在旧实现通过。覆盖三段独立 catch、factory/create/import/prewarm/log 各阶段普通错误与 cancel、production fatal SystemError 包装、部分任务发布后失败保留引用、取消不进入后续 shutdown。迁移后 direct/架构/完整 HTTP/角色/scheduler/真实信号 137 项通过；旧版 122 项对原完整 main 及原块通过。两原块/展开整个 main AST 及 328 路径 OpenAPI 一致。
+- 新 3 项依赖/预算/唯一真实消费和原参数/调用位置/local→worker→scheduler 顺序/无 main 副本/惰性导入无配置或 task 创建门禁接入 CI；已有 HTTP policy 门禁更新为只列 main 直接报告的组件。main 523/lifespan 232 新增收缩预算，worker 模块 47/函数 31 行。
+- 原 YAML 完整静态 1,967 项（2 既有弃用警告）、readiness 69、云 OCR 30 全部通过。混合 607 项单进程确认 Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/周期端口/30 模块与父别名及 policy/shutdown 端口恢复（包装进程 2 rewrite 警告）。严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/三段独立 catch/部分任务引用/fatal 包装/取消边界及全部等价证据：No findings，无子 agent。
+- 仅本地提交本批 11 文件，不推送、不操作生产。main 545→523/lifespan 258→232 行，bootstrap 282/runner 50 保持，图 569 模块/2,235 边/零循环/反向 API。HTTP/独立 runner 既有 yield 前失败清理缺口、shared client 关闭阻断等行为待办不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。

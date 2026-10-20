@@ -9,8 +9,7 @@ from tests.architecture.dependency_scan import scan_application
 
 APP = Path(__file__).resolve().parents[2] / "app"
 COMPONENTS = [
-    "Executors", "OCR Gateway", "Pipeline dispatcher v2", "Reaper",
-    "AI prewarm worker", "Scheduler heartbeat", "Audit log cleanup scheduler",
+    "Executors", "OCR Gateway", "Scheduler heartbeat", "Audit log cleanup scheduler",
     "Recommendation metrics scheduler",
 ]
 
@@ -66,6 +65,10 @@ def test_main_uses_real_policies_original_ports_components_and_startup_positions
         "profile = get_ocr_profile()",
     ]]
     assert positions == sorted(positions)
+    worker_helper = next(node for node in ast.walk(ast.parse(source))
+                         if isinstance(node, ast.Call)
+                         and getattr(node.func, "id", None) == "start_http_worker_tasks")
+    assert worker_helper not in reports
 
 
 def test_importing_http_policy_does_not_load_configuration_resources_or_mutate_environment():

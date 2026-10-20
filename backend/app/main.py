@@ -64,6 +64,10 @@ from app.services.runtime_http_startup_diagnostics import (
     log_http_export_startup,
     log_http_startup,
 )
+from app.services.runtime_http_worker_startup import (
+    HttpWorkerTasks,
+    start_http_worker_tasks,
+)
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
 from app.services.runtime_ocr_startup import (
     HttpOcrResources,
@@ -114,8 +118,7 @@ async def lifespan(app: FastAPI):
     # Background asyncio task references (initialized per role block)
     cleanup_task = None
     _staging_cleanup_task = None
-    _pipeline_worker_task = None
-    _reaper_task = None
+    _worker_tasks = HttpWorkerTasks()
     _export_processor_task = None
     _export_cleanup_task = None
     _scheduler_heartbeat_task = None
@@ -163,8 +166,6 @@ async def lifespan(app: FastAPI):
         initialize_role_executors(role)
     except Exception as e:
         report_http_startup_failure("Executors", e, _production_mode)
-    _pipeline_worker_task: asyncio.Task | None = None
-    _reaper_task: asyncio.Task | None = None
     _lag_monitor_task: asyncio.Task | None = None
 
     # Event-loop lag monitor (always runs — lightweight, all roles)
@@ -193,32 +194,9 @@ async def lifespan(app: FastAPI):
 
     # ── Role: worker — pipeline processing + AI prewarm ──
     if role in ("worker", "all"):
-        try:
-            from app.services.task_queue_worker import run_dispatcher_v2
-
-            _pipeline_worker_task = asyncio.create_task(
-                run_dispatcher_v2(), name="pipeline-dispatcher-v2"
-            )
-        except Exception as e:
-            report_http_startup_failure("Pipeline dispatcher v2", e, _production_mode)
-
-        try:
-            from app.services.task_queue_worker import run_reaper_loop_v2
-
-            _reaper_task = asyncio.create_task(
-                run_reaper_loop_v2(), name="task-reaper-v2"
-            )
-        except Exception as e:
-            report_http_startup_failure("Reaper", e, _production_mode)
-
-        # AI prewarm worker — uses DurableTaskQueue (moved from scheduler per P0-2)
-        try:
-            from app.services.ai_prewarm_worker import start_worker
-
-            await start_worker()
-            logger.info("AI prewarm worker started")
-        except Exception as e:
-            report_http_startup_failure("AI prewarm worker", e, _production_mode)
+        await start_http_worker_tasks(
+            _worker_tasks, _production_mode, logger, report_http_startup_failure,
+        )
 
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
@@ -313,8 +291,8 @@ async def lifespan(app: FastAPI):
         # 4. Cancel and await background asyncio tasks with grace timeout
         await cancel_and_wait_runtime_tasks([
             ("token-cleanup", cleanup_task),
-            ("pipeline-dispatcher-v2", _pipeline_worker_task),
-            ("task-reaper-v2", _reaper_task),
+            ("pipeline-dispatcher-v2", _worker_tasks.pipeline_worker_task),
+            ("task-reaper-v2", _worker_tasks.reaper_task),
             ("staging-cleanup", _staging_cleanup_task),
             ("export-processor", _export_processor_task),
             ("export-cleanup", _export_cleanup_task),
