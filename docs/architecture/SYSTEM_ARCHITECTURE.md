@@ -58,6 +58,8 @@ OCR 架构测试 `backend/tests/architecture/test_architecture_boundaries.py` �
 
 导出业务服务和 scheduler 处理器共用 `backend/app/services/export/state_machine.py` 的转换表/校验规则，service 不再反向导入 processor；任务状态枚举仍以现有 schema 为准。领取、并发、事务、超时和重导出恢复仍由原入口拥有，本次未改变状态机协议。
 
+导出 phase3 验收样本由 `backend/tests/export/docx_acceptance_fixture.py` 调用真实 DOCX exporter，在 pytest 临时目录生成；不依赖本机 artifacts 目录或提交二进制样本。测试覆盖可解析性和内容结构，不代表完整 OOXML 合规；严格校验发现的现有属性顺序、zoom、矩阵包装及片段公式问题见 `REFACTOR_INVENTORY.md`，未在测试夹具重构中修改应用渲染语义。
+
 ### 核心设计原则
 
 - **单体后端**，不分微服务，3 层：Route → Service → Model

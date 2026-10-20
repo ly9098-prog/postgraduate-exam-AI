@@ -62,7 +62,7 @@
 
 第三十八批已解除 embedding / vector config 的 2 模块循环：`services/embedding_endpoints.py` 统一 URL 构造，运行请求与管理端连通测试直接依赖该纯规则，后者不再导入 embedding 执行服务；原配置读取方式不变。26 项端点/调用方回归及 302 组新旧规则对照验证行为一致，对应两条循环边已从基线移除。
 
-第三十九批已解除 export service / processor 的 2 模块循环：`services/export/state_machine.py` 持有原转换表与校验函数，两类消费者直接依赖该规则。55 项状态规则测试、900 组新旧返回值/异常对照与现有导出/并发回归验证等价；不改变任务领取、事务或失败恢复。两条循环边已移除。导出 phase3 的 12 项旧验收仍依赖缺失的本机 DOCX 产物，重构前后均失败，尚需将其改为可重复生成的测试夹具。
+第三十九批已解除 export service / processor 的 2 模块循环：`services/export/state_machine.py` 持有原转换表与校验函数，两类消费者直接依赖该规则。55 项状态规则测试、900 组新旧返回值/异常对照与现有导出/并发回归验证等价；不改变任务领取、事务或失败恢复。两条循环边已移除。当时导出 phase3 的 12 项旧验收因本机 DOCX 产物缺失而失败；第四十批已改为由真实导出器在 pytest 临时目录生成合成样本，恢复可重复验收。
 
 该图包含 TYPE_CHECKING、函数内及延迟导入；静态循环不等同于运行时循环导入错误。扫描器不解析计算生成的模块名、动态插件/monkeypatch、隐式包初始化带来的依赖或第三方内部关系，因而“无新增静态循环”不能证明运行时没有循环、死锁或资源泄漏。
 
@@ -81,3 +81,5 @@ CI 已将新测试加入原有 Static architecture & non-GPU regression tests �
 - 本清单完成注册入口枚举和后端静态依赖基线，仍需逐用例核对全部消费者、事务/状态机和异常行为。阶段 0 的全量语义审查保持未完成。
 - 上表的“待核查/待迁移”必须有代码与回归证据后才能改为完成；行数下降、文件移动、AST 解析成功均不能单独满足治理验收。
 - PostgreSQL/Redis、OCR/AI 外部服务、真实后台浏览器与微信编译/模拟器/真机没有在本批运行。高风险迁移须另补相应测试环境与故障证据。
+- DOCX 验收已检查 ZIP 完整性、XML 可解析、python-docx 重开、原生表格/合并单元格、PAGE 页脚、中文/化学字符和 OMML 矩阵节点/元素值。当前输出有两个页脚且仅使用 PAGE，旧 NUMPAGES 断言已按实现更新。
+- 第四十批额外使用 docx 技能附带的严格 OOXML 校验器检查合成输出，校验未通过：`header2.xml` 的 pBdr、`document.xml` 的 shd/tblBorders/keepWithNext 元素顺序及 `settings.xml` 的 zoom 缺少 percent 属性。源码与样本还显示 OMML 矩阵缺少行列包装，`segments.text` 中的 LaTeX 走纯文本路径；本批未修改生产渲染器，单独登记为既有格式/渲染问题。当前测试通过不证明完整 OOXML 合规、矩阵布局正确或 Word/LibreOffice 显示一致。

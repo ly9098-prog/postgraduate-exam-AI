@@ -34,6 +34,13 @@ from app.services.export.table_parser import (
 _OMML_NS = "schemas.openxmlformats.org/officeDocument/2006/math"
 
 
+@pytest.fixture(scope="module")
+def acceptance_docx(tmp_path_factory):
+    from tests.export.docx_acceptance_fixture import generate_acceptance_docx
+
+    return generate_acceptance_docx(tmp_path_factory.mktemp("export_phase3"))
+
+
 # ═══════════════════════════════════════════════════
 # 1. Table logical grid with col_span
 # ═══════════════════════════════════════════════════
@@ -566,18 +573,18 @@ class TestAdminCLI:
 
 
 class TestDocxAcceptance:
-    """Acceptance DOCX XML structure verification."""
+    """Verify freshly exported DOCX output rather than a developer's old file."""
 
-    DOCX_PATH = "/home/lmh/projects/postgraduate-ai/artifacts/libreoffice/phase3_acceptance.docx"
+    @pytest.fixture(autouse=True)
+    def _use_generated_docx(self, acceptance_docx):
+        self.docx_path = acceptance_docx
 
     def _docx_xml(self) -> str:
-        import zipfile
-        with zipfile.ZipFile(self.DOCX_PATH) as z:
+        with zipfile.ZipFile(self.docx_path) as z:
             return z.read("word/document.xml").decode("utf-8")
 
     def test_docx_exists(self):
-        import os
-        assert os.path.exists(self.DOCX_PATH), "Acceptance DOCX not found"
+        assert self.docx_path.is_file(), "Acceptance DOCX not generated"
 
     def test_docx_has_w_tbl(self):
         xml = self._docx_xml()
@@ -597,9 +604,8 @@ class TestDocxAcceptance:
 
     def test_docx_has_page_field(self):
         self._docx_xml()
-        import zipfile
         has_page = False
-        with zipfile.ZipFile(self.DOCX_PATH) as z:
+        with zipfile.ZipFile(self.docx_path) as z:
             for name in z.namelist():
                 if "footer" in name:
                     content = z.read(name).decode("utf-8")
@@ -608,22 +614,22 @@ class TestDocxAcceptance:
                         break
         assert has_page, "No PAGE field in footer"
 
-    def test_docx_has_numpages_field(self):
-        import zipfile
-        has_numpages = False
-        with zipfile.ZipFile(self.DOCX_PATH) as z:
-            for name in z.namelist():
-                if "footer" in name:
-                    content = z.read(name).decode("utf-8")
-                    if "NUMPAGES" in content:
-                        has_numpages = True
-                        break
-        assert has_numpages, "No NUMPAGES field in footer"
+    def test_both_footers_use_current_page_only_layout(self):
+        from xml.etree import ElementTree
+
+        namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        with zipfile.ZipFile(self.docx_path) as z:
+            footers = [name for name in z.namelist() if name.startswith("word/footer") and name.endswith(".xml")]
+            assert len(footers) == 2
+            for name in footers:
+                root = ElementTree.fromstring(z.read(name))
+                instructions = [node.text.strip() for node in root.findall(".//w:instrText", namespace)]
+                assert instructions == ["PAGE"]
 
     def test_no_html_tag_leakage(self):
-        xml = self._docx_xml()
-        import re
-        text_content = re.sub(r'<[^>]+>', ' ', xml)
+        from xml.etree import ElementTree
+
+        text_content = "".join(ElementTree.fromstring(self._docx_xml()).itertext())
         assert "<sub>" not in text_content, "Raw <sub> tag leaked"
         assert "<sup>" not in text_content, "Raw <sup> tag leaked"
         assert "<b>" not in text_content, "Raw <b> tag leaked"
@@ -633,13 +639,18 @@ class TestDocxAcceptance:
         assert "线性代数" in xml, "Chinese text missing"
 
     def test_docx_not_empty(self):
-        import os
-        assert os.path.getsize(self.DOCX_PATH) > 1000, "DOCX too small"
+        assert self.docx_path.stat().st_size > 1000, "DOCX too small"
 
     def test_chemistry_unicode_present(self):
         xml = self._docx_xml()
         assert any(c in xml for c in "₂₃₄₊₋"), "Unicode chemistry not found"
 
     def test_matrix_formula_present(self):
-        xml = self._docx_xml()
-        assert "matrix" in xml.lower() or "pmatrix" in xml.lower(), "Matrix not found"
+        from xml.etree import ElementTree
+
+        namespace = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+        root = ElementTree.fromstring(self._docx_xml())
+        matrices = root.findall(".//m:m", namespace)
+        assert len(matrices) == 1, "Expected one native OMML matrix"
+        values = [node.text for node in matrices[0].findall(".//m:t", namespace)]
+        assert values == ["1", "2", "3", "4"]
