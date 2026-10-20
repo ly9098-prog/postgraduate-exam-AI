@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十二批已提交，第八十三批收敛周期清理与导出循环入口；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十三批已提交，第八十四批建立完整独立角色生命周期契约；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1072,3 +1072,14 @@
 - 额外实际两个入口全部3类cleanup进入真实system-task循环，在受控未来延时中确认原注册、真实asyncio等待、真实task.cancel及finally注销，恢复注册表，无socket和业务执行。该验证不等同于定时清理业务、Redis分布式锁或独立进程完整启停验收。严格Ruff/全应用Ruff/compileall/diff/CI路径与33项保护哈希通过。
 - 按review-agent只读核对完整差异、原system-task注册/调度/注销消费者、两入口task归属及export异常/日志、测试清理/旧新证据：No findings。新模块32行/函数最长7行；main642→614行/lifespan334保持，bootstrap719→688行/调度初始化93保持，图561模块/2,214边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。独立worker完整启动/失败/退出和其他共享生命周期/业务/客户端治理继续，既有yield前清理/client关闭阻断等独立行为待办保持。
+
+
+## 九十、第八十四批执行记录：完整独立角色生命周期契约
+
+- 仅补测试/CI/文档，不修改生产源码。32项直接进入真实`bootstrap._run_role_async`、真实worker/scheduler初始化及真实shutdown_role；TaskRegistry/ManagedTask/asyncio.create_task/取消/共享wait和formula to_thread均保留真实实现，约30模块的外部持久化/服务端口替身、pytest临时scratch/cwd及socket拒绝避免副作用。worker两任务、scheduler九任务及原outbox回调均由真实registry拥有，fixture独立收尾测试自身任务。
+- 覆盖worker/scheduler×本地/云×OCR开关的正常启停/资源顺序，生产初始化致命/普通错误/取消、配置和signal安装失败、真实等待任务cancel、关闭普通错误继续和CancelledError阻断、未知角色。信号安装使用捕获Event的端口，真实等待/唤醒但不发送OS SIGTERM/SIGINT，不声称已验证CLI进程exit code或真实服务关闭。
+- 相同32项在旧`3a39d843`完整bootstrap模块通过，旧私有周期函数仅映射到同一受控循环端口；当前runner/shutdown/worker init/signal安装四函数AST与该旧版一致，证明相关缺口为既有。原27项刻画通过，补充关闭cancel/未知角色后32项通过，混合HTTP/独立scheduler/完整角色99项通过。
+- 新确认独立runner既有缺口：角色初始化失败及等待stop_event时cancel均不进入shutdown_role；部分任务可能已创建仍存活。配置校验失败发生在创建registry前；shutdown中CancelledError仍直接传播并跳过后续资源。测试明确断言未清理，再由fixture收尾，未给生产补finally或吞取消。登记独立修复待办，不夹带改变退出策略。
+- 原YAML静态CI本地1,433项（2既有弃用警告）、readiness69项、云OCR30项通过。额外99项同进程核验Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/原周期端口、30模块对象与已存在父别名恢复；逐测试autouse审计sys.path无泄漏。初wrapper全局sys.path差异已定位到pytest首次setup import_path预置包根，改在框架setup后的fixture边界核验，不归因于被测代码（包装进程2条rewrite警告）。
+- 严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；review-agent只读检查完整测试/端口、真实runner/init/关闭和错误/取消/信号边界、TaskRegistry最终收尾/状态审计：No findings。端口192行/测试124行，生产main614/lifespan334、bootstrap688与图561模块/2,214边/零循环保持。
+- 仅本地提交本批测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。独立角色真实CLI进程/OS信号/DB/Redis/OCR/AI及客户端全链仍未验收；下一批可在此完整契约下继续worker/scheduler/资源编排治理，HTTP/独立runner清理缺口与全栈未完成项保持待办。
