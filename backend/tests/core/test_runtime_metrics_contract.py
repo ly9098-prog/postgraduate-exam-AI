@@ -74,11 +74,11 @@ async def test_metrics_access_checked_before_sampling(
 
 @pytest.fixture
 def metrics_ports(monkeypatch):
-    from app.api.v1 import admin_imports
     from app.core import ai_runtime_guard, database, resource_guard
     from app.features import batch_image_import_service, token_budget
     from app.services import (
         audit_cleanup_scheduler,
+        import_sse_metrics,
         ocr_service,
         recommendation_metrics_scheduler,
         sse_pubsub,
@@ -122,7 +122,7 @@ def metrics_ports(monkeypatch):
     monkeypatch.setattr(
         batch_image_import_service, "_active_sse_connections", {"a": 2, "b": 3}, raising=False,
     )
-    monkeypatch.setattr(admin_imports, "_sse_metrics", {"connections": 7})
+    monkeypatch.setattr(import_sse_metrics, "counters", {"connections": 7})
     monkeypatch.setattr(task_queue_worker, "is_draining_v2", lambda: False)
     monkeypatch.setattr(audit_cleanup_scheduler.audit_log_cleanup_scheduler, "_running", True)
     monkeypatch.setattr(
@@ -130,7 +130,8 @@ def metrics_ports(monkeypatch):
     )
     return SimpleNamespace(
         queue=queue, calls=calls, ocr=ocr_service, guard=ai_runtime_guard.ai_runtime_guard,
-        budget=token_budget, staging=staging_storage,
+        budget=token_budget, staging=staging_storage, database=database,
+        resources=resource_guard.resource_guard,
     )
 
 

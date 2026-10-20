@@ -295,6 +295,7 @@ jobs:
             tests/core/test_http_error_contract.py \
             tests/core/test_http_middleware_contract.py \
             tests/core/test_runtime_metrics_contract.py \
+            tests/core/test_runtime_system_metrics_contract.py \
             tests/core/test_orm_registry.py \
             tests/test_ocr_fix/test_adapter_contract.py \
             tests/test_services/test_question_draft_fallback.py \
@@ -305,6 +306,7 @@ jobs:
             tests/test_services/test_pomodoro_scheduler.py \
             tests/test_api/test_import_page_range.py \
             tests/test_api/test_image_import_status.py \
+            tests/test_api/test_import_sse_metrics.py \
             tests/ocr_pipeline/test_ocr_resume_equivalence.py \
             tests/test_api/test_candidate_evaluator_privacy.py \
             tests/pipeline/test_pipeline_fingerprint.py \

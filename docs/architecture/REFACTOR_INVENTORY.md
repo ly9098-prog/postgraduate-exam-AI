@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：542 个模块、2,154 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：545 个模块、2,162 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 1607 | `lifespan` 870 | HTTP 错误/中间件、指标访问和队列/推理采样已独立；系统/DB/SSE/调度器指标、健康及生命周期仍待治理。 |
+| `backend/app/main.py` | 1521 | `lifespan` 870 | HTTP 错误/中间件与指标采样已独立，指标端点组合 36 行；健康及生命周期仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -115,6 +115,7 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 - 本清单完成注册入口枚举和后端静态依赖基线，仍需逐用例核对全部消费者、事务/状态机和异常行为。阶段 0 的全量语义审查保持未完成。
 - 第六十三批确认 readiness 的既有判定缺口：`_check_alembic_head()` 返回 False 时 checks.alembic 被映射为 `stale`，关键失败列表仅接收 `unavailable`，其余依赖正常时仍返回 HTTP 200。已增加原行为刻画并单独登记；需要后续行为修复批次，不能在等价迁移中悄然改为 503。
+- 第六十五批核实旧 SSE `active` 计数仅在连接开启时刷新，关闭时只更新 per-user 连接表；`sse_active_connections` 则每次采样重新求和。迁移保留这两个现有口径，未把共享计数所有权收敛当作活动快照刷新缺口已修复。
 - 上表的“待核查/待迁移”必须有代码与回归证据后才能改为完成；行数下降、文件移动、AST 解析成功均不能单独满足治理验收。
 - PostgreSQL/Redis、OCR/AI 外部服务、真实后台浏览器与微信编译/模拟器/真机没有在本批运行。高风险迁移须另补相应测试环境与故障证据。
 - DOCX 验收已检查 ZIP 完整性、XML 可解析、python-docx 重开、原生表格/合并单元格、PAGE 页脚、中文/化学字符和 OMML 矩阵节点/元素值。当前输出有两个页脚且仅使用 PAGE，旧 NUMPAGES 断言已按实现更新。
@@ -135,3 +136,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十三批恢复健康/readiness 基线：原公开 health 1 项失败及 readiness 显式运行后的 9 项失败均由测试夹具修复，生产实现不变。OCR profile patch 指向真实导入位置；队列使用 v2 端口；调度器开关明确；空间断言不再条件放行；恢复 OCR hysteresis 并移除全局 lifespan 污染。新增调度器/队列临界与云/本地状态和详情脱敏矩阵后，三文件 69 项通过。独立 CI 步骤只对指定 mocked readiness 文件打开目录门禁，并使用隔离配置；不运行真实 DB/Redis 集成，不将 39 项此前条件跳过当作验证。Alembic stale 仍返回 200 的既有缺口单列，不因本批绿色而视为已修复。
 
 第六十四批分离指标访问策略、队列深度/计数与 OCR/AI 采样到三个职责模块。队列计数/网关/AI guard/budget 继续由原实现持有，不新增副本；访问判断保持先于实际采样。36 项原实现刻画先通过，迁移后增补取消和部分字段读取失败；结合 3 项依赖/新进程/尺寸门禁，完整 CI 静态步骤本地 644 项通过，独立 readiness 69 项通过。79 组完整响应/头/异常/采样轨迹与旧实现一致，展开 helper 后端点 AST 和其余 main AST 相同，328 路径 OpenAPI 一致。main 1,607 行，新模块 30/58/66 行、函数最长 39；静态图 542 模块/2,154 边/零循环。系统/DB/SSE/调度器指标和健康/生命周期仍待治理，真实外部服务/部署/客户端与远端 CI 未验证。
+
+第六十五批把剩余系统/storage/DB/进程/worker/scheduler 输出与 SSE 采样按职责分离，main 指标端点组合 36 行。原 Admin SSE 六个计数迁到唯一中立模块，路由直接写入、sampler 直接读取，去掉旧路由变量及服务读取 API 的依赖；连接表和限额/超时/清理语义保持原状。迁移前 52 项指标与真实 SSE 刻画通过；迁移后完整本地静态 CI 665 项、readiness 69 项通过，测试按职责分文件后定向 75 项通过。80 组完整正文/头/错误/采样轨迹、展开端点 AST、Admin route 归一化 AST 和 328 路径 OpenAPI 一致。新模块 13/28/102 行，函数最长 27 行，main 1,521 行；静态图 545 模块/2,162 边/零循环。真实 Redis/PostgreSQL/SSE、角色启动/退出、客户端和远端 CI 未验收；旧 active 快照刷新问题单独登记。

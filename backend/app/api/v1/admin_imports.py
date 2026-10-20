@@ -20,6 +20,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.services.import_sse_metrics as import_sse_metrics
 from app.core.admin_guards import (
     admin_rate_limit,
     finish_idempotency,
@@ -36,18 +37,6 @@ from app.features.pipeline_orchestrator import (
     _get_stage_checkpoint,
     _set_pipeline_store,
 )
-
-# ── SSE low-cardinality metrics ──
-# Counters; no user_id label (high cardinality).
-# Per-user connection counts stored in batch_image_import_service._active_sse_connections.
-_sse_metrics = {
-    "active": 0,
-    "per_user_rejected": 0,
-    "global_rejected": 0,
-    "disconnected": 0,
-    "max_duration_closed": 0,
-    "max_idle_closed": 0,
-}
 from app.schemas.admin_imports import (
     AdminImportActionResponse,
     AdminImportBatchCompleteRequest,
@@ -1566,7 +1555,7 @@ async def stream_batch_image_job(
     # Global connection limit
     total_active = sum(active_conns.values())
     if total_active >= _SSE_MAX_GLOBAL_CONNECTIONS:
-        _sse_metrics["global_rejected"] += 1
+        import_sse_metrics.counters["global_rejected"] += 1
         logger.warning(
             "SSE global connection limit reached: %d active",
             total_active,
@@ -1579,7 +1568,7 @@ async def stream_batch_image_job(
     # Per-user connection limit
     user_count = active_conns.get(current_user_id, 0)
     if user_count >= _SSE_MAX_CONNECTIONS_PER_USER:
-        _sse_metrics["per_user_rejected"] += 1
+        import_sse_metrics.counters["per_user_rejected"] += 1
         logger.warning(
             "SSE per-user limit reached for user %s: %d active",
             current_user_id,
@@ -1608,7 +1597,7 @@ async def stream_batch_image_job(
 
         # Track active connection
         active_conns[current_user_id] = active_conns.get(current_user_id, 0) + 1
-        _sse_metrics["active"] = sum(active_conns.values())
+        import_sse_metrics.counters["active"] = sum(active_conns.values())
         start_time = time.time()
         last_business_event_time = start_time  # for idle timeout
 
@@ -1667,20 +1656,20 @@ async def stream_batch_image_job(
             while True:
                 elapsed = time.time() - start_time
                 if elapsed > _SSE_MAX_DURATION_SEC:
-                    _sse_metrics["max_duration_closed"] += 1
+                    import_sse_metrics.counters["max_duration_closed"] += 1
                     yield f"event: timeout\ndata: {json.dumps({'message': 'connection max duration reached'})}\n\n"
                     return
 
                 # Idle timeout — no business events within threshold
                 idle_sec = time.time() - last_business_event_time
                 if idle_sec > _SSE_MAX_IDLE_SEC:
-                    _sse_metrics["max_idle_closed"] += 1
+                    import_sse_metrics.counters["max_idle_closed"] += 1
                     yield f"event: idle_timeout\ndata: {json.dumps({'message': 'connection idle timeout'})}\n\n"
                     return
 
                 # Check client disconnect (FastAPI CancelledError handler is also present)
                 if await request.is_disconnected():
-                    _sse_metrics["disconnected"] += 1
+                    import_sse_metrics.counters["disconnected"] += 1
                     return
 
                 try:

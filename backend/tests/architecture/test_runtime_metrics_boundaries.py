@@ -12,6 +12,8 @@ MODULES = (
     "core/observability_access.py",
     "services/task_queue_metrics.py",
     "services/runtime_inference_metrics.py",
+    "services/runtime_system_metrics.py",
+    "services/runtime_sse_metrics.py",
 )
 
 
@@ -22,6 +24,15 @@ def test_metrics_modules_have_one_way_dependencies_and_short_functions():
     assert graph["app.services.task_queue_metrics"] == {"app.services.task_queue_service"}
     assert graph["app.services.runtime_inference_metrics"] == {
         "app.services.ocr_service", "app.core.ai_runtime_guard", "app.features.token_budget",
+    }
+    assert graph["app.services.runtime_system_metrics"] == {
+        "app.core.resource_guard", "app.core.database", "app.services.staging_storage",
+        "app.services.task_queue_worker", "app.services.audit_cleanup_scheduler",
+        "app.services.recommendation_metrics_scheduler",
+    }
+    assert graph["app.services.runtime_sse_metrics"] == {
+        "app.services.sse_pubsub", "app.features.batch_image_import_service",
+        "app.services.import_sse_metrics",
     }
     for relative in MODULES:
         name = "app." + relative.removesuffix(".py").replace("/", ".")
@@ -73,3 +84,40 @@ for name in ('app.main', 'app.core.config', 'app.core.database',
             capture_output=True, text=True, check=False,
         )
         assert result.returncode == 0, result.stderr
+
+
+def test_sse_counter_owner_is_neutral_and_route_only_consumes_it():
+    from app.api.v1 import admin_imports
+    from app.services import import_sse_metrics
+
+    assert admin_imports.import_sse_metrics is import_sse_metrics
+    assert not hasattr(admin_imports, "_sse_metrics")
+    source = (APP / "services/import_sse_metrics.py").read_text()
+    tree = ast.parse(source)
+    assert len(source.splitlines()) <= 300
+    values = [n for n in tree.body if isinstance(n, ast.AnnAssign)]
+    assert len(values) == 1
+    assert isinstance(values[0].target, ast.Name) and values[0].target.id == "counters"
+    assert ast.literal_eval(values[0].value) == {
+        "active": 0, "per_user_rejected": 0, "global_rejected": 0,
+        "disconnected": 0, "max_duration_closed": 0, "max_idle_closed": 0,
+    }
+    graph, _ = scan_application(APP)
+    assert graph["app.services.import_sse_metrics"] == set()
+    assert "app.services.import_sse_metrics" in graph["app.api.v1.admin_imports"]
+
+
+def test_sse_counter_import_does_not_load_api_or_other_runtime():
+    probe = """
+import sys
+from app.services.import_sse_metrics import counters
+assert len(counters) == 6
+for name in ('app.main', 'app.core.config', 'app.core.database',
+             'app.api.v1.admin_imports', 'app.features.batch_image_import_service'):
+    assert name not in sys.modules, name
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe], cwd=APP.parent,
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr

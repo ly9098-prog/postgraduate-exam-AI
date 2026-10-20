@@ -28,6 +28,16 @@ from app.services.production_config_validator import (
     validate_production_config_async,
 )
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
+from app.services.runtime_sse_metrics import append_sse_metrics
+from app.services.runtime_system_metrics import (
+    append_db_pool_metrics,
+    append_db_query_metrics,
+    append_process_metrics,
+    append_staging_cleanup_metrics,
+    append_staging_metrics,
+    append_system_metrics,
+    append_worker_scheduler_metrics,
+)
 from app.services.task_queue_metrics import (
     append_queue_counters,
     append_queue_depth_metrics,
@@ -1458,120 +1468,24 @@ async def metrics_endpoint(request: Request):
     from app.services.task_queue_service import queue_metrics
 
     lines: list[str] = []
-    _append = lines.append
-
     await append_queue_depth_metrics(lines)
     append_queue_counters(lines, queue_metrics)
-
-    # ── System resource metrics ──
-    sys_metrics = resource_guard.get_system_metrics()
-    _append(f"system_rss_mb {sys_metrics.rss_mb:.1f}")
-    _append(f"system_available_memory_mb {sys_metrics.available_memory_mb:.1f}")
-    _append(f"system_active_pipelines {sys_metrics.active_pipelines}")
-    _append(f"system_event_loop_lag_ms {_elapsed_monitor_event_loop_lag_ms:.2f}")
-
+    append_system_metrics(
+        lines, resource_guard.get_system_metrics(),
+        event_loop_lag_ms=_elapsed_monitor_event_loop_lag_ms,
+    )
     append_ocr_metrics(lines)
     await append_ai_metrics(lines)
-
-    # ── Staging storage metrics ──
-    try:
-        from app.services.staging_storage import get_metrics
-
-        sm = get_metrics()
-        _append(f"staging_disk_usage_bytes {sm.get('disk_usage_bytes', 0)}")
-        _append(f"staging_object_count {sm.get('object_count', 0)}")
-        _append(f"staging_leased_count {sm.get('leased_count', 0)}")
-    except Exception:
-        _append("staging_disk_usage_bytes 0")
-
-    # ── DB pool metrics ──
-    pool_stats = _get_db_pool_metrics()
-    for k, v in pool_stats.items():
-        if isinstance(v, (int, float)):
-            _append(f"db_pool_{k} {v}")
-
-    # ── DB query performance metrics ──
-    try:
-        from app.core.database import get_db_query_metrics
-
-        qm = get_db_query_metrics()
-        _append(f"db_query_total {qm.get('total', 0)}")
-        _append(f"db_slow_query_total {qm.get('slow', 0)}")
-        _append(f"db_query_duration_ms_total {qm.get('duration_ms_total', 0)}")
-        _append(f"db_query_duration_ms_avg {qm.get('duration_ms_avg', 0)}")
-        _append(f"db_query_duration_ms_max {qm.get('duration_ms_max', 0)}")
-    except Exception:
-        _append("db_query_metrics_available 0")
-
-    # ── Process info ──
-    _append(
-        f'process_info{{role="{settings.PROCESS_ROLE}",env="{settings.APP_ENV}"}} 1'
+    append_staging_metrics(lines)
+    append_db_pool_metrics(lines, _get_db_pool_metrics())
+    append_db_query_metrics(lines)
+    append_process_metrics(
+        lines, role=settings.PROCESS_ROLE, environment=settings.APP_ENV,
+        uptime_seconds=time.time() - _startup_ts,
     )
-    _append(f"process_uptime_seconds {time.time() - _startup_ts:.0f}")
-
-    # ── SSE connections ──
-    # ── SSE connections ──
-    try:
-        from app.services.sse_pubsub import check_health as _sse_health
-
-        _sse_ok = await _sse_health()
-        _append(f"sse_healthy {1 if _sse_ok else 0}")
-    except Exception:
-        _append("sse_healthy 0")
-    try:
-        from app.features import batch_image_import_service as _batch_svc_mod
-
-        _active_sse = getattr(_batch_svc_mod, "_active_sse_connections", {})
-        _total_sse = sum(_active_sse.values()) if isinstance(_active_sse, dict) else 0
-        _append(f"sse_active_connections {_total_sse}")
-    except Exception:
-        _append("sse_active_connections 0")
-    try:
-        from app.api.v1.admin_imports import _sse_metrics as _sse_m
-
-        if isinstance(_sse_m, dict):
-            for _sk, _sv in _sse_m.items():
-                _append(f"sse_{_sk} {_sv}")
-    except Exception:
-        pass
-
-    # ── Draining status ──
-    try:
-        from app.services.task_queue_worker import is_draining_v2
-
-        _append(f"worker_draining {1 if is_draining_v2() else 0}")
-    except Exception:
-        _append("worker_draining 0")
-
-    # ── Scheduler running state ──
-    try:
-        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-
-        _append(
-            f'scheduler_running{{name="audit_cleanup"}} {1 if audit_log_cleanup_scheduler._running else 0}'
-        )
-    except Exception:
-        _append('scheduler_running{name="audit_cleanup"} 0')
-    try:
-        from app.services.recommendation_metrics_scheduler import (
-            recommendation_metrics_scheduler,
-        )
-
-        _append(
-            f'scheduler_running{{name="recommendation_metrics"}} '
-            f"{1 if recommendation_metrics_scheduler._running else 0}"
-        )
-    except Exception:
-        _append('scheduler_running{name="recommendation_metrics"} 0')
-
-    # ── Staging cleanup stats ──
-    try:
-        from app.services.staging_storage import get_metrics as _staging_metrics
-
-        _sm = _staging_metrics()
-        _append(f"staging_orphan_count {_sm.get('orphan_count', 0)}")
-    except Exception:
-        _append("staging_orphan_count 0")
+    await append_sse_metrics(lines)
+    append_worker_scheduler_metrics(lines)
+    append_staging_cleanup_metrics(lines)
 
     # Prometheus text format requires trailing newline
     lines.append("")
