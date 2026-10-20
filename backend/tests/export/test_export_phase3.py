@@ -24,7 +24,7 @@ from app.schemas.export_task import ExportTaskStatus
 from app.services.export.omml_converter import (
     latex_to_omml_xml,
 )
-from app.services.export.processor import validate_transition
+from app.services.export.state_machine import validate_transition
 from app.services.export.table_model import TableBlock, TableCell, TableRow
 from app.services.export.table_parser import (
     parse_html_table,

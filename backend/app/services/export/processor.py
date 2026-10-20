@@ -53,6 +53,7 @@ from app.services.export.service import (
     _is_reexport_with_old_file,
     process_task,
 )
+from app.services.export.state_machine import validate_transition
 
 logger = logging.getLogger(__name__)
 
@@ -79,38 +80,6 @@ _processor_wakeup: asyncio.Event | None = None
 _concurrency_semaphore: asyncio.Semaphore | None = None
 _pdf_semaphore: asyncio.Semaphore | None = None
 _docx_semaphore: asyncio.Semaphore | None = None
-
-
-# ── State machine — transition rules (enforced) ──
-
-_VALID_TRANSITIONS: dict[str, set[str]] = {
-    ExportTaskStatus.PENDING: {ExportTaskStatus.PROCESSING},
-    ExportTaskStatus.PROCESSING: {ExportTaskStatus.COMPLETED, ExportTaskStatus.FAILED},
-    ExportTaskStatus.COMPLETED: {ExportTaskStatus.EXPIRED, ExportTaskStatus.PENDING},
-    ExportTaskStatus.FAILED: {ExportTaskStatus.PENDING, ExportTaskStatus.EXPIRED},
-    ExportTaskStatus.EXPIRED: {ExportTaskStatus.PENDING},
-}
-
-
-def validate_transition(
-    current: str,
-    target: str,
-    task_id: int = 0,
-) -> None:
-    """Validate an export status transition.
-
-    Raises ``ValueError`` if the transition is not allowed.
-    """
-    allowed = _VALID_TRANSITIONS.get(current)
-    if allowed is None:
-        raise ValueError(
-            f"export_state_invalid: unknown current state '{current}' for task {task_id}"
-        )
-    if target not in allowed:
-        raise ValueError(
-            f"export_state_invalid: transition {current}→{target} "
-            f"not allowed for task {task_id}"
-        )
 
 
 # ── Concurrency tracking ──

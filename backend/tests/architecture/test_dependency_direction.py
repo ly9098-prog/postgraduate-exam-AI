@@ -135,3 +135,22 @@ def test_embedding_endpoint_rules_remain_independent_and_acyclic():
     assert endpoint in graph["app.services.vector_config_service"]
     assert not graph[endpoint]
     assert not any(endpoint in edge for edge in cyclic_edges(graph))
+
+
+def test_export_transition_rules_have_no_service_or_processor_dependency():
+    source = (APP / "services" / "export" / "state_machine.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert import_names(tree, "app.services.export") == {
+        "__future__", "__future__.annotations",
+        "app.schemas.export_task", "app.schemas.export_task.ExportTaskStatus",
+    }
+    assert len(source.splitlines()) <= 300
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.end_lineno - node.lineno + 1 <= 50
+    graph, _ = scan_application(APP)
+    rule = "app.services.export.state_machine"
+    assert rule in graph["app.services.export.service"]
+    assert rule in graph["app.services.export.processor"]
+    assert "app.services.export.processor" not in graph["app.services.export.service"]
+    assert not any(rule in edge for edge in cyclic_edges(graph))

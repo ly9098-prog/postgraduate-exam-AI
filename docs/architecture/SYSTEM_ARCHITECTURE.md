@@ -52,9 +52,11 @@
 
 OCR 架构测试 `backend/tests/architecture/test_architecture_boundaries.py` 已修正仓库根路径；源码扫描必须发现非空 Python 文件集合，缺失/空目录直接失败，注入越界导入的测试验证扫描器能检出违规。刷题投影和请求筛选纯规则另有 AST 检查，禁止直接依赖路由、FastAPI、SQLAlchemy 或数据库会话模块；请求范围、候选策略、到期筛选、最终守卫和签名响应编排允许数据库会话类型，但禁止路由、FastAPI、数据库会话工厂依赖及 `commit`/`rollback` 调用。管理端新增 API 边界测试，限制题库 API 模块依赖既有 client/types，并检查不直接调用原生 fetch 和新增业务文件/函数预算。实际回归结果与历史失败修复见 `prompts/tasks/current_task.md` 执行记录。
 
-后端全应用依赖门禁位于 `backend/tests/architecture/test_dependency_direction.py`：service/feature 静态导入 API 必须为零，新增静态循环边必须为零。扫描包含相对、局部和可静态解析的字面量动态导入；7 组既有循环的 122 条具体边保存在同目录 `import_cycle_baseline.json`，逐组说明迁移条件，已解除的边必须移除。门禁已接入 CI 的静态架构回归步骤；扫描限制、全栈入口清单、当前热点与未完成验证见 `docs/architecture/REFACTOR_INVENTORY.md`，静态图不代替运行时或业务语义验收。
+后端全应用依赖门禁位于 `backend/tests/architecture/test_dependency_direction.py`：service/feature 静态导入 API 必须为零，新增静态循环边必须为零。扫描包含相对、局部和可静态解析的字面量动态导入；6 组既有循环的 120 条具体边保存在同目录 `import_cycle_baseline.json`，逐组说明迁移条件，已解除的边必须移除。门禁已接入 CI 的静态架构回归步骤；扫描限制、全栈入口清单、当前热点与未完成验证见 `docs/architecture/REFACTOR_INVENTORY.md`，静态图不代替运行时或业务语义验收。
 
 向量运行请求与管理端连通测试通过 `backend/app/services/embedding_endpoints.py` 共用端点构造纯规则；`vector_config_service` 不再反向导入 embedding 执行服务，两者的静态循环已解除。配置解析、凭据、SSRF 校验、请求序列化及向量维度/批量排序仍由原服务负责。
+
+导出业务服务和 scheduler 处理器共用 `backend/app/services/export/state_machine.py` 的转换表/校验规则，service 不再反向导入 processor；任务状态枚举仍以现有 schema 为准。领取、并发、事务、超时和重导出恢复仍由原入口拥有，本次未改变状态机协议。
 
 ### 核心设计原则
 

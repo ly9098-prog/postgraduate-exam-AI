@@ -45,6 +45,7 @@ from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
 from app.services.export.snapshot_service import create_snapshot, load_snapshot
 from app.services.export.sorter import sort_questions
+from app.services.export.state_machine import validate_transition
 
 logger = logging.getLogger(__name__)
 
@@ -264,9 +265,6 @@ async def process_task(
 
     Returns the updated task.
     """
-    # Lazy import to avoid circular dependency (processor.py imports process_task)
-    from app.services.export.processor import validate_transition
-
     # Load task with lock protection (re-select to get latest)
     result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
     task = result.scalar_one_or_none()

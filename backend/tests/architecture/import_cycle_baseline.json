@@ -508,18 +508,5 @@
         "app.services.export.docx_exporter"
       ]
     ]
-  },
-  {
-    "reason": "Existing export service/processor lifecycle imports; migrate with task persistence and worker shutdown coverage.",
-    "edges": [
-      [
-        "app.services.export.processor",
-        "app.services.export.service"
-      ],
-      [
-        "app.services.export.service",
-        "app.services.export.processor"
-      ]
-    ]
   }
 ]
