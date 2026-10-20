@@ -64,6 +64,7 @@ const sandbox = {
     if (request === './utils/active-session-recovery') return require('../pages/pomodoro/utils/active-session-recovery')
     if (request === './utils/completion-recovery') return require('../pages/pomodoro/utils/completion-recovery')
     if (request === './utils/confirm-recovery') return require('../pages/pomodoro/utils/confirm-recovery')
+    if (request === './utils/show-recovery') return require('../pages/pomodoro/utils/show-recovery')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -146,6 +147,67 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('unknown start short-circuits completion and active recovery', async () => {
+    for (const resolution of ['storage_error', 'cancelled', 'restored']) {
+      storage.clear()
+      const page = createPage()
+      storage.set('pomodoro_completion', { sessionId: 110 })
+      page._syncThemeFromStorage = () => {}
+      page._reconcileUnknownStartAttempt = async () => resolution
+      let errors = 0
+      let completion = 0
+      let active = 0
+      page._showPomodoroPersistenceError = () => { errors++ }
+      page._restoreCompletionView = () => { completion++ }
+      page._recoverActiveSession = async () => { active++ }
+      await page.onShow()
+      assert.strictEqual(errors, resolution === 'storage_error' ? 1 : 0)
+      assert.strictEqual(completion, 0)
+      assert.strictEqual(active, 0)
+    }
+  })
+
+  await test('hidden page cannot restore completion after uncertain-start response', async () => {
+    storage.clear()
+    const page = createPage()
+    storage.set('pomodoro_completion', { sessionId: 111 })
+    page._syncThemeFromStorage = () => {}
+    let resolveStart
+    page._reconcileUnknownStartAttempt = () => new Promise(resolve => { resolveStart = resolve })
+    let completions = 0
+    page._restoreCompletionView = () => { completions++ }
+    const showing = page.onShow()
+    page.onHide()
+    resolveStart('none')
+    await showing
+    assert.strictEqual(completions, 0)
+  })
+
+  await test('returning from stats clears confirmation and passes current generation to active recovery', async () => {
+    storage.clear()
+    const page = createPage()
+    page._navigatingToStats = true
+    page._confirmTimerSnapshot = { sessionId: 112 }
+    page._timerState.endConfirmMode = 'free-complete'
+    page.data.showEndConfirm = true
+    storage.set('pomodoro_confirm_pause', { sessionId: 112 })
+    page._syncThemeFromStorage = () => {}
+    page._reconcileUnknownStartAttempt = async () => 'none'
+    let recovered = 0
+    page._recoverActiveSession = async (pending, sequence) => {
+      recovered++
+      assert.strictEqual(pending, null)
+      assert.strictEqual(sequence, page._activeSyncSeq)
+      assert.strictEqual(page._navigatingToStats, false)
+      assert.strictEqual(page._confirmTimerSnapshot, null)
+      assert.strictEqual(page._timerState.endConfirmMode, '')
+      assert.strictEqual(page.data.showEndConfirm, false)
+      assert.strictEqual(storage.has('pomodoro_confirm_pause'), false)
+    }
+    await page.onShow()
+    assert.strictEqual(recovered, 1)
+  })
 
   await test('onShow restores both valid confirmation modes and acknowledges the pause', async () => {
     for (const mode of ['free-complete', 'countdown-interrupt']) {

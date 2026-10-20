@@ -55,11 +55,12 @@ function method(name, source = src, declaration = false) {
 
 console.log('\n--- Lifecycle race guards ---')
 const onShow = method('onShow')
+const showOptions = method('_showRecoveryOptions')
 const onHide = method('onHide')
 const onLoad = method('onLoad')
 const onUnload = method('onUnload')
 t('onShow versions active reconciliation', () => assert.ok(onShow.includes('activeSyncSeq')))
-t('onShow ignores a response after the page is hidden', () => assert.ok(onShow.includes('!this._pageVisible || activeSyncSeq !== this._activeSyncSeq')))
+t('onShow supplies visibility and request-generation protection', () => assert.ok(showOptions.includes('this._pageVisible && activeSyncSeq === this._activeSyncSeq')))
 t('onHide invalidates in-flight reconciliation', () => assert.ok(onHide.includes('this._activeSyncSeq = (this._activeSyncSeq || 0) + 1')))
 
 console.log('\n--- Pause/resume tap stability ---')
@@ -232,7 +233,7 @@ t('terminal conflicts persist across process death before pending cleanup', () =
   assert.ok(retry.indexOf('if (!this._recordPomodoroTerminalConflict') < retry.indexOf('_dropPendingPomodoroSessionActions'))
   assert.ok(ack.includes('_safeRemovePomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY'))
   assert.ok(handle.indexOf('_dropPendingPomodoroSessionActions') < handle.indexOf('_ackPomodoroTerminalConflict'))
-  assert.ok(onShow.includes('startupTerminalConflict'))
+  assert.ok(showOptions.includes('consumeConflict: () => this._consumeAnyPomodoroTerminalConflict()'))
 })
 t('canonical pause/resume sync clears local adjustment only after the session queue is drained', () => {
   const retry = method('_retryPendingPomodoroSync')
@@ -253,7 +254,7 @@ t('completion is queued after earlier pause/resume actions', () => {
 t('automatic countdown completion uses retryable completion', () => assert.ok(method('_onWorkComplete').includes('_completePomodoroWithRetry')))
 t('free completion uses retryable completion', () => assert.ok(method('_completeFreeTimerSession').includes('_completePomodoroWithRetry')))
 t('cold-start pending terminal conflicts are consumed before keeping celebration state', () => {
-  assert.ok(onShow.includes('_consumeAnyPomodoroTerminalConflict'))
+  assert.ok(showOptions.includes('consumeConflict: () => this._consumeAnyPomodoroTerminalConflict()'))
 })
 t('expired countdown restore consumes terminal conflict from retry result', () => {
   const restore = method('_restoreSession')
@@ -364,8 +365,8 @@ t('pending queue read failures fail closed instead of masquerading as empty', ()
   assert.ok(queueReader.includes("if (!stored.ok) return null"))
   assert.ok(queueSrc.includes('if (queue === null) return null'))
   assert.ok(retry.includes('if (queue === null)'))
-  assert.ok(onShow.includes('pendingSync.storageUnreadable'))
-  assert.ok(onShow.indexOf('pendingSync.storageUnreadable') < onShow.indexOf('_reconcileUnknownStartAttempt()'))
+  assert.ok(onShow.includes('const pendingSync = this._getPendingPomodoroSync()'))
+  assert.ok(onShow.includes('await recoverOnShow(this._showRecoveryOptions(activeSyncSeq), pendingSync)'))
 })
 t('start request is gated on durable unknown-start recovery state', () => {
   const startPost = method('_postPomodoroStartWithReconciliation')
@@ -516,10 +517,10 @@ t('completion marker persists break metadata across app restart', () => {
   assert.ok(dismissCompletion.includes('completionFlag.breakSec'))
 })
 t('onShow keeps a valid completion marker authoritative until dismissal', () => {
-  assert.ok(onShow.includes('buildCompletionRecovery(completionFlag, this.data, pomodoroTaskTypes)'))
-  assert.ok(onShow.includes('this.setData(recovery.view)'))
-  const completionSection = onShow.slice(onShow.indexOf('} else {', onShow.indexOf('const completionFlag = completionStored.value')), onShow.indexOf('// Navigation guard'))
-  assert.ok(!completionSection.includes("_safeRemovePomodoroStorage('pomodoro_completion'"))
+  const restore = method('_restoreCompletionView')
+  assert.ok(restore.includes('buildCompletionRecovery(completion, this.data, pomodoroTaskTypes)'))
+  assert.ok(restore.includes('this.setData(recovery.view)'))
+  assert.ok(!restore.includes('_safeRemovePomodoroStorage'))
 })
 
 console.log('\n--- Break restore ---')
@@ -535,7 +536,7 @@ t('break progress is based on original total instead of rebasing to remaining', 
   assert.ok(!restoreBreak.includes('_startBreak(remaining'))
 })
 t('onShow restores break before pending network synchronization', () => {
-  assert.ok(onShow.includes('await this._recoverActiveSession(pendingSync, activeSyncSeq)'))
+  assert.ok(showOptions.includes('recoverActive: pending => this._recoverActiveSession(pending, activeSyncSeq)'))
   const recovery = method('_recoverActiveSession')
   assert.ok(recovery.includes('restoreBreak: () => this._restoreBreak()'))
   assert.ok(recovery.includes('retryPending: () => this._retryPendingPomodoroSync()'))

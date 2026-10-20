@@ -62,14 +62,15 @@ function extractMethod(source, name) {
 console.log('\n--- Static recovery ordering ---')
 const onShow = extractMethod(src, 'onShow')
 t('onShow delegates cached and server recovery to the tested recovery module', () => {
-  assert.ok(onShow.includes('await this._recoverActiveSession(pendingSync, activeSyncSeq)'))
+  assert.ok(onShow.includes('await recoverOnShow(this._showRecoveryOptions(activeSyncSeq), pendingSync)'))
+  assert.ok(extractMethod(src, '_showRecoveryOptions').includes('recoverActive: pending => this._recoverActiveSession(pending, activeSyncSeq)'))
   const recovery = extractMethod(src, '_recoverActiveSession')
   assert.ok(recovery.includes('readCached: () => this._getCachedActiveSession()'))
   assert.ok(recovery.includes('fetchActive: () => this._fetchActiveSession()'))
 })
 t('page entrance is enabled before network reconciliation', () => {
   const enteredIdx = onShow.indexOf('this.setData({ pageEntered: true })')
-  const fetchIdx = onShow.indexOf('await this._recoverActiveSession(pendingSync, activeSyncSeq)')
+  const fetchIdx = onShow.indexOf('await recoverOnShow(this._showRecoveryOptions(activeSyncSeq), pendingSync)')
   assert.ok(enteredIdx >= 0 && enteredIdx < fetchIdx)
 })
 t('server recovery can clear stale local state through the page adapter', () => {

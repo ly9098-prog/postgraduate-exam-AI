@@ -5,6 +5,7 @@ const { createSyncRetryController, isRetryableSyncError } = require('./utils/syn
 const { recoverActiveSession } = require('./utils/active-session-recovery')
 const { buildCompletionRecovery } = require('./utils/completion-recovery')
 const { restoreConfirmSnapshot } = require('./utils/confirm-recovery')
+const { recoverOnShow } = require('./utils/show-recovery')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -238,105 +239,44 @@ Page({
       this.setData({ pageEntered: true })
     }
 
-    if (pendingSync && pendingSync.storageUnreadable) {
-      this._showPomodoroPersistenceError()
-      return
-    }
+    await recoverOnShow(this._showRecoveryOptions(activeSyncSeq), pendingSync)
+  },
 
-    // A /start request may have committed on the server while its response was
-    // lost. Resolve that rare uncertainty before normal active-session restore so
-    // leaving during the request cannot create a hidden "ghost" timer.
-    const unknownStartResolution = await this._reconcileUnknownStartAttempt()
-    if (!this._pageVisible || activeSyncSeq !== this._activeSyncSeq) return
-    if (unknownStartResolution === 'storage_error') {
-      this._showPomodoroPersistenceError()
-      return
+  _showRecoveryOptions(activeSyncSeq) {
+    return {
+      readStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+      removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+      persistenceError: () => this._showPomodoroPersistenceError(),
+      reconcileStart: () => this._reconcileUnknownStartAttempt(),
+      isCurrent: () => this._pageVisible && activeSyncSeq === this._activeSyncSeq,
+      consumeConflict: () => this._consumeAnyPomodoroTerminalConflict(),
+      handleConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
+      showCompletion: completion => this._restoreCompletionView(completion),
+      retryPending: () => this._retryPendingPomodoroSync(),
+      loadStats: () => this.loadTodayStats(),
+      deferStats: () => setTimeout(() => this.loadTodayStats(), 200),
+      isNavigatingToStats: () => this._navigatingToStats,
+      resetNavigation: () => { this._navigatingToStats = false },
+      clearConfirmation: () => this._clearRestoredConfirmation(),
+      confirmSnapshot: () => this._confirmTimerSnapshot,
+      isValidConfirmation: snapshot => this._isValidConfirmSnapshot(snapshot),
+      restoreConfirmation: snapshot => this._restoreConfirmSnapshot(snapshot),
+      recoverActive: pending => this._recoverActiveSession(pending, activeSyncSeq),
     }
-    if (unknownStartResolution === 'cancelled' || unknownStartResolution === 'restored') {
-      setTimeout(() => this.loadTodayStats(), 200)
-      return
-    }
+  },
 
-    // A terminal conflict is persisted before its pending mutation is removed.
-    // Consume it before trusting a stale completion marker after a cold restart.
-    const startupTerminalConflict = this._consumeAnyPomodoroTerminalConflict()
-    if (startupTerminalConflict) {
-      this._handlePomodoroTerminalConflict(startupTerminalConflict.sessionId, startupTerminalConflict)
-      return
-    }
+  _restoreCompletionView(completion) {
+    const recovery = buildCompletionRecovery(completion, this.data, pomodoroTaskTypes)
+    this._completionBreakSec = recovery.breakSec
+    if (!this.data.showCelebration) wx.vibrateLong()
+    this.setData(recovery.view)
+  },
 
-    // Completion flag — check before active fetch since it may short-circuit.
-    // A read failure is not equivalent to "no completion"; fail closed so a
-    // stale running snapshot cannot resurrect a just-finished session.
-    const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'onShow completion')
-    if (!completionStored.ok) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-    const completionFlag = completionStored.value
-    if (completionFlag) {
-      if (!completionFlag.sessionId) {
-        this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
-      } else {
-        // A completion marker remains authoritative until the celebration is
-        // actually dismissed. Never delete it merely because onShow fired while
-        // the overlay was already visible; doing so could resurrect the just-
-        // completed running snapshot after a background/foreground transition.
-        const recovery = buildCompletionRecovery(completionFlag, this.data, pomodoroTaskTypes)
-        this._completionBreakSec = recovery.breakSec
-        if (!this.data.showCelebration) wx.vibrateLong()
-        this.setData(recovery.view)
-        // Celebration rendering must not suppress a pending completion retry.
-        if (pendingSync) {
-          this._retryPendingPomodoroSync().then(synced => {
-            const conflict = this._consumeAnyPomodoroTerminalConflict()
-            if (conflict) {
-              this._handlePomodoroTerminalConflict(conflict.sessionId, conflict)
-              return
-            }
-            if (synced) this.loadTodayStats()
-          })
-        }
-        // A cold restart may have no in-memory stats yet even when the completion
-        // was already committed on the server.
-        setTimeout(() => this.loadTodayStats(), 200)
-        return
-      }
-    }
-
-    // Navigation guard: returning from pomodoro-stats — don't restore stale snapshot
-    if (this._navigatingToStats) {
-      this._navigatingToStats = false
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-      this._confirmTimerSnapshot = null
-      this._timerState.endConfirmMode = ''
-      this.setData({ showEndConfirm: false })
-    } else {
-      // Validate and optionally restore confirm snapshot. As with pending and
-      // completion state, a read failure must never be interpreted as absence.
-      let confirmSnapshot = this._confirmTimerSnapshot
-      if (!confirmSnapshot) {
-        const storedConfirm = this._safeGetPomodoroStorage('pomodoro_confirm_pause', 'onShow confirm snapshot')
-        if (!storedConfirm.ok) {
-          this._showPomodoroPersistenceError()
-          return
-        }
-        confirmSnapshot = storedConfirm.value
-      }
-      if (confirmSnapshot && confirmSnapshot.sessionId) {
-        if (this._isValidConfirmSnapshot(confirmSnapshot)) {
-          this._restoreConfirmSnapshot(confirmSnapshot)
-          return
-        }
-        // Snapshot exists but is invalid — clean up stale data
-        this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-        this._confirmTimerSnapshot = null
-        this._timerState.endConfirmMode = ''
-        this.setData({ showEndConfirm: false })
-      }
-    }
-
-    await this._recoverActiveSession(pendingSync, activeSyncSeq)
+  _clearRestoredConfirmation() {
+    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
+    this._confirmTimerSnapshot = null
+    this._timerState.endConfirmMode = ''
+    this.setData({ showEndConfirm: false })
   },
 
   _restoreConfirmSnapshot(snapshot) {
