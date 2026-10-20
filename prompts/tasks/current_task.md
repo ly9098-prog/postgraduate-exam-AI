@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十一批已提交，第九十二批合并共享staging启动扫描；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十二批已提交，第九十三批分离HTTP启动诊断与目录准备；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1164,3 +1164,12 @@
 - 两原完整块、展开整个main和bootstrap AST一致，328条路径OpenAPI一致，48组import/sweep/count/truthiness/event/warning/error/context/cancel轨迹一致。保留普通异常warning后继续、CancelledError传播以及warning失败传播，不改原启动失败清理策略；额外两项使用真实async_sweep_temp_files/to_thread/sweep_temp_files，只在pytest临时目录扫描，确认在线程执行并保留新根文件和嵌套文件，无现有资源清理。
 - 新3项依赖/预算/真实双消费者及原logger/调用位置/无副本/惰性导入无配置和资源副作用门禁接入CI。首次门禁发现runner51行，移除原重复Shutdown注释后50行，不改代码语义；最终direct/架构/完整HTTP/角色/4个真实信号子进程共126项通过。混合441项单进程确认Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/原周期端口/30模块与父别名及原policy/shutdown端口恢复（包装进程2条rewrite警告）。
 - 原YAML静态CI1,793项（2既有弃用警告）、readiness69项、云OCR30项通过；此轮collection后补充的2项真实扫描在最终定向126/旧版129/混合441中均通过，不计入1,793。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；主agent按review-agent只读审查完整diff/真实调用方/惰性导入/异常和取消/完整模块等价与全部验证证据：No findings，无子agent。仅显式暂存本批11文件并本地提交，不推送或操作生产。新模块16行/函数11行，main604→597行/lifespan323→315行，bootstrap292→282行/runner61→50行；图567模块/2,229边/零循环/反向API。33项既有工作区保护状态不变；HTTP/独立runner失败清理缺口、真实外部依赖/完整outbox持久化/客户端及全栈其余阶段仍待继续。
+
+
+## 九十九、第九十三批执行记录：HTTP 启动诊断与目录准备（2026-10-21）
+
+- 原HTTP启动画像/角色诊断和导出访问配置/处理器状态两完整块迁至`services/runtime_http_startup_diagnostics.py`的log_http_startup、log_http_export_startup，显式接收原Settings/profile/role/logger；原四次mkdir迁入已有`core/runtime_resource_startup.py`的ensure_http_runtime_directories。main保留原sweep→启动诊断→导出诊断→目录准备→init_db位置，不搬整个lifespan、不改变资源/任务所有权。
+- 原87项直接契约与43项完整HTTP共130项先在原实现通过；后增完整HTTP导出配置普通错误/cancel两项，同组132项对旧`6b3f93da`完整main和三个原完整块通过（包装进程1条rewrite警告）。覆盖六角色/精确日志与参数、画像/config读取和logger错误、REDIS_URL真值/读取错误、capability成功/失败/import/cancel/修改配置后读取、四mkdir顺序/部分失败/EXPORT_DIR延后读取与实际临时目录幂等/既有数据保留。新增8项完整HTTP目录失败均在DB/task前传播；普通导出配置错误继续，cancel不进入后续启动或shutdown，均保留旧边界。
+- 三原完整块/展开整个main AST及资源模块原有两个函数AST一致，328路径OpenAPI一致，73组配置/画像读取/日志/import/capability变更/目录/错误/context/cancel轨迹一致。保留四mkdir逐次调用、前三次成功后才读EXPORT_DIR；capability在REDIS_URL读取前执行，普通日志错误不新增吞异常。main模块导入时原三次静态目录创建保持；local web原export_processor_enabled=false日志仍按原role口径，实际本地processor fallback启动逻辑不变。
+- 新3项诊断依赖/预算/唯一真实消费和原参数/调用顺序/无main副本/导入不加载配置画像资源或产生日志目录的门禁接入CI；已有resource门禁扩展真实目录owner与TYPE_CHECKING config依赖，staging门禁跟随真实新下游。main≤545/lifespan≤258新增收缩预算。迁移后相关direct/资源/完整HTTP/独立角色/4真实OS信号child/三个架构门禁213项通过；混合538项单进程确认新resource.os、原Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/周期端口/30模块与父别名及policy/shutdown端口恢复（包装进程2条rewrite警告）。
+- 原YAML完整静态CI1,895项（2既有弃用警告）/readiness69项/云OCR30项通过，所有本批用例均已包含在该轮collection。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；由主agent按review-agent只读流程审查完整diff/实际调用方/读取与日志顺序/原catch/取消/部分目录副作用及全部等价与回归证据：No findings，无子agent。只显式暂存本批12文件并本地提交，不推送、不操作生产或清理现有资源。新诊断模块74行/函数36、24行，资源模块35→48行/新函数6行，main597→545行/lifespan315→258行；bootstrap282/runner50保持，图568模块/2,233边/零循环/反向API。33项既有工作区路径保护状态不变；HTTP/独立runner既有清理缺口、完整外部服务/持久化/客户端及全栈其余阶段继续待办。

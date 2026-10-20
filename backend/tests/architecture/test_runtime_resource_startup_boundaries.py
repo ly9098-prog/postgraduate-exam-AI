@@ -8,12 +8,13 @@ from pathlib import Path
 from tests.architecture.dependency_scan import scan_application
 
 APP = Path(__file__).resolve().parents[2] / "app"
-HELPERS = ["initialize_role_executors", "start_resource_reconciler"]
+HELPERS = ["initialize_role_executors", "start_resource_reconciler", "ensure_http_runtime_directories"]
 
 
 def test_resource_startup_dependencies_and_function_budgets():
     graph, _ = scan_application(APP)
     assert graph["app.core.runtime_resource_startup"] == {
+        "app.core.config",
         "app.core.deployment_profile", "app.core.executor_registry",
         "app.core.executors", "app.core.resource_guard",
     }
@@ -59,9 +60,11 @@ before = dict(os.environ)
 def forbidden(*args, **kwargs):
     raise AssertionError('import must not create tasks')
 asyncio.create_task = forbidden
+os.makedirs = forbidden
 from app.core import runtime_resource_startup
 assert callable(runtime_resource_startup.initialize_role_executors)
 assert callable(runtime_resource_startup.start_resource_reconciler)
+assert callable(runtime_resource_startup.ensure_http_runtime_directories)
 assert dict(os.environ) == before
 for name in (
     'app.main', 'app.core.config', 'app.core.database', 'app.core.executor_registry',

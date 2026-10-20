@@ -15,6 +15,31 @@ COMMON_STOP = [
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failed", [0, 1, 2, 3])
+@pytest.mark.parametrize("error_type", [PermissionError, asyncio.CancelledError])
+async def test_runtime_directory_failure_precedes_database_and_tasks(runtime, monkeypatch, failed, error_type):
+    paths = []
+    error = error_type("synthetic complete startup directory failure")
+
+    def mkdir(path, **kwargs):
+        paths.append((path, kwargs))
+        if len(paths) == failed + 1:
+            raise error
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "makedirs", mkdir)
+        with pytest.raises(error_type) as caught:
+            async with main.lifespan(main.app):
+                pytest.fail("failed directory preparation must not yield")
+    assert caught.value is error
+    expected = ["static/formulas", "static/question-assets", "static/avatars", main.settings.EXPORT_DIR]
+    assert paths == [(path, {"exist_ok": True}) for path in expected[:failed + 1]]
+    assert "export.config" in runtime.events
+    assert "db.init" not in runtime.events and not runtime.tasks
+    assert not [event for event in runtime.events if event in COMMON_STOP]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
 async def test_startup_sweep_precedes_resources_and_preserves_failure_boundary(runtime, error_type):
     error = error_type("synthetic HTTP startup sweep failure")
@@ -34,6 +59,28 @@ async def test_startup_sweep_precedes_resources_and_preserves_failure_boundary(r
             "Staging temp sweep failed (non-fatal)", exc_info=True,
         )
         assert runtime.events.index("staging.sweep") < runtime.events.index("db.init")
+        assert all(task.done() for task in runtime.tasks)
+        assert [event for event in runtime.events if event in COMMON_STOP] == COMMON_STOP
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_export_config_failure_preserves_http_startup_boundary(runtime, error_type):
+    error = error_type("synthetic complete export configuration failure")
+    runtime.failures["export.config"] = error
+    if error_type is asyncio.CancelledError:
+        with pytest.raises(asyncio.CancelledError) as caught:
+            async with main.lifespan(main.app):
+                pytest.fail("cancelled export configuration must not yield")
+        assert caught.value is error
+        assert not runtime.tasks and "db.init" not in runtime.events
+        assert not [event for event in runtime.events if event in COMMON_STOP]
+    else:
+        async with main.lifespan(main.app):
+            await asyncio.sleep(0)
+        runtime.logger.warning.assert_any_call(
+            "Export config logging failed (non-fatal)", exc_info=True,
+        )
         assert all(task.done() for task in runtime.tasks)
         assert [event for event in runtime.events if event in COMMON_STOP] == COMMON_STOP
 

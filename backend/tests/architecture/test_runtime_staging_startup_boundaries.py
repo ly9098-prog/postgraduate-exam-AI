@@ -54,7 +54,7 @@ def test_both_entrypoints_call_real_sweep_with_original_logger_and_position():
             assert ast.unparse(owner.body[index + 1]) == "registry = TaskRegistry()"
         else:
             assert ast.unparse(owner.body[index - 1]) == "profile = get_ocr_profile()"
-            assert ast.unparse(owner.body[index + 1]).startswith("logger.info('Starting 2240AI")
+            assert ast.unparse(owner.body[index + 1]) == "log_http_startup(settings, role, profile, logger)"
 
 
 def test_import_staging_startup_does_not_load_config_resources_or_start_tasks():
