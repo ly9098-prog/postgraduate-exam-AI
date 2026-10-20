@@ -45,7 +45,6 @@ from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.export.schema_compatibility import repair_export_idempotency_schema
 from app.services.ocr_readiness import OcrReadinessState, check_ocr_config
-from app.services.outbox_queue_adapter import build_outbox_enqueue
 from app.services.production_config_validator import (
     validate_production_config,
     validate_production_config_async,
@@ -60,6 +59,10 @@ from app.services.readiness_dependency_probes import (
     get_db_pool_metrics,
 )
 from app.services.role_readiness import check_role_dependencies
+from app.services.runtime_http_scheduler_startup import (
+    HttpSchedulerTasks,
+    start_http_scheduler_tasks,
+)
 from app.services.runtime_http_startup_diagnostics import (
     log_http_export_startup,
     log_http_startup,
@@ -74,14 +77,7 @@ from app.services.runtime_ocr_startup import (
     initialize_http_ocr_gateway,
 )
 from app.services.runtime_periodic_tasks import (
-    run_export_cleanup,
     run_export_processor_loop,
-    run_staging_cleanup,
-    run_token_cleanup,
-)
-from app.services.runtime_scheduler_startup import (
-    start_audit_cleanup_scheduler,
-    start_recommendation_metrics_scheduler,
 )
 from app.services.runtime_schema_diagnostics import log_runtime_schema_divergence
 from app.services.runtime_sse_metrics import append_sse_metrics
@@ -116,14 +112,8 @@ async def lifespan(app: FastAPI):
     role = prepare_http_runtime_role(settings, resolve_effective_process_role)
 
     # Background asyncio task references (initialized per role block)
-    cleanup_task = None
-    _staging_cleanup_task = None
     _worker_tasks = HttpWorkerTasks()
-    _export_processor_task = None
-    _export_cleanup_task = None
-    _scheduler_heartbeat_task = None
-    _outbox_dispatcher_task = None
-    _outbox_reconciler_task = None
+    _scheduler_tasks = HttpSchedulerTasks()
 
     # A plain local ``uvicorn app.main:app`` process resolves to the web role
     # when LOCAL_ASYNC_RUNTIME_ENABLED is false. Export generation does not
@@ -187,7 +177,7 @@ async def lifespan(app: FastAPI):
     # only this processor avoids enabling the full Redis-dependent async runtime
     # while making the documented single-process uvicorn workflow functional.
     if _local_web_export_processor:
-        _export_processor_task = asyncio.create_task(
+        _scheduler_tasks.export_processor_task = asyncio.create_task(
             run_export_processor_loop(logger), name="export-processor-local"
         )
         logger.info("Local web export processor started")
@@ -200,61 +190,9 @@ async def lifespan(app: FastAPI):
 
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
-        try:
-            from app.services.system_task_service import run_scheduler_heartbeat
-
-            _scheduler_heartbeat_task = asyncio.create_task(
-                run_scheduler_heartbeat(), name="scheduler-heartbeat"
-            )
-        except Exception as e:
-            report_http_startup_failure("Scheduler heartbeat", e, _production_mode)
-
-        try:
-            await start_audit_cleanup_scheduler(logger)
-        except Exception as e:
-            report_http_startup_failure("Audit log cleanup scheduler", e, _production_mode)
-
-        try:
-            await start_recommendation_metrics_scheduler(logger)
-        except Exception as e:
-            report_http_startup_failure("Recommendation metrics scheduler", e, _production_mode)
-
-        # Periodic cleanup tasks belong in the scheduler role only
-        cleanup_task = asyncio.create_task(
-            run_token_cleanup(), name="token-cleanup"
+        await start_http_scheduler_tasks(
+            _scheduler_tasks, _production_mode, logger, report_http_startup_failure,
         )
-        _staging_cleanup_task = asyncio.create_task(
-            run_staging_cleanup(), name="staging-cleanup"
-        )
-
-        # Export processor + cleanup (scheduler role only)
-        _export_processor_task = asyncio.create_task(
-            run_export_processor_loop(logger), name="export-processor"
-        )
-        _export_cleanup_task = asyncio.create_task(
-            run_export_cleanup(), name="export-cleanup"
-        )
-
-        # Outbox dispatcher + reconciler (scheduler role only)
-        # Reads pending outbox records and enqueues them to Redis v2 queue
-        try:
-            from app.services.outbox_service import (
-                run_outbox_dispatcher,
-                run_outbox_reconciler,
-            )
-            from app.services.task_queue_service import task_queue
-
-            _enqueue_from_outbox = build_outbox_enqueue(task_queue)
-
-            _outbox_dispatcher_task = asyncio.create_task(
-                run_outbox_dispatcher(_enqueue_from_outbox), name="outbox-dispatcher"
-            )
-            _outbox_reconciler_task = asyncio.create_task(
-                run_outbox_reconciler(), name="outbox-reconciler"
-            )
-            logger.info("Outbox dispatcher + reconciler started")
-        except Exception as e:
-            logger.warning("Outbox dispatcher start failed (non-fatal): %s", e)
 
     # Start resource reservation orphan reconciler (all roles)
     await start_resource_reconciler()
@@ -279,7 +217,7 @@ async def lifespan(app: FastAPI):
                 pass
 
         # 3b. Signal export processor to drain (scheduler/all or local-web fallback)
-        if _export_processor_task is not None:
+        if _scheduler_tasks.export_processor_task is not None:
             try:
                 from app.services.export.processor import stop_processor
 
@@ -290,15 +228,15 @@ async def lifespan(app: FastAPI):
 
         # 4. Cancel and await background asyncio tasks with grace timeout
         await cancel_and_wait_runtime_tasks([
-            ("token-cleanup", cleanup_task),
+            ("token-cleanup", _scheduler_tasks.cleanup_task),
             ("pipeline-dispatcher-v2", _worker_tasks.pipeline_worker_task),
             ("task-reaper-v2", _worker_tasks.reaper_task),
-            ("staging-cleanup", _staging_cleanup_task),
-            ("export-processor", _export_processor_task),
-            ("export-cleanup", _export_cleanup_task),
-            ("scheduler-heartbeat", _scheduler_heartbeat_task),
-            ("outbox-dispatcher", _outbox_dispatcher_task),
-            ("outbox-reconciler", _outbox_reconciler_task),
+            ("staging-cleanup", _scheduler_tasks.staging_cleanup_task),
+            ("export-processor", _scheduler_tasks.export_processor_task),
+            ("export-cleanup", _scheduler_tasks.export_cleanup_task),
+            ("scheduler-heartbeat", _scheduler_tasks.scheduler_heartbeat_task),
+            ("outbox-dispatcher", _scheduler_tasks.outbox_dispatcher_task),
+            ("outbox-reconciler", _scheduler_tasks.outbox_reconciler_task),
         ])
 
         await stop_role_services(role)

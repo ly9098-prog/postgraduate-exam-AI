@@ -300,6 +300,7 @@ jobs:
             tests/architecture/test_runtime_staging_startup_boundaries.py \
             tests/architecture/test_runtime_http_startup_boundaries.py \
             tests/architecture/test_runtime_http_worker_startup_boundaries.py \
+            tests/architecture/test_runtime_http_scheduler_startup_boundaries.py \
             tests/architecture/test_outbox_queue_adapter_boundaries.py \
             tests/architecture/test_gateway_bypass_zero.py \
             tests/architecture/test_document_ir_production_write_zero.py \
@@ -354,6 +355,7 @@ jobs:
             tests/core/test_runtime_http_startup.py \
             tests/core/test_runtime_http_worker_startup.py \
             tests/core/test_http_worker_lifespan_contract.py \
+            tests/core/test_runtime_http_scheduler_startup.py \
             tests/core/test_runtime_outbox_enqueue.py \
             tests/test_services/test_readiness_redis_ping.py \
             tests/core/test_orm_registry.py \

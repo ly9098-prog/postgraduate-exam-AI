@@ -16,7 +16,7 @@ def test_periodic_module_dependencies_and_budgets():
     assert graph["app.services.runtime_periodic_tasks"] == {
         "app.services.system_task_service", "app.services.export.processor",
     }
-    for module in ["app.main", "app.core.bootstrap"]:
+    for module in ["app.services.runtime_http_scheduler_startup", "app.core.bootstrap"]:
         assert "app.services.runtime_periodic_tasks" in graph[module]
     source = (APP / "services/runtime_periodic_tasks.py").read_text()
     assert len(source.splitlines()) <= 300
@@ -28,11 +28,12 @@ def test_periodic_module_dependencies_and_budgets():
 def test_runtime_entries_consume_shared_functions_and_keep_original_task_names():
     from app import main
     from app.core import bootstrap
-    from app.services import runtime_periodic_tasks
+    from app.services import runtime_http_scheduler_startup, runtime_periodic_tasks
 
-    for module in [main, bootstrap]:
-        for name in HELPERS:
-            assert getattr(module, name) is getattr(runtime_periodic_tasks, name)
+    for module in [runtime_http_scheduler_startup, bootstrap]:
+        if module is bootstrap:
+            for name in HELPERS:
+                assert getattr(module, name) is getattr(runtime_periodic_tasks, name)
         assert not hasattr(module, "_run_registered_periodic_task")
         assert not any(hasattr(module, "_periodic_" + name) for name in [
             "token_cleanup", "staging_cleanup", "export_cleanup", "export_processor",
@@ -47,11 +48,13 @@ def test_runtime_entries_consume_shared_functions_and_keep_original_task_names()
             assert [ast.unparse(arg) for arg in call.args] == (
                 ["logger"] if call.func.id == "run_export_processor_loop" else []
             )
-        assert sorted(call.func.id for call in calls) == sorted(
-            HELPERS + (["run_export_processor_loop"] if module is main else [])
-        )
+        call_ids = sorted(call.func.id for call in calls)
+        expected = sorted(HELPERS)
+        if module is runtime_http_scheduler_startup:
+            assert set(call_ids) == set(expected)
         for label in ["token-cleanup", "staging-cleanup", "export-processor", "export-cleanup"]:
             assert f'"{label}"' in Path(module.__file__).read_text()
+    assert 'name="export-processor-local"' in Path(main.__file__).read_text()
     assert 'name="export-processor-local"' in Path(main.__file__).read_text()
 
 

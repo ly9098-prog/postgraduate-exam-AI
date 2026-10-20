@@ -97,12 +97,17 @@ async def runtime(monkeypatch, tmp_path):
         deployment_profile, "detect_deployment_profile",
         lambda: deployment_profile.DeploymentProfile.LOCAL_IMPORT,
     )
+    monkeypatch.setattr(main, "monitor_event_loop_lag", lambda *args: loop("lag"))
     for attr, label in {
-        "monitor_event_loop_lag": "lag", "run_export_processor_loop": "export",
-        "run_token_cleanup": "token", "run_staging_cleanup": "staging",
-        "run_export_cleanup": "export_cleanup",
+        "run_export_processor_loop": "export", "run_token_cleanup": "token",
+        "run_staging_cleanup": "staging", "run_export_cleanup": "export_cleanup",
     }.items():
-        monkeypatch.setattr(main, attr, lambda *args, label=label: loop(label))
+        if attr == "run_export_processor_loop":
+            monkeypatch.setattr(main, attr, lambda *args, label=label: loop(label))
+        from app.services import runtime_periodic_tasks
+        for mod in [main, runtime_periodic_tasks]:
+            if hasattr(mod, attr):
+                monkeypatch.setattr(mod, attr, lambda *args, label=label: loop(label))
 
     def client(*args, **kwargs):
         state.client = SimpleNamespace(aclose=asynchronous("ocr.client.close"))

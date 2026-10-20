@@ -41,7 +41,7 @@ def test_lifespan_still_starts_one_monitor_and_cancels_it_before_export_drain():
     assert start < source.index('if role in ("web", "all"):', start)
     stop = source.index("_lag_monitor_task.cancel()")
     assert stop < source.index("await _lag_monitor_task", stop)
-    assert stop < source.index("if _export_processor_task is not None:", stop)
+    assert stop < source.index("if _scheduler_tasks.export_processor_task is not None:", stop)
 
 
 def test_importing_lag_module_does_not_create_runtime_or_tasks():

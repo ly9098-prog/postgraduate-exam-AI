@@ -8,10 +8,7 @@ from pathlib import Path
 from tests.architecture.dependency_scan import scan_application
 
 APP = Path(__file__).resolve().parents[2] / "app"
-COMPONENTS = [
-    "Executors", "OCR Gateway", "Scheduler heartbeat", "Audit log cleanup scheduler",
-    "Recommendation metrics scheduler",
-]
+COMPONENTS = ["Executors", "OCR Gateway"]
 
 
 def test_http_policy_dependencies_and_function_budgets():
@@ -59,6 +56,8 @@ def test_main_uses_real_policies_original_ports_components_and_startup_positions
         assert not node.keywords
     for node in reports:
         assert [ast.unparse(arg) for arg in node.args[1:]] == ["e", "_production_mode"]
+    # Only Executors and OCR Gateway are reported directly by main; worker/scheduler
+    # components are reported by their dedicated startup functions.
     positions = [source.index(fragment) for fragment in [
         "role = prepare_http_runtime_role(", "    validate_production_config()",
         "await validate_production_config_async()", "    assert_http_ocr_isolation(",

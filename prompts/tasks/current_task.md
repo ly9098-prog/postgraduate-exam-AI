@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十三批已提交，第九十四批分离HTTP worker启动与任务引用；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十四批已提交，第九十五批分离HTTP scheduler启动与任务引用；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1182,3 +1182,12 @@
 - 新 3 项依赖/预算/唯一真实消费和原参数/调用位置/local→worker→scheduler 顺序/无 main 副本/惰性导入无配置或 task 创建门禁接入 CI；已有 HTTP policy 门禁更新为只列 main 直接报告的组件。main 523/lifespan 232 新增收缩预算，worker 模块 47/函数 31 行。
 - 原 YAML 完整静态 1,967 项（2 既有弃用警告）、readiness 69、云 OCR 30 全部通过。混合 607 项单进程确认 Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/周期端口/30 模块与父别名及 policy/shutdown 端口恢复（包装进程 2 rewrite 警告）。严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/三段独立 catch/部分任务引用/fatal 包装/取消边界及全部等价证据：No findings，无子 agent。
 - 仅本地提交本批 11 文件，不推送、不操作生产。main 545→523/lifespan 258→232 行，bootstrap 282/runner 50 保持，图 569 模块/2,235 边/零循环/反向 API。HTTP/独立 runner 既有 yield 前失败清理缺口、shared client 关闭阻断等行为待办不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。
+
+
+## 一百零一、第九十五批执行记录：HTTP scheduler 启动与任务引用（2026-10-21）
+
+- 原 HTTP lifespan 的 scheduler heartbeat/audit/metrics/4周期/outbox 共7段迁至 `services/runtime_http_scheduler_startup.py` 的 `start_http_scheduler_tasks`，新增 `HttpSchedulerTasks` 数据类持有7个任务引用。main 直接消费真实函数和状态类，显式传原 `_production_mode`/`logger`/`report_http_startup_failure`；原 worker→scheduler→reconciler 顺序和 shutdown 标签/引用归属保持。保留三种失败策略：heartbeat/audit/metrics 使用 report_http_startup_failure；4个周期任务无 try/except；outbox 使用 logger.warning。
+- 原 26 项直接契约先在旧实现通过。覆盖三段 fatal catch、4个 bare task create 失败传播、outbox 普通 warning/import/cancel、production fatal SystemError 包装、部分任务发布后失败保留引用。迁移后 direct/架构/完整 HTTP/角色/scheduler/worker 118 项通过；旧版 79 项对原完整 main 及原块通过。原 local web export processor fallback 也使用 `_scheduler_tasks.export_processor_task` 引用，shutdown 标签全部更新为 `_scheduler_tasks.*` 属性。
+- 新 3 项依赖/预算/唯一真实消费和原参数/调用位置/worker→scheduler→reconciler 顺序/无 main 副本/惰性导入门禁接入 CI；已有 periodic/outbox/scheduler 架构门禁更新为跟随真实新消费者。main 461/lifespan 174 新增收缩预算，scheduler 模块 90 行/函数≤50。
+- 原 YAML 完整静态 1,996 项（2 既有弃用警告）、readiness 69、云 OCR 30 全部通过。混合 607 项单进程确认 Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/周期端口/30 模块与父别名及 policy/shutdown 端口恢复。严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/三种失败策略/部分任务引用/fatal 包装/取消边界及全部等价证据：No findings，无子 agent。
+- 仅本地提交本批文件，不推送、不操作生产。main 523→461/lifespan 232→174 行，bootstrap 282/runner 50 保持，图 570 模块/2,238 边/零循环/反向 API。HTTP/独立 runner 既有 yield 前失败清理缺口、shared client 关闭阻断等行为待办不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。

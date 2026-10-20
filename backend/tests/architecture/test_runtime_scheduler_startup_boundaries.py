@@ -19,7 +19,7 @@ def test_scheduler_startup_dependencies_and_function_budgets():
         "app.services.outbox_service", "app.services.task_queue_service",
         "app.services.practice.projection_reconciliation_service", "app.services.task_observability_service",
     }
-    for module in ["app.main", "app.core.bootstrap"]:
+    for module in ["app.services.runtime_http_scheduler_startup", "app.core.bootstrap"]:
         assert "app.services.runtime_scheduler_startup" in graph[module]
     source = (APP / "services/runtime_scheduler_startup.py").read_text()
     assert len(source.splitlines()) <= 300
@@ -29,12 +29,11 @@ def test_scheduler_startup_dependencies_and_function_budgets():
 
 
 def test_both_entries_use_real_helpers_caller_logger_and_original_error_handlers():
-    from app import main
     from app.core import bootstrap
-    from app.services import runtime_scheduler_startup
+    from app.services import runtime_http_scheduler_startup, runtime_scheduler_startup
 
     for module, filename, function, report in [
-        (main, "main.py", "lifespan", "report_http_startup_failure"),
+        (runtime_http_scheduler_startup, "services/runtime_http_scheduler_startup.py", "start_http_scheduler_tasks", "report_failure"),
         (bootstrap, "core/bootstrap.py", "_init_scheduler_dependencies", "_report"),
     ]:
         tree = ast.parse((APP / filename).read_text())
@@ -45,7 +44,9 @@ def test_both_entries_use_real_helpers_caller_logger_and_original_error_handlers
         ], key=lambda node: node.lineno)
         assert [node.func.id for node in calls] == HELPERS
         for call, label in zip(calls, ["Audit log cleanup scheduler", "Recommendation metrics scheduler"], strict=True):
-            assert getattr(module, call.func.id) is getattr(runtime_scheduler_startup, call.func.id)
+            if module is bootstrap:
+                assert getattr(module, call.func.id) is getattr(runtime_scheduler_startup, call.func.id)
+            # runtime_http_scheduler_startup imports helpers lazily inside the function.
             assert [ast.unparse(arg) for arg in call.args] == ["logger"] and not call.keywords
             owner = next(node for node in ast.walk(runtime) if isinstance(node, ast.Try) and any(item is call for item in ast.walk(node)))
             assert len(owner.handlers) == 1 and ast.unparse(owner.handlers[0].type) == "Exception"
