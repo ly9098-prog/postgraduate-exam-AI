@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十五批已提交，第七十六批分离启动会话与模型配置自检；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十六批已提交，第七十七批分离启动schema兼容与差异诊断；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -998,3 +998,14 @@
 - 完整静态CI本地1,069项通过、2条既有弃用警告；独立readiness69项通过。严格Ruff、全应用Ruff、compileall、diff、CI YAML/路径和33项保护哈希检查通过。完整lifespan33项的单进程状态恢复再次通过（包装进程2条rewrite警告），包括新logger及原25模块端口。
 - 新模块84行、函数11/18/31行，main981→930行/lifespan676→620行；图554模块/2,195边/零循环/反向API。按review-agent只读核对完整差异、原会话/commit/取消/日志、配置读取时机、真实持久化回滚与完整lifespan及CI：No findings。仅本地提交相关代码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。
 - 第七十五批确认的yield前失败不清理和shared client关闭错误阻断后续清理仍未修；启动schema兼容与诊断、资源初始化、角色启动编排及独立worker/scheduler实际验收继续治理。真实PostgreSQL/Redis/OCR/AI、客户端/远端CI和全栈其余阶段尚未完成，不能因结构计数或替身测试完成而勾选整体目标。
+
+
+## 八十三、第七十七批执行记录：启动 schema 兼容与差异诊断
+
+- `services/export/schema_compatibility.py`拥有原导出幂等键兼容修复，分开SQLite反射/批处理和PostgreSQL事务；`services/runtime_schema_diagnostics.py`拥有原只读差异查询。main仍在init_db之后、管理员/策略/AI自检之前按原顺序调用，传同一session factory，不新增迁移/DDL规则、engine、会话所有者副本或运行状态。
+- 原两段启动代码先通过44项刻画，其中9项临时SQLite覆盖缺表、无索引、普通/唯一索引、命名/匿名UNIQUE、组合约束及已有普通索引；真实batch修复保留原数据、只解除单列幂等键唯一限制、重复执行不再修复。迁移后相关schema/完整lifespan/启动/架构133项通过；追加2项SQLite batch规划错误/取消后数据和原约束保留并可重试，最终schema/架构49项通过。该故障注入发生在batch规划阶段，不证明全部DDL执行中断均可安全恢复。
+- 相同46项schema契约（含11项真实临时SQLite）对`05b094a6`旧完整AST也全部通过；SQLite检查与batch回调、PostgreSQL事务、诊断代码块和展开完整main/lifespan AST在显式factory/inspect绑定后相同，328路径OpenAPI一致。208组PostgreSQL约束名/引号转义/SQL/参数/commit/exit/缺列/错误/取消/日志轨迹一致；SQL字面量按旧完整AST保留原空白，最终字面量重排不改AST。
+- SQLite inspect仍在begin前导入，反射与DDL仍通过同一async connection.run_sync，显式传入原inspect函数；Alembic在确需修复时才导入，命名约定/约束和索引删除顺序/已有普通索引保留不变。PostgreSQL仍查询原约束名、转义双引号、两条DDL后才commit。差异检查仍三表原顺序、无commit、单表普通错误按原规则跳过，取消传播；未把其best-effort结果升级为迁移门禁。
+- 新增3项依赖/预算/真实调用顺序/事务归属及新进程无app/配置/数据库加载或engine/task创建门禁，旧启动位置门禁跟随实际定义。完整静态CI本地1,118项通过、2条既有弃用警告；独立readiness69项通过。严格Ruff/全应用Ruff/compileall/diff/CI YAML与路径、33项保护哈希通过；完整lifespan33项全局状态恢复再通过（包装进程2条rewrite警告）。
+- 两模块141/67行，函数最长31行；main930→769行/lifespan620→458行，图556模块/2,199边/零循环/反向API。按review-agent只读核对完整差异、原反射/SQL/事务/错误/取消/导入顺序、真实SQLite数据及故障/重试、完整lifespan和CI：No findings。
+- 仅本地提交相关代码/测试/CI/任务/盘点，保留其他工作区改动及删除，不推送、不操作生产。SQLite测试只使用pytest临时库；PostgreSQL为受控会话，真实PostgreSQL schema修复、DDL执行中断、独立角色和外部服务/客户端/远端CI仍未验收。yield前失败不清理与shared client关闭失败阻断后续清理仍作为独立待办；资源/角色启动及其他全栈治理继续。

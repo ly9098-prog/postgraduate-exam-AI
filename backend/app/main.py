@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import resolve_effective_process_role, settings
@@ -34,6 +33,7 @@ from app.core.runtime_role_shutdown import drain_queue_for_role, stop_role_servi
 from app.core.runtime_task_shutdown import cancel_and_wait_runtime_tasks
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
+from app.services.export.schema_compatibility import repair_export_idempotency_schema
 from app.services.ocr_readiness import OcrReadinessState, check_ocr_config
 from app.services.production_config_validator import (
     validate_production_config,
@@ -50,6 +50,7 @@ from app.services.readiness_dependency_probes import (
 )
 from app.services.role_readiness import check_role_dependencies
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
+from app.services.runtime_schema_diagnostics import log_runtime_schema_divergence
 from app.services.runtime_sse_metrics import append_sse_metrics
 from app.services.runtime_startup_checks import (
     initialize_dev_admin,
@@ -283,170 +284,8 @@ async def lifespan(app: FastAPI):
     os.makedirs(settings.EXPORT_DIR, exist_ok=True)
     await init_db()
 
-    # Fix residual UNIQUE constraint on export_tasks.idempotency_key.
-    # The phase7_export_fixes migration attempted this but failed on SQLite
-    # (table-level UNIQUE constraints can't be dropped via batch_op.drop_index).
-    # This runtime DDL is a belt-and-suspenders fix alongside the application-level
-    # IntegrityError handler in the create_export endpoint.
-    try:
-        from app.core.database import engine as _db_engine
-
-        _dialect = _db_engine.dialect.name
-        if _dialect == "sqlite":
-            from sqlalchemy import inspect as _sa_inspect
-
-            def _repair_export_idempotency_index(sync_conn) -> bool:
-                """Inspect/repair SQLite through AsyncConnection.run_sync."""
-                _inspector = _sa_inspect(sync_conn)
-                if "export_tasks" not in _inspector.get_table_names():
-                    return False
-                _ix_list = _inspector.get_indexes("export_tasks")
-                _unique_constraints = _inspector.get_unique_constraints("export_tasks")
-                _unique_indexes = [
-                    _ix
-                    for _ix in _ix_list
-                    if _ix.get("column_names", []) == ["idempotency_key"]
-                    and _ix.get("unique")
-                ]
-                _matching_constraints = [
-                    _constraint
-                    for _constraint in _unique_constraints
-                    if _constraint.get("column_names", []) == ["idempotency_key"]
-                ]
-                _has_plain_index = any(
-                    _ix.get("column_names", []) == ["idempotency_key"]
-                    and not _ix.get("unique")
-                    for _ix in _ix_list
-                )
-                if not _unique_indexes and not _matching_constraints:
-                    return False
-
-                # Alembic batch mode recreates SQLite tables when a table-level
-                # UNIQUE constraint cannot be removed with DROP INDEX.
-                from alembic.runtime.migration import MigrationContext
-
-                from alembic import op
-
-                _ctx = MigrationContext.configure(sync_conn)
-                _op = op.Operations(_ctx)
-                # Naming convention gives SQLite's unnamed column-level UNIQUE
-                # constraint a deterministic reflected name in batch mode.
-                naming_convention = {
-                    "uq": "uq_%(table_name)s_%(column_0_name)s",
-                }
-                with _op.batch_alter_table(
-                    "export_tasks", naming_convention=naming_convention
-                ) as _batch:
-                    for _constraint in _matching_constraints:
-                        _batch.drop_constraint(
-                            _constraint.get("name")
-                            or "uq_export_tasks_idempotency_key",
-                            type_="unique",
-                        )
-                    for _ix in _unique_indexes:
-                        _batch.drop_index(_ix["name"])
-                    if not _has_plain_index:
-                        _batch.create_index(
-                            "ix_export_tasks_idempotency_key", ["idempotency_key"]
-                        )
-                return True
-
-            # Never drive AsyncEngine.sync_engine directly from the event loop:
-            # aiosqlite requires the greenlet adapter and synchronous drivers
-            # would otherwise block startup.
-            async with _db_engine.begin() as _conn:
-                _sqlite_index_repaired = await _conn.run_sync(
-                    _repair_export_idempotency_index
-                )
-            if _sqlite_index_repaired:
-                logger.info(
-                    "Fixed residual UNIQUE constraint on export_tasks.idempotency_key (SQLite)"
-                )
-        elif _dialect == "postgresql":
-            # PostgreSQL: drop the UNIQUE constraint if it exists and replace with index
-            async with async_session() as _s:
-                _row = (
-                    await _s.execute(
-                        text("""
-                    SELECT conname FROM pg_constraint
-                    WHERE conrelid = 'export_tasks'::regclass
-                    AND conname LIKE '%idempotency_key%'
-                    AND contype = 'u'
-                """)
-                    )
-                ).scalar_one_or_none()
-                if _row:
-                    # Constraint names come from PostgreSQL metadata, but still
-                    # escape identifier quotes before interpolating into DDL.
-                    _quoted_constraint = str(_row).replace('"', '""')
-                    await _s.execute(
-                        text(
-                            f'ALTER TABLE export_tasks DROP CONSTRAINT "{_quoted_constraint}"'
-                        )
-                    )
-                    await _s.execute(
-                        text(
-                            "CREATE INDEX IF NOT EXISTS ix_export_tasks_idempotency_key "
-                            "ON export_tasks (idempotency_key)"
-                        )
-                    )
-                    await _s.commit()
-                    logger.info(
-                        "Fixed residual UNIQUE constraint on export_tasks.idempotency_key (PostgreSQL)"
-                    )
-    except Exception as _exc:
-        logger.warning(
-            "Failed to fix idempotency_key UNIQUE constraint (%s: %s) "
-            "(non-fatal, application-level fallback active)",
-            type(_exc).__name__,
-            _exc,
-        )
-
-    # Schema divergence diagnostic: detect missing runtime-DDL columns on PostgreSQL.
-    # Lightweight startup check — warns if known columns are absent.
-    try:
-        from app.core.database import engine
-
-        _sync_engine = engine.sync_engine
-        if _sync_engine.dialect.name == "postgresql":
-            _runtime_ddl_checks: dict[str, list[str]] = {
-                "questions": ["question_hash", "sync_uuid", "sync_version"],
-                "question_imports": [
-                    "question_hash",
-                    "duplicate_status",
-                    "duplicate_of_question_id",
-                    "duplicate_of_import_id",
-                ],
-                "users": ["is_banned", "deleted_at"],
-            }
-            _divergence: list[str] = []
-            async with async_session() as _s:
-                for _tbl, _cols in _runtime_ddl_checks.items():
-                    try:
-                        _row = (
-                            await _s.execute(
-                                text(
-                                    "SELECT column_name FROM information_schema.columns "
-                                    "WHERE table_name=:tbl AND column_name=ANY(:cols)"
-                                ),
-                                {"tbl": _tbl, "cols": _cols},
-                            )
-                        ).all()
-                        _found = {r[0] for r in _row}
-                        for _c in _cols:
-                            if _c not in _found:
-                                _divergence.append(f"{_tbl}.{_c}")
-                    except Exception:
-                        pass
-            if _divergence:
-                logger.warning(
-                    "Schema divergence (runtime DDL not in Alembic): %s",
-                    ", ".join(_divergence),
-                )
-            else:
-                logger.debug("Schema divergence check: all runtime-DDL columns present")
-    except Exception:
-        logger.debug("Schema divergence check skipped (not PostgreSQL or transient)")
+    await repair_export_idempotency_schema(async_session)
+    await log_runtime_schema_divergence(async_session)
     await initialize_dev_admin(async_session, ensure_dev_super_admin, settings)
     await seed_recommendation_strategies(async_session)
     await log_ai_model_configuration(async_session)

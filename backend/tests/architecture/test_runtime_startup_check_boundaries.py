@@ -54,7 +54,7 @@ def test_main_uses_real_helpers_with_original_factory_order_and_admin_initialize
         "ensure_dev_super_admin", "settings",
     ]
     positions = [source.index(f"await {name}(") for name in HELPERS]
-    assert source.index('logger.debug("Schema divergence check skipped') < positions[0]
+    assert source.index("await log_runtime_schema_divergence(") < positions[0]
     assert positions[-1] < source.index("_executors = init_executors_for_role(")
 
 
