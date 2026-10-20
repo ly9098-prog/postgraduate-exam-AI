@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：539 个模块、2,147 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：542 个模块、2,154 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 1729 | `lifespan` 870 | HTTP 错误契约/处理器及中间件已独立，资源初始化、任务启停及健康/指标仍待治理。 |
+| `backend/app/main.py` | 1607 | `lifespan` 870 | HTTP 错误/中间件、指标访问和队列/推理采样已独立；系统/DB/SSE/调度器指标、健康及生命周期仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -133,3 +133,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十二批将安全头、CORS/Host 装配和追踪日志迁至 `core/http_middleware.py`；main 显式提供配置，原注册位置、选项和四层顺序一致。每个 app 的安全模式由闭包隔离，新模块导入不加载 settings、数据库或 main。18 项原实现刻画先通过；增加 app 隔离及日志失败测试后契约/边界共 24 项通过。160 组安全头、108 组日志/响应/异常/context 轨迹相同，展开日志 helper 后 AST 和其余 main AST 相同，328 路径 OpenAPI 相同。本地完整 CI 静态步骤 599 项通过，随后追加的两项日志错误测试已包含在 24 项定向复验；远端 CI 未运行。新模块 126 行、函数最长 42 行，main 1,729 行；静态图 539 模块/2,147 边/零循环。健康/指标、生命周期和完整角色验证仍待继续，不以文件缩短代替治理验收。
 
 第六十三批恢复健康/readiness 基线：原公开 health 1 项失败及 readiness 显式运行后的 9 项失败均由测试夹具修复，生产实现不变。OCR profile patch 指向真实导入位置；队列使用 v2 端口；调度器开关明确；空间断言不再条件放行；恢复 OCR hysteresis 并移除全局 lifespan 污染。新增调度器/队列临界与云/本地状态和详情脱敏矩阵后，三文件 69 项通过。独立 CI 步骤只对指定 mocked readiness 文件打开目录门禁，并使用隔离配置；不运行真实 DB/Redis 集成，不将 39 项此前条件跳过当作验证。Alembic stale 仍返回 200 的既有缺口单列，不因本批绿色而视为已修复。
+
+第六十四批分离指标访问策略、队列深度/计数与 OCR/AI 采样到三个职责模块。队列计数/网关/AI guard/budget 继续由原实现持有，不新增副本；访问判断保持先于实际采样。36 项原实现刻画先通过，迁移后增补取消和部分字段读取失败；结合 3 项依赖/新进程/尺寸门禁，完整 CI 静态步骤本地 644 项通过，独立 readiness 69 项通过。79 组完整响应/头/异常/采样轨迹与旧实现一致，展开 helper 后端点 AST 和其余 main AST 相同，328 路径 OpenAPI 一致。main 1,607 行，新模块 30/58/66 行、函数最长 39；静态图 542 模块/2,154 边/零循环。系统/DB/SSE/调度器指标和健康/生命周期仍待治理，真实外部服务/部署/客户端与远端 CI 未验证。

@@ -1,11 +1,10 @@
 import asyncio
-import hmac
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -17,6 +16,7 @@ from app.core.deployment_profile import is_restricted_environment
 from app.core.http_error_handlers import register_http_exception_handlers
 from app.core.http_middleware import register_http_middleware
 from app.core.logging_config import setup_logging
+from app.core.observability_access import require_observability_access
 from app.core.ocr_isolation import (
     is_restricted_ocr_environment,
     loaded_local_ocr_modules,
@@ -26,6 +26,11 @@ from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.production_config_validator import (
     validate_production_config,
     validate_production_config_async,
+)
+from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
+from app.services.task_queue_metrics import (
+    append_queue_counters,
+    append_queue_depth_metrics,
 )
 
 setup_logging()
@@ -1438,29 +1443,6 @@ async def _check_queue() -> str | None:
 # --- 路由（聚合 Router） ---
 
 
-def _require_observability_access(request: Request) -> None:
-    """Protect detailed runtime metrics in restricted environments.
-
-    Local development remains convenient. In cloud/production a blank token
-    disables the endpoint (404); otherwise clients must send
-    ``Authorization: Bearer <OBSERVABILITY_TOKEN>``.
-    """
-    if not _production_mode:
-        return
-    expected = (settings.OBSERVABILITY_TOKEN or "").strip()
-    authorization = request.headers.get("authorization", "")
-    scheme, _, supplied = authorization.partition(" ")
-    if (
-        not expected
-        or scheme.lower() != "bearer"
-        or not supplied
-        or not hmac.compare_digest(supplied, expected)
-    ):
-        # Hide the existence of the diagnostics endpoint from unauthenticated
-        # internet scanners rather than advertising an auth-protected target.
-        raise HTTPException(status_code=404, detail="Not Found")
-
-
 @app.get("/health/metrics")
 async def metrics_endpoint(request: Request):
     """Prometheus-compatible metrics endpoint.
@@ -1469,63 +1451,17 @@ async def metrics_endpoint(request: Request):
     Aggregates: task queue state, system resources, event-loop lag,
     DB pool, SSE connections, scheduler stats.
     """
-    _require_observability_access(request)
+    require_observability_access(
+        request, production_mode=_production_mode, token=settings.OBSERVABILITY_TOKEN,
+    )
     from app.core.resource_guard import resource_guard
     from app.services.task_queue_service import queue_metrics
 
     lines: list[str] = []
     _append = lines.append
 
-    # ── Task queue metrics ──
-    task_types = [
-        "import_pipeline",
-        "image_pipeline",
-        "excel_pipeline",
-        "resume_pipeline",
-        "admin_resume",
-        "batch_image",
-        "formula_batch",
-        "prewarm_analysis",
-        "export_mistakes",
-        "answer_projection",
-        "error_diagnosis",
-    ]
-    try:
-        from app.services.task_queue_service import task_queue
-
-        for tt in task_types:
-            ready = await task_queue.ready_length_v2(tt)
-            processing = await task_queue.processing_length_v2(tt)
-            retry_count = await task_queue.retry_length_v2(tt)
-            dead = await task_queue.dead_length_v2(tt)
-            corrupt = await task_queue.corrupt_length_v2(tt)
-            oldest_age = await task_queue.oldest_ready_age_v2(tt)
-            _append(f'task_queue_ready{{type="{tt}"}} {ready}')
-            _append(f'task_queue_processing{{type="{tt}"}} {processing}')
-            _append(f'task_queue_retry{{type="{tt}"}} {retry_count}')
-            _append(f'task_queue_dead{{type="{tt}"}} {dead}')
-            _append(f'task_queue_corrupt{{type="{tt}"}} {corrupt}')
-            _append(f'task_queue_oldest_ready_age_seconds{{type="{tt}"}} {oldest_age}')
-    except Exception:
-        for tt in task_types:
-            _append(f'task_queue_ready{{type="{tt}"}} 0')
-            _append(f'task_queue_processing{{type="{tt}"}} 0')
-            _append(f'task_queue_retry{{type="{tt}"}} 0')
-            _append(f'task_queue_dead{{type="{tt}"}} 0')
-            _append(f'task_queue_corrupt{{type="{tt}"}} 0')
-            _append(f'task_queue_oldest_ready_age_seconds{{type="{tt}"}} 0')
-
-    # Cumulative counters from queue_metrics dict
-    for key in (
-        "lease_renewal_failure",
-        "duplicate_enqueue_prevented",
-        "reaper_reclaimed",
-        "owner_fencing_rejected",
-        "enqueue_rejected",
-        "dead_purge_count",
-        "corrupt_cleaned",
-    ):
-        _append(f"task_queue_{key} {queue_metrics.get(key, 0)}")
+    await append_queue_depth_metrics(lines)
+    append_queue_counters(lines, queue_metrics)
 
     # ── System resource metrics ──
     sys_metrics = resource_guard.get_system_metrics()
@@ -1534,66 +1470,8 @@ async def metrics_endpoint(request: Request):
     _append(f"system_active_pipelines {sys_metrics.active_pipelines}")
     _append(f"system_event_loop_lag_ms {_elapsed_monitor_event_loop_lag_ms:.2f}")
 
-    # ── OCR Gateway / circuit breaker metrics ──
-    try:
-        from app.services.ocr_service import get_gateway
-
-        gateway = get_gateway()
-        if gateway is not None:
-            wm = gateway.worker_metrics
-            _append(f'ocr_circuit_state{{backend="{wm.get("backend", "?")}"}} 1')
-            state = wm.get("circuit_state", "unknown")
-            _append(
-                f'ocr_circuit{{backend="{wm.get("backend", "?")}",state="{state}"}} 1'
-            )
-            _append(
-                f"ocr_circuit_breaker_rejected_total "
-                f"{wm.get('circuit_breaker_rejected', 0)}"
-            )
-            _append(
-                f"ocr_circuit_breaker_trips_total {wm.get('circuit_breaker_trips', 0)}"
-            )
-            _append(f"ocr_accepted_total {wm.get('accepted', 0)}")
-            _append(f"ocr_failed_total {wm.get('failed', 0)}")
-            _append(f"ocr_timed_out_total {wm.get('timed_out', 0)}")
-            _append(f"ocr_connection_errors_total {wm.get('connection_errors', 0)}")
-    except Exception:
-        _append("ocr_circuit 0")
-
-    # ── AI runtime / cost guard metrics ──
-    try:
-        from app.core.ai_runtime_guard import ai_runtime_guard
-
-        am = ai_runtime_guard.metrics_snapshot()
-        _append(f"ai_requests_total {am.get('requests', 0)}")
-        _append(f"ai_success_total {am.get('success', 0)}")
-        _append(f"ai_failures_total {am.get('failures', 0)}")
-        _append(f"ai_tokens_total {am.get('tokens', 0)}")
-        _append(f"ai_in_flight {am.get('in_flight', 0)}")
-        _append(f"ai_queue_wait_ms_total {am.get('queue_wait_ms_total', 0)}")
-        _append(f"ai_queue_wait_ms_avg {am.get('queue_wait_ms_avg', 0)}")
-        _append(
-            f'ai_rejected_total{{reason="rate_limit"}} {am.get("rejected_rate_limit", 0)}'
-        )
-        _append(
-            f'ai_rejected_total{{reason="overload"}} {am.get("rejected_overload", 0)}'
-        )
-        _append(
-            f'ai_rejected_total{{reason="circuit"}} {am.get("rejected_circuit", 0)}'
-        )
-        _append(
-            f'ai_rejected_total{{reason="prompt_too_large"}} {am.get("rejected_prompt_too_large", 0)}'
-        )
-        _append(f"ai_circuit_trips_total {am.get('circuit_trips', 0)}")
-        _append(f"ai_open_circuits {am.get('open_circuits', 0)}")
-        from app.features.token_budget import get_shared_token_usage_snapshot
-
-        budget = await get_shared_token_usage_snapshot()
-        _append(f"ai_pipeline_tokens_daily {budget.get('daily', 0)}")
-        _append(f"ai_pipeline_tokens_monthly {budget.get('monthly', 0)}")
-        _append(f"ai_pipeline_token_budget_shared {1 if budget.get('shared') else 0}")
-    except Exception:
-        _append("ai_runtime_metrics_available 0")
+    append_ocr_metrics(lines)
+    await append_ai_metrics(lines)
 
     # ── Staging storage metrics ──
     try:
