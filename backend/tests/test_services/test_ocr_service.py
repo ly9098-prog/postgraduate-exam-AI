@@ -250,6 +250,7 @@ class TestOCRFixRouter:
 
     Adapters are injected directly via OCRFixRouter(adapters={...}) so the
     lazy _get_adapter path is bypassed and we can test chaining logic in isolation.
+    DeepSeek-backed test doubles use the canonical "openai-compatible" chain key.
     """
 
     @pytest.mark.asyncio
@@ -261,7 +262,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_vl_adapter,
-            "deepseek": mock_deepseek,
+            "openai-compatible": mock_deepseek,
         })
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
@@ -284,7 +285,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_failing_adapter,
-            "deepseek": mock_deepseek_adapter,
+            "openai-compatible": mock_deepseek_adapter,
         })
         # Use auto strategy to enable full chain
         router.configure({"ocr_fix_strategy": "auto"})
@@ -307,7 +308,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_empty_adapter,
-            "deepseek": mock_deepseek_adapter,
+            "openai-compatible": mock_deepseek_adapter,
         })
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
@@ -329,7 +330,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_vl_unsafe_adapter,
-            "deepseek": mock_deepseek_adapter,
+            "openai-compatible": mock_deepseek_adapter,
         })
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
@@ -378,7 +379,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_vl_unsafe_adapter,
-            "deepseek": mock_deepseek_unsafe,
+            "openai-compatible": mock_deepseek_unsafe,
             "rule_fallback": mock_rule,
         })
         router.configure({"ocr_fix_strategy": "auto"})
@@ -410,7 +411,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_failing_adapter,
-            "deepseek": mock_failing_adapter,
+            "openai-compatible": mock_failing_adapter,
             "rule_fallback": mock_rule,
         })
         router.configure({"ocr_fix_strategy": "auto"})
@@ -431,7 +432,7 @@ class TestOCRFixRouter:
 
         router = OCRFixRouter(adapters={
             "paddleocr-vl": mock_vl_adapter,
-            "deepseek": mock_deepseek_adapter,
+            "openai-compatible": mock_deepseek_adapter,
         })
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
