@@ -23,6 +23,7 @@ from app.core.ocr_isolation import (
     loaded_local_ocr_modules,
 )
 from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
+from app.core.runtime_task_shutdown import cancel_and_wait_runtime_tasks
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.ocr_readiness import OcrReadinessState, check_ocr_config
@@ -757,58 +758,17 @@ async def lifespan(app: FastAPI):
                 logger.warning("Export processor stop signal failed: %s", e)
 
         # 4. Cancel and await background asyncio tasks with grace timeout
-        _shutdown_tasks = []
-        if cleanup_task and not cleanup_task.done():
-            cleanup_task.cancel()
-            _shutdown_tasks.append(("token-cleanup", cleanup_task))
-        if _pipeline_worker_task and not _pipeline_worker_task.done():
-            _pipeline_worker_task.cancel()
-            _shutdown_tasks.append(("pipeline-dispatcher-v2", _pipeline_worker_task))
-        if _reaper_task and not _reaper_task.done():
-            _reaper_task.cancel()
-            _shutdown_tasks.append(("task-reaper-v2", _reaper_task))
-        if _staging_cleanup_task and not _staging_cleanup_task.done():
-            _staging_cleanup_task.cancel()
-            _shutdown_tasks.append(("staging-cleanup", _staging_cleanup_task))
-        if _export_processor_task and not _export_processor_task.done():
-            _export_processor_task.cancel()
-            _shutdown_tasks.append(("export-processor", _export_processor_task))
-        if _export_cleanup_task and not _export_cleanup_task.done():
-            _export_cleanup_task.cancel()
-            _shutdown_tasks.append(("export-cleanup", _export_cleanup_task))
-        if _scheduler_heartbeat_task and not _scheduler_heartbeat_task.done():
-            _scheduler_heartbeat_task.cancel()
-            _shutdown_tasks.append(("scheduler-heartbeat", _scheduler_heartbeat_task))
-        if _outbox_dispatcher_task and not _outbox_dispatcher_task.done():
-            _outbox_dispatcher_task.cancel()
-            _shutdown_tasks.append(("outbox-dispatcher", _outbox_dispatcher_task))
-        if _outbox_reconciler_task and not _outbox_reconciler_task.done():
-            _outbox_reconciler_task.cancel()
-            _shutdown_tasks.append(("outbox-reconciler", _outbox_reconciler_task))
-
-        if _shutdown_tasks:
-            task_names = {task: name for name, task in _shutdown_tasks}
-            done, pending = await asyncio.wait(task_names, timeout=30)
-            for task in done:
-                name = task_names[task]
-                if task.cancelled():
-                    logger.info("Task %s: cancelled", name)
-                    continue
-                try:
-                    exc = task.exception()
-                except asyncio.CancelledError:
-                    logger.info("Task %s: cancelled", name)
-                    continue
-                if exc is None:
-                    logger.info("Task %s: completed after cancel", name)
-                else:
-                    logger.warning("Task %s: cancel error: %s", name, exc)
-            for task in pending:
-                logger.warning(
-                    "Task %s: did not stop within shared 30s grace period",
-                    task_names[task],
-                )
-                task.cancel()
+        await cancel_and_wait_runtime_tasks([
+            ("token-cleanup", cleanup_task),
+            ("pipeline-dispatcher-v2", _pipeline_worker_task),
+            ("task-reaper-v2", _reaper_task),
+            ("staging-cleanup", _staging_cleanup_task),
+            ("export-processor", _export_processor_task),
+            ("export-cleanup", _export_cleanup_task),
+            ("scheduler-heartbeat", _scheduler_heartbeat_task),
+            ("outbox-dispatcher", _outbox_dispatcher_task),
+            ("outbox-reconciler", _outbox_reconciler_task),
+        ])
 
         # 4. Stop schedulers (if running in this role)
         if role in ("scheduler", "all"):

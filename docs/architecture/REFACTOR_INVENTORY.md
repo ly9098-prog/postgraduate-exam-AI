@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：550 个模块、2,180 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：551 个模块、2,181 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 1166 | `lifespan` 870 | HTTP/指标/探针已独立，lag 为中立共享状态；生命周期仍待治理。 |
+| `backend/app/main.py` | 1126 | `lifespan` 829 | HTTP/指标/探针/lag及任务取消等待已独立；启动、资源清理和角色生命周期仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -148,3 +148,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十九批将角色检查迁至 `role_readiness.py`，显式传入 settings，scheduler 审计/推荐检查独立函数；原 logger、优先级、错误/日志和取消规则保留。22 项原实现刻画先过，迁移后定向 148 项通过；2,560 组角色/云/draining/backend/开关/运行组合结果和日志顺序一致，展开 AST 与 328 路径 OpenAPI 一致。3 项新进程/依赖/预算/实际调用门禁接入 CI，完整静态步骤本地 826 项、readiness 69 项通过。模块97行、函数41/43行，main1,184行；图549模块/2,178边/零循环。真实运行角色启动/失败清理/退出尚未验收，lag和lifespan继续待治理。
 
 第七十批将 lag 样本和监测迁入中立 `core/event_loop_health.py`，main/readiness/metrics/ResourceGuard 共享同一对象，去掉从 sys.modules 查 main 的读取。原监测任务启动/取消顺序不变，无新角色任务。8 项原实现刻画先过，迁移后定向164项、完整静态CI839项/readiness69项通过；36组多tick/取消轨迹、AST和328路径OpenAPI一致。真实任务取消不遗留子任务，独立进程无main读取默认0。模块22行/监测7行，main1,166行；图550模块/2,180边/零循环。真实lifespan完整启停、外部依赖、客户端和远端CI仍未验收。
+
+第七十一批将原九类后台任务顺序取消/一次30秒共享等待迁至`core/runtime_task_shutdown.py`；main保留任务引用及export stop→取消等待→scheduler stop的位置。7项原片段刻画先过，加入真实task/共享wait取消与3项架构门禁后定向25项通过；343组done/cancel/wait/log轨迹、展开lifespan AST及328路径OpenAPI一致。完整静态CI本地851项/readiness69项通过。模块40行/函数31行，main1,126行、lifespan829行；图551模块/2,181边/零循环。pending采用替身wait，未等待真实30秒；不代表真实角色/外部服务优雅退出验收。
