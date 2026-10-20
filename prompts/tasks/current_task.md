@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前八十九批已提交，第九十批分离独立角色关闭资源边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十批已提交，第九十一批分离独立角色启动策略；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1145,3 +1145,13 @@
 - 混合275项单进程确认新shutdown.asyncio端口、Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块及父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。额外真实资源脚本在独立解释器验证4个worker bounded pools/PDF pool执行线程工作后关闭、registry清空/恢复、真实内存SQLite SELECT1并监听dispose关闭连接、真实orphan asyncio task停止、queue关闭无网络；不等同于生产DB/Redis/OCR/AI全链和失败恢复验收。
 - 严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过；review-agent只读检查完整迁移/所有真实调用方/原画像解析与import/catch/线程deadline/错误与取消/一次等待及真实资源与子进程证据：No findings。新模块155行/六函数30、24、16、26、20、23行；bootstrap498→379行/shutdown157→30行，main604/lifespan323保持，图565模块/2,226边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其余改动及删除，不推送、不操作生产。剩余runner61行及角色guard/scratch等职责可继续治理；已登记runner/HTTP失败不清理等行为缺口和外部服务/完整outbox持久化/客户端及全栈其他阶段仍未完成。
+
+
+## 九十七、第九十一批执行记录：独立角色启动策略（2026-10-21）
+
+- 将bootstrap原HTTP启动拒绝、scratch目录策略和启动失败reporter三完整实现迁至中立`core/standalone_runtime_policy.py`，worker/scheduler/run_role直接消费真实函数及唯一STANDALONE_ROLES，无旧私有forwarder。显式传原Settings/logger/profile；原角色校验→HTTP拒绝→env/Settings写回、worker profile→scratch→执行器、scheduler profile→reporter工厂→组件启动位置保持。
+- 原116项直接刻画先过，新增显式/回退两项真实临时目录创建、重复调用及保留已有marker验证后118项；相同118+38完整角色+10完整scheduler共166项对旧`275771c2`完整bootstrap及三原函数通过。迁移后direct/架构/完整角色/真实信号子进程163项通过，Linux4个真实SIGTERM/SIGINT CLI退出用例均运行。
+- 三完整策略正文和展开整个bootstrap AST在明确config/logger/角色集合绑定后相同；仅模块顶层docstring纠正原HTTP共享生命周期的失实描述，HTTP lifespan实际仍由app.main拥有。763组argv/env/角色/scratch/profile/mkdir/冻结失败策略/日志/错误/cause/取消轨迹一致。保留原只读argv[0]、不归一化角色或路径、带尾斜杠显式路径允许、只对原默认值检测画像、工厂时冻结production判定及logger失败优先传播等行为，不夹带修复。
+- 新3项依赖/预算/真实消费和原写回前顺序/唯一角色集合/无旧壳/导入不加载配置或创建目录task和修改env门禁接入CI；bootstrap总长降至300行内并设预算。原YAML完整静态1,744项（2既有弃用警告）、readiness69项、云OCR30项通过。混合393项同进程确认新policy.os/sys、shutdown.asyncio、Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。
+- 严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；按review-agent只读流程由主agent核对完整diff、所有实际消费者、懒导入/工厂快照/路径语义/错误和取消及完整角色证据：No findings，无子agent。新模块91行/三函数26、20、24行，bootstrap379→292行/runner61保持；main604/lifespan323保持，图566模块/2,229边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。runner剩余启动编排、HTTP/独立角色失败清理独立待办、实际外部服务/完整outbox持久化/客户端和全栈其他阶段仍待继续。

@@ -1,20 +1,8 @@
-"""Shared process lifecycle — bootstrap/lifecycle for web/worker/scheduler.
+"""Standalone worker and scheduler lifecycle assembly.
 
-All three entry points (``web_main.py``, ``worker_main.py``, ``scheduler_main.py``)
-delegate to this module so that startup and shutdown logic is defined exactly once.
-
-Usage::
-
-    # Web (FastAPI via uvicorn/gunicorn — lifespan is in main.py)
-    os.environ.setdefault("PROCESS_ROLE", "web")
-
-    # Worker (standalone process)
-    from app.core.bootstrap import run_role
-    run_role("worker")
-
-    # Scheduler (standalone process)
-    from app.core.bootstrap import run_role
-    run_role("scheduler")
+Entry modules call ``run_role`` here without starting an HTTP listener.
+The HTTP lifespan remains in ``app.main``. Resource implementations are
+separate from the runner's task registry, signal wait and shutdown order.
 """
 
 from __future__ import annotations
@@ -27,6 +15,12 @@ import sys
 from app.core.config import settings
 from app.core.runtime_signals import install_role_signal_handlers
 from app.core.runtime_task_registry import TaskRegistry
+from app.core.standalone_runtime_policy import (
+    STANDALONE_ROLES,
+    create_standalone_failure_reporter,
+    ensure_worker_scratch_directory,
+    reject_standalone_http_launch,
+)
 from app.core.standalone_runtime_shutdown import (
     close_standalone_runtime_connections,
     shutdown_standalone_formula_pool,
@@ -52,38 +46,6 @@ from app.services.runtime_scheduler_startup import (
 
 logger = logging.getLogger("postgraduate-ai.bootstrap")
 
-# Guard: worker/scheduler roles started via HTTP (Gunicorn / uvicorn) must fail.
-_FORBIDDEN_HTTP_ROLES = frozenset({"worker", "scheduler"})
-
-
-def _guard_http_role(role: str) -> None:
-    """Raise SystemError if a worker or scheduler role is started over HTTP.
-
-    Detects Gunicorn/uvicorn by checking whether this process was launched
-    by a web server (argv contains gunicorn/uvicorn or GUNICORN_CMD_ARGS
-    / UVICORN_CMD_ARGS env vars are set).
-
-    Workers and schedulers must be started as standalone processes via
-    ``python -m app.worker_main`` / ``python -m app.scheduler_main``.
-    Starting them over HTTP would expose an unnecessary port and waste
-    resources on connection handling.
-    """
-    if role not in _FORBIDDEN_HTTP_ROLES:
-        return
-    is_http = (
-        "gunicorn" in (sys.argv[0] if sys.argv else "").lower()
-        or "uvicorn" in (sys.argv[0] if sys.argv else "").lower()
-        or bool(os.environ.get("GUNICORN_CMD_ARGS"))
-        or bool(os.environ.get("UVICORN_CMD_ARGS"))
-    )
-    if is_http:
-        raise SystemError(
-            f"PROCESS_ROLE={role} started over HTTP (Gunicorn/uvicorn). "
-            f"This role must be started as a standalone process: "
-            f"python -m app.{role}_main"
-        )
-
-
 # ── Role-specific initializers (lazy imports) ──
 
 
@@ -96,7 +58,7 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
 
     profile = detect_deployment_profile()
     # Worker scratch dir
-    _ensure_scratch_dir()
+    ensure_worker_scratch_directory(settings)
 
     # Role-aware bounded executors
     from app.core.executor_registry import init_executor_registry
@@ -143,7 +105,7 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     from app.core.deployment_profile import detect_deployment_profile
 
     profile = detect_deployment_profile()
-    _report = _startup_failure_reporter(profile)
+    _report = create_standalone_failure_reporter(profile, settings, logger)
 
     # Cross-process heartbeat used by /system/tasks to distinguish a healthy
     # recurring executor from a web process that can only run tasks manually.
@@ -188,55 +150,6 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     # and Redis and only logs/reports when the health signature changes, so a
     # persistent incident does not create one alert per polling interval.
     start_scheduler_health_task(registry, logger)
-
-
-# ── Startup helpers ──
-
-
-def _startup_failure_reporter(profile):
-    """Return a callable that reports component startup failures.
-
-    In cloud_api/production, raises SystemError; in development, logs warning.
-    """
-    from app.core.deployment_profile import DeploymentProfile
-
-    is_restricted = (
-        profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
-    )
-
-    def _report(component: str, exc: Exception) -> None:
-        if is_restricted:
-            logger.critical("%s start failed — fatal in production", component)
-            raise SystemError(f"{component} start failed: {exc}") from exc
-        logger.warning("%s start failed (non-fatal): %s", component, exc)
-
-    return _report
-
-
-def _ensure_scratch_dir() -> str:
-    """Ensure worker scratch directory exists, raising on misconfiguration."""
-    scratch = settings.WORKER_SCRATCH_DIR
-    if not scratch or scratch == "/tmp" or scratch == "/tmp/worker-scratch":
-        # In production, WORKER_SCRATCH_DIR must be explicitly configured.
-        # In development, fall back to a safe location.
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-
-        profile = detect_deployment_profile()
-        if profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
-            raise SystemError(
-                "WORKER_SCRATCH_DIR must be explicitly configured in production "
-                "(pointing to a Docker volume or dedicated directory). "
-                f"Current value: {scratch!r}"
-            )
-        scratch = os.path.join(
-            os.path.dirname(settings.STAGING_STORAGE_DIR or "/opt/2240ai-v2/staging"),
-            "scratch",
-        )
-    os.makedirs(scratch, exist_ok=True)
-    return scratch
 
 
 # ── Shutdown ──
@@ -356,9 +269,9 @@ def run_role(role: str) -> None:
         from app.core.bootstrap import run_role
         run_role("scheduler")
     """
-    if role not in _FORBIDDEN_HTTP_ROLES:
+    if role not in STANDALONE_ROLES:
         raise ValueError(f"Unknown standalone role: {role!r}")
-    _guard_http_role(role)
+    reject_standalone_http_launch(role)
     # Settings is imported at module load time, so update both the process
     # environment and the singleton before any role-aware validation/pool setup.
     os.environ["PROCESS_ROLE"] = role

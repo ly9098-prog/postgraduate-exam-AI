@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：565 个模块、2,226 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：566 个模块、2,229 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -36,7 +36,7 @@
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 604 | `lifespan` 323 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
-| `backend/app/core/bootstrap.py` | 379 | `_run_role_async` 61 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口；隔离子进程SIGTERM/SIGINT和CLI正常退出已测，真实外部依赖全链未验收。 |
+| `backend/app/core/bootstrap.py` | 292 | `_run_role_async` 61 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口；隔离子进程SIGTERM/SIGINT和CLI正常退出已测，真实外部依赖全链未验收。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -210,3 +210,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第九十批（2026-10-21）独立shutdown六具体职责迁至standalone_runtime_shutdown，原role/logger显式输入，bootstrap保留原开始/完成日志/顺序和一次registry等待/实时Settings grace读取。原44刻画先过，扩充49项direct+38完整角色共87项对旧4f914e3e六段原块与完整bootstrap通过；六完整块/展开整个bootstrap AST、2,592组角色/画像/资源顺序/deadline/线程参数/错误/取消/日志轨迹一致。保留独立公式timeout不force、OCR profile导入try外、gateway和非worker draining普通错误静默等原策略。原YAML静态1,623项（2既有弃用警告）/readiness69/云30通过，含真实POSIX4child信号/退出；混合275项新shutdown.asyncio及全局/模块/sys.path状态恢复通过。独立真实资源脚本验证worker/PDF线程工作后池关闭/registry恢复、内存SQLite SELECT1后dispose连接close事件、真实orphan task停止和queue close，无网络；不代表生产全链。严格检查/33保护哈希/review-agent只读No findings。新模块155/最长30，bootstrap379/shutdown30（runner61），main604/lifespan323保持，565模块/2,226边/零循环/反向API。既有失败清理缺口/其他runtime职责及外部服务、客户端与全栈计划仍待继续。
+
+
+第九十一批（2026-10-21）bootstrap原HTTP启动拒绝/scratch/失败reporter迁至standalone_runtime_policy；三个真实消费者直接使用原Settings/logger/profile及唯一角色集合，原校验/写回/画像/资源顺序保持，无旧私有壳。原116刻画先过，补2真实临时目录幂等/数据保留后118项，相同118+38完整角色+10scheduler共166项对旧275771c2完整实现通过；当前163项direct/架构/完整角色/真实OS信号通过。三原正文/展开bootstrap AST在显式绑定后相同，仅顶层docstring纠正HTTP共享生命周期失实描述，763组argv/env/path/profile/mkdir/frozen report/log/error/cause/cancel轨迹一致。保留只看argv[0]、角色和路径不归一化、尾斜杠显式路径允许、工厂时冻结production判定等原行为。原YAML静态1,744项（2既有弃用警告）/readiness69/云30通过，混合393项policy.os/sys及全局/模块/sys.path状态恢复通过；严格检查/33保护哈希/主agent按review-agent只读No findings，无子agent。模块91/最长26，bootstrap292并加入≤300门禁，runner61，main604/lifespan323保持；566模块/2,229边/零循环/反向API。runner/失败清理独立待办、真实外部服务/客户端与全栈其他域继续。
