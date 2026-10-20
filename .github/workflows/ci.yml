@@ -314,6 +314,7 @@ jobs:
             tests/core/test_runtime_resource_shutdown.py \
             tests/core/test_runtime_component_shutdown.py \
             tests/core/test_runtime_ocr_shutdown.py \
+            tests/core/test_http_lifespan_contract.py \
             tests/test_services/test_readiness_redis_ping.py \
             tests/core/test_orm_registry.py \
             tests/test_ocr_fix/test_adapter_contract.py \

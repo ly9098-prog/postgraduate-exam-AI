@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十三批已提交，第七十四批分离OCR执行器关闭策略；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十四批已提交，第七十五批增加完整HTTP lifespan隔离契约；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -977,3 +977,13 @@
 - 3,000组角色/画像/导入失败/异常/取消/gateway/client/日志轨迹、完整执行器块AST、展开后的完整main/lifespan AST和328路径OpenAPI一致；无真实OCR/HTTP调用。新增2项真实helper/原角色和关闭位置/client异常边界及新进程无本地OCR/资源加载门禁，旧门禁同步真实调用，接入CI。
 - 完整静态CI本地983项通过、2条既有弃用警告；独立readiness69项通过。严格Ruff、全应用Ruff、compileall、diff、CI YAML/路径和33项保护哈希检查通过。资源模块120行、OCR helper21行；main999→981行/lifespan695→676行；图553模块/2,193边/零循环/反向API。
 - 按review-agent只读核对完整差异、云隔离/惰性导入、原超时/日志/取消、gateway/client归属和main位置及对照/门禁：No findings。仅本地提交相关代码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。startup/yield前失败清理、独立角色/真实外部依赖和完整业务/客户端验收仍待完成。
+
+
+## 八十一、第七十五批执行记录：完整 HTTP lifespan 隔离契约
+
+- `tests/core/test_http_lifespan_contract.py` 直接进入真实`main.lifespan(main.app)`，不截取或重建生命周期片段；独立191行fixture模块替换25个资源/持久化端口、使用临时工作目录并拒绝socket连接，保留真实create_task/cancel/asyncio.wait和to_thread。每例finally取消并gather自己创建的全部受控任务，不遗留fixture任务或真实连接。
+- 33项覆盖web/all/未知角色与OCR开关、worker/scheduler HTTP拒绝、local role设置/env同步、正常关闭、yield内普通错误/取消及真实serving task.cancel、3类非致命启动错误、10类yield前失败、shared client关闭失败和6类共享资源错误。首轮4项断言误以为web/all启动无warning；改为精确校验既有启动告警，未修改生产日志。结合已有关闭/架构定向184项通过，无新增skip/xfail。
+- 相同33项契约对第72批之前`92a81296`的真实完整lifespan也全部通过；外部旧版对照脚本先误绑pytest模块，改为收集时绑定实际item.module后通过。单进程包装验证settings/env/cwd/lifespan_context/engine/create_task/socket/httpx/logger与全部25模块端口恢复。两种包装进程各有2条提前导入anyio/pytest_asyncio引起的rewrite警告，普通独立测试无该警告。
+- 新确认既有缺口：startup在yield前，故配置/DB/致命执行器/OCR启动错误或取消不进入关闭finally；OCR gateway初始化失败时，lag task已创建、shared client已创建却不由该路径收尾。fixture只清理自己的替身和受控task；测试明确刻画此行为，生产修复需单独批次，不夹带在等价迁移。shared client退出错误阻断后续共享资源清理也按原行为登记，未修。
+- 新测试接入既有CI：完整静态CI本地1,016项通过、2条既有弃用警告；独立readiness69项通过。严格测试Ruff、全应用Ruff、compileall、diff、CI YAML/路径及33项保护哈希检查通过；无生产源码/配置/API/数据库变更，main981行/lifespan676行、553模块/2,193边保持。
+- 按review-agent只读核对完整差异、实际lifespan/任务/端口、网络拒绝、fixture收尾和全局恢复、旧实现结果/已知缺口及CI：No findings。本批仅本地提交测试/CI/任务/盘点，保留其他改动和删除，不推送、不操作生产。端口替身仍不代表真实HTTP服务器、PostgreSQL/Redis/OCR、独立worker/scheduler或客户端完整验收；下一批按原启动顺序治理并保持这些真实lifespan契约。

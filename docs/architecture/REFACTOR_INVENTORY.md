@@ -159,3 +159,8 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第七十四批原OCR执行器云判断/惰性导入/30秒关闭迁至已有资源模块；main原web/all分流和formula→executor→gateway→shared client顺序保持，gateway/client原错误传播不变。35项原片段刻画先过，迁移后相关132项通过，3,000组角色/画像/导入/错误/取消/日志、完整块/展开main AST及328路径OpenAPI一致。完整静态CI983项（2条既有弃用警告）/readiness69项通过。模块120行、OCR helper21行；main981行/lifespan676行，553模块/2,193边/零循环。替身执行器/HTTP不证明真实OCR或完整角色退出；启动及yield前失败清理继续待办。
+
+
+第七十五批补33项直接进入完整真实HTTP lifespan的隔离契约，保留真实asyncio任务/取消/共享等待与线程调用，25个资源端口替身和临时目录/连接拒绝避免外部副作用；同33项对`92a81296`旧完整lifespan也通过。覆盖正常/请求异常/真实task.cancel、角色与OCR分流、yield前后错误和清理顺序；定向184项、完整静态CI1,016项（2条既有弃用警告）/readiness69项通过。单进程确认所有25模块、settings/env/cwd/lifespan/engine/task/socket/httpx/logger恢复，fixture收尾自身全部任务。无生产代码变更，结构计数不变。
+
+新确认的既有失败清理缺口：startup发生在yield/try-finally之前，配置/DB/致命执行器/OCR初始化错误或取消不会执行关闭序列；OCR gateway失败时已创建的lag task与shared HTTP client不会由该路径清理。相同旧实现契约证实不是本轮抽取新增；先登记为单独行为修复待办，不用本批修复/skip/xfail掩盖。shared client关闭错误仍按原逻辑阻断后续共享资源关闭。上述模拟端口测试不证明真实服务/独立角色的完整退出安全。
