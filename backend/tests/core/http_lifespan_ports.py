@@ -16,6 +16,7 @@ from app.core import (
     runtime_role_shutdown,
     runtime_task_shutdown,
 )
+from app.services import runtime_startup_checks
 
 
 @pytest_asyncio.fixture
@@ -177,7 +178,10 @@ async def runtime(monkeypatch, tmp_path):
         monkeypatch.setitem(sys.modules, name, module)
     logger = SimpleNamespace(info=Mock(), warning=Mock(), critical=Mock(), error=Mock(), debug=Mock(), exception=Mock())
     monkeypatch.setattr(main, "logger", logger)
-    for module in [runtime_resource_shutdown, runtime_role_shutdown, runtime_task_shutdown]:
+    for module in [
+        runtime_resource_shutdown, runtime_role_shutdown, runtime_task_shutdown,
+        runtime_startup_checks,
+    ]:
         monkeypatch.setattr(module, "logger", logger)
     state.logger = logger
     try:

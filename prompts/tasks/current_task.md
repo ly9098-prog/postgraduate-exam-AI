@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十四批已提交，第七十五批增加完整HTTP lifespan隔离契约；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十五批已提交，第七十六批分离启动会话与模型配置自检；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -987,3 +987,14 @@
 - 新确认既有缺口：startup在yield前，故配置/DB/致命执行器/OCR启动错误或取消不进入关闭finally；OCR gateway初始化失败时，lag task已创建、shared client已创建却不由该路径收尾。fixture只清理自己的替身和受控task；测试明确刻画此行为，生产修复需单独批次，不夹带在等价迁移。shared client退出错误阻断后续共享资源清理也按原行为登记，未修。
 - 新测试接入既有CI：完整静态CI本地1,016项通过、2条既有弃用警告；独立readiness69项通过。严格测试Ruff、全应用Ruff、compileall、diff、CI YAML/路径及33项保护哈希检查通过；无生产源码/配置/API/数据库变更，main981行/lifespan676行、553模块/2,193边保持。
 - 按review-agent只读核对完整差异、实际lifespan/任务/端口、网络拒绝、fixture收尾和全局恢复、旧实现结果/已知缺口及CI：No findings。本批仅本地提交测试/CI/任务/盘点，保留其他改动和删除，不推送、不操作生产。端口替身仍不代表真实HTTP服务器、PostgreSQL/Redis/OCR、独立worker/scheduler或客户端完整验收；下一批按原启动顺序治理并保持这些真实lifespan契约。
+
+
+## 八十二、第七十六批执行记录：启动会话与模型配置自检
+
+- `services/runtime_startup_checks.py` 持有管理员初始化、推荐策略种子和AI模型配置自检的三个独立会话边界，main按原顺序传原session factory、原管理员函数和同一个Settings对象。管理员函数保持原main eager import，另两个服务仍在原try内惰性导入；Settings.APP_ENV仍在session enter之后读取，不提前冻结配置。三个helper不初始化数据库/配置/网络，不另建engine或状态。
+- 原三段真实启动片段先通过46项刻画；初稿在AI factory/enter失败时误断言仍有exit，修正为原上下文协议后原实现全过。迁移后增加APP_ENV会话进入后读取测试，连同真实完整lifespan/架构83项通过。管理员和策略仍各一次commit、AI自检不commit；普通异常记录后继续后续独立会话，CancelledError传播，commit/exit先后不变。
+- 931组创建结果/种子空或非法结果/AI severity/会话factory-enter-call-commit-exit错误与取消/模块导入失败/配置读取的参数、会话、日志和结果与旧代码一致；三个完整块按显式端口重命名后AST、展开完整main/lifespan AST和328路径OpenAPI一致。新增3项依赖/实际消费者和原参数/事务次数/尺寸/新进程无配置资源导入门禁，接入现有CI。
+- 三项临时SQLite真实持久化测试通过：管理员/角色/审计/策略数据落库，两轮初始化行数不变，四次commit均来自两类初始化；AI检查只读；commit普通失败与取消后session退出回滚、无seed数据残留。全部使用临时文件/合成数据，未连接生产或真实外部服务。
+- 完整静态CI本地1,069项通过、2条既有弃用警告；独立readiness69项通过。严格Ruff、全应用Ruff、compileall、diff、CI YAML/路径和33项保护哈希检查通过。完整lifespan33项的单进程状态恢复再次通过（包装进程2条rewrite警告），包括新logger及原25模块端口。
+- 新模块84行、函数11/18/31行，main981→930行/lifespan676→620行；图554模块/2,195边/零循环/反向API。按review-agent只读核对完整差异、原会话/commit/取消/日志、配置读取时机、真实持久化回滚与完整lifespan及CI：No findings。仅本地提交相关代码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。
+- 第七十五批确认的yield前失败不清理和shared client关闭错误阻断后续清理仍未修；启动schema兼容与诊断、资源初始化、角色启动编排及独立worker/scheduler实际验收继续治理。真实PostgreSQL/Redis/OCR/AI、客户端/远端CI和全栈其余阶段尚未完成，不能因结构计数或替身测试完成而勾选整体目标。

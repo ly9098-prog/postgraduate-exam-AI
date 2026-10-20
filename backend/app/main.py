@@ -51,6 +51,11 @@ from app.services.readiness_dependency_probes import (
 from app.services.role_readiness import check_role_dependencies
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
 from app.services.runtime_sse_metrics import append_sse_metrics
+from app.services.runtime_startup_checks import (
+    initialize_dev_admin,
+    log_ai_model_configuration,
+    seed_recommendation_strategies,
+)
 from app.services.runtime_system_metrics import (
     append_db_pool_metrics,
     append_db_query_metrics,
@@ -442,65 +447,9 @@ async def lifespan(app: FastAPI):
                 logger.debug("Schema divergence check: all runtime-DDL columns present")
     except Exception:
         logger.debug("Schema divergence check skipped (not PostgreSQL or transient)")
-    try:
-        async with async_session() as db:
-            created_admin = await ensure_dev_super_admin(db, settings.APP_ENV)
-            await db.commit()
-            if created_admin:
-                logger.info("Development super admin initialized")
-    except Exception as e:
-        logger.warning("Development super admin init failed (non-fatal): %s", e)
-
-    # Seed default recommendation strategies (idempotent, fills only empty fields)
-    try:
-        from app.services.recommendation_seed_service import (
-            seed_default_recommendation_strategies,
-        )
-
-        async with async_session() as db:
-            seed_result = await seed_default_recommendation_strategies(db, force=False)
-            await db.commit()
-            if any(v for v in seed_result.values()):
-                logger.info(
-                    "Recommendation strategies seeded: created=%s updated=%s skipped=%s",
-                    seed_result.get("created"),
-                    seed_result.get("updated"),
-                    seed_result.get("skipped"),
-                )
-    except Exception as e:
-        logger.warning("Recommendation strategy seed failed (non-fatal): %s", e)
-
-    # AI model config self-check (common)
-    try:
-        from app.services.health_check_service import check_ai_model_config
-
-        async with async_session() as db:
-            ai_check = await check_ai_model_config(db)
-            if ai_check.severity == "error":
-                logger.error(
-                    "AI_MODEL_NOT_CONFIGURED: admin_ai_model_configs has no enabled model; "
-                    "OCR AI repair / VL fallback may be unavailable"
-                )
-            elif ai_check.severity == "warning":
-                logger.warning(
-                    "AI_MODEL_DEFAULT_MISSING: enabled AI models exist (%d) but no default model is configured; "
-                    "providers=%s features=%s",
-                    ai_check.enabled_count,
-                    ai_check.providers,
-                    ai_check.features,
-                )
-            else:
-                logger.info(
-                    "AI model config healthy: enabled_count=%d default_count=%d providers=%s features=%s",
-                    ai_check.enabled_count,
-                    ai_check.default_count,
-                    ai_check.providers,
-                    ai_check.features,
-                )
-    except Exception as e:
-        logger.warning(
-            "AI model config self-check failed (non-fatal, DB may not be ready): %s", e
-        )
+    await initialize_dev_admin(async_session, ensure_dev_super_admin, settings)
+    await seed_recommendation_strategies(async_session)
+    await log_ai_model_configuration(async_session)
 
     # ── Resource references populated by role ──
     _ocr_gateway = None
