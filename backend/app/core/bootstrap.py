@@ -22,10 +22,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 import sys
 
 from app.core.config import settings
+from app.core.runtime_signals import install_role_signal_handlers
 from app.core.runtime_task_registry import TaskRegistry
 from app.services.runtime_ocr_startup import initialize_worker_ocr_gateway
 from app.services.runtime_periodic_tasks import (
@@ -74,28 +74,6 @@ def _guard_http_role(role: str) -> None:
             f"This role must be started as a standalone process: "
             f"python -m app.{role}_main"
         )
-
-
-# ── Signal handling ──
-
-
-def _install_signal_handlers(stop_event: asyncio.Event) -> None:
-    """Install SIGTERM/SIGINT handlers that set the stop event."""
-    loop = asyncio.get_running_loop()
-
-    def _on_signal() -> None:
-        if not stop_event.is_set():
-            logger.info("Received shutdown signal, initiating graceful shutdown")
-            stop_event.set()
-
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, _on_signal)
-        except NotImplementedError:
-            # Windows / some environments don't support add_signal_handler
-            pass
-        except Exception:
-            logger.warning("Could not install signal handler for %s", sig)
 
 
 # ── Role-specific initializers (lazy imports) ──
@@ -474,7 +452,7 @@ async def _run_role_async(role: str) -> None:
 
     # Wait for shutdown signal
     stop_event = asyncio.Event()
-    _install_signal_handlers(stop_event)
+    install_role_signal_handlers(stop_event, logger)
     await stop_event.wait()
 
     # Shutdown

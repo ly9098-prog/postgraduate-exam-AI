@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十七批已提交，第八十八批分离scheduler可选后台组件启动；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前八十八批已提交，第八十九批分离角色信号与真实子进程验证；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1124,3 +1124,13 @@
 - 额外用真实新outbox helper/真实run_outbox_dispatcher coroutine捕获enqueue callback，两个coroutine在执行DB工作前关闭；该真实回调与HTTP入口在独立临时Redis7 Unix socket上通过v2 Lua接受/幂等/容量/schema错误/停机结果验证。无DB发布工作、无现有/外部Redis连接，queue/control关闭、测试Redis实例退出，日志/tmp/outbox-adapter-redis-ep5_l1tm；不据此宣称完整outbox持久化/租约/重试验收。
 - 依review-agent只读检查完整差异、实际TaskRegistry/dispatcher/投影和健康消费者、原catch/取消/日志/部分任务归属、完整角色和旧新证据：No findings。scheduler模块19→71行/新增函数17、13、8行；bootstrap550→520行/scheduler init82→50行，main604/lifespan323保持，图563模块/2,218边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。独立runner/HTTP失败清理等行为待办、其余shutdown/信号/CLI/真实服务/客户端及全栈阶段仍未完成。
+
+
+## 九十五、第八十九批执行记录：角色信号与真实子进程验证（2026-10-21）
+
+- 原bootstrap._install_signal_handlers正文迁至中立`core/runtime_signals.py`的install_role_signal_handlers(stop_event, logger)，bootstrap直接传原stop Event与logger，不留旧私有forwarder；位置仍role初始化完成后、stop_event.wait之前，runner继续拥有等待和shutdown。原SIGTERM→SIGINT顺序/同一callback/已set不重复记录/日志先于set/NotImplementedError忽略/普通注册错误warning与继续/取消传播保持。
+- 原10项信号端口刻画和4项隔离CLI子进程信号基线共14项先在原实现通过。增加两注册warning失败和双NotImplementedError后13项单元契约；相同13+38项完整独立角色对旧`5f31342a`原installer及完整bootstrap共51项通过，旧函数只显式绑定logger和当前fixture信号端口。首轮迁移相关62项通过；原installer正文与展开整个bootstrap AST一致，96组注册/不支持/错误/取消/重复callback/logger/event轨迹一致。
+- 4项POSIX子进程用干净显式合成env/pytest临时cwd，无真实.env/凭据；子进程harness通过runpy执行真实app.worker_main或app.scheduler_main的__main__→run_role→完整runner/init/shutdown，保留真实TaskRegistry/asyncio/loop.add_signal_handler。只在确认该子进程handlers installed后向其PID发送真实SIGTERM或SIGINT；原2或9任务全部done，原共享资源顺序与一次信号日志、role/env写回及exit code0验证。超时/异常仅终止本测试child，未向宿主/现有服务发信号。Windows等非POSIX按明确条件不运行此信号投递用例；本地Linux4项无skip。
+- 子进程外部DB/Redis/OCR/业务循环端口仍替身并拒绝socket，HTTP/client/外部资源全链优雅退出不由此证明；没有改变已知启动失败/等待cancel不进入shutdown或client close阻断等行为。新增3项零应用依赖/预算/真实消费/安装位于init与wait之间/导入不装handler不创建task或加载配置门禁，接入CI。
+- 原YAML完整静态1,571项（2既有弃用警告）、readiness69项、云OCR30项通过；混合226项同进程核验Settings/env/cwd/TaskRegistry/新信号端口/task/socket/lifespan/周期端口/30模块和父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过。
+- 按review-agent只读检查完整diff、原事件写入/日志/异常边界、真实CLI路径/信号安装/父子握手与清理、全生命周期和旧新证据：No findings。模块24行/installer17行，bootstrap520→498行；main604/lifespan323保持，图564模块/2,219边/零循环/反向API。仅本地提交相关源码/测试/CI/任务/盘点，保留其余改动及删除，不推送、不操作生产。shutdown/runner剩余职责、失败清理独立待办及其他全栈领域继续。

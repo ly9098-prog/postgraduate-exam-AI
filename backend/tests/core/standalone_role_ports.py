@@ -46,7 +46,7 @@ class RolePorts:
         finally:
             self.events.append(f"end:{label}")
 
-    def signal(self, event):
+    def signal(self, event, logger):
         self.sync("signals.install")()
         self.stop_event = event
         self.signal_ready.set()
@@ -84,7 +84,7 @@ async def role_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(bootstrap, "logger", state.logger)
     monkeypatch.setattr(runtime_task_registry, "logger", state.logger)
     monkeypatch.setattr(bootstrap, "TaskRegistry", registry)
-    monkeypatch.setattr(bootstrap, "_install_signal_handlers", state.signal)
+    monkeypatch.setattr(bootstrap, "install_role_signal_handlers", state.signal)
     monkeypatch.setattr(socket.socket, "connect", state.forbid_network)
     monkeypatch.setattr(socket.socket, "connect_ex", state.forbid_network)
     for name, value in {
