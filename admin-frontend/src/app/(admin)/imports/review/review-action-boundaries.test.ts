@@ -35,10 +35,14 @@ const modules = [
       "./review-edit-state",
     ],
   },
+  {
+    path: "./components/batch-answer-results.tsx",
+    imports: ["lucide-react", "@/components/ui/button", "@/lib/api/types"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
-  const file = ts.createSourceFile("review-action.ts", source, ts.ScriptTarget.Latest, true);
+  const file = ts.createSourceFile("review-action.tsx", source, ts.ScriptTarget.Latest, true);
   const result: string[] = [];
   function walk(node: ts.Node) {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
