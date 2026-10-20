@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前二十五批已提交；阶段 0/1 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前二十六批已提交；阶段 0/1 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -511,3 +511,12 @@
 - 验证：管理端 `npm run check` 通过，含 typecheck、全量 test（42 个文件/722 项）、lint（0 错误/132 警告）和 production build；后端全应用 Ruff 与 compileall 通过；`git diff --cached --check` 通过。新增 hook、测试与边界测试严格 ESLint 检查通过。
 - 按 review-agent 只读缺陷审查流程核对完整暂存 diff、请求协议、hook 回调/缓存时序、页面调用点和新增 QueryClient 测试：No findings。该结论不代表真实后台浏览器、后端集成、微信开发者工具/真机、PostgreSQL/Redis 或生产集成已验证。
 - 本批不改后端 API、图片导入、小程序、数据库或生产配置。独立本地提交，不推送；完整目标仍未完成：全量业务盘点、审核图片/展示职责、小程序 controller、后端学习域/队列/OCR 与阶段 4 长期门禁继续待实施。
+
+## 三十二、第二十六批执行记录：导入审核图片答案 mutation
+
+- 新增 `imports/review/hooks/use-review-image-answer-mutations.ts`，承接图片预览 FormData、preview token 应用请求、加载/错误生命周期及审核队列缓存失效；页面继续持有文件列表、导入模式、预览/结果展示和文件选择/移除状态。
+- 保留 `/answers/image/preview` 与 `/answers/image/apply` 路径、POST、重复 `files` 表单字段、`mode` 字段、token/operation id 请求体、错误文案和成功后队列失效顺序；文本批量答案协议保持独立。
+- 新增 4 项 QueryClient mutation 回归，覆盖 FormData 内容、预览失败、应用副作用顺序与应用失败；边界测试限制页面内联接口并纳入 hook 的依赖/尺寸预算。
+- 管理端 `npm run check` 通过，含 typecheck、全量 test（43 个文件/727 项）、lint（0 错误/132 警告）及 production build；新增 hook、测试和边界测试严格 ESLint 通过。后端全应用 `ruff check app/ --ignore I001,F401,N818` 与 `python3 -m compileall -q app` 通过。
+- 按 review-agent 只读缺陷审查流程核对完整差异、multipart 请求、回调/缓存顺序、页面调用点和 QueryClient 测试：No findings。审查未发现阻断本批提交的问题；该结论不代表真实后台浏览器、后端集成、微信开发者工具/真机、PostgreSQL/Redis 或生产集成已验证。
+- 本批不改 API、数据库、生产配置、小程序和 OCR pipeline。完整目标仍未完成：全量业务盘点、审核展示职责、小程序 controller、后端学习域/队列/OCR 与阶段 4 长期门禁继续待实施。

@@ -43,6 +43,7 @@ import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
 import { useReviewBatchAnswerMutations } from "./hooks/use-review-batch-answer-mutations";
+import { useReviewImageAnswerMutations } from "./hooks/use-review-image-answer-mutations";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
@@ -326,7 +327,6 @@ export default function ImportReviewPage() {
   const [imageImportMode, setImageImportMode] = useState<"answer_only" | "answer_analysis">("answer_only");
   const [imagePreviewResult, setImagePreviewResult] = useState<BatchAnswerImagePreviewResponse | null>(null);
   const [imageApplyResult, setImageApplyResult] = useState<BatchAnswerImageApplyResponse | null>(null);
-  const [imageExecuting, setImageExecuting] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const currentBatchId = filters.batch_id || batchIdParam;
 
@@ -647,6 +647,24 @@ export default function ImportReviewPage() {
   const { mutate: previewBatchAnswers, isPending: isPreviewingBatchAnswers } = previewBatchAnswerMutation;
   const { mutate: applyBatchAnswers, isPending: isApplyingBatchAnswers } = applyBatchAnswerMutation;
   const batchAnswerExecuting = isPreviewingBatchAnswers || isApplyingBatchAnswers;
+  const { preview: previewImageMutation, apply: applyImageMutation } = useReviewImageAnswerMutations(
+    apiRequest,
+    {
+      onPreviewStarted: () => {
+        setImageError(null);
+        setImagePreviewResult(null);
+        setImageApplyResult(null);
+      },
+      onPreviewed: setImagePreviewResult,
+      onPreviewError: (error) => setImageError(error instanceof Error ? error.message : "预览生成失败"),
+      onApplyStarted: () => setImageError(null),
+      onApplied: setImageApplyResult,
+      onApplyError: (error) => setImageError(error instanceof Error ? error.message : "写入失败"),
+    },
+  );
+  const { mutate: previewImageAnswers, isPending: isPreviewingImageAnswers } = previewImageMutation;
+  const { mutate: applyImageAnswers, isPending: isApplyingImageAnswers } = applyImageMutation;
+  const imageExecuting = isPreviewingImageAnswers || isApplyingImageAnswers;
 
   const handleBatchAnswerPreview = useCallback(() => {
     if (!currentBatchId || !batchAnswerRawText.trim()) return;
@@ -677,53 +695,19 @@ export default function ImportReviewPage() {
     setImageError(null);
   }, []);
 
-  const handleImagePreview = useCallback(async () => {
+  const handleImagePreview = useCallback(() => {
     if (!currentBatchId || imageFiles.length === 0) return;
-    setImageExecuting(true);
-    setImageError(null);
-    setImagePreviewResult(null);
-    setImageApplyResult(null);
-    try {
-      const formData = new FormData();
-      imageFiles.forEach((f) => formData.append("files", f));
-      formData.append("mode", imageImportMode);
-      const result = await apiRequest<BatchAnswerImagePreviewResponse>(
-        `/imports/${currentBatchId}/answers/image/preview`,
-        { method: "POST", body: formData },
-      );
-      setImagePreviewResult(result);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "预览生成失败";
-      setImageError(msg);
-    } finally {
-      setImageExecuting(false);
-    }
-  }, [currentBatchId, imageFiles, imageImportMode]);
+    previewImageAnswers({ batchId: currentBatchId, files: imageFiles, mode: imageImportMode });
+  }, [currentBatchId, imageFiles, imageImportMode, previewImageAnswers]);
 
-  const handleImageApply = useCallback(async () => {
+  const handleImageApply = useCallback(() => {
     if (!currentBatchId || !imagePreviewResult?.preview_token) return;
-    setImageExecuting(true);
-    setImageError(null);
-    try {
-      const result = await apiRequest<BatchAnswerImageApplyResponse>(
-        `/imports/${currentBatchId}/answers/image/apply`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            preview_token: imagePreviewResult.preview_token,
-            operation_id: imagePreviewResult.operation_id || "",
-          }),
-        },
-      );
-      setImageApplyResult(result);
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "写入失败";
-      setImageError(msg);
-    } finally {
-      setImageExecuting(false);
-    }
-  }, [currentBatchId, imagePreviewResult, queryClient]);
+    applyImageAnswers({
+      batchId: currentBatchId,
+      previewToken: imagePreviewResult.preview_token,
+      operationId: imagePreviewResult.operation_id || "",
+    });
+  }, [currentBatchId, imagePreviewResult, applyImageAnswers]);
 
   const handleImageFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
