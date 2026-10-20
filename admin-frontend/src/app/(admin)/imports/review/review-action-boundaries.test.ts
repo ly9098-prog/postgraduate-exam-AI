@@ -39,6 +39,10 @@ const modules = [
     path: "./components/batch-answer-results.tsx",
     imports: ["lucide-react", "@/components/ui/button", "@/lib/api/types"],
   },
+  {
+    path: "./components/image-answer-results.tsx",
+    imports: ["lucide-react", "@/components/ui/button", "@/lib/api/types"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
