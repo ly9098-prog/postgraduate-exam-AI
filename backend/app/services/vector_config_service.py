@@ -17,6 +17,7 @@ from app.core.secret_crypto import (
     decrypt_secret,
 )
 from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig
+from app.services.embedding_endpoints import build_embeddings_url
 
 
 class EmbeddingConfig:
@@ -219,8 +220,6 @@ async def test_embedding_connection(
             message=str(exc),
             latency_ms=0,
         )
-
-    from app.services.embedding_service import build_embeddings_url
 
     url = build_embeddings_url(api_base_url)
     headers = {

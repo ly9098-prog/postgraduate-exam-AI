@@ -119,3 +119,19 @@ def test_an_existing_cycle_does_not_allow_new_edges_or_modules():
     assert cyclic_edges(graph) - allowed == {("a", "new"), ("new", "b")}
     graph["b"].clear()
     assert allowed - cyclic_edges(graph) == {("a", "b"), ("b", "a")}
+
+
+def test_embedding_endpoint_rules_remain_independent_and_acyclic():
+    source = (APP / "services" / "embedding_endpoints.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert import_names(tree, "app.services") == {"urllib.parse", "urllib.parse.urlparse"}
+    assert len(source.splitlines()) <= 300
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.end_lineno - node.lineno + 1 <= 50
+    graph, _ = scan_application(APP)
+    endpoint = "app.services.embedding_endpoints"
+    assert endpoint in graph["app.services.embedding_service"]
+    assert endpoint in graph["app.services.vector_config_service"]
+    assert not graph[endpoint]
+    assert not any(endpoint in edge for edge in cyclic_edges(graph))

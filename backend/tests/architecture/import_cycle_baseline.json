@@ -497,19 +497,6 @@
     ]
   },
   {
-    "reason": "Existing embedding/vector configuration callbacks; defer until configuration refresh and embedding lifecycle tests cover both directions.",
-    "edges": [
-      [
-        "app.services.embedding_service",
-        "app.services.vector_config_service"
-      ],
-      [
-        "app.services.vector_config_service",
-        "app.services.embedding_service"
-      ]
-    ]
-  },
-  {
     "reason": "Existing DOCX/OMML rendering helpers use local reverse imports; migrate with document output regression coverage.",
     "edges": [
       [
