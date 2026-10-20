@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.features import question_pipeline as svc
+from app.features import question_draft_generator, question_pipeline
 from app.models.user import User
 from app.schemas.ai_import import (
     AiLogItem,
@@ -29,7 +29,7 @@ async def generate(
 ):
     """AI 批量生成草稿题目，进入暂存区。绝不直接进入正式题库。"""
     try:
-        result = await svc.generate_drafts(
+        result = await question_draft_generator.generate_drafts(
             db,
             current_user.id,
             knowledge_points=data.knowledge_points,
@@ -54,7 +54,7 @@ async def list_logs(
     current_user: User = Depends(get_current_user),
 ):
     """AI 调用审计日志（按当前用户）"""
-    result = await svc.list_logs(
+    result = await question_pipeline.list_logs(
         db,
         user_id=current_user.id,
         action=action,

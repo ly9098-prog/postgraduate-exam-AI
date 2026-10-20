@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.core.time_utils import serialize_utc_datetime, utcnow
-from app.features import question_pipeline
+from app.features import question_ai_complete
 from app.models.question_import import QuestionImport
 from app.schemas.admin_imports import (
     AdminImportBatchDetail,
@@ -963,7 +963,7 @@ async def batch_complete_import_questions(
     from app.services.admin_ai_settings_service import is_super_admin
 
     _skip_budget = await is_super_admin(db, operator)
-    result = await question_pipeline.batch_complete_questions(
+    result = await question_ai_complete.batch_complete_questions(
         db,
         operator.id,
         import_ids,
@@ -1234,7 +1234,7 @@ async def complete_import_question(
         raise ValueError("仅支持对 pending 记录使用 AI 补全")
     await ensure_ai_parse_allowed(db, operator, request)
 
-    result = await question_pipeline.complete_import(db, operator.id, import_id)
+    result = await question_ai_complete.complete_import(db, operator.id, import_id)
     refreshed = await _get_import_question(db, import_id)
     await write_admin_audit(
         db,

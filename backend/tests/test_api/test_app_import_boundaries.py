@@ -67,7 +67,7 @@ def test_app_ai_import_generate_remains_available(monkeypatch):
     from app.api.v1 import ai_import
 
     monkeypatch.setattr(
-        ai_import.svc,
+        ai_import.question_draft_generator,
         "generate_drafts",
         AsyncMock(
             return_value={

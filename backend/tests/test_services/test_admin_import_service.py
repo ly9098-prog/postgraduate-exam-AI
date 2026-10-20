@@ -162,7 +162,7 @@ async def test_complete_import_question_reuses_pipeline_and_audits(monkeypatch):
     complete = AsyncMock(return_value={"missing": ["answer"], "from_fallback": False, "ai_metadata": {"complete_suggestion": {"answer": "B"}}, "tokens_used": 10, "duration_ms": 20})
     monkeypatch.setattr(admin_import_service, "write_admin_audit", audit)
     monkeypatch.setattr(admin_import_service, "ensure_ai_parse_allowed", parse_allowed)
-    monkeypatch.setattr(admin_import_service.question_pipeline, "complete_import", complete)
+    monkeypatch.setattr(admin_import_service.question_ai_complete, "complete_import", complete)
 
     result = await complete_import_question(db, 1, _principal())
 

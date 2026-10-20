@@ -29,39 +29,11 @@
     ]
   },
   {
-    "reason": "Existing question generation, enhancement and persistence collaboration; migrate with human-review and persistence regressions.",
+    "reason": "Existing normalization core and import writer compatibility exports; migrate remaining writer consumers and duplicate parser implementations with persistence regressions.",
     "edges": [
-      [
-        "app.features.question_ai_complete",
-        "app.features.question_pipeline"
-      ],
-      [
-        "app.features.question_ai_enrich",
-        "app.features.question_ai_complete"
-      ],
-      [
-        "app.features.question_ai_enrich",
-        "app.features.question_pipeline"
-      ],
-      [
-        "app.features.question_draft_generator",
-        "app.features.question_pipeline"
-      ],
       [
         "app.features.question_import_writer",
         "app.features.question_pipeline"
-      ],
-      [
-        "app.features.question_pipeline",
-        "app.features.question_ai_complete"
-      ],
-      [
-        "app.features.question_pipeline",
-        "app.features.question_ai_enrich"
-      ],
-      [
-        "app.features.question_pipeline",
-        "app.features.question_draft_generator"
       ],
       [
         "app.features.question_pipeline",

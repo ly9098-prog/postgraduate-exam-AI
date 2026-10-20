@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：528 个模块、2,097 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：528 个模块、2,095 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -49,11 +49,11 @@
 
 `backend/tests/architecture/test_dependency_direction.py` 扫描全应用，service/feature 到 API 的静态导入必须为零。相对导入、局部导入和可静态解析的字面量动态导入也参与检查；源码语法错误、空目录或目录缺失不会静默跳过。
 
-`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 2 组/15 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
+`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 2 组/8 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
 
 | 静态循环组 | 模块数/内部边 | 已核对原因与迁移条件 |
 | --- | --- | --- |
-| question pipeline / writer / AI complete/enrich / draft | 5 / 9 | 历史兼容入口与抽出的实现回调原管线；迁移调用方后才能收尾旧转发。 |
+| question pipeline / writer | 2 / 2 | AI 入口已迁移；剩余 writer 兼容导出与旧解析副本待迁移消费者后收尾。 |
 | import pipeline / worker / formula graph / batch image | 4 / 6 | worker 调业务执行器，生产者通过 worker 模块入队；拆生产者协议时验证队列/恢复。 |
 
 第三十八批已解除 embedding / vector config 的 2 模块循环：`services/embedding_endpoints.py` 统一 URL 构造，运行请求与管理端连通测试直接依赖该纯规则，后者不再导入 embedding 执行服务；原配置读取方式不变。26 项端点/调用方回归及 302 组新旧规则对照验证行为一致，对应两条循环边已从基线移除。
@@ -70,6 +70,8 @@
 
 第五十四批将上述自动链测试的七处注入键改为真实 canonical 名称，原结果/异常/安全拒绝与规则回退断言保留，不改生产行为。服务文件 24 项通过；扩大 OCR/导入边界/配置与故障回归共 136 通过、1 既有 xfail，关闭上述 2 项旧失败。外部 OCR/LLM 仍使用替身，不据此宣称生产链验收完成。
 
+第五十五批去掉 question_pipeline 对 AI complete/enrich/draft 的旧转发，Admin service 直接依赖补全模块，App AI 路由直接依赖草稿生成模块并继续从 core 读取日志。旧代码新进程先导入 complete/enrich 均因部分初始化 ImportError 失败，新进程回归恢复通过；3 个生产文件完整 AST 归一化 import/调用所有者后相同，运行时 328 条路径 OpenAPI 完全一致。新增 5 项边界与 2 项降级/非法科目测试，结合原 App 权限用例 10 项通过；扩大架构/审核/题目回归 294 通过、19 项相同既有失败、8 项既有 xfail。该批只精确移除已解除的 7 条循环边，未治理 writer 兼容导出、旧解析副本、全部 AI 成功写入或真实模型/事务环境。
+
 该图包含 TYPE_CHECKING、函数内及延迟导入；静态循环不等同于运行时循环导入错误。扫描器不解析计算生成的模块名、动态插件/monkeypatch、隐式包初始化带来的依赖或第三方内部关系，因而“无新增静态循环”不能证明运行时没有循环、死锁或资源泄漏。
 
 运行入口：
@@ -80,7 +82,7 @@ cd backend
 ruff check tests/architecture/dependency_scan.py tests/architecture/test_dependency_direction.py
 ```
 
-CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界、ORM 注册/边界及 OCR 适配器/导入边界测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
+CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界、ORM 注册/边界、OCR 适配器/导入边界及题目 AI 边界/降级测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
 
 ## 5. 番茄钟模块边界与尺寸门禁
 
