@@ -8,7 +8,6 @@ import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MathFormula } from "@/components/ui/math-formula";
-import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +28,6 @@ import {
   type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
 import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
-import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
@@ -48,12 +46,12 @@ import { ReviewVisualSegmentEditor } from "./components/review-visual-segment-ed
 import { ReviewAnswerEditor } from "./components/review-answer-editor";
 import { ImageAnswerPreview, ImageAnswerResult } from "./components/image-answer-results";
 import { BatchAnswerPreview, BatchAnswerResult } from "./components/batch-answer-results";
-import { OptionVisualPreview } from "./components/option-visual-preview";
+import { ReviewQuestionPreview } from "./components/review-question-preview";
 import { ReviewOptionEditor } from "./components/review-option-editor";
 import { ReviewSourceEvidence } from "./components/review-source-evidence";
 import { ReviewJsonView } from "./components/review-json-view";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
-import { extractOptionVisualModel, normalizeOptionTextForDisplay, type OptionVisualModel } from "@/lib/option-visual-utils";
+import { extractOptionVisualModel, type OptionVisualModel } from "@/lib/option-visual-utils";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
 
 type FilterDropdownOption = {
@@ -1715,66 +1713,12 @@ export default function ImportReviewPage() {
 
               {detailView === "formatted" && !editing ? (
                 <>
-                  {/* ── Stem Card ── */}
-                  <section className="animate-fade-up drawer-section-delay-1 section-scroll section-scroll-ink rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                    <div className="flex items-center gap-2.5 mb-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-primary)]/10">
-                        <span className="text-xs font-bold text-[var(--color-primary)]" style={{ fontFamily: "'Georgia', serif" }}>题</span>
-                      </span>
-                      <span className="text-sm font-semibold text-[var(--ink)]">题干</span>
-                    </div>
-                    <div className="ml-9 stem-text">
-                      <QuestionContentRenderer content={previewItem?.parsed_content} fallbackText={editState.stem} showTableMetadata ignoredSegmentIds={optionVisualModel.consumedSegmentIds} preserveCodeText />
-                    </div>
-                  </section>
-
-                  {/* ── Options Card ── */}
-                  {(() => {
-                    const mb = isMultiBlankChoice(editState.question_type)
-                      ? editState.multiBlank
-                      : null;
-                    const hasMultiBlank = mb != null && mb.groups.length >= 2;
-                    return hasMultiBlank ? (
-                      <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                        <MultiBlankChoicePreview
-                          groups={mb!.groups}
-                          answerMap={mb!.answerMap}
-                          usesSharedOptions={mb!.usesSharedOptions}
-                          sharedOptions={mb!.sharedOptions}
-                          stem={editState.stem}
-                        />
-                      </section>
-                    ) : (
-                      <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2.5 mb-3">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
-                            <span className="text-xs font-bold" style={{ color: "#c49a6b", fontFamily: "'Georgia', serif" }}>选</span>
-                          </span>
-                          <span className="text-sm font-semibold text-[var(--ink)]">选项</span>
-                        </div>
-                        <div className="ml-9">
-                          {optionVisualModel.mode !== "none" ? (
-                            <OptionVisualPreview
-                              model={optionVisualModel}
-                              options={editState.options}
-                              onRuntimeIssue={(issue) => setRuntimeIssues((prev) => prev.includes(issue) ? prev : [...prev, issue])}
-                            />
-                          ) : editState.options.length === 0 ? (
-                          <p className="text-sm text-[var(--color-text-hint)]">（无选项）</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {editState.options.map((opt) => (
-                              <div key={opt.key} className="flex items-center gap-3">
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center option-chip">{opt.key}</span>
-                                <span className="text-sm text-[var(--color-text-secondary)]"><MathFormula text={normalizeOptionTextForDisplay(opt.text)} /></span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </section>
-                  );
-                  })()}
+                  <ReviewQuestionPreview
+                    content={previewItem.parsed_content}
+                    draft={editState}
+                    visualModel={optionVisualModel}
+                    onRuntimeIssue={(issue) => setRuntimeIssues((prev) => prev.includes(issue) ? prev : [...prev, issue])}
+                  />
 
                   {/* ── Answer Card ── */}
                   <section className="animate-fade-up drawer-section-delay-3 section-scroll section-scroll-jade rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">

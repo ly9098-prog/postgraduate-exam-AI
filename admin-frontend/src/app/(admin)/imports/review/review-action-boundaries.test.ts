@@ -79,6 +79,14 @@ const modules = [
     path: "./components/review-source-evidence.tsx",
     imports: ["@/lib/api/types"],
   },
+  {
+    path: "./components/review-question-preview.tsx",
+    imports: [
+      "@/components/question-content-renderer", "@/components/ui/math-formula",
+      "@/lib/api/types", "@/lib/option-visual-utils", "../review-edit-state",
+      "./multi-blank-choice-preview", "./option-visual-preview",
+    ],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
