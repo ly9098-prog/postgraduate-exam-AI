@@ -88,7 +88,7 @@ def metrics_ports(monkeypatch):
     )
 
     monkeypatch.setattr(main, "_production_mode", False)
-    monkeypatch.setattr(main, "_elapsed_monitor_event_loop_lag_ms", 1.234)
+    monkeypatch.setattr(main.event_loop_health, "lag_ms", 1.234)
     monkeypatch.setattr(main, "_startup_ts", 100.0)
     monkeypatch.setattr(main, "time", SimpleNamespace(time=lambda: 225.0))
     monkeypatch.setattr(main, "get_db_pool_metrics", lambda: {"size": 4, "error": "private"})

@@ -734,18 +734,9 @@ class ResourceGuard:
         except OSError:
             pass
 
-        # Event-loop lag — import from main.py module-level global
-        try:
-            import sys as _sys
+        from app.core.event_loop_health import event_loop_health
 
-            # Access the module global from main.py
-            _main_mod = _sys.modules.get("app.main")
-            if _main_mod is not None:
-                m.event_loop_lag_ms = getattr(
-                    _main_mod, "_elapsed_monitor_event_loop_lag_ms", 0.0
-                )
-        except Exception:
-            pass
+        m.event_loop_lag_ms = event_loop_health.lag_ms
 
         # Temporary workspace pressure.
         #

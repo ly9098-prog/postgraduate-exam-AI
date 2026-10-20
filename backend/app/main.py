@@ -13,6 +13,7 @@ from app.api.router import api_router
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.deployment_profile import is_restricted_environment
+from app.core.event_loop_health import event_loop_health, monitor_event_loop_lag
 from app.core.http_error_handlers import register_http_exception_handlers
 from app.core.http_middleware import register_http_middleware
 from app.core.logging_config import setup_logging
@@ -523,7 +524,7 @@ async def lifespan(app: FastAPI):
 
     # Event-loop lag monitor (always runs — lightweight, all roles)
     _lag_monitor_task = asyncio.create_task(
-        _event_loop_lag_monitor(), name="event-loop-lag-monitor"
+        monitor_event_loop_lag(event_loop_health), name="event-loop-lag-monitor"
     )
 
     # ── Role: web — HTTP + enqueue ──
@@ -1010,25 +1011,6 @@ register_http_exception_handlers(app)
 
 # --- 健康检查和可观测性 ---
 
-# Event-loop lag monitor (driven by lifespan task)
-_elapsed_monitor_event_loop_lag_ms: float = 0.0
-
-
-async def _event_loop_lag_monitor(interval: float = 1.0) -> None:
-    """Measure event-loop scheduling delay by scheduling a callback.
-
-    The actual delay between scheduled and actual wake-up time is a
-    proxy for event-loop congestion. Updated in a module-level global.
-    """
-    global _elapsed_monitor_event_loop_lag_ms
-    while True:
-        scheduled = time.perf_counter()
-        await asyncio.sleep(interval)
-        actual = time.perf_counter()
-        _elapsed_monitor_event_loop_lag_ms = round(
-            (actual - scheduled - interval) * 1000, 2
-        )
-
 
 # ── OCR readiness hysteresis ──
 # Track consecutive remote OCR health-check failures.
@@ -1105,7 +1087,7 @@ async def ready_health():
             queue_status=queue_status,
             draining=draining,
             db_pool=get_db_pool_metrics(),
-            event_loop_lag_ms=_elapsed_monitor_event_loop_lag_ms,
+            event_loop_lag_ms=event_loop_health.lag_ms,
         ),
         redis_configured=bool(settings.REDIS_URL),
         production_mode=_production_mode,
@@ -1135,7 +1117,7 @@ async def metrics_endpoint(request: Request):
     append_queue_counters(lines, queue_metrics)
     append_system_metrics(
         lines, resource_guard.get_system_metrics(),
-        event_loop_lag_ms=_elapsed_monitor_event_loop_lag_ms,
+        event_loop_lag_ms=event_loop_health.lag_ms,
     )
     append_ocr_metrics(lines)
     await append_ai_metrics(lines)

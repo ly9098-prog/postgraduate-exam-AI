@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十八批已提交，第六十九批分离角色依赖检查；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十九批已提交，第七十批统一事件循环 lag 状态；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -931,3 +931,12 @@
 - 新增 3 项依赖/预算/真实调用/新进程门禁并接入既有 CI，模块 97 行、两个函数为 41/43 行；main 1,275 → 1,184 行，图 549 模块、2,178 边、零循环/反向 API。模块导入不加载配置、数据库、OCR isolation 或 worker/scheduler。
 - 完整本地静态 CI 826 项通过、2 条既有弃用警告；独立 readiness 69 项通过。新改 Python 严格 Ruff、全应用 Ruff、compileall、Git diff 与 CI YAML/路径检查通过。按 review-agent 只读审查全部差异、原角色优先级、scheduler日志/错误/取消及真实消费者和组合对照：No findings。
 - 本批仅本地提交代码/测试/CI/任务与盘点，保留其他工作区改动和删除，不推送、不操作生产。角色检查替身不等于真实 HTTP/worker/scheduler 启动/失败清理/退出；main lifespan、lag 单一所有权和全栈其他业务仍待治理，已登记 Alembic/SSE 原缺口未修。
+
+## 七十六、第七十批执行记录：事件循环 lag 唯一状态
+
+- `core/event_loop_health.py` 持有唯一进程内样本及显式 state 的监测协程；main 的 readiness/metrics 和 ResourceGuard 直接读取同一对象。移除原 main 标量/监测转发及 ResourceGuard 对 sys.modules 中 main 的隐式查找；中立模块不导入 app/settings/数据库，不在导入时创建任务。
+- 原实现先通过 8 项刻画：sleep 后才发布、两位小数、负值不钳制、取消/普通错误不覆盖最后样本，ResourceGuard 读取值及没有 main 时默认零。迁移后独立进程验证 ResourceGuard 不加载 main 仍为零；真实 asyncio task 验证显式独立 state、取消传播/最后样本保留且无新增/遗留任务。
+- 监测函数按 state 归一化后 AST 一致，其余 main/lifespan AST 除名称/显式状态外一致；36 组多 tick/间隔/初值/负值/取消轨迹一致，运行时完整 OpenAPI 328 路径一致。lifespan 仍在原执行器初始化后启动同名唯一任务，在原 drain 之后、export stop 之前 cancel/await；不为 worker/scheduler 新增监测任务。
+- 定向 lag/架构/ResourceGuard/cloud resource/metrics/响应规则 164 项通过。新增 3 项依赖/状态/尺寸/生命周期位置和无导入任务门禁并接入 CI；整个 HTTP/worker/scheduler 启停仍未完成验收。
+- 完整本地静态 CI 839 项通过、2 条既有弃用警告，独立 readiness 69 项通过。新改 Python 严格 Ruff、全应用 Ruff、compileall、Git diff 和 CI YAML/路径验证通过；模块22行、监测函数7行，main1,184→1,166行，图550模块/2,180边/零循环/反向API。
+- 按 review-agent 只读审查完整差异、唯一状态、所有消费者、默认零语义、样本发布与取消、lifespan原位置及AST/轨迹/门禁：No findings。本批仅本地提交相关代码/测试/CI/任务/盘点，保留其他改动与删除，不推送、不操作生产；真实角色启停、外部依赖和客户端/远端CI仍未验收。
