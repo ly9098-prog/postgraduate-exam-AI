@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十四批已提交，第六十五批收敛指标组合与 SSE 计数所有权；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十五批已提交，第六十六批抽取 readiness 响应判定；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -895,3 +895,12 @@
 - 展开辅助函数后端点 AST、其余 main 非导入 AST，以及按新计数所有者归一化后的 Admin route AST 相同；80 组完整响应/头/错误/队列采样轨迹一致，运行时 328 路径 OpenAPI 一致。新 SSE sampler 初稿包式导入多出 features 包边，改为直接导入实际模块后门禁通过，未放宽依赖约束。
 - 完整本地 CI 静态步骤 665 项通过、2 条既有弃用警告；独立 readiness 69 项通过。随后按职责分开系统指标测试，复用原 fixture，最终指标/架构/SSE/Admin 回归 75 项通过，测试文件路径已同步 CI。新增模块 13/28/102 行，函数最长 27 行；main 1,607 → 1,521 行，当前图 545 模块、2,162 边、0 循环且无 service/feature → API。
 - 新改 Python 严格 Ruff、全应用 Ruff、compileall、Git diff、CI YAML/路径验证通过。按 review-agent 只读审查完整差异、真实 SSE 写入/读取、限额/断开/超时与清理、采样顺序/部分失败/取消、AST/响应对照及门禁：No findings。本批仅本地提交相关代码/测试/CI/任务与盘点，不推送、不操作生产，保留其他工作区改动与删除。健康及角色生命周期、真实 Redis/PostgreSQL/SSE/外部服务与客户端验收仍未完成。
+
+## 七十二、第六十六批执行记录：readiness 响应判定
+
+- 新增中立 `core/readiness_response.py`，不可变 ReadinessSnapshot 明确容纳原探针结果，纯函数集中 checks 字段、关键失败判断、degraded、云端隐藏详情及状态码；不执行探针、不依赖 FastAPI/settings/数据库。main 仍持有原探针编排、draining 错误回退和 JSONResponse，未改变探针顺序或事务/网络规则。
+- 先在原实现通过 15 项入口刻画：八种探针异常立即停止后续调用，正常路径严格 database → redis → alembic → staging → space → role → OCR → queue → draining → pool；draining 抛错按原规则退为 False，云端不泄露池/空间详情。迁移后加入 49 项纯响应矩阵、Redis 包含条件及原映射引用不变性检查。
+- 4,096 组布尔探针、生产/Redis配置、OCR/queue 状态组合，旧原函数后半段与新规则 JSONResponse 的 status/body/headers 完全一致；探针前半段 AST、其余 main 非导入 AST 与完整 328 路径 OpenAPI 一致。保留 Alembic stale 不触发 503、queue unavailable 信息展示等已登记原行为，未用抽取修复业务。
+- 定向契约/架构/原 readiness 共 125 项通过。新模块 75 行、函数最长 31 行；2 项门禁验证 main 唯一调用、单向依赖/尺寸和新进程不加载应用/配置/FastAPI。新测试接入现有 CI；main 1,521 → 1,491 行，探针和角色生命周期仍待治理。
+- 完整本地静态 CI 731 项通过、2 条既有弃用警告；独立 readiness 69 项通过，严格 Ruff/全应用 Ruff/compileall/diff 与 CI YAML/路径验证通过。静态图 546 模块、2,163 边、零循环/反向 API。按 review-agent 只读核对全部差异、字段/引用/顺序、纯规则输入/输出、云脱敏及组合对照：No findings。
+- 本批只本地提交响应规则、调用方/测试/CI及架构/任务记录，不推送、不操作生产，保留其他工作区改动和删除。未运行真实 PostgreSQL/Redis、OCR/AI、完整运行角色与客户端；健康探针边界和全量治理继续进行，Alembic 判定缺口保持单独待办。

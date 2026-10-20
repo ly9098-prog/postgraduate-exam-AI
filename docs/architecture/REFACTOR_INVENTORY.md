@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：545 个模块、2,162 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：546 个模块、2,163 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 1521 | `lifespan` 870 | HTTP 错误/中间件与指标采样已独立，指标端点组合 36 行；健康及生命周期仍待治理。 |
+| `backend/app/main.py` | 1491 | `lifespan` 870 | HTTP 错误/中间件、指标采样及 readiness 响应映射已独立；健康探针及生命周期仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -138,3 +138,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十四批分离指标访问策略、队列深度/计数与 OCR/AI 采样到三个职责模块。队列计数/网关/AI guard/budget 继续由原实现持有，不新增副本；访问判断保持先于实际采样。36 项原实现刻画先通过，迁移后增补取消和部分字段读取失败；结合 3 项依赖/新进程/尺寸门禁，完整 CI 静态步骤本地 644 项通过，独立 readiness 69 项通过。79 组完整响应/头/异常/采样轨迹与旧实现一致，展开 helper 后端点 AST 和其余 main AST 相同，328 路径 OpenAPI 一致。main 1,607 行，新模块 30/58/66 行、函数最长 39；静态图 542 模块/2,154 边/零循环。系统/DB/SSE/调度器指标和健康/生命周期仍待治理，真实外部服务/部署/客户端与远端 CI 未验证。
 
 第六十五批把剩余系统/storage/DB/进程/worker/scheduler 输出与 SSE 采样按职责分离，main 指标端点组合 36 行。原 Admin SSE 六个计数迁到唯一中立模块，路由直接写入、sampler 直接读取，去掉旧路由变量及服务读取 API 的依赖；连接表和限额/超时/清理语义保持原状。迁移前 52 项指标与真实 SSE 刻画通过；迁移后完整本地静态 CI 665 项、readiness 69 项通过，测试按职责分文件后定向 75 项通过。80 组完整正文/头/错误/采样轨迹、展开端点 AST、Admin route 归一化 AST 和 328 路径 OpenAPI 一致。新模块 13/28/102 行，函数最长 27 行，main 1,521 行；静态图 545 模块/2,162 边/零循环。真实 Redis/PostgreSQL/SSE、角色启动/退出、客户端和远端 CI 未验收；旧 active 快照刷新问题单独登记。
+
+第六十六批将 readiness 响应映射迁至纯 `core/readiness_response.py`，不可变 snapshot 仅记录现有探针结果；main 原探针顺序和 draining 回退仍在。15 项原调用/失败顺序刻画先通过，加入纯矩阵、引用不变性和 2 项新进程/依赖/尺寸门禁后，定向 125 项通过；完整静态 CI 本地 731 项、readiness 69 项通过。4,096 组旧/新状态/JSON字节/头一致，探针前半段及其余 main AST、328 路径 OpenAPI 一致。新模块 75 行/最长函数 31 行；main 1,491 行，图 546 模块/2,163 边/零循环。Alembic stale 原缺口未修，真实探针与角色生命周期/客户端/远端 CI 未验收。

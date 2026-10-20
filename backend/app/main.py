@@ -21,6 +21,7 @@ from app.core.ocr_isolation import (
     is_restricted_ocr_environment,
     loaded_local_ocr_modules,
 )
+from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.production_config_validator import (
@@ -1096,55 +1097,24 @@ async def ready_health():
     except Exception:
         draining = False
 
-    checks = {
-        "database": "ok" if db_ok else "unavailable",
-        "db_pool": _get_db_pool_metrics(),
-        "alembic": "ok" if alembic_ok else "stale",
-        "staging": "ok" if staging_ok else "unavailable",
-        "role_deps": "ok" if role_ok else "unavailable",
-        "event_loop_lag_ms": _elapsed_monitor_event_loop_lag_ms,
-        "draining": "ok" if not draining else "draining",
-    }
-    if settings.REDIS_URL or _production_mode:
-        checks["redis"] = "ok" if redis_ok else "unavailable"
-    if ocr_status:
-        checks["ocr"] = ocr_status
-    if queue_status:
-        checks["queue"] = queue_status
-    if staging_space:
-        checks["staging_space"] = staging_space
-
-    critical_failures = [
-        k
-        for k, v in checks.items()
-        if v == "unavailable"
-        and k
-        in (
-            "database",
-            "redis",
-            "alembic",
-            "staging",
-            "role_deps",
-            "ocr",
-        )
-    ]
-    # Draining is also critical — produces 503 even though value is "draining"
-    if draining:
-        critical_failures.append("draining")
-    all_ok = len(critical_failures) == 0
-
-    response_content = {
-        "status": "ok" if all_ok else "unavailable",
-        "degraded": ocr_status == "degraded" or queue_status == "degraded",
-    }
-    # Public cloud readiness must expose only the decision needed by a load
-    # balancer. Detailed topology/queue/pool information stays local.
-    if not _production_mode:
-        response_content["checks"] = checks
-    return JSONResponse(
-        status_code=200 if all_ok else 503,
-        content=response_content,
+    status_code, response_content = build_readiness_response(
+        ReadinessSnapshot(
+            database_ok=db_ok,
+            redis_ok=redis_ok,
+            alembic_ok=alembic_ok,
+            staging_ok=staging_ok,
+            staging_space=staging_space,
+            role_ok=role_ok,
+            ocr_status=ocr_status,
+            queue_status=queue_status,
+            draining=draining,
+            db_pool=_get_db_pool_metrics(),
+            event_loop_lag_ms=_elapsed_monitor_event_loop_lag_ms,
+        ),
+        redis_configured=bool(settings.REDIS_URL),
+        production_mode=_production_mode,
     )
+    return JSONResponse(status_code=status_code, content=response_content)
 
 
 async def _check_database() -> bool:
