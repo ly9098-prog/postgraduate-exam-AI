@@ -1,5 +1,6 @@
 """Close shared runtime resources at their original lifespan boundaries."""
 
+import asyncio
 import logging
 
 logger = logging.getLogger("postgraduate-ai")
@@ -67,3 +68,30 @@ async def stop_resource_reconciler() -> None:
         await resource_guard.stop_orphan_reconciler()
     except Exception as e:
         logger.warning("Orphan reconciler stop error: %s", e)
+
+
+async def shutdown_formula_pool() -> None:
+    try:
+        from app.services.formula_graph_spec_renderer import (
+            shutdown_formula_render_pool,
+        )
+
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                shutdown_formula_render_pool,
+                wait=True,
+                cancel_futures=False,
+            ),
+            timeout=30,
+        )
+        logger.info("Formula render pool shut down")
+    except TimeoutError:
+        logger.warning(
+            "Formula render pool shutdown timed out, forcing non-blocking"
+        )
+        try:
+            shutdown_formula_render_pool(wait=False, cancel_futures=True)
+        except Exception as exc2:
+            logger.exception("Formula render pool forced shutdown error: %s", exc2)
+    except Exception:
+        logger.exception("Formula render pool shutdown error")
