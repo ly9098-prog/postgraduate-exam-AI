@@ -13,7 +13,8 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -98,10 +99,16 @@ async def reset_tables(isolated_db):
     async with isolated_db.async_session() as db:
         from sqlalchemy import delete
 
-        from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
+        from app.models.pomodoro import (
+            PomodoroPauseInterval,
+            PomodoroSession,
+            PomodoroSubjectAllocation,
+        )
         from app.models.user import User
 
         await db.execute(delete(PomodoroPauseInterval))
+        # SQLite does not enable the allocation table's FK cascade in this fixture.
+        await db.execute(delete(PomodoroSubjectAllocation))
         await db.execute(delete(PomodoroSession))
         await db.execute(delete(User))
         await db.commit()
@@ -116,19 +123,33 @@ async def _make_user(db, openid: str = "openid_test") -> int:
 
 
 async def _make_subject(db) -> int:
-    import uuid
+    from sqlalchemy import select
 
     from app.models.admin import Subject
-    code = f"test_subject_{uuid.uuid4().hex[:8]}"
-    subj = Subject(code=code, name="测试科目", level=1, path="test", is_active=True, sort_order=0)
+    subj = await db.scalar(select(Subject).where(Subject.code == "advanced_math"))
+    if subj is not None:
+        return subj.id
+    subj = Subject(
+        code="advanced_math", name="高等数学", level=1, path="advanced_math",
+        is_active=True, sort_order=0,
+    )
     db.add(subj)
     await db.flush()
     return subj.id
 
 
+@pytest.fixture(autouse=True)
+def clock(monkeypatch):
+    from app.services import pomodoro_service as svc
+
+    value = SimpleNamespace(now=datetime(2026, 8, 8, 0, 0))
+    monkeypatch.setattr(svc, "utcnow", lambda: value.now)
+    return value
+
+
 class TestServiceLayer:
     @pytest.mark.asyncio
-    async def test_complete_session_closes_notification_channel(self, isolated_db):
+    async def test_complete_session_closes_notification_channel(self, isolated_db, clock):
         from sqlalchemy import select
 
         from app.models.pomodoro import PomodoroSession
@@ -144,6 +165,12 @@ class TestServiceLayer:
             await db.commit()
 
         async with isolated_db.async_session() as db:
+            with pytest.raises(svc.PomodoroNotReadyError):
+                await svc.complete_session(db, sid, uid)
+            await db.rollback()
+
+        clock.now += timedelta(minutes=25)
+        async with isolated_db.async_session() as db:
             await svc.complete_session(db, sid, uid)
             await db.commit()
 
@@ -151,6 +178,7 @@ class TestServiceLayer:
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
 
         assert row.status == "completed"
+        assert row.actual_duration == 1500
         assert row.notification_sent is True
         assert "skipped: user completed" in (row.notification_error or "")
 
@@ -201,14 +229,14 @@ class TestServiceLayer:
 
         assert row.expected_end_time is not None
         delta = (row.expected_end_time - row.start_time).total_seconds()
-        assert 1499 <= delta <= 1501  # 25 min ±1s
+        assert delta == 1500
         assert row.openid_snapshot == "u_start"
         assert row.notification_enabled is True
         assert row.notification_sent is False
 
     @pytest.mark.asyncio
-    async def test_pause_then_resume_extends_expected_end_time(self, isolated_db):
-        from sqlalchemy import select, update
+    async def test_pause_then_resume_extends_expected_end_time(self, isolated_db, clock):
+        from sqlalchemy import select
 
         from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
         from app.services import pomodoro_service as svc
@@ -232,24 +260,7 @@ class TestServiceLayer:
             paused_eet = row.expected_end_time
             assert row.paused_at is not None, "暂停后 paused_at 必须有值"
 
-        # 把 paused_at 与 open interval 一起倒推 90 秒模拟"暂停了 90 秒"
-        # （canonical 语义下 interval 是暂停时长的权威来源）
-        async with isolated_db.async_session() as db:
-            rewound = datetime.now(UTC) - timedelta(seconds=90)
-            await db.execute(
-                update(PomodoroSession)
-                .where(PomodoroSession.id == sid)
-                .values(paused_at=rewound)
-            )
-            await db.execute(
-                update(PomodoroPauseInterval)
-                .where(
-                    PomodoroPauseInterval.session_id == sid,
-                    PomodoroPauseInterval.ended_at.is_(None),
-                )
-                .values(started_at=rewound)
-            )
-            await db.commit()
+        clock.now += timedelta(seconds=90)
 
         # 恢复
         async with isolated_db.async_session() as db:
@@ -258,11 +269,15 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+            interval = (await db.execute(
+                select(PomodoroPauseInterval).where(PomodoroPauseInterval.session_id == sid)
+            )).scalar_one()
 
         assert row.paused_at is None
-        # expected_end_time 应延后 ~90 秒（容忍 ±2 秒处理时延）
         delta = (row.expected_end_time - paused_eet).total_seconds()
-        assert 88 <= delta <= 92, f"expected ~90s shift, got {delta}s"
+        assert delta == 90
+        assert (interval.ended_at - interval.started_at).total_seconds() == 90
+        assert row.total_paused_sec == 90
 
     @pytest.mark.asyncio
     async def test_pause_is_idempotent(self, isolated_db):
@@ -323,4 +338,4 @@ class TestServiceLayer:
 
         assert row.paused_at is None
         # 未暂停的 resume 不应改 expected_end_time
-        assert abs((row.expected_end_time - original_eet).total_seconds()) < 1
+        assert row.expected_end_time == original_eet

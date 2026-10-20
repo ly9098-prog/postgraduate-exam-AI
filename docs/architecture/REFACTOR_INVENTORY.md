@@ -104,7 +104,7 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 ## 6. 未完成的验收
 
-- 第五十一批发现并用 HEAD 原 database/45 模型源码在新进程复现 3 项既有失败：`test_p5_0_schema_baseline_migration` 要求当前不存在的 PracticeRecord.answers；`test_pomodoro_v2_migration` 两项 runtime 测试以当前不可用的“数学二”夹具启动会话。第五十二批已按当前 per-answer/PracticeSession 契约、canonical 科目和受控时钟修复断言/夹具，并显式清理共享 SQLite 中未级联移除的 allocation 子表；三份交接测试共 42 项通过，不修改生产行为、不增加 skip/xfail。扩大回归为 216 通过、13 失败、16 条件跳过；额外 study_day_stats/scheduler 两文件单独运行仍为相同 13 失败/35 通过，涉及旧科目、统计分类和当前日期相关断言，尚待处理。PostgreSQL 条件测试本地跳过，不宣称迁移/并发验收完成。
+- 第五十一批发现并用 HEAD 原 database/45 模型源码在新进程复现 3 项既有失败：`test_p5_0_schema_baseline_migration` 要求当前不存在的 PracticeRecord.answers；`test_pomodoro_v2_migration` 两项 runtime 测试以当前不可用的“数学二”夹具启动会话。第五十二批已按当前 per-answer/PracticeSession 契约、canonical 科目和受控时钟修复断言/夹具，并显式清理共享 SQLite 中未级联移除的 allocation 子表；三份交接测试共 42 项通过，不修改生产行为、不增加 skip/xfail。该批扩大回归额外出现的 study_day_stats/scheduler 13 项旧失败已由第六十一批恢复，见后文；PostgreSQL 条件测试本地跳过，不宣称迁移/并发验收完成。
 
 - 第四十一/四十二批已新增并接入 `pages/pomodoro/utils/sync-retry-controller.js`，重试状态仅由 controller 持有，页面提供显式能力回调。独立 9 项测试及 Page VM 29 项运行回归覆盖退避、隐藏/卸载清理、监听身份、终态冲突与真实队列单次并发 drain；不代表 `onShow` 恢复、整个页面或微信真实网络行为已经完成验收。
 - 第四十三批活动会话恢复下沉到 `pages/pomodoro/utils/active-session-recovery.js`，模块组合本地恢复、待同步动作处理和服务端状态应用；页面保留能力接线与完成/确认前置分支。10 项独立测试、Page VM 33 项运行回归及 6,144 组旧/新轨迹与状态对照验证本地证据，微信首帧、后台切换和真实网络行为仍未验证。
@@ -126,3 +126,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第五十九批恢复上述 8 项上传/状态 API 测试失败：权限缓存 miss 下执行真实权限判断，HTTP 400 按当前脱敏 envelope 检查；状态路由使用真实 SQLite 所有权查询与显式用户。新增 4 项权限/他人记录/缺失状态回归，两文件 22 项通过；完整架构/admission/上传/API/故障与公式交接共 239 项通过。两文件已接入现有 CI，不修改生产权限、错误或业务语义；本地 SQLite/替身端口证据不证明真实 PostgreSQL/Redis/部署角色和客户端完成。
 
 第六十批从 main 抽取 `core/http_error_contract.py` 和 `core/http_error_handlers.py`，分别拥有公开策略和异常适配；装配保留原位置与注册顺序，不反向引用 main、不保留转发。10 个迁移函数 AST 与其余 main AST 对照一致，792 组旧/新响应、头、日志和 context 轨迹一致，运行时 OpenAPI 328 路径一致。69 项 HTTP 契约/边界测试接入既有 CI；本轮完整架构及上传/状态/公式批次/隐私/AI 能力回归 322 项通过。静态图 538 模块、2,145 条边且无循环；新模块满足 300/50 预算。main 仍有 1,843 行，lifespan、中间件、健康/指标及完整角色退出待治理；真实 PostgreSQL/Redis、外部服务、客户端和远端 CI 未验证。
+
+第六十一批恢复 study_day_stats/scheduler 的 13 项旧失败：canonical 科目及 ID 断言、受控学习日/服务时钟、SQLite allocation 清理；原时间/归因/异常规则不变。两文件 48 项通过，真实 pause/resume 精确验证 90 秒，完成先验证未到时拒绝再验证 25 分钟完成。停用的 canonical 408 科目继续与无科目合并，异常暂停不补造区间。扩大完整架构/HTTP/ORM/分配/归因/迁移回归 293 通过、9 项条件跳过；未运行真实 PostgreSQL 并发。两文件接入现有 CI，静态回归显式使用隔离测试配置；本地完整执行该 CI 步骤 577 项通过。不修改生产代码/配置、不增加 skip/xfail；远端 CI 未运行。

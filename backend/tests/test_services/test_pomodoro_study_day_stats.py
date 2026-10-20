@@ -108,12 +108,14 @@ async def _make_user(db, openid: str = "openid_test") -> int:
     return u.id
 
 
-async def _make_subject(db, code: str | None = None) -> int:
-    import uuid
+async def _make_subject(db, code: str = "advanced_math") -> int:
+    from sqlalchemy import select
 
     from app.models.admin import Subject
-    code = code or f"math2_{uuid.uuid4().hex[:8]}"
-    subj = Subject(code=code, name="数学二", level=1, path=code, is_active=True, sort_order=0)
+    subj = await db.scalar(select(Subject).where(Subject.code == code))
+    if subj is not None:
+        return subj.id
+    subj = Subject(code=code, name="高等数学", level=1, path=code, is_active=True, sort_order=0)
     db.add(subj)
     await db.flush()
     return subj.id
@@ -487,7 +489,8 @@ class TestDailySummary:
         assert d8["duration_sec"] == 3600
         assert d8["sessions"] == 0  # 前一日开始的 session，今日只有时长贡献
         assert sum(s["duration_sec"] for s in d7["subjects"]) == d7["duration_sec"]
-        assert d7["subjects"][0]["subject_name"] == "数学二"
+        assert d7["subjects"][0]["subject_name"] == "高等数学"
+        assert d7["subjects"][0]["subject_id"] == subj
         assert d7["day_start_minute"] == 360
         assert d7["day_start_time"] == "06:00"
 
@@ -516,8 +519,8 @@ class TestDailySummary:
             uid = await _make_user(db, "u_inactive")
             active = await _make_subject(db)
             inactive = Subject(
-                code="deactivated_subj", name="已停用科目", level=1,
-                path="deactivated_subj", is_active=False, sort_order=0,
+                code="data_structure", name="数据结构", level=1,
+                path="data_structure", is_active=False, sort_order=0,
             )
             db.add(inactive)
             await db.flush()
@@ -532,8 +535,9 @@ class TestDailySummary:
         # 停用科目与无科目合并为单个"未分类"，不单独出现
         assert len(rows) == 2
         by_name = {r["subject_name"]: r for r in rows}
-        assert "数学二" in by_name
-        assert by_name["数学二"]["duration_sec"] == 3600
+        assert "高等数学" in by_name
+        assert by_name["高等数学"]["duration_sec"] == 3600
+        assert by_name["高等数学"]["subject_id"] == active
         assert "未分类" in by_name
         assert by_name["未分类"]["duration_sec"] == 7200
         assert by_name["未分类"]["subject_id"] is None
@@ -628,8 +632,11 @@ class TestStatsAndTrends:
         assert stats["today_duration_sec"] == 600  # 只统计当前学习日内的贡献
 
     @pytest.mark.asyncio
-    async def test_trends_cross_day_contribution(self, isolated_db):
+    async def test_trends_cross_day_contribution(self, isolated_db, monkeypatch):
+        from app.core import time_utils
         from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(time_utils, "utcnow", lambda: _utc(2026, 8, 8, 10, 0))
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_trend")
@@ -771,13 +778,17 @@ class TestPauseIntervals:
         assert row.paused_at is None
 
     @pytest.mark.asyncio
-    async def test_case13_paused_without_open_interval_is_not_repaired(self, isolated_db):
+    async def test_case13_paused_without_open_interval_is_not_repaired(
+        self, isolated_db, monkeypatch
+    ):
         # Post-migration invariant: paused -> exactly one open pause interval.  A
         # paused_at-only row is a data anomaly: logged, never silently repaired.
         from sqlalchemy import select
 
         from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
         from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(svc, "utcnow", lambda: _utc(2026, 8, 8, 0, 50))
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_legacy")
@@ -796,6 +807,7 @@ class TestPauseIntervals:
             await db.commit()
 
         async with isolated_db.async_session() as db:
+            monkeypatch.setattr(svc, "utcnow", lambda: _utc(2026, 8, 8, 1, 10))
             await svc.resume_session(db, sid, uid)
             await db.commit()
 
@@ -810,11 +822,15 @@ class TestPauseIntervals:
         assert row.paused_at is None
 
     @pytest.mark.asyncio
-    async def test_case13b_complete_paused_without_open_interval_no_interval(self, isolated_db):
+    async def test_case13b_complete_paused_without_open_interval_no_interval(
+        self, isolated_db, monkeypatch
+    ):
         from sqlalchemy import select
 
         from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
         from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(svc, "utcnow", lambda: _utc(2026, 8, 8, 0, 50))
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_legacy2")
@@ -830,6 +846,7 @@ class TestPauseIntervals:
             await db.commit()
 
         async with isolated_db.async_session() as db:
+            monkeypatch.setattr(svc, "utcnow", lambda: _utc(2026, 8, 8, 1, 15))
             await svc.complete_session(db, sid, uid)
             await db.commit()
 
@@ -845,6 +862,7 @@ class TestPauseIntervals:
         # Server-authoritative actual = wall clock (the lost pause segment is a
         # logged data anomaly, not silently repaired).
         assert row.actual_duration == int((row.end_time - row.start_time).total_seconds())
+        assert row.actual_duration == 1500
 
     @pytest.mark.asyncio
     async def test_complete_with_pause_produces_exact_attribution(self, isolated_db):
