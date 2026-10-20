@@ -308,6 +308,26 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
+      - name: Pomodoro module boundaries and lifecycle regressions
+        run: |
+          node miniprogram/scripts/architecture/pomodoro-boundaries.js
+          node --test \
+            miniprogram/tests/test-pomodoro-module-boundaries.js \
+            miniprogram/tests/test-pomodoro-hide-storage.js \
+            miniprogram/tests/test-pomodoro-show-recovery.js \
+            miniprogram/tests/test-pomodoro-confirm-recovery.js \
+            miniprogram/tests/test-pomodoro-completion-recovery.js \
+            miniprogram/tests/test-pomodoro-active-session-recovery.js \
+            miniprogram/tests/test-pomodoro-sync-retry-controller.js \
+            miniprogram/tests/test-pomodoro-pending-sync.js \
+            miniprogram/tests/test-pomodoro-timer-math.js
+          node miniprogram/scripts/test-pomodoro-stability-runtime.js
+          node miniprogram/scripts/test-pomodoro-resilience.js
+          node miniprogram/scripts/test-pomodoro-resume-latency.js
+          node miniprogram/scripts/test-pomodoro-free-timer-limit.js
+          node miniprogram/tests/test-render-invariant.js
+          node miniprogram/tests/render_regression/run.js
+
       - name: Build admin frontend
         if: steps.admin-manifest.outputs.present == 'true'
         working-directory: admin-frontend

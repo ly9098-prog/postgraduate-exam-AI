@@ -76,7 +76,28 @@ ruff check tests/architecture/dependency_scan.py tests/architecture/test_depende
 
 CI 已将新测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
 
-## 5. 未完成的验收
+## 5. 番茄钟模块边界与尺寸门禁
+
+`miniprogram/scripts/architecture/pomodoro-boundaries.js` 是独立 Node AST 检查入口，复用 `admin-frontend/package.json` 已声明的 TypeScript 开发依赖。先安装管理端依赖；解析器不进入小程序运行包，不修改小程序依赖清单，也不执行应用模块。
+
+- 当前覆盖 9 个已治理模块：`timer-math.js`、`session-storage.js`、`pending-sync-queue.js`、`active-session-recovery.js`、`completion-recovery.js`、`confirm-recovery.js`、`hide-storage.js`、`show-recovery.js`、`sync-retry-controller.js`，路径均位于 `miniprogram/pages/pomodoro/utils/`。
+- 唯一许可的模块依赖是 `confirm-recovery → timer-math`；其他模块不导入页面、API、全局存储、第三方或其他分包。require 必须直接接收单个字符串字面量；别名、计算参数、动态/ES 导入会失败。
+- 已治理模块不直接访问 wx/Page、隐式 this、全局时钟/定时器/网络或全局宿主；通过 options/storage 等显式能力回调访问外部副作用。静态检查允许属性名、注释与字符串出现同名词，不用文本搜索将它们判为越界。
+- 每个覆盖模块不超过 300 行，所有有函数体的函数、箭头、表达式、方法和访问器不超过 50 行。真实 `Page({...})` 中已治理的生命周期和适配方法也保持 50 行；页面总行数设为现存 3,631 行上限，因剩余未治理职责记录为技术债，后续抽取时应同步缩减上限，不扩增白名单掩盖增长。
+- 语法错误、空/仅注释文件、缺失源码、缺失治理方法/页面导入或异常 Page 定义会失败。13 项独立反例测试覆盖违规注入、嵌套函数、虚假同名对象方法和完整扫描失败路径。
+
+管理端依赖安装后，从仓库根目录运行：
+
+```bash
+node miniprogram/scripts/architecture/pomodoro-boundaries.js
+node miniprogram/tests/test-pomodoro-module-boundaries.js
+```
+
+`.github/workflows/reliability.yml` 在既有 `admin-build` 的依赖安装后、构建前运行门禁、9 个独立 Node 测试文件及页面韧性/恢复/渲染脚本。本地执行新增步骤的原始命令通过，独立 Node 测试共 85 项；远端 GitHub CI 尚未运行。没有新增小程序 `npm test`。
+
+范围限制：该策略只覆盖明确列出的 9 个模块与页面方法，不证明其他小程序业务、所有分包边界或运行时能力隔离已完成；不是安全沙箱。主题/科目缓存等既有 wx 适配、其他页面、双份代码一致性和全仓尺寸基线仍需后续核查。行为正确性继续由独立回归和真实微信环境验收，不能由 AST 门禁替代。
+
+## 6. 未完成的验收
 
 - 第四十一/四十二批已新增并接入 `pages/pomodoro/utils/sync-retry-controller.js`，重试状态仅由 controller 持有，页面提供显式能力回调。独立 9 项测试及 Page VM 29 项运行回归覆盖退避、隐藏/卸载清理、监听身份、终态冲突与真实队列单次并发 drain；不代表 `onShow` 恢复、整个页面或微信真实网络行为已经完成验收。
 - 第四十三批活动会话恢复下沉到 `pages/pomodoro/utils/active-session-recovery.js`，模块组合本地恢复、待同步动作处理和服务端状态应用；页面保留能力接线与完成/确认前置分支。10 项独立测试、Page VM 33 项运行回归及 6,144 组旧/新轨迹与状态对照验证本地证据，微信首帧、后台切换和真实网络行为仍未验证。
