@@ -37,7 +37,7 @@ def test_lifespan_still_starts_one_monitor_and_cancels_it_before_export_drain():
     assert source.count("monitor_event_loop_lag(event_loop_health)") == 1
     assert source.count('name="event-loop-lag-monitor"') == 1
     start = source.index("monitor_event_loop_lag(event_loop_health)")
-    assert source.index('init_executor_registry(_executors)') < start
+    assert source.index("initialize_role_executors(role)") < start
     assert start < source.index('if role in ("web", "all"):', start)
     stop = source.index("_lag_monitor_task.cancel()")
     assert stop < source.index("await _lag_monitor_task", stop)

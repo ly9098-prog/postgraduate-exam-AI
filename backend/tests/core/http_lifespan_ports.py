@@ -14,6 +14,7 @@ from app.core import (
     deployment_profile,
     http_runtime_policy,
     runtime_resource_shutdown,
+    runtime_resource_startup,
     runtime_role_shutdown,
     runtime_task_shutdown,
 )
@@ -181,7 +182,7 @@ async def runtime(monkeypatch, tmp_path):
     logger = SimpleNamespace(info=Mock(), warning=Mock(), critical=Mock(), error=Mock(), debug=Mock(), exception=Mock())
     monkeypatch.setattr(main, "logger", logger)
     for module in [
-        runtime_resource_shutdown, runtime_role_shutdown, runtime_task_shutdown,
+        runtime_resource_shutdown, runtime_resource_startup, runtime_role_shutdown, runtime_task_shutdown,
         runtime_startup_checks, runtime_schema_diagnostics, schema_compatibility,
         http_runtime_policy,
     ]:

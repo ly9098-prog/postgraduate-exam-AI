@@ -55,7 +55,7 @@ def test_main_uses_real_helpers_with_original_factory_order_and_admin_initialize
     ]
     positions = [source.index(f"await {name}(") for name in HELPERS]
     assert source.index("await log_runtime_schema_divergence(") < positions[0]
-    assert positions[-1] < source.index("_executors = init_executors_for_role(")
+    assert positions[-1] < source.index("initialize_role_executors(role)")
 
 
 def test_importing_startup_checks_does_not_initialize_configuration_or_resources():

@@ -34,6 +34,10 @@ from app.core.runtime_resource_shutdown import (
     shutdown_render_resources,
     stop_resource_reconciler,
 )
+from app.core.runtime_resource_startup import (
+    initialize_role_executors,
+    start_resource_reconciler,
+)
 from app.core.runtime_role_shutdown import drain_queue_for_role, stop_role_services
 from app.core.runtime_task_shutdown import cancel_and_wait_runtime_tasks
 from app.core.sentry import init_sentry
@@ -234,24 +238,7 @@ async def lifespan(app: FastAPI):
 
     # ── Role-aware BoundedExecutors ──
     try:
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-        from app.core.executor_registry import init_executor_registry
-        from app.core.executors import init_executors_for_role
-
-        _deploy_profile = detect_deployment_profile()
-        _executors = init_executors_for_role(
-            role,
-            is_production=(_deploy_profile == DeploymentProfile.CLOUD_API),
-        )
-        init_executor_registry(_executors)
-        logger.info(
-            "Executors initialized for role=%s: %s",
-            role,
-            {k: v.name for k, v in _executors.items()},
-        )
+        initialize_role_executors(role)
     except Exception as e:
         report_http_startup_failure("Executors", e, _production_mode)
     _pipeline_worker_task: asyncio.Task | None = None
@@ -434,12 +421,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Outbox dispatcher start failed (non-fatal): %s", e)
 
     # Start resource reservation orphan reconciler (all roles)
-    try:
-        from app.core.resource_guard import resource_guard
-
-        await resource_guard.start_orphan_reconciler()
-    except Exception as e:
-        logger.warning("Orphan reconciler start failed (non-fatal): %s", e)
+    await start_resource_reconciler()
 
     # ── Yield — application serves requests ──
     try:
