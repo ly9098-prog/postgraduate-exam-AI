@@ -80,6 +80,17 @@ const modules = [
     imports: ["@/lib/api/types"],
   },
   {
+    path: "./review-display-text.ts",
+    imports: [],
+  },
+  {
+    path: "./components/review-answer-preview.tsx",
+    imports: [
+      "@/components/ui/math-formula", "@/lib/api/types", "../review-edit-state",
+      "../review-display-text", "./multi-blank-answer-summary",
+    ],
+  },
+  {
     path: "./components/review-question-preview.tsx",
     imports: [
       "@/components/question-content-renderer", "@/components/ui/math-formula",

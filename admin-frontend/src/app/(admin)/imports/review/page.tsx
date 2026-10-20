@@ -7,7 +7,6 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, Upload, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { MathFormula } from "@/components/ui/math-formula";
 import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +27,8 @@ import {
   type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
 import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
-import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
+import { ReviewAnswerPreview } from "./components/review-answer-preview";
+import { isMeaningfulText } from "./review-display-text";
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
 import {
@@ -155,17 +155,6 @@ function getSourceQuestionNo(item: ImportQuestionItem): string {
     rawText.match(/^\s*第\s*(\d+)\s*题/) ||
     rawText.match(/^\s*[（(]\s*(\d+)\s*[）)]/);
   return m ? m[1] : "";
-}
-
-/** 判断字符串是否为有意义的展示内容（不为空、unknown、null 等） */
-function isMeaningfulText(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  const text = String(value).trim();
-  if (!text) return false;
-  const invalidValues = new Set([
-    "unknown", "UNKNOWN", "Unknown", "未知", "-", "—", "null", "undefined",
-  ]);
-  return !invalidValues.has(text);
 }
 
 /** 从导入题目中生成来源定位字符串（多级兜底，无有效来源时返回空字符串） */
@@ -1721,68 +1710,7 @@ export default function ImportReviewPage() {
                   />
 
                   {/* ── Answer Card ── */}
-                  <section className="animate-fade-up drawer-section-delay-3 section-scroll section-scroll-jade rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                    <div className="flex items-center gap-2.5 mb-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-success)]/10">
-                        <span className="text-xs font-bold text-[var(--color-success)]" style={{ fontFamily: "'Georgia', serif" }}>答</span>
-                      </span>
-                      <span className="text-sm font-semibold text-[var(--ink)]">答案</span>
-                      {/* 答案状态标签 — 紧凑展示 */}
-                      {(previewItem.answer_status === "missing" || (!editState.answer && previewItem.answer_status !== "imported")) ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-200">需人工确认</span>
-                      ) : previewItem.answer_status === "ai_filled" ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">
-                          AI 补全
-                          {previewItem.answer_confidence != null ? <span className="font-normal opacity-70">({(previewItem.answer_confidence * 100).toFixed(0)}%)</span> : null}
-                        </span>
-                      ) : previewItem.answer_status === "manual_filled" ? (
-                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">人工填写</span>
-                      ) : previewItem.answer_status === "manual_verified" ? (
-                        <span className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">人工已核验</span>
-                      ) : previewItem.answer_status === "abnormal" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-200">答案异常</span>
-                      ) : previewItem.ai_answer_flag ? (
-                        <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">AI 补全</span>
-                      ) : null}
-                    </div>
-                    <div className="ml-9">
-                      {previewItem.answer_source && isMeaningfulText(previewItem.answer_source) && !["unknown"].includes(String(previewItem.answer_source).toLowerCase()) ? (
-                        <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">来源：{previewItem.answer_source === "ai" ? "AI 补全" : previewItem.answer_source === "ocr" ? "OCR 识别" : previewItem.answer_source === "parser" ? "解析器提取" : previewItem.answer_source === "manual" ? "人工填写" : previewItem.answer_source}</p>
-                      ) : null}
-                      {(() => {
-                        const mb = isMultiBlankChoice(editState.question_type) ? (editState.multiBlank ?? null) : null;
-                        const hasMultiBlank = mb != null && mb.groups.length >= 2;
-                        return (
-                          <span className={hasMultiBlank ? "" : "answer-box"}>
-                            {hasMultiBlank ? (
-                              <MultiBlankAnswerSummary groups={mb!.groups} answerMap={mb!.answerMap} />
-                            ) : (
-                              editState.answer || "—"
-                            )}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </section>
-
-                  {/* ── Analysis Card ── */}
-                  <section className="animate-fade-up drawer-section-delay-4 section-scroll section-scroll-jade rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                    <div className="flex items-center gap-2.5 mb-3">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(107,155,107,0.1)" }}>
-                        <span className="text-xs font-bold" style={{ color: "#6b9b6b", fontFamily: "'Georgia', serif" }}>析</span>
-                      </span>
-                      <span className="text-sm font-semibold text-[var(--ink)]">解析</span>
-                    </div>
-                    <div className="ml-9">
-                      {editState.analysis ? (
-                        <div className="stem-text">
-                          <MathFormula text={editState.analysis} />
-                        </div>
-                      ) : (
-                        <p className="text-sm text-[var(--color-text-hint)]">（无解析）</p>
-                      )}
-                    </div>
-                  </section>
+                  <ReviewAnswerPreview item={previewItem} draft={editState} />
 
                   {/* ── OCR Raw Data ── */}
                   <ReviewSourceEvidence raw_data={previewItem.raw_data} parsed_content={previewItem.parsed_content} />
