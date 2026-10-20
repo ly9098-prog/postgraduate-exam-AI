@@ -61,6 +61,7 @@ const sandbox = {
     if (request === './utils/session-storage') return require('../pages/pomodoro/utils/session-storage')
     if (request === './utils/pending-sync-queue') return require('../pages/pomodoro/utils/pending-sync-queue')
     if (request === './utils/sync-retry-controller') return require('../pages/pomodoro/utils/sync-retry-controller')
+    if (request === './utils/active-session-recovery') return require('../pages/pomodoro/utils/active-session-recovery')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -142,6 +143,95 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('onShow restores the first cached frame before awaiting server response', async () => {
+    storage.clear()
+    const page = createPage()
+    const calls = []
+    let resolveFetch
+    page._syncThemeFromStorage = () => {}
+    page._reconcileUnknownStartAttempt = async () => 'none'
+    page._getCachedActiveSession = () => ({ id: 80 })
+    page._canLightSyncActive = () => false
+    page._restoreSession = session => {
+      calls.push(session.id)
+      page.data.phase = 'running'
+      page._timerState.sessionId = session.id
+    }
+    page._fetchActiveSession = () => {
+      calls.push('fetch')
+      return new Promise(resolve => { resolveFetch = resolve })
+    }
+    const showing = page.onShow()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.strictEqual(page.data.pageEntered, true)
+    assert.deepStrictEqual(calls, [80, 'fetch'])
+    page.onHide()
+    resolveFetch({ id: 99 })
+    await showing
+    assert.deepStrictEqual(calls, [80, 'fetch'])
+  })
+
+  await test('page restores cached timer before fetch and rejects a hidden-page response', async () => {
+    const page = createPage()
+    page._pageVisible = true
+    page._activeSyncSeq = 10
+    const calls = []
+    let resolveFetch
+    page._getCachedActiveSession = () => ({ id: 81 })
+    page._canLightSyncActive = () => false
+    page._restoreSession = session => {
+      calls.push(session.id)
+      page.data.phase = 'running'
+      page._timerState.sessionId = session.id
+    }
+    page._fetchActiveSession = () => {
+      calls.push('fetch')
+      return new Promise(resolve => { resolveFetch = resolve })
+    }
+    const recovery = page._recoverActiveSession(null, 10)
+    assert.deepStrictEqual(calls, [81, 'fetch'])
+    page._pageVisible = false
+    resolveFetch({ id: 82 })
+    await recovery
+    assert.deepStrictEqual(calls, [81, 'fetch'])
+  })
+
+  await test('page recovery rejects an older show generation after pending drain', async () => {
+    const page = createPage()
+    page._pageVisible = true
+    page._activeSyncSeq = 20
+    page._getCachedActiveSession = () => null
+    page._restoreBreak = () => true
+    let resolveDrain
+    let fetches = 0
+    page._retryPendingPomodoroSync = () => new Promise(resolve => { resolveDrain = resolve })
+    page._fetchActiveSession = async () => { fetches++; return null }
+    const recovery = page._recoverActiveSession({}, 20)
+    page._activeSyncSeq = 21
+    resolveDrain(true)
+    await recovery
+    assert.strictEqual(fetches, 0)
+  })
+
+  await test('page server-null clears an optimistically restored running session', async () => {
+    const page = createPage()
+    page._pageVisible = true
+    page._activeSyncSeq = 30
+    const calls = []
+    page._getCachedActiveSession = () => ({ id: 83 })
+    page._canLightSyncActive = () => false
+    page._restoreSession = session => {
+      page.data.phase = 'running'
+      page._timerState.sessionId = session.id
+    }
+    page._fetchActiveSession = async () => null
+    page._resetToIdle = () => { calls.push('idle'); page.data.phase = 'idle' }
+    page._restoreBreak = () => { calls.push('break'); return false }
+    await page._recoverActiveSession(null, 30)
+    assert.deepStrictEqual(calls, ['idle', 'break'])
+    assert.strictEqual(scheduledDelay, 200)
+  })
 
   await test('retry controllers are lazy, per-page, and teardown does not create one', () => {
     const first = createPage()

@@ -2,6 +2,7 @@ const api = require('../../utils/api')
 const { readStorage, writeStorage, removeStorage } = require('./utils/session-storage')
 const { createPendingSyncQueue } = require('./utils/pending-sync-queue')
 const { createSyncRetryController, isRetryableSyncError } = require('./utils/sync-retry-controller')
+const { recoverActiveSession } = require('./utils/active-session-recovery')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -427,80 +428,31 @@ Page({
     }
     }
 
-    // Restore from the local running snapshot first so the dial starts moving
-    // without waiting for /pomodoro/active. The server response below remains
-    // authoritative and will reconcile stale/cross-device state afterwards.
-    const cachedActive = this._getCachedActiveSession()
-    if (this._isPomodoroStorageError(cachedActive)) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-    let restoredFromCache = false
-    if (cachedActive) {
-      const restored = this._canLightSyncActive(cachedActive)
-        ? this._syncActiveSessionLight(cachedActive, true)
-        : this._restoreSession(cachedActive)
-      if (restored === false) return
-      restoredFromCache = this.data.phase === PHASE.RUNNING && this._timerState.sessionId === cachedActive.id
-    }
+    await this._recoverActiveSession(pendingSync, activeSyncSeq)
+  },
 
-    // Breaks are purely local and must resume immediately, even while the network
-    // is offline or an earlier completion is waiting to synchronize.
-    let restoredBreak = false
-    if (!cachedActive && this.data.phase !== PHASE.RUNNING) {
-      restoredBreak = this._restoreBreak()
-    }
-
-    if (pendingSync) {
-      const synced = await this._retryPendingPomodoroSync()
-      if (!this._pageVisible || activeSyncSeq !== this._activeSyncSeq) return
-      const conflict = this._consumeAnyPomodoroTerminalConflict()
-      if (conflict) {
-        this._handlePomodoroTerminalConflict(conflict.sessionId, conflict)
-        return
-      }
-      if (!synced) {
-        // Keep the locally restored state stable while offline. Fetching /active
-        // after a failed retry can only return the same stale server state and may
-        // undo an optimistic pause/resume or resurrect a locally completed timer.
-        setTimeout(() => this.loadTodayStats(), 200)
-        return
-      }
-    }
-
-    const active = await this._fetchActiveSession()
-    if (!this._pageVisible || activeSyncSeq !== this._activeSyncSeq) return
-    if (this._isPomodoroStorageError(active)) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-
-    const activeHasPendingTerminal = active && this._hasPendingPomodoroAction(active.id, ['complete', 'interrupt'])
-    if (activeHasPendingTerminal) {
-      // A terminal local action is final from the user's perspective. Never
-      // resurrect the same stale server row while its retry remains queued.
-      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-    } else if (active) {
-      if (restoredBreak) {
-        this._clearTimer()
-        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-        restoredBreak = false
-      }
-      const restored = this._canLightSyncActive(active)
-        ? this._syncActiveSessionLight(active, true)
-        : this._restoreSession(active)
-      if (restored === false) return
-    } else if (restoredFromCache && this.data.phase === PHASE.RUNNING) {
-      // Server confirmed there is no active session. Discard the optimistic
-      // local recovery instead of leaving a stale timer running indefinitely.
-      this._resetToIdle()
-      this._restoreBreak()
-    } else if (this.data.phase !== PHASE.RUNNING && !restoredBreak) {
-      this._restoreBreak()
-    }
-
-    // Deferred: stats don't block active session recovery
-    setTimeout(() => this.loadTodayStats(), 200)
+  _recoverActiveSession(pendingSync, activeSyncSeq) {
+    return recoverActiveSession({
+      readCached: () => this._getCachedActiveSession(),
+      isStorageError: value => this._isPomodoroStorageError(value),
+      persistenceError: () => this._showPomodoroPersistenceError(),
+      canLightSync: session => this._canLightSyncActive(session),
+      syncLight: (session, persist) => this._syncActiveSessionLight(session, persist),
+      restoreSession: session => this._restoreSession(session),
+      isRunning: () => this.data.phase === PHASE.RUNNING,
+      sessionId: () => this._timerState.sessionId,
+      restoreBreak: () => this._restoreBreak(),
+      retryPending: () => this._retryPendingPomodoroSync(),
+      consumeConflict: () => this._consumeAnyPomodoroTerminalConflict(),
+      handleConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
+      deferStats: () => setTimeout(() => this.loadTodayStats(), 200),
+      fetchActive: () => this._fetchActiveSession(),
+      hasPendingTerminal: (sessionId, actions) => this._hasPendingPomodoroAction(sessionId, actions),
+      removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+      clearTimer: () => this._clearTimer(),
+      resetIdle: () => this._resetToIdle(),
+      isCurrent: () => this._pageVisible && activeSyncSeq === this._activeSyncSeq,
+    }, pendingSync)
   },
 
   onHide() {

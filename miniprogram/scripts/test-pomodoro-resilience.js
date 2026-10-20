@@ -535,7 +535,10 @@ t('break progress is based on original total instead of rebasing to remaining', 
   assert.ok(!restoreBreak.includes('_startBreak(remaining'))
 })
 t('onShow restores break before pending network synchronization', () => {
-  assert.ok(onShow.indexOf('restoredBreak = this._restoreBreak()') < onShow.indexOf('await this._retryPendingPomodoroSync()'))
+  assert.ok(onShow.includes('await this._recoverActiveSession(pendingSync, activeSyncSeq)'))
+  const recovery = method('_recoverActiveSession')
+  assert.ok(recovery.includes('restoreBreak: () => this._restoreBreak()'))
+  assert.ok(recovery.includes('retryPending: () => this._retryPendingPomodoroSync()'))
 })
 
 console.log('\n--- Canvas reuse ---')
