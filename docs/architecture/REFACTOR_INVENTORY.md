@@ -102,7 +102,7 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 ## 6. 未完成的验收
 
-- 第五十一批发现并用 HEAD 原 database/45 模型源码在新进程复现 3 项既有失败：`test_p5_0_schema_baseline_migration` 要求当前不存在的 PracticeRecord.answers；`test_pomodoro_v2_migration` 两项 runtime 测试以当前不可用的“数学二”夹具启动会话。未为通过重构回归修改生产字段/科目规则、skip 或 xfail，测试契约/夹具需另行修复。PostgreSQL 条件测试本地跳过，不宣称迁移/并发验收完成。
+- 第五十一批发现并用 HEAD 原 database/45 模型源码在新进程复现 3 项既有失败：`test_p5_0_schema_baseline_migration` 要求当前不存在的 PracticeRecord.answers；`test_pomodoro_v2_migration` 两项 runtime 测试以当前不可用的“数学二”夹具启动会话。第五十二批已按当前 per-answer/PracticeSession 契约、canonical 科目和受控时钟修复断言/夹具，并显式清理共享 SQLite 中未级联移除的 allocation 子表；三份交接测试共 42 项通过，不修改生产行为、不增加 skip/xfail。扩大回归为 216 通过、13 失败、16 条件跳过；额外 study_day_stats/scheduler 两文件单独运行仍为相同 13 失败/35 通过，涉及旧科目、统计分类和当前日期相关断言，尚待处理。PostgreSQL 条件测试本地跳过，不宣称迁移/并发验收完成。
 
 - 第四十一/四十二批已新增并接入 `pages/pomodoro/utils/sync-retry-controller.js`，重试状态仅由 controller 持有，页面提供显式能力回调。独立 9 项测试及 Page VM 29 项运行回归覆盖退避、隐藏/卸载清理、监听身份、终态冲突与真实队列单次并发 drain；不代表 `onShow` 恢复、整个页面或微信真实网络行为已经完成验收。
 - 第四十三批活动会话恢复下沉到 `pages/pomodoro/utils/active-session-recovery.js`，模块组合本地恢复、待同步动作处理和服务端状态应用；页面保留能力接线与完成/确认前置分支。10 项独立测试、Page VM 33 项运行回归及 6,144 组旧/新轨迹与状态对照验证本地证据，微信首帧、后台切换和真实网络行为仍未验证。

@@ -87,11 +87,14 @@ async def reset_tables(isolated_db):
         from app.models.pomodoro import (
             PomodoroPauseInterval,
             PomodoroSession,
+            PomodoroSubjectAllocation,
             UserPomodoroSettings,
         )
         from app.models.user import User
 
         await db.execute(delete(PomodoroPauseInterval))
+        # This SQLite fixture does not enable FK cascades; clear child rows explicitly.
+        await db.execute(delete(PomodoroSubjectAllocation))
         await db.execute(delete(PomodoroSession))
         await db.execute(delete(UserPomodoroSettings))
         await db.execute(delete(User))
@@ -107,11 +110,16 @@ async def _make_user(db, openid: str = "openid_migr") -> int:
 
 
 async def _make_subject(db) -> int:
-    import uuid
+    from sqlalchemy import select
 
     from app.models.admin import Subject
-    code = f"math2_{uuid.uuid4().hex[:8]}"
-    subj = Subject(code=code, name="数学二", level=1, path=code, is_active=True, sort_order=0)
+    subj = await db.scalar(select(Subject).where(Subject.code == "advanced_math"))
+    if subj is not None:
+        return subj.id
+    subj = Subject(
+        code="advanced_math", name="高等数学", level=1, path="advanced_math",
+        is_active=True, sort_order=0,
+    )
     db.add(subj)
     await db.flush()
     return subj.id
@@ -550,12 +558,15 @@ class TestVerify:
 
 class TestRuntimeCanonical:
     @pytest.mark.asyncio
-    async def test_complete_is_server_authoritative_no_client_override(self, isolated_db):
+    async def test_complete_is_server_authoritative_no_client_override(self, isolated_db, monkeypatch):
         from sqlalchemy import select
 
         from app.models.pomodoro import PomodoroSession
         from app.services import pomodoro_service as svc
 
+        start = _utc(2026, 8, 7, 10, 0)
+        clock = {"now": start}
+        monkeypatch.setattr(svc, "utcnow", lambda: clock["now"])
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "r_authority")
             subj = await _make_subject(db)
@@ -563,6 +574,12 @@ class TestRuntimeCanonical:
             sid = session.id
             await db.commit()
 
+        async with isolated_db.async_session() as db:
+            with pytest.raises(svc.PomodoroNotReadyError, match="POMODORO_NOT_READY"):
+                await svc.complete_session(db, sid, uid)
+            await db.rollback()
+
+        clock["now"] = start + timedelta(minutes=25)
         async with isolated_db.async_session() as db:
             await svc.complete_session(db, sid, uid)
             await db.commit()
@@ -574,45 +591,39 @@ class TestRuntimeCanonical:
         # no intervals -> zero pause -> actual == wall clock
         wall = int((row.end_time - row.start_time).total_seconds())
         assert row.actual_duration == wall
+        assert wall == 1500
         assert row.total_paused_sec == 0
 
     @pytest.mark.asyncio
-    async def test_pause_then_complete_uses_interval_seconds(self, isolated_db):
-        from sqlalchemy import select, update
+    async def test_pause_then_complete_uses_interval_seconds(self, isolated_db, monkeypatch):
+        from sqlalchemy import select
 
-        from app.core.time_utils import utcnow
         from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
         from app.services import pomodoro_service as svc
 
+        start = _utc(2026, 8, 7, 11, 0)
+        clock = {"now": start}
+        monkeypatch.setattr(svc, "utcnow", lambda: clock["now"])
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "r_pause")
             subj = await _make_subject(db)
             session = await svc.start_session(db, uid, subj, None, "standard", 25, 5)
             sid = session.id
-            # Rewind start so the wall clock is ~300s regardless of real elapsed time.
-            await db.execute(
-                update(PomodoroSession)
-                .where(PomodoroSession.id == sid)
-                .values(start_time=utcnow() - timedelta(seconds=300))
-            )
             await db.commit()
 
+        clock["now"] = start + timedelta(minutes=25)
         async with isolated_db.async_session() as db:
             await svc.pause_session(db, sid, uid)
-            # Simulate a real pause: rewind the open interval so it spans ~240s.
-            iv_start = (await db.execute(
+            interval = (await db.execute(
                 select(PomodoroPauseInterval).where(
                     PomodoroPauseInterval.session_id == sid,
                     PomodoroPauseInterval.ended_at.is_(None),
                 )
-            )).scalar_one().started_at
-            await db.execute(
-                update(PomodoroPauseInterval)
-                .where(PomodoroPauseInterval.session_id == sid, PomodoroPauseInterval.ended_at.is_(None))
-                .values(started_at=iv_start - timedelta(seconds=240))
-            )
+            )).scalar_one()
+            assert interval.started_at == clock["now"]
             await db.commit()
 
+        clock["now"] = start + timedelta(minutes=29)
         async with isolated_db.async_session() as db:
             await svc.complete_session(db, sid, uid)
             await db.commit()
@@ -620,8 +631,8 @@ class TestRuntimeCanonical:
         async with isolated_db.async_session() as db:
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
         wall = int((row.end_time - row.start_time).total_seconds())
-        assert wall >= 200, "session wall clock should be ~300s"
-        assert 240 <= row.total_paused_sec <= 260, "the rewound pause segment is counted"
+        assert wall == 1740
+        assert row.total_paused_sec == 240
         # canonical invariant holds exactly: wall - pause == actual
         assert row.actual_duration == wall - row.total_paused_sec
-        assert row.actual_duration > 0
+        assert row.actual_duration == 1500

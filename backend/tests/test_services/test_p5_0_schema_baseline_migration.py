@@ -80,28 +80,36 @@ class TestPracticeRecordORM:
         for col in new_cols:
             assert col in column_names, f"ORM missing new column '{col}'"
 
-    def test_model_has_legacy_columns(self):
-        """ORM 包含 8 个 legacy session 列（防止 autogenerate DROP COLUMN）"""
+    def test_current_model_excludes_retired_batch_columns(self):
+        """Later migration a4c5d6e7f8b9 retired batch data from per-answer rows."""
         from app.models.practice_record import PracticeRecord
 
         mapper = PracticeRecord.__mapper__
         column_names = {col.key for col in mapper.columns}
 
-        legacy = {"mode", "question_ids", "answers", "correct_count",
-                  "wrong_count", "duration_sec", "started_at", "finished_at"}
-        for col in legacy:
-            assert col in column_names, f"ORM missing legacy column '{col}'"
+        retired = {"question_ids", "answers", "correct_count",
+                   "wrong_count", "duration_sec", "started_at", "finished_at"}
+        assert not column_names & retired
+        assert {"question_version_id", "projection_state", "mode"} <= column_names
 
-    def test_legacy_columns_nullable(self):
-        """Legacy 列全部 nullable=True"""
+    def test_per_answer_fields_required_and_optional_fields_nullable(self):
+        """Check current nullability explicitly; do not silently skip absent legacy fields."""
         from app.models.practice_record import PracticeRecord
 
         mapper = PracticeRecord.__mapper__
-        for col in mapper.columns:
-            if col.key in {"mode", "question_ids", "answers", "correct_count",
-                           "wrong_count", "duration_sec", "started_at", "finished_at"}:
-                assert col.nullable is True, \
-                    f"Legacy column '{col.key}' should be nullable"
+        for name in ("user_id", "question_id", "question_version_id", "subject_id",
+                     "question_type", "user_answer", "is_correct", "projection_state"):
+            assert mapper.columns[name].nullable is False, name
+        for name in ("mode", "used_time"):
+            assert mapper.columns[name].nullable is True, name
+
+    def test_session_aggregates_have_a_separate_model(self):
+        from app.models.practice_session import PracticeSession
+
+        columns = PracticeSession.__mapper__.columns
+        for name in ("request_id", "duration_sec", "started_at", "finished_at",
+                     "question_count", "correct_count"):
+            assert columns[name].nullable is False, name
 
     def test_question_id_has_foreign_key(self):
         """question_id 列有 ForeignKey 到 questions.id"""
