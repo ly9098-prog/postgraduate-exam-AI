@@ -7,20 +7,12 @@
         "app.services.import_pipeline_service"
       ],
       [
-        "app.services.formula_graph_spec_service",
-        "app.services.task_queue_worker"
-      ],
-      [
         "app.services.import_pipeline_service",
         "app.services.task_queue_worker"
       ],
       [
         "app.services.task_queue_worker",
         "app.features.batch_image_import_service"
-      ],
-      [
-        "app.services.task_queue_worker",
-        "app.services.formula_graph_spec_service"
       ],
       [
         "app.services.task_queue_worker",

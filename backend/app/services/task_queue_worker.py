@@ -771,7 +771,7 @@ async def _process_task(task: Task) -> None:
 
             from app.core.database import async_session
             from app.models.formula import FormulaCard
-            from app.services.formula_graph_spec_service import _process_batch
+            from app.services.formula_graph_batch_runner import process_batch
 
             card_ids = payload.get("card_ids", [])
             admin_id = payload.get("admin_id", 0)
@@ -783,7 +783,7 @@ async def _process_task(task: Task) -> None:
                 )
                 cards = list(result.scalars().all())
 
-            await _process_batch(job_id, cards, admin_id)
+            await process_batch(job_id, cards, admin_id)
 
         elif task_type == TASK_TYPE_BATCH_IMAGE:
             from app.features import batch_image_import_service as batch_svc
@@ -1230,7 +1230,7 @@ async def _process_task_v2(task: Task) -> None:
 
             from app.core.database import async_session
             from app.models.formula import FormulaCard
-            from app.services.formula_graph_spec_service import _process_batch
+            from app.services.formula_graph_batch_runner import process_batch
 
             card_ids = payload.get("card_ids", [])
             admin_id = payload.get("admin_id", 0)
@@ -1242,7 +1242,7 @@ async def _process_task_v2(task: Task) -> None:
                 )
                 cards = list(result.scalars().all())
 
-            await _process_batch(job_id, cards, admin_id)
+            await process_batch(job_id, cards, admin_id)
 
         elif task_type == TASK_TYPE_BATCH_IMAGE:
             from app.features import batch_image_import_service as batch_svc
