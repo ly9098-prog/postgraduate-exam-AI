@@ -1,41 +1,32 @@
-"""Import pipeline service — shared business logic for import pipelines.
+"""Import pipeline execution, status and shared resource/image helpers.
 
-API Router 层只负责：鉴权、参数解析、调用 service、返回 response。
-业务流程编排在 service 层完成，不依赖 FastAPI HTTP 对象 (UploadFile, Request, Depends)。
+Upload admission is owned by import_upload_service. Background execution keeps
+the existing database, cleanup, status and resource reservation behavior here.
 """
 
 import hashlib
 import io
 import logging
 import os
-import uuid
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
-from app.core.log_context import bind_log_context, get_log_context, log_event
+from app.core.log_context import bind_log_context, log_event
 from app.core.resource_guard import resource_guard
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features.pipeline_coordinator_entry import run_pipeline
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
-    resolve_pdf_page_range,
     resume_pipeline_background,
     run_pipeline_background,
 )
 from app.features.pipeline_orchestrator import (
     get_pipeline_status as _orchestrator_get_pipeline_status,
 )
-from app.schemas.import_review import (
-    PdfPageRangeInfo,
-    PipelineStatusResponse,
-    PipelineUploadResponse,
-)
-from app.services.staging_storage import async_store_file
-from app.services.upload_validator import get_upload_validator
+from app.schemas.import_review import PipelineStatusResponse
 from app.utils.sentry_utils import capture_exception, set_tag
 
 logger = logging.getLogger(__name__)
@@ -771,313 +762,6 @@ async def _run_pipeline_with_db(
                 )
 
 
-async def start_import_pipeline(
-    *,
-    file_path: str,
-    filename: str,
-    content_type: str | None,
-    subject: str | None = None,
-    subject_id: int | None = None,
-    import_mode: str = "auto",
-    enable_ai_repair: bool = True,
-    confidence_threshold: float = 0.6,
-    image_fast_mode: bool = True,
-    page_start: int | None = None,
-    page_end: int | None = None,
-    created_by: str | None = None,
-) -> PipelineUploadResponse:
-    """统一导入入口核心逻辑：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
-
-    这是纯业务逻辑函数，不依赖 FastAPI HTTP 对象。
-    Router 层需先通过 ``streaming_upload_handler.stream_to_temp()``
-    将上传文件写入临时文件，再传入 file_path。
-    """
-    if not filename:
-        raise ValueError("文件名不能为空")
-
-    # Validate file exists and is non-empty
-    file_size = os.path.getsize(file_path)
-    if file_size == 0:
-        raise ValueError("文件内容为空")
-
-    set_tag("stage", "upload")
-    set_tag("upload.filename", filename or "unknown")
-    set_tag("upload.type", "pipeline")
-
-    lower_name = filename.lower()
-
-    is_pdf = lower_name.endswith(".pdf")
-    is_txt = lower_name.endswith(".txt")
-    is_excel = lower_name.endswith((".xlsx", ".xls"))
-    is_image = lower_name.endswith(_IMAGE_EXTENSIONS)
-
-    if not is_pdf and not is_txt and not is_excel and not is_image:
-        raise ValueError(
-            "仅支持 .xlsx / .xls / .pdf / .txt / .jpg / .jpeg / .png / .webp 文件"
-        )
-
-    validator = get_upload_validator()
-    validator.validate_file(filename, file_size, content_type)
-
-    # Non-PDF files must not include page range params
-    if (page_start is not None or page_end is not None) and not is_pdf:
-        raise ValueError("page_start/page_end 仅适用于 PDF 文件")
-
-    if is_image:
-        if content_type and content_type not in _IMAGE_CONTENT_TYPES:
-            raise ValueError("图片 Content-Type 不支持")
-        if not settings.OCR_ENABLED:
-            raise ValueError("图片 OCR 功能未启用")
-        # 云端使用外部 OCR API，无需本地 PaddleOCR
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-        from app.core.ocr_isolation import local_paddleocr_available
-
-        if (
-            detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
-            and not local_paddleocr_available()
-        ):
-            raise ValueError("OCR 依赖未安装：paddleocr")
-
-        image_width, image_height, image_format = _validate_image_path(file_path)
-        image_hash = _sha256_of_file(file_path)
-        pipeline_id = f"img_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image_hash[:8]}"
-
-        # Acquire admission reservation before staging
-        await _acquire_pipeline_reservation(pipeline_id, "image_pipeline")
-        try:
-            # Stage the image to persistent storage before enqueuing
-            staging_obj = await async_store_file(
-                file_path,
-                original_name=filename,
-                mime=content_type or "image/png",
-            )
-
-            options = {
-                "enable_ai_repair": enable_ai_repair,
-                "confidence_threshold": confidence_threshold,
-                "image_hash": image_hash,
-                "image_fast_mode": image_fast_mode,
-            }
-
-            _ctx = get_log_context()
-            options["_trace_id"] = _ctx.get("trace_id")
-            options["_request_id"] = _ctx.get("request_id")
-
-            await _set_image_pipeline_status(
-                pipeline_id,
-                status="queued",
-                stats={
-                    "image_bytes": file_size,
-                    "image_width": image_width,
-                    "image_height": image_height,
-                    "image_format": image_format,
-                    "staging_object_id": staging_obj.object_id,
-                },
-                stages={
-                    "upload": {"status": "completed"},
-                    "ocr": {"status": "pending"},
-                },
-            )
-
-            from app.services.task_queue_worker import enqueue_image_pipeline
-
-            result = await enqueue_image_pipeline(
-                pipeline_id=pipeline_id,
-                staging_object_id=staging_obj.object_id,
-                source_file=filename,
-                subject=subject,
-                subject_id=subject_id,
-                options=options,
-            )
-            if not result:
-                await _set_image_pipeline_status(
-                    pipeline_id,
-                    status="failed",
-                    errors=[f"Queue rejected: {result.reason}"],
-                )
-                raise ValueError(_queue_rejection_message(result.reason))
-
-            log_event(
-                logger,
-                "import.upload.accepted",
-                pipeline_id=pipeline_id,
-                source_type="image",
-                source_file=filename,
-                file_size=file_size,
-                content_type=content_type or "-",
-            )
-            return PipelineUploadResponse(
-                pipeline_id=pipeline_id, status="queued", source_type="image"
-            )
-        except Exception:
-            await _release_pipeline_reservation(pipeline_id)
-            raise
-
-    if is_excel:
-        pipeline_id = (
-            f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-        )
-
-        await _acquire_pipeline_reservation(pipeline_id, "excel_pipeline")
-        try:
-            staging_obj = await async_store_file(
-                file_path,
-                original_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-            await _set_pipeline_store(
-                pipeline_id,
-                {
-                    "pipeline_id": pipeline_id,
-                    "status": "parsing",
-                    "source_type": "excel",
-                    "source_file": filename,
-                    "stages": {"upload": {"status": "completed"}},
-                    "stats": {},
-                    "errors": [],
-                    "started_at": serialize_utc_datetime(utcnow()),
-                    "staging_object_id": staging_obj.object_id,
-                },
-            )
-
-            from app.services.task_queue_worker import enqueue_excel_pipeline
-
-            result = await enqueue_excel_pipeline(
-                pipeline_id=pipeline_id,
-                staging_object_id=staging_obj.object_id,
-                source_file=filename,
-            )
-            if not result:
-                await _set_pipeline_store(
-                    pipeline_id,
-                    {
-                        "status": "failed",
-                        "errors": [f"Queue rejected: {result.reason}"],
-                    },
-                )
-                raise ValueError(_queue_rejection_message(result.reason))
-
-            return PipelineUploadResponse(
-                pipeline_id=pipeline_id, status="parsing", source_type="excel"
-            )
-        except Exception:
-            await _release_pipeline_reservation(pipeline_id)
-            raise
-
-    source_type = "pdf" if is_pdf else "txt"
-    pipeline_id = (
-        f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-    )
-
-    page_range: PdfPageRangeInfo | None = None
-    pdf_total_pages = 0
-
-    if is_pdf:
-        try:
-            import fitz
-
-            with fitz.open(file_path) as doc:
-                pdf_total_pages = len(doc)
-                validator.validate_pdf_pages(pdf_total_pages)
-                page_range = resolve_pdf_page_range(
-                    pdf_total_pages,
-                    page_start=page_start,
-                    page_end=page_end,
-                )
-        except ValueError:
-            raise
-        except Exception:
-            logger.warning("PDF page count/range validation failed", exc_info=True)
-
-        logger.info(
-            "PDF upload accepted: filename=%s total_pages=%s page_start=%s page_end=%s selected=%s",
-            filename,
-            pdf_total_pages,
-            page_start,
-            page_end,
-            page_range.selected_page_count if page_range else "N/A",
-        )
-
-    options = {
-        "enable_ai_repair": enable_ai_repair,
-        "confidence_threshold": confidence_threshold,
-        "import_mode": import_mode,
-    }
-    if page_range:
-        options["page_start"] = page_range.effective_start
-        options["page_end"] = page_range.effective_end
-
-    ctx = get_log_context()
-    options["_trace_id"] = ctx.get("trace_id")
-    options["_request_id"] = ctx.get("request_id")
-
-    # Acquire admission reservation before staging
-    await _acquire_pipeline_reservation(pipeline_id, "import_pipeline")
-    try:
-        # Stage file to persistent storage before enqueuing task
-        mime = content_type or ("application/pdf" if is_pdf else "text/plain")
-        staging_obj = await async_store_file(
-            file_path, original_name=filename, mime=mime
-        )
-
-        store_data: dict = {
-            "pipeline_id": pipeline_id,
-            "status": "processing",
-            "source_type": source_type,
-            "source_file": filename,
-            "current_stage": "extract",
-            "stages": {"upload": {"status": "completed"}},
-            "stats": {},
-            "errors": [],
-            "started_at": serialize_utc_datetime(utcnow()),
-            "staging_object_id": staging_obj.object_id,
-        }
-        if page_range:
-            store_data["page_range"] = page_range.model_dump()
-
-        await _set_pipeline_store(pipeline_id, store_data)
-
-        from app.services.task_queue_worker import enqueue_import_pipeline
-
-        result = await enqueue_import_pipeline(
-            pipeline_id=pipeline_id,
-            staging_object_id=staging_obj.object_id,
-            source_type=source_type,
-            source_file=filename,
-            subject=subject,
-            subject_id=subject_id,
-            options=options,
-            created_by=created_by,
-        )
-        if not result:
-            await _set_pipeline_store(
-                pipeline_id,
-                {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]},
-            )
-            raise ValueError(_queue_rejection_message(result.reason))
-
-        log_event(
-            logger,
-            "import.upload.accepted",
-            pipeline_id=pipeline_id,
-            source_type=source_type,
-            source_file=filename,
-            file_size=file_size,
-            content_type=content_type or "-",
-        )
-        return PipelineUploadResponse(
-            pipeline_id=pipeline_id,
-            status="parsing",
-            source_type=source_type,
-            page_range=page_range,
-        )
-    except Exception:
-        await _release_pipeline_reservation(pipeline_id)
-        raise
-        raise
 
 
 async def get_pipeline_status(

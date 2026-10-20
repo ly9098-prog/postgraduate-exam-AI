@@ -53,8 +53,8 @@ class TestPublicAdminImportModules:
         assert pi.svc_start_import_pipeline is not None
         assert ai.svc_start_import_pipeline is not None
 
-        # They should be the same function object from import_pipeline_service
-        from app.services.import_pipeline_service import (
+        # They share the upload admission service; execution stays in its own module.
+        from app.services.import_upload_service import (
             start_import_pipeline as svc_fn,
         )
         assert pi.svc_start_import_pipeline is svc_fn

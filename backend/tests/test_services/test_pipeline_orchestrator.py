@@ -2839,7 +2839,7 @@ class TestPageRangePersistence:
     @pytest.mark.asyncio
     async def test_upload_response_page_range(self, tmp_path):
         """Test that start_import_pipeline returns page_range immediately."""
-        from app.services.import_pipeline_service import start_import_pipeline
+        from app.services.import_upload_service import start_import_pipeline
 
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 test content")
@@ -2908,7 +2908,7 @@ class TestNonPdfPageRangeRejection:
 
     @pytest.mark.asyncio
     async def test_image_with_page_range_raises(self, tmp_path):
-        from app.services.import_pipeline_service import start_import_pipeline
+        from app.services.import_upload_service import start_import_pipeline
 
         img_file = tmp_path / "test.jpg"
         img_file.write_bytes(b"fake image content")
@@ -2922,7 +2922,7 @@ class TestNonPdfPageRangeRejection:
 
     @pytest.mark.asyncio
     async def test_txt_with_page_range_raises(self, tmp_path):
-        from app.services.import_pipeline_service import start_import_pipeline
+        from app.services.import_upload_service import start_import_pipeline
 
         txt_file = tmp_path / "test.txt"
         txt_file.write_bytes(b"some text content")
@@ -2936,7 +2936,7 @@ class TestNonPdfPageRangeRejection:
 
     @pytest.mark.asyncio
     async def test_excel_with_page_range_raises(self, tmp_path):
-        from app.services.import_pipeline_service import start_import_pipeline
+        from app.services.import_upload_service import start_import_pipeline
 
         xl_file = tmp_path / "test.xlsx"
         xl_file.write_bytes(b"fake excel")
@@ -2951,7 +2951,7 @@ class TestNonPdfPageRangeRejection:
 
     @pytest.mark.asyncio
     async def test_pdf_with_page_range_ok(self, tmp_path):
-        from app.services.import_pipeline_service import start_import_pipeline
+        from app.services.import_upload_service import start_import_pipeline
 
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 test")

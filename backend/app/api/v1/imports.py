@@ -30,7 +30,7 @@ from app.schemas.question_import import (
 from app.services.import_pipeline_service import (
     get_pipeline_status as svc_get_pipeline_status,
 )
-from app.services.import_pipeline_service import (
+from app.services.import_upload_service import (
     start_import_pipeline as svc_start_import_pipeline,
 )
 from app.services.streaming_upload_handler import stream_to_temp

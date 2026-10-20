@@ -100,7 +100,7 @@ from app.services.admin_import_service import (
 from app.services.import_pipeline_service import (
     get_pipeline_status as svc_get_pipeline_status,
 )
-from app.services.import_pipeline_service import (
+from app.services.import_upload_service import (
     start_import_pipeline as svc_start_import_pipeline,
 )
 from app.services.question_csv_import_service import (

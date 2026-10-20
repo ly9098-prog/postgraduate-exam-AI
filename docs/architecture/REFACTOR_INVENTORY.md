@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：531 个模块、2,104 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：536 个模块、2,139 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -49,11 +49,7 @@
 
 `backend/tests/architecture/test_dependency_direction.py` 扫描全应用，service/feature 到 API 的静态导入必须为零。相对导入、局部导入和可静态解析的字面量动态导入也参与检查；源码语法错误、空目录或目录缺失不会静默跳过。
 
-`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 1 组/4 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
-
-| 静态循环组 | 模块数/内部边 | 已核对原因与迁移条件 |
-| --- | --- | --- |
-| import pipeline / worker / batch image | 3 / 4 | worker 调业务执行器，生产者通过 worker 模块入队；拆生产者协议时验证队列/恢复。 |
+`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。第五十八批后全应用静态循环为零，`import_cycle_baseline.json` 已缩减为空数组；既有门禁继续拒绝任意新增循环边，不设组级白名单。扫描仍包含局部和 TYPE_CHECKING 导入；零静态循环不等于运行时资源、完整角色或业务端到端验收完成。
 
 第三十八批已解除 embedding / vector config 的 2 模块循环：`services/embedding_endpoints.py` 统一 URL 构造，运行请求与管理端连通测试直接依赖该纯规则，后者不再导入 embedding 执行服务；原配置读取方式不变。26 项端点/调用方回归及 302 组新旧规则对照验证行为一致，对应两条循环边已从基线移除。
 
@@ -124,3 +120,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 - 第四十批额外使用 docx 技能附带的严格 OOXML 校验器检查合成输出，校验未通过：`header2.xml` 的 pBdr、`document.xml` 的 shd/tblBorders/keepWithNext 元素顺序及 `settings.xml` 的 zoom 缺少 percent 属性。源码与样本还显示 OMML 矩阵缺少行列包装，`segments.text` 中的 LaTeX 走纯文本路径；本批未修改生产渲染器，单独登记为既有格式/渲染问题。当前测试通过不证明完整 OOXML 合规、矩阵布局正确或 Word/LibreOffice 显示一致。
 
 第五十七批分离公式批次的创建、执行和单一进程内状态所有者：Admin API 直接依赖 batch_service/state，两个 worker 分发分支直接依赖 batch_runner，preview/confirm service 不再依赖 worker。保持原队列 payload、任务 id、重试次数、逐卡事务、失败继续、取消传播与跳过计数口径。新增 17 项契约/交接测试和 2 项架构/预算测试；完整架构、公式 API、上传及队列指标共 288 项通过。111 组旧/新状态与事务/重试/取消轨迹相同，328 路径 OpenAPI 相同。进程内状态不跨进程共享是原有限制，本批没有声称独立生产 worker 批次状态已验收；真实 Redis/PostgreSQL、渲染进程及生产仍未运行。剩余 import/batch image/worker 的 4 条循环边待继续治理。
+
+第五十八批拆出 Public/Admin 唯一上传入口、不可变输入快照及图片/Excel/文档 admission 模块，后台执行服务不再导入 worker；移除最后 4 条循环基线边。输入只保留原 12 个参数，不新增业务状态。原后台服务剩余非导入/说明 AST 不变，完整 328 路径 OpenAPI 一致；160 组响应/异常及校验、资源预留、暂存、状态、队列、释放调用对照一致。新增 29 项 admission 和 4 项架构/新进程回归通过；扩大架构、上传/API、故障注入与公式队列交接为 226 通过、8 项相同既有失败。新增第 4 项首导入测试后定向 33 项通过。8 项失败涉及旧权限夹具、错误脱敏预期及直接调用路由缺少用户参数，未通过修改生产行为或 skip/xfail 掩盖。保留原队列取消不释放预留的行为；真实 Redis/PostgreSQL、OCR/模型、完整角色生命周期与客户端仍未验证，零静态循环不关闭阶段 0/1/3/4 的其他待办。
