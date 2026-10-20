@@ -20,7 +20,7 @@ async def scheduler(monkeypatch):
         profile=deployment_profile.DeploymentProfile.LOCAL_IMPORT,
     )
 
-    async def loop():
+    async def loop(*args):
         await asyncio.Future()
 
     async def start(name):
@@ -47,7 +47,7 @@ async def scheduler(monkeypatch):
     logger = Mock()
     monkeypatch.setattr(bootstrap, "logger", logger)
     state.logger = logger
-    for name in ["_periodic_token_cleanup", "_periodic_staging_cleanup", "_periodic_export_processor", "_periodic_export_cleanup"]:
+    for name in ["run_token_cleanup", "run_staging_cleanup", "run_export_processor_loop", "run_export_cleanup"]:
         monkeypatch.setattr(bootstrap, name, loop)
     _install_scheduler_modules(monkeypatch, loop, start, outbox, enqueue)
     try:

@@ -27,6 +27,12 @@ import sys
 from collections.abc import Awaitable
 
 from app.core.config import settings
+from app.services.runtime_periodic_tasks import (
+    run_export_cleanup,
+    run_export_processor_loop,
+    run_staging_cleanup,
+    run_token_cleanup,
+)
 from app.services.runtime_scheduler_startup import (
     start_audit_cleanup_scheduler,
     start_recommendation_metrics_scheduler,
@@ -300,14 +306,14 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
         _report("Recommendation metrics scheduler", e)
 
     # Periodic token cleanup (with distributed lock)
-    registry.create(_periodic_token_cleanup(), "token-cleanup")
+    registry.create(run_token_cleanup(), "token-cleanup")
 
     # Periodic staging cleanup
-    registry.create(_periodic_staging_cleanup(), "staging-cleanup")
+    registry.create(run_staging_cleanup(), "staging-cleanup")
 
     # Export processor + cleanup
-    registry.create(_periodic_export_processor(), "export-processor")
-    registry.create(_periodic_export_cleanup(), "export-cleanup")
+    registry.create(run_export_processor_loop(logger), "export-processor")
+    registry.create(run_export_cleanup(), "export-cleanup")
 
     # Outbox dispatcher + DB/Redis reconciler
     try:
@@ -364,43 +370,6 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
         logger.info("Async task health monitor started")
     except Exception as e:
         logger.warning("Async task health monitor init failed (non-fatal): %s", e)
-
-
-# ── Periodic task implementations (shared between roles) ──
-
-
-async def _run_registered_periodic_task(task_id: str, label: str) -> None:
-    """Delegate periodic scheduling to the shared system-task runtime."""
-    from app.services.system_task_service import run_registered_periodic_task
-
-    await run_registered_periodic_task(task_id, label)
-
-
-async def _periodic_token_cleanup() -> None:
-    """Clean up expired refresh tokens on deterministic 6-hour UTC slots."""
-    await _run_registered_periodic_task(
-        "refresh_token_cleanup", "Refresh token cleanup"
-    )
-
-
-async def _periodic_staging_cleanup() -> None:
-    """Clean up expired staging files at minute 00 of every UTC hour."""
-    await _run_registered_periodic_task("staging_cleanup", "Staging cleanup")
-
-
-async def _periodic_export_processor() -> None:
-    """Run export processor (loop, exits via stop_processor)."""
-    try:
-        from app.services.export.processor import run_export_processor
-
-        await run_export_processor()
-    except Exception as e:
-        logger.warning("Export processor exited: %s", e)
-
-
-async def _periodic_export_cleanup() -> None:
-    """Clean up expired export tasks at minute 02 of every UTC hour."""
-    await _run_registered_periodic_task("export_cleanup", "Export cleanup")
 
 
 # ── Startup helpers ──

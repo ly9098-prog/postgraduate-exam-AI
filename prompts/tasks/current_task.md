@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十一批已提交，第八十二批共用审计与推荐调度器启动；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十二批已提交，第八十三批收敛周期清理与导出循环入口；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1062,3 +1062,13 @@
 - 额外真实APScheduler脚本使用两个新服务实例、临时注册表和未来UTC cron时刻：两调用方logger均可启动、各仅1job、重复启动幂等、真实注册/stop及恢复通过，无socket或job执行。只证明调度器装配/启停；不代表定时业务、分布式锁、真实DB/Redis或独立进程全链验收。
 - 依review-agent只读检查完整差异、两入口原策略/日志、scheduler实际start/stop/注册消费者、TaskRegistry清理及旧新证据：No findings。模块19行/函数5、7行；main646→642行/lifespan342→334行；bootstrap723→719行/调度初始化101→93行，graph560模块/2,210边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其余改动及删除，不推送、不操作生产。其他worker/scheduler编排、独立角色完整启动/失败/退出及全栈计划仍继续；已知HTTP yield前失败不清理和client关闭错误阻断后续清理未修改。
+
+
+## 八十九、第八十三批执行记录：周期清理与导出循环唯一实现
+
+- HTTP main与独立bootstrap的token/staging/export cleanup及export processor循环入口收敛至`services/runtime_periodic_tasks.py`；移除两处旧私有函数，入口直接调用真实共享定义。三类cleanup仍以原task_id/label惰性调用system_task_service，UTC调度/锁/业务执行/存活注册仍由该原服务拥有；export processor显式接收各调用方logger，原import/await/普通错误warning/取消传播保持。原asyncio/TaskRegistry创建和所有task名、local-web fallback及关闭所有者不变。
+- 原两个入口34项刻画先过，迁移后34项又对旧`f078b239`五个真实完整函数通过（包装进程1条rewrite警告）。相关周期/完整HTTP lifespan/独立scheduler77项通过；函数重命名/logger端口绑定后原函数体和展开两个完整模块AST一致，32组task_id/label/await/error/cancel/log轨迹、328路径OpenAPI一致。
+- 新3项依赖/预算/两个真实消费者及无旧forwarder/任务名/参数/导入无配置或资源/task/env副作用门禁接入CI。原YAML完整静态1,401项（2既有弃用警告）、readiness69项、云OCR30项通过。HTTP/OCR/scheduler/独立scheduler/共享周期混合111项单进程确认Settings/env/cwd/lifespan/engine/task/socket/httpx/logger/27模块与原bootstrap周期端口恢复（包装进程2条rewrite警告）。
+- 额外实际两个入口全部3类cleanup进入真实system-task循环，在受控未来延时中确认原注册、真实asyncio等待、真实task.cancel及finally注销，恢复注册表，无socket和业务执行。该验证不等同于定时清理业务、Redis分布式锁或独立进程完整启停验收。严格Ruff/全应用Ruff/compileall/diff/CI路径与33项保护哈希通过。
+- 按review-agent只读核对完整差异、原system-task注册/调度/注销消费者、两入口task归属及export异常/日志、测试清理/旧新证据：No findings。新模块32行/函数最长7行；main642→614行/lifespan334保持，bootstrap719→688行/调度初始化93保持，图561模块/2,214边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。独立worker完整启动/失败/退出和其他共享生命周期/业务/客户端治理继续，既有yield前清理/client关闭阻断等独立行为待办保持。

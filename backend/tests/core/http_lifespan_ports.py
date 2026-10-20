@@ -98,9 +98,9 @@ async def runtime(monkeypatch, tmp_path):
         lambda: deployment_profile.DeploymentProfile.LOCAL_IMPORT,
     )
     for attr, label in {
-        "monitor_event_loop_lag": "lag", "_periodic_export_processor": "export",
-        "_periodic_token_cleanup": "token", "_periodic_staging_cleanup": "staging",
-        "_periodic_export_cleanup": "export_cleanup",
+        "monitor_event_loop_lag": "lag", "run_export_processor_loop": "export",
+        "run_token_cleanup": "token", "run_staging_cleanup": "staging",
+        "run_export_cleanup": "export_cleanup",
     }.items():
         monkeypatch.setattr(main, attr, lambda *args, label=label: loop(label))
 

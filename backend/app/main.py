@@ -63,6 +63,12 @@ from app.services.runtime_ocr_startup import (
     HttpOcrResources,
     initialize_http_ocr_gateway,
 )
+from app.services.runtime_periodic_tasks import (
+    run_export_cleanup,
+    run_export_processor_loop,
+    run_staging_cleanup,
+    run_token_cleanup,
+)
 from app.services.runtime_scheduler_startup import (
     start_audit_cleanup_scheduler,
     start_recommendation_metrics_scheduler,
@@ -92,40 +98,6 @@ setup_logging()
 init_sentry()
 
 logger = logging.getLogger("postgraduate-ai")
-
-
-async def _run_registered_periodic_task(task_id: str, label: str) -> None:
-    """Delegate periodic scheduling to the shared system-task runtime."""
-    from app.services.system_task_service import run_registered_periodic_task
-
-    await run_registered_periodic_task(task_id, label)
-
-
-async def _periodic_token_cleanup() -> None:
-    """Clean up expired refresh tokens on deterministic 6-hour UTC slots."""
-    await _run_registered_periodic_task(
-        "refresh_token_cleanup", "Refresh token cleanup"
-    )
-
-
-async def _periodic_staging_cleanup() -> None:
-    """Clean up expired staging files at minute 00 of every UTC hour."""
-    await _run_registered_periodic_task("staging_cleanup", "Staging cleanup")
-
-
-async def _periodic_export_processor():
-    """Background task: process pending export tasks (scheduler role only)."""
-    try:
-        from app.services.export.processor import run_export_processor
-
-        await run_export_processor()
-    except Exception as e:
-        logger.warning("Export processor exited: %s", e)
-
-
-async def _periodic_export_cleanup() -> None:
-    """Clean up expired export tasks at minute 02 of every UTC hour."""
-    await _run_registered_periodic_task("export_cleanup", "Export cleanup")
 
 
 @asynccontextmanager
@@ -273,7 +245,7 @@ async def lifespan(app: FastAPI):
     # while making the documented single-process uvicorn workflow functional.
     if _local_web_export_processor:
         _export_processor_task = asyncio.create_task(
-            _periodic_export_processor(), name="export-processor-local"
+            run_export_processor_loop(logger), name="export-processor-local"
         )
         logger.info("Local web export processor started")
 
@@ -329,18 +301,18 @@ async def lifespan(app: FastAPI):
 
         # Periodic cleanup tasks belong in the scheduler role only
         cleanup_task = asyncio.create_task(
-            _periodic_token_cleanup(), name="token-cleanup"
+            run_token_cleanup(), name="token-cleanup"
         )
         _staging_cleanup_task = asyncio.create_task(
-            _periodic_staging_cleanup(), name="staging-cleanup"
+            run_staging_cleanup(), name="staging-cleanup"
         )
 
         # Export processor + cleanup (scheduler role only)
         _export_processor_task = asyncio.create_task(
-            _periodic_export_processor(), name="export-processor"
+            run_export_processor_loop(logger), name="export-processor"
         )
         _export_cleanup_task = asyncio.create_task(
-            _periodic_export_cleanup(), name="export-cleanup"
+            run_export_cleanup(), name="export-cleanup"
         )
 
         # Outbox dispatcher + reconciler (scheduler role only)
