@@ -319,6 +319,8 @@ jobs:
             tests/export/test_docx_fonts.py \
             tests/core/test_code_integrity.py \
             tests/practice/test_scored_pipeline_contract.py \
+            tests/practice/test_scored_selection_contract.py \
+            tests/architecture/test_scored_selection_boundaries.py \
             tests/core/test_http_error_contract.py \
             tests/core/test_http_middleware_contract.py \
             tests/core/test_runtime_metrics_contract.py \

@@ -67,6 +67,7 @@ from app.services.practice.recommendation_pipeline import (
     merge_recommendation_results,
     normalize_smart_strategy,
 )
+from app.services.practice.scored_selection import select_scored_candidates
 from app.services.practice.sequential_service import (
     SEQUENTIAL_MODE,
     get_sequential_practice_questions,
@@ -3489,52 +3490,21 @@ async def get_smart_scored_questions(
             [(q.id, round(s, 1), r) for q, s, r in top],
         )
 
-    # ── 6. 知识点多样性控制 ──
-    max_per_kp = max(1, int(count * 0.5))
-    selected: list[Question] = []
-    selected_ids: set[int] = set()
-    kp_counter: dict[int, int] = {}
-
-    for q, sc, reasons in scored:
-        kp_ids = q_kp_map.get(q.id, [])
-        if kp_ids:
-            min_count = min(kp_counter.get(k, 0) for k in kp_ids)
-            if min_count >= max_per_kp:
-                continue
-
-        selected.append(q)
-        selected_ids.add(q.id)
-        for k in kp_ids:
-            kp_counter[k] = kp_counter.get(k, 0) + 1
-        metadata[q.id] = _build_scored_metadata(
-            sc, reasons, kp_ids, kp_names,
+    def scored_metadata(score: float, reasons: list[str], kp_ids: list[int]) -> dict:
+        return _build_scored_metadata(
+            score, reasons, kp_ids, kp_names,
             graph_candidates=graph_candidates,
             blocked_kps=blocked_kps,
             kp_mastery=kp_mastery,
             kp_observations=kp_observations,
             strategy_config_id=scored_runtime.get("strategy_config_id"),
         )
-        if len(selected) >= count:
-            break
 
-    # ── 降级 2: 放宽多样性 ──
-    if len(selected) < count:
+    selected, selected_ids, relaxed_diversity = select_scored_candidates(
+        scored, count, q_kp_map, metadata, scored_metadata,
+    )
+    if relaxed_diversity:
         fallback_level = max(fallback_level, 2)
-        for q, sc, reasons in scored:
-            if q.id in selected_ids:
-                continue
-            selected.append(q)
-            selected_ids.add(q.id)
-            metadata[q.id] = _build_scored_metadata(
-                sc, reasons, q_kp_map.get(q.id, []), kp_names,
-                graph_candidates=graph_candidates,
-                blocked_kps=blocked_kps,
-                kp_mastery=kp_mastery,
-                kp_observations=kp_observations,
-                strategy_config_id=scored_runtime.get("strategy_config_id"),
-            )
-            if len(selected) >= count:
-                break
 
     # ── 降级 3: 随机补齐（可放宽 24h，但仍尊重 exclude_answered/no_repeat_days） ──
     if len(selected) < count:
