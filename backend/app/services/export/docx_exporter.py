@@ -47,6 +47,13 @@ from docx.text.paragraph import Paragraph
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.analysis_content import split_analysis_sections
+from app.services.export.docx_fonts import (
+    BODY_FONT,
+    BODY_FONT_EA,
+    EN_FONT,
+    HEADING_FONT,
+    set_east_asian_font,
+)
 from app.services.export.exporter_base import Exporter, ExportResult
 from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
@@ -74,13 +81,6 @@ MARGIN_T_CM = 1.8
 MARGIN_B_CM = 1.7
 BODY_W_CM = PAGE_W_CM - MARGIN_L_CM - MARGIN_R_CM  # 17 cm
 
-# ── Font names ──
-_BODY_FONT = "SimSun"  # 宋体 — Chinese body
-_BODY_FONT_EA = "SimSun"  # East-Asian body
-_HEADING_FONT = "SimHei"  # 黑体 — Chinese heading
-_EN_FONT = "Times New Roman"  # English / numbers
-_CODE_FONT = "Consolas"
-_CODE_FONT_CJK = "DengXian"  # 等线 — Chinese in code blocks
 _BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 _LOCAL_ASSET_ROOTS = (
     os.path.join(_BACKEND_ROOT, "static", "question-assets"),
@@ -183,16 +183,16 @@ class DocxExporter(Exporter):
 
         style = doc.styles["Normal"]
         font = style.font
-        font.name = _EN_FONT
+        font.name = EN_FONT
         font.size = Pt(10)
         rpr = style.element.get_or_add_rPr()
         rfonts = rpr.find(qn("w:rFonts"))
         if rfonts is None:
             rfonts = OxmlElement("w:rFonts")
             rpr.append(rfonts)
-        rfonts.set(qn("w:eastAsia"), _BODY_FONT_EA)
-        rfonts.set(qn("w:ascii"), _EN_FONT)
-        rfonts.set(qn("w:hAnsi"), _EN_FONT)
+        rfonts.set(qn("w:eastAsia"), BODY_FONT_EA)
+        rfonts.set(qn("w:ascii"), EN_FONT)
+        rfonts.set(qn("w:hAnsi"), EN_FONT)
 
         pf = style.paragraph_format
         pf.space_before = Pt(0)
@@ -236,8 +236,8 @@ class DocxExporter(Exporter):
             prefix_run = stem_p.add_run(prefix)
             prefix_run.bold = False
             prefix_run.font.size = Pt(10)
-            prefix_run.font.name = _BODY_FONT
-            self._set_east_asian_font(prefix_run, _BODY_FONT_EA)
+            prefix_run.font.name = BODY_FONT
+            set_east_asian_font(prefix_run, BODY_FONT_EA)
 
             content_text = self._get_question_text(q)
             content = q.get("content") if isinstance(q.get("content"), dict) else {}
@@ -256,8 +256,8 @@ class DocxExporter(Exporter):
                 else:
                     run = stem_p.add_run(cleaned_stem)
                     run.font.size = Pt(10)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
+                    run.font.name = BODY_FONT
+                    set_east_asian_font(run, BODY_FONT_EA)
                 visual_segments = [
                     seg
                     for seg in segments
@@ -278,8 +278,8 @@ class DocxExporter(Exporter):
             else:
                 run = stem_p.add_run("（题干内容未提供）")
                 run.font.size = Pt(10)
-                run.font.name = _BODY_FONT
-                self._set_east_asian_font(run, _BODY_FONT_EA)
+                run.font.name = BODY_FONT
+                set_east_asian_font(run, BODY_FONT_EA)
             question_paragraphs.append(stem_p)
 
             segment_urls = {
@@ -381,8 +381,8 @@ class DocxExporter(Exporter):
         run = p.add_run(title)
         run.bold = False
         run.font.size = Pt(16)
-        run.font.name = _HEADING_FONT
-        self._set_east_asian_font(run, _HEADING_FONT)
+        run.font.name = HEADING_FONT
+        set_east_asian_font(run, HEADING_FONT)
 
     def _setup_header_footer(self, doc: Document, config: dict) -> None:
         """Use a later-page title header and centered ``· PAGE ·`` footer."""
@@ -407,8 +407,8 @@ class DocxExporter(Exporter):
         run = hp.add_run(title)
         run.font.size = Pt(8)
         run.font.color.rgb = RGBColor(0x60, 0x60, 0x60)
-        run.font.name = _BODY_FONT
-        self._set_east_asian_font(run, _BODY_FONT_EA)
+        run.font.name = BODY_FONT
+        set_east_asian_font(run, BODY_FONT_EA)
         self._set_paragraph_bottom_border(hp, color="B7B7B7", size="3", space="2")
 
         for footer in (section.first_page_footer, section.footer):
@@ -419,12 +419,12 @@ class DocxExporter(Exporter):
             run = fp.add_run("· ")
             run.font.size = Pt(8)
             run.font.color.rgb = RGBColor(0x68, 0x68, 0x68)
-            run.font.name = _EN_FONT
+            run.font.name = EN_FONT
             self._add_field_to_paragraph(fp, "PAGE")
             run = fp.add_run(" ·")
             run.font.size = Pt(8)
             run.font.color.rgb = RGBColor(0x68, 0x68, 0x68)
-            run.font.name = _EN_FONT
+            run.font.name = EN_FONT
 
     @staticmethod
     def _add_field_to_paragraph(paragraph, field_name: str):
@@ -492,8 +492,8 @@ class DocxExporter(Exporter):
             cleaned = self._sanitize_text(text)
             run = paragraph.add_run(cleaned)
             run.font.size = Pt(10)
-            run.font.name = _BODY_FONT
-            self._set_east_asian_font(run, _BODY_FONT_EA)
+            run.font.name = BODY_FONT
+            set_east_asian_font(run, BODY_FONT_EA)
 
     def _write_segments_to_doc(
         self,
@@ -517,8 +517,8 @@ class DocxExporter(Exporter):
                     if cleaned:
                         run = parent_paragraph.add_run(cleaned)
                         run.font.size = Pt(10)
-                        run.font.name = _BODY_FONT
-                        self._set_east_asian_font(run, _BODY_FONT_EA)
+                        run.font.name = BODY_FONT
+                        set_east_asian_font(run, BODY_FONT_EA)
 
             elif seg_type == "newline":
                 p = self._add_paragraph_to_doc(parent_paragraph)
@@ -559,8 +559,8 @@ class DocxExporter(Exporter):
                 if cleaned:
                     run = paragraph.add_run(cleaned)
                     run.font.size = Pt(10)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
+                    run.font.name = BODY_FONT
+                    set_east_asian_font(run, BODY_FONT_EA)
             else:
                 # Attempt OMML first, then PNG, then raw text
                 latex = seg["content"]
@@ -576,8 +576,8 @@ class DocxExporter(Exporter):
                     run = paragraph.add_run(f" [公式] {latex} ")
                     run.font.size = Pt(8)
                     run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
+                    run.font.name = BODY_FONT
+                    set_east_asian_font(run, BODY_FONT_EA)
 
     # ── Image handling ──
 
@@ -607,8 +607,8 @@ class DocxExporter(Exporter):
         run = paragraph.add_run("图片加载失败")
         run.font.size = Pt(8)
         run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-        run.font.name = _BODY_FONT
-        self._set_east_asian_font(run, _BODY_FONT_EA)
+        run.font.name = BODY_FONT
+        set_east_asian_font(run, BODY_FONT_EA)
         return False
 
     @staticmethod
@@ -769,8 +769,8 @@ class DocxExporter(Exporter):
                     key, value = items[item_index]
                     run = p.add_run(f"{key}．{self._sanitize_text(value)}")
                     run.font.size = Pt(9.8)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
+                    run.font.name = BODY_FONT
+                    set_east_asian_font(run, BODY_FONT_EA)
         return table
 
     def _add_blank_option_groups(self, doc: Document, groups: list[dict]):
@@ -793,8 +793,8 @@ class DocxExporter(Exporter):
                 p.paragraph_format.keep_with_next = True
                 run = p.add_run(f"{label}：")
                 run.font.size = Pt(9.5)
-                run.font.name = _BODY_FONT
-                self._set_east_asian_font(run, _BODY_FONT_EA)
+                run.font.name = BODY_FONT
+                set_east_asian_font(run, BODY_FONT_EA)
             table = self._add_options_table(doc, options)
             if first_table is None:
                 first_table = table
@@ -881,14 +881,14 @@ class DocxExporter(Exporter):
                     num_run = num_p.add_run(str(item["num"]))
                     num_run.bold = True
                     num_run.font.size = number_size
-                    num_run.font.name = _HEADING_FONT
-                    self._set_east_asian_font(num_run, _HEADING_FONT)
+                    num_run.font.name = HEADING_FONT
+                    set_east_asian_font(num_run, HEADING_FONT)
 
                     ans_run = ans_p.add_run(answer)
                     ans_run.bold = True
                     ans_run.font.size = answer_size
-                    ans_run.font.name = _HEADING_FONT
-                    self._set_east_asian_font(ans_run, _HEADING_FONT)
+                    ans_run.font.name = HEADING_FONT
+                    set_east_asian_font(ans_run, HEADING_FONT)
         return table
 
     @staticmethod
@@ -1014,8 +1014,8 @@ class DocxExporter(Exporter):
         run = p.add_run(text)
         run.bold = True
         run.font.size = Pt(11)
-        run.font.name = _HEADING_FONT
-        self._set_east_asian_font(run, _HEADING_FONT)
+        run.font.name = HEADING_FONT
+        set_east_asian_font(run, HEADING_FONT)
 
     def _add_analysis_after_question(self, doc: Document, text: str) -> list[Paragraph]:
         """Render inline analysis using labeled, indented semantic sections."""
@@ -1033,8 +1033,8 @@ class DocxExporter(Exporter):
         title_run = title.add_run("解析")
         title_run.bold = True
         title_run.font.size = Pt(10)
-        title_run.font.name = _BODY_FONT
-        self._set_east_asian_font(title_run, _BODY_FONT_EA)
+        title_run.font.name = BODY_FONT
+        set_east_asian_font(title_run, BODY_FONT_EA)
         paragraphs.append(title)
 
         for label, body in sections:
@@ -1054,12 +1054,12 @@ class DocxExporter(Exporter):
             number_run = p.add_run(f"{number}．")
             number_run.bold = True
             number_run.font.size = Pt(10)
-            number_run.font.name = _BODY_FONT
-            self._set_east_asian_font(number_run, _BODY_FONT_EA)
+            number_run.font.name = BODY_FONT
+            set_east_asian_font(number_run, BODY_FONT_EA)
             run = p.add_run(text)
             run.font.size = Pt(10)
-            run.font.name = _BODY_FONT
-            self._set_east_asian_font(run, _BODY_FONT_EA)
+            run.font.name = BODY_FONT
+            set_east_asian_font(run, BODY_FONT_EA)
             return [p]
 
         paragraphs: list[Paragraph] = []
@@ -1074,8 +1074,8 @@ class DocxExporter(Exporter):
             run = heading.add_run(prefix)
             run.bold = True
             run.font.size = Pt(10)
-            run.font.name = _BODY_FONT
-            self._set_east_asian_font(run, _BODY_FONT_EA)
+            run.font.name = BODY_FONT
+            set_east_asian_font(run, BODY_FONT_EA)
             heading.paragraph_format.keep_with_next = bool(body)
             paragraphs.append(heading)
 
@@ -1086,8 +1086,8 @@ class DocxExporter(Exporter):
                 body_p.paragraph_format.line_spacing = 1.35
                 body_run = body_p.add_run(body)
                 body_run.font.size = Pt(10)
-                body_run.font.name = _BODY_FONT
-                self._set_east_asian_font(body_run, _BODY_FONT_EA)
+                body_run.font.name = BODY_FONT
+                set_east_asian_font(body_run, BODY_FONT_EA)
                 paragraphs.append(body_p)
             first = False
 
@@ -1105,8 +1105,8 @@ class DocxExporter(Exporter):
         run = heading.add_run(label)
         run.bold = True
         run.font.size = Pt(10)
-        run.font.name = _BODY_FONT
-        self._set_east_asian_font(run, _BODY_FONT_EA)
+        run.font.name = BODY_FONT
+        set_east_asian_font(run, BODY_FONT_EA)
         heading.paragraph_format.keep_with_next = bool(body)
         paragraphs.append(heading)
 
@@ -1117,8 +1117,8 @@ class DocxExporter(Exporter):
             body_p.paragraph_format.line_spacing = 1.35
             body_run = body_p.add_run(body)
             body_run.font.size = Pt(10)
-            body_run.font.name = _BODY_FONT
-            self._set_east_asian_font(body_run, _BODY_FONT_EA)
+            body_run.font.name = BODY_FONT
+            set_east_asian_font(body_run, BODY_FONT_EA)
             paragraphs.append(body_p)
         return paragraphs
 
@@ -1130,20 +1130,20 @@ class DocxExporter(Exporter):
         run = p.add_run(title)
         run.bold = True
         run.font.size = Pt(14)
-        run.font.name = _HEADING_FONT
-        self._set_east_asian_font(run, _HEADING_FONT)
+        run.font.name = HEADING_FONT
+        set_east_asian_font(run, HEADING_FONT)
 
     @staticmethod
     def _add_labeled_text(paragraph, label: str, text: str) -> None:
         label_run = paragraph.add_run(f"{label}：")
         label_run.bold = True
         label_run.font.size = Pt(10)
-        label_run.font.name = _BODY_FONT
-        DocxExporter._set_east_asian_font(label_run, _BODY_FONT_EA)
+        label_run.font.name = BODY_FONT
+        set_east_asian_font(label_run, BODY_FONT_EA)
         run = paragraph.add_run(text)
         run.font.size = Pt(10)
-        run.font.name = _BODY_FONT
-        DocxExporter._set_east_asian_font(run, _BODY_FONT_EA)
+        run.font.name = BODY_FONT
+        set_east_asian_font(run, BODY_FONT_EA)
 
     @staticmethod
     def _keep_question_together(paragraphs: list) -> None:
@@ -1207,16 +1207,6 @@ class DocxExporter(Exporter):
             "多选题": "多项选择题",
             "问答题": "简答题",
         }.get(title, title)
-
-    @staticmethod
-    def _set_east_asian_font(run, font_name: str):
-        """Set the East-Asian font on a run via OOXML."""
-        rpr = run._r.get_or_add_rPr()
-        rfonts = rpr.find(qn("w:rFonts"))
-        if rfonts is None:
-            rfonts = OxmlElement("w:rFonts")
-            rpr.append(rfonts)
-        rfonts.set(qn("w:eastAsia"), font_name)
 
     @staticmethod
     def _get_question_text(q: dict) -> str:
@@ -1293,8 +1283,8 @@ class DocxExporter(Exporter):
             elif part:
                 run = paragraph.add_run(part)
                 run.font.size = Pt(10.5)
-                run.font.name = _BODY_FONT
-                DocxExporter._set_east_asian_font(run, _BODY_FONT_EA)
+                run.font.name = BODY_FONT
+                set_east_asian_font(run, BODY_FONT_EA)
                 if in_b:
                     run.bold = True
                 if in_i:

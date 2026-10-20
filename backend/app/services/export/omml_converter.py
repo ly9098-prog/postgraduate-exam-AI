@@ -474,10 +474,10 @@ def render_latex_as_omml_or_fallback(
     # Attempt 3: raw text
     run = paragraph.add_run(f" [公式] {latex} ")
     run.font.size = _pt(8)
-    from app.services.export.docx_exporter import _BODY_FONT, DocxExporter
+    from app.services.export.docx_fonts import BODY_FONT, set_east_asian_font
 
-    run.font.name = _BODY_FONT
-    DocxExporter._set_east_asian_font(run, _BODY_FONT)
+    run.font.name = BODY_FONT
+    set_east_asian_font(run, BODY_FONT)
     return False
 
 

@@ -482,18 +482,5 @@
         "app.features.question_import_writer"
       ]
     ]
-  },
-  {
-    "reason": "Existing DOCX/OMML rendering helpers use local reverse imports; migrate with document output regression coverage.",
-    "edges": [
-      [
-        "app.services.export.docx_exporter",
-        "app.services.export.omml_converter"
-      ],
-      [
-        "app.services.export.omml_converter",
-        "app.services.export.docx_exporter"
-      ]
-    ]
   }
 ]
