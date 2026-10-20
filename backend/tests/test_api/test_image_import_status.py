@@ -1,9 +1,12 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import sqlalchemy as sa
 from fastapi import HTTPException
 
 from app.api.v1 import imports
+from app.models.user import User
 from app.services import import_pipeline_service as pipeline_svc
 
 
@@ -24,6 +27,34 @@ class FakeCache:
             raise RuntimeError("cache unavailable")
         self.values[key] = value
         self.ttls[key] = ttl
+
+
+@pytest.fixture
+def ownership_db():
+    engine = sa.create_engine("sqlite:///:memory:")
+    metadata = sa.MetaData()
+    pipelines = sa.Table(
+        "import_pipelines", metadata,
+        sa.Column("pipeline_id", sa.String, primary_key=True),
+        sa.Column("created_by", sa.String),
+    )
+    metadata.create_all(engine)
+    with engine.connect() as connection:
+        connection.execute(pipelines.insert(), [
+            {"pipeline_id": "same", "created_by": "7"},
+            {"pipeline_id": "img_1", "created_by": "7"},
+            {"pipeline_id": "foreign", "created_by": "8"},
+        ])
+
+        async def execute(statement):
+            return connection.execute(statement)
+
+        yield SimpleNamespace(execute=execute)
+    engine.dispose()
+
+
+def _requester():
+    return User(id=7, openid="synthetic-status-owner")
 
 
 @pytest.fixture(autouse=True)
@@ -138,35 +169,63 @@ async def test_fail_image_pipeline_appends_error_and_finishes(fake_cache):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_status_returns_old_pipeline_first(monkeypatch, fake_cache):
+async def test_pipeline_status_returns_old_pipeline_first(monkeypatch, fake_cache, ownership_db):
     old_status = {"pipeline_id": "same", "status": "completed", "batch_id": "old_batch"}
     monkeypatch.setattr(imports, "svc_get_pipeline_status", AsyncMock(return_value=old_status))
     await pipeline_svc._set_image_pipeline_status("same", status="failed", batch_id="image_batch")
 
-    response = await imports.pipeline_status("same", None)
+    response = await imports.pipeline_status("same", ownership_db, _requester())
 
     assert response["batch_id"] == "old_batch"
     assert response["status"] == "completed"
 
 
 @pytest.mark.asyncio
-async def test_pipeline_status_returns_image_status_when_old_missing(monkeypatch, fake_cache):
+async def test_pipeline_status_returns_image_status_when_old_missing(
+    monkeypatch, fake_cache, ownership_db,
+):
     # Mock orchestrator to return None so svc_get_pipeline_status falls through
     # to image pipeline store.
     monkeypatch.setattr(pipeline_svc, "_orchestrator_get_pipeline_status", AsyncMock(return_value=None))
     await pipeline_svc._set_image_pipeline_status("img_1", status="completed", batch_id="image_batch")
 
-    response = await imports.pipeline_status("img_1", None)
+    response = await imports.pipeline_status("img_1", ownership_db, _requester())
 
     assert response.batch_id == "image_batch"
     assert response.status == "completed"
 
 
 @pytest.mark.asyncio
-async def test_pipeline_status_raises_404_when_missing(monkeypatch, fake_cache):
+async def test_pipeline_status_raises_404_when_missing(monkeypatch, fake_cache, ownership_db):
     monkeypatch.setattr(pipeline_svc, "_orchestrator_get_pipeline_status", AsyncMock(return_value=None))
 
     with pytest.raises(HTTPException) as exc:
-        await imports.pipeline_status("missing", None)
+        await imports.pipeline_status("missing", ownership_db, _requester())
 
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pipeline_id", ["foreign", "missing"])
+async def test_foreign_or_missing_pipeline_never_reads_status(
+    monkeypatch, ownership_db, pipeline_id,
+):
+    read = AsyncMock()
+    monkeypatch.setattr(imports, "svc_get_pipeline_status", read)
+    with pytest.raises(HTTPException) as exc:
+        await imports.pipeline_status(pipeline_id, ownership_db, _requester())
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "流水线不存在"
+    read.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_owned_pipeline_without_runtime_status_maps_to_404(
+    monkeypatch, ownership_db,
+):
+    read = AsyncMock(side_effect=ValueError("missing runtime status"))
+    monkeypatch.setattr(imports, "svc_get_pipeline_status", read)
+    with pytest.raises(HTTPException) as exc:
+        await imports.pipeline_status("same", ownership_db, _requester())
+    assert exc.value.status_code == 404
+    read.assert_awaited_once_with("same", ownership_db)

@@ -287,6 +287,8 @@ jobs:
             tests/test_services/test_question_writer_parsers.py \
             tests/test_services/test_formula_graph_batch.py \
             tests/test_services/test_import_upload_admission.py \
+            tests/test_api/test_import_page_range.py \
+            tests/test_api/test_image_import_status.py \
             tests/ocr_pipeline/test_ocr_resume_equivalence.py \
             tests/test_api/test_candidate_evaluator_privacy.py \
             tests/pipeline/test_pipeline_fingerprint.py \

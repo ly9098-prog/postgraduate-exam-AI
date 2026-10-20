@@ -4,13 +4,17 @@
 参数校验和错误响应。service 层被 mock 以隔离 API 路由/参数处理逻辑。
 """
 import io
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import admin_imports
 from app.api.v1 import imports as public_imports
+from app.core import admin_security
 from app.core.admin_security import AdminPrincipal, get_current_admin
+from app.core.database import get_db
 from app.core.security import get_current_user
 from app.main import app
 from app.models.admin import AdminUser
@@ -18,6 +22,33 @@ from app.models.user import User
 from app.schemas.import_review import PdfPageRangeInfo, PipelineUploadResponse
 
 client = TestClient(app)
+
+
+class _PermissionDb:
+    def __init__(self, permissions=("import:write",)):
+        self.permissions = permissions
+
+    async def execute(self, statement):
+        assert "permissions" in str(statement)
+        assert statement.compile().params["role_id_1"] == 1
+        return SimpleNamespace(
+            scalars=lambda: SimpleNamespace(all=lambda: list(self.permissions)),
+        )
+
+
+@pytest.fixture(autouse=True)
+def permission_cache_miss(monkeypatch):
+    monkeypatch.setattr(admin_security, "_get_role_version", AsyncMock(return_value=None))
+
+
+def _assert_safe_bad_request(response):
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "HTTP_400"
+    assert error["message"] == "请求参数有误，请检查后重试"
+    assert error["retryable"] is False
+    assert error["request_id"]
+    assert error["trace_id"]
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -58,6 +89,7 @@ async def _allow_admin():
 
 def _setup_admin_auth():
     app.dependency_overrides[get_current_admin] = _allow_admin
+    app.dependency_overrides[get_db] = lambda: _PermissionDb()
 
 
 def _setup_app_auth():
@@ -128,8 +160,9 @@ class TestAdminUploadPageRange:
             "/api/admin/v1/imports/upload?page_start=1&import_mode=book",
             files={"file": ("test.jpg", io.BytesIO(b"fake image"), "image/jpeg")},
         )
-        assert resp.status_code == 400
-        assert "仅适用于 PDF" in resp.text
+        _assert_safe_bad_request(resp)
+        assert "仅适用于 PDF" not in resp.text
+        self._mock_svc.assert_awaited_once()
 
     def test_service_value_error_returns_400(self):
         """Any ValueError from service → 400."""
@@ -138,8 +171,18 @@ class TestAdminUploadPageRange:
             "/api/admin/v1/imports/upload?page_start=0&page_end=3&import_mode=book",
             files={"file": ("test.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
         )
-        assert resp.status_code == 400
-        assert "0" in resp.text or "无效" in resp.text
+        _assert_safe_bad_request(resp)
+        assert "page_start" not in resp.text
+        self._mock_svc.assert_awaited_once()
+
+    def test_upload_without_permission_never_calls_service(self):
+        app.dependency_overrides[get_db] = lambda: _PermissionDb(())
+        resp = client.post(
+            "/api/admin/v1/imports/upload",
+            files={"file": ("test.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        )
+        assert resp.status_code == 403
+        self._mock_svc.assert_not_awaited()
 
 
 # ── Public endpoint: /api/v1/import/pipeline/upload ─────────────────────────
@@ -185,8 +228,9 @@ class TestPublicUploadPageRange:
             "/api/v1/import/pipeline/upload?page_start=1",
             files={"file": ("test.jpg", io.BytesIO(b"fake image"), "image/jpeg")},
         )
-        assert resp.status_code == 400
-        assert "仅适用于 PDF" in resp.text
+        _assert_safe_bad_request(resp)
+        assert "仅适用于 PDF" not in resp.text
+        self._mock_svc.assert_awaited_once()
 
     def test_public_upload_no_page_range_ok(self):
         """Public endpoint: no page range → service called with None."""
