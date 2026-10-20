@@ -1224,3 +1224,11 @@
 - `get_smart_scored_questions` 的 Admin scored 配置加载（默认值构建 + recommendation_strategy_service 读取 + 失败回退）提取为模块级 `_load_scored_runtime_config(db)`；保留原默认权重/图谱参数、try/except 边界和 warning 日志。函数从 516 行降至 488 行；新增 helper 31 行。
 - 原 208 项 practice 测试通过，0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。严格 Ruff/compileall/diff 通过。
 - 仅本地提交，不推送、不操作生产。`get_smart_scored_questions` 仍超 50 行预算——后续继续提取候选构建/评分/降级阶段。
+
+
+## 一百零六、第一百批执行记录：候选池构建提取（2026-10-21）
+
+- `get_smart_scored_questions` 的候选池构建阶段拆分为三个模块级函数：`_build_smart_scored_candidate_conditions`（35 行，构建 scope/排除/24h 条件）、`_execute_candidate_query`（26 行，count+random_sample+execute）、`_load_smart_scored_candidates`（35 行，编排 scope 解析+条件+查询+降级 1 放宽）。所有函数≤50 行预算。
+- 保留原条件顺序、24h 硬排除、excluded_sub 构建、fallback 1 放宽逻辑（去掉最后条件重查）；`subject_cond` 在 caller 从 scope_ids 重建。函数从 488 行降至 412 行。
+- 原 208 项 practice 测试通过，0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。严格 Ruff/compileall/diff 通过。
+- 仅本地提交，不推送、不操作生产。`get_smart_scored_questions` 仍超 50 行预算——后续继续提取图谱扩展/状态加载/评分/降级编排。

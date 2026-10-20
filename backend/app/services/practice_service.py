@@ -3005,6 +3005,109 @@ async def _load_scored_runtime_config(db: AsyncSession) -> dict:
 
 
 
+def _build_smart_scored_candidate_conditions(
+    user_id: int,
+    scope_ids: list[int],
+    exclude_answered: bool,
+    no_repeat_days: int | None,
+    now: datetime,
+) -> tuple[list, object | None]:
+    """Build candidate query conditions including 24h and exclude filters."""
+    subject_cond = Question.subject_id.in_(scope_ids)
+    conditions: list = [
+        Question.is_active,
+        subject_cond,
+        _practice_revision_scope_condition(scope_ids),
+    ]
+
+    excluded_sub = _build_excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
+    if excluded_sub is not None:
+        conditions.append(Question.id.notin_(excluded_sub))
+
+    # 硬性排除 24 h 内做过的题
+    recent_cutoff = now - timedelta(hours=24)
+    recent_q_sub = (
+        select(PracticeRecord.question_id)
+        .where(
+            PracticeRecord.user_id == user_id,
+            PracticeRecord.answered_at >= recent_cutoff,
+        )
+        .distinct()
+    )
+    conditions.append(Question.id.notin_(recent_q_sub))
+    return conditions, excluded_sub
+
+
+async def _load_smart_scored_candidates(
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    subject_ids: list[int] | None,
+    candidate_limit: int,
+    exclude_answered: bool,
+    no_repeat_days: int | None,
+    count: int,
+    now: datetime,
+) -> tuple[list[Question], list, list[int], object | None, int]:
+    """Build candidate pool with 24h exclusion, relaxing to fallback level 1 if insufficient."""
+    scope_ids = (
+        subject_ids
+        if subject_ids is not None
+        else await resolve_subject_ids(db, subject_code)
+    )
+    conditions, excluded_sub = _build_smart_scored_candidate_conditions(
+        user_id, scope_ids, exclude_answered, no_repeat_days, now,
+    )
+
+    candidates = await _execute_candidate_query(db, conditions, candidate_limit)
+    active_candidate_conditions = conditions
+    fallback_level = 0
+
+    # 24h 过滤后不足 → 放宽（降级 1）
+    if len(candidates) < count:
+        fallback_level = 1
+        relaxed = [c for c in conditions if c is not conditions[-1]]
+        active_candidate_conditions = relaxed
+        candidates = await _execute_candidate_query(
+            db, relaxed, candidate_limit,
+        )
+
+    return candidates, active_candidate_conditions, scope_ids, excluded_sub, fallback_level
+
+
+async def _execute_candidate_query(
+    db: AsyncSession,
+    conditions: list,
+    candidate_limit: int,
+) -> list[Question]:
+    """Count, random-sample and execute a candidate query."""
+    total = int(
+        (
+            await db.scalar(
+                select(func.count()).select_from(
+                    select(Question.id).where(and_(*conditions)).subquery()
+                )
+            )
+        )
+        or 0
+    )
+    query = (
+        select(Question)
+        .where(and_(*conditions))
+        .options(selectinload(Question.subject_ref))
+    )
+    query = _random_sample_query(
+        query, total, min(candidate_limit, total), Question.id,
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+
 async def get_smart_scored_questions(
     db: AsyncSession,
     user_id: int,
@@ -3041,90 +3144,14 @@ async def get_smart_scored_questions(
     system_weights = scored_runtime.get("weights") or {}
     graph_runtime = scored_runtime.get("graph") or {}
 
-    # ── 1. 候选题池 ──
     candidate_limit = max(count * 5, 50)
-    scope_ids = (
-        subject_ids
-        if subject_ids is not None
-        else await resolve_subject_ids(db, subject_code)
+    candidates, active_candidate_conditions, scope_ids, excluded_sub, fallback_level = (
+        await _load_smart_scored_candidates(
+            db, user_id, subject_code, subject_ids, candidate_limit,
+            exclude_answered, no_repeat_days, count, now,
+        )
     )
     subject_cond = Question.subject_id.in_(scope_ids)
-    conditions: list = [
-        Question.is_active,
-        subject_cond,
-        _practice_revision_scope_condition(scope_ids),
-    ]
-
-    excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-    )
-    if excluded_sub is not None:
-        conditions.append(Question.id.notin_(excluded_sub))
-
-    # 硬性排除 24 h 内做过的题
-    recent_cutoff = now - timedelta(hours=24)
-    recent_q_sub = (
-        select(PracticeRecord.question_id)
-        .where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.answered_at >= recent_cutoff,
-        )
-        .distinct()
-    )
-    conditions.append(Question.id.notin_(recent_q_sub))
-
-    candidate_total = int(
-        (
-            await db.scalar(
-                select(func.count()).select_from(
-                    select(Question.id).where(and_(*conditions)).subquery()
-                )
-            )
-        )
-        or 0
-    )
-    cand_query = (
-        select(Question)
-        .where(and_(*conditions))
-        .options(selectinload(Question.subject_ref))
-    )
-    cand_query = _random_sample_query(
-        cand_query, candidate_total, min(candidate_limit, candidate_total), Question.id
-    )
-    cand_result = await db.execute(cand_query)
-    candidates: list[Question] = list(cand_result.scalars().all())
-    active_candidate_conditions = conditions
-
-    # 24h 过滤后不足 → 放宽（降级 1）
-    if len(candidates) < count:
-        fallback_level = 1
-        relaxed = [c for c in conditions if c is not conditions[-1]]
-        active_candidate_conditions = relaxed
-        relaxed_total = int(
-            (
-                await db.scalar(
-                    select(func.count()).select_from(
-                        select(Question.id).where(and_(*relaxed)).subquery()
-                    )
-                )
-            )
-            or 0
-        )
-        relaxed_query = (
-            select(Question)
-            .where(and_(*relaxed))
-            .options(selectinload(Question.subject_ref))
-        )
-        relaxed_query = _random_sample_query(
-            relaxed_query,
-            relaxed_total,
-            min(candidate_limit, relaxed_total),
-            Question.id,
-        )
-        relaxed_result = await db.execute(relaxed_query)
-        candidates = list(relaxed_result.scalars().all())
 
     if not candidates:
         logger.warning(
