@@ -41,6 +41,7 @@
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-answer-editor.tsx`、`review-answer-selection.ts` | 答案/解析编辑展示与单选/多选切换规则分开；组件通过字段回调连接页面草稿，纯规则保留分隔、重复项、选项顺序和未知题型回退，多空题继续使用既有识别规则 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-visual-segment-editor.tsx`、`hooks/use-review-segment-drag.ts` | 视觉片段的展示、排序、归属和删除复用既有 segment-utils；页面实例级拖拽状态由 hook 持有，上传请求/异步写回与文件输入引用留在页面，卡片不接收输入 ref |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-option-editor.tsx`、`review-option-editing.ts` | 选项编辑按多空、图片选项、普通文本优先级组合；普通文本更新与选项片段移除由纯规则负责，页面保留草稿 setter、多空 reducer 和图片模式确认回调 |
+| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-json-view.tsx` | 审核详情 JSON 模式的基础信息、解析数据、重复检测和 OCR/AI 原始数据分组及折叠展示由无状态组件承接；页面保留模式切换与编辑状态 |
 | `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js` | 时间计算、存储异常适配和待同步队列分别由无页面依赖模块负责；Page 仍负责 `api.now()`、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
 
 这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；GET 发题入口已收敛，提交链路和番茄钟 Page controller 仍待后续治理。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列模块不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。

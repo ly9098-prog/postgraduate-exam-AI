@@ -50,6 +50,7 @@ import { ImageAnswerPreview, ImageAnswerResult } from "./components/image-answer
 import { BatchAnswerPreview, BatchAnswerResult } from "./components/batch-answer-results";
 import { OptionVisualPreview } from "./components/option-visual-preview";
 import { ReviewOptionEditor } from "./components/review-option-editor";
+import { ReviewJsonView } from "./components/review-json-view";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
 import { extractOptionVisualModel, normalizeOptionTextForDisplay, type OptionVisualModel } from "@/lib/option-visual-utils";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
@@ -2006,29 +2007,7 @@ export default function ImportReviewPage() {
                 </>
               ) : detailView === "json" && !editing ? (
                 /* ── JSON View ── */
-                <div className="space-y-3">
-                  {[
-                    { title: "基础信息", accent: "#5b7b9a", data: { id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject_id: previewItem.subject_id, subject_code: previewItem.subject_code, subject_name: previewItem.subject_name, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at } },
-                    { title: "解析数据", accent: "#6b9b6b", data: { parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis } },
-                    { title: "重复检测", accent: "#c49a6b", data: { duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash } },
-                    { title: "OCR / AI 原始数据", accent: "#9a7aba", data: { raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata } },
-                  ].map(({ title, accent, data }) => (
-                    <section key={title} className="animate-fade-up rounded-xl border border-[var(--color-border)]/60 bg-white/80 shadow-sm" style={{ animationDelay: "0.03s" }}>
-                      <details className="group" open>
-                        <summary className="flex cursor-pointer items-center gap-2.5 border-b border-[var(--color-border)]/30 px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
-                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ backgroundColor: `${accent}18` }}>
-                            <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: accent }} />
-                          </span>
-                          {title}
-                          <span className="ml-auto inline-block text-[10px] transition-transform group-open:rotate-90 opacity-50">▶</span>
-                        </summary>
-                        <div className="px-4 pb-3 pt-2">
-                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(data)}</pre>
-                        </div>
-                      </details>
-                    </section>
-                  ))}
-                </div>
+                <ReviewJsonView item={previewItem} />
               ) : (
                 /* ── Edit Mode ── */
                 <div className="space-y-5 pb-16">

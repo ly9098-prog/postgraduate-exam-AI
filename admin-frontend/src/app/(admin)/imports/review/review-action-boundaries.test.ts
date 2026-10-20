@@ -71,6 +71,10 @@ const modules = [
       "./option-visual-editor",
     ],
   },
+  {
+    path: "./components/review-json-view.tsx",
+    imports: ["@/lib/api/types"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
