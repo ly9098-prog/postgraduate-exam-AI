@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十七批已提交，第六十八批收敛 OCR readiness 状态与探针；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十八批已提交，第六十九批分离角色依赖检查；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -922,3 +922,12 @@
 - 3 项架构测试检查真实调用/Doctor 无 main 依赖、唯一状态、300/50 预算及新进程惰性导入，接入现有 CI。模块 105 行、函数最长 44 行；main 1,358 → 1,275 行，图 548 模块、2,172 边、零循环/反向 API。完整角色、生命周期和全栈治理仍未完成。
 - 完整本地静态 CI 801 通过、2 条既有弃用警告；独立 readiness 69 项通过。新改 Python 严格 Ruff、全应用 Ruff、compileall、Git diff 与 CI YAML/测试路径检查通过。按 review-agent 只读审查全部差异、唯一状态与 await 后计数、错误/取消、配置检查顺序、Doctor 真实导入及对照：No findings。
 - 本批仅本地提交相关代码/测试/CI/任务及盘点，保留其他文件改动与删除，不推送、不操作生产。HTTP transport 为替身，未执行真实 OCR/Doctor 全链、生产数据库/Redis、角色启动/退出或客户端/远端 CI；事件循环 lag 仍由 main 持有，角色检查及生命周期下一批继续。
+
+## 七十五、第六十九批执行记录：角色依赖检查
+
+- `services/role_readiness.py` 持有显式 Settings 的角色检查，scheduler 审计/推荐指标检查独立函数；main 直接调用真实定义，不保留 `_check_role_deps`。保持相同 logger 名称、web 云隔离、worker/all draining 先于 OCR/调度器、scheduler/all 启用开关、ImportError 与普通异常日志和未知角色 False。
+- 原实现先通过新增 22 项刻画：web/worker/scheduler/all/未知角色，云本地模块与大小写 backend、draining 的拒绝/普通错误回退/取消，以及两类 scheduler 的 import/access/cancel 错误和日志。迁移后契约/边界/响应/原 readiness 共 148 项通过；取消继续传播，不改变原 worker draining 查询失败继续的行为。
+- 展开 scheduler helper、去除文档及显式参数归一化后角色函数与其余 main AST 一致；2,560 组角色/云/模块/backend/draining/开关/运行状态结果及日志顺序一致，完整 OpenAPI 328 路径一致。首轮 AST 对照未对 helper 展开后导入节点再归一化而失败，修正对照脚本后通过，未因此改生产语义。
+- 新增 3 项依赖/预算/真实调用/新进程门禁并接入既有 CI，模块 97 行、两个函数为 41/43 行；main 1,275 → 1,184 行，图 549 模块、2,178 边、零循环/反向 API。模块导入不加载配置、数据库、OCR isolation 或 worker/scheduler。
+- 完整本地静态 CI 826 项通过、2 条既有弃用警告；独立 readiness 69 项通过。新改 Python 严格 Ruff、全应用 Ruff、compileall、Git diff 与 CI YAML/路径检查通过。按 review-agent 只读审查全部差异、原角色优先级、scheduler日志/错误/取消及真实消费者和组合对照：No findings。
+- 本批仅本地提交代码/测试/CI/任务与盘点，保留其他工作区改动和删除，不推送、不操作生产。角色检查替身不等于真实 HTTP/worker/scheduler 启动/失败清理/退出；main lifespan、lag 单一所有权和全栈其他业务仍待治理，已登记 Alembic/SSE 原缺口未修。

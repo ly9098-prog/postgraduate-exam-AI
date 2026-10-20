@@ -89,8 +89,9 @@ class TestCheckRoleDeps:
     @staticmethod
     def _import_check_role_deps():
         """Import the module-level function lazily to avoid startup side effects."""
-        from app.main import _check_role_deps
-        return _check_role_deps
+        import app.main
+
+        return lambda: app.main.check_role_dependencies(app.main.settings)
 
     async def test_web_role_ok(self):
         """Web role should pass deps check by default."""
@@ -574,7 +575,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=True),
+            patch("app.main.check_role_dependencies", return_value=True),
             patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
@@ -592,7 +593,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=True),
+            patch("app.main.check_role_dependencies", return_value=True),
             patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
@@ -610,7 +611,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=True),
+            patch("app.main.check_role_dependencies", return_value=True),
             patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=True),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
@@ -627,7 +628,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=False),
+            patch("app.main.check_role_dependencies", return_value=False),
             patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
@@ -644,7 +645,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=True),
+            patch("app.main.check_role_dependencies", return_value=True),
             patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
@@ -662,7 +663,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=True),
+            patch("app.main.check_role_dependencies", return_value=True),
             patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
@@ -680,7 +681,7 @@ class TestReadinessEndpoint:
             patch("app.main.check_alembic_head", return_value=True),
             patch("app.main.check_staging", return_value=True),
             patch("app.main.check_staging_space", return_value={}),
-            patch("app.main._check_role_deps", return_value=True),
+            patch("app.main.check_role_dependencies", return_value=True),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -698,7 +699,7 @@ class TestReadinessEndpoint:
     @pytest.mark.parametrize("production", [False, True])
     @pytest.mark.parametrize("failed_probe,status", [
         (None, 200), ("check_database", 503), ("check_redis", 503),
-        ("check_staging", 503), ("_check_role_deps", 503),
+        ("check_staging", 503), ("check_role_dependencies", 503),
         ("check_ocr_config", 503), ("check_queue", 200),
         # Existing readiness classifies stale Alembic as informational.
         ("check_alembic_head", 200),
@@ -712,7 +713,7 @@ class TestReadinessEndpoint:
         probes = {
             "check_database": True, "check_redis": True,
             "check_alembic_head": True, "check_staging": True,
-            "_check_role_deps": True, "check_ocr_config": None,
+            "check_role_dependencies": True, "check_ocr_config": None,
             "check_queue": None, "check_staging_space": {},
         }
         if failed_probe:

@@ -280,6 +280,7 @@ jobs:
             tests/architecture/test_readiness_response_boundaries.py \
             tests/architecture/test_readiness_probe_boundaries.py \
             tests/architecture/test_ocr_readiness_boundaries.py \
+            tests/architecture/test_role_readiness_boundaries.py \
             tests/architecture/test_gateway_bypass_zero.py \
             tests/architecture/test_document_ir_production_write_zero.py \
             tests/core/test_artifact_path_traversal.py \
@@ -302,6 +303,7 @@ jobs:
             tests/core/test_readiness_response_contract.py \
             tests/core/test_readiness_dependency_probes.py \
             tests/core/test_ocr_readiness_contract.py \
+            tests/core/test_role_readiness_contract.py \
             tests/test_services/test_readiness_redis_ping.py \
             tests/core/test_orm_registry.py \
             tests/test_ocr_fix/test_adapter_contract.py \

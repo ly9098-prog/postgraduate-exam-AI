@@ -11,7 +11,7 @@ from app.core.readiness_response import ReadinessSnapshot, build_readiness_respo
 
 PROBES = [
     "check_database", "check_redis", "check_alembic_head", "check_staging",
-    "check_staging_space", "_check_role_deps", "check_ocr_config", "check_queue",
+    "check_staging_space", "check_role_dependencies", "check_ocr_config", "check_queue",
 ]
 
 

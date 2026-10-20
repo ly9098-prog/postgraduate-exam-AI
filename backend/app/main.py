@@ -38,6 +38,7 @@ from app.services.readiness_dependency_probes import (
     check_staging_space,
     get_db_pool_metrics,
 )
+from app.services.role_readiness import check_role_dependencies
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
 from app.services.runtime_sse_metrics import append_sse_metrics
 from app.services.runtime_system_metrics import (
@@ -1078,7 +1079,7 @@ async def ready_health():
     )
     staging_ok = await check_staging()
     staging_space = await check_staging_space()
-    role_ok = await _check_role_deps()
+    role_ok = await check_role_dependencies(settings)
 
     # Non-critical checks (informational, don't fail probe)
     ocr_status = await check_ocr_config(settings, ocr_readiness_state)
@@ -1110,98 +1111,6 @@ async def ready_health():
         production_mode=_production_mode,
     )
     return JSONResponse(status_code=status_code, content=response_content)
-
-
-async def _check_role_deps() -> bool:
-    """Check role-specific dependencies are available.
-
-    Web:
-      - If cloud_api, verify no local paddle/paddleocr in sys.modules
-      - (DB, Redis, staging checked separately)
-
-    Worker:
-      - Must not be draining
-      - If cloud_api, OCR execution backend must not be local_process
-
-    Scheduler:
-      - Pomodoro scheduler (removed)
-      - Audit log cleanup scheduler loop running (if AUDIT_LOG_CLEANUP_ENABLED)
-    """
-    role = settings.PROCESS_ROLE
-    is_cloud = is_restricted_ocr_environment()
-
-    if role == "web":
-        if is_cloud and loaded_local_ocr_modules():
-            logger.warning(
-                "role_deps: cloud web role detected banned OCR modules in sys.modules"
-            )
-            return False
-        return True
-
-    if role in {"worker", "all"}:
-        # Draining check
-        try:
-            from app.services.task_queue_worker import is_draining_v2
-
-            if is_draining_v2():
-                logger.warning("role_deps: worker is draining")
-                return False
-        except Exception:
-            pass
-
-        # Cloud worker must not use local_process backend
-        if is_cloud:
-            exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
-            if exec_backend == "local_process":
-                logger.warning("role_deps: cloud worker with local_process OCR backend")
-                return False
-
-        if role != "all":
-            return True
-
-    if role in {"scheduler", "all"}:
-        # Check audit log cleanup scheduler running (if enabled)
-        try:
-            from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-
-            if (
-                settings.AUDIT_LOG_CLEANUP_ENABLED
-                and not audit_log_cleanup_scheduler._running
-            ):
-                logger.warning("role_deps: audit log cleanup scheduler not running")
-                return False
-        except ImportError:
-            logger.warning("role_deps: audit_cleanup_scheduler import failed")
-            return False
-        except Exception as e:
-            logger.warning("role_deps: audit cleanup scheduler check error: %s", e)
-            return False
-
-        try:
-            from app.services.recommendation_metrics_scheduler import (
-                recommendation_metrics_scheduler,
-            )
-
-            if (
-                settings.RECOMMENDATION_METRICS_AGG_ENABLED
-                and not recommendation_metrics_scheduler._running
-            ):
-                logger.warning(
-                    "role_deps: recommendation metrics scheduler not running"
-                )
-                return False
-        except ImportError:
-            logger.warning("role_deps: recommendation_metrics_scheduler import failed")
-            return False
-        except Exception as e:
-            logger.warning(
-                "role_deps: recommendation metrics scheduler check error: %s", e
-            )
-            return False
-
-        return True
-
-    return False  # Unknown role → fail probe
 
 
 # --- 路由（聚合 Router） ---

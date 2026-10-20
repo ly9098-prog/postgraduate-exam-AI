@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：548 个模块、2,172 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：549 个模块、2,178 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 1275 | `lifespan` 870 | HTTP/指标/基础及 OCR 探针已独立，main 持有唯一 OCR readiness state；角色检查与生命周期仍待治理。 |
+| `backend/app/main.py` | 1184 | `lifespan` 870 | HTTP/指标/基础/OCR/角色探针已独立，main 持有唯一 OCR readiness state；lag 与生命周期仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -144,3 +144,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十七批将七个基础探针迁至 `readiness_dependency_probes.py`，main 直接消费真实定义，显式传入会话工厂、Redis/production 参数和原 Alembic 路径；保留惰性端口和所有错误/取消规则。33 项原实现契约先通过，迁移后相关定向 208 项通过，7 个函数及剩余 main AST 归一化一致；76 组旧/新数据库/Redis/队列结果与 328 路径 OpenAPI 一致。完整本地静态 CI 771 项、readiness 69 项通过，3 项新进程/单向依赖/预算/调用门禁接入现有 CI。新模块 156 行、最长函数 29 行，main 1,358 行；图 547 模块/2,168 边/零循环。无真实服务/部署/客户端/远端 CI 验收，OCR readiness、角色和生命周期仍待继续。
 
 第六十八批将 OCR 配置/远端 health 检查和显式失败状态迁至 `ocr_readiness.py`，main 拥有一个状态实例，Doctor 直接导入探针而不再导入 HTTP app。26 项原实现刻画先过，迁移后加入 state 隔离及 3 项依赖/新进程/尺寸门禁，完整静态 CI 本地 801 项、readiness 69 项通过。3,072 组配置/状态/调用/异常/取消对照、展开 helper AST 和 328 路径 OpenAPI 一致；传输替身覆盖 URL/timeout/auth/trace/HTTP边界。模块 105 行/最长函数44，main 1,275 行；图548模块/2,172边/零循环。真实 OCR/Doctor全链与角色/生命周期/客户端未验证，lag仍为main原状态。
+
+第六十九批将角色检查迁至 `role_readiness.py`，显式传入 settings，scheduler 审计/推荐检查独立函数；原 logger、优先级、错误/日志和取消规则保留。22 项原实现刻画先过，迁移后定向 148 项通过；2,560 组角色/云/draining/backend/开关/运行组合结果和日志顺序一致，展开 AST 与 328 路径 OpenAPI 一致。3 项新进程/依赖/预算/实际调用门禁接入 CI，完整静态步骤本地 826 项、readiness 69 项通过。模块97行、函数41/43行，main1,184行；图549模块/2,178边/零循环。真实运行角色启动/失败清理/退出尚未验收，lag和lifespan继续待治理。
