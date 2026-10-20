@@ -57,7 +57,7 @@ async def test_staging_sample_and_cleanup_sample_are_separate_reads(monkeypatch,
 
 @pytest.mark.asyncio
 async def test_pool_metric_filter_keeps_existing_numeric_types(monkeypatch, metrics_ports):
-    monkeypatch.setattr(main, "_get_db_pool_metrics", lambda: {
+    monkeypatch.setattr(main, "get_db_pool_metrics", lambda: {
         "integer": 7, "float": 1.25, "boolean": True, "string": "private", "none": None,
     })
     lines = (await main.metrics_endpoint(incoming())).body.decode().splitlines()

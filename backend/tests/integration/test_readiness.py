@@ -342,7 +342,7 @@ class TestCheckOcrConfig:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# _check_queue
+# check_queue
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -352,8 +352,12 @@ class TestCheckQueue:
 
     @staticmethod
     def _import_check_queue():
-        from app.main import _check_queue
-        return _check_queue
+        import app.main
+
+        return lambda: app.main.check_queue(
+            redis_url=app.main.settings.REDIS_URL,
+            production_mode=app.main._production_mode,
+        )
 
     async def test_no_redis_returns_none(self):
         """Without REDIS_URL, returns None (queue not relevant)."""
@@ -438,7 +442,7 @@ class TestCheckQueue:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# _check_staging_space
+# check_staging_space
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -448,8 +452,8 @@ class TestCheckStagingSpace:
 
     @staticmethod
     def _import_check_staging_space():
-        from app.main import _check_staging_space
-        return _check_staging_space
+        from app.main import check_staging_space
+        return check_staging_space
 
     async def test_returns_dict_with_keys(self, tmp_path):
         """The staging space check returns a dict with expected keys."""
@@ -562,13 +566,13 @@ class TestReadinessEndpoint:
     def test_healthy_probe(self, client):
         """All deps healthy → 200 with status=ok."""
         with (
-            patch("app.main._check_database", return_value=True),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=True),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=True),
-            patch("app.main._check_queue", return_value="ok"),
+            patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -580,13 +584,13 @@ class TestReadinessEndpoint:
     def test_db_unavailable_returns_503(self, client):
         """Database unavailable → 503."""
         with (
-            patch("app.main._check_database", return_value=False),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=False),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=True),
-            patch("app.main._check_queue", return_value="ok"),
+            patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -598,13 +602,13 @@ class TestReadinessEndpoint:
     def test_draining_returns_503(self, client):
         """Worker draining → 503."""
         with (
-            patch("app.main._check_database", return_value=True),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=True),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=True),
-            patch("app.main._check_queue", return_value="ok"),
+            patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=True),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -615,13 +619,13 @@ class TestReadinessEndpoint:
     def test_role_deps_fail_returns_503(self, client):
         """Role deps unavailable → 503."""
         with (
-            patch("app.main._check_database", return_value=True),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=True),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=False),
-            patch("app.main._check_queue", return_value="ok"),
+            patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -632,13 +636,13 @@ class TestReadinessEndpoint:
     def test_ocr_unavailable_returns_503(self, client):
         """OCR unavailable (config error) → 503 (critical in production)."""
         with (
-            patch("app.main._check_database", return_value=True),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=True),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=True),
-            patch("app.main._check_queue", return_value="ok"),
+            patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -650,13 +654,13 @@ class TestReadinessEndpoint:
     def test_ocr_degraded_returns_200(self, client):
         """OCR degraded (remote down) → 200 with degraded flag (not critical)."""
         with (
-            patch("app.main._check_database", return_value=True),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=True),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=True),
-            patch("app.main._check_queue", return_value="ok"),
+            patch("app.main.check_queue", return_value="ok"),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
@@ -668,16 +672,16 @@ class TestReadinessEndpoint:
     def test_queue_unavailable_returns_200(self, client):
         """Queue 'unavailable' returns 200 — queue is not a hard dep (Redis is)."""
         with (
-            patch("app.main._check_database", return_value=True),
-            patch("app.main._check_redis", return_value=True),
-            patch("app.main._check_alembic_head", return_value=True),
-            patch("app.main._check_staging", return_value=True),
-            patch("app.main._check_staging_space", return_value={}),
+            patch("app.main.check_database", return_value=True),
+            patch("app.main.check_redis", return_value=True),
+            patch("app.main.check_alembic_head", return_value=True),
+            patch("app.main.check_staging", return_value=True),
+            patch("app.main.check_staging_space", return_value={}),
             patch("app.main._check_role_deps", return_value=True),
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
-            with patch("app.main._check_queue", return_value="unavailable"):
+            with patch("app.main.check_queue", return_value="unavailable"):
                 resp = client.get("/health/ready")
         assert resp.status_code == 200
         assert resp.json()["checks"]["queue"] == "unavailable"
@@ -690,11 +694,11 @@ class TestReadinessEndpoint:
 
     @pytest.mark.parametrize("production", [False, True])
     @pytest.mark.parametrize("failed_probe,status", [
-        (None, 200), ("_check_database", 503), ("_check_redis", 503),
-        ("_check_staging", 503), ("_check_role_deps", 503),
-        ("_check_ocr_config", 503), ("_check_queue", 200),
+        (None, 200), ("check_database", 503), ("check_redis", 503),
+        ("check_staging", 503), ("_check_role_deps", 503),
+        ("_check_ocr_config", 503), ("check_queue", 200),
         # Existing readiness classifies stale Alembic as informational.
-        ("_check_alembic_head", 200),
+        ("check_alembic_head", 200),
     ])
     def test_original_readiness_status_and_cloud_detail_boundary(
         self, client, monkeypatch, production, failed_probe, status
@@ -703,14 +707,14 @@ class TestReadinessEndpoint:
         from app.services import task_queue_worker
 
         probes = {
-            "_check_database": True, "_check_redis": True,
-            "_check_alembic_head": True, "_check_staging": True,
+            "check_database": True, "check_redis": True,
+            "check_alembic_head": True, "check_staging": True,
             "_check_role_deps": True, "_check_ocr_config": None,
-            "_check_queue": None, "_check_staging_space": {},
+            "check_queue": None, "check_staging_space": {},
         }
         if failed_probe:
             probes[failed_probe] = (
-                "unavailable" if failed_probe in {"_check_ocr_config", "_check_queue"}
+                "unavailable" if failed_probe in {"_check_ocr_config", "check_queue"}
                 else False
             )
         for name, result in probes.items():
@@ -718,7 +722,7 @@ class TestReadinessEndpoint:
         monkeypatch.setattr(app.main, "_production_mode", production)
         monkeypatch.setattr(app.main.settings, "REDIS_URL", "redis://synthetic:6379")
         monkeypatch.setattr(
-            app.main, "_get_db_pool_metrics", lambda: {"private": "synthetic-private"},
+            app.main, "get_db_pool_metrics", lambda: {"private": "synthetic-private"},
         )
         monkeypatch.setattr(task_queue_worker, "is_draining_v2", lambda: False)
         response = client.get("/health/ready")
@@ -730,5 +734,5 @@ class TestReadinessEndpoint:
         else:
             assert response.json().items() >= expected.items()
             assert response.json()["checks"]["db_pool"] == {"private": "synthetic-private"}
-            if failed_probe == "_check_alembic_head":
+            if failed_probe == "check_alembic_head":
                 assert response.json()["checks"]["alembic"] == "stale"

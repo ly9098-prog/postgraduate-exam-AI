@@ -91,7 +91,7 @@ def metrics_ports(monkeypatch):
     monkeypatch.setattr(main, "_elapsed_monitor_event_loop_lag_ms", 1.234)
     monkeypatch.setattr(main, "_startup_ts", 100.0)
     monkeypatch.setattr(main, "time", SimpleNamespace(time=lambda: 225.0))
-    monkeypatch.setattr(main, "_get_db_pool_metrics", lambda: {"size": 4, "error": "private"})
+    monkeypatch.setattr(main, "get_db_pool_metrics", lambda: {"size": 4, "error": "private"})
     monkeypatch.setattr(
         resource_guard.resource_guard, "get_system_metrics",
         lambda: SimpleNamespace(rss_mb=12.34, available_memory_mb=567.89, active_pipelines=2),

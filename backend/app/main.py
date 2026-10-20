@@ -28,6 +28,15 @@ from app.services.production_config_validator import (
     validate_production_config,
     validate_production_config_async,
 )
+from app.services.readiness_dependency_probes import (
+    check_alembic_head,
+    check_database,
+    check_queue,
+    check_redis,
+    check_staging,
+    check_staging_space,
+    get_db_pool_metrics,
+)
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
 from app.services.runtime_sse_metrics import append_sse_metrics
 from app.services.runtime_system_metrics import (
@@ -1019,23 +1028,6 @@ async def _event_loop_lag_monitor(interval: float = 1.0) -> None:
         )
 
 
-def _get_db_pool_metrics() -> dict:
-    """Return SQLAlchemy async engine pool status (sync, for health endpoint)."""
-    try:
-        from app.core.database import engine
-
-        sync_engine = engine.sync_engine
-        pool = sync_engine.pool
-        return {
-            "size": pool.size(),
-            "checked_in": pool.checkedin(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-
 # ── OCR readiness hysteresis ──
 # Track consecutive remote OCR health-check failures.
 # Crosses the degraded threshold at 3 consecutive failures.
@@ -1078,16 +1070,18 @@ async def ready_health():
     - OCR external configuration (development only)
     - Queue status
     """
-    db_ok = await _check_database()
-    redis_ok = await _check_redis()
-    alembic_ok = await _check_alembic_head()
-    staging_ok = await _check_staging()
-    staging_space = await _check_staging_space()
+    db_ok = await check_database(async_session)
+    redis_ok = await check_redis(redis_url=settings.REDIS_URL, production_mode=_production_mode)
+    alembic_ok = await check_alembic_head(
+        async_session, script_location=os.path.join(os.path.dirname(__file__), "../alembic"),
+    )
+    staging_ok = await check_staging()
+    staging_space = await check_staging_space()
     role_ok = await _check_role_deps()
 
     # Non-critical checks (informational, don't fail probe)
     ocr_status = await _check_ocr_config()
-    queue_status = await _check_queue()
+    queue_status = await check_queue(redis_url=settings.REDIS_URL, production_mode=_production_mode)
 
     # Draining is critical — stop the load balancer from sending requests
     try:
@@ -1108,114 +1102,13 @@ async def ready_health():
             ocr_status=ocr_status,
             queue_status=queue_status,
             draining=draining,
-            db_pool=_get_db_pool_metrics(),
+            db_pool=get_db_pool_metrics(),
             event_loop_lag_ms=_elapsed_monitor_event_loop_lag_ms,
         ),
         redis_configured=bool(settings.REDIS_URL),
         production_mode=_production_mode,
     )
     return JSONResponse(status_code=status_code, content=response_content)
-
-
-async def _check_database() -> bool:
-    """Check PostgreSQL is reachable."""
-    try:
-        async with async_session() as session:
-            await session.execute(text("SELECT 1"))
-        return True
-    except Exception:
-        return False
-
-
-async def _check_redis() -> bool:
-    """Check Redis is reachable and responsive.
-
-    In production, Redis is mandatory — returns False if not configured.
-    """
-    if not settings.REDIS_URL:
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-
-        try:
-            if (
-                detect_deployment_profile() == DeploymentProfile.CLOUD_API
-                or _production_mode
-            ):
-                return False
-        except Exception:
-            return False
-        return True  # Not configured in dev — not a failure
-    try:
-        from app.core.cache import cache
-
-        # Must be a real Redis PING: cache.set/get silently fall back to the
-        # in-process cache, which would report "ok" during a Redis outage and
-        # keep the instance in the load balancer.
-        return await cache.ping()
-    except Exception:
-        return False
-
-
-async def _check_alembic_head() -> bool:
-    """Verify the database migration is at the head revision."""
-    try:
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-
-        async with async_session() as session:
-            row = (
-                await session.execute(text("SELECT version_num FROM alembic_version"))
-            ).scalar_one_or_none()
-            db_revision = row or ""
-
-        alembic_cfg = Config()
-        alembic_cfg.set_main_option(
-            "script_location",
-            os.path.join(os.path.dirname(__file__), "../alembic"),
-        )
-        script = ScriptDirectory.from_config(alembic_cfg)
-        head_revision = script.get_current_head()
-
-        return bool(db_revision and head_revision and db_revision == head_revision)
-    except Exception:
-        return False
-
-
-async def _check_staging() -> bool:
-    """Check the staging directory is writable."""
-    from app.services.staging_storage import _STAGING_DIR
-
-    try:
-        path = _STAGING_DIR
-        path.mkdir(parents=True, exist_ok=True)
-        return os.access(str(path), os.W_OK)
-    except Exception:
-        return False
-
-
-async def _check_staging_space() -> dict:
-    """Return staging directory space info (free bytes, total bytes, used percent).
-
-    Returns empty dict on failure (non-critical, informational only).
-    """
-    from app.services.staging_storage import _STAGING_DIR
-
-    try:
-        st = os.statvfs(str(_STAGING_DIR))
-        free_bytes = st.f_frsize * st.f_bavail
-        total_bytes = st.f_frsize * st.f_blocks
-        used_percent = (
-            ((total_bytes - free_bytes) / total_bytes * 100) if total_bytes > 0 else 0
-        )
-        return {
-            "staging_free_bytes": free_bytes,
-            "staging_total_bytes": total_bytes,
-            "staging_used_percent": round(used_percent, 1),
-        }
-    except Exception:
-        return {}
 
 
 async def _check_role_deps() -> bool:
@@ -1394,32 +1287,6 @@ async def _check_ocr_remote_connectivity() -> bool:
         return False
 
 
-async def _check_queue() -> str | None:
-    """Check durable queue health.
-
-    Returns "ok" if queue is healthy, "degraded" if queue depth is high,
-    "unavailable" if Redis is unreachable in production (no hysteresis
-    for critical infrastructure deps), or None if Redis not configured.
-    """
-    if not settings.REDIS_URL:
-        return None
-    try:
-        from app.services.task_queue_service import task_queue
-
-        total = 0
-        for tt in ("import_pipeline", "image_pipeline", "excel_pipeline"):
-            total += await task_queue.ready_length_v2(tt)
-            total += await task_queue.processing_length_v2(tt)
-        if total > 100:
-            return "degraded"
-        return "ok"
-    except Exception:
-        # Redis error is a critical infrastructure failure — not "degraded"
-        if _production_mode:
-            return "unavailable"
-        return "degraded"
-
-
 # --- 路由（聚合 Router） ---
 
 
@@ -1447,7 +1314,7 @@ async def metrics_endpoint(request: Request):
     append_ocr_metrics(lines)
     await append_ai_metrics(lines)
     append_staging_metrics(lines)
-    append_db_pool_metrics(lines, _get_db_pool_metrics())
+    append_db_pool_metrics(lines, get_db_pool_metrics())
     append_db_query_metrics(lines)
     append_process_metrics(
         lines, role=settings.PROCESS_ROLE, environment=settings.APP_ENV,

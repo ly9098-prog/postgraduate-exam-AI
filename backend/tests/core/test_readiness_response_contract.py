@@ -10,8 +10,8 @@ from app import main
 from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
 
 PROBES = [
-    "_check_database", "_check_redis", "_check_alembic_head", "_check_staging",
-    "_check_staging_space", "_check_role_deps", "_check_ocr_config", "_check_queue",
+    "check_database", "check_redis", "check_alembic_head", "check_staging",
+    "check_staging_space", "_check_role_deps", "_check_ocr_config", "check_queue",
 ]
 
 
@@ -24,7 +24,7 @@ async def test_readiness_probe_order_and_early_failure(monkeypatch, failure):
     error = RuntimeError("synthetic probe failure")
     results = [True, True, True, True, {"free": 10}, True, None, None]
     for name, value in zip(PROBES, results, strict=True):
-        async def probe(name=name, value=value):
+        async def probe(*_args, name=name, value=value, **_kwargs):
             calls.append(name)
             if name == failure:
                 raise error
@@ -37,7 +37,7 @@ async def test_readiness_probe_order_and_early_failure(monkeypatch, failure):
         lambda: calls.append("draining") or False,
     )
     monkeypatch.setattr(
-        main, "_get_db_pool_metrics", lambda: calls.append("pool") or {"size": 4},
+        main, "get_db_pool_metrics", lambda: calls.append("pool") or {"size": 4},
     )
     if failure:
         with pytest.raises(RuntimeError) as caught:
@@ -60,13 +60,13 @@ async def test_draining_probe_error_fallback_and_cloud_privacy(monkeypatch, drai
     from app.services import task_queue_worker
 
     for name in PROBES:
-        result = None if name in {"_check_ocr_config", "_check_queue"} else True
-        if name == "_check_staging_space":
+        result = None if name in {"_check_ocr_config", "check_queue"} else True
+        if name == "check_staging_space":
             result = {"private": "synthetic-private"}
         monkeypatch.setattr(main, name, AsyncMock(return_value=result))
     monkeypatch.setattr(main, "_production_mode", production)
     monkeypatch.setattr(main.settings, "REDIS_URL", "")
-    monkeypatch.setattr(main, "_get_db_pool_metrics", lambda: {"private": "synthetic-private"})
+    monkeypatch.setattr(main, "get_db_pool_metrics", lambda: {"private": "synthetic-private"})
     monkeypatch.setattr(
         task_queue_worker, "is_draining_v2",
         Mock(side_effect=RuntimeError("private")) if drain == "error" else lambda: drain,

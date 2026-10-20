@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十五批已提交，第六十六批抽取 readiness 响应判定；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前六十六批已提交，第六十七批分离基础依赖探针；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -904,3 +904,12 @@
 - 定向契约/架构/原 readiness 共 125 项通过。新模块 75 行、函数最长 31 行；2 项门禁验证 main 唯一调用、单向依赖/尺寸和新进程不加载应用/配置/FastAPI。新测试接入现有 CI；main 1,521 → 1,491 行，探针和角色生命周期仍待治理。
 - 完整本地静态 CI 731 项通过、2 条既有弃用警告；独立 readiness 69 项通过，严格 Ruff/全应用 Ruff/compileall/diff 与 CI YAML/路径验证通过。静态图 546 模块、2,163 边、零循环/反向 API。按 review-agent 只读核对全部差异、字段/引用/顺序、纯规则输入/输出、云脱敏及组合对照：No findings。
 - 本批只本地提交响应规则、调用方/测试/CI及架构/任务记录，不推送、不操作生产，保留其他工作区改动和删除。未运行真实 PostgreSQL/Redis、OCR/AI、完整运行角色与客户端；健康探针边界和全量治理继续进行，Alembic 判定缺口保持单独待办。
+
+## 七十三、第六十七批执行记录：基础依赖探针
+
+- `services/readiness_dependency_probes.py` 持有数据库、Redis、Alembic、staging 可写/空间、队列和 DB pool 七个探针；main 直接调用定义，不保留原私有函数转发。会话工厂、Redis URL、production mode 和原 Alembic 路径显式传入；staging/池/缓存仍从原端口惰性读取，不创建新连接、引擎、缓存或状态。
+- 先在原实现通过 33 项契约，验证真实 SELECT 文本/会话上下文、数据库错误与取消、Redis 真 PING/无缓存写入、无 Redis 时云和配置错误 fail-closed、Alembic 单 head/缺失/不匹配及原 script_location、staging mkdir→access 和池指标/错误。抽取后相关响应/指标/探针与原 readiness 共 208 项通过；全仓检索迁移独立 Redis PING 测试和所有 patch 至实际调用名称。
+- 七个函数按显式端口/配置归一化后完整 AST 与 HEAD 相同，其余 main 非导入 AST 归一化后相同；76 组数据库/Redis/队列成功、异常、取消结果一致，运行时完整 OpenAPI 328 路径一致。取消不被普通 Exception 兜底吞掉；队列仍按三类 v2 ready/processing 汇总、100/101 临界和原本地/生产回退，不改变 readiness stale 已知问题。
+- 新增 3 项实际定义/依赖/预算/新进程门禁；模块 156 行、函数最长 29 行，导入不初始化 app/settings/database/cache/queue。新探针与独立 Redis 回归接入既有 CI。main 1,491 → 1,358 行；当前图 547 模块、2,168 边、零循环/反向 API。
+- 完整本地静态 CI 771 项通过、2 条既有弃用警告，独立 readiness 69 项通过。新改 Python 严格 Ruff、全应用 Ruff、compileall、Git diff、CI YAML/路径检查通过。按 review-agent 只读审查全部差异、显式参数、惰性端口、异常/取消和缓存 fail-closed、所有测试调用/patch及对照：No findings。
+- 本批仅本地提交相关源/测试/CI/任务与盘点，不推送、不操作生产，保留其他改动与删除状态。未验证真实 PostgreSQL/Redis、生产迁移/队列/OCR/AI和客户端；OCR readiness/角色检查/生命周期、其他业务域与全栈长期门禁继续进行。
