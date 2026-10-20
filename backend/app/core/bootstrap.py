@@ -43,6 +43,7 @@ from app.services.runtime_scheduler_startup import (
     start_scheduler_health_task,
     start_scheduler_outbox_tasks,
 )
+from app.services.runtime_staging_startup import sweep_staging_on_startup
 
 logger = logging.getLogger("postgraduate-ai.bootstrap")
 
@@ -211,17 +212,7 @@ async def _run_role_async(role: str) -> None:
 
     detect_deployment_profile()
 
-    # Staging sweep on startup
-    try:
-        from app.core.log_context import log_event
-        from app.services.staging_storage import async_sweep_temp_files
-
-        swept = await async_sweep_temp_files()
-        if swept:
-            log_event(logger, "staging.sweep", count=swept)
-    except Exception:
-        logger.warning("Staging temp sweep failed (non-fatal)", exc_info=True)
-
+    await sweep_staging_on_startup(logger)
     # Create managed task registry
     registry = TaskRegistry()
 
@@ -249,7 +240,6 @@ async def _run_role_async(role: str) -> None:
     install_role_signal_handlers(stop_event, logger)
     await stop_event.wait()
 
-    # Shutdown
     await shutdown_role(role, registry)
 
 

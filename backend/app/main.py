@@ -76,6 +76,7 @@ from app.services.runtime_scheduler_startup import (
 )
 from app.services.runtime_schema_diagnostics import log_runtime_schema_divergence
 from app.services.runtime_sse_metrics import append_sse_metrics
+from app.services.runtime_staging_startup import sweep_staging_on_startup
 from app.services.runtime_startup_checks import (
     initialize_dev_admin,
     log_ai_model_configuration,
@@ -137,15 +138,7 @@ async def lifespan(app: FastAPI):
     profile = get_ocr_profile()
 
     # Staging storage: sweep stale temp files on startup
-    try:
-        from app.core.log_context import log_event
-        from app.services.staging_storage import async_sweep_temp_files
-
-        swept = await async_sweep_temp_files()
-        if swept:
-            log_event(logger, "staging.sweep", count=swept)
-    except Exception:
-        logger.warning("Staging temp sweep failed (non-fatal)", exc_info=True)
+    await sweep_staging_on_startup(logger)
     logger.info(
         "Starting 2240AI — env=%s role=%s ocr_profile=%s (gpu=%s, workers=%d, max_pdf_pages=%d)",
         settings.APP_ENV,

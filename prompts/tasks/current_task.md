@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十批已提交，第九十一批分离独立角色启动策略；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前九十一批已提交，第九十二批合并共享staging启动扫描；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1155,3 +1155,12 @@
 - 新3项依赖/预算/真实消费和原写回前顺序/唯一角色集合/无旧壳/导入不加载配置或创建目录task和修改env门禁接入CI；bootstrap总长降至300行内并设预算。原YAML完整静态1,744项（2既有弃用警告）、readiness69项、云OCR30项通过。混合393项同进程确认新policy.os/sys、shutdown.asyncio、Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。
 - 严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；按review-agent只读流程由主agent核对完整diff、所有实际消费者、懒导入/工厂快照/路径语义/错误和取消及完整角色证据：No findings，无子agent。新模块91行/三函数26、20、24行，bootstrap379→292行/runner61保持；main604/lifespan323保持，图566模块/2,229边/零循环/反向API。
 - 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。runner剩余启动编排、HTTP/独立角色失败清理独立待办、实际外部服务/完整outbox持久化/客户端和全栈其他阶段仍待继续。
+
+
+## 九十八、第九十二批执行记录：共享 staging 启动扫描（2026-10-21）
+
+- HTTP lifespan与独立runner两个完全相同的staging启动扫描try块迁至`services/runtime_staging_startup.py`的sweep_staging_on_startup(logger)。两个入口直接使用唯一真实定义，显式传各自原logger；HTTP仍在OCR profile解析后/启动诊断前，独立角色仍在配置校验/profile检测后/TaskRegistry创建前。只合并启动扫描策略，周期cleanup和真实staging存储实现保持。
+- 原40项直接契约、42项完整角色及35项完整HTTP共117项先在旧实现通过。覆盖两入口的原import顺序、零/非零/负数/None/容器count原样及truthiness、await/结构化日志/导入/普通错误/cancel和warning自身错误。增加2项真实临时目录扫描后，共42直接+42角色+35HTTP+10scheduler=129项对旧`755fbcfe`两个完整模块和原try块通过（包装进程1条rewrite警告）。
+- 两原完整块、展开整个main和bootstrap AST一致，328条路径OpenAPI一致，48组import/sweep/count/truthiness/event/warning/error/context/cancel轨迹一致。保留普通异常warning后继续、CancelledError传播以及warning失败传播，不改原启动失败清理策略；额外两项使用真实async_sweep_temp_files/to_thread/sweep_temp_files，只在pytest临时目录扫描，确认在线程执行并保留新根文件和嵌套文件，无现有资源清理。
+- 新3项依赖/预算/真实双消费者及原logger/调用位置/无副本/惰性导入无配置和资源副作用门禁接入CI。首次门禁发现runner51行，移除原重复Shutdown注释后50行，不改代码语义；最终direct/架构/完整HTTP/角色/4个真实信号子进程共126项通过。混合441项单进程确认Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/原周期端口/30模块与父别名及原policy/shutdown端口恢复（包装进程2条rewrite警告）。
+- 原YAML静态CI1,793项（2既有弃用警告）、readiness69项、云OCR30项通过；此轮collection后补充的2项真实扫描在最终定向126/旧版129/混合441中均通过，不计入1,793。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；主agent按review-agent只读审查完整diff/真实调用方/惰性导入/异常和取消/完整模块等价与全部验证证据：No findings，无子agent。仅显式暂存本批11文件并本地提交，不推送或操作生产。新模块16行/函数11行，main604→597行/lifespan323→315行，bootstrap292→282行/runner61→50行；图567模块/2,229边/零循环/反向API。33项既有工作区保护状态不变；HTTP/独立runner失败清理缺口、真实外部依赖/完整outbox持久化/客户端及全栈其余阶段仍待继续。

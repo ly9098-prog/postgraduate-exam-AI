@@ -141,3 +141,26 @@ async def test_worker_partial_ocr_failure_keeps_runner_error_and_no_shutdown_bou
     assert "orphans.start" not in state.events and "signals.install" not in state.events
     assert not [event for event in state.events if event in COMMON_STOP]
     assert len(state.registries) == 1 and not state.registries[0]._tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["worker", "scheduler"])
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_staging_startup_failure_precedes_registry_and_preserves_nonfatal_boundary(role_runtime, role, error_type):
+    state = role_runtime
+    error = error_type("synthetic complete startup sweep failure")
+    state.failures["staging.sweep"] = error
+    if error_type is asyncio.CancelledError:
+        with pytest.raises(asyncio.CancelledError) as caught:
+            await bootstrap._run_role_async(role)
+        assert caught.value is error
+        assert state.events == ["logging.setup", "config.sync", "config.async", "staging.sweep"]
+        assert not state.registries
+    else:
+        await bootstrap._run_role_async(role)
+        state.logger.warning.assert_any_call(
+            "Staging temp sweep failed (non-fatal)", exc_info=True,
+        )
+        assert len(state.registries) == 1
+        assert all(item._task.done() for item in state.registries[0]._tasks)
+        assert [event for event in state.events if event in COMMON_STOP] == COMMON_STOP

@@ -15,6 +15,30 @@ COMMON_STOP = [
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_startup_sweep_precedes_resources_and_preserves_failure_boundary(runtime, error_type):
+    error = error_type("synthetic HTTP startup sweep failure")
+    runtime.failures["staging.sweep"] = error
+    if error_type is asyncio.CancelledError:
+        with pytest.raises(asyncio.CancelledError) as caught:
+            async with main.lifespan(main.app):
+                pytest.fail("cancelled startup sweep must not yield")
+        assert caught.value is error
+        assert not runtime.tasks
+        assert "db.init" not in runtime.events
+        assert not [event for event in runtime.events if event in COMMON_STOP]
+    else:
+        async with main.lifespan(main.app):
+            await asyncio.sleep(0)
+        runtime.logger.warning.assert_any_call(
+            "Staging temp sweep failed (non-fatal)", exc_info=True,
+        )
+        assert runtime.events.index("staging.sweep") < runtime.events.index("db.init")
+        assert all(task.done() for task in runtime.tasks)
+        assert [event for event in runtime.events if event in COMMON_STOP] == COMMON_STOP
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("role", ["web", "all", "unknown"])
 @pytest.mark.parametrize("ocr_enabled", [False, True])
 async def test_real_lifespan_success_owns_tasks_and_preserves_close_order(runtime, monkeypatch, role, ocr_enabled):
