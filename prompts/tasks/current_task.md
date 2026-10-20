@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前八十八批已提交，第八十九批分离角色信号与真实子进程验证；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前八十九批已提交，第九十批分离独立角色关闭资源边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1134,3 +1134,14 @@
 - 子进程外部DB/Redis/OCR/业务循环端口仍替身并拒绝socket，HTTP/client/外部资源全链优雅退出不由此证明；没有改变已知启动失败/等待cancel不进入shutdown或client close阻断等行为。新增3项零应用依赖/预算/真实消费/安装位于init与wait之间/导入不装handler不创建task或加载配置门禁，接入CI。
 - 原YAML完整静态1,571项（2既有弃用警告）、readiness69项、云OCR30项通过；混合226项同进程核验Settings/env/cwd/TaskRegistry/新信号端口/task/socket/lifespan/周期端口/30模块和父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过。
 - 按review-agent只读检查完整diff、原事件写入/日志/异常边界、真实CLI路径/信号安装/父子握手与清理、全生命周期和旧新证据：No findings。模块24行/installer17行，bootstrap520→498行；main604/lifespan323保持，图564模块/2,219边/零循环/反向API。仅本地提交相关源码/测试/CI/任务/盘点，保留其余改动及删除，不推送、不操作生产。shutdown/runner剩余职责、失败清理独立待办及其他全栈领域继续。
+
+
+## 九十六、第九十批执行记录：独立角色关闭资源边界（2026-10-21）
+
+- bootstrap.shutdown_role的六段完整实现按明确职责迁至中立`core/standalone_runtime_shutdown.py`：worker drain/reaper/prewarm、scheduler停止、公式池、OCR、执行器/PDF、queue/DB/orphan。caller显式传原role/logger，bootstrap仍拥有开始/完成日志、原顺序和一次registry.wait_all，WORKER_SHUTDOWN_GRACE_SEC仍在原位置实时读取；不强行复用HTTP不同策略，不改变任何catch/取消/超时/清理归属。
+- 原44项分段刻画先过，迁移后连同完整角色38项和真实SIGTERM/SIGINT CLI子进程4项共86项通过；扩充registry.clear错误、云画像本地OCR import禁止与gateway import静默、warning失败后共49项直接契约。相同49+38共87项对旧`4f914e3e`六段原完整实现和完整bootstrap通过。
+- 六段原完整块与展开整个bootstrap AST一致，2,592组role/profile/resource order/deadline/thread kwargs/error/cancel/log轨迹一致。保留独立公式timeout仅warning/不force重试，OCR profile import在try外，worker gateway普通错误静默，非worker draining普通错误静默；取消仍传播/阻断后续，执行器关闭失败跳过registry clear但继续PDF，logger自身失败仍传播。
+- 新3项依赖/预算/实际唯一消费、caller原logger/role/开始完成日志/原一次registry等待位置、惰性导入不加载配置或资源门禁接入CI。原YAML静态1,623项（2既有弃用警告）、readiness69项、云OCR30项全部通过；包括迁移后4个真实OS信号/CLI正常退出用例，未跳过Linux验证。
+- 混合275项单进程确认新shutdown.asyncio端口、Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块及父别名恢复、逐fixture sys.path稳定（包装进程2条rewrite警告）。额外真实资源脚本在独立解释器验证4个worker bounded pools/PDF pool执行线程工作后关闭、registry清空/恢复、真实内存SQLite SELECT1并监听dispose关闭连接、真实orphan asyncio task停止、queue关闭无网络；不等同于生产DB/Redis/OCR/AI全链和失败恢复验收。
+- 严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过；review-agent只读检查完整迁移/所有真实调用方/原画像解析与import/catch/线程deadline/错误与取消/一次等待及真实资源与子进程证据：No findings。新模块155行/六函数30、24、16、26、20、23行；bootstrap498→379行/shutdown157→30行，main604/lifespan323保持，图565模块/2,226边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其余改动及删除，不推送、不操作生产。剩余runner61行及角色guard/scratch等职责可继续治理；已登记runner/HTTP失败不清理等行为缺口和外部服务/完整outbox持久化/客户端及全栈其他阶段仍未完成。

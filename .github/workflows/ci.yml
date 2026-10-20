@@ -295,6 +295,7 @@ jobs:
             tests/architecture/test_runtime_periodic_boundaries.py \
             tests/architecture/test_runtime_task_registry_boundaries.py \
             tests/architecture/test_runtime_signal_boundaries.py \
+            tests/architecture/test_standalone_shutdown_boundaries.py \
             tests/architecture/test_outbox_queue_adapter_boundaries.py \
             tests/architecture/test_gateway_bypass_zero.py \
             tests/architecture/test_document_ir_production_write_zero.py \
@@ -343,6 +344,7 @@ jobs:
             tests/core/test_runtime_task_registry.py \
             tests/core/test_runtime_signals.py \
             tests/core/test_standalone_signals.py \
+            tests/core/test_standalone_shutdown_contract.py \
             tests/core/test_runtime_outbox_enqueue.py \
             tests/test_services/test_readiness_redis_ping.py \
             tests/core/test_orm_registry.py \
