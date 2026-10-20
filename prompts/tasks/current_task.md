@@ -1217,3 +1217,10 @@
 - 函数从 540 行降至 516 行；新增两个 helper 各 28/8 行。原 208 项 practice 测试 + 621 项 architecture/lifecycle + 232 项 architecture = 1,061 项通过，4 项既有 MagicMock 失败经 stash 验证为基线。0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。
 - `practice_service.py` 4117 行，`get_smart_scored_questions` 仍超 50 行预算——后续继续按阶段提取候选构建/评分/降级编排。严格 Ruff/全应用 Ruff/compileall/diff 通过。
 - 仅本地提交本批文件，不推送、不操作生产。其他 33 保护路径不变，context 仍未跟踪。
+
+
+## 一百零五、第九十九批执行记录：scored 配置加载提取（2026-10-21）
+
+- `get_smart_scored_questions` 的 Admin scored 配置加载（默认值构建 + recommendation_strategy_service 读取 + 失败回退）提取为模块级 `_load_scored_runtime_config(db)`；保留原默认权重/图谱参数、try/except 边界和 warning 日志。函数从 516 行降至 488 行；新增 helper 31 行。
+- 原 208 项 practice 测试通过，0 循环/0 反向 API/33 保护哈希通过/review-agent 只读 No findings。严格 Ruff/compileall/diff 通过。
+- 仅本地提交，不推送、不操作生产。`get_smart_scored_questions` 仍超 50 行预算——后续继续提取候选构建/评分/降级阶段。

@@ -2971,6 +2971,40 @@ def _build_fallback_metadata(reason: str, strategy: str) -> dict:
 
 
 
+async def _load_scored_runtime_config(db: AsyncSession) -> dict:
+    """Load scored recommendation config, falling back to built-in defaults."""
+    # Admin 全局配置：default_scored 控制系统级权重和图谱门槛。
+    # 配置读取失败时必须退化到内置默认值，不能影响刷题。
+    scored_runtime = {
+        "strategy_config_id": None,
+        "weights": {
+            "due_weight": 1.0,
+            "weakness_weight": 1.0,
+            "wrong_weight": 1.0,
+            "new_question_weight": 1.0,
+            "diversity_weight": 1.0,
+            "path_weight": 1.0,
+        },
+        "graph": {
+            "weak_target_limit": 5,
+            "max_depth": 2,
+            "max_nodes": 24,
+            "prerequisite_mastery_threshold": 60.0,
+            "prerequisite_confidence_threshold": 0.3,
+        },
+    }
+    try:
+        from app.services import recommendation_strategy_service
+
+        scored_runtime = (
+            await recommendation_strategy_service.get_scored_runtime_config(db)
+        )
+    except Exception:
+        logger.warning("scored 全局策略配置读取失败，使用内置默认值", exc_info=True)
+    return scored_runtime
+
+
+
 async def get_smart_scored_questions(
     db: AsyncSession,
     user_id: int,
@@ -3003,35 +3037,7 @@ async def get_smart_scored_questions(
     metadata: dict[int, dict] = {}
     fallback_level = 0
 
-    # Admin 全局配置：default_scored 控制系统级权重和图谱门槛。
-    # 配置读取失败时必须退化到内置默认值，不能影响刷题。
-    scored_runtime = {
-        "strategy_config_id": None,
-        "weights": {
-            "due_weight": 1.0,
-            "weakness_weight": 1.0,
-            "wrong_weight": 1.0,
-            "new_question_weight": 1.0,
-            "diversity_weight": 1.0,
-            "path_weight": 1.0,
-        },
-        "graph": {
-            "weak_target_limit": 5,
-            "max_depth": 2,
-            "max_nodes": 24,
-            "prerequisite_mastery_threshold": 60.0,
-            "prerequisite_confidence_threshold": 0.3,
-        },
-    }
-    try:
-        from app.services import recommendation_strategy_service
-
-        scored_runtime = (
-            await recommendation_strategy_service.get_scored_runtime_config(db)
-        )
-    except Exception:
-        logger.warning("scored 全局策略配置读取失败，使用内置默认值", exc_info=True)
-
+    scored_runtime = await _load_scored_runtime_config(db)
     system_weights = scored_runtime.get("weights") or {}
     graph_runtime = scored_runtime.get("graph") or {}
 
