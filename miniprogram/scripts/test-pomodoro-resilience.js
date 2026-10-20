@@ -516,10 +516,10 @@ t('completion marker persists break metadata across app restart', () => {
   assert.ok(dismissCompletion.includes('completionFlag.breakSec'))
 })
 t('onShow keeps a valid completion marker authoritative until dismissal', () => {
-  assert.ok(onShow.includes('phase: PHASE.IDLE'))
-  assert.ok(onShow.includes('showCelebration: true'))
-  const completionSection = onShow.slice(onShow.indexOf("const completionFlag = wx.getStorageSync('pomodoro_completion')"), onShow.indexOf('// Navigation guard'))
-  assert.ok(!completionSection.includes("else {\n        wx.removeStorageSync('pomodoro_completion')"))
+  assert.ok(onShow.includes('buildCompletionRecovery(completionFlag, this.data, pomodoroTaskTypes)'))
+  assert.ok(onShow.includes('this.setData(recovery.view)'))
+  const completionSection = onShow.slice(onShow.indexOf('} else {', onShow.indexOf('const completionFlag = completionStored.value')), onShow.indexOf('// Navigation guard'))
+  assert.ok(!completionSection.includes("_safeRemovePomodoroStorage('pomodoro_completion'"))
 })
 
 console.log('\n--- Break restore ---')

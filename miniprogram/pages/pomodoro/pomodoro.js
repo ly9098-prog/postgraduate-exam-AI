@@ -3,6 +3,7 @@ const { readStorage, writeStorage, removeStorage } = require('./utils/session-st
 const { createPendingSyncQueue } = require('./utils/pending-sync-queue')
 const { createSyncRetryController, isRetryableSyncError } = require('./utils/sync-retry-controller')
 const { recoverActiveSession } = require('./utils/active-session-recovery')
+const { buildCompletionRecovery } = require('./utils/completion-recovery')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -280,40 +281,10 @@ Page({
         // actually dismissed. Never delete it merely because onShow fired while
         // the overlay was already visible; doing so could resurrect the just-
         // completed running snapshot after a background/foreground transition.
-        this._completionBreakSec = completionFlag.breakSec !== undefined && Number.isFinite(Number(completionFlag.breakSec))
-          ? Math.max(0, Number(completionFlag.breakSec))
-          : null
-        const selectedSubjectId = completionFlag.selectedSubjectId || this.data.selectedSubjectId
-        const completionAggregate = completionFlag.allocationMode === 'equal_408_core_v1'
-        const selectedSubject = selectedSubjectId ? {
-          id: selectedSubjectId,
-          code: completionFlag.selectedSubjectCode || (this.data.selectedSubject && this.data.selectedSubject.code) || '',
-          name: completionFlag.selectedSubjectName || (this.data.selectedSubject && this.data.selectedSubject.name) || '',
-          _isAggregate: completionAggregate,
-        } : this.data.selectedSubject
-        const completionHasTaskType = Object.prototype.hasOwnProperty.call(completionFlag, 'selectedTaskType')
-        const completionTaskType = completionHasTaskType && pomodoroTaskTypes.TYPE_MAP[completionFlag.selectedTaskType]
-          ? completionFlag.selectedTaskType
-          : ''
+        const recovery = buildCompletionRecovery(completionFlag, this.data, pomodoroTaskTypes)
+        this._completionBreakSec = recovery.breakSec
         if (!this.data.showCelebration) wx.vibrateLong()
-        this.setData({
-          phase: PHASE.IDLE,
-          isPaused: false,
-          showEndConfirm: false,
-          showCelebration: true,
-          celebrationMotto: completionFlag.motto,
-          celebrationType: completionFlag.type || 'excellent',
-          selectedPreset: completionFlag.selectedPreset || this.data.selectedPreset,
-          workDuration: Number.isFinite(Number(completionFlag.workDuration)) ? Number(completionFlag.workDuration) : this.data.workDuration,
-          breakDuration: Number.isFinite(Number(completionFlag.breakDuration)) ? Number(completionFlag.breakDuration) : this.data.breakDuration,
-          selectedSubjectId,
-          selectedSubject,
-          allocationMode: completionAggregate ? 'equal_408_core_v1' : 'single',
-          selectedTaskType: completionHasTaskType ? completionTaskType : this.data.selectedTaskType,
-          selectedTaskTypeLabel: completionHasTaskType
-            ? (completionTaskType ? pomodoroTaskTypes.label(completionTaskType) : '未分类')
-            : this.data.selectedTaskTypeLabel,
-        })
+        this.setData(recovery.view)
         // Celebration rendering must not suppress a pending completion retry.
         if (pendingSync) {
           this._retryPendingPomodoroSync().then(synced => {

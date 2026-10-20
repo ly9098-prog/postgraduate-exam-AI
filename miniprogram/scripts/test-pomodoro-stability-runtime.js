@@ -62,6 +62,7 @@ const sandbox = {
     if (request === './utils/pending-sync-queue') return require('../pages/pomodoro/utils/pending-sync-queue')
     if (request === './utils/sync-retry-controller') return require('../pages/pomodoro/utils/sync-retry-controller')
     if (request === './utils/active-session-recovery') return require('../pages/pomodoro/utils/active-session-recovery')
+    if (request === './utils/completion-recovery') return require('../pages/pomodoro/utils/completion-recovery')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -91,6 +92,7 @@ const sandbox = {
     if (request === '../../utils/storage') {
       return {
         pomodoroTaskTypes: {
+          TYPE_MAP: { new_questions: true, review: true },
           DEFAULT_TYPE: 'new_questions',
           label(type) { return type === 'new_questions' ? '新题' : type },
           getSelected() { return 'new_questions' },
@@ -143,6 +145,65 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('completion recovery keeps marker authoritative across repeated shows', async () => {
+    storage.clear()
+    const page = createPage()
+    const completion = {
+      sessionId: 91, selectedSubjectId: 4, selectedSubjectCode: 'exam408',
+      selectedSubjectName: '408', allocationMode: 'equal_408_core_v1',
+      selectedTaskType: 'review', workDuration: 50, breakDuration: 10, breakSec: 600,
+    }
+    storage.set('pomodoro_completion', completion)
+    page._syncThemeFromStorage = () => {}
+    page._reconcileUnknownStartAttempt = async () => 'none'
+    let fetches = 0
+    let vibrations = 0
+    const oldVibrate = wx.vibrateLong
+    wx.vibrateLong = () => { vibrations++ }
+    page._fetchActiveSession = async () => { fetches++; return { id: 91 } }
+    try {
+      await page.onShow()
+      await page.onShow()
+      assert.strictEqual(page.data.phase, 'idle')
+      assert.strictEqual(page.data.showCelebration, true)
+      assert.strictEqual(page.data.selectedSubject._isAggregate, true)
+      assert.strictEqual(page.data.selectedTaskType, 'review')
+      assert.strictEqual(page._completionBreakSec, 600)
+      assert.strictEqual(storage.get('pomodoro_completion'), completion)
+      assert.strictEqual(fetches, 0)
+      assert.strictEqual(vibrations, 1)
+      assert.strictEqual(scheduledDelay, 200)
+    } finally {
+      wx.vibrateLong = oldVibrate
+    }
+  })
+
+  await test('completion celebration still drains pending actions and handles terminal conflict', async () => {
+    storage.clear()
+    const page = createPage()
+    storage.set('pomodoro_completion', { sessionId: 92 })
+    storage.set('pomodoro_pending_sync', [{
+      sessionId: 92, action: 'complete', nonce: 'completion-recovery', savedAt: nowMs,
+    }])
+    page._syncThemeFromStorage = () => {}
+    page._reconcileUnknownStartAttempt = async () => 'none'
+    const conflict = { sessionId: 92, action: 'complete', actualStatus: 'interrupted' }
+    let consumed = 0
+    let retries = 0
+    let handled = null
+    let stats = 0
+    page._consumeAnyPomodoroTerminalConflict = () => consumed++ ? conflict : null
+    page._retryPendingPomodoroSync = async () => { retries++; return true }
+    page._handlePomodoroTerminalConflict = (id, value) => { handled = [id, value] }
+    page.loadTodayStats = () => { stats++ }
+    await page.onShow()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.strictEqual(page.data.showCelebration, true)
+    assert.strictEqual(retries, 1)
+    assert.deepStrictEqual(handled, [92, conflict])
+    assert.strictEqual(stats, 0)
+  })
 
   await test('onShow restores the first cached frame before awaiting server response', async () => {
     storage.clear()
