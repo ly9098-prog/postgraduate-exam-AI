@@ -29,7 +29,9 @@ from app.core.ocr_isolation import (
 from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
 from app.core.runtime_resource_shutdown import (
     close_runtime_connections,
+    log_active_children,
     shutdown_formula_pool,
+    shutdown_http_ocr_gateway,
     shutdown_ocr_executor,
     shutdown_render_resources,
     stop_resource_reconciler,
@@ -247,41 +249,14 @@ async def lifespan(app: FastAPI):
         # Cloud profile: skip OCR executor shutdown — it imports local PaddleOCR modules.
         if role in ("web", "all"):
             await shutdown_ocr_executor()
-
-            try:
-                from app.features.ocr_gateway import (
-                    OCRGateway,  # noqa: F401 - preserve the shutdown import boundary
-                )
-
-                if _ocr_resources.gateway is not None:
-                    await _ocr_resources.gateway.shutdown()
-                    logger.info("OCR Gateway shut down")
-            except Exception as e:
-                logger.warning("OCR Gateway shutdown error: %s", e)
-
-            # Close the shared httpx.AsyncClient used by OCR
-            if _ocr_resources.shared_http_client is not None:
-                await _ocr_resources.shared_http_client.aclose()
-                logger.info("OCR shared httpx client closed")
+            await shutdown_http_ocr_gateway(_ocr_resources)
 
         await shutdown_render_resources()
         await close_runtime_connections()
         await stop_resource_reconciler()
 
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)
-        try:
-            import multiprocessing
-
-            children = multiprocessing.active_children()
-            if children:
-                logger.warning(
-                    "Active child processes after shutdown: %s",
-                    [c.pid for c in children],
-                )
-            else:
-                logger.info("No active child processes after shutdown")
-        except Exception as e:
-            logger.warning("Active children check failed: %s", e)
+        log_active_children()
 
 
 _production_mode = is_restricted_environment()

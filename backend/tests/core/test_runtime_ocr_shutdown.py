@@ -86,6 +86,7 @@ def run_ocr_shutdown(ocr_ports):
         namespace = {
             "logger": ocr_ports.logger, "asyncio": ocr_ports.runtime,
             "shutdown_ocr_executor": main.shutdown_ocr_executor,
+            "shutdown_http_ocr_gateway": main.shutdown_http_ocr_gateway,
         }
         exec(code, namespace)
         resources = HttpOcrResources(

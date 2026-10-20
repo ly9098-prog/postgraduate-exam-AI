@@ -1,4 +1,4 @@
-"""OCR executor policy stays lazy while lifespan owns gateway/client cleanup."""
+"""OCR shutdown stays lazy while lifespan passes its owned gateway and client."""
 
 import ast
 import subprocess
@@ -33,18 +33,10 @@ def test_main_uses_real_executor_policy_inside_original_role_and_cleanup_positio
     assert ast.dump(owner.test) == ast.dump(ast.parse('role in ("web", "all")', mode="eval").body)
     positions = [source.index(fragment) for fragment in [
         "await shutdown_formula_pool()", "await shutdown_ocr_executor()",
-        "await _ocr_resources.gateway.shutdown()", "await _ocr_resources.shared_http_client.aclose()",
+        "await shutdown_http_ocr_gateway(_ocr_resources)",
         "await shutdown_render_resources()",
     ]]
     assert positions == sorted(positions)
-    client_guard = next(
-        node for node in owner.body if isinstance(node, ast.If)
-        and ast.unparse(node.test) == "_ocr_resources.shared_http_client is not None"
-    )
-    assert len(client_guard.body) == 2
-    assert ast.unparse(client_guard.body[0]) == "await _ocr_resources.shared_http_client.aclose()"
-    assert ast.unparse(client_guard.body[1]) == "logger.info('OCR shared httpx client closed')"
-
 
 def test_ocr_shutdown_policy_import_does_not_load_local_ocr_or_runtime_resources():
     probe = """

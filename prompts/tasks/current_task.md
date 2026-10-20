@@ -1191,3 +1191,12 @@
 - 新 3 项依赖/预算/唯一真实消费和原参数/调用位置/worker→scheduler→reconciler 顺序/无 main 副本/惰性导入门禁接入 CI；已有 periodic/outbox/scheduler 架构门禁更新为跟随真实新消费者。main 461/lifespan 174 新增收缩预算，scheduler 模块 90 行/函数≤50。
 - 原 YAML 完整静态 1,996 项（2 既有弃用警告）、readiness 69、云 OCR 30 全部通过。混合 607 项单进程确认 Settings/env/cwd/sys.path/TaskRegistry/信号/task/socket/lifespan/周期端口/30 模块与父别名及 policy/shutdown 端口恢复。严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/三种失败策略/部分任务引用/fatal 包装/取消边界及全部等价证据：No findings，无子 agent。
 - 仅本地提交本批文件，不推送、不操作生产。main 523→461/lifespan 232→174 行，bootstrap 282/runner 50 保持，图 570 模块/2,238 边/零循环/反向 API。HTTP/独立 runner 既有 yield 前失败清理缺口、shared client 关闭阻断等行为待办不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。
+
+
+## 一百零二、第九十六批执行记录：HTTP OCR gateway/client 关闭与子进程诊断（2026-10-21）
+
+- 原 HTTP lifespan 中 OCR gateway/client 关闭块和子进程检查两段迁至已有 `core/runtime_resource_shutdown.py` 的 `shutdown_http_ocr_gateway(resources)` 与 `log_active_children()`，main 直接消费模块函数并传原 `_ocr_resources`；原 `shutdown_ocr_executor → gateway → client → render → connections → reconciler → completed → children` 顺序和 lazy import 边界保持。保留 gateway 普通错误 warning、client 关闭错误传播（无 try/except）、multiprocessing 普通错误 warning 等原策略；OCR gateway 导入保留 `noqa: F401`，multiprocessing 仍内联导入。
+- 接续前模型已完成的功能迁移并修复两处质量缺陷：恢复 `test_runtime_resource_shutdown_boundaries` 的 strict `positions == sorted(positions)` 关闭顺序断言（前模型曾误降为松散检查）；修复模块尾部多余空行（3 行→2 行）。新增 `TYPE_CHECKING` 导入 `HttpOcrResources` 用于参数注解，仅静态分析依赖，不新增运行时 core→services 导入。
+- 原 40 项 OCR shutdown 契约先在旧实现通过；扩充架构依赖图（新增 `app.features.ocr_gateway` + `app.services.runtime_ocr_startup`）、probe 禁导入（新增 `app.features.ocr_gateway`/`app.services.runtime_ocr_startup`/`multiprocessing`）和 HELPERS 列表后，受影响 155 项全过。完整静态 CI：229 项 architecture + 644 项 lifespan/startup + 451 项 runtime/standalone = 1,324 项通过，无新增失败。
+- 既有 3 项预存失败（`test_security_regressions::test_redirect_target...`、2 项 `test_staging_storage` 过期/孤儿清理）经 stash 验证均为前批基线，与本批无关。严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/异常与取消边界/类型安全/测试完整性：No findings，无子 agent。
+- 仅本地提交本批 6 文件，不推送、不操作生产。module 159 行/函数≤22 行，main 523→436/lifespan 232→147 行；bootstrap 282/runner 50 保持，图 571 模块/2,242 边/零循环/反向 API。HTTP/独立 runner 既有 yield 前失败清理缺口、shared client 关闭阻断后续清理等行为待办不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。

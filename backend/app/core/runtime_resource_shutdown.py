@@ -1,7 +1,13 @@
 """Close shared runtime resources at their original lifespan boundaries."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.runtime_ocr_startup import HttpOcrResources
 
 logger = logging.getLogger("postgraduate-ai")
 
@@ -118,3 +124,36 @@ async def shutdown_ocr_executor() -> None:
         logger.warning("OCR executor shutdown timed out")
     except Exception:
         logger.exception("OCR executor shutdown error")
+
+
+async def shutdown_http_ocr_gateway(resources: HttpOcrResources) -> None:
+    """Shut down the shared OCR gateway and httpx client after the executor."""
+    try:
+        from app.features.ocr_gateway import OCRGateway  # noqa: F401
+
+        if resources.gateway is not None:
+            await resources.gateway.shutdown()
+            logger.info("OCR Gateway shut down")
+    except Exception as e:
+        logger.warning("OCR Gateway shutdown error: %s", e)
+
+    if resources.shared_http_client is not None:
+        await resources.shared_http_client.aclose()
+        logger.info("OCR shared httpx client closed")
+
+
+def log_active_children() -> None:
+    """Check for lingering child processes after shutdown."""
+    try:
+        import multiprocessing
+
+        children = multiprocessing.active_children()
+        if children:
+            logger.warning(
+                "Active child processes after shutdown: %s",
+                [c.pid for c in children],
+            )
+        else:
+            logger.info("No active child processes after shutdown")
+    except Exception as e:
+        logger.warning("Active children check failed: %s", e)
