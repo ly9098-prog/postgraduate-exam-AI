@@ -18,6 +18,8 @@ let failRemoveStorageKey = ''
 let failReadStorageKey = ''
 let nowMs = Date.parse('2026-08-23T08:00:00Z')
 let scheduledDelay = null
+let scheduledTimer = null
+const clearedTimers = []
 let capturedPage = null
 
 const api = {
@@ -58,6 +60,7 @@ const sandbox = {
     if (request === './utils/timer-math') return require('../pages/pomodoro/utils/timer-math')
     if (request === './utils/session-storage') return require('../pages/pomodoro/utils/session-storage')
     if (request === './utils/pending-sync-queue') return require('../pages/pomodoro/utils/pending-sync-queue')
+    if (request === './utils/sync-retry-controller') return require('../pages/pomodoro/utils/sync-retry-controller')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -101,9 +104,10 @@ const sandbox = {
   },
   setTimeout(fn, delay) {
     scheduledDelay = delay
-    return { fn, delay }
+    scheduledTimer = { fn, delay }
+    return scheduledTimer
   },
-  clearTimeout() {},
+  clearTimeout(timer) { clearedTimers.push(timer) },
 }
 vm.runInNewContext(source, sandbox, { filename: 'pomodoro.js' })
 assert.ok(capturedPage, 'Page definition was not captured')
@@ -138,6 +142,146 @@ async function test(name, fn) {
 
 ;(async () => {
   console.log('\n--- Pomodoro runtime stability ---')
+
+  await test('retry controllers are lazy, per-page, and teardown does not create one', () => {
+    const first = createPage()
+    const second = createPage()
+    first._unregisterNetworkStatusListener()
+    first._clearPendingPomodoroSyncRetryTimer(true)
+    assert.strictEqual(first._syncRetryController, null)
+    assert.notStrictEqual(first._getSyncRetryController(), second._getSyncRetryController())
+    assert.strictEqual(first._getSyncRetryController(), first._getSyncRetryController())
+  })
+
+  await test('real page reconnect checks pending work, consumes conflicts and refreshes stats', async () => {
+    storage.clear()
+    const page = createPage()
+    const oldOn = wx.onNetworkStatusChange
+    const oldOff = wx.offNetworkStatusChange
+    let callback
+    let removed
+    let registrations = 0
+    let retries = 0
+    let stats = 0
+    let handled = null
+    let conflict = { sessionId: 71 }
+    wx.onNetworkStatusChange = fn => { callback = fn; registrations++ }
+    wx.offNetworkStatusChange = fn => { removed = fn }
+    page._retryPendingPomodoroSync = async () => { retries++; return true }
+    page._consumeAnyPomodoroTerminalConflict = () => conflict
+    page._handlePomodoroTerminalConflict = (id, value) => { handled = [id, value] }
+    page.loadTodayStats = () => { stats++ }
+    try {
+      page._registerNetworkStatusListener()
+      page._registerNetworkStatusListener()
+      assert.strictEqual(registrations, 1)
+      callback({ isConnected: true })
+      page._pageVisible = true
+      callback({ isConnected: true })
+      assert.strictEqual(retries, 0)
+      storage.set('pomodoro_pending_sync', [{
+        action: 'pause', sessionId: 71, savedAt: nowMs, nonce: 'reconnect-test',
+      }])
+      page._schedulePendingPomodoroSyncRetry({ statusCode: 503 })
+      const timer = scheduledTimer
+      callback({ isConnected: true })
+      await new Promise(resolve => setImmediate(resolve))
+      assert.ok(clearedTimers.includes(timer))
+      assert.deepStrictEqual(handled, [71, conflict])
+      assert.strictEqual(stats, 0)
+      conflict = null
+      callback({ isConnected: true })
+      await new Promise(resolve => setImmediate(resolve))
+      assert.strictEqual(stats, 1)
+      page.onUnload()
+      assert.strictEqual(removed, callback)
+      callback({ isConnected: true })
+      assert.strictEqual(retries, 2)
+    } finally {
+      wx.onNetworkStatusChange = oldOn
+      wx.offNetworkStatusChange = oldOff
+    }
+  })
+
+  await test('onHide cancels delayed retry and preserves backoff; unload resets it', () => {
+    storage.clear()
+    const page = createPage()
+    page._pageVisible = true
+    storage.set('pomodoro_pending_sync', [{
+      action: 'pause', sessionId: 72, savedAt: nowMs, nonce: 'hide-test',
+    }])
+    page._schedulePendingPomodoroSyncRetry({})
+    const timer = scheduledTimer
+    page.onHide()
+    assert.ok(clearedTimers.includes(timer))
+    page._pageVisible = true
+    page._schedulePendingPomodoroSyncRetry({})
+    assert.strictEqual(scheduledDelay, 5000)
+    page.onUnload()
+    page._pageVisible = true
+    page._schedulePendingPomodoroSyncRetry({})
+    assert.strictEqual(scheduledDelay, 2000)
+    page._clearPendingPomodoroSyncRetryTimer(true)
+  })
+
+  await test('page network adapter requires both listener APIs and tolerates disappearing off', () => {
+    const page = createPage()
+    const oldOn = wx.onNetworkStatusChange
+    const oldOff = wx.offNetworkStatusChange
+    let registrations = 0
+    wx.onNetworkStatusChange = () => { registrations++ }
+    wx.offNetworkStatusChange = undefined
+    try {
+      page._registerNetworkStatusListener()
+      assert.strictEqual(registrations, 0)
+      wx.offNetworkStatusChange = oldOff
+      page._registerNetworkStatusListener()
+      assert.strictEqual(registrations, 1)
+      wx.offNetworkStatusChange = undefined
+      page._unregisterNetworkStatusListener()
+    } finally {
+      wx.onNetworkStatusChange = oldOn
+      wx.offNetworkStatusChange = oldOff
+    }
+  })
+
+  await test('repeated reconnect callbacks share the actual queue drain in flight', async () => {
+    storage.clear()
+    const page = createPage()
+    page._pageVisible = true
+    storage.set('pomodoro_pending_sync', [{
+      action: 'pause', sessionId: 73, savedAt: nowMs,
+      clientActionAt: nowMs, nonce: 'single-flight-test',
+    }])
+    const oldOn = wx.onNetworkStatusChange
+    const oldPost = api.post
+    let callback
+    let resolvePost
+    let posts = 0
+    wx.onNetworkStatusChange = fn => { callback = fn }
+    api.post = () => {
+      posts++
+      return new Promise(resolve => { resolvePost = resolve })
+    }
+    page.loadTodayStats = () => {}
+    try {
+      page._registerNetworkStatusListener()
+      callback({ isConnected: true })
+      callback({ isConnected: true })
+      assert.strictEqual(posts, 1)
+      const drain = page._pendingSyncDrainPromise
+      assert.ok(drain)
+      resolvePost({ status: 'paused' })
+      await new Promise(resolve => setImmediate(resolve))
+      assert.strictEqual(page._pendingSyncDrainPromise, null)
+      assert.strictEqual(page._getPendingPomodoroSyncQueue().length, 0)
+      assert.strictEqual(posts, 1)
+    } finally {
+      page._unregisterNetworkStatusListener()
+      wx.onNetworkStatusChange = oldOn
+      api.post = oldPost
+    }
+  })
 
   await test('pending queue adapters belong to their Page instance and observe live storage', () => {
     storage.clear()
@@ -369,7 +513,14 @@ async function test(name, fn) {
     }])
     page._schedulePendingPomodoroSyncRetry({ statusCode: 503 })
     assert.strictEqual(scheduledDelay, 2000)
-    assert.strictEqual(page._pendingSyncRetryAttempt, 1)
+    let retries = 0
+    page._retryPendingPomodoroSync = async () => { retries++; return true }
+    scheduledTimer.fn()
+    await Promise.resolve()
+    assert.strictEqual(retries, 1)
+    page._schedulePendingPomodoroSyncRetry({ statusCode: 503 })
+    assert.strictEqual(scheduledDelay, 5000)
+    page._clearPendingPomodoroSyncRetryTimer(true)
   })
 
   await test('cold restore remains paused across device-clock rollback', async () => {

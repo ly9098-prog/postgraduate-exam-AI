@@ -93,24 +93,22 @@ const registerNetworkStatusListener = method('_registerNetworkStatusListener')
 const unregisterNetworkStatusListener = method('_unregisterNetworkStatusListener')
 t('network listener is registered once with a removable callback', () => {
   assert.ok(onLoad.includes('this._registerNetworkStatusListener()'))
-  assert.ok(registerNetworkStatusListener.includes('this._networkStatusHandler ||'))
-  assert.ok(registerNetworkStatusListener.includes("typeof wx.onNetworkStatusChange !== 'function'"))
-  assert.ok(registerNetworkStatusListener.includes("typeof wx.offNetworkStatusChange !== 'function'"))
-  assert.ok(registerNetworkStatusListener.includes('wx.onNetworkStatusChange(this._networkStatusHandler)'))
+  assert.ok(registerNetworkStatusListener.includes('this._getSyncRetryController().register()'))
 })
-t('network reconnect drains only while visible and when work is pending', () => {
-  assert.ok(registerNetworkStatusListener.includes('!status.isConnected || !this._pageVisible'))
-  assert.ok(registerNetworkStatusListener.includes('!this._getPendingPomodoroSync()'))
-  assert.ok(registerNetworkStatusListener.includes('this._retryPendingPomodoroSync()'))
+t('network controller receives live page visibility and pending work', () => {
+  const factory = method('_getSyncRetryController')
+  assert.ok(factory.includes('isVisible: () => this._pageVisible'))
+  assert.ok(factory.includes('hasPending: () => !!this._getPendingPomodoroSync()'))
+  assert.ok(factory.includes('retry: () => this._retryPendingPomodoroSync()'))
 })
 t('network reconnect reuses existing terminal-conflict reconciliation', () => {
-  assert.ok(registerNetworkStatusListener.includes('_consumeAnyPomodoroTerminalConflict'))
-  assert.ok(registerNetworkStatusListener.includes('_handlePomodoroTerminalConflict'))
+  const factory = method('_getSyncRetryController')
+  assert.ok(factory.includes('_consumeAnyPomodoroTerminalConflict'))
+  assert.ok(factory.includes('_handlePomodoroTerminalConflict'))
 })
 t('unload removes network callback to avoid page-instance leaks', () => {
   assert.ok(onUnload.includes('this._unregisterNetworkStatusListener()'))
-  assert.ok(unregisterNetworkStatusListener.includes('wx.offNetworkStatusChange(this._networkStatusHandler)'))
-  assert.ok(unregisterNetworkStatusListener.includes('this._networkStatusHandler = null'))
+  assert.ok(unregisterNetworkStatusListener.includes('this._syncRetryController.unregister()'))
 })
 
 console.log('\n--- Free cold restore / canonical clock ---')
@@ -284,19 +282,15 @@ t('pending queue persistence failures are surfaced instead of silently accepted'
   assert.ok(queueSrc.includes('if (queue === null) return false'))
   assert.ok(retry.includes('local acknowledgement could not be persisted'))
 })
-t('online transient failures use bounded exponential backoff', () => {
-  assert.ok(src.includes('POMODORO_SYNC_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000, 60000]'))
-  assert.ok(retryClassifier.includes("error.code === 'NETWORK_ERROR'"))
-  assert.ok(retryClassifier.includes('statusCode === 408'))
-  assert.ok(retryClassifier.includes('statusCode === 429'))
-  assert.ok(retryClassifier.includes('statusCode >= 500'))
-  assert.ok(retryScheduler.includes('POMODORO_SYNC_RETRY_DELAYS_MS'))
+t('online transient failures delegate to the tested retry controller', () => {
+  assert.ok(retryClassifier.includes('return isRetryableSyncError(error)'))
+  assert.ok(retryScheduler.includes('this._getSyncRetryController().schedule(error)'))
   assert.ok(retry.includes('_schedulePendingPomodoroSyncRetry(error)'))
 })
 t('retry timers stop while hidden/unloaded and reconnect retries immediately', () => {
   assert.ok(onHide.includes('_clearPendingPomodoroSyncRetryTimer()'))
   assert.ok(onUnload.includes('_clearPendingPomodoroSyncRetryTimer(true)'))
-  assert.ok(registerNetworkStatusListener.includes('_clearPendingPomodoroSyncRetryTimer(true)'))
+  assert.ok(registerNetworkStatusListener.includes('this._getSyncRetryController().register()'))
 })
 t('countdown cold restore treats a valid pause snapshot as authoritative even at 0ms', () => {
   assert.ok(restoreCountdown.includes('savedTotal + Math.max(0, api.now() - pauseStart)'))

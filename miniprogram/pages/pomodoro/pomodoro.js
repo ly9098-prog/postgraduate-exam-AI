@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { readStorage, writeStorage, removeStorage } = require('./utils/session-storage')
 const { createPendingSyncQueue } = require('./utils/pending-sync-queue')
+const { createSyncRetryController, isRetryableSyncError } = require('./utils/sync-retry-controller')
 const { filter408SubjectTree } = require('./utils/subject-scope')
 const {
   readSubjectCache,
@@ -42,7 +43,6 @@ const POMODORO_UNKNOWN_START_KEY = 'pomodoro_unknown_start'
 const POMODORO_TERMINAL_CONFLICT_KEY = 'pomodoro_terminal_conflict'
 const CANVAS_INIT_MAX_RETRIES = 16
 const POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500
-const POMODORO_SYNC_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000, 60000]
 
 function parseServerTime(value) {
   return parseServerUtc(value)
@@ -176,9 +176,7 @@ Page({
   _completionBreakSec: null,
   _pauseToggleLocked: false,
   _pauseToggleUnlockTimer: null,
-  _networkStatusHandler: null,
-  _pendingSyncRetryTimer: null,
-  _pendingSyncRetryAttempt: 0,
+  _syncRetryController: null,
   _statsRequestSeq: 0,
 
   /* ==================== Lifecycle ==================== */
@@ -604,81 +602,47 @@ Page({
     } catch (_) {}
   },
 
-  _registerNetworkStatusListener() {
-    if (
-      this._networkStatusHandler ||
-      typeof wx.onNetworkStatusChange !== 'function' ||
-      typeof wx.offNetworkStatusChange !== 'function'
-    ) return
-
-    this._networkStatusHandler = status => {
-      if (!status || !status.isConnected || !this._pageVisible) return
-      if (!this._getPendingPomodoroSync()) return
-
-      // Reconnect is a strong signal that an earlier transient failure may have
-      // recovered. Cancel any delayed retry and drain immediately. The drain is
-      // single-flight, so duplicate network callbacks cannot issue duplicates.
-      this._clearPendingPomodoroSyncRetryTimer(true)
-      this._retryPendingPomodoroSync().then(synced => {
-        if (!this._pageVisible) return
-        const conflict = this._consumeAnyPomodoroTerminalConflict()
-        if (conflict) {
-          this._handlePomodoroTerminalConflict(conflict.sessionId, conflict)
-          return
-        }
-        if (synced) this.loadTodayStats()
-      }).catch(error => {
-        console.warn('pomodoro reconnect sync failed', error)
+  _getSyncRetryController() {
+    if (!this._syncRetryController) {
+      this._syncRetryController = createSyncRetryController({
+        setTimeout: (fn, delay) => setTimeout(fn, delay),
+        clearTimeout: timer => clearTimeout(timer),
+        isVisible: () => this._pageVisible,
+        hasPending: () => !!this._getPendingPomodoroSync(),
+        retry: () => this._retryPendingPomodoroSync(),
+        warn: (message, error) => console.warn(message, error),
+        consumeConflict: () => this._consumeAnyPomodoroTerminalConflict(),
+        handleConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
+        loadStats: () => this.loadTodayStats(),
+        canListen: () => typeof wx.onNetworkStatusChange === 'function' &&
+          typeof wx.offNetworkStatusChange === 'function',
+        onNetworkStatusChange: handler => wx.onNetworkStatusChange(handler),
+        offNetworkStatusChange: handler => {
+          if (typeof wx.offNetworkStatusChange === 'function') wx.offNetworkStatusChange(handler)
+        },
       })
     }
+    return this._syncRetryController
+  },
 
-    wx.onNetworkStatusChange(this._networkStatusHandler)
+  _registerNetworkStatusListener() {
+    this._getSyncRetryController().register()
   },
 
   _unregisterNetworkStatusListener() {
-    if (!this._networkStatusHandler) return
-    try {
-      if (typeof wx.offNetworkStatusChange === 'function') {
-        wx.offNetworkStatusChange(this._networkStatusHandler)
-      }
-    } catch (_) {}
-    this._networkStatusHandler = null
+    if (this._syncRetryController) this._syncRetryController.unregister()
   },
 
   _isRetryablePomodoroSyncError(error) {
-    const statusCode = Number(error && error.statusCode) || 0
-    return !!(
-      (error && error.code === 'NETWORK_ERROR') ||
-      statusCode === 0 ||
-      statusCode === 408 ||
-      statusCode === 429 ||
-      statusCode >= 500
-    )
+    return isRetryableSyncError(error)
   },
 
   _clearPendingPomodoroSyncRetryTimer(resetAttempt = false) {
-    if (this._pendingSyncRetryTimer) {
-      clearTimeout(this._pendingSyncRetryTimer)
-      this._pendingSyncRetryTimer = null
-    }
-    if (resetAttempt) this._pendingSyncRetryAttempt = 0
+    if (this._syncRetryController) this._syncRetryController.clear(resetAttempt)
   },
 
   _schedulePendingPomodoroSyncRetry(error) {
-    if (!this._pageVisible || !this._getPendingPomodoroSync() || !this._isRetryablePomodoroSyncError(error)) return
-    if (this._pendingSyncRetryTimer) return
-
-    const attempt = Math.max(0, Number(this._pendingSyncRetryAttempt || 0))
-    const delayIndex = Math.min(attempt, POMODORO_SYNC_RETRY_DELAYS_MS.length - 1)
-    const delay = POMODORO_SYNC_RETRY_DELAYS_MS[delayIndex]
-    this._pendingSyncRetryAttempt = attempt + 1
-    this._pendingSyncRetryTimer = setTimeout(() => {
-      this._pendingSyncRetryTimer = null
-      if (!this._pageVisible || !this._getPendingPomodoroSync()) return
-      this._retryPendingPomodoroSync().catch(retryError => {
-        console.warn('pomodoro delayed sync retry failed', retryError)
-      })
-    }, delay)
+    this._getSyncRetryController().schedule(error)
   },
 
   _releasePauseToggleLock() {
