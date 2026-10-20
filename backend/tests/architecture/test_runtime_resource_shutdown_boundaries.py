@@ -43,7 +43,7 @@ def test_lifespan_uses_real_helpers_in_original_shutdown_order():
     assert sorted(node.func.id for node in calls) == sorted(HELPERS)
     positions = [source.index(f"await {name}()") for name in HELPERS]
     assert positions == sorted(positions)
-    assert source.index("await _ocr_shared_http_client.aclose()") < positions[0]
+    assert source.index("await _ocr_resources.shared_http_client.aclose()") < positions[0]
     assert positions[-1] < source.index('logger.info("=== Shutdown sequence completed')
 
 

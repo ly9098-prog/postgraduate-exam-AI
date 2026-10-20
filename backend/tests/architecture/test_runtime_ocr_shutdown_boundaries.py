@@ -33,18 +33,17 @@ def test_main_uses_real_executor_policy_inside_original_role_and_cleanup_positio
     assert ast.dump(owner.test) == ast.dump(ast.parse('role in ("web", "all")', mode="eval").body)
     positions = [source.index(fragment) for fragment in [
         "await shutdown_formula_pool()", "await shutdown_ocr_executor()",
-        "await _ocr_gateway.shutdown()", "await _ocr_shared_http_client.aclose()",
+        "await _ocr_resources.gateway.shutdown()", "await _ocr_resources.shared_http_client.aclose()",
         "await shutdown_render_resources()",
     ]]
     assert positions == sorted(positions)
-    client_try = next(
-        node for node in owner.body if isinstance(node, ast.Try)
-        and any(isinstance(item, ast.Expr) and isinstance(item.value, ast.Name)
-                and item.value.id == "_ocr_shared_http_client" for item in node.body)
+    client_guard = next(
+        node for node in owner.body if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "_ocr_resources.shared_http_client is not None"
     )
-    assert [ast.dump(handler.type) for handler in client_try.handlers] == [
-        ast.dump(ast.Name(id="NameError", ctx=ast.Load())),
-    ]
+    assert len(client_guard.body) == 2
+    assert ast.unparse(client_guard.body[0]) == "await _ocr_resources.shared_http_client.aclose()"
+    assert ast.unparse(client_guard.body[1]) == "logger.info('OCR shared httpx client closed')"
 
 
 def test_ocr_shutdown_policy_import_does_not_load_local_ocr_or_runtime_resources():

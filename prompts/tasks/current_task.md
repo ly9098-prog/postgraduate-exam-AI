@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前七十九批已提交，第八十批分离执行器与孤儿协调器启动；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十批已提交，第八十一批分离HTTP OCR资源装配与归属；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1040,3 +1040,14 @@
 - 3项依赖/尺寸/真实调用及失败所有权与新进程无资源/env写入/task创建门禁接入CI。首次完整CI两项旧门禁查找已迁移文本失败，迁为真实helper调用位置并由新门禁验证内部依赖/边界；最终原YAML完整静态1,282项（2既有弃用警告）、readiness69项、云隔离30项全部通过。
 - 完整lifespan33项状态恢复再通过（包装进程2条既有rewrite警告），覆盖新增startup logger和25模块端口。严格Ruff/全应用Ruff/compileall/diff/CI路径与33项保护哈希通过。按review-agent只读检查完整差异、实际executors/registry/guard消费者、导入和错误边界、旧新AST/轨迹及测试：No findings。
 - 新模块35行，函数19/7行；main708→690行/lifespan412→390行，图558模块/2,205边/零循环/无反向API。仅本地提交相关源码/测试/CI/文档，保留其他改动及删除，不推送、不操作生产。OCR gateway/worker/scheduler启动、yield前失败和client关闭阻断等行为待办、全栈完整治理仍继续。
+
+
+## 八十七、第八十一批执行记录：HTTP OCR 资源装配与归属
+
+- `services/runtime_ocr_startup.py`拥有原HTTP OCR依赖导入、配置读取、共享httpx client/worker/gateway构建及发布/日志。每次lifespan持有一个`HttpOcrResources`，在client构建成功后立即保存client、gateway构建成功后立即保存gateway；worker/画像/发布/日志失败不丢失已创建资源。main保留原web/all分流、OCR Gateway失败报告、实时production mode及关闭顺序。
+- 原完整启动块先通过32项刻画，覆盖配置/超时/连接限额/worker传参与client身份/发布、禁用但仍导入原依赖、8步骤和6导入点错误/取消及日志失败。新增完整真实lifespan16项部分初始化/生产致命/非生产继续/取消/退出边界；相同32+16项对旧`716d90a5`完整启动块和完整lifespan通过（包装进程1条rewrite警告）。
+- 资源字段归一化后原完整装配块、展开完整main/lifespan AST一致；原未赋值client关闭检查对应每实例默认None，不吞close错误，原关闭import/日志保留。对照发现迁移暂漏client关闭日志后补回，并增加明确日志门禁；最终192组配置/导入/构建/参数/错误/取消/发布/部分资源/日志轨迹和328路径OpenAPI一致。
+- 定向启动/完整lifespan/关闭/云/架构149项通过；最终原YAML静态CI1,333项（2条既有弃用警告）、readiness69项、云OCR30项通过。完整lifespan与新增部分失败49项单进程确认Settings/env/cwd/lifespan/engine/task/socket/httpx/logger和25模块端口恢复（包装进程2条rewrite警告）。
+- 额外实际httpx/PaddleX worker/cloud gateway装配及关闭脚本通过：client身份、connect/read timeout、worker不拥有共享client、gateway关闭不关闭client、lifespan手动close后closed、singleton恢复、无Paddle导入/无socket连接。未发起真实OCR调用，不代表服务连通性或独立角色完整启动验收。
+- 3项依赖/尺寸/真实消费和每实例隔离/原分流与失败所有者/无资源惰性导入门禁接入CI；旧关闭门禁跟随真实资源字段。严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过；按review-agent只读检查完整差异、实际worker/gateway/单例/关闭消费者、资源保存时机/错误/取消和旧新证据：No findings。
+- 模块63行/装配41行；main690→646行/lifespan390→342行，图559模块/2,208边/零循环/反向API。仅本地提交相关源码/测试/CI/任务/盘点，保留所有既有改动和删除，不推送、不操作生产。yield前失败不清理与client关闭错误阻断后续清理保持独立待办；worker/scheduler启动与全栈完整计划仍未完成。

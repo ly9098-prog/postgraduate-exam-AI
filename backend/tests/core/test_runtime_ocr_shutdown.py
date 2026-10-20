@@ -13,6 +13,7 @@ import pytest
 
 from app import main
 from app.core import deployment_profile, runtime_resource_shutdown
+from app.services.runtime_ocr_startup import HttpOcrResources
 
 ABSENT = object()
 
@@ -75,7 +76,7 @@ def run_ocr_shutdown(ocr_ports):
     end = source.index("        await shutdown_render_resources()", start)
     function = ast.AsyncFunctionDef(
         name="shutdown", args=ast.arguments(
-            posonlyargs=[], args=[ast.arg(arg="role"), ast.arg(arg="_ocr_gateway")],
+            posonlyargs=[], args=[ast.arg(arg="role"), ast.arg(arg="_ocr_resources")],
             kwonlyargs=[], kw_defaults=[], defaults=[],
         ), body=ast.parse(textwrap.dedent(source[start:end])).body, decorator_list=[],
     )
@@ -86,10 +87,12 @@ def run_ocr_shutdown(ocr_ports):
             "logger": ocr_ports.logger, "asyncio": ocr_ports.runtime,
             "shutdown_ocr_executor": main.shutdown_ocr_executor,
         }
-        if client is not ABSENT:
-            namespace["_ocr_shared_http_client"] = ocr_ports.client if client else None
         exec(code, namespace)
-        await namespace["shutdown"](role, ocr_ports.gateway if gateway else None)
+        resources = HttpOcrResources(
+            gateway=ocr_ports.gateway if gateway else None,
+            shared_http_client=ocr_ports.client if client is not ABSENT and client else None,
+        )
+        await namespace["shutdown"](role, resources)
 
     return run
 

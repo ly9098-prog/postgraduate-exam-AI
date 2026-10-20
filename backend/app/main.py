@@ -59,6 +59,10 @@ from app.services.readiness_dependency_probes import (
 )
 from app.services.role_readiness import check_role_dependencies
 from app.services.runtime_inference_metrics import append_ai_metrics, append_ocr_metrics
+from app.services.runtime_ocr_startup import (
+    HttpOcrResources,
+    initialize_http_ocr_gateway,
+)
 from app.services.runtime_schema_diagnostics import log_runtime_schema_divergence
 from app.services.runtime_sse_metrics import append_sse_metrics
 from app.services.runtime_startup_checks import (
@@ -234,7 +238,7 @@ async def lifespan(app: FastAPI):
     await log_ai_model_configuration(async_session)
 
     # ── Resource references populated by role ──
-    _ocr_gateway = None
+    _ocr_resources = HttpOcrResources()
 
     # ── Role-aware BoundedExecutors ──
     try:
@@ -256,52 +260,7 @@ async def lifespan(app: FastAPI):
     if role in ("web", "all"):
         # Initialize OCR Gateway (needed for API enqueue endpoints)
         try:
-            import httpx
-
-            from app.core.ocr_runtime_config import get_runtime_config
-            from app.features.ocr_gateway import OCRGateway
-            from app.services.ocr_worker_client import create_ocr_worker_client
-
-            cfg = get_runtime_config()
-            if cfg.enabled:
-                # Create a shared httpx.AsyncClient for all OCR HTTP
-                # communication.  Ownership remains in this lifespan block;
-                # the worker client will NOT close it on shutdown.
-                _ocr_shared_http_client = httpx.AsyncClient(
-                    timeout=httpx.Timeout(
-                        connect=cfg.remote_connect_timeout_sec,
-                        read=cfg.remote_read_timeout_sec,
-                        write=cfg.remote_connect_timeout_sec,
-                        pool=cfg.remote_connect_timeout_sec,
-                    ),
-                    limits=httpx.Limits(
-                        max_keepalive_connections=cfg.remote_max_concurrency,
-                        max_connections=cfg.remote_max_concurrency,
-                    ),
-                )
-                worker_client = create_ocr_worker_client(
-                    cfg,
-                    http_client=_ocr_shared_http_client,
-                )
-                from app.core.deployment_profile import detect_deployment_profile
-
-                _ocr_gateway = OCRGateway(
-                    mode="gateway",
-                    profile=detect_deployment_profile(),
-                    worker_client=worker_client,
-                )
-                from app.services.ocr_service import set_gateway
-
-                set_gateway(_ocr_gateway)
-                logger.info(
-                    "OCR Gateway initialized (role=%s mode=gateway exec_backend=%s profile=%s env=%s)",
-                    role,
-                    cfg.execution_backend,
-                    cfg.profile,
-                    cfg.environment,
-                )
-            else:
-                logger.info("OCR not enabled, skipping Gateway initialization")
+            initialize_http_ocr_gateway(_ocr_resources, role)
         except Exception as e:
             report_http_startup_failure("OCR Gateway", e, _production_mode)
 
@@ -475,23 +434,20 @@ async def lifespan(app: FastAPI):
             await shutdown_ocr_executor()
 
             try:
-                from app.features.ocr_gateway import OCRGateway
+                from app.features.ocr_gateway import (
+                    OCRGateway,  # noqa: F401 - preserve the shutdown import boundary
+                )
 
-                if _ocr_gateway is not None:
-                    await _ocr_gateway.shutdown()
+                if _ocr_resources.gateway is not None:
+                    await _ocr_resources.gateway.shutdown()
                     logger.info("OCR Gateway shut down")
             except Exception as e:
                 logger.warning("OCR Gateway shutdown error: %s", e)
 
             # Close the shared httpx.AsyncClient used by OCR
-            try:
-                _ocr_shared_http_client
-            except NameError:
-                pass
-            else:
-                if _ocr_shared_http_client is not None:
-                    await _ocr_shared_http_client.aclose()
-                    logger.info("OCR shared httpx client closed")
+            if _ocr_resources.shared_http_client is not None:
+                await _ocr_resources.shared_http_client.aclose()
+                logger.info("OCR shared httpx client closed")
 
         await shutdown_render_resources()
         await close_runtime_connections()

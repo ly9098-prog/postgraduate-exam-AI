@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：558 个模块、2,205 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：559 个模块、2,208 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 690 | `lifespan` 390 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器启动已独立；其他角色启动与完整失败清理仍待治理。 |
+| `backend/app/main.py` | 646 | `lifespan` 342 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -179,3 +179,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第八十批`core/runtime_resource_startup.py`拥有原角色执行器与孤儿协调器启动，main保留原位置及Executors失败报告边界。原24项刻画先过，扩充后26项对旧`8be9e754`完整AST通过；相关实际lifespan/执行器/guard/架构114项、旧位置门禁迁移后9项通过。完整块/展开main AST、288组角色/画像/注册/故障/取消/日志轨迹、328路径OpenAPI一致。10组真实执行器注册/线程工作/关闭、真实协调器task幂等启停和registry恢复、无socket连接通过；真实Redis协调与独立角色仍未验收。新增3项架构/惰性导入/真实消费门禁，原YAML完整静态1,282项（2既有弃用警告）/readiness69项/云30项通过，33项lifespan状态恢复再过；严格Ruff/compileall/diff/33项保护哈希及review-agent只读No findings。模块35行/函数19与7行，main690行/lifespan390行，558模块/2,205边/零循环/反向API。其他角色启动/既有清理缺口及全栈验收继续待办。
+
+
+第八十一批`services/runtime_ocr_startup.py`接管HTTP OCR配置/共享client/worker/gateway装配，lifespan每实例资源对象立即保留构建成功的client/gateway；main仍拥有原角色/失败报告/关闭顺序，禁用依赖导入与部分失败/取消状态保留。32项原块刻画和16项完整lifespan失败边界均对旧`716d90a5`通过；相关149项通过。资源字段映射后完整块/展开main AST、192组配置/导入/构建/资源/发布/错误/取消/日志轨迹和328路径OpenAPI一致，client默认None对应旧未赋值保护且原close日志与错误传播保留。真实httpx/PaddleX worker/cloud gateway装配/共享client非ownership/关闭及singleton恢复通过，无socket/Paddle；未调用外部OCR。原YAML静态1,333项（2既有弃用警告）/readiness69项/云30项通过，49项lifespan状态恢复再过；严格Ruff/compileall/diff/保护哈希、review-agent只读No findings。模块63行/函数41行，main646行/lifespan342行，559模块/2,208边/零循环/反向API。yield前失败清理/client关闭阻断等既有缺口不变，其他角色启动与全栈验收继续待办。

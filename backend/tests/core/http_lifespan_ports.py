@@ -18,7 +18,11 @@ from app.core import (
     runtime_role_shutdown,
     runtime_task_shutdown,
 )
-from app.services import runtime_schema_diagnostics, runtime_startup_checks
+from app.services import (
+    runtime_ocr_startup,
+    runtime_schema_diagnostics,
+    runtime_startup_checks,
+)
 from app.services.export import schema_compatibility
 
 
@@ -183,7 +187,7 @@ async def runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "logger", logger)
     for module in [
         runtime_resource_shutdown, runtime_resource_startup, runtime_role_shutdown, runtime_task_shutdown,
-        runtime_startup_checks, runtime_schema_diagnostics, schema_compatibility,
+        runtime_startup_checks, runtime_schema_diagnostics, schema_compatibility, runtime_ocr_startup,
         http_runtime_policy,
     ]:
         monkeypatch.setattr(module, "logger", logger)
