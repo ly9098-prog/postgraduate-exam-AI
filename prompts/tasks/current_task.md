@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十批已提交，第八十一批分离HTTP OCR资源装配与归属；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十一批已提交，第八十二批共用审计与推荐调度器启动；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1051,3 +1051,14 @@
 - 额外实际httpx/PaddleX worker/cloud gateway装配及关闭脚本通过：client身份、connect/read timeout、worker不拥有共享client、gateway关闭不关闭client、lifespan手动close后closed、singleton恢复、无Paddle导入/无socket连接。未发起真实OCR调用，不代表服务连通性或独立角色完整启动验收。
 - 3项依赖/尺寸/真实消费和每实例隔离/原分流与失败所有者/无资源惰性导入门禁接入CI；旧关闭门禁跟随真实资源字段。严格Ruff/全应用Ruff/compileall/diff/CI路径和33保护哈希通过；按review-agent只读检查完整差异、实际worker/gateway/单例/关闭消费者、资源保存时机/错误/取消和旧新证据：No findings。
 - 模块63行/装配41行；main690→646行/lifespan390→342行，图559模块/2,208边/零循环/反向API。仅本地提交相关源码/测试/CI/任务/盘点，保留所有既有改动和删除，不推送、不操作生产。yield前失败不清理与client关闭错误阻断后续清理保持独立待办；worker/scheduler启动与全栈完整计划仍未完成。
+
+
+## 八十八、第八十二批执行记录：共用审计与推荐调度器启动
+
+- 核实HTTP all分流与独立`bootstrap._init_scheduler_dependencies`的审计清理/推荐统计启动块语义相同；唯一实现迁至`services/runtime_scheduler_startup.py`两个具体async函数，两处直接消费并显式传入各自logger。原导入→await start→日志顺序保持，main原report_http_startup_failure与bootstrap原_report仍各自拥有异常策略，不合并两种入口/TaskRegistry协议。
+- 20项先在原启动块和完整独立scheduler初始化通过：导入/await/日志/普通错误/取消，原9类managed task顺序、outbox回调参数及audit/metrics错误下本地继续/云致命/取消传播；测试使用真实TaskRegistry/asyncio任务，外部服务替身且拒绝socket。新增8项完整HTTP all scheduler失败边界；相同28项对旧`3a39d843`完整main lifespan和独立scheduler初始化通过（包装进程1条rewrite警告）。
+- 两处原完整启动块及展开完整main/bootstrap模块AST一致，48组两入口import/await/log/错误/取消轨迹与328路径OpenAPI一致。相关HTTP生命周期/部分OCR/共享调度/独立scheduler/架构80项通过。3项共享依赖/预算/两个真实消费者及logger/失败所有者/无配置资源加载或task/env副作用门禁接入CI。
+- 原YAML完整静态CI1,364项（2条既有弃用警告）、readiness69项、云OCR30项通过；完整HTTP/独立scheduler/共享启动混合77项在单进程确认Settings/env/cwd/lifespan/engine/asyncio/socket/httpx/logger/27模块端口及bootstrap原周期函数恢复（包装进程2条rewrite警告）。严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过。
+- 额外真实APScheduler脚本使用两个新服务实例、临时注册表和未来UTC cron时刻：两调用方logger均可启动、各仅1job、重复启动幂等、真实注册/stop及恢复通过，无socket或job执行。只证明调度器装配/启停；不代表定时业务、分布式锁、真实DB/Redis或独立进程全链验收。
+- 依review-agent只读检查完整差异、两入口原策略/日志、scheduler实际start/stop/注册消费者、TaskRegistry清理及旧新证据：No findings。模块19行/函数5、7行；main646→642行/lifespan342→334行；bootstrap723→719行/调度初始化101→93行，graph560模块/2,210边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其余改动及删除，不推送、不操作生产。其他worker/scheduler编排、独立角色完整启动/失败/退出及全栈计划仍继续；已知HTTP yield前失败不清理和client关闭错误阻断后续清理未修改。

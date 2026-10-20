@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：559 个模块、2,208 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：560 个模块、2,210 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,8 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 646 | `lifespan` 342 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
+| `backend/app/main.py` | 642 | `lifespan` 334 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
+| `backend/app/core/bootstrap.py` | 719 | `shutdown_role` 157 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整scheduler初始化受控回归已建立；其他启动/关闭及信号/进程退出待治理验收。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -182,3 +183,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第八十一批`services/runtime_ocr_startup.py`接管HTTP OCR配置/共享client/worker/gateway装配，lifespan每实例资源对象立即保留构建成功的client/gateway；main仍拥有原角色/失败报告/关闭顺序，禁用依赖导入与部分失败/取消状态保留。32项原块刻画和16项完整lifespan失败边界均对旧`716d90a5`通过；相关149项通过。资源字段映射后完整块/展开main AST、192组配置/导入/构建/资源/发布/错误/取消/日志轨迹和328路径OpenAPI一致，client默认None对应旧未赋值保护且原close日志与错误传播保留。真实httpx/PaddleX worker/cloud gateway装配/共享client非ownership/关闭及singleton恢复通过，无socket/Paddle；未调用外部OCR。原YAML静态1,333项（2既有弃用警告）/readiness69项/云30项通过，49项lifespan状态恢复再过；严格Ruff/compileall/diff/保护哈希、review-agent只读No findings。模块63行/函数41行，main646行/lifespan342行，559模块/2,208边/零循环/反向API。yield前失败清理/client关闭阻断等既有缺口不变，其他角色启动与全栈验收继续待办。
+
+
+第八十二批`services/runtime_scheduler_startup.py`将HTTP all与独立bootstrap scheduler共有的审计/推荐启动收敛为两个具体函数，显式接收各调用方logger，原main报告和bootstrap_report各自保留。原20项启动/完整独立scheduler刻画先过，新增HTTP失败8项后共28项对旧`3a39d843`完整两个入口通过；相关80项通过。原两块/展开完整main/bootstrap AST、48组导入/await/日志/错误/取消轨迹及328路径OpenAPI一致。独立scheduler使用真实9类TaskRegistry任务、替身外部端口，outbox回调/失败/取消/清理有证据；不代表真实进程退出。真实APScheduler新实例各1job、幂等start/注册/stop及原状态恢复通过，无网络/job执行。原YAML静态1,364项（2既有弃用警告）/readiness69/云30通过；77项HTTP/独立scheduler混合全局状态恢复通过，严格检查/33保护哈希/review-agent只读No findings。模块19行/函数5与7，main642/lifespan334、bootstrap719/调度初始化93；560模块/2,210边/零循环/反向API。余下启动/失败清理/独立角色及外部依赖/客户端完整验收仍待完成。

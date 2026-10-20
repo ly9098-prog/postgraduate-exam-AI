@@ -27,6 +27,10 @@ import sys
 from collections.abc import Awaitable
 
 from app.core.config import settings
+from app.services.runtime_scheduler_startup import (
+    start_audit_cleanup_scheduler,
+    start_recommendation_metrics_scheduler,
+)
 
 logger = logging.getLogger("postgraduate-ai.bootstrap")
 
@@ -285,21 +289,13 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 
     # Audit log cleanup scheduler
     try:
-        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-
-        await audit_log_cleanup_scheduler.start()
-        logger.info("Audit log cleanup scheduler started")
+        await start_audit_cleanup_scheduler(logger)
     except Exception as e:
         _report("Audit log cleanup scheduler", e)
 
     # Recommendation metrics daily aggregation scheduler
     try:
-        from app.services.recommendation_metrics_scheduler import (
-            recommendation_metrics_scheduler,
-        )
-
-        await recommendation_metrics_scheduler.start()
-        logger.info("Recommendation metrics scheduler started")
+        await start_recommendation_metrics_scheduler(logger)
     except Exception as e:
         _report("Recommendation metrics scheduler", e)
 

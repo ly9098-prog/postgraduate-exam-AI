@@ -63,6 +63,10 @@ from app.services.runtime_ocr_startup import (
     HttpOcrResources,
     initialize_http_ocr_gateway,
 )
+from app.services.runtime_scheduler_startup import (
+    start_audit_cleanup_scheduler,
+    start_recommendation_metrics_scheduler,
+)
 from app.services.runtime_schema_diagnostics import log_runtime_schema_divergence
 from app.services.runtime_sse_metrics import append_sse_metrics
 from app.services.runtime_startup_checks import (
@@ -314,20 +318,12 @@ async def lifespan(app: FastAPI):
             report_http_startup_failure("Scheduler heartbeat", e, _production_mode)
 
         try:
-            from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-
-            await audit_log_cleanup_scheduler.start()
-            logger.info("Audit log cleanup scheduler started")
+            await start_audit_cleanup_scheduler(logger)
         except Exception as e:
             report_http_startup_failure("Audit log cleanup scheduler", e, _production_mode)
 
         try:
-            from app.services.recommendation_metrics_scheduler import (
-                recommendation_metrics_scheduler,
-            )
-
-            await recommendation_metrics_scheduler.start()
-            logger.info("Recommendation metrics scheduler started")
+            await start_recommendation_metrics_scheduler(logger)
         except Exception as e:
             report_http_startup_failure("Recommendation metrics scheduler", e, _production_mode)
 
