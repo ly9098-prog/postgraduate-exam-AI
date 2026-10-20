@@ -114,6 +114,7 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 - 第四十七批 `pages/pomodoro/utils/hide-storage.js` 集中离页取消意图、确认持久化及运行快照构建，保留存储上下文、时钟取值和清理顺序。8 项模块测试、Page VM 46 项运行回归及 13,824 组完整旧/新 onHide 对照通过；生命周期局部有本地证据，确认操作、计时/画布和整个页面仍未治理完毕。
 
 - 本清单完成注册入口枚举和后端静态依赖基线，仍需逐用例核对全部消费者、事务/状态机和异常行为。阶段 0 的全量语义审查保持未完成。
+- 第六十三批确认 readiness 的既有判定缺口：`_check_alembic_head()` 返回 False 时 checks.alembic 被映射为 `stale`，关键失败列表仅接收 `unavailable`，其余依赖正常时仍返回 HTTP 200。已增加原行为刻画并单独登记；需要后续行为修复批次，不能在等价迁移中悄然改为 503。
 - 上表的“待核查/待迁移”必须有代码与回归证据后才能改为完成；行数下降、文件移动、AST 解析成功均不能单独满足治理验收。
 - PostgreSQL/Redis、OCR/AI 外部服务、真实后台浏览器与微信编译/模拟器/真机没有在本批运行。高风险迁移须另补相应测试环境与故障证据。
 - DOCX 验收已检查 ZIP 完整性、XML 可解析、python-docx 重开、原生表格/合并单元格、PAGE 页脚、中文/化学字符和 OMML 矩阵节点/元素值。当前输出有两个页脚且仅使用 PAGE，旧 NUMPAGES 断言已按实现更新。
@@ -130,3 +131,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十一批恢复 study_day_stats/scheduler 的 13 项旧失败：canonical 科目及 ID 断言、受控学习日/服务时钟、SQLite allocation 清理；原时间/归因/异常规则不变。两文件 48 项通过，真实 pause/resume 精确验证 90 秒，完成先验证未到时拒绝再验证 25 分钟完成。停用的 canonical 408 科目继续与无科目合并，异常暂停不补造区间。扩大完整架构/HTTP/ORM/分配/归因/迁移回归 293 通过、9 项条件跳过；未运行真实 PostgreSQL 并发。两文件接入现有 CI，静态回归显式使用隔离测试配置；本地完整执行该 CI 步骤 577 项通过。不修改生产代码/配置、不增加 skip/xfail；远端 CI 未运行。
 
 第六十二批将安全头、CORS/Host 装配和追踪日志迁至 `core/http_middleware.py`；main 显式提供配置，原注册位置、选项和四层顺序一致。每个 app 的安全模式由闭包隔离，新模块导入不加载 settings、数据库或 main。18 项原实现刻画先通过；增加 app 隔离及日志失败测试后契约/边界共 24 项通过。160 组安全头、108 组日志/响应/异常/context 轨迹相同，展开日志 helper 后 AST 和其余 main AST 相同，328 路径 OpenAPI 相同。本地完整 CI 静态步骤 599 项通过，随后追加的两项日志错误测试已包含在 24 项定向复验；远端 CI 未运行。新模块 126 行、函数最长 42 行，main 1,729 行；静态图 539 模块/2,147 边/零循环。健康/指标、生命周期和完整角色验证仍待继续，不以文件缩短代替治理验收。
+
+第六十三批恢复健康/readiness 基线：原公开 health 1 项失败及 readiness 显式运行后的 9 项失败均由测试夹具修复，生产实现不变。OCR profile patch 指向真实导入位置；队列使用 v2 端口；调度器开关明确；空间断言不再条件放行；恢复 OCR hysteresis 并移除全局 lifespan 污染。新增调度器/队列临界与云/本地状态和详情脱敏矩阵后，三文件 69 项通过。独立 CI 步骤只对指定 mocked readiness 文件打开目录门禁，并使用隔离配置；不运行真实 DB/Redis 集成，不将 39 项此前条件跳过当作验证。Alembic stale 仍返回 200 的既有缺口单列，不因本批绿色而视为已修复。

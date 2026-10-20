@@ -10,6 +10,7 @@ Covers Batch 8 checks:
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,6 +20,13 @@ from app.services.production_config_validator import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def isolate_ocr_hysteresis(monkeypatch):
+    import app.main
+
+    monkeypatch.setattr(app.main, "_ocr_remote_consecutive_failures", 0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -97,7 +105,7 @@ class TestCheckRoleDeps:
         check = self._import_check_role_deps()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.core.deployment_profile.detect_deployment_profile") as mock_profile,
+            patch("app.core.ocr_isolation.detect_deployment_profile") as mock_profile,
         ):
             mock_settings.PROCESS_ROLE = "web"
             mock_profile.return_value = "cloud_api"
@@ -128,7 +136,7 @@ class TestCheckRoleDeps:
         check = self._import_check_role_deps()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.core.deployment_profile.detect_deployment_profile") as mock_profile,
+            patch("app.core.ocr_isolation.detect_deployment_profile") as mock_profile,
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
         ):
             mock_settings.PROCESS_ROLE = "worker"
@@ -146,6 +154,7 @@ class TestCheckRoleDeps:
         ):
             mock_settings.PROCESS_ROLE = "scheduler"
             mock_settings.AUDIT_LOG_CLEANUP_ENABLED = True
+            mock_settings.RECOMMENDATION_METRICS_AGG_ENABLED = False
             mock_audit._running = True
             result = await check()
         assert result is True
@@ -159,6 +168,7 @@ class TestCheckRoleDeps:
         ):
             mock_settings.PROCESS_ROLE = "scheduler"
             mock_settings.AUDIT_LOG_CLEANUP_ENABLED = True
+            mock_settings.RECOMMENDATION_METRICS_AGG_ENABLED = False
             mock_audit._running = False
             result = await check()
         assert result is False
@@ -169,8 +179,24 @@ class TestCheckRoleDeps:
         with patch("app.main.settings") as mock_settings:
             mock_settings.PROCESS_ROLE = "scheduler"
             mock_settings.AUDIT_LOG_CLEANUP_ENABLED = False
+            mock_settings.RECOMMENDATION_METRICS_AGG_ENABLED = False
             result = await check()
         assert result is True
+
+    @pytest.mark.parametrize("running", [False, True])
+    async def test_scheduler_requires_enabled_recommendation_loop(self, running):
+        check = self._import_check_role_deps()
+        with (
+            patch("app.main.settings") as mock_settings,
+            patch(
+                "app.services.recommendation_metrics_scheduler.recommendation_metrics_scheduler"
+            ) as mock_recommendation,
+        ):
+            mock_settings.PROCESS_ROLE = "scheduler"
+            mock_settings.AUDIT_LOG_CLEANUP_ENABLED = False
+            mock_settings.RECOMMENDATION_METRICS_AGG_ENABLED = True
+            mock_recommendation._running = running
+            assert await check() is running
 
     async def test_unknown_role_fails(self):
         """Unknown PROCESS_ROLE must fail the probe."""
@@ -208,7 +234,7 @@ class TestCheckOcrConfig:
         check = self._import_check_ocr_config()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="cloud_api"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="cloud_api"),
         ):
             mock_settings.OCR_ENABLED = True
             mock_settings.OCR_EXECUTION_BACKEND = "local_process"
@@ -221,7 +247,7 @@ class TestCheckOcrConfig:
         check = self._import_check_ocr_config()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="cloud_api"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="cloud_api"),
         ):
             mock_settings.OCR_ENABLED = True
             mock_settings.OCR_EXECUTION_BACKEND = "paddlex_http"
@@ -235,7 +261,7 @@ class TestCheckOcrConfig:
         check = self._import_check_ocr_config()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="local_import"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
             mock_settings.OCR_EXECUTION_BACKEND = "local_process"
@@ -252,7 +278,7 @@ class TestCheckOcrConfig:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.main._check_ocr_remote_connectivity", return_value=False),
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="local_import"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
             mock_settings.OCR_EXECUTION_BACKEND = "paddlex_http"
@@ -270,7 +296,7 @@ class TestCheckOcrConfig:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.main._check_ocr_remote_connectivity", return_value=True),
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="local_import"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
             mock_settings.OCR_EXECUTION_BACKEND = "paddlex_http"
@@ -289,7 +315,7 @@ class TestCheckOcrConfig:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.main._check_ocr_remote_connectivity", return_value=False),
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="local_import"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
             mock_settings.OCR_EXECUTION_BACKEND = "paddlex_http"
@@ -304,7 +330,7 @@ class TestCheckOcrConfig:
         check = self._import_check_ocr_config()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.core.deployment_profile.detect_deployment_profile", return_value="cloud_api"),
+            patch("app.core.ocr_isolation.detect_deployment_profile", return_value="cloud_api"),
             patch.dict(sys.modules, {"paddleocr": MagicMock()}),
         ):
             mock_settings.OCR_ENABLED = True
@@ -342,12 +368,13 @@ class TestCheckQueue:
         check = self._import_check_queue()
         with (
             patch("app.main.settings") as mock_settings,
+            patch("app.main._production_mode", True),
             patch("app.services.task_queue_service.task_queue") as mock_queue,
         ):
             mock_settings.REDIS_URL = "redis://localhost:6379"
             mock_settings.APP_ENV = "production"
-            mock_queue.queue_length = AsyncMock(side_effect=Exception("Redis connection refused"))
-            mock_queue.processing_length = AsyncMock(side_effect=Exception("Redis connection refused"))
+            mock_queue.ready_length_v2 = AsyncMock(side_effect=Exception("Redis connection refused"))
+            mock_queue.processing_length_v2 = AsyncMock(side_effect=Exception("Redis connection refused"))
             result = await check()
         assert result == "unavailable"
 
@@ -356,12 +383,13 @@ class TestCheckQueue:
         check = self._import_check_queue()
         with (
             patch("app.main.settings") as mock_settings,
+            patch("app.main._production_mode", False),
             patch("app.services.task_queue_service.task_queue") as mock_queue,
         ):
             mock_settings.REDIS_URL = "redis://localhost:6379"
             mock_settings.APP_ENV = "development"
-            mock_queue.queue_length = AsyncMock(side_effect=Exception("Redis connection refused"))
-            mock_queue.processing_length = AsyncMock(side_effect=Exception("Redis connection refused"))
+            mock_queue.ready_length_v2 = AsyncMock(side_effect=Exception("Redis connection refused"))
+            mock_queue.processing_length_v2 = AsyncMock(side_effect=Exception("Redis connection refused"))
             result = await check()
         assert result == "degraded"
 
@@ -374,8 +402,8 @@ class TestCheckQueue:
         ):
             mock_settings.REDIS_URL = "redis://localhost:6379"
             mock_settings.APP_ENV = "production"
-            mock_queue.queue_length = AsyncMock(return_value=5)
-            mock_queue.processing_length = AsyncMock(return_value=3)
+            mock_queue.ready_length_v2 = AsyncMock(return_value=5)
+            mock_queue.processing_length_v2 = AsyncMock(return_value=3)
             result = await check()
         assert result == "ok"
 
@@ -388,10 +416,25 @@ class TestCheckQueue:
         ):
             mock_settings.REDIS_URL = "redis://localhost:6379"
             mock_settings.APP_ENV = "production"
-            mock_queue.queue_length = AsyncMock(return_value=80)
-            mock_queue.processing_length = AsyncMock(return_value=40)
+            mock_queue.ready_length_v2 = AsyncMock(return_value=80)
+            mock_queue.processing_length_v2 = AsyncMock(return_value=40)
             result = await check()
         assert result == "degraded"
+
+    @pytest.mark.parametrize("depth,expected", [(100, "ok"), (101, "degraded")])
+    async def test_queue_threshold_uses_all_three_v2_task_types(self, depth, expected):
+        check = self._import_check_queue()
+        with (
+            patch("app.main.settings") as mock_settings,
+            patch("app.services.task_queue_service.task_queue") as mock_queue,
+        ):
+            mock_settings.REDIS_URL = "redis://synthetic:6379"
+            mock_queue.ready_length_v2 = AsyncMock(side_effect=[depth, 0, 0])
+            mock_queue.processing_length_v2 = AsyncMock(return_value=0)
+            assert await check() == expected
+        task_types = ["import_pipeline", "image_pipeline", "excel_pipeline"]
+        assert [args.args[0] for args in mock_queue.ready_length_v2.await_args_list] == task_types
+        assert [args.args[0] for args in mock_queue.processing_length_v2.await_args_list] == task_types
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -408,18 +451,22 @@ class TestCheckStagingSpace:
         from app.main import _check_staging_space
         return _check_staging_space
 
-    async def test_returns_dict_with_keys(self):
+    async def test_returns_dict_with_keys(self, tmp_path):
         """The staging space check returns a dict with expected keys."""
         check = self._import_check_staging_space()
-        with patch("app.services.staging_storage._STAGING_DIR") as mock_dir:
-            mock_dir.exists = True
+        with (
+            patch("app.services.staging_storage._STAGING_DIR", tmp_path),
+            patch("app.main.os.statvfs", return_value=SimpleNamespace(
+                f_frsize=100, f_bavail=10, f_blocks=40,
+            )) as statvfs,
+        ):
             result = await check()
-        assert isinstance(result, dict)
-        # On success should have the three keys
-        if result:
-            assert "staging_free_bytes" in result
-            assert "staging_total_bytes" in result
-            assert "staging_used_percent" in result
+        statvfs.assert_called_once_with(str(tmp_path))
+        assert result == {
+            "staging_free_bytes": 1000,
+            "staging_total_bytes": 4000,
+            "staging_used_percent": 75.0,
+        }
 
     async def test_empty_on_error(self):
         """When statvfs fails, returns empty dict."""
@@ -501,14 +548,16 @@ class TestReadinessEndpoint:
     """
 
     @pytest.fixture
-    def client(self):
+    def client(self, monkeypatch):
         """Create a TestClient that does NOT trigger lifespan startup."""
         from fastapi.testclient import TestClient
 
-        from app.main import app
-        # Override the lifespan to skip startup/shutdown
-        app.router.lifespan_context = None
-        return TestClient(app)
+        import app.main
+
+        monkeypatch.setattr(app.main, "_production_mode", False)
+        monkeypatch.setattr(app.main, "_check_ocr_config", AsyncMock(return_value=None))
+        # A client used without a context manager does not start the lifespan.
+        return TestClient(app.main.app)
 
     def test_healthy_probe(self, client):
         """All deps healthy → 200 with status=ok."""
@@ -638,3 +687,48 @@ class TestReadinessEndpoint:
         resp = client.get("/health/live")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
+
+    @pytest.mark.parametrize("production", [False, True])
+    @pytest.mark.parametrize("failed_probe,status", [
+        (None, 200), ("_check_database", 503), ("_check_redis", 503),
+        ("_check_staging", 503), ("_check_role_deps", 503),
+        ("_check_ocr_config", 503), ("_check_queue", 200),
+        # Existing readiness classifies stale Alembic as informational.
+        ("_check_alembic_head", 200),
+    ])
+    def test_original_readiness_status_and_cloud_detail_boundary(
+        self, client, monkeypatch, production, failed_probe, status
+    ):
+        import app.main
+        from app.services import task_queue_worker
+
+        probes = {
+            "_check_database": True, "_check_redis": True,
+            "_check_alembic_head": True, "_check_staging": True,
+            "_check_role_deps": True, "_check_ocr_config": None,
+            "_check_queue": None, "_check_staging_space": {},
+        }
+        if failed_probe:
+            probes[failed_probe] = (
+                "unavailable" if failed_probe in {"_check_ocr_config", "_check_queue"}
+                else False
+            )
+        for name, result in probes.items():
+            monkeypatch.setattr(app.main, name, AsyncMock(return_value=result))
+        monkeypatch.setattr(app.main, "_production_mode", production)
+        monkeypatch.setattr(app.main.settings, "REDIS_URL", "redis://synthetic:6379")
+        monkeypatch.setattr(
+            app.main, "_get_db_pool_metrics", lambda: {"private": "synthetic-private"},
+        )
+        monkeypatch.setattr(task_queue_worker, "is_draining_v2", lambda: False)
+        response = client.get("/health/ready")
+        assert response.status_code == status
+        expected = {"status": "ok" if status == 200 else "unavailable", "degraded": False}
+        if production:
+            assert response.json() == expected
+            assert "synthetic-private" not in response.text
+        else:
+            assert response.json().items() >= expected.items()
+            assert response.json()["checks"]["db_pool"] == {"private": "synthetic-private"}
+            if failed_probe == "_check_alembic_head":
+                assert response.json()["checks"]["alembic"] == "stale"

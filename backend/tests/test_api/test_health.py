@@ -11,8 +11,7 @@ def test_simple_health():
     resp = client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "ok"
-    assert "env" in data
+    assert data == {"status": "ok"}
 
 
 def test_api_health_endpoint():
