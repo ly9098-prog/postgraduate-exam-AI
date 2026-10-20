@@ -52,6 +52,8 @@
 
 OCR 架构测试 `backend/tests/architecture/test_architecture_boundaries.py` 已修正仓库根路径；源码扫描必须发现非空 Python 文件集合，缺失/空目录直接失败，注入越界导入的测试验证扫描器能检出违规。刷题投影和请求筛选纯规则另有 AST 检查，禁止直接依赖路由、FastAPI、SQLAlchemy 或数据库会话模块；请求范围、候选策略、到期筛选、最终守卫和签名响应编排允许数据库会话类型，但禁止路由、FastAPI、数据库会话工厂依赖及 `commit`/`rollback` 调用。管理端新增 API 边界测试，限制题库 API 模块依赖既有 client/types，并检查不直接调用原生 fetch 和新增业务文件/函数预算。实际回归结果与历史失败修复见 `prompts/tasks/current_task.md` 执行记录。
 
+后端全应用依赖门禁位于 `backend/tests/architecture/test_dependency_direction.py`：service/feature 静态导入 API 必须为零，新增静态循环边必须为零。扫描包含相对、局部和可静态解析的字面量动态导入；8 组既有循环的 124 条具体边保存在同目录 `import_cycle_baseline.json`，逐组说明迁移条件，已解除的边必须移除。门禁已接入 CI 的静态架构回归步骤；扫描限制、全栈入口清单、当前热点与未完成验证见 `docs/architecture/REFACTOR_INVENTORY.md`，静态图不代替运行时或业务语义验收。
+
 ### 核心设计原则
 
 - **单体后端**，不分微服务，3 层：Route → Service → Model
