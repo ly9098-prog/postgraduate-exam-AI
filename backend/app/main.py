@@ -23,6 +23,11 @@ from app.core.ocr_isolation import (
     loaded_local_ocr_modules,
 )
 from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
+from app.core.runtime_resource_shutdown import (
+    close_runtime_connections,
+    shutdown_render_resources,
+    stop_resource_reconciler,
+)
 from app.core.runtime_task_shutdown import cancel_and_wait_runtime_tasks
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
@@ -871,67 +876,9 @@ async def lifespan(app: FastAPI):
                     await _ocr_shared_http_client.aclose()
                     logger.info("OCR shared httpx client closed")
 
-        # 7. BoundedExecutors shutdown
-        try:
-            from app.core.executor_registry import (
-                clear_executor_registry,
-                get_all_executors,
-            )
-            from app.core.executors import shutdown_executors
-
-            await shutdown_executors(get_all_executors())
-            clear_executor_registry()
-            logger.info("BoundedExecutors shut down")
-        except Exception as e:
-            logger.warning("BoundedExecutor shutdown error: %s", e)
-
-        # 8. PDF renderer shutdown (common)
-        try:
-            from app.services.pdf_renderer_service import pdf_renderer
-
-            await pdf_renderer.shutdown()
-            logger.info("PDF renderer shut down")
-        except Exception as e:
-            logger.warning("PDF renderer shutdown error: %s", e)
-
-        # 8. Close Redis client from task queue (common)
-        try:
-            from app.services.task_queue_service import task_queue
-
-            await task_queue.close()
-            logger.info("Task queue Redis client closed")
-        except Exception as e:
-            logger.warning("Task queue close error: %s", e)
-
-        # 8b. Close AI resource-governance Redis pools.
-        try:
-            from app.core.ai_runtime_guard import ai_runtime_guard
-
-            await ai_runtime_guard.close()
-            from app.features.token_budget import close_token_budget
-
-            await close_token_budget()
-            logger.info("AI runtime resource pools closed")
-        except Exception as e:
-            logger.warning("AI runtime resource pool close error: %s", e)
-
-        # 9. Dispose SQLAlchemy engine
-        try:
-            from app.core.database import engine
-
-            await engine.dispose()
-            logger.info("SQLAlchemy engine disposed")
-        except Exception as e:
-            logger.warning("Engine dispose error: %s", e)
-
-        # ── Diagnostics ──
-        # Stop resource reservation orphan reconciler
-        try:
-            from app.core.resource_guard import resource_guard
-
-            await resource_guard.stop_orphan_reconciler()
-        except Exception as e:
-            logger.warning("Orphan reconciler stop error: %s", e)
+        await shutdown_render_resources()
+        await close_runtime_connections()
+        await stop_resource_reconciler()
 
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)
         try:
