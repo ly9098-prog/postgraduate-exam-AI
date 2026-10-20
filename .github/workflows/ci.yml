@@ -284,6 +284,7 @@ jobs:
             tests/architecture/test_event_loop_health_boundaries.py \
             tests/architecture/test_runtime_shutdown_boundaries.py \
             tests/architecture/test_runtime_resource_shutdown_boundaries.py \
+            tests/architecture/test_runtime_http_shutdown_boundaries.py \
             tests/architecture/test_runtime_role_shutdown_boundaries.py \
             tests/architecture/test_runtime_ocr_shutdown_boundaries.py \
             tests/architecture/test_runtime_startup_check_boundaries.py \

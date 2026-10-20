@@ -40,7 +40,7 @@ def test_lifespan_keeps_original_labels_order_and_shutdown_position():
     assert len(calls) == 1
     assert [ast.literal_eval(item.elts[0]) for item in calls[0].args[0].elts] == TASK_NAMES
     position = source.index("await cancel_and_wait_runtime_tasks")
-    assert source.index("await stop_processor()") < position
+    assert source.index("await stop_export_processor(role)") < position
     assert position < source.index("await stop_role_services(role)")
 
 

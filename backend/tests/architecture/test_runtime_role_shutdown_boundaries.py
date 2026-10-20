@@ -45,8 +45,10 @@ def test_lifespan_keeps_role_protocols_and_formula_pool_in_original_positions():
         if node.func.id != "shutdown_formula_pool":
             assert [ast.dump(arg) for arg in node.args] == [ast.dump(ast.Name(id="role", ctx=ast.Load()))]
     positions = [source.index(fragment) for fragment in [
-        "await drain_queue_for_role(role)", "_lag_monitor_task.cancel()",
-        "await stop_processor()", "await cancel_and_wait_runtime_tasks",
+        "await drain_queue_for_role(role)",
+        "await stop_lag_monitor(_lag_monitor_task)",
+        "await stop_export_processor(role)",
+        "await cancel_and_wait_runtime_tasks(",
         "await stop_role_services(role)", "await shutdown_formula_pool()",
         "await shutdown_ocr_executor()", "await shutdown_render_resources()",
     ]]

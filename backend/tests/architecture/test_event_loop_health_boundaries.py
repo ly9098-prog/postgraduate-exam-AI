@@ -39,8 +39,8 @@ def test_lifespan_still_starts_one_monitor_and_cancels_it_before_export_drain():
     start = source.index("monitor_event_loop_lag(event_loop_health)")
     assert source.index("initialize_role_executors(role)") < start
     assert start < source.index('if role in ("web", "all"):', start)
-    stop = source.index("_lag_monitor_task.cancel()")
-    assert stop < source.index("await _lag_monitor_task", stop)
+    stop = source.index("await stop_lag_monitor(_lag_monitor_task)")
+    assert start < stop
     assert stop < source.index("if _scheduler_tasks.export_processor_task is not None:", stop)
 
 

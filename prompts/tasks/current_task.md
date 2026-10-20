@@ -1200,3 +1200,12 @@
 - 原 40 项 OCR shutdown 契约先在旧实现通过；扩充架构依赖图（新增 `app.features.ocr_gateway` + `app.services.runtime_ocr_startup`）、probe 禁导入（新增 `app.features.ocr_gateway`/`app.services.runtime_ocr_startup`/`multiprocessing`）和 HELPERS 列表后，受影响 155 项全过。完整静态 CI：229 项 architecture + 644 项 lifespan/startup + 451 项 runtime/standalone = 1,324 项通过，无新增失败。
 - 既有 3 项预存失败（`test_security_regressions::test_redirect_target...`、2 项 `test_staging_storage` 过期/孤儿清理）经 stash 验证均为前批基线，与本批无关。严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/异常与取消边界/类型安全/测试完整性：No findings，无子 agent。
 - 仅本地提交本批 6 文件，不推送、不操作生产。module 159 行/函数≤22 行，main 523→436/lifespan 232→147 行；bootstrap 282/runner 50 保持，图 571 模块/2,242 边/零循环/反向 API。HTTP/独立 runner 既有 yield 前失败清理缺口、shared client 关闭阻断后续清理等行为待办不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。
+
+
+## 一百零三、第九十七批执行记录：HTTP lag 监控停止与导出处理器停止（2026-10-21）
+
+- 原 HTTP lifespan 的 lag 监控停止和导出处理器停止两段迁至 `core/runtime_http_shutdown.py` 的 `stop_lag_monitor(task)` 与 `stop_export_processor(role)`，main 直接消费模块函数；原 `drain → lag → export → cancel` 顺序和异常/取消边界保持。
+- 保留 lag 监控 `CancelledError` 静默通过、export 处理器普通错误 warning 和 import 边界；caller 仍持有 `_lag_monitor_task` 和 `_scheduler_tasks.export_processor_task` 的 None/done 守卫，不引入第二套任务协议。
+- 原 51 项受影响测试先过；新增 6 项单元契约覆盖 None/done/pending task 和 success/import/runtime/cancel 边界后全过。更新 2 项架构门禁（`test_runtime_shutdown_boundaries` 和 `test_event_loop_health_boundaries`、`test_runtime_role_shutdown_boundaries`）跟随新调用位置；完整静态 232 项 architecture + 389 项 lifespan/startup + 133 项 resource/task + 223 项 standalone + 408 项 runtime = 1,385 项通过，无新增失败。
+- 严格 Ruff/全应用 Ruff/compileall/diff/CI 路径与 33 保护哈希通过；主 agent 按 review-agent 只读流程审查完整 diff/实际调用方/异常与取消边界/类型安全/测试完整性：No findings，无子 agent。
+- 仅本地提交本批文件，不推送、不操作生产。module 27 行/函数 8、9 行，main 436→429/lifespan 147→136 行；571 模块/2,240 边/零循环/反向 API。既有 yield 前失败清理、shared client 关闭阻断等行为缺口不夹带修复；真实外部服务/完整 outbox 持久化/客户端及全栈其余阶段仍待继续。

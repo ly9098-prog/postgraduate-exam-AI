@@ -42,6 +42,10 @@ from app.core.runtime_resource_startup import (
     start_resource_reconciler,
 )
 from app.core.runtime_role_shutdown import drain_queue_for_role, stop_role_services
+from app.core.runtime_http_shutdown import (
+    stop_export_processor,
+    stop_lag_monitor,
+)
 from app.core.runtime_task_shutdown import cancel_and_wait_runtime_tasks
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
@@ -211,22 +215,11 @@ async def lifespan(app: FastAPI):
         await drain_queue_for_role(role)
 
         # 2. Stop event-loop lag monitor
-        if _lag_monitor_task and not _lag_monitor_task.done():
-            _lag_monitor_task.cancel()
-            try:
-                await _lag_monitor_task
-            except asyncio.CancelledError:
-                pass
+        await stop_lag_monitor(_lag_monitor_task)
 
         # 3b. Signal export processor to drain (scheduler/all or local-web fallback)
         if _scheduler_tasks.export_processor_task is not None:
-            try:
-                from app.services.export.processor import stop_processor
-
-                await stop_processor()
-                logger.info("export_processor_stopped role=%s", role)
-            except Exception as e:
-                logger.warning("Export processor stop signal failed: %s", e)
+            await stop_export_processor(role)
 
         # 4. Cancel and await background asyncio tasks with grace timeout
         await cancel_and_wait_runtime_tasks([
