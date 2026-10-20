@@ -3,7 +3,7 @@
 from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.orm_base import Base
 from app.core.time_utils import utcnow
 
 

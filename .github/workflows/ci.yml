@@ -260,6 +260,7 @@ jobs:
             tests/architecture/test_dependency_direction.py \
             tests/architecture/test_ai_prewarm_boundaries.py \
             tests/architecture/test_docx_font_boundaries.py \
+            tests/architecture/test_orm_base_boundaries.py \
             tests/architecture/test_gateway_bypass_zero.py \
             tests/architecture/test_document_ir_production_write_zero.py \
             tests/core/test_artifact_path_traversal.py \
@@ -275,6 +276,7 @@ jobs:
             tests/test_services/test_ai_prewarm_protocol.py \
             tests/export/test_docx_fonts.py \
             tests/core/test_code_integrity.py \
+            tests/core/test_orm_registry.py \
             tests/ocr_pipeline/test_ocr_resume_equivalence.py \
             tests/test_api/test_candidate_evaluator_privacy.py \
             tests/pipeline/test_pipeline_fingerprint.py \

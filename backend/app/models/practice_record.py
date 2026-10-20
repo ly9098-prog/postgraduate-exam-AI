@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.orm_base import Base
 from app.features.question_type import QT_SINGLE_CHOICE
 
 

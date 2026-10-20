@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.models  # noqa: F401
 from alembic import context
-from app.core.database import Base
+from app.core.orm_base import Base
 
 # Canonical model registry. Keep table registration in one place so Alembic,
 # runtime initialization, and schema audits see the same metadata.

@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：527 个模块、2,104 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：528 个模块、2,105 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -49,11 +49,10 @@
 
 `backend/tests/architecture/test_dependency_direction.py` 扫描全应用，service/feature 到 API 的静态导入必须为零。相对导入、局部导入和可静态解析的字面量动态导入也参与检查；源码语法错误、空目录或目录缺失不会静默跳过。
 
-`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 4 组/116 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
+`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 3 组/21 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
 
 | 静态循环组 | 模块数/内部边 | 已核对原因与迁移条件 |
 | --- | --- | --- |
-| database / models 注册 | 47 / 95 | models 引用 Base，database 的局部初始化导入模型注册；先分离注册所有权并验证迁移/启动。 |
 | ocr_fix 包与适配器/router | 4 / 6 | 包导出与适配器/路由内导入；先补 gateway 与失败路径验证。 |
 | question pipeline / writer / AI complete/enrich / draft | 5 / 9 | 历史兼容入口与抽出的实现回调原管线；迁移调用方后才能收尾旧转发。 |
 | import pipeline / worker / formula graph / batch image | 4 / 6 | worker 调业务执行器，生产者通过 worker 模块入队；拆生产者协议时验证队列/恢复。 |
@@ -66,6 +65,8 @@
 
 第五十批已解除 DOCX / OMML 的 2 模块循环：`services/export/docx_fonts.py` 持有原字体策略和 East-Asian run 字体设置，两个渲染器直接调用；OMML 仅在纯文本兜底时惰性导入该规则，不再加载完整导出器。11 项字体/兜底测试及 3 项边界测试通过，108 组 run XML、原始兜底段落和 6 份完整文档的全部 ZIP 部件字节对照一致；完整架构与相关导出回归 391 项通过。没有修复既有 OOXML 元素顺序、矩阵包装或片段 LaTeX 问题，不据输出一致宣称 Word/WPS/LibreOffice 视觉验收通过。
 
+第五十一批已解除 database / models 注册的 47 模块/95 边循环组：唯一声明基类迁至 `core/orm_base.py`，45 个模型/契约模块和 Alembic 直接引用，`database.Base` 仍是同一对象供现有运行时调用方使用。完整 79 表/79 mapper/1,076 列/246 索引的属性、默认值和 PostgreSQL/SQLite DDL 与迁移前一致；新进程模型注册和 Alembic metadata 装配均不加载配置或运行时数据库引擎。临时 SQLite 完整迁移、重复 init、用户持久化、失败清理及 cloud profile 禁止 runtime DDL 通过。真实 PostgreSQL/生产启动尚未验证，不能据静态循环消除标记高风险运行时整体完成。
+
 该图包含 TYPE_CHECKING、函数内及延迟导入；静态循环不等同于运行时循环导入错误。扫描器不解析计算生成的模块名、动态插件/monkeypatch、隐式包初始化带来的依赖或第三方内部关系，因而“无新增静态循环”不能证明运行时没有循环、死锁或资源泄漏。
 
 运行入口：
@@ -76,7 +77,7 @@ cd backend
 ruff check tests/architecture/dependency_scan.py tests/architecture/test_dependency_direction.py
 ```
 
-CI 已将新依赖测试、预热协议/架构及 DOCX 字体/边界测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
+CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界及 ORM 注册/边界测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
 
 ## 5. 番茄钟模块边界与尺寸门禁
 
@@ -100,6 +101,8 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 范围限制：该策略只覆盖明确列出的 9 个模块与页面方法，不证明其他小程序业务、所有分包边界或运行时能力隔离已完成；不是安全沙箱。主题/科目缓存等既有 wx 适配、其他页面、双份代码一致性和全仓尺寸基线仍需后续核查。行为正确性继续由独立回归和真实微信环境验收，不能由 AST 门禁替代。
 
 ## 6. 未完成的验收
+
+- 第五十一批发现并用 HEAD 原 database/45 模型源码在新进程复现 3 项既有失败：`test_p5_0_schema_baseline_migration` 要求当前不存在的 PracticeRecord.answers；`test_pomodoro_v2_migration` 两项 runtime 测试以当前不可用的“数学二”夹具启动会话。未为通过重构回归修改生产字段/科目规则、skip 或 xfail，测试契约/夹具需另行修复。PostgreSQL 条件测试本地跳过，不宣称迁移/并发验收完成。
 
 - 第四十一/四十二批已新增并接入 `pages/pomodoro/utils/sync-retry-controller.js`，重试状态仅由 controller 持有，页面提供显式能力回调。独立 9 项测试及 Page VM 29 项运行回归覆盖退避、隐藏/卸载清理、监听身份、终态冲突与真实队列单次并发 drain；不代表 `onShow` 恢复、整个页面或微信真实网络行为已经完成验收。
 - 第四十三批活动会话恢复下沉到 `pages/pomodoro/utils/active-session-recovery.js`，模块组合本地恢复、待同步动作处理和服务端状态应用；页面保留能力接线与完成/确认前置分支。10 项独立测试、Page VM 33 项运行回归及 6,144 组旧/新轨迹与状态对照验证本地证据，微信首帧、后台切换和真实网络行为仍未验证。

@@ -58,7 +58,7 @@ def _compile_jsonb_sqlite(element, compiler, **kw):
     return compiler.visit_JSON(SA_JSON(), **kw)
 
 
-from app.core.database import Base
+from app.core.orm_base import Base
 
 
 class TaskOutbox(Base):

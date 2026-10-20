@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.orm_base import Base
 
 
 class Tag(Base):

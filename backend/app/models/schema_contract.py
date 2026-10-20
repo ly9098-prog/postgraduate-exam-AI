@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy import Index, text
 
-from app.core.database import Base
+from app.core.orm_base import Base
 
 _RENAME_INDEXES = {
     "ix_knowledge_edges_source_knowledge_point_id": "ix_knowledge_edges_source_kp",

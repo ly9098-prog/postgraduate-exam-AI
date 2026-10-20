@@ -4,10 +4,10 @@ import time
 
 from sqlalchemy import event, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+from app.core.orm_base import Base
 
 logger = logging.getLogger("postgraduate-ai.database")
 
@@ -157,10 +157,6 @@ def _after_cursor_execute(conn, cursor, statement, parameters, context, executem
 
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 async def get_db():
