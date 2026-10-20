@@ -7,8 +7,8 @@ import re
 import time
 from typing import Any
 
+import app.features.ocr_fix.interfaces as ocr_fix_interfaces
 from app.ai.client import llm
-from app.features.ocr_fix import interfaces as ocr_fix_interfaces
 from app.features.ocr_fix.canonical_output import canonicalize
 
 logger = logging.getLogger(__name__)

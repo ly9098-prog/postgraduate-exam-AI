@@ -55,8 +55,8 @@ async def correct_ocr_blocks(
         _detect_structure_abnormal,
         _should_correct,
     )
-    from app.features.ocr_fix import OCRFixRouter
     from app.features.ocr_fix.interfaces import OCRFixResult
+    from app.features.ocr_fix.router import OCRFixRouter
     from app.features.token_budget import check_token_limit, estimate_tokens
 
     logger = logging.getLogger(__name__)

@@ -167,7 +167,7 @@ class TestCorrectOcrBlocks:
         }]
 
         with patch("app.ai.client.deepseek") as mock_client, \
-             patch("app.features.ocr_fix.OCRFixRouter") as mock_router_cls:
+             patch("app.features.ocr_fix.router.OCRFixRouter") as mock_router_cls:
             mock_client.is_available.return_value = True
             mock_router = MagicMock()
             mock_router.fix = AsyncMock(return_value=OCRFixResult(
@@ -219,7 +219,7 @@ class TestCorrectOcrBlocks:
         }]
 
         with patch("app.ai.client.deepseek") as mock_client, \
-             patch("app.features.ocr_fix.OCRFixRouter") as mock_router_cls:
+             patch("app.features.ocr_fix.router.OCRFixRouter") as mock_router_cls:
             mock_client.is_available.return_value = True
             mock_router = MagicMock()
             mock_router.fix = AsyncMock(side_effect=RuntimeError("API error"))
@@ -257,7 +257,7 @@ class TestCorrectOcrBlocks:
         }]
 
         with patch("app.ai.client.deepseek") as mock_client, \
-             patch("app.features.ocr_fix.OCRFixRouter") as mock_router_cls:
+             patch("app.features.ocr_fix.router.OCRFixRouter") as mock_router_cls:
             mock_client.is_available.return_value = True
             mock_router = MagicMock()
             mock_router.fix = AsyncMock(return_value=OCRFixResult(

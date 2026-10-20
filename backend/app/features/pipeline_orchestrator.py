@@ -3475,8 +3475,8 @@ class ImportPipeline:
         **_kw,
     ) -> dict:
         """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
-        from app.features.ocr_fix import OCRFixRouter
         from app.features.ocr_fix.metrics import OcrCorrectionMetrics
+        from app.features.ocr_fix.router import OCRFixRouter
 
         # 构建 router 配置
         router_config = await self._build_router_config(opts, db)

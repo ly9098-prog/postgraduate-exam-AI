@@ -29,35 +29,6 @@
     ]
   },
   {
-    "reason": "Existing OCR adapter/router package imports; migrate with OCR gateway and adapter failure regressions.",
-    "edges": [
-      [
-        "app.features.ocr_fix",
-        "app.features.ocr_fix.deepseek_adapter"
-      ],
-      [
-        "app.features.ocr_fix",
-        "app.features.ocr_fix.openai_compatible_adapter"
-      ],
-      [
-        "app.features.ocr_fix",
-        "app.features.ocr_fix.router"
-      ],
-      [
-        "app.features.ocr_fix.deepseek_adapter",
-        "app.features.ocr_fix.openai_compatible_adapter"
-      ],
-      [
-        "app.features.ocr_fix.openai_compatible_adapter",
-        "app.features.ocr_fix"
-      ],
-      [
-        "app.features.ocr_fix.router",
-        "app.features.ocr_fix.openai_compatible_adapter"
-      ]
-    ]
-  },
-  {
     "reason": "Existing question generation, enhancement and persistence collaboration; migrate with human-review and persistence regressions.",
     "edges": [
       [

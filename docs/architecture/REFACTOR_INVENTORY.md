@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：528 个模块、2,105 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：528 个模块、2,097 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -49,11 +49,10 @@
 
 `backend/tests/architecture/test_dependency_direction.py` 扫描全应用，service/feature 到 API 的静态导入必须为零。相对导入、局部导入和可静态解析的字面量动态导入也参与检查；源码语法错误、空目录或目录缺失不会静默跳过。
 
-`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 3 组/21 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
+`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 2 组/15 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
 
 | 静态循环组 | 模块数/内部边 | 已核对原因与迁移条件 |
 | --- | --- | --- |
-| ocr_fix 包与适配器/router | 4 / 6 | 包导出与适配器/路由内导入；先补 gateway 与失败路径验证。 |
 | question pipeline / writer / AI complete/enrich / draft | 5 / 9 | 历史兼容入口与抽出的实现回调原管线；迁移调用方后才能收尾旧转发。 |
 | import pipeline / worker / formula graph / batch image | 4 / 6 | worker 调业务执行器，生产者通过 worker 模块入队；拆生产者协议时验证队列/恢复。 |
 
@@ -67,6 +66,8 @@
 
 第五十一批已解除 database / models 注册的 47 模块/95 边循环组：唯一声明基类迁至 `core/orm_base.py`，45 个模型/契约模块和 Alembic 直接引用，`database.Base` 仍是同一对象供现有运行时调用方使用。完整 79 表/79 mapper/1,076 列/246 索引的属性、默认值和 PostgreSQL/SQLite DDL 与迁移前一致；新进程模型注册和 Alembic metadata 装配均不加载配置或运行时数据库引擎。临时 SQLite 完整迁移、重复 init、用户持久化、失败清理及 cloud profile 禁止 runtime DDL 通过。真实 PostgreSQL/生产启动尚未验证，不能据静态循环消除标记高风险运行时整体完成。
 
+第五十三批已解除 ocr_fix 包/适配器/router 的 4 模块/6 边循环组：包初始化只保留说明，两个业务入口直接导入 router，适配器直接导入 interfaces 模块，四处测试 patch 跟随真实定义迁移。3 个业务模块除 import 外完整 AST 不变，保留原错误/降级、安全门、模型配置和人工审核链路；不删除 DeepSeek 适配类或旧 OCR 兼容用例。15 项真实适配器/路由契约在修改前后通过；7 项边界测试确认新进程导入包、协议、canonical_output 或 router 不加载 AI client、配置、数据库及适配器。扩大架构/OCR/协调器/API 回归 314 通过、2 既有失败、1 既有 xfail；两项旧失败均是现有 router 测试仍注入 `deepseek` 键、而自动链使用 `openai-compatible`。未改生产路由或跳过失败，真实 OCR/模型、数据库/队列和客户端未验证。
+
 该图包含 TYPE_CHECKING、函数内及延迟导入；静态循环不等同于运行时循环导入错误。扫描器不解析计算生成的模块名、动态插件/monkeypatch、隐式包初始化带来的依赖或第三方内部关系，因而“无新增静态循环”不能证明运行时没有循环、死锁或资源泄漏。
 
 运行入口：
@@ -77,7 +78,7 @@ cd backend
 ruff check tests/architecture/dependency_scan.py tests/architecture/test_dependency_direction.py
 ```
 
-CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界及 ORM 注册/边界测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
+CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界、ORM 注册/边界及 OCR 适配器/导入边界测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
 
 ## 5. 番茄钟模块边界与尺寸门禁
 
