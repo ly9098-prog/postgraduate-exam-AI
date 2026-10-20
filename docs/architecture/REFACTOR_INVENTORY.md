@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：561 个模块、2,214 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：562 个模块、2,215 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -36,7 +36,7 @@
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 614 | `lifespan` 334 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
-| `backend/app/core/bootstrap.py` | 688 | `shutdown_role` 157 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口，OS信号/真实进程退出待验收。 |
+| `backend/app/core/bootstrap.py` | 580 | `shutdown_role` 157 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口，OS信号/真实进程退出待验收。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -192,3 +192,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第八十四批仅测试/CI/文档：32项直接运行完整独立_run_role_async/worker与scheduler初始化/shutdown_role，真实TaskRegistry/ManagedTask/asyncio任务/取消/共享wait/to_thread，外部端口替身/临时目录/拒绝socket。覆盖两角色/画像/OCR正常顺序、startup/配置/signal安装错误和取消、真实等待任务cancel、关闭普通错误继续/取消阻断、未知角色；与HTTP混合99项通过。同32项在旧3a39d843完整bootstrap通过（旧周期端口作名称绑定），runner/shutdown/worker init/signal安装AST一致。确认独立runner初始化失败和等待信号cancel不进入shutdown，任务可能遗留；fixture只收尾自身task，不修生产行为。需单独处理，与HTTP yield前失败/client关闭阻断同为既有待办。原YAML静态1,433项（2既有弃用警告）/readiness69/云30通过，99项同进程Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块与父别名恢复，逐fixture sys.path稳定（pytest首次setup路径预置单独排除）。严格检查/33保护哈希/review-agent只读No findings。端口192/测试124行，生产结构和561模块/2,214边/零循环保持。真实OS信号/CLI进程退出/外部依赖及全栈其他域仍未验收。
+
+
+第八十五批bootstrap通用ManagedTask/TaskRegistry完整迁至`core/runtime_task_registry.py`，装配入口直接消费真实类，原实例/role/信号/关闭顺序、postgraduate-ai.bootstrap logger、共享wait/超时/pending二次cancel与wait吞取消保持。原13项刻画先过，追加真实等待者cancel后14项对旧edfdb4f8完整类通过；相关完整角色/独立scheduler55项通过。原两个类与展开整个bootstrap AST一致、340组callback/register/done/cancel/wait/pending/log/错误/取消轨迹一致（仅pending set二次cancel无序段归一化）。新增3项依赖/预算/唯一类与真实消费/无资源导入门禁，原YAML静态1,450项（2既有弃用警告）/readiness69/云30通过；113项混合单进程新logger/全局与模块状态恢复通过。严格检查/33保护哈希/review-agent只读No findings。模块114行/最长方法22，bootstrap580，main614/lifespan334保持，562模块/2,215边/零循环/反向API。原wait吞取消/pending不再等待及runner清理缺口未修，真实进程/信号/外部依赖/全栈验收仍待完成。

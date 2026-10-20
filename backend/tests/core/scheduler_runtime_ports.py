@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest_asyncio
 
-from app.core import bootstrap, deployment_profile
+from app.core import bootstrap, deployment_profile, runtime_task_registry
 
 
 @pytest_asyncio.fixture
@@ -46,6 +46,7 @@ async def scheduler(monkeypatch):
     monkeypatch.setattr(deployment_profile, "detect_deployment_profile", lambda: state.profile)
     logger = Mock()
     monkeypatch.setattr(bootstrap, "logger", logger)
+    monkeypatch.setattr(runtime_task_registry, "logger", logger)
     state.logger = logger
     for name in ["run_token_cleanup", "run_staging_cleanup", "run_export_processor_loop", "run_export_cleanup"]:
         monkeypatch.setattr(bootstrap, name, loop)

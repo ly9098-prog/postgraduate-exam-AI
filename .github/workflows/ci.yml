@@ -293,6 +293,7 @@ jobs:
             tests/architecture/test_runtime_ocr_startup_boundaries.py \
             tests/architecture/test_runtime_scheduler_startup_boundaries.py \
             tests/architecture/test_runtime_periodic_boundaries.py \
+            tests/architecture/test_runtime_task_registry_boundaries.py \
             tests/architecture/test_gateway_bypass_zero.py \
             tests/architecture/test_document_ir_production_write_zero.py \
             tests/core/test_artifact_path_traversal.py \
@@ -335,6 +336,7 @@ jobs:
             tests/core/test_http_scheduler_startup_contract.py \
             tests/core/test_runtime_periodic_tasks.py \
             tests/core/test_standalone_role_lifecycle.py \
+            tests/core/test_runtime_task_registry.py \
             tests/test_services/test_readiness_redis_ping.py \
             tests/core/test_orm_registry.py \
             tests/test_ocr_fix/test_adapter_contract.py \

@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest_asyncio
 
-from app.core import bootstrap
+from app.core import bootstrap, runtime_task_registry
 
 
 class RolePorts:
@@ -82,6 +82,7 @@ async def role_runtime(monkeypatch, tmp_path):
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(bootstrap, "logger", state.logger)
+    monkeypatch.setattr(runtime_task_registry, "logger", state.logger)
     monkeypatch.setattr(bootstrap, "TaskRegistry", registry)
     monkeypatch.setattr(bootstrap, "_install_signal_handlers", state.signal)
     monkeypatch.setattr(socket.socket, "connect", state.forbid_network)

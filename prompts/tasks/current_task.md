@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十三批已提交，第八十四批建立完整独立角色生命周期契约；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-20。状态：前八十四批已提交，第八十五批分离通用后台任务注册与等待；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1083,3 +1083,13 @@
 - 原YAML静态CI本地1,433项（2既有弃用警告）、readiness69项、云OCR30项通过。额外99项同进程核验Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/原周期端口、30模块对象与已存在父别名恢复；逐测试autouse审计sys.path无泄漏。初wrapper全局sys.path差异已定位到pytest首次setup import_path预置包根，改在框架setup后的fixture边界核验，不归因于被测代码（包装进程2条rewrite警告）。
 - 严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；review-agent只读检查完整测试/端口、真实runner/init/关闭和错误/取消/信号边界、TaskRegistry最终收尾/状态审计：No findings。端口192行/测试124行，生产main614/lifespan334、bootstrap688与图561模块/2,214边/零循环保持。
 - 仅本地提交本批测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。独立角色真实CLI进程/OS信号/DB/Redis/OCR/AI及客户端全链仍未验收；下一批可在此完整契约下继续worker/scheduler/资源编排治理，HTTP/独立runner清理缺口与全栈未完成项保持待办。
+
+
+## 九十一、第八十五批执行记录：通用后台任务注册与等待
+
+- 原bootstrap的ManagedTask/TaskRegistry完整迁至中立`core/runtime_task_registry.py`，bootstrap直接导入真实TaskRegistry并继续拥有实例创建、role init、信号等待和shutdown位置；无反向bootstrap/app/配置/资源依赖，保留原postgraduate-ai.bootstrap logger身份。未合并HTTP任务管理协议、未改变timeout/pending策略或ManagedTask.wait吞取消的既有行为。
+- 原完整类先通过13项刻画：真实create/name/完成callback错误日志、ManagedTask.wait成功/错误/取消/timeout、register/create插入顺序、仅取消未完成任务、一次共享wait、真实不配合首次取消的task在0秒deadline后排序warning和二次cancel、wait取消传播。增加真实等待者cancel用例后14项对旧`edfdb4f8`完整类通过，迁移后包含完整独立角色/独立scheduler55项通过。
+- 两完整类AST和展开整个bootstrap AST一致；340组callback/register/done/cancel/shared wait/pending/error/cancel/log轨迹一致。pending set的二次cancel顺序原本无序，仅对这一集合迭代段归一化，不改变源码或插入顺序语义。实际task用例由fixture/测试finally收尾，不以替身掩盖泄漏。
+- 新3项无应用依赖/预算/实际TaskRegistry消费与唯一类定义/原实例位置/导入无配置资源或task/env副作用门禁接入CI；旧scheduler和完整role测试端口同时patch新模块logger并恢复。原YAML静态1,450项（2既有弃用警告）、readiness69项、云OCR30项通过。HTTP/独立角色/任务管理混合113项单进程确认新logger、Settings/env/cwd/TaskRegistry/signal/task/socket/lifespan/周期端口/30模块及父别名恢复，逐fixture sys.path稳定（包装进程2条rewrite警告）。
+- 严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护哈希通过；按review-agent只读检查完整类迁移、所有调用方/异常callback/原logger及取消/等待/timeout/二次cancel边界和全生命周期证据：No findings。模块114行/最长方法22行；bootstrap688→580行，main614/lifespan334保持，图562模块/2,215边/零循环/反向API。
+- 仅本地提交相关源码/测试/CI/任务/盘点，保留其他改动及删除，不推送、不操作生产。ManagedTask.wait原本吞等待者取消、pending二次cancel后不再等待，以及HTTP/独立runner失败不清理仍为既有行为；真实OS信号/CLI进程/外部服务/客户端及其他全栈计划继续待办。
