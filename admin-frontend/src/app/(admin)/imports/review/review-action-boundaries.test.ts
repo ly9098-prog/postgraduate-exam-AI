@@ -51,6 +51,14 @@ const modules = [
     path: "./components/review-answer-editor.tsx",
     imports: ["@/components/ui/input", "../review-edit-state", "../review-answer-selection"],
   },
+  {
+    path: "./hooks/use-review-segment-drag.ts",
+    imports: ["react", "@/lib/segment-utils"],
+  },
+  {
+    path: "./components/review-visual-segment-editor.tsx",
+    imports: ["react", "lucide-react", "@/lib/segment-utils", "../hooks/use-review-segment-drag"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
