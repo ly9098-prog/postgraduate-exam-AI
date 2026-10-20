@@ -6,17 +6,16 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import api_router
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.deployment_profile import is_restricted_environment
 from app.core.http_error_handlers import register_http_exception_handlers
+from app.core.http_middleware import register_http_middleware
 from app.core.logging_config import setup_logging
 from app.core.ocr_isolation import (
     is_restricted_ocr_environment,
@@ -972,125 +971,12 @@ app = FastAPI(
     openapi_url=None if _production_mode else "/openapi.json",
 )
 
-# --- 中间件 ---
-
-app.add_middleware(
-    TrustedHostMiddleware,
+register_http_middleware(
+    app,
     allowed_hosts=settings.ALLOWED_HOSTS,
+    cors_origins=settings.CORS_ORIGINS,
+    production_mode=_production_mode,
 )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID", "X-Trace-ID"],
-)
-
-
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault(
-        "Permissions-Policy",
-        "camera=(), microphone=(), geolocation=(), payment=()",
-    )
-    if _production_mode:
-        response.headers.setdefault(
-            "Strict-Transport-Security",
-            "max-age=31536000; includeSubDomains",
-        )
-    if request.url.path.startswith(("/api/v1/auth", "/api/admin/v1/auth")):
-        response.headers.setdefault("Cache-Control", "no-store")
-        response.headers.setdefault("Pragma", "no-cache")
-    return response
-
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    from app.core.log_context import (
-        bind_log_context,
-        clear_log_context,
-        log_event,
-        normalize_request_id,
-        normalize_trace_id,
-    )
-
-    access_logger = logging.getLogger("app.access")
-
-    # Read or generate bounded correlation IDs. Also accept W3C traceparent
-    # as a bridge from reverse proxies/APM agents when X-Trace-ID is absent.
-    trace_id = normalize_trace_id(
-        request.headers.get("x-trace-id"),
-        request.headers.get("traceparent"),
-    )
-    request_id = normalize_request_id(request.headers.get("x-request-id"))
-
-    start = time.time()
-    try:
-        bind_log_context(trace_id=trace_id, request_id=request_id)
-
-        # Extract safe request metadata (no Authorization, no full query values)
-        try:
-            query_keys = (
-                list(request.query_params.keys()) if request.query_params else []
-            )
-        except Exception:
-            query_keys = []
-        client_ip = request.client.host if request.client else "-"
-        user_agent = request.headers.get("user-agent", "-")[:200]
-        content_type = request.headers.get("content-type", "-")
-        content_length = request.headers.get("content-length", "-")
-
-        log_event(
-            access_logger,
-            "http.request.start",
-            method=request.method,
-            path=request.url.path,
-            query_keys=query_keys,
-            client_ip=client_ip,
-            user_agent=user_agent,
-            content_type=content_type,
-            content_length=content_length,
-        )
-
-        response = await call_next(request)
-        elapsed_ms = round((time.time() - start) * 1000)
-
-        # Set trace headers on the response (covers both success and exception-handler responses)
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Trace-ID"] = trace_id
-
-        log_event(
-            access_logger,
-            "http.request.finish",
-            method=request.method,
-            path=request.url.path,
-            status_code=response.status_code,
-            duration_ms=elapsed_ms,
-            response_content_length=response.headers.get("content-length", "-"),
-        )
-        return response
-    except Exception as exc:
-        elapsed_ms = round((time.time() - start) * 1000)
-        log_event(
-            access_logger,
-            "http.request.error",
-            level="error",
-            method=request.method,
-            path=request.url.path,
-            duration_ms=elapsed_ms,
-            error_type=type(exc).__name__,
-            error_message=str(exc)[:300],
-        )
-        raise
-    finally:
-        clear_log_context()
-
 
 register_http_exception_handlers(app)
 

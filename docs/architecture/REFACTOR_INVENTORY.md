@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：538 个模块、2,145 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：539 个模块、2,147 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -35,7 +35,7 @@
 | `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
-| `backend/app/main.py` | 1843 | `lifespan` 870 | HTTP 错误契约/处理器已独立，资源初始化、任务启停、中间件及健康/指标仍待治理。 |
+| `backend/app/main.py` | 1729 | `lifespan` 870 | HTTP 错误契约/处理器及中间件已独立，资源初始化、任务启停及健康/指标仍待治理。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
@@ -128,3 +128,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第六十批从 main 抽取 `core/http_error_contract.py` 和 `core/http_error_handlers.py`，分别拥有公开策略和异常适配；装配保留原位置与注册顺序，不反向引用 main、不保留转发。10 个迁移函数 AST 与其余 main AST 对照一致，792 组旧/新响应、头、日志和 context 轨迹一致，运行时 OpenAPI 328 路径一致。69 项 HTTP 契约/边界测试接入既有 CI；本轮完整架构及上传/状态/公式批次/隐私/AI 能力回归 322 项通过。静态图 538 模块、2,145 条边且无循环；新模块满足 300/50 预算。main 仍有 1,843 行，lifespan、中间件、健康/指标及完整角色退出待治理；真实 PostgreSQL/Redis、外部服务、客户端和远端 CI 未验证。
 
 第六十一批恢复 study_day_stats/scheduler 的 13 项旧失败：canonical 科目及 ID 断言、受控学习日/服务时钟、SQLite allocation 清理；原时间/归因/异常规则不变。两文件 48 项通过，真实 pause/resume 精确验证 90 秒，完成先验证未到时拒绝再验证 25 分钟完成。停用的 canonical 408 科目继续与无科目合并，异常暂停不补造区间。扩大完整架构/HTTP/ORM/分配/归因/迁移回归 293 通过、9 项条件跳过；未运行真实 PostgreSQL 并发。两文件接入现有 CI，静态回归显式使用隔离测试配置；本地完整执行该 CI 步骤 577 项通过。不修改生产代码/配置、不增加 skip/xfail；远端 CI 未运行。
+
+第六十二批将安全头、CORS/Host 装配和追踪日志迁至 `core/http_middleware.py`；main 显式提供配置，原注册位置、选项和四层顺序一致。每个 app 的安全模式由闭包隔离，新模块导入不加载 settings、数据库或 main。18 项原实现刻画先通过；增加 app 隔离及日志失败测试后契约/边界共 24 项通过。160 组安全头、108 组日志/响应/异常/context 轨迹相同，展开日志 helper 后 AST 和其余 main AST 相同，328 路径 OpenAPI 相同。本地完整 CI 静态步骤 599 项通过，随后追加的两项日志错误测试已包含在 24 项定向复验；远端 CI 未运行。新模块 126 行、函数最长 42 行，main 1,729 行；静态图 539 模块/2,147 边/零循环。健康/指标、生命周期和完整角色验证仍待继续，不以文件缩短代替治理验收。
