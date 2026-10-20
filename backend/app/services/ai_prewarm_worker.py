@@ -12,11 +12,9 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import time
 
-from app.ai.prompts import AI_ANALYSIS_PROMPT_VERSION
 from app.services.task_queue_service import Task, TaskQueueUnavailableError, task_queue
 
 logger = logging.getLogger(__name__)
@@ -41,22 +39,6 @@ _local_fallback_semaphore: asyncio.Semaphore | None = None
 
 
 # ── Public API ──
-
-
-def build_prewarm_revision(
-    *, review_count: int | None, wrong_answer: str | None
-) -> str:
-    """Stable, non-sensitive revision for one wrong-question state.
-
-    The durable queue keeps idempotency keys for seven days. A fixed task id such
-    as ``prewarm:{wq_id}`` therefore suppresses legitimate regeneration when the
-    same question is answered incorrectly again within that window. Include the
-    wrong-question revision in the task id while hashing the answer so no user
-    content is exposed in Redis keys/logs.
-    """
-    raw = f"{AI_ANALYSIS_PROMPT_VERSION}|{int(review_count or 0)}|{wrong_answer or ''}"
-    state_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:14]
-    return f"r{int(review_count or 0)}:{state_hash}"
 
 
 def _get_local_fallback_semaphore() -> asyncio.Semaphore:

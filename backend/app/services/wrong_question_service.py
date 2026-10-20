@@ -113,10 +113,8 @@ async def update_wrong(
     await db.refresh(wq)
     if should_rewarm:
         try:
-            from app.services.ai_prewarm_worker import (
-                build_prewarm_revision,
-                enqueue_prewarm,
-            )
+            from app.ai.prewarm_revision import build_prewarm_revision
+            from app.services.ai_prewarm_worker import enqueue_prewarm
 
             revision = build_prewarm_revision(
                 review_count=wq.review_count,

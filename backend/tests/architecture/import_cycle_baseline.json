@@ -484,19 +484,6 @@
     ]
   },
   {
-    "reason": "Existing AI service/prewarm worker lifecycle imports; migrate with role-specific startup and shutdown coverage.",
-    "edges": [
-      [
-        "app.services.ai_prewarm_worker",
-        "app.services.ai_service"
-      ],
-      [
-        "app.services.ai_service",
-        "app.services.ai_prewarm_worker"
-      ]
-    ]
-  },
-  {
     "reason": "Existing DOCX/OMML rendering helpers use local reverse imports; migrate with document output regression coverage.",
     "edges": [
       [

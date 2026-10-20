@@ -1100,10 +1100,8 @@ async def grade_batch_review(
     # availability must never decide whether the review submission succeeds.
     if prewarm_candidates:
         try:
-            from app.services.ai_prewarm_worker import (
-                build_prewarm_revision,
-                enqueue_prewarm,
-            )
+            from app.ai.prewarm_revision import build_prewarm_revision
+            from app.services.ai_prewarm_worker import enqueue_prewarm
 
             for wq_id, review_count, wrong_answer in prewarm_candidates:
                 revision = build_prewarm_revision(

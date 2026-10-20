@@ -2105,7 +2105,7 @@ async def prewarm_wrong_question_analysis(
             }
 
         if expected_revision:
-            from app.services.ai_prewarm_worker import build_prewarm_revision
+            from app.ai.prewarm_revision import build_prewarm_revision
 
             current_revision = build_prewarm_revision(
                 review_count=wq.review_count,

@@ -917,10 +917,8 @@ async def _finalize_attempt(
 
     if wrong_for_prewarm:
         try:
-            from app.services.ai_prewarm_worker import (
-                build_prewarm_revision,
-                enqueue_prewarm,
-            )
+            from app.ai.prewarm_revision import build_prewarm_revision
+            from app.services.ai_prewarm_worker import enqueue_prewarm
 
             for wrong in wrong_for_prewarm:
                 revision = build_prewarm_revision(

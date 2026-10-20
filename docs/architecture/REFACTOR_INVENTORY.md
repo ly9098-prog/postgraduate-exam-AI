@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：525 个模块、2,098 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：526 个模块、2,103 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -32,9 +32,9 @@
 | 路径 | 文件行数 | 候选函数/方法及行数 | 已确认职责或待分离边界 |
 | --- | ---: | --- | --- |
 | `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
-| `backend/app/services/practice_service.py` | 4103 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
+| `backend/app/services/practice_service.py` | 4101 | `get_smart_scored_questions` 540 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
-| `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | 错题分析与预热生命周期相互导入，保持凭据和画像边界。 |
+| `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 2156 | `lifespan` 870 | 资源初始化、任务启停与 app 装配混合，按角色生命周期迁移。 |
 | `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
@@ -49,7 +49,7 @@
 
 `backend/tests/architecture/test_dependency_direction.py` 扫描全应用，service/feature 到 API 的静态导入必须为零。相对导入、局部导入和可静态解析的字面量动态导入也参与检查；源码语法错误、空目录或目录缺失不会静默跳过。
 
-`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 6 组/120 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
+`dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。基线 `import_cycle_baseline.json` 逐边记录现存 5 组/118 条静态循环边及迁移前需补的回归；新增边（包括同一既有循环组内的新边）与新增模块都不能借组级白名单通过。已解除的循环边必须从基线移除，不允许留下无限期许可。基线只登记当前事实，不将这些循环标记为已修复：
 
 | 静态循环组 | 模块数/内部边 | 已核对原因与迁移条件 |
 | --- | --- | --- |
@@ -58,11 +58,12 @@
 | question pipeline / writer / AI complete/enrich / draft | 5 / 9 | 历史兼容入口与抽出的实现回调原管线；迁移调用方后才能收尾旧转发。 |
 | import pipeline / worker / formula graph / batch image | 4 / 6 | worker 调业务执行器，生产者通过 worker 模块入队；拆生产者协议时验证队列/恢复。 |
 | DOCX / OMML | 2 / 2 | 导出器调用 OMML，OMML 局部引用导出器布局；用既有文档输出回归验证。 |
-| AI service / prewarm worker | 2 / 2 | AI 分析引用预热 revision，worker 调 AI service；角色启停与预热协议保持不变。 |
 
 第三十八批已解除 embedding / vector config 的 2 模块循环：`services/embedding_endpoints.py` 统一 URL 构造，运行请求与管理端连通测试直接依赖该纯规则，后者不再导入 embedding 执行服务；原配置读取方式不变。26 项端点/调用方回归及 302 组新旧规则对照验证行为一致，对应两条循环边已从基线移除。
 
 第三十九批已解除 export service / processor 的 2 模块循环：`services/export/state_machine.py` 持有原转换表与校验函数，两类消费者直接依赖该规则。55 项状态规则测试、900 组新旧返回值/异常对照与现有导出/并发回归验证等价；不改变任务领取、事务或失败恢复。两条循环边已移除。当时导出 phase3 的 12 项旧验收因本机 DOCX 产物缺失而失败；第四十批已改为由真实导出器在 pytest 临时目录生成合成样本，恢复可重复验收。
+
+第四十九批已解除 AI service / prewarm worker 的 2 模块循环：`ai/prewarm_revision.py` 持有原 revision 哈希规则，6 个消费模块直接引用，worker 不再提供旧实现/重导出。保持 prompt version、计数转换、答案原值、SHA-256 截取、任务 id/payload 和用户过滤不变。18 项规则、9 项协议/入口启停及 3 项架构测试通过；新进程导入规则不加载 worker、AI service 或 database。队列交接使用 mock 存储/入队端口，生命周期验证使用受控协程，不代表真实 Redis 租约、模型服务或部署角色验收。
 
 该图包含 TYPE_CHECKING、函数内及延迟导入；静态循环不等同于运行时循环导入错误。扫描器不解析计算生成的模块名、动态插件/monkeypatch、隐式包初始化带来的依赖或第三方内部关系，因而“无新增静态循环”不能证明运行时没有循环、死锁或资源泄漏。
 
@@ -74,7 +75,7 @@ cd backend
 ruff check tests/architecture/dependency_scan.py tests/architecture/test_dependency_direction.py
 ```
 
-CI 已将新测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
+CI 已将新依赖测试和预热协议/架构测试加入原有 Static architecture & non-GPU regression tests 步骤；不新增生产运行入口。
 
 ## 5. 番茄钟模块边界与尺寸门禁
 

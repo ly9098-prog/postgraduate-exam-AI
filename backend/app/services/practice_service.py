@@ -3972,10 +3972,8 @@ async def batch_submit_answers(
 
     if prewarm_wrong_questions:
         try:
-            from app.services.ai_prewarm_worker import (
-                build_prewarm_revision,
-                enqueue_prewarm,
-            )
+            from app.ai.prewarm_revision import build_prewarm_revision
+            from app.services.ai_prewarm_worker import enqueue_prewarm
 
             for wrong in prewarm_wrong_questions:
                 revision = build_prewarm_revision(

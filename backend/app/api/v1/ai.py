@@ -168,7 +168,8 @@ async def recover_error_analysis(
     backup is revision-aware and force-regeneration-aware: the worker skips the
     backup when the original request has already committed a newer generation.
     """
-    from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+    from app.ai.prewarm_revision import build_prewarm_revision
+    from app.services.ai_prewarm_worker import enqueue_prewarm
 
     wq = await _get_wrong_question_for_answer_ai(
         db,
@@ -209,7 +210,8 @@ async def prewarm_analysis(
     current_user: User = Depends(get_current_user),
 ):
     """批量预生成错题 AI 分析。后台任务统一校验缓存新鲜度并按需生成。"""
-    from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+    from app.ai.prewarm_revision import build_prewarm_revision
+    from app.services.ai_prewarm_worker import enqueue_prewarm
 
     queued: list[int] = []
     skipped: list[int] = []
