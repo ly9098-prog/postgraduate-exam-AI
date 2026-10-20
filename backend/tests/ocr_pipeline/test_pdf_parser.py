@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.features.question_pipeline import _parse_pdf  # noqa: E402
+from app.features.question_import_writer import _parse_pdf  # noqa: E402
 
 
 def _make_pdf(text: str) -> bytes:

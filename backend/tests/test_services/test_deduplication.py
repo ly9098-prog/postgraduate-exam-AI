@@ -7,7 +7,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.features.question_pipeline import _parse_pdf, process_question_pipeline
+from app.features.question_import_writer import _parse_pdf
+from app.features.question_pipeline import process_question_pipeline
 from app.services.pdf_text_normalizer import (
     _should_merge,
     deduplicate_repeated_text,
@@ -130,7 +131,7 @@ class TestParsePdfDuplication:
     )
 
     def _parse(self):
-        with patch("app.features.question_pipeline._extract_pdf_text", return_value=self.DUPLICATED):
+        with patch("app.features.question_import_writer._extract_pdf_text", return_value=self.DUPLICATED):
             return _parse_pdf(b"fake", "test.pdf")
 
     def test_stem_not_duplicated(self):

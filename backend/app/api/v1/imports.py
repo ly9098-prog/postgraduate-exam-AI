@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import require_app_permission
 from app.core.time_utils import serialize_utc_datetime, utcnow
-from app.features import question_pipeline as svc
+from app.features import question_import_writer as svc
 from app.features.import_mode import ImportMode
 from app.models.user import User
 from app.schemas.import_review import (

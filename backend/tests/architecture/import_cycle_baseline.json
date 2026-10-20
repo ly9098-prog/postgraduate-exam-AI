@@ -27,18 +27,5 @@
         "app.services.import_pipeline_service"
       ]
     ]
-  },
-  {
-    "reason": "Existing normalization core and import writer compatibility exports; migrate remaining writer consumers and duplicate parser implementations with persistence regressions.",
-    "edges": [
-      [
-        "app.features.question_import_writer",
-        "app.features.question_pipeline"
-      ],
-      [
-        "app.features.question_pipeline",
-        "app.features.question_import_writer"
-      ]
-    ]
   }
 ]

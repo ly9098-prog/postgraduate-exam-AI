@@ -834,10 +834,8 @@ async def import_text_questions(
     import uuid
     from datetime import datetime
 
-    from app.features.question_pipeline import (
-        _create_question_import,
-        process_question_pipeline,
-    )
+    from app.features.question_import_writer import _create_question_import
+    from app.features.question_pipeline import process_question_pipeline
 
     batch_id = (
         f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"

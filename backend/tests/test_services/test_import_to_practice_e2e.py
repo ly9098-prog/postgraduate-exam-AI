@@ -35,7 +35,7 @@ from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.features.question_pipeline import (  # noqa: E402
+from app.features.question_import_writer import (  # noqa: E402
     _guess_subject,
     _parse_pdf,
     batch_approve,

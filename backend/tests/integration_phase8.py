@@ -38,7 +38,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import Base, async_session, engine  # noqa: E402
-from app.features import question_pipeline as import_service
+from app.features import question_import_writer as import_service
 from app.main import app as fastapi_app  # noqa: E402
 from app.models.ai_chat import AiChat  # noqa: E402,F401
 from app.models.ai_generation_log import AiGenerationLog  # noqa: E402,F401

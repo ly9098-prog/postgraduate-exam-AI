@@ -699,7 +699,7 @@ async def _process_task(task: Task) -> None:
             if file_path:
                 with open(file_path, "rb") as _fh:
                     file_content = _fh.read()
-            from app.features import question_pipeline as pipeline_svc
+            from app.features import question_import_writer as pipeline_svc
 
             await run_excel_pipeline_background(
                 pipeline_id=pipeline_id,
@@ -1154,7 +1154,7 @@ async def _process_task_v2(task: Task) -> None:
             if file_path:
                 with open(file_path, "rb") as _fh:
                     file_content = _fh.read()
-            from app.features import question_pipeline as pipeline_svc
+            from app.features import question_import_writer as pipeline_svc
 
             if _fence_record_id:
                 await _verify_fencing_or_cancel(task, _fence_record_id, task_type)

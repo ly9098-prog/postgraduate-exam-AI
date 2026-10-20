@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.features.question_pipeline import _parse_pdf  # noqa: E402
+from app.features.question_import_writer import _parse_pdf  # noqa: E402
 from app.services.pdf_text_normalizer import merge_broken_lines  # noqa: E402
 
 PASSED: list[str] = []
@@ -116,7 +116,7 @@ def test_option_inline_single_line() -> None:
     # 这里直接测解析函数，不走 PDF 渲染（避免字体问题）
     from unittest.mock import patch
 
-    from app.features.question_pipeline import _parse_pdf as _ppdf
+    from app.features.question_import_writer import _parse_pdf as _ppdf
 
     fake_text = (
         "1. Which value is correct?\n"
@@ -125,7 +125,7 @@ def test_option_inline_single_line() -> None:
         "解析：B is half.\n"
     )
 
-    with patch("app.features.question_pipeline._extract_pdf_text", return_value=fake_text):
+    with patch("app.features.question_import_writer._extract_pdf_text", return_value=fake_text):
         results = _ppdf(b"dummy", "test.pdf")
 
     assert results, "未解析出题目"
@@ -149,8 +149,8 @@ def test_math_options_preserved() -> None:
         "解析：3/2 * lim sin(3x)/3x = 3/2 * 1 = 3/2\n"
     )
     from unittest.mock import patch
-    with patch("app.features.question_pipeline._extract_pdf_text", return_value=fake_text):
-        from app.features.question_pipeline import _parse_pdf as _ppdf
+    with patch("app.features.question_import_writer._extract_pdf_text", return_value=fake_text):
+        from app.features.question_import_writer import _parse_pdf as _ppdf
         results = _ppdf(b"dummy", "test.pdf")
 
     assert results, "未解析出题目"
@@ -176,8 +176,8 @@ def test_standard_math_question_structure() -> None:
         "原式 = 3/2 * lim(x->0) sin(3x)/(3x) = 3/2 * 1 = 3/2\n"
     )
     from unittest.mock import patch
-    with patch("app.features.question_pipeline._extract_pdf_text", return_value=fake_text):
-        from app.features.question_pipeline import _parse_pdf as _ppdf
+    with patch("app.features.question_import_writer._extract_pdf_text", return_value=fake_text):
+        from app.features.question_import_writer import _parse_pdf as _ppdf
         results = _ppdf(b"dummy", "test.pdf")
 
     assert results, "未解析出题目"
@@ -203,8 +203,8 @@ def test_derivative_question() -> None:
         "解析：f'(x)=(x^2+1)'=2x\n"
     )
     from unittest.mock import patch
-    with patch("app.features.question_pipeline._extract_pdf_text", return_value=fake_text):
-        from app.features.question_pipeline import _parse_pdf as _ppdf
+    with patch("app.features.question_import_writer._extract_pdf_text", return_value=fake_text):
+        from app.features.question_import_writer import _parse_pdf as _ppdf
         results = _ppdf(b"dummy", "test.pdf")
 
     assert results, "未解析出题目"
@@ -231,8 +231,8 @@ def test_regression_answer_pollution() -> None:
         "偏移量为0x1000，意味着目标地址=0x2000。\n"
     )
     from unittest.mock import patch
-    with patch("app.features.question_pipeline._extract_pdf_text", return_value=fake_text):
-        from app.features.question_pipeline import _parse_pdf as _ppdf
+    with patch("app.features.question_import_writer._extract_pdf_text", return_value=fake_text):
+        from app.features.question_import_writer import _parse_pdf as _ppdf
         results = _ppdf(b"dummy", "test.pdf")
 
     assert results, "未解析出题目"

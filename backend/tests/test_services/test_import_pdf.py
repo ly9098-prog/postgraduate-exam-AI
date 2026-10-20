@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.features.question_pipeline import import_pdf
+from app.features.question_import_writer import import_pdf
 
 
 def _make_pdf(text: str) -> bytes:

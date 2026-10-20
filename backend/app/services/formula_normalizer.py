@@ -1,7 +1,7 @@
 """OCR 数学公式修复：将常见 OCR 错误转换为标准 LaTeX。
 
 只做规则替换，不引入新依赖。
-调用点：question_pipeline._extract_pdf_text 和 ocr_service.clean_ocr_text 之后。
+调用点：question_import_writer._extract_pdf_text 和 ocr_service.clean_ocr_text 之后。
 """
 
 import re

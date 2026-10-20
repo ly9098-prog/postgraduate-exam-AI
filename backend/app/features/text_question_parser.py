@@ -14,7 +14,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.question_pipeline import _guess_subject, process_question_pipeline
+from app.features.question_import_writer import _guess_subject
+from app.features.question_pipeline import process_question_pipeline
 from app.services.formula_normalizer import (
     fix_ocr_formula,
     normalize_text_import_delimiters,
