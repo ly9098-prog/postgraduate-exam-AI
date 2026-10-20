@@ -24,6 +24,7 @@ from app.core.ocr_isolation import (
 from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
+from app.services.ocr_readiness import OcrReadinessState, check_ocr_config
 from app.services.production_config_validator import (
     validate_production_config,
     validate_production_config_async,
@@ -1031,7 +1032,7 @@ async def _event_loop_lag_monitor(interval: float = 1.0) -> None:
 # ── OCR readiness hysteresis ──
 # Track consecutive remote OCR health-check failures.
 # Crosses the degraded threshold at 3 consecutive failures.
-_ocr_remote_consecutive_failures: int = 0
+ocr_readiness_state = OcrReadinessState()
 
 
 @app.get("/health")
@@ -1080,7 +1081,7 @@ async def ready_health():
     role_ok = await _check_role_deps()
 
     # Non-critical checks (informational, don't fail probe)
-    ocr_status = await _check_ocr_config()
+    ocr_status = await check_ocr_config(settings, ocr_readiness_state)
     queue_status = await check_queue(redis_url=settings.REDIS_URL, production_mode=_production_mode)
 
     # Draining is critical — stop the load balancer from sending requests
@@ -1201,90 +1202,6 @@ async def _check_role_deps() -> bool:
         return True
 
     return False  # Unknown role → fail probe
-
-
-async def _check_ocr_config() -> str | None:
-    """Check OCR configuration. Returns status string or None if not applicable.
-
-    Returns "ok", "degraded", "unavailable", or None (no OCR configured).
-
-    Config errors → immediate "unavailable" in cloud/production, "degraded" in dev.
-    Remote connectivity errors → hysteresis: 3 consecutive failures → "degraded".
-    Local paddle modules in cloud → "unavailable".
-    """
-    if not settings.OCR_ENABLED:
-        return None
-
-    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
-    issues: list[str] = []
-
-    # Check for local paddle in sys.modules under cloud → immediate unavailable
-    if exec_backend == "local_process":
-        issues.append("local_process backend not allowed")
-
-    if settings.OCR_USE_GPU is not False:
-        issues.append("GPU should be disabled")
-
-    if exec_backend == "paddlex_http" and not settings.OCR_REMOTE_TOKEN:
-        issues.append("remote token not set")
-
-    is_cloud = is_restricted_ocr_environment()
-
-    # Local paddle in sys.modules under cloud → unavailable
-    if is_cloud and loaded_local_ocr_modules():
-        issues.append("local paddle modules loaded in cloud deployment")
-
-    if issues:
-        if is_cloud:
-            return "unavailable"
-        return "degraded"
-
-    # Remote connectivity check with hysteresis (only for remote backends)
-    if exec_backend == "paddlex_http":
-        global _ocr_remote_consecutive_failures
-        remote_ok = await _check_ocr_remote_connectivity()
-        if remote_ok:
-            _ocr_remote_consecutive_failures = 0
-            return "ok"
-        else:
-            _ocr_remote_consecutive_failures += 1
-            if _ocr_remote_consecutive_failures >= 3:
-                return "degraded"
-            # Transient failure — still ok until threshold
-            return "ok"
-
-    return "ok"
-
-
-async def _check_ocr_remote_connectivity() -> bool:
-    """Lightweight health check against remote OCR endpoint.
-
-    Returns True if reachable, False on any failure.
-    Does NOT update hysteresis counters — caller is responsible.
-    """
-    if not settings.OCR_ENABLED:
-        return True
-    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
-    if exec_backend != "paddlex_http" or not settings.OCR_REMOTE_URL:
-        return True
-    try:
-        import httpx
-
-        url = settings.OCR_REMOTE_URL
-        timeout = httpx.Timeout(settings.OCR_REMOTE_HEALTH_TIMEOUT_SEC)
-        from app.core.log_context import get_trace_headers
-
-        headers = get_trace_headers()
-        if settings.OCR_REMOTE_TOKEN:
-            header_name = getattr(settings, "OCR_REMOTE_AUTH_HEADER", "Authorization")
-            scheme = getattr(settings, "OCR_REMOTE_AUTH_SCHEME", "Bearer")
-            headers[header_name] = f"{scheme} {settings.OCR_REMOTE_TOKEN}"
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            respiratory = url.rstrip("/") + "/health"
-            resp = await client.get(respiratory, headers=headers)
-            return resp.status_code < 500
-    except Exception:
-        return False
 
 
 # --- 路由（聚合 Router） ---

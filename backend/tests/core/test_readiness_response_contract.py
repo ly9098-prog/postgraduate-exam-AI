@@ -11,7 +11,7 @@ from app.core.readiness_response import ReadinessSnapshot, build_readiness_respo
 
 PROBES = [
     "check_database", "check_redis", "check_alembic_head", "check_staging",
-    "check_staging_space", "_check_role_deps", "_check_ocr_config", "check_queue",
+    "check_staging_space", "_check_role_deps", "check_ocr_config", "check_queue",
 ]
 
 
@@ -60,7 +60,7 @@ async def test_draining_probe_error_fallback_and_cloud_privacy(monkeypatch, drai
     from app.services import task_queue_worker
 
     for name in PROBES:
-        result = None if name in {"_check_ocr_config", "check_queue"} else True
+        result = None if name in {"check_ocr_config", "check_queue"} else True
         if name == "check_staging_space":
             result = {"private": "synthetic-private"}
         monkeypatch.setattr(main, name, AsyncMock(return_value=result))

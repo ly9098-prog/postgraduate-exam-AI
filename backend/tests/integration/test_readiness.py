@@ -26,7 +26,7 @@ pytestmark = pytest.mark.integration
 def isolate_ocr_hysteresis(monkeypatch):
     import app.main
 
-    monkeypatch.setattr(app.main, "_ocr_remote_consecutive_failures", 0)
+    monkeypatch.setattr(app.main.ocr_readiness_state, "consecutive_failures", 0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -218,8 +218,9 @@ class TestCheckOcrConfig:
 
     @staticmethod
     def _import_check_ocr_config():
-        from app.main import _check_ocr_config
-        return _check_ocr_config
+        import app.main
+
+        return lambda: app.main.check_ocr_config(app.main.settings, app.main.ocr_readiness_state)
 
     async def test_ocr_disabled_returns_none(self):
         """When OCR_ENABLED is False, returns None (not checked)."""
@@ -273,11 +274,11 @@ class TestCheckOcrConfig:
         """3 consecutive remote check failures returns 'degraded'."""
         check = self._import_check_ocr_config()
         import app.main
-        app.main._ocr_remote_consecutive_failures = 2
+        app.main.ocr_readiness_state.consecutive_failures = 2
 
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.main._check_ocr_remote_connectivity", return_value=False),
+            patch("app.services.ocr_readiness.check_ocr_remote_connectivity", return_value=False),
             patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
@@ -291,11 +292,11 @@ class TestCheckOcrConfig:
         """After 3 failures, 1 success resets counter and returns 'ok'."""
         check = self._import_check_ocr_config()
         import app.main
-        app.main._ocr_remote_consecutive_failures = 3
+        app.main.ocr_readiness_state.consecutive_failures = 3
 
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.main._check_ocr_remote_connectivity", return_value=True),
+            patch("app.services.ocr_readiness.check_ocr_remote_connectivity", return_value=True),
             patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
@@ -304,17 +305,17 @@ class TestCheckOcrConfig:
             mock_settings.OCR_USE_GPU = False
             result = await check()
         assert result == "ok"
-        assert app.main._ocr_remote_consecutive_failures == 0
+        assert app.main.ocr_readiness_state.consecutive_failures == 0
 
     async def test_remote_connectivity_one_failure_still_ok(self):
         """1 remote failure (below threshold) still returns 'ok'."""
         check = self._import_check_ocr_config()
         import app.main
-        app.main._ocr_remote_consecutive_failures = 0
+        app.main.ocr_readiness_state.consecutive_failures = 0
 
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.main._check_ocr_remote_connectivity", return_value=False),
+            patch("app.services.ocr_readiness.check_ocr_remote_connectivity", return_value=False),
             patch("app.core.ocr_isolation.detect_deployment_profile", return_value="local_import"),
         ):
             mock_settings.OCR_ENABLED = True
@@ -323,7 +324,7 @@ class TestCheckOcrConfig:
             mock_settings.OCR_USE_GPU = False
             result = await check()
         assert result == "ok"
-        assert app.main._ocr_remote_consecutive_failures == 1
+        assert app.main.ocr_readiness_state.consecutive_failures == 1
 
     async def test_paddle_modules_cloud_unavailable(self):
         """Local paddle OCR modules in sys.modules under cloud returns 'unavailable'."""
@@ -494,8 +495,10 @@ class TestCheckOcrRemoteConnectivity:
 
     @staticmethod
     def _import_fn():
-        from app.main import _check_ocr_remote_connectivity
-        return _check_ocr_remote_connectivity
+        import app.main
+        from app.services.ocr_readiness import check_ocr_remote_connectivity
+
+        return lambda: check_ocr_remote_connectivity(app.main.settings)
 
     async def test_ocr_disabled_returns_true(self):
         """When OCR is disabled, connectivity check trivially passes."""
@@ -559,7 +562,7 @@ class TestReadinessEndpoint:
         import app.main
 
         monkeypatch.setattr(app.main, "_production_mode", False)
-        monkeypatch.setattr(app.main, "_check_ocr_config", AsyncMock(return_value=None))
+        monkeypatch.setattr(app.main, "check_ocr_config", AsyncMock(return_value=None))
         # A client used without a context manager does not start the lifespan.
         return TestClient(app.main.app)
 
@@ -647,7 +650,7 @@ class TestReadinessEndpoint:
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
             # Override _check_ocr_config to return "unavailable"
-            with patch("app.main._check_ocr_config", return_value="unavailable"):
+            with patch("app.main.check_ocr_config", return_value="unavailable"):
                 resp = client.get("/health/ready")
         assert resp.status_code == 503
 
@@ -664,7 +667,7 @@ class TestReadinessEndpoint:
             patch("app.services.task_queue_worker.is_draining_v2", return_value=False),
             patch("app.main.settings.REDIS_URL", "redis://localhost:6379"),
         ):
-            with patch("app.main._check_ocr_config", return_value="degraded"):
+            with patch("app.main.check_ocr_config", return_value="degraded"):
                 resp = client.get("/health/ready")
         assert resp.status_code == 200
         assert resp.json()["degraded"] is True
@@ -696,7 +699,7 @@ class TestReadinessEndpoint:
     @pytest.mark.parametrize("failed_probe,status", [
         (None, 200), ("check_database", 503), ("check_redis", 503),
         ("check_staging", 503), ("_check_role_deps", 503),
-        ("_check_ocr_config", 503), ("check_queue", 200),
+        ("check_ocr_config", 503), ("check_queue", 200),
         # Existing readiness classifies stale Alembic as informational.
         ("check_alembic_head", 200),
     ])
@@ -709,12 +712,12 @@ class TestReadinessEndpoint:
         probes = {
             "check_database": True, "check_redis": True,
             "check_alembic_head": True, "check_staging": True,
-            "_check_role_deps": True, "_check_ocr_config": None,
+            "_check_role_deps": True, "check_ocr_config": None,
             "check_queue": None, "check_staging_space": {},
         }
         if failed_probe:
             probes[failed_probe] = (
-                "unavailable" if failed_probe in {"_check_ocr_config", "check_queue"}
+                "unavailable" if failed_probe in {"check_ocr_config", "check_queue"}
                 else False
             )
         for name, result in probes.items():

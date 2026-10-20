@@ -237,9 +237,9 @@ async def _main() -> int:
 
         # OCR remote connectivity check
         if settings.OCR_ENABLED and settings.OCR_EXECUTION_BACKEND == "paddlex_http":
-            from app.main import _check_ocr_remote_connectivity
+            from app.services.ocr_readiness import check_ocr_remote_connectivity
 
-            remote_ok = await _check_ocr_remote_connectivity()
+            remote_ok = await check_ocr_remote_connectivity(settings)
             _check(
                 "OCR remote connectivity",
                 remote_ok,
