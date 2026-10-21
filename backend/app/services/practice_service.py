@@ -83,6 +83,10 @@ from app.services.practice.sequential_service import (
     get_sequential_practice_questions,
     reset_sequential_progress,  # noqa: F401 — re-exported for the practice API
 )
+from app.services.practice.smart_scored_supplement import (
+    ScoredSupplementRequest,
+    run_scored_supplement,
+)
 from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
     _pick_graph_target_kps,
@@ -2275,71 +2279,29 @@ async def get_smart_practice_questions(
 
     # V4: 综合打分策略
     if smart_strategy == "scored":
-        try:
-            scored_qs, scored_meta = await get_smart_scored_questions(
+        scored_result = await run_scored_supplement(
+            ScoredSupplementRequest(
                 db=db,
                 user_id=user_id,
                 subject_code=subject_code,
                 count=count,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-                request_id=request_id,
-                subject_ids=scope_ids,
-            )
-            if len(scored_qs) >= count:
-                return await _maybe_finalize_smart(
-                    scored_qs[:count],
-                    scored_meta,
-                    skip_finalize,
-                    db,
-                    user_id,
-                    subject_code,
-                    request_id=request_id,
-                    experiment_id=experiment_info.get("experiment_id"),
-                    variant_key=experiment_info.get("variant_key"),
-                )
-
-            # scored 已经选出的题目包含复习/薄弱/图谱信号，不能因为题量不足就
-            # 整批丢弃再从 weakness_vector 重做。保留已有结果，仅补齐缺口。
-            logger.info(
-                "scored 策略题量不足 (%d/%d)，保留 scored 结果并 fallback 到 weakness_vector 补齐",
-                len(scored_qs),
-                count,
-            )
-            remaining = count - len(scored_qs)
-            fallback_qs, fallback_meta = await _smart_weakness_vector(
-                db=db,
-                user_id=user_id,
-                subject_code=subject_code,
-                count=remaining,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
-                exclude_ids={q.id for q in scored_qs},
-                subject_ids=scope_ids,
-            )
-            merged_qs, merged_meta = merge_recommendation_results(
-                scored_qs,
-                scored_meta,
-                fallback_qs,
-                fallback_meta,
-                count=count,
-            )
-            return await _maybe_finalize_smart(
-                merged_qs[:count],
-                merged_meta,
-                skip_finalize,
-                db,
-                user_id,
-                subject_code,
                 request_id=request_id,
+                scope_ids=scope_ids,
+                skip_finalize=skip_finalize,
                 experiment_id=experiment_info.get("experiment_id"),
                 variant_key=experiment_info.get("variant_key"),
+                logger=logger,
+                load_scored=get_smart_scored_questions,
+                load_fallback=_smart_weakness_vector,
+                merge_results=merge_recommendation_results,
+                finalize=_maybe_finalize_smart,
             )
-        except Exception:
-            logger.warning(
-                "scored 策略失败，fallback 到 weakness_vector", exc_info=True
-            )
+        )
+        if scored_result is not None:
+            return scored_result
 
     # Phase 3: 知识路径策略
     if smart_strategy == "path":

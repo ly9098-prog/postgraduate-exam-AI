@@ -33,6 +33,7 @@ def _make_mock_db():
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
     db.rollback = AsyncMock()
+    db.scalar = AsyncMock(return_value=0)
     return db
 
 
@@ -520,7 +521,7 @@ class TestSmartModeIntegration:
             {"name": "导数", "mastery_score": 0.3, "accuracy": 0.3, "attempt_count": 5, "weakness_level": "weak"}
         ])
         mock_rls = MagicMock()
-        mock_rls.create_recommendation_logs = AsyncMock(return_value=[1])
+        mock_rls.create_recommendation_logs_isolated = AsyncMock(return_value=[1])
 
         # Patch at the app.services package attribute level so `from app.services import X` picks up the mock
         with patch("app.services.mastery_service", mock_ms, create=True), \
@@ -539,8 +540,8 @@ class TestSmartModeIntegration:
             # Verify we got questions back
             assert len(questions) >= 1
             # Verify recommendation log service was called with request_id
-            mock_rls.create_recommendation_logs.assert_called_once()
-            call_kwargs = mock_rls.create_recommendation_logs.call_args[1]
+            mock_rls.create_recommendation_logs_isolated.assert_called_once()
+            call_kwargs = mock_rls.create_recommendation_logs_isolated.call_args[1]
             assert call_kwargs.get("request_id") == "test-req-1"
 
     def test_random_mode_not_affected(self):
@@ -559,14 +560,18 @@ class TestSmartModeIntegration:
 
     def test_sequential_mode_not_affected(self):
         """sequential mode should work exactly as before."""
+        import app.services.practice_service as practice_service
         from app.services.practice_service import get_practice_questions
 
         db = _make_mock_db()
         q1, q2 = _make_question(1), _make_question(2)
-        db.execute.side_effect = self._side_effect_once([q1, q2])
 
         with patch("app.services.practice_service.resolve_subject_ids",
-                   new_callable=AsyncMock, return_value=[1]):
+                   new_callable=AsyncMock, return_value=[1]), patch.object(
+            practice_service,
+            "get_sequential_practice_questions",
+            new=AsyncMock(return_value=([q1, q2], {"reserved": 2})),
+        ):
             result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="sequential"))
         assert len(result) == 2
 

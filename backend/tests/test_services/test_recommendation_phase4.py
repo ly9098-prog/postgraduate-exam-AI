@@ -32,6 +32,7 @@ def _make_mock_db():
     db.refresh = AsyncMock()
     db.flush = AsyncMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=0)
     return db
 
 

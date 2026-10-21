@@ -31,6 +31,7 @@ def _make_mock_db():
     db.refresh = AsyncMock()
     db.flush = AsyncMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=0)
     return db
 
 
@@ -620,7 +621,9 @@ class TestAttachRecommendedQuestions:
 class TestSmartStrategyPath:
     def test_path_strategy_returns_questions(self):
         """smart_strategy=path 能返回题目。"""
-        import app.services
+        import app.services.knowledge_path_service
+        import app.services.recommendation_experiment_service
+        import app.services.recommendation_log_service
         from app.services.practice_service import get_smart_practice_questions
 
         db = _make_mock_db()
@@ -649,10 +652,22 @@ class TestSmartStrategyPath:
         # Question 查询
         db.execute.return_value = _make_execute_result(scalars=[q1, q2])
 
-        with patch.object(app.services, "knowledge_path_service", mock_path):
+        with patch.object(
+            app.services.knowledge_path_service,
+            "get_user_path_recommendations",
+            mock_path.get_user_path_recommendations,
+        ), patch.object(
+            app.services.recommendation_experiment_service,
+            "resolve_strategy_for_user",
+            new=AsyncMock(return_value={"source": "default"}),
+        ), patch.object(
+            app.services.recommendation_log_service,
+            "create_recommendation_logs_isolated",
+            new=AsyncMock(return_value=[]),
+        ):
             questions, metadata = _run(get_smart_practice_questions(
-                db, user_id=1, subject_code="exam408-ds", count=5,
-                smart_strategy="path",
+                db, user_id=1, subject_code="exam408-ds", count=2,
+                smart_strategy="path", subject_ids=[5],
             ))
 
             assert len(questions) == 2
@@ -660,7 +675,11 @@ class TestSmartStrategyPath:
 
     def test_path_fallback_to_weakness_vector(self):
         """path 推荐失败时能 fallback 到 weakness_vector。"""
-        import app.services
+        import app.services.knowledge_path_service
+        import app.services.mastery_service
+        import app.services.practice_service
+        import app.services.recommendation_experiment_service
+        import app.services.recommendation_log_service
         from app.services.practice_service import get_smart_practice_questions
 
         db = _make_mock_db()
@@ -676,16 +695,35 @@ class TestSmartStrategyPath:
         # get_practice_questions 返回题目
         db.execute.return_value = _make_execute_result(scalars=[q1])
 
-        with patch.object(app.services, "knowledge_path_service", mock_path), \
-             patch.object(app.services, "mastery_service", mock_mastery):
+        with patch.object(
+            app.services.knowledge_path_service,
+            "get_user_path_recommendations",
+            mock_path.get_user_path_recommendations,
+        ), patch.object(
+            app.services.mastery_service,
+            "get_user_weak_knowledge_points",
+            mock_mastery.get_user_weak_knowledge_points,
+        ), patch.object(
+            app.services.recommendation_experiment_service,
+            "resolve_strategy_for_user",
+            new=AsyncMock(return_value={"source": "default"}),
+        ), patch.object(
+            app.services.recommendation_log_service,
+            "create_recommendation_logs_isolated",
+            new=AsyncMock(return_value=[]),
+        ), patch.object(
+            app.services.practice_service,
+            "get_practice_questions",
+            new=AsyncMock(return_value=[q1]),
+        ):
 
             questions, metadata = _run(get_smart_practice_questions(
-                db, user_id=1, subject_code="exam408-ds", count=5,
-                smart_strategy="path",
+                db, user_id=1, subject_code="exam408-ds", count=1,
+                smart_strategy="path", subject_ids=[5],
             ))
 
-            # 应该能返回题目（通过 fallback）
-            assert len(questions) >= 0  # 至少有尝试
+            assert [q.id for q in questions] == [200]
+            assert metadata[200]["strategy"] == "random_fallback"
 
 
 # ── Test: random/sequential 不受影响 ──
@@ -720,13 +758,18 @@ class TestExistingModesUnaffected:
 
     def test_sequential_mode_unchanged(self):
         """sequential 模式不受影响。"""
+        import app.services.practice_service
         from app.services.practice_service import get_practice_questions
 
         db = _make_mock_db()
         q1 = _make_question(1)
-        db.execute.side_effect = self._side_effect_once([q1])
 
-        with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
+        with patch("app.services.practice_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]), patch.object(
+            app.services.practice_service,
+            "get_sequential_practice_questions",
+            new=AsyncMock(return_value=([q1], {"reserved": 1})),
+        ):
             result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="sequential"))
         assert len(result) == 1
 

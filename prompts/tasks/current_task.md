@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零六批已提交，第一百零七批完成 scored 补齐编排边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零七批已提交，第一百零八批完成 smart scored 补充编排边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1301,3 +1301,14 @@
 - 保留两个层级分别重新计算remaining；level 3条件顺序为active→subject→revision→candidate/selected排除→可选excluded；level 4才去掉重复历史条件并改为selected排除。保留第一次补齐重新加入重复ID、最终补齐跳过重复ID，以及每次merge在原行位置生成metadata。没有合并两种sampler，也没有改变事务边界。
 - 新增2项flow直接契约覆盖excluded有/无时base→subject→revision→候选/已选排除→可选excluded顺序、每级remaining与两级merge参数顺序；3项flow架构门禁验证惰性依赖/预算/无SQL执行/真实入口全部17个端口与条件AST/无内联fallback及无导入副作用，并接入原YAML静态步骤。已有4个scored架构门禁同步跟随真实flow消费者。首次只读审查发现上述基础条件与`request.db.execute`门禁不足，已修正后复审确认关闭。
 - 新模块98行/函数8、22、22行，practice_service4170/完整入口144行；图576模块/2,250边/零循环/零反向API。定向68项、练习/API混合206项通过；最终原YAML静态2,067项（2条既有警告）/readiness69/云OCR30均通过；严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护路径哈希通过。真实PostgreSQL/外部推荐服务仍未验收；不把入口行数收缩视为practice域或全栈完成。
+
+
+## 一百一十四、第一百零八批执行记录：smart scored 补充编排边界（2026-10-21）
+
+- `get_smart_practice_questions` 的 scored 策略分支迁至中立模块 `practice/smart_scored_supplement.run_scored_supplement`；`ScoredSupplementRequest` 显式传入 DB、用户/科目/题量、过滤与复习参数、scope、收尾开关、实验上下文、原 logger、scored/fallback/merge/finalize 端口。模块只保留“scored 满额直接收尾，否则按缺口补齐、合并后截断、失败后返回 None 以继续原 weakness 路径”的原顺序，不执行查询、持久化或事务操作。
+- 完整 scored 结果仍以 `scored[:count]` 和原 metadata 直接收尾；缺口只请求 `count - len(scored)`，排除全部已选 ID，合并后才截断。实验 `experiment_id`/`variant_key`、逐题 strategy/score/config 元数据和 `skip_finalize` 聚合行为保持；普通异常仍回到原内联 weakness/随机路径，`CancelledError` 继续向调用方传播。
+- 按要求保留旧 logger 身份，两个日志仍由 `app.services.practice_service` 发出；日志文本、级别和异常信息不变。新增 4 项完整入口契约覆盖满额、短补、失败回退与取消传播，3 项架构/新进程门禁精确约束 17 个请求端口、scored 分支无内联旧 try、流程顺序及无 I/O 依赖；两文件接入原 YAML 静态步骤。
+- 修复既有 smart/path 测试接线：补异步 `db.scalar`，对齐真实 knowledge-path 与 isolated recommendation-log patch 目标，并让 sequential 测试显式替换真实顺序服务，不再以 SQL 模拟掩盖分支。未修知识路径在练习过滤前写日志/提交请求会话的既有缺陷，登记为独立行为批次。
+- 新模块 100 行，`run_scored_supplement`/`_finalize` 分别为 49/16 行；`practice_service.py` 4,132 行，`get_smart_practice_questions` 446 行，`get_smart_scored_questions` 144 行。当前图 577 模块/2,251 边/零静态循环/零反向 API。
+- 新 smart/架构/phase2 定向 11 项、修复后旧 smart/path 子集 8 项、练习/API 混合 270 项通过（13 条既有弃用/aiosqlite 线程收尾警告）。原 YAML 三步原样重放：静态 2,075 项、readiness 69 项、云 OCR 30 项全部通过（静态 2 条既有弃用警告）；严格 Ruff、全应用 Ruff、compileall、diff 均通过。SQL/推荐服务均为端口替身，未验证真实 PostgreSQL/Redis、外部推荐服务、管理端浏览器或微信端。
+- 仅本地提交本批源码、测试、CI、任务记录和架构盘点；`prompts/tasks/context.md` 保持未跟踪，其他 33 项既有改动/删除保持原状态。不推送、不操作生产，不把本批边界收缩视为 practice 域或全栈治理完成。
