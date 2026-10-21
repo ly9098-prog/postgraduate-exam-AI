@@ -54,9 +54,7 @@ def test_scored_entry_uses_real_ranker_and_keeps_debug_and_explanation_ownership
         isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_build_fallback_metadata"
         for node in calls
     )
-    assert any(isinstance(node, ast.Await) and isinstance(node.value, ast.Call)
-               and getattr(node.value.func, "id", "") == "load_random_fill_questions"
-               for node in ast.walk(entry))
+    assert "run_scored_fallback" in ast.unparse(entry)
     assert any(isinstance(node, ast.If) and "top5" in ast.unparse(node)
                for node in entry.body)
     projection = next(node for node in entry.body if getattr(node, "name", "") == "scored_metadata")

@@ -1,6 +1,7 @@
 """Run real scoring, diversity selection and fallback through the scored entry."""
 
 import asyncio
+import sys
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -263,6 +264,73 @@ async def test_fill_database_errors_propagate_without_later_query(selection_port
         await run(state, count=3)
     assert caught.value is state.error
     assert len(state.queries) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("excluded", [True, False])
+async def test_fallback_flow_preserves_original_conditions_and_order(
+    selection_ports, monkeypatch, excluded,
+):
+    from app.models.question import Question
+
+    state = selection_ports
+    state.candidates = [question(1)]
+    state.counts = [0, 0]
+    state.rows = [[], []]
+    flow_module = sys.modules["app.services.practice.scored_fallback_flow"]
+    random_fill = AsyncMock(return_value=[])
+    repeat_fill = AsyncMock(return_value=[])
+    merge = Mock(return_value=[])
+    excluded_sub = select(Question.id).where(Question.id == 99) if excluded else None
+    base_condition = Question.is_active
+    subject_condition = Question.subject_id.in_([2])
+    revision_condition = Question.id > 0
+    request = flow_module.ScoredFallbackRequest(
+        db=state.db,
+        selected=[question(1)],
+        selected_ids={1},
+        metadata={1: {"strategy": "smart_scored"}},
+        count=3,
+        fallback_level=2,
+        base_conditions=[base_condition],
+        subject_condition=subject_condition,
+        candidate_ids={1},
+        excluded_subquery=excluded_sub,
+        scope_ids=[2],
+        revision_condition=lambda ids: revision_condition,
+        random_fill=random_fill,
+        repeat_fill=repeat_fill,
+        sample_query=lambda *a, **k: None,
+        merge_fill=merge,
+        metadata_factory=lambda reason, strategy: {},
+    )
+
+    result = await flow_module.run_scored_fallback(request)
+
+    assert result.fallback_level == 4
+    random_conditions = random_fill.call_args.args[1]
+    assert len(random_conditions) == (5 if excluded else 4)
+    assert random_conditions[:3] == [
+        base_condition, subject_condition, revision_condition,
+    ]
+    assert random_conditions[3].left.name == "id"
+    assert random_conditions[3].right.value == [1]
+    if excluded:
+        assert random_conditions[4].left.name == "id"
+        assert "questions.id = " in str(random_conditions[4].right.element)
+    repeat_conditions = repeat_fill.call_args.args[1]
+    assert len(repeat_conditions) == 4
+    assert repeat_conditions[:3] == [
+        base_condition, subject_condition, revision_condition,
+    ]
+    assert repeat_conditions[3].left.name == "id"
+    assert repeat_conditions[3].right.value == [1]
+    assert random_fill.call_args.args[2] == 2
+    assert repeat_fill.call_args.args[2] == 2
+    assert [call.args[4:6] for call in merge.call_args_list] == [
+        ("随机补齐", "random_fallback"),
+        ("题量不足，放宽重复限制补齐", "repeat_window_fallback"),
+    ]
 
 
 @pytest.mark.asyncio

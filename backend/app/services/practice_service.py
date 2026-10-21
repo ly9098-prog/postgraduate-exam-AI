@@ -71,6 +71,10 @@ from app.services.practice.scored_fallback import (
     load_random_fill_questions,
     load_repeat_fill_questions,
 )
+from app.services.practice.scored_fallback_flow import (
+    ScoredFallbackRequest,
+    run_scored_fallback,
+)
 from app.services.practice.scored_fallback_merge import merge_fill_questions
 from app.services.practice.scored_ranking import score_and_rank_candidates
 from app.services.practice.scored_selection import select_scored_candidates
@@ -3500,44 +3504,29 @@ async def get_smart_scored_questions(
     if relaxed_diversity:
         fallback_level = max(fallback_level, 2)
 
-    # ── 降级 3: 随机补齐（可放宽 24h，但仍尊重 exclude_answered/no_repeat_days） ──
-    if len(selected) < count:
-        fallback_level = max(fallback_level, 3)
-        remaining = count - len(selected)
-        fill_cond = [
-            Question.is_active,
-            subject_cond,
-            _practice_revision_scope_condition(scope_ids),
-            Question.id.notin_(cand_ids | selected_ids),
-        ]
-        if excluded_sub is not None:
-            fill_cond.append(Question.id.notin_(excluded_sub))
-
-        fill_questions = await load_random_fill_questions(db, fill_cond, remaining)
-        merge_fill_questions(
-            selected, selected_ids, fill_questions, metadata,
-            "随机补齐", "random_fallback", _build_fallback_metadata,
-            skip_duplicates=False,
+    fallback = await run_scored_fallback(
+        ScoredFallbackRequest(
+            db=db,
+            selected=selected,
+            selected_ids=selected_ids,
+            metadata=metadata,
+            count=count,
+            fallback_level=fallback_level,
+            base_conditions=[Question.is_active],
+            subject_condition=subject_cond,
+            candidate_ids=cand_ids,
+            excluded_subquery=excluded_sub,
+            scope_ids=scope_ids,
+            revision_condition=_practice_revision_scope_condition,
+            random_fill=load_random_fill_questions,
+            repeat_fill=load_repeat_fill_questions,
+            sample_query=_random_sample_query,
+            merge_fill=merge_fill_questions,
+            metadata_factory=_build_fallback_metadata,
         )
-
-    # ── 降级 4: 最终兜底，才放宽 exclude_answered/no_repeat_days ──
-    if len(selected) < count:
-        fallback_level = max(fallback_level, 4)
-        remaining = count - len(selected)
-        fill_cond2 = [
-            Question.is_active,
-            subject_cond,
-            _practice_revision_scope_condition(scope_ids),
-            Question.id.notin_(selected_ids),
-        ]
-        repeat_questions = await load_repeat_fill_questions(
-            db, fill_cond2, remaining, _random_sample_query,
-        )
-        merge_fill_questions(
-            selected, selected_ids, repeat_questions, metadata,
-            "题量不足，放宽重复限制补齐", "repeat_window_fallback",
-            _build_fallback_metadata, skip_duplicates=True,
-        )
+    )
+    selected = fallback.questions
+    fallback_level = fallback.fallback_level
 
     logger.info(
         "[smart_recommend] user_id=%s subject_id=%s candidates=%s selected=%s fallback=%s",

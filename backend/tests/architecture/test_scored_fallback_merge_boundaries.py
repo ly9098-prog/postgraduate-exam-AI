@@ -28,36 +28,22 @@ def test_merge_dependencies_budgets_and_no_io():
 
 def test_scored_entry_uses_real_merge_for_both_different_fallback_rules():
     from app.services import practice_service as svc
-    from app.services.practice import scored_fallback_merge
+    from app.services.practice import scored_fallback_flow, scored_fallback_merge
 
     source = (APP / "services/practice_service.py").read_text()
     entry = next(
         node for node in ast.parse(source).body
         if getattr(node, "name", "") == "get_smart_scored_questions"
     )
-    calls = [
-        node for node in ast.walk(entry)
-        if isinstance(node, ast.Call)
-        and getattr(node.func, "id", "") == "merge_fill_questions"
-    ]
+    text = ast.unparse(entry)
     assert svc.merge_fill_questions is scored_fallback_merge.merge_fill_questions
-    assert len(calls) == 2
-    first, second = calls
-    assert [ast.unparse(arg) for arg in first.args] == [
-        "selected", "selected_ids", "fill_questions", "metadata",
-        "'随机补齐'", "'random_fallback'", "_build_fallback_metadata",
-    ]
-    assert {kw.arg: ast.unparse(kw.value) for kw in first.keywords} == {
-        "skip_duplicates": "False",
-    }
-    assert [ast.unparse(arg) for arg in second.args] == [
-        "selected", "selected_ids", "repeat_questions", "metadata",
-        "'题量不足，放宽重复限制补齐'", "'repeat_window_fallback'",
-        "_build_fallback_metadata",
-    ]
-    assert {kw.arg: ast.unparse(kw.value) for kw in second.keywords} == {
-        "skip_duplicates": "True",
-    }
+    assert svc.run_scored_fallback is scored_fallback_flow.run_scored_fallback
+    assert "merge_fill=merge_fill_questions" in text
+    assert "metadata_factory=_build_fallback_metadata" in text
+    flow_source = (APP / "services/practice/scored_fallback_flow.py").read_text()
+    flow_text = ast.unparse(ast.parse(flow_source))
+    assert flow_text.count("skip_duplicates=False") == 1
+    assert flow_text.count("skip_duplicates=True") == 1
     assert not any(isinstance(node, ast.For) for node in entry.body)
     assert not any(
         getattr(node.func, "id", "") == "_build_fallback_metadata"

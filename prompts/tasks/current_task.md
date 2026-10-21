@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零五批已提交，第一百零六批完成 scored 补齐结果合并边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零六批已提交，第一百零七批完成 scored 补齐编排边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1293,3 +1293,11 @@
 - 先补2项完整入口契约：首次返回重复ID照样追加、最终跳过重复且不覆盖已有metadata、provider顺序和元数据调用点保持；第二轮普通错误/取消冻结已追加结果，并确保后续最终查询不发生。原有29项契约与新增后共31 direct项通过，4个scored架构门禁及依赖图28项通过。
 - 第105批评分helper保持原精确实参语义，不修改其调用表达式；第105批未归一化AST比较仍只作为已知限制，不作为等价证明。评分函数38行，`get_smart_scored_questions`仍159行，后续还要继续拆分收尾编排，不因本批裁剪把整个practice域视为完成。
 - 本批新增模块33行/函数19行，practice_service4181行；静态图575模块/2,248边/零循环/零反向API。定向47项、练习/API混合201项通过；原YAML静态2,062项（2条既有警告）/readiness69/云OCR30通过；严格Ruff/全应用Ruff/compileall/diff/CI路径/33保护路径哈希通过。未验证真实PostgreSQL或外部推荐服务。
+
+
+## 一百一十三、第一百零七批执行记录：scored 补齐编排边界（2026-10-21）
+
+- 原入口的level 3随机补齐与level 4重复限制放宽两个完整`if`块迁至`practice/scored_fallback_flow.run_scored_fallback`，由`ScoredFallbackRequest`显式传入DB/已选题目/ID/metadata/count/原fallback级别、subject条件、候选ID、excluded子查询、scope、revision条件、两个查询函数、sampler、merge函数及metadata工厂。查询、sampler、元数据策略仍由入口的既有权威实现提供，module只保留原顺序和level/remaining规则。
+- 保留两个层级分别重新计算remaining；level 3条件顺序为active→subject→revision→candidate/selected排除→可选excluded；level 4才去掉重复历史条件并改为selected排除。保留第一次补齐重新加入重复ID、最终补齐跳过重复ID，以及每次merge在原行位置生成metadata。没有合并两种sampler，也没有改变事务边界。
+- 新增2项flow直接契约覆盖excluded有/无时base→subject→revision→候选/已选排除→可选excluded顺序、每级remaining与两级merge参数顺序；3项flow架构门禁验证惰性依赖/预算/无SQL执行/真实入口全部17个端口与条件AST/无内联fallback及无导入副作用，并接入原YAML静态步骤。已有4个scored架构门禁同步跟随真实flow消费者。首次只读审查发现上述基础条件与`request.db.execute`门禁不足，已修正后复审确认关闭。
+- 新模块98行/函数8、22、22行，practice_service4170/完整入口144行；图576模块/2,250边/零循环/零反向API。定向68项、练习/API混合206项通过；最终原YAML静态2,067项（2条既有警告）/readiness69/云OCR30均通过；严格Ruff/全应用Ruff/compileall/diff/CI路径与33保护路径哈希通过。真实PostgreSQL/外部推荐服务仍未验收；不把入口行数收缩视为practice域或全栈完成。
