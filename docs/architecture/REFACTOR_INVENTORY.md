@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：574 个模块、2,246 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：575 个模块、2,248 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -32,7 +32,7 @@
 | 路径 | 文件行数 | 候选函数/方法及行数 | 已确认职责或待分离边界 |
 | --- | ---: | --- | --- |
 | `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
-| `backend/app/services/practice_service.py` | 4180 | `get_smart_scored_questions` 159 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
+| `backend/app/services/practice_service.py` | 4181 | `get_smart_scored_questions` 159 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
@@ -249,3 +249,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 
 第一百零五批（2026-10-21）scored逐题评分与稳定降序排序归practice/scored_ranking，入口显式传入原scorer/state/KP/mastery/recent/now及全部图与权重端口；日志、解释元数据、多样性和补齐仍由调用方拥有。模块49/函数36，practice_service4180/入口159；图574模块/2246边/零循环/反向API。新增3项直接契约（精确原实参/候选不可变/同分稳定，普通错误与取消止于失败候选）计入总32项，3项架构门禁入CI；32组旧入口比较覆盖结果/metadata/SQL/随机/日志/错误取消，两个scorer monkeypatch场景由直接契约单独覆盖，不宣称未归一化整套AST等价。混合256通过、原YAML静态2056/readiness69/云OCR30通过；严格检查与33保护哈希通过。隔离端口不证明真实PG/外部服务；其他长函数和全栈领域继续。
+
+
+第一百零六批（2026-10-21）scored两处补齐结果合并迁至practice/scored_fallback_merge.merge_fill_questions：显式接收selected/ids/rows/metadata/reason/strategy/原metadata工厂，保留首次补齐不去重与最终放宽重复限制去重的不同口径，metadata仍在原行追加时点生成；入口继续拥有过滤、查询、fallback级别、日志和最终slice。模块33/函数19，practice_service4181/入口159；图575模块/2248边/零循环/反向API。新增2项完整入口契约验证行序/重复规则/元数据调用点及普通错误/取消后的短结果，3项新架构门禁入CI；第105批评分helper调用表达式保持不变，未归一化AST限制不因此消除。定向47、练习/API混合201通过；原YAML静态2,062（2既有警告）/readiness69/云OCR30通过；严格Ruff/全应用Ruff/compileall/diff/CI路径/33保护哈希通过。未做真实PG/外部服务验收。

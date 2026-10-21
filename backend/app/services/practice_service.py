@@ -71,6 +71,7 @@ from app.services.practice.scored_fallback import (
     load_random_fill_questions,
     load_repeat_fill_questions,
 )
+from app.services.practice.scored_fallback_merge import merge_fill_questions
 from app.services.practice.scored_ranking import score_and_rank_candidates
 from app.services.practice.scored_selection import select_scored_candidates
 from app.services.practice.sequential_service import (
@@ -3513,10 +3514,11 @@ async def get_smart_scored_questions(
             fill_cond.append(Question.id.notin_(excluded_sub))
 
         fill_questions = await load_random_fill_questions(db, fill_cond, remaining)
-        for fq in fill_questions:
-            selected.append(fq)
-            selected_ids.add(fq.id)
-            metadata[fq.id] = _build_fallback_metadata("随机补齐", "random_fallback")
+        merge_fill_questions(
+            selected, selected_ids, fill_questions, metadata,
+            "随机补齐", "random_fallback", _build_fallback_metadata,
+            skip_duplicates=False,
+        )
 
     # ── 降级 4: 最终兜底，才放宽 exclude_answered/no_repeat_days ──
     if len(selected) < count:
@@ -3531,12 +3533,11 @@ async def get_smart_scored_questions(
         repeat_questions = await load_repeat_fill_questions(
             db, fill_cond2, remaining, _random_sample_query,
         )
-        for fq in repeat_questions:
-            if fq.id in selected_ids:
-                continue
-            selected.append(fq)
-            selected_ids.add(fq.id)
-            metadata[fq.id] = _build_fallback_metadata("题量不足，放宽重复限制补齐", "repeat_window_fallback")
+        merge_fill_questions(
+            selected, selected_ids, repeat_questions, metadata,
+            "题量不足，放宽重复限制补齐", "repeat_window_fallback",
+            _build_fallback_metadata, skip_duplicates=True,
+        )
 
     logger.info(
         "[smart_recommend] user_id=%s subject_id=%s candidates=%s selected=%s fallback=%s",

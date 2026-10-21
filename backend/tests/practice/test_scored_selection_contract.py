@@ -343,3 +343,51 @@ async def test_empty_fill_counts_keep_original_short_result(selection_ports, emp
     assert list(metadata) == [1]
     assert len(state.queries) == 4
     assert fallback_level(state) == 4
+
+
+@pytest.mark.asyncio
+async def test_fill_merge_preserves_order_duplicate_rules_and_metadata_points(
+    selection_ports, monkeypatch,
+):
+    state = selection_ports
+    state.candidates = [question(1)]
+    state.counts = [0, 2]
+    state.rows = [[question(2), question(2), question(3)], [question(1), question(2)]]
+    factory = Mock(side_effect=svc._build_fallback_metadata)
+    monkeypatch.setattr(svc, "_build_fallback_metadata", factory)
+
+    selected, metadata = await run(state, count=4)
+
+    assert [q.id for q in selected] == [1, 2, 2, 3]
+    assert list(metadata) == [1, 2, 3]
+    assert factory.call_args_list == [
+        (("随机补齐", "random_fallback"), {}),
+        (("随机补齐", "random_fallback"), {}),
+        (("随机补齐", "random_fallback"), {}),
+    ]
+    assert fallback_level(state) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_fill_merge_metadata_failure_stops_before_later_rows_and_final_query(
+    selection_ports, monkeypatch, error_type,
+):
+    state = selection_ports
+    state.candidates = [question(1)]
+    state.counts[0], state.rows[0] = 0, [question(2), question(3), question(4)]
+    error = error_type("synthetic merge metadata failure")
+    calls = 0
+
+    def factory(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise error
+        return svc._build_fallback_metadata(*args)
+
+    monkeypatch.setattr(svc, "_build_fallback_metadata", factory)
+    with pytest.raises(error_type) as caught:
+        await run(state, count=4)
+    assert caught.value is error
+    assert len(state.queries) == 2

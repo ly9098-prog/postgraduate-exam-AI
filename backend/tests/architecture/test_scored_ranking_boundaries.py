@@ -50,6 +50,10 @@ def test_scored_entry_uses_real_ranker_and_keeps_debug_and_explanation_ownership
     }
     assert not any(isinstance(node, ast.For) for node in entry.body)
     assert not any(isinstance(node, ast.Call) and getattr(node.func, "id", "") == "calculate_smart_score" for node in calls)
+    assert not any(
+        isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_build_fallback_metadata"
+        for node in calls
+    )
     assert any(isinstance(node, ast.Await) and isinstance(node.value, ast.Call)
                and getattr(node.value.func, "id", "") == "load_random_fill_questions"
                for node in ast.walk(entry))

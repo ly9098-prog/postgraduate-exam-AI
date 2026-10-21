@@ -1,0 +1,90 @@
+"""Fallback merging consumes rows and metadata policy without query ownership."""
+
+import ast
+import subprocess
+import sys
+from pathlib import Path
+
+from tests.architecture.dependency_scan import scan_application
+
+APP = Path(__file__).resolve().parents[2] / "app"
+
+
+def test_merge_dependencies_budgets_and_no_io():
+    graph, _ = scan_application(APP)
+    assert graph["app.services.practice.scored_fallback_merge"] == {"app.models.question"}
+    assert "app.services.practice.scored_fallback_merge" in graph["app.services.practice_service"]
+    source = (APP / "services/practice/scored_fallback_merge.py").read_text()
+    tree = ast.parse(source)
+    assert len(source.splitlines()) <= 100
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.end_lineno - node.lineno + 1 <= 50
+        if isinstance(node, ast.Call):
+            assert getattr(node.func, "attr", "") not in {
+                "execute", "commit", "rollback", "begin", "begin_nested",
+            }
+
+
+def test_scored_entry_uses_real_merge_for_both_different_fallback_rules():
+    from app.services import practice_service as svc
+    from app.services.practice import scored_fallback_merge
+
+    source = (APP / "services/practice_service.py").read_text()
+    entry = next(
+        node for node in ast.parse(source).body
+        if getattr(node, "name", "") == "get_smart_scored_questions"
+    )
+    calls = [
+        node for node in ast.walk(entry)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "merge_fill_questions"
+    ]
+    assert svc.merge_fill_questions is scored_fallback_merge.merge_fill_questions
+    assert len(calls) == 2
+    first, second = calls
+    assert [ast.unparse(arg) for arg in first.args] == [
+        "selected", "selected_ids", "fill_questions", "metadata",
+        "'随机补齐'", "'random_fallback'", "_build_fallback_metadata",
+    ]
+    assert {kw.arg: ast.unparse(kw.value) for kw in first.keywords} == {
+        "skip_duplicates": "False",
+    }
+    assert [ast.unparse(arg) for arg in second.args] == [
+        "selected", "selected_ids", "repeat_questions", "metadata",
+        "'题量不足，放宽重复限制补齐'", "'repeat_window_fallback'",
+        "_build_fallback_metadata",
+    ]
+    assert {kw.arg: ast.unparse(kw.value) for kw in second.keywords} == {
+        "skip_duplicates": "True",
+    }
+    assert not any(isinstance(node, ast.For) for node in entry.body)
+    assert not any(
+        getattr(node.func, "id", "") == "_build_fallback_metadata"
+        for node in ast.walk(entry) if isinstance(node, ast.Call)
+    )
+
+
+def test_import_does_not_load_models_database_configuration_or_create_tasks():
+    probe = """
+import asyncio
+import os
+import sys
+before = dict(os.environ)
+def forbidden(*args, **kwargs):
+    raise AssertionError("merge import must not create tasks")
+asyncio.create_task = forbidden
+from app.services.practice.scored_fallback_merge import merge_fill_questions
+assert callable(merge_fill_questions)
+assert dict(os.environ) == before
+for name in (
+    'app.main', 'app.core.config', 'app.core.database', 'app.models.question',
+    'app.services.practice_service', 'sqlalchemy',
+):
+    assert name not in sys.modules, name
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe], cwd=APP.parent,
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr

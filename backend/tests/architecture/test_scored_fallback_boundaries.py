@@ -28,7 +28,7 @@ def test_fill_dependencies_and_bounded_functions():
 
 def test_scored_entry_uses_real_loaders_with_original_filters_and_sampler():
     from app.services import practice_service as svc
-    from app.services.practice import scored_fallback
+    from app.services.practice import scored_fallback, scored_fallback_merge
 
     source = (APP / "services/practice_service.py").read_text()
     entry = next(node for node in ast.parse(source).body if getattr(node, "name", "") == "get_smart_scored_questions")
@@ -44,7 +44,10 @@ def test_scored_entry_uses_real_loaders_with_original_filters_and_sampler():
         assert [ast.unparse(arg) for arg in found[0].args] == args
     assert not any(getattr(node.func, "attr", "") == "execute" for node in calls)
     assert any(getattr(node.func, "id", "") == "_practice_revision_scope_condition" for node in calls)
-    assert any(getattr(node.func, "id", "") == "_build_fallback_metadata" for node in calls)
+    assert svc.merge_fill_questions is scored_fallback_merge.merge_fill_questions
+    assert sum(
+        getattr(node.func, "id", "") == "merge_fill_questions" for node in calls
+    ) == 2
 
 
 def test_import_does_not_load_models_configuration_database_or_create_tasks():
