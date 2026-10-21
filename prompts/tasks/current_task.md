@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零二批已提交，第一百零三批完成 scored 评分/选题/补齐契约与多样性规则分离验证；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零三批已提交，第一百零四批完成 scored 补齐查询分离与验证；阶段 0/1/3/4 部分完成，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1264,3 +1264,15 @@
 - 主agent只读审查完整diff/原两轮选择/元数据生成次序/真实调用方及新旧轨迹后，未发现本批阻断问题；无子agent、无生产操作、无push。API、权限、事务和任务协议不变，整体全栈目标仍未完成。
 - 最终原YAML静态2,036通过（2条既有警告）/readiness69/云OCR30均通过。两轮选择循环在显式变量名/元数据工厂端口绑定后AST相同，service其余61函数AST未变。日志 `/tmp/scored-selection-{baseline,targeted,comparison,mixed,ast,ci-status}.log` 及 `/tmp/cloud-isolation-{ci,readiness,cloud}.log`，未用人工拼接的测试列表冒充原CI。
 - 下一步继续评分/随机补齐职责边界，并用本批真实分支契约保留过滤、随机阈值、字段和错误口径；完整目标保持active。只显式暂存本批7文件本地提交，context保持未跟踪，其他33保护路径及删除状态保持。
+
+
+## 一百一十、第一百零四批执行记录：scored 补齐查询边界（2026-10-21）
+
+- 原入口的随机补齐与最终重复限制放宽查询归 `practice/scored_fallback.py`：`build_random_fill_query`拥有total<=remaining/<=2000/>2000三分支，`load_random_fill_questions`负责原count→query→execute→scalars.all，`load_repeat_fill_questions`显式消费原`_random_sample_query`，保留原参数与原DB session。模块不commit/rollback/begin，不创建engine、配置或任务。
+- caller继续拥有原subject/revision/active/candidate-selected/history排除条件、fallback级别、放宽顺序、metadata与合并/去重；不把两个不同随机口径合并：首次total<=remaining不加limit且按ID，最终仍用原sampler随机/offset规则。保留补齐返回多余metadata、最终duplicate跳过等原行为。
+- 扩充现有完整入口契约11项：四个count/rows查询分别普通错误/取消、最终sampler参数/offset、None/0计数短结果；总29项先在未修改实现通过。迁移后直接与架构定向51项通过，练习域混合253项通过（12条警告含既有datetime弃用和aiosqlite线程收尾问题）。新增3项架构门禁并接入原YAML，已有选择门禁跟随真实新query消费者。
+- 29组与旧27af0505完整函数对照，结果/metadata/SQL参数/随机偏移/日志/错误取消一致；61个其他service函数AST未变，两补齐guard/level/remaining/filter赋值与合并loop body AST保持。日志/tmp/scored-fill-{baseline,targeted,comparison,mixed,ast}.log；对照是隔离端口，非真实PG/生产链验收。
+- 新模块95/函数34、14、27行；practice_service4191/入口171行。静态图573模块/2244边/零循环/反向API。严格Ruff/全应用Ruff/compileall/diff及33保护路径哈希通过。主agent按只读缺陷审查核对全部差异、实际调用点、参数/取数时机/原循环与错误边界，未发现本批阻断问题；不创建子agent、不push/生产/清理。
+- 原YAML静态/readiness/云OCR三步骤结果将在最终验证行记录。整体全栈目标仍active，评分编排、其他长函数、业务域与客户端尚未完成，不因入口收缩声称完成。
+- 最终原YAML步骤：静态2,050通过（2条既有警告）/readiness69/云OCR30全过；日志/tmp/scored-fill-ci-status.log与/tmp/cloud-isolation-{ci,readiness,cloud}.log。严格检查及旧新对照均覆盖最终代码；仅显式暂存本批8文件，本地提交，不把context或其他改动纳入。
+- 下一步继续scored评分编排与加载边界，优先用现有直接契约防止模型/权重/解释次序漂移；保留其他领域与客户端阶段待办、HTTP/独立runner失败清理等已知限制，目标仍active。

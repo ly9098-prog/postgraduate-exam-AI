@@ -40,7 +40,8 @@ def test_real_scored_caller_keeps_projection_and_fallback_ownership():
     projection = next(node for node in entry.body if getattr(node, "name", "") == "scored_metadata")
     assert "_build_scored_metadata" in ast.unparse(projection)
     assert "scored_runtime.get('strategy_config_id')" in ast.unparse(projection)
-    assert any(getattr(node.func, "attr", "") == "execute" for node in calls)
+    assert any(getattr(node.func, "id", "") == "load_random_fill_questions" for node in calls)
+    assert any(getattr(node.func, "id", "") == "load_repeat_fill_questions" for node in calls)
     assert any(getattr(node.func, "id", "") == "calculate_smart_score" for node in calls)
 
 

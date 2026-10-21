@@ -36,7 +36,7 @@ def selection_ports(monkeypatch):
     state = SimpleNamespace(
         candidates=[question(qid) for qid in range(1, 7)], qkp={}, qstates={},
         queries=[], counts=[0, 0], rows=[[], []], offsets=[], weights={},
-        error=None, now=datetime(2026, 10, 21), logger=Mock(),
+        error=None, fail_at=None, now=datetime(2026, 10, 21), logger=Mock(),
     )
     excluded = select(PracticeRecord.question_id).where(PracticeRecord.user_id == 7)
 
@@ -51,7 +51,7 @@ def selection_ports(monkeypatch):
 
     async def execute(query):
         state.queries.append(query)
-        if state.error:
+        if state.error and (state.fail_at is None or len(state.queries) == state.fail_at):
             raise state.error
         index = (len(state.queries) - 1) // 2
         value = state.counts[index] if len(state.queries) % 2 else state.rows[index]
@@ -226,3 +226,49 @@ async def test_empty_candidate_pool_returns_without_scoring(selection_ports, mon
     assert await run(selection_ports) == ([], {})
     score.assert_not_called()
     assert not selection_ports.queries
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_query", [1, 2, 3, 4])
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_each_fill_count_and_rows_query_preserves_error_boundary(
+    selection_ports, failed_query, error_type,
+):
+    state = selection_ports
+    state.candidates = [question(1)]
+    state.counts, state.rows = [0, 2], [[], [question(2), question(3)]]
+    state.error, state.fail_at = error_type("synthetic fill query failure"), failed_query
+    with pytest.raises(error_type) as caught:
+        await run(state, count=3)
+    assert caught.value is state.error
+    assert len(state.queries) == failed_query
+
+
+@pytest.mark.asyncio
+async def test_repeat_fill_keeps_original_sampler_and_offset(selection_ports, monkeypatch):
+    state = selection_ports
+    state.candidates = [question(1)]
+    state.counts, state.rows = [0, 2001], [[], [question(2), question(3)]]
+    sampler = Mock(wraps=svc._random_sample_query)
+    monkeypatch.setattr(svc, "_random_sample_query", sampler)
+    selected, metadata = await run(state, count=3)
+    sampler.assert_called_once()
+    assert sampler.call_args.kwargs == {
+        "total_count": 2001, "need": 2, "id_col": svc.Question.id,
+    }
+    assert state.offsets == [(0, 1999)]
+    assert [q.id for q in selected] == [1, 2, 3]
+    assert metadata[2]["strategy"] == "repeat_window_fallback"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("empty_count", [None, 0])
+async def test_empty_fill_counts_keep_original_short_result(selection_ports, empty_count):
+    state = selection_ports
+    state.candidates = [question(1)]
+    state.counts = [empty_count, empty_count]
+    selected, metadata = await run(state, count=3)
+    assert [q.id for q in selected] == [1]
+    assert list(metadata) == [1]
+    assert len(state.queries) == 4
+    assert fallback_level(state) == 4

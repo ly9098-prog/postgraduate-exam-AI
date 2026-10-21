@@ -67,6 +67,10 @@ from app.services.practice.recommendation_pipeline import (
     merge_recommendation_results,
     normalize_smart_strategy,
 )
+from app.services.practice.scored_fallback import (
+    load_random_fill_questions,
+    load_repeat_fill_questions,
+)
 from app.services.practice.scored_selection import select_scored_candidates
 from app.services.practice.sequential_service import (
     SEQUENTIAL_MODE,
@@ -3519,36 +3523,8 @@ async def get_smart_scored_questions(
         if excluded_sub is not None:
             fill_cond.append(Question.id.notin_(excluded_sub))
 
-        # Use random offset to avoid ORDER BY random() on potentially large table
-        fill_count_q = select(func.count(Question.id)).where(and_(*fill_cond))
-        fill_total = (await db.execute(fill_count_q)).scalar() or 0
-        if fill_total <= remaining:
-            fill_q = (
-                select(Question)
-                .where(and_(*fill_cond))
-                .options(selectinload(Question.subject_ref))
-                .order_by(Question.id.asc())
-            )
-        elif fill_total <= 2000:
-            fill_q = (
-                select(Question)
-                .where(and_(*fill_cond))
-                .options(selectinload(Question.subject_ref))
-                .order_by(func.random())
-                .limit(remaining)
-            )
-        else:
-            offset = random.randint(0, fill_total - remaining)
-            fill_q = (
-                select(Question)
-                .where(and_(*fill_cond))
-                .options(selectinload(Question.subject_ref))
-                .order_by(Question.id.asc())
-                .offset(offset)
-                .limit(remaining)
-            )
-        fill_result = await db.execute(fill_q)
-        for fq in fill_result.scalars().all():
+        fill_questions = await load_random_fill_questions(db, fill_cond, remaining)
+        for fq in fill_questions:
             selected.append(fq)
             selected_ids.add(fq.id)
             metadata[fq.id] = _build_fallback_metadata("随机补齐", "random_fallback")
@@ -3563,19 +3539,10 @@ async def get_smart_scored_questions(
             _practice_revision_scope_condition(scope_ids),
             Question.id.notin_(selected_ids),
         ]
-        fill_q2_base = (
-            select(Question)
-            .where(and_(*fill_cond2))
-            .options(selectinload(Question.subject_ref))
+        repeat_questions = await load_repeat_fill_questions(
+            db, fill_cond2, remaining, _random_sample_query,
         )
-        fill_count2 = (
-            await db.execute(select(func.count(Question.id)).where(and_(*fill_cond2)))
-        ).scalar() or 0
-        fill_q2 = _random_sample_query(
-            fill_q2_base, total_count=fill_count2, need=remaining, id_col=Question.id
-        )
-        fill_result2 = await db.execute(fill_q2)
-        for fq in fill_result2.scalars().all():
+        for fq in repeat_questions:
             if fq.id in selected_ids:
                 continue
             selected.append(fq)
