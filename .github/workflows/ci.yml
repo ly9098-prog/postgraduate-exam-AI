@@ -322,6 +322,7 @@ jobs:
             tests/practice/test_scored_selection_contract.py \
             tests/architecture/test_scored_selection_boundaries.py \
             tests/architecture/test_scored_fallback_boundaries.py \
+            tests/architecture/test_scored_ranking_boundaries.py \
             tests/core/test_http_error_contract.py \
             tests/core/test_http_middleware_contract.py \
             tests/core/test_runtime_metrics_contract.py \

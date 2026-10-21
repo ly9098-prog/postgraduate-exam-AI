@@ -37,6 +37,8 @@ def selection_ports(monkeypatch):
         candidates=[question(qid) for qid in range(1, 7)], qkp={}, qstates={},
         queries=[], counts=[0, 0], rows=[[], []], offsets=[], weights={},
         error=None, fail_at=None, now=datetime(2026, 10, 21), logger=Mock(),
+        recent_kp_ids=set(), kp_mastery={}, kp_observations={}, graph_context={},
+        graph_runtime={},
     )
     excluded = select(PracticeRecord.question_id).where(PracticeRecord.user_id == 7)
 
@@ -44,7 +46,7 @@ def selection_ports(monkeypatch):
         return state.candidates, [], [2], excluded, 0
 
     async def states(*args):
-        return state.qstates, set(), state.qkp
+        return state.qstates, state.recent_kp_ids, state.qkp
 
     async def weights(*args):
         return state.weights
@@ -64,13 +66,15 @@ def selection_ports(monkeypatch):
     monkeypatch.setattr(svc, "utcnow", lambda: state.now)
     monkeypatch.setattr(svc, "logger", state.logger)
     monkeypatch.setattr(svc.random, "randint", randint)
-    monkeypatch.setattr(svc, "_load_scored_runtime_config", AsyncMock(return_value={
-        "strategy_config_id": 8,
-    }))
+    async def runtime_config(*args):
+        return {"strategy_config_id": 8, "graph": state.graph_runtime}
+
+    async def knowledge_context(*args):
+        return state.kp_mastery, state.kp_observations, state.graph_context
+
+    monkeypatch.setattr(svc, "_load_scored_runtime_config", runtime_config)
     monkeypatch.setattr(svc, "_load_smart_scored_candidates", candidates)
-    monkeypatch.setattr(svc, "_load_knowledge_and_graph_context", AsyncMock(
-        return_value=({}, {}, {}),
-    ))
+    monkeypatch.setattr(svc, "_load_knowledge_and_graph_context", knowledge_context)
     monkeypatch.setattr(svc, "_load_candidate_states", states)
     monkeypatch.setattr(svc, "_load_kp_names", AsyncMock(return_value={}))
     monkeypatch.setattr(svc, "_compute_recommendation_weights", weights)
@@ -124,6 +128,73 @@ async def test_real_score_weights_and_stable_ties(selection_ports):
     assert all(isinstance(meta["recommend_reason"], str) for meta in metadata.values())
     top = state.logger.info.call_args_list[0].args[2]
     assert [row[0] for row in top] == [1, 3, 2, 4]
+
+
+@pytest.mark.asyncio
+async def test_score_context_passes_exact_state_and_keeps_candidate_order(selection_ports, monkeypatch):
+    state = selection_ports
+    state.candidates = [question(1), question(2), question(3)]
+    state.qstates = {1: SimpleNamespace(question_id=1), 2: None}
+    state.qkp = {1: [11], 2: [12], 3: []}
+    state.recent_kp_ids = {11}
+    state.kp_mastery = {11: (30.0, 0.8), 12: (70.0, 0.4)}
+    state.kp_observations = {11: (3, 2), 12: (1, 0)}
+    state.graph_context = {
+        "blocked_targets": {11: [{"path_quality": 0.5}]},
+        "prerequisite_candidates": {12: {"path_quality": 0.7}},
+        "prerequisites_by_target": {11: [{"depth": 1}]},
+    }
+    state.graph_runtime = {"max_depth": 3}
+    state.weights = {"due_weight": 2.0}
+    scorer = Mock(side_effect=[(2.0, ["a"]), (3.0, ["b"]), (2.0, ["c"])])
+    monkeypatch.setattr(svc, "calculate_smart_score", scorer)
+    selected, _ = await run(state)
+    assert [q.id for q in selected] == [2, 1, 3]
+    assert [q.id for q in state.candidates] == [1, 2, 3]
+    assert scorer.call_args_list == [
+        ((state.candidates[0], state.qstates[1], [11], state.kp_mastery,
+          state.recent_kp_ids, state.now), {
+            "kp_observations": state.kp_observations,
+            "blocked_kps": {11: [{"path_quality": 0.5}]},
+            "graph_candidates": {12: {"path_quality": 0.7}},
+            "prerequisites_by_target": {11: [{"depth": 1}]},
+            "weights": {"due_weight": 2.0}, "graph_config": {"max_depth": 3},
+          }),
+        ((state.candidates[1], None, [12], state.kp_mastery,
+          state.recent_kp_ids, state.now), {
+            "kp_observations": state.kp_observations,
+            "blocked_kps": {11: [{"path_quality": 0.5}]},
+            "graph_candidates": {12: {"path_quality": 0.7}},
+            "prerequisites_by_target": {11: [{"depth": 1}]},
+            "weights": {"due_weight": 2.0}, "graph_config": {"max_depth": 3},
+          }),
+        ((state.candidates[2], None, [], state.kp_mastery,
+          state.recent_kp_ids, state.now), {
+            "kp_observations": state.kp_observations,
+            "blocked_kps": {11: [{"path_quality": 0.5}]},
+            "graph_candidates": {12: {"path_quality": 0.7}},
+            "prerequisites_by_target": {11: [{"depth": 1}]},
+            "weights": {"due_weight": 2.0}, "graph_config": {"max_depth": 3},
+          }),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_scorer_failure_stops_later_candidates_metadata_and_fill(
+    selection_ports, monkeypatch, error_type,
+):
+    state = selection_ports
+    state.candidates = [question(1), question(2), question(3)]
+    error = error_type("synthetic scorer failure")
+    scorer = Mock(side_effect=[(1.0, ["a"]), error])
+    monkeypatch.setattr(svc, "calculate_smart_score", scorer)
+    with pytest.raises(error_type) as caught:
+        await run(state)
+    assert caught.value is error
+    assert scorer.call_count == 2
+    assert not state.queries
+    assert state.logger.info.call_count == 0
 
 
 @pytest.mark.asyncio

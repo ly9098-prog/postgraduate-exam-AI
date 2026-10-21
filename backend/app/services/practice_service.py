@@ -71,6 +71,7 @@ from app.services.practice.scored_fallback import (
     load_random_fill_questions,
     load_repeat_fill_questions,
 )
+from app.services.practice.scored_ranking import score_and_rank_candidates
 from app.services.practice.scored_selection import select_scored_candidates
 from app.services.practice.sequential_service import (
     SEQUENTIAL_MODE,
@@ -3462,28 +3463,16 @@ async def get_smart_scored_questions(
         db, user_id, system_weights,
     )
 
-    # ── 5. 逐题打分 ──
-    scored: list[tuple[Question, float, list[str]]] = []
-    for q in candidates:
-        kp_ids = q_kp_map.get(q.id, [])
-        qs = q_state_map.get(q.id)
-        sc, reasons = calculate_smart_score(
-            q,
-            qs,
-            kp_ids,
-            kp_mastery,
-            recent_kp_ids,
-            now,
-            kp_observations=kp_observations,
-            blocked_kps=blocked_kps,
-            graph_candidates=graph_candidates,
-            prerequisites_by_target=prerequisites_by_target,
-            weights=rec_weights,
-            graph_config=graph_runtime,
-        )
-        scored.append((q, sc, reasons))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
+    scored = score_and_rank_candidates(
+        candidates, q_state_map, q_kp_map, kp_mastery, recent_kp_ids, now,
+        kp_observations=kp_observations,
+        blocked_kps=blocked_kps,
+        graph_candidates=graph_candidates,
+        prerequisites_by_target=prerequisites_by_target,
+        weights=rec_weights,
+        graph_config=graph_runtime,
+        calculate_score=calculate_smart_score,
+    )
 
     # 调试日志
     if scored:

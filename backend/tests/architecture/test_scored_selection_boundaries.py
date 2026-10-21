@@ -42,7 +42,7 @@ def test_real_scored_caller_keeps_projection_and_fallback_ownership():
     assert "scored_runtime.get('strategy_config_id')" in ast.unparse(projection)
     assert any(getattr(node.func, "id", "") == "load_random_fill_questions" for node in calls)
     assert any(getattr(node.func, "id", "") == "load_repeat_fill_questions" for node in calls)
-    assert any(getattr(node.func, "id", "") == "calculate_smart_score" for node in calls)
+    assert any(getattr(node.func, "id", "") == "score_and_rank_candidates" for node in calls)
 
 
 def test_import_has_no_runtime_or_resource_side_effects():

@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：573 个模块、2,244 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：574 个模块、2,246 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -32,7 +32,7 @@
 | 路径 | 文件行数 | 候选函数/方法及行数 | 已确认职责或待分离边界 |
 | --- | ---: | --- | --- |
 | `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
-| `backend/app/services/practice_service.py` | 4191 | `get_smart_scored_questions` 171 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
+| `backend/app/services/practice_service.py` | 4180 | `get_smart_scored_questions` 159 | 选题/评分/查询组合，保留 provider 与批次签名边界。 |
 | `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
@@ -246,3 +246,6 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 
 第一百零四批（2026-10-21）scored随机/最终补齐查询归practice/scored_fallback，显式conditions/session/remaining与原sampler；caller继续拥有过滤、放宽顺序、fallback级别、metadata与合并loop。保留首次<=remaining不limit/ID排序、<=2000随机、>2000offset及最终原sampler不同口径。模块95/函数34、14、27，practice_service4191/入口171；图573模块/2244边/零循环/反向API。新增11项完整入口故障/空计数/sampler契约（总29项迁移前先过），新增3架构门禁入CI。定向51、混合253通过（12条既有弃用/线程收尾警告）；29组原完整函数参数/SQL/结果/metadata/日志/随机/错误对照一致；61其他service函数AST、两caller条件与合并loop AST不变。仅隔离SQL端口，不证明真实PG/生产事务；评分与其他全栈领域继续治理。
 最终原YAML静态2050（2既有警告）/readiness69/云OCR30通过；严格Ruff/compileall/diff与33保护路径哈希通过。下一步继续评分编排及加载边界，所有既有其他领域/客户端/失败清理待办保持，不用结构计数代替全栈验收。
+
+
+第一百零五批（2026-10-21）scored逐题评分与稳定降序排序归practice/scored_ranking，入口显式传入原scorer/state/KP/mastery/recent/now及全部图与权重端口；日志、解释元数据、多样性和补齐仍由调用方拥有。模块49/函数36，practice_service4180/入口159；图574模块/2246边/零循环/反向API。新增3项直接契约（精确原实参/候选不可变/同分稳定，普通错误与取消止于失败候选）计入总32项，3项架构门禁入CI；32组旧入口比较覆盖结果/metadata/SQL/随机/日志/错误取消，两个scorer monkeypatch场景由直接契约单独覆盖，不宣称未归一化整套AST等价。混合256通过、原YAML静态2056/readiness69/云OCR30通过；严格检查与33保护哈希通过。隔离端口不证明真实PG/外部服务；其他长函数和全栈领域继续。
