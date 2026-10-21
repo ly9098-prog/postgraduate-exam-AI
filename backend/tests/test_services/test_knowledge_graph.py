@@ -673,6 +673,101 @@ class TestSmartStrategyPath:
             assert len(questions) == 2
             assert all(m["strategy"] == "knowledge_path" for m in metadata.values())
 
+    def test_knowledge_path_endpoint_keeps_own_logs(self):
+        """独立知识路径 API 仍写自身日志，刷题入口才关闭候选日志。"""
+        import app.services.knowledge_path_service as path_service
+        import app.services.recommendation_log_service as log_service
+
+        db = _make_mock_db()
+        db.get = AsyncMock(return_value=MagicMock(code="exam408-ds", name="408"))
+        node = {
+            "knowledge_point_id": 20,
+            "name": "链表",
+            "priority": 0.8,
+            "reason": "knowledge path",
+            "recommended_question_ids": [100],
+        }
+        log = AsyncMock(return_value=[1])
+
+        with patch.object(
+            path_service,
+            "build_user_knowledge_path",
+            new=AsyncMock(return_value={
+                "nodes": [node],
+                "strategy": "knowledge_path",
+                "start_kp": node,
+            }),
+        ), patch.object(
+            path_service,
+            "attach_recommended_questions_to_path",
+            new=AsyncMock(side_effect=lambda _db, _uid, _code, nodes, **_kw: nodes),
+        ), patch.object(
+            log_service,
+            "create_recommendation_logs",
+            log,
+        ):
+            result = _run(path_service.get_user_path_recommendations(
+                db, user_id=1, subject=5,
+            ))
+
+        assert result["recommended_question_ids"] == [100]
+        log.assert_awaited_once()
+        assert log.await_args.kwargs["recommendations"][0]["question_id"] == 100
+
+    def test_practice_path_disables_endpoint_logging(self):
+        """刷题 path 必须把候选日志留给最终下发裁剪后的 smart 收尾。"""
+        import app.services.knowledge_path_service as path_service
+        import app.services.mastery_service as mastery_service
+        import app.services.practice_service as practice_service
+        import app.services.recommendation_experiment_service as experiment_service
+        import app.services.recommendation_log_service as log_service
+
+        db = _make_mock_db()
+        result = {
+            "subject_id": 5,
+            "subject_code": "exam408-ds",
+            "start_knowledge_point_id": 20,
+            "strategy": "knowledge_path",
+            "nodes": [],
+            "recommended_question_ids": [],
+            "fallback_used": True,
+        }
+        path = AsyncMock(return_value=result)
+
+        with patch.object(
+            path_service, "get_user_path_recommendations", path,
+        ), patch.object(
+            mastery_service,
+            "get_user_weak_knowledge_points",
+            new=AsyncMock(return_value=[]),
+        ), patch.object(
+            experiment_service,
+            "resolve_strategy_for_user",
+            new=AsyncMock(return_value={"source": "default"}),
+        ), patch.object(
+            log_service,
+            "create_recommendation_logs_isolated",
+            new=AsyncMock(return_value=[]),
+        ), patch.object(
+            practice_service,
+            "_compute_weak_knowledge_points",
+            new=AsyncMock(return_value=[]),
+        ), patch.object(
+            practice_service,
+            "get_practice_questions",
+            new=AsyncMock(return_value=[]),
+        ):
+            from app.services.practice_service import get_smart_practice_questions
+
+            questions, metadata = _run(get_smart_practice_questions(
+                db, user_id=1, subject_code="exam408-ds", count=1,
+                smart_strategy="path", subject_ids=[5],
+            ))
+
+        assert path.await_args.kwargs["write_logs"] is False
+        assert questions == []
+        assert metadata == {}
+
     def test_path_fallback_to_weakness_vector(self):
         """path 推荐失败时能 fallback 到 weakness_vector。"""
         import app.services.knowledge_path_service

@@ -401,13 +401,18 @@ async def get_user_path_recommendations(
     start_knowledge_point_id: int | None = None,
     limit: int = 8,
     questions_per_node: int = 3,
+    write_logs: bool = True,
 ) -> dict:
     """完整知识路径推荐流程。
 
     1. build_user_knowledge_path
     2. attach_recommended_questions_to_path
-    3. 写 recommendation_logs (scene='knowledge_path')
+    3. 可选写 recommendation_logs (scene='knowledge_path')
     4. 返回完整路径和推荐题 ID
+
+    刷题入口会基于最终守卫裁剪题目，并由 smart 收尾只为实际返回题写
+    ``practice_smart`` 日志；因此它必须关闭这里的候选日志，避免提前提交
+    请求事务并记录未下发题。
 
     返回 KnowledgePathResponse-like dict。
     """
@@ -473,7 +478,7 @@ async def get_user_path_recommendations(
                         "reason": n.get("reason", ""),
                     }
                 )
-        if recs:
+        if recs and write_logs:
             await recommendation_log_service.create_recommendation_logs(
                 db=db,
                 user_id=user_id,

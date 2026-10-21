@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-21。状态：前一百零七批已提交，第一百零八批完成 smart scored 补充编排边界；阶段 0/1/3/4 部分完成，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-22。状态：前一百一十批已完成并本地提交到 `3dfa3575`；第一百一十一批为独立缺陷修复，完成后另记提交哈希；阶段 0/1/3/4 部分完成，阶段 2 基本待实施，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1312,3 +1312,48 @@
 - 新模块 100 行，`run_scored_supplement`/`_finalize` 分别为 49/16 行；`practice_service.py` 4,132 行，`get_smart_practice_questions` 446 行，`get_smart_scored_questions` 144 行。当前图 577 模块/2,251 边/零静态循环/零反向 API。
 - 新 smart/架构/phase2 定向 11 项、修复后旧 smart/path 子集 8 项、练习/API 混合 270 项通过（13 条既有弃用/aiosqlite 线程收尾警告）。原 YAML 三步原样重放：静态 2,075 项、readiness 69 项、云 OCR 30 项全部通过（静态 2 条既有弃用警告）；严格 Ruff、全应用 Ruff、compileall、diff 均通过。SQL/推荐服务均为端口替身，未验证真实 PostgreSQL/Redis、外部推荐服务、管理端浏览器或微信端。
 - 仅本地提交本批源码、测试、CI、任务记录和架构盘点；`prompts/tasks/context.md` 保持未跟踪，其他 33 项既有改动/删除保持原状态。不推送、不操作生产，不把本批边界收缩视为 practice 域或全栈治理完成。
+
+
+## 一百一十五、第一百零九阶段：本地练习接口与管理端浏览器验证（2026-10-21）
+
+- 本轮没有修改生产源码，只使用已运行的本地后端（`127.0.0.1:8000`，开发 SQLite）和管理端（`localhost:3000`）验证现有刷题链路。测试用户为隔离开发夹具 ID `658`，未写入真实用户、生产凭据或仓库文件；临时 token、响应和截图仅保存在 `/tmp/postgraduate-practice-e2e/`。
+- 实际 `GET /api/v1/practice/subjects` 返回根科目 `1/2/3/4`，科目 `2` 下有叶子 `7/8/9/10`。随机科目 `7`、`smart_strategy=scored`、`smart_strategy=path`、`weakness_vector`、空科目、非法题号、缺失/越界参数、缺失/无效 token 和不存在科目均按预期返回 200/400/401/403/404/422；GET 响应不泄露答案/解析字段，并带 `Cache-Control: private, no-store` 与 `Pragma: no-cache`。
+- 补验父学科和知识点层级：`GET /api/v1/practice/questions?subject_id=2&include_children=true&count=10` 返回跨 `7/8/9/10` 的 10 道签名题；同一父科目 `include_children=false` 返回空结果且无签名。`knowledge_point_id=1&include_descendants=false` 只返回根知识点直属题 `2970`，`include_descendants=true` 的 `knowledge_scope` 含根及 6 个后代、共 7 个知识点，返回题目均属于科目 `7` 且落在该范围内。
+- 真实 `POST /api/v1/practice/batch-submit` 先以畸形载荷得到 400 `PRACTICE_BATCH_INVALID` 且无新记录；随后两个新批次成功写入练习记录 `419/420`、会话 `70/71`、错题/复习行 `285` 和诊断 `274`。确定性题号批次 `2998,510` 的提交结果为 1 正确、0 错误、1 跳过，并保留签发版本 `5070`；未出现答案或 token 泄漏。
+- 管理端浏览器实际登录 `localhost:3000` 后，`/dashboard`、`/questions`、`/review`、`/recommendation/strategies`、`/recommendation/experiments`、`/recommendation/reports` 在首次访问和刷新后均成功加载；捕获的 Admin API 请求均为 200，无页面错误、失败请求、控制台错误或 500。截图和机器可读报告位于 `/tmp/postgraduate-practice-e2e/admin-browser-refresh-1792584329/`（`report.json`、`01-login.png` 至 `08-recommendation_reports-reload.png`）。随后独立复跑同一 `localhost` 登录/六页脚本，登录 API 200 并跳转 `/dashboard`，`admin-browser/report.json` 中六页均为 200 且 `console`/`page_errors`/`failed_requests` 为空；日志为 `/tmp/postgraduate-practice-e2e/admin-browser-final-recheck.log`。
+- 发现并记录地址级问题：`http://127.0.0.1:3000/login` 点击登录后没有发出登录请求且停留在 `/login?`，而 `http://localhost:3000` 可用；CORS 预检允许两个 origin，根因尚未证明，未修改产品逻辑。另有既有 `path` 策略日志缺陷：实际返回题 `459,460`，推荐日志 `115` 记录了未返回的 `461`；该问题按交接要求单列，不在本阶段顺手修复。
+- 微信开发者工具进程日志显示项目已打开、模拟器编译和 appservice 重启，但没有可用的 DevTools MCP 或截图/交互证据，`cli.bat` 仍报 `Maximum setlocal recursion level reached`；因此只能记为“已触发打开/编译”，不能声称编译、页面交互、渲染、提交或真机通过。未执行 PostgreSQL/Redis、外部推荐/OCR/AI、生产部署或真实用户验收。
+- 本轮已运行 `git diff --check`，并重新核对 33 个既有保护路径的 SHA-256：全部一致，未覆盖或恢复用户的未提交改动/删除。`prompts/tasks/context.md` 仍未跟踪，不应纳入提交；本轮未暂存、提交或推送。
+- 用户明确允许后，已按精确范围删除数据库合成用户 `658` 及其关联数据，共 8 张表 18 行；事务提交后独立只读复核 8 项计数均为 0。SQLite 数据库大小仍为 90,755,072 字节，未执行 `VACUUM`，因此文件不会立即缩小。清理预览保留在 `/tmp/postgraduate-practice-e2e/cleanup-preview.json`。
+- 用户明确允许后，已终止仅匹配 `C:\Temp\codex-postgraduate-e2e-edge` 的隔离 Edge 进程，并删除该临时 profile；复核目录不存在、匹配进程为 0。未触碰个人 Edge、微信开发者工具或其他浏览器数据；`/tmp/postgraduate-practice-e2e/` 验证证据继续保留。
+
+
+## 一百一十六、第一百一十阶段：练习提交半状态与孤儿 outbox 修复（2026-10-21）
+
+- 真实微信模拟器复现首次失败：5 题已答完并出现确认弹窗，点击“确认交卷”后 API 返回 `400 PRACTICE_PAYLOAD_INVALID`；运行日志为 `Non-terminal outbox record exists for task_id=answer_projection:419 status=pending`，前端通用提示为“交卷内容未通过校验”。这不是用户 payload 或批次签名问题，而是 SQLite 删除记录后复用主键、旧 outbox 仍 pending，且 ID 序列未回退。
+- 数据库核对确认半状态：旧 `practice_sessions.id=70/user_id=659/request_id=practice_2fcebb...` 已可见，`question_count=answered_count=5`、`submission_payload_hash` 非空，但 `submission_response=NULL`，无对应 `practice_records`、错题、复习或 outbox；旧 trace 为 `tr_mvi3suuou4bhgno4lb`，首次请求 `req_mvi3wms7mare0q9opv`。`_replay_committed_submission` 对该缺失 canonical response 稳定抛出 `PracticeSubmissionConflictError`，即新请求会映射为 409 而不是伪造重放结果。
+- `batch_submit_answers` 原先在 `PracticeSession` 上使用独立 `begin_nested()` flush，再在后续 outbox 失败时向外抛异常。SQLite 释放该 savepoint 后，异常请求依赖只关闭 session、未显式 rollback，导致会话单独可见而 records/response 不可见。当前修复先用 SQLite 显式外层事务包住 savepoint 占位，占位成功后 session/records/wrong/review/outbox/response 最终只由一次 `db.commit()` 提交；后续异常整体 rollback，savepoint 不再拥有独立持久化结果。
+- `create_outbox` 对 `answer_projection` 的非终态任务增加源记录权威校验：仅当同 ID 记录已被删除，或记录时间晚于旧 outbox（主键复用）时，原位重绑该 outbox 到新记录，保留原 `task_id`/id/created_at，写入 `recovered_from_orphan` 和错误说明，重置 pending 状态/租约/重试；活记录的真实并发冲突仍抛原错误，其他任务类型行为不变。
+- 新增真实 SQLite 事务回归 2 项：旧 pending outbox 与新记录复用同 ID 时成功重绑；模拟 outbox 写失败后 session/records 均不可见。前一项先按失败行为红测，事务修复后 7 项 sequential 定向全过。练习域混合 250 项、扩大链路 303 项通过；严格 Ruff、`compileall -q`、`git diff --check` 通过。测试中的 aiosqlite “Event loop is closed” 收尾告警为既有问题，未将其算作真实 DB 验收。
+- 复审后修正事务设计：恢复 `IntegrityError`/`_is_unique_violation`，SQLite 先显式 `BEGIN`，再以 `begin_nested()` savepoint 占用 `(user_id, request_id)`。若并发唯一冲突，savepoint 回滚后读取已提交 winner 并做内容哈希重放，不让事务进入 poisoned 状态；占位成功后 session/records/wrong/review/outbox/response 统一由外层事务持有，后续任意 `BaseException` 都显式 `db.rollback()` 再传播。同步抽取 `_payload_with_trace()`，新任务与孤儿重绑共用原请求关联语义。
+- outbox 新鲜度判定从 `answered_at` 改为 `PracticeRecord.created_at`：仅源记录创建时间严格晚于旧 outbox 才允许重绑，等时或更早均 fail closed。测试改为：旧 outbox 显式早于新记录以确定性覆盖复用 ID；活源使用正常创建行保持等时拒绝；新增快查未命中后唯一冲突重放，以及 outbox 失败时 session/records 整体回滚。最终 9 项定向与练习域扩大链路 305 项通过（20 条既有 datetime/aiosqlite 线程收尾告警），严格 Ruff/compileall/`git diff --check` 通过；两文件仍有先于本阶段存在的 Ruff format 漂移。当前无 Docker，未验证 PostgreSQL 并发，不把 SQLite 回归冒充真实 PG 验收。
+- 真实 HTTP 隔离批次（用户 659）成功：2 题提交 200，session `71` 响应完整，records `419/420`、错题/复习同步生成；新记录复用并重绑了旧 outbox `419/420`，证明实际运行路径恢复。旧 session `70` 未删除、未改写，只作为确定性冲突边界保留。
+- 微信模拟器完整重跑 5 题 `[2417,277,302,3043,2651]`，答案 `A/B/C/D/B`；确认弹窗显示“已完成 5/5 题”，真实确认后进入结果页并显示 1 对 4 错、总题 5、正确率 20%。对应数据库 session `72`（`request_id=practice_7acd3f81...`）`submission_response` 完整，records `421-425`、错题 `286-289`、复习调度同批存在；截图证据在 `/mnt/c/Temp/codex-wechat-e2e/evidence/practice-fixed-round-q1.png`、`practice-q1-selected.png` 至 `practice-q5-selected.png`、`practice-fixed-submit-confirm-or-result.png`、`practice-fixed-after-confirm.png`。日志中提交、结果页诊断和趋势请求均为 200；本地 AI 模型未配置导致预热降级，未阻塞结果页。
+- 仍未验证：真机、PostgreSQL/Redis、外部推荐/AI/OCR、生产部署与历史数据迁移；旧 session `70` 的 canonical response 缺失属于已产生的历史半提交，当前修复不作自动补写，也不清理用户 659、session 70/71/72、截图或诊断证据。`current_task.md` 只记录本阶段事实，不声称全栈目标完成。
+
+
+## 一百一十七、第一百一十一阶段：独立缺陷修复（2026-10-22）
+
+### 111.1 path 候选日志与提前提交
+
+- 复现依据沿用第一百零九阶段：`path` 实际返回题 `459,460`，推荐日志却记录了未下发的 `461`。根因位于 `knowledge_path_service.get_user_path_recommendations`：它在返回候选后立即调用 `create_recommendation_logs`，该函数内部 `commit()` 提前提交请求会话；随后 `practice_service` 才执行活动态、科目范围、不可变版本和 repeat-window 最终守卫并截断题目，因此日志可能包含被守卫裁掉的候选，且提前提交破坏了请求事务所有者的边界。
+- 修复保持独立知识路径 API 行为：`get_user_path_recommendations` 增加 `write_logs: bool = True`，默认仍写 `scene='knowledge_path'` 日志；Admin/用户侧 `/api/v1/knowledge-path` 调用不改。smart 刷题 `path` 分支显式传 `write_logs=False`，候选阶段不再提交请求会话；最终仍由 `_finalize_smart` 在守卫后的实际返回题上写 `scene='practice_smart'` 日志，并保留 request/experiment/variant 上下文。
+- 新增 4 项契约回归：路径独立 API 仍写自身日志；刷题路径必须关闭端点日志；最终守卫后只记录实际返回的 `459,460`，不记录候选 `461`；路径失败时仍走既有 weakness/random fallback，且只记录最终返回题。定向练习域 198 项、架构 + 知识图谱 + 练习 API 301 项、练习/API 混合 87 项均通过；严格 Ruff、`compileall -q`、`git diff --check` 通过。
+- 该修复改变 `knowledge_path_service` 内部函数签名但保持默认行为和 HTTP 契约不变；未删除历史日志、未改写数据库、未补写旧记录。真实 PostgreSQL/Redis/外部推荐服务仍未验证，SQLite/端口替身结果不冒充生产事务验收。
+
+### 111.2 127.0.0.1:3000 登录不触发请求
+
+- 复现确认：Next.js 16.2.12 dev server 监听 `localhost` 时，浏览器访问 `http://127.0.0.1:3000/login` 会收到服务端 HTML，但 `/_next/webpack-hmr` 被 Next 的开发跨源保护返回 403/非法握手；App Router 客户端未完成 hydrate，表单仍以原生 GET 提交，因此 URL 变为 `/login?`、输入被清空且没有 `/api/admin/v1/auth/login` 请求。`localhost` 同时受默认允许，故可正常登录。
+- 已在 `admin-frontend/next.config.ts` 的开发分支显式设置 `allowedDevOrigins: ["127.0.0.1"]`，只放开开发内部资源和 HMR，不放宽生产 CORS、Admin JWT、refresh cookie 或后端 TrustedHost。生产构建不包含该 dev-only 配置。
+- 真实浏览器复测 `127.0.0.1:3000`：登录 POST 200，跳转 `/dashboard`，`sessionStorage` 有 access token；`dashboard/questions/review/recommendation strategies/experiments/reports` 六页均 200，Admin API 无 4xx/5xx，控制台错误、页面错误和失败请求均为空。证据位于 `/tmp/postgraduate-practice-e2e/admin-browser/report.json` 与对应截图。
+- 管理端 `npm run typecheck`、`npm run lint`（0 errors，132 条既有 warning）、`npm run test`（56 files/788 tests）、`npm run build`（33 routes）全部通过。该验证是本地 dev + Chrome headless；不等于生产部署、真实用户浏览器矩阵或微信端验收。

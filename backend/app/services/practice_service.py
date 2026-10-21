@@ -2325,6 +2325,7 @@ async def get_smart_practice_questions(
                 subject=subject_code,
                 limit=8,
                 questions_per_node=3,
+                write_logs=False,
             )
             path_qids = path_result.get("recommended_question_ids", [])
             if path_qids:
