@@ -114,6 +114,10 @@ async def runtime(monkeypatch, tmp_path):
         sync("ocr.client.create")()
         return state.client
 
+    def worker(*args, **kwargs):
+        sync("ocr.worker.create")()
+        return SimpleNamespace(shutdown=asynchronous("ocr.worker.stop"))
+
     def gateway(*args, **kwargs):
         sync("ocr.gateway.create")()
         state.gateway = SimpleNamespace(shutdown=asynchronous("ocr.gateway.stop"))
@@ -164,7 +168,7 @@ async def runtime(monkeypatch, tmp_path):
             shutdown_executors=asynchronous("executors.stop"),
         ),
         "app.core.ocr_runtime_config": SimpleNamespace(get_runtime_config=config),
-        "app.services.ocr_worker_client": SimpleNamespace(create_ocr_worker_client=sync("ocr.worker.create", object())),
+        "app.services.ocr_worker_client": SimpleNamespace(create_ocr_worker_client=worker),
         "app.features.ocr_gateway": SimpleNamespace(OCRGateway=gateway),
         "app.services.ocr_service": SimpleNamespace(set_gateway=sync("ocr.gateway.publish")),
         "app.services.export.processor": SimpleNamespace(stop_processor=asynchronous("export.signal")),

@@ -28,6 +28,7 @@ def test_gateway_assembly_keeps_timeout_limits_configuration_and_resource_identi
     ]
     assert ports.resources.gateway is ports.gateway
     assert ports.resources.shared_http_client is ports.client
+    assert ports.resources.worker_client is None
     ports.logger.info.assert_called_once_with(
         "OCR Gateway initialized (role=%s mode=gateway exec_backend=%s profile=%s env=%s)",
         "web", "synthetic-remote", "cloud_api", "production",
@@ -55,6 +56,8 @@ def test_partial_assembly_preserves_only_previously_created_resources(ports, fai
     assert [event[0] for event in ports.events] == OPERATIONS[:index + 1]
     assert ports.resources.shared_http_client is (ports.client if index > OPERATIONS.index("client") else None)
     assert ports.resources.gateway is (ports.gateway if index > OPERATIONS.index("gateway") else None)
+    retained = OPERATIONS.index("worker") < index <= OPERATIONS.index("gateway")
+    assert ports.resources.worker_client is (ports.worker if retained else None)
     ports.logger.info.assert_not_called()
     ports.logger.warning.assert_not_called()
 
@@ -72,6 +75,9 @@ def test_import_failure_propagates_with_original_partial_resource_state(ports, f
         ports.client if failed in IMPORTS[4:] else None
     )
     assert ports.resources.gateway is (ports.gateway if failed == IMPORTS[-1] else None)
+    assert ports.resources.worker_client is (
+        ports.worker if failed == "app.core.deployment_profile" else None
+    )
     ports.logger.info.assert_not_called()
 
 

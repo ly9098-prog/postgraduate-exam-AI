@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     from app.core.deployment_profile import DeploymentProfile
     from app.features.ocr_gateway import OCRGateway
+    from app.services.ocr_worker_client import OcrWorkerClient
 
 logger = logging.getLogger("postgraduate-ai")
 
@@ -19,6 +20,7 @@ logger = logging.getLogger("postgraduate-ai")
 class HttpOcrResources:
     gateway: OCRGateway | None = None
     shared_http_client: httpx.AsyncClient | None = None
+    worker_client: OcrWorkerClient | None = None
 
 
 def initialize_http_ocr_gateway(resources: HttpOcrResources, role: str) -> None:
@@ -42,7 +44,7 @@ def initialize_http_ocr_gateway(resources: HttpOcrResources, role: str) -> None:
                 max_connections=cfg.remote_max_concurrency,
             ),
         )
-        worker_client = create_ocr_worker_client(
+        resources.worker_client = create_ocr_worker_client(
             cfg,
             http_client=resources.shared_http_client,
         )
@@ -51,8 +53,9 @@ def initialize_http_ocr_gateway(resources: HttpOcrResources, role: str) -> None:
         resources.gateway = OCRGateway(
             mode="gateway",
             profile=detect_deployment_profile(),
-            worker_client=worker_client,
+            worker_client=resources.worker_client,
         )
+        resources.worker_client = None
         from app.services.ocr_service import set_gateway
 
         set_gateway(resources.gateway)
@@ -64,7 +67,11 @@ def initialize_http_ocr_gateway(resources: HttpOcrResources, role: str) -> None:
         logger.info("OCR not enabled, skipping Gateway initialization")
 
 
-def initialize_worker_ocr_gateway(profile: DeploymentProfile, logger: logging.Logger) -> None:
+def initialize_worker_ocr_gateway(
+    profile: DeploymentProfile,
+    logger: logging.Logger,
+    resources: HttpOcrResources | None = None,
+) -> None:
     from app.core.ocr_runtime_config import get_runtime_config
     from app.features.ocr_gateway import OCRGateway
     from app.services.ocr_worker_client import create_ocr_worker_client
@@ -72,11 +79,16 @@ def initialize_worker_ocr_gateway(profile: DeploymentProfile, logger: logging.Lo
     cfg = get_runtime_config()
     if cfg.enabled:
         worker_client = create_ocr_worker_client(cfg)
+        if resources is not None:
+            resources.worker_client = worker_client
         ocr_gateway = OCRGateway(
             mode="gateway",
             profile=profile,
             worker_client=worker_client,
         )
+        if resources is not None:
+            resources.gateway = ocr_gateway
+            resources.worker_client = None
         from app.services.ocr_service import set_gateway
 
         set_gateway(ocr_gateway)

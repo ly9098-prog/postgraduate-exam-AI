@@ -701,8 +701,7 @@ class TestReadinessEndpoint:
         (None, 200), ("check_database", 503), ("check_redis", 503),
         ("check_staging", 503), ("check_role_dependencies", 503),
         ("check_ocr_config", 503), ("check_queue", 200),
-        # Existing readiness classifies stale Alembic as informational.
-        ("check_alembic_head", 200),
+        ("check_alembic_head", 503),
     ])
     def test_original_readiness_status_and_cloud_detail_boundary(
         self, client, monkeypatch, production, failed_probe, status

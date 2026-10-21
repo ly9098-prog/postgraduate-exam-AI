@@ -36,7 +36,7 @@ async def test_runtime_directory_failure_precedes_database_and_tasks(runtime, mo
     assert paths == [(path, {"exist_ok": True}) for path in expected[:failed + 1]]
     assert "export.config" in runtime.events
     assert "db.init" not in runtime.events and not runtime.tasks
-    assert not [event for event in runtime.events if event in COMMON_STOP]
+    assert [event for event in runtime.events if event in COMMON_STOP] == COMMON_STOP
 
 
 @pytest.mark.asyncio
@@ -51,7 +51,7 @@ async def test_startup_sweep_precedes_resources_and_preserves_failure_boundary(r
         assert caught.value is error
         assert not runtime.tasks
         assert "db.init" not in runtime.events
-        assert not [event for event in runtime.events if event in COMMON_STOP]
+        assert [event for event in runtime.events if event in COMMON_STOP] == COMMON_STOP
     else:
         async with main.lifespan(main.app):
             await asyncio.sleep(0)
@@ -74,7 +74,7 @@ async def test_export_config_failure_preserves_http_startup_boundary(runtime, er
                 pytest.fail("cancelled export configuration must not yield")
         assert caught.value is error
         assert not runtime.tasks and "db.init" not in runtime.events
-        assert not [event for event in runtime.events if event in COMMON_STOP]
+        assert [event for event in runtime.events if event in COMMON_STOP] == COMMON_STOP
     else:
         async with main.lifespan(main.app):
             await asyncio.sleep(0)
@@ -196,49 +196,99 @@ async def test_nonfatal_startup_errors_yield_then_close_existing_resources(runti
     assert "ocr.client.close" in runtime.events
     if failed == "ocr.gateway.create":
         assert "ocr.gateway.stop" not in runtime.events
+        assert "ocr.worker.stop" in runtime.events
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failed", ["config.sync", "config.async", "db.init", "executors.init", "ocr.gateway.create"])
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
-async def test_current_pre_yield_failure_does_not_enter_shutdown_finally(runtime, monkeypatch, failed, error_type):
+async def test_pre_yield_failure_cleans_created_resources_and_preserves_original_error(
+    runtime, monkeypatch, failed, error_type,
+):
     monkeypatch.setattr(main, "_production_mode", True)
     runtime.ocr_enabled = True
     error = error_type("synthetic startup failure")
     runtime.failures[failed] = error
+    if failed == "ocr.gateway.create":
+        runtime.failures["ocr.client.close"] = RuntimeError(
+            "synthetic client close failure"
+        )
     wrapped = error_type is RuntimeError and failed in {"executors.init", "ocr.gateway.create"}
     with pytest.raises(SystemError if wrapped else error_type) as caught:
         async with main.lifespan(main.app):
             pytest.fail("startup failure must not yield")
     assert (caught.value.__cause__ if wrapped else caught.value) is error
-    assert not [name for name in runtime.events if name in COMMON_STOP]
+    assert [name for name in runtime.events if name in COMMON_STOP] == COMMON_STOP
     assert "export.signal" not in runtime.events
-    assert "ocr.client.close" not in runtime.events
+    assert ("ocr.client.close" in runtime.events) is (
+        failed in {"ocr.gateway.create"}
+    )
+    assert ("ocr.worker.stop" in runtime.events) is (
+        failed == "ocr.gateway.create"
+    )
     if failed == "ocr.gateway.create":
         assert runtime.client is not None
         assert [task.get_name() for task in runtime.tasks] == ["event-loop-lag-monitor"]
-        assert not runtime.tasks[0].done()
+        assert runtime.tasks[0].done()
     else:
         assert not runtime.tasks
-    # The fixture cancels all owned test tasks; the production failure gap is recorded separately.
+    assert all(task.done() for task in runtime.tasks)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
-async def test_shared_client_close_failure_propagates_before_common_resources(runtime, error_type):
+async def test_cleanup_error_for_pre_yield_failure_does_not_override_startup_error(runtime, error_type):
+    startup_error = error_type("synthetic startup failure")
+    runtime.failures["db.init"] = startup_error
+    runtime.failures["pdf.stop"] = RuntimeError("synthetic cleanup failure")
+    with pytest.raises(error_type) as caught:
+        async with main.lifespan(main.app):
+            pytest.fail("startup failure must not yield")
+    assert caught.value is startup_error
+    assert [name for name in runtime.events if name in COMMON_STOP] == COMMON_STOP
+    assert runtime.logger.warning.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_shared_client_close_failure_preserves_remaining_shutdown(runtime, error_type):
     runtime.ocr_enabled = True
     error = error_type("synthetic shared client close failure")
     runtime.failures["ocr.client.close"] = error
+    if error_type is asyncio.CancelledError:
+        with pytest.raises(error_type) as caught:
+            async with main.lifespan(main.app):
+                await asyncio.sleep(0)
+        assert caught.value is error
+        assert "ocr.gateway.stop" in runtime.events
+        assert "ocr.client.close" in runtime.events
+        assert "executors.stop" not in runtime.events
+        assert "db.dispose" not in runtime.events
+        assert "orphans.stop" not in runtime.events
+    else:
+        with pytest.raises(RuntimeError) as caught:
+            async with main.lifespan(main.app):
+                await asyncio.sleep(0)
+        assert caught.value is error
+        assert [name for name in runtime.events if name in COMMON_STOP] == COMMON_STOP
+        assert runtime.events[-1] == "orphans.stop"
+        assert runtime.logger.warning.called
+    assert all(task.done() for task in runtime.tasks)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_shared_client_close_error_does_not_override_startup_error(runtime, error_type):
+    runtime.ocr_enabled = True
+    startup_error = error_type("synthetic startup failure")
+    runtime.failures["db.init"] = startup_error
+    runtime.failures["ocr.client.close"] = RuntimeError("synthetic client close failure")
     with pytest.raises(error_type) as caught:
         async with main.lifespan(main.app):
-            await asyncio.sleep(0)
-    assert caught.value is error
-    assert "ocr.gateway.stop" in runtime.events
-    assert "ocr.client.close" in runtime.events
-    assert "executors.stop" not in runtime.events
-    assert "db.dispose" not in runtime.events
-    assert "orphans.stop" not in runtime.events
-    assert all(task.done() for task in runtime.tasks)
+            pytest.fail("startup failure must not yield")
+    assert caught.value is startup_error
+    assert [name for name in runtime.events if name in COMMON_STOP] == COMMON_STOP
+    assert runtime.logger.warning.called
 
 
 @pytest.mark.asyncio

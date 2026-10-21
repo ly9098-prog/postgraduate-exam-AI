@@ -1,7 +1,13 @@
 """Stop standalone role resources at their original failure boundaries."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.runtime_ocr_startup import HttpOcrResources
 
 
 async def stop_standalone_worker_services(role: str, logger: logging.Logger) -> None:
@@ -80,7 +86,12 @@ async def shutdown_standalone_formula_pool(logger: logging.Logger) -> None:
         logger.exception("Formula render pool shutdown error")
 
 
-async def shutdown_standalone_ocr(role: str, logger: logging.Logger) -> None:
+async def shutdown_standalone_ocr(
+    role: str,
+    logger: logging.Logger,
+    *,
+    ocr_resources: HttpOcrResources | None = None,
+) -> None:
     if role in ("worker", "all"):
         from app.core.deployment_profile import (
             DeploymentProfile,
@@ -95,6 +106,25 @@ async def shutdown_standalone_ocr(role: str, logger: logging.Logger) -> None:
                 await asyncio.wait_for(ocr_executor.shutdown(wait=True), timeout=30)
             except Exception:
                 logger.exception("OCR executor shutdown error")
+
+        if ocr_resources is not None:
+            try:
+                if ocr_resources.gateway is not None:
+                    try:
+                        await ocr_resources.gateway.shutdown()
+                    except Exception:
+                        pass
+                if ocr_resources.worker_client is not None:
+                    try:
+                        await ocr_resources.worker_client.shutdown()
+                    except Exception:
+                        pass
+                    finally:
+                        ocr_resources.worker_client = None
+            except asyncio.CancelledError:
+                ocr_resources.worker_client = None
+                raise
+            return
 
         try:
             # Gateway may or may not be initialized in this role

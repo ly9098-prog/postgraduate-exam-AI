@@ -46,7 +46,7 @@ def test_lifespan_keeps_role_protocols_and_formula_pool_in_original_positions():
             assert [ast.dump(arg) for arg in node.args] == [ast.dump(ast.Name(id="role", ctx=ast.Load()))]
     positions = [source.index(fragment) for fragment in [
         "await drain_queue_for_role(role)",
-        "await stop_lag_monitor(_lag_monitor_task)",
+        "await stop_lag_monitor(lag_monitor_task)",
         "await stop_export_processor(role)",
         "await cancel_and_wait_runtime_tasks(",
         "await stop_role_services(role)", "await shutdown_formula_pool()",

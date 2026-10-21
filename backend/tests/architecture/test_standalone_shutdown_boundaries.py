@@ -25,6 +25,7 @@ def test_standalone_shutdown_dependencies_and_function_budgets():
         "app.core.deployment_profile", "app.services.ocr_executor_service", "app.services.ocr_service",
         "app.core.executor_registry", "app.core.executors", "app.services.pdf_renderer_service",
         "app.services.task_queue_service", "app.core.database", "app.core.resource_guard",
+        "app.services.runtime_ocr_startup",
     }
     assert "app.core.standalone_runtime_shutdown" in graph["app.core.bootstrap"]
     source = (APP / "core/standalone_runtime_shutdown.py").read_text()
@@ -51,12 +52,17 @@ def test_bootstrap_uses_real_sections_around_one_original_registry_wait():
         assert [ast.unparse(arg) for arg in node.args] == (
             ["role", "logger"] if node.func.id in ROLE_HELPERS else ["logger"]
         )
-        assert not node.keywords
+        expected_keywords = (
+            {"ocr_resources": ast.Name(id="ocr_resources", ctx=ast.Load())}
+            if node.func.id == "shutdown_standalone_ocr"
+            else {}
+        )
+        assert [keyword.arg for keyword in node.keywords] == list(expected_keywords)
     waits = [node for node in calls if ast.unparse(node.func) == "registry.wait_all"]
     assert len(waits) == 1
     assert ast.unparse(waits[0]) == "registry.wait_all(timeout=settings.WORKER_SHUTDOWN_GRACE_SEC)"
     assert helpers[1].lineno < waits[0].lineno < helpers[2].lineno
-    assert ast.unparse(shutdown.body[1]).startswith("logger.info('=== Shutdown sequence started")
+    assert ast.unparse(shutdown.body[3]).startswith("logger.info('=== Shutdown sequence started")
     assert ast.unparse(shutdown.body[-1]).startswith("logger.info('=== Shutdown sequence completed")
 
 

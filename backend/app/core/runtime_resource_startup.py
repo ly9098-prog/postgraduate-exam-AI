@@ -31,6 +31,20 @@ def initialize_role_executors(role: str) -> None:
     )
 
 
+def initialize_worker_executors(*, is_production: bool) -> None:
+    from app.core.executor_registry import init_executor_registry
+    from app.core.executors import init_executors_for_role
+
+    executors = init_executors_for_role(
+        "worker",
+        is_production=is_production,
+    )
+    init_executor_registry(executors)
+    logger.info(
+        "Worker executors initialized: %s", {k: v.name for k, v in executors.items()}
+    )
+
+
 async def start_resource_reconciler() -> None:
     try:
         from app.core.resource_guard import resource_guard

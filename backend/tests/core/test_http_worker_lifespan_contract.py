@@ -32,8 +32,8 @@ async def run_failed_worker(state, monkeypatch, production, error, failed_task):
         if failed_task is None:
             expected.append("task-reaper-v2")
         assert [task.get_name() for task in state.tasks] == expected
-        assert all(not task.done() for task in state.tasks)
-        assert "formula.stop" not in state.events and "db.dispose" not in state.events
+        assert all(task.done() for task in state.tasks)
+        assert "formula.stop" in state.events and "db.dispose" in state.events
         assert "audit.start" not in state.events
     else:
         async with main.lifespan(main.app):

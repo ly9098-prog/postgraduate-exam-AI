@@ -41,7 +41,12 @@ def test_main_calls_real_helpers_with_original_failure_owner_and_positions():
     orphan = helpers["start_resource_reconciler"][0]
     assert [ast.unparse(arg) for arg in executor.args] == ["role"]
     assert not executor.keywords and not orphan.args and not orphan.keywords
-    owner = next(node for node in life.body if isinstance(node, ast.Try) and any(item is executor for item in ast.walk(node)))
+    owner = min(
+        (node for node in ast.walk(life)
+        if isinstance(node, ast.Try) and any(item is executor for item in ast.walk(node))
+        ),
+        key=lambda node: node.end_lineno - node.lineno,
+    )
     assert len(owner.handlers) == 1 and ast.unparse(owner.handlers[0].type) == "Exception"
     assert ast.unparse(owner.handlers[0].body[0]) == "report_http_startup_failure('Executors', e, _production_mode)"
     seed = next(node for node in calls if node.func.id == "log_ai_model_configuration")

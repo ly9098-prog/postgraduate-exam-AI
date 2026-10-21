@@ -41,22 +41,22 @@ def test_lifespan_uses_real_state_and_helper_with_original_ports_and_position():
     assert len(allocation) == len(startup) == 1
     assert not allocation[0].args and not allocation[0].keywords
     assert [ast.unparse(arg) for arg in startup[0].args] == [
-        "_worker_tasks", "_production_mode", "logger", "report_http_startup_failure",
+        "worker_tasks", "_production_mode", "logger", "report_http_startup_failure",
     ]
     assert not startup[0].keywords
-    owner = next(node for node in life.body if isinstance(node, ast.If) and startup[0] in ast.walk(node))
+    owner = next(node for node in ast.walk(life) if isinstance(node, ast.If) and startup[0] in ast.walk(node))
     assert ast.unparse(owner.test) == "role in ('worker', 'all')"
-    local = next(node for node in life.body if isinstance(node, ast.If)
+    local = next(node for node in ast.walk(life) if isinstance(node, ast.If)
                  and any("Local web export processor started" in ast.unparse(child)
                          for child in ast.walk(node)))
-    scheduler = next(node for node in life.body if isinstance(node, ast.If)
+    scheduler = next(node for node in ast.walk(life) if isinstance(node, ast.If)
                      and ast.unparse(node.test) == "role in ('scheduler', 'all')")
     assert local.lineno < owner.lineno < scheduler.lineno
     shutdown = next(node for node in calls if getattr(node.func, "id", None) == "cancel_and_wait_runtime_tasks")
     labels = [ast.literal_eval(item.elts[0]) for item in shutdown.args[0].elts]
     values = [ast.unparse(item.elts[1]) for item in shutdown.args[0].elts]
-    assert values[labels.index("pipeline-dispatcher-v2")] == "_worker_tasks.pipeline_worker_task"
-    assert values[labels.index("task-reaper-v2")] == "_worker_tasks.reaper_task"
+    assert values[labels.index("pipeline-dispatcher-v2")] == "worker_tasks.pipeline_worker_task"
+    assert values[labels.index("task-reaper-v2")] == "worker_tasks.reaper_task"
     assert not any(
         isinstance(node, ast.ImportFrom)
         and node.module in {"app.services.task_queue_worker", "app.services.ai_prewarm_worker"}

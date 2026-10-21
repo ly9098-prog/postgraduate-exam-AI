@@ -1,6 +1,6 @@
 # 全栈高内聚、低耦合重构实施计划
 
-> 编制日期：2026-10-19；更新日期：2026-10-22。状态：前一百一十批已完成并本地提交到 `3dfa3575`；第一百一十一批为独立缺陷修复，完成后另记提交哈希；阶段 0/1/3/4 部分完成，阶段 2 基本待实施，完整治理尚未完成。
+> 编制日期：2026-10-19；更新日期：2026-10-22。状态：第一百一十一批已本地提交为 `6ecbd1a5`；第一百一十二批为运行时启动/关闭失败边界修复，完成后另记提交哈希；阶段 0/1/3/4 部分完成，阶段 2 基本待实施，完整治理尚未完成。
 > 已确认方向：全量盘点、分批治理；保持现有行为、界面与外部接口兼容。
 > 已获“开始执行”、继续批次及“先提交”授权，实施等价重构并分批本地提交；不推送，不执行生产操作，不清理既有资源。
 
@@ -1357,3 +1357,12 @@
 - 已在 `admin-frontend/next.config.ts` 的开发分支显式设置 `allowedDevOrigins: ["127.0.0.1"]`，只放开开发内部资源和 HMR，不放宽生产 CORS、Admin JWT、refresh cookie 或后端 TrustedHost。生产构建不包含该 dev-only 配置。
 - 真实浏览器复测 `127.0.0.1:3000`：登录 POST 200，跳转 `/dashboard`，`sessionStorage` 有 access token；`dashboard/questions/review/recommendation strategies/experiments/reports` 六页均 200，Admin API 无 4xx/5xx，控制台错误、页面错误和失败请求均为空。证据位于 `/tmp/postgraduate-practice-e2e/admin-browser/report.json` 与对应截图。
 - 管理端 `npm run typecheck`、`npm run lint`（0 errors，132 条既有 warning）、`npm run test`（56 files/788 tests）、`npm run build`（33 routes）全部通过。该验证是本地 dev + Chrome headless；不等于生产部署、真实用户浏览器矩阵或微信端验收。
+
+
+## 一百一十八、第一百一十二阶段：运行时启动与关闭失败边界（2026-10-22）
+
+- HTTP lifespan 改为 startup 与 `yield` 共用同一个 `try/finally`：db、executor、OCR Gateway 等 yield 前失败也会执行既有有序清理；启动异常仍保持原对象/取消身份，清理普通错误不再覆盖启动错误。Standalone runner 新增独立 `StandaloneRuntimeResources(role, registry, ocr)`，worker 启动、signal 等待、signal 取消和 shutdown 都由一个资源所有者传递，避免失败时 registry/task 或 OCR client 失去引用。
+- OCR 所有权收紧：HTTP 与 worker 在 `create_ocr_worker_client()` 成功后立即把 client 保存在 `HttpOcrResources.worker_client`，只在 `OCRGateway` 构造成功后转移并清空；gateway 构造失败时由 cleanup 关闭暂存 client。gateway 与暂存 worker 同时存在时两条路径都尝试关闭，gateway 普通失败或取消不跳过 worker/shared client；任一关闭阶段取消时继续清理剩余资源，最终传播第一个取消对象。显式传入 `ocr_resources` 时不再读取全局 gateway singleton。
+- Standalone 启动失败清理拆至 `core/runtime_startup_cleanup.py`，普通异常、`CancelledError` 和 cleanup logger 自身失败都要保留原启动失败；已存在的 `SystemError` 原样重抛。worker OCR 使用 client 自身 `shutdown()`，不反射私有 `_client`。readiness 将 Alembic `stale` 纳入关键失败并返回 503，生产模式继续隐藏 checks 明细。
+- 回归：OCR shutdown 定向 47 项、全量 `tests/architecture` 255 项通过；全量 `tests/core` 1,620 passed、4 skipped、3 failed。3 项失败均在本轮前交接中已登记为既有：`safe_remote_fetch` redirect FakeConnection 不接受 `connect_timeout`，`staging_storage` 两个 orphan cleanup 用例未删除过期文件。独立审查发现的 cleanup 取消覆盖、gateway 失败跳 worker、logger 抛错跳后续资源和 worker 取消失跳 shared client 问题均已修复并有真实失败回归；最终只读复审无 findings，剩余 3 项 core 失败与本轮源码无关，仍保持既有待办。
+- 验证命令：`.venv/bin/python -m pytest tests/core -q --tb=short`、`.venv/bin/python -m pytest tests/architecture -q --tb=short`、`ruff check app/ --ignore I001,F401,N818`、`compileall -q app`、`git diff --check` 均完成（pytest 保留上述 3 项既有失败）。PostgreSQL/Redis/OCR/AI 外部服务、真实生产角色退出和客户端验收仍未执行；不把端口替身、SQLite 或结构门禁冒充生产验收。仅本地提交相关源码/测试/任务/盘点，保留用户其他改动与删除，不推送、不操作生产。

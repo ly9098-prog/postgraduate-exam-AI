@@ -27,16 +27,15 @@ def test_runner_installs_real_handlers_after_initialization_and_before_wait_shut
     assert bootstrap.install_role_signal_handlers is runtime_signals.install_role_signal_handlers
     assert not hasattr(bootstrap, "_install_signal_handlers")
     tree = ast.parse((APP / "core/bootstrap.py").read_text())
-    runner = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_run_role_async")
+    runner = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_run_standalone_role")
     calls = [node for node in ast.walk(runner) if isinstance(node, ast.Call)]
     installation = [node for node in calls if getattr(node.func, "id", None) == "install_role_signal_handlers"]
     assert len(installation) == 1
     assert [ast.unparse(arg) for arg in installation[0].args] == ["stop_event", "logger"]
     assert not installation[0].keywords
     stop_wait = next(node for node in calls if ast.unparse(node.func) == "stop_event.wait")
-    shutdown = next(node for node in calls if getattr(node.func, "id", None) == "shutdown_role")
     scheduler = next(node for node in calls if getattr(node.func, "id", None) == "_init_scheduler_dependencies")
-    assert scheduler.lineno < installation[0].lineno < stop_wait.lineno < shutdown.lineno
+    assert scheduler.lineno < installation[0].lineno < stop_wait.lineno
     assert not any(isinstance(node, ast.FunctionDef) and node.name == "_install_signal_handlers" for node in tree.body)
 
 

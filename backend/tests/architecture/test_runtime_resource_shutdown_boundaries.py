@@ -48,7 +48,7 @@ def test_lifespan_uses_real_helpers_in_original_shutdown_order():
     assert sorted(node.func.id for node in calls) == sorted(HELPERS)
     positions = [source.index(fragment) for fragment in [
         "await shutdown_ocr_executor()",
-        "await shutdown_http_ocr_gateway(_ocr_resources)",
+        "await shutdown_http_ocr_gateway(ocr_resources)",
         "await shutdown_render_resources()",
         "await close_runtime_connections()",
         "await stop_resource_reconciler()",

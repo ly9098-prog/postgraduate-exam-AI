@@ -40,21 +40,35 @@ def test_both_entrypoints_call_real_sweep_with_original_logger_and_position():
         )
         owner = next(node for node in tree.body if getattr(node, "name", None) == owner_name)
         calls = [
-            (index, node.value.value) for index, node in enumerate(owner.body)
+            (node.lineno, node.value.value)
+            for node in ast.walk(owner)
             if isinstance(node, ast.Expr) and isinstance(node.value, ast.Await)
             and isinstance(node.value.value, ast.Call)
             and getattr(node.value.value.func, "id", None) == "sweep_staging_on_startup"
         ]
         assert len(calls) == 1
-        index, call = calls[0]
+        line, call = calls[0]
         assert [ast.unparse(arg) for arg in call.args] == ["logger"]
         assert not call.keywords
         if owner_name == "_run_role_async":
-            assert ast.unparse(owner.body[index - 1]) == "detect_deployment_profile()"
-            assert ast.unparse(owner.body[index + 1]) == "registry = TaskRegistry()"
+            statements = [
+                (node.lineno, ast.unparse(node)) for node in ast.walk(owner)
+                if isinstance(node, ast.stmt)
+            ]
+            previous = max(line for line, _ in statements if line < calls[0][0])
+            following = min(line for line, _ in statements if line > calls[0][0])
+            assert dict(statements)[previous] == "detect_deployment_profile()"
+            assert dict(statements)[following] == "resources = StandaloneRuntimeResources(role)"
         else:
-            assert ast.unparse(owner.body[index - 1]) == "profile = get_ocr_profile()"
-            assert ast.unparse(owner.body[index + 1]) == "log_http_startup(settings, role, profile, logger)"
+            nodes = list(ast.walk(owner))
+            index = next(
+                i for i, node in enumerate(nodes)
+                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Await)
+                and isinstance(node.value.value, ast.Call)
+                and getattr(node.value.value.func, "id", None) == "sweep_staging_on_startup"
+            )
+            assert ast.unparse(nodes[index - 1]) == "profile = get_ocr_profile()"
+            assert ast.unparse(nodes[index + 1]) == "log_http_startup(settings, role, profile, logger)"
 
 
 def test_import_staging_startup_does_not_load_config_resources_or_start_tasks():

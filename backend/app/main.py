@@ -27,6 +27,11 @@ from app.core.ocr_isolation import (
     loaded_local_ocr_modules,
 )
 from app.core.readiness_response import ReadinessSnapshot, build_readiness_response
+from app.core.runtime_http_shutdown import (
+    raise_after_http_shutdown,
+    stop_export_processor,
+    stop_lag_monitor,
+)
 from app.core.runtime_resource_shutdown import (
     close_runtime_connections,
     log_active_children,
@@ -42,10 +47,6 @@ from app.core.runtime_resource_startup import (
     start_resource_reconciler,
 )
 from app.core.runtime_role_shutdown import drain_queue_for_role, stop_role_services
-from app.core.runtime_http_shutdown import (
-    stop_export_processor,
-    stop_lag_monitor,
-)
 from app.core.runtime_task_shutdown import cancel_and_wait_runtime_tasks
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
@@ -117,94 +118,101 @@ logger = logging.getLogger("postgraduate-ai")
 async def lifespan(app: FastAPI):
     role = prepare_http_runtime_role(settings, resolve_effective_process_role)
 
-    # Background asyncio task references (initialized per role block)
-    _worker_tasks = HttpWorkerTasks()
-    _scheduler_tasks = HttpSchedulerTasks()
+    worker_tasks = HttpWorkerTasks()
+    scheduler_tasks = HttpSchedulerTasks()
+    ocr_resources = HttpOcrResources()
+    lag_monitor_task: asyncio.Task | None = None
+    shutdown_error: Exception | None = None
 
-    # A plain local ``uvicorn app.main:app`` process resolves to the web role
-    # when LOCAL_ASYNC_RUNTIME_ENABLED is false. Export generation does not
-    # depend on the Redis task runtime, so keep its lightweight DB-backed
-    # processor available locally; otherwise export tasks remain pending forever
-    # unless developers also start a separate scheduler process. Production
-    # keeps the existing web/scheduler split.
-    _local_web_export_processor = role == "web" and (
-        settings.APP_ENV or ""
-    ).strip().lower() in {"development", "dev", "local", "test", "testing"}
-
-    # ── Common startup (all roles) ──
-    validate_production_config()
-    await validate_production_config_async()
-
-    assert_http_ocr_isolation(loaded_local_ocr_modules, is_restricted_ocr_environment)
-
-    from app.core.ocr_profile import get_ocr_profile
-
-    profile = get_ocr_profile()
-
-    # Staging storage: sweep stale temp files on startup
-    await sweep_staging_on_startup(logger)
-    log_http_startup(settings, role, profile, logger)
-    log_http_export_startup(role, settings, logger)
-    ensure_http_runtime_directories(settings)
-    await init_db()
-
-    await repair_export_idempotency_schema(async_session)
-    await log_runtime_schema_divergence(async_session)
-    await initialize_dev_admin(async_session, ensure_dev_super_admin, settings)
-    await seed_recommendation_strategies(async_session)
-    await log_ai_model_configuration(async_session)
-
-    # ── Resource references populated by role ──
-    _ocr_resources = HttpOcrResources()
-
-    # ── Role-aware BoundedExecutors ──
     try:
-        initialize_role_executors(role)
-    except Exception as e:
-        report_http_startup_failure("Executors", e, _production_mode)
-    _lag_monitor_task: asyncio.Task | None = None
+        # A plain local ``uvicorn app.main:app`` process resolves to the web role
+        # when LOCAL_ASYNC_RUNTIME_ENABLED is false. Export generation does not
+        # depend on the Redis task runtime, so keep its lightweight DB-backed
+        # processor available locally; otherwise export tasks remain pending forever
+        # unless developers also start a separate scheduler process. Production
+        # keeps the existing web/scheduler split.
+        local_web_export_processor = role == "web" and (
+            settings.APP_ENV or ""
+        ).strip().lower() in {"development", "dev", "local", "test", "testing"}
 
-    # Event-loop lag monitor (always runs — lightweight, all roles)
-    _lag_monitor_task = asyncio.create_task(
-        monitor_event_loop_lag(event_loop_health), name="event-loop-lag-monitor"
-    )
+        # ── Common startup (all roles) ──
+        validate_production_config()
+        await validate_production_config_async()
 
-    # ── Role: web — HTTP + enqueue ──
-    # Periodic cleanup tasks (token, staging) belong exclusively to the
-    # scheduler role. The web role only handles request serving and enqueue.
-    if role in ("web", "all"):
-        # Initialize OCR Gateway (needed for API enqueue endpoints)
+        assert_http_ocr_isolation(
+            loaded_local_ocr_modules, is_restricted_ocr_environment
+        )
+
+        from app.core.ocr_profile import get_ocr_profile
+
+        profile = get_ocr_profile()
+
+        # Staging storage: sweep stale temp files on startup
+        await sweep_staging_on_startup(logger)
+        log_http_startup(settings, role, profile, logger)
+        log_http_export_startup(role, settings, logger)
+        ensure_http_runtime_directories(settings)
+        await init_db()
+
+        await repair_export_idempotency_schema(async_session)
+        await log_runtime_schema_divergence(async_session)
+        await initialize_dev_admin(async_session, ensure_dev_super_admin, settings)
+        await seed_recommendation_strategies(async_session)
+        await log_ai_model_configuration(async_session)
+
+        # ── Role-aware BoundedExecutors ──
         try:
-            initialize_http_ocr_gateway(_ocr_resources, role)
+            initialize_role_executors(role)
         except Exception as e:
-            report_http_startup_failure("OCR Gateway", e, _production_mode)
+            report_http_startup_failure("Executors", e, _production_mode)
 
-    # Local web development still needs a runnable export processor. Starting
-    # only this processor avoids enabling the full Redis-dependent async runtime
-    # while making the documented single-process uvicorn workflow functional.
-    if _local_web_export_processor:
-        _scheduler_tasks.export_processor_task = asyncio.create_task(
-            run_export_processor_loop(logger), name="export-processor-local"
-        )
-        logger.info("Local web export processor started")
-
-    # ── Role: worker — pipeline processing + AI prewarm ──
-    if role in ("worker", "all"):
-        await start_http_worker_tasks(
-            _worker_tasks, _production_mode, logger, report_http_startup_failure,
+        # Event-loop lag monitor (always runs — lightweight, all roles)
+        lag_monitor_task = asyncio.create_task(
+            monitor_event_loop_lag(event_loop_health),
+            name="event-loop-lag-monitor",
         )
 
-    # ── Role: scheduler — periodic background tasks ──
-    if role in ("scheduler", "all"):
-        await start_http_scheduler_tasks(
-            _scheduler_tasks, _production_mode, logger, report_http_startup_failure,
-        )
+        # ── Role: web — HTTP + enqueue ──
+        # Periodic cleanup tasks (token, staging) belong exclusively to the
+        # scheduler role. The web role only handles request serving and enqueue.
+        if role in ("web", "all"):
+            # Initialize OCR Gateway (needed for API enqueue endpoints)
+            try:
+                initialize_http_ocr_gateway(ocr_resources, role)
+            except Exception as e:
+                report_http_startup_failure("OCR Gateway", e, _production_mode)
 
-    # Start resource reservation orphan reconciler (all roles)
-    await start_resource_reconciler()
+        # Local web development still needs a runnable export processor. Starting
+        # only this processor avoids enabling the full Redis-dependent async runtime
+        # while making the documented single-process uvicorn workflow functional.
+        if local_web_export_processor:
+            scheduler_tasks.export_processor_task = asyncio.create_task(
+                run_export_processor_loop(logger), name="export-processor-local"
+            )
+            logger.info("Local web export processor started")
 
-    # ── Yield — application serves requests ──
-    try:
+        # ── Role: worker — pipeline processing + AI prewarm ──
+        if role in ("worker", "all"):
+            await start_http_worker_tasks(
+                worker_tasks,
+                _production_mode,
+                logger,
+                report_http_startup_failure,
+            )
+
+        # ── Role: scheduler — periodic background tasks ──
+        if role in ("scheduler", "all"):
+            await start_http_scheduler_tasks(
+                scheduler_tasks,
+                _production_mode,
+                logger,
+                report_http_startup_failure,
+            )
+
+        # Start resource reservation orphan reconciler (all roles)
+        await start_resource_reconciler()
+
+        # ── Yield — application serves requests ──
         yield
     finally:
         # ══════════════════════════════════════════
@@ -212,44 +220,78 @@ async def lifespan(app: FastAPI):
         # ══════════════════════════════════════════
         logger.info("=== Shutdown sequence started (role=%s) ===", role)
 
-        await drain_queue_for_role(role)
+        try:
+            await drain_queue_for_role(role)
+        except Exception as e:
+            shutdown_error = shutdown_error or e
 
         # 2. Stop event-loop lag monitor
-        await stop_lag_monitor(_lag_monitor_task)
+        try:
+            await stop_lag_monitor(lag_monitor_task)
+        except Exception as e:
+            shutdown_error = shutdown_error or e
 
         # 3b. Signal export processor to drain (scheduler/all or local-web fallback)
-        if _scheduler_tasks.export_processor_task is not None:
-            await stop_export_processor(role)
+        if scheduler_tasks.export_processor_task is not None:
+            try:
+                await stop_export_processor(role)
+            except Exception as e:
+                shutdown_error = shutdown_error or e
 
         # 4. Cancel and await background asyncio tasks with grace timeout
-        await cancel_and_wait_runtime_tasks([
-            ("token-cleanup", _scheduler_tasks.cleanup_task),
-            ("pipeline-dispatcher-v2", _worker_tasks.pipeline_worker_task),
-            ("task-reaper-v2", _worker_tasks.reaper_task),
-            ("staging-cleanup", _scheduler_tasks.staging_cleanup_task),
-            ("export-processor", _scheduler_tasks.export_processor_task),
-            ("export-cleanup", _scheduler_tasks.export_cleanup_task),
-            ("scheduler-heartbeat", _scheduler_tasks.scheduler_heartbeat_task),
-            ("outbox-dispatcher", _scheduler_tasks.outbox_dispatcher_task),
-            ("outbox-reconciler", _scheduler_tasks.outbox_reconciler_task),
-        ])
+        try:
+            await cancel_and_wait_runtime_tasks([
+                ("token-cleanup", scheduler_tasks.cleanup_task),
+                ("pipeline-dispatcher-v2", worker_tasks.pipeline_worker_task),
+                ("task-reaper-v2", worker_tasks.reaper_task),
+                ("staging-cleanup", scheduler_tasks.staging_cleanup_task),
+                ("export-processor", scheduler_tasks.export_processor_task),
+                ("export-cleanup", scheduler_tasks.export_cleanup_task),
+                ("scheduler-heartbeat", scheduler_tasks.scheduler_heartbeat_task),
+                ("outbox-dispatcher", scheduler_tasks.outbox_dispatcher_task),
+                ("outbox-reconciler", scheduler_tasks.outbox_reconciler_task),
+            ])
+        except Exception as e:
+            shutdown_error = shutdown_error or e
 
-        await stop_role_services(role)
+        try:
+            await stop_role_services(role)
+        except Exception as e:
+            shutdown_error = shutdown_error or e
 
-        await shutdown_formula_pool()
+        try:
+            await shutdown_formula_pool()
+        except Exception as e:
+            shutdown_error = shutdown_error or e
 
         # 6. Shutdown OCR infrastructure (only if this role uses it)
         # Cloud profile: skip OCR executor shutdown — it imports local PaddleOCR modules.
         if role in ("web", "all"):
-            await shutdown_ocr_executor()
-            await shutdown_http_ocr_gateway(_ocr_resources)
+            try:
+                await shutdown_ocr_executor()
+            except Exception as e:
+                shutdown_error = shutdown_error or e
+            try:
+                await shutdown_http_ocr_gateway(ocr_resources)
+            except Exception as e:
+                shutdown_error = shutdown_error or e
 
-        await shutdown_render_resources()
-        await close_runtime_connections()
-        await stop_resource_reconciler()
+        try:
+            await shutdown_render_resources()
+        except Exception as e:
+            shutdown_error = shutdown_error or e
+        try:
+            await close_runtime_connections()
+        except Exception as e:
+            shutdown_error = shutdown_error or e
+        try:
+            await stop_resource_reconciler()
+        except Exception as e:
+            shutdown_error = shutdown_error or e
 
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)
         log_active_children()
+        raise_after_http_shutdown(shutdown_error)
 
 
 _production_mode = is_restricted_environment()

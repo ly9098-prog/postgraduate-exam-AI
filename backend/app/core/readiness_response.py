@@ -51,7 +51,7 @@ def build_readiness_response(
     critical_failures = [
         k
         for k, v in checks.items()
-        if v == "unavailable"
+        if isinstance(v, str) and v in {"unavailable", "stale"}
         and k
         in (
             "database",
@@ -62,7 +62,6 @@ def build_readiness_response(
             "ocr",
         )
     ]
-    # Preserve the original stale-Alembic behavior; its correction is a separate change.
     if snapshot.draining:
         critical_failures.append("draining")
     all_ok = len(critical_failures) == 0

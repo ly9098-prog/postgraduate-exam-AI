@@ -100,7 +100,7 @@ def snapshot(**changes):
     ({"ocr_status": "degraded"}, 200, True),
     ({"queue_status": "degraded"}, 200, True),
     ({"queue_status": "unavailable"}, 200, False),
-    ({"alembic_ok": False}, 200, False),
+    ({"alembic_ok": False}, 503, False),
     ({"draining": True}, 503, False),
     ({"database_ok": False, "queue_status": "degraded"}, 503, True),
 ])
@@ -141,3 +141,35 @@ def test_snapshot_and_response_keep_existing_mapping_references_without_mutation
     assert space == {"free": 42} and pool == {"size": 3}
     with pytest.raises(FrozenInstanceError):
         value.database_ok = False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("production", [False, True])
+async def test_ready_endpoint_returns_503_for_stale_alembic(monkeypatch, production):
+    from app.services import task_queue_worker
+
+    probes = {
+        "check_database": True,
+        "check_redis": True,
+        "check_alembic_head": False,
+        "check_staging": True,
+        "check_staging_space": {},
+        "check_role_dependencies": True,
+        "check_ocr_config": None,
+        "check_queue": None,
+    }
+    for name, result in probes.items():
+        monkeypatch.setattr(main, name, AsyncMock(return_value=result))
+    monkeypatch.setattr(main, "_production_mode", production)
+    monkeypatch.setattr(main.settings, "REDIS_URL", "")
+    monkeypatch.setattr(main, "get_db_pool_metrics", lambda: {})
+    monkeypatch.setattr(task_queue_worker, "is_draining_v2", lambda: False)
+
+    response = await main.ready_health()
+
+    assert response.status_code == 503
+    content = json.loads(response.body)
+    assert content["status"] == "unavailable"
+    assert ("checks" in content) is (not production)
+    if not production:
+        assert content["checks"]["alembic"] == "stale"

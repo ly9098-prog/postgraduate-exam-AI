@@ -26,17 +26,49 @@ def test_main_uses_real_executor_policy_inside_original_role_and_cleanup_positio
     owner = next(
         node for node in ast.walk(tree)
         if isinstance(node, ast.If) and any(
-            isinstance(item, ast.Expr) and isinstance(item.value, ast.Await)
-            and item.value.value is call for item in node.body
+            isinstance(item, ast.Try) for item in node.body
+        ) and any(
+            isinstance(item, ast.Call) and item is call for item in ast.walk(node)
         )
     )
     assert ast.dump(owner.test) == ast.dump(ast.parse('role in ("web", "all")', mode="eval").body)
     positions = [source.index(fragment) for fragment in [
         "await shutdown_formula_pool()", "await shutdown_ocr_executor()",
-        "await shutdown_http_ocr_gateway(_ocr_resources)",
+        "await shutdown_http_ocr_gateway(ocr_resources)",
         "await shutdown_render_resources()",
     ]]
     assert positions == sorted(positions)
+
+
+def test_http_shutdown_attempts_gateway_worker_and_shared_client_in_order():
+    source = (APP / "core/runtime_resource_shutdown.py").read_text()
+    shutdown = next(
+        node for node in ast.parse(source).body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "shutdown_http_ocr_gateway"
+    )
+    assert shutdown.end_lineno - shutdown.lineno + 1 <= 50
+    calls = [ast.unparse(node) for node in ast.walk(shutdown) if isinstance(node, ast.Call)]
+    assert "resources.gateway.shutdown()" in calls
+    assert "resources.worker_client.shutdown()" in calls
+    assert "resources.shared_http_client.aclose()" in calls
+    warning_calls = [
+        node for node in ast.walk(shutdown)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "_warn_safely"
+    ]
+    assert len(warning_calls) == 4
+    worker_clear = next(
+        node.lineno for node in ast.walk(shutdown)
+        if isinstance(node, ast.Assign)
+        and ast.unparse(node.targets[0]) == "resources.worker_client"
+        and ast.unparse(node.value) == "None"
+    )
+    client_close = next(
+        node.lineno for node in ast.walk(shutdown)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "resources.shared_http_client.aclose"
+    )
+    assert worker_clear < client_close
+
 
 def test_ocr_shutdown_policy_import_does_not_load_local_ocr_or_runtime_resources():
     probe = """

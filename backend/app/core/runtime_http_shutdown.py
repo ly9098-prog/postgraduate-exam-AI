@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 
 logger = logging.getLogger("postgraduate-ai")
 
@@ -25,3 +26,9 @@ async def stop_export_processor(role: str) -> None:
         logger.info("export_processor_stopped role=%s", role)
     except Exception as e:
         logger.warning("Export processor stop signal failed: %s", e)
+
+
+def raise_after_http_shutdown(error: Exception | None) -> None:
+    """Raise a completed shutdown failure unless startup already owns the exit."""
+    if error is not None and sys.exc_info() == (None, None, None):
+        raise error

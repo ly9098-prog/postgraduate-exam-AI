@@ -41,7 +41,8 @@ def install_child_ports(patch, root, state):
 def run_child():
     root, role = Path(os.environ["SIGNAL_TEST_ROOT"]), os.environ["SIGNAL_TEST_ROLE"]
     state = RolePorts()
-    registry_type, install_signals = bootstrap.TaskRegistry, bootstrap.install_role_signal_handlers
+    registry_type = runtime_task_registry.TaskRegistry
+    install_signals = bootstrap.install_role_signal_handlers
 
     def registry():
         instance = registry_type()
@@ -54,7 +55,7 @@ def run_child():
 
     with MonkeyPatch.context() as patch:
         install_child_ports(patch, root, state)
-        patch.setattr(bootstrap, "TaskRegistry", registry)
+        patch.setattr(runtime_task_registry, "TaskRegistry", registry)
         patch.setattr(bootstrap, "install_role_signal_handlers", signals)
         runpy.run_module("app." + role + "_main", run_name="__main__")
         assert bootstrap.settings.PROCESS_ROLE == os.environ["PROCESS_ROLE"] == role

@@ -27,11 +27,11 @@ async def test_http_scheduler_startup_keeps_entrypoint_failure_boundary(
             async with main.lifespan(main.app):
                 pytest.fail("fatal scheduler startup must not yield")
         assert (caught.value.__cause__ if wrapped else caught.value) is error
-        assert "formula.stop" not in runtime.events and "db.dispose" not in runtime.events
+        assert "formula.stop" in runtime.events and "db.dispose" in runtime.events
         assert [task.get_name() for task in runtime.tasks] == [
             "event-loop-lag-monitor", "pipeline-dispatcher-v2", "task-reaper-v2", "scheduler-heartbeat",
         ]
-        assert all(not task.done() for task in runtime.tasks)
+        assert all(task.done() for task in runtime.tasks)
     else:
         async with main.lifespan(main.app):
             await asyncio.sleep(0)

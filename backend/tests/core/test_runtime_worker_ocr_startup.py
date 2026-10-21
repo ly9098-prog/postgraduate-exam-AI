@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.services.runtime_ocr_startup import HttpOcrResources
 from tests.core.runtime_worker_ocr_probe import worker_ocr_operation
 
 IMPORTS = [
@@ -24,6 +25,7 @@ def ports(monkeypatch):
     state = SimpleNamespace(
         events=events, imports=imports, failures=failures, config=config,
         profile=object(), worker=object(), gateway=object(), logger=Mock(), published=None,
+        resources=HttpOcrResources(),
     )
 
     def call(name, result):
@@ -59,13 +61,15 @@ def ports(monkeypatch):
 
 
 def test_worker_assembly_uses_exact_pre_resolved_profile_and_no_shared_client_argument(ports):
-    assert ports.initialize(ports.profile, ports.logger) is None
+    assert ports.initialize(ports.profile, ports.logger, ports.resources) is None
     assert ports.events == [
         ("config", (), {}), ("worker", (ports.config,), {}),
         ("gateway", (), {"mode": "gateway", "profile": ports.profile, "worker_client": ports.worker}),
         ("publish", (ports.gateway,), {}),
     ]
     assert ports.published is ports.gateway and ports.imports == IMPORTS
+    assert ports.resources.gateway is ports.gateway
+    assert ports.resources.worker_client is None
     ports.logger.info.assert_called_once_with(
         "OCR Gateway initialized (role=worker exec_backend=%s profile=%s)",
         "synthetic-remote", "synthetic-config-profile",
@@ -74,7 +78,7 @@ def test_worker_assembly_uses_exact_pre_resolved_profile_and_no_shared_client_ar
 
 def test_disabled_worker_still_imports_original_modules_without_constructing_or_publishing(ports):
     ports.config.enabled = False
-    ports.initialize(ports.profile, ports.logger)
+    ports.initialize(ports.profile, ports.logger, ports.resources)
     assert ports.events == [("config", (), {})]
     assert ports.imports == IMPORTS[:3] and ports.published is None
     ports.logger.info.assert_called_once_with("OCR not enabled on worker, skipping Gateway")
@@ -86,7 +90,7 @@ def test_worker_import_and_construction_errors_propagate_at_original_boundaries(
     error = error_type("synthetic worker OCR failure")
     ports.failures[failed] = error
     with pytest.raises(error_type) as caught:
-        ports.initialize(ports.profile, ports.logger)
+        ports.initialize(ports.profile, ports.logger, ports.resources)
     assert caught.value is error and ports.published is None
     if failed in OPERATIONS:
         assert [event[0] for event in ports.events] == OPERATIONS[:OPERATIONS.index(failed) + 1]
@@ -102,6 +106,20 @@ def test_worker_log_failure_preserves_completed_gateway_publication(ports, enabl
     error = RuntimeError("synthetic worker log failure")
     ports.logger.info.side_effect = error
     with pytest.raises(RuntimeError) as caught:
-        ports.initialize(ports.profile, ports.logger)
+        ports.initialize(ports.profile, ports.logger, ports.resources)
     assert caught.value is error
     assert ports.published is (ports.gateway if enabled else None)
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+def test_gateway_construction_failure_retains_worker_client_for_owner_cleanup(
+    ports, error_type,
+):
+    error = error_type("synthetic gateway construction failure")
+    ports.failures["gateway"] = error
+    with pytest.raises(error_type) as caught:
+        ports.initialize(ports.profile, ports.logger, ports.resources)
+    assert caught.value is error
+    assert ports.resources.worker_client is ports.worker
+    assert ports.resources.gateway is None
+    assert ports.published is None

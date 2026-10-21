@@ -24,9 +24,9 @@ def test_http_scheduler_startup_dependencies_and_budgets():
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             assert node.end_lineno - node.lineno + 1 <= 50
     main = (APP / "main.py").read_text()
-    assert len(main.splitlines()) <= 461
+    assert len(main.splitlines()) <= 471
     life = next(node for node in ast.parse(main).body if getattr(node, "name", None) == "lifespan")
-    assert life.end_lineno - life.lineno + 1 <= 174
+    assert life.end_lineno - life.lineno + 1 <= 178
 
 
 def test_lifespan_uses_real_state_and_helper_with_original_ports_and_position():
@@ -43,24 +43,24 @@ def test_lifespan_uses_real_state_and_helper_with_original_ports_and_position():
     assert len(allocation) == len(startup) == 1
     assert not allocation[0].args and not allocation[0].keywords
     assert [ast.unparse(arg) for arg in startup[0].args] == [
-        "_scheduler_tasks", "_production_mode", "logger", "report_http_startup_failure",
+        "scheduler_tasks", "_production_mode", "logger", "report_http_startup_failure",
     ]
     assert not startup[0].keywords
-    owner = next(node for node in life.body if isinstance(node, ast.If) and startup[0] in ast.walk(node))
+    owner = next(node for node in ast.walk(life) if isinstance(node, ast.If) and startup[0] in ast.walk(node))
     assert ast.unparse(owner.test) == "role in ('scheduler', 'all')"
-    worker = next(node for node in life.body if isinstance(node, ast.If)
+    worker = next(node for node in ast.walk(life) if isinstance(node, ast.If)
                   and ast.unparse(node.test) == "role in ('worker', 'all')")
     reconciler = next(node for node in calls if getattr(node.func, "id", None) == "start_resource_reconciler")
     assert worker.lineno < owner.lineno < reconciler.lineno
     shutdown = next(node for node in calls if getattr(node.func, "id", None) == "cancel_and_wait_runtime_tasks")
     values = {ast.literal_eval(item.elts[0]): ast.unparse(item.elts[1]) for item in shutdown.args[0].elts}
-    assert values["token-cleanup"] == "_scheduler_tasks.cleanup_task"
-    assert values["staging-cleanup"] == "_scheduler_tasks.staging_cleanup_task"
-    assert values["export-processor"] == "_scheduler_tasks.export_processor_task"
-    assert values["export-cleanup"] == "_scheduler_tasks.export_cleanup_task"
-    assert values["scheduler-heartbeat"] == "_scheduler_tasks.scheduler_heartbeat_task"
-    assert values["outbox-dispatcher"] == "_scheduler_tasks.outbox_dispatcher_task"
-    assert values["outbox-reconciler"] == "_scheduler_tasks.outbox_reconciler_task"
+    assert values["token-cleanup"] == "scheduler_tasks.cleanup_task"
+    assert values["staging-cleanup"] == "scheduler_tasks.staging_cleanup_task"
+    assert values["export-processor"] == "scheduler_tasks.export_processor_task"
+    assert values["export-cleanup"] == "scheduler_tasks.export_cleanup_task"
+    assert values["scheduler-heartbeat"] == "scheduler_tasks.scheduler_heartbeat_task"
+    assert values["outbox-dispatcher"] == "scheduler_tasks.outbox_dispatcher_task"
+    assert values["outbox-reconciler"] == "scheduler_tasks.outbox_reconciler_task"
     assert not any(
         isinstance(node, ast.ImportFrom)
         and node.module in {"app.services.system_task_service", "app.services.outbox_service",

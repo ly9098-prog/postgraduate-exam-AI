@@ -14,7 +14,7 @@ from tests.core.http_lifespan_ports import runtime as runtime
 ])
 @pytest.mark.parametrize("production", [False, True])
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
-async def test_partial_ocr_startup_keeps_original_resource_cleanup_boundary(
+async def test_partial_ocr_startup_cleans_created_resources_and_preserves_error(
     runtime, monkeypatch, failed, production, error_type,
 ):
     monkeypatch.setattr(main, "_production_mode", production)
@@ -28,15 +28,25 @@ async def test_partial_ocr_startup_keeps_original_resource_cleanup_boundary(
             async with main.lifespan(main.app):
                 pytest.fail("fatal startup must not yield")
         assert (caught.value.__cause__ if wrapped else caught.value) is error
-        assert "ocr.client.close" not in runtime.events
-        assert "ocr.gateway.stop" not in runtime.events
-        assert "db.dispose" not in runtime.events
+        assert ("ocr.client.close" in runtime.events) is (
+            failed in {"ocr.worker.create", "ocr.gateway.create", "ocr.gateway.publish"}
+        )
+        assert ("ocr.worker.stop" in runtime.events) is (
+            failed == "ocr.gateway.create"
+        )
+        assert ("ocr.gateway.stop" in runtime.events) is (
+            failed == "ocr.gateway.publish"
+        )
+        assert "db.dispose" in runtime.events
         assert [task.get_name() for task in runtime.tasks] == ["event-loop-lag-monitor"]
-        assert not runtime.tasks[0].done()
+        assert runtime.tasks[0].done()
     else:
         async with main.lifespan(main.app):
             await asyncio.sleep(0)
         assert ("ocr.client.close" in runtime.events) is (failed != "ocr.client.create")
+        assert ("ocr.worker.stop" in runtime.events) is (
+            failed == "ocr.gateway.create"
+        )
         assert ("ocr.gateway.stop" in runtime.events) is (failed == "ocr.gateway.publish")
         assert "db.dispose" in runtime.events
         assert all(task.done() for task in runtime.tasks)

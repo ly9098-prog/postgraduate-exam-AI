@@ -50,28 +50,41 @@ async def test_full_role_lifecycle_owns_real_tasks_and_original_resource_order(r
 @pytest.mark.parametrize("role", ["worker", "scheduler"])
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
 @pytest.mark.parametrize("stage", ["config.async", "role.init", "signals.install"])
-async def test_existing_initialization_failure_does_not_run_shutdown_finally(role_runtime, role, error_type, stage):
+async def test_initialization_failure_after_registry_cleans_role_and_preserves_error(
+    role_runtime, role, error_type, stage,
+):
     state = role_runtime
     state.cloud = True
-    failed = ("prewarm.start" if role == "worker" else "metrics.start") if stage == "role.init" else stage
+    failed = {
+        "config.async": "config.async",
+        "role.init": "prewarm.start" if role == "worker" else "audit.start",
+        "signals.install": "signals.install",
+    }[stage]
     error = error_type("synthetic full role startup error")
     state.failures[failed] = error
-    wrapped = stage == "role.init" and error_type is RuntimeError
-    with pytest.raises(SystemError if wrapped else error_type) as caught:
+    if stage == "config.async":
+        expected = error_type
+    elif error_type is asyncio.CancelledError:
+        expected = asyncio.CancelledError
+    elif role == "worker":
+        expected = SystemError
+    else:
+        expected = SystemError
+    with pytest.raises(expected) as caught:
         await bootstrap._run_role_async(role)
-    assert (caught.value.__cause__ if wrapped else caught.value) is error
-    assert not [event for event in state.events if event in COMMON_STOP]
+    assert (caught.value.__cause__ if expected is SystemError else caught.value) is error
     if stage == "config.async":
         assert not state.registries
+        assert not [event for event in state.events if event in COMMON_STOP]
     else:
         assert len(state.registries) == 1
-        assert all(not item._task.done() for item in state.registries[0]._tasks)
-    # Fixture cleanup is separate from the production path's missing finally.
+        assert all(item._task.done() for item in state.registries[0]._tasks)
+        assert [event for event in state.events if event in COMMON_STOP] == COMMON_STOP
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("role", ["worker", "scheduler"])
-async def test_current_signal_wait_task_cancellation_does_not_enter_shutdown(role_runtime, role):
+async def test_signal_wait_cancellation_cleans_role_and_propagates(role_runtime, role):
     state = role_runtime
     state.auto_stop = False
     runner = asyncio.create_task(bootstrap._run_role_async(role))
@@ -80,12 +93,44 @@ async def test_current_signal_wait_task_cancellation_does_not_enter_shutdown(rol
         runner.cancel()
         with pytest.raises(asyncio.CancelledError):
             await runner
-        assert not [event for event in state.events if event in COMMON_STOP]
-        assert all(not item._task.done() for item in state.registries[0]._tasks)
+        assert [event for event in state.events if event in COMMON_STOP] == COMMON_STOP
+        assert all(item._task.done() for item in state.registries[0]._tasks)
     finally:
         if not runner.done():
             runner.cancel()
         await asyncio.gather(runner, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_role_cleanup_error_does_not_override_post_startup_error(
+    role_runtime, error_type,
+):
+    state = role_runtime
+    startup_error = error_type("synthetic role startup error")
+    state.failures["prewarm.start"] = startup_error
+    state.failures["pdf.stop"] = RuntimeError("synthetic cleanup failure")
+    expected = error_type if error_type is asyncio.CancelledError else SystemError
+    with pytest.raises(expected) as caught:
+        await bootstrap._run_role_async("worker")
+    assert (
+        caught.value.__cause__ if expected is SystemError else caught.value
+    ) is startup_error
+    assert [event for event in state.events if event in COMMON_STOP] == COMMON_STOP
+    assert state.logger.warning.called
+
+
+@pytest.mark.asyncio
+async def test_original_system_error_is_rethrown_without_rewrapping(role_runtime):
+    state = role_runtime
+    error = SystemError("synthetic original system error")
+    state.failures["prewarm.start"] = error
+
+    with pytest.raises(SystemError) as caught:
+        await bootstrap._run_role_async("worker")
+
+    assert caught.value is error
+    assert [event for event in state.events if event in COMMON_STOP] == COMMON_STOP
 
 
 @pytest.mark.asyncio
@@ -127,7 +172,9 @@ async def test_unknown_standalone_role_is_rejected_after_common_checks(role_runt
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failed", ["ocr.worker.create", "ocr.gateway.create", "ocr.gateway.publish"])
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
-async def test_worker_partial_ocr_failure_keeps_runner_error_and_no_shutdown_boundary(role_runtime, failed, error_type):
+async def test_worker_partial_ocr_failure_runs_reachable_role_cleanup_and_keeps_error(
+    role_runtime, failed, error_type,
+):
     state = role_runtime
     state.cloud, state.ocr_enabled = True, True
     error = error_type("synthetic partial worker OCR startup failure")
@@ -139,8 +186,82 @@ async def test_worker_partial_ocr_failure_keeps_runner_error_and_no_shutdown_bou
     assert ("ocr.gateway.publish" in state.events) is (failed == "ocr.gateway.publish")
     assert (state.gateway is not None) is (failed == "ocr.gateway.publish")
     assert "orphans.start" not in state.events and "signals.install" not in state.events
-    assert not [event for event in state.events if event in COMMON_STOP]
+    expected = [event for event in COMMON_STOP if event != "ocr.executor.stop"]
+    assert [event for event in state.events if event in COMMON_STOP] == expected
+    assert ("ocr.gateway.stop" in state.events) is (failed == "ocr.gateway.publish")
+    assert ("ocr.worker.stop" in state.events) is (failed == "ocr.gateway.create")
+    assert "ocr.gateway.global" not in state.events
     assert len(state.registries) == 1 and not state.registries[0]._tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_worker_client_cleanup_failure_does_not_replace_gateway_startup_error(
+    role_runtime, error_type,
+):
+    state = role_runtime
+    state.cloud, state.ocr_enabled = True, True
+    startup_error = error_type("synthetic gateway construction failure")
+    state.failures["ocr.gateway.create"] = startup_error
+    state.failures["ocr.worker.stop"] = RuntimeError("synthetic worker close failure")
+    expected = asyncio.CancelledError if error_type is asyncio.CancelledError else SystemError
+    with pytest.raises(expected) as caught:
+        await bootstrap._run_role_async("worker")
+    assert (
+        caught.value.__cause__ if expected is SystemError else caught.value
+    ) is startup_error
+    assert "ocr.worker.stop" in state.events
+    assert "ocr.gateway.global" not in state.events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("startup", ["error", "cancel"])
+@pytest.mark.parametrize("cleanup", ["error", "cancel"])
+async def test_startup_error_survives_cleanup_failure_and_cancellation(
+    role_runtime, startup, cleanup,
+):
+    state = role_runtime
+    state.cloud, state.ocr_enabled = True, True
+    startup_error = {
+        "error": RuntimeError("synthetic startup failure"),
+        "cancel": asyncio.CancelledError("synthetic startup cancellation"),
+    }[startup]
+    cleanup_error = {
+        "error": RuntimeError("synthetic cleanup failure"),
+        "cancel": asyncio.CancelledError("synthetic cleanup cancellation"),
+    }[cleanup]
+    state.failures.update({
+        "ocr.gateway.create": startup_error,
+        "ocr.worker.stop": cleanup_error,
+    })
+    expected = asyncio.CancelledError if startup == "cancel" else SystemError
+    with pytest.raises(expected) as caught:
+        await bootstrap._run_role_async("worker")
+    if startup == "cancel":
+        assert caught.value is startup_error
+    else:
+        assert caught.value.__cause__ is startup_error
+    assert state.events.count("ocr.worker.stop") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_startup_cancellation_is_not_replaced_by_cleanup_error(
+    role_runtime, error_type,
+):
+    state = role_runtime
+    state.cloud, state.ocr_enabled = True, True
+    startup_error = error_type("synthetic startup cancellation")
+    logger_error = RuntimeError("synthetic startup logger failure")
+    state.logger.critical.side_effect = logger_error
+    state.failures["ocr.gateway.create"] = startup_error
+    expected = asyncio.CancelledError if error_type is asyncio.CancelledError else SystemError
+    with pytest.raises(expected) as caught:
+        await bootstrap._run_role_async("worker")
+    if error_type is asyncio.CancelledError:
+        assert caught.value is startup_error
+    else:
+        assert caught.value.__cause__ is startup_error
 
 
 @pytest.mark.asyncio

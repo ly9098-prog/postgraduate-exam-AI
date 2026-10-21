@@ -23,18 +23,24 @@ def test_task_registry_has_no_application_dependencies_and_bounded_methods():
 
 def test_bootstrap_uses_actual_registry_and_remains_task_owner():
     from app.core import bootstrap, runtime_task_registry
+    from app.core import standalone_runtime_resources
 
-    assert bootstrap.TaskRegistry is runtime_task_registry.TaskRegistry
+    assert standalone_runtime_resources.StandaloneRuntimeResources
     tree = ast.parse((APP / "core/bootstrap.py").read_text())
     assert not any(isinstance(node, ast.ClassDef) and node.name in {"ManagedTask", "TaskRegistry"} for node in tree.body)
     runner = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_run_role_async")
     constructors = [
         node for node in ast.walk(runner) if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name) and node.func.id == "TaskRegistry"
+        and getattr(node.func, "id", None) == "StandaloneRuntimeResources"
     ]
-    assert len(constructors) == 1 and not constructors[0].args and not constructors[0].keywords
-    for name in ["_init_worker_dependencies", "_init_scheduler_dependencies", "shutdown_role"]:
-        assert any(isinstance(node, ast.Call) and getattr(node.func, "id", None) == name for node in ast.walk(runner))
+    assert len(constructors) == 1
+    assert [ast.unparse(arg) for arg in constructors[0].args] == ["role"]
+    assert not constructors[0].keywords
+    assert any(
+        isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "_run_standalone_role"
+        for node in ast.walk(runner)
+    )
     assert runtime_task_registry.logger.name == "postgraduate-ai.bootstrap"
 
 

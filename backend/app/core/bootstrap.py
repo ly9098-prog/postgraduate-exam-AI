@@ -13,7 +13,12 @@ import os
 import sys
 
 from app.core.config import settings
+from app.core.runtime_resource_startup import initialize_worker_executors
 from app.core.runtime_signals import install_role_signal_handlers
+from app.core.runtime_startup_cleanup import (
+    cleanup_failed_startup,
+    rethrow_startup_failure,
+)
 from app.core.runtime_task_registry import TaskRegistry
 from app.core.standalone_runtime_policy import (
     STANDALONE_ROLES,
@@ -21,6 +26,7 @@ from app.core.standalone_runtime_policy import (
     ensure_worker_scratch_directory,
     reject_standalone_http_launch,
 )
+from app.core.standalone_runtime_resources import StandaloneRuntimeResources
 from app.core.standalone_runtime_shutdown import (
     close_standalone_runtime_connections,
     shutdown_standalone_formula_pool,
@@ -50,7 +56,9 @@ logger = logging.getLogger("postgraduate-ai.bootstrap")
 # ── Role-specific initializers (lazy imports) ──
 
 
-async def _init_worker_dependencies(registry: TaskRegistry) -> None:
+async def _init_worker_dependencies(
+    resources: StandaloneRuntimeResources,
+) -> None:
     """Initialize worker-specific: OCR Gateway, executors, dispatcher, reaper, AI prewarm.
 
     Called at startup; raises on failure in production.
@@ -61,22 +69,13 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
     # Worker scratch dir
     ensure_worker_scratch_directory(settings)
 
-    # Role-aware bounded executors
-    from app.core.executor_registry import init_executor_registry
-    from app.core.executors import init_executors_for_role
-
-    executors = init_executors_for_role(
-        "worker",
-        is_production=(profile == DeploymentProfile.CLOUD_API),
-    )
-    init_executor_registry(executors)
-    logger.info(
-        "Worker executors initialized: %s", {k: v.name for k, v in executors.items()}
+    initialize_worker_executors(
+        is_production=profile == DeploymentProfile.CLOUD_API
     )
 
     # OCR Gateway (external HTTP client only — no local Paddle).
     # Let the worker client own its AsyncClient so gateway.shutdown() closes it.
-    initialize_worker_ocr_gateway(profile, logger)
+    initialize_worker_ocr_gateway(profile, logger, resources.ocr)
 
     # Staging orphan reconciler
     from app.core.resource_guard import resource_guard
@@ -86,8 +85,8 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
     # Pipeline dispatcher + reaper (v2)
     from app.services.task_queue_worker import run_dispatcher_v2, run_reaper_loop_v2
 
-    registry.create(run_dispatcher_v2(), "pipeline-dispatcher-v2")
-    registry.create(run_reaper_loop_v2(), "task-reaper-v2")
+    resources.registry.create(run_dispatcher_v2(), "pipeline-dispatcher-v2")
+    resources.registry.create(run_reaper_loop_v2(), "task-reaper-v2")
 
     # AI prewarm worker
     from app.services.ai_prewarm_worker import start_worker
@@ -99,7 +98,6 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
         settings.WORKER_CONCURRENCY,
         profile,
     )
-
 
 async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     """Initialize scheduler-specific: periodic tasks, cleanup loops."""
@@ -156,12 +154,16 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 # ── Shutdown ──
 
 
-async def shutdown_role(role: str, registry: TaskRegistry) -> None:
+async def shutdown_role(
+    resources: StandaloneRuntimeResources,
+) -> None:
     """Ordered shutdown of all role-specific infrastructure.
 
     Call from the role's shutdown path (FastAPI lifespan finally block
     or standalone process signal handler).
     """
+    role = resources.role
+    registry = resources.registry
     logger.info("=== Shutdown sequence started (role=%s) ===", role)
 
     # 1. Worker: graceful drain
@@ -177,7 +179,7 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
     await shutdown_standalone_formula_pool(logger)
 
     # 5. OCR infrastructure (role-aware)
-    await shutdown_standalone_ocr(role, logger)
+    await shutdown_standalone_ocr(role, logger, ocr_resources=resources.ocr)
 
     # 6. BoundedExecutors shutdown
     await shutdown_standalone_render_resources(logger)
@@ -188,6 +190,53 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
     logger.info("=== Shutdown sequence completed (role=%s) ===", role)
 
 
+async def _run_standalone_role(
+    resources: StandaloneRuntimeResources,
+) -> None:
+    role = resources.role
+    registry = resources.registry
+    started = False
+
+    async def cleanup() -> None:
+        await shutdown_role(resources)
+
+    try:
+        if role not in STANDALONE_ROLES:
+            raise ValueError(f"Unknown standalone role: {role!r}")
+        if role == "worker":
+            await _init_worker_dependencies(resources)
+        elif role == "scheduler":
+            await _init_scheduler_dependencies(registry)
+        started = True
+        logger.info("Role %s fully initialized — running event loop", role)
+        stop_event = asyncio.Event()
+        install_role_signal_handlers(stop_event, logger)
+        await stop_event.wait()
+    except asyncio.CancelledError:
+        if resources.role not in STANDALONE_ROLES:
+            raise
+        await cleanup_failed_startup(cleanup, role=role, logger=logger)
+        raise
+    except SystemError:
+        if resources.role not in STANDALONE_ROLES:
+            raise
+        await cleanup_failed_startup(cleanup, role=role, logger=logger)
+        raise
+    except Exception as e:
+        if role not in STANDALONE_ROLES:
+            logger.critical("Role %s initialization failed: %s", role, e)
+            raise SystemError(f"Role {role} initialization failed: {e}") from e
+        await rethrow_startup_failure(
+            e,
+            resources,
+            shutdown_role,
+            logger=logger,
+        )
+
+    if started:
+        await shutdown_role(resources)
+
+
 # ── Standalone process runner ──
 
 
@@ -196,10 +245,8 @@ async def _run_role_async(role: str) -> None:
     from app.core.logging_config import setup_logging
 
     setup_logging()
-
     logger.info("Starting 2240AI — role=%s env=%s", role, settings.APP_ENV)
 
-    # Validate production config
     from app.services.production_config_validator import (
         validate_production_config,
         validate_production_config_async,
@@ -207,58 +254,16 @@ async def _run_role_async(role: str) -> None:
 
     validate_production_config()
     await validate_production_config_async()
-
     from app.core.deployment_profile import detect_deployment_profile
 
     detect_deployment_profile()
-
     await sweep_staging_on_startup(logger)
-    # Create managed task registry
-    registry = TaskRegistry()
-
-    # Initialize role-specific dependencies
-    try:
-        if role == "worker":
-            await _init_worker_dependencies(registry)
-        elif role == "scheduler":
-            await _init_scheduler_dependencies(registry)
-        else:
-            raise ValueError(f"Unknown standalone role: {role!r}")
-    except SystemError:
-        raise
-    except Exception as e:
-        logger.critical("Role %s initialization failed: %s", role, e)
-        raise SystemError(f"Role {role} initialization failed: {e}") from e
-
-    logger.info(
-        "Role %s fully initialized — running event loop",
-        role,
-    )
-
-    # Wait for shutdown signal
-    stop_event = asyncio.Event()
-    install_role_signal_handlers(stop_event, logger)
-    await stop_event.wait()
-
-    await shutdown_role(role, registry)
+    resources = StandaloneRuntimeResources(role)
+    await _run_standalone_role(resources)
 
 
 def run_role(role: str) -> None:
-    """Run a standalone process role (worker or scheduler).
-
-    Sets ``PROCESS_ROLE``, validates environment, initializes dependencies,
-    runs the event loop, and performs graceful shutdown on SIGTERM/SIGINT.
-
-    Usage::
-
-        # In worker_main.py:
-        from app.core.bootstrap import run_role
-        run_role("worker")
-
-        # In scheduler_main.py:
-        from app.core.bootstrap import run_role
-        run_role("scheduler")
-    """
+    """Run a worker or scheduler role without starting an HTTP listener."""
     if role not in STANDALONE_ROLES:
         raise ValueError(f"Unknown standalone role: {role!r}")
     reject_standalone_http_launch(role)

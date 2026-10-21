@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.runtime_ocr_startup import HttpOcrResources
 from tests.core.standalone_role_ports import role_runtime as role_runtime
 from tests.core.standalone_shutdown_probe import shutdown_operations
 
@@ -182,3 +183,67 @@ async def test_close_warning_failure_propagates_before_following_resources(opera
         await operations.close_standalone_runtime_connections(state.logger)
     assert caught.value is error
     assert state.events == ["queue.close"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gateway", ["absent", "retained"])
+async def test_explicit_ocr_resources_close_retained_worker_without_global_fallback(
+    operations, role_runtime, gateway,
+):
+    state = role_runtime
+    worker = SimpleNamespace(shutdown=state.asynchronous("ocr.worker.stop"))
+    resources = HttpOcrResources(
+        gateway=(SimpleNamespace(shutdown=state.asynchronous("ocr.gateway.stop"))
+                 if gateway == "retained" else None),
+        worker_client=worker,
+    )
+    await operations.shutdown_standalone_ocr(
+        "worker", state.logger, ocr_resources=resources,
+    )
+    expected = ["ocr.executor.stop"]
+    if gateway == "retained":
+        expected.append("ocr.gateway.stop")
+    expected.append("ocr.worker.stop")
+    assert state.events == expected
+    assert resources.worker_client is None
+    state.logger.warning.assert_not_called()
+    state.logger.exception.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_explicit_ocr_cancellation_clears_retained_worker_and_propagates(
+    operations, role_runtime,
+):
+    state = role_runtime
+    error = asyncio.CancelledError("synthetic gateway cancellation")
+    resources = HttpOcrResources(
+        gateway=SimpleNamespace(shutdown=state.asynchronous("ocr.gateway.stop")),
+        worker_client=SimpleNamespace(shutdown=state.asynchronous("ocr.worker.stop")),
+    )
+    state.failures["ocr.gateway.stop"] = error
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await operations.shutdown_standalone_ocr(
+            "worker", state.logger, ocr_resources=resources,
+        )
+    assert caught.value is error
+    assert "ocr.worker.stop" not in state.events
+    assert resources.worker_client is None
+
+
+@pytest.mark.asyncio
+async def test_explicit_ocr_resources_close_both_when_gateway_close_fails(
+    operations, role_runtime,
+):
+    state = role_runtime
+    resources = HttpOcrResources(
+        gateway=SimpleNamespace(shutdown=state.asynchronous("ocr.gateway.stop")),
+        worker_client=SimpleNamespace(shutdown=state.asynchronous("ocr.worker.stop")),
+    )
+    state.failures["ocr.gateway.stop"] = RuntimeError("synthetic gateway close failure")
+    await operations.shutdown_standalone_ocr(
+        "worker", state.logger, ocr_resources=resources,
+    )
+    assert [event for event in state.events if event.startswith("ocr.")] == [
+        "ocr.executor.stop", "ocr.gateway.stop", "ocr.worker.stop",
+    ]
+    assert resources.worker_client is None

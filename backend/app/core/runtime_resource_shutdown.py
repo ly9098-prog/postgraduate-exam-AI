@@ -12,6 +12,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("postgraduate-ai")
 
 
+def _warn_safely(message: str, *args: object, exc_info: bool = False) -> None:
+    try:
+        logger.warning(message, *args, exc_info=exc_info)
+    except (Exception, asyncio.CancelledError):
+        pass
+
+
 async def shutdown_render_resources() -> None:
     try:
         from app.core.executor_registry import (
@@ -128,18 +135,50 @@ async def shutdown_ocr_executor() -> None:
 
 async def shutdown_http_ocr_gateway(resources: HttpOcrResources) -> None:
     """Shut down the shared OCR gateway and httpx client after the executor."""
+    shutdown_error: Exception | None = None
+    shutdown_cancelled: asyncio.CancelledError | None = None
     try:
         from app.features.ocr_gateway import OCRGateway  # noqa: F401
 
         if resources.gateway is not None:
-            await resources.gateway.shutdown()
-            logger.info("OCR Gateway shut down")
+            try:
+                await resources.gateway.shutdown()
+                logger.info("OCR Gateway shut down")
+            except asyncio.CancelledError as e:
+                shutdown_cancelled = e
+            except Exception as e:
+                shutdown_error = e
+                _warn_safely("OCR Gateway shutdown error: %s", e)
     except Exception as e:
-        logger.warning("OCR Gateway shutdown error: %s", e)
+        shutdown_error = shutdown_error or e
+        _warn_safely("OCR Gateway import error: %s", e)
+
+    if resources.worker_client is not None:
+        try:
+            await resources.worker_client.shutdown()
+            logger.info("OCR worker client shut down after partial startup")
+        except asyncio.CancelledError as e:
+            shutdown_cancelled = shutdown_cancelled or e
+        except Exception as e:
+            shutdown_error = shutdown_error or e
+            _warn_safely("OCR worker client shutdown error: %s", e)
+        finally:
+            resources.worker_client = None
 
     if resources.shared_http_client is not None:
-        await resources.shared_http_client.aclose()
-        logger.info("OCR shared httpx client closed")
+        try:
+            await resources.shared_http_client.aclose()
+            logger.info("OCR shared httpx client closed")
+        except asyncio.CancelledError as e:
+            shutdown_cancelled = shutdown_cancelled or e
+        except Exception as e:
+            _warn_safely("OCR shared httpx client close error: %s", e)
+            shutdown_error = shutdown_error or e
+
+    if shutdown_cancelled is not None:
+        raise shutdown_cancelled
+    if shutdown_error is not None:
+        raise shutdown_error
 
 
 def log_active_children() -> None:

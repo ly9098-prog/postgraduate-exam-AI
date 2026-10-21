@@ -22,6 +22,7 @@ class RolePorts:
         self.cloud = False
         self.ocr_enabled = False
         self.gateway = None
+        self.worker = None
         self.enqueue = None
         self.network = []
         self.logger = Mock()
@@ -61,9 +62,19 @@ class RolePorts:
         self.sync("ocr.gateway.create")()
         return SimpleNamespace(shutdown=self.asynchronous("ocr.gateway.stop"))
 
+    def make_worker(self, *args, **kwargs):
+        self.sync("ocr.worker.create")()
+        return SimpleNamespace(shutdown=self.asynchronous("ocr.worker.stop"))
+
     def publish_gateway(self, gateway):
         self.gateway = gateway
         self.sync("ocr.gateway.publish")()
+
+    def get_gateway(self):
+        if "ocr.gateway.stop" in self.failures:
+            self.events.append("ocr.gateway.stop")
+            raise self.failures["ocr.gateway.stop"]
+        return self.gateway
 
     def outbox(self, callback):
         self.enqueue = callback
@@ -73,7 +84,7 @@ class RolePorts:
 @pytest_asyncio.fixture
 async def role_runtime(monkeypatch, tmp_path):
     state = RolePorts()
-    registry_type = bootstrap.TaskRegistry
+    registry_type = runtime_task_registry.TaskRegistry
 
     def registry():
         instance = registry_type()
@@ -83,7 +94,7 @@ async def role_runtime(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(bootstrap, "logger", state.logger)
     monkeypatch.setattr(runtime_task_registry, "logger", state.logger)
-    monkeypatch.setattr(bootstrap, "TaskRegistry", registry)
+    monkeypatch.setattr(runtime_task_registry, "TaskRegistry", registry)
     monkeypatch.setattr(bootstrap, "install_role_signal_handlers", state.signal)
     monkeypatch.setattr(socket.socket, "connect", state.forbid_network)
     monkeypatch.setattr(socket.socket, "connect_ex", state.forbid_network)
@@ -155,8 +166,10 @@ def install_worker_ports(monkeypatch, state):
     modules = {
         "app.core.ocr_runtime_config": SimpleNamespace(get_runtime_config=config),
         "app.features.ocr_gateway": SimpleNamespace(OCRGateway=state.make_gateway),
-        "app.services.ocr_worker_client": SimpleNamespace(create_ocr_worker_client=state.sync("ocr.worker.create", object())),
-        "app.services.ocr_service": SimpleNamespace(set_gateway=state.publish_gateway, get_gateway=lambda: state.gateway),
+        "app.services.ocr_worker_client": SimpleNamespace(create_ocr_worker_client=state.make_worker),
+        "app.services.ocr_service": SimpleNamespace(
+            set_gateway=state.publish_gateway, get_gateway=state.get_gateway,
+        ),
         "app.services.ocr_executor_service": SimpleNamespace(ocr_executor=SimpleNamespace(shutdown=state.asynchronous("ocr.executor.stop"))),
         "app.services.task_queue_worker": SimpleNamespace(
             run_dispatcher_v2=lambda: state.loop("dispatcher"), run_reaper_loop_v2=lambda: state.loop("reaper"),

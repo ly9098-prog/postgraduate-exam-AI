@@ -115,7 +115,7 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 - 第四十七批 `pages/pomodoro/utils/hide-storage.js` 集中离页取消意图、确认持久化及运行快照构建，保留存储上下文、时钟取值和清理顺序。8 项模块测试、Page VM 46 项运行回归及 13,824 组完整旧/新 onHide 对照通过；生命周期局部有本地证据，确认操作、计时/画布和整个页面仍未治理完毕。
 
 - 本清单完成注册入口枚举和后端静态依赖基线，仍需逐用例核对全部消费者、事务/状态机和异常行为。阶段 0 的全量语义审查保持未完成。
-- 第六十三批确认 readiness 的既有判定缺口：`_check_alembic_head()` 返回 False 时 checks.alembic 被映射为 `stale`，关键失败列表仅接收 `unavailable`，其余依赖正常时仍返回 HTTP 200。已增加原行为刻画并单独登记；需要后续行为修复批次，不能在等价迁移中悄然改为 503。
+- 第六十三批登记 readiness 的 Alembic stale 缺口，第一百一十二阶段已按独立行为批次修复：`stale` 现纳入关键失败，依赖检查命中时返回 HTTP 503；生产模式仍隐藏 checks 明细。
 - 第六十五批核实旧 SSE `active` 计数仅在连接开启时刷新，关闭时只更新 per-user 连接表；`sse_active_connections` 则每次采样重新求和。迁移保留这两个现有口径，未把共享计数所有权收敛当作活动快照刷新缺口已修复。
 - 上表的“待核查/待迁移”必须有代码与回归证据后才能改为完成；行数下降、文件移动、AST 解析成功均不能单独满足治理验收。
 - PostgreSQL/Redis、OCR/AI 外部服务、真实后台浏览器与微信编译/模拟器/真机没有在本批运行。高风险迁移须另补相应测试环境与故障证据。
@@ -257,3 +257,5 @@ node miniprogram/tests/test-pomodoro-module-boundaries.js
 第一百零七批（2026-10-21）scored两级补齐编排迁至practice/scored_fallback_flow.run_scored_fallback，caller通过ScoredFallbackRequest显式传原query/merge/metadata/revision/sampler端口与基础subject条件；module保留level 3/4、每级重新计算remaining、首次随机补齐含excluded_sub、最终放宽历史条件及两条去重策略。模块98/函数8、22、22，practice_service4170/入口144；图576模块/2250边/零循环/反向API。新增2项flow直接契约覆盖base→subject→revision→排除→可选excluded顺序、remaining及两次merge口径，3项flow架构门禁入CI，精确检查17个入口端口与条件AST并递归拒绝DB持久化调用；旧scored架构门禁跟随真实flow消费者。首次审查指出的base_conditions与request.db.execute守卫缺口已修正。定向68、练习/API混合206通过；最终原YAML静态2,067（2既有警告）/readiness69/云OCR30通过；严格Ruff/全应用Ruff/compileall/diff/CI路径/33保护哈希通过。真实PG/外部服务未验收。
 
 第一百零八批（2026-10-21）smart scored满额/缺口补充编排迁至practice/smart_scored_supplement.run_scored_supplement，ScoredSupplementRequest显式携带17个参数/端口，模块保留原scored优先、remaining计算、exclude_ids、合并后截断、普通异常返回None继续内联weakness路径及取消传播；查询、推荐提供者、合并、最终日志和事务仍由practice_service拥有，模块无I/O依赖。模块100/函数49、16，practice_service4132/入口446；图577模块/2251边/零循环/反向API。新增4项完整入口契约与3项架构/新进程门禁入CI，修复旧smart/path异步scalar、真实patch目标与sequential替身；知识路径在练习过滤前写日志/提交请求会话的既有缺陷仍单列。定向11、修复旧子集8、练习/API混合270通过；最终原YAML静态2,075（2既有警告）/readiness69/云OCR30通过；严格Ruff/全应用Ruff/compileall/diff/CI路径/33保护哈希通过。真实PG/外部推荐服务未验收。
+
+第一百一十二阶段（2026-10-22）运行时启动/关闭失败边界：HTTP lifespan 以同一 try/finally 覆盖 startup 与 yield，yield 前 db/executor/OCR 失败也走有序清理，已有启动异常不被清理错误或清理取消覆盖；standalone 资源拆为 `StandaloneRuntimeResources(role, registry, ocr)`，worker OCR client 在 gateway 构造窗口保留并按自身 shutdown 关闭，gateway 普通失败或取消不跳过暂存 worker/shared client，显式 resources 不回落全局 singleton；新增 `runtime_startup_cleanup` 统一保留原失败及 SystemError 身份。readiness 将 Alembic stale 作为关键失败返回 503，生产 checks 继续脱敏。OCR shutdown 定向 47 项、全量 architecture 255 项通过；tests/core 为 1,620 passed、4 skipped、3 failed，后者为交接既有 safe_remote_fetch/staging orphan 用例失败。Ruff、compileall、diff 通过；本轮未重新执行 33 路径哈希核对；未运行真实 PostgreSQL/Redis/OCR/AI、生产退出或客户端验收。
