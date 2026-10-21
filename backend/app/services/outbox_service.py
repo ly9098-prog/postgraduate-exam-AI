@@ -88,6 +88,25 @@ def _normalize_outbox_contract(
     return version
 
 
+def _payload_with_trace(payload: dict[str, Any]) -> dict[str, Any]:
+    """Copy a payload and attach current request correlation metadata."""
+    persisted_payload = dict(payload)
+    try:
+        from app.core.log_context import get_log_context
+
+        ctx = get_log_context()
+        trace_meta = {
+            key: str(ctx.get(key))
+            for key in ("trace_id", "request_id")
+            if ctx.get(key) not in (None, "", "-")
+        }
+        if trace_meta and "_trace" not in persisted_payload:
+            persisted_payload["_trace"] = trace_meta
+    except Exception:
+        pass
+    return persisted_payload
+
+
 # ── Outbox Service ──
 
 
@@ -131,28 +150,70 @@ async def create_outbox(
                 task_id,
             )
             return existing_row
-        raise ValueError(
-            f"Non-terminal outbox record exists for task_id={task_id} "
-            f"status={existing_row.status}"
-        )
+        # Answer projection task IDs are derived from the practice-record
+        # primary key. SQLite can reuse an ID after the source row is deleted,
+        # leaving a non-terminal outbox row that would otherwise make all future
+        # submissions for that ID fail. The source row is the authority; inspect
+        # the database rather than relying on the transaction-local ID allocation.
+        if task_type == "answer_projection":
+            from app.models.practice_record import PracticeRecord
+
+            source_record_id = int(payload.get("practice_record_id") or 0)
+            source_record = (
+                await db.execute(
+                    select(
+                        PracticeRecord.id,
+                        PracticeRecord.created_at,
+                    ).where(PracticeRecord.id == source_record_id)
+                )
+            ).one_or_none()
+            existing_created_at = existing_row.created_at
+            source_is_newer_than_outbox = (
+                source_record is not None
+                and source_record[1] is not None
+                and existing_created_at is not None
+                and source_record[1] > existing_created_at
+            )
+            if source_record is not None and not source_is_newer_than_outbox:
+                raise ValueError(
+                    f"Non-terminal outbox record exists for task_id={task_id} "
+                    f"status={existing_row.status}"
+                )
+            persisted_payload = _payload_with_trace(payload)
+            existing_row.payload = {
+                **persisted_payload,
+                "recovered_from_orphan": {
+                    "practice_record_id": source_record_id,
+                    "outbox_id": int(existing_row.id),
+                },
+            }
+            existing_row.schema_version = effective_schema_version
+            existing_row.status = "pending"
+            existing_row.lease_token = None
+            existing_row.lease_expires_at = None
+            existing_row.published_at = None
+            existing_row.retry_count = 0
+            existing_row.error_message = (
+                f"rebound orphan: practice record {source_record_id} was reissued"
+            )
+            existing_row.updated_at = utcnow()
+            await db.flush()
+            logger.warning(
+                "Rebound orphan answer projection outbox: task_id=%s record_id=%s",
+                task_id,
+                source_record_id,
+            )
+            return existing_row
+        else:
+            raise ValueError(
+                f"Non-terminal outbox record exists for task_id={task_id} "
+                f"status={existing_row.status}"
+            )
 
     # Persist correlation metadata with the transactional outbox record. The
     # dispatcher runs in another background task/process, so ContextVar state
     # from the originating HTTP request is otherwise unavailable at publish time.
-    persisted_payload = dict(payload)
-    try:
-        from app.core.log_context import get_log_context
-
-        ctx = get_log_context()
-        trace_meta = {
-            key: str(ctx.get(key))
-            for key in ("trace_id", "request_id")
-            if ctx.get(key) not in (None, "", "-")
-        }
-        if trace_meta and "_trace" not in persisted_payload:
-            persisted_payload["_trace"] = trace_meta
-    except Exception:
-        pass
+    persisted_payload = _payload_with_trace(payload)
 
     outbox = TaskOutbox(
         task_id=task_id,

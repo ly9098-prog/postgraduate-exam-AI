@@ -360,6 +360,19 @@ async def _china_date_expr(db: AsyncSession, column):
     return cast(column + text("INTERVAL '8 hours'"), SQLDate)
 
 
+async def _start_explicit_transaction(db: AsyncSession) -> None:
+    """Start an outer transaction before creating SQLite savepoints.
+
+    SQLite's implicit transaction starts only at the first write. Releasing a
+    savepoint created in that state can persist the write even if the caller
+    later rolls back. PostgreSQL does not have this edge case; an explicit
+    BEGIN keeps the nested claim semantics equivalent on both dialects.
+    """
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        await db.execute(text("BEGIN"))
+
+
 _PRACTICE_DURATION_ROUNDING_TOLERANCE = (
     2  # 允许 finished-start 与 duration 的少量取整误差
 )
@@ -483,17 +496,15 @@ def _normalize_practice_session(
 
 
 def _is_unique_violation(err: IntegrityError) -> bool:
-    """True only for a unique-constraint IntegrityError (the intended idempotency
-    collision).  Any other integrity error (FK / CHECK / NOT NULL) is a real data
-    problem and must not be mislabeled as a duplicate request_id."""
+    """Return True only for the expected request-id unique collision."""
     orig = getattr(err, "orig", None)
     if orig is None:
         return False
     code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
     if code == "23505":  # PostgreSQL unique_violation (asyncpg/psycopg)
         return True
-    msg = str(orig)
-    return "UNIQUE constraint failed" in msg or "duplicate key" in msg
+    message = str(orig)
+    return "UNIQUE constraint failed" in message or "duplicate key" in message
 
 
 def _random_sample_query(query, total_count: int, need: int, id_col=None):
@@ -2942,8 +2953,6 @@ def _build_fallback_metadata(reason: str, strategy: str) -> dict:
     }
 
 
-
-
 async def _load_scored_runtime_config(db: AsyncSession) -> dict:
     """Load scored recommendation config, falling back to built-in defaults."""
     # Admin 全局配置：default_scored 控制系统级权重和图谱门槛。
@@ -2975,7 +2984,6 @@ async def _load_scored_runtime_config(db: AsyncSession) -> dict:
     except Exception:
         logger.warning("scored 全局策略配置读取失败，使用内置默认值", exc_info=True)
     return scored_runtime
-
 
 
 def _build_smart_scored_candidate_conditions(
@@ -3080,7 +3088,6 @@ async def _execute_candidate_query(
     return list(result.scalars().all())
 
 
-
 async def _load_knowledge_and_graph_context(
     db: AsyncSession,
     user_id: int,
@@ -3155,7 +3162,6 @@ async def _fetch_graph_context(
     )
 
 
-
 async def _extend_with_graph_question_candidates(
     db: AsyncSession,
     user_id: int,
@@ -3202,7 +3208,6 @@ async def _extend_with_graph_question_candidates(
         )
 
 
-
 async def _expand_graph_candidates(
     db: AsyncSession,
     user_id: int,
@@ -3242,7 +3247,6 @@ async def _expand_graph_candidates(
             graph_candidate_ids, weak_target_ids, count,
         )
     return graph_context
-
 
 
 async def _load_candidate_states(
@@ -3355,7 +3359,6 @@ async def _compute_recommendation_weights(
         key: float(system_weights.get(key, 1.0)) * float(user_weights.get(key, 1.0))
         for key in weight_keys
     }
-
 
 
 async def get_smart_scored_questions(
@@ -3855,12 +3858,16 @@ async def batch_submit_answers(
         ),
         scope_snapshot=scope_snapshot,
     )
+    await _start_explicit_transaction(db)
     try:
+        # Claim the request id in a savepoint. A concurrent winner must not
+        # poison the caller's transaction before we replay its committed result.
         async with db.begin_nested():
             db.add(session_obj)
             await db.flush()
     except IntegrityError as exc:
         if not _is_unique_violation(exc):
+            await db.rollback()
             raise
         winner = await db.scalar(
             select(PracticeSession).where(
@@ -3869,137 +3876,149 @@ async def batch_submit_answers(
             )
         )
         if winner is None:
+            await db.rollback()
             raise
         return _replay_committed_submission(winner, payload_hash)
 
-    now = utcnow()
-    records: list[tuple[PracticeRecord, object, bool, str, int | None]] = []
-    for q, is_correct, user_answer, used_time in evaluated_answers:
-        record = PracticeRecord(
-            user_id=user_id,
-            question_id=int(q.id),
-            question_version_id=int(q.question_version_id),
-            subject_id=int(q.subject_id),
-            question_type=q.question_type,
-            user_answer=user_answer,
-            is_correct=is_correct,
-            used_time=used_time,
-            answered_at=now,
-            mode=session_values["mode"],
-            projection_state="pending",
-        )
-        db.add(record)
-        records.append((record, q, is_correct, user_answer, used_time))
-    if records:
-        await db.flush()
-
-    from app.services.wrong_question_service import record_wrong
-
-    prewarm_wrong_questions = []
-    wrong_question_ids: dict[int, int] = {}
-    for record, q, is_correct, user_answer, _used_time in records:
-        if not is_correct:
-            wrong = await record_wrong(
-                db,
-                user_id,
-                int(q.id),
-                user_answer,
-                question_version_id=int(q.question_version_id),
-                commit=False,
-            )
-            from app.services import error_diagnosis_service
-
-            diagnosis = await error_diagnosis_service.record_error_event(
-                db,
+    try:
+        now = utcnow()
+        records: list[tuple[PracticeRecord, object, bool, str, int | None]] = []
+        for q, is_correct, user_answer, used_time in evaluated_answers:
+            record = PracticeRecord(
                 user_id=user_id,
-                wrong_question_id=int(wrong.id),
                 question_id=int(q.id),
                 question_version_id=int(q.question_version_id),
+                subject_id=int(q.subject_id),
+                question_type=q.question_type,
+                user_answer=user_answer,
+                is_correct=is_correct,
+                used_time=used_time,
+                answered_at=now,
+                mode=session_values["mode"],
+                projection_state="pending",
+            )
+            db.add(record)
+            records.append((record, q, is_correct, user_answer, used_time))
+        if records:
+            await db.flush()
+
+        from app.services.wrong_question_service import record_wrong
+
+        prewarm_wrong_questions = []
+        wrong_question_ids: dict[int, int] = {}
+        for record, q, is_correct, user_answer, _used_time in records:
+            if not is_correct:
+                wrong = await record_wrong(
+                    db,
+                    user_id,
+                    int(q.id),
+                    user_answer,
+                    question_version_id=int(q.question_version_id),
+                    commit=False,
+                )
+                from app.services import error_diagnosis_service
+
+                diagnosis = await error_diagnosis_service.record_error_event(
+                    db,
+                    user_id=user_id,
+                    wrong_question_id=int(wrong.id),
+                    question_id=int(q.id),
+                    question_version_id=int(q.question_version_id),
+                    practice_record_id=int(record.id),
+                    source_context="practice",
+                    user_answer=record.user_answer,
+                    occurred_at=record.answered_at or now,
+                    queue_ai=False,
+                )
+                prewarm_wrong_questions.append(wrong)
+                wrong_question_ids[int(q.id)] = int(wrong.id)
+                setattr(
+                    record,
+                    "_error_diagnosis_payload",
+                    error_diagnosis_service.serialize_diagnosis(diagnosis),
+                )
+            await _create_answer_projection_outbox(
+                db,
                 practice_record_id=int(record.id),
-                source_context="practice",
-                user_answer=record.user_answer,
-                occurred_at=record.answered_at or now,
-                queue_ai=False,
+                request_id=answer_request_ids.get(int(q.id)),
             )
-            prewarm_wrong_questions.append(wrong)
-            wrong_question_ids[int(q.id)] = int(wrong.id)
-            setattr(
-                record,
-                "_error_diagnosis_payload",
-                error_diagnosis_service.serialize_diagnosis(diagnosis),
-            )
-        await _create_answer_projection_outbox(
-            db,
-            practice_record_id=int(record.id),
-            request_id=answer_request_ids.get(int(q.id)),
+
+        revision_kps = await load_revision_kp_names(db, issued_revisions.values())
+        response_by_question: dict[int, dict] = {}
+        for record, q, is_correct, _user_answer, _used_time in records:
+            response_by_question[int(q.id)] = {
+                "record_id": int(record.id),
+                "question_id": int(q.id),
+                "is_correct": bool(is_correct),
+                "correct_answer": q.answer,
+                "status": "correct" if is_correct else "wrong",
+                "analysis": q.analysis,
+                "knowledge_points": revision_kps.get(int(q.question_version_id), []),
+                "is_wrong_added": int(q.id) in wrong_question_ids,
+                "wrong_question_id": wrong_question_ids.get(int(q.id)),
+                "error_diagnosis": getattr(
+                    record, "_error_diagnosis_payload", None
+                ),
+            }
+        for q in skipped_questions:
+            response_by_question[int(q.id)] = {
+                "question_id": int(q.id),
+                "is_correct": False,
+                "correct_answer": q.answer,
+                "status": "skipped",
+                "analysis": q.analysis,
+                "knowledge_points": revision_kps.get(int(q.question_version_id), []),
+                "is_wrong_added": False,
+                "wrong_question_id": None,
+            }
+
+        from app.services.practice.knowledge_session_summary import (
+            persisted_knowledge_session,
         )
 
-    revision_kps = await load_revision_kp_names(db, issued_revisions.values())
-    response_by_question: dict[int, dict] = {}
-    for record, q, is_correct, _user_answer, _used_time in records:
-        response_by_question[int(q.id)] = {
-            "record_id": int(record.id),
-            "question_id": int(q.id),
-            "is_correct": bool(is_correct),
-            "correct_answer": q.answer,
-            "status": "correct" if is_correct else "wrong",
-            "analysis": q.analysis,
-            "knowledge_points": revision_kps.get(int(q.question_version_id), []),
-            "is_wrong_added": int(q.id) in wrong_question_ids,
-            "wrong_question_id": wrong_question_ids.get(int(q.id)),
-            "error_diagnosis": getattr(record, "_error_diagnosis_payload", None),
-        }
-    for q in skipped_questions:
-        response_by_question[int(q.id)] = {
-            "question_id": int(q.id),
-            "is_correct": False,
-            "correct_answer": q.answer,
-            "status": "skipped",
-            "analysis": q.analysis,
-            "knowledge_points": revision_kps.get(int(q.question_version_id), []),
-            "is_wrong_added": False,
-            "wrong_question_id": None,
-        }
-
-    from app.services.practice.knowledge_session_summary import (
-        persisted_knowledge_session,
-    )
-
-    response_payload = jsonable_encoder(
-        {
-            "results": [response_by_question[qid] for qid in issued_order],
-            "total_correct": total_correct,
-            "total_wrong": total_wrong,
-            "total_skipped": len(skipped_questions),
-            "knowledge_session": persisted_knowledge_session(
-                batch_payload.get("knowledge_context")
-            ),
-            "entry_context": (
-                dict(batch_payload.get("entry_context"))
-                if isinstance(batch_payload.get("entry_context"), dict)
-                else None
-            ),
-        }
-    )
-    # submission_response is a SQL JSON column and is also the source used for
-    # idempotent replay.  Nested diagnostics may contain datetime values, so
-    # normalize the entire payload once before both persistence and response.
-    session_obj.submission_response = response_payload
-    sequential_reservation_request_id = batch_payload.get("seq_reservation_request_id")
-    if (
-        sequential_reservation_request_id
-        and str(batch_payload.get("mode")) == "sequential"
-    ):
-        await db.execute(
-            delete(SequentialReservation).where(
-                SequentialReservation.user_id == user_id,
-                SequentialReservation.subject_id == int(batch_payload.get("sid") or 0),
-                SequentialReservation.start_request_id
-                == str(sequential_reservation_request_id),
-                SequentialReservation.question_id.in_(all_question_ids),
-            )
+        response_payload = jsonable_encoder(
+            {
+                "results": [response_by_question[qid] for qid in issued_order],
+                "total_correct": total_correct,
+                "total_wrong": total_wrong,
+                "total_skipped": len(skipped_questions),
+                "knowledge_session": persisted_knowledge_session(
+                    batch_payload.get("knowledge_context")
+                ),
+                "entry_context": (
+                    dict(batch_payload.get("entry_context"))
+                    if isinstance(batch_payload.get("entry_context"), dict)
+                    else None
+                ),
+            }
         )
-    await db.commit()
+        # submission_response is a SQL JSON column and is also the source used
+        # for idempotent replay. Nested diagnostics may contain datetime values,
+        # so normalize the entire payload once before persistence and response.
+        session_obj.submission_response = response_payload
+        sequential_reservation_request_id = batch_payload.get(
+            "seq_reservation_request_id"
+        )
+        if (
+            sequential_reservation_request_id
+            and str(batch_payload.get("mode")) == "sequential"
+        ):
+            await db.execute(
+                delete(SequentialReservation).where(
+                    SequentialReservation.user_id == user_id,
+                    SequentialReservation.subject_id
+                    == int(batch_payload.get("sid") or 0),
+                    SequentialReservation.start_request_id
+                    == str(sequential_reservation_request_id),
+                    SequentialReservation.question_id.in_(all_question_ids),
+                )
+            )
+        await db.commit()
+    except BaseException:
+        # Once the session claim is accepted this service owns the whole outer
+        # transaction. Roll back before propagating so no partial state remains.
+        await db.rollback()
+        raise
 
     if prewarm_wrong_questions:
         try:

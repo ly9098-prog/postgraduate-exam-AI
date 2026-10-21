@@ -665,3 +665,63 @@ class TestResponseCompatibility:
         assert "answer" not in q0
         payload = practice_router.svc._decode_practice_batch_token(data["batch_token"])
         assert payload["questions"] == [[1, 101]]
+
+
+class TestBatchSubmitErrorMapping:
+    """The route must preserve the service-level submission error contract."""
+
+    def _submit(self, monkeypatch, exc: Exception):
+        monkeypatch.setattr(
+            practice_router.svc,
+            "batch_submit_answers",
+            AsyncMock(side_effect=exc),
+        )
+        _setup_deps({})
+        try:
+            return client.post(
+                "/api/v1/practice/batch-submit",
+                json={
+                    "batch_token": "signed-token-1234567890",
+                    "answers": [
+                        {
+                            "question_id": 1,
+                            "user_answer": "A",
+                            "used_time": 1,
+                        }
+                    ],
+                    "skipped_question_ids": [],
+                    "session": {
+                        "request_id": "request-1",
+                        "subject_id": 2,
+                        "mode": "sequential",
+                        "started_at": "2026-10-21T00:00:00Z",
+                        "finished_at": "2026-10-21T00:00:02Z",
+                        "duration_sec": 2,
+                        "question_count": 1,
+                        "answered_count": 1,
+                    },
+                },
+            )
+        finally:
+            _cleanup_deps()
+
+    def test_invalid_batch_token_is_400(self, monkeypatch):
+        response = self._submit(
+            monkeypatch,
+            practice_router.svc.PracticeBatchTokenError("invalid"),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "PRACTICE_BATCH_INVALID"
+
+    def test_submission_conflict_is_409(self, monkeypatch):
+        response = self._submit(
+            monkeypatch,
+            practice_router.svc.PracticeSubmissionConflictError("conflict"),
+        )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "PRACTICE_SUBMISSION_CONFLICT"
+
+    def test_payload_value_error_is_400(self, monkeypatch):
+        response = self._submit(monkeypatch, ValueError("invalid payload"))
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "PRACTICE_PAYLOAD_INVALID"
