@@ -30,6 +30,12 @@ const {
   canReconcilePendingSync,
   decidePendingSyncReconciliation,
 } = require('./utils/sync-reconciliation')
+const {
+  resolvePausedMs,
+  computeCountdownRestore,
+  computeFreeRestore,
+  resolveRestoredSubject,
+} = require('./utils/session-restore')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -2851,36 +2857,19 @@ Page({
     }
 
     // Compute effective paused ms: server base + current segment + local adjustment
-    const serverBaseMs = (session.total_paused_sec || 0) * 1000
-    let totalPausedMs = serverBaseMs
-    let isPaused = false
-
     const storedPause = this._safeGetPomodoroStorage('pomodoro_pause', 'restore countdown pause')
     if (!storedPause.ok) {
       this._showPomodoroPersistenceError()
       return false
     }
-    const savedPause = storedPause.value
-    if (savedPause && savedPause.sessionId === session.id) {
-      const savedTotal = Number(savedPause.totalPausedMs || 0)
-      const pauseStart = Number(savedPause.pauseStartTime || api.now())
-      totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
-        ? savedTotal + Math.max(0, api.now() - pauseStart)
-        : serverBaseMs
-      // The presence of a valid pause snapshot is itself the paused-state signal.
-      // Do not infer state from elapsed pause milliseconds: a just-paused session
-      // can legitimately have 0ms accumulated, and device-clock rollback must not
-      // accidentally resume it during cold restore.
-      isPaused = true
-    } else if (session.paused_at) {
-      const pausedAtMs = parseServerTime(session.paused_at)
-      if (Number.isFinite(pausedAtMs)) {
-        totalPausedMs = serverBaseMs + Math.max(0, api.now() - pausedAtMs)
-        isPaused = true
-      }
-    }
-
-    if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+    const pausedAtMs = session.paused_at ? parseServerTime(session.paused_at) : null
+    let totalPausedMs = resolvePausedMs({
+      serverPausedSec: session.total_paused_sec || 0,
+      savedPause: storedPause.value,
+      pausedAtMs,
+      now: api.now(),
+      sessionId: session.id,
+    }).totalPausedMs
 
     // Apply local pause adjustment (e.g. from cancelEndConfirm). During cold
     // restore this is critical state: unreadable storage must stop reconciliation
@@ -2891,22 +2880,23 @@ Page({
       return false
     }
 
-    const elapsed = Math.floor((api.now() - startTime - totalPausedMs) / 1000)
-    const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
-      ? Math.max(0, totalSec - elapsed) : 0
-
-    // Resolve subject from session (cached session may only carry canonical subject_code)
-    const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
-    const subjectCode = session.subject_code || ''
-    const subjectName = session.subject_name || '未分类'
-    const aggregateSession = session.allocation_mode === 'equal_408_core_v1'
-    const restoredSubject = (this.data.subjects || []).find(item => Number(item.id) === Number(subjectId))
-    const selectedSubject = restoredSubject || {
-      id: subjectId,
-      code: subjectCode,
-      name: subjectName,
-      _isAggregate: aggregateSession,
-    }
+    const restore = computeCountdownRestore({
+      serverPausedSec: session.total_paused_sec || 0,
+      savedPause: storedPause.value,
+      pausedAtMs,
+      now: api.now(),
+      startTime,
+      totalSec,
+    })
+    totalPausedMs = restore.totalPausedMs
+    const isPaused = restore.isPaused
+    const remaining = restore.remaining
+    const subject = resolveRestoredSubject({
+      session,
+      subjects: this.data.subjects,
+      lookupSubjectIdByCode: code => this._lookupSubjectIdByCode(code),
+    })
+    const { subjectId, selectedSubject, aggregate: aggregateSession } = subject
     const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
     const activeTaskType = sessionTaskType || ''
     const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
@@ -2917,10 +2907,7 @@ Page({
     if (remaining <= 0) {
       this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
       this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-      const completedAt = Math.min(
-        api.now(),
-        startTime + Math.max(0, totalPausedMs) + totalSec * 1000
-      )
+      const completedAt = restore.completedAt
       this._completePomodoroWithRetry(session.id, completedAt).then(synced => {
         const conflict = this._consumePomodoroTerminalConflict(session.id, 'complete')
         if (conflict) {
@@ -2962,7 +2949,7 @@ Page({
     this._timerState.remainingSec = remaining
     this._timerState.totalPausedMs = totalPausedMs
     this._timerState.pauseStartTime = isPaused ? api.now() : null
-    this._timerState.progress = totalSec > 0 ? remaining / totalSec : 0
+    this._timerState.progress = restore.progress
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
@@ -3006,32 +2993,19 @@ Page({
       return true
     }
 
-    const serverTotalPausedSec = session.total_paused_sec || 0
     const storedPause = this._safeGetPomodoroStorage('pomodoro_free_pause', 'restore free pause')
     if (!storedPause.ok) {
       this._showPomodoroPersistenceError()
       return false
     }
-    const savedPause = storedPause.value
-    let totalPausedMs = serverTotalPausedSec * 1000
-    let isPaused = false
-
-    if (savedPause && savedPause.sessionId === session.id) {
-      const savedTotal = Number(savedPause.totalPausedMs || 0)
-      const pauseStart = Number(savedPause.pauseStartTime || api.now())
-      totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
-        ? savedTotal + Math.max(0, api.now() - pauseStart)
-        : totalPausedMs
-      isPaused = true
-    } else if (session.paused_at) {
-      const pausedAtMs = parseServerTime(session.paused_at)
-      if (Number.isFinite(pausedAtMs)) {
-        isPaused = true
-        totalPausedMs += Math.max(0, api.now() - pausedAtMs)
-      }
-    }
-
-    if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+    const pausedAtMs = session.paused_at ? parseServerTime(session.paused_at) : null
+    let totalPausedMs = resolvePausedMs({
+      serverPausedSec: session.total_paused_sec || 0,
+      savedPause: storedPause.value,
+      pausedAtMs,
+      now: api.now(),
+      sessionId: session.id,
+    }).totalPausedMs
     totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs, true)
     if (totalPausedMs === null) {
       this._showPomodoroPersistenceError()
@@ -3044,17 +3018,28 @@ Page({
     this._timerState.sessionStartTime = startTime
     this._timerState.totalPausedMs = totalPausedMs
     this._timerState.freeDisplayOffsetMs = 0
-    this._timerState.pauseStartTime = isPaused ? api.now() : null
 
-    let elapsed = Math.max(0, Math.floor((api.now() - startTime - totalPausedMs) / 1000))
-    elapsed = Math.min(elapsed, Math.floor(FREE_TIMER_MAX_MS / 1000))
+    const restore = computeFreeRestore({
+      serverPausedSec: session.total_paused_sec || 0,
+      savedPause: storedPause.value,
+      pausedAtMs,
+      now: api.now(),
+      startTime,
+      maxMs: FREE_TIMER_MAX_MS,
+    })
+    totalPausedMs = restore.totalPausedMs
+    const isPaused = restore.isPaused
+    const elapsed = restore.elapsed
     const fmt = formatElapsedSec(elapsed)
 
-    const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
-    const subjectCode = session.subject_code || ''
-    const subjectName = session.subject_name || '未分类'
-    const aggregateSession = session.allocation_mode === 'equal_408_core_v1'
-    const restoredSubject = (this.data.subjects || []).find(item => Number(item.id) === Number(subjectId))
+    this._timerState.pauseStartTime = isPaused ? api.now() : null
+
+    const subject = resolveRestoredSubject({
+      session,
+      subjects: this.data.subjects,
+      lookupSubjectIdByCode: code => this._lookupSubjectIdByCode(code),
+    })
+    const { subjectId, selectedSubject, aggregate: aggregateSession } = subject
     const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
     const activeTaskType = sessionTaskType || ''
     const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
@@ -3069,12 +3054,7 @@ Page({
       ringCanvasVisible: true,
       isFreeTimer: true,
       selectedSubjectId: subjectId,
-      selectedSubject: subjectId ? (restoredSubject || {
-        id: subjectId,
-        code: subjectCode,
-        name: subjectName,
-        _isAggregate: aggregateSession,
-      }) : null,
+      selectedSubject,
       allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
       selectedTaskType: activeTaskType,
       selectedTaskTypeLabel: activeTaskTypeLabel,

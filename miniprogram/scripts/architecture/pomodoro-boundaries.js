@@ -22,10 +22,11 @@ const MODULES = {
   'terminal-conflict-state.js': [],
   'canvas-layout.js': [],
   'sync-reconciliation.js': [],
+  'session-restore.js': [],
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 3496
+const PAGE_MAX_LINES = 3476
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
