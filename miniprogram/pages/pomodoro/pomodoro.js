@@ -45,6 +45,11 @@ const {
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { buildCompletionCelebration } = require('./utils/completion-celebration')
 const { handleTerminalConflict } = require('./utils/terminal-conflict-handler')
+const {
+  getLocalPauseAdjustment,
+  mergeLocalPauseAdjustment,
+  clearLocalPauseAdjustment,
+} = require('./utils/pause-adjustment')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -2065,14 +2070,15 @@ Page({
 
   /* ==================== Local Pause Adjustment ==================== */
 
-  _clearLocalPauseAdjustment(sessionId) {
-    const stored = this._safeGetPomodoroStorage('pomodoro_pause_adjustment', 'pause adjustment cleanup')
-    if (!stored.ok) return false
-    const adjust = stored.value
-    if (!adjust || adjust.sessionId === sessionId) {
-      return this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
+  _pauseAdjustmentStorage() {
+    return {
+      read: (key, context) => this._safeGetPomodoroStorage(key, context),
+      remove: (key, context) => this._safeRemovePomodoroStorage(key, context),
     }
-    return true
+  },
+
+  _clearLocalPauseAdjustment(sessionId) {
+    return clearLocalPauseAdjustment(this._pauseAdjustmentStorage(), sessionId)
   },
 
   _maybeClearLocalPauseAdjustment(sessionId) {
@@ -2081,18 +2087,11 @@ Page({
   },
 
   _getLocalPauseAdjustment(sessionId, failClosed = false) {
-    const stored = this._safeGetPomodoroStorage('pomodoro_pause_adjustment', 'pause adjustment')
-    if (!stored.ok) return failClosed ? null : 0
-    const adjust = stored.value
-    if (!adjust || adjust.sessionId !== sessionId) return 0
-    const value = Number(adjust.totalPausedMs || 0)
-    return Number.isFinite(value) && value >= 0 ? value : 0
+    return getLocalPauseAdjustment(this._pauseAdjustmentStorage(), sessionId, failClosed)
   },
 
   _mergeLocalPauseAdjustment(sessionId, serverPausedMs, failClosed = false) {
-    const localPausedMs = this._getLocalPauseAdjustment(sessionId, failClosed)
-    if (localPausedMs === null) return null
-    return Math.max(Number(serverPausedMs || 0), Number(localPausedMs || 0))
+    return mergeLocalPauseAdjustment(this._pauseAdjustmentStorage(), sessionId, serverPausedMs, failClosed)
   },
 
   /* ==================== Free Timer Display Offset ==================== */

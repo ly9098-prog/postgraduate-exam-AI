@@ -27,10 +27,11 @@ const MODULES = {
   'subject-selection.js': [],
   'completion-celebration.js': ['../../../utils/storage'],
   'terminal-conflict-handler.js': [],
+  'pause-adjustment.js': [],
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 3255
+const PAGE_MAX_LINES = 3254
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
