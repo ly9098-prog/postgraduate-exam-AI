@@ -65,6 +65,7 @@ import {
   buildBatchAnswerViewState,
   type BatchAnswerFillTab,
 } from "./review-batch-answer-view-state";
+import { buildBatchCompleteResultState } from "./review-batch-complete-result-state";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
@@ -273,6 +274,7 @@ export default function ImportReviewPage() {
   const [imageApplyResult, setImageApplyResult] = useState<BatchAnswerImageApplyResponse | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const currentBatchId = filters.batch_id || batchIdParam;
+  const batchResultView = buildBatchCompleteResultState(batchResult);
 
   const syncedDetailRef = useRef<Set<number>>(new Set());
   const segmentReplaceInputRef = useRef<HTMLInputElement>(null);
@@ -1952,7 +1954,7 @@ export default function ImportReviewPage() {
                   <h4 className="font-display text-xl font-bold text-[var(--ink)]">AI 批量补全</h4>
                   <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     已选 <span className="font-semibold text-[var(--ink)]">{selectedIds.size}</span> 题
-                    {batchResult ? ` · 完成 ${batchResult.succeeded} / 失败 ${batchResult.failed} / 跳过 ${batchResult.skipped}` : ""}
+                    {batchResultView?.summary ?? ""}
                   </p>
                   {draftRestored && !batchResult ? (
                     <p className="mt-1 flex items-center gap-1 text-xs text-amber-600">
@@ -2084,31 +2086,25 @@ export default function ImportReviewPage() {
                       <span className="text-xl font-bold text-[var(--color-text-hint)]">{batchResult.skipped}</span>
                     </div>
                   </div>
-                  {batchResult.items.filter((i) => i.status !== "success").length > 0 ? (
+                  {batchResultView && batchResultView.nonSuccessItems.length > 0 ? (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">失败/跳过明细</p>
-                      {batchResult.items.filter((i) => i.status !== "success").map((item) => (
+                      {batchResultView.nonSuccessItems.map(({ item, isFailed, label, containerClass, labelClass, errorClass }) => (
                         <div
                           key={item.import_id}
-                          className={`rounded-xl border px-4 py-3 text-sm ${
-                            item.status === "failed"
-                              ? "border-[var(--color-danger)]/40 bg-[var(--color-danger-light)]/30"
-                              : "border-[var(--color-border)] bg-white/60"
-                          }`}
+                          className={`rounded-xl border px-4 py-3 text-sm ${containerClass}`}
                         >
                           <div className="flex items-center gap-2">
-                            {item.status === "failed" ? (
+                            {isFailed ? (
                               <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
                             ) : null}
                             <span className="font-mono text-xs text-[var(--color-text-hint)]">#{item.import_id}</span>
-                            <span className={`text-xs font-medium ${item.status === "failed" ? "text-[var(--color-danger)]" : "text-[var(--color-text-hint)]"}`}>
-                              {item.status === "failed" ? "失败" : "跳过"}
+                            <span className={`text-xs font-medium ${labelClass}`}>
+                              {label}
                             </span>
                           </div>
                           {item.error ? (
-                            <p className={`mt-1.5 whitespace-pre-wrap text-xs leading-relaxed ${
-                              item.status === "failed" ? "text-[var(--color-danger)]" : "text-[var(--color-text-secondary)]"
-                            }`}>
+                            <p className={`mt-1.5 whitespace-pre-wrap text-xs leading-relaxed ${errorClass}`}>
                               {item.error}
                             </p>
                           ) : null}

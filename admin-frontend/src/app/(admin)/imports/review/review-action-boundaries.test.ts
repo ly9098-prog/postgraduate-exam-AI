@@ -112,6 +112,10 @@ const modules = [
     imports: ["@/lib/api/types"],
   },
   {
+    path: "./review-batch-complete-result-state.ts",
+    imports: ["@/lib/api/types"],
+  },
+  {
     path: "./review-queue-badges.ts",
     imports: ["@/lib/api/types"],
   },
