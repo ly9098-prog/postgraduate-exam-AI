@@ -26,24 +26,16 @@ function getRewardData() {
   if (REWARD_CACHE !== null) return REWARD_CACHE
 
   var map = {}
-  var trophyMod, successMod, celebrationMod, fireworksMod, medalMod, studyMod
+  var trophyMod, successMod
   var awardMod, thumbsUpMod
 
   try { trophyMod = require('./lottie/reward/trophy.js') } catch (_) {}
   try { successMod = require('./lottie/success/success-check.js') } catch (_) {}
-  try { celebrationMod = require('./lottie/reward/celebration.js') } catch (_) {}
-  try { fireworksMod = require('./lottie/reward/fireworks.js') } catch (_) {}
-  try { medalMod = require('./lottie/reward/medal.js') } catch (_) {}
-  try { studyMod = require('./lottie/study/study.js') } catch (_) {}
   try { awardMod = require('./lottie/reward/award.js') } catch (_) {}
   try { thumbsUpMod = require('./lottie/reward/thumbs-up.js') } catch (_) {}
 
   if (trophyMod) map.excellent = trophyMod
   if (successMod) { map.practice = successMod; map.steady = successMod }
-  if (celebrationMod) map.final = celebrationMod
-  if (fireworksMod) map.combo = fireworksMod
-  if (medalMod) map.group = medalMod
-  if (studyMod) map.focus = studyMod
   if (awardMod) map.award = awardMod
   if (thumbsUpMod) map.thumbsUp = thumbsUpMod
 
