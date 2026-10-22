@@ -1,6 +1,6 @@
 # Admin API 规范
 
-> 版本：v2.8（408 考试与题目 CSV 导入） | 状态：核心 Admin API 已实施 | 更新：2026-09-23
+> 版本：v2.9（批量答案补录端点同步） | 状态：核心 Admin API 已实施 | 更新：2026-10-23
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
@@ -9,6 +9,7 @@
 > - **变更原因**：2026-08-10 同步题目图片上传/替换/删除、快捷添加选项、keyword 匹配知识点名与别名，以及公式卡 API 与 PUT 版本号推导（行锁 + max 版本）。
 > - **变更原因**：2026-08-29 同步系统运维细粒度权限、备份响应脱敏、用户/Admin JWT 签名域隔离与生产健康端点收敛。
 - **变更原因**：2026-09-23 同步 408 考试管理接口、题目 CSV 直导入，以及生产 Base URL（`xzshub.top` / `api.xzshub.top`，不再使用 `api.2240ai.com`）。
+- **变更原因**：2026-10-23 补齐 §3.8 批量答案补录 4 个端点（answers/preview、answers/apply、answers/image/preview、answers/image/apply，2026-07-12 起实现），并明确 preview_token 两段式与审计动作。
 
 ---
 
@@ -231,6 +232,10 @@ POST   /v1/auth/refresh
 | PUT | `/imports/questions/{importId}` | 修改导入题字段（含 status / review_note / parsed_*） | import:write |
 | POST | `/imports/questions/{importId}/complete` | 单题 AI 补全（辅助，不绕过人工确认） | import:write |
 | POST | `/imports/questions/batch-complete` | 批量 AI 补全（ids 上限 50） | import:write |
+| POST | `/imports/{batchId}/answers/preview` | 答案串补录预览（解析答案串，不写入） | import:write |
+| POST | `/imports/{batchId}/answers/apply` | 确认答案串预览结果并写入答案 | import:write |
+| POST | `/imports/{batchId}/answers/image/preview` | 答案/解析图片预览（多图上传，mode=answer_only/answer_analysis） | import:write |
+| POST | `/imports/{batchId}/answers/image/apply` | 确认图片预览结果并写入答案/解析 | import:write |
 | POST | `/imports/questions/{importId}/approve` | 单题审核通过（审核即发布） | import:write |
 | POST | `/imports/questions/{importId}/reject` | 单题审核拒绝 | import:write |
 | POST | `/imports/{batchId}/approve` | 批次审核通过（逐题 Level 1 重复检测后发布） | import:write |
@@ -242,6 +247,11 @@ POST   /v1/auth/refresh
 | DELETE | `/imports/questions/{importId}` | 删除导入题 | import:write |
 | DELETE | `/imports/{batchId}` | 删除整个批次 | import:write |
 | POST | `/imports/questions-csv` | 导入题目导出 CSV，直接写入 `questions`（非 AI/OCR，不经 `question_imports` 审核） | import:write |
+
+**批量答案补录端点（2026-07-12 起实现，管理端审核页已消费）**：
+- preview → apply 两段式：preview 生成 `preview_token`（15 分钟 TTL）与 `operation_id`（1 小时幂等），apply 凭 token 确认后写入。
+- 审计动作：答案串补录写 `import.batch_answer_fill`，图片补录写 `import.batch_answer_image_fill`。
+- 前端消费：`admin-frontend/src/app/(admin)/imports/review/hooks/use-review-batch-answer-mutations.ts`、`use-review-image-answer-mutations.ts`。
 
 **查询参数（Phase 4 实现，2026-05-29）**：
 - `GET /imports`：`page`（默认 1，≥1）、`page_size`（默认 20，1-100）、`status`、`source_type`、`keyword`。

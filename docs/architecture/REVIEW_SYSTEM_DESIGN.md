@@ -1,7 +1,7 @@
 # SM-2 复习调度系统设计
 
 > 基于代码真实状态的架构设计文档。描述当前系统边界、数据职责、同步策略与技术债。
-> 最后更新：2026-09-02（ReviewSchedule 唯一数据源；旧 SM-2 字段与旧端点已移除）
+> 最后更新：2026-10-23（按当前代码复核：接口清单、ORM 字段表与时区策略修正；ReviewSchedule 仍为唯一数据源）
 
 ---
 
@@ -24,15 +24,15 @@
 │               API 层 (review.py + wrong_q.py)        │
 │  ┌─────────────────────┐  ┌───────────────────────┐ │
 │  │ 复习接口 (RS 基座)   │  │ 错题本接口            │ │
-│  │ /today               │  │ /wrong_questions      │ │
-│  │ /schedule-submit     │  │ /{id}/quality         │ │
-│  │ /batch-submit        │  │ (路由到 RS 路径)      │ │
-│  │ /grade-submit        │  │                       │ │
-│  │ /grade-batch         │  │                       │ │
-│  │ /schedule-stats      │  │                       │ │
-│  │ /history             │  │                       │ │
-│  │ /{id}/master         │  │                       │ │
-│  │ /{id}/unmaster       │  │                       │ │
+│  │  /today              │  │  /wrong-questions      │ │
+│  │  /today/overview     │  │  /stats                │ │
+│  │  /today/next-batch   │  │  /task-flow            │ │
+│  │  /today/result       │  │  /diagnosis/*          │ │
+│  │  /schedule-stats     │  │  /{wq_id} GET/PUT      │ │
+│  │  /history            │  │  /batch POST           │ │
+│  │  /grade-batch        │  │                        │ │
+│  │  /{id}/master        │  │                        │ │
+│  │  /{id}/unmaster      │  │                        │ │
 │  └──────────┬──────────┘  └───────────┬───────────┘ │
 └─────────────┼──────────────────────────┼────────────┘
               │                          │
@@ -44,13 +44,14 @@
 │  │         review_scheduler                   │     │
 │  │  (RS 主调度，唯一 SM-2 计算入口)            │     │
 │  │                                            │     │
-│  │  get_today_review()                        │     │
-│  │  submit_review()                           │     │
-│  │  batch_submit_review()                     │     │
-│  │  get_review_stats()                        │     │
-│  │  get_review_history()                      │     │
-│  │  auto_schedule_wq()                        │     │
-│  │  mark/unmark_mastered()                    │     │
+│  │  get_today_review()                         │     │
+│  │  get_today_review_overview()                │     │
+│  │  get_next_today_review_batch()              │     │
+│  │  get_today_review_result()                  │     │
+│  │  submit_review() / grade_batch_review()     │     │
+│  │  get_review_stats() / get_review_history()  │     │
+│  │  auto_schedule_wrong_question()             │     │
+│  │  mark_mastered() / unmark_mastered()        │     │
 │  └───────────────────┬────────────────────────┘     │
 │                      │                              │
 │                      ▼                              │
@@ -61,10 +62,9 @@
 │  └──────────────────────────────────────────┘       │
 │                                                      │
 │  ┌──────────────────────────────────────┐           │
-│  │ wrong_question_service               │           │
-│  │ (错题 CRUD，不含 SM-2 逻辑)          │           │
-│  │ record_wrong()                       │           │
-│  │ update_quality() → RS 路由           │           │
+│  │  wrong_question_service               │           │
+│  │  (错题 CRUD，不含 SM-2 逻辑)                 │           │
+│  │  record_wrong()                       │           │
 │  └──────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────┘
         │
@@ -74,10 +74,11 @@
 │                                                      │
 │  ┌──────────────────────────────────────────────┐   │
 │  │         ReviewSchedule (主系统)               │   │
-│  │  id | user_id | question_id | subject         │   │
+│  │  id | user_id | question_id                   │   │
+│  │  question_version_id | subject_id(FK)         │   │
 │  │  interval | ease_factor | repetitions         │   │
 │  │  next_review_at | last_reviewed_at            │   │
-│  │  mastered                                     │   │
+│  │  occurrence_seq | is_active | mastered        │   │
 │  │  created_at | updated_at                      │   │
 │  └────────────────────┬─────────────────────────┘   │
 │                       │ 单向同步 (仅 last_review_at) │
@@ -97,10 +98,12 @@
 │                                                      │
 │  ┌──────────────────────────────────────────────┐   │
 │  │         ReviewRecord (历史记录层)              │   │
-│  │  id | user_id | question_id | schedule_id     │   │
-│  │  rating | interval_before | interval_after    │   │
-│  │  ease_factor_before | ease_factor_after       │   │
-│  │  reviewed_at                                  │   │
+│  │  id | user_id | question_id                   │   │
+│  │  question_version_id | schedule_id            │   │
+│  │  occurrence_seq | request_id                  │   │
+│  │  rating | interval_before/after               │   │
+│  │  ease_factor_before/after                     │   │
+│  │  mastery_percent | reviewed_at                │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
 ```
@@ -126,15 +129,37 @@
 id              int           PK
 user_id         int           用户 FK
 question_id     int           题目 FK
-subject         str?          科目缓存（冗余，来自 Question；避免高频 join）
+question_version_id int       题目版本 FK（question_versions.id）；提交时校验版本一致
+subject_id      int?          科目 FK（subjects.id，ondelete SET NULL，可空）
 interval        int           当前复习间隔（天），SM-2 计算结果
 ease_factor     float         难度因子（E-Factor），SM-2 计算结果，下限 1.3
 repetitions     int           连续正确次数，SM-2 计算结果
 next_review_at  datetime?     下次复习时间（UTC naive datetime）
 last_reviewed_at datetime?    最近一次复习时间
 mastered        bool          是否标记为已掌握
+is_active       bool          是否有效（默认 true；失效调度不进入待复习列表）
+occurrence_seq  int           服务端持有的下一次复习序号；每次成功提交 +1，提交时校验防重
 created_at      datetime      创建时间
 updated_at      datetime      最后更新时间
+```
+
+### ReviewRecord 负责（历史记录）
+
+```
+字段            类型          说明
+─────────────────────────────────────────────────────
+id              int           PK
+user_id         int           用户 FK
+question_id     int           题目 FK
+question_version_id int       题目版本 FK
+schedule_id     int?          关联 ReviewSchedule（可空）
+occurrence_seq  int           本次复习对应的调度序号（schedule_id + occurrence_seq 唯一）
+request_id      str           请求幂等键（user_id + request_id 唯一）
+rating          int           0-5 评分（自评或自动批改映射值）
+interval_before/interval_after int?  提交前后复习间隔（天）
+ease_factor_before/ease_factor_after float? 提交前后难度因子
+mastery_percent int?          掌握度百分比（0-100，可空）
+reviewed_at     datetime      提交时间（仅追加，不修改）
 ```
 
 ### WrongQuestion 负责（错题分析）
@@ -253,7 +278,7 @@ efactor' = max(1.3, efactor')
 
 ### 自动批改默认映射
 
-当用户未提供自评 rating 时（`/review/grade-submit` 和 `/review/grade-batch`）：
+批量自动批改提交时（`POST /review/grade-batch`，按作答对错映射 rating）：
 
 ```
 答对 (correct) → rating=4（正确但稍有犹豫）
@@ -264,9 +289,10 @@ efactor' = max(1.3, efactor')
 
 ### 时区策略
 
-- **内部存储**：统一使用 naive UTC datetime（`utcnow()` 返回 `datetime.now(timezone.utc).replace(tzinfo=None)`）
-- **日期提取**：统一使用 `utcnow().date()`，不使用 `date.today()`
-- **计算输入**：`calc_sm2()` 的 `review_date` 参数由调用方传入 UTC date
+- **复习日期**：按 Asia/Shanghai 日历日计算。`calc_sm2()` 的 `review_date` 缺省为 `shanghai_today()`（`sm2_service.py`），`review_scheduler.submit_review()` 显式传入 `shanghai_today()`（`review_scheduler.py:665`）
+- **next_review_at 存储**：上海日历日起点的 naive UTC 瞬时——`shanghai_date_utc_range(next_review_date)[0]`（`review_scheduler.py:674`）
+- **内部存储**：其余时间戳统一使用 naive UTC datetime（`utcnow()` 返回 `datetime.now(timezone.utc).replace(tzinfo=None)`）
+- **禁止**：产品口径的「今天」不得从 `utcnow().date()` 或服务器本地时间推导（`time_utils.shanghai_today` docstring 明确要求）
 
 ---
 
@@ -278,30 +304,36 @@ efactor' = max(1.3, efactor')
 ┌────────────────────────────────────────────────────┐
 │                  复习接口（RS 基座）                 │
 │                                                     │
-│  GET    /review/today         今日待复习列表         │
-│  POST   /review/schedule-submit  提交单题评分       │
-│  POST   /review/batch-submit  批量提交评分          │
-│  POST   /review/grade-submit  自动批改 + 提交       │
-│  POST   /review/grade-batch   批量自动批改          │
-│  GET    /review/schedule-stats  复习统计            │
-│  GET    /review/history       复习历史              │
-│  POST   /review/{id}/master   标记已掌握            │
-│  POST   /review/{id}/unmaster 取消已掌握            │
+│  GET    /review/today            今日待复习列表      │
+│  GET    /review/today/overview   今日复习总览        │
+│  POST   /review/today/next-batch 获取下一批待复习     │
+│  GET    /review/today/result     本次复习结果        │
+│  GET    /review/schedule-stats   复习统计            │
+│  GET    /review/history          复习历史            │
+│  POST   /review/grade-batch      批量自动批改 + 提交 │
+│  POST   /review/{schedule_id}/master    标记已掌握   │
+│  POST   /review/{schedule_id}/unmaster  取消已掌握   │
 │                                                     │
 │  错题本接口（WQ 基座，不含 SM-2 参数）              │
-│  GET    /wrong-questions       错题列表             │
-│  GET    /wrong-questions/stats 错题统计             │
-│  GET    /wrong-questions/{id}  单题详情             │
-│  PUT    /wrong-questions/{id}  更新错题类型         │
-│  PUT    /wrong-questions/{id}/quality  评分（RS路由）│
+│  GET    /wrong-questions          错题列表           │
+│  GET    /wrong-questions/stats    错题统计           │
+│  GET    /wrong-questions/task-flow     任务流        │
+│  GET    /wrong-questions/diagnosis/taxonomy  错误分类│
+│  GET    /wrong-questions/diagnosis/stats    诊断统计│
+│  GET    /wrong-questions/{wq_id}            单题详情│
+│  GET    /wrong-questions/{wq_id}/diagnosis   单题诊断│
+│  PUT    /wrong-questions/{wq_id}/diagnosis   更新诊断│
+│  POST   /wrong-questions/{wq_id}/diagnosis/suggest  建议│
+│  PUT    /wrong-questions/{wq_id}             更新错题│
+│  POST   /wrong-questions/batch               批量操作│
 └────────────────────────────────────────────────────┘
 ```
 
 ### 设计说明
 
 - 旧接口（`/review/due`、`/review/submit`、`/review/stats`）已于 P2-1 移除
-- 所有复习操作统一使用 ReviewSchedule 作为数据源
-- `PUT /wrong-questions/{id}/quality` 底层路由到 `review_scheduler.submit_review()`，不走独立 SM-2 计算
+- 所有复习操作统一使用 ReviewSchedule 作为数据源；评分提交唯一入口是 `POST /review/grade-batch`（`grade_batch_review()` 逐条调用 `submit_review()`，按作答对错映射 rating=4/1）
+- 错题本侧无任何 SM-2 参数写入端点（原 `PUT /wrong-questions/{id}/quality` 已不存在）
 - WrongQuestion 响应中不含 SM-2 参数（P2-2 移除）
 
 ---
@@ -310,7 +342,7 @@ efactor' = max(1.3, efactor')
 
 ### 审计方法
 
-基于 2026-06-26 的历史审计快照并结合 2026-09-02 当前代码复核，逐条检查以下风险点。标注为“已修复”的代码块仅用于说明历史风险，不能作为当前实现示例。
+基于 2026-06-26 的历史审计快照，结合 2026-09-02 与 2026-10-23 两次当前代码复核，逐条检查以下风险点。标注为“已修复”的代码块仅用于说明历史风险，不能作为当前实现示例。
 
 ### 6.1 ReviewSchedule → WrongQuestion 已移除字段
 
@@ -329,9 +361,9 @@ P2-2 后 WQ 不持有 SM-2 字段（efactor/interval/repetitions/next_review_dat
 
 ### 6.2 WrongQuestion 被用于计算 SM-2 的路径
 
-> 以下调用链是 P0-1 修复前的历史示例，当前代码不再执行；保留它仅为审计追溯。
+**确认不存在**：`wrong_question_service.update_quality()` 已不存在——当前 `wrong_question_service.py` 无任何 SM-2 计算或 quality 写入；错题本侧也无 `PUT /wrong-questions/{id}/quality` 路由。所有 SM-2 计算统一经 `review_scheduler.submit_review()` → `calc_sm2()`。
 
-**确认存在**：`wrong_question_service.update_quality()` (wrong_question_service.py:158-187)
+> 以下调用链是 P0-1 修复前的历史示例，当前代码不再执行；保留它仅为审计追溯。
 
 > **状态：P0-1 已修复** ✅ — `update_quality()` 已改为通过 ReviewSchedule 路径执行 SM-2 计算，不再绕开 RS。
 
@@ -372,17 +404,17 @@ async def update_quality(db, user_id, wq_id, quality):
 
 | 位置 | 使用 | 时区 |
 |------|------|------|
-| `review_scheduler.submit_review()` | `utcnow().date()` | UTC ✅ |
-| `review_scheduler.get_today_review()` | `utcnow()` | UTC ✅ |
-| `review_scheduler.auto_schedule_wq()` | `utcnow()` | UTC ✅ |
-| `review_scheduler.get_review_stats()` | `utcnow()` | UTC ✅ |
+| `review_scheduler.submit_review()` | `shanghai_today()` 作 review_date；`shanghai_date_utc_range()` 定 next_review_at；存储戳 `utcnow()` | Asia/Shanghai 日历日 ✅ |
+| `review_scheduler.get_today_review()` | `shanghai_today_boundaries()` 定今日窗口 | Asia/Shanghai 日历日 ✅ |
+| `review_scheduler.auto_schedule_wrong_question()` | 首次复习 = `shanghai_today() + 1 天`（错题首次复习从北京时间次日开始，e3389c59） | Asia/Shanghai 日历日 ✅ |
+| `review_scheduler.get_review_stats()` | `shanghai_today()` / `shanghai_date_utc_range()` | Asia/Shanghai 日历日 ✅ |
 | ~~`_sync_schedule_to_wq()` fallback~~ | `utcnow().date()` | P1-3 已修复 ✅ |
 | ~~`wrong_question_service.record_wrong()`~~ | `utcnow().date()` | P1-4 已修复 ✅ |
 | ~~`wrong_question_service.update_quality()`~~ | 已废弃（走 RS 路径） | P0-1 已修复 ✅ |
 | ~~`review_service.get_due_reviews()`~~ | RS 路径（`utcnow()`） | P1-1 已修复 ✅ |
 | ~~`review_service.get_review_stats()`~~ | RS/ReviewRecord 路径（`utcnow()`） | P1-1 已修复 ✅ |
 
-**结论**：全部路径已统一为 UTC ✅。无 `date.today()` 残留。
+**结论**：产品日期口径全部为 Asia/Shanghai 日历日 ✅，存储统一 naive UTC；无 `date.today()` 残留。
 
 ---
 
@@ -414,14 +446,14 @@ async def update_quality(db, user_id, wq_id, quality):
 | P2-2 | **废弃 WrongQuestion SM-2 兼容字段** | 移除 efactor/interval/repetitions/next_review_date/quality；保留 mastered 状态位 | ✅ 已移除 |
 | P2-3 | **统一复习视图** | 旧接口已移除，`/review/today` 为唯一复习列表端点 | ✅ 已完成 |
 | P2-4 | **复习统计接口合并** | 旧接口已移除，`/review/schedule-stats` 为唯一统计端点 | ✅ 已完成 |
-| P2-5 | **ReviewSchedule.subject 去冗余** | subject 为性能优化（避免高频 join），当前维持现状 | ⏸️ 已跳过 |
+| P2-5 | **ReviewSchedule.subject 去冗余** | 科目缓存字段已改为 `subject_id` 外键（subjects.id，可空） | ✅ 已实施 |
 
 ---
 
 > 本文档基于代码真实状态，不包含未实现的设计。相关代码路径：
-> - 调度服务：`backend/app/services/review_scheduler.py`
+> - 调度服务：`backend/app/services/review_scheduler.py`（submit_review / grade_batch_review / get_today_review* 等）
 > - SM-2 算法：`backend/app/services/sm2_service.py`
 > - 错题服务：`backend/app/services/wrong_question_service.py`
-> - 学习统计：`backend/app/services/stats_service.py`
+> - 时区工具：`backend/app/core/time_utils.py`（shanghai_today / shanghai_today_boundaries / shanghai_date_utc_range）
 > - ORM 模型：`backend/app/models/review_scheduler.py`, `wrong_question.py`
 > - API 路由：`backend/app/api/v1/review.py`, `wrong_questions.py`

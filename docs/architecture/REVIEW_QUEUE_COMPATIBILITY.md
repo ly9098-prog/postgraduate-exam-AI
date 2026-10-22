@@ -42,12 +42,12 @@
 | 单题驳回 | 同上 | `导入题目 #<动作 ID> 已驳回。`，随后关闭抽屉 |
 | 已选/整批通过 | 成功响应或无 `errors` 的结果 | `批量审核通过完成，影响 N 条导入题目。` |
 | 已选/整批驳回 | 同上 | `批量驳回完成，影响 N 条导入题目。` |
-| 已选批量部分失败 | 客户端 `Promise.allSettled` 汇总 `{affected_count, errors[]}` | `批量<动作>部分完成：成功 N，失败 M（#id…）。`，按输入 ID 顺序汇总 |
+| 已选批量部分失败 | 客户端 `Promise.allSettled` 汇总 `{affected_count, errors[]}` | `批量<动作>部分完成：成功 N，失败 M（#id…）。`，按输入 ID 顺序汇总客户端逐题失败 |
 | 低风险批量通过 | `{affected_count, skipped_count, skipped_reasons[]}` | 固定计数；仅 skipped_count>0 追加“部分高风险/需检查题已跳过” |
 
 当前页面在批量结果缺 `affected_count` 时显示 0；这是防御性回退，不是服务端正常响应。低风险提示不展示 `skipped_reasons` 明细。
 
-审核 mutation 成功后的顺序为：页面提示/按需关闭抽屉 → 清空选择/确认/驳回原因 → 失效 `import-review-queue`、`import-batches`，非驳回动作再失效 `questions`。逐题批量无论部分还是全部失败都由 `Promise.allSettled` 汇总为成功结果，因此仍执行上述清理与失效；只有请求 Promise 被拒绝进入 `onError` 时，才只显示错误且不清选择或失效缓存。
+审核 mutation 成功后的顺序为：页面提示/按需关闭抽屉 → 清空选择/确认/驳回原因 → 失效 `import-review-queue`、`import-batches`，非驳回动作再失效 `questions`。逐题批量中被 `Promise.allSettled` 汇总的部分或全部失败仍会 resolve 为结果并进入成功清理；只有 mutation Promise 本身被拒绝进入 `onError` 时，才只显示错误且不清选择或失效缓存。未识别的运行时动作返回防御性提示且不关闭抽屉，但仍按既有成功清理路径清空选择/确认/驳回原因，提示用户刷新确认结果。
 
 ## 5. 已确认的边界与缺口
 

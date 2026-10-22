@@ -1,6 +1,6 @@
 # 复习系统 Smoke Test 检查清单
 
-> 开发者手工验证步骤。每次修改复习调度相关逻辑后执行，确保核心流程不退化。最后更新：2026-09-02。
+> 开发者手工验证步骤。每次修改复习调度相关逻辑后执行，确保核心流程不退化。最后更新：2026-10-23（接口按当前路由修正：`schedule-submit` / `grade-submit` 已移除，提交统一走 `grade-batch`）。
 
 ---
 
@@ -43,57 +43,41 @@ GET /api/v1/review/today?subject=&limit=20
 - [ ] `questions[].schedule_id` 与 ReviewSchedule.id 对应
 - [ ] 返回数据不含答案（仅为复习用途）
 
-### 3. 提交 rating=0（完全不会）
+### 3. SM-2 评分规则（rating 直接行为）
+
+API 已不支持自带 rating 的单条/批量提交（`schedule-submit` / `grade-submit` 均已移除）；各 rating 的 SM-2 行为由单元测试直接覆盖：
 
 ```
-POST /api/v1/review/schedule-submit
+pytest backend/tests/test_services/test_sm2_service.py
+```
+
+**验证：**
+- [ ] rating=0：`interval_after` = 1、`repetitions` = 0、`next_review_at` 当天重现、`ease_factor` 下降
+- [ ] rating=4：`interval_after` > 1、`repetitions` 递增（+1）、`ease_factor` 上升、`next_review_at` 在未来的第 interval 天
+
+### 4. 自动批改（grade-batch，单条）
+
+```
+POST /api/v1/review/grade-batch
 {
-  "schedule_id": 1,
-  "question_id": 1,
-  "rating": 0
+  "reviews": [
+    {
+      "schedule_id": 1,
+      "question_id": 1,
+      "question_version_id": 555,
+      "occurrence_seq": 0,
+      "request_id": "smoke-single-0001",
+      "user_answer": "A"
+    }
+  ]
 }
 ```
 
 **验证：**
-- [ ] Response `interval_after` = 1
-- [ ] `repetitions` = 0（连续正确计数归零）
-- [ ] `next_review_at` ≈ 今天（当天立即重现）
-- [ ] `ease_factor` 略低于之前的值
-- [ ] ReviewRecord 表新增记录，rating=0
-
-### 4. 提交 rating=4（正确但有犹豫）
-
-```
-POST /api/v1/review/schedule-submit
-{
-  "schedule_id": 1,
-  "question_id": 1,
-  "rating": 4
-}
-```
-
-**验证：**
-- [ ] `interval_after` > 1（间隔按 SM-2 推进）
-- [ ] `repetitions` 递增（+1）
-- [ ] `ease_factor` 略高于之前的值
-- [ ] `next_review_at` 在未来的第 interval 天
-
-### 5. 自动批改
-
-```
-POST /api/v1/review/grade-submit
-{
-  "schedule_id": 1,
-  "question_id": 1,
-  "user_answer": "A"
-}
-```
-
-**验证：**
-- [ ] 答案匹配 → `is_correct=True`, `rating=4`
-- [ ] 答案不匹配 → `is_correct=False`, `rating=1`
-- [ ] 未提供 rating 时按默认映射，不抛异常
-- [ ] ReviewSchedule 状态按 SM-2 推进
+- [ ] 答案匹配 → `is_correct=true`（服务端按 rating=4 推进）
+- [ ] 答案不匹配 → `is_correct=false`（服务端按 rating=1 推进）
+- [ ] `schedule_id` / `question_id` / `question_version_id` / `occurrence_seq` 须与 `/review/today` 返回的一致，否则该条返回 `success=false`
+- [ ] ReviewSchedule 状态按 SM-2 推进，ReviewRecord 新增记录
 
 ### 6. 批量自动批改
 

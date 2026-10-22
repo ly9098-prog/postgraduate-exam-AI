@@ -1,6 +1,6 @@
 # Redis 使用情况与稳定性设计
 
-> 状态：与当前代码同步（更新于 2026-09-28）
+> 状态：与当前代码同步（更新于 2026-09-29）
 > 适用范围：`backend/`、`deploy/`、`miniprogram/pages/pomodoro/`
 > 事实依据：源码、生产 Compose、生产只读探测。未执行过写操作/压测的内容会明确标注。
 
@@ -227,7 +227,9 @@ bash deploy/scripts/redis_backup.sh backup      # 或 deploy.sh backup-redis
 bash deploy/scripts/redis_backup.sh list
 
 # 从 RDB 安全恢复（AOF-safe；会停止 Redis、快照旧数据、重建 AOF）
-bash deploy/scripts/deploy.sh redis-restore /data/backups/redis/redis_YYYYmmdd_HHMMSS.rdb
+# 备份目录默认值以 deploy/scripts/redis_backup.sh（BACKUP_DIR 默认 PROJECT_DIR/redis_backups）为准；
+# 如需改目录，可设置宿主机路径 REDIS_BACKUP_DIR。
+bash deploy/scripts/deploy.sh redis-restore /opt/22408-ai/redis_backups/redis_YYYYmmdd_HHMMSS.rdb
 
 # Redis 状态（只读）
 docker exec deploy-redis-1 redis-cli INFO memory

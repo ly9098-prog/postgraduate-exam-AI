@@ -1,6 +1,6 @@
 # 2240AI 系统架构
 
-> 基于代码与运行时索引（Codebase Memory）整理，不含未来设计。全篇核对：2026-09-02；2026-10-19/20 仅补充分批职责拆分说明，不代表全篇重新验收。
+> 基于代码与运行时索引（Codebase Memory）整理，不含未来设计。全篇核对：2026-09-02；2026-10-19/20 补充分批职责拆分说明；2026-10-23 修正模块清单文件名、services 文件数、grade_batch 端点与时区表述，不代表全篇重新验收。
 
 ---
 
@@ -98,7 +98,7 @@ postgraduate-ai/
 │   ├── core/         # 基础设施 (config/database/security)
 │   ├── models/       # SQLAlchemy ORM 模型
 │   ├── schemas/      # Pydantic 模型
-│   ├── services/     # 业务逻辑 (16文件)
+│   ├── services/     # 业务逻辑 (156个.py文件，另有 practice/export 等子包)
 │   ├── features/     # 导入管线 (ImportTextNormalizer 等)
 │   ├── ai/           # AI 集成（OpenAI-compatible 网关，模型由 Admin API 配置）
 │   └── main.py
@@ -120,7 +120,7 @@ postgraduate-ai/
 | 题库 CRUD | ✅ 完成 | questions.py, question_service.py |
 | 随机刷题 + 判分 | ✅ 完成 | practice.py, practice_service.py |
 | 错题本 | ✅ 完成 | wrong_questions.py, wrong_question_service.py |
-| SM-2 复习调度 | ✅ 完成 | review.py, sm2_service.py, review_service.py |
+| SM-2 复习调度 | ✅ 完成 | review.py, sm2_service.py, review_scheduler.py |
 | AI 错题分析 | ✅ 完成 | ai.py, ai_service.py, ai/client.py |
 | AI 学习建议 | ✅ 完成 | (同上) |
 | 题库导入 | ✅ 完成 | imports.py, import_service.py |
@@ -130,7 +130,7 @@ postgraduate-ai/
 | 批量图片 SSE 流式追踪 | ✅ 完成 | sse.ts, admin_imports.py |
 | 学习统计 | ✅ 完成 | stats.py, stats_service.py |
 | 答题行为记录 | ✅ 完成 | behavior.py, behavior_service.py |
-| 知识点标签 | ✅ 完成 | knowledge_points.py, knowledge_service.py |
+| 知识点标签 | ✅ 完成 | knowledge_points.py, knowledge_point_service.py |
 | RAG 检索 | 🟡 API/模块可用，业务接入范围有限 | `app/api/v1/rag.py`, `rag/` |
 | 编程题渲染 | ✅ 已接入 | Admin 专用代码渲染；小程序 CODE 渲染路径 |
 | 题目图片预加载 | ✅ 已接入 | `question-image-cache.js` 会话级预解码缓存 |
@@ -184,7 +184,7 @@ PDF → pdf_classifier (逐页判断)
   ├─ _sync_schedule_to_wq() 回写 WQ
   └─ 创建 ReviewRecord（历史记录）
 
-自动批改 → grade_submit / grade_batch
+自动批改 → grade_batch（`POST /review/grade-batch`）
   ├─ 未提供用户自评 rating 时:
   │   is_correct=True  → rating=4
   │   is_correct=False → rating=1
@@ -194,7 +194,7 @@ PDF → pdf_classifier (逐页判断)
 **关键设计决策**：
 
 - **ReviewSchedule 是唯一数据源**。`WrongQuestion` 不再维护旧版 SM-2 字段；复习历史写入 `ReviewRecord`。
-- **时区统一**：复习日期统一使用 `utcnow().date()`，避免服务器本地时区导致日期偏移。
+- **时区统一**：复习日期按 Asia/Shanghai 日历日（`shanghai_today()`）计算，`next_review_at` 存为该日 0 点的 naive UTC 瞬时；其余时间戳用 `utcnow()`，避免服务器本地时区导致日期偏移。
 - **Rating 0 是合法值**：SM-2 quality 评分范围 0-5，0 表示完全不会，会重置连续正确计数（repetitions=0）并缩短间隔。
 
 **历史技术债（已全部清理）**：
@@ -204,7 +204,7 @@ PDF → pdf_classifier (逐页判断)
 | 旧接口未迁移 | ✅ P1-1 已修复（数据源切换 RS） → P2-1 已移除旧接口 |
 | 旧 SM-2 路径残留 | ✅ P0-1 已修复（`update_quality()` 路由到 RS） |
 | 双表维护 | ✅ 已移除 WrongQuestion 上的旧 SM-2 字段，调度统一使用 ReviewSchedule |
-| 时区混用 | ✅ P1-3/4 已修复（全部路径统一为 `utcnow()`） |
+| 时区混用 | ✅ P1-3/4 已修复；产品日期口径为 Asia/Shanghai 日历日（`shanghai_today()`），存储为 naive UTC |
 
 > 完整设计与技术债清单详见 [REVIEW_SYSTEM_DESIGN.md](REVIEW_SYSTEM_DESIGN.md)。
 

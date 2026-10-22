@@ -1,6 +1,6 @@
 # 审计日志规范（Audit Log）
 
-> 版本：v2.4（运维权限与安全审计同步版） | 状态：已同步 | 更新：2026-09-02
+> 版本：v2.5（action 清单按代码写入值补全） | 状态：已同步 | 更新：2026-10-23
 > 修订自审计报告 C5（分级写入策略）、I7（分区与归档）
 > **取代旧文档 OPERATION_LOG.md**
 
@@ -147,15 +147,20 @@ system.token_refresh
 
 # 小程序用户管理
 app_user.view             # important（敏感查看）
-app_user.edit             # important
+app_user.update           # normal（改昵称等；before/after 快照）
 app_user.ban              # important
 app_user.unban            # important
+app_user.bind_admin       # critical（绑定后台管理员账号）
+app_user.unbind_admin     # critical（解绑）
 
 # 后台管理员管理
 admin_user.create         # critical
-admin_user.edit           # important
+admin_user.update         # critical（含启用/停用；停用会置 token nbf 失效）
 admin_user.delete         # critical
 admin_user.role_change    # critical
+admin_user.change_password   # critical（本人改密）
+admin_user.reset_password    # critical（重置他人密码，禁止重置自己）
+admin_user.force_logout      # critical（强制登出，禁止登出自己）
 
 # 角色 / 权限
 role.create               # critical
@@ -170,17 +175,20 @@ question.batch_delete     # critical（批量软删除）
 question.backfill_embeddings # normal（批量回填 embedding 向量）
 
 > 2026-08-10 同步：题目审核（通过/拒绝）走导入管理接口（import 级，见 REVIEW_FLOW.md §3），审核动作记录在 `question_imports.status / reviewed_by / reviewed_at`，不写 `question.*` 审计动作。代码中不存在 `question.approve` / `question.reject` / `question.batch_approve` / `question.batch_reject` / `question.rollback`；编辑统一写 `question.update`（含图片/选项操作，复用 update_admin_question 写入），旧文档示例 `question.edit` 已废弃。
+>
+> 2026-10-23 同步：本清单按代码实际写入值逐项核对补全——科目/后台管理员/小程序用户的 `.edit` 旧名更正为 `.update`（代码无 `subject.edit` / `admin_user.edit` / `app_user.edit`）；补齐 `import.batch_answer_image_fill`、`knowledge.create_edge` / `knowledge.infer_edges`、`syllabus.*`、`vector_config.update`、`admin_user.change_password` / `admin_user.reset_password` / `admin_user.force_logout`、`app_user.update` / `app_user.bind_admin` / `app_user.unbind_admin`。「具体 action 以实现写入值为准」的原则适用于全部章节；severity 缺省为 `normal`（`write_admin_audit` 默认值）。
 
 # 科目
 subject.create            # important
-subject.edit              # important
+subject.update            # important（改父科目/编码时）；其余字段变更 normal
 subject.delete            # critical
 
 # 导入
 import.enrich             # normal（触发 AI 解析任务）
 import.complete           # important（单题 AI 补全）
 import.batch_complete     # important（批量 AI 补全）
-import.batch_answer_fill  # important（批量补充答案）
+import.batch_answer_fill  # important（批量补充答案，答案串）
+import.batch_answer_image_fill  # important（批量补充答案，答案/解析图片）
 
 # 公式卡（2026-08-10 同步）
 formula.create            # normal
@@ -207,6 +215,22 @@ formula.import-item.approved  # normal
 formula.import-item.rejected  # normal
 formula-category.create       # normal
 formula-category.update       # normal
+
+# 知识点关系
+knowledge.create_edge     # normal（手工创建知识点关系边）
+knowledge.infer_edges     # normal（推断关系边，可 force_rebuild）
+
+# 考纲（syllabus）
+syllabus.create           # normal
+syllabus.update           # normal
+syllabus.activate         # critical（启用考纲）
+syllabus.archive          # normal（归档）
+syllabus.replace_knowledge_points  # normal（替换考纲知识点）
+syllabus.create_mapping   # normal（新建映射）
+syllabus.delete_mapping   # normal（删除映射）
+
+# 向量配置
+vector_config.update      # important（更新向量检索配置）
 
 # AI 设置
 ai_setting.update         # important（更新全局开关或月度调用额度）

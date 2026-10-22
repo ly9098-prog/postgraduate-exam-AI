@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-09-22 ~ 2026-10-23
+
+对照已落地实现补记（重构战役收尾）。历史审计报告不改写。
+
+- **运行时重构战役收尾（阶段完成）**
+  - 第五十三至一百一十二阶段：HTTP lifespan / 独立 worker / scheduler 的启动、信号、关闭、失败清理边界逐批迁移至中立模块（`core/runtime_*`、`services/runtime_*`、`practice/scored_*` 等），登记见 `docs/architecture/REFACTOR_INVENTORY.md` §4/§6；后端静态依赖 584 模块 / 2,265 边 / 0 静态循环（2026-10-23 复跑 `backend/tests/architecture/dependency_scan.py`）。
+  - observability（`d6c5232a`/`9f29e9fc`，2026-09-29）：Redis 容量监控与答题投影键监控，见 `docs/architecture/REDIS_USAGE.md` §7。
+  - admin-auth（`beb1a0ca`，2026-10-04）：后台认证相关变更。
+  - 2026-10-22 统计/番茄钟/复习重构系列（14 个 refactor 提交）：pomodoro 统计科目投影/窗口/来源累计/响应组装拆分、stats 共享自然日时间投影（`039537f2`）；复习流分离来源定位/AI 建议与答案等价/列表徽章/筛选与抽屉/补全草稿/确认弹层/快速补答案视图/批量补全结果/图片答案流程/审核反馈与确认状态（至 `f4e60284`）；新增 `docs/architecture/REVIEW_QUEUE_COMPATIBILITY.md` 登记审核队列排序/过滤/分页口径。
+  - 番茄钟完成通知的微信订阅消息推送链路已于 2026-07-29（`0063f278`）移除；`pomodoro_sessions` 通知字段保留但无发送方，事实说明见 `docs/architecture/POMODORO_NOTIFICATION.md`。
+- **Redis 备份目录改造**（commit 206efb60）
+  - `deploy/scripts/redis_backup.sh` 默认归档到宿主机 `/opt/22408-ai/redis_backups`（`BACKUP_DIR` 默认 `PROJECT_DIR/redis_backups`，可用 `REDIS_BACKUP_DIR` 覆盖）；`redis_restore.sh` 用法同步；`deploy.sh` 暴露 `backup-redis` / `redis-restore` 子命令，`deploy/Makefile` 有 `redis-restore` 目标。文档口径见 `docs/project/DEPLOY_PLAN.md` 与 `docs/architecture/REDIS_USAGE.md` §8。
+- **生产补录番茄钟记录（一次性运维留痕，2026-10-04/05）**
+  - 生产 `pomodoro_sessions` 为用户 1 补录两条 `completed` 记录：ID 391（操作系统，2026-10-05 02:00–02:45 北京时间，2700 秒）与 ID 392（英语，2026-10-05 14:50:54–15:06:54 北京时间，960 秒）；均为 free 计时（`work_duration=break_duration=0`），无暂停记录；已通过生产数据库回查确认。原记录在 `DEPLOY_PLAN.md` §9.6/§9.7，因属一次性数据操作已移出部署文档。
+
+---
+
 ## 2026-09-13 ~ 2026-09-21
 
 对照 `e8beb2e2` 之后已落地的实现补记。历史审计报告不改写。

@@ -1,6 +1,6 @@
 # 数据库设计规划
 
-> 版本：v2.6（SQLAlchemy/Alembic 与运维能力同步版） | 状态：核心 Admin schema 已实施 | 更新：2026-09-02
+> 版本：v2.7（question_imports 答案状态与优先级字段登记） | 状态：核心 Admin schema 已实施 | 更新：2026-10-23
 > ORM：SQLAlchemy | DB：PostgreSQL（生产共享实例）/ SQLite（开发兼容）
 > 修订自审计报告 I1（新增 subjects）、C6（新增 question_versions）、C5（operation_logs → audit_log + severity）、O1（IP 字段）、C1（双身份系统说明）
 >
@@ -496,6 +496,24 @@ ALTER TABLE question_imports
   ADD COLUMN reviewed_by INTEGER REFERENCES admin_users(id),
   ADD COLUMN reviewed_at TIMESTAMP;
 ```
+
+**答案状态与优先级字段（2026-07 起已实现，ORM `backend/app/models/question_import.py`）**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `answer_status` | String(24) | 答案状态：`missing` / `imported` / `ai_filled` / `manual_filled` / `manual_verified` / `abnormal`；审核队列过滤参数（`admin_imports.py` review-queue `answer_status`） |
+| `answer_source` | String(16) | 答案来源：`ocr` / `parser` / `ai` / `manual` / `unknown` |
+| `answer_confidence` | Float | 答案识别或 AI 补全置信度 |
+| `review_priority` | Integer, indexed | 审核优先级，越高越优先；参与审核队列排序 |
+| `ai_answer_flag` | Boolean | AI 答案待确认标记（阶段七） |
+| `superseded_by_batch_id` / `superseded_at` | String(64) / DateTime | 批次被合并取代时的来源批次与时间（P0-4） |
+| `source_question_no` / `source_question_label` | String(32) | 原始题号 / 完整标签（如 `12`、`12.`） |
+| `source_image_seq` / `source_image_name` | Integer / String(256) | 批量图片导入的来源图序号 / 文件名 |
+| `source_page_start` / `source_page_end` | Integer | PDF/文档起始/结束页码 |
+| `source_order_index` | Integer | 批次内稳定顺序索引 |
+| `raw_text_preview` | Text | 原始题目文本预览（保留题号） |
+
+> 2026-10-23 同步：本节只登记与审核队列直接相关的答案状态/优先级字段；完整字段以 ORM 模型为准（文档自声明模型为事实源）。
 
 历史 ORM 映射参考（当前实现以 SQLAlchemy 模型为准）：
 ```prisma

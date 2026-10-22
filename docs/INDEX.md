@@ -114,7 +114,7 @@
 | 文档 / 入口 | 当前事实 |
 |------|------|
 | `docs/architecture/SYSTEM_ARCHITECTURE.md` | 2026-09-02 总体架构与运行时状态 |
-| `docs/admin/ADMIN_API_SPEC.md` | Admin API v2.7，包含 system/tasks/backup 端点 |
+| `docs/admin/ADMIN_API_SPEC.md` | Admin API v2.9，包含 system/tasks/backup 端点与批量答案补录端点 |
 | `docs/admin/RBAC_RULES.md` | JWT 隔离签名域与 `system:*` 权限 |
 | `docs/project/ROLE_DEPLOYMENT.md` | `local_import` / `cloud_api` 角色拆分与生产约束 |
 | `docs/frontend/render-invariant.md` | 小程序 CODE / LaTeX / 图片渲染路径 |

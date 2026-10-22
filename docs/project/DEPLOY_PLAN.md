@@ -1,6 +1,7 @@
 # 部署方案
 
-> 更新时间：2026-08-16
+> 更新时间：2026-10-23
+> 2026-10-23 变更：Redis 备份/恢复路径与脚本默认值一致保留；移除 §9.6/§9.7 两条生产补录番茄钟记录（一次性运维操作，留痕移至 docs/project/CHANGELOG.md）。
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
 > ✅ **Pomodoro V2 迁移已完成（2026-08-08）**：历史 Pomodoro 数据已规范化到 V2 canonical 模型，
@@ -332,13 +333,13 @@ bash deploy/scripts/deploy.sh backup-redis
 bash deploy/scripts/redis_backup.sh list
 
 # 从 RDB 安全恢复（脚本会停止 Redis、快照旧数据、重建 AOF 后再启动）
-bash deploy/scripts/deploy.sh redis-restore /data/backups/redis/<backup>.rdb
+bash deploy/scripts/deploy.sh redis-restore /opt/22408-ai/redis_backups/<backup>.rdb
 
 # 也可通过 Makefile 调用
-cd deploy && make redis-restore BACKUP=/data/backups/redis/<backup>.rdb
+cd deploy && make redis-restore BACKUP=/opt/22408-ai/redis_backups/<backup>.rdb
 ```
 
-> Redis 备份通过 `BGSAVE` 生成原生 RDB 快照；脚本校验文件头并以时间戳归档，默认保留 14 天（`REDIS_BACKUP_RETENTION_DAYS`）。请将 Redis 备份纳入与 PostgreSQL 相同的异地/离线保留策略。
+> Redis 备份通过 `BGSAVE` 生成原生 RDB 快照；默认归档到宿主机 `/opt/22408-ai/redis_backups`，脚本校验文件头并以时间戳归档，默认保留 14 天（`REDIS_BACKUP_RETENTION_DAYS`）。备份文件不会写入 Redis 命名卷；如需改目录，可设置宿主机路径 `REDIS_BACKUP_DIR`。请将 Redis 备份纳入与 PostgreSQL 相同的异地/离线保留策略。
 >
 > **为什么需要专用恢复脚本**：生产已开启 AOF，直接替换 `/data/dump.rdb` 后 `docker restart` 会优先加载 `appendonlydir`，可能表现为恢复后 `DBSIZE=0`。`redis_restore.sh` 会先保留旧数据目录快照，清空旧 AOF/RDB，使用临时 Redis 从 RDB 加载并校验 `DBSIZE>0`，再触发 AOF 重写，最后恢复生产容器并校验 `PING`、`DBSIZE`、`INFO persistence`。
 >

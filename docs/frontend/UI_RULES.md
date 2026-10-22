@@ -189,7 +189,9 @@
 | 专注统计 | subpackages/productivity/pomodoro-stats/index | 番茄钟统计 |
 | 导出配置 / 记录 | subpackages/export/{export-config,export-records}/ | 数据导出 |
 
-**分包预下载**（`app.json` `preloadRule`）：首页→study、数据看板→study、番茄钟→productivity；formulas / animation / export 按需加载。
+**分包预下载**（`app.json` `preloadRule`）：首页→study + knowledge、数据看板→study + knowledge、番茄钟→productivity；formulas / animation / export 按需加载。
+
+**动画资源**：`subpackages/animation/lottie-loader.js` 保留加载动画、番茄钟使用的 `excellent` / `award` / `thumbsUp` 庆祝动画，以及组件默认的 `steady`（与 `practice` 共用成功动画）。未使用的 `final` / `combo` / `group` / `focus` 动画数据和 `assets/animation` 中无引用的 1×1 占位图片已清理；无图片来源时仍使用组件内置静态降级。图标保留运行时使用的格式、主题及诊断选中态变体，已被 PNG 或共享图标替代的旧 SVG 不再打包。
 
 ---
 

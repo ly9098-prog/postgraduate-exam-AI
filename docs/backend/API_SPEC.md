@@ -3,6 +3,8 @@
 > 2240AI 全量 API 接口规范。Base URL: `/api/v1`
 >
 > 2026-08-10 更新原因：题目/科目关系已从 `subject`（string code，如 "math2"）迁移为 `subject_id`（int，FK `subjects.id`），响应中展开 `subject_code` / `subject_name`；本规范相关参数表与 JSON 示例已同步更新。
+>
+> 2026-10-23 更新原因：复习与错题本接口按当前路由修正——`/review/schedule-submit`、`/review/batch-submit`、`/review/grade-submit`、`PUT /wrong-questions/{id}/quality` 均不存在（已移除），评分提交统一为 `POST /review/grade-batch`；补登记 `/review/today/next-batch`、`/review/{schedule_id}/master|unmaster`、`/review/history` 与错题诊断（`/wrong-questions/diagnosis/*`）端点。
 
 ---
 
@@ -424,15 +426,31 @@ Authorization: Bearer <jwt_token>
 }
 ```
 
-### PUT `/wrong-questions/{id}/quality`
+### GET `/wrong-questions/diagnosis/taxonomy`
 
-质量评分（触发 SM-2 更新）。
+错误分类字典（错因分类树）。
 
-```json
-{
-  "quality": 4
-}
-```
+### GET `/wrong-questions/diagnosis/stats`
+
+错因诊断统计。
+
+### GET `/wrong-questions/{id}/diagnosis`
+
+单条错题的诊断结果。
+
+### PUT `/wrong-questions/{id}/diagnosis`
+
+更新单条错题的诊断结果。
+
+### POST `/wrong-questions/{id}/diagnosis/suggest`
+
+AI 错因诊断建议（辅助，需人工确认）。
+
+### POST `/wrong-questions/batch`
+
+批量错题操作。
+
+> 已移除：`PUT /wrong-questions/{id}/quality`（质量评分端点已不存在；SM-2 评分提交统一走 `POST /review/grade-batch`，见复习章节）。
 
 ---
 
@@ -495,52 +513,52 @@ Authorization: Bearer <jwt_token>
 
 今日复习完成结果汇总（正确/错误/掌握/明日待复习数）。
 
-### POST `/review/schedule-submit`
+### POST `/review/today/next-batch`
 
-提交单条复习评分（SM-2 更新）。
+获取下一批待复习题目（提交上一批后领取）。
 
-```json
-// Request
-{
-  "schedule_id": 1,
-  "question_id": 100,
-  "rating": 4
-}
+### POST `/review/grade-batch`
 
-// Response
-{
-  "schedule_id": 1,
-  "question_id": 100,
-  "rating": 4,
-  "interval_after": 6,
-  "ease_factor_after": 2.6,
-  "next_review_at": "2026-08-16T10:00:00+08:00",
-  "is_correct": true
-}
-```
-
-### POST `/review/batch-submit`
-
-批量提交复习评分。
+批量自动批改 + 提交复习评分（上限 40 条）。服务端按作答对错映射 rating：正确 → 4，错误 → 1；不支持调用方自带 rating。
 
 ```json
 // Request
 {
   "reviews": [
-    {"schedule_id": 1, "question_id": 100, "rating": 4},
-    {"schedule_id": 2, "question_id": 101, "rating": 2}
-  ]
+    {
+      "schedule_id": 1,
+      "question_id": 100,
+      "question_version_id": 555,
+      "occurrence_seq": 0,
+      "request_id": "client-generated-id-8+",
+      "user_answer": "A"
+    }
+  ],
+  "session": {
+    "request_id": "session-request-id",
+    "duration_sec": 180
+  }
 }
 
-// Response
+// Response（逐条结果；单条失败不中断整批）
 {
   "results": [
-    {"schedule_id": 1, "question_id": 100, "next_review_at": "2026-08-16T10:00:00+08:00", "is_correct": true},
-    {"schedule_id": 2, "question_id": 101, "next_review_at": "2026-08-11T10:00:00+08:00", "is_correct": false}
+    {
+      "schedule_id": 1,
+      "question_id": 100,
+      "question_version_id": 555,
+      "occurrence_seq": 1,
+      "request_id": "client-generated-id-8+",
+      "success": true,
+      "is_correct": true,
+      "correct_answer": "A"
+    }
   ],
-  "total": 2
+  "total": 1
 }
 ```
+
+> 已移除：`POST /review/schedule-submit`、`POST /review/batch-submit`（自评 rating 的单条/批量提交端点已不存在）。
 
 ### GET `/review/schedule-stats`
 
@@ -559,9 +577,19 @@ Authorization: Bearer <jwt_token>
 }
 ```
 
-### POST `/review/grade-submit` / `POST /review/grade-batch`
+### GET `/review/history`
 
-提交对错判定（`grade-submit` 单题，`grade-batch` 批量），返回是否正确/标准答案/更新后的 SM-2 参数。
+复习历史（分页）。
+
+### POST `/review/{schedule_id}/master`
+
+标记已掌握。
+
+### POST `/review/{schedule_id}/unmaster`
+
+取消已掌握。
+
+> 已移除：`POST /review/grade-submit`（单题自动批改端点已不存在，统一走 `POST /review/grade-batch`）。
 
 ---
 

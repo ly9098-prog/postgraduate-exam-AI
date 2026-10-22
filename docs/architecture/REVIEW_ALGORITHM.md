@@ -1,6 +1,6 @@
 # Review Algorithm (SM-2)
 
-> 当前复习调度实现说明。最后更新：2026-09-02。
+> 当前复习调度实现说明。最后更新：2026-10-23（API 清单按 `backend/app/api/v1/review.py` 实际路由修正）。
 
 ## 实现入口
 
@@ -16,7 +16,7 @@
 - `quality < 3`：连续正确次数归零，间隔重置为 1 天。
 - `quality >= 3`：第 1 次间隔 1 天，第 2 次间隔 6 天，之后按 `interval × ease_factor` 计算并稳定四舍五入。
 - ease factor 下限为 1.3，评分 0 是合法值。
-- 复习日期和时间统一按 UTC 计算；学习日边界由复习服务处理。
+- 复习日期按 Asia/Shanghai 日历日计算（`shanghai_today()`）；`next_review_at` 存储为该上海日历日起点的 naive UTC 瞬时（`shanghai_date_utc_range()`）。
 
 ## 数据职责
 
@@ -56,14 +56,16 @@ review_schedules
 | 接口 | 用途 |
 |---|---|
 | `GET /api/v1/review/today` | 今日待复习列表 |
-| `POST /api/v1/review/schedule-submit` | 提交单次复习评分 |
-| `POST /api/v1/review/batch-submit` | 批量提交评分 |
+| `GET /api/v1/review/today/overview` | 今日复习任务流概览 |
+| `POST /api/v1/review/today/next-batch` | 获取下一批待复习 |
+| `GET /api/v1/review/today/result` | 今日复习完成结果汇总 |
 | `GET /api/v1/review/schedule-stats` | 复习统计 |
 | `GET /api/v1/review/history` | 复习历史 |
+| `POST /api/v1/review/grade-batch` | 批量自动批改 + 提交（上限 40 条） |
 | `POST /api/v1/review/{schedule_id}/master` | 标记已掌握 |
-| `POST /api/v1/review/{schedule_id}/unmaster` | 取消掌握 |
+| `POST /api/v1/review/{schedule_id}/unmaster` | 取消已掌握 |
 
-旧 `/review/due`、`/review/submit`、`/review/stats` 端点已移除，不应再接入新客户端。
+旧 `/review/due`、`/review/submit`、`/review/stats`、`/review/schedule-submit`、`/review/batch-submit`、`/review/grade-submit` 端点均已移除，不应再接入新客户端；自评 rating 的单条/批量提交入口已不存在，评分提交统一走 `grade-batch`（按作答对错映射 4/1）。
 
 ## 设计约束
 

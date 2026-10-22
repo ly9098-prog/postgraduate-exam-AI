@@ -1,9 +1,10 @@
 # 题目审核流程设计
 
-> 版本：v2.2（知识点关联表与编辑审计同步版） | 状态：可启动开发 | 更新：2026-08-10
+> 版本：v2.3（审核工作台过滤与 re_pending 页面登记） | 状态：可启动开发 | 更新：2026-10-23
 > 修订自审计报告 C6：完善 editing/re_pending 状态机；引入 question_versions 快照；权限分级
 > 2026-05-30 变更原因：同步题库 Level 1 完全重复检测；导入阶段标记疑似重复，审核发布阶段按 `subject + question_hash` 拦截。
 > 2026-08-10 变更原因：题目知识点改由 `question_knowledge_points` 关联表保存（`questions.knowledge_points` 列移除）；编辑审计动作统一为 `question.update`。
+> 2026-10-23 变更原因：§6 审核工作台按 `review-query-state.ts` / `page.tsx` 复核改写（过滤条件清单、答案状态筛选、re_pending 孤儿页面登记）。
 
 ---
 
@@ -215,25 +216,33 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 
 ## 六、审核工作台设计（前端）
 
-### 过滤条件
-- 审核状态：`pending` / `rejected` / `approved`（`re_pending` 为设计预留，当前无此状态数据）
-- 重复状态：`normal` / `possible_duplicate`
-- 科目：subjects 树形选择
-- 来源：手动上传 / AI 导入 / PDF 导入
-- 时间范围
-- 导入批次 ID
+> 2026-10-23 按 `admin-frontend/src/app/(admin)/imports/review/review-query-state.ts`（ReviewFilters 类型与 createDefaultReviewFilters）与 `page.tsx` 复核改写。队列排序 / 分页 / 过滤语义以 `docs/architecture/REVIEW_QUEUE_COMPATIBILITY.md` §2 为准，本文不复述。
+
+### 过滤条件（当前实现）
+
+- 审核状态（`status`，默认 `pending`）：下拉选项 `pending` / `approved` / `rejected` / `published` / 全部（`re_pending` 为设计预留，当前无此状态数据）
+- 科目（`subject_id`）：subjects 下拉选择（单选，非树形）
+- 来源（`source_type`）：手动上传 / AI 导入 / PDF 导入
+- 风险等级（`risk_level`）：`high` / `medium` / `low`
+- 答案状态（`answer_status`）：前端下拉为 `missing` / `ai_filled` / `imported` / `manual_verified` / `abnormal`；后端 `GET /imports/review-queue` 另接受 `manual_filled`（`backend/app/api/v1/admin_imports.py:464-503`）
+- 关键词（`keyword`）：搜索题干 / OCR 原文，防抖后随列表请求传入
+- 导入批次 ID（`batch_id`）
+
+不存在「重复状态（duplicate_status）」与「时间范围」筛选项。注意：`risk_level` 为分页后内存过滤、`total` 口径存在偏差，属既有行为，见 `REVIEW_QUEUE_COMPATIBILITY.md` §2/§5。
 
 ### 快速审核模式
-- 列表展示题目摘要（题干前 100 字 + 选项 ABCD）
+- 列表展示题目摘要（题干 + 选项 ABCD；题干摘要由 CSS 单行截断实现，无固定字数逻辑）
 - `duplicate_status=possible_duplicate` 时展示疑似重复标识，并可查看命中的正式题目 ID / 暂存导入题 ID 与 hash
 - 单行操作：[通过] [拒绝]
 - 拒绝时弹出 reason 输入框（必填）
 - 批量选中（上限 50） + 批量通过/拒绝
 
-### re_pending 工作台（设计预留，未实现）
-- 单独 Tab 展示 re_pending 题目
-- 展示版本对比（左：上次 approved 版本，右：当前编辑版本，diff 高亮）
-- 审核员选择"接受变更"或"回滚"
+### re_pending 工作台（后端未实现；前端存在未接入导航的孤儿页面）
+
+- 后端无 re_pending 写入路径：`_EDIT_FIELDS` 不含 review_status（`backend/app/services/admin_question_service.py:37-53`），生产代码无 re_pending 赋值（仅 CSV 导入可显式带入，`backend/app/services/question_csv_import_service.py:241-268`）；审核页没有可用写入路径（`REVIEW_QUEUE_COMPATIBILITY.md` §5）。
+- 管理端存在历史页面 `admin-frontend/src/app/(admin)/review/page.tsx`：含 `pending | re_pending` 两个 Tab；re_pending Tab 查询 `/questions?review_status=re_pending`（page.tsx:131），并拉取版本历史做 diff 展示（page.tsx:146-195）。
+- 该页面不在导航中：`admin-frontend/src/lib/routes.ts` 的 nav 项无 `/review`（只有 `/imports/review` 等），全仓无指向 `/review` 的链接，只能手输 URL 到达。
+- 「版本对比（左：上次 approved 版本，右：当前编辑版本，diff 高亮）」与「接受变更 / 回滚」仅为 UI 预留，后端无对应写入端点；后续由 pm 决定删除该孤儿页面或补后端实现。
 
 ---
 
