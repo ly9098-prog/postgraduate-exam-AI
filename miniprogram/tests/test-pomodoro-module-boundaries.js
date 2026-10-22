@@ -13,8 +13,8 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 23)
-  assert.equal(result.edges, 3)
+  assert.equal(result.modules, 24)
+  assert.equal(result.edges, 4)
 })
 
 test('dependency injection examples cannot import page, API, storage or another package', () => {
@@ -127,6 +127,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 23)
+    assert.equal(result.modules, 24)
   }
 })

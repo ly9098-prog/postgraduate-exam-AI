@@ -51,6 +51,7 @@ const {
   clearLocalPauseAdjustment,
 } = require('./utils/pause-adjustment')
 const { resolveBreakSec } = require('./utils/celebration-dismiss')
+const { buildEndConfirmViewModel } = require('./utils/end-confirm-view-model')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -281,7 +282,7 @@ Page({
       setSnapshot: value => { this._confirmTimerSnapshot = value },
       sessionStartTime: () => this._timerState.sessionStartTime,
       applyTimer: patch => Object.assign(this._timerState, patch),
-      buildView: (mode, value) => this._buildEndConfirmViewModel(mode, value),
+      buildView: (mode, value) => buildEndConfirmViewModel(mode, value),
       applyView: patch => this.setData(patch),
       nextTick: callback => wx.nextTick(callback),
       draw: value => {
@@ -1226,51 +1227,6 @@ Page({
     return true
   },
 
-  _buildEndConfirmViewModel(mode, snapshot) {
-    if (mode === 'free-complete') {
-      const elapsed = Math.max(0, snapshot.elapsedSec || 0)
-      const fmt = formatElapsedSec(elapsed)
-      const hasElapsed = elapsed >= 1
-      return {
-        showEndConfirm: true,
-        endConfirmTheme: 'free',
-        endConfirmTitle: '结束自由计时？',
-        endConfirmText: hasElapsed
-          ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。`
-          : '当前计时时长较短，确认后仍会结束本次计时。',
-        // cover-view 在部分基础库/真机上不会可靠自动换行。长时长和
-        // 大字体下把“标签 / 时长 / 说明”拆成独立行，避免 nowrap 裁字。
-        endConfirmLine1: hasElapsed ? '本次已专注' : '当前计时时长较短',
-        endConfirmLine2: hasElapsed ? fmt.friendly : '确认后仍会结束本次计时。',
-        endConfirmLine3: hasElapsed ? '确认后将计入学习统计。' : '',
-        endConfirmOkText: '确认结束',
-        endConfirmCancelText: '继续计时',
-      }
-    }
-
-    if (mode === 'countdown-interrupt') {
-      const isBreak = snapshot.phase === 'break'
-      const elapsedSec = Math.max(0, (snapshot.totalSec || 0) - (snapshot.remainingSec || 0))
-      const fmt = formatElapsedSec(elapsedSec)
-      const hasElapsed = elapsedSec > 0
-      return {
-        showEndConfirm: true,
-        endConfirmTheme: isBreak ? 'break' : 'focus',
-        endConfirmTitle: isBreak ? '结束休息？' : '结束本次专注？',
-        endConfirmText: hasElapsed
-          ? `本次已专注 ${fmt.friendly}。确认后将结束当前番茄钟。`
-          : '确认后将结束当前番茄钟。',
-        endConfirmLine1: hasElapsed ? '本次已专注' : '确认后将结束当前番茄钟。',
-        endConfirmLine2: hasElapsed ? fmt.friendly : '',
-        endConfirmLine3: hasElapsed ? '确认后将结束当前番茄钟。' : '',
-        endConfirmOkText: '结束',
-        endConfirmCancelText: isBreak ? '继续休息' : '继续专注',
-      }
-    }
-
-    throw new Error('Unknown confirm mode: ' + mode)
-  },
-
   async _showEndFreeConfirm() {
     if (!this._timerState.sessionId || this.data.actionLoading) return
 
@@ -1314,7 +1270,7 @@ Page({
     this._timerState.freeFriendlyText = fmt.friendly
     this._timerState.endConfirmMode = 'free-complete'
     this.setData({
-      ...this._buildEndConfirmViewModel('free-complete', snapshot),
+      ...buildEndConfirmViewModel('free-complete', snapshot),
       ringCanvasVisible: true,
       freeDisplayTime: fmt.display,
       isPaused: true,
@@ -1451,7 +1407,7 @@ Page({
     const snapshot = this._confirmTimerSnapshot
 
     this.setData({
-      ...this._buildEndConfirmViewModel('countdown-interrupt', snapshot),
+      ...buildEndConfirmViewModel('countdown-interrupt', snapshot),
       ringCanvasVisible: true,
     })
 
