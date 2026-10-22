@@ -53,6 +53,7 @@ import {
   updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
+import { toggleAllSelection, toggleSingleSelection } from "@/lib/selection-ops";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
@@ -625,24 +626,11 @@ export default function QuestionsPage() {
   };
 
   const toggleAll = () => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (allChecked) {
-        items.forEach((item) => next.delete(item.id));
-      } else {
-        items.forEach((item) => next.add(item.id));
-      }
-      return next;
-    });
+    setSelectedIds(() => toggleAllSelection(items.map((item) => item.id), allChecked));
   };
 
   const toggleOne = (id: number) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelectedIds((current) => toggleSingleSelection(current, id));
   };
 
   const selectQuestion = useCallback((id: number) => {

@@ -63,11 +63,8 @@ import {
   createReviewActionDialogState,
   reduceReviewActionDialogState,
 } from "./review-action-dialog-state";
-import {
-  reduceReviewFilterSelection,
-  toggleAllSelection,
-  toggleSingleSelection,
-} from "./review-filter-selection";
+import { reduceReviewFilterSelection } from "./review-filter-selection";
+import { toggleAllSelection, toggleSingleSelection } from "@/lib/selection-ops";
 import {
   batchAnswerLoadingLabel,
   buildBatchAnswerViewState,
