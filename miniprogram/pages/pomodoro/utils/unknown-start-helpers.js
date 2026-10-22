@@ -44,3 +44,12 @@ module.exports = {
   matchesUnknownStartAttempt,
   buildUnknownStartAttempt,
 }
+
+function startCancellationAt(session, cancelAt, now, parseServerTime) {
+  const requestedAt = Number(cancelAt)
+  const fallback = Number.isFinite(requestedAt) && requestedAt > 0 ? requestedAt : now
+  const serverStartAt = session && session.start_time ? parseServerTime(session.start_time) : NaN
+  return Number.isFinite(serverStartAt) ? Math.max(serverStartAt, fallback) : fallback
+}
+
+module.exports.startCancellationAt = startCancellationAt

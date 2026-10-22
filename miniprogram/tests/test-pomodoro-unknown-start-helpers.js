@@ -81,3 +81,20 @@ assert.equal(overridden.taskType, 'exam')
 assert.equal(overridden.requestedAt, 3000)
 
 console.log('Pomodoro unknown start helpers passed: payload/match/build')
+
+// ── startCancellationAt ──
+const { startCancellationAt } = require('../pages/pomodoro/utils/unknown-start-helpers')
+const parse = (s) => new Date(s).getTime()
+
+// with valid server start_time
+assert.equal(startCancellationAt({ start_time: '2023-01-01T00:00:00Z' }, 1700000001000, 1700000002000, parse), 1700000001000)
+// cancelAt=0 → fallback to now, which is after server start
+assert.equal(startCancellationAt({ start_time: '2023-01-01T00:00:00Z' }, 0, 1700000002000, parse), 1700000002000)
+// no session → fallback to now
+assert.equal(startCancellationAt(null, 0, 1700000003000, parse), 1700000003000)
+// invalid cancelAt → fallback to now
+assert.equal(startCancellationAt(null, NaN, 1700000004000, parse), 1700000004000)
+// valid cancelAt → use it
+assert.equal(startCancellationAt(null, 1700000005000, 1700000006000, parse), 1700000005000)
+
+console.log('Pomodoro unknown start helpers passed: payload/match/build/cancellation')

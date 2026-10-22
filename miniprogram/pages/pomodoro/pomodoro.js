@@ -56,6 +56,7 @@ const {
   buildUnknownStartPayload,
   matchesUnknownStartAttempt,
   buildUnknownStartAttempt,
+  startCancellationAt,
 } = require('./utils/unknown-start-helpers')
 const { buildCachedActiveSession } = require('./utils/cached-session-builder')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
@@ -651,10 +652,7 @@ Page({
   },
 
   _startCancellationAt(session, cancelAt) {
-    const requestedAt = Number(cancelAt)
-    const fallback = Number.isFinite(requestedAt) && requestedAt > 0 ? requestedAt : api.now()
-    const serverStartAt = session && session.start_time ? parseServerTime(session.start_time) : NaN
-    return Number.isFinite(serverStartAt) ? Math.max(serverStartAt, fallback) : fallback
+    return startCancellationAt(session, cancelAt, api.now(), parseServerTime)
   },
 
   async _reconcileUnknownStartAttempt(explicitAttempt) {
