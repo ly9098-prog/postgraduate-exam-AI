@@ -4,41 +4,32 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from sqlalchemy import Date as SQLDate
-from sqlalchemy import case, cast, func, select, text
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import (
-    shanghai_date_utc_range,
-    shanghai_today,
-    shanghai_today_boundaries,
-    utcnow,
-)
+from app.core.time_utils import shanghai_today, utcnow
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.user_question_state import UserQuestionState
+from app.services.learning_time_projection import (
+    china_date_expr as _china_date_expr,
+)
+from app.services.learning_time_projection import (
+    date_utc_range as _date_utc_range,
+)
+from app.services.learning_time_projection import (
+    today_utc as _today_utc,
+)
 
 logger = logging.getLogger(__name__)
 
 
 # ── helpers ──────────────────────────────────────────────────────────
-
-
-def _today_utc() -> datetime:
-    """Return China today's midnight converted to naive UTC."""
-    return shanghai_today_boundaries()[0]
-
-
-async def _china_date_expr(db: AsyncSession, column):
-    bind = await db.connection()
-    if bind.sync_connection.dialect.name == "sqlite":
-        return func.date(column, "+8 hours")
-    return cast(column + text("INTERVAL '8 hours'"), SQLDate)
 
 
 def _safe_accuracy(correct: int, total: int) -> float:
@@ -680,7 +671,7 @@ async def get_study_trend(
     db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7
 ) -> dict:
     today = shanghai_today()
-    since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
+    since = _date_utc_range(today - timedelta(days=days - 1))[0]
     day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     q = select(

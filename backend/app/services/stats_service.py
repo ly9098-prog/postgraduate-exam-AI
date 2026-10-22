@@ -1,19 +1,12 @@
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-from sqlalchemy import Date as SQLDate
-from sqlalchemy import Integer, case, cast, func, select, text
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.subject_scope import selected_408_subject_ids
-from app.core.time_utils import (
-    serialize_utc_datetime,
-    shanghai_date_utc_range,
-    shanghai_today,
-    shanghai_today_boundaries,
-    utcnow,
-)
+from app.core.time_utils import serialize_utc_datetime, shanghai_today, utcnow
 from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.answer_behavior import AnswerBehavior
 from app.models.knowledge_point import KnowledgePoint
@@ -22,6 +15,21 @@ from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.wrong_question import WrongQuestion
+from app.services.learning_time_projection import (
+    china_date_expr as _china_date_expr,
+)
+from app.services.learning_time_projection import (
+    china_hour_expr as _china_hour_expr,
+)
+from app.services.learning_time_projection import (
+    coerce_date as _coerce_date,
+)
+from app.services.learning_time_projection import (
+    date_utc_range as _date_utc_range,
+)
+from app.services.learning_time_projection import (
+    today_utc as _today_utc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,38 +117,6 @@ def _normalize_dashboard_actions(value: object, *, limit: int = 4) -> list[dict]
     return result
 
 
-def _today_utc() -> datetime:
-    """Return China today's 00:00 boundary as naive UTC for DB queries."""
-    return shanghai_today_boundaries()[0]
-
-
-async def _china_date_expr(db: AsyncSession, column):
-    """SQL expression that buckets a naive-UTC DB timestamp by China date."""
-    bind = await db.connection()
-    if bind.sync_connection.dialect.name == "sqlite":
-        return func.date(column, "+8 hours")
-    return cast(column + text("INTERVAL '8 hours'"), SQLDate)
-
-
-async def _china_hour_expr(db: AsyncSession, column):
-    """SQL expression for the China wall-clock hour of a UTC DB timestamp."""
-    bind = await db.connection()
-    if bind.sync_connection.dialect.name == "sqlite":
-        return cast(func.strftime("%H", column, "+8 hours"), Integer)
-    return func.extract("hour", column + text("INTERVAL '8 hours'"))
-
-
-def _coerce_date(value) -> date | None:
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value[:10])
-        except ValueError:
-            return None
-    return None
-
-
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
     """学习总览统计"""
     today_start = _today_utc()
@@ -217,8 +193,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
 
 async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
     today = shanghai_today()
-    first_day = today - timedelta(days=364)
-    since = shanghai_date_utc_range(first_day)[0]
+    since = _date_utc_range(today - timedelta(days=364))[0]
     day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     result = await db.execute(
@@ -296,7 +271,7 @@ async def get_trends(
     if start_date is None:
         start_date = today - timedelta(days=days - 1)
 
-    since = shanghai_date_utc_range(start_date)[0]
+    since = _date_utc_range(start_date)[0]
     day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     result = await db.execute(
@@ -422,7 +397,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             ReviewSchedule.is_active,
             WrongQuestion.review_count >= 1,
             ReviewSchedule.next_review_at
-            <= shanghai_date_utc_range(today + timedelta(days=3))[0],
+            <= _date_utc_range(today + timedelta(days=3))[0],
         )
         .order_by(ReviewSchedule.next_review_at)
         .limit(10)
@@ -446,7 +421,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at
-            <= shanghai_date_utc_range(today - timedelta(days=7))[0],
+            <= _date_utc_range(today - timedelta(days=7))[0],
         )
     )
 
@@ -959,7 +934,7 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     from app.ai.prompts_learning import build_report_prompt
 
     today = shanghai_today()
-    since = shanghai_date_utc_range(today - timedelta(days=60))[0]
+    since = _date_utc_range(today - timedelta(days=60))[0]
 
     result = await db.execute(
         select(

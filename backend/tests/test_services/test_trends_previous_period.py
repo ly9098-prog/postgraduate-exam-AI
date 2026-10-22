@@ -20,6 +20,10 @@ def _freeze_time(frozen_date: date):
     return patch("app.services.stats_service.utcnow", return_value=dt)
 
 
+def _freeze_shanghai_today(frozen_date: date):
+    return patch("app.services.stats_service.shanghai_today", return_value=frozen_date)
+
+
 async def _make_db():
     """Create a fresh file-based SQLite database with all tables."""
     # Use file-based SQLite to guarantee isolation between tests
@@ -30,6 +34,7 @@ async def _make_db():
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: sync_conn.exec_driver_sql("PRAGMA foreign_keys=OFF"))
+        import app.models.admin  # noqa: F401
         import app.models.question  # noqa: F401
         import app.models.user  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
@@ -57,6 +62,7 @@ def _make_record(user_id: int, answered_at: datetime, is_correct: bool, **kw):
     return PracticeRecord(
         user_id=user_id, question_id=kw.pop("question_id", 1),
         subject_id=1, question_type="choice", user_answer="A",
+        question_version_id=kw.pop("question_version_id", 1),
         is_correct=is_correct, used_time=30, answered_at=answered_at, **kw,
     )
 
@@ -73,7 +79,7 @@ class TestGetTrendsDualPeriod:
         engine, session, db_path = await _make_db()
         try:
             today = date(2026, 7, 12)
-            with _freeze_time(today):
+            with _freeze_time(today), _freeze_shanghai_today(today):
                 await _add_records(session, [
                     _make_record(user_id=1, answered_at=datetime(2026, 7, 6), is_correct=True),
                 ])
@@ -123,9 +129,14 @@ class TestDashboardV2PreviousPeriod:
             patcher = patch("app.services.stats_service.utcnow")
             mock_utcnow = patcher.start()
             mock_utcnow.return_value = datetime(frozen_today.year, frozen_today.month, frozen_today.day)
+            today_patcher = patch(
+                "app.services.stats_service.shanghai_today", return_value=frozen_today
+            )
+            today_patcher.start()
             try:
                 result = await get_dashboard_v2(session, user_id, trend_days=trend_days)
             finally:
+                today_patcher.stop()
                 patcher.stop()
 
             return result["trends"]
@@ -332,7 +343,7 @@ class TestDashboardV2PreviousPeriod:
                 _make_record(user_id=1, answered_at=datetime(2026, 7, 2), is_correct=True, question_id=1),
                 _make_record(user_id=1, answered_at=datetime(2026, 7, 8), is_correct=True, question_id=2),
             ])
-            with _freeze_time(today):
+            with _freeze_time(today), _freeze_shanghai_today(today):
                 raw = await get_dashboard_v2(session, user_id=1, trend_days=7)
 
             response = DashboardV2Response(**raw)
