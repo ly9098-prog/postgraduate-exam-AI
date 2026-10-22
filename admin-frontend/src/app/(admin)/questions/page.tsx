@@ -54,6 +54,7 @@ import {
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { toggleAllSelection, toggleSingleSelection } from "@/lib/selection-ops";
+import { buildVersionLabels } from "./question-version-labels";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
@@ -346,31 +347,15 @@ export default function QuestionsPage() {
     baseVersion === "current" ? selectedQuestion : baseVersionDetail.data;
   const compareVersionData =
     compareVersion === "current" ? selectedQuestion : compareVersionDetail.data;
-  // placeholderData 会在新版本到达前保留上一份详情，因此标签也跟随“当前实际展示的数据”
-  // 而不是提前切到新版本号，避免短暂出现“新标签 + 旧内容”的错觉。
-  const baseVersionLabel =
-    baseVersion === "current"
-      ? "当前版本"
-      : baseVersionDetail.data?.version
-        ? `v${baseVersionDetail.data.version}`
-        : `v${baseVersion}`;
-  const compareVersionLabel =
-    compareVersion === "current"
-      ? "当前版本"
-      : compareVersion === null
-        ? "请选择版本"
-        : compareVersionDetail.data?.version
-          ? `v${compareVersionDetail.data.version}`
-          : `v${compareVersion}`;
-  const versionComparisonLoading =
-    (typeof baseVersion === "number" && baseVersionDetail.isFetching) ||
-    (typeof compareVersion === "number" && compareVersionDetail.isFetching);
-  const pendingVersionLabel =
-    typeof baseVersion === "number" && baseVersionDetail.isFetching
-      ? `v${baseVersion}`
-      : typeof compareVersion === "number" && compareVersionDetail.isFetching
-        ? `v${compareVersion}`
-        : null;
+  // placeholderData 会在新版本到达前保留上一份详情，因此标签也跟随"当前实际展示的数据"
+  // 而不是提前切到新版本号，避免短暂出现"新标签 + 旧内容"的错觉。
+  const { baseVersionLabel, compareVersionLabel, versionComparisonLoading, pendingVersionLabel } =
+    buildVersionLabels({
+      base: baseVersion,
+      compare: compareVersion,
+      baseDetail: baseVersionDetail,
+      compareDetail: compareVersionDetail,
+    });
   const editingSegments = useMemo(
     () => contentSegments(editForm.content),
     [editForm.content],

@@ -138,6 +138,10 @@ const modules = [
     path: "./question-export-payload.ts",
     imports: ["./question-api", "./question-list-state"],
   },
+  {
+    path: "./question-version-labels.ts",
+    imports: ["@/components/questions/question-version-picker", "@/lib/api/types"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {
