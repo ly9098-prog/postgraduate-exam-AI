@@ -92,6 +92,10 @@ const modules = [
     imports: ["@/lib/api/types"],
   },
   {
+    path: "./review-queue-badges.ts",
+    imports: ["@/lib/api/types"],
+  },
+  {
     path: "./components/review-stem-editor.tsx",
     imports: ["@/components/structured-table-editor", "@/lib/structured-table"],
   },

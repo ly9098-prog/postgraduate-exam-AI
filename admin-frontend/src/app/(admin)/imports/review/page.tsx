@@ -31,6 +31,7 @@ import { ReviewStemEditor } from "./components/review-stem-editor";
 import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
 import { getSourceLocator, getSourceQuestionNo } from "./review-source-location";
+import { getReviewListBadges, getReviewTableBadges } from "./review-queue-badges";
 import {
   answersEquivalent,
   completeSuggestionFromItem,
@@ -1199,23 +1200,7 @@ export default function ImportReviewPage() {
                     </thead>
                     <tbody>
                       {items.map((item, index) => {
-                        const answerStatusLabel =
-                          item.answer_status === "missing" ? "缺失" :
-                          item.answer_status === "ai_filled" ? "AI" :
-                          item.answer_status === "imported" ? "导入" :
-                          item.answer_status === "manual_filled" ? "已填" :
-                          item.answer_status === "manual_verified" ? "已验" :
-                          item.answer_status === "abnormal" ? "异常" : "—";
-                        const answerStatusStyle: React.CSSProperties =
-                          item.answer_status === "missing" ? { color: "#b03a3a", fontWeight: 700 } :
-                          item.answer_status === "ai_filled" ? { color: "#c46a3a", fontWeight: 600 } :
-                          item.answer_status === "abnormal" ? { color: "#b03a3a", fontWeight: 700 } :
-                          {};
-                        const riskLabel = item.risk_level === "high" ? "高" : item.risk_level === "medium" ? "中" : "低";
-                        const riskStyle: React.CSSProperties =
-                          item.risk_level === "high" ? { color: "#b03a3a", fontWeight: 700 } :
-                          item.risk_level === "medium" ? { color: "#b87a30", fontWeight: 600 } :
-                          { color: "#3a7a5a" };
+                        const { answerStatusLabel, answerStatusStyle, riskLabel, riskStyle } = getReviewTableBadges(item);
                         const srcNo = getSourceQuestionNo(item);
                         const questionTypeCode = canonicalizeQuestionType(item.question_type);
                         const isSingleChoice = questionTypeCode === "single_choice";
@@ -1362,26 +1347,7 @@ export default function ImportReviewPage() {
                   </label>
                 </div>
                 {items.map((item, index) => {
-                  const riskColor = item.risk_level === "high" ? "#b03a3a" : item.risk_level === "medium" ? "#b87a30" : item.risk_level === "low" ? "#3a7a5a" : "var(--color-border)";
-                  const hasAnswerMissing = (!item.parsed_answer || item.parsed_answer.trim() === "") && item.risk_level !== "low";
-                  const reasonCount = item.risk_reasons?.length ?? 0;
-                  // ── 原题定位显示 ──
-                  const sourceLabel = item.source_image_seq != null
-                    ? `图${item.source_image_seq}${item.source_question_no ? ` · 原题${item.source_question_no}` : ""}`
-                    : (item.source_question_no ? `原题${item.source_question_no}` : null);
-                  // ── 答案状态标签 ──
-                  const answerStatusLabel =
-                    item.answer_status === "missing" ? "答案缺失" :
-                    item.answer_status === "ai_filled" ? "AI补全" :
-                    item.answer_status === "imported" ? "已导入" :
-                    item.answer_status === "manual_filled" ? "已填写" :
-                    item.answer_status === "manual_verified" ? "已验证" :
-                    item.answer_status === "abnormal" ? "答案异常" : null;
-                  const answerStatusColor =
-                    item.answer_status === "missing" ? "#b03a3a" :
-                    item.answer_status === "ai_filled" ? "#c46a3a" :
-                    item.answer_status === "abnormal" ? "#b03a3a" :
-                    "var(--color-text-hint)";
+                  const { riskColor, hasAnswerMissing, reasonCount, sourceLabel, answerStatusLabel, answerStatusColor } = getReviewListBadges(item);
 
                   return (
                     <div key={item.id}>
