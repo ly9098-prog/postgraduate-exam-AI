@@ -84,6 +84,10 @@ const modules = [
     imports: [],
   },
   {
+    path: "./review-source-location.ts",
+    imports: ["@/lib/api/types", "./review-display-text"],
+  },
+  {
     path: "./components/review-stem-editor.tsx",
     imports: ["@/components/structured-table-editor", "@/lib/structured-table"],
   },
