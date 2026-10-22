@@ -7,11 +7,13 @@ from datetime import datetime
 from app.core.log_context import get_log_context, log_event
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features.pipeline_orchestrator import (
+    _resolve_chunk_size,
     _set_pipeline_store,
     resolve_pdf_page_range,
 )
 from app.schemas.import_review import PdfPageRangeInfo, PipelineUploadResponse
 from app.services import import_pipeline_service as runtime
+from app.services.import_pipeline_admission import admit_pipeline_record
 from app.services.import_upload_request import UploadRequest
 from app.services.staging_storage import StagingObject, async_store_file
 from app.services.upload_validator import UploadValidator
@@ -105,6 +107,12 @@ async def start_document_upload(
         f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     )
     page_range = _resolve_document_range(request, validator, is_pdf)
+    source_sha256 = await admit_pipeline_record(
+        request,
+        pipeline_id=pipeline_id,
+        source_type=source_type,
+        chunk_size=_resolve_chunk_size(),
+    )
     options = _document_options(request, page_range)
     await runtime._acquire_pipeline_reservation(pipeline_id, "import_pipeline")
     try:
@@ -122,6 +130,7 @@ async def start_document_upload(
             subject_id=request.subject_id,
             options=options,
             created_by=request.created_by,
+            source_sha256=source_sha256,
         )
         if not result:
             await _set_pipeline_store(

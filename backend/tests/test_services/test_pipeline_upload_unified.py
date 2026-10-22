@@ -31,6 +31,20 @@ def _bypass_resource_guard():
         yield
 
 
+@pytest.fixture
+def _bypass_pipeline_checkpoint(monkeypatch):
+    from app.features import pipeline_checkpoint
+    from app.services import import_pipeline_admission
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(pipeline_checkpoint, "ensure_pipeline_record", noop)
+    monkeypatch.setattr(pipeline_checkpoint, "update_pipeline_status", noop)
+    monkeypatch.setattr(import_pipeline_admission, "ensure_pipeline_record", noop)
+    return noop
+
+
 def _mock_stream_to_temp(path: str | None = None, content: bytes = b"dummy content"):
     """Return a context manager that patches ``stream_to_temp``.
 
@@ -55,7 +69,7 @@ def _mock_stream_to_temp_empty():
 
 
 class TestRunExcelPipelineBackground:
-    def test_success_writes_store_with_source_type(self):
+    def test_success_writes_store_with_source_type(self, _bypass_pipeline_checkpoint):
         mock_import = AsyncMock(return_value=("batch_abc", 5))
         asyncio.run(run_excel_pipeline_background(
             pipeline_id="xl_test_001",
@@ -71,14 +85,15 @@ class TestRunExcelPipelineBackground:
         assert status["batch_id"] == "batch_abc"
         assert status["stats"]["total"] == 5
 
-    def test_failure_writes_store_with_source_type(self):
+    def test_failure_writes_store_with_source_type(self, _bypass_pipeline_checkpoint):
         mock_import = AsyncMock(side_effect=RuntimeError("parse error"))
-        asyncio.run(run_excel_pipeline_background(
-            pipeline_id="xl_fail_001",
-            file_content=b"bad excel",
-            source_file="bad.xlsx",
-            import_excel_fn=mock_import,
-        ))
+        with pytest.raises(RuntimeError, match="parse error"):
+            asyncio.run(run_excel_pipeline_background(
+                pipeline_id="xl_fail_001",
+                file_content=b"bad excel",
+                source_file="bad.xlsx",
+                import_excel_fn=mock_import,
+            ))
 
         status = asyncio.run(get_pipeline_status("xl_fail_001"))
         assert status is not None
@@ -90,8 +105,12 @@ class TestRunExcelPipelineBackground:
 class TestPipelineUploadDispatch:
     """Test the pipeline_upload route handler dispatch logic."""
 
+    @pytest.fixture(autouse=True)
+    def _bypass_checkpoint_for_dispatch(self, _bypass_pipeline_checkpoint):
+        return _bypass_pipeline_checkpoint
+
     @pytest.fixture
-    def mock_deps(self):
+    def mock_deps(self, _bypass_pipeline_checkpoint):
         with patch("app.api.v1.imports.require_app_permission") as mock_perm, \
              patch("app.core.config.settings") as mock_settings:
             mock_perm.return_value = lambda: MagicMock()

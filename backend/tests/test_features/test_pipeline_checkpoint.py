@@ -20,10 +20,15 @@ from app.core.database import Base
 from app.features.pipeline_checkpoint import (
     create_chunk_records,
     create_pipeline_record,
+    ensure_chunk_records,
+    ensure_pipeline_record,
     get_pending_chunks,
     get_pipeline_progress,
     mark_chunk_running,
+    set_fencing_context,
+    clear_fencing_context,
     update_chunk_status,
+    update_pipeline_metadata,
     update_pipeline_status,
 )
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk  # noqa: F401
@@ -134,6 +139,134 @@ def test_create_pipeline_record_persists_watermark_snapshot(tmp_path):
                 )
             ).scalar_one()
             assert row.watermark_snapshot == snapshot
+
+    _run(_go())
+
+
+def test_ensure_pipeline_record_is_idempotent_and_enriches_owner(tmp_path):
+    async def _go():
+        sm, _engine = await _make_session(tmp_path)
+        async with sm() as db:
+            admitted = await ensure_pipeline_record(
+                db,
+                pipeline_id="pl_ensure_001",
+                source_type="pdf",
+                source_file="upload.pdf",
+                total_pages=None,
+                chunk_size=40,
+                created_by="admin-1",
+                source_sha256="a" * 64,
+                status="queued",
+            )
+            assert admitted.status == "queued"
+            assert admitted.created_by == "admin-1"
+            assert admitted.source_sha256 == "a" * 64
+
+            enriched = await ensure_pipeline_record(
+                db,
+                pipeline_id="pl_ensure_001",
+                source_type="pdf",
+                source_file="upload.pdf",
+                total_pages=120,
+                chunk_size=40,
+                created_by="different-admin",
+                source_sha256="b" * 64,
+                status="processing",
+            )
+            assert enriched.total_pages == 120
+            assert enriched.status == "processing"
+            # Owner/hash are immutable once admitted.
+            assert enriched.created_by == "admin-1"
+            assert enriched.source_sha256 == "a" * 64
+
+    _run(_go())
+
+
+def test_ensure_chunk_records_is_idempotent_and_rejects_range_changes(tmp_path):
+    async def _go():
+        sm, _engine = await _make_session(tmp_path)
+        async with sm() as db:
+            await ensure_pipeline_record(
+                db,
+                pipeline_id="pl_ensure_chunks",
+                source_type="pdf",
+                source_file="upload.pdf",
+                total_pages=120,
+                chunk_size=40,
+                status="queued",
+            )
+            first = await ensure_chunk_records(
+                db, "pl_ensure_chunks", [(1, 40), (41, 80), (81, 120)]
+            )
+            second = await ensure_chunk_records(
+                db, "pl_ensure_chunks", [(1, 40), (41, 80), (81, 120)]
+            )
+            assert [chunk.chunk_index for chunk in first] == [0, 1, 2]
+            assert [chunk.chunk_index for chunk in second] == [0, 1, 2]
+
+            with pytest.raises(ValueError, match="range changed"):
+                await ensure_chunk_records(
+                    db, "pl_ensure_chunks", [(1, 40), (41, 80), (81, 119)]
+                )
+
+    _run(_go())
+
+
+def test_stale_fence_rejects_parent_and_chunk_updates(tmp_path):
+    async def _go():
+        sm, _engine = await _make_session(tmp_path)
+        async with sm() as db:
+            await ensure_pipeline_record(
+                db,
+                pipeline_id="pl_fence_001",
+                source_type="pdf",
+                source_file="upload.pdf",
+                total_pages=40,
+                chunk_size=40,
+                status="processing",
+            )
+            await ensure_chunk_records(db, "pl_fence_001", [(1, 40)])
+
+            from app.models.import_pipeline import ImportPipeline
+            from sqlalchemy import update
+
+            await db.execute(
+                update(ImportPipeline)
+                .where(ImportPipeline.pipeline_id == "pl_fence_001")
+                .values(
+                    current_task_id="new-task",
+                    current_owner_token="new-owner",
+                    execution_generation=2,
+                )
+            )
+            await db.commit()
+
+            token = set_fencing_context(
+                task_id="stale-task", owner_token="stale-owner", generation=1
+            )
+            try:
+                from app.services.db_fencing import FencingRejectedError
+
+                with pytest.raises(FencingRejectedError, match="record update"):
+                    await ensure_pipeline_record(
+                        db,
+                        pipeline_id="pl_fence_001",
+                        source_type="pdf",
+                        source_file="upload.pdf",
+                        total_pages=40,
+                        chunk_size=40,
+                        status="completed",
+                    )
+                with pytest.raises(FencingRejectedError, match="Chunk update"):
+                    await update_chunk_status(
+                        db, "pl_fence_001", 0, status="completed"
+                    )
+                with pytest.raises(FencingRejectedError, match="metadata update"):
+                    await update_pipeline_metadata(
+                        db, "pl_fence_001", alerts=[{"code": "stale"}]
+                    )
+            finally:
+                clear_fencing_context(token)
 
     _run(_go())
 

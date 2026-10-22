@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.log_context import get_log_context, log_event
 from app.schemas.import_review import PipelineUploadResponse
 from app.services import import_pipeline_service as runtime
+from app.services.import_pipeline_admission import admit_pipeline_record
 from app.services.import_upload_request import UploadRequest
 from app.services.staging_storage import StagingObject, async_store_file
 
@@ -74,13 +75,26 @@ async def _stage_image(
     return (staging_obj, options)
 
 
+async def _begin_image_admission(
+    request: UploadRequest,
+    pipeline_id: str,
+) -> None:
+    await admit_pipeline_record(
+        request,
+        pipeline_id=pipeline_id,
+        source_type="image",
+        chunk_size=1,
+    )
+    await runtime._acquire_pipeline_reservation(pipeline_id, "image_pipeline")
+
+
 async def start_image_upload(
     request: UploadRequest, file_size: int,
 ) -> PipelineUploadResponse:
     pipeline_id, image_hash, image_width, image_height, image_format = _prepare_image(
         request
     )
-    await runtime._acquire_pipeline_reservation(pipeline_id, "image_pipeline")
+    await _begin_image_admission(request, pipeline_id)
     try:
         staging_obj, options = await _stage_image(
             request,
@@ -100,6 +114,7 @@ async def start_image_upload(
             subject=request.subject,
             subject_id=request.subject_id,
             options=options,
+            created_by=request.created_by,
         )
         if not result:
             await runtime._set_image_pipeline_status(

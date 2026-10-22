@@ -461,6 +461,7 @@ async def _run_image_pipeline_with_db(
     subject: str | None,
     subject_id: int | None,
     options: dict,
+    created_by: str | None = None,
 ) -> None:
     """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
     bind_log_context(
@@ -483,6 +484,19 @@ async def _run_image_pipeline_with_db(
     set_tag("upload.filename", source_file)
     set_tag("upload.type", "image")
     try:
+        from app.features import pipeline_checkpoint as ckpt
+
+        async with async_session() as db:
+            await ckpt.ensure_pipeline_record(
+                db,
+                pipeline_id=pipeline_id,
+                source_type="image",
+                source_file=source_file or None,
+                total_pages=1,
+                chunk_size=1,
+                created_by=created_by,
+                status="processing",
+            )
         from app.services.ocr_service import clean_ocr_text
 
         # Read image from disk for OCR processing
@@ -564,6 +578,16 @@ async def _run_image_pipeline_with_db(
             enabled=bool(options.get("image_fast_mode", True)),
         )
         async with async_session() as db:
+            await ckpt.ensure_pipeline_record(
+                db,
+                pipeline_id=pipeline_id,
+                source_type="image",
+                source_file=source_file or None,
+                total_pages=1,
+                chunk_size=1,
+                created_by=created_by,
+                status="processing",
+            )
             result = await run_pipeline(
                 file_content=raw_text.encode("utf-8"),
                 source_type="txt",
@@ -613,6 +637,14 @@ async def _run_image_pipeline_with_db(
             "started_at", current.get("started_at", serialize_utc_datetime(utcnow()))
         )
         await _set_image_pipeline_status(pipeline_id, **result)
+        async with async_session() as db:
+            await ckpt.update_pipeline_status(
+                db,
+                pipeline_id,
+                status=status,
+                error_message=failure_reason if status == "failed" else None,
+                finished=True,
+            )
         log_event(
             logger,
             "import.background.finish",
@@ -644,6 +676,17 @@ async def _run_image_pipeline_with_db(
             },
         )
         await _fail_image_pipeline(pipeline_id, str(exc))
+        from app.features import pipeline_checkpoint as ckpt
+
+        async with async_session() as db:
+            await ckpt.update_pipeline_status(
+                db,
+                pipeline_id,
+                status="failed",
+                error_message=str(exc)[:4000],
+                finished=True,
+            )
+        raise
     finally:
         await _release_pipeline_reservation(pipeline_id)
         if image_path and os.path.exists(image_path):
@@ -662,6 +705,7 @@ async def _run_pipeline_with_db(
     subject_id: int | None,
     options: dict,
     created_by: str | None = None,
+    source_sha256: str | None = None,
 ) -> None:
     """后台任务包装器：创建独立 DB 会话并执行流水线。
 
@@ -687,18 +731,18 @@ async def _run_pipeline_with_db(
     )
 
     try:
-        source_sha256: str | None = None
-        try:
-            hasher = hashlib.sha256()
-            with open(file_path, "rb") as fh:
-                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                    hasher.update(chunk)
-            source_sha256 = hasher.hexdigest()
-        except Exception:
-            logger.exception(
-                "compute source_sha256 failed for pipeline %s; resume identity check will be skipped",
-                pipeline_id,
-            )
+        if source_sha256 is None:
+            try:
+                hasher = hashlib.sha256()
+                with open(file_path, "rb") as fh:
+                    for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                        hasher.update(chunk)
+                source_sha256 = hasher.hexdigest()
+            except Exception:
+                logger.exception(
+                    "compute source_sha256 failed for pipeline %s; resume identity check will be skipped",
+                    pipeline_id,
+                )
 
         async with async_session() as db:
             await run_pipeline_background(
@@ -740,6 +784,21 @@ async def _run_pipeline_with_db(
         capture_exception(
             exc, tags={"pipeline_id": pipeline_id, "stage": "pipeline_background"}
         )
+        try:
+            from app.features import pipeline_checkpoint as ckpt
+
+            async with async_session() as db:
+                await ckpt.update_pipeline_status(
+                    db,
+                    pipeline_id,
+                    status="failed",
+                    error_message=str(exc)[:4000],
+                    finished=True,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to persist background pipeline failure: %s", pipeline_id
+            )
         await _set_pipeline_store(
             pipeline_id,
             {
@@ -751,6 +810,7 @@ async def _run_pipeline_with_db(
                 "finished_at": "",
             },
         )
+        raise
     finally:
         await _release_pipeline_reservation(pipeline_id)
         if file_path and os.path.exists(file_path):
@@ -799,8 +859,24 @@ async def run_resume_background(
                 options=options,
                 db=db,
             )
-    except Exception:
+    except Exception as exc:
         logger.exception("resume pipeline %s failed", pipeline_id)
+        try:
+            from app.features import pipeline_checkpoint as ckpt
+
+            async with async_session() as db:
+                await ckpt.update_pipeline_status(
+                    db,
+                    pipeline_id,
+                    status="failed",
+                    error_message=str(exc)[:4000],
+                    finished=True,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to persist resume pipeline failure: %s", pipeline_id
+            )
+        raise
     finally:
         if file_path and os.path.exists(file_path):
             try:

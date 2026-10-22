@@ -17,3 +17,4 @@ class UploadRequest:
     page_start: int | None = None
     page_end: int | None = None
     created_by: str | None = None
+    source_sha256: str | None = None

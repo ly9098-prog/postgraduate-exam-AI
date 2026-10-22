@@ -21,6 +21,7 @@ from app.features.pipeline_checkpoint import (
     create_chunk_records,
     create_pipeline_record,
     update_chunk_status,
+    update_pipeline_status,
 )
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk  # noqa: F401
 
@@ -198,6 +199,40 @@ def test_status_returns_none_for_unknown_pipeline(tmp_path):
         sm, _engine = await _make_sessionmaker(tmp_path)
         async with sm() as db:
             assert await orch.get_pipeline_status("pl_does_not_exist", db=db) is None
+
+    _run(_go())
+
+
+def test_status_falls_back_to_db_when_runtime_store_is_missing(tmp_path):
+    """Admitted-but-not-yet-started pipelines remain queryable from DB."""
+
+    async def _go():
+        sm, _engine = await _make_sessionmaker(tmp_path)
+        pipeline_id = "pl_db_only_001"
+        async with sm() as db:
+            await create_pipeline_record(
+                db,
+                pipeline_id=pipeline_id,
+                source_type="pdf",
+                source_file="queued.pdf",
+                total_pages=40,
+                chunk_size=40,
+                created_by="admin-1",
+                source_sha256="a" * 64,
+            )
+            await update_pipeline_status(db, pipeline_id, status="queued")
+
+        orch._pipeline_store.pop(pipeline_id, None)
+        try:
+            async with sm() as db:
+                status = await orch.get_pipeline_status(pipeline_id, db=db)
+            assert status is not None
+            assert status["status"] == "queued"
+            assert status["source_type"] == "pdf"
+            assert status["source_file"] == "queued.pdf"
+            assert status["chunk_progress"]["status"] == "queued"
+        finally:
+            orch._pipeline_store.pop(pipeline_id, None)
 
     _run(_go())
 

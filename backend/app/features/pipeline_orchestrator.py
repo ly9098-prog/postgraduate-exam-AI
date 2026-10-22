@@ -6299,7 +6299,7 @@ class ImportPipeline:
         # Create parent + chunk records up-front (DB authoritative).
         # 每个初始化步骤用独立临时 session，避免长事务。
         async with session_factory() as init_db:
-            await ckpt.create_pipeline_record(
+            await ckpt.ensure_pipeline_record(
                 init_db,
                 pipeline_id=self.pipeline_id,
                 source_type=source_type,
@@ -6310,7 +6310,7 @@ class ImportPipeline:
                 source_sha256=self.source_sha256,
                 watermark_snapshot=watermark_snapshot or None,
             )
-            await ckpt.create_chunk_records(init_db, self.pipeline_id, chunk_ranges)
+            await ckpt.ensure_chunk_records(init_db, self.pipeline_id, chunk_ranges)
 
         # P2-4: chunked 路径只构造一次 hash 索引，整个 pipeline 共用。失败
         # 不阻断主流程——index_loaded=False 时 similarity_match 退化为
@@ -6635,6 +6635,21 @@ async def run_pipeline_background(
         raise ValueError("either file_path or file_content must be provided")
 
     started_at = serialize_utc_datetime(utcnow())
+    if db is not None:
+        from app.features import pipeline_checkpoint as ckpt
+
+        resolved_chunk_size = _resolve_chunk_size()
+        await ckpt.ensure_pipeline_record(
+            db,
+            pipeline_id=pipeline_id,
+            source_type=source_type,
+            source_file=source_file or None,
+            total_pages=None,
+            chunk_size=resolved_chunk_size,
+            created_by=created_by,
+            source_sha256=source_sha256,
+            status="processing",
+        )
     # Preserve page_range from the initial store (set by start_import_pipeline)
     # so it survives the background-task store overwrite.
     initial_page_range = _pipeline_store.get(pipeline_id, {}).get("page_range")
@@ -6693,6 +6708,20 @@ async def run_pipeline_background(
         await _check_cancelled()
 
         result["pipeline_id"] = pipeline_id
+        if db is not None:
+            from app.features import pipeline_checkpoint as ckpt
+
+            result_status = str(result.get("status") or "failed")
+            result_errors = result.get("errors") or []
+            await ckpt.update_pipeline_status(
+                db,
+                pipeline_id,
+                status=result_status,
+                error_message=(
+                    str(result_errors[0])[:4000] if result_errors else None
+                ),
+                finished=result_status == "completed",
+            )
         # Preserve page_range through the final store write (the pipeline
         # result itself doesn't carry PdfPageRangeInfo — only the upload
         # response does).
@@ -6720,21 +6749,14 @@ async def run_pipeline_background(
                 qr = result.get("quality_report")
                 al = result.get("alerts")
                 if qr or al:
-                    from sqlalchemy import update
+                    from app.features import pipeline_checkpoint as ckpt
 
-                    from app.models.import_pipeline import (
-                        ImportPipeline as ImportPipelineRow,
+                    await ckpt.update_pipeline_metadata(
+                        db,
+                        pipeline_id,
+                        quality_report=qr if qr else None,
+                        alerts=al if al else None,
                     )
-
-                    await db.execute(
-                        update(ImportPipelineRow)
-                        .where(ImportPipelineRow.pipeline_id == pipeline_id)
-                        .values(
-                            quality_report=qr if qr else None,
-                            alerts=al if al else None,
-                        )
-                    )
-                    await db.commit()
             except Exception as persist_exc:
                 logger.warning(
                     "Failed to persist quality_report/alerts for pipeline %s: %s",
@@ -6743,6 +6765,21 @@ async def run_pipeline_background(
                 )
     except Exception as exc:
         logger.exception("Pipeline %s failed", pipeline_id)
+        if db is not None:
+            try:
+                from app.features import pipeline_checkpoint as ckpt
+
+                await ckpt.update_pipeline_status(
+                    db,
+                    pipeline_id,
+                    status="failed",
+                    error_message=str(exc)[:4000],
+                    finished=True,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to persist pipeline failure status: %s", pipeline_id
+                )
         existing = _pipeline_store.get(pipeline_id, {})
         await _set_pipeline_store(
             pipeline_id,
@@ -7051,26 +7088,42 @@ async def run_excel_pipeline_background(
     file_content: bytes,
     source_file: str,
     import_excel_fn,
+    created_by: str | None = None,
 ) -> None:
     """后台运行 Excel 导入，结果写入 Redis + 内存以支持状态查询。"""
     from app.core.database import async_session
+    from app.features import pipeline_checkpoint as ckpt
 
-    await _set_pipeline_store(
-        pipeline_id,
-        {
-            "pipeline_id": pipeline_id,
-            "status": "parsing",
-            "source_type": "excel",
-            "stages": {"extract": {"status": "running"}},
-            "stats": {},
-            "errors": [],
-            "started_at": serialize_utc_datetime(utcnow()),
-        },
-    )
+    started_at = serialize_utc_datetime(utcnow())
+    await _set_pipeline_store(pipeline_id, {
+        "pipeline_id": pipeline_id,
+        "status": "parsing",
+        "source_type": "excel",
+        "stages": {"extract": {"status": "running"}},
+        "stats": {},
+        "errors": [],
+        "started_at": started_at,
+    })
 
     try:
         async with async_session() as db:
+            await ckpt.ensure_pipeline_record(
+                db,
+                pipeline_id=pipeline_id,
+                source_type="excel",
+                source_file=source_file or None,
+                total_pages=None,
+                chunk_size=1,
+                created_by=created_by,
+                status="processing",
+            )
             batch_id, total = await import_excel_fn(db, file_content, source_file)
+            await ckpt.update_pipeline_status(
+                db,
+                pipeline_id,
+                status="completed",
+                finished=True,
+            )
         # P0-1: release Excel bytes after import function consumes them
         del file_content
         await _set_pipeline_store(
@@ -7083,12 +7136,20 @@ async def run_excel_pipeline_background(
                 "stats": {"total": total, "to_review": total},
                 "stages": {"extract": {"status": "completed"}},
                 "errors": [],
-                "started_at": _pipeline_store[pipeline_id]["started_at"],
+                "started_at": started_at,
                 "finished_at": serialize_utc_datetime(utcnow()),
             },
         )
     except Exception as exc:
         logger.exception("Excel pipeline %s failed", pipeline_id)
+        async with async_session() as db:
+            await ckpt.update_pipeline_status(
+                db,
+                pipeline_id,
+                status="failed",
+                error_message=str(exc)[:4000],
+                finished=True,
+            )
         await _set_pipeline_store(
             pipeline_id,
             {
@@ -7096,12 +7157,11 @@ async def run_excel_pipeline_background(
                 "status": "failed",
                 "source_type": "excel",
                 "errors": [str(exc)],
-                "started_at": _pipeline_store.get(pipeline_id, {}).get(
-                    "started_at", ""
-                ),
+                "started_at": started_at,
                 "finished_at": serialize_utc_datetime(utcnow()),
             },
         )
+        raise
 
 
 async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
@@ -7124,7 +7184,46 @@ async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
     """
     data = await _get_pipeline_store(pipeline_id)
     if data is None:
-        return None
+        if db is None:
+            return None
+        from sqlalchemy import select
+
+        from app.features import pipeline_checkpoint as ckpt
+        from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
+
+        progress = await ckpt.get_pipeline_progress(db, pipeline_id, use_cache=False)
+        if progress is None:
+            return None
+        row = (
+            await db.execute(
+                select(ImportPipelineRow).where(
+                    ImportPipelineRow.pipeline_id == pipeline_id
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        data = {
+            "pipeline_id": pipeline_id,
+            "status": progress.get("status", row.status),
+            "source_type": row.source_type,
+            "source_file": row.source_file or "",
+            "stages": {},
+            "stats": {},
+            "errors": [row.error_message] if row.error_message else [],
+            "started_at": serialize_utc_datetime(row.started_at)
+            if row.started_at
+            else "",
+            "finished_at": serialize_utc_datetime(row.finished_at)
+            if row.finished_at
+            else "",
+            "chunk_progress": progress,
+        }
+        if row.quality_report is not None:
+            data["quality_report"] = row.quality_report
+        if row.alerts is not None:
+            data["alerts"] = row.alerts
+        return data
     # 防御性拷贝：_get_pipeline_store 返回的是 _pipeline_store 内引用，
     # 任何后续字段写入都会直接污染主 store（白名单契约破坏）。
     data = dict(data)

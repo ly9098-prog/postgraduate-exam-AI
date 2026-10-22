@@ -9,6 +9,7 @@ from app.features.pipeline_orchestrator import (
 )
 from app.schemas.import_review import PipelineUploadResponse
 from app.services import import_pipeline_service as runtime
+from app.services.import_pipeline_admission import admit_pipeline_record
 from app.services.import_upload_request import UploadRequest
 from app.services.staging_storage import StagingObject, async_store_file
 
@@ -40,6 +41,12 @@ async def start_excel_upload(request: UploadRequest) -> PipelineUploadResponse:
     pipeline_id = (
         f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     )
+    await admit_pipeline_record(
+        request,
+        pipeline_id=pipeline_id,
+        source_type="excel",
+        chunk_size=1,
+    )
     await runtime._acquire_pipeline_reservation(pipeline_id, "excel_pipeline")
     try:
         staging_obj = await _stage_excel(request, pipeline_id)
@@ -49,6 +56,7 @@ async def start_excel_upload(request: UploadRequest) -> PipelineUploadResponse:
             pipeline_id=pipeline_id,
             staging_object_id=staging_obj.object_id,
             source_file=request.filename,
+            created_by=request.created_by,
         )
         if not result:
             await _set_pipeline_store(

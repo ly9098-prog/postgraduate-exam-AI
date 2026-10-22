@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import serialize_utc_datetime, utcnow
@@ -140,6 +141,118 @@ async def create_pipeline_record(
     return record
 
 
+async def _select_pipeline_record(
+    db: AsyncSession, pipeline_id: str
+) -> ImportPipeline | None:
+    return (
+        await db.execute(
+            select(ImportPipeline).where(ImportPipeline.pipeline_id == pipeline_id)
+        )
+    ).scalar_one_or_none()
+
+
+def _active_parent_fence_clause(pipeline_id: str):
+    """Return an EXISTS clause for the current worker fence, if active."""
+    fence = _fencing_ctx.get()
+    if fence is None:
+        return None
+    return (
+        select(ImportPipeline.pipeline_id)
+        .where(
+            ImportPipeline.pipeline_id == pipeline_id,
+            ImportPipeline.current_task_id == fence["task_id"],
+            ImportPipeline.current_owner_token == fence["owner_token"],
+            ImportPipeline.execution_generation == fence["generation"],
+        )
+        .exists()
+    )
+
+
+async def ensure_pipeline_record(
+    db: AsyncSession,
+    *,
+    pipeline_id: str,
+    source_type: str,
+    source_file: str | None,
+    total_pages: int | None,
+    chunk_size: int,
+    created_by: str | None = None,
+    source_sha256: str | None = None,
+    watermark_snapshot: list | dict | None = None,
+    status: str | None = "running",
+) -> ImportPipeline:
+    """Create the parent record once, then safely enrich it on retries.
+
+    Upload admission creates the record before enqueueing so DB fencing and
+    status ownership checks have a row to address. Chunked execution later
+    calls this function to add page/chunk metadata without a primary-key race.
+    """
+    row = await _select_pipeline_record(db, pipeline_id)
+    if row is None:
+        row = ImportPipeline(
+            pipeline_id=pipeline_id,
+            source_type=source_type,
+            source_file=source_file,
+            total_pages=total_pages,
+            chunk_size=chunk_size,
+            status=status or "running",
+            created_by=created_by,
+            source_sha256=source_sha256,
+            watermark_snapshot=watermark_snapshot,
+        )
+        db.add(row)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            row = await _select_pipeline_record(db, pipeline_id)
+            if row is None:
+                raise
+        else:
+            await db.refresh(row)
+
+    values: dict[str, Any] = {}
+    if source_type:
+        values["source_type"] = source_type
+    if source_file is not None:
+        values["source_file"] = source_file
+    if total_pages is not None:
+        values["total_pages"] = total_pages
+    if chunk_size is not None:
+        values["chunk_size"] = chunk_size
+    if row.created_by is None and created_by is not None:
+        values["created_by"] = created_by
+    if row.source_sha256 is None and source_sha256 is not None:
+        values["source_sha256"] = source_sha256
+    if row.watermark_snapshot is None and watermark_snapshot is not None:
+        values["watermark_snapshot"] = watermark_snapshot
+    if status is not None:
+        values["status"] = status
+    if values:
+        stmt = (
+            update(ImportPipeline)
+            .where(ImportPipeline.pipeline_id == pipeline_id)
+            .values(**values)
+        )
+        fence_clause = _active_parent_fence_clause(pipeline_id)
+        if fence_clause is not None:
+            stmt = stmt.where(fence_clause)
+        result = await db.execute(stmt)
+        if fence_clause is not None and result.rowcount != 1:
+            await db.rollback()
+            from app.services.db_fencing import FencingRejectedError
+
+            raise FencingRejectedError(
+                f"Pipeline record update rejected (fence lost): {pipeline_id}"
+            )
+        await db.commit()
+
+    refreshed = await _select_pipeline_record(db, pipeline_id)
+    if refreshed is None:
+        raise RuntimeError(f"Pipeline record disappeared: {pipeline_id}")
+    return refreshed
+
+
 async def update_pipeline_status(
     db: AsyncSession,
     pipeline_id: str,
@@ -189,6 +302,41 @@ async def update_pipeline_status(
     await db.commit()
 
 
+async def update_pipeline_metadata(
+    db: AsyncSession,
+    pipeline_id: str,
+    *,
+    quality_report: dict | None = None,
+    alerts: list | None = None,
+) -> None:
+    """Persist optional result metadata without changing lifecycle status."""
+    values: dict[str, Any] = {}
+    if quality_report is not None:
+        values["quality_report"] = quality_report
+    if alerts is not None:
+        values["alerts"] = alerts
+    if not values:
+        return
+
+    stmt = (
+        update(ImportPipeline)
+        .where(ImportPipeline.pipeline_id == pipeline_id)
+        .values(**values)
+    )
+    fence_clause = _active_parent_fence_clause(pipeline_id)
+    if fence_clause is not None:
+        stmt = stmt.where(fence_clause)
+    result = await db.execute(stmt)
+    if fence_clause is not None and result.rowcount != 1:
+        await db.rollback()
+        from app.services.db_fencing import FencingRejectedError
+
+        raise FencingRejectedError(
+            f"Pipeline metadata update rejected (fence lost): {pipeline_id}"
+        )
+    await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Chunk 记录
 # ---------------------------------------------------------------------------
@@ -220,18 +368,107 @@ async def create_chunk_records(
     return chunks
 
 
+async def ensure_chunk_records(
+    db: AsyncSession,
+    pipeline_id: str,
+    page_ranges: list[tuple[int, int]],
+) -> list[ImportPipelineChunk]:
+    """Create only missing chunks; a retry after a crash is a no-op."""
+    existing = (
+        (
+            await db.execute(
+                select(ImportPipelineChunk)
+                .where(ImportPipelineChunk.pipeline_id == pipeline_id)
+                .order_by(ImportPipelineChunk.chunk_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    existing_by_index = {chunk.chunk_index: chunk for chunk in existing}
+    for index, (start, end) in enumerate(page_ranges):
+        current = existing_by_index.get(index)
+        if current is not None and (
+            current.page_start != start or current.page_end != end
+        ):
+            raise ValueError(
+                f"Chunk {index} range changed for {pipeline_id}: "
+                f"{current.page_start}-{current.page_end} != {start}-{end}"
+            )
+
+    missing = [
+        ImportPipelineChunk(
+            pipeline_id=pipeline_id,
+            chunk_index=index,
+            page_start=start,
+            page_end=end,
+            status="pending",
+        )
+        for index, (start, end) in enumerate(page_ranges)
+        if index not in existing_by_index
+    ]
+    if missing:
+        fence_clause = _active_parent_fence_clause(pipeline_id)
+        if fence_clause is not None:
+            owned = await db.scalar(select(fence_clause))
+            if not owned:
+                from app.services.db_fencing import FencingRejectedError
+
+                raise FencingRejectedError(
+                    f"Chunk initialization rejected (fence lost): {pipeline_id}"
+                )
+        db.add_all(missing)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+
+    rows = (
+        (
+            await db.execute(
+                select(ImportPipelineChunk)
+                .where(ImportPipelineChunk.pipeline_id == pipeline_id)
+                .order_by(ImportPipelineChunk.chunk_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
+async def _execute_chunk_update(
+    db: AsyncSession,
+    pipeline_id: str,
+    statement,
+) -> None:
+    fence_clause = _active_parent_fence_clause(pipeline_id)
+    if fence_clause is not None:
+        statement = statement.where(fence_clause)
+    result = await db.execute(statement)
+    if fence_clause is not None and result.rowcount != 1:
+        await db.rollback()
+        from app.services.db_fencing import FencingRejectedError
+
+        raise FencingRejectedError(
+            f"Chunk update rejected (fence lost): {pipeline_id}"
+        )
+    await db.commit()
+
+
 async def mark_chunk_running(
     db: AsyncSession, pipeline_id: str, chunk_index: int
 ) -> None:
-    await db.execute(
+    await _execute_chunk_update(
+        db,
+        pipeline_id,
         update(ImportPipelineChunk)
         .where(
             ImportPipelineChunk.pipeline_id == pipeline_id,
             ImportPipelineChunk.chunk_index == chunk_index,
         )
-        .values(status="running", started_at=_utcnow(), error_message=None)
+        .values(status="running", started_at=_utcnow(), error_message=None),
     )
-    await db.commit()
 
 
 async def update_chunk_status(
@@ -254,30 +491,18 @@ async def update_chunk_status(
     if status in ("completed", "failed"):
         values["finished_at"] = _utcnow()
 
-    # Fence via parent pipeline: if the pipeline has been reassigned to a new
-    # worker, stale chunk updates must be rejected.
-    fence = _fencing_ctx.get()
-    if fence is not None:
-        from app.services.db_fencing import (
-            verify_fencing_or_raise,
-        )
-
-        # Verify the parent pipeline still belongs to this worker
-        await verify_fencing_or_raise(
-            db=db,
-            model_class=ImportPipeline,
-            record_id=pipeline_id,
-        )
-
-    await db.execute(
+    # The parent EXISTS predicate is evaluated in the same UPDATE, so a
+    # reassignment between a separate SELECT and the chunk write cannot slip in.
+    await _execute_chunk_update(
+        db,
+        pipeline_id,
         update(ImportPipelineChunk)
         .where(
             ImportPipelineChunk.pipeline_id == pipeline_id,
             ImportPipelineChunk.chunk_index == chunk_index,
         )
-        .values(**values)
+        .values(**values),
     )
-    await db.commit()
 
 
 # ---------------------------------------------------------------------------

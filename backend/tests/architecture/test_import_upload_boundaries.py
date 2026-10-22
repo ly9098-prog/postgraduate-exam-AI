@@ -10,7 +10,7 @@ from tests.architecture.dependency_scan import cyclic_edges, scan_application
 APP = Path(__file__).resolve().parents[2] / "app"
 MODULES = (
     "import_upload_request", "import_upload_service", "import_image_upload",
-    "import_excel_upload", "import_document_upload",
+    "import_excel_upload", "import_document_upload", "import_pipeline_admission",
 )
 
 

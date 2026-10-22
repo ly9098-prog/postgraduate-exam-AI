@@ -11,6 +11,7 @@ from app.services import (
     import_document_upload,
     import_excel_upload,
     import_image_upload,
+    import_pipeline_admission,
     import_pipeline_service,
     import_upload_service,
     task_queue_worker,
@@ -42,6 +43,10 @@ def admission(monkeypatch, tmp_path):
         mark("stage")
         return SimpleNamespace(object_id="synthetic-staging")
 
+    async def admit(_request, *, pipeline_id, source_type, chunk_size):
+        mark("admit")
+        return "synthetic-sha256"
+
     async def status(*args, **kwargs):
         mark("status")
         statuses.append((args, kwargs))
@@ -68,6 +73,9 @@ def admission(monkeypatch, tmp_path):
     monkeypatch.setattr(import_upload_service, "get_upload_validator", lambda: validator)
     monkeypatch.setattr(import_pipeline_service, "_acquire_pipeline_reservation", acquire)
     monkeypatch.setattr(import_pipeline_service, "_release_pipeline_reservation", release)
+    monkeypatch.setattr(import_pipeline_admission, "admit_pipeline_record", admit)
+    for module in (import_document_upload, import_excel_upload, import_image_upload):
+        monkeypatch.setattr(module, "admit_pipeline_record", admit)
     monkeypatch.setattr(import_pipeline_service, "_set_image_pipeline_status", status)
     monkeypatch.setattr(import_pipeline_service, "_validate_image_path", lambda _path: (40, 50, "PNG"))
     monkeypatch.setattr(import_pipeline_service, "_sha256_of_file", lambda _path: "abcdef0123456789")
@@ -106,7 +114,9 @@ async def test_success_keeps_reservation_and_original_queue_payload(admission, e
         enable_ai_repair=False, confidence_threshold=0.7, created_by="synthetic-admin",
     )
     expected = ["validate"] + (["pages"] if extension == "pdf" else [])
-    assert admission.trace == expected + ["reserve", "stage", "status", "queue"]
+    assert admission.trace == expected + [
+        "admit", "reserve", "stage", "status", "queue",
+    ]
     assert response.source_type == source
     assert response.status == ("queued" if source == "image" else "parsing")
     payload = admission.queued[0]
@@ -117,8 +127,10 @@ async def test_success_keeps_reservation_and_original_queue_payload(admission, e
         assert payload["subject_id"] == 3
         assert payload["options"]["enable_ai_repair"] is False
         assert payload["options"]["confidence_threshold"] == 0.7
-    if source in ("pdf", "txt"):
+    if source in ("pdf", "txt", "image"):
         assert payload["created_by"] == "synthetic-admin"
+    if source in ("pdf", "txt"):
+        assert payload["source_sha256"] == "synthetic-sha256"
     if source == "pdf":
         assert response.page_range.total_pages == 10
         assert payload["options"]["page_start"] == 1
@@ -127,7 +139,9 @@ async def test_success_keeps_reservation_and_original_queue_payload(admission, e
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("extension", ["txt", "pdf", "xlsx", "png"])
-@pytest.mark.parametrize("failure", ["reserve", "stage", "status", "queue", "reject"])
+@pytest.mark.parametrize(
+    "failure", ["reserve", "stage", "status", "queue", "reject"]
+)
 async def test_admission_failures_release_only_after_reservation(admission, extension, failure):
     admission.control["failure"] = failure
     error = ValueError if failure == "reject" else RuntimeError
@@ -150,6 +164,15 @@ async def test_non_pdf_range_rejects_before_admission(admission, extension):
     with pytest.raises(ValueError, match="仅适用于 PDF"):
         await start(admission, extension, page_start=2)
     assert admission.trace == ["validate"]
+
+
+@pytest.mark.asyncio
+async def test_admission_failure_never_acquires_or_enqueues(admission):
+    admission.control["failure"] = "admit"
+    with pytest.raises(RuntimeError, match="admit"):
+        await start(admission, "txt")
+    assert admission.trace == ["validate", "admit"]
+    assert admission.queued == []
 
 
 @pytest.mark.asyncio

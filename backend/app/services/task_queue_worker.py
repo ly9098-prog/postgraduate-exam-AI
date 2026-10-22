@@ -442,6 +442,7 @@ async def enqueue_import_pipeline(
     subject_id: int | None,
     options: dict,
     created_by: str | None = None,
+    source_sha256: str | None = None,
 ) -> EnqueueResult:
     """Enqueue an import pipeline task via the durable queue."""
     payload = {
@@ -452,6 +453,7 @@ async def enqueue_import_pipeline(
         "subject_id": subject_id,
         "options": options,
         "created_by": created_by,
+        "source_sha256": source_sha256,
         "staging_object_id": staging_object_id,
     }
     return await _enqueue_v2_with_local_fallback(
@@ -492,6 +494,7 @@ async def enqueue_image_pipeline(
     subject: str | None,
     subject_id: int | None,
     options: dict,
+    created_by: str | None = None,
 ) -> EnqueueResult:
     """Enqueue an image OCR pipeline task."""
     payload = {
@@ -500,6 +503,7 @@ async def enqueue_image_pipeline(
         "subject": subject,
         "subject_id": subject_id,
         "options": options,
+        "created_by": created_by,
         "staging_object_id": staging_object_id,
     }
     return await _enqueue_v2_with_local_fallback(
@@ -514,11 +518,13 @@ async def enqueue_excel_pipeline(
     pipeline_id: str,
     staging_object_id: str,
     source_file: str,
+    created_by: str | None = None,
 ) -> EnqueueResult:
     """Enqueue an Excel import pipeline task."""
     payload = {
         "pipeline_id": pipeline_id,
         "source_file": source_file,
+        "created_by": created_by,
         "staging_object_id": staging_object_id,
     }
     return await _enqueue_v2_with_local_fallback(
@@ -670,6 +676,7 @@ async def _process_task(task: Task) -> None:
                 subject_id=payload.get("subject_id"),
                 options=payload.get("options", {}),
                 created_by=payload.get("created_by"),
+                source_sha256=payload.get("source_sha256"),
             )
 
         elif task_type == TASK_TYPE_IMAGE_PIPELINE:
@@ -688,6 +695,7 @@ async def _process_task(task: Task) -> None:
                 subject=payload.get("subject"),
                 subject_id=payload.get("subject_id"),
                 options=payload.get("options", {}),
+                created_by=payload.get("created_by"),
             )
 
         elif task_type == TASK_TYPE_EXCEL_PIPELINE:
@@ -706,6 +714,7 @@ async def _process_task(task: Task) -> None:
                 file_content=file_content,
                 source_file=payload.get("source_file", ""),
                 import_excel_fn=pipeline_svc.import_excel,
+                created_by=payload.get("created_by"),
             )
 
         elif task_type == TASK_TYPE_RESUME_PIPELINE:
@@ -1122,6 +1131,7 @@ async def _process_task_v2(task: Task) -> None:
                 subject_id=payload.get("subject_id"),
                 options=payload.get("options", {}),
                 created_by=payload.get("created_by"),
+                source_sha256=payload.get("source_sha256"),
             )
 
         elif task_type == TASK_TYPE_IMAGE_PIPELINE:
@@ -1143,6 +1153,7 @@ async def _process_task_v2(task: Task) -> None:
                 subject=payload.get("subject"),
                 subject_id=payload.get("subject_id"),
                 options=payload.get("options", {}),
+                created_by=payload.get("created_by"),
             )
 
         elif task_type == TASK_TYPE_EXCEL_PIPELINE:
@@ -1163,6 +1174,7 @@ async def _process_task_v2(task: Task) -> None:
                 file_content=file_content,
                 source_file=payload.get("source_file", ""),
                 import_excel_fn=pipeline_svc.import_excel,
+                created_by=payload.get("created_by"),
             )
 
         elif task_type == TASK_TYPE_RESUME_PIPELINE:
