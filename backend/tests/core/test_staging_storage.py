@@ -7,6 +7,8 @@ import pytest
 
 from app.services.staging_storage import (
     _VALID_OBJECT_ID_RE_V2,
+    _metadata_path,
+    _object_path,
     _sha256_of_file,
     async_cleanup_work_copy,
     async_create_work_copy,
@@ -28,6 +30,29 @@ from app.services.staging_storage import (
     sweep_temp_files,
     validate_object_id,
 )
+
+
+def _age_staging_object(object_id: str, age_sec: int) -> None:
+    """Move filesystem timestamps and the read-only metadata file out of grace."""
+    import json
+
+    old_timestamp = time.time() - age_sec
+    data_path = _object_path(object_id)
+    metadata_path = _metadata_path(object_id)
+    assert data_path.exists()
+    assert metadata_path.exists()
+    os.utime(data_path, (old_timestamp, old_timestamp))
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["created_at"] = old_timestamp
+    metadata["last_referenced_at"] = old_timestamp
+    stat_result = metadata_path.stat()
+    os.chmod(metadata_path, stat_result.st_mode | 0o200)
+    try:
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    finally:
+        os.chmod(metadata_path, stat_result.st_mode)
+    os.utime(metadata_path, (old_timestamp, old_timestamp))
 
 
 class TestObjectIdFormat:
@@ -438,6 +463,8 @@ class TestAtomicWrites:
         stale_tmp = obj_dir / "stg_0000000000000000000000000000000000000000000000000000000000000000.data.tmp"
         try:
             stale_tmp.write_text("stale data")
+            old_timestamp = time.time() - 7200
+            os.utime(stale_tmp, (old_timestamp, old_timestamp))
             removed = cleanup_orphans(max_age_sec=-1)
             assert removed >= 1
             assert not stale_tmp.exists()
@@ -560,6 +587,7 @@ class TestStagingCleanup:
         tmp.close()
         try:
             obj = store_file(tmp.name)
+            _age_staging_object(obj.object_id, 7200)
             deleted = cleanup_orphans(max_age_sec=-1)
             assert deleted >= 1
             assert retrieve_file(obj.object_id) is None

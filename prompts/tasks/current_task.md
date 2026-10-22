@@ -1366,3 +1366,9 @@
 - Standalone 启动失败清理拆至 `core/runtime_startup_cleanup.py`，普通异常、`CancelledError` 和 cleanup logger 自身失败都要保留原启动失败；已存在的 `SystemError` 原样重抛。worker OCR 使用 client 自身 `shutdown()`，不反射私有 `_client`。readiness 将 Alembic `stale` 纳入关键失败并返回 503，生产模式继续隐藏 checks 明细。
 - 回归：OCR shutdown 定向 47 项、全量 `tests/architecture` 255 项通过；全量 `tests/core` 1,620 passed、4 skipped、3 failed。3 项失败均在本轮前交接中已登记为既有：`safe_remote_fetch` redirect FakeConnection 不接受 `connect_timeout`，`staging_storage` 两个 orphan cleanup 用例未删除过期文件。独立审查发现的 cleanup 取消覆盖、gateway 失败跳 worker、logger 抛错跳后续资源和 worker 取消失跳 shared client 问题均已修复并有真实失败回归；最终只读复审无 findings，剩余 3 项 core 失败与本轮源码无关，仍保持既有待办。
 - 验证命令：`.venv/bin/python -m pytest tests/core -q --tb=short`、`.venv/bin/python -m pytest tests/architecture -q --tb=short`、`ruff check app/ --ignore I001,F401,N818`、`compileall -q app`、`git diff --check` 均完成（pytest 保留上述 3 项既有失败）。PostgreSQL/Redis/OCR/AI 外部服务、真实生产角色退出和客户端验收仍未执行；不把端口替身、SQLite 或结构门禁冒充生产验收。已按 40 个显式路径本地提交为 `5c62d707 fix(runtime): 收紧角色启动与关闭失败边界`，文档收尾提交随后续最终 HEAD 记录；提交后无暂存内容；保留 36 个用户既有改动/删除及未跟踪 `context.md`，不推送、不操作生产。
+
+
+## 一百一十九、第一百一十三阶段：恢复 3 项既有 core 测试契约（2026-10-22）
+
+- 仅修复测试，不改生产逻辑：`safe_remote_fetch` 的 redirect FakeConnection 补齐 `connect_timeout`、`connect()` 与 `sock`；staging 两项测试显式把临时文件或对象 data/meta 时间戳移动到 1 小时 orphan grace 之外，并对只读 metadata 临时恢复写权限后回滚，保持“负数 age 也不能绕过 grace”的生产语义。
+- 修复后 3 项定向通过；两个测试文件 58 项通过；完整 `tests/core` 1,624 passed、4 skipped、0 failed。严格 Ruff、compileall 与 diff 通过。Alembic stale readiness 保持第 112 批已实现的 503 行为，无需重复修改。

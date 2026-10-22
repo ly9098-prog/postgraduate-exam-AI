@@ -70,15 +70,28 @@ def test_redirect_target_is_revalidated_before_connect(monkeypatch: pytest.Monke
             return b""
 
     class FakeConnection:
-        def __init__(self, hostname: str, resolved_ip: str, port: int, timeout: float):
+        def __init__(
+            self,
+            hostname: str,
+            resolved_ip: str,
+            port: int,
+            timeout: float,
+            *,
+            connect_timeout: float | None = None,
+        ):
             assert hostname == "public.example"
             assert resolved_ip == "93.184.216.34"
+            assert connect_timeout is not None and connect_timeout <= timeout
+            self.sock = None
 
         def request(self, *args, **kwargs) -> None:
             return None
 
         def getresponse(self) -> FakeResponse:
             return FakeResponse()
+
+        def connect(self) -> None:
+            return None
 
         def close(self) -> None:
             return None
