@@ -44,6 +44,10 @@ const modules = [
     imports: ["lucide-react"],
   },
   {
+    path: "./components/question-secondary-info.tsx",
+    imports: ["@/lib/api/types"],
+  },
+  {
     path: "./components/question-version-value.tsx",
     imports: [
       "@/components/ui/math-formula", "@/components/question-content-renderer",
