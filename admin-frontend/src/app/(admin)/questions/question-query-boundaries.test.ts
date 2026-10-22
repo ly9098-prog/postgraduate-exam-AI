@@ -36,6 +36,14 @@ const modules = [
     imports: ["lucide-react"],
   },
   {
+    path: "./components/question-type-badge.tsx",
+    imports: ["lucide-react", "@/lib/question-types"],
+  },
+  {
+    path: "./components/question-custom-checkbox.tsx",
+    imports: ["lucide-react"],
+  },
+  {
     path: "./components/question-version-value.tsx",
     imports: [
       "@/components/ui/math-formula", "@/components/question-content-renderer",

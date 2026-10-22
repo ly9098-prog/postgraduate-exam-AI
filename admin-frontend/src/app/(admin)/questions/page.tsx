@@ -55,7 +55,7 @@ import {
 import { hasPermission } from "@/lib/permissions/permissions";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
-import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
+import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { buildQuestionCopyText } from "@/lib/question-copy";
@@ -80,6 +80,8 @@ import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
 import { QuestionTableEditors } from "./components/question-table-editors";
 import { DifficultyBadge } from "./components/question-difficulty-badge";
+import { TypeBadge } from "./components/question-type-badge";
+import { CustomCheckbox } from "./components/question-custom-checkbox";
 import { QuestionVersionComparison } from "./components/question-version-comparison";
 import { questionDetailOptions } from "./question-queries";
 import {
@@ -253,42 +255,6 @@ function renderSecondaryQuestionInfo(question: QuestionWithImport) {
         </div>
       ) : null}
     </details>
-  );
-}
-
-/** Type badge */
-function TypeBadge({ type: t }: { type: string | null | undefined }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-secondary)]">
-      <Layers className="h-3 w-3" />
-      {getQuestionTypeLabel(t)}
-    </span>
-  );
-}
-
-function CustomCheckbox({
-  checked,
-  onChange,
-  className = "",
-}: {
-  checked: boolean;
-  onChange: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={onChange}
-      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-        checked
-          ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
-          : "border-[var(--color-border)] bg-white hover:border-[var(--color-text-hint)]"
-      } ${className}`}
-    >
-      {checked && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
-    </button>
   );
 }
 
