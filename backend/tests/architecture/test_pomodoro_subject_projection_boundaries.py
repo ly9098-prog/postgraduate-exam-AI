@@ -27,7 +27,11 @@ def test_projection_dependencies_and_function_budgets():
             assert node.end_lineno - node.lineno + 1 <= 50
         if isinstance(node, ast.Call):
             assert getattr(node.func, "attr", "") not in {
-                "execute", "commit", "rollback", "flush", "create_task",
+                "execute",
+                "commit",
+                "rollback",
+                "flush",
+                "create_task",
             }
 
 
@@ -36,25 +40,46 @@ def test_real_snapshot_consumes_projection_without_duplicate_implementations():
     from app.services import pomodoro_service, pomodoro_subject_projection
 
     assert EXAM408_CORE_CODES == (
-        "data_structure", "computer_organization", "operating_system", "computer_network",
+        "data_structure",
+        "computer_organization",
+        "operating_system",
+        "computer_network",
     )
     tree = ast.parse((APP / "services/pomodoro_service.py").read_text())
     definitions = {
-        node.name for node in tree.body
+        node.name
+        for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     assert not definitions & (NAMES | {f"_{name}" for name in NAMES})
     snapshot = next(
-        node for node in tree.body
+        node
+        for node in tree.body
         if getattr(node, "name", "") == "build_pomodoro_statistics_snapshot"
     )
     calls = {
-        node.func.id for node in ast.walk(snapshot)
+        node.func.id: node
+        for node in ast.walk(snapshot)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
-    assert NAMES <= calls
+    focus_ports = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in calls["accumulate_focus_sessions"].keywords
+    }
+    supplemental_ports = {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in calls["accumulate_supplemental_sessions"].keywords
+    }
+    assert {
+        "resolve_allocations": "resolve_allocations",
+        "allocation_group_key": "allocation_group_key",
+        "allocate_seconds": "allocate_seconds_by_weight",
+    }.items() <= focus_ports.items()
+    assert supplemental_ports["resolve_subject"] == "resolve_subject"
     for name in NAMES:
-        assert getattr(pomodoro_service, name) is getattr(pomodoro_subject_projection, name)
+        assert getattr(pomodoro_service, name) is getattr(
+            pomodoro_subject_projection, name
+        )
 
 
 def test_new_process_projection_import_has_no_runtime_resources():
@@ -76,7 +101,10 @@ for name in (
     assert name not in sys.modules, name
 """
     result = subprocess.run(
-        [sys.executable, "-c", probe], cwd=APP.parent,
-        capture_output=True, text=True, check=False,
+        [sys.executable, "-c", probe],
+        cwd=APP.parent,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr

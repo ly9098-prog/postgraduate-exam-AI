@@ -10,6 +10,7 @@ from tests.architecture.dependency_scan import scan_application
 APP = Path(__file__).resolve().parents[2] / "app"
 MODULE = "app.services.pomodoro_statistics_window"
 RESPONSE = "app.services.pomodoro_statistics_response"
+ACCUMULATION = "app.services.pomodoro_statistics_accumulation"
 
 
 def test_window_dependencies_and_budgets():
@@ -236,6 +237,87 @@ def forbidden(*args, **kwargs):
 asyncio.create_task = forbidden
 from app.services.pomodoro_statistics_response import build_statistics_response
 assert callable(build_statistics_response)
+assert dict(os.environ) == before
+for name in (
+    'app.main', 'app.core.config', 'app.core.database', 'app.models.pomodoro',
+    'app.services.pomodoro_service', 'sqlalchemy', 'fastapi',
+):
+    assert name not in sys.modules, name
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=APP.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_accumulation_dependencies_and_function_budgets():
+    graph, _ = scan_application(APP)
+    assert graph[ACCUMULATION] == set()
+    assert ACCUMULATION in graph["app.services.pomodoro_service"]
+    source = (APP / "services/pomodoro_statistics_accumulation.py").read_text()
+    assert len(source.splitlines()) <= 300
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.end_lineno - node.lineno + 1 <= 50
+        if isinstance(node, ast.Call):
+            assert getattr(node.func, "attr", "") not in {
+                "execute",
+                "commit",
+                "rollback",
+                "flush",
+                "create_task",
+            }
+
+
+def test_snapshot_calls_accumulators_in_source_order_with_shared_state():
+    tree = ast.parse((APP / "services/pomodoro_service.py").read_text())
+    entry = next(
+        node
+        for node in tree.body
+        if getattr(node, "name", "") == "build_pomodoro_statistics_snapshot"
+    )
+    calls = [
+        node.value.func.id
+        for node in entry.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+    ]
+    assert calls.index("accumulate_focus_sessions") < calls.index(
+        "accumulate_supplemental_sessions"
+    )
+    focus = next(
+        node.value
+        for node in entry.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", "") == "accumulate_focus_sessions"
+    )
+    supplemental = next(
+        node.value
+        for node in entry.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", "") == "accumulate_supplemental_sessions"
+    )
+    assert ast.unparse(focus.args[1]) == ast.unparse(supplemental.args[1]) == "state"
+
+
+def test_new_process_accumulation_import_has_no_runtime_resources():
+    probe = """
+import asyncio
+import os
+import sys
+before = dict(os.environ)
+def forbidden(*args, **kwargs):
+    raise AssertionError("accumulation import must not create tasks")
+asyncio.create_task = forbidden
+from app.services.pomodoro_statistics_accumulation import accumulate_focus_sessions
+assert callable(accumulate_focus_sessions)
 assert dict(os.environ) == before
 for name in (
     'app.main', 'app.core.config', 'app.core.database', 'app.models.pomodoro',

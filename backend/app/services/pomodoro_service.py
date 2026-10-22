@@ -37,6 +37,11 @@ from app.services.pomodoro_attribution import (
     split_duration_excluding_intervals,
     split_session_duration_by_study_day,
 )
+from app.services.pomodoro_statistics_accumulation import (
+    StatisticsAccumulationState,
+    accumulate_focus_sessions,
+    accumulate_supplemental_sessions,
+)
 from app.services.pomodoro_statistics_response import build_statistics_response
 from app.services.pomodoro_statistics_window import (
     StatisticsWindowRequest,
@@ -1209,198 +1214,64 @@ async def build_pomodoro_statistics_snapshot(
     week_start_date = study_day_for_utc(study_week_utc_range(dsm)[0], dsm)
     week_end_date = week_start_date + timedelta(days=7)
 
-    if need_stats:
-        today_sessions = 0
-        today_duration = 0
-        week_sessions = 0
-        week_duration = 0
-    if need_trends:
-        trend_agg = {
+    trend_agg = (
+        {
             today - timedelta(days=trends_days - 1 - i): {
                 "sessions": 0,
                 "duration_sec": 0,
             }
             for i in range(trends_days)
         }
-    if need_daily_summary:
-        target_groups: dict[int | None, dict] = {}
-        target_sessions = 0
-        target_duration = 0
-    if need_range_summary:
-        range_groups: dict[int | None, dict] = {}
-        range_sessions = 0
-        range_duration = 0
-        range_active_day_set: set[date] = set()
-
-    # 已被计时的"占用"墙钟区间（用于刷题去重）：
-    #  - 所有 Pomodoro 的 active（非暂停）区间
-    # Practice 仅补充没有被这些区间覆盖的部分，避免学习总时长 double count。
-    # 刷题会话业务上互斥（同一时间只能进行一组刷题），因此不把已处理的刷题
-    # 窗口回填进 counted_spans —— 若两刷题会话异常重叠，各自按原时长计入即可，
-    # 不做顺序依赖的去重（顺序依赖会产生与遍历次序相关的欠计）。
-    counted_spans: list[tuple[datetime, datetime]] = []
-
-    # ── PomodoroSession：时长 + 次数（sessions 系番茄专注次数，不并入刷题）──
-    for s in pomodoro_sessions:
-        counted_spans.extend(active_intervals_for_session(s))
-        start_day = study_day_for_utc(s.start_time, dsm)
-        split = split_session_duration_by_study_day(s, s.pause_intervals, dsm)
-        is_terminal = s.status in POMODORO_STATS_TERMINAL_STATUSES
-        if need_stats:
-            if is_terminal and start_day == today:
-                today_sessions += 1
-            if is_terminal and week_start_date <= start_day < week_end_date:
-                week_sessions += 1
-            for day, sec in split.items():
-                if day == today:
-                    today_duration += sec
-                if week_start_date <= day < week_end_date:
-                    week_duration += sec
-        if need_range_summary:
-            if is_terminal and range_start <= start_day <= range_end:
-                range_sessions += 1
-            range_contrib = 0
-            for day, sec in split.items():
-                if range_start <= day <= range_end:
-                    range_contrib += sec
-                    range_duration += sec
-                    if sec > 0:
-                        range_active_day_set.add(day)
-            if range_include_subjects and range_contrib > 0:
-                allocations = resolve_allocations(s)
-                allocated_by_subject = {
-                    allocation_group_key(row[0], row[1]): 0 for row in allocations
-                }
-                for day, sec in split.items():
-                    if range_start <= day <= range_end:
-                        for row, allocated_sec in zip(
-                            allocations, allocate_seconds_by_weight(sec, allocations)
-                        ):
-                            allocated_by_subject[
-                                allocation_group_key(row[0], row[1])
-                            ] += allocated_sec
-                for subject_id, code, name, _ in allocations:
-                    key = allocation_group_key(subject_id, code)
-                    allocated_sec = allocated_by_subject[key]
-                    g = range_groups.setdefault(
-                        key,
-                        {
-                            "subject_id": subject_id,
-                            "subject_code": code,
-                            "subject_name": name,
-                            "duration_sec": 0,
-                            "sessions": 0,
-                            "participation_sessions": 0,
-                        },
-                    )
-                    g["duration_sec"] += allocated_sec
-                    if is_terminal and range_start <= start_day <= range_end:
-                        g["sessions"] += 1
-                        g["participation_sessions"] += 1
-        if need_trends:
-            if is_terminal and start_day in trend_agg:
-                trend_agg[start_day]["sessions"] += 1
-            for day, sec in split.items():
-                if day in trend_agg:
-                    trend_agg[day]["duration_sec"] += sec
-        if need_daily_summary:
-            day_contrib = split.get(target, 0)
-            if day_contrib <= 0 and start_day != target:
-                continue
-            if is_terminal and start_day == target:
-                target_sessions += 1
-            target_duration += day_contrib
-            if day_contrib <= 0:
-                # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
-                continue
-            allocations = resolve_allocations(s)
-            seconds = allocate_seconds_by_weight(day_contrib, allocations)
-            for (subject_id, code, name, _), allocated_sec in zip(allocations, seconds):
-                key = allocation_group_key(subject_id, code)
-                g = target_groups.setdefault(
-                    key,
-                    {
-                        "subject_id": subject_id,
-                        "subject_code": code,
-                        "subject_name": name,
-                        "duration_sec": 0,
-                        "sessions": 0,
-                        "participation_sessions": 0,
-                    },
-                )
-                g["duration_sec"] += allocated_sec
-                if is_terminal and start_day == target:
-                    g["sessions"] += 1
-                    g["participation_sessions"] += 1
-
-    # ── PracticeSession：仅补充时长（与 Pomodoro 重叠部分被排除）──
-    # 顶层 sessions（stats/trends/daily_summary.sessions）保持番茄次数；
-    # 科目级 subjects[].sessions 定义成"当天开始的该科目学习记录数"，含刷题，
-    # 供前端跨统计日渗透判断使用（普通当天刷题不会被误判为渗透）。
-    for s in practice_sessions:
-        start_day = study_day_for_utc(s.start_time, dsm)
-        split = split_duration_excluding_intervals(
-            s.start_time,
-            s.end_time,
-            s.actual_duration,
-            counted_spans,
-            dsm,
-        )
-        if need_stats:
-            for day, sec in split.items():
-                if day == today:
-                    today_duration += sec
-                if week_start_date <= day < week_end_date:
-                    week_duration += sec
-        if need_range_summary:
-            range_contrib = 0
-            for day, sec in split.items():
-                if range_start <= day <= range_end:
-                    range_contrib += sec
-                    range_duration += sec
-                    if sec > 0:
-                        range_active_day_set.add(day)
-            if range_include_subjects and range_contrib > 0:
-                key, code, name = resolve_subject(s)
-                g = range_groups.setdefault(
-                    key,
-                    {
-                        "subject_id": key,
-                        "subject_code": code,
-                        "subject_name": name,
-                        "duration_sec": 0,
-                        "sessions": 0,
-                        "participation_sessions": 0,
-                    },
-                )
-                g["duration_sec"] += range_contrib
-                if range_start <= start_day <= range_end:
-                    g["sessions"] += 1
-        if need_trends:
-            for day, sec in split.items():
-                if day in trend_agg:
-                    trend_agg[day]["duration_sec"] += sec
-        if need_daily_summary:
-            day_contrib = split.get(target, 0)
-            if day_contrib <= 0:
-                # 刷题 session 不生成 0% 科目切片，也不计入顶层 sessions
-                continue
-            target_duration += day_contrib
-            key, code, name = resolve_subject(s)
-            g = target_groups.setdefault(
-                key,
-                {
-                    "subject_id": key,
-                    "subject_code": code,
-                    "subject_name": name,
-                    "duration_sec": 0,
-                    "sessions": 0,
-                    "participation_sessions": 0,
-                },
-            )
-            g["duration_sec"] += day_contrib
-            if start_day == target:
-                g["sessions"] += 1
+        if need_trends
+        else {}
+    )
+    state = StatisticsAccumulationState(
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        range_include_subjects=range_include_subjects,
+        today=today,
+        target=target,
+        range_start=range_start,
+        range_end=range_end,
+        week_start_date=week_start_date,
+        week_end_date=week_end_date,
+        trends=trend_agg,
+        stats={
+            "today_sessions": 0,
+            "today_duration": 0,
+            "week_sessions": 0,
+            "week_duration": 0,
+        },
+        daily={"sessions": 0, "duration_sec": 0, "groups": {}},
+        range={
+            "sessions": 0,
+            "duration_sec": 0,
+            "groups": {},
+            "active_days_set": set(),
+        },
+    )
+    accumulate_focus_sessions(
+        pomodoro_sessions,
+        state,
+        day_start_minute=dsm,
+        terminal_statuses=POMODORO_STATS_TERMINAL_STATUSES,
+        active_intervals=active_intervals_for_session,
+        split_by_day=split_session_duration_by_study_day,
+        study_day_for_utc=study_day_for_utc,
+        resolve_allocations=resolve_allocations,
+        allocation_group_key=allocation_group_key,
+        allocate_seconds=allocate_seconds_by_weight,
+    )
+    accumulate_supplemental_sessions(
+        practice_sessions,
+        state,
+        day_start_minute=dsm,
+        split_excluding=split_duration_excluding_intervals,
+        study_day_for_utc=study_day_for_utc,
+        resolve_subject=resolve_subject,
+    )
 
     return build_statistics_response(
         need_stats=need_stats,
@@ -1414,23 +1285,18 @@ async def build_pomodoro_statistics_snapshot(
         day_start_time=settings["day_start_time"],
         trends=trend_agg if need_trends else None,
         stats_values={
-            "today_sessions": today_sessions if need_stats else 0,
-            "today_duration": today_duration if need_stats else 0,
-            "week_sessions": week_sessions if need_stats else 0,
-            "week_duration": week_duration if need_stats else 0,
+            **state.stats,
         },
         daily_values={
-            "sessions": target_sessions if need_daily_summary else 0,
-            "duration_sec": target_duration if need_daily_summary else 0,
-            "groups": target_groups if need_daily_summary else {},
+            **state.daily,
         },
         range_values={
             "start_date": range_start,
             "end_date": range_end,
-            "sessions": range_sessions if need_range_summary else 0,
-            "duration_sec": range_duration if need_range_summary else 0,
-            "active_days": len(range_active_day_set) if need_range_summary else 0,
-            "groups": range_groups if need_range_summary else {},
+            "sessions": state.range["sessions"],
+            "duration_sec": state.range["duration_sec"],
+            "active_days": len(state.range["active_days_set"]),
+            "groups": state.range["groups"],
         },
     )
 

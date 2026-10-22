@@ -377,3 +377,96 @@ async def test_zero_duration_counts_focus_without_subject_slices(runtime, monkey
         assert result[key]["sessions"] == 1 and result[key]["duration_sec"] == 0
         assert result[key]["subjects"] == []
     assert result["range_summary"]["active_days"] == 0
+
+
+@pytest.mark.asyncio
+async def test_multi_source_cross_day_pause_overlap_and_ordering(runtime, monkeypatch):
+    day_one = study_day_utc_range(TODAY - timedelta(days=1), 0)[0] + timedelta(hours=23)
+    focus = _learning_session(day_one, 7, "data_structure", focus=True)
+    focus.end_time = day_one + timedelta(hours=2)
+    focus.actual_duration = 3600
+    focus.pause_intervals = [
+        SimpleNamespace(
+            started_at=day_one + timedelta(minutes=30),
+            ended_at=day_one + timedelta(minutes=90),
+        )
+    ]
+    practice = _learning_session(
+        day_one + timedelta(minutes=30), 9, "english", focus=False
+    )
+    practice.end_time = day_one + timedelta(hours=1, minutes=30)
+    practice.actual_duration = 3600
+    loaded = []
+
+    async def focus_loader(*args, **kwargs):
+        loaded.append("focus")
+        return [focus]
+
+    async def supplemental_loader(*args, **kwargs):
+        loaded.append("supplemental")
+        return [practice]
+
+    monkeypatch.setattr(service, "_load_overlapping_sessions", focus_loader)
+    monkeypatch.setattr(
+        service, "_load_overlapping_practice_sessions", supplemental_loader
+    )
+    result = await _snapshot(
+        runtime,
+        trends_days=2,
+        range_start=TODAY - timedelta(days=1),
+        range_end=TODAY,
+    )
+    assert loaded == ["focus", "supplemental"]
+    assert result["stats"]["today_sessions"] == 0
+    assert result["stats"]["today_duration_sec"] == 3600
+    assert result["trends"] == [
+        dict(
+            date=(TODAY - timedelta(days=1)).isoformat(),
+            sessions=1,
+            duration_sec=3600,
+        ),
+        dict(date=TODAY.isoformat(), sessions=0, duration_sec=3600),
+    ]
+    assert result["range_summary"]["duration_sec"] == 7200
+    assert result["range_summary"]["active_days"] == 2
+    assert result["daily_summary"]["duration_sec"] == 3600
+    subjects = result["daily_summary"]["subjects"]
+    assert [(row["subject_code"], row["duration_sec"]) for row in subjects] == [
+        ("data_structure", 1800),
+        ("english", 1800),
+    ]
+    assert [(row["sessions"], row["participation_sessions"]) for row in subjects] == [
+        (0, 0),
+        (0, 0),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("source", ["focus", "supplemental"])
+async def test_source_attribution_error_or_cancel_has_identity_and_short_circuits(
+    runtime, monkeypatch, cancelled, source
+):
+    error = (
+        asyncio.CancelledError("cancelled")
+        if cancelled
+        else RuntimeError("attribution failed")
+    )
+    called = []
+
+    def fail(*args, **kwargs):
+        called.append("attribution")
+        raise error
+
+    monkeypatch.setattr(
+        service,
+        "active_intervals_for_session"
+        if source == "focus"
+        else "split_duration_excluding_intervals",
+        fail,
+    )
+    with pytest.raises(type(error)) as caught:
+        await _snapshot(runtime)
+    assert caught.value is error
+    assert called == ["attribution"]
+    assert "build_statistics_response" not in runtime.events
