@@ -26,6 +26,10 @@ const {
   evaluateCanvasLayout,
   buildCanvasSetup,
 } = require('./utils/canvas-layout')
+const {
+  canReconcilePendingSync,
+  decidePendingSyncReconciliation,
+} = require('./utils/sync-reconciliation')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -2087,76 +2091,48 @@ Page({
   },
 
   async _reconcilePendingPomodoroSyncFailure(pending, error) {
-    const statusCode = Number(error && error.statusCode) || 0
-    if (statusCode !== 404 && statusCode !== 409) return false
-
+    if (!canReconcilePendingSync(error)) return false
     let active
     try {
       active = await api.get('/pomodoro/active')
     } catch (_) {
       return false
     }
-
-    if (active && active.id === pending.sessionId) {
-      // Lost response: server may already be in the requested state.
-      if (pending.action === 'pause' && active.status === 'paused') {
-        if (!this._clearPendingPomodoroSync(pending)) return false
-        this._maybeClearLocalPauseAdjustment(pending.sessionId)
-        return true
-      }
-      if (pending.action === 'resume' && active.status === 'running') {
-        if (!this._clearPendingPomodoroSync(pending)) return false
-        this._maybeClearLocalPauseAdjustment(pending.sessionId)
-        return true
-      }
-
-      if (error && error.code === 'POMODORO_CLOCK_SKEW') {
-        // /active has just refreshed api.now() from server_now/Date. Replay the
-        // user's actual intent with a calibrated timestamp instead of deleting it.
-        const retries = Number(pending.clockSkewRetries || 0)
-        if (retries < 2) {
-          this._updatePendingPomodoroSync(pending, {
-            clientActionAt: api.now(),
-            clockSkewRetries: retries + 1,
-          })
-          return true
-        }
-        // Keep the intent queued if clock calibration is still unusable. A later
-        // online drain can retry; never silently turn pause/interrupt back into run.
-        return false
-      }
-
-      if (
-        error &&
-        (error.code === 'POMODORO_STALE_ACTION' || error.code === 'POMODORO_NOT_READY')
-      ) {
-        if (pending.action === 'complete' || pending.action === 'interrupt') {
-          const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
-          if (!completionStored.ok) return false
-          const completion = completionStored.value
-          if (
-            completion && completion.sessionId === pending.sessionId &&
-            !this._safeRemovePomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
-          ) return false
-          this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-          this._completionBreakSec = null
-          this.setData({ showCelebration: false, showEndConfirm: false })
-        }
-        if (this._pageVisible && this._restoreSession(active) === false) return false
-        if (!this._clearPendingPomodoroSync(pending)) return false
-        this._maybeClearLocalPauseAdjustment(pending.sessionId)
-        return true
-      }
+    const decision = decidePendingSyncReconciliation(pending, error, active)
+    if (decision.kind === 'not-reconcilable' || decision.kind === 'keep-pending') {
+      return false
     }
-
-    if (!active || active.id !== pending.sessionId) {
-      // The old session is terminal/missing. Terminal POSTs normally return the
-      // final row directly; this fallback prevents obsolete non-terminal actions
-      // from blocking the queue forever.
-      return this._dropPendingPomodoroSessionActions(pending.sessionId)
+    if (decision.kind === 'acknowledge') {
+      if (!this._clearPendingPomodoroSync(pending)) return false
+      this._maybeClearLocalPauseAdjustment(pending.sessionId)
+      return true
     }
-
-    return false
+    if (decision.kind === 'retry-with-calibration') {
+      this._updatePendingPomodoroSync(pending, {
+        clientActionAt: api.now(),
+        clockSkewRetries: decision.retries + 1,
+      })
+      return true
+    }
+    if (decision.kind === 'restore-active') {
+      if (decision.clearTerminalCompletion) {
+        const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
+        if (!completionStored.ok) return false
+        const completion = completionStored.value
+        if (
+          completion && completion.sessionId === pending.sessionId &&
+          !this._safeRemovePomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
+        ) return false
+        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
+        this._completionBreakSec = null
+        this.setData({ showCelebration: false, showEndConfirm: false })
+      }
+      if (this._pageVisible && this._restoreSession(active) === false) return false
+      if (!this._clearPendingPomodoroSync(pending)) return false
+      this._maybeClearLocalPauseAdjustment(pending.sessionId)
+      return true
+    }
+    return this._dropPendingPomodoroSessionActions(pending.sessionId)
   },
 
   async _retryPendingPomodoroSync() {
