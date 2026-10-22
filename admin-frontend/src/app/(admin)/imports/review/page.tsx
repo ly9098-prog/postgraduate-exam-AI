@@ -17,7 +17,7 @@ import { apiRequest, toQuery } from "@/lib/api/client";
 import { updateSegUrl } from "@/lib/segment-utils";
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
 import type { SelectOption } from "@/components/ui/custom-select";
-import type { BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
   getMultiBlankSaveState,
   reduceMultiBlankEditState,
@@ -71,7 +71,7 @@ import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
 import { useReviewBatchAnswerMutations } from "./hooks/use-review-batch-answer-mutations";
-import { useReviewImageAnswerMutations } from "./hooks/use-review-image-answer-mutations";
+import { useReviewImageAnswerFlow } from "./hooks/use-review-image-answer-flow";
 import { useReviewSegmentDrag } from "./hooks/use-review-segment-drag";
 import { ReviewVisualSegmentEditor } from "./components/review-visual-segment-editor";
 import { ReviewAnswerEditor } from "./components/review-answer-editor";
@@ -268,11 +268,6 @@ export default function ImportReviewPage() {
 
   // Phase 2: 图片导入
   const [batchAnswerFillTab, setBatchAnswerFillTab] = useState<BatchAnswerFillTab>("text");
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [imageImportMode, setImageImportMode] = useState<"answer_only" | "answer_analysis">("answer_only");
-  const [imagePreviewResult, setImagePreviewResult] = useState<BatchAnswerImagePreviewResponse | null>(null);
-  const [imageApplyResult, setImageApplyResult] = useState<BatchAnswerImageApplyResponse | null>(null);
-  const [imageError, setImageError] = useState<string | null>(null);
   const currentBatchId = filters.batch_id || batchIdParam;
   const batchResultView = buildBatchCompleteResultState(batchResult);
 
@@ -581,24 +576,19 @@ export default function ImportReviewPage() {
   const { mutate: previewBatchAnswers, isPending: isPreviewingBatchAnswers } = previewBatchAnswerMutation;
   const { mutate: applyBatchAnswers, isPending: isApplyingBatchAnswers } = applyBatchAnswerMutation;
   const batchAnswerExecuting = isPreviewingBatchAnswers || isApplyingBatchAnswers;
-  const { preview: previewImageMutation, apply: applyImageMutation } = useReviewImageAnswerMutations(
-    apiRequest,
-    {
-      onPreviewStarted: () => {
-        setImageError(null);
-        setImagePreviewResult(null);
-        setImageApplyResult(null);
-      },
-      onPreviewed: setImagePreviewResult,
-      onPreviewError: (error) => setImageError(error instanceof Error ? error.message : "预览生成失败"),
-      onApplyStarted: () => setImageError(null),
-      onApplied: setImageApplyResult,
-      onApplyError: (error) => setImageError(error instanceof Error ? error.message : "写入失败"),
-    },
-  );
-  const { mutate: previewImageAnswers, isPending: isPreviewingImageAnswers } = previewImageMutation;
-  const { mutate: applyImageAnswers, isPending: isApplyingImageAnswers } = applyImageMutation;
-  const imageExecuting = isPreviewingImageAnswers || isApplyingImageAnswers;
+  const {
+    imageFiles,
+    imageImportMode,
+    imagePreviewResult,
+    imageApplyResult,
+    imageError,
+    imageExecuting,
+    handleImagePreview,
+    handleImageApply,
+    handleImageFileChange,
+    removeImageFile,
+    setImageImportMode,
+  } = useReviewImageAnswerFlow(apiRequest);
   const batchAnswerView = buildBatchAnswerViewState({
     tab: batchAnswerFillTab,
     textPreview: batchAnswerPreview,
@@ -626,44 +616,6 @@ export default function ImportReviewPage() {
     setBatchAnswerPreview(null);
     setBatchAnswerApplyResult(null);
     setBatchAnswerError(null);
-  }, []);
-
-  // Phase 2: 图片导入 handlers
-  const handleImageReset = useCallback(() => {
-    setImageFiles([]);
-    setImagePreviewResult(null);
-    setImageApplyResult(null);
-    setImageError(null);
-  }, []);
-
-  const handleImagePreview = useCallback(() => {
-    if (!currentBatchId || imageFiles.length === 0) return;
-    previewImageAnswers({ batchId: currentBatchId, files: imageFiles, mode: imageImportMode });
-  }, [currentBatchId, imageFiles, imageImportMode, previewImageAnswers]);
-
-  const handleImageApply = useCallback(() => {
-    if (!currentBatchId || !imagePreviewResult?.preview_token) return;
-    applyImageAnswers({
-      batchId: currentBatchId,
-      previewToken: imagePreviewResult.preview_token,
-      operationId: imagePreviewResult.operation_id || "",
-    });
-  }, [currentBatchId, imagePreviewResult, applyImageAnswers]);
-
-  const handleImageFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setImageFiles((prev) => [...prev, ...files]);
-    setImagePreviewResult(null);
-    setImageApplyResult(null);
-    setImageError(null);
-    e.target.value = "";
-  }, []);
-
-  const removeImageFile = useCallback((index: number) => {
-    setImageFiles((prev) => prev.filter((_, i) => i !== index));
-    setImagePreviewResult(null);
-    setImageApplyResult(null);
-    setImageError(null);
   }, []);
 
   const toggleBatchField = (field: string) => {
@@ -2359,7 +2311,7 @@ export default function ImportReviewPage() {
                       <Button
                         className="h-9 w-full text-sm"
                         disabled={imageFiles.length === 0 || imageExecuting}
-                        onClick={handleImagePreview}
+                        onClick={() => handleImagePreview(currentBatchId)}
                       >
                         <Eye className="mr-1.5 h-4 w-4" />
                         预览识别结果
@@ -2372,7 +2324,7 @@ export default function ImportReviewPage() {
                     <ImageAnswerPreview
                       preview={imagePreviewResult}
                       executing={imageExecuting}
-                      onApply={handleImageApply}
+                      onApply={() => handleImageApply(currentBatchId)}
                     />
                   ) : null}
 

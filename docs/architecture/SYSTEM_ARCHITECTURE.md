@@ -35,7 +35,7 @@
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-answer-mutations.ts` | 快速答案保存与人工确认的 PUT 请求、成功/失败回调和审核队列/详情缓存失效由 feature hook 承接；答案提示和快速答案草稿清理由页面提供回调 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-complete-mutation.ts` | 单题 AI 补全请求、错误包装、审核队列失效、详情缓存写回及页面状态接纳时序由 feature hook 与页面回调协作承接 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-batch-answer-mutations.ts` | 文本批量答案预览/应用请求、错误/加载生命周期与审核队列失效由 feature mutation hook 承接；页面保留草稿和预览结果展示 |
-| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-image-answer-mutations.ts` | 图片批量答案 FormData 预览、token 应用、错误/加载生命周期与审核队列失效由 feature mutation hook 承接；页面保留文件列表、导入模式和结果展示 |
+| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `hooks/use-review-image-answer-mutations.ts`、`hooks/use-review-image-answer-flow.ts` | 图片批量答案 FormData 预览、token 应用、错误/加载生命周期与审核队列失效由 mutation hook 承接；完整流程 hook 持有文件追加/移除、导入模式、预览/写入结果及错误状态，保留批次/文件/token 前置条件、重置语义和 mutation 回调时序。页面只连接当前批次与展示 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/batch-answer-results.tsx` | 文本批量答案的统计、逐题状态表、警告和写入结果由无状态展示组件负责；页面保留显示条件、草稿、请求和关闭状态，使用写入/关闭回调连接 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/image-answer-results.tsx` | 图片答案的匹配统计、逐题表格、来源/置信度、警告及写入结果由无状态展示组件负责；页面保留文件、模式、请求及显示条件，通过写入/关闭回调连接 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-answer-editor.tsx`、`review-answer-selection.ts` | 答案/解析编辑展示与单选/多选切换规则分开；组件通过字段回调连接页面草稿，纯规则保留分隔、重复项、选项顺序和未知题型回退，多空题继续使用既有识别规则 |

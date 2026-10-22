@@ -28,6 +28,12 @@ const modules = [
     imports: ["@tanstack/react-query", "@/lib/api/types"],
   },
   {
+    path: "./hooks/use-review-image-answer-flow.ts",
+    imports: [
+      "react", "@/lib/api/types", "./use-review-image-answer-mutations",
+    ],
+  },
+  {
     path: "./review-save-request.ts",
     imports: [
       "@/lib/api/types",
