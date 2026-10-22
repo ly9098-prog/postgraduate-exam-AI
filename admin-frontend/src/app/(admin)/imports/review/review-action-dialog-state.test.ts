@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createReviewActionDialogState,
   reduceReviewActionDialogState,
+  type ReviewActionDialogAction,
   type ReviewActionDialogState,
 } from "./review-action-dialog-state";
 
@@ -74,6 +75,19 @@ describe("review action dialog state", () => {
     expect(once.selectedIds).toEqual(new Set([2]));
     expect(twice.selectedIds).toEqual(new Set([2, 3]));
     expect(initial.selectedIds).toEqual(new Set([1, 2]));
+  });
+
+  it("uses the latest reducer state when queued updates run in one React batch", () => {
+    const initial = {
+      ...createReviewActionDialogState(),
+      selectedIds: new Set([1]),
+    };
+    const actions: ReviewActionDialogAction[] = [
+      { type: "update-selected-ids", update: (current) => new Set(current).add(2) },
+      { type: "update-selected-ids", update: (current) => new Set(current).add(3) },
+    ];
+    const reduced = actions.reduce(reduceReviewActionDialogState, initial);
+    expect(reduced.selectedIds).toEqual(new Set([1, 2, 3]));
   });
 
   it("resets selection, confirmation and rejection reason while preserving message", () => {

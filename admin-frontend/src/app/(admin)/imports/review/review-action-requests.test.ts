@@ -80,6 +80,30 @@ describe("review action request execution", () => {
     });
   });
 
+  it("routes an empty selection through the whole-batch endpoint", async () => {
+    const request = createRequestSpy(() => ({ affected_count: 1 }));
+    await executeReviewActionRequest(options(
+      { action: "batch-approve" },
+      { selectedIds: [], request },
+    ));
+    expect(request).toHaveBeenCalledExactlyOnceWith("/imports/selected-batch/approve", {
+      method: "POST",
+      headers: { "Idempotency-Key": "key:approve:selected-batch" },
+    });
+  });
+
+  it("keeps page-supplied ids on the selected-item path without filtering them", async () => {
+    const request = createRequestSpy(() => ({ affected_count: 1 }));
+    await executeReviewActionRequest(options(
+      { action: "batch-reject" },
+      { selectedIds: [101, 202], request },
+    ));
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      "/imports/questions/101/reject",
+      "/imports/questions/202/reject",
+    ]);
+  });
+
   it("uses batch idempotency keys and includes the reject reason in its operation key", async () => {
     const request = createRequestSpy(() => ({ affected_count: 2 }));
     await executeReviewActionRequest(options({ action: "batch-approve" }, { request }));

@@ -42,7 +42,10 @@ export function reduceReviewActionDialogState(
     case "selected-ids":
       return { ...state, selectedIds: action.selectedIds };
     case "update-selected-ids":
-      return { ...state, selectedIds: action.update(state.selectedIds) };
+      return {
+        ...state,
+        selectedIds: action.update(state.selectedIds),
+      };
     case "message":
       return { ...state, message: action.message };
     case "reset":

@@ -14,6 +14,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { formatChinaClock } from "@/lib/time";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { useAuthStore } from "@/lib/auth/auth-store";
+import { hasPermission } from "@/lib/permissions/permissions";
 import { updateSegUrl } from "@/lib/segment-utils";
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
 import type { SelectOption } from "@/components/ui/custom-select";
@@ -205,6 +207,8 @@ function statusTone(status: string) {
 export default function ImportReviewPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const permissions = useAuthStore((state) => state.permissions);
+  const canWrite = hasPermission(permissions, "import:write");
   const batchIdParam = searchParams.get("batch_id") || "";
   const [filters, setFilters] = useState(createDefaultReviewFilters);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
@@ -473,10 +477,8 @@ export default function ImportReviewPage() {
     }, {
       onSuccess: (result, action) => {
         const feedback = buildReviewActionFeedback(result, action);
-        if (feedback) {
-          updateMessage(feedback.message);
-          if (feedback.closeDrawer) closeDrawer();
-        }
+        updateMessage(feedback.message);
+        if (feedback.closeDrawer) closeDrawer();
       },
       onReset: () => {
         updateSelectedIds(new Set());
@@ -526,6 +528,7 @@ export default function ImportReviewPage() {
       );
     },
     onDetailSynced: (result) => {
+      if (previewId !== result.item.id) return;
       // Keep the active drawer in sync immediately.  The detail query has higher
       // precedence than completedItem, so leaving its old cache entry in place
       // makes freshly completed parsed_analysis look as if it was never saved.
@@ -590,6 +593,25 @@ export default function ImportReviewPage() {
     removeImageFile,
     setImageImportMode,
   } = useReviewImageAnswerFlow(apiRequest);
+  const handleImageFileSelection = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (imageExecuting) return;
+      handleImageFileChange(event);
+    },
+    [handleImageFileChange, imageExecuting],
+  );
+  const removeImageFileSafely = useCallback(
+    (index: number) => {
+      if (!imageExecuting) removeImageFile(index);
+    },
+    [imageExecuting, removeImageFile],
+  );
+  const selectImageImportMode = useCallback(
+    (mode: "answer_only" | "answer_analysis") => {
+      if (!imageExecuting) setImageImportMode(mode);
+    },
+    [imageExecuting, setImageImportMode],
+  );
   const batchAnswerView = buildBatchAnswerViewState({
     tab: batchAnswerFillTab,
     textPreview: batchAnswerPreview,
@@ -723,6 +745,7 @@ export default function ImportReviewPage() {
   const confirmDialogState = buildReviewConfirmDialogState(confirmState, selectedIds.size);
 
   const openPreview = (item: ImportQuestionItem) => {
+    if (segmentUploading >= 0 || completeMutation.isPending) return;
     const preview = createReviewPreviewState(item);
     setPreviewId(preview.previewId);
     setCompletedItem(null);
@@ -734,6 +757,7 @@ export default function ImportReviewPage() {
   };
 
   const closeDrawer = () => {
+    if (segmentUploading >= 0 || completeMutation.isPending) return;
     const hasUnsavedChanges = hasUnsavedReviewDrawerChanges({
       editing,
       editState,
@@ -753,7 +777,7 @@ export default function ImportReviewPage() {
   };
 
   const startEditing = () => {
-    if (!previewId) return;
+    if (!previewId || !canWrite) return;
     const segs = previewItem?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
     const session = createReviewEditSession(editState, segs);
     setEditedSegments(session.editedSegments);
@@ -763,6 +787,14 @@ export default function ImportReviewPage() {
   };
 
   const cancelEditing = () => {
+    const hasUnsavedChanges = hasUnsavedReviewDrawerChanges({
+      editing,
+      editState,
+      editSnapshot: editSnapshotRef.current,
+      editedSegments,
+      segmentSnapshot: segmentSnapshotRef.current,
+    });
+    if (hasUnsavedChanges && !window.confirm("有未保存的修改，确定取消编辑吗？")) return;
     setEditState(previewItem ? editStateFromItem(previewItem) : null);
     setEditedSegments(null);
     setEditing(false);
@@ -833,7 +865,8 @@ export default function ImportReviewPage() {
   }, [previewId, editing, editState]);
 
   const handleSegmentReplace = useCallback(async (si: number, file: File) => {
-    if (!file) return;
+    if (!file || !canWrite) return;
+    const targetPreviewId = previewId;
     setSegmentUploading(si);
     try {
       const formData = new FormData();
@@ -842,6 +875,7 @@ export default function ImportReviewPage() {
         method: "POST",
         body: formData,
       });
+      if (previewId !== targetPreviewId) return;
       setEditedSegments((prev) => {
         if (!prev || si >= prev.length) return prev;
         return updateSegUrl(prev, si, result.url);
@@ -852,7 +886,7 @@ export default function ImportReviewPage() {
     } finally {
       setSegmentUploading(-1);
     }
-  }, []);
+  }, [canWrite, previewId]);
 
   const handleSegmentFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -957,22 +991,22 @@ export default function ImportReviewPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <div className="flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/60 p-1">
-                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => updateConfirmState({ action: "batch-approve" })}>
+                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canWrite || !canBatchOperate} onClick={() => updateConfirmState({ action: "batch-approve" })}>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   批量通过
                 </Button>
-                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!(filters.batch_id || batchIdParam)} onClick={() => updateConfirmState({ action: "low-risk-batch-approve" })}>
+                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canWrite || !(filters.batch_id || batchIdParam)} onClick={() => updateConfirmState({ action: "low-risk-batch-approve" })}>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   批量通过低风险
                 </Button>
-                <Button variant="danger" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => updateConfirmState({ action: "batch-reject" })}>
+                <Button variant="danger" className="h-8 px-3 text-xs" disabled={!canWrite || !canBatchOperate} onClick={() => updateConfirmState({ action: "batch-reject" })}>
                   <XCircle className="h-3.5 w-3.5" />
                   批量驳回
                 </Button>
                 <Button
                   variant="secondary"
                   className="h-8 px-3 text-xs"
-                  disabled={selectedIds.size === 0}
+                  disabled={!canWrite || selectedIds.size === 0}
                   onClick={() => { setShowBatchComplete(true); setBatchResult(null); }}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
@@ -981,7 +1015,7 @@ export default function ImportReviewPage() {
                 <Button
                   variant="secondary"
                   className="h-8 px-3 text-xs"
-                  disabled={!currentBatchId}
+                  disabled={!canWrite || !currentBatchId}
                   onClick={() => { setShowBatchAnswerFill(true); handleBatchAnswerReset(); }}
                 >
                   <FileText className="h-3.5 w-3.5" />
@@ -1247,6 +1281,7 @@ export default function ImportReviewPage() {
                                     <button
                                       key={opt}
                                       onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
+                                      disabled={!canWrite}
                                       className={`h-6 min-w-0 rounded text-[10px] font-bold transition border ${
                                         draftAnswer === opt
                                           ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
@@ -1263,6 +1298,7 @@ export default function ImportReviewPage() {
                                     <button
                                       key={opt}
                                       onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
+                                      disabled={!canWrite}
                                       className={`h-6 shrink-0 rounded px-2 text-[10px] font-bold transition border ${
                                         draftAnswer === opt
                                           ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
@@ -1279,6 +1315,7 @@ export default function ImportReviewPage() {
                                   value={draftAnswer}
                                   onChange={(e) => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
                                   placeholder={isMultiChoice ? "如 AC" : "答案"}
+                                  disabled={!canWrite}
                                 />
                               )}
                             </td>
@@ -1292,8 +1329,10 @@ export default function ImportReviewPage() {
                               <div className="inline-flex w-[124px] items-center justify-end gap-1">
                                 <button className="w-9 rounded border border-[var(--color-border)] bg-white px-1 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)} title="查看详情">查</button>
                                 <button
-                                  onClick={() => quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer })}
-                                  disabled={quickAnswerMutation.isPending || !hasDraftChanged}
+                                  onClick={() => {
+                                    if (canWrite) quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer });
+                                  }}
+                                  disabled={!canWrite || quickAnswerMutation.isPending || !hasDraftChanged}
                                   className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
                                     hasDraftChanged
                                       ? "visible opacity-100 border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
@@ -1321,8 +1360,10 @@ export default function ImportReviewPage() {
                                   消
                                 </button>
                                 <button
-                                  onClick={() => verifyAnswerMutation.mutate(item.id)}
-                                  disabled={verifyAnswerMutation.isPending || !item.parsed_answer}
+                                  onClick={() => {
+                                    if (canWrite) verifyAnswerMutation.mutate(item.id);
+                                  }}
+                                  disabled={!canWrite || verifyAnswerMutation.isPending || !item.parsed_answer}
                                   className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
                                     item.parsed_answer
                                       ? "visible opacity-100 border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
@@ -1442,7 +1483,7 @@ export default function ImportReviewPage() {
                           </button>
                           <button
                             className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-success)] bg-[var(--color-success-light)] px-2.5 text-[10px] font-semibold text-[var(--color-success)] transition-colors hover:bg-[var(--color-success)] hover:text-white disabled:opacity-30"
-                            disabled={item.status === "published"}
+                            disabled={!canWrite || item.status === "published"}
                             onClick={() => updateConfirmState({ action: "approve", id: item.id })}
                           >
                             <CheckCircle2 className="h-3 w-3" />
@@ -1450,7 +1491,7 @@ export default function ImportReviewPage() {
                           </button>
                           <button
                             className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-danger)] bg-white px-2.5 text-[10px] font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:opacity-30"
-                            disabled={item.status === "published"}
+                            disabled={!canWrite || item.status === "published"}
                             onClick={() => updateConfirmState({ action: "reject", id: item.id })}
                           >
                             <XCircle className="h-3 w-3" />
@@ -1640,9 +1681,9 @@ export default function ImportReviewPage() {
                         {answerSuggestion ? (
                           <button
                             type="button"
-                            disabled={answerSuggestionApplied}
+                            disabled={!canWrite || answerSuggestionApplied}
                             onClick={() => {
-                              if (answerSuggestionApplied) return;
+                              if (!canWrite || answerSuggestionApplied) return;
                               setEditState((prev) => prev ? { ...prev, answer: answerSuggestion } : prev);
                             }}
                             className={cn(
@@ -1816,9 +1857,9 @@ export default function ImportReviewPage() {
                         {answerSuggestion ? (
                           <button
                             type="button"
-                            disabled={answerSuggestionApplied}
+                            disabled={!canWrite || answerSuggestionApplied}
                             onClick={() => {
-                              if (answerSuggestionApplied) return;
+                              if (!canWrite || answerSuggestionApplied) return;
                               setEditState({ ...editState, answer: answerSuggestion });
                             }}
                             className={cn(
@@ -1844,19 +1885,21 @@ export default function ImportReviewPage() {
                 <div className="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-3 backdrop-blur-xl">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5">
-                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published" || isBlockedByVisualIssues} onClick={() => updateConfirmState({ action: "approve", id: previewItem.id })}>
+                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={!canWrite || previewItem.status === "published" || isBlockedByVisualIssues} onClick={() => updateConfirmState({ action: "approve", id: previewItem.id })}>
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         通过
                       </Button>
-                      <Button variant="danger" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published"} onClick={() => updateConfirmState({ action: "reject", id: previewItem.id })}>
+                      <Button variant="danger" className="h-8 px-3.5 text-xs" disabled={!canWrite || previewItem.status === "published"} onClick={() => updateConfirmState({ action: "reject", id: previewItem.id })}>
                         <XCircle className="h-3.5 w-3.5" />
                         驳回
                       </Button>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
-                        disabled={completeMutation.isPending || previewItem.status !== "pending"}
-                        onClick={() => completeMutation.mutate(previewItem.id)}
+                        disabled={!canWrite || completeMutation.isPending || previewItem.status !== "pending"}
+                        onClick={() => {
+                          if (canWrite) completeMutation.mutate(previewItem.id);
+                        }}
                         className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold tracking-wider transition-all ${
                           completeMutation.isPending
                             ? "bg-[var(--color-primary)]/10 text-[var(--color-primary-dark)] cursor-wait"
@@ -1870,7 +1913,7 @@ export default function ImportReviewPage() {
                         )}
                         {completeMutation.isPending ? "审校中" : "AI 审校"}
                       </button>
-                      <Button className="h-8 px-3 text-xs" variant="secondary" onClick={startEditing}>
+                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={!canWrite || segmentUploading >= 0} onClick={startEditing}>
                         <FileText className="h-3.5 w-3.5" />
                         编辑
                       </Button>
@@ -1912,7 +1955,9 @@ export default function ImportReviewPage() {
                       <X className="h-3.5 w-3.5" />
                       取消
                     </Button>
-                    <Button className="h-8 px-3 text-xs" variant="primary" disabled={!canSave || updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
+                    <Button className="h-8 px-3 text-xs" variant="primary" disabled={!canWrite || !canSave || updateMutation.isPending || previewItem.status === "published"} onClick={() => {
+                      if (canWrite) updateMutation.mutate();
+                    }}>
                       <Save className="h-3.5 w-3.5" />
                       {updateMutation.isPending ? "保存中..." : "保存"}
                     </Button>
@@ -2281,7 +2326,8 @@ export default function ImportReviewPage() {
                           multiple
                           className="hidden"
                           id="image-upload-input"
-                          onChange={handleImageFileChange}
+                          onChange={handleImageFileSelection}
+                          disabled={imageExecuting}
                         />
                         <label htmlFor="image-upload-input" className="cursor-pointer">
                           <Upload className="mx-auto h-8 w-8 text-[var(--color-text-hint)]" />
@@ -2300,8 +2346,9 @@ export default function ImportReviewPage() {
                                 <span className="min-w-0 flex-1 truncate text-[var(--ink)]">{file.name}</span>
                                 <span className="shrink-0 text-[var(--color-text-hint)]">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
                                 <button
-                                  onClick={() => removeImageFile(idx)}
-                                  className="shrink-0 rounded p-0.5 text-[var(--color-text-hint)] hover:bg-red-50 hover:text-red-600 transition"
+                                  onClick={() => removeImageFileSafely(idx)}
+                                  disabled={imageExecuting}
+                                  className="shrink-0 rounded p-0.5 text-[var(--color-text-hint)] hover:bg-red-50 hover:text-red-600 transition disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   <X className="h-3.5 w-3.5" />
                                 </button>
@@ -2315,22 +2362,24 @@ export default function ImportReviewPage() {
                         <p className="text-xs font-semibold text-[var(--color-text-secondary)]">识别模式</p>
                         <div className="flex gap-2">
                           <button
-                            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                               imageImportMode === "answer_only"
                                 ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)]"
                                 : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/30"
                             }`}
-                            onClick={() => setImageImportMode("answer_only")}
+                            onClick={() => selectImageImportMode("answer_only")}
+                            disabled={imageExecuting}
                           >
                             仅答案
                           </button>
                           <button
-                            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                               imageImportMode === "answer_analysis"
                                 ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)]"
                                 : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/30"
                             }`}
-                            onClick={() => setImageImportMode("answer_analysis")}
+                            onClick={() => selectImageImportMode("answer_analysis")}
+                            disabled={imageExecuting}
                           >
                             答案+解析
                           </button>
@@ -2373,7 +2422,9 @@ export default function ImportReviewPage() {
         {...confirmDialogState}
         loading={actionMutation.isPending}
         onCancel={() => updateConfirmState(null)}
-        onConfirm={() => confirmState && actionMutation.mutate(confirmState)}
+        onConfirm={() => {
+          if (canWrite && confirmState) actionMutation.mutate(confirmState);
+        }}
       >
         {confirmDialogState.showRejectReason ? (
           <Input placeholder="驳回原因" value={rejectReason} onChange={(event) => updateRejectReason(event.target.value)} />

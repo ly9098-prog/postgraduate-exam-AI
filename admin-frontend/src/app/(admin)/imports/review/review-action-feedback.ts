@@ -23,7 +23,7 @@ export type ReviewActionFeedback = {
 export function buildReviewActionFeedback(
   result: ReviewActionResult,
   action: ReviewActionState,
-): ReviewActionFeedback | null {
+): ReviewActionFeedback {
   if (action.action === "approve" || action.action === "reject") {
     return {
       message: `导入题目 #${action.id} ${action.action === "approve" ? "已通过审核" : "已驳回"}。`,
@@ -46,7 +46,12 @@ export function buildReviewActionFeedback(
       closeDrawer: false,
     };
   }
-  if (action.action !== "low-risk-batch-approve") return null;
+  if (action.action !== "low-risk-batch-approve") {
+    return {
+      message: "操作已完成，但未识别的审核动作；请刷新后确认审核结果。",
+      closeDrawer: false,
+    };
+  }
   const lowRisk = result as LowRiskBatchResult;
   const message = `低风险批量通过完成：通过 ${lowRisk.affected_count} 题，跳过 ${lowRisk.skipped_count} 题`;
   return {

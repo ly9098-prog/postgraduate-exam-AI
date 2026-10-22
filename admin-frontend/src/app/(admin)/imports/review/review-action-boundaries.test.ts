@@ -118,6 +118,10 @@ const modules = [
     imports: ["@/lib/api/types", "./review-action-requests"],
   },
   {
+    path: "./review-filter-selection.ts",
+    imports: [],
+  },
+  {
     path: "./review-batch-answer-view-state.ts",
     imports: ["@/lib/api/types"],
   },

@@ -78,6 +78,15 @@ describe("review action feedback", () => {
     });
   });
 
+  it("returns defensive feedback for an unknown runtime action without closing the drawer", () => {
+    expect(feedback({ affected_count: 1 }, {
+      action: "unknown",
+    } as unknown as ReviewActionState)).toEqual({
+      message: "操作已完成，但未识别的审核动作；请刷新后确认审核结果。",
+      closeDrawer: false,
+    });
+  });
+
   it("preserves low-risk counts and the skipped-reason suffix threshold", () => {
     expect(feedback({
       affected_count: 4,
