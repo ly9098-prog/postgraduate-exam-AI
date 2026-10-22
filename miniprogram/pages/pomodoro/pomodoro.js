@@ -37,6 +37,11 @@ const {
   resolveRestoredSubject,
 } = require('./utils/session-restore')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
+const {
+  findRouteSubject,
+  findLegacySubject,
+  findSubjectById,
+} = require('./utils/subject-selection')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -485,34 +490,18 @@ Page({
 
     // Route presets can target either a stable subject_id or the canonical 408 subject_code.
     // subject_code keeps strategy-driven Next Best Action usable before a subject has practice data.
-    if (this.data.fromSubjectId || this.data.fromSubjectCode) {
-      const matchesRoute = s => (
-        this.data.fromSubjectId
-          ? Number(s.id) === Number(this.data.fromSubjectId)
-          : String(s.code || '') === String(this.data.fromSubjectCode || '')
-      )
-      const aggregateMatch = aggregate && !aggregate._disabled && coreSubjects.length === 4 &&
-        matchesRoute(aggregate)
-        ? aggregate
-        : null
-      const match = aggregateMatch || leaves.find(matchesRoute)
-      if (match) {
-        this.setData({
-          selectedSubjectId: match.id,
-          selectedSubject: match,
-          allocationMode: match._isAggregate ? 'equal_408_core_v1' : 'single',
-        })
-        this._updateComputedFields()
-      }
+    const route = { subjectId: this.data.fromSubjectId, subjectCode: this.data.fromSubjectCode }
+    const routeSelection = (route.subjectId || route.subjectCode)
+      ? findRouteSubject({ route, aggregate, leaves, coreSubjects }) : null
+    if (routeSelection) {
+      this.setData(routeSelection)
+      this._updateComputedFields()
     }
     // 恢复的旧会话可能只有 subject_code（无 subject_id），用已加载列表回填
-    const restored = this.data.selectedSubject
-    if (restored && !restored.id && restored.code) {
-      const match = leaves.find(s => s.code === restored.code)
-      if (match) {
-        this.setData({ selectedSubjectId: match.id, selectedSubject: match })
-        this._updateComputedFields()
-      }
+    const legacySelection = findLegacySubject(this.data.selectedSubject, leaves)
+    if (legacySelection) {
+      this.setData(legacySelection)
+      this._updateComputedFields()
     }
   },
 
@@ -543,7 +532,7 @@ Page({
     const disabled = e.currentTarget.dataset.disabled
     if (disabled === true || disabled === 'true') return
     const id = parseInt(e.currentTarget.dataset.id, 10) || null
-    const subject = id ? this.data.subjects.find(s => Number(s.id) === id) : null
+    const subject = findSubjectById(this.data.subjects, id)
     if (subject) {
       this.setData({
         selectedSubjectId: id,
@@ -2739,6 +2728,7 @@ Page({
       now: api.now(),
       startTime,
       totalSec,
+      sessionId: session.id,
     })
     totalPausedMs = restore.totalPausedMs
     const isPaused = restore.isPaused
@@ -2878,6 +2868,7 @@ Page({
       now: api.now(),
       startTime,
       maxMs: FREE_TIMER_MAX_MS,
+      sessionId: session.id,
     })
     totalPausedMs = restore.totalPausedMs
     const isPaused = restore.isPaused

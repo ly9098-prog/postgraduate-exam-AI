@@ -66,6 +66,16 @@ const sandbox = {
     if (request === './utils/confirm-recovery') return require('../pages/pomodoro/utils/confirm-recovery')
     if (request === './utils/show-recovery') return require('../pages/pomodoro/utils/show-recovery')
     if (request === './utils/hide-storage') return require('../pages/pomodoro/utils/hide-storage')
+    if (request === './utils/subject-options') return require('../pages/pomodoro/utils/subject-options')
+    if (request === './utils/subject-selection') return require('../pages/pomodoro/utils/subject-selection')
+    if (request === './utils/countdown-controller') return require('../pages/pomodoro/utils/countdown-controller')
+    if (request === './utils/free-timer-controller') return require('../pages/pomodoro/utils/free-timer-controller')
+    if (request === './utils/ring-geometry') return require('../pages/pomodoro/utils/ring-geometry')
+    if (request === './utils/terminal-conflict-state') return require('../pages/pomodoro/utils/terminal-conflict-state')
+    if (request === './utils/canvas-layout') return require('../pages/pomodoro/utils/canvas-layout')
+    if (request === './utils/sync-reconciliation') return require('../pages/pomodoro/utils/sync-reconciliation')
+    if (request === './utils/session-restore') return require('../pages/pomodoro/utils/session-restore')
+    if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }
@@ -130,6 +140,7 @@ function createPage() {
   page._initCanvas = () => {}
   page.drawRing = () => {}
   page._updateComputedFields = () => {}
+  page._startTimer = () => {}
   return page
 }
 

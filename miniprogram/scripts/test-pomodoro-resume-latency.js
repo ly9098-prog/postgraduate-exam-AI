@@ -25,6 +25,7 @@ const jsPath = path.join(root, 'pages/pomodoro/pomodoro.js')
 const cssPath = path.join(root, 'pages/pomodoro/pomodoro.wxss')
 const src = fs.readFileSync(jsPath, 'utf8')
 const css = fs.readFileSync(cssPath, 'utf8')
+const ringGeometrySrc = fs.readFileSync(path.join(root, 'pages/pomodoro/utils/ring-geometry.js'), 'utf8')
 
 function extractMethod(source, name) {
   const re = new RegExp('(?:^|\\n)  (?:async )?' + name.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&') + '\\([^\\n]*\\) \\{')
@@ -102,10 +103,11 @@ t('canvas rebuild clears previous draw throttle state', () => {
   assert.ok(initCanvas.includes('this._lastDrawnAt = 0'))
 })
 t('ring throttle is duration-aware instead of fixed 1/360 only', () => {
-  assert.ok(drawRing.includes('0.8 / totalSec'))
+  assert.ok(drawRing.includes('shouldDrawRing(progress, isBreak'))
+  assert.ok(ringGeometrySrc.includes('0.8 / previous.totalSec'))
 })
 t('ring is forced to refresh within about one second', () => {
-  assert.ok(drawRing.includes('sinceLastDraw < 1000'))
+  assert.ok(ringGeometrySrc.includes('sinceLastDraw >= 1000'))
   assert.ok(drawRing.includes('this._lastDrawnAt = now'))
 })
 t('removed artificial 50/100/200ms drawRing startup delays', () => {

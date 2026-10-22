@@ -16,6 +16,10 @@ function t(name, fn) {
 
 const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
+const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
+const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
+const canvasLayoutSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/canvas-layout.js'), 'utf8')
+const cancelConfirmStateSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/cancel-confirm-state.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
@@ -115,7 +119,8 @@ t('unload removes network callback to avoid page-instance leaks', () => {
 console.log('\n--- Free cold restore / canonical clock ---')
 const restoreFree = method('_restoreFreeSession')
 t('free restore uses server start_time as the single clock origin', () => {
-  assert.ok(restoreFree.includes('api.now() - startTime - totalPausedMs'))
+  assert.ok(restoreFree.includes('computeFreeRestore'))
+  assert.ok(sessionRestoreSrc.includes('options.now - options.startTime - paused.totalPausedMs'))
   assert.ok(restoreFree.includes('this._timerState.freeDisplayOffsetMs = 0'))
   assert.ok(!restoreFree.includes('_localFreeDisplayOffsetMs'))
 })
@@ -198,25 +203,25 @@ t('pending queue drains strictly from the head', () => {
 })
 t('permanent 404/409 queue failures reconcile against server active state', () => {
   assert.ok(retry.includes('_reconcilePendingPomodoroSyncFailure'))
-  const reconcile = method('_reconcilePendingPomodoroSyncFailure')
-  assert.ok(reconcile.includes('statusCode !== 404 && statusCode !== 409'))
-  assert.ok(reconcile.includes("api.get('/pomodoro/active')"))
+  const pageReconcile = method('_reconcilePendingPomodoroSyncFailure')
+  assert.ok(pageReconcile.includes("api.get('/pomodoro/active')"))
+  assert.ok(syncReconciliationSrc.includes('statusCode !== 404 && statusCode !== 409'))
 })
 t('stale/too-early terminal actions restore the still-active server session', () => {
-  const reconcile = method('_reconcilePendingPomodoroSyncFailure')
-  assert.ok(reconcile.includes("error.code === 'POMODORO_STALE_ACTION'"))
-  assert.ok(reconcile.includes("error.code === 'POMODORO_NOT_READY'"))
-  assert.ok(reconcile.includes('this._restoreSession(active)'))
-  assert.ok(reconcile.includes('this._clearPendingPomodoroSync(pending)'))
-  assert.ok(reconcile.includes('showCelebration: false'))
+  const pageReconcile = method('_reconcilePendingPomodoroSyncFailure')
+  assert.ok(syncReconciliationSrc.includes("error.code === 'POMODORO_STALE_ACTION'"))
+  assert.ok(syncReconciliationSrc.includes("error.code === 'POMODORO_NOT_READY'"))
+  assert.ok(pageReconcile.includes('this._restoreSession(active)'))
+  assert.ok(pageReconcile.includes('this._clearPendingPomodoroSync(pending)'))
+  assert.ok(pageReconcile.includes('showCelebration: false'))
 })
 t('clock-skew actions are recalibrated and replayed instead of silently deleted', () => {
-  const reconcile = method('_reconcilePendingPomodoroSyncFailure')
-  assert.ok(reconcile.includes("error.code === 'POMODORO_CLOCK_SKEW'"))
-  assert.ok(reconcile.includes('_updatePendingPomodoroSync'))
-  assert.ok(reconcile.includes('clientActionAt: api.now()'))
-  assert.ok(reconcile.includes('clockSkewRetries'))
-  assert.ok(reconcile.includes('return false'))
+  const pageReconcile = method('_reconcilePendingPomodoroSyncFailure')
+  assert.ok(syncReconciliationSrc.includes("error.code === 'POMODORO_CLOCK_SKEW'"))
+  assert.ok(pageReconcile.includes('_updatePendingPomodoroSync'))
+  assert.ok(pageReconcile.includes('clientActionAt: api.now()'))
+  assert.ok(pageReconcile.includes('clockSkewRetries'))
+  assert.ok(pageReconcile.includes('return false'))
 })
 t('logout clears pending, unknown-start and terminal-conflict pomodoro mutations', () => {
   assert.ok(storageSrc.includes("'pomodoro_pending_sync'"))
@@ -294,9 +299,10 @@ t('retry timers stop while hidden/unloaded and reconnect retries immediately', (
   assert.ok(registerNetworkStatusListener.includes('this._getSyncRetryController().register()'))
 })
 t('countdown cold restore treats a valid pause snapshot as authoritative even at 0ms', () => {
-  assert.ok(restoreCountdown.includes('savedTotal + Math.max(0, api.now() - pauseStart)'))
-  assert.ok(restoreCountdown.includes('isPaused = true'))
-  assert.ok(!restoreCountdown.includes('isPaused = totalPausedMs > 0'))
+  assert.ok(restoreCountdown.includes('computeCountdownRestore'))
+  assert.ok(sessionRestoreSrc.includes('savedTotal + Math.max(0, options.now - pauseStart)'))
+  assert.ok(sessionRestoreSrc.includes('isPaused = true'))
+  assert.ok(!sessionRestoreSrc.includes('isPaused = totalPausedMs > 0'))
 })
 t('today stats ignores slower stale responses', () => {
   assert.ok(statsLoader.includes('_statsRequestSeq'))
@@ -548,8 +554,9 @@ const initCanvas = method('_initCanvas')
 t('timer restart can reuse an existing/in-flight canvas', () => assert.ok(src.includes('this._initCanvas(!options.reuseCanvas)')))
 t('canvas init suppresses duplicate in-flight initialization', () => assert.ok(initCanvas.includes('this._canvasInitPending')))
 t('canvas initialization waits substantially longer on slow devices', () => {
-  assert.ok(src.includes('CANVAS_INIT_MAX_RETRIES = 16'))
-  assert.ok(method('_scheduleCanvasInit').includes('retryCount * 8'))
+  assert.ok(canvasLayoutSrc.includes('CANVAS_INIT_MAX_RETRIES = 16'))
+  assert.ok(canvasLayoutSrc.includes('16 + count * 8'))
+  assert.ok(method('_scheduleCanvasInit').includes('canvasRetryDelay(retryCount)'))
 })
 t('drawRing self-heals a failed canvas initialization on a later tick', () => {
   const draw = method('drawRing')
@@ -566,8 +573,8 @@ t('free ring recovery forces a fresh canvas after overlay dismissal', () => {
   assert.ok(redrawFreeRing.includes('this.drawRing(0, false)'))
 })
 t('free end-confirm cancel redraws the ring in all recovery branches', () => {
-  const hits = cancelEndConfirm.match(/this\._redrawFreeRingAfterOverlay\(\)/g) || []
-  assert.ok(hits.length >= 3, 'expected redraw in fallback, paused and running branches')
+  assert.ok(cancelEndConfirm.includes('if (plan.redrawFree) this._redrawFreeRingAfterOverlay()'))
+  assert.ok((cancelConfirmStateSrc.match(/redrawFree: true/g) || []).length >= 3)
 })
 t('free ring redraw waits until the confirm overlay is gone', () => {
   assert.ok(redrawFreeRing.includes('wx.nextTick'))
@@ -589,11 +596,10 @@ t('native canvas is truly hidden while end-confirm overlay is visible', () => {
 })
 
 t('countdown cancel rebuilds canvas after native hidden is removed', () => {
-  const countdown = cancelEndConfirm.slice(cancelEndConfirm.indexOf("if (mode === 'countdown-interrupt'"), cancelEndConfirm.indexOf("if (mode === 'free-complete')"))
-  const initHits = countdown.match(/this\._initCanvas\(true\)/g) || []
-  const drawHits = countdown.match(/this\.drawRing\(/g) || []
-  assert.ok(initHits.length >= 2, 'expected paused and running countdown cancel branches to rebuild canvas')
-  assert.ok(drawHits.length >= 2, 'expected paused and running countdown cancel branches to redraw ring')
+  assert.ok(cancelEndConfirm.includes('if (plan.redraw)'))
+  assert.ok(cancelEndConfirm.includes('this._initCanvas(true)'))
+  assert.ok(cancelEndConfirm.includes('this.drawRing(plan.redraw.totalSec'))
+  assert.ok((cancelConfirmStateSrc.match(/redraw: \{ totalSec: snapshot\.totalSec/g) || []).length >= 2)
 })
 t('native canvas uses normal flow instead of absolute positioning', () => {
   const block = wxss.slice(wxss.indexOf('.ring-canvas {'), wxss.indexOf('.ring-canvas-ready'))
@@ -615,8 +621,9 @@ t('canvas init ignores stale selector callbacks by generation', () => {
 t('canvas waits for a stable stage-aligned layout before binding context', () => {
   const m = method('_scheduleCanvasInit')
   assert.ok(m.includes("select('.ring-stage').boundingClientRect()"))
-  assert.ok(m.includes('stageAligned'))
-  assert.ok(m.includes('stable'))
+  assert.ok(m.includes('evaluateCanvasLayout(stageRect, canvasInfo, previousRect)'))
+  assert.ok(canvasLayoutSrc.includes("status: 'misaligned'"))
+  assert.ok(canvasLayoutSrc.includes("status: 'unstable'"))
 })
 t('canvas is revealed only after a successful draw', () => {
   assert.ok(src.includes('ringCanvasPaintReady: false'))

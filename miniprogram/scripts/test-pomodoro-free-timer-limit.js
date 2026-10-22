@@ -277,10 +277,10 @@ t('_restoreFreeSession caps elapsed at max and calls _checkFreeTimerLimitAndAuto
     '_restoreFreeSession must call _checkFreeTimerLimitAndAutoEnd')
 })
 
-t('Tick function in _startFreeTimerInterval checks _checkFreeTimerLimitAndAutoEnd', function () {
-  var methodBody = extractMethod(js, '_startFreeTimerInterval')
-  assert.ok(methodBody.indexOf('_checkFreeTimerLimitAndAutoEnd') >= 0,
-    'tick must check limit')
+t('Free timer controller checks the limit before scheduling the next tick', function () {
+  var controllerMethod = extractMethod(js, '_getFreeTimerController')
+  assert.ok(controllerMethod.indexOf('shouldFinalize: () => this._checkFreeTimerLimitAndAutoEnd()') >= 0,
+    'free timer controller must check the limit after each tick')
 })
 
 t('Countdown-related methods do not reference FREE_TIMER_MAX_MS', function () {

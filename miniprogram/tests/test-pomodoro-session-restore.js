@@ -61,6 +61,40 @@ assert.deepEqual(computeCountdownRestore({
 
 assert.deepEqual(computeCountdownRestore({
   serverPausedSec: 0,
+  savedPause: { sessionId: 1, totalPausedMs: 0, pauseStartTime: 70000 },
+  pausedAtMs: null,
+  now: 60000,
+  startTime: 30000,
+  totalSec: 1500,
+  sessionId: 1,
+}), {
+  totalPausedMs: 0,
+  isPaused: true,
+  elapsed: 30,
+  remaining: 1470,
+  progress: 0.98,
+  completedAt: 60000,
+})
+
+assert.deepEqual(computeCountdownRestore({
+  serverPausedSec: 0,
+  savedPause: { sessionId: 1, totalPausedMs: 0, pauseStartTime: 70000 },
+  pausedAtMs: null,
+  now: 60000,
+  startTime: 30000,
+  totalSec: 1500,
+  sessionId: 2,
+}), {
+  totalPausedMs: 0,
+  isPaused: false,
+  elapsed: 30,
+  remaining: 1470,
+  progress: 0.98,
+  completedAt: 60000,
+})
+
+assert.deepEqual(computeCountdownRestore({
+  serverPausedSec: 0,
   savedPause: null,
   pausedAtMs: null,
   now: 2000000,
@@ -86,6 +120,20 @@ assert.deepEqual(computeFreeRestore({
   totalPausedMs: 60000,
   isPaused: false,
   elapsed: 140,
+})
+
+assert.deepEqual(computeFreeRestore({
+  serverPausedSec: 0,
+  savedPause: { sessionId: 1, totalPausedMs: 0, pauseStartTime: 70000 },
+  pausedAtMs: null,
+  now: 60000,
+  startTime: 30000,
+  maxMs: 5 * 60 * 60 * 1000,
+  sessionId: 1,
+}), {
+  totalPausedMs: 0,
+  isPaused: true,
+  elapsed: 30,
 })
 
 assert.deepEqual(computeFreeRestore({

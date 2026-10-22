@@ -72,18 +72,6 @@
       },
       {
         "type": "glob",
-        "value": "assets/icons/home-hero/top-card-background.png"
-      },
-      {
-        "type": "glob",
-        "value": "assets/icons/error-cause-paper.png"
-      },
-      {
-        "type": "folder",
-        "value": "assets/animation"
-      },
-      {
-        "type": "glob",
         "value": "utils/pomodoro-theme.js"
       },
       {
