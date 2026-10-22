@@ -43,6 +43,7 @@ const {
   findSubjectById,
 } = require('./utils/subject-selection')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
+const { buildCompletionCelebration } = require('./utils/completion-celebration')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -2290,24 +2291,16 @@ Page({
   /* ==================== Work Complete ==================== */
 
   _showCompletionCelebration(sessionId, options) {
-    options = options || {}
-    const workDuration = Number.isFinite(Number(options.workDuration)) ? Number(options.workDuration) : this.data.workDuration
-    const breakDuration = Number.isFinite(Number(options.breakDuration)) ? Number(options.breakDuration) : this.data.breakDuration
-    const selectedPreset = options.selectedPreset || this.data.selectedPreset
-    const selectedSubject = options.selectedSubject || this.data.selectedSubject
-    const selectedSubjectId = options.selectedSubjectId || this.data.selectedSubjectId || (selectedSubject && selectedSubject.id) || null
-    const hasOptionTaskType = Object.prototype.hasOwnProperty.call(options, 'selectedTaskType')
-    const rawTaskType = hasOptionTaskType ? options.selectedTaskType : this.data.selectedTaskType
-    const selectedTaskType = pomodoroTaskTypes.TYPE_MAP[rawTaskType] ? rawTaskType : ''
-    const selectedTaskTypeLabel = selectedTaskType
-      ? (options.selectedTaskTypeLabel || pomodoroTaskTypes.label(selectedTaskType))
-      : '未分类'
-    const breakSec = selectedPreset === 'debug' ? 5 : Math.max(0, breakDuration * 60)
-    const motto = options.motto || MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
-    const type = options.type || this._nextCelebrationType()
+    const celebration = buildCompletionCelebration(sessionId, options, {
+      data: this.data,
+      mottoes: MOTTOES,
+      nextCelebrationType: () => this._nextCelebrationType(),
+      MathRandom: Math.random,
+    })
+    const { completionFlag, viewData, breakSec } = celebration
     // Re-assert attribution at completion so history keeps the task type even if
     // an earlier start-response mapping was interrupted by a restart.
-    if (selectedTaskType) pomodoroTaskTypes.recordSession({ id: sessionId }, selectedTaskType)
+    if (celebration.selectedTaskType) pomodoroTaskTypes.recordSession({ id: celebration.sessionId }, celebration.selectedTaskType)
 
     // Completion is final locally immediately. Remove every running snapshot
     // before showing the animation so onHide cannot persist/resurrect this session.
@@ -2320,22 +2313,6 @@ Page({
     this._timerState.endConfirmMode = ''
     this._completionBreakSec = breakSec
 
-    const completionFlag = {
-      motto,
-      type,
-      sessionId,
-      breakSec,
-      workDuration,
-      breakDuration,
-      selectedPreset,
-      selectedSubjectId,
-      selectedSubjectCode: selectedSubject ? selectedSubject.code || '' : '',
-      selectedSubjectName: selectedSubject ? selectedSubject.name || '' : '',
-      allocationMode: selectedSubject && selectedSubject._isAggregate
-        ? 'equal_408_core_v1'
-        : 'single',
-      selectedTaskType,
-    }
     this._safeSetPomodoroStorage('pomodoro_completion', completionFlag, 'completion marker')
 
     // Invalidate the native canvas before the running wx:if block disappears.
@@ -2346,23 +2323,7 @@ Page({
     this._ringCache = null
     this._pendingDraw = null
 
-    this.setData({
-      phase: PHASE.IDLE,
-      isPaused: false,
-      showEndConfirm: false,
-      ringCanvasVisible: false,
-      ringCanvasPaintReady: false,
-      showCelebration: true,
-      celebrationMotto: motto,
-      celebrationType: type,
-      selectedPreset,
-      workDuration,
-      breakDuration,
-      selectedSubjectId,
-      selectedSubject,
-      selectedTaskType,
-      selectedTaskTypeLabel,
-    })
+    this.setData(viewData)
   },
 
   async _onWorkComplete() {

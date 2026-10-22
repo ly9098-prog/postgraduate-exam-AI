@@ -25,10 +25,11 @@ const MODULES = {
   'session-restore.js': [],
   'cancel-confirm-state.js': ['./cancel-confirm-format'],
   'subject-selection.js': [],
+  'completion-celebration.js': ['../../../utils/storage'],
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 3319
+const PAGE_MAX_LINES = 3283
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
