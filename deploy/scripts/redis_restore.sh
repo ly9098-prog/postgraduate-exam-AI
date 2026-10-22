@@ -2,7 +2,7 @@
 # 2240AI — Redis RDB 恢复（AOF-safe restore）
 #
 # 用法：
-#   bash deploy/scripts/redis_restore.sh /data/backups/redis/redis_YYYYmmdd_HHMMSS.rdb
+#   bash deploy/scripts/redis_restore.sh /opt/22408-ai/redis_backups/redis_YYYYmmdd_HHMMSS.rdb
 #
 # 为什么不能直接替换 /data/dump.rdb 后 restart：
 # Redis 已开启 appendonly，启动时会优先加载 appendonlydir，而不是 dump.rdb。
@@ -31,7 +31,7 @@ REDIS_DATA_DIR="${REDIS_DATA_DIR:-/data}"
 REDIS_VOLUME="${REDIS_VOLUME:-deploy_redisdata_prod}"
 HELPER_CONTAINER="${REDIS_HELPER_CONTAINER:-deploy-redis-restore-helper}"
 HELPER_PORT="${REDIS_HELPER_PORT:-6390}"
-PRESERVE_ROOT="${REDIS_RESTORE_PRESERVE_DIR:-/data/backups/redis/restore-snapshots}"
+PRESERVE_ROOT="${REDIS_RESTORE_PRESERVE_DIR:-${PROJECT_DIR}/redis_backups/restore-snapshots}"
 PRESERVE_DIR=""
 REDIS_STOPPED=0
 PRODUCTION_STARTED=0
