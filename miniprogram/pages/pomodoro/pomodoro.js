@@ -44,6 +44,7 @@ const {
 } = require('./utils/subject-selection')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { buildCompletionCelebration } = require('./utils/completion-celebration')
+const { handleTerminalConflict } = require('./utils/terminal-conflict-handler')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -1895,47 +1896,21 @@ Page({
   },
 
   _handlePomodoroTerminalConflict(sessionId, conflict) {
-    if (!conflict) return false
-    if (this._isPomodoroStorageError(conflict)) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    if (!this._dropPendingPomodoroSessionActions(sessionId)) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'terminal conflict completion')
-    if (!completionStored.ok) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    const completion = completionStored.value
-    if (
-      completion && completion.sessionId === sessionId &&
-      !this._safeRemovePomodoroStorage('pomodoro_completion', 'terminal conflict completion')
-    ) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    // Break/adjustment are derived UI caches. Their cleanup is best effort, but
-    // the conflict marker itself is acknowledged only after all critical session
-    // and completion state has been durably cleaned.
-    this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
-    if (!this._ackPomodoroTerminalConflict(conflict)) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    this._completionBreakSec = null
-    this._clearTimer()
-    this.setData({ showCelebration: false, showEndConfirm: false })
-    this._resetToIdle()
-    const title = conflict.serverStatus === 'completed'
-      ? '已同步其他设备的完成状态'
-      : '已同步其他设备的结束状态'
-    wx.showToast({ title, icon: 'none', duration: 2000 })
-    this.loadTodayStats()
-    return true
+    return handleTerminalConflict({
+      isStorageError: (value) => this._isPomodoroStorageError(value),
+      persistenceError: () => this._showPomodoroPersistenceError(),
+      dropSessionActions: (id) => this._dropPendingPomodoroSessionActions(id),
+      getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+      removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+      ackConflict: (c) => this._ackPomodoroTerminalConflict(c),
+      get completionBreakSec() { return this._completionBreakSec },
+      set completionBreakSec(v) { this._completionBreakSec = v },
+      clearTimer: () => this._clearTimer(),
+      setData: (data) => this.setData(data),
+      resetIdle: () => this._resetToIdle(),
+      showToast: (toast) => wx.showToast(toast),
+      loadStats: () => this.loadTodayStats(),
+    }, sessionId, conflict)
   },
 
   async _reconcilePendingPomodoroSyncFailure(pending, error) {
