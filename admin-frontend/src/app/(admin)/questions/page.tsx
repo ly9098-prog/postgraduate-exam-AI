@@ -103,11 +103,18 @@ import {
   contentSegments,
   isCodeSegment,
   isPlainImageSegment,
-  segmentType,
   textForStemEditor,
   textFromContent,
 } from "./question-content-editing";
 import { optionsToKeyValueList } from "./question-option-editing";
+import {
+  comparableAssetUrl,
+  fallbackQuestionImageUrls,
+  isMultiBlankChoice,
+  isMultiBlankMultipleChoice,
+  isMultiChoice,
+  normalizedChoiceAnswerKeys,
+} from "./question-display-helpers";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -134,77 +141,6 @@ const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
 
 type ConfirmState = QuestionDeleteIntent | null;
-
-function imageUrlFromUnknown(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
-  const record = value as Record<string, unknown>;
-  for (const key of ["url", "src", "image_url", "imageUrl"]) {
-    const candidate = record[key];
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-  }
-  return "";
-}
-
-function comparableAssetUrl(value: unknown): string {
-  const raw = imageUrlFromUnknown(value);
-  if (!raw) return "";
-  const resolved = resolveAssetUrl(raw) || raw;
-  return resolved.replace(/\/+$/, "");
-}
-
-function contentRenderedImageKeys(content: unknown): Set<string> {
-  const keys = new Set<string>();
-  contentSegments(content).forEach((segment) => {
-    const type = segmentType(segment);
-    if (!["image", "math_image", "table_image", "code_image"].includes(type)) return;
-    const key = comparableAssetUrl(segment.url);
-    if (key) keys.add(key);
-  });
-  return keys;
-}
-
-function fallbackQuestionImageUrls(
-  content: unknown,
-  imageUrlField: unknown,
-): string[] {
-  if (!Array.isArray(imageUrlField)) return [];
-  const renderedKeys = contentRenderedImageKeys(content);
-  const fallbackUrls = new Map<string, string>();
-  imageUrlField.forEach((value: unknown) => {
-    const raw = imageUrlFromUnknown(value);
-    const key = comparableAssetUrl(raw);
-    if (!raw || !key || renderedKeys.has(key)) return;
-    fallbackUrls.set(key, raw);
-  });
-  return Array.from(fallbackUrls.values());
-}
-
-function isMultiChoice(questionType: string): boolean {
-  return canonicalizeQuestionType(questionType) === "multiple_choice";
-}
-
-function isMultiBlankChoice(questionType: string): boolean {
-  const code = canonicalizeQuestionType(questionType);
-  return code === "multi_blank_choice" || code === "multi_blank_multiple_choice";
-}
-
-/** 多空（多选）选择题：每空可选多个选项 */
-function isMultiBlankMultipleChoice(questionType: string): boolean {
-  return canonicalizeQuestionType(questionType) === "multi_blank_multiple_choice";
-}
-
-function normalizedChoiceAnswerKeys(answer: string | null | undefined): string[] {
-  const seen = new Set<string>();
-  return String(answer ?? "")
-    .split(/[,，\s]+/)
-    .map((key) => key.trim().toUpperCase())
-    .filter((key) => {
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
 
 function QuestionAnswerDisplay({
   questionType,
@@ -370,9 +306,14 @@ export default function QuestionsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(() => positiveInt(searchParams.get("page"), 1) ?? 1);
   const [pageSize, setPageSize] = useState(() => normalizeQuestionPageSize(searchParams.get("page_size")));
-  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(() =>
+  const [selectedQuestionId, setSelectedQuestionIdState] = useState<number | null>(() =>
     positiveInt(searchParams.get("selected_id")),
   );
+  const selectedQuestionIdRef = useRef(selectedQuestionId);
+  const setSelectedQuestionId = useCallback((id: number | null) => {
+    selectedQuestionIdRef.current = id;
+    setSelectedQuestionIdState(id);
+  }, []);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [baseVersion, setBaseVersion] = useState<QuestionVersionSelection>("current");
   const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
@@ -604,7 +545,10 @@ export default function QuestionsPage() {
     setEditForm(addQuestionCodeSegment);
   }, [setEditForm]);
 
-  const { handleQuestionMutated, prepareImmediateQuestionMutation } = useQuestionImmediateMutations({
+  const {
+    handleQuestionMutated,
+    prepareImmediateQuestionMutation,
+  } = useQuestionImmediateMutations({
     questionId: selectedQuestionId,
     question: selectedQuestion,
     dirty,
@@ -612,7 +556,11 @@ export default function QuestionsPage() {
     stemText: editStemText,
     unresolvedTableCount: unresolvedEditingTableCount,
     emptyCodeCount: emptyEditingCodeCount,
-  }, { setForm: setEditForm, setStemText: setEditStemText, setMessage });
+  }, {
+    setForm: setEditForm,
+    setStemText: setEditStemText,
+    setMessage,
+  }, selectedQuestionIdRef);
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));

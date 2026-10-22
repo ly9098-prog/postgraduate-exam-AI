@@ -13,7 +13,7 @@ const modules = [
       "lucide-react", "@/components/ui/button",
       "@/components/questions/question-image-field", "@/components/questions/quick-add-options",
       "../question-option-editing", "@/lib/question-options", "@/lib/question-types",
-      "@/lib/api/types", "react",
+      "@/lib/api/types", "react", "../hooks/use-question-immediate-mutations",
     ],
   },
   {
@@ -103,8 +103,16 @@ const modules = [
     imports: [
       "react", "@tanstack/react-query", "@/lib/api/types", "../question-api",
       "../question-content-editing", "../question-edit-draft",
-      "../question-edit-patch", "../question-queries",
+      "../question-edit-patch", "../question-immediate-owner", "../question-queries",
     ],
+  },
+  {
+    path: "./question-immediate-owner.ts",
+    imports: [],
+  },
+  {
+    path: "./question-display-helpers.ts",
+    imports: ["@/lib/asset-url", "@/lib/question-types", "./question-content-editing"],
   },
 ];
 
