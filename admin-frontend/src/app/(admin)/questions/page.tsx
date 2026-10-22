@@ -54,6 +54,7 @@ import {
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { toggleAllSelection, toggleSingleSelection } from "@/lib/selection-ops";
+import { useOutsideClick } from "@/lib/use-outside-click";
 import { buildVersionLabels } from "./question-version-labels";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -540,47 +541,9 @@ export default function QuestionsPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isCommonFilterMenuOpen, isMoreFilterOpen, isExportMenuOpen]);
 
-  useEffect(() => {
-    if (!isCommonFilterMenuOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        commonFilterMenuRef.current &&
-        !commonFilterMenuRef.current.contains(event.target as Node)
-      ) {
-        setIsCommonFilterMenuOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isCommonFilterMenuOpen]);
-
-  useEffect(() => {
-    if (!isMoreFilterOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        moreFilterRef.current &&
-        !moreFilterRef.current.contains(event.target as Node)
-      ) {
-        setIsMoreFilterOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isMoreFilterOpen]);
-
-  useEffect(() => {
-    if (!isExportMenuOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        exportMenuRef.current &&
-        !exportMenuRef.current.contains(event.target as Node)
-      ) {
-        setIsExportMenuOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isExportMenuOpen]);
+  useOutsideClick(commonFilterMenuRef, isCommonFilterMenuOpen, () => setIsCommonFilterMenuOpen(false), "pointerdown");
+  useOutsideClick(moreFilterRef, isMoreFilterOpen, () => setIsMoreFilterOpen(false), "pointerdown");
+  useOutsideClick(exportMenuRef, isExportMenuOpen, () => setIsExportMenuOpen(false), "pointerdown");
 
   const handleExport = async (format: "csv" | "docx") => {
     try {

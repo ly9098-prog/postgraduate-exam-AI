@@ -16,6 +16,7 @@ import { formatChinaClock } from "@/lib/time";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
+import { useOutsideClick } from "@/lib/use-outside-click";
 import { updateSegUrl } from "@/lib/segment-utils";
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
 import type { SelectOption } from "@/components/ui/custom-select";
@@ -310,40 +311,13 @@ export default function ImportReviewPage() {
   const segmentDrag = useReviewSegmentDrag(editedSegments, setEditedSegments);
 
   // Close batch dropdown on outside click
-  useEffect(() => {
-    if (!batchDropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (batchDropdownRef.current && !batchDropdownRef.current.contains(e.target as Node)) {
-        setBatchDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [batchDropdownOpen]);
+  useOutsideClick(batchDropdownRef, batchDropdownOpen, () => setBatchDropdownOpen(false));
 
   // Close subject dropdown on outside click (portal bypasses drawer's onBlur chain)
-  useEffect(() => {
-    if (!subjectDropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (subjectBtnRef.current && !subjectBtnRef.current.contains(e.target as Node)) {
-        setSubjectDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [subjectDropdownOpen]);
+  useOutsideClick(subjectBtnRef, subjectDropdownOpen, () => setSubjectDropdownOpen(false));
 
   // Close subject edit dropdown on outside click (portal bypasses drawer's onBlur chain)
-  useEffect(() => {
-    if (!subjectEditDropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (subjectEditBtnRef.current && !subjectEditBtnRef.current.contains(e.target as Node)) {
-        setSubjectEditDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [subjectEditDropdownOpen]);
+  useOutsideClick(subjectEditBtnRef, subjectEditDropdownOpen, () => setSubjectEditDropdownOpen(false));
 
   const batchCompleteDraftStorage = () => localStorage;
 
