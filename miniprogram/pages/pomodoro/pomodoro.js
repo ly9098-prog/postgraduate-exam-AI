@@ -15,26 +15,12 @@ const {
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
+const { buildSubjectChoices, normalizeCachedSubjects, subjectIconByCode } = require('./utils/subject-options')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
-
-const SUBJECT_ICON = {
-  exam408: '/assets/icons/pomodoro-subject/monitor.svg',
-  data_structure: '/assets/icons/pomodoro-subject/list-tree.svg',
-  computer_organization: '/assets/icons/diagnosis-subject/computer-organization.svg',
-  operating_system: '/assets/icons/diagnosis-subject/operating-system.svg',
-  computer_network: '/assets/icons/diagnosis-subject/computer-network.svg',
-  'math2-calculus': '/assets/icons/pomodoro-subject/square-function.svg',
-  advanced_math: '/assets/icons/pomodoro-subject/square-function.svg',
-  'math2-linalg': '/assets/icons/pomodoro-subject/grid-2x2.svg',
-  linear_algebra: '/assets/icons/pomodoro-subject/grid-2x2.svg',
-  english: '/assets/icons/pomodoro-subject/languages.svg',
-  pol: '/assets/icons/pomodoro-subject/landmark.svg',
-  politics: '/assets/icons/pomodoro-subject/landmark.svg',
-}
 
 const PRESETS = [
   { key: 'standard', label: '标准', work: 25, break: 5 },
@@ -63,33 +49,6 @@ const MOTTOES = [
   '专注是最好的努力',
   '为梦想全力以赴',
 ]
-
-function flattenSubjectTree(tree) {
-  const result = []
-  function walk(nodes) {
-    var list = Array.isArray(nodes) ? nodes : []
-    for (var nodeIndex = 0; nodeIndex < list.length; nodeIndex += 1) {
-      var node = list[nodeIndex]
-      if (!node) continue
-      const activeChildren = (node.children || []).filter(c => c.is_active !== false)
-      if (activeChildren.length === 0) {
-        result.push({
-          id: node.subject_id,
-          code: node.subject_code || '',
-          name: node.subject_name || node.display_name || '',
-        })
-      } else {
-        walk(activeChildren)
-      }
-    }
-  }
-  walk(tree || [])
-  return result
-}
-
-function subjectIconByCode(code) {
-  return SUBJECT_ICON[code] || '/assets/icons/pomodoro-subject/book-open.svg'
-}
 
 Page({
   data: {
@@ -482,26 +441,7 @@ Page({
       if (!tree || !Array.isArray(tree)) {
         throw new Error('科目数据格式错误')
       }
-      const flat = flattenSubjectTree(tree).map(s => ({
-        ...s,
-        _icon: subjectIconByCode(s.code),
-        _iconDark: subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
-      }))
-      const root = (tree || []).find(item => item && item.subject_code === 'exam408')
-      const coreSubjects = ['data_structure', 'computer_organization', 'operating_system', 'computer_network']
-        .map(code => flat.find(item => item.code === code))
-      const aggregate = root
-        ? [{
-          id: root.subject_id,
-          code: root.subject_code,
-          name: root.subject_name || root.display_name || '计算机综合',
-          _isAggregate: true,
-          _disabled: !coreSubjects.every(Boolean),
-          _icon: subjectIconByCode(root.subject_code),
-          _iconDark: subjectIconByCode(root.subject_code).replace('.svg', '-dark.svg'),
-        }]
-        : []
-      const choices = aggregate.concat(flat)
+      const { choices } = buildSubjectChoices(tree)
       writeSubjectCache(choices)
       this._applySubjects(choices)
     } catch (e) {
@@ -512,16 +452,7 @@ Page({
 
   _applySubjects(flat) {
     // Resolve presentation from current assets, not the cached icon paths.
-    const choices = (Array.isArray(flat) ? flat : []).map(s => ({
-      ...s,
-      _icon: subjectIconByCode(s.code),
-      _iconDark: subjectIconByCode(s.code).replace('.svg', '-dark.svg'),
-    }))
-    const aggregate = choices.find(s => s && s._isAggregate)
-    const leaves = choices.filter(s => s && !s._isAggregate)
-    const coreSubjects = ['data_structure', 'computer_organization', 'operating_system', 'computer_network']
-      .map(code => leaves.find(item => item.code === code))
-      .filter(Boolean)
+    const { choices, aggregate, leaves, coreSubjects } = normalizeCachedSubjects(flat)
     this.setData({
       subjects: choices,
       aggregateAvailable: !!aggregate && coreSubjects.length === 4,
