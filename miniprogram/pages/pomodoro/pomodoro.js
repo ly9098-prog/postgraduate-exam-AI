@@ -52,6 +52,11 @@ const {
 } = require('./utils/pause-adjustment')
 const { resolveBreakSec } = require('./utils/celebration-dismiss')
 const { buildEndConfirmViewModel } = require('./utils/end-confirm-view-model')
+const {
+  buildUnknownStartPayload,
+  matchesUnknownStartAttempt,
+  buildUnknownStartAttempt,
+} = require('./utils/unknown-start-helpers')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -633,43 +638,15 @@ Page({
   },
 
   _buildUnknownStartAttempt(overrides = {}) {
-    const clientStartId = overrides.clientStartId || api.createClientStartId()
-    return {
-      requestedAt: api.now(),
-      cancelIfFound: false,
-      cancelAt: null,
-      clientStartId,
-      subjectId: this.data.selectedSubjectId,
-      chapterId: this.data.fromChapterId || null,
-      preset: this.data.selectedPreset,
-      workDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
-      breakDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
-      allocationMode: this.data.allocationMode,
-      notificationEnabled: false,
-      taskType: this.data.selectedTaskType,
-      ...overrides,
-    }
+    return buildUnknownStartAttempt(this.data, overrides, api.createClientStartId, api.now())
   },
 
   _unknownStartPayload(attempt) {
-    if (!attempt || !attempt.clientStartId) return null
-    return {
-      subject_id: attempt.subjectId,
-      allocation_mode: attempt.allocationMode || 'single',
-      chapter_id: attempt.chapterId || null,
-      preset: attempt.preset,
-      work_duration: Number(attempt.workDuration || 0),
-      break_duration: Number(attempt.breakDuration || 0),
-      notification_enabled: !!attempt.notificationEnabled,
-      client_start_id: attempt.clientStartId,
-    }
+    return buildUnknownStartPayload(attempt)
   },
 
   _matchesUnknownStartAttempt(session, attempt) {
-    return !!(
-      session && attempt && session.id && attempt.clientStartId &&
-      session.client_start_id === attempt.clientStartId
-    )
+    return matchesUnknownStartAttempt(session, attempt)
   },
 
   _startCancellationAt(session, cancelAt) {
