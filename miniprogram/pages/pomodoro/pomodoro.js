@@ -19,6 +19,7 @@ const { buildSubjectChoices, normalizeCachedSubjects, subjectIconByCode } = requ
 const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
 const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
+const conflictState = require('./utils/terminal-conflict-state')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -1979,11 +1980,11 @@ Page({
   },
 
   _isPomodoroStorageError(value) {
-    return !!(value && value.storageUnreadable)
+    return conflictState.isStorageConflict(value)
   },
 
   _recordPomodoroTerminalConflict(sessionId, requestedAction, serverStatus) {
-    const conflict = { sessionId, requestedAction, serverStatus, savedAt: api.now() }
+    const conflict = conflictState.createTerminalConflict(sessionId, requestedAction, serverStatus, api.now())
     // The conflict marker is the durable bridge between a server-side terminal
     // result and removal of the pending client mutation. Never acknowledge/drop
     // the pending action unless this marker has actually reached local storage.
@@ -1999,7 +2000,7 @@ Page({
     const stored = this._safeGetPomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, 'terminal conflict')
     if (!stored.ok) return { storageUnreadable: true }
     const conflict = stored.value
-    if (conflict && conflict.sessionId && conflict.requestedAction) {
+    if (conflictState.isValidTerminalConflict(conflict)) {
       this._pomodoroTerminalConflict = conflict
       return conflict
     }
@@ -2013,7 +2014,7 @@ Page({
   _consumePomodoroTerminalConflict(sessionId, requestedAction) {
     const conflict = this._readPomodoroTerminalConflict()
     if (this._isPomodoroStorageError(conflict)) return conflict
-    if (!conflict || conflict.sessionId !== sessionId || conflict.requestedAction !== requestedAction) return null
+    if (!conflictState.matchesTerminalConflict(conflict, sessionId, requestedAction)) return null
     return conflict
   },
 
