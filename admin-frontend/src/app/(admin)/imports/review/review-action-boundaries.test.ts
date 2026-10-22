@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 const modules = [
   {
     path: "./hooks/use-review-action-mutation.ts",
-    imports: ["react", "@tanstack/react-query", "../review-action-requests"],
+    imports: [
+      "react", "@tanstack/react-query", "../review-action-requests",
+      "../review-action-feedback",
+    ],
   },
   {
     path: "./hooks/use-review-update-mutation.ts",
@@ -130,6 +133,14 @@ const modules = [
     imports: ["@/lib/api/types"],
   },
   {
+    path: "./review-batch-complete-request.ts",
+    imports: ["@/lib/api/types", "./review-batch-complete-draft"],
+  },
+  {
+    path: "./hooks/use-review-batch-complete-mutation.ts",
+    imports: ["@tanstack/react-query", "@/lib/api/types", "../review-batch-complete-draft"],
+  },
+  {
     path: "./review-queue-badges.ts",
     imports: ["@/lib/api/types"],
   },
@@ -203,5 +214,7 @@ describe("review action feature boundaries", () => {
     expect(source).not.toContain('localStorage.removeItem(DRAFT_KEY)');
     expect(source).not.toMatch(/const DRAFT_KEY\s*=/);
     expect(source).not.toMatch(/function loadDraft\s*\(/);
+    expect(source).not.toContain("/imports/questions/batch-complete");
+    expect(source).not.toContain("import_ids:");
   });
 });

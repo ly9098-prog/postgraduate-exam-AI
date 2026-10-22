@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, Upload, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -58,7 +58,6 @@ import {
   stringSuggestion,
 } from "./review-completion-suggestion";
 import { buildReviewConfirmDialogState } from "./review-confirm-dialog-state";
-import { buildReviewActionFeedback } from "./review-action-feedback";
 import type { ReviewActionState } from "./review-action-requests";
 import {
   createReviewActionDialogState,
@@ -71,11 +70,16 @@ import {
   type BatchAnswerFillTab,
 } from "./review-batch-answer-view-state";
 import { buildBatchCompleteResultState } from "./review-batch-complete-result-state";
+import {
+  buildBatchCompleteFeedback,
+  validateBatchCompleteRequest,
+} from "./review-batch-complete-request";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
 import { useReviewBatchAnswerMutations } from "./hooks/use-review-batch-answer-mutations";
+import { useReviewBatchCompleteMutation } from "./hooks/use-review-batch-complete-mutation";
 import { useReviewImageAnswerFlow } from "./hooks/use-review-image-answer-flow";
 import { useReviewSegmentDrag } from "./hooks/use-review-segment-drag";
 import { ReviewVisualSegmentEditor } from "./components/review-visual-segment-editor";
@@ -205,7 +209,6 @@ function statusTone(status: string) {
 }
 
 export default function ImportReviewPage() {
-  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
   const canWrite = hasPermission(permissions, "import:write");
@@ -475,8 +478,7 @@ export default function ImportReviewPage() {
       rejectReason,
       request: apiRequest,
     }, {
-      onSuccess: (result, action) => {
-        const feedback = buildReviewActionFeedback(result, action);
+      onSuccess: (feedback) => {
         updateMessage(feedback.message);
         if (feedback.closeDrawer) closeDrawer();
       },
@@ -646,51 +648,37 @@ export default function ImportReviewPage() {
     setBatchFields((prev) => toggleBatchCompleteField(prev, field));
   };
 
-  const executeBatchComplete = async () => {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) {
-      updateMessage("请先选择需要补全的题目。");
-      return;
-    }
-    if (batchFields.length === 0) {
-      updateMessage("请选择至少一个补全字段。");
-      return;
-    }
-    setExecuting(true);
-    setBatchResult(null);
-    try {
-      const result = await apiRequest<BatchCompleteResponse>("/imports/questions/batch-complete", {
-        method: "POST",
-        body: JSON.stringify({ import_ids: ids, fields: batchFields, strategy: batchStrategy }),
-      });
+  const batchCompleteMutation = useReviewBatchCompleteMutation(apiRequest, {
+    onStarted: () => { setExecuting(true); setBatchResult(null); },
+    onCompleted: (result) => {
       setBatchResult(result);
       clearDraft();
-      const failedItems = result.items.filter((i) => i.status === "failed");
-      const failedIdStr = failedItems.length > 0 ? `（${failedItems.map((i) => `#${i.import_id}`).join("、")}）` : "";
-      updateMessage(`批量补全完成：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped}${failedIdStr}`);
-      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["import-question-detail"] });
-
-      // If the completed question is currently open, refresh it eagerly so the
-      // newly persisted answer/analysis is visible in the drawer without closing
-      // it or manually reloading the page.
-      if (previewId !== null && ids.includes(previewId)) {
-        try {
-          const refreshed = await apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`);
-          queryClient.setQueryData(["import-question-detail", previewId], refreshed);
-          syncedDetailRef.current.add(previewId);
-          setCompletedItem(refreshed);
-          setEditState(editStateFromItem(refreshed));
-        } catch {
-          // The completion itself has succeeded; a transient detail refresh must
-          // not turn the whole batch operation into a failure message.
-        }
-      }
-    } catch (error) {
+      updateMessage(buildBatchCompleteFeedback(result));
+    },
+    onDetailSynced: (refreshed) => {
+      syncedDetailRef.current.add(refreshed.id);
+      setCompletedItem(refreshed);
+      setEditState(editStateFromItem(refreshed));
+    },
+    onError: (error) => {
       updateMessage(error instanceof Error ? error.message : "批量补全失败，请稍后重试。");
-    } finally {
-      setExecuting(false);
+    },
+    onFinished: () => setExecuting(false),
+  });
+  const executeBatchComplete = () => {
+    const validation = validateBatchCompleteRequest(
+      Array.from(selectedIds), batchFields, batchStrategy,
+    );
+    if (!validation.ok) {
+      updateMessage(validation.message);
+      return;
     }
+    batchCompleteMutation.mutate({
+      importIds: validation.args.importIds,
+      fields: validation.args.fields,
+      strategy: validation.args.strategy,
+      openPreviewId: previewId,
+    });
   };
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
@@ -744,8 +732,26 @@ export default function ImportReviewPage() {
 
   const confirmDialogState = buildReviewConfirmDialogState(confirmState, selectedIds.size);
 
+  const hasUnsavedDraft = useCallback(() => (
+    hasUnsavedReviewDrawerChanges({
+      editing,
+      editState,
+      editSnapshot: editSnapshotRef.current,
+      editedSegments,
+      segmentSnapshot: segmentSnapshotRef.current,
+    })
+  ), [editing, editState, editedSegments]);
+
   const openPreview = (item: ImportQuestionItem) => {
     if (segmentUploading >= 0 || completeMutation.isPending) return;
+    if (previewId !== null) {
+      if (
+        hasUnsavedDraft() &&
+        !window.confirm("有未保存的修改，确定切换到其他题目吗？")
+      ) {
+        return;
+      }
+    }
     const preview = createReviewPreviewState(item);
     setPreviewId(preview.previewId);
     setCompletedItem(null);
@@ -756,16 +762,9 @@ export default function ImportReviewPage() {
     setDetailView(preview.detailView);
   };
 
-  const closeDrawer = () => {
+  const closeDrawer = useCallback(() => {
     if (segmentUploading >= 0 || completeMutation.isPending) return;
-    const hasUnsavedChanges = hasUnsavedReviewDrawerChanges({
-      editing,
-      editState,
-      editSnapshot: editSnapshotRef.current,
-      editedSegments,
-      segmentSnapshot: segmentSnapshotRef.current,
-    });
-    if (hasUnsavedChanges) {
+    if (hasUnsavedDraft()) {
       if (!window.confirm("有未保存的修改，确定关闭吗？")) return;
     }
     setPreviewId(null);
@@ -774,7 +773,19 @@ export default function ImportReviewPage() {
     setEditedSegments(null);
     setEditing(false);
     syncedDetailRef.current.clear();
-  };
+  }, [
+    completeMutation.isPending, hasUnsavedDraft, segmentUploading,
+    setEditState, setEditing, setEditedSegments,
+  ]);
+
+  useEffect(() => {
+    if (previewId === null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeDrawer();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [previewId, closeDrawer]);
 
   const startEditing = () => {
     if (!previewId || !canWrite) return;
@@ -787,14 +798,7 @@ export default function ImportReviewPage() {
   };
 
   const cancelEditing = () => {
-    const hasUnsavedChanges = hasUnsavedReviewDrawerChanges({
-      editing,
-      editState,
-      editSnapshot: editSnapshotRef.current,
-      editedSegments,
-      segmentSnapshot: segmentSnapshotRef.current,
-    });
-    if (hasUnsavedChanges && !window.confirm("有未保存的修改，确定取消编辑吗？")) return;
+    if (hasUnsavedDraft() && !window.confirm("有未保存的修改，确定取消编辑吗？")) return;
     setEditState(previewItem ? editStateFromItem(previewItem) : null);
     setEditedSegments(null);
     setEditing(false);
@@ -854,15 +858,6 @@ export default function ImportReviewPage() {
       };
     });
   }, []);
-
-  useEffect(() => {
-    if (previewId === null) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeDrawer();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [previewId, editing, editState]);
 
   const handleSegmentReplace = useCallback(async (si: number, file: File) => {
     if (!file || !canWrite) return;
