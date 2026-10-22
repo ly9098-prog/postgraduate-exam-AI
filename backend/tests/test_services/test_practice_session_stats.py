@@ -11,16 +11,17 @@
 - request_id 幂等：重试不新增第二个 PracticeSession
 - overlap 去重：Pomodoro 与刷题并行时不 double count
 - 科目级 sessions 含刷题、顶层 sessions 保持番茄次数
-- batch_submit 同事务落库 PracticeSession / 旧客户端不携带 session 不受影响
-- 单题 used_time 不串题（后置行为记录使用各自题目的 used_time）
+- 签名 batch_submit 同事务落库 PracticeSession/records/outbox，缺失协议拒绝且无残留
+- 单题 used_time 不串题（真实后置投影使用各自题目的 used_time）
 """
 from __future__ import annotations
 
 import asyncio
 import os
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -83,24 +84,11 @@ def monkeypatch_module():
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_tables(isolated_db):
+    # This fixture owns a temporary SQLite database. Reset derived/outbox rows as
+    # well as source rows because SQLite here does not enforce FK cascades.
     async with isolated_db.async_session() as db:
-        from sqlalchemy import delete
-
-        from app.models.pomodoro import (
-            PomodoroPauseInterval,
-            PomodoroSession,
-            UserPomodoroSettings,
-        )
-        from app.models.practice_record import PracticeRecord
-        from app.models.practice_session import PracticeSession
-        from app.models.user import User
-
-        await db.execute(delete(PomodoroPauseInterval))
-        await db.execute(delete(PomodoroSession))
-        await db.execute(delete(PracticeSession))
-        await db.execute(delete(PracticeRecord))
-        await db.execute(delete(UserPomodoroSettings))
-        await db.execute(delete(User))
+        for table in reversed(list(isolated_db.Base.metadata.tables.values())):
+            await db.execute(table.delete())
         await db.commit()
 
 
@@ -112,15 +100,18 @@ async def _make_user(db, openid: str = "openid_test") -> int:
     return u.id
 
 
-async def _make_subject(db, code: str | None = None, name: str = "高等数学") -> int:
-    import uuid
+async def _make_subject(db, code: str = "advanced_math", name: str = "高等数学") -> int:
+    from sqlalchemy import select
 
     from app.models.admin import Subject
-    code = code or f"math2_{uuid.uuid4().hex[:8]}"
-    subj = Subject(code=code, name=name, level=1, path=code, is_active=True, sort_order=0)
-    db.add(subj)
+
+    existing = await db.scalar(select(Subject).where(Subject.code == code))
+    if existing is not None:
+        return existing.id
+    subject = Subject(code=code, name=name, level=1, path=code, is_active=True, sort_order=0)
+    db.add(subject)
     await db.flush()
-    return subj.id
+    return subject.id
 
 
 def _utc(*parts):
@@ -164,6 +155,8 @@ async def _make_question(db, subj, *, id_override=None, answer="A", question_typ
     await db.flush()
     from app.services.knowledge_point_service import sync_question_knowledge_points
     await sync_question_knowledge_points(db, q, ["导数"], source="test")
+    from app.services.question_revision_service import ensure_question_revision
+    await ensure_question_revision(db, q, change_source="test")
     return q.id
 
 
@@ -408,8 +401,8 @@ class TestProductionReviewMath:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_invariant")
-            en = await _make_subject(db, code="english_1", name="英语")
-            ma = await _make_subject(db, code="math_1", name="高等数学")
+            en = await _make_subject(db, code="english", name="英语")
+            ma = await _make_subject(db, code="advanced_math", name="高等数学")
             db.add(_make_pomo(uid, en, _utc(2026, 8, 8, 2, 0), _utc(2026, 8, 8, 2, 25), 1500))
             db.add(_make_practice(uid, ma, _utc(2026, 8, 8, 2, 20), _utc(2026, 8, 8, 2, 35), 900))
             await db.commit()
@@ -418,9 +411,9 @@ class TestProductionReviewMath:
             summary = await svc.get_daily_summary(db, uid, date(2026, 8, 8))
 
         by_code = {s["subject_code"]: s for s in summary["subjects"]}
-        assert by_code["english_1"]["duration_sec"] == 1500
+        assert by_code["english"]["duration_sec"] == 1500
         # 刷题只贡献非重叠段 [02:25-02:35) = 600s，不把已计入番茄的 300s 重复计
-        assert by_code["math_1"]["duration_sec"] == 600
+        assert by_code["advanced_math"]["duration_sec"] == 600
         assert sum(s["duration_sec"] for s in summary["subjects"]) == summary["duration_sec"]
 
     @pytest.mark.asyncio
@@ -594,219 +587,226 @@ class TestHistoryMerge:
         assert len(set(all_keys)) == 3, "同秒分页不得重复或丢失"
 
 
-# ── batch-submit 落库 + 幂等 + 旧客户端兼容 + used_time ──────────────
+# Signed submissions and asynchronous per-answer projection.
+
+async def _signed_submission(db, uid, subj, answers, request_id="req-stats"):
+    from app.core.time_utils import utcnow
+    from app.models.question import Question
+    from app.services import practice_service as svc
+    from app.services.question_revision_service import load_latest_question_revision_ids
+
+    finished = utcnow()
+    started = finished - timedelta(minutes=20)
+    questions = [await db.get(Question, answer["question_id"]) for answer in answers]
+    revisions = await load_latest_question_revision_ids(db, [q.id for q in questions])
+    # Issue at the session's start, retaining the real HMAC and expiry validator.
+    with patch.object(svc.time, "time", return_value=started.replace(tzinfo=UTC).timestamp()):
+        token, _, signed_id = svc.create_practice_batch_token(
+            user_id=uid, subject_id=subj, mode="random", questions=questions,
+            revision_ids=revisions, submission_request_id=request_id,
+        )
+    assert token and signed_id == request_id
+    return {
+        "answers": answers,
+        "session_meta": {
+            "request_id": request_id, "subject_id": subj, "mode": "random",
+            "started_at": started.isoformat() + "Z",
+            "finished_at": finished.isoformat() + "Z", "duration_sec": 1200,
+            "question_count": len(answers), "answered_count": len(answers),
+        },
+        "skipped_question_ids": [], "batch_token": token,
+    }
+
+
+async def _seed_submission(isolated_db, answers=("A",), request_id="req-stats"):
+    async with isolated_db.async_session() as db:
+        uid = await _make_user(db)
+        subj = await _make_subject(db)
+        qids = [await _make_question(db, subj, answer=value) for value in answers]
+        await db.commit()
+        payload = await _signed_submission(
+            db, uid, subj,
+            [{"question_id": qid, "user_answer": value} for qid, value in zip(qids, answers)],
+            request_id=request_id,
+        )
+    return uid, subj, qids, payload
+
+
+async def _assert_no_submission(isolated_db):
+    from sqlalchemy import func, select
+
+    from app.models.practice_record import PracticeRecord
+    from app.models.practice_session import PracticeSession
+    from app.models.task_outbox import TaskOutbox
+
+    async with isolated_db.async_session() as db:
+        for model in (PracticeSession, PracticeRecord, TaskOutbox):
+            assert await db.scalar(select(func.count()).select_from(model)) == 0
+
 
 class TestBatchSubmitSession:
     @pytest.mark.asyncio
     async def test_batch_submit_creates_practice_session(self, isolated_db):
         from sqlalchemy import select
 
+        from app.models.practice_record import PracticeRecord
         from app.models.practice_session import PracticeSession
+        from app.models.task_outbox import TaskOutbox
         from app.services import practice_service as svc
 
+        uid, _, _, payload = await _seed_submission(isolated_db, ("A", "B"), "req-abc")
+        payload["answers"][0]["used_time"] = 40
+        payload["answers"][1].update(user_answer="C", used_time=120)
         async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_bs")
-            subj = await _make_subject(db)
-            q1 = await _make_question(db, subj, answer="A")
-            q2 = await _make_question(db, subj, answer="B")
-            await db.commit()
-
-        session_meta = {
-            "request_id": "req-abc",
-            "subject_id": subj,
-            "mode": "random",
-            "started_at": "2026-08-08T02:00:00.000Z",
-            "finished_at": "2026-08-08T02:18:00.000Z",
-            "duration_sec": 1080,
-            "question_count": 2,
-            "answered_count": 2,
-            "status": "completed",
-        }
+            result = await svc.batch_submit_answers(db, uid, **payload)
+        assert (result["total_correct"], result["total_wrong"]) == (1, 1)
         async with isolated_db.async_session() as db:
-            result = await svc.batch_submit_answers(
-                db, uid, [
-                    {"question_id": q1, "user_answer": "A", "used_time": 40, "request_id": "req-abc"},
-                    {"question_id": q2, "user_answer": "C", "used_time": 120, "request_id": "req-abc"},
-                ],
-                session_meta=session_meta,
-            )
-            await db.commit()
-            assert result["total_correct"] == 1
-            assert result["total_wrong"] == 1
-
-        async with isolated_db.async_session() as db:
-            rows = (await db.execute(
-                select(PracticeSession).where(PracticeSession.user_id == uid)
-            )).scalars().all()
-            assert len(rows) == 1
-            s = rows[0]
-            assert s.request_id == "req-abc"
-            assert s.duration_sec == 1080
-            assert s.answered_count == 2
-            assert s.correct_count == 1
-            assert s.wrong_count == 1
-            assert s.status == "completed"
+            session = (await db.scalars(select(PracticeSession))).one()
+            records = list((await db.scalars(select(PracticeRecord))).all())
+            outboxes = list((await db.scalars(select(TaskOutbox))).all())
+            assert session.request_id == "req-abc"
+            assert session.duration_sec == 1200 and session.answered_count == 2
+            assert session.correct_count == session.wrong_count == 1
+            assert session.status == "completed" and session.submission_response == result
+            assert len(records) == len(outboxes) == 2
+            assert {row.projection_state for row in records} == {"pending"}
+            assert {row.task_type for row in outboxes} == {"answer_projection"}
+            assert {row.payload["practice_record_id"] for row in outboxes} == {
+                row.id for row in records
+            }
 
     @pytest.mark.asyncio
     async def test_request_id_idempotent_retry(self, isolated_db):
-        from sqlalchemy import select
+        from sqlalchemy import func, select
 
+        from app.models.practice_record import PracticeRecord
         from app.models.practice_session import PracticeSession
+        from app.models.task_outbox import TaskOutbox
         from app.services import practice_service as svc
 
+        uid, _, _, payload = await _seed_submission(isolated_db, request_id="req-idem")
+        responses = []
+        for _ in range(2):
+            async with isolated_db.async_session() as db:
+                responses.append(await svc.batch_submit_answers(db, uid, **payload))
+        assert responses[0] == responses[1]
         async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_bs_idem")
-            subj = await _make_subject(db)
-            q1 = await _make_question(db, subj, answer="A")
-            await db.commit()
-
-        session_meta = {
-            "request_id": "req-idem",
-            "subject_id": subj,
-            "mode": "random",
-            "started_at": "2026-08-08T02:00:00.000Z",
-            "finished_at": "2026-08-08T02:10:00.000Z",
-            "duration_sec": 600,
-        }
-        async with isolated_db.async_session() as db:
-            await svc.batch_submit_answers(db, uid, [{"question_id": q1, "user_answer": "A"}], session_meta=session_meta)
-            await db.commit()
-
-        # 模拟网络重试：同一 request_id 再次提交
-        async with isolated_db.async_session() as db:
-            await svc.batch_submit_answers(db, uid, [{"question_id": q1, "user_answer": "A"}], session_meta=session_meta)
-            await db.commit()
-
-        async with isolated_db.async_session() as db:
-            rows = (await db.execute(
-                select(PracticeSession).where(PracticeSession.user_id == uid)
-            )).scalars().all()
-            assert len(rows) == 1, "同 request_id 重试不得新增第二个 PracticeSession"
+            for model in (PracticeSession, PracticeRecord, TaskOutbox):
+                assert await db.scalar(select(func.count()).select_from(model)) == 1
 
     @pytest.mark.asyncio
-    async def test_old_client_without_session_unaffected(self, isolated_db):
-        from sqlalchemy import select
-
-        from app.models.practice_session import PracticeSession
+    @pytest.mark.parametrize("missing", ["session_meta", "batch_token", "skipped_question_ids"])
+    async def test_incomplete_client_protocol_rejected_without_writes(self, isolated_db, missing):
         from app.services import practice_service as svc
 
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_bs_old")
-            subj = await _make_subject(db)
-            q1 = await _make_question(db, subj, answer="A")
-            await db.commit()
-
-        async with isolated_db.async_session() as db:
-            result = await svc.batch_submit_answers(db, uid, [{"question_id": q1, "user_answer": "A"}])
-            await db.commit()
-            assert result["total_correct"] == 1
-
-        async with isolated_db.async_session() as db:
-            rows = (await db.execute(
-                select(PracticeSession).where(PracticeSession.user_id == uid)
-            )).scalars().all()
-            assert rows == []  # 不携带 session -> 不写 PracticeSession
+        uid, _, _, payload = await _seed_submission(isolated_db)
+        payload[missing] = None if missing != "batch_token" else ""
+        with pytest.raises(svc.PracticeBatchTokenError):
+            async with isolated_db.async_session() as db:
+                await svc.batch_submit_answers(db, uid, **payload)
+        await _assert_no_submission(isolated_db)
 
     @pytest.mark.asyncio
-    async def test_used_time_not_serialized_across_questions(self, isolated_db):
+    async def test_used_time_preserved_until_and_after_projection(self, isolated_db):
         from sqlalchemy import select
 
         from app.models.answer_behavior import AnswerBehavior
         from app.models.practice_record import PracticeRecord
         from app.services import practice_service as svc
+        from app.services.practice.answer_projection_service import (
+            project_practice_answer,
+        )
 
+        uid, _, qids, payload = await _seed_submission(isolated_db, ("A", "B"))
+        payload["answers"][0]["used_time"] = 40
+        payload["answers"][1].update(user_answer="C", used_time=120)
         async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_usedtime")
-            subj = await _make_subject(db)
-            q1 = await _make_question(db, subj, answer="A")
-            q2 = await _make_question(db, subj, answer="B")
-            await db.commit()
-
+            await svc.batch_submit_answers(db, uid, **payload)
         async with isolated_db.async_session() as db:
-            await svc.batch_submit_answers(db, uid, [
-                {"question_id": q1, "user_answer": "A", "used_time": 40},
-                {"question_id": q2, "user_answer": "C", "used_time": 120},
-            ])
-            await db.commit()
-
+            records = list((await db.scalars(select(PracticeRecord))).all())
+            assert {row.question_id: row.used_time for row in records} == dict(zip(qids, [40, 120]))
+            assert list((await db.scalars(select(AnswerBehavior))).all()) == []
+        for record in records:
+            async with isolated_db.async_session() as db:
+                projected = await project_practice_answer(db, practice_record_id=record.id)
+                assert projected["processed"] is True
         async with isolated_db.async_session() as db:
-            recs = (await db.execute(
-                select(PracticeRecord).where(PracticeRecord.user_id == uid)
-            )).scalars().all()
-            by_q = {r.question_id: r.used_time for r in recs}
-            assert by_q[q1] == 40
-            assert by_q[q2] == 120
+            behaviors = list((await db.scalars(select(AnswerBehavior))).all())
+            assert len(behaviors) == 2
+            assert {row.question_id: row.time_spent_sec for row in behaviors} == dict(zip(qids, [40, 120]))
+            assert {row.practice_record_id for row in behaviors} == {row.id for row in records}
 
-            behaviors = (await db.execute(
-                select(AnswerBehavior).where(AnswerBehavior.user_id == uid)
-            )).scalars().all()
-            by_q_behav = {b.question_id: b.time_spent_sec for b in behaviors}
-            assert by_q_behav[q1] == 40
-            assert by_q_behav[q2] == 120
-
-
-# ── 数据校验 / normalization ─────────────────────────────────────────
 
 class TestSessionNormalization:
     def _meta(self, **overrides):
         base = {
-            "request_id": "req-n",
-            "subject_id": 1,
-            "mode": "random",
-            "started_at": "2026-08-08T02:00:00Z",
-            "finished_at": "2026-08-08T02:20:00Z",
-            "duration_sec": 1200,
+            "request_id": "req-n", "subject_id": 1, "mode": "random",
+            "started_at": "2026-08-08T02:00:00Z", "finished_at": "2026-08-08T02:20:00Z",
+            "duration_sec": 1200, "question_count": 5, "answered_count": 5,
         }
         base.update(overrides)
         return base
 
-    def test_absent_meta_returns_none(self):
+    @pytest.mark.parametrize("meta", [None, {}])
+    def test_absent_meta_is_rejected(self, meta):
         from app.services.practice_service import _normalize_practice_session
-        assert _normalize_practice_session(None, user_id=1, answered_count=5, total_correct=3, total_wrong=2) is None
-        assert _normalize_practice_session({}, user_id=1, answered_count=5, total_correct=3, total_wrong=2) is None
+        with pytest.raises(ValueError, match="session 不能为空"):
+            _normalize_practice_session(meta, user_id=1, answered_count=5, total_correct=3, total_wrong=2)
 
     def test_valid(self):
         from app.services.practice_service import _normalize_practice_session
         out = _normalize_practice_session(
             self._meta(), user_id=1, answered_count=5, total_correct=3, total_wrong=2,
         )
-        assert out["duration_sec"] == 1200
-        assert out["subject_id"] == 1
-        assert out["started_at"] == _utc(2026, 8, 8, 2, 0)
-        assert out["finished_at"] == _utc(2026, 8, 8, 2, 20)
-        assert out["answered_count"] == 5
-        assert out["correct_count"] == 3
-        assert out["wrong_count"] == 2
-        assert out["status"] == "completed"
+        assert out == {
+            "user_id": 1, "subject_id": 1, "request_id": "req-n", "mode": "random",
+            "started_at": _utc(2026, 8, 8, 2, 0), "finished_at": _utc(2026, 8, 8, 2, 20),
+            "duration_sec": 1200, "question_count": 5, "answered_count": 5,
+            "correct_count": 3, "wrong_count": 2, "status": "completed",
+        }
 
-    def test_huge_duration_capped(self):
-        from app.services import practice_service as svc
+    def test_huge_duration_is_rejected_instead_of_capped(self):
         from app.services.practice_service import _normalize_practice_session
-        # 墙钟 8h（超出 6h 上限），上报超大 duration -> 被上限裁剪
-        out = _normalize_practice_session(
-            self._meta(
-                duration_sec=999999999,
-                started_at="2026-08-08T02:00:00Z",
-                finished_at="2026-08-08T10:00:00Z",
-            ),
-            user_id=1, answered_count=5, total_correct=0, total_wrong=5,
+        with pytest.raises(ValueError, match="墙钟"):
+            _normalize_practice_session(
+                self._meta(duration_sec=999999999, finished_at="2026-08-08T10:00:00Z"),
+                user_id=1, answered_count=5, total_correct=0, total_wrong=5,
+            )
+
+    def test_duration_within_wall_but_above_session_limit_is_rejected(self):
+        from app.services.practice_service import (
+            PRACTICE_SESSION_MAX_DURATION_SEC,
+            _normalize_practice_session,
         )
-        assert out["duration_sec"] == svc.PRACTICE_SESSION_MAX_DURATION_SEC
+        with pytest.raises(ValueError, match="允许上限"):
+            _normalize_practice_session(
+                self._meta(duration_sec=PRACTICE_SESSION_MAX_DURATION_SEC + 1,
+                           finished_at="2026-08-09T02:00:00Z"),
+                user_id=1, answered_count=5, total_correct=0, total_wrong=5,
+            )
 
-    def test_negative_duration_falls_back_to_wall(self):
+    @pytest.mark.parametrize("duration", [-5, None])
+    def test_missing_or_negative_duration_falls_back_to_wall(self, duration):
         from app.services.practice_service import _normalize_practice_session
         out = _normalize_practice_session(
-            self._meta(duration_sec=-5), user_id=1, answered_count=5, total_correct=0, total_wrong=5,
-        )
-        assert out["duration_sec"] == 1200  # 墙钟 20min
-
-    def test_duration_exceeding_wall_clamped(self):
-        from app.services.practice_service import _normalize_practice_session
-        # 墙钟 1200s，上报 1300（超过 2s 容差）-> clamp 到墙钟
-        out = _normalize_practice_session(
-            self._meta(duration_sec=1300), user_id=1, answered_count=5, total_correct=0, total_wrong=5,
+            self._meta(duration_sec=duration), user_id=1, answered_count=5, total_correct=0, total_wrong=5,
         )
         assert out["duration_sec"] == 1200
+
+    def test_duration_exceeding_wall_is_rejected(self):
+        from app.services.practice_service import _normalize_practice_session
+        with pytest.raises(ValueError, match="墙钟"):
+            _normalize_practice_session(
+                self._meta(duration_sec=1300), user_id=1, answered_count=5, total_correct=0, total_wrong=5,
+            )
+
+    @pytest.mark.parametrize("count", [None, 4, 6])
+    def test_answered_count_is_mandatory_and_matches_answers(self, count):
+        from app.services.practice_service import _normalize_practice_session
+        with pytest.raises(ValueError, match="answered_count"):
+            _normalize_practice_session(
+                self._meta(answered_count=count), user_id=1, answered_count=5, total_correct=3, total_wrong=2,
+            )
 
     def test_malformed_datetime_rejected(self):
         from app.services.practice_service import _normalize_practice_session
@@ -819,135 +819,96 @@ class TestSessionNormalization:
         from app.services.practice_service import _normalize_practice_session
         with pytest.raises(ValueError, match="finished_at"):
             _normalize_practice_session(
-                self._meta(
-                    started_at="2026-08-08T02:20:00Z",
-                    finished_at="2026-08-08T02:00:00Z",
-                ),
+                self._meta(started_at="2026-08-08T02:20:00Z", finished_at="2026-08-08T02:00:00Z"),
                 user_id=1, answered_count=5, total_correct=0, total_wrong=5,
             )
 
 
-# ── code-review 修复回归：malformed session 不丢作答 / request_id 截断 / 科目回退 ─
+class TestSubmitValidation:
+    @pytest.mark.asyncio
+    async def test_malformed_session_rejected_without_partial_answers(self, isolated_db):
+        from app.services import practice_service as svc
 
-class TestReviewFixes:
-    async def _submit(self, isolated_db, openid: str, session_meta):
+        uid, _, _, payload = await _seed_submission(isolated_db)
+        payload["session_meta"]["started_at"] = "not-a-date"
+        with pytest.raises(ValueError, match="ISO"):
+            async with isolated_db.async_session() as db:
+                await svc.batch_submit_answers(db, uid, **payload)
+        await _assert_no_submission(isolated_db)
+
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("length", [104, 128])
+    async def test_request_id_within_protocol_limit_is_stored_exactly(self, isolated_db, length):
+        from sqlalchemy import select
+
+        from app.models.practice_session import PracticeSession
+        from app.services import practice_service as svc
+
+        request_id = "req-" + "x" * (length - 4)
+        uid, _, _, payload = await _seed_submission(isolated_db, request_id=request_id)
+        async with isolated_db.async_session() as db:
+            await svc.batch_submit_answers(db, uid, **payload)
+        async with isolated_db.async_session() as db:
+            session = (await db.scalars(select(PracticeSession))).one()
+            assert session.request_id == request_id and len(session.request_id) == length
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("length", [129, 255, 263])
+    async def test_overlong_request_id_rejected_without_hash_or_writes(self, isolated_db, length):
+        from app.services import practice_service as svc
+
+        uid, _, _, payload = await _seed_submission(isolated_db)
+        payload["session_meta"]["request_id"] = "r" * length
+        with pytest.raises(ValueError, match="128"):
+            async with isolated_db.async_session() as db:
+                await svc.batch_submit_answers(db, uid, **payload)
+        await _assert_no_submission(isolated_db)
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_subject_is_rejected_instead_of_reassigned(self, isolated_db):
+        from app.services import practice_service as svc
+
+        uid, _, _, payload = await _seed_submission(isolated_db)
+        payload["session_meta"]["subject_id"] = 999999999
+        with pytest.raises(svc.PracticeBatchTokenError, match="科目"):
+            async with isolated_db.async_session() as db:
+                await svc.batch_submit_answers(db, uid, **payload)
+        await _assert_no_submission(isolated_db)
+
+
+class TestChinaDateAggregation:
+    @pytest.mark.asyncio
+    async def test_real_sqlite_buckets_midnight_and_keeps_users_isolated(self, isolated_db, monkeypatch):
         from sqlalchemy import select
 
         from app.models.practice_record import PracticeRecord
-        from app.models.practice_session import PracticeSession
-        from app.services import practice_service as svc
+        from app.services import practice_service, stats_service, study_report_service
 
+        uid, subj, qids, payload = await _seed_submission(isolated_db, ("A", "B"))
+        payload["answers"][1]["user_answer"] = "C"
         async with isolated_db.async_session() as db:
-            uid = await _make_user(db, openid)
-            subj = await _make_subject(db)
-            q1 = await _make_question(db, subj, answer="A")
+            await practice_service.batch_submit_answers(db, uid, **payload)
+        async with isolated_db.async_session() as db:
+            records = list((await db.scalars(select(PracticeRecord).order_by(PracticeRecord.id))).all())
+            records[0].answered_at = _utc(2026, 10, 21, 15, 59, 59)
+            records[1].answered_at = _utc(2026, 10, 21, 16, 0, 0)
+            other_uid = await _make_user(db, "other-date-user")
+            db.add(PracticeRecord(
+                user_id=other_uid, question_id=qids[0],
+                question_version_id=records[0].question_version_id, subject_id=subj,
+                question_type="single_choice", user_answer="A", is_correct=True,
+                answered_at=_utc(2026, 10, 21, 16, 0, 0),
+            ))
             await db.commit()
-
+        for service in (stats_service, study_report_service):
+            monkeypatch.setattr(service, "shanghai_today", lambda: date(2026, 10, 22))
         async with isolated_db.async_session() as db:
-            result = await svc.batch_submit_answers(
-                db, uid,
-                [{"question_id": q1, "user_answer": "A", "used_time": 40}],
-                session_meta=session_meta,
-            )
-            await db.commit()
-            assert result["total_correct"] == 1
-
-        async with isolated_db.async_session() as db:
-            recs = (await db.execute(
-                select(PracticeRecord).where(PracticeRecord.user_id == uid)
-            )).scalars().all()
-            sess = (await db.execute(
-                select(PracticeSession).where(PracticeSession.user_id == uid)
-            )).scalars().all()
-        return q1, subj, recs, sess
-
-    @pytest.mark.asyncio
-    async def test_malformed_session_keeps_answers(self, isolated_db):
-        """session 时间戳非法 → 跳过会话落库，但作答记录照常入库（不 400、不丢答案）。"""
-        _, _, recs, sess = await self._submit(isolated_db, "u_rev_malformed", {
-            "request_id": "req-bad-ts",
-            "subject_id": None,
-            "started_at": "not-a-date",  # 结构非法
-            "finished_at": "2026-08-08T02:20:00Z",
-            "duration_sec": 1200,
-        })
-        assert len(recs) == 1, "malformed session 不得导致作答记录丢失"
-        assert recs[0].is_correct is True
-        assert sess == []
-
-    @pytest.mark.asyncio
-    async def test_long_request_id_stored_until_255(self, isolated_db):
-        """≤255 的 request_id 原样保存（不截断）；超 255 才稳定 hash，避免 DataError。"""
-        _, _, recs, sess = await self._submit(isolated_db, "u_rev_longreq", {
-            "request_id": "req-" + "x" * 100,  # 103 chars，列内原样保存
-            "subject_id": None,
-            "started_at": "2026-08-08T02:00:00Z",
-            "finished_at": "2026-08-08T02:20:00Z",
-            "duration_sec": 1200,
-        })
-        assert len(recs) == 1
-        assert len(sess) == 1
-        assert len(sess[0].request_id) == 104
-        assert sess[0].request_id == "req-" + "x" * 100
-
-    @pytest.mark.asyncio
-    async def test_overlong_request_id_hash_not_truncate_collision(self, isolated_db):
-        """两个不同超长 request_id（前 255 位相同）绝不能因截断被当成同一次会话。"""
-        from sqlalchemy import select
-
-        from app.models.practice_session import PracticeSession
-        from app.services import practice_service as svc
-
-        long_a = "req-" + "a" * 255 + "-one"
-        long_b = "req-" + "a" * 255 + "-two"
-        assert long_a[:255] == long_b[:255]
-
-        async def _submit(uid, req_id, started):
-            async with isolated_db.async_session() as db:
-                await svc.batch_submit_answers(
-                    db, uid,
-                    [{"question_id": qid, "user_answer": "A", "used_time": 40}],
-                    session_meta={
-                        "request_id": req_id, "subject_id": None,
-                        "started_at": started + "Z",
-                        "finished_at": (datetime.fromisoformat(started) + timedelta(minutes=20)).isoformat() + "Z",
-                        "duration_sec": 1200,
-                    },
-                )
-                await db.commit()
-            async with isolated_db.async_session() as db:
-                sess = (await db.execute(
-                    select(PracticeSession).where(PracticeSession.user_id == uid)
-                )).scalars().all()
-            return sess
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_rev_hash")
-            subj = await _make_subject(db)
-            qid = await _make_question(db, subj, answer="A")
-            await db.commit()
-
-        sess_a = await _submit(uid, long_a, "2026-08-08T02:00:00")
-        assert len(sess_a) == 1
-        assert sess_a[0].request_id.startswith("h:")
-        # 同一超长 id 重试 → 同一 hash，幂等去重仍生效（仍只有一条会话）
-        sess_a2 = await _submit(uid, long_a, "2026-08-08T02:00:00")
-        assert len(sess_a2) == 1
-        # 不同超长 id → 不同 hash key，绝不能被合并成同一次会话
-        sess_ab = await _submit(uid, long_b, "2026-08-08T03:00:00")
-        assert len(sess_ab) == 2
-        assert sess_ab[0].request_id != sess_ab[1].request_id
-
-    @pytest.mark.asyncio
-    async def test_nonexistent_subject_falls_back_to_question_subject(self, isolated_db):
-        """客户端 subject_id 指向不存在的科目 → 回退到本组题目的科目，会话正常落库。"""
-        _, subj, recs, sess = await self._submit(isolated_db, "u_rev_badsubj", {
-            "request_id": "req-bad-subj",
-            "subject_id": 999999999,  # 不存在的科目
-            "started_at": "2026-08-08T02:00:00Z",
-            "finished_at": "2026-08-08T02:20:00Z",
-            "duration_sec": 1200,
-        })
-        assert len(recs) == 1
-        assert len(sess) == 1
-        assert sess[0].subject_id == subj
+            assert await stats_service._calc_consecutive_days(db, uid) == 2
+            assert await stats_service._calc_consecutive_days(db, other_uid) == 1
+            trend = await study_report_service.get_study_trend(db, uid, subject_id=subj, days=3)
+            other = await study_report_service.get_study_trend(db, other_uid, days=3)
+        assert [item["date"] for item in trend["items"]] == ["2026-10-20", "2026-10-21", "2026-10-22"]
+        assert [item["answer_count"] for item in trend["items"]] == [0, 1, 1]
+        assert [item["accuracy"] for item in trend["items"]] == [0.0, 100.0, 0.0]
+        assert [item["answer_count"] for item in other["items"]] == [0, 0, 1]

@@ -379,6 +379,9 @@ jobs:
             tests/test_services/test_pomodoro_subject_allocation.py \
             tests/architecture/test_pomodoro_subject_projection_boundaries.py \
             tests/test_services/test_pomodoro_scheduler.py \
+            tests/test_services/test_practice_session_stats.py \
+            tests/test_services/test_stats_service.py \
+            tests/test_services/test_study_report_service.py \
             tests/test_api/test_import_page_range.py \
             tests/test_api/test_image_import_status.py \
             tests/test_api/test_import_sse_metrics.py \

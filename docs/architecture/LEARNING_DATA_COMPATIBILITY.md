@@ -55,14 +55,21 @@
 
 ## 5. 可执行基线与剩余工作
 
-本批先在未改实现上运行新增22项刻画，再迁移实现。已有 `test_pomodoro_subject_allocation.py` 的3项、学习日统计、scheduler、刷题/复习时长、study-plan 保存回归及新架构门禁用于验证实际消费者。命令和最终结果见任务记录第一百二十三节。
+第114批先在未改实现上运行新增22项刻画，再迁移实现。已有 `test_pomodoro_subject_allocation.py` 的3项、学习日统计、scheduler、刷题/复习时长、study-plan 保存回归及新架构门禁用于验证实际消费者。命令和最终结果见任务记录第一百二十三节。
 
 架构门禁 `tests/architecture/test_pomodoro_subject_projection_boundaries.py` 约束纯模块依赖、100行文件/50行函数预算、实际 snapshot 接线、无重复定义及新进程导入无配置/数据库/模型/任务副作用；与两份科目规则测试接入原 CI static 步骤。
 
-扩大回归发现的既有缺口须在后续单独修复：
+第115批修复第114批发现的21项旧测试契约缺口，未修改生产代码：
 
-1. `test_practice_session_stats.py` 的13项失败仍调用旧 batch-submit 参数，或期待当前已拒绝的缺失 session、隐式 answered_count、超墙钟时长与超长 request_id 行为。独立加载本批抽取前 service 后同样13项失败；不能放宽生产提交来使旧测试通过。
-2. stats/study-report 的8项旧日期分桶测试把异步 `db.connection()` 配成普通 MagicMock；当前两个服务文件未修改。应修测试端口并继续核对日期和筛选口径。
-3. 番茄钟 snapshot 仍338行，混合窗口装配、来源归属、维度累计与响应；后续先扩充真实入口的组合/错误/取消契约，再按明确职责拆分。数据库加载与用户/时间范围守卫保持原所有者。
-4. 小程序完整 controller、前后台/断网恢复、统计视图派生和 Admin 页面状态仍待逐段治理；本批未改客户端，不声称编译、模拟器或真机已验收。
-5. 本地 SQLite 和替身端口不证明 PG 并发或外部 provider；上一轮隔离 PG/Redis 证据覆盖答题链，未覆盖本批专注统计的真库/生产版本。生产仍运行部署时镜像，本批没有重新部署。
+- `test_practice_session_stats.py` 通过真实 revision 创建/最新版本读取与 HMAC 签名提交；不再绕过协议或假设缺失 session 可写答案。验证幂等重放、session/records/outbox 关联、非法请求三表零残留、104/128字符 request_id 原样保存与129/255/263字符拒绝、科目篡改拒绝、显式 answered_count、时长上限和墙钟检查。
+- used_time 用例先确认 committed record/outbox 已存在、AnswerBehavior 尚未生成，再调用真实 `project_practice_answer`，分别核对正确/错误题的40/120秒行为记录。异步投影没有被伪装为提交同步副作用。
+- fixture 使用规范科目码和真实修订；只在本模块自建临时 SQLite 库中重置全部表，避免无 FK cascade 时复用用户/记录 ID 后残留 outbox、错题或掌握度污染。原时长合并、跨日、重叠扣除和 history 用例保留。
+- stats/study-report 的8项失败补齐异步 `db.connection()` 替身，固定北京时间日期，分别以 SQLite/PostgreSQL dialect 编译断言 +8小时分桶、用户/科目过滤和时间窗口；日期字符串与 date 对象结果均有确定断言。
+- 另以真实临时 SQLite 执行两个日期聚合服务：`2026-10-21 15:59:59 UTC` 与 `16:00:00 UTC` 分别进入北京时间21日与22日，连续天数、百分数、补零及用户隔离一并验证。PostgreSQL 这里只编译 SQL，不声称已执行真库查询。
+- 三份恢复的测试已加入原 CI static 步骤，最终运行结果见任务记录第一百二十四节；不通过 skip/xfail 或放宽业务实现消除旧失败。
+
+仍待治理：
+
+1. 番茄钟 snapshot 仍338行，混合窗口装配、来源归属、维度累计与响应；后续先扩充真实入口的组合/错误/取消契约，再按明确职责拆分。数据库加载与用户/时间范围守卫保持原所有者。
+2. 小程序完整 controller、前后台/断网恢复、统计视图派生和 Admin 页面状态仍待逐段治理；本批未改客户端，不声称编译、模拟器或真机已验收。
+3. 本地 SQLite 和替身端口不证明 PG 并发或外部 provider；上一轮隔离 PG/Redis 证据覆盖答题链，未覆盖本批专注统计的真库/生产版本。生产仍运行部署时镜像，本批没有重新部署。

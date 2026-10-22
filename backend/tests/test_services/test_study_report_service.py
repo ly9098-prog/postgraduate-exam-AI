@@ -14,8 +14,11 @@
 """
 import asyncio
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.services.study_report_service import (
     _calc_priority,
@@ -73,6 +76,9 @@ def _make_db(side_effects):
     """db.execute 每次调用按顺序返回不同结果。"""
     db = MagicMock()
     db.execute = AsyncMock(side_effect=side_effects)
+    db.connection = AsyncMock(return_value=SimpleNamespace(
+        sync_connection=SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+    ))
     return db
 
 
@@ -383,6 +389,12 @@ class TestGetWrongQuestions:
 
 
 class TestGetStudyTrend:
+    @pytest.fixture(autouse=True)
+    def fixed_china_date(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.study_report_service.shanghai_today", lambda: date(2026, 10, 22)
+        )
+
     def test_empty_fills_zeros(self):
         """场景 3：无刷题记录时，所有日期补零。"""
         db = _make_db([_mock_result(all_vals=[])])
@@ -393,8 +405,7 @@ class TestGetStudyTrend:
 
     def test_with_data_fills_gaps(self):
         """场景 3：有数据但中间有缺失日期，自动补零。"""
-        from app.core.time_utils import utcnow
-        today = utcnow().date()
+        today = date(2026, 10, 22)
         # 只返回今天和 2 天前的数据
         db = _make_db([
             _mock_result(all_vals=[
@@ -413,6 +424,36 @@ class TestGetStudyTrend:
         # 前天
         assert result["items"][0]["answer_count"] == 5
         assert result["items"][0]["accuracy"] == 60.0
+
+    @pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+    @pytest.mark.parametrize("date_as_string", [False, True])
+    def test_subject_scope_and_china_bucketing(self, dialect, date_as_string):
+        from sqlalchemy.dialects import postgresql, sqlite
+
+        from app.core.time_utils import shanghai_date_utc_range
+
+        today = date(2026, 10, 22)
+        db = _make_db([_mock_result(all_vals=[
+            MockRow(d=today.isoformat() if date_as_string else today, total=4, correct=3),
+        ])])
+        db.connection.return_value.sync_connection.dialect.name = dialect
+        result = _run(get_study_trend(db, user_id=37, subject_id=9, days=3))
+        assert [item["answer_count"] for item in result["items"]] == [0, 0, 4]
+        assert result["items"][-1]["accuracy"] == 75.0
+        assert result["items"][0]["date"] == "2026-10-20"
+        db.connection.assert_awaited_once()
+        compiled = db.execute.await_args.args[0].compile(
+            dialect=sqlite.dialect() if dialect == "sqlite" else postgresql.dialect()
+        )
+        sql = str(compiled)
+        assert "practice_records.user_id =" in sql
+        assert "practice_records.subject_id =" in sql
+        assert {37, 9} <= set(compiled.params.values())
+        assert shanghai_date_utc_range(today - timedelta(days=2))[0] in compiled.params.values()
+        if dialect == "sqlite":
+            assert "+8 hours" in compiled.params.values()
+        else:
+            assert "INTERVAL '8 hours' AS DATE" in sql
 
 
 # ── subject_id 过滤路径测试 ─────────────────────────────────────────
