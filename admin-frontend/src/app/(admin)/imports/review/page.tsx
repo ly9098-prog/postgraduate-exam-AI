@@ -60,6 +60,11 @@ import {
   type ReviewBatchActionResult,
 } from "./review-action-requests";
 import { buildReviewConfirmDialogState } from "./review-confirm-dialog-state";
+import {
+  batchAnswerLoadingLabel,
+  buildBatchAnswerViewState,
+  type BatchAnswerFillTab,
+} from "./review-batch-answer-view-state";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
@@ -261,7 +266,7 @@ export default function ImportReviewPage() {
   const [batchAnswerError, setBatchAnswerError] = useState<string | null>(null);
 
   // Phase 2: 图片导入
-  const [batchAnswerFillTab, setBatchAnswerFillTab] = useState<"text" | "image">("text");
+  const [batchAnswerFillTab, setBatchAnswerFillTab] = useState<BatchAnswerFillTab>("text");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imageImportMode, setImageImportMode] = useState<"answer_only" | "answer_analysis">("answer_only");
   const [imagePreviewResult, setImagePreviewResult] = useState<BatchAnswerImagePreviewResponse | null>(null);
@@ -592,6 +597,13 @@ export default function ImportReviewPage() {
   const { mutate: previewImageAnswers, isPending: isPreviewingImageAnswers } = previewImageMutation;
   const { mutate: applyImageAnswers, isPending: isApplyingImageAnswers } = applyImageMutation;
   const imageExecuting = isPreviewingImageAnswers || isApplyingImageAnswers;
+  const batchAnswerView = buildBatchAnswerViewState({
+    tab: batchAnswerFillTab,
+    textPreview: batchAnswerPreview,
+    textResult: batchAnswerApplyResult,
+    imagePreview: imagePreviewResult,
+    imageResult: imageApplyResult,
+  });
 
   const handleBatchAnswerPreview = useCallback(() => {
     if (!currentBatchId || !batchAnswerRawText.trim()) return;
@@ -2151,15 +2163,7 @@ export default function ImportReviewPage() {
                   <h4 className="font-display text-xl font-bold text-[var(--ink)]">快速补充答案</h4>
                   <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     批次 <span className="font-mono text-xs font-semibold text-[var(--ink)]">{currentBatchId}</span>
-                    {batchAnswerApplyResult ? (
-                      <span className="ml-2">· 已更新 <span className="font-semibold text-emerald-600">{batchAnswerApplyResult.updated_count}</span> 题</span>
-                    ) : batchAnswerPreview ? (
-                      <span className="ml-2">· 预览 <span className="font-semibold text-[var(--ink)]">{batchAnswerPreview.summary.writable_count}</span> 题可写入</span>
-                    ) : imageApplyResult ? (
-                      <span className="ml-2">· 已更新答案 <span className="font-semibold text-emerald-600">{imageApplyResult.updated_answer_count}</span> 解析 <span className="font-semibold text-emerald-600">{imageApplyResult.updated_analysis_count}</span></span>
-                    ) : imagePreviewResult ? (
-                      <span className="ml-2">· 匹配 <span className="font-semibold text-[var(--ink)]">{imagePreviewResult.summary.matched_count}</span> 题</span>
-                    ) : null}
+                    {batchAnswerView.summary ? <span className="ml-2">{batchAnswerView.summary}</span> : null}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -2174,7 +2178,7 @@ export default function ImportReviewPage() {
                 </div>
               </div>
               {/* Tab switcher */}
-              {!batchAnswerApplyResult && !imageApplyResult ? (
+              {batchAnswerView.showTabs ? (
                 <div className="mt-3 flex gap-0.5 rounded-xl border border-[var(--color-border-light)] bg-[var(--color-bg)]/70 p-0.5">
                   <button
                     className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
@@ -2210,7 +2214,9 @@ export default function ImportReviewPage() {
                 <div className="absolute inset-0 z-10 rounded-xl bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
                   <div className="flex flex-col items-center gap-2 rounded-xl bg-white/90 px-5 py-4 shadow-sm">
                     <span className="inline-block h-6 w-6 animate-spin rounded-full border-[3px] border-[var(--color-border)] border-t-[var(--color-primary)]" />
-                    <span className="text-sm text-[var(--color-text-secondary)]">{batchAnswerPreview ? "正在写入答案…" : "正在解析答案…"}</span>
+                    <span className="text-sm text-[var(--color-text-secondary)]">
+                      {batchAnswerLoadingLabel({ mode: "text", hasPreview: Boolean(batchAnswerPreview) })}
+                    </span>
                   </div>
                 </div>
               ) : null}
@@ -2226,7 +2232,7 @@ export default function ImportReviewPage() {
               ) : null}
 
               {/* Step 1: Input */}
-              {!batchAnswerPreview && !batchAnswerApplyResult ? (
+              {batchAnswerView.showTextInput ? (
                 <div className="space-y-4">
                   <div>
                     <p className="mb-1 text-sm font-semibold text-[var(--ink)]">输入答案串</p>
@@ -2252,7 +2258,7 @@ export default function ImportReviewPage() {
               ) : null}
 
               {/* Step 2: Preview table */}
-              {batchAnswerPreview && !batchAnswerApplyResult ? (
+              {batchAnswerView.showTextPreview && batchAnswerPreview ? (
                 <BatchAnswerPreview
                   preview={batchAnswerPreview}
                   executing={batchAnswerExecuting}
@@ -2261,18 +2267,20 @@ export default function ImportReviewPage() {
               ) : null}
 
               {/* Step 3: Apply result */}
-              {batchAnswerApplyResult ? (
+              {batchAnswerView.showTextResult && batchAnswerApplyResult ? (
                 <BatchAnswerResult result={batchAnswerApplyResult} onClose={() => setShowBatchAnswerFill(false)} />
               ) : null}
 
               {/* ── Image Tab Content ── */}
-              {batchAnswerFillTab === "image" ? (
+              {batchAnswerView.showImageContent ? (
                 <>
                   {imageExecuting ? (
                     <div className="absolute inset-0 z-10 rounded-xl bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
                       <div className="flex flex-col items-center gap-2 rounded-xl bg-white/90 px-5 py-4 shadow-sm">
                         <span className="inline-block h-6 w-6 animate-spin rounded-full border-[3px] border-[var(--color-border)] border-t-[var(--color-primary)]" />
-                        <span className="text-sm text-[var(--color-text-secondary)]">{imagePreviewResult ? "正在写入答案…" : "正在识别图片…"}</span>
+                        <span className="text-sm text-[var(--color-text-secondary)]">
+                          {batchAnswerLoadingLabel({ mode: "image", hasPreview: Boolean(imagePreviewResult) })}
+                        </span>
                       </div>
                     </div>
                   ) : null}
@@ -2287,7 +2295,7 @@ export default function ImportReviewPage() {
                   ) : null}
 
                   {/* Step 1: Upload */}
-                  {!imagePreviewResult && !imageApplyResult ? (
+                  {batchAnswerView.showImageInput ? (
                     <div className="space-y-4">
                       <div className="rounded-xl border-2 border-dashed border-[var(--color-border)] p-6 text-center transition hover:border-[var(--color-primary)]/40">
                         <input
@@ -2364,7 +2372,7 @@ export default function ImportReviewPage() {
                   ) : null}
 
                   {/* Step 2: Preview results */}
-                  {imagePreviewResult && !imageApplyResult ? (
+                  {batchAnswerView.showImagePreview && imagePreviewResult ? (
                     <ImageAnswerPreview
                       preview={imagePreviewResult}
                       executing={imageExecuting}
@@ -2373,7 +2381,7 @@ export default function ImportReviewPage() {
                   ) : null}
 
                   {/* Step 3: Apply result */}
-                  {imageApplyResult ? (
+                  {batchAnswerView.showImageResult && imageApplyResult ? (
                     <ImageAnswerResult result={imageApplyResult} onClose={() => setShowBatchAnswerFill(false)} />
                   ) : null}
                 </>

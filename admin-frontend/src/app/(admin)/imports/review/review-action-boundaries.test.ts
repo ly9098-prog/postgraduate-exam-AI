@@ -108,6 +108,10 @@ const modules = [
     imports: ["./review-action-requests"],
   },
   {
+    path: "./review-batch-answer-view-state.ts",
+    imports: ["@/lib/api/types"],
+  },
+  {
     path: "./review-queue-badges.ts",
     imports: ["@/lib/api/types"],
   },
