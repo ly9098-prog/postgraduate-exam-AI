@@ -17,10 +17,11 @@ const MODULES = {
   'sync-retry-controller.js': [],
   'subject-options.js': [],
   'countdown-controller.js': [],
+  'free-timer-controller.js': [],
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 3575
+const PAGE_MAX_LINES = 3566
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',

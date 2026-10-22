@@ -17,6 +17,7 @@ const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
 const { buildSubjectChoices, normalizeCachedSubjects, subjectIconByCode } = require('./utils/subject-options')
 const { createCountdownController } = require('./utils/countdown-controller')
+const { createFreeTimerController } = require('./utils/free-timer-controller')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -123,7 +124,7 @@ Page({
   },
 
   _timerController: null,
-  _freeTimerId: null,
+  _freeTimerController: null,
   _freeTimerFinalizing: false,
   _touchStartX: 0,
   _pageVisible: false,
@@ -1042,40 +1043,30 @@ Page({
     })
   },
 
-  _clearFreeTimerInterval() {
-    if (this._freeTimerId) {
-      clearTimeout(this._freeTimerId)
-      this._freeTimerId = null
+  _getFreeTimerController() {
+    if (!this._freeTimerController) {
+      this._freeTimerController = createFreeTimerController({
+        setTimeout: (fn, delay) => setTimeout(fn, delay),
+        clearTimeout: timer => clearTimeout(timer),
+        getElapsedMs: () => this._getEffectiveFreeElapsedMs(),
+        isBlocked: () => this.data.isPaused || this.data.showEndConfirm,
+        onTick: () => this._updateFreeElapsed(),
+        shouldFinalize: () => this._checkFreeTimerLimitAndAutoEnd(),
+      })
     }
+    return this._freeTimerController
+  },
+
+  _clearFreeTimerInterval() {
+    if (this._freeTimerController) this._freeTimerController.clear()
   },
 
   _startFreeTimerInterval() {
-    if (this._freeTimerId) return
-
-    const scheduleNext = () => {
-      const elapsedMs = this._getEffectiveFreeElapsedMs()
-      const remainder = elapsedMs % 1000
-      const delay = remainder === 0 ? 1000 : 1000 - remainder
-      this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(delay, 1000)))
-    }
-
-    const tick = async () => {
-      this._freeTimerId = null
-      if (this.data.isPaused || this.data.showEndConfirm) return
-      this._updateFreeElapsed()
-
-      // Check 5-hour limit after display update; if auto-ended, stop scheduling
-      if (this._checkFreeTimerLimitAndAutoEnd()) return
-
-      scheduleNext()
-    }
-
-    scheduleNext()
+    return this._getFreeTimerController().start()
   },
 
   _restartFreeTimerInterval() {
-    this._clearFreeTimerInterval()
-    this._startFreeTimerInterval()
+    this._getFreeTimerController().restart()
   },
 
   async _pauseFreeTimer() {
