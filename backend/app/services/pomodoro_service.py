@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.subject_scope import (
+    EXAM408_CORE_CODES,
     is_study_subject_enabled,
     select_study_subject_records,
 )
@@ -36,6 +37,12 @@ from app.services.pomodoro_attribution import (
     split_duration_excluding_intervals,
     split_session_duration_by_study_day,
 )
+from app.services.pomodoro_subject_projection import (
+    allocate_seconds_by_weight,
+    allocation_group_key,
+    resolve_allocations,
+    resolve_subject,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +51,6 @@ COUNTDOWN_COMPLETE_EARLY_TOLERANCE_SEC = 2
 CLIENT_ACTION_FUTURE_TOLERANCE_SEC = 5
 CLIENT_ACTION_PAST_TOLERANCE_SEC = 5
 EQUAL_408_MODE = "equal_408_core_v1"
-EQUAL_408_CODES = (
-    "data_structure",
-    "computer_organization",
-    "operating_system",
-    "computer_network",
-)
 
 # Statistics represent persisted learning records only after a focus session has
 # ended. Running/paused sessions remain visible through the active-session API and
@@ -357,12 +358,12 @@ async def start_session(
             item.code: item
             for item in all_subjects
             if item.parent_id == subj.id
-            and item.code in EQUAL_408_CODES
+            and item.code in EXAM408_CORE_CODES
             and item.id in enabled_ids
         }
-        if set(children_by_code) != set(EQUAL_408_CODES):
+        if set(children_by_code) != set(EXAM408_CORE_CODES):
             raise ValueError("408 四科配置不完整或不可用，暂不能使用四科均分")
-        allocation_subjects = [children_by_code[code] for code in EQUAL_408_CODES]
+        allocation_subjects = [children_by_code[code] for code in EXAM408_CORE_CODES]
         if any(
             item.parent_id != subj.id
             or any(child.parent_id == item.id and child.id in enabled_ids for child in all_subjects)
@@ -1133,76 +1134,6 @@ async def _load_overlapping_practice_sessions(
     return out
 
 
-def _resolve_subject(session) -> tuple[int | None, str, str]:
-    """Return (group_key, code, name) for a session's subject.
-
-    Only active subjects render under their real id/name; inactive or orphaned
-    (deleted) subjects merge into a single 未分类 group so no duration is lost and
-    no duplicate 未分类 slices are produced.
-    """
-    ref = session.subject_ref
-    if (
-        session.subject_id is not None
-        and ref is not None
-        and is_study_subject_enabled(ref)
-    ):
-        return session.subject_id, ref.code or "", ref.name or ""
-    return None, "", "未分类"
-
-
-def _resolve_allocations(session) -> list[tuple[int | None, str, str, int]]:
-    """Resolve persisted attribution rows; legacy sessions remain single-subject."""
-    rows = list(getattr(session, "subject_allocations", []) or [])
-    if not rows:
-        key, code, name = _resolve_subject(session)
-        return [(key, code, name, 10000)]
-    order = {code: index for index, code in enumerate(EQUAL_408_CODES)}
-    def allocation_code(row) -> str:
-        return getattr(row, "subject_code_snapshot", getattr(row, "subject_code", ""))
-
-    def allocation_name(row) -> str:
-        return getattr(row, "subject_name_snapshot", getattr(row, "subject_name", ""))
-
-    rows.sort(
-        key=lambda row: (
-            order.get(allocation_code(row), len(order)),
-            allocation_code(row),
-        )
-    )
-    return [
-        (
-            row.subject_id,
-            allocation_code(row),
-            allocation_name(row),
-            row.weight_basis_points,
-        )
-        for row in rows
-    ]
-
-
-def _allocation_group_key(subject_id: int | None, code: str):
-    if subject_id is not None or not code:
-        return subject_id
-    return ("deleted-subject", code)
-
-
-def _allocate_seconds_by_weight(total_sec: int, rows: list[tuple[int | None, str, str, int]]) -> list[int]:
-    """Largest-remainder allocation with row-order tie breaking and exact conservation."""
-    total_sec = max(0, int(total_sec))
-    if not rows:
-        return []
-    weight_sum = sum(max(0, int(row[3])) for row in rows)
-    if weight_sum <= 0:
-        raise ValueError("科目分配权重无效")
-    exact = [total_sec * max(0, int(row[3])) / weight_sum for row in rows]
-    allocated = [int(value) for value in exact]
-    remaining = total_sec - sum(allocated)
-    order = sorted(range(len(rows)), key=lambda i: (-(exact[i] - allocated[i]), i))
-    for index in order[:remaining]:
-        allocated[index] += 1
-    return allocated
-
-
 async def build_pomodoro_statistics_snapshot(
     db: AsyncSession,
     user_id: int,
@@ -1338,20 +1269,20 @@ async def build_pomodoro_statistics_snapshot(
                     if sec > 0:
                         range_active_day_set.add(day)
             if range_include_subjects and range_contrib > 0:
-                allocations = _resolve_allocations(s)
+                allocations = resolve_allocations(s)
                 allocated_by_subject = {
-                    _allocation_group_key(row[0], row[1]): 0 for row in allocations
+                    allocation_group_key(row[0], row[1]): 0 for row in allocations
                 }
                 for day, sec in split.items():
                     if range_start <= day <= range_end:
                         for row, allocated_sec in zip(
-                            allocations, _allocate_seconds_by_weight(sec, allocations)
+                            allocations, allocate_seconds_by_weight(sec, allocations)
                         ):
                             allocated_by_subject[
-                                _allocation_group_key(row[0], row[1])
+                                allocation_group_key(row[0], row[1])
                             ] += allocated_sec
                 for subject_id, code, name, _ in allocations:
-                    key = _allocation_group_key(subject_id, code)
+                    key = allocation_group_key(subject_id, code)
                     allocated_sec = allocated_by_subject[key]
                     g = range_groups.setdefault(
                         key,
@@ -1384,10 +1315,10 @@ async def build_pomodoro_statistics_snapshot(
             if day_contrib <= 0:
                 # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
                 continue
-            allocations = _resolve_allocations(s)
-            seconds = _allocate_seconds_by_weight(day_contrib, allocations)
+            allocations = resolve_allocations(s)
+            seconds = allocate_seconds_by_weight(day_contrib, allocations)
             for (subject_id, code, name, _), allocated_sec in zip(allocations, seconds):
-                key = _allocation_group_key(subject_id, code)
+                key = allocation_group_key(subject_id, code)
                 g = target_groups.setdefault(
                     key,
                     {
@@ -1432,7 +1363,7 @@ async def build_pomodoro_statistics_snapshot(
                     if sec > 0:
                         range_active_day_set.add(day)
             if range_include_subjects and range_contrib > 0:
-                key, code, name = _resolve_subject(s)
+                key, code, name = resolve_subject(s)
                 g = range_groups.setdefault(
                     key,
                     {
@@ -1457,7 +1388,7 @@ async def build_pomodoro_statistics_snapshot(
                 # 刷题 session 不生成 0% 科目切片，也不计入顶层 sessions
                 continue
             target_duration += day_contrib
-            key, code, name = _resolve_subject(s)
+            key, code, name = resolve_subject(s)
             g = target_groups.setdefault(
                 key,
                 {

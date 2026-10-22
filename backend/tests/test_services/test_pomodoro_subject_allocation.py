@@ -8,17 +8,17 @@ def _four_equal_rows():
 
 
 def test_equal_allocation_conserves_integer_seconds_with_stable_remainder():
-    from app.services.pomodoro_service import _allocate_seconds_by_weight
+    from app.services.pomodoro_subject_projection import allocate_seconds_by_weight
 
     rows = _four_equal_rows()
 
-    assert _allocate_seconds_by_weight(3601, rows) == [901, 900, 900, 900]
-    assert _allocate_seconds_by_weight(3, rows) == [1, 1, 1, 0]
-    assert _allocate_seconds_by_weight(0, rows) == [0, 0, 0, 0]
+    assert allocate_seconds_by_weight(3601, rows) == [901, 900, 900, 900]
+    assert allocate_seconds_by_weight(3, rows) == [1, 1, 1, 0]
+    assert allocate_seconds_by_weight(0, rows) == [0, 0, 0, 0]
 
 
 def test_weighted_allocation_conserves_duration_and_supports_single_subject():
-    from app.services.pomodoro_service import _allocate_seconds_by_weight
+    from app.services.pomodoro_subject_projection import allocate_seconds_by_weight
 
     rows = [
         (1, "data_structure", "数据结构", 2500),
@@ -26,10 +26,10 @@ def test_weighted_allocation_conserves_duration_and_supports_single_subject():
         (3, "operating_system", "操作系统", 2500),
         (4, "computer_network", "计算机网络", 2500),
     ]
-    result = _allocate_seconds_by_weight(10_001, rows)
+    result = allocate_seconds_by_weight(10_001, rows)
     assert result == [2501, 2500, 2500, 2500]
     assert sum(result) == 10_001
-    assert _allocate_seconds_by_weight(7, [(1, "english", "英语", 10000)]) == [7]
+    assert allocate_seconds_by_weight(7, [(1, "english", "英语", 10000)]) == [7]
 
 
 def test_study_plan_scope_counts_allocations_once_and_filters_subjects():

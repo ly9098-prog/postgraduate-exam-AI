@@ -1,11 +1,11 @@
 # 全栈重构源码盘点
 
-> 核对日期：2026-10-21；对应 `prompts/tasks/current_task.md` 阶段 0/4。
+> 核对日期：2026-10-22；对应 `prompts/tasks/current_task.md` 阶段 0/4。
 > 本清单登记真实入口、结构证据、回归入口和后续决策，不代表所有业务语义已审查完毕。
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：577 个模块、2,251 条模块导入边。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：580 个模块、2,259 条模块导入边（2026-10-22 当前源码复核）。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -21,7 +21,7 @@
 | 题库治理 | `questions.py`、`admin_questions.py`、`admin_subjects.py`、`admin_knowledge.py`、`admin_syllabus.py`；`services/admin_question_service.py`、`question_revision_service.py`、`question_snapshot_service.py` | `questions`、`subjects`、`syllabus`、`knowledge-graph`、`coverage`、`review` | 刷题与错题页、`subpackages/knowledge` | 题库页已拆查询、保存和部分编辑职责，不能据此标记知识图谱等页面完成。保留版本/知识点权威实现，后续核对各页面请求、转换及草稿生命周期。现有 `question-*.test.ts`、题库 API 与版本测试继续作基线。 |
 | 导入与 AI/OCR | `imports.py`、`ai_import.py`、`admin_imports.py`、`admin_ai_config.py`、`admin_ai_settings.py`；`features/pipeline_orchestrator.py`、`question_pipeline.py`、`services/import_pipeline_service.py` | `imports/*`、`ai-settings`、`system/tasks` | 当前 25 个注册页没有独立 AI/OCR 导入页面，不新增小程序导题入口 | 审核页已拆纯规则、mutation、编辑和详情展示，仍需收敛状态与页面组合。OCR 编排/worker 相互导入与 question_pipeline 兼容入口见静态循环登记；迁移必须补恢复、任务与人工审核证据。现有 `tests/architecture`、`tests/pipeline`、`tests/ocr_pipeline` 为验证入口。 |
 | 学习闭环 | `practice.py`、`wrong_questions.py`、`review.py`、`exams.py`、`study_plan.py`、`study_hub.py`、`adaptive_learning.py`；`services/practice_service.py`、`wrong_question_service.py`、`review_scheduler.py`、`exam_service.py`、`study_plan_service.py` | `exams`、`exams/[id]`、`recommendation/*`、题库配置 | `subpackages/study` 的刷题/结果/错题/今日复习/学习计划，`subpackages/exam` | GET 发题编排已治理；提交、错题/复习、考试、计划/推荐仍待迁移。刷题 `_loadQuestions` 342 行、今日复习 `submitGroup` 207 行，先刻画会话/答案/完成口径，不搬进万能 runner。回归入口：后端 `tests/practice`、`test_practice_chain_regressions.py`、`test_review_api.py`；小程序 `test-review-submit-completion.js`、`test-practice-result-diagnosis.js`。 |
-| 学习数据 | `pomodoro.py`、`stats.py`、`study_report.py`、`sync.py`；`services/pomodoro_service.py`、`pomodoro_normalization.py`、`pomodoro_attribution.py`、`stats_service.py`、`study_report_service.py` | `dashboard`、`app-users` 中已有展示 | `pages/home`、`pages/dashboard`、番茄钟和 `productivity/pomodoro-stats` | 番茄钟纯计算/持久化/待同步队列已接入，Page controller 与统计响应转换待治理。后端统计快照函数 338 行；必须保留多学科归因、暂停、跨日和幂等口径。现有番茄钟独立 Node 脚本及 `test_pomodoro_study_day_stats.py`、PostgreSQL 并发测试为入口。 |
+| 学习数据 | `pomodoro.py`、`stats.py`、`study_report.py`；`services/pomodoro_service.py`、`pomodoro_subject_projection.py`、`pomodoro_normalization.py`、`pomodoro_attribution.py`、`stats_service.py`、`study_report_service.py` | `dashboard` 使用独立 Admin 统计；`app-users` 的展示仍待细查 | `pages/home`、`pages/dashboard`、番茄钟和 `productivity/pomodoro-stats` | 当前有界语义审查及迁移决定见 `LEARNING_DATA_COMPATIBILITY.md`：事务/统计日/科目快照、报告口径与学习计划分配不能直接合并。统计科目投影已抽出；snapshot 仍338行，Page controller 与聚合编排待治理。`sync.py` 实际为 Admin 权限题库导入，归导入/题库域。旧统计测试13+8项契约缺口单独登记，不据结构扫描称全域完成。 |
 | 公式与导出 | `formulas.py`、`admin_formulas.py`、`exports.py`；`services/formula_*`、`services/export/*` | `formulas`、`formulas/[id]`、`formulas/new`、`formulas/categories` | `subpackages/formulas`、`subpackages/export` | 保留已有公式编辑 workbench/图谱辅助模块；列表页与导出记录页转换/查询职责待核查。DOCX/OMML 与 export service/processor 既有局部互引按具体边登记，不新增第二套导出器。回归入口：后端 `tests/export`、`test_admin_formulas.py`；小程序公式脚本、`test-export-capability-error.js`。 |
 | 公共运行时 | `main.py`、`worker_main.py`、`scheduler_main.py`；`services/task_queue_service.py`、`task_queue_worker.py`、缓存/存储/健康服务 | `lib/api/client.ts`、`lib/api/sse.ts`、`system/tasks`、`imports/tasks` | `app.js`、`utils/api.js`、`utils/storage.js`、现有内容渲染器 | 主入口 lifespan 136 行、任务消费 `_process_task_v2` 307 行，按角色/状态机拆分。HTTP、worker、scheduler 的退出与失败路径分别验证；新门禁不证明运行时安全。回归入口：`test_worker_sigterm.py`、`test_worker_kill.py`、任务队列测试及客户端 API/SSE 测试。 |
 
@@ -37,7 +37,7 @@
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
 | `backend/app/core/bootstrap.py` | 282 | `_run_role_async` 50 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口；隔离子进程SIGTERM/SIGINT和CLI正常退出已测，真实外部依赖全链未验收。 |
-| `backend/app/services/pomodoro_service.py` | 1825 | `build_pomodoro_statistics_snapshot` 338 | 统计与归因响应组合，需同口径快照/跨日回归。 |
+| `backend/app/services/pomodoro_service.py` | 1756 | `build_pomodoro_statistics_snapshot` 338 | 科目快照与整数秒分配已迁至75行纯模块，事务、查询、窗口和累计仍由原服务持有；继续补组合/失败契约后治理。 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2496 | `ImportReviewPage` 2256 | 请求/展示已部分抽出，草稿、预览、筛选和弹层编排仍集中。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
 | `admin-frontend/src/app/(admin)/knowledge-graph/page.tsx` | 1809 | `KnowledgeGraphPage` 613 | 图谱转换和交互已有页面外函数；继续核查请求/布局/选择状态。 |
