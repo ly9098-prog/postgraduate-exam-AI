@@ -32,6 +32,11 @@ import { buildReviewQueueParams } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
 import { getSourceLocator, getSourceQuestionNo } from "./review-source-location";
 import {
+  answersEquivalent,
+  completeSuggestionFromItem,
+  stringSuggestion,
+} from "./review-completion-suggestion";
+import {
   type ReviewActionState,
   type ReviewBatchActionResult,
 } from "./review-action-requests";
@@ -135,33 +140,6 @@ function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value, null, 2);
-}
-
-function completeSuggestionFromItem(item: ImportQuestionItem | null | undefined) {
-  const suggestion = item?.ai_metadata?.complete_suggestion;
-  if (suggestion && typeof suggestion === "object" && !Array.isArray(suggestion)) return suggestion as Record<string, unknown>;
-  return null;
-}
-
-function stringSuggestion(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : "";
-}
-
-function normalizeAnswerForCompare(value: unknown): string {
-  const text = String(value ?? "").trim();
-  if (!text) return "";
-  const compact = text.replace(/[，、；;\s]+/g, ",").replace(/^,+|,+$/g, "");
-  const upper = compact.toUpperCase();
-  if (/^[A-Z](?:,[A-Z])*$/.test(upper)) {
-    return upper.split(",").filter(Boolean).sort().join(",");
-  }
-  return compact;
-}
-
-function answersEquivalent(left: unknown, right: unknown): boolean {
-  const a = normalizeAnswerForCompare(left);
-  const b = normalizeAnswerForCompare(right);
-  return Boolean(a && b && a === b);
 }
 
 const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject_id", "question_type", "stem", "options", "tips", "tags"];
