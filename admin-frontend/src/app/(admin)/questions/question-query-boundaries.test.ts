@@ -142,6 +142,10 @@ const modules = [
     path: "./question-version-labels.ts",
     imports: ["@/components/questions/question-version-picker", "@/lib/api/types"],
   },
+  {
+    path: "./question-query-params.ts",
+    imports: ["./question-api", "./question-list-state"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {

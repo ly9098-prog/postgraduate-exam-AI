@@ -126,6 +126,7 @@ import {
   saveCurrentFilters,
 } from "./question-filter-persistence";
 import { buildExportPayload } from "./question-export-payload";
+import { buildQueryParams } from "./question-query-params";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -216,18 +217,7 @@ export default function QuestionsPage() {
   }, [filters, page, pageSize, selectedQuestionId]);
 
   const queryParams = useMemo(
-    () => ({
-      page,
-      page_size: pageSize,
-      subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
-      is_active: filters.is_active,
-      question_type: filters.question_type,
-      keyword: filters.keyword,
-      year: filters.year,
-      difficulty: filters.difficulty ? Number(filters.difficulty) : undefined,
-      import_batch_id: filters.import_batch_id || undefined,
-      knowledge_point_id: filters.knowledge_point_id ? Number(filters.knowledge_point_id) : undefined,
-    }),
+    () => buildQueryParams(filters, page, pageSize),
     [page, pageSize, filters],
   );
 
