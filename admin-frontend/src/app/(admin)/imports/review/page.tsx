@@ -28,10 +28,19 @@ import {
 import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
 import { ReviewAnswerPreview } from "./components/review-answer-preview";
 import { ReviewStemEditor } from "./components/review-stem-editor";
-import { buildReviewQueueParams } from "./review-query-state";
+import {
+  buildReviewQueueParams,
+  createDefaultReviewFilters,
+  shouldShowReviewFilterReset,
+} from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
 import { getSourceLocator, getSourceQuestionNo } from "./review-source-location";
 import { getReviewListBadges, getReviewTableBadges } from "./review-queue-badges";
+import {
+  createReviewEditSession,
+  createReviewPreviewState,
+  hasUnsavedReviewDrawerChanges,
+} from "./review-drawer-state";
 import {
   answersEquivalent,
   completeSuggestionFromItem,
@@ -180,7 +189,7 @@ export default function ImportReviewPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const batchIdParam = searchParams.get("batch_id") || "";
-  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject_id: "", source_type: "", keyword: "", risk_level: "", answer_status: "" });
+  const [filters, setFilters] = useState(createDefaultReviewFilters);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false);
   const subjectBtnRef = useRef<HTMLButtonElement>(null);
@@ -719,20 +728,25 @@ export default function ImportReviewPage() {
   };
 
   const openPreview = (item: ImportQuestionItem) => {
-    setPreviewId(item.id);
+    const preview = createReviewPreviewState(item);
+    setPreviewId(preview.previewId);
     setCompletedItem(null);
-    const snapshot = editStateFromItem(item);
-    setEditState(snapshot);
-    editSnapshotRef.current = JSON.stringify(snapshot);
-    segmentSnapshotRef.current = JSON.stringify(item.parsed_content?.segments ?? []);
-    setEditing(false);
-    setDetailView("formatted");
+    setEditState(preview.editState);
+    editSnapshotRef.current = preview.editSnapshot;
+    segmentSnapshotRef.current = preview.segmentSnapshot;
+    setEditing(preview.editing);
+    setDetailView(preview.detailView);
   };
 
   const closeDrawer = () => {
-    const hasEditStateChanges = editing && editState && JSON.stringify(editState) !== editSnapshotRef.current;
-    const hasSegmentChanges = editing && JSON.stringify(editedSegments ?? []) !== segmentSnapshotRef.current;
-    if (hasEditStateChanges || hasSegmentChanges) {
+    const hasUnsavedChanges = hasUnsavedReviewDrawerChanges({
+      editing,
+      editState,
+      editSnapshot: editSnapshotRef.current,
+      editedSegments,
+      segmentSnapshot: segmentSnapshotRef.current,
+    });
+    if (hasUnsavedChanges) {
       if (!window.confirm("有未保存的修改，确定关闭吗？")) return;
     }
     setPreviewId(null);
@@ -745,15 +759,12 @@ export default function ImportReviewPage() {
 
   const startEditing = () => {
     if (!previewId) return;
-    // Copy current segments from previewItem for editing
     const segs = previewItem?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
-    const clonedSegments = segs && segs.length > 0
-      ? JSON.parse(JSON.stringify(segs)) as Array<Record<string, unknown>>
-      : null;
-    setEditedSegments(clonedSegments);
-    segmentSnapshotRef.current = JSON.stringify(clonedSegments ?? []);
-    editSnapshotRef.current = JSON.stringify(editState);
-    setEditing(true);
+    const session = createReviewEditSession(editState, segs);
+    setEditedSegments(session.editedSegments);
+    segmentSnapshotRef.current = session.segmentSnapshot;
+    editSnapshotRef.current = session.editSnapshot;
+    setEditing(session.editing);
   };
 
   const cancelEditing = () => {
@@ -1159,11 +1170,11 @@ export default function ImportReviewPage() {
                 </div>
               ) : null}
             </div>
-            {(filters.batch_id || filters.subject_id || filters.risk_level || filters.answer_status || filters.keyword) ? (
+            {shouldShowReviewFilterReset(filters) ? (
               <button
                 type="button"
                 className="flex h-7 items-center gap-1 rounded-lg px-2 text-[10px] font-medium text-[var(--color-text-hint)] hover:text-[var(--color-danger)] transition-colors"
-                onClick={() => setFilters({ batch_id: "", status: "pending", subject_id: "", source_type: "", keyword: "", risk_level: "", answer_status: "" })}
+                onClick={() => setFilters(createDefaultReviewFilters())}
               >
                 重置
               </button>

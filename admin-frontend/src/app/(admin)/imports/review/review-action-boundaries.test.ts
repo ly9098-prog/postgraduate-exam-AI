@@ -92,6 +92,14 @@ const modules = [
     imports: ["@/lib/api/types"],
   },
   {
+    path: "./review-query-state.ts",
+    imports: [],
+  },
+  {
+    path: "./review-drawer-state.ts",
+    imports: ["@/lib/api/types", "./review-edit-state"],
+  },
+  {
     path: "./review-queue-badges.ts",
     imports: ["@/lib/api/types"],
   },

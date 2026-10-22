@@ -3,12 +3,37 @@ export type ReviewFilters = {
   status: string;
   subject_id: string;
   source_type: string;
+  keyword: string;
   risk_level: string;
   answer_status: string;
 };
 
+export type ReviewFilterInputs = Omit<ReviewFilters, "keyword">;
+
+export function createDefaultReviewFilters(): ReviewFilters {
+  return {
+    batch_id: "",
+    status: "pending",
+    subject_id: "",
+    source_type: "",
+    keyword: "",
+    risk_level: "",
+    answer_status: "",
+  };
+}
+
+export function shouldShowReviewFilterReset(filters: ReviewFilters): boolean {
+  return Boolean(
+    filters.batch_id ||
+    filters.subject_id ||
+    filters.risk_level ||
+    filters.answer_status ||
+    filters.keyword,
+  );
+}
+
 export function buildReviewQueueParams(
-  filters: ReviewFilters,
+  filters: ReviewFilterInputs,
   page: number,
   batchIdParam: string,
   debouncedKeyword: string,
