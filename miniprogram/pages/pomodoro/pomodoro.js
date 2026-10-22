@@ -36,6 +36,7 @@ const {
   computeFreeRestore,
   resolveRestoredSubject,
 } = require('./utils/session-restore')
+const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -1478,198 +1479,49 @@ Page({
     }
     const now = api.now()
     this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-
-    if (mode === 'countdown-interrupt' && snapshot && snapshot.sessionId) {
-      this._confirmTimerSnapshot = snapshot
-      const fmt = this._formatCountdownDisplay(snapshot.remainingSec)
-
-      if (snapshot.wasPaused) {
-        // Was paused before confirm — keep paused after cancel
-        this._timerState.remainingSec = snapshot.remainingSec
-        this._timerState.progress = snapshot.progress
-        this._timerState.pauseStartTime = snapshot.pauseStartTime || api.now()
-        this._timerState.totalPausedMs = snapshot.totalPausedMs || 0
-        this._timerState.endConfirmMode = ''
-        this.setData({
-          showEndConfirm: false,
-          ringCanvasVisible: true,
-          endConfirmTheme: '',
-          endConfirmTitle: '',
-          endConfirmText: '',
-      endConfirmLine1: '',
-      endConfirmLine2: '',
-      endConfirmLine3: '',
-          displayMin: fmt.min,
-          displaySec: fmt.sec,
-          isPaused: true,
-        })
-
-        this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-        this._confirmTimerSnapshot = null
-
-        wx.nextTick(() => {
-          this._initCanvas(true)
-          this.drawRing(snapshot.totalSec, snapshot.phase === 'break')
-        })
-        return
-      }
-
-      // ===== Was running before confirm — resume after cancel =====
-      // 1. Calculate local adjustment immediately
-      const pauseDelta = Math.max(0, now - snapshot.openedAt)
-      const localTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
-
-      // 2. Persist resume intent before changing local state. If the pending
-      // queue cannot be written, keep the confirmation pause in place.
-      if (!this._setPendingPomodoroSync('resume', snapshot.sessionId, now)) {
+    const plan = buildCancelEndConfirmPlan({
+      mode,
+      snapshot,
+      now,
+      freeNow: mode === 'free-complete' ? api.now() : now,
+      isPaused: this.data.isPaused,
+    })
+    if (plan.snapshot) this._confirmTimerSnapshot = plan.snapshot
+    Object.assign(this._timerState, plan.timer)
+    if (plan.adjustment) {
+      if (!this._setPendingPomodoroSync('resume', plan.adjustment.sessionId, now)) {
         this._showPomodoroPersistenceError()
         return
       }
-      this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
-        sessionId: snapshot.sessionId,
-        totalPausedMs: localTotalPausedMs,
-        savedAt: api.now(),
-        source: 'cancel_end_confirm',
-      }, 'cancel confirm resume adjustment')
+      this._safeSetPomodoroStorage('pomodoro_pause_adjustment', plan.adjustment, 'cancel confirm resume adjustment')
+    }
 
-      // 3. Restore UI immediately from snapshot — no await
-      this._timerState.remainingSec = snapshot.remainingSec
-      this._timerState.progress = snapshot.progress
-      this._timerState.totalPausedMs = localTotalPausedMs
-      this._timerState.pauseStartTime = null
-      this._timerState.endConfirmMode = ''
-      this.setData({
-        showEndConfirm: false,
-        ringCanvasVisible: true,
-        endConfirmTheme: '',
-        endConfirmTitle: '',
-        endConfirmText: '',
-        displayMin: fmt.min,
-        displaySec: fmt.sec,
-        isPaused: false,
-        actionLoading: false,
-      })
-
+    this.setData(plan.view)
+    if (plan.removeConfirmStorage) {
       this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-
-      // 4. Start timer immediately from snapshot remainingMs
-      this._countdownTotalSec = snapshot.totalSec
-      this._startTimer(snapshot.totalSec, { remainingMs: snapshot.remainingMs, forceRunning: true })
-
+    }
+    if (plan.clearSnapshot) this._confirmTimerSnapshot = null
+    if (plan.startTimer) {
+      this._countdownTotalSec = plan.startTimer.totalSec
+      this._startTimer(plan.startTimer.totalSec, {
+        remainingMs: plan.startTimer.remainingMs,
+        forceRunning: true,
+      })
+    }
+    if (plan.startFreeTimer) this._startFreeTimerInterval()
+    if (plan.restartFreeTimer) this._restartFreeTimerInterval()
+    if (plan.redraw) {
       wx.nextTick(() => {
         this._initCanvas(true)
-        this.drawRing(snapshot.totalSec, snapshot.phase === 'break')
+        this.drawRing(plan.redraw.totalSec, plan.redraw.phase === 'break')
       })
-
-      this._confirmTimerSnapshot = null
-
-      // 5. Drain the already-persisted resume after the confirm pause. The ordered
-      // queue keeps pause -> resume sequencing stable even if pause timed out.
+    }
+    if (plan.redrawFree) this._redrawFreeRingAfterOverlay()
+    if (plan.retryPending) {
       this._retryPendingPomodoroSync().then(synced => {
         if (!synced) console.warn('resume after cancel confirm pending; keep local timer')
       })
-
-      return
     }
-
-    if (mode === 'free-complete') {
-      if (!snapshot || snapshot.mode !== 'free-complete') {
-        this._timerState.endConfirmMode = ''
-        this.setData({
-          showEndConfirm: false,
-          ringCanvasVisible: true,
-          endConfirmTheme: '',
-          endConfirmTitle: '',
-          endConfirmText: '',
-        })
-        if (!this.data.isPaused) this._startFreeTimerInterval()
-        // The 2D canvas is hidden while the cover-view confirm dialog is open.
-        // On some real devices its backing surface is cleared while hidden, so
-        // merely making it visible again leaves a blank dial. Rebuild and force
-        // the first free-timer ring paint after the overlay is dismissed.
-        this._redrawFreeRingAfterOverlay()
-        return
-      }
-
-      const fmt = formatElapsedSec(snapshot.elapsedSec || 0)
-
-      // Was paused before confirm — keep paused after cancel
-      if (snapshot.wasPaused) {
-        this._timerState.pauseStartTime = snapshot.pauseStartTime || api.now()
-        this._timerState.totalPausedMs = snapshot.totalPausedMs || 0
-        this._timerState.elapsedSec = snapshot.elapsedSec || 0
-        this._timerState.freeFriendlyText = fmt.friendly
-        this._timerState.endConfirmMode = ''
-        this._timerState.freeDisplayOffsetMs = 0
-        this.setData({
-          showEndConfirm: false,
-          ringCanvasVisible: true,
-          endConfirmTheme: '',
-          endConfirmTitle: '',
-          endConfirmText: '',
-          isPaused: true,
-          freeDisplayTime: fmt.display,
-        })
-
-        this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-        this._confirmTimerSnapshot = null
-        this._redrawFreeRingAfterOverlay()
-        return
-      }
-
-      // Was running before confirm — resume from snapshot.elapsedSec
-      const pauseDelta = Math.max(0, api.now() - snapshot.openedAt)
-      const localTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
-
-      if (!this._setPendingPomodoroSync('resume', snapshot.sessionId, now)) {
-        this._showPomodoroPersistenceError()
-        return
-      }
-      this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
-        sessionId: snapshot.sessionId,
-        totalPausedMs: localTotalPausedMs,
-        savedAt: api.now(),
-        source: 'cancel_free_end_confirm',
-      }, 'cancel free confirm resume adjustment')
-
-      this._timerState.pauseStartTime = null
-      this._timerState.totalPausedMs = localTotalPausedMs
-      this._timerState.elapsedSec = snapshot.elapsedSec || 0
-      this._timerState.freeFriendlyText = ''
-      this._timerState.endConfirmMode = ''
-      this._timerState.freeDisplayOffsetMs = 0
-      this.setData({
-        showEndConfirm: false,
-        ringCanvasVisible: true,
-        endConfirmTheme: '',
-        endConfirmTitle: '',
-        endConfirmText: '',
-        isPaused: false,
-        freeDisplayTime: fmt.display,
-      })
-
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-      this._confirmTimerSnapshot = null
-
-      this._restartFreeTimerInterval()
-      this._redrawFreeRingAfterOverlay()
-
-      // Backend resume is serialized behind the confirm pause.
-      this._retryPendingPomodoroSync().then(synced => {
-        if (!synced) console.warn('resume free timer after cancel confirm pending; keep local timer')
-      })
-
-      return
-    }
-
-    this._timerState.endConfirmMode = ''
-    this.setData({
-      showEndConfirm: false,
-      endConfirmTheme: '',
-      endConfirmTitle: '',
-      endConfirmText: '',
-    })
-    this._confirmTimerSnapshot = null
   },
 
   async confirmEndTimer() {
