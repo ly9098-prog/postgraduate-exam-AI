@@ -62,6 +62,7 @@ import {
   createReviewActionDialogState,
   reduceReviewActionDialogState,
 } from "./review-action-dialog-state";
+import { reduceReviewFilterSelection } from "./review-filter-selection";
 import {
   batchAnswerLoadingLabel,
   buildBatchAnswerViewState,
@@ -671,15 +672,43 @@ export default function ImportReviewPage() {
   };
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
-    setFilters((current) => ({ ...current, [key]: value }));
-    updateSelectedIds(new Set());
-    setPreviewId(null);
-    setCompletedItem(null);
-    setEditState(null);
+    setFilters((current) => {
+      const nextFilters = { ...current, [key]: value };
+      updateSelectedIds((selectedIds) =>
+        reduceReviewFilterSelection({ filters: nextFilters, selectedIds }, "facet").selectedIds,
+      );
+      return nextFilters;
+    });
+    resetFilterScopedReviewState();
+  };
+
+  const updateKeywordFilter = (keyword: string) => {
+    setFilters((current) => {
+      const nextFilters = { ...current, keyword };
+      updateSelectedIds((selectedIds) =>
+        reduceReviewFilterSelection({ filters: nextFilters, selectedIds }, "keyword").selectedIds,
+      );
+      return nextFilters;
+    });
+  };
+
+  const resetFilters = () => {
+    const nextFilters = createDefaultReviewFilters();
+    setFilters(nextFilters);
+    updateSelectedIds((selectedIds) =>
+      reduceReviewFilterSelection({ filters: nextFilters, selectedIds }, "reset").selectedIds,
+    );
+    resetFilterScopedReviewState();
   };
 
   const toggleAll = () => {
     updateSelectedIds(() => (allChecked ? new Set() : new Set(items.map((item) => item.id))));
+  };
+
+  const resetFilterScopedReviewState = () => {
+    setPreviewId(null);
+    setCompletedItem(null);
+    setEditState(null);
   };
 
   const toggleOne = (id: number) => {
@@ -975,7 +1004,7 @@ export default function ImportReviewPage() {
                 className="h-8 w-full rounded-lg border border-[var(--color-border)] bg-white pl-8 pr-3 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
                 placeholder="搜索题干 / OCR 原文..."
                 value={filters.keyword}
-                onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
+                onChange={(event) => updateKeywordFilter(event.target.value)}
               />
             </div>
 
@@ -1140,7 +1169,7 @@ export default function ImportReviewPage() {
               <button
                 type="button"
                 className="flex h-7 items-center gap-1 rounded-lg px-2 text-[10px] font-medium text-[var(--color-text-hint)] hover:text-[var(--color-danger)] transition-colors"
-                onClick={() => setFilters(createDefaultReviewFilters())}
+                onClick={resetFilters}
               >
                 重置
               </button>
