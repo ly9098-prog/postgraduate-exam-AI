@@ -16,6 +16,17 @@ const filters: ReviewFilters = {
   answer_status: "",
 };
 
+// Compile-time guard: keyword is owned by the debounced request input, not filters.
+const requestFilters = {
+  batch_id: "",
+  status: "pending",
+  subject_id: "",
+  source_type: "",
+  risk_level: "",
+  answer_status: "",
+} satisfies Parameters<typeof buildReviewQueueParams>[0];
+void requestFilters;
+
 describe("import review queue query state", () => {
   it("creates the existing default filters with pending status and no active facets", () => {
     const defaults = createDefaultReviewFilters();

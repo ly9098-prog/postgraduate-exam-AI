@@ -59,6 +59,7 @@ import {
   type ReviewActionState,
   type ReviewBatchActionResult,
 } from "./review-action-requests";
+import { buildReviewConfirmDialogState } from "./review-confirm-dialog-state";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
@@ -723,6 +724,8 @@ export default function ImportReviewPage() {
       return next;
     });
   };
+
+  const confirmDialogState = buildReviewConfirmDialogState(confirmState, selectedIds.size);
 
   const openPreview = (item: ImportQuestionItem) => {
     const preview = createReviewPreviewState(item);
@@ -2382,23 +2385,12 @@ export default function ImportReviewPage() {
 
       <ConfirmDialog
         open={confirmState !== null}
-        title={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险题" : confirmState?.action?.includes("reject") ? "驳回导入题目" : "通过导入题目"}
-        description={
-          confirmState?.action === "low-risk-batch-approve"
-              ? `将自动通过当前批次中所有低风险题（risk_level=low）并跳过高风险和需检查题。高风险和需检查题不会被通过。`
-              : confirmState?.action === "batch-approve" && selectedIds.size > 0
-                ? `将对已选的 ${selectedIds.size} 条导入题目执行批量通过操作。`
-                : confirmState?.action === "batch-reject" && selectedIds.size > 0
-                  ? `将对已选的 ${selectedIds.size} 条导入题目执行批量驳回操作。`
-                  : "操作会更新 question_imports 暂存审核状态。"
-        }
-        confirmText={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险" : confirmState?.action?.includes("reject") ? "驳回" : "通过"}
-        danger={Boolean(confirmState?.action.includes("reject"))}
+        {...confirmDialogState}
         loading={actionMutation.isPending}
         onCancel={() => setConfirmState(null)}
         onConfirm={() => confirmState && actionMutation.mutate(confirmState)}
       >
-        {confirmState?.action === "reject" || confirmState?.action === "batch-reject" ? (
+        {confirmDialogState.showRejectReason ? (
           <Input placeholder="驳回原因" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} />
         ) : null}
       </ConfirmDialog>

@@ -104,6 +104,10 @@ const modules = [
     imports: [],
   },
   {
+    path: "./review-confirm-dialog-state.ts",
+    imports: ["./review-action-requests"],
+  },
+  {
     path: "./review-queue-badges.ts",
     imports: ["@/lib/api/types"],
   },
