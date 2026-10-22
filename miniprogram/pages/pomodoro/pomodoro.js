@@ -50,6 +50,7 @@ const {
   mergeLocalPauseAdjustment,
   clearLocalPauseAdjustment,
 } = require('./utils/pause-adjustment')
+const { resolveBreakSec } = require('./utils/celebration-dismiss')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -2333,14 +2334,7 @@ Page({
       return
     }
     const completionFlag = completionStored.value
-    let breakSec
-    if (completionFlag && completionFlag.breakSec !== undefined && Number.isFinite(Number(completionFlag.breakSec))) {
-      breakSec = Math.max(0, Number(completionFlag.breakSec))
-    } else if (Number.isFinite(this._completionBreakSec)) {
-      breakSec = Math.max(0, Number(this._completionBreakSec))
-    } else {
-      breakSec = this.data.selectedPreset === 'debug' ? 5 : Math.max(0, Number(this.data.breakDuration || 0) * 60)
-    }
+    const breakSec = resolveBreakSec(completionFlag, this._completionBreakSec, this.data)
     this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
     this._completionBreakSec = null
     this.setData({ showCelebration: false })
