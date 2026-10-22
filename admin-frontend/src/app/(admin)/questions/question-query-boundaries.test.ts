@@ -48,6 +48,10 @@ const modules = [
     imports: ["@/lib/api/types"],
   },
   {
+    path: "./components/question-answer-display.tsx",
+    imports: ["@/components/ui/math-formula", "@/lib/question-options", "../question-display-helpers"],
+  },
+  {
     path: "./components/question-version-value.tsx",
     imports: [
       "@/components/ui/math-formula", "@/components/question-content-renderer",

@@ -81,6 +81,7 @@ import { QuestionTableEditors } from "./components/question-table-editors";
 import { DifficultyBadge } from "./components/question-difficulty-badge";
 import { TypeBadge } from "./components/question-type-badge";
 import { CustomCheckbox } from "./components/question-custom-checkbox";
+import { QuestionAnswerDisplay } from "./components/question-answer-display";
 import { QuestionSecondaryInfo } from "./components/question-secondary-info";
 import { QuestionVersionComparison } from "./components/question-version-comparison";
 import { questionDetailOptions } from "./question-queries";
@@ -148,37 +149,6 @@ const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
 
 type ConfirmState = QuestionDeleteIntent | null;
-
-function QuestionAnswerDisplay({
-  questionType,
-  answer,
-}: {
-  questionType: string;
-  answer: string | null | undefined;
-}) {
-  if (isMultiBlankChoice(questionType)) {
-    const items = parseMultiBlankChoiceAnswer(answer);
-    if (items.length > 0) {
-      return (
-        <div className="space-y-1">
-          {items.map((item, index) => (
-            <div
-              key={`${item.blankId}-${index}`}
-              className="grid grid-cols-[auto_1fr] items-center gap-x-3 leading-6"
-            >
-              <span>{item.blankId}</span>
-              <span>
-                <MathFormula text={item.optionKey} />
-              </span>
-            </div>
-          ))}
-        </div>
-      );
-    }
-  }
-
-  return <MathFormula text={answer || "—"} />;
-}
 
 export default function QuestionsPage() {
   const queryClient = useQueryClient();
