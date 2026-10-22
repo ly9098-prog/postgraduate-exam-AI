@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -55,11 +55,13 @@ import {
   completeSuggestionFromItem,
   stringSuggestion,
 } from "./review-completion-suggestion";
-import {
-  type ReviewActionState,
-  type ReviewBatchActionResult,
-} from "./review-action-requests";
 import { buildReviewConfirmDialogState } from "./review-confirm-dialog-state";
+import { buildReviewActionFeedback } from "./review-action-feedback";
+import type { ReviewActionState } from "./review-action-requests";
+import {
+  createReviewActionDialogState,
+  reduceReviewActionDialogState,
+} from "./review-action-dialog-state";
 import {
   batchAnswerLoadingLabel,
   buildBatchAnswerViewState,
@@ -215,16 +217,38 @@ export default function ImportReviewPage() {
   const [answerStatusDropdownOpen, setAnswerStatusDropdownOpen] = useState(false);
   const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
   const batchDropdownRef = useRef<HTMLDivElement>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [actionDialog, dispatchActionDialog] = useReducer(
+    reduceReviewActionDialogState,
+    undefined,
+    createReviewActionDialogState,
+  );
+  const { selectedIds, confirmState, rejectReason, message } = actionDialog;
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [confirmState, setConfirmState] = useState<ConfirmState>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const updateSelectedIds = (
+    next: Set<number> | ((current: Set<number>) => Set<number>),
+  ) => {
+    if (typeof next === "function") {
+      dispatchActionDialog({ type: "update-selected-ids", update: next });
+    } else {
+      dispatchActionDialog({ type: "selected-ids", selectedIds: next });
+    }
+  };
+  const updateConfirmState = (next: ConfirmState) => {
+    dispatchActionDialog(next
+      ? { type: "open", action: next }
+      : { type: "cancel" });
+  };
+  const updateRejectReason = (next: string) => {
+    dispatchActionDialog({ type: "reject-reason", reason: next });
+  };
+  const updateMessage = (next: string | null) => {
+    dispatchActionDialog({ type: "message", message: next });
+  };
   useEffect(() => {
     if (!message) return;
-    const t = setTimeout(() => setMessage(null), 5000);
+    const t = setTimeout(() => updateMessage(null), 5000);
     return () => clearTimeout(t);
   }, [message]);
   const [debouncedKeyword, setDebouncedKeyword] = useState(filters.keyword);
@@ -447,43 +471,19 @@ export default function ImportReviewPage() {
       request: apiRequest,
     }, {
       onSuccess: (result, action) => {
-        if (action.action === "approve") {
-          setMessage(`导入题目 #${action.id} 已通过审核。`);
-          closeDrawer();
-        } else if (action.action === "reject") {
-          setMessage(`导入题目 #${action.id} 已驳回。`);
-          closeDrawer();
-        } else if (action.action === "batch-approve") {
-          const affected = "affected_count" in result ? result.affected_count : 0;
-          const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
-          if (errors && errors.length > 0) {
-            const failedIds = errors.map((e) => `#${e.id}`).join("、");
-            setMessage(`批量审核通过部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
-          } else {
-            setMessage(`批量审核通过完成，影响 ${affected} 条导入题目。`);
-          }
-        } else if (action.action === "batch-reject") {
-          const affected = "affected_count" in result ? result.affected_count : 0;
-          const errors = "errors" in result ? (result as ReviewBatchActionResult).errors : undefined;
-          if (errors && errors.length > 0) {
-            const failedIds = errors.map((e) => `#${e.id}`).join("、");
-            setMessage(`批量驳回部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
-          } else {
-            setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
-          }
-        } else if (action.action === "low-risk-batch-approve") {
-          const res = result as { affected_count: number; skipped_count: number; skipped_reasons: string[] };
-          const msg = `低风险批量通过完成：通过 ${res.affected_count} 题，跳过 ${res.skipped_count} 题`;
-          setMessage(res.skipped_count > 0 ? `${msg}（部分高风险/需检查题已跳过）` : msg);
+        const feedback = buildReviewActionFeedback(result, action);
+        if (feedback) {
+          updateMessage(feedback.message);
+          if (feedback.closeDrawer) closeDrawer();
         }
       },
       onReset: () => {
-        setSelectedIds(new Set());
-        setConfirmState(null);
-        setRejectReason("");
+        updateSelectedIds(new Set());
+        updateConfirmState(null);
+        updateRejectReason("");
       },
       onError: (error) => {
-        setMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
+        updateMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
       },
   });
 
@@ -503,7 +503,7 @@ export default function ImportReviewPage() {
     request: apiRequest,
   }, {
     onSaved: (result) => {
-      setMessage(`导入题目 #${result.id} 已保存。`);
+      updateMessage(`导入题目 #${result.id} 已保存。`);
       setEditState(editStateFromItem(result));
       setEditedSegments(null);
       setCompletedItem(result);
@@ -511,14 +511,14 @@ export default function ImportReviewPage() {
     },
     onAfterInvalidation: () => setEditing(false),
     onError: (error) => {
-      setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
+      updateMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
     },
   });
 
   const completeMutation = useReviewCompleteMutation(apiRequest, {
     onCompleted: (result) => {
       const missingFields = result.missing.length > 0 ? `（补全字段：${result.missing.join("、")}）` : "";
-      setMessage(
+      updateMessage(
         result.missing.length === 0
           ? "当前题目信息已完整，无需补全。"
           : `AI 补全完成${missingFields}，请复核后保存/通过。`,
@@ -533,7 +533,7 @@ export default function ImportReviewPage() {
       setCompletedItem(result.item);
       setEditState(editStateFromItem(result.item));
     },
-    onError: (error) => setMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。"),
+    onError: (error) => updateMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。"),
   });
 
   const { quickAnswer: quickAnswerMutation, verifyAnswer: verifyAnswerMutation } = useReviewAnswerMutations(
@@ -541,7 +541,7 @@ export default function ImportReviewPage() {
     {
       onQuickAnswerSaved: (result) => {
         const srcNo = getSourceQuestionNo(result);
-        setMessage(srcNo ? `原题${srcNo} 答案已保存` : `导入题目 #${result.id} 答案已保存`);
+        updateMessage(srcNo ? `原题${srcNo} 答案已保存` : `导入题目 #${result.id} 答案已保存`);
         setQuickAnswerDrafts((prev) => {
           const next = { ...prev };
           delete next[result.id];
@@ -550,10 +550,10 @@ export default function ImportReviewPage() {
       },
       onAnswerVerified: (result) => {
         const srcNo = getSourceQuestionNo(result);
-        setMessage(srcNo ? `原题${srcNo} 答案已确认为正确` : `导入题目 #${result.id} 答案已确认为正确`);
+        updateMessage(srcNo ? `原题${srcNo} 答案已确认为正确` : `导入题目 #${result.id} 答案已确认为正确`);
       },
       onError: (error, action) => {
-        setMessage(error instanceof Error
+        updateMessage(error instanceof Error
           ? error.message
           : action === "save" ? "保存失败，请稍后重试。" : "确认失败，请稍后重试。");
       },
@@ -626,11 +626,11 @@ export default function ImportReviewPage() {
   const executeBatchComplete = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) {
-      setMessage("请先选择需要补全的题目。");
+      updateMessage("请先选择需要补全的题目。");
       return;
     }
     if (batchFields.length === 0) {
-      setMessage("请选择至少一个补全字段。");
+      updateMessage("请选择至少一个补全字段。");
       return;
     }
     setExecuting(true);
@@ -644,7 +644,7 @@ export default function ImportReviewPage() {
       clearDraft();
       const failedItems = result.items.filter((i) => i.status === "failed");
       const failedIdStr = failedItems.length > 0 ? `（${failedItems.map((i) => `#${i.import_id}`).join("、")}）` : "";
-      setMessage(`批量补全完成：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped}${failedIdStr}`);
+      updateMessage(`批量补全完成：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped}${failedIdStr}`);
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["import-question-detail"] });
 
@@ -664,7 +664,7 @@ export default function ImportReviewPage() {
         }
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "批量补全失败，请稍后重试。");
+      updateMessage(error instanceof Error ? error.message : "批量补全失败，请稍后重试。");
     } finally {
       setExecuting(false);
     }
@@ -672,18 +672,18 @@ export default function ImportReviewPage() {
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
-    setSelectedIds(new Set());
+    updateSelectedIds(new Set());
     setPreviewId(null);
     setCompletedItem(null);
     setEditState(null);
   };
 
   const toggleAll = () => {
-    setSelectedIds(() => (allChecked ? new Set() : new Set(items.map((item) => item.id))));
+    updateSelectedIds(() => (allChecked ? new Set() : new Set(items.map((item) => item.id))));
   };
 
   const toggleOne = (id: number) => {
-    setSelectedIds((current) => {
+    updateSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -817,9 +817,9 @@ export default function ImportReviewPage() {
         if (!prev || si >= prev.length) return prev;
         return updateSegUrl(prev, si, result.url);
       });
-      setMessage(`图片已替换：${result.filename}`);
+      updateMessage(`图片已替换：${result.filename}`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "图片上传失败");
+      updateMessage(err instanceof Error ? err.message : "图片上传失败");
     } finally {
       setSegmentUploading(-1);
     }
@@ -913,7 +913,7 @@ export default function ImportReviewPage() {
           <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)]/30 pt-2.5">
             <span className="text-[10px] text-[var(--color-text-hint)]">{formatChinaClock()}</span>
             <div className="ml-auto">
-              <button aria-label="关闭提示" className="rounded-lg px-3 py-1 text-[10px] font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]" onClick={() => setMessage(null)}>关闭</button>
+              <button aria-label="关闭提示" className="rounded-lg px-3 py-1 text-[10px] font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]" onClick={() => updateMessage(null)}>关闭</button>
             </div>
           </div>
           </div>
@@ -928,15 +928,15 @@ export default function ImportReviewPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <div className="flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/60 p-1">
-                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-approve" })}>
+                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => updateConfirmState({ action: "batch-approve" })}>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   批量通过
                 </Button>
-                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!(filters.batch_id || batchIdParam)} onClick={() => setConfirmState({ action: "low-risk-batch-approve" })}>
+                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!(filters.batch_id || batchIdParam)} onClick={() => updateConfirmState({ action: "low-risk-batch-approve" })}>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   批量通过低风险
                 </Button>
-                <Button variant="danger" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-reject" })}>
+                <Button variant="danger" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => updateConfirmState({ action: "batch-reject" })}>
                   <XCircle className="h-3.5 w-3.5" />
                   批量驳回
                 </Button>
@@ -1414,7 +1414,7 @@ export default function ImportReviewPage() {
                           <button
                             className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-success)] bg-[var(--color-success-light)] px-2.5 text-[10px] font-semibold text-[var(--color-success)] transition-colors hover:bg-[var(--color-success)] hover:text-white disabled:opacity-30"
                             disabled={item.status === "published"}
-                            onClick={() => setConfirmState({ action: "approve", id: item.id })}
+                            onClick={() => updateConfirmState({ action: "approve", id: item.id })}
                           >
                             <CheckCircle2 className="h-3 w-3" />
                             通过
@@ -1422,7 +1422,7 @@ export default function ImportReviewPage() {
                           <button
                             className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-danger)] bg-white px-2.5 text-[10px] font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:opacity-30"
                             disabled={item.status === "published"}
-                            onClick={() => setConfirmState({ action: "reject", id: item.id })}
+                            onClick={() => updateConfirmState({ action: "reject", id: item.id })}
                           >
                             <XCircle className="h-3 w-3" />
                             驳回
@@ -1815,11 +1815,11 @@ export default function ImportReviewPage() {
                 <div className="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-3 backdrop-blur-xl">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5">
-                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published" || isBlockedByVisualIssues} onClick={() => setConfirmState({ action: "approve", id: previewItem.id })}>
+                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published" || isBlockedByVisualIssues} onClick={() => updateConfirmState({ action: "approve", id: previewItem.id })}>
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         通过
                       </Button>
-                      <Button variant="danger" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published"} onClick={() => setConfirmState({ action: "reject", id: previewItem.id })}>
+                      <Button variant="danger" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published"} onClick={() => updateConfirmState({ action: "reject", id: previewItem.id })}>
                         <XCircle className="h-3.5 w-3.5" />
                         驳回
                       </Button>
@@ -2343,11 +2343,11 @@ export default function ImportReviewPage() {
         open={confirmState !== null}
         {...confirmDialogState}
         loading={actionMutation.isPending}
-        onCancel={() => setConfirmState(null)}
+        onCancel={() => updateConfirmState(null)}
         onConfirm={() => confirmState && actionMutation.mutate(confirmState)}
       >
         {confirmDialogState.showRejectReason ? (
-          <Input placeholder="驳回原因" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} />
+          <Input placeholder="驳回原因" value={rejectReason} onChange={(event) => updateRejectReason(event.target.value)} />
         ) : null}
       </ConfirmDialog>
     </div>

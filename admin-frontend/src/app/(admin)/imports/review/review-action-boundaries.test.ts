@@ -114,6 +114,10 @@ const modules = [
     imports: ["./review-action-requests"],
   },
   {
+    path: "./review-action-feedback.ts",
+    imports: ["@/lib/api/types", "./review-action-requests"],
+  },
+  {
     path: "./review-batch-answer-view-state.ts",
     imports: ["@/lib/api/types"],
   },
