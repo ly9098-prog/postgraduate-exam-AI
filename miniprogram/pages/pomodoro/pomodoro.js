@@ -57,6 +57,7 @@ const {
   matchesUnknownStartAttempt,
   buildUnknownStartAttempt,
 } = require('./utils/unknown-start-helpers')
+const { buildCachedActiveSession } = require('./utils/cached-session-builder')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
 
@@ -2462,28 +2463,7 @@ Page({
     // An active session can remain paused for days. Do not silently discard its
     // only offline recovery snapshot on a fixed wall-clock TTL; the server's
     // terminal/active state is authoritative and clears this cache when reachable.
-    if (!local) return null
-    const cachedStartTime = Number(local.sessionStartTime)
-    if (!Number.isFinite(cachedStartTime) || cachedStartTime <= 0 || !local.sessionId) return null
-    const isPaused = !!local.isPaused
-    return {
-      id: local.sessionId,
-      start_time: new Date(cachedStartTime).toISOString(),
-      work_duration: Number(local.workDuration || 0),
-      break_duration: Number(local.breakDuration || 0),
-      preset: local.selectedPreset || 'standard',
-      status: isPaused ? 'paused' : 'running',
-      paused_at: isPaused && local.pauseStartTime
-        ? new Date(local.pauseStartTime).toISOString()
-        : null,
-      total_paused_sec: Math.floor(Number(local.totalPausedMs || 0) / 1000),
-      subject_id: local.selectedSubjectId,
-      subject_code: local.selectedSubjectCode || '',
-      subject_name: local.selectedSubjectName || '',
-      allocation_mode: local.allocationMode || 'single',
-      task_type: local.selectedTaskType || '',
-      _local_elapsed_sec: local.isFreeTimer ? Number(local.elapsedSec || 0) : undefined,
-    }
+    return buildCachedActiveSession(local, (ms) => new Date(ms).toISOString())
   },
 
   _getCachedActiveSession() {
