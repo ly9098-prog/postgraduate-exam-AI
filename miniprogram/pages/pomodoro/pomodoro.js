@@ -16,6 +16,7 @@ const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
 const { buildSubjectChoices, normalizeCachedSubjects, subjectIconByCode } = require('./utils/subject-options')
+const { createCountdownController } = require('./utils/countdown-controller')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -121,7 +122,7 @@ Page({
     selectedPresetLabel: '',
   },
 
-  _timer: null,
+  _timerController: null,
   _freeTimerId: null,
   _freeTimerFinalizing: false,
   _touchStartX: 0,
@@ -2384,6 +2385,12 @@ Page({
   _startTimer(totalSec, options = {}) {
     this._clearTimer()
     this._initCanvas(!options.reuseCanvas)
+    const controller = createCountdownController({
+      setTimeout: (fn, delay) => setTimeout(fn, delay),
+      clearTimeout: timer => clearTimeout(timer),
+      clearInterval: timer => clearInterval(timer),
+    })
+    this._timerController = controller
 
     // remainingMs has highest priority, then remainingSec, then this._timerState.remainingSec, then totalSec
     let remainMs
@@ -2415,7 +2422,7 @@ Page({
 
     const tick = () => {
       if (this.data.isPaused || this.data.showEndConfirm) {
-        this._timer = null
+        controller.stop()
         return
       }
 
@@ -2445,17 +2452,16 @@ Page({
       }
 
       const nextDelay = Math.max(80, Math.min(250, remainingMs % 1000 || 250))
-      this._timer = setTimeout(tick, nextDelay)
+      controller.scheduleTick(tick, nextDelay)
     }
 
     tick()
   },
 
   _clearTimer() {
-    if (this._timer) {
-      clearTimeout(this._timer)
-      clearInterval(this._timer)
-      this._timer = null
+    if (this._timerController) {
+      this._timerController.clear()
+      this._timerController = null
     }
     this._clearFreeTimerInterval()
   },
@@ -2649,7 +2655,14 @@ Page({
       }
 
       const nextDelay = Math.max(80, Math.min(250, currentRemainingMs % 1000 || 250))
-      this._timer = setTimeout(tick, nextDelay)
+      if (!this._timerController) {
+        this._timerController = createCountdownController({
+          setTimeout: (fn, delay) => setTimeout(fn, delay),
+          clearTimeout: timer => clearTimeout(timer),
+          clearInterval: timer => clearInterval(timer),
+        })
+      }
+      this._timerController.scheduleTick(tick, nextDelay)
     }
     tick()
   },
