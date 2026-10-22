@@ -38,7 +38,7 @@
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
 | `backend/app/core/bootstrap.py` | 282 | `_run_role_async` 50 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口；隔离子进程SIGTERM/SIGINT和CLI正常退出已测，真实外部依赖全链未验收。 |
 | `backend/app/services/pomodoro_service.py` | 1756 | `build_pomodoro_statistics_snapshot` 338 | 科目快照与整数秒分配已迁至75行纯模块，事务、查询、窗口和累计仍由原服务持有；继续补组合/失败契约后治理。 |
-| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2410 | `ImportReviewPage` 2223 | 来源定位、AI 建议/答案等价、列表/表格徽章、筛选默认/重置与预览抽屉快照规则已抽出；徽章保留两视图的未知风险回退和显式来源差异，抽屉规则保留 JSON 快照、未保存确认及空段落语义。页面仍集中筛选 interactions、编辑确认、异步刷新和弹层编排；重置按钮未清空已选/预览的既有行为保持不变。 |
+| `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 2407 | `ImportReviewPage` 2213 | 来源定位、AI 建议/答案等价、列表/表格徽章、筛选默认/重置、预览抽屉快照及批量补全草稿规则已抽出；徽章保留两视图的未知风险回退和显式来源差异，抽屉规则保留 JSON 快照、未保存确认及空段落语义，草稿规则保留 storage 失败静默、损坏数据回退和策略归一化。页面仍集中筛选 interactions、编辑确认、异步刷新和弹层编排；批量请求、执行锁与结果展示仍在页面。 |
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
 | `admin-frontend/src/app/(admin)/knowledge-graph/page.tsx` | 1809 | `KnowledgeGraphPage` 613 | 图谱转换和交互已有页面外函数；继续核查请求/布局/选择状态。 |
 | `admin-frontend/src/app/(admin)/system/tasks/page.tsx` | 1599 | `SystemTasksPage` 1121 | 任务列表/详情/事件消费与 UI 编排边界待核查。 |

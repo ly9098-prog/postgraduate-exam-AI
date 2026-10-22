@@ -100,6 +100,10 @@ const modules = [
     imports: ["@/lib/api/types", "./review-edit-state"],
   },
   {
+    path: "./review-batch-complete-draft.ts",
+    imports: [],
+  },
+  {
     path: "./review-queue-badges.ts",
     imports: ["@/lib/api/types"],
   },
@@ -168,5 +172,10 @@ describe("review action feature boundaries", () => {
     expect(source).not.toContain("/answers/apply");
     expect(source).not.toContain("/answers/image/preview");
     expect(source).not.toContain("/answers/image/apply");
+    expect(source).not.toContain('localStorage.getItem(DRAFT_KEY)');
+    expect(source).not.toContain('localStorage.setItem(DRAFT_KEY');
+    expect(source).not.toContain('localStorage.removeItem(DRAFT_KEY)');
+    expect(source).not.toMatch(/const DRAFT_KEY\s*=/);
+    expect(source).not.toMatch(/function loadDraft\s*\(/);
   });
 });

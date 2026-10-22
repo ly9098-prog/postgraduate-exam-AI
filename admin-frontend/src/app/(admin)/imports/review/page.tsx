@@ -42,6 +42,15 @@ import {
   hasUnsavedReviewDrawerChanges,
 } from "./review-drawer-state";
 import {
+  BATCH_COMPLETE_ALL_FIELDS,
+  clearBatchCompleteDraft,
+  createDefaultBatchCompleteDraft,
+  loadBatchCompleteDraft,
+  saveBatchCompleteDraft,
+  toggleBatchCompleteField,
+  type BatchCompleteStrategy,
+} from "./review-batch-complete-draft";
+import {
   answersEquivalent,
   completeSuggestionFromItem,
   stringSuggestion,
@@ -152,8 +161,6 @@ function renderJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject_id", "question_type", "stem", "options", "tips", "tags"];
-
 const STATUS_OPTIONS = [
   { value: "pending", label: "待审核" },
   { value: "approved", label: "已通过" },
@@ -234,8 +241,8 @@ export default function ImportReviewPage() {
 
   const [viewMode, setViewMode] = useState<"list" | "table">("list");
   const [showBatchComplete, setShowBatchComplete] = useState(false);
-  const [batchFields, setBatchFields] = useState<string[]>(["answer", "analysis", "knowledge_points", "difficulty"]);
-  const [batchStrategy, setBatchStrategy] = useState<"fill_empty" | "force_overwrite">("fill_empty");
+  const [batchFields, setBatchFields] = useState<string[]>(() => createDefaultBatchCompleteDraft().fields);
+  const [batchStrategy, setBatchStrategy] = useState<BatchCompleteStrategy>("fill_empty");
   const [batchResult, setBatchResult] = useState<BatchCompleteResponse | null>(null);
   const [executing, setExecuting] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -302,34 +309,24 @@ export default function ImportReviewPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [subjectEditDropdownOpen]);
 
-  const DRAFT_KEY = "batch-complete-draft";
+  const batchCompleteDraftStorage = () => localStorage;
 
-  const saveDraft = (fields: string[], strategy: string) => {
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ fields, strategy, savedAt: Date.now() }));
-    } catch { /* quota exceeded, silently ignore */ }
+  const saveDraft = (fields: string[], strategy: BatchCompleteStrategy) => {
+    saveBatchCompleteDraft(batchCompleteDraftStorage, fields, strategy);
   };
 
   const clearDraft = () => {
-    try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+    clearBatchCompleteDraft(batchCompleteDraftStorage);
   };
 
-  const loadDraft = (): { fields: string[]; strategy: string } | null => {
-    try {
-      const raw = localStorage.getItem(DRAFT_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed?.fields)) return null;
-      return { fields: parsed.fields, strategy: parsed.strategy === "force_overwrite" ? "force_overwrite" : "fill_empty" };
-    } catch { return null; }
-  };
+  const loadDraft = () => loadBatchCompleteDraft(batchCompleteDraftStorage);
 
   // restore draft on mount
   useEffect(() => {
     const draft = loadDraft();
     if (draft) {
       setBatchFields(draft.fields);
-      setBatchStrategy(draft.strategy as "fill_empty" | "force_overwrite");
+      setBatchStrategy(draft.strategy);
       setDraftRestored(true);
     }
   }, []);
@@ -656,7 +653,7 @@ export default function ImportReviewPage() {
 
   const toggleBatchField = (field: string) => {
     setDraftRestored(false);
-    setBatchFields((prev) => (prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]));
+    setBatchFields((prev) => toggleBatchCompleteField(prev, field));
   };
 
   const executeBatchComplete = async () => {
@@ -1954,7 +1951,7 @@ export default function ImportReviewPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {!batchResult ? (
-                    <Button variant="ghost" className="h-7 px-2 text-[11px] text-[var(--color-text-hint)]" onClick={() => { clearDraft(); setDraftRestored(false); setBatchFields(["answer", "analysis", "knowledge_points", "difficulty"]); setBatchStrategy("fill_empty"); setAutoSaveHint("草稿已清空"); }}>
+                    <Button variant="ghost" className="h-7 px-2 text-[11px] text-[var(--color-text-hint)]" onClick={() => { const draft = createDefaultBatchCompleteDraft(); clearDraft(); setDraftRestored(false); setBatchFields(draft.fields); setBatchStrategy(draft.strategy); setAutoSaveHint("草稿已清空"); }}>
                       清空草稿
                     </Button>
                   ) : null}
@@ -2016,17 +2013,17 @@ export default function ImportReviewPage() {
                       <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
                         <input
                           type="checkbox"
-                          checked={ALL_BATCH_FIELDS.every(f => batchFields.includes(f))}
-                          onChange={() => setBatchFields(batchFields.length === ALL_BATCH_FIELDS.length ? [] : [...ALL_BATCH_FIELDS])}
+                          checked={BATCH_COMPLETE_ALL_FIELDS.every(f => batchFields.includes(f))}
+                          onChange={() => setBatchFields(batchFields.length === BATCH_COMPLETE_ALL_FIELDS.length ? [] : [...BATCH_COMPLETE_ALL_FIELDS])}
                           className="peer absolute inset-0 cursor-pointer opacity-0"
                         />
                         <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
                       </span>
                       全选
-                      <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {batchFields.length}/{ALL_BATCH_FIELDS.length}</span>
+                      <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {batchFields.length}/{BATCH_COMPLETE_ALL_FIELDS.length}</span>
                     </label>
                     <div className="grid grid-cols-2 gap-2">
-                      {ALL_BATCH_FIELDS.map((value) => {
+                      {BATCH_COMPLETE_ALL_FIELDS.map((value) => {
                         const labels: Record<string, string> = {
                           answer: "题目答案", analysis: "题目解析", knowledge_points: "知识点",
                           difficulty: "难度等级", subject_id: "科目", question_type: "题型",
