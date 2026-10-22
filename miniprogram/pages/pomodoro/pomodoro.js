@@ -18,6 +18,7 @@ const pomodoroTheme = require('./utils/pomodoro-theme')
 const { buildSubjectChoices, normalizeCachedSubjects, subjectIconByCode } = require('./utils/subject-options')
 const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
+const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -3256,33 +3257,7 @@ Page({
   },
 
   _buildRingCache(isBreak) {
-    var ctx = this._ctx
-    if (!ctx) return null
-    var size = this._canvasSize
-    var center = size / 2
-    var radius = center - 18
-    var lineWidth = 12
-    var colors = isBreak
-      ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
-      : this.data.isFreeTimer
-        ? { start: '#34D399', end: '#059669', dot: '#10B981' }
-        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
-    // 构建渐变（颜色在 session 内不变，只需构建一次）
-    var glowGrad = ctx.createLinearGradient(0, 0, size, size)
-    glowGrad.addColorStop(0, colors.start)
-    glowGrad.addColorStop(1, colors.end)
-    var grad = ctx.createLinearGradient(0, 0, size, size)
-    grad.addColorStop(0, colors.start)
-    grad.addColorStop(1, colors.end)
-    return {
-      size: size,
-      center: center,
-      radius: radius,
-      lineWidth: lineWidth,
-      colors: colors,
-      glowGrad: glowGrad,
-      grad: grad,
-    }
+    return buildRingCache(this._ctx, this._canvasSize, isBreak, this.data.isFreeTimer)
   },
 
   drawRing(totalSec, isBreak) {
@@ -3302,12 +3277,12 @@ Page({
     // Keep throttling expensive canvas work, but guarantee a visible refresh at
     // least about once per second. The old fixed 1/360 threshold meant a 25-min
     // ring could wait ~4.2s and a 50-min ring ~8.3s before moving.
-    if (this._lastDrawnProgress !== undefined && this._lastDrawnIsBreak === isBreak) {
-      var diff = Math.abs(progress - this._lastDrawnProgress)
-      var minProgressStep = totalSec > 0 ? Math.min(1 / 360, 0.8 / totalSec) : 0
-      var sinceLastDraw = now - Number(this._lastDrawnAt || 0)
-      if (diff < minProgressStep && sinceLastDraw < 1000) return
-    }
+    if (!shouldDrawRing(progress, isBreak, {
+      progress: this._lastDrawnProgress,
+      isBreak: this._lastDrawnIsBreak,
+      totalSec,
+      at: this._lastDrawnAt,
+    }, now)) return
     this._lastDrawnProgress = progress
     this._lastDrawnIsBreak = isBreak
     this._lastDrawnAt = now
