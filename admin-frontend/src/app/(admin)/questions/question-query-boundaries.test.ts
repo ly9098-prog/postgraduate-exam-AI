@@ -114,6 +114,14 @@ const modules = [
     path: "./question-display-helpers.ts",
     imports: ["@/lib/asset-url", "@/lib/question-types", "./question-content-editing"],
   },
+  {
+    path: "./question-filter-persistence.ts",
+    imports: ["./question-list-state"],
+  },
+  {
+    path: "./question-export-payload.ts",
+    imports: ["./question-api", "./question-list-state"],
+  },
 ];
 
 function violations(source: string, allowed: string[]) {

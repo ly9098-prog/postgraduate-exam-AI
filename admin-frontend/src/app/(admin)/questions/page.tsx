@@ -115,6 +115,11 @@ import {
   isMultiChoice,
   normalizedChoiceAnswerKeys,
 } from "./question-display-helpers";
+import {
+  loadSavedFilters,
+  saveCurrentFilters,
+} from "./question-filter-persistence";
+import { buildExportPayload } from "./question-export-payload";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -652,35 +657,17 @@ export default function QuestionsPage() {
   };
 
   const handleSaveCurrentFilters = () => {
-    try {
-      window.localStorage.setItem(
-        "admin-question-saved-filter",
-        JSON.stringify(filters),
-      );
-      setMessage("当前筛选条件已保存到本机。 ");
-    } catch {
-      setMessage("筛选保存失败，请检查浏览器存储权限。 ");
-    }
+    const result = saveCurrentFilters(() => window.localStorage, filters);
+    setMessage(result.ok ? "当前筛选条件已保存到本机。 " : result.message);
   };
 
   const handleApplySavedFilters = () => {
-    try {
-      const raw = window.localStorage.getItem("admin-question-saved-filter");
-      if (!raw) {
-        setMessage("暂无已保存的筛选条件。 ");
-        setIsCommonFilterMenuOpen(false);
-        return;
-      }
-      const parsed = JSON.parse(raw) as Partial<typeof filters>;
-      applyFilterPreset({
-        ...parsed,
-        // Older saved presets used an empty is_active value to mean “all”.
-        // Treat that legacy value as active-only so soft-deleted questions stay hidden.
-        is_active: parsed.is_active === "false" ? "false" : "true",
-      });
-    } catch {
-      setMessage("已保存的筛选条件无法读取。 ");
-      setIsCommonFilterMenuOpen(false);
+    const result = loadSavedFilters(() => window.localStorage);
+    if (result.ok) {
+      applyFilterPreset(result.filters);
+    } else {
+      setMessage(result.message);
+      if (result.closeMenu) setIsCommonFilterMenuOpen(false);
     }
   };
 
@@ -755,23 +742,9 @@ export default function QuestionsPage() {
     try {
       setExportingFormat(format);
       setIsExportMenuOpen(false);
-      const response = await exportQuestions({
-        format,
-        ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
-        subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
-        is_active:
-          filters.is_active === ""
-            ? undefined
-            : filters.is_active === "true",
-        question_type: filters.question_type || undefined,
-        keyword: filters.keyword || undefined,
-        year: filters.year ? Number(filters.year) : undefined,
-        difficulty: filters.difficulty
-          ? Number(filters.difficulty)
-          : undefined,
-        import_batch_id: filters.import_batch_id || undefined,
-        knowledge_point_id: filters.knowledge_point_id ? Number(filters.knowledge_point_id) : undefined,
-      });
+      const response = await exportQuestions(
+        buildExportPayload(format, filters, selectedIds),
+      );
       const url = URL.createObjectURL(response.blob);
       const link = document.createElement("a");
       link.href = url;
