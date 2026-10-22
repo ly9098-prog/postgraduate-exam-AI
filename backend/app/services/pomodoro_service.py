@@ -37,6 +37,11 @@ from app.services.pomodoro_attribution import (
     split_duration_excluding_intervals,
     split_session_duration_by_study_day,
 )
+from app.services.pomodoro_statistics_response import build_statistics_response
+from app.services.pomodoro_statistics_window import (
+    StatisticsWindowRequest,
+    requested_statistics_period,
+)
 from app.services.pomodoro_subject_projection import (
     allocate_seconds_by_weight,
     allocation_group_key,
@@ -1162,32 +1167,25 @@ async def build_pomodoro_statistics_snapshot(
     today = current_study_day(dsm)
     target = target_date or today
 
-    ranges: list[tuple[datetime, datetime]] = []
-    if need_stats:
-        today_start, today_end = study_day_utc_range(today, dsm)
-        week_start, week_end = study_week_utc_range(dsm)
-        ranges.append((min(today_start, week_start), max(today_end, week_end)))
-    if need_trends:
-        trend_start, _ = study_day_utc_range(
-            today - timedelta(days=trends_days - 1), dsm
-        )
-        _, trend_end = study_day_utc_range(today, dsm)
-        ranges.append((trend_start, trend_end))
-    if need_daily_summary:
-        ranges.append(study_day_utc_range(target, dsm))
-    if need_range_summary:
-        if range_start is None or range_end is None:
-            raise ValueError("range_start and range_end are required for range summary")
-        if range_end < range_start:
-            raise ValueError("range_end must be on or after range_start")
-        range_period_start, _ = study_day_utc_range(range_start, dsm)
-        _, range_period_end = study_day_utc_range(range_end, dsm)
-        ranges.append((range_period_start, range_period_end))
-
-    if not ranges:
+    period = requested_statistics_period(
+        StatisticsWindowRequest(
+            day_start_minute=dsm,
+            today=today,
+            target=target,
+            trends_days=trends_days,
+            need_stats=need_stats,
+            need_trends=need_trends,
+            need_daily_summary=need_daily_summary,
+            range_start=range_start,
+            range_end=range_end,
+            need_range_summary=need_range_summary,
+        ),
+        day_range=study_day_utc_range,
+        week_range=study_week_utc_range,
+    )
+    if period is None:
         return {}
-    period_start = min(r[0] for r in ranges)
-    period_end = max(r[1] for r in ranges)
+    period_start, period_end = period
     pomodoro_sessions = await _load_overlapping_sessions(
         db,
         user_id,
@@ -1404,74 +1402,37 @@ async def build_pomodoro_statistics_snapshot(
             if start_day == target:
                 g["sessions"] += 1
 
-    result: dict = {}
-    if need_stats:
-        result["stats"] = {
-            "today_sessions": today_sessions,
-            "today_duration_sec": today_duration,
-            "week_sessions": week_sessions,
-            "week_duration_sec": week_duration,
-            "today_date": today.isoformat(),
-            "week_start_date": week_start_date.isoformat(),
-            "day_start_minute": dsm,
-            "day_start_time": settings["day_start_time"],
-        }
-    if need_trends:
-        result["trends"] = [
-            {
-                "date": d.isoformat(),
-                "sessions": trend_agg[d]["sessions"],
-                "duration_sec": trend_agg[d]["duration_sec"],
-            }
-            for d in sorted(trend_agg)
-        ]
-    if need_daily_summary:
-        subjects = [
-            {
-                "subject_id": g["subject_id"],
-                "subject_code": g["subject_code"],
-                "subject_name": g["subject_name"],
-                "sessions": g["sessions"],
-                "participation_sessions": g["participation_sessions"],
-                "duration_sec": g["duration_sec"],
-            }
-            for key, g in target_groups.items()
-        ]
-        subjects.sort(key=lambda r: r["duration_sec"], reverse=True)
-        result["daily_summary"] = {
-            "date": target.isoformat(),
-            "timezone": "Asia/Shanghai",
-            "day_start_minute": dsm,
-            "day_start_time": settings["day_start_time"],
-            "sessions": target_sessions,
-            "duration_sec": target_duration,
-            "subjects": subjects,
-        }
-    if need_range_summary:
-        range_subjects = [
-            {
-                "subject_id": g["subject_id"],
-                "subject_code": g["subject_code"],
-                "subject_name": g["subject_name"],
-                "sessions": g["sessions"],
-                "participation_sessions": g["participation_sessions"],
-                "duration_sec": g["duration_sec"],
-            }
-            for key, g in range_groups.items()
-        ]
-        range_subjects.sort(key=lambda r: r["duration_sec"], reverse=True)
-        result["range_summary"] = {
-            "start_date": range_start.isoformat(),
-            "end_date": range_end.isoformat(),
-            "timezone": "Asia/Shanghai",
-            "day_start_minute": dsm,
-            "day_start_time": settings["day_start_time"],
-            "sessions": range_sessions,
-            "duration_sec": range_duration,
-            "active_days": len(range_active_day_set),
-            "subjects": range_subjects,
-        }
-    return result
+    return build_statistics_response(
+        need_stats=need_stats,
+        need_trends=need_trends,
+        need_daily_summary=need_daily_summary,
+        need_range_summary=need_range_summary,
+        today=today,
+        week_start_date=week_start_date,
+        target=target,
+        day_start_minute=dsm,
+        day_start_time=settings["day_start_time"],
+        trends=trend_agg if need_trends else None,
+        stats_values={
+            "today_sessions": today_sessions if need_stats else 0,
+            "today_duration": today_duration if need_stats else 0,
+            "week_sessions": week_sessions if need_stats else 0,
+            "week_duration": week_duration if need_stats else 0,
+        },
+        daily_values={
+            "sessions": target_sessions if need_daily_summary else 0,
+            "duration_sec": target_duration if need_daily_summary else 0,
+            "groups": target_groups if need_daily_summary else {},
+        },
+        range_values={
+            "start_date": range_start,
+            "end_date": range_end,
+            "sessions": range_sessions if need_range_summary else 0,
+            "duration_sec": range_duration if need_range_summary else 0,
+            "active_days": len(range_active_day_set) if need_range_summary else 0,
+            "groups": range_groups if need_range_summary else {},
+        },
+    )
 
 
 async def get_stats(db: AsyncSession, user_id: int) -> dict:
