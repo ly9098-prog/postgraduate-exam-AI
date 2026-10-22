@@ -20,6 +20,12 @@ const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
 const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
 const conflictState = require('./utils/terminal-conflict-state')
+const {
+  CANVAS_INIT_MAX_RETRIES,
+  canvasRetryDelay,
+  evaluateCanvasLayout,
+  buildCanvasSetup,
+} = require('./utils/canvas-layout')
 const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
 const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 const { pomodoroTaskTypes } = require('../../utils/storage')
@@ -36,7 +42,6 @@ const PRESETS = [
 const FREE_TIMER_MAX_MS = 5 * 60 * 60 * 1000 // 5 hours max for free timer
 const POMODORO_UNKNOWN_START_KEY = 'pomodoro_unknown_start'
 const POMODORO_TERMINAL_CONFLICT_KEY = 'pomodoro_terminal_conflict'
-const CANVAS_INIT_MAX_RETRIES = 16
 const POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500
 
 function parseServerTime(value) {
@@ -3201,49 +3206,22 @@ Page({
 
         const stageRect = res && res[0]
         const canvasInfo = res && res[1]
-        if (!stageRect || !canvasInfo || !canvasInfo.node || !canvasInfo.width || !canvasInfo.height) {
-          const delay = Math.min(140, 16 + retryCount * 8)
+        const layout = evaluateCanvasLayout(stageRect, canvasInfo, previousRect)
+        if (layout.status !== 'ready') {
+          const delay = canvasRetryDelay(retryCount)
           setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, previousRect), delay)
-          return
-        }
-
-        const rect = {
-          left: Number.isFinite(canvasInfo.left) ? canvasInfo.left : stageRect.left,
-          top: Number.isFinite(canvasInfo.top) ? canvasInfo.top : stageRect.top,
-          width: canvasInfo.width,
-          height: canvasInfo.height,
-        }
-        const stageAligned =
-          Math.abs(rect.left - stageRect.left) <= 2 &&
-          Math.abs(rect.top - stageRect.top) <= 2 &&
-          Math.abs(rect.width - stageRect.width) <= 2 &&
-          Math.abs(rect.height - stageRect.height) <= 2
-        const stable = previousRect &&
-          Math.abs(rect.left - previousRect.left) <= 1 &&
-          Math.abs(rect.top - previousRect.top) <= 1 &&
-          Math.abs(rect.width - previousRect.width) <= 1 &&
-          Math.abs(rect.height - previousRect.height) <= 1
-
-        // Require one stable layout frame before binding the native Canvas 2D
-        // context. This avoids measuring while the running-state block is still
-        // being inserted/reflowed during onShow restoration.
-        if (!stageAligned || !stable) {
-          const delay = Math.min(140, 16 + retryCount * 8)
-          setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, rect), delay)
           return
         }
 
         const canvas = canvasInfo.node
         const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-        const dpr = windowInfo.pixelRatio || 1
-        this._dpr = dpr
-        const width = canvasInfo.width
-        const height = canvasInfo.height
-        this._canvasSize = Math.min(width, height)
-        canvas.width = Math.round(width * dpr)
-        canvas.height = Math.round(height * dpr)
+        const setup = buildCanvasSetup(layout.rect, windowInfo.pixelRatio)
+        this._dpr = setup.dpr
+        this._canvasSize = setup.size
+        canvas.width = setup.pixelWidth
+        canvas.height = setup.pixelHeight
         const ctx = canvas.getContext('2d')
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.setTransform(setup.dpr, 0, 0, setup.dpr, 0, 0)
         this._ctx = ctx
         this._canvasReady = true
         this._canvasInitPending = false
