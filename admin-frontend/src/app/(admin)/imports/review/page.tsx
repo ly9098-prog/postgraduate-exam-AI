@@ -63,7 +63,11 @@ import {
   createReviewActionDialogState,
   reduceReviewActionDialogState,
 } from "./review-action-dialog-state";
-import { reduceReviewFilterSelection } from "./review-filter-selection";
+import {
+  reduceReviewFilterSelection,
+  toggleAllSelection,
+  toggleSingleSelection,
+} from "./review-filter-selection";
 import {
   batchAnswerLoadingLabel,
   buildBatchAnswerViewState,
@@ -712,7 +716,7 @@ export default function ImportReviewPage() {
   };
 
   const toggleAll = () => {
-    updateSelectedIds(() => (allChecked ? new Set() : new Set(items.map((item) => item.id))));
+    updateSelectedIds(() => toggleAllSelection(items.map((item) => item.id), allChecked));
   };
 
   const resetFilterScopedReviewState = () => {
@@ -722,12 +726,7 @@ export default function ImportReviewPage() {
   };
 
   const toggleOne = (id: number) => {
-    updateSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    updateSelectedIds((current) => toggleSingleSelection(current, id));
   };
 
   const confirmDialogState = buildReviewConfirmDialogState(confirmState, selectedIds.size);
