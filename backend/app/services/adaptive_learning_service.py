@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -28,6 +29,12 @@ from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.user_question_difficulty_state import UserQuestionDifficultyState
 from app.models.user_question_state import UserQuestionState
 from app.models.user_recommend_preference import UserRecommendPreference
+from app.services.unique_conflict import (
+    is_unique_violation as _is_unique_violation,
+)
+from app.services.unique_conflict import (
+    start_explicit_transaction as _start_explicit_transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,15 +121,74 @@ def _estimate_expected_time(difficulty: int) -> int:
 # ── DB helpers ────────────────────────────────────────────────────────
 
 
+async def _claim_profile(
+    db: AsyncSession,
+    user_id: int,
+) -> UserAdaptiveProfile | None:
+    profile = UserAdaptiveProfile(user_id=user_id)
+    try:
+        async with db.begin_nested():
+            db.add(profile)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
+        return None
+    return profile
+
+
+async def _claim_knowledge_state(
+    db: AsyncSession,
+    user_id: int,
+    knowledge_point_id: int,
+) -> UserKnowledgeAdaptiveState | None:
+    state = UserKnowledgeAdaptiveState(
+        user_id=user_id,
+        knowledge_point_id=knowledge_point_id,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(state)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
+        return None
+    return state
+
+
+async def _claim_difficulty_state(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+) -> UserQuestionDifficultyState | None:
+    state = UserQuestionDifficultyState(user_id=user_id, question_id=question_id)
+    try:
+        async with db.begin_nested():
+            db.add(state)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
+        return None
+    return state
+
+
 async def _get_or_create_profile(db: AsyncSession, user_id: int) -> UserAdaptiveProfile:
     result = await db.execute(
         select(UserAdaptiveProfile).where(UserAdaptiveProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
     if profile is None:
-        profile = UserAdaptiveProfile(user_id=user_id)
-        db.add(profile)
-        await db.flush()
+        await _start_explicit_transaction(db)
+        profile = await _claim_profile(db, user_id)
+        if profile is None:
+            result = await db.execute(
+                select(UserAdaptiveProfile).where(
+                    UserAdaptiveProfile.user_id == user_id
+                )
+            )
+            profile = result.scalar_one()
     return profile
 
 
@@ -138,6 +204,31 @@ async def _get_knowledge_adaptive(
     return result.scalar_one_or_none()
 
 
+async def _get_or_create_knowledge_adaptive(
+    db: AsyncSession,
+    user_id: int,
+    kp_id: int,
+) -> UserKnowledgeAdaptiveState:
+    state = await _get_knowledge_adaptive(db, user_id, kp_id)
+    if state is None:
+        await _start_explicit_transaction(db)
+        state = await _claim_knowledge_state(db, user_id, kp_id)
+        if state is None:
+            state = await _reload_knowledge_adaptive(db, user_id, kp_id)
+    return state
+
+
+async def _reload_knowledge_adaptive(
+    db: AsyncSession,
+    user_id: int,
+    kp_id: int,
+) -> UserKnowledgeAdaptiveState:
+    state = await _get_knowledge_adaptive(db, user_id, kp_id)
+    if state is None:
+        raise RuntimeError("knowledge adaptive state disappeared after unique conflict")
+    return state
+
+
 async def _get_or_create_difficulty(
     db: AsyncSession, user_id: int, question_id: int
 ) -> UserQuestionDifficultyState:
@@ -149,9 +240,16 @@ async def _get_or_create_difficulty(
     )
     state = result.scalar_one_or_none()
     if state is None:
-        state = UserQuestionDifficultyState(user_id=user_id, question_id=question_id)
-        db.add(state)
-        await db.flush()
+        await _start_explicit_transaction(db)
+        state = await _claim_difficulty_state(db, user_id, question_id)
+        if state is None:
+            result = await db.execute(
+                select(UserQuestionDifficultyState).where(
+                    UserQuestionDifficultyState.user_id == user_id,
+                    UserQuestionDifficultyState.question_id == question_id,
+                )
+            )
+            state = result.scalar_one()
     return state
 
 
@@ -167,13 +265,15 @@ async def update_user_interval_factor(
 ) -> float:
     """根据到期复习表现调整用户全局 interval_factor，返回新值。"""
     profile = await _get_or_create_profile(db, user_id)
+    if not is_due_review:
+        return profile.interval_factor
 
     old_factor = profile.interval_factor
     factor = old_factor
 
-    if is_due_review and not is_correct:
+    if not is_correct:
         factor = factor * 0.92
-    elif is_due_review and is_correct:
+    else:
         if is_overdue_review:
             factor = factor * 1.08
         else:
@@ -185,10 +285,9 @@ async def update_user_interval_factor(
     profile.last_adjusted_at = utcnow()
 
     # 更新近期统计（滑动窗口简化：每次到期复习 +1）
-    if is_due_review:
-        profile.recent_due_count += 1
-        if is_correct:
-            profile.recent_due_correct_count += 1
+    profile.recent_due_count += 1
+    if is_correct:
+        profile.recent_due_correct_count += 1
 
     await db.flush()
 
@@ -217,6 +316,8 @@ async def update_knowledge_interval_factor(
     """根据复习表现调整知识点级 interval_factor。"""
     if not knowledge_point_ids:
         return
+    if not is_due_review:
+        return
 
     # 批量加载已有状态
     existing_result = await db.execute(
@@ -229,30 +330,24 @@ async def update_knowledge_interval_factor(
         s.knowledge_point_id: s for s in existing_result.scalars().all()
     }
 
-    # 批量创建缺失状态。新 ORM 对象的 Column(default=...) 在 flush 前未必
-    # 已填入 Python 属性；必须先 flush，才能安全读取 interval_factor / 计数器。
-    created_any = False
-    for kp_id in knowledge_point_ids:
-        if kp_id not in state_map:
-            state = UserKnowledgeAdaptiveState(
-                user_id=user_id,
-                knowledge_point_id=kp_id,
-            )
-            db.add(state)
-            state_map[kp_id] = state
-            created_any = True
-    if created_any:
-        await db.flush()
+    missing_ids = [kp_id for kp_id in knowledge_point_ids if kp_id not in state_map]
+    if missing_ids:
+        await _start_explicit_transaction(db)
+    for kp_id in missing_ids:
+        claimed = await _claim_knowledge_state(db, user_id, kp_id)
+        if claimed is None:
+            claimed = await _reload_knowledge_adaptive(db, user_id, kp_id)
+        state_map[kp_id] = claimed
 
     # 统一更新
-    for kp_id in knowledge_point_ids:
+    for kp_id in dict.fromkeys(knowledge_point_ids):
         state = state_map[kp_id]
         old = state.interval_factor
         factor = old
 
-        if is_due_review and not is_correct:
+        if not is_correct:
             factor = factor * 0.92
-        elif is_due_review and is_correct:
+        else:
             if is_overdue_review:
                 factor = factor * 1.08
             else:
@@ -262,12 +357,11 @@ async def update_knowledge_interval_factor(
         state.interval_factor = round(factor, 4)
         state.last_adjusted_at = utcnow()
 
-        if is_due_review:
-            state.due_review_count += 1
-            if is_correct:
-                state.due_review_correct_count += 1
-            if is_overdue_review and not is_correct:
-                state.overdue_wrong_count += 1
+        state.due_review_count += 1
+        if is_correct:
+            state.due_review_correct_count += 1
+        if is_overdue_review and not is_correct:
+            state.overdue_wrong_count += 1
 
     await db.flush()
 

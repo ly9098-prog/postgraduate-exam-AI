@@ -13,13 +13,18 @@
 10. feature flag 关闭时 update_adaptive_state_after_answer 不执行
 """
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.services.adaptive_learning_service import (
     _adjust_weight,
+    _claim_difficulty_state,
+    _claim_knowledge_state,
+    _claim_profile,
     _clamp,
     calculate_personalized_interval_days,
     can_recommend_advanced_knowledge,
@@ -109,6 +114,22 @@ def _make_db(side_effects):
     return db
 
 
+class _UniqueViolationProfileDb:
+    def __init__(self, error=None):
+        self.flush = AsyncMock(
+            side_effect=IntegrityError(
+                "INSERT", {}, error or Exception("duplicate key")
+            )
+        )
+
+    @asynccontextmanager
+    async def begin_nested(self):
+        yield self
+
+    def add(self, _value):
+        pass
+
+
 # ── 纯函数测试 ──────────────────────────────────────────────────────
 
 
@@ -169,6 +190,52 @@ class TestPureFunctions:
 
 
 class TestUpdateUserIntervalFactor:
+    def test_profile_claim_turns_unique_race_into_retryable_miss(self):
+        db = _UniqueViolationProfileDb()
+
+        assert _run(_claim_profile(db, 1)) is None
+        db.flush.assert_awaited_once()
+
+    def test_profile_claim_preserves_non_unique_database_errors(self):
+        db = _UniqueViolationProfileDb(Exception("foreign key"))
+
+        with pytest.raises(IntegrityError, match="foreign key"):
+            _run(_claim_profile(db, 1))
+
+    def test_knowledge_claim_turns_unique_race_into_retryable_miss(self):
+        db = _UniqueViolationProfileDb(
+            Exception(
+                "UNIQUE constraint failed: "
+                "user_knowledge_adaptive_state.user_id, "
+                "user_knowledge_adaptive_state.knowledge_point_id"
+            )
+        )
+
+        assert _run(_claim_knowledge_state(db, 1, 2)) is None
+
+    def test_knowledge_claim_preserves_non_unique_database_errors(self):
+        db = _UniqueViolationProfileDb(Exception("foreign key"))
+
+        with pytest.raises(IntegrityError, match="foreign key"):
+            _run(_claim_knowledge_state(db, 1, 2))
+
+    def test_difficulty_claim_turns_unique_race_into_retryable_miss(self):
+        db = _UniqueViolationProfileDb(
+            Exception(
+                "UNIQUE constraint failed: "
+                "user_question_difficulty_state.user_id, "
+                "user_question_difficulty_state.question_id"
+            )
+        )
+
+        assert _run(_claim_difficulty_state(db, 1, 2)) is None
+
+    def test_difficulty_claim_preserves_non_unique_database_errors(self):
+        db = _UniqueViolationProfileDb(Exception("foreign key"))
+
+        with pytest.raises(IntegrityError, match="foreign key"):
+            _run(_claim_difficulty_state(db, 1, 2))
+
     def test_due_wrong_decreases_factor(self):
         """场景 3：到期答错，interval_factor 下降 8%。"""
         profile = MockProfile(interval_factor=1.0)
@@ -453,52 +520,44 @@ class TestGetBlockedKnowledgePoints:
         ))
         assert result == {}
 
-    def test_blocked_prerequisite_detected(self):
-        """前置知识点 mastery=35, confidence=0.8 → 被标记为薄弱。"""
-        db = _make_db([
-            # 1. edges query: KP 20 has prerequisite KP 10
-            _mock_result(all_vals=[
-                MockRow(target_knowledge_point_id=20, source_knowledge_point_id=10),
-            ]),
-            # 2. mastery query: KP 10 mastery=35, confidence=0.8
-            _mock_result(all_vals=[
-                MockRow(knowledge_point_id=10, mastery_score=35.0, confidence=0.8),
-            ]),
-            # 3. name query: KP 10 name="基础概念"
-            _mock_result(all_vals=[
-                MockRow(id=10, name="基础概念"),
-            ]),
-        ])
+    @pytest.mark.asyncio
+    async def test_blocked_prerequisite_detected(self):
+        """Direct confirmed weak prerequisites are returned as blockers."""
+        db = AsyncMock()
+        with patch(
+            "app.services.adaptive_learning_service.get_recommendation_graph_context",
+            new=AsyncMock(return_value={"blocked_targets": {
+                20: [{
+                    "knowledge_point_id": 10,
+                    "name": "基础概念",
+                    "mastery_score": 35.0,
+                    "mastery_confidence": 0.8,
+                    "path_quality": 0.8,
+                }],
+            }}),
+        ) as graph:
+            result = await get_blocked_knowledge_points(
+                db, user_id=1, kp_ids=[20], subject="math",
+            )
 
-        result = _run(get_blocked_knowledge_points(
-            db, user_id=1, kp_ids=[20], subject="math",
-        ))
-
-        assert 20 in result
-        assert len(result[20]) == 1
+        graph.assert_awaited_once()
         assert result[20][0]["knowledge_point_id"] == 10
         assert result[20][0]["name"] == "基础概念"
         assert result[20][0]["mastery_score"] == 35.0
 
-    def test_mastered_prerequisite_not_blocked(self):
-        """前置知识点 mastery=80, confidence=0.9 → 不阻塞。"""
-        db = _make_db([
-            _mock_result(all_vals=[
-                MockRow(target_knowledge_point_id=20, source_knowledge_point_id=10),
-            ]),
-            _mock_result(all_vals=[
-                MockRow(knowledge_point_id=10, mastery_score=80.0, confidence=0.9),
-            ]),
-            _mock_result(all_vals=[
-                MockRow(id=10, name="基础概念"),
-            ]),
-        ])
+    @pytest.mark.asyncio
+    async def test_mastered_prerequisite_not_blocked(self):
+        """Mastered direct prerequisites are excluded by graph context."""
+        db = AsyncMock()
+        with patch(
+            "app.services.adaptive_learning_service.get_recommendation_graph_context",
+            new=AsyncMock(return_value={"blocked_targets": {}}),
+        ):
+            result = await get_blocked_knowledge_points(
+                db, user_id=1, kp_ids=[20], subject="math",
+            )
 
-        result = _run(get_blocked_knowledge_points(
-            db, user_id=1, kp_ids=[20], subject="math",
-        ))
-
-        assert result == {}  # KP 20 不在 blocked 中
+        assert result == {}
 
 
 class TestSmartScorePathDimensions:
@@ -519,7 +578,7 @@ class TestSmartScorePathDimensions:
         q = self._make_question()
         kp_ids = [20]
         kp_mastery = {20: (50.0, 0.5)}  # KP 20 本身 mastery=50
-        blocked_kps = {20: [{"knowledge_point_id": 10, "name": "基础", "mastery_score": 35.0}]}
+        blocked_kps = {20: [{"knowledge_point_id": 10, "name": "基础", "mastery_score": 35.0, "path_quality": 1.0}]}
 
         score_blocked, reasons_blocked = calculate_smart_score(
             q, None, kp_ids, kp_mastery, set(), datetime.now(UTC),
@@ -540,15 +599,25 @@ class TestSmartScorePathDimensions:
         q = self._make_question()
         kp_ids = [20]
         kp_mastery = {20: (45.0, 0.5)}  # KP 20 薄弱
-        # blocked_kps 不包含 KP 20（前置已掌握）
-        blocked_kps = {}  # 空 = 没有阻塞
+        graph_candidates = {
+            20: {
+                "knowledge_point_id": 10,
+                "confirmed_gap": True,
+                "path_quality": 1.0,
+                "origin_mastery_score": 45.0,
+                "origin_mastery_confidence": 0.5,
+                "mastery_score": 80.0,
+                "mastery_confidence": 0.9,
+            }
+        }
 
         score, reasons = calculate_smart_score(
             q, None, kp_ids, kp_mastery, set(), datetime.now(UTC),
-            blocked_kps=blocked_kps,
+            graph_candidates=graph_candidates,
         )
 
-        assert "path_unlock" in reasons
+        assert "prerequisite_need" in reasons
+        assert score > 40
 
     def test_no_path_effect_without_blocked_kps(self):
         """blocked_kps=None 时路径维度不生效。"""

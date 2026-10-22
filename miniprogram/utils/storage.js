@@ -30,6 +30,17 @@ const PROTECTED_KEYS = [
   'privacy_acceptance',
 ]
 
+const SESSION_DYNAMIC_KEY_PREFIXES = [
+  'ai_',
+  'aiCache',
+  'ai_diagnosis',
+  'practice_pending_submission_v1:',
+  'exam_attempt_pending_v1:',
+  'exam_attempt_pending_v2:',
+  'exam_attempt_pending_v3:',
+  'review_today_draft_v1:',
+]
+
 function get(key) {
   try {
     return wx.getStorageSync(key)
@@ -94,12 +105,7 @@ function clearSession(options) {
       var key = allKeys[ki]
       // 跳过受保护的键
       if (preservePrivacy && PROTECTED_KEYS.indexOf(key) >= 0) continue
-      if (
-        key.indexOf('ai_') === 0 ||
-        key.indexOf('aiCache') === 0 ||
-        key.indexOf('ai_diagnosis') === 0 ||
-        key.indexOf('practice_pending_submission_v1:') === 0
-      ) {
+      if (SESSION_DYNAMIC_KEY_PREFIXES.some(prefix => key.indexOf(prefix) === 0)) {
         remove(key)
       }
     }
@@ -756,6 +762,7 @@ module.exports = {
   clearSession,
   BUSINESS_CACHE_KEYS,
   PROTECTED_KEYS,
+  SESSION_DYNAMIC_KEY_PREFIXES,
   studyStrategy,
   pomodoroTaskTypes,
   knowledgePracticeSync,

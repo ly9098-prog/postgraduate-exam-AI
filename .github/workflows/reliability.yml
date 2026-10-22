@@ -325,6 +325,8 @@ jobs:
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js
           node miniprogram/scripts/test-pomodoro-free-timer-limit.js
+          node miniprogram/tests/test-storage-session-cleanup.js
+          node miniprogram/tests/test-exam-terminal-navigation.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
 

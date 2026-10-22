@@ -9,6 +9,7 @@ import logging
 from datetime import timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import serialize_utc_datetime, utcnow
@@ -18,6 +19,12 @@ from app.models.practice_record import PracticeRecord
 from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.services.subject_resolution import resolve_subject_ids
+from app.services.unique_conflict import (
+    is_unique_violation as _is_unique_violation,
+)
+from app.services.unique_conflict import (
+    start_explicit_transaction as _start_explicit_transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,57 @@ MASTERY_INITIAL_SCORE = 50.0
 
 
 # ── V3 核心工具函数 ──
+
+
+async def _claim_knowledge_state(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    knowledge_point: KnowledgePoint,
+) -> UserKnowledgeState | None:
+    state = UserKnowledgeState(
+        user_id=user_id,
+        subject_id=knowledge_point.subject_id,
+        knowledge_point_id=knowledge_point.id,
+        attempt_count=0,
+        correct_count=0,
+        wrong_count=0,
+        accuracy=0.0,
+        mastery_score=MASTERY_INITIAL_SCORE,
+        weakness_level="observing",
+        confidence=0.0,
+        recent_answer_count=0,
+        recent_correct_count=0,
+        recent_wrong_count=0,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(state)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
+        return None
+    return state
+
+
+async def _reload_knowledge_state(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    knowledge_point_id: int,
+) -> UserKnowledgeState:
+    state = await db.scalar(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.knowledge_point_id == knowledge_point_id,
+        )
+    )
+    if state is None:
+        raise RuntimeError(
+            "user knowledge state disappeared after unique conflict"
+        )
+    return state
 
 
 def normalize_knowledge_points(raw: object) -> list[str]:
@@ -200,6 +258,27 @@ async def update_user_knowledge_state_after_answer(
         )
     )
     existing_states = {s.knowledge_point_id: s for s in states_result.scalars().all()}
+    missing_mappings = [
+        (qkp, kp) for qkp, kp in mappings if kp.id not in existing_states
+    ]
+    if missing_mappings:
+        await _start_explicit_transaction(db)
+    missing_claim_states: set[int] = set()
+    for _qkp, kp in missing_mappings:
+        state = await _claim_knowledge_state(
+            db,
+            user_id=user_id,
+            knowledge_point=kp,
+        )
+        if state is None:
+            state = await _reload_knowledge_state(
+                db,
+                user_id=user_id,
+                knowledge_point_id=kp.id,
+            )
+        else:
+            missing_claim_states.add(state.id)
+        existing_states[kp.id] = state
 
     updated = 0
     created = 0
@@ -210,22 +289,10 @@ async def update_user_knowledge_state_after_answer(
         state = existing_states.get(kp.id)
 
         if not state:
-            state = UserKnowledgeState(
-                user_id=user_id,
-                subject_id=kp.subject_id,
-                knowledge_point_id=kp.id,
-                attempt_count=0,
-                correct_count=0,
-                wrong_count=0,
-                accuracy=0.0,
-                mastery_score=MASTERY_INITIAL_SCORE,
-                weakness_level="observing",
-                confidence=0.0,
-                recent_answer_count=0,
-                recent_correct_count=0,
-                recent_wrong_count=0,
+            raise RuntimeError(
+                "user knowledge state missing after claim/reload"
             )
-            db.add(state)
+        if state.id in missing_claim_states:
             created += 1
 
         mastery_before = float(

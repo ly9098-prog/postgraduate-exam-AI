@@ -90,6 +90,7 @@ Page({
     remainingText: '--:--',
     markedForReview: false,
     timeExpired: false,
+    resultRecoveryPending: false,
   },
 
   onLoad(options) {
@@ -233,13 +234,22 @@ Page({
       url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}`,
       fail: () => {
         this._terminalNavigation = false
-        this._navigationLocked = false
         if (this._pageAlive) {
+          this._navigationLocked = true
+          this.setData({ resultRecoveryPending: true })
           if (this.data.submitting) this.setData({ submitting: false })
-          wx.showToast({ title: '结果页打开失败，请重试', icon: 'none' })
+          wx.showToast({ title: '答卷已归档，请重新打开结果页', icon: 'none' })
         }
       },
     })
+  },
+
+  retryResultNavigation() {
+    if (!this._attemptTerminal || this._terminalNavigation) return
+    this._terminalNavigation = false
+    this._navigationLocked = false
+    this.setData({ resultRecoveryPending: false })
+    this._navigateToResult()
   },
 
   _navigateToPaperList() {
@@ -666,6 +676,7 @@ Page({
   },
 
   async submitExam(options = {}) {
+    if (this._attemptTerminal || this._navigationLocked) return false
     if (this._submitPromise) return this._submitPromise
     if (this.data.submitting) return
     const auto = !!options.auto || this.data.timeExpired
@@ -694,7 +705,9 @@ Page({
     // In that case the auto-submit path may already have started; do not launch
     // a second client-side flush/submit sequence after the modal resolves.
     if (this._submitPromise) return this._submitPromise
-    if (this.data.submitting) return
+    if (this.data.submitting || this._attemptTerminal || this._navigationLocked) {
+      return false
+    }
 
     const task = this._performSubmit(auto)
     this._submitPromise = task

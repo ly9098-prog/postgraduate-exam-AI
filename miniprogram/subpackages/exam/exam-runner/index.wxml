@@ -19,7 +19,7 @@
       answeredCount="{{answeredCount}}"
       progressPercent="{{progressPercent}}"
       elapsedText="{{remainingText}}"
-      readonly="{{timeExpired || submitting}}"
+      readonly="{{timeExpired || submitting || resultRecoveryPending}}"
       submitting="{{submitting}}"
       submitted="{{false}}"
       showFeedback="{{false}}"
@@ -39,6 +39,10 @@
       bind:submit="submitExam"
       bind:exit="requestExit"
     />
+    <view class="result-recovery" wx:if="{{resultRecoveryPending}}">
+      <text>答卷已归档，当前页面已锁定，不能再修改答案。</text>
+      <button bindtap="retryResultNavigation">重新打开结果页</button>
+    </view>
   </view>
   <view class="submit-mask" wx:if="{{submitting}}"><view class="submit-card"><text class="submit-title">正在提交选择题答卷</text><text>请勿关闭小程序</text></view></view>
 </view>

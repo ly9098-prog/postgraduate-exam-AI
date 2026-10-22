@@ -171,7 +171,9 @@ class TestSyncQuestionKnowledgePoints:
 
         db.execute = AsyncMock(side_effect=mock_execute)
 
-        result = _run(sync_question_knowledge_points(db, q, ["导数", "极限"], source="imported"))
+        with patch("app.services.question_revision_service.lock_question_for_revision", new=AsyncMock(return_value=q)), \
+             patch("app.services.knowledge_point_service.resolve_knowledge_points", new=AsyncMock(return_value=[_make_kp(1), _make_kp(2)])):
+            result = _run(sync_question_knowledge_points(db, q, ["导数", "极限"], source="imported"))
         assert result["total"] == 2
         assert result["created"] == 2
         assert result["deleted"] == 0
@@ -200,13 +202,18 @@ class TestSyncQuestionKnowledgePoints:
 
         db.execute = AsyncMock(side_effect=mock_execute)
 
+        def _sync(names, points):
+            with patch("app.services.question_revision_service.lock_question_for_revision", new=AsyncMock(return_value=q)), \
+                 patch("app.services.knowledge_point_service.resolve_knowledge_points", new=AsyncMock(return_value=points)):
+                return _run(sync_question_knowledge_points(db, q, names, source="admin", replace=True))
+
         # replace=[极限] → 删除 kp1（id=1 不在目标 {2}），保留/更新 kp2
-        result = _run(sync_question_knowledge_points(db, q, ["极限"], source="admin", replace=True))
+        result = _sync(["极限"], [_make_kp(2, name="极限")])
         assert result["deleted"] == 1
         assert result["total"] == 1
 
         # replace=[] → 清空全部
-        result = _run(sync_question_knowledge_points(db, q, [], source="admin", replace=True))
+        result = _sync([], [])
         assert result["deleted"] == 2
         assert result["created"] == 0
 
@@ -236,7 +243,9 @@ class TestSyncQuestionKnowledgePoints:
             return r
 
         db.execute = AsyncMock(side_effect=mock_execute)
-        result = _run(sync_question_knowledge_points(db, q, [], source="imported", replace=False))
+        with patch("app.services.question_revision_service.lock_question_for_revision", new=AsyncMock(return_value=q)), \
+             patch("app.services.knowledge_point_service.resolve_knowledge_points", new=AsyncMock(return_value=[])):
+            result = _run(sync_question_knowledge_points(db, q, [], source="imported", replace=False))
         assert result["total"] == 0
         assert result["created"] == 0
 
@@ -257,72 +266,54 @@ class TestSyncQuestionKnowledgePoints:
             return r
 
         db.execute = AsyncMock(side_effect=mock_execute)
-        # 同一知识点以不同空白形式出现 → 去重为 1
-        result = _run(sync_question_knowledge_points(
-            db, q, ["  导数  ", "导数", "极限"], source="imported"))
+        with patch("app.services.question_revision_service.lock_question_for_revision", new=AsyncMock(return_value=q)), \
+             patch("app.services.knowledge_point_service.resolve_knowledge_points", new=AsyncMock(return_value=[_make_kp(1), _make_kp(2)])):
+            # 同一知识点以不同空白形式出现 → 去重为 1
+            result = _run(sync_question_knowledge_points(
+                db, q, ["  导数  ", "导数", "极限"], source="imported"))
         assert result["total"] == 2
         assert result["created"] == 2
 
 
-# ── 3. calculate_mastery_score ──
+# ── 3/4. V3 mastery primitives ──
 
-class TestCalculateMasteryScore:
-    def test_zero_attempts(self):
-        from app.services.mastery_service import calculate_mastery_score
-        score = calculate_mastery_score(0, 0, 0)
-        assert score == 0.0
+class TestMasteryPrimitives:
+    def test_zero_attempts_delta_is_correct_bonus(self):
+        from app.services.mastery_service import compute_mastery_delta
+        assert compute_mastery_delta(True) == 6.0
+        assert compute_mastery_delta(False) == -12.0
 
-    def test_all_correct(self):
-        from app.services.mastery_service import calculate_mastery_score
-        score = calculate_mastery_score(10, 10, 0)
-        assert score > 0.8  # High score expected
+    def test_difficulty_adjusts_delta(self):
+        from app.services.mastery_service import compute_mastery_delta
+        assert compute_mastery_delta(True, difficulty=4) == 9.0
+        assert compute_mastery_delta(False, difficulty=2) == -16.0
 
-    def test_all_wrong(self):
-        from app.services.mastery_service import calculate_mastery_score
-        score = calculate_mastery_score(10, 0, 10)
-        assert score < 0.3  # Low score expected
+    def test_consecutive_wrong_penalty(self):
+        from app.services.mastery_service import compute_mastery_delta
+        assert compute_mastery_delta(False, recent_wrong_count=2) == -15.0
 
-    def test_penalty_for_recent_wrong(self):
-        from app.services.mastery_service import calculate_mastery_score
-        now = datetime(2026, 6, 28)
-        score_no_penalty = calculate_mastery_score(10, 5, 5, last_wrong_at=None, last_practiced_at=now)
-        score_with_penalty = calculate_mastery_score(10, 5, 5, last_wrong_at=now, last_practiced_at=now)
-        assert score_no_penalty > score_with_penalty
+    def test_score_clamped_0_to_100(self):
+        from app.services.mastery_service import clamp_mastery_score
+        assert clamp_mastery_score(-5) == 0.0
+        assert clamp_mastery_score(120) == 100.0
 
-    def test_score_clamped_0_to_1(self):
-        from app.services.mastery_service import calculate_mastery_score
-        score = calculate_mastery_score(1, 0, 1, last_wrong_at=datetime(2026, 6, 28), last_practiced_at=datetime(2026, 6, 28))
-        assert 0.0 <= score <= 1.0
+    def test_confidence_caps_at_one(self):
+        from app.services.mastery_service import compute_confidence
+        assert compute_confidence(0) == 0.0
+        assert compute_confidence(10) == 1.0
 
+    def test_low_confidence_label_does_not_overjudge(self):
+        from app.services.mastery_service import get_mastery_label
+        assert get_mastery_label(30.0, 0.1) == "possible_weak"
+        assert get_mastery_label(90.0, 0.1) == "possible_mastered"
+        assert get_mastery_label(55.0, 0.1) == "observing"
 
-# ── 4. classify_weakness_level ──
-
-class TestClassifyWeaknessLevel:
-    def test_unknown_when_no_attempts(self):
-        from app.services.mastery_service import classify_weakness_level
-        assert classify_weakness_level(0.0, 0) == "unknown"
-
-    def test_weak(self):
-        from app.services.mastery_service import classify_weakness_level
-        assert classify_weakness_level(0.3, 5) == "weak"
-
-    def test_medium(self):
-        from app.services.mastery_service import classify_weakness_level
-        assert classify_weakness_level(0.6, 5) == "medium"
-
-    def test_strong(self):
-        from app.services.mastery_service import classify_weakness_level
-        assert classify_weakness_level(0.9, 10) == "strong"
-
-    def test_boundary_045(self):
-        from app.services.mastery_service import classify_weakness_level
-        # 0.45 is NOT < 0.45 so should be medium
-        assert classify_weakness_level(0.45, 5) == "medium"
-
-    def test_boundary_075(self):
-        from app.services.mastery_service import classify_weakness_level
-        # 0.75 is NOT < 0.75 so should be strong
-        assert classify_weakness_level(0.75, 5) == "strong"
+    def test_confirmed_labels_follow_v3_thresholds(self):
+        from app.services.mastery_service import get_mastery_label
+        assert get_mastery_label(30.0, 0.5) == "weak"
+        assert get_mastery_label(55.0, 0.5) == "normal"
+        assert get_mastery_label(80.0, 0.5) == "good"
+        assert get_mastery_label(90.0, 0.5) == "mastered"
 
 
 # ── 5. update_user_knowledge_state_after_answer ──
@@ -358,23 +349,12 @@ class TestUpdateUserKnowledgeState:
 
         db.execute = AsyncMock(side_effect=mock_execute)
 
-        result = _run(update_user_knowledge_state_after_answer(db, 1, 1, True))
+        db.scalar = AsyncMock(return_value=2)
+        result = _run(update_user_knowledge_state_after_answer(db, 1, 1, True, 11))
         assert result["created"] == 1
         assert result["updated"] == 1
         # Verify db.add was called (new state created)
         db.add.assert_called()
-
-    def test_wrong_answer_may_decrease_weakness(self):
-        from app.services.mastery_service import (
-            calculate_mastery_score,
-            classify_weakness_level,
-        )
-
-        # After many wrong answers, weakness should be "weak"
-        score = calculate_mastery_score(10, 1, 9, last_wrong_at=datetime(2026, 6, 28), last_practiced_at=datetime(2026, 6, 28))
-        level = classify_weakness_level(score, 10)
-        assert level == "weak"
-
 
 # ── 6. get_user_weak_knowledge_points ──
 
@@ -412,8 +392,8 @@ class TestGetUserWeakKnowledgePoints:
                 # UKS query — empty
                 return _make_execute_result(all=[])
             elif call_count[0] == 2:
-                # PracticeRecord fallback → (record, question_id)
-                return _make_execute_result(all=[(pr, 1), (pr, 1)])
+                # PracticeRecord fallback → (is_correct, kp_id, kp_name)
+                return _make_execute_result(all=[(False, 1, "导数"), (False, 1, "导数")])
             else:
                 # load_question_kps → (question_id, kp.name) rows
                 r = MagicMock()
@@ -576,31 +556,8 @@ class TestSmartModeIntegration:
         assert len(result) == 2
 
 
-# ── 9. submit_answer feedback loop ──
+# ── 9. answer projection feedback loop ──
 
-class TestSubmitAnswerFeedbackLoop:
-    def test_submit_calls_mastery_and_log(self):
-        """submit_answer should call mastery_service and recommendation_log_service."""
-        from app.services.practice_service import submit_answer
-
-        db = _make_mock_db()
-        q = _make_question(1, answer="A")
-
-        # Mock db.execute to return question
-        db.execute = AsyncMock(return_value=_make_execute_result(scalar_one_or_none=q))
-
-        with patch("app.services.practice_service.record_wrong", new_callable=AsyncMock), \
-             patch("app.services.practice_service.record_answer_behavior", new_callable=AsyncMock), \
-             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock), \
-             patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock), \
-             patch("app.services.question_review_service.update_user_question_state_after_answer",
-                   new_callable=AsyncMock):
-            result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="B", request_id="test-req"))
-
-        assert result["is_correct"] is False
-        assert result["is_wrong_added"] is True
-        # mastery_service and recommendation_log_service are called via try/except,
-        # so even if they fail, the result is still returned
-        assert result["question_id"] == 1
+# The legacy synchronous ``submit_answer`` entry point was replaced by signed
+# batch submission plus answer projections; API-level feedback behavior is
+# covered by practice batch and projection integration tests.
