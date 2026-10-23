@@ -44,6 +44,9 @@ const {
 const {
   createReviewMasterController,
 } = require('./utils/master-controller')
+const {
+  createStartBatchController,
+} = require('./utils/start-batch-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -504,125 +507,42 @@ todayAdviceText,
 }
 },
 async startTodayReview() {
-if (this.data.todayRemainingCount <= 0) return
-if (this.data.isStarting || this.data.isContinuing) return
-const flowSeq = ++this._flowRequestSeq
-this.setData({
-isStarting: true,
-batchLoading: true,
-phase: 'loading',
+await this._startBatchController().start()
+},
+_startBatchController() {
+return this._startBatchControllerInstance || (
+this._startBatchControllerInstance = createStartBatchController({
+getTodayRemainingCount: () => this.data.todayRemainingCount,
+isStarting: () => this.data.isStarting,
+isContinuing: () => this.data.isContinuing,
+nextFlowSeq: () => ++this._flowRequestSeq,
+getCurrentFlowSeq: () => this._flowRequestSeq,
+isFlowCurrent: seq => seq === this._flowRequestSeq,
+isPageAlive: () => this._alive,
+setData: patch => this.setData(patch),
+getBatchSize: () => this.data.reviewBatchSize,
+postNextBatch: payload => api.post('/review/today/next-batch', payload),
+loadOverview: () => this.loadTodayReviewOverview(),
+normalizeQuestion: question => normalizeReviewQuestion(question),
+restoreDraft: questions => this._restoreReviewDraft(questions),
+getSession: () => this._reviewSession,
+getData: () => this.data,
+enrichQuestion: question => this._enrichQuestion(question),
+buildOptionList: (question, answers) => adapter.buildOptionList(question, answers, KF),
+getBlankOptionGroups: question => adapter.getBlankOptionGroups(question),
+enrichBlankOptionGroups: (groups, answer) => adapter.enrichBlankOptionGroups(groups, answer),
+computeAnsweredCount: (questions, answers) => adapter.computeAnsweredCount(questions, answers, KF),
+getTotalBatchCount: () => this.data.totalBatchCount,
+checkSetDataSize: data => this._checkSetDataSize(data),
+syncAnsweredFlags: () => this._syncAnsweredFlags(),
+updateRunnerFields: () => this._updateRunnerFields(),
+checkRenderInvariant: renderModel => this._checkRenderInvariant(renderModel),
+recordRenderTrace: trace => this._recordRenderTrace(trace),
+startReviewTimer: () => this._startReviewTimer(),
+showToast: options => wx.showToast(options),
+logError: (...args) => console.error(...args),
 })
-try {
-const batch = await api.post('/review/today/next-batch', {
-batch_size: this.data.reviewBatchSize,
-})
-if (!this._alive || flowSeq !== this._flowRequestSeq) return
-const rawQuestions = batch.questions || []
-if (!rawQuestions.length) {
-wx.showToast({ title: '今日没有待复习题目', icon: 'none' })
-await this.loadTodayReviewOverview()
-return
-}
-const allQuestions = rawQuestions.map(normalizeReviewQuestion).filter(Boolean)
-if (!allQuestions.length) {
-throw new Error('所有题目标准化后为空')
-}
-this._reviewSession.allQuestions = allQuestions
-const restoredDraft = this._restoreReviewDraft(allQuestions)
-this._reviewSession.answers = restoredDraft.answers
-this._reviewSession.sessionId = batch.session_id || ''
-this._reviewSession.currentGroupId = batch.group_id || ''
-this._reviewSession.allGroupResults = []
-this._reviewSession.totalCorrect = 0
-this._reviewSession.totalWrong = 0
-this._reviewSession.totalCompleted = 0
-this._reviewSession.safeModeActive = false
-this._reviewSession.renderTraces = []
-var firstEnriched = this._enrichQuestion(allQuestions[0])
-var preparedQuestions = allQuestions.slice()
-preparedQuestions[0] = firstEnriched
-var currentIndex = Math.min(Math.max(0, restoredDraft.currentIndex || 0), preparedQuestions.length - 1)
-if (currentIndex > 0) preparedQuestions[currentIndex] = this._enrichQuestion(preparedQuestions[currentIndex])
-this._reviewSession.allQuestions = preparedQuestions
-var currentEnriched = preparedQuestions[currentIndex]
-var currentOptionList = adapter.buildOptionList(currentEnriched, restoredDraft.answers, KF)
-var currentBlankOptionGroups = currentEnriched._blankOptionGroups || []
-if (currentEnriched._hasBlankOptionGroups) {
-const restoredAnswer = restoredDraft.answers[currentEnriched.schedule_id] || ''
-currentBlankOptionGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(currentEnriched), restoredAnswer)
-}
-var firstQuestion = Object.assign({}, currentEnriched, {
-_optionList: currentOptionList,
-_blankOptionGroups: currentBlankOptionGroups,
-_hasBlankOptionGroups: currentBlankOptionGroups.length > 0,
-})
-this._reviewSession.optionKeys = currentEnriched._optionKeys
-this._checkSetDataSize({ phase: 'reviewing', currentQuestion: firstQuestion })
-const batchDueCount = Number(batch.today_due_count || 0)
-const batchCompletedCount = Number(batch.today_completed_count || 0)
-const taskTotalCount = Math.max(
-Number(this._reviewSession.todayTaskTotalCount || 0),
-Number(this.data.todayDueCount || 0),
-batchDueCount,
-allQuestions.length
 )
-const completedBeforeSession = Math.max(
-Number(this._reviewSession.completedBeforeSession || 0),
-Number(this.data.todayCompletedCount || 0),
-batchCompletedCount
-)
-this._reviewSession.todayTaskTotalCount = taskTotalCount
-this._reviewSession.completedBeforeSession = completedBeforeSession
-this.setData({
-phase: 'reviewing',
-groups: [preparedQuestions],
-currentGroupIdx: 0,
-groupQuestions: preparedQuestions,
-currentIndex: currentIndex,
-currentQuestion: firstQuestion,
-_answeredCount: adapter.computeAnsweredCount(preparedQuestions, restoredDraft.answers, KF),
-currentBatchNo: batch.batch_no || 1,
-totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
-todayDueCount: taskTotalCount,
-todayCompletedCount: completedBeforeSession,
-todayRemainingCount: Math.max(0, taskTotalCount - completedBeforeSession),
-groupResults: [],
-groupWrongResults: [],
-groupCorrect: 0,
-groupWrong: 0,
-_groupSkipped: 0,
-groupAccuracyPercent: 0,
-showGroupDetails: false,
-masterConfirmId: null,
-submittingGroup: false,
-resultTransitioning: false,
-batchLoading: false,
-isStarting: false,
-isContinuing: false,
-})
-this._syncAnsweredFlags()
-this._updateRunnerFields()
-this._checkRenderInvariant(currentEnriched._renderModel)
-this._recordRenderTrace(currentEnriched._renderModel && currentEnriched._renderModel.renderTrace)
-this._startReviewTimer()
-if (restoredDraft.restoredCount > 0) {
-wx.showToast({ title: `已恢复 ${restoredDraft.restoredCount} 题草稿`, icon: 'none' })
-}
-} catch (e) {
-if (!this._alive || flowSeq !== this._flowRequestSeq) return
-console.error('[REVIEW_ERROR] startTodayReview failed',
-'batchSize=' + this.data.reviewBatchSize,
-'statusCode=' + (e.statusCode || 'N/A'),
-'detail=' + (e.detail || e.message || 'unknown'))
-this.setData({
-isStarting: false,
-isContinuing: false,
-batchLoading: false,
-phase: 'error',
-errorText: '获取复习题失败，请检查网络后重试',
-})
-wx.showToast({ title: '获取复习题失败，请重试', icon: 'none' })
-}
 },
 _splitGroups(questions, size) {
 const groups = []
