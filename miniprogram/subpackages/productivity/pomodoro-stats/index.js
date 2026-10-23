@@ -35,6 +35,7 @@ const { createPieAnimationController } = require('./pie-animation-controller')
 const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
 const { createCancelWorkController } = require('./cancel-work-controller')
 const overviewMapping = require('./overview-mapping')
+const { buildLoadViewState } = require('./load-view-state')
 
 const {
   getSubjectColor,
@@ -713,76 +714,64 @@ var pageConfig = {
         if (!this._alive || reqId !== this._requestId || dateSeq !== this._dateRequestSeq) return
       }
 
-      const daySessions = (effectiveHistory && effectiveHistory.items) || []
-      const subjectBreakdown = (summary && summary.subjects) || []
-      const selectedDurationSec = Number(summary && summary.duration_sec) || 0
-      const selectedSessionCount = Number(summary && summary.sessions) || 0
-      const hasBleedInSubjects = overviewMapping.hasCrossDayBleedInSubjects(subjectBreakdown)
+      const willAnimate = !this._hasData
+      this._hasData = true
+      this._cancelDurationAnimation(false)
+      const displayDaySubjects = this.data.distributionPeriod === 'day'
+      if (displayDaySubjects) this._resetPieCache()
+      const viewState = buildLoadViewState({
+        stats,
+        summary,
+        lifetime,
+        trends,
+        effectiveHistory,
+        effectiveDate,
+        authoritativeToday,
+        willAnimate,
+        displayDaySubjects,
+        currentLifetimeStartDate: this.data.lifetimeStartDate,
+        currentSubjects: this.data.subjects,
+        currentDistributionHasData: this.data.distributionHasData,
+        currentRangeStart: this.data.distributionRangeStart,
+        currentRangeEnd: this.data.distributionRangeEnd,
+        hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
+        formatSession: item => this._formatSession(item),
+        formatMin: sec => this._fmtMin(sec),
+        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
+        hasDistributionData: items => this._hasDistributionData(items),
+        buildSubjectItems: subjects => this._buildSubjectItems(subjects),
+        formatPieDateLabel: date => this._formatPieDateLabel(date),
+        getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
+        buildCumulativePatch: (lifetimeSummary, lifetimeStart) => this._cumulativeCustomized
+          ? { lifetimeStartDate: lifetimeStart }
+          : {
+              lifetimeStartDate: lifetimeStart,
+              ...this._cumulativeSummaryPatch({
+                ...lifetimeSummary,
+                start_date: lifetimeStart,
+              }, lifetimeStart),
+            },
+      })
+
+      const {
+        daySessions,
+        subjectBreakdown,
+        selectedDurationSec,
+        selectedSessionCount,
+      } = viewState
+      this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
       this._daySubjectsRaw = subjectBreakdown
       this._rawTodayDur = selectedDurationSec
       this._rawWeekDur = stats.week_duration_sec || 0
 
-      const willAnimate = !this._hasData
-      const recentSessions = daySessions
-      this._hasData = true
-      this._cancelDurationAnimation(false)
-      this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
-
-      const historyPatch = willAnimate
-        ? { history: [], historyTotal: effectiveHistory.total || 0, historyReady: false }
-        : {
-            history: recentSessions.map(item => this._formatSession(item)),
-            historyTotal: effectiveHistory.total || 0,
-            historyReady: true,
-          }
-
-      const lifetimeStart = lifetime.start_date || this.data.lifetimeStartDate || effectiveDate || authoritativeToday
-      const cumulativePatch = this._cumulativeCustomized
-        ? { lifetimeStartDate: lifetimeStart }
-        : {
-            lifetimeStartDate: lifetimeStart,
-            ...this._cumulativeSummaryPatch({
-              ...lifetime,
-              start_date: lifetimeStart,
-            }, lifetimeStart),
-          }
-      const displayDaySubjects = this.data.distributionPeriod === 'day'
-      if (displayDaySubjects) this._resetPieCache()
-
-      this.setData({
-        todaySessions: selectedSessionCount,
-        todayDurationText: this._fmtMin(selectedDurationSec),
-        selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
-        weekSessions: stats.week_sessions || 0,
-        weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
-        trends: trends,
-        trendHasData: this._hasDistributionData(trends),
-        subjects: displayDaySubjects ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
-        distributionHasData: displayDaySubjects ? this._hasDistributionData(subjectBreakdown) : this.data.distributionHasData,
-        pieDateLabel: this._formatPieDateLabel(effectiveDate),
-        distributionRangeStart: displayDaySubjects ? effectiveDate : this.data.distributionRangeStart,
-        distributionRangeEnd: displayDaySubjects ? effectiveDate : this.data.distributionRangeEnd,
-        canGoNextDate: !!(effectiveDate && authoritativeToday && effectiveDate < authoritativeToday),
-        _crossDayBleedIn: hasBleedInSubjects,
-        pieLoading: false,
-        loading: false,
-        contentReady: true,
-        errorText: '',
-        _dispTodaySessions: willAnimate ? 0 : selectedSessionCount,
-        ...this._getTodayDurationDisplayPatch(willAnimate ? '0分钟' : this._fmtMin(selectedDurationSec)),
-        durationValueAnimating: willAnimate,
-        _dispWeekSessions: willAnimate ? 0 : (stats.week_sessions || 0),
-        _dispWeekDurationText: willAnimate ? '0分钟' : this._fmtMin(stats.week_duration_sec || 0),
-        ...cumulativePatch,
-        ...historyPatch,
-      }, () => {
+      this.setData(viewState.dataPatch, () => {
         if (!this._alive || !this._isVisible || reqId !== this._requestId) return
         if (willAnimate) {
           this._queueDeferredHistory(
             reqId,
             dateSeq,
             effectiveDate,
-            recentSessions,
+            daySessions,
             effectiveHistory.total || 0
           )
         }
