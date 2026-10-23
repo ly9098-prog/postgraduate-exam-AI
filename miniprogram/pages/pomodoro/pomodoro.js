@@ -77,6 +77,7 @@ const { createInterruptSessionController } = require('./utils/interrupt-session-
 const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-free-timer-controller')
 const { createFreeTimerLimitController } = require('./utils/free-timer-limit-controller')
 const { createStartBreakController } = require('./utils/start-break-controller')
+const { createStartTimerController } = require('./utils/start-timer-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -249,6 +250,7 @@ Page({
   _confirmEndFreeTimerController: null,
   _freeTimerLimitController: null,
   _startBreakController: null,
+  _startTimerController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1630,81 +1632,8 @@ Page({
   },
 
   _startTimer(totalSec, options = {}) {
-    this._clearTimer()
-    this._initCanvas(!options.reuseCanvas)
-    const controller = createCountdownController({
-      setTimeout: (fn, delay) => setTimeout(fn, delay),
-      clearTimeout: timer => clearTimeout(timer),
-      clearInterval: timer => clearInterval(timer),
-    })
-    this._timerController = controller
-
-    // remainingMs has highest priority, then remainingSec, then this._timerState.remainingSec, then totalSec
-    let remainMs
-    if (Number.isFinite(options.remainingMs)) {
-      remainMs = Math.max(0, options.remainingMs)
-    } else {
-      const remainSec = Number.isFinite(options.remainingSec)
-        ? Math.max(0, options.remainingSec)
-        : Math.max(0, this._timerState.remainingSec || totalSec)
-      remainMs = remainSec * 1000
-    }
-
-    const totalMs = Math.max(1, totalSec * 1000)
-
-    const displayRemainingSec = remainMs <= 0 ? 0 : Math.ceil(remainMs / 1000)
-    const progress = totalMs > 0 ? remainMs / totalMs : 0
-    const fmt = this._formatCountdownDisplay(displayRemainingSec)
-
-    this._countdownTotalSec = totalSec
-    this._countdownEndAt = api.now() + remainMs
-
-    this._timerState.remainingSec = displayRemainingSec
-    this._timerState.progress = progress
-    const update = { displayMin: fmt.min, displaySec: fmt.sec, ringCanvasVisible: true }
-    if (options.forceRunning) {
-      update.isPaused = false
-    }
-    this.setData(update)
-
-    const tick = () => {
-      if (this.data.isPaused || this.data.showEndConfirm) {
-        controller.stop()
-        return
-      }
-
-      const remainingMs = Math.max(0, this._countdownEndAt - api.now())
-      const displayRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
-      const progress = totalMs > 0 ? remainingMs / totalMs : 0
-      const fmt = this._formatCountdownDisplay(displayRemainingSec)
-
-      if (
-        displayRemainingSec !== this._timerState.remainingSec ||
-        Math.abs(progress - this._timerState.progress) > 0.002
-      ) {
-        this._timerState.remainingSec = displayRemainingSec
-        this._timerState.progress = progress
-        this.setData({
-          displayMin: fmt.min,
-          displaySec: fmt.sec,
-        })
-      }
-
-      this.drawRing(totalSec, this.data.phase === 'break')
-
-      if (remainingMs <= 0) {
-        this._clearTimer()
-        this._onWorkComplete()
-        return
-      }
-
-      const nextDelay = Math.max(80, Math.min(250, remainingMs % 1000 || 250))
-      controller.scheduleTick(tick, nextDelay)
-    }
-
-    tick()
+    return this._getStartTimerController().start(totalSec, options)
   },
-
   _clearTimer() {
     if (this._timerController) {
       this._timerController.clear()
@@ -1818,6 +1747,34 @@ Page({
       })
     }
     return this._startBreakController
+  },
+
+  _getStartTimerController() {
+    if (!this._startTimerController) {
+      this._startTimerController = createStartTimerController({
+        clearTimer: () => this._clearTimer(),
+        initCanvas: force => this._initCanvas(force),
+        setTimeout: (fn, delay) => setTimeout(fn, delay),
+        clearTimeout: timer => clearTimeout(timer),
+        clearInterval: timer => clearInterval(timer),
+        setTimerController: controller => { this._timerController = controller },
+        getRemainingSec: () => this._timerState.remainingSec,
+        formatCountdownDisplay: sec => this._formatCountdownDisplay(sec),
+        now: () => api.now(),
+        setCountdownTotalSec: value => { this._countdownTotalSec = value },
+        setCountdownEndAt: value => { this._countdownEndAt = value },
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        setData: data => this.setData(data),
+        isPaused: () => this.data.isPaused,
+        showEndConfirm: () => this.data.showEndConfirm,
+        getCountdownEndAt: () => this._countdownEndAt,
+        getProgress: () => this._timerState.progress,
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+        isBreakPhase: () => this.data.phase === 'break',
+        onWorkComplete: () => this._onWorkComplete(),
+      })
+    }
+    return this._startTimerController
   },
 
   /* ==================== Break Timer ==================== */

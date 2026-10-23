@@ -607,9 +607,9 @@ t('onShow restores break before pending network synchronization', () => {
 })
 
 console.log('\n--- Canvas reuse ---')
-const startTimer = method('_startTimer')
+const startTimerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-timer-controller.js'), 'utf8')
 const initCanvas = method('_initCanvas')
-t('timer restart can reuse an existing/in-flight canvas', () => assert.ok(src.includes('this._initCanvas(!options.reuseCanvas)')))
+t('timer restart can reuse an existing/in-flight canvas', () => assert.ok(startTimerSrc.includes('options.initCanvas(!startOptions.reuseCanvas)')))
 t('canvas init suppresses duplicate in-flight initialization', () => assert.ok(initCanvas.includes('this._canvasInitPending')))
 t('canvas initialization waits substantially longer on slow devices', () => {
   assert.ok(canvasLayoutSrc.includes('CANVAS_INIT_MAX_RETRIES = 16'))

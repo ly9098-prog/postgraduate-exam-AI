@@ -51,6 +51,7 @@ const MODULES = {
   'confirm-end-free-timer-controller.js': [],
   'free-timer-limit-controller.js': ['./timer-math'],
   'start-break-controller.js': ['./countdown-controller'],
+  'start-timer-controller.js': ['./countdown-controller'],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -70,7 +71,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2300
+const PAGE_MAX_LINES = 2257
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -118,6 +119,7 @@ const PAGE_METHODS = new Set([
   '_getFreeTimerLimitController', '_checkFreeTimerLimitAndAutoEnd',
   '_autoFinishFreeTimer', '_completeFreeTimerSession',
   '_getStartBreakController', '_startBreak',
+  '_getStartTimerController', '_startTimer',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -745,6 +747,18 @@ function pageViolations(source) {
         if (methodName === '_startBreak' &&
             !returnsControllerCall(node, '_getStartBreakController', 'start', ['totalSec', 'options'])) {
           errors.push('start break must delegate to its controller')
+        }
+        if (methodName === '_getStartTimerController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createStartTimerController',
+              '_startTimerController',
+            )) {
+          errors.push('start timer must lazily assign its controller')
+        }
+        if (methodName === '_startTimer' &&
+            !returnsControllerCall(node, '_getStartTimerController', 'start', ['totalSec', 'options'])) {
+          errors.push('start timer must delegate to its controller')
         }
       }
     }
