@@ -58,6 +58,9 @@ const {
 const {
   createOverviewVMController,
 } = require('./utils/overview-vm-controller')
+const {
+  createRenderSafetyController,
+} = require('./utils/render-safety-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -292,6 +295,17 @@ getBatchSizeOptions: () => REVIEW_BATCH_SIZE_OPTIONS,
 getDefaultBatchSize: () => 10,
 isUserBatchSizeSelected: () => this._userSelectedReviewBatchSize,
 getCurrentUserBatchSize: () => this.data.reviewBatchSize,
+})
+)
+},
+_renderSafetyController() {
+return this._renderSafety || (
+this._renderSafety = createRenderSafetyController({
+isSafeModeActive: () => this._reviewSession.safeModeActive,
+enterSafeMode: () => this._enterSafeMode(),
+getRenderTraces: () => this._reviewSession.renderTraces,
+setRenderTraces: traces => { this._reviewSession.renderTraces = traces },
+isDev: () => config.DEV,
 })
 )
 },
@@ -570,41 +584,10 @@ _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
 }
 },
 _checkRenderInvariant(renderModel) {
-if (!renderModel) return
-if (renderModel.mode === 'CODE' && renderModel.rawText) {
-var hasHtmlLeak = /&(?:nbsp|amp|lt|gt|#\d+);/.test(renderModel.rawText)
-if (hasHtmlLeak) {
-console.error('[CODE_HTML_LEAK] review-today CODE rawText contains HTML entities')
-}
-var hasRenderViolation = renderModel.html.length > 0 || renderModel.richTextNodes.length > 0
-if (hasRenderViolation) {
-console.error('[CODE_RENDER_VIOLATION] review-today CODE mode leaked into html/richTextNodes')
-}
-if ((hasHtmlLeak || hasRenderViolation) && !this._reviewSession.safeModeActive) {
-this._enterSafeMode()
-}
-}
-if (renderModel.mode === 'MIXED') {
-if (!renderModel.blocks || renderModel.blocks.length === 0) {
-console.error('[MIXED_RENDER_VIOLATION] review-today MIXED mode but blocks is empty')
-return
-}
-for (var mi = 0; mi < renderModel.blocks.length; mi++) {
-var mBlock = renderModel.blocks[mi]
-if (mBlock.type === 'CODE' && mBlock.rawText) {
-if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(mBlock.rawText)) {
-console.error('[CODE_HTML_LEAK] review-today MIXED CODE block #' + mi + ' contains HTML entities')
-}
-}
-}
-}
+this._renderSafetyController().checkInvariant(renderModel)
 },
 _recordRenderTrace(trace) {
-if (!trace) return
-var traces = this._reviewSession.renderTraces
-traces = traces.concat([trace])
-if (traces.length > 200) traces = traces.slice(-200)
-this._reviewSession.renderTraces = traces
+this._renderSafetyController().recordTrace(trace)
 },
 _enterSafeMode() {
 console.warn('[SELF_HEAL] review-today CODE render violation — entering SAFE_MODE')
@@ -623,15 +606,7 @@ console.warn('[SELF_HEAL] review-today re-rendered at index ' + idx + ' in SAFE_
 }
 },
 _checkSetDataSize(data) {
-if (!config.DEV) return
-var THRESHOLD = 200 * 1024
-try {
-var size = new Blob([JSON.stringify(data)]).size
-if (size > THRESHOLD) {
-console.warn('[SETDATA_SIZE] payload ~' + (size / 1024).toFixed(0) + 'KB for keys: ' + Object.keys(data).join(', ') + ' (threshold: ' + (THRESHOLD / 1024) + 'KB)')
-}
-} catch (e) {
-}
+this._renderSafetyController().checkSetDataSize(data)
 },
 _syncAnsweredFlags() {
 this._questionDisplayController().syncAnsweredFlags()
