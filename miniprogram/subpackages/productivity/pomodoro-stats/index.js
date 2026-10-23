@@ -24,6 +24,7 @@ const pieRenderer = require('./pie-renderer')
 const { createDistributionCommitController } = require('./distribution-commit-controller')
 const { createSaveDayStartController } = require('./save-day-start-controller')
 const { createSettingsController } = require('./settings-controller')
+const { reconcileFromServer } = require('./reconcile-controller')
 
 const {
   getSubjectColor,
@@ -194,54 +195,23 @@ var pageConfig = {
    * 设备时钟偏差导致的"今日"不一致。
    */
   _reconcileFromServer(stats, summary) {
-    const patch = {}
-    if (stats) {
-      const rawDsm = stats.day_start_minute
-      if (rawDsm != null) {
-        const dsm = Number.isFinite(Number(rawDsm)) ? Math.max(0, Math.min(1439, Number(rawDsm))) : this.data.dayStartMinute
-        if (dsm !== this.data.dayStartMinute) {
-          patch.dayStartMinute = dsm
-          patch.dayStartTime = chinaTime.minuteToTimeText(dsm)
-          patch.studyDayRangeText = this._studyDayRangeText(dsm)
-        }
-        this._settingsLoaded = true
-      }
-    }
-    // stats.today_date 恒为权威"今日"；仅当查看"今日"时，summary.date 亦可代表今日
-    const today = (stats && stats.today_date) || (summary && summary.date) || ''
-    if (today) patch.cumulativePickerStartDate = this._shiftDate(today, -365)
-    const prevToday = this.data._todayDate
-    const prevSelected = this.data.selectedDate
-    let changedToday = false
-    if (today && today !== prevToday) {
-      patch._todayDate = today
-      changedToday = true
-    }
-    if (today && (!prevSelected || prevSelected === prevToday || prevSelected > today)) {
-      patch.selectedDate = today
-      patch.pieDateLabel = '今日'
-      patch.selectedDurationLabel = '今日学习'
-      changedToday = true
-    }
-    const finalToday = patch._todayDate || today || prevToday
-    const finalSelected = patch.selectedDate || prevSelected
-    if (finalToday && finalSelected) patch.canGoNextDate = finalSelected < finalToday
-    if (finalSelected) {
-      const customMin = this._shiftDate(finalSelected, -365)
-      patch.customRangePickerStartDate = customMin
-      if (this.data.customRangeStartDate && this.data.customRangeStartDate > finalSelected) {
-        patch.customRangeStartDate = finalSelected
-      } else if (this.data.customRangeStartDate && this.data.customRangeStartDate < customMin) {
-        patch.customRangeStartDate = customMin
-      }
-    }
-    if (Object.keys(patch).length) this.setData(patch)
+    const result = reconcileFromServer({
+      stats,
+      summary,
+      dayStartMinute: this.data.dayStartMinute,
+      todayDate: this.data._todayDate,
+      selectedDate: this.data.selectedDate,
+      customRangeStartDate: this.data.customRangeStartDate,
+      minuteToTimeText: minute => chinaTime.minuteToTimeText(minute),
+      getStudyDayRangeText: minute => this._studyDayRangeText(minute),
+      shiftDate: (date, delta) => this._shiftDate(date, delta),
+    })
+    if (stats && stats.day_start_minute != null) this._settingsLoaded = true
+    if (Object.keys(result.patch).length) this.setData(result.patch)
     return {
-      changedToday,
-      today: today || this.data._todayDate,
-      selectedDate: today && (!prevSelected || prevSelected === prevToday || prevSelected > today)
-        ? today
-        : prevSelected,
+      changedToday: result.changedToday,
+      today: result.today,
+      selectedDate: result.selectedDate,
     }
   },
 
