@@ -9,6 +9,7 @@ from pathlib import Path
 from app.services import (
     task_queue_lua_v1,
     task_queue_lua_v1_recovery,
+    task_queue_lua_v1_to_v2,
     task_queue_lua_v2_claim,
     task_queue_lua_v2_transitions,
 )
@@ -39,13 +40,14 @@ PROTOCOL_MODULES = (
     APP_ROOT / "services" / "task_queue_keys.py",
     APP_ROOT / "services" / "task_queue_lua_v1.py",
     APP_ROOT / "services" / "task_queue_lua_v1_recovery.py",
+    APP_ROOT / "services" / "task_queue_lua_v1_to_v2.py",
     APP_ROOT / "services" / "task_queue_lua_v2_claim.py",
     APP_ROOT / "services" / "task_queue_lua_v2_transitions.py",
     APP_ROOT / "services" / "task_queue_script_bindings.py",
 )
 
-# These hashes are the wire-level Lua contract captured before the extraction.
-# Updating a script requires an explicit protocol change and a new hash.
+# These hashes are the wire-level Lua contract. Updating a script requires an
+# explicit protocol change and a new hash.
 EXPECTED_SCRIPT_SHA256 = {
     "_LUA_ENQUEUE": "9edc7a1ebee19c56e1db9174ce1d777f797e7475c91ec7d3de7de0db7a1c424f",
     "_LUA_ENQUEUE_NON_IDEMPOTENT": (
@@ -101,13 +103,17 @@ EXPECTED_SCRIPT_SHA256 = {
     "_LUA_CANCEL_V2": (
         "75bb2d8adff2a648dbbf48aa9cd647db74b4615ac71bd508331d16921f87c775"
     ),
+    "_LUA_DRAIN_ONE_V1_TO_V2": (
+        "527da83d9a77ddb7db7b574750d347769d39021d1a40ff8484a3e0f5c0632f89"
+    ),
 }
 
 
-def test_lua_script_payloads_match_pre_extraction_contract() -> None:
+def test_lua_script_payloads_match_wire_contract() -> None:
     modules = (
         task_queue_lua_v1,
         task_queue_lua_v1_recovery,
+        task_queue_lua_v1_to_v2,
         task_queue_lua_v2_claim,
         task_queue_lua_v2_transitions,
     )
@@ -141,6 +147,7 @@ def test_script_bindings_preserve_attribute_order_and_protocol_sources() -> None
         for module in (
             task_queue_lua_v1,
             task_queue_lua_v1_recovery,
+            task_queue_lua_v1_to_v2,
             task_queue_lua_v2_claim,
             task_queue_lua_v2_transitions,
         )
@@ -169,6 +176,7 @@ def test_script_bindings_preserve_attribute_order_and_protocol_sources() -> None
         "_lua_retry_claim_v2",
         "_lua_mark_corrupt_v2",
         "_lua_cancel_v2",
+        "_lua_drain_one_v1_to_v2",
     )
 
     assert tuple(attribute for attribute, _ in SCRIPT_BINDINGS) == expected_attributes

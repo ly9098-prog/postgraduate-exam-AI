@@ -34,7 +34,7 @@
 | --- | ---: | --- | --- |
 | `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
 | `backend/app/services/practice_service.py` | 4132 | `get_smart_practice_questions` 446 / `get_smart_scored_questions` 144 | smart 策略编排仍由入口持有；scored 满额/缺口补充已迁至 `practice.smart_scored_supplement`，查询、评分、最终日志与事务仍由调用方负责，后续继续收口其余分支。 |
-| `backend/app/services/task_queue_service.py` | 2676 | `fail_v2` 187 | 20 个 Lua 脚本与键空间构造已迁至独立协议模块，脚本源/实例绑定顺序集中于 `task_queue_script_bindings.py`，脚本字节和 key 命名保持不变；`DurableTaskQueue` 仍持有入队、认领、租约、重试、死信和 v1→v2 迁移编排，须继续结合真实队列集成拆分。 |
+| `backend/app/services/task_queue_service.py` | 2690 | `fail_v2` 187 | 21 个 Lua 脚本与键空间构造已迁至独立协议模块，脚本源/实例绑定顺序集中于 `task_queue_script_bindings.py`；v1→v2 已改为单任务原子迁移，脚本字节、既有 key 命名和 v2 状态返回保持不变。`DurableTaskQueue` 仍持有入队、认领、租约、重试、死信和管理编排，须继续结合真实队列集成拆分。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
 | `backend/app/core/bootstrap.py` | 282 | `_run_role_async` 50 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口；隔离子进程SIGTERM/SIGINT和CLI正常退出已测，真实外部依赖全链未验收。 |

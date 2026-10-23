@@ -1,8 +1,9 @@
 """Canonical Lua script bindings for the durable task queue.
 
-The order matches the pre-extraction load sequence. The queue service uses the
-attribute names for its per-instance SHA cache; protocol modules remain the
-only owners of Lua source text.
+The first entries preserve the pre-extraction load sequence; the atomic v1→v2
+migration script is appended. The queue service uses these attribute names for
+its per-instance SHA cache; protocol modules remain the only owners of Lua
+source text.
 """
 
 from app.services.task_queue_lua_v1 import (
@@ -18,6 +19,7 @@ from app.services.task_queue_lua_v1_recovery import (
     _LUA_REAPER,
     _LUA_RETRY_CLAIM,
 )
+from app.services.task_queue_lua_v1_to_v2 import _LUA_DRAIN_ONE_V1_TO_V2
 from app.services.task_queue_lua_v2_claim import (
     _LUA_CLAIM_V2,
     _LUA_ENQUEUE_NON_IDEMPOTENT_V2,
@@ -55,4 +57,5 @@ SCRIPT_BINDINGS: tuple[tuple[str, str], ...] = (
     ("_lua_retry_claim_v2", _LUA_RETRY_CLAIM_V2),
     ("_lua_mark_corrupt_v2", _LUA_MARK_CORRUPT_V2),
     ("_lua_cancel_v2", _LUA_CANCEL_V2),
+    ("_lua_drain_one_v1_to_v2", _LUA_DRAIN_ONE_V1_TO_V2),
 )

@@ -58,4 +58,7 @@ async def test_noscript_reloads_every_binding_before_retry():
 
     assert result == "ok"
     assert len(client.loaded) == len(bindings.SCRIPT_BINDINGS) * 2
-    assert [call[0] for call in client.eval_calls] == ["sha-1", "sha-21"]
+    assert [call[0] for call in client.eval_calls] == [
+        "sha-1",
+        f"sha-{len(bindings.SCRIPT_BINDINGS) + 1}",
+    ]

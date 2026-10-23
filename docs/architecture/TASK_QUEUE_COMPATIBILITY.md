@@ -15,7 +15,7 @@
 | 过期回收 | `_reclaim_expired_v2`、`run_reaper_loop_v2` | scheduler/HTTP worker 启动 | 只回收 lease 已过期且 heartbeat 缺失的任务；v2 Lua 使用 Redis 时间。 |
 | 健康统计 | `queue_length_v2` 等、`get_metrics_v2` | Admin 任务页、readiness、指标采样 | v2 健康方法在 Redis 不可用时抛 `QueueHealthError`，不能伪装为空队列。 |
 | 死信/损坏管理 | `list_*_v2`、`retry_from_dead_v2`、`delete_*_v2`、`purge_dead_v2` | Admin 任务页/运维接口 | 保留可见错误摘要、FIFO/LIFO 顺序和受限容量；管理重试开启新 retry cycle。 |
-| v1→v2 迁移 | `drain_v1_to_v2`、`drain_all_v1_to_v2`、`delete_v1_keys` | 一次性迁移/运维工具 | v1 仅兼容保留，不被 v2 dispatcher 消费；迁移必须保持 idempotent guard 和任务身份。 |
+| v1→v2 迁移 | `drain_v1_to_v2`、`drain_all_v1_to_v2`、`delete_v1_keys` | 一次性迁移/运维工具 | v1 仅兼容保留，不被 v2 dispatcher 消费；每个任务由原子 Lua 迁移，校验身份、写 v2 hash/admission guard/ready list 后才移除 v1 位置。v2 满时保留 v1 队头；payload 缺失或身份不符时转为 v2 corrupt 诊断。 |
 
 ## 2. Redis 键空间与版本边界
 
@@ -37,7 +37,7 @@
 
 ## 4. Lua 脚本缓存
 
-- 20 个 Lua 源文本分别由 `task_queue_lua_v1.py`、`task_queue_lua_v1_recovery.py`、`task_queue_lua_v2_claim.py`、`task_queue_lua_v2_transitions.py` 独占。
+- 21 个 Lua 源文本分别由 `task_queue_lua_v1.py`、`task_queue_lua_v1_recovery.py`、`task_queue_lua_v1_to_v2.py`、`task_queue_lua_v2_claim.py`、`task_queue_lua_v2_transitions.py` 独占。
 - `task_queue_script_bindings.py` 只保存 `(实例属性, Lua 源)` 的唯一有序清单；`DurableTaskQueue` 按该顺序调用 `SCRIPT LOAD`，缓存 SHA，并在 `NOSCRIPT` 后清空全部绑定再重载。
 - 脚本顺序、SHA、KEYS/ARGV 参数和键命名是线协议，不能因重构改变。脚本内容哈希由架构门禁固定。
 - 服务通过共享 Redis connection pool 执行脚本，单连接客户端用于阻塞 dequeue；连接返回/关闭分别属于调用点，不得用一个全局连接替代两种用途。
@@ -46,11 +46,12 @@
 
 - `backend/tests/architecture/test_task_queue_protocol_boundaries.py`：20 个脚本哈希、脚本数据模块预算、绑定顺序与源文本、服务尺寸下限。
 - `backend/tests/core/test_task_queue_script_bindings.py`：加载顺序、重复加载幂等、NOSCRIPT 全量重载。
+- `backend/tests/core/test_task_queue_v1_to_v2_migration.py`：使用 fakeredis + Lua 执行原子迁移成功、v2 满保留 v1、缺失/错配 payload 转 corrupt、已有 v2 guard 去重及半写 v2 hash 冲突保护。
 - `backend/tests/core/test_queue_metrics.py`、`test_runtime_metrics_contract.py`：Task 基础字段、指标采样和队列端口契约。
 - `backend/tests/integration/test_queue_hardening.py`、`test_queue_fencing.py`、`test_queue_integration.py`：需要 `--run-integration` 和真实临时 Redis；当前环境未启动 Redis，因此只能执行静态/替身回归，不能宣称通过。
 
 ## 6. 已知风险与后续
 
-- `drain_v1_to_v2` 当前是“LPOP 后重新入 v2”的 Python 编排；v2 队列满、payload 缺失或 Redis 在弹出后异常时，任务可能只留在 v1 hash 而不再在 v1 ready list。后续应改为带回滚的迁移脚本或独立原子迁移协议，并用真实临时 Redis 验证。
+- `drain_v1_to_v2` 的 fakeredis Lua 契约已覆盖上述丢失路径；但本机没有可用 `redis-server`，尚未在真实 Redis 执行迁移、容量并发或故障注入，不能把 fakeredis 结果记为真实集成通过。
 - 完整 worker 主循环、lease 过期回收、多 dispatcher 并发、Redis 中断恢复、生产角色退出和备份恢复演练仍未验证。
 - Admin 任务页的真实浏览器操作、真实死信重试和长任务取消仍未验收。
