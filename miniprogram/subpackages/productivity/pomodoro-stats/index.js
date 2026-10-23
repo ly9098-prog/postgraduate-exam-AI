@@ -50,6 +50,7 @@ const { createDynamicRefreshController } = require('./dynamic-refresh-controller
 const { createLoadRequestController } = require('./load-request-controller')
 const { createLoadRequestControllerFactory } = require('./load-request-controller-factory')
 const { createPageInitController } = require('./page-init-controller')
+const { createLifecycleController } = require('./lifecycle-controller')
 
 const {
   getSubjectColor,
@@ -217,39 +218,46 @@ var pageConfig = {
   },
 
   onShow() {
-    this._isVisible = true
-    this._syncThemeFromStorage()
-    if (!this._viewReady) return
-    this._requestId++
-    this.loadData()
-    this._scheduleDynamicRefresh()
+    this._getLifecycleController().show()
   },
 
   onReady() {
-    this._viewReady = true
-    this._isVisible = true
-    this._requestId++
-    this.loadData()
-    this._scheduleDynamicRefresh()
-    const warmCanvases = () => {
-      if (!this._alive || !this._isVisible) return
-      this._initCanvases(() => {})
-    }
-    if (wx.nextTick) wx.nextTick(warmCanvases)
-    else setTimeout(warmCanvases, 0)
+    this._getLifecycleController().ready()
   },
 
   onHide() {
-    this._isVisible = false
-    this._clearDynamicRefresh()
-    this._cancelDurationAnimation(false)
-    this._cancelDeferredHistory(true)
+    this._getLifecycleController().hide()
   },
 
   onUnload() {
-    this._alive = false
-    this._isVisible = false
-    this._cancelPendingWork()
+    this._getLifecycleController().unload()
+  },
+
+  _getLifecycleController() {
+    if (!this._lifecycleController) {
+      this._lifecycleController = createLifecycleController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        isViewReady: () => this._viewReady,
+        setVisible: value => { this._isVisible = value },
+        setViewReady: () => { this._viewReady = true },
+        setAlive: value => { this._alive = value },
+        incrementRequestId: () => { this._requestId++ },
+        syncTheme: () => this._syncThemeFromStorage(),
+        loadData: () => this.loadData(),
+        scheduleDynamicRefresh: () => this._scheduleDynamicRefresh(),
+        clearDynamicRefresh: () => this._clearDynamicRefresh(),
+        cancelDurationAnimation: resetState => this._cancelDurationAnimation(resetState),
+        cancelDeferredHistory: clearPending => this._cancelDeferredHistory(clearPending),
+        cancelPendingWork: () => this._cancelPendingWork(),
+        initCanvases: callback => this._initCanvases(callback),
+        nextTick: callback => {
+          if (wx.nextTick) wx.nextTick(callback)
+          else setTimeout(callback, 0)
+        },
+      })
+    }
+    return this._lifecycleController
   },
 
 
