@@ -79,7 +79,96 @@ function findMatchingResult(results, question) {
   return matchingResults[0] || null
 }
 
+function mergeResultsByScheduleId(oldResults, newResults) {
+  const order = []
+  const byScheduleId = {}
+  ;(oldResults || []).forEach(item => {
+    const scheduleId = String(item && item.schedule_id || '')
+    if (!scheduleId) return
+    if (!byScheduleId[scheduleId]) order.push(scheduleId)
+    byScheduleId[scheduleId] = item
+  })
+  ;(newResults || []).forEach(item => {
+    const scheduleId = String(item && item.schedule_id || '')
+    if (!scheduleId) return
+    if (!byScheduleId[scheduleId]) order.push(scheduleId)
+    byScheduleId[scheduleId] = item
+  })
+  return order.map(scheduleId => byScheduleId[scheduleId])
+}
+
+function buildGroupOutcome(options) {
+  const groupResults = options.groupResults || []
+  const groupCorrect = groupResults.filter(item => item.isCorrect && item.wasSubmitted).length
+  const groupWrong = groupResults.filter(item => item.wasSubmitted && !item.isCorrect).length
+  const groupSkipped = groupResults.filter(item => !item.wasSubmitted).length
+  const groupFailed = groupResults.filter(item => item.submitFailed).length
+  const groupRefreshRequired = groupResults.filter(item => item.submitFailed && item.refreshRequired).length
+  const groupRetryableFailed = groupResults.filter(item => item.submitFailed && !item.refreshRequired).length
+  const failureToast = groupFailed > 0
+    ? (groupRefreshRequired > 0 && groupRetryableFailed > 0
+      ? `${groupRefreshRequired} 题需刷新，${groupRetryableFailed} 题待重试`
+      : (groupRefreshRequired > 0
+        ? `${groupRefreshRequired} 题任务已更新，将重新获取`
+        : `${groupRetryableFailed} 题提交失败，已保留待重试`))
+    : ''
+
+  const allGroupResults = mergeResultsByScheduleId(options.allGroupResults, groupResults)
+  const totalCorrect = allGroupResults.filter(item => item.isCorrect && item.wasSubmitted).length
+  const totalWrong = allGroupResults.filter(item => item.wasSubmitted && !item.isCorrect).length
+  const totalCompleted = allGroupResults.filter(item => item.wasSubmitted).length
+  const pendingQuestionIds = new Set(
+    groupResults
+      .filter(item => !item.wasSubmitted && (!item.submitFailed || !item.refreshRequired))
+      .map(item => String(item.schedule_id))
+  )
+  const pendingQuestions = (options.groupQuestions || [])
+    .filter(question => pendingQuestionIds.has(String(question.schedule_id)))
+  const groups = pendingQuestions.length > 0
+    ? (options.groups || []).concat([pendingQuestions])
+    : (options.groups || [])
+  const todayTaskTotalCount = Math.max(
+    Number(options.sessionTodayTaskTotalCount || 0),
+    Number(options.dataTodayDueCount || 0),
+    totalCompleted
+  )
+  const todayCompletedCount = Math.min(
+    todayTaskTotalCount,
+    Math.max(
+      Number(options.dataTodayCompletedCount || 0),
+      Number(options.completedBeforeSession || 0) + totalCompleted
+    )
+  )
+  const todayRemainingCount = Math.max(0, todayTaskTotalCount - todayCompletedCount)
+
+  return {
+    failureToast,
+    session: {
+      todayTaskTotalCount,
+      allGroupResults,
+      totalCorrect,
+      totalWrong,
+      totalCompleted,
+    },
+    view: {
+      groups,
+      groupWrongResults: groupResults.filter(item => item.wasSubmitted && !item.isCorrect),
+      groupCorrect,
+      groupWrong,
+      _groupSkipped: groupSkipped,
+      groupAccuracyPercent: Math.round((groupCorrect + groupWrong) > 0 ? groupCorrect / (groupCorrect + groupWrong) * 100 : 0),
+      todayDueCount: todayTaskTotalCount,
+      todayCompletedCount,
+      todayRemainingCount,
+      todayProgressPercent: todayTaskTotalCount > 0 ? Math.round(todayCompletedCount / todayTaskTotalCount * 100) : 0,
+      _groupProgressStyle: 'width: ' + Math.round((options.currentGroupIdx + 1) / Math.max(1, groups.length) * 100) + '%',
+    },
+  }
+}
+
 module.exports = {
   buildGroupReviews,
   buildGroupResult,
+  buildGroupOutcome,
+  mergeResultsByScheduleId,
 }

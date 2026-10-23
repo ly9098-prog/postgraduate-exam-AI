@@ -16,6 +16,7 @@ const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
 const {
   buildGroupReviews,
   buildGroupResult,
+  buildGroupOutcome,
 } = require('./utils/group-submission')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
@@ -49,25 +50,6 @@ var s = Math.max(0, sec || 0)
 var m = Math.floor(s / 60)
 var ss = s % 60
 return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss
-}
-function _mergeResultsByScheduleId(oldResults, newResults) {
-var order = []
-var map = {}
-;(oldResults || []).forEach(function(item) {
-var sid = String(item && item.schedule_id || '')
-if (!sid) return
-if (!map[sid]) order.push(sid)
-map[sid] = item
-})
-;(newResults || []).forEach(function(item) {
-var sid = String(item && item.schedule_id || '')
-if (!sid) return
-if (!map[sid]) order.push(sid)
-map[sid] = item
-})
-return order.map(function(sid) {
-return map[sid]
-})
 }
 function _reviewFailureNeedsRefresh(result) {
 if (!result || result.success !== false) return false
@@ -1195,69 +1177,29 @@ failureNeedsRefresh: result => _reviewFailureNeedsRefresh(result),
 // Drafts are removed only after the server confirms that exact immutable task
 // occurrence was submitted. Failed/skipped items remain available for retry.
 this._clearSubmittedReviewDraft(groupQuestions, groupResults)
-const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasSubmitted).length
-const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
-const groupSkipped = groupResults.filter(r => !r.wasSubmitted).length
-const groupFailed = groupResults.filter(r => r.submitFailed).length
-const groupRefreshRequired = groupResults.filter(r => r.submitFailed && r.refreshRequired).length
-const groupRetryableFailed = groupResults.filter(r => r.submitFailed && !r.refreshRequired).length
-if (groupFailed > 0) {
-const title = groupRefreshRequired > 0 && groupRetryableFailed > 0
-? `${groupRefreshRequired} 题需刷新，${groupRetryableFailed} 题待重试`
-: (groupRefreshRequired > 0
-? `${groupRefreshRequired} 题任务已更新，将重新获取`
-: `${groupRetryableFailed} 题提交失败，已保留待重试`)
-wx.showToast({ title, icon: 'none' })
-}
-const allGroupResults = _mergeResultsByScheduleId(this._reviewSession.allGroupResults, groupResults)
-const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasSubmitted).length
-const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
-const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
-const pendingQuestionIds = new Set(
-groupResults
-.filter(r => !r.wasSubmitted && (!r.submitFailed || !r.refreshRequired))
-.map(r => String(r.schedule_id))
-)
-const pendingQuestions = groupQuestions.filter(q => pendingQuestionIds.has(String(q.schedule_id)))
-const newGroups = pendingQuestions.length > 0
-? (this.data.groups || []).concat([pendingQuestions])
-: this.data.groups
-const todayTaskTotalCount = Math.max(
-Number(this._reviewSession.todayTaskTotalCount || 0),
-Number(this.data.todayDueCount || 0),
-totalCompleted
-)
-const completedBeforeSession = Number(this._reviewSession.completedBeforeSession || 0)
-const todayCompletedCount = Math.min(
-todayTaskTotalCount,
-Math.max(Number(this.data.todayCompletedCount || 0), completedBeforeSession + totalCompleted)
-)
-const todayRemainingCount = Math.max(0, todayTaskTotalCount - todayCompletedCount)
-this._reviewSession.todayTaskTotalCount = todayTaskTotalCount
-this._reviewSession.allGroupResults = allGroupResults
-this._reviewSession.totalCorrect = totalCorrect
-this._reviewSession.totalWrong = totalWrong
-this._reviewSession.totalCompleted = totalCompleted
+const outcome = buildGroupOutcome({
+groupResults,
+groupQuestions,
+groups: this.data.groups,
+allGroupResults: this._reviewSession.allGroupResults,
+sessionTodayTaskTotalCount: this._reviewSession.todayTaskTotalCount,
+dataTodayDueCount: this.data.todayDueCount,
+dataTodayCompletedCount: this.data.todayCompletedCount,
+completedBeforeSession: this._reviewSession.completedBeforeSession,
+currentGroupIdx: this.data.currentGroupIdx,
+})
+if (outcome.failureToast) wx.showToast({ title: outcome.failureToast, icon: 'none' })
+Object.assign(this._reviewSession, outcome.session)
 this._pauseReviewTimer()
 this.setData({
 phase: 'group-result',
-groups: newGroups,
+...outcome.view,
 groupResults,
-groupWrongResults: groupResults.filter(r => r.wasSubmitted && !r.isCorrect),
-groupCorrect,
-groupWrong,
-_groupSkipped: groupSkipped,
-groupAccuracyPercent: Math.round((groupCorrect + groupWrong) > 0 ? groupCorrect / (groupCorrect + groupWrong) * 100 : 0),
-todayDueCount: todayTaskTotalCount,
-todayCompletedCount: todayCompletedCount,
-todayRemainingCount: todayRemainingCount,
-todayProgressPercent: todayTaskTotalCount > 0 ? Math.round(todayCompletedCount / todayTaskTotalCount * 100) : 0,
 showGroupDetails: false,
 submittingGroup: false,
-_groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
 resultDockVisible: true,
 }, () => {
-if (todayRemainingCount <= 0) this._showResultDockAndRefreshTimer()
+if (outcome.view.todayRemainingCount <= 0) this._showResultDockAndRefreshTimer()
 })
 } catch (e) {
 if (!this._alive) return

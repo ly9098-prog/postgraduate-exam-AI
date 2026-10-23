@@ -3,6 +3,8 @@ const { test } = require('node:test')
 const {
   buildGroupReviews,
   buildGroupResult,
+  buildGroupOutcome,
+  mergeResultsByScheduleId,
 } = require('../subpackages/study/review-today/utils/group-submission')
 
 const questions = [
@@ -119,4 +121,81 @@ test('uses result order and may select a question id fallback', () => {
   assert.equal(exact.wasSubmitted, true)
   assert.equal(exact.isCorrect, false)
   assert.equal(exact.correctAnswer, 'wrong')
+})
+
+test('merges result history by schedule id in first-seen order', () => {
+  const previous = [
+    { schedule_id: 1, wasSubmitted: true, isCorrect: false },
+    { schedule_id: 2, wasSubmitted: true, isCorrect: true },
+  ]
+  const current = [
+    { schedule_id: 2, wasSubmitted: true, isCorrect: false },
+    { schedule_id: 3, wasSubmitted: true, isCorrect: true },
+  ]
+  assert.deepEqual(mergeResultsByScheduleId(previous, current), [
+    { schedule_id: 1, wasSubmitted: true, isCorrect: false },
+    { schedule_id: 2, wasSubmitted: true, isCorrect: false },
+    { schedule_id: 3, wasSubmitted: true, isCorrect: true },
+  ])
+})
+
+test('builds retry groups, progress, and session state from group results', () => {
+  const submitted = {
+    schedule_id: 1,
+    wasSubmitted: true,
+    isCorrect: true,
+  }
+  const failed = {
+    schedule_id: 2,
+    wasSubmitted: false,
+    submitFailed: true,
+    refreshRequired: false,
+  }
+  const refreshed = {
+    schedule_id: 3,
+    wasSubmitted: false,
+    submitFailed: true,
+    refreshRequired: true,
+  }
+  const skipped = {
+    schedule_id: 4,
+    wasSubmitted: false,
+    submitFailed: false,
+  }
+  const outcome = buildGroupOutcome({
+    groupResults: [submitted, failed, refreshed, skipped],
+    groupQuestions: [
+      { schedule_id: 1 }, { schedule_id: 2 }, { schedule_id: 3 }, { schedule_id: 4 },
+    ],
+    groups: [{ schedule_id: 1 }, { schedule_id: 2 }, { schedule_id: 3 }, { schedule_id: 4 }],
+    allGroupResults: [{ schedule_id: 1, wasSubmitted: false }],
+    sessionTodayTaskTotalCount: 6,
+    dataTodayDueCount: 5,
+    dataTodayCompletedCount: 1,
+    completedBeforeSession: 0,
+    currentGroupIdx: 0,
+  })
+
+  assert.equal(outcome.failureToast, '1 题需刷新，1 题待重试')
+  assert.deepEqual(outcome.view.groups, [
+    { schedule_id: 1 }, { schedule_id: 2 }, { schedule_id: 3 }, { schedule_id: 4 },
+    [{ schedule_id: 2 }, { schedule_id: 4 }],
+  ])
+  assert.deepEqual(outcome.session, {
+    todayTaskTotalCount: 6,
+    allGroupResults: [submitted, failed, refreshed, skipped],
+    totalCorrect: 1,
+    totalWrong: 0,
+    totalCompleted: 1,
+  })
+  assert.equal(outcome.view.groupCorrect, 1)
+  assert.equal(outcome.view.groupWrong, 0)
+  assert.equal(outcome.view._groupSkipped, 3)
+  assert.equal(outcome.view.groupAccuracyPercent, 100)
+  assert.equal(outcome.view.todayDueCount, 6)
+  assert.equal(outcome.view.todayCompletedCount, 1)
+  assert.equal(outcome.view.todayRemainingCount, 5)
+  assert.equal(outcome.view.todayProgressPercent, 17)
+  assert.equal(outcome.view._groupProgressStyle, 'width: 20%')
+  assert.deepEqual(outcome.view.groupWrongResults, [])
 })
