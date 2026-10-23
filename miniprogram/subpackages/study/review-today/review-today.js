@@ -7,8 +7,7 @@ stripLeadingOptionLabel, toPlainInlineMathText, needsRichRender,
 textToHtml
 } = require('../utils/stem-render')
 const {
-isMultipleChoiceType, isTrueFalseType,
-normalizeChoiceAnswer, serializeChoiceAnswer, serializeBlankAnswer,
+isTrueFalseType,
 } = require('../utils/answer')
 const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../utils/subject-meta')
@@ -50,6 +49,9 @@ const {
 const {
   createReviewDraftController,
 } = require('./utils/draft-controller')
+const {
+  createAnswerInteractionController,
+} = require('./utils/answer-interaction-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -239,6 +241,23 @@ getPhase: () => this.data.phase,
 getGroupQuestions: () => this.data.groupQuestions,
 getCurrentQuestion: () => this.data.currentQuestion,
 now: () => Date.now(),
+})
+)
+},
+_answerInteractionController() {
+return this._answerInteraction || (
+this._answerInteraction = createAnswerInteractionController({
+isSubmitting: () => this.data.submittingGroup,
+getCurrentQuestion: () => this.data.currentQuestion,
+getAnswers: () => this._reviewSession.answers,
+setAnswers: answers => { this._reviewSession.answers = answers },
+getGroupQuestions: () => this.data.groupQuestions,
+getKeyField: () => KF,
+setData: patch => this.setData(patch),
+persistDraft: () => this._persistReviewDraft(),
+syncAnsweredFlags: () => this._syncAnsweredFlags(),
+updateRunnerFields: () => this._updateRunnerFields(),
+buildRunnerSubtitle: () => '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
 })
 )
 },
@@ -661,78 +680,10 @@ runnerSubjectName: this.data.currentQuestion
 })
 },
 selectOption(e) {
-if (this.data.submittingGroup) return
-const opt = e.detail.option
-if (!opt) return
-const q = this.data.currentQuestion
-const answers = { ...this._reviewSession.answers }
-if (isMultipleChoiceType(q.question_type)) {
-const prev = answers[q.schedule_id] || ''
-const sel = normalizeChoiceAnswer(prev)
-const idx = sel.indexOf(opt)
-if (idx >= 0) sel.splice(idx, 1)
-else sel.push(opt)
-sel.sort()
-const newAnswer = serializeChoiceAnswer(sel.join(','))
-if (newAnswer) answers[q.schedule_id] = newAnswer
-else delete answers[q.schedule_id]
-} else {
-if (answers[q.schedule_id] === opt) {
-delete answers[q.schedule_id]
-} else {
-answers[q.schedule_id] = opt
-}
-}
-this._reviewSession.answers = answers
-this._persistReviewDraft()
-const optionList = adapter.buildOptionList(q, answers, KF)
-const currentQuestion = Object.assign({}, q, { _optionList: optionList })
-const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
-this.setData({ currentQuestion, _answeredCount: answeredCount })
-this._syncAnsweredFlags()
-this._updateRunnerFields()
+this._answerInteractionController().selectOption(e)
 },
 selectBlankOption(e) {
-if (this.data.submittingGroup) return
-const blankId = String(e.detail.blankId || '').trim()
-const opt = String(e.detail.option || '').trim().toUpperCase()
-const q = this.data.currentQuestion
-if (!q || !adapter.isMultiBlankChoice(q) || !blankId || !opt) return
-const answer = this._reviewSession.answers[q.schedule_id] || ''
-const blankAnswers = adapter.normalizeBlankAnswer(answer)
-if (typeof adapter.isMultiBlankMultipleChoice === 'function' && adapter.isMultiBlankMultipleChoice(q)) {
-// 多空（多选）：在空内 key 集合中切换
-const current = String(blankAnswers[blankId] || '').split(',').filter(Boolean)
-const next = current.indexOf(opt) >= 0
-? current.filter(function (k) { return k !== opt })
-: current.concat([opt]).sort()
-if (next.length > 0) blankAnswers[blankId] = next.join(',')
-else delete blankAnswers[blankId]
-} else if (blankAnswers[blankId] === opt) {
-delete blankAnswers[blankId]
-} else {
-blankAnswers[blankId] = opt
-}
-const rawGroups = adapter.getBlankOptionGroups(q)
-const newAnswer = serializeBlankAnswer(rawGroups, blankAnswers)
-const answers = { ...this._reviewSession.answers }
-if (newAnswer) answers[q.schedule_id] = newAnswer
-else delete answers[q.schedule_id]
-const enrichedGroups = adapter.enrichBlankOptionGroups(rawGroups, newAnswer)
-this._reviewSession.answers = answers
-this._persistReviewDraft()
-const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
-const enrichedQuestions = adapter.applyAnsweredFlags(this.data.groupQuestions,
-adapter.buildAnsweredFlags(this.data.groupQuestions, answers, KF), KF)
-this.setData({
-_answeredCount: answeredCount,
-runnerProgressPercent: Math.round(answeredCount / (enrichedQuestions.length || 1) * 100),
-runnerSubtitle: '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
-runnerSubjectName: q ? (q.subject_name || q._subjectLabel || '') : '',
-'currentQuestion._blankOptionGroups': enrichedGroups,
-'currentQuestion._hasBlankOptionGroups': enrichedGroups.length > 0,
-groupQuestions: enrichedQuestions,
-})
+this._answerInteractionController().selectBlankOption(e)
 },
 goQuestion(e) {
 var index = e.detail.index
