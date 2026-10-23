@@ -13,8 +13,8 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 43)
-  assert.equal(result.edges, 4)
+  assert.equal(result.modules, 44)
+  assert.equal(result.edges, 5)
 })
 
 test('dependency injection examples cannot import page, API, storage or another package', () => {
@@ -545,6 +545,22 @@ test('free timer begin shell must lazily reuse one controller', () => {
     .includes('free timer begin must delegate to its controller'))
 })
 
+test('cancel end confirm shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._cancelEndConfirmController = createCancelEndConfirmController({',
+    'void createCancelEndConfirmController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('cancel end confirm must lazily assign its controller'))
+
+  const detachedCancel = pageSource.replace(
+    'this._getCancelEndConfirmController().cancel()',
+    'this._getCancelEndConfirmController().legacyCancel()'
+  )
+  assert.ok(pageViolations(detachedCancel)
+    .includes('cancel end confirm must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -557,6 +573,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 43)
+    assert.equal(result.modules, 44)
   }
 })

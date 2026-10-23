@@ -59,6 +59,7 @@ const { createBreakRestoreController } = require('./utils/break-restore-controll
 const { createCompletionCelebrationController } = require('./utils/completion-celebration-controller')
 const { createWorkCompleteController } = require('./utils/work-complete-controller')
 const { createFreeTimerBeginController } = require('./utils/free-timer-begin-controller')
+const { createCancelEndConfirmController } = require('./utils/cancel-end-confirm-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -213,6 +214,7 @@ Page({
   _completionCelebrationController: null,
   _workCompleteController: null,
   _freeTimerBeginController: null,
+  _cancelEndConfirmController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -765,6 +767,38 @@ Page({
     return this._freeTimerBeginController
   },
 
+  _getCancelEndConfirmController() {
+    if (!this._cancelEndConfirmController) {
+      this._cancelEndConfirmController = createCancelEndConfirmController({
+        isActionLoading: () => this.data.actionLoading,
+        getEndConfirmMode: () => this._timerState.endConfirmMode,
+        getConfirmTimerSnapshot: () => this._confirmTimerSnapshot,
+        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
+        now: () => api.now(),
+        incrementConfirmActionSeq: () => { this._confirmActionSeq = (this._confirmActionSeq || 0) + 1 },
+        isPaused: () => this.data.isPaused,
+        applyTimerState: patch => Object.assign(this._timerState, patch),
+        safeGetStorage: key => this._safeGetPomodoroStorage(key, 'cancel end confirm'),
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'cancel confirm resume adjustment'),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
+        setData: data => this.setData(data),
+        setCountdownTotalSec: v => { this._countdownTotalSec = v },
+        startTimer: (totalSec, opts) => this._startTimer(totalSec, opts),
+        startFreeTimerInterval: () => this._startFreeTimerInterval(),
+        restartFreeTimerInterval: () => this._restartFreeTimerInterval(),
+        nextTick: callback => wx.nextTick(callback),
+        initCanvas: force => this._initCanvas(force),
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+        redrawFreeRingAfterOverlay: () => this._redrawFreeRingAfterOverlay(),
+        retryPendingSync: () => this._retryPendingPomodoroSync(),
+        warn: msg => console.warn(msg),
+      })
+    }
+    return this._cancelEndConfirmController
+  },
+
   _updateFreeElapsed() {
     if (!this.data.isFreeTimer) return
     if (this.data.showEndConfirm) return
@@ -1098,63 +1132,7 @@ Page({
   },
 
   async cancelEndConfirm() {
-    if (this.data.actionLoading) return
-
-    const mode = this._timerState.endConfirmMode
-    let snapshot = this._confirmTimerSnapshot
-    if (!snapshot) {
-      const storedConfirm = this._safeGetPomodoroStorage('pomodoro_confirm_pause', 'cancel end confirm')
-      if (!storedConfirm.ok) {
-        this._showPomodoroPersistenceError()
-        return
-      }
-      snapshot = storedConfirm.value
-    }
-    const now = api.now()
-    this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-    const plan = buildCancelEndConfirmPlan({
-      mode,
-      snapshot,
-      now,
-      freeNow: mode === 'free-complete' ? api.now() : now,
-      isPaused: this.data.isPaused,
-    })
-    if (plan.snapshot) this._confirmTimerSnapshot = plan.snapshot
-    Object.assign(this._timerState, plan.timer)
-    if (plan.adjustment) {
-      if (!this._setPendingPomodoroSync('resume', plan.adjustment.sessionId, now)) {
-        this._showPomodoroPersistenceError()
-        return
-      }
-      this._safeSetPomodoroStorage('pomodoro_pause_adjustment', plan.adjustment, 'cancel confirm resume adjustment')
-    }
-
-    this.setData(plan.view)
-    if (plan.removeConfirmStorage) {
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-    }
-    if (plan.clearSnapshot) this._confirmTimerSnapshot = null
-    if (plan.startTimer) {
-      this._countdownTotalSec = plan.startTimer.totalSec
-      this._startTimer(plan.startTimer.totalSec, {
-        remainingMs: plan.startTimer.remainingMs,
-        forceRunning: true,
-      })
-    }
-    if (plan.startFreeTimer) this._startFreeTimerInterval()
-    if (plan.restartFreeTimer) this._restartFreeTimerInterval()
-    if (plan.redraw) {
-      wx.nextTick(() => {
-        this._initCanvas(true)
-        this.drawRing(plan.redraw.totalSec, plan.redraw.phase === 'break')
-      })
-    }
-    if (plan.redrawFree) this._redrawFreeRingAfterOverlay()
-    if (plan.retryPending) {
-      this._retryPendingPomodoroSync().then(synced => {
-        if (!synced) console.warn('resume after cancel confirm pending; keep local timer')
-      })
-    }
+    return this._getCancelEndConfirmController().cancel()
   },
 
   async confirmEndTimer() {

@@ -599,7 +599,7 @@ t('drawRing self-heals a failed canvas initialization on a later tick', () => {
 })
 
 console.log('\n--- Free end-confirm ring recovery ---')
-const cancelEndConfirm = method('cancelEndConfirm')
+const cancelEndConfirmSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/cancel-end-confirm-controller.js'), 'utf8')
 const redrawFreeRing = method('_redrawFreeRingAfterOverlay')
 t('free ring recovery forces a fresh canvas after overlay dismissal', () => {
   assert.ok(redrawFreeRing.includes('this._timerState.progress = 1'))
@@ -607,7 +607,7 @@ t('free ring recovery forces a fresh canvas after overlay dismissal', () => {
   assert.ok(redrawFreeRing.includes('this.drawRing(0, false)'))
 })
 t('free end-confirm cancel redraws the ring in all recovery branches', () => {
-  assert.ok(cancelEndConfirm.includes('if (plan.redrawFree) this._redrawFreeRingAfterOverlay()'))
+  assert.ok(cancelEndConfirmSrc.includes('if (plan.redrawFree) options.redrawFreeRingAfterOverlay()'))
   assert.ok((cancelConfirmStateSrc.match(/redrawFree: true/g) || []).length >= 3)
 })
 t('free ring redraw waits until the confirm overlay is gone', () => {
@@ -632,9 +632,9 @@ t('native canvas is truly hidden while end-confirm overlay is visible', () => {
 })
 
 t('countdown cancel rebuilds canvas after native hidden is removed', () => {
-  assert.ok(cancelEndConfirm.includes('if (plan.redraw)'))
-  assert.ok(cancelEndConfirm.includes('this._initCanvas(true)'))
-  assert.ok(cancelEndConfirm.includes('this.drawRing(plan.redraw.totalSec'))
+  assert.ok(cancelEndConfirmSrc.includes('if (plan.redraw)'))
+  assert.ok(cancelEndConfirmSrc.includes('options.initCanvas(true)'))
+  assert.ok(cancelEndConfirmSrc.includes('options.drawRing(plan.redraw.totalSec'))
   assert.ok((cancelConfirmStateSrc.match(/redraw: \{ totalSec: snapshot\.totalSec/g) || []).length >= 2)
 })
 t('native canvas uses normal flow instead of absolute positioning', () => {

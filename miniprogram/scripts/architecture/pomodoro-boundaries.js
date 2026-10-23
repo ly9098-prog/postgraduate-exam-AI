@@ -33,6 +33,7 @@ const MODULES = {
   'completion-celebration-controller.js': [],
   'work-complete-controller.js': [],
   'free-timer-begin-controller.js': [],
+  'cancel-end-confirm-controller.js': ['./cancel-confirm-state'],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -52,7 +53,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2441
+const PAGE_MAX_LINES = 2419
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -81,6 +82,7 @@ const PAGE_METHODS = new Set([
   '_getCompletionCelebrationController', '_showCompletionCelebration',
   '_getWorkCompleteController', '_onWorkComplete',
   '_getFreeTimerBeginController', '_beginFreeTimer',
+  '_getCancelEndConfirmController', 'cancelEndConfirm',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -484,6 +486,18 @@ function pageViolations(source) {
         if (methodName === '_beginFreeTimer' &&
             !returnsControllerCall(node, '_getFreeTimerBeginController', 'begin', ['session'])) {
           errors.push('free timer begin must delegate to its controller')
+        }
+        if (methodName === '_getCancelEndConfirmController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createCancelEndConfirmController',
+              '_cancelEndConfirmController',
+            )) {
+          errors.push('cancel end confirm must lazily assign its controller')
+        }
+        if (methodName === 'cancelEndConfirm' &&
+            !returnsControllerCall(node, '_getCancelEndConfirmController', 'cancel', [])) {
+          errors.push('cancel end confirm must delegate to its controller')
         }
       }
     }
