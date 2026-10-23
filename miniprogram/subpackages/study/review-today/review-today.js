@@ -52,6 +52,9 @@ const {
 const {
   createAnswerInteractionController,
 } = require('./utils/answer-interaction-controller')
+const {
+  createQuestionDisplayController,
+} = require('./utils/question-display-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -257,6 +260,24 @@ setData: patch => this.setData(patch),
 persistDraft: () => this._persistReviewDraft(),
 syncAnsweredFlags: () => this._syncAnsweredFlags(),
 updateRunnerFields: () => this._updateRunnerFields(),
+buildRunnerSubtitle: () => '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
+})
+)
+},
+_questionDisplayController() {
+return this._questionDisplay || (
+this._questionDisplay = createQuestionDisplayController({
+getGroupQuestions: () => this.data.groupQuestions,
+getAnswers: () => this._reviewSession.answers,
+setOptionKeys: keys => { this._reviewSession.optionKeys = keys },
+getKeyField: () => KF,
+getAnsweredCount: () => this.data._answeredCount,
+getCurrentQuestion: () => this.data.currentQuestion,
+enrichQuestion: q => this._enrichQuestion(q),
+setData: patch => this.setData(patch),
+checkSetDataSize: data => this._checkSetDataSize(data),
+checkRenderInvariant: model => this._checkRenderInvariant(model),
+recordRenderTrace: trace => this._recordRenderTrace(trace),
 buildRunnerSubtitle: () => '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
 })
 )
@@ -631,53 +652,13 @@ console.warn('[SETDATA_SIZE] payload ~' + (size / 1024).toFixed(0) + 'KB for key
 }
 },
 _syncAnsweredFlags() {
-const enriched = adapter.applyAnsweredFlags(this.data.groupQuestions, adapter.buildAnsweredFlags(this.data.groupQuestions, this._reviewSession.answers, KF), KF)
-this.setData({ groupQuestions: enriched })
+this._questionDisplayController().syncAnsweredFlags()
 },
 _showQuestion(index) {
-const q = this.data.groupQuestions[index]
-if (!q) return
-var enriched = q._renderModel ? q : this._enrichQuestion(q)
-const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, this._reviewSession.answers, KF)
-const optionList = adapter.buildOptionList(enriched, this._reviewSession.answers, KF)
-var blankOptionGroups = enriched._blankOptionGroups || []
-var hasBlankOptionGroups = enriched._hasBlankOptionGroups || false
-if (hasBlankOptionGroups) {
-const answer = this._reviewSession.answers[enriched.schedule_id] || ''
-blankOptionGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(enriched), answer)
-}
-const currentQuestion = Object.assign({}, enriched, {
-_optionList: optionList,
-_blankOptionGroups: blankOptionGroups,
-_hasBlankOptionGroups: blankOptionGroups.length > 0,
-})
-this._reviewSession.optionKeys = enriched._optionKeys
-if (!q._renderModel) {
-var gq = this.data.groupQuestions.slice()
-gq[index] = enriched
-this.setData({ groupQuestions: gq })
-}
-this._checkSetDataSize({ currentIndex: index, currentQuestion: currentQuestion })
-this.setData({
-currentIndex: index,
-currentQuestion: currentQuestion,
-_answeredCount: answeredCount,
-})
-this._updateRunnerFields()
-this._checkRenderInvariant(enriched._renderModel)
-this._recordRenderTrace(enriched._renderModel && enriched._renderModel.renderTrace)
+this._questionDisplayController().showQuestion(index)
 },
 _updateRunnerFields() {
-var grp = this.data.groupQuestions || []
-var total = grp.length || 1
-var answered = this.data._answeredCount || 0
-this.setData({
-runnerProgressPercent: Math.round(answered / total * 100),
-runnerSubtitle: '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
-runnerSubjectName: this.data.currentQuestion
-? (this.data.currentQuestion.subject_name || this.data.currentQuestion._subjectLabel || '')
-: '',
-})
+this._questionDisplayController().updateRunnerFields()
 },
 selectOption(e) {
 this._answerInteractionController().selectOption(e)
