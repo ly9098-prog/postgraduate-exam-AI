@@ -39,6 +39,7 @@ const { buildLoadViewState } = require('./load-view-state')
 const { buildDateViewState } = require('./date-view-state')
 const { createStatsCanvasInitController } = require('./canvas-init-controller')
 const { createThemeSyncController } = require('./theme-sync-controller')
+const { createDeferredHistoryController } = require('./deferred-history-controller')
 
 const {
   getSubjectColor,
@@ -607,42 +608,32 @@ var pageConfig = {
   },
 
   _cancelDeferredHistory(clearPending) {
-    if (this._deferredHistoryTimer) {
-      clearTimeout(this._deferredHistoryTimer)
-      this._deferredHistoryTimer = null
-    }
-    if (clearPending) this._pendingHistoryCommit = null
+    this._getDeferredHistoryController().cancel(clearPending)
   },
 
   _queueDeferredHistory(reqId, dateSeq, selectedDate, sessions, total) {
-    this._cancelDeferredHistory(true)
-    this._pendingHistoryCommit = {
-      reqId,
-      dateSeq,
-      selectedDate,
-      sessions: Array.isArray(sessions) ? sessions : [],
-      total: Number(total) || 0,
-    }
-    // The history list is below the fold. Mount it after the chart/count-up
-    // animations have finished so its view creation never competes with them.
-    this._deferredHistoryTimer = setTimeout(() => {
-      this._deferredHistoryTimer = null
-      const pending = this._pendingHistoryCommit
-      this._pendingHistoryCommit = null
-      if (
-        !pending ||
-        !this._alive ||
-        !this._isVisible ||
-        pending.reqId !== this._requestId ||
-        pending.dateSeq !== this._dateRequestSeq ||
-        pending.selectedDate !== this.data.selectedDate
-      ) return
-      this.setData({
-        history: pending.sessions.map(item => this._formatSession(item)),
-        historyTotal: pending.total,
-        historyReady: true,
+    this._getDeferredHistoryController().queue(reqId, dateSeq, selectedDate, sessions, total)
+  },
+
+  _getDeferredHistoryController() {
+    if (!this._deferredHistoryController) {
+      this._deferredHistoryController = createDeferredHistoryController({
+        getTimer: () => this._deferredHistoryTimer,
+        setTimer: timer => { this._deferredHistoryTimer = timer },
+        getPending: () => this._pendingHistoryCommit,
+        setPending: value => { this._pendingHistoryCommit = value },
+        clearTimeout,
+        setTimeout,
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getRequestId: () => this._requestId,
+        getDateRequestSeq: () => this._dateRequestSeq,
+        getSelectedDate: () => this.data.selectedDate,
+        formatSession: item => this._formatSession(item),
+        setData: patch => this.setData(patch),
       })
-    }, 1300)
+    }
+    return this._deferredHistoryController
   },
 
   _cancelDurationAnimation(resetState) {
