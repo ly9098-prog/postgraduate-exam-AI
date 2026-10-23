@@ -67,6 +67,9 @@ const {
 const {
   createQuestionEnrichmentController,
 } = require('./utils/question-enrichment-controller')
+const {
+  createReviewSessionController,
+} = require('./utils/review-session-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -189,38 +192,7 @@ pendingBatchSize: 10,
 skeletonOptions: [1, 2, 3, 4],
 },
 _createReviewSession() {
-return {
-allTodayQuestionIds: [],
-completedQuestionIds: [],
-remainingQuestionIds: [],
-allQuestions: [],
-answers: {},
-sessionId: '',
-currentGroupId: '',
-allGroupResults: [],
-totalCorrect: 0,
-totalWrong: 0,
-totalCompleted: 0,
-todayTaskTotalCount: 0,
-completedBeforeSession: 0,
-safeModeActive: false,
-renderTraces: [],
-optionKeys: [],
-reviewOverview: null,
-overviewLoading: false,
-reviewRequestIds: {},
-taskDate: getChinaDate(0),
-timerStartedAt: 0,
-timerLastTickAt: 0,
-timerElapsedMs: 0,
-timerRunning: false,
-// 本组计时分段：随 grade-batch 上报，计入番茄钟统计的刷题时长
-timingSegmentId: '',
-timingStartedAtMs: 0,
-}
-},
-_getReviewDraftKey() {
-return this._reviewDraftController().key()
+return this._reviewSessionController().createSession()
 },
 _readReviewDraft() {
 return this._reviewDraftController().read()
@@ -340,6 +312,14 @@ subjectLabel: (name, code) => this.subjectLabel(name, code),
 })
 )
 },
+_reviewSessionController() {
+return this._reviewSessionCtl || (
+this._reviewSessionCtl = createReviewSessionController({
+getSession: () => this._reviewSession,
+setData: patch => this.setData(patch),
+})
+)
+},
 onLoad(options) {
 let statusBar = 20
 try {
@@ -406,11 +386,7 @@ this._resultDockFadeTimer = null
 }
 },
 _setDateStr() {
-const now = getChinaWallParts(Date.now())
-const weekdays = ['日', '一', '二', '三', '四', '五', '六']
-this.setData({
-_dateStr: `${now.month}月${now.day}日 星期${weekdays[now.weekday]}`
-})
+this._reviewSessionController().setDateStr()
 },
 async loadTodayReviewOverview() {
 const requestSeq = ++this._overviewRequestSeq
@@ -667,19 +643,7 @@ _clearMasterUndo() {
 this._reviewMasterController().clearUndo()
 },
 _getReviewRequestId(question) {
-const session = this._reviewSession || (this._reviewSession = this._createReviewSession())
-const key = [
-String(question.schedule_id || ''),
-String(question.question_version_id || ''),
-String(question.occurrence_seq != null ? question.occurrence_seq : ''),
-].join(':')
-if (!key || key === '::') return ''
-if (!session.reviewRequestIds) session.reviewRequestIds = {}
-if (!session.reviewRequestIds[key]) {
-const randomPart = Math.random().toString(36).slice(2, 10)
-session.reviewRequestIds[key] = `review_${Date.now().toString(36)}_${randomPart}_${question.schedule_id}`
-}
-return session.reviewRequestIds[key]
+return this._reviewSessionController().getRequestId(question)
 },
 async submitGroup() {
 const { groupQuestions } = this.data
@@ -870,8 +834,7 @@ this.loadTodayReviewOverview()
 },
 noop() {},
 subjectLabel(name, code) {
-if (name) return name
-return getSubjectName(code || name)
+return this._reviewSessionController().subjectLabel(name, code)
 },
 _safeTickDelta(rawMs) {
 return safeReviewTickDelta(rawMs)
