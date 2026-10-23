@@ -45,6 +45,7 @@ const { createDateCommitController } = require('./date-commit-controller')
 const { createLoadFailureController } = require('./load-failure-controller')
 const { createDateFailureController } = require('./date-failure-controller')
 const { createDateRequestController } = require('./date-request-controller')
+const { createChartModeController } = require('./chart-mode-controller')
 const { createLoadRequestController } = require('./load-request-controller')
 
 const {
@@ -545,40 +546,7 @@ var pageConfig = {
   },
 
   toggleChartMode() {
-    if (this.data.chartMode === 'bar') {
-      this._barAnimationToken = (this._barAnimationToken || 0) + 1
-      this.setData({ chartMode: 'pie', barRendering: false }, () => {
-        const drawPie = () => {
-          if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
-          this._initCanvases(() => this._renderPieChart(1, true))
-        }
-        if (wx.nextTick) wx.nextTick(drawPie)
-        else setTimeout(drawPie, 0)
-      })
-      return
-    }
-
-    // Lazy mount: WXML does not create #trend-bars-canvas before this explicit
-    // user action, so entering the page never pays bar-canvas init/draw cost.
-    const firstMount = !this.data.barCanvasMounted
-    this.setData({
-      chartMode: 'bar',
-      barCanvasMounted: true,
-      barRendering: firstMount || !this._barRenderedOnce,
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-    }, () => {
-      const drawBar = () => {
-        if (!this._alive || !this._isVisible || this.data.chartMode !== 'bar') return
-        this._initTrendCanvas(() => {
-          if (!this._alive || !this._isVisible || this.data.chartMode !== 'bar') return
-          if (firstMount || !this._barRenderedOnce) this._animateTrendOnly()
-          else this._renderTrendBars(1)
-        })
-      }
-      if (wx.nextTick) wx.nextTick(drawBar)
-      else setTimeout(drawBar, 0)
-    })
+    this._getChartModeController().toggle()
   },
 
   _animateTrendOnly() {
@@ -607,6 +575,31 @@ var pageConfig = {
     return this._trendAnimationController
   },
 
+  _getChartModeController() {
+    if (!this._chartModeController) {
+      this._chartModeController = createChartModeController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getChartMode: () => this.data.chartMode,
+        isBarMounted: () => !!this.data.barCanvasMounted,
+        isBarRenderedOnce: () => !!this._barRenderedOnce,
+        incrementBarAnimationToken: () => {
+          this._barAnimationToken = (this._barAnimationToken || 0) + 1
+        },
+        setData: (patch, callback) => this.setData(patch, callback),
+        hasNextTick: () => !!wx.nextTick,
+        nextTick: callback => wx.nextTick(callback),
+        setTimeout,
+        initCanvases: callback => this._initCanvases(callback),
+        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
+        initTrendCanvas: callback => this._initTrendCanvas(callback),
+        animateTrendOnly: () => this._animateTrendOnly(),
+        renderTrendBars: progress => this._renderTrendBars(progress),
+        isFirstMount: () => !this.data.barCanvasMounted,
+      })
+    }
+    return this._chartModeController
+  },
 
   _resetPieCache() {
     this._pieRenderCache = { sectors: null, wallSteps: null, labelLayout: null }
