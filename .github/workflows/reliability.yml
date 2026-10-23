@@ -371,6 +371,7 @@ jobs:
           node --test miniprogram/tests/test-practice-question-load-state.js
           node --test miniprogram/tests/test-practice-sequential-restart-controller.js
           node --test miniprogram/tests/test-review-group-submission.js
+          node --test miniprogram/tests/test-review-submit-confirm-controller.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
           node miniprogram/tests/test-render-invariant.js

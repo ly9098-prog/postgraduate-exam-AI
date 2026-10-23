@@ -18,6 +18,9 @@ const {
   buildGroupResult,
   buildGroupOutcome,
 } = require('./utils/group-submission')
+const {
+  createGroupSubmitConfirmController,
+} = require('./utils/submit-confirm-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1084,39 +1087,17 @@ if (submittingGroup || this._submitConfirmPending || this.data.masterSubmitting 
 const totalCount = groupQuestions.length
 const answeredCount = adapter.computeAnsweredCount(groupQuestions, this._reviewSession.answers, KF)
 const unansweredCount = totalCount - answeredCount
-const confirm = this.selectComponent('#submitConfirm')
-if (!confirm) return
-this._submitConfirmPending = true
-try {
-if (unansweredCount > 0) {
-const continueReview = await confirm.show({
-scenario: 'unanswered',
-layout: 'minimal',
-title: '请先完成本组复习',
-message: `还有 ${unansweredCount} 题未完成作答。请填写全部题目后再提交，多空题需要填写每一空。`,
-confirmText: '继续作答',
-showCancel: false,
+const groupSubmitConfirmController = this._groupSubmitConfirmController || (
+this._groupSubmitConfirmController = createGroupSubmitConfirmController({
+getConfirm: () => this.selectComponent('#submitConfirm'),
+setPending: value => { this._submitConfirmPending = value },
+isPageAlive: () => this._alive,
+getPhase: () => this.data.phase,
+findUnansweredIndex: () => this.data.groupQuestions.findIndex(q => !adapter.isQuestionAnswered(q, this._reviewSession.answers, KF)),
+showQuestion: index => this._showQuestion(index),
 })
-if (continueReview && this._alive && this.data.phase === 'reviewing') {
-const index = this.data.groupQuestions.findIndex(q => !adapter.isQuestionAnswered(q, this._reviewSession.answers, KF))
-if (index >= 0) this._showQuestion(index)
-}
-return
-}
-const confirmed = await confirm.show({
-scenario: 'all-done',
-layout: 'minimal',
-title: '提交本组复习？',
-message: `本组 ${totalCount} 题已全部作答，提交后查看复盘结果。`,
-confirmText: '提交复习',
-cancelText: '继续检查',
-})
-if (!confirmed || !this._alive || this.data.phase !== 'reviewing') return
-} catch (_) {
-return
-} finally {
-this._submitConfirmPending = false
-}
+)
+if (!await groupSubmitConfirmController.confirm(totalCount, unansweredCount)) return
 // Revalidate after the asynchronous dialog; never submit a changed/incomplete batch.
 if (this.data.submittingGroup || this.data.groupQuestions !== groupQuestions) return
 const answers = { ...this._reviewSession.answers }
