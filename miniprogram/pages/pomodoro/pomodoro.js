@@ -69,6 +69,7 @@ const { createBeginCountdownController } = require('./utils/begin-countdown-cont
 const { createPauseSessionController } = require('./utils/pause-session-controller')
 const { createResumeSessionController } = require('./utils/resume-session-controller')
 const { createShowCountdownInterruptConfirmController } = require('./utils/show-countdown-interrupt-confirm-controller')
+const { createConfirmEndTimerController } = require('./utils/confirm-end-timer-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -233,6 +234,7 @@ Page({
   _pauseSessionController: null,
   _resumeSessionController: null,
   _showCountdownInterruptConfirmController: null,
+  _confirmEndTimerController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1049,6 +1051,22 @@ Page({
     return this._showCountdownInterruptConfirmController
   },
 
+  _getConfirmEndTimerController() {
+    if (!this._confirmEndTimerController) {
+      this._confirmEndTimerController = createConfirmEndTimerController({
+        isActionLoading: () => this.data.actionLoading,
+        getEndConfirmMode: () => this._timerState.endConfirmMode,
+        confirmEndFreeTimer: () => this._confirmEndFreeTimer(),
+        confirmInterruptCountdown: () => this._confirmInterruptCountdown(),
+        warn: (msg, detail) => console.warn(msg, detail),
+        getSessionId: () => this._timerState.sessionId,
+        getSnapshotMode: () => this._confirmTimerSnapshot && this._confirmTimerSnapshot.mode,
+        showToast: toast => wx.showToast(toast),
+      })
+    }
+    return this._confirmEndTimerController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1216,28 +1234,7 @@ Page({
   },
 
   async confirmEndTimer() {
-    if (this.data.actionLoading) return
-
-    const mode = this._timerState.endConfirmMode
-    const snapshot = this._confirmTimerSnapshot
-
-    if (mode === 'free-complete') {
-      return this._confirmEndFreeTimer()
-    }
-
-    if (mode === 'countdown-interrupt') {
-      return this._confirmInterruptCountdown()
-    }
-
-    console.warn('[pomodoro] invalid end confirm mode', {
-      mode,
-      sessionId: this._timerState.sessionId,
-      snapshotMode: snapshot && snapshot.mode,
-    })
-    wx.showToast({
-      title: '结束状态异常，请重新操作',
-      icon: 'none',
-    })
+    return this._getConfirmEndTimerController().confirm()
   },
 
   async _confirmEndFreeTimer() {
