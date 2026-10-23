@@ -38,10 +38,7 @@ import { QuestionImageField } from "@/components/questions/question-image-field"
 import { QuestionAnalysis } from "@/components/questions/question-analysis";
 import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
 import { QuestionKnowledgePointsDisplay, QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
-import {
-  QuestionVersionPicker,
-  type QuestionVersionSelection,
-} from "@/components/questions/question-version-picker";
+import { QuestionVersionPicker } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
   normalizeBlankOptionGroups,
@@ -76,6 +73,7 @@ import {
 import { useQuestionSubjectOptions } from "./hooks/use-question-subject-options";
 import { useQuestionMenus } from "./hooks/use-question-menus";
 import { useQuestionCopy } from "./hooks/use-question-copy";
+import { useQuestionVersionHistory } from "./hooks/use-question-version-history";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -87,12 +85,7 @@ import { QuestionAnswerDisplay } from "./components/question-answer-display";
 import { QuestionSecondaryInfo } from "./components/question-secondary-info";
 import { QuestionVersionComparison } from "./components/question-version-comparison";
 import { questionDetailOptions } from "./question-queries";
-import {
-  useQuestionDetail,
-  useQuestionList,
-  useQuestionVersion,
-  useQuestionVersions,
-} from "./hooks/use-question-queries";
+import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries";
 
 import { buildQuestionListHref, positiveInt, type QuestionListFilters } from "./question-list-state";
 import {
@@ -154,9 +147,6 @@ export default function QuestionsPage() {
     setPageSize,
   } = useQuestionPagination(searchParams);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
-  const [baseVersion, setBaseVersion] = useState<QuestionVersionSelection>("current");
-  const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
-  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
   const editorCallbacks = useRef<{
@@ -240,9 +230,18 @@ export default function QuestionsPage() {
     closeMenus: closeAllMenus,
     onMessage: setMessage,
   });
-  const versions = useQuestionVersions(selectedQuestionId);
-  const baseVersionDetail = useQuestionVersion(selectedQuestionId, baseVersion);
-  const compareVersionDetail = useQuestionVersion(selectedQuestionId, compareVersion);
+  const {
+    versions,
+    baseVersionDetail,
+    compareVersionDetail,
+    baseVersion,
+    compareVersion,
+    versionHistoryOpen,
+    setBaseVersion,
+    setCompareVersion,
+    toggleVersionHistory,
+    swapVersions,
+  } = useQuestionVersionHistory(selectedQuestionId);
   const {
     editing, setEditing, editForm, setEditForm, editStemText, setEditStemText,
     dirty, unsavedIntent, setUnsavedIntent, startEditing, cancelEditing,
@@ -255,14 +254,6 @@ export default function QuestionsPage() {
     editorCallbacks.current.setEditing = setEditing;
     editorCallbacks.current.setEditForm = setEditForm;
   }, [setEditForm, setEditing]);
-
-  useEffect(() => {
-    if (!versionHistoryOpen || compareVersion !== null) return;
-    const latestHistoricalVersion = versions.data?.items?.[0]?.version;
-    if (latestHistoricalVersion !== undefined) {
-      setCompareVersion(latestHistoricalVersion);
-    }
-  }, [compareVersion, versionHistoryOpen, versions.data?.items]);
 
   const deleteMutation = useQuestionDelete(selectedIds, {
     onDeleted: (result, variables) => {
@@ -312,12 +303,6 @@ export default function QuestionsPage() {
       window.history.replaceState(window.history.state, "", nextHref);
     }
   }, [filters, page, pageSize, selectedQuestionId]);
-
-  useEffect(() => {
-    setVersionHistoryOpen(false);
-    setBaseVersion("current");
-    setCompareVersion(null);
-  }, [selectedQuestionId]);
 
   const hasActiveFilters = Boolean(
     filters.subject_id ||
@@ -1787,7 +1772,7 @@ export default function QuestionsPage() {
                   <section className="py-6">
                     <button
                       type="button"
-                      onClick={() => setVersionHistoryOpen((open) => !open)}
+                      onClick={toggleVersionHistory}
                       className="flex w-full items-center justify-between gap-4 rounded-lg px-1 py-1 text-left transition hover:bg-slate-50"
                       aria-expanded={versionHistoryOpen}
                     >
@@ -1833,12 +1818,7 @@ export default function QuestionsPage() {
                                   disabled={compareVersion === null}
                                   title="交换对比版本"
                                   aria-label="交换基准版本和对比版本"
-                                  onClick={() => {
-                                    if (compareVersion === null) return;
-                                    const previousBase = baseVersion;
-                                    setBaseVersion(compareVersion);
-                                    setCompareVersion(previousBase);
-                                  }}
+                                  onClick={swapVersions}
                                 >
                                   <ArrowLeftRight className="h-4 w-4" />
                                 </Button>
