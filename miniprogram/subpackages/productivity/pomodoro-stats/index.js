@@ -31,6 +31,7 @@ const { createSelectDateController } = require('./select-date-controller')
 const { createCumulativeRefreshController } = require('./cumulative-refresh-controller')
 const { createDistributionLoadController } = require('./distribution-load-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
+const { createPieAnimationController } = require('./pie-animation-controller')
 
 const {
   getSubjectColor,
@@ -1027,37 +1028,28 @@ var pageConfig = {
   },
 
   _animatePieOnly() {
-    if (!this._pieCtx || !this._pieRect) return
-    const token = (this._pieAnimationToken || 0) + 1
-    this._pieAnimationToken = token
-    this._pieLabelToken = (this._pieLabelToken || 0) + 1
-    const duration = 980
-    const start = Date.now()
-    const node = this._pieCanvasNode
-    const raf = node && node.requestAnimationFrame
-      ? cb => node.requestAnimationFrame(cb)
-      : cb => setTimeout(cb, 16)
-    let lastDraw = 0
+    this._getPieAnimationController().animate()
+  },
 
-    this._renderPieChart(0, false)
-    const tick = () => {
-      if (!this._alive || !this._isVisible || token !== this._pieAnimationToken) return
-      const elapsed = Date.now() - start
-      const raw = Math.min(1, elapsed / duration)
-      if (raw < 1 && elapsed - lastDraw >= 28) {
-        lastDraw = elapsed
-        this._renderPieChart(this._easeInOutCubic(raw), false)
-      }
-      if (raw < 1) {
-        this._pieDateRafId = raf(tick)
-      } else {
-        // Keep the expensive percentage badges out of the final motion frame.
-        this._renderPieChart(1, false)
-        this._pieDateRafId = null
-        this._revealPieLabelsIncrementally()
-      }
+  _getPieAnimationController() {
+    if (!this._pieAnimationController) {
+      this._pieAnimationController = createPieAnimationController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getPieCtx: () => this._pieCtx,
+        getPieRect: () => this._pieRect,
+        getPieCanvasNode: () => this._pieCanvasNode,
+        getPieAnimationToken: () => this._pieAnimationToken,
+        incrementPieAnimationToken: () => { this._pieAnimationToken = (this._pieAnimationToken || 0) + 1; return this._pieAnimationToken },
+        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1 },
+        setPieDateRafId: id => { this._pieDateRafId = id },
+        now: () => Date.now(),
+        setTimeout,
+        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
+        revealPieLabelsIncrementally: () => this._revealPieLabelsIncrementally(),
+      })
     }
-    this._pieDateRafId = raf(tick)
+    return this._pieAnimationController
   },
 
   _revealPieLabelsIncrementally() {
