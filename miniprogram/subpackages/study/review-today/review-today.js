@@ -73,6 +73,9 @@ const {
 const {
   createNavBackController,
 } = require('./utils/nav-back-controller')
+const {
+  createReviewSelfHealController,
+} = require('./utils/self-heal-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -336,6 +339,19 @@ reLaunch: options => wx.reLaunch(options),
 })
 )
 },
+_reviewSelfHealController() {
+return this._reviewSelfHeal || (
+this._reviewSelfHeal = createReviewSelfHealController({
+setSafeModeActive: v => { this._reviewSession.safeModeActive = v },
+getCurrentQuestion: () => this.data.currentQuestion,
+getCurrentIndex: () => this.data.currentIndex,
+getGroupQuestions: () => this.data.groupQuestions,
+enrichQuestion: q => this._enrichQuestion(q),
+setData: patch => this.setData(patch),
+showQuestion: idx => this._showQuestion(idx),
+})
+)
+},
 onLoad(options) {
 let statusBar = 20
 try {
@@ -558,20 +574,7 @@ _recordRenderTrace(trace) {
 this._renderSafetyController().recordTrace(trace)
 },
 _enterSafeMode() {
-console.warn('[SELF_HEAL] review-today CODE render violation — entering SAFE_MODE')
-this._reviewSession.safeModeActive = true
-if (this.data.currentQuestion) {
-const idx = this.data.currentIndex
-const q = this.data.groupQuestions[idx]
-if (q) {
-const enriched = this._enrichQuestion(q)
-const groupQuestions = (this.data.groupQuestions || []).slice()
-groupQuestions[idx] = enriched
-this.setData({ groupQuestions })
-this._showQuestion(idx)
-}
-console.warn('[SELF_HEAL] review-today re-rendered at index ' + idx + ' in SAFE_MODE')
-}
+this._reviewSelfHealController().enterSafeMode()
 },
 _checkSetDataSize(data) {
 this._renderSafetyController().checkSetDataSize(data)
