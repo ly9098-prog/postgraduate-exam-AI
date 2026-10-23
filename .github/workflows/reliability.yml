@@ -357,6 +357,7 @@ jobs:
             miniprogram/tests/test-pomodoro-free-timer-limit-controller.js \
             miniprogram/tests/test-pomodoro-start-break-controller.js \
             miniprogram/tests/test-pomodoro-start-timer-controller.js \
+            miniprogram/tests/test-pomodoro-canvas-init-controller.js \
             miniprogram/tests/test-pomodoro-draw-ring-controller.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js

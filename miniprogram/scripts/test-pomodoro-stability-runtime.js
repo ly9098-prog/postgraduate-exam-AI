@@ -184,6 +184,9 @@ const sandbox = {
     if (request === './utils/start-timer-controller') {
       return require('../pages/pomodoro/utils/start-timer-controller')
     }
+    if (request === './utils/canvas-init-controller') {
+      return require('../pages/pomodoro/utils/canvas-init-controller')
+    }
     if (request === './utils/draw-ring-controller') {
       return require('../pages/pomodoro/utils/draw-ring-controller')
     }

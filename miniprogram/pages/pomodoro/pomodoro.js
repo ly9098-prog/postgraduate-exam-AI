@@ -20,12 +20,7 @@ const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
 const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
 const conflictState = require('./utils/terminal-conflict-state')
-const {
-  CANVAS_INIT_MAX_RETRIES,
-  canvasRetryDelay,
-  evaluateCanvasLayout,
-  buildCanvasSetup,
-} = require('./utils/canvas-layout')
+const { CANVAS_INIT_MAX_RETRIES } = require('./utils/canvas-layout')
 const {
   canReconcilePendingSync,
   decidePendingSyncReconciliation,
@@ -78,6 +73,7 @@ const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-fre
 const { createFreeTimerLimitController } = require('./utils/free-timer-limit-controller')
 const { createStartBreakController } = require('./utils/start-break-controller')
 const { createStartTimerController } = require('./utils/start-timer-controller')
+const { createCanvasInitController } = require('./utils/canvas-init-controller')
 const { createDrawRingController } = require('./utils/draw-ring-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
@@ -252,6 +248,7 @@ Page({
   _freeTimerLimitController: null,
   _startBreakController: null,
   _startTimerController: null,
+  _canvasInitController: null,
   _drawRingController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
@@ -1954,79 +1951,44 @@ Page({
   },
 
   _initCanvas(force) {
-    if (!force && ((this._canvasReady && this._ctx) || this._canvasInitPending)) return
-
-    // Every forced rebuild invalidates older selector-query callbacks. On real
-    // devices a callback from the previous page/layout can arrive late and bind
-    // the 2D context to a stale native-canvas position, which makes the ring jump
-    // to the top of the page after re-entering Pomodoro.
-    const initSeq = (this._canvasInitSeq || 0) + 1
-    this._canvasInitSeq = initSeq
-    this._canvasInitPending = true
-    this._canvasReady = false
-    this._ctx = null
-    this._ringCache = null // 清除缓存的渐变/几何
-    if (this.data.ringCanvasPaintReady) {
-      this.setData({ ringCanvasPaintReady: false })
-    }
-
-    // A rebuilt canvas is blank. Reset draw-throttle state as well, otherwise
-    // the first paint can be skipped because progress barely changed.
-    this._lastDrawnProgress = undefined
-    this._lastDrawnIsBreak = undefined
-    this._lastDrawnAt = 0
-    this._scheduleCanvasInit(0, initSeq, null)
+    return this._getCanvasInitController().init(force)
   },
 
   _scheduleCanvasInit(retryCount, initSeq, previousRect) {
-    if (initSeq !== this._canvasInitSeq) return
-    if (retryCount > CANVAS_INIT_MAX_RETRIES) {
-      this._canvasInitPending = false
-      return
-    }
+    return this._getCanvasInitController().schedule(retryCount, initSeq, previousRect)
+  },
 
-    wx.nextTick(() => {
-      if (initSeq !== this._canvasInitSeq) return
-      if (!this._pageVisible) {
-        this._canvasInitPending = false
-        return
-      }
-
-      const query = wx.createSelectorQuery().in(this)
-      query.select('.ring-stage').boundingClientRect()
-      query.select('#progress-ring').fields({ node: true, size: true, rect: true })
-      query.exec((res) => {
-        if (initSeq !== this._canvasInitSeq) return
-
-        const stageRect = res && res[0]
-        const canvasInfo = res && res[1]
-        const layout = evaluateCanvasLayout(stageRect, canvasInfo, previousRect)
-        if (layout.status !== 'ready') {
-          const delay = canvasRetryDelay(retryCount)
-          setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, previousRect), delay)
-          return
-        }
-
-        const canvas = canvasInfo.node
-        const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-        const setup = buildCanvasSetup(layout.rect, windowInfo.pixelRatio)
-        this._dpr = setup.dpr
-        this._canvasSize = setup.size
-        canvas.width = setup.pixelWidth
-        canvas.height = setup.pixelHeight
-        const ctx = canvas.getContext('2d')
-        ctx.setTransform(setup.dpr, 0, 0, setup.dpr, 0, 0)
-        this._ctx = ctx
-        this._canvasReady = true
-        this._canvasInitPending = false
-        this._ringCache = null // 重建后缓存失效
-        if (this._pendingDraw) {
-          const pending = this._pendingDraw
-          this._pendingDraw = null
-          this.drawRing(pending.totalSec, pending.isBreak)
-        }
+  _getCanvasInitController() {
+    if (!this._canvasInitController) {
+      this._canvasInitController = createCanvasInitController({
+        canvasReady: () => this._canvasReady,
+        getCtx: () => this._ctx,
+        canvasInitPending: () => this._canvasInitPending,
+        getCanvasInitSeq: () => this._canvasInitSeq,
+        setCanvasInitSeq: value => { this._canvasInitSeq = value },
+        setCanvasInitPending: value => { this._canvasInitPending = value },
+        setCanvasReady: value => { this._canvasReady = value },
+        setCtx: value => { this._ctx = value },
+        setRingCache: value => { this._ringCache = value },
+        ringCanvasPaintReady: () => this.data.ringCanvasPaintReady,
+        setData: data => this.setData(data),
+        setLastDrawnProgress: value => { this._lastDrawnProgress = value },
+        setLastDrawnIsBreak: value => { this._lastDrawnIsBreak = value },
+        setLastDrawnAt: value => { this._lastDrawnAt = value },
+        maxRetries: () => CANVAS_INIT_MAX_RETRIES,
+        nextTick: fn => wx.nextTick(fn),
+        isPageVisible: () => this._pageVisible,
+        createSelectorQuery: () => wx.createSelectorQuery().in(this),
+        setTimeout: (fn, delay) => setTimeout(fn, delay),
+        getWindowInfo: () => (wx.getWindowInfo ? wx.getWindowInfo() : {}),
+        setDpr: value => { this._dpr = value },
+        setCanvasSize: value => { this._canvasSize = value },
+        getPendingDraw: () => this._pendingDraw,
+        setPendingDraw: value => { this._pendingDraw = value },
+        drawRing: (totalSec, isBreak) => this.drawRing(totalSec, isBreak),
       })
-    })
+    }
+    return this._canvasInitController
   },
 
   _buildRingCache(isBreak) {

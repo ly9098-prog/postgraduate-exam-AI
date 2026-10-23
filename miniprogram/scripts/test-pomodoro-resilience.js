@@ -609,13 +609,13 @@ t('onShow restores break before pending network synchronization', () => {
 console.log('\n--- Canvas reuse ---')
 const startTimerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-timer-controller.js'), 'utf8')
 const drawRingSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/draw-ring-controller.js'), 'utf8')
-const initCanvas = method('_initCanvas')
+const canvasInitSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/canvas-init-controller.js'), 'utf8')
 t('timer restart can reuse an existing/in-flight canvas', () => assert.ok(startTimerSrc.includes('options.initCanvas(!startOptions.reuseCanvas)')))
-t('canvas init suppresses duplicate in-flight initialization', () => assert.ok(initCanvas.includes('this._canvasInitPending')))
+t('canvas init suppresses duplicate in-flight initialization', () => assert.ok(canvasInitSrc.includes('options.canvasInitPending()')))
 t('canvas initialization waits substantially longer on slow devices', () => {
   assert.ok(canvasLayoutSrc.includes('CANVAS_INIT_MAX_RETRIES = 16'))
   assert.ok(canvasLayoutSrc.includes('16 + count * 8'))
-  assert.ok(method('_scheduleCanvasInit').includes('canvasRetryDelay(retryCount)'))
+  assert.ok(canvasInitSrc.includes('canvasRetryDelay(retryCount)'))
 })
 t('drawRing self-heals a failed canvas initialization on a later tick', () => {
   assert.ok(drawRingSrc.includes('!options.canvasInitPending()'))
@@ -676,11 +676,11 @@ t('ring wrapper fills the stage without absolute positioning', () => {
   assert.ok(block.includes('height: 100%'))
 })
 t('canvas init ignores stale selector callbacks by generation', () => {
-  assert.ok(initCanvas.includes('_canvasInitSeq'))
-  assert.ok(method('_scheduleCanvasInit').includes('initSeq !== this._canvasInitSeq'))
+  assert.ok(canvasInitSrc.includes('options.getCanvasInitSeq()'))
+  assert.ok(canvasInitSrc.includes('initSeq !== options.getCanvasInitSeq()'))
 })
 t('canvas waits for a stable stage-aligned layout before binding context', () => {
-  const m = method('_scheduleCanvasInit')
+  const m = canvasInitSrc
   assert.ok(m.includes("select('.ring-stage').boundingClientRect()"))
   assert.ok(m.includes('evaluateCanvasLayout(stageRect, canvasInfo, previousRect)'))
   assert.ok(canvasLayoutSrc.includes("status: 'misaligned'"))
