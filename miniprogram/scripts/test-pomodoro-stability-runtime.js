@@ -94,6 +94,9 @@ const sandbox = {
     if (request === './utils/terminal-conflict-controller') {
       return require('../pages/pomodoro/utils/terminal-conflict-controller')
     }
+    if (request === './utils/stats-controller') {
+      return require('../pages/pomodoro/utils/stats-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

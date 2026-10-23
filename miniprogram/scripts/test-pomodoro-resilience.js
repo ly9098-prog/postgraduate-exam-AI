@@ -22,6 +22,7 @@ const unknownStartSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodo
 const pendingSyncSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-controller.js'), 'utf8')
 const terminalConflictSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/terminal-conflict-controller.js'), 'utf8')
 const terminalConflictHandlerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/terminal-conflict-handler.js'), 'utf8')
+const statsControllerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/stats-controller.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
 const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
@@ -286,7 +287,7 @@ const queueSetter = method('enqueueAction', queueSrc, true)
 const retryScheduler = method('_schedulePendingPomodoroSyncRetry')
 const retryClassifier = method('_isRetryablePomodoroSyncError')
 const restoreCountdown = countdownRestoreSrc
-const statsLoader = method('loadTodayStats')
+const statsLoader = method('load', statsControllerSrc, true)
 t('pending queue has a non-destructive safety valve and reserves terminal capacity', () => {
   assert.ok(queueSrc.includes('POMODORO_PENDING_SYNC_MAX_ACTIONS = 200'))
   assert.ok(queueSrc.includes('POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT = 196'))
@@ -319,9 +320,9 @@ t('countdown cold restore treats a valid pause snapshot as authoritative even at
   assert.ok(!sessionRestoreSrc.includes('isPaused = totalPausedMs > 0'))
 })
 t('today stats ignores slower stale responses', () => {
-  assert.ok(statsLoader.includes('_statsRequestSeq'))
-  assert.ok(statsLoader.includes('requestSeq !== this._statsRequestSeq'))
-  assert.ok(onUnload.includes('_statsRequestSeq = (this._statsRequestSeq || 0) + 1'))
+  assert.ok(statsControllerSrc.includes('state.requestSeq'))
+  assert.ok(statsLoader.includes('seq !== state.requestSeq'))
+  assert.ok(onUnload.includes('this._getStatsController().invalidate()'))
 })
 t('corrective database migration is fail-loud and verifies all canonical invariants', () => {
   assert.ok(backendCorrectiveMigrationSrc.includes('down_revision: str | None = "x8y9z0a1b2c3"'))

@@ -44,6 +44,7 @@ const { createStartSessionController } = require('./utils/start-session-controll
 const { createUnknownStartController } = require('./utils/unknown-start-controller')
 const { createPendingSyncController } = require('./utils/pending-sync-controller')
 const { createTerminalConflictController } = require('./utils/terminal-conflict-controller')
+const { createStatsController } = require('./utils/stats-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -190,7 +191,7 @@ Page({
   _pauseToggleLocked: false,
   _pauseToggleUnlockTimer: null,
   _syncRetryController: null,
-  _statsRequestSeq: 0,
+  _statsController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -396,7 +397,7 @@ Page({
     this._clearTimer()
     this._releasePauseToggleLock()
     this._clearPendingPomodoroSyncRetryTimer(true)
-    this._statsRequestSeq = (this._statsRequestSeq || 0) + 1
+    this._getStatsController().invalidate()
     this._unregisterNetworkStatusListener()
     if (this._themeSwitchTimer) {
       clearTimeout(this._themeSwitchTimer)
@@ -2429,22 +2430,19 @@ Page({
 
   /* ==================== Stats ==================== */
 
-  async loadTodayStats() {
-    const requestSeq = (this._statsRequestSeq || 0) + 1
-    this._statsRequestSeq = requestSeq
-    try {
-      const stats = await api.get('/pomodoro/stats')
-      // Multiple lifecycle/conflict paths can refresh stats concurrently. Only the
-      // newest request may update UI, so a slower pre-completion response cannot
-      // overwrite a newer post-completion total.
-      if (requestSeq !== this._statsRequestSeq) return
-      const m = Math.floor((stats.today_duration_sec || 0) / 60)
-      this._timerState.todayDurationSec = stats.today_duration_sec || 0
-      this.setData({
-        todaySessions: stats.today_sessions || 0,
-        todayDurationText: m >= 60 ? `${Math.floor(m / 60)}时${m % 60}分` : `${m}分钟`,
+  _getStatsController() {
+    if (!this._statsController) {
+      this._statsController = createStatsController({
+        get: path => api.get(path),
+        setTodayDurationSec: value => { this._timerState.todayDurationSec = value },
+        setData: data => this.setData(data),
       })
-    } catch (_) {}
+    }
+    return this._statsController
+  },
+
+  async loadTodayStats() {
+    return this._getStatsController().load()
   },
 
   goStats() {

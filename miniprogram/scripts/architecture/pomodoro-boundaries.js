@@ -22,6 +22,7 @@ const MODULES = {
   'unknown-start-controller.js': [],
   'pending-sync-controller.js': [],
   'terminal-conflict-controller.js': [],
+  'stats-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -41,7 +42,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2579
+const PAGE_MAX_LINES = 2577
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -58,6 +59,7 @@ const PAGE_METHODS = new Set([
   '_readPomodoroTerminalConflict', '_consumePomodoroTerminalConflict',
   '_consumeAnyPomodoroTerminalConflict', '_ackPomodoroTerminalConflict',
   '_handlePomodoroTerminalConflict',
+  '_getStatsController', 'loadTodayStats',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -305,6 +307,14 @@ function pageViolations(source) {
               ['sessionId', 'conflict'],
             )) {
           errors.push('terminal conflict handle must delegate to its controller')
+        }
+        if (methodName === '_getStatsController' &&
+            !hasLazyControllerAccessor(node, 'createStatsController', '_statsController')) {
+          errors.push('stats must lazily assign its controller')
+        }
+        if (methodName === 'loadTodayStats' &&
+            !returnsControllerCall(node, '_getStatsController', 'load', [])) {
+          errors.push('today stats must delegate to its controller')
         }
       }
     }
