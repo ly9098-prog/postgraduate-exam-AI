@@ -41,13 +41,9 @@ import { QuestionKnowledgePointsDisplay, QuestionKnowledgePointsEditor } from "@
 import { QuestionVersionPicker } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
-  normalizeBlankOptionGroups,
   normalizeQuestionOptions,
-  parseMultiBlankChoiceAnswer,
-  resolveBlankOptionGroupsValue,
   resolveQuestionBlankOptionGroups,
   resolveQuestionOptions,
-  updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
@@ -96,17 +92,14 @@ import {
   textForStemEditor,
   textFromContent,
 } from "./question-content-editing";
-import { optionsToKeyValueList } from "./question-option-editing";
 import {
   comparableAssetUrl,
   fallbackQuestionImageUrls,
   isMultiBlankChoice,
-  isMultiBlankMultipleChoice,
-  isMultiChoice,
-  normalizedChoiceAnswerKeys,
 } from "./question-display-helpers";
 import { buildExportPayload } from "./question-export-payload";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
+import { QuestionAnswerEditor } from "./question-answer-editor";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -1323,200 +1316,10 @@ export default function QuestionsPage() {
                   />
 
                   {/* Answer editor */}
-                  {isMultiBlankChoice(editForm.question_type ?? "") ? (
-                    (() => {
-                      const groups = normalizeBlankOptionGroups(
-                        resolveBlankOptionGroupsValue(editForm.content),
-                      );
-                      const multiSelect = isMultiBlankMultipleChoice(
-                        editForm.question_type ?? "",
-                      );
-                      const parsedAnswer = parseMultiBlankChoiceAnswer(editForm.answer);
-                      const parsedAnswerMap = new Map(
-                        parsedAnswer.map((item) => [item.blankId, item.optionKey]),
-                      );
-                      const blankIds =
-                        groups.length > 0
-                          ? groups.map((group) => group.id)
-                          : parsedAnswer.map((item) => item.blankId);
-
-                      return (
-                        <section className="border-b border-slate-200 py-5">
-                          <div className="mb-4">
-                            <p className="text-sm font-semibold text-slate-950">答案</p>
-                            <p className="mt-1 text-[11px] text-slate-400">
-                              {multiSelect
-                                ? "点击选项可快速多选或取消；也可手动填写多个字母（如 A,C）"
-                                : "点击选项可快速填入单选答案；再次点击已选项可清空"}
-                            </p>
-                          </div>
-
-                          {blankIds.length > 0 ? (
-                            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                              {blankIds.map((blankId, index) => {
-                                const group = groups.find((g) => g.id === blankId);
-                                const currentLetters = (parsedAnswerMap.get(blankId) ?? "")
-                                  .split(",")
-                                  .map((l) => l.trim().toUpperCase())
-                                  .filter(Boolean);
-                                return (
-                                <div
-                                  key={`${blankId}-${index}`}
-                                  className="flex items-center gap-4 border-b border-slate-100 px-4 py-3 last:border-b-0"
-                                >
-                                  <span className="w-8 shrink-0 text-sm font-medium text-slate-900">
-                                    {blankId}
-                                  </span>
-                                  <div className="min-w-0 flex-1 space-y-2">
-                                    {group && group.options.length > 0 ? (
-                                      <div className="flex flex-wrap items-center gap-1.5">
-                                        {group.options.map((opt) => {
-                                          const normalizedKey = opt.key.trim().toUpperCase();
-                                          const selected = currentLetters.includes(normalizedKey);
-                                          return (
-                                            <button
-                                              key={opt.key}
-                                              type="button"
-                                              className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition ${
-                                                selected
-                                                  ? "border-slate-900 bg-slate-900 text-white"
-                                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
-                                              }`}
-                                              title={opt.text ? `${opt.key}. ${opt.text}` : `选择 ${opt.key}`}
-                                              aria-pressed={selected}
-                                              onClick={() =>
-                                                setEditForm((current) => ({
-                                                  ...current,
-                                                  answer: updateMultiBlankChoiceAnswer(
-                                                    current.answer,
-                                                    blankIds,
-                                                    blankId,
-                                                    !multiSelect && selected ? "" : normalizedKey,
-                                                    multiSelect,
-                                                  ),
-                                                }))
-                                              }
-                                            >
-                                              {opt.key}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : null}
-                                    <Input
-                                      value={parsedAnswerMap.get(blankId) ?? ""}
-                                      aria-label={`${blankId} 答案`}
-                                      placeholder={multiSelect ? "如 A,C" : "如 A"}
-                                      className="h-8 max-w-32 border-slate-200 bg-slate-50/60 text-center text-xs shadow-none focus:bg-white"
-                                      onChange={(e) =>
-                                        setEditForm((current) => ({
-                                          ...current,
-                                          answer: updateMultiBlankChoiceAnswer(
-                                            current.answer,
-                                            blankIds,
-                                            blankId,
-                                            e.target.value,
-                                          ),
-                                        }))
-                                      }
-                                    />
-                                  </div>
-                                </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <Input
-                              value={editForm.answer ?? ""}
-                              className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
-                              onChange={(e) =>
-                                setEditForm({ ...editForm, answer: e.target.value })
-                              }
-                            />
-                          )}
-                        </section>
-                      );
-                    })()
-                  ) : optionsToKeyValueList(editForm.options).length > 0 ? (
-                    <section className="border-b border-slate-200 py-5">
-                      <div className="mb-4">
-                        <p className="text-sm font-semibold text-slate-950">答案</p>
-                        <p className="mt-1 text-[11px] text-slate-400">快速选择正确选项，也可直接编辑答案内容</p>
-                      </div>
-                      <p className="mb-2 text-[11px] font-medium text-slate-500">快速选择</p>
-                      {editForm.question_type &&
-                      isMultiChoice(editForm.question_type) ? (
-                        <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">
-                          多选：单击切换各选项，以逗号分隔
-                        </p>
-                      ) : null}
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {optionsToKeyValueList(editForm.options).map((opt) => {
-                          const normalizedKey = opt.key.trim().toUpperCase();
-                          const selected = isMultiChoice(
-                            editForm.question_type ?? "",
-                          )
-                            ? normalizedChoiceAnswerKeys(editForm.answer).includes(normalizedKey)
-                            : String(editForm.answer ?? "").trim().toUpperCase() === normalizedKey;
-                          return (
-                            <button
-                              key={opt.key}
-                              type="button"
-                              className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition ${
-                                selected
-                                  ? "border-slate-900 bg-slate-900 text-white"
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
-                              }`}
-                              onClick={() => {
-                                if (
-                                  isMultiChoice(editForm.question_type ?? "")
-                                ) {
-                                  const keys = normalizedChoiceAnswerKeys(editForm.answer);
-                                  const next = keys.includes(normalizedKey)
-                                    ? keys.filter((key) => key !== normalizedKey)
-                                    : [...keys, normalizedKey];
-                                  setEditForm({
-                                    ...editForm,
-                                    answer: next.join(","),
-                                  });
-                                } else {
-                                  setEditForm({
-                                    ...editForm,
-                                    answer: selected ? "" : normalizedKey,
-                                  });
-                                }
-                              }}
-                            >
-                              {opt.key}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-4 space-y-1.5">
-                        <p className="text-[11px] font-medium text-slate-500">答案内容</p>
-                        <Input
-                          value={editForm.answer ?? ""}
-                          className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, answer: e.target.value })
-                          }
-                        />
-                      </div>
-                    </section>
-                  ) : (
-                    <section className="border-b border-slate-200 py-5">
-                      <p className="mb-3 text-sm font-semibold text-slate-950">答案</p>
-                      <div>
-                        <Input
-                          value={editForm.answer ?? ""}
-                          className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, answer: e.target.value })
-                          }
-                        />
-                      </div>
-                    </section>
-                  )}
+                  <QuestionAnswerEditor
+                    editForm={editForm}
+                    setEditForm={setEditForm}
+                  />
 
                   <QuestionKnowledgePointsEditor
                     value={editForm.knowledge_points ?? []}
