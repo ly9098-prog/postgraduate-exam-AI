@@ -27,6 +27,7 @@ const { createSettingsController } = require('./settings-controller')
 const { reconcileFromServer } = require('./reconcile-controller')
 const { buildCumulativeSummaryPatch } = require('./cumulative-summary-patch')
 const { formatStudyDayRangeText } = require('./study-day-range-text')
+const { createSelectDateController } = require('./select-date-controller')
 
 const {
   getSubjectColor,
@@ -874,27 +875,24 @@ var pageConfig = {
   },
 
   _selectDate(date) {
-    const nextDate = String(date || '').trim()
-    const today = this.data._todayDate
-    if (!nextDate || nextDate === this.data.selectedDate || (today && nextDate > today)) return
-    this._cancelDeferredHistory(true)
-    const patch = {
-      selectedDate: nextDate,
-      pieDateLabel: this._formatPieDateLabel(nextDate),
-      selectedDurationLabel: this._formatSelectedDurationLabel(nextDate),
-      canGoNextDate: !!(today && nextDate < today),
-      customRangePickerStartDate: this._shiftDate(nextDate, -365),
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-      durationValueAnimating: true,
+    this._getSelectDateController().select(date)
+  },
+
+  _getSelectDateController() {
+    if (!this._selectDateController) {
+      this._selectDateController = createSelectDateController({
+        getTodayDate: () => this.data._todayDate,
+        getSelectedDate: () => this.data.selectedDate,
+        getCustomRangeStartDate: () => this.data.customRangeStartDate,
+        cancelDeferredHistory: () => this._cancelDeferredHistory(true),
+        formatPieDateLabel: date => this._formatPieDateLabel(date),
+        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
+        shiftDate: (date, delta) => this._shiftDate(date, delta),
+        setData: (patch, callback) => this.setData(patch, callback),
+        loadDateData: date => this.loadDateData(date),
+      })
     }
-    const customMin = patch.customRangePickerStartDate
-    if (this.data.customRangeStartDate && this.data.customRangeStartDate > nextDate) {
-      patch.customRangeStartDate = nextDate
-    } else if (this.data.customRangeStartDate && this.data.customRangeStartDate < customMin) {
-      patch.customRangeStartDate = customMin
-    }
-    this.setData(patch, () => this.loadDateData(nextDate))
+    return this._selectDateController
   },
 
   onDateChange(e) {
