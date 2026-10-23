@@ -46,6 +46,7 @@ const { createLoadFailureController } = require('./load-failure-controller')
 const { createDateFailureController } = require('./date-failure-controller')
 const { createDateRequestController } = require('./date-request-controller')
 const { createChartModeController } = require('./chart-mode-controller')
+const { createDynamicRefreshController } = require('./dynamic-refresh-controller')
 const { createLoadRequestController } = require('./load-request-controller')
 
 const {
@@ -279,32 +280,32 @@ var pageConfig = {
 
 
   _clearDynamicRefresh() {
-    if (this._dynamicRefreshTimer) {
-      clearTimeout(this._dynamicRefreshTimer)
-      this._dynamicRefreshTimer = null
-    }
+    this._getDynamicRefreshController().cancel()
   },
 
   _scheduleDynamicRefresh(delayMs) {
-    this._clearDynamicRefresh()
-    if (!this._alive || !this._isVisible || !this._viewReady) return
-    const delay = Math.max(1000, Number(delayMs) || STATS_DYNAMIC_REFRESH_MS)
-    this._dynamicRefreshTimer = setTimeout(async () => {
-      this._dynamicRefreshTimer = null
-      if (!this._alive || !this._isVisible || !this._viewReady) return
-      // Do not race a date/settings/manual refresh. Try again shortly instead of
-      // invalidating a user-triggered request with a background request id.
-      if ((this._statsLoadInFlight || 0) > 0 || this.data.cumulativeLoading) {
-        this._scheduleDynamicRefresh(3000)
-        return
-      }
-      this._requestId++
-      try {
-        await this.loadData({ background: true })
-      } finally {
-        this._scheduleDynamicRefresh()
-      }
-    }, delay)
+    this._getDynamicRefreshController().schedule(delayMs)
+  },
+
+  _getDynamicRefreshController() {
+    if (!this._dynamicRefreshController) {
+      this._dynamicRefreshController = createDynamicRefreshController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        isViewReady: () => this._viewReady,
+        getTimer: () => this._dynamicRefreshTimer,
+        setTimer: timer => { this._dynamicRefreshTimer = timer },
+        clearTimeout,
+        setTimeout,
+        getDefaultDelayMs: () => STATS_DYNAMIC_REFRESH_MS,
+        getStatsLoadInFlight: () => this._statsLoadInFlight || 0,
+        isCumulativeLoading: () => !!this.data.cumulativeLoading,
+        incrementRequestId: () => { this._requestId++ },
+        loadBackground: () => this.loadData({ background: true }),
+        schedule: delay => this._scheduleDynamicRefresh(delay),
+      })
+    }
+    return this._dynamicRefreshController
   },
 
   _syncThemeFromStorage() {
