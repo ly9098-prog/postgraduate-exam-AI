@@ -343,6 +343,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-canvas-palette.js \
             miniprogram/tests/test-pomodoro-stats-subject-items.js \
             miniprogram/tests/test-pomodoro-stats-pie-label-renderer.js \
+            miniprogram/tests/test-pomodoro-stats-pie-sector-builder.js \
             miniprogram/tests/test-pomodoro-theme-controller.js \
             miniprogram/tests/test-pomodoro-end-confirm-snapshot.js \
             miniprogram/tests/test-pomodoro-active-sync-controller.js \

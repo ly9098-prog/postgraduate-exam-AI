@@ -19,6 +19,7 @@ const { createShadeColorCache } = require('./shade-color-cache')
 const canvasPalette = require('./canvas-palette')
 const subjectItems = require('./subject-items')
 const pieLabelRenderer = require('./pie-label-renderer')
+const pieSectorBuilder = require('./pie-sector-builder')
 
 const {
   getSubjectColor,
@@ -1418,34 +1419,10 @@ var pageConfig = {
 
     // Geometry, shades and label positions are cached for the entire data set.
     if (!this._pieSectors) {
-      const totalDur = subjects.reduce((sum, item) => sum + (item.duration_sec || 0), 0) || 1
-      const sectors = []
-      let angle = -Math.PI / 2
-      subjects.filter(item => (item.duration_sec || 0) > 0).forEach(item => {
-        const pct = (item.duration_sec || 0) / totalDur
-        const endA = angle + Math.PI * 2 * pct
-        sectors.push({
-          subject: item,
-          color: item._color || '#3B82F6',
-          pct,
-          startA: angle,
-          endA,
-        })
-        angle = endA
-      })
-      this._pieSectors = sectors
-      // Keep layer count stable across the animation. The previous final-frame
-      // jump from 3 layers to ~12 caused the visible tail-end hitch.
-      const wallStepsFull = Math.max(5, Math.min(7, Math.round(depth)))
-      this._pieWallSteps = wallStepsFull
-      sectors.forEach(sec => {
-        sec._wallShades = []
-        for (let layer = 1; layer <= wallStepsFull; layer++) {
-          const ratio = layer / wallStepsFull
-          sec._wallShades.push(this._shadeColorCached(sec.color, Math.round(-52 + ratio * 38)))
-        }
-      })
-      this._pieLabelLayout = this._buildPieLabelLayout(sectors, geometry)
+      const built = pieSectorBuilder.buildPieSectors(subjects, geometry, (hex, amount) => this._shadeColorCached(hex, amount))
+      this._pieSectors = built.sectors
+      this._pieWallSteps = built.wallSteps
+      this._pieLabelLayout = built.labelLayout
     }
 
     const sectors = this._pieSectors
