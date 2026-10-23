@@ -59,11 +59,9 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
+import { exportQuestions } from "./question-api";
 
-import {
-  exportQuestions,
-} from "./question-api";
-
+import { useQuestionExport } from "./hooks/use-question-export";
 import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
 import { useQuestionUpdate } from "./hooks/use-question-update";
 import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
@@ -117,10 +115,6 @@ import {
 } from "./question-display-helpers";
 import { buildExportPayload } from "./question-export-payload";
 import { buildQuestionDeleteFeedback } from "./question-delete-feedback";
-import {
-  buildExportMessage,
-  exportQuestionDownload,
-} from "./question-export-download";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -165,7 +159,6 @@ export default function QuestionsPage() {
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
   const editorCallbacks = useRef<{
     setEditing: (value: boolean) => void;
     setEditForm: (value: Record<string, unknown>) => void;
@@ -229,6 +222,24 @@ export default function QuestionsPage() {
   });
 
   const detail = useQuestionDetail(selectedQuestionId);
+  const { exportingFormat, exportQuestion: handleExport } = useQuestionExport({
+    buildPayload: useCallback(
+      (format: "csv" | "docx") => buildExportPayload(format, filters, selectedIds),
+      [filters, selectedIds],
+    ),
+    download: {
+      createObjectURL: blob => URL.createObjectURL(blob),
+      revokeObjectURL: url => URL.revokeObjectURL(url),
+      createAnchor: () => document.createElement("a"),
+      appendAnchor: anchor => document.body.appendChild(anchor),
+      removeAnchor: anchor => anchor.remove(),
+      clickAnchor: anchor => anchor.click(),
+      setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    },
+    request: exportQuestions,
+    closeMenus: closeAllMenus,
+    onMessage: setMessage,
+  });
   const versions = useQuestionVersions(selectedQuestionId);
   const baseVersionDetail = useQuestionVersion(selectedQuestionId, baseVersion);
   const compareVersionDetail = useQuestionVersion(selectedQuestionId, compareVersion);
@@ -449,32 +460,6 @@ export default function QuestionsPage() {
     const timer = window.setTimeout(() => setMessage(null), 3800);
     return () => window.clearTimeout(timer);
   }, [message]);
-
-  const handleExport = async (format: "csv" | "docx") => {
-    try {
-      setExportingFormat(format);
-      closeAllMenus();
-      const response = await exportQuestions(
-        buildExportPayload(format, filters, selectedIds),
-      );
-      exportQuestionDownload(response, format, {
-        createObjectURL: blob => URL.createObjectURL(blob),
-        revokeObjectURL: url => URL.revokeObjectURL(url),
-        createAnchor: () => document.createElement("a"),
-        appendAnchor: anchor => document.body.appendChild(anchor),
-        removeAnchor: anchor => anchor.remove(),
-        clickAnchor: anchor => anchor.click(),
-        setTimeout: (callback, delay) => window.setTimeout(callback, delay),
-      });
-      setMessage(buildExportMessage(format));
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "导出失败，请稍后重试。",
-      );
-    } finally {
-      setExportingFormat(null);
-    }
-  };
 
   const confirmDescription =
     confirmState?.action === "batch-delete"
