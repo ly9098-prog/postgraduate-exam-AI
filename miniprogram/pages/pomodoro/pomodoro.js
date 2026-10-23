@@ -71,6 +71,8 @@ const { createResumeSessionController } = require('./utils/resume-session-contro
 const { createShowCountdownInterruptConfirmController } = require('./utils/show-countdown-interrupt-confirm-controller')
 const { createConfirmEndTimerController } = require('./utils/confirm-end-timer-controller')
 const { createEndSessionController } = require('./utils/end-session-controller')
+const { createPauseFreeTimerController } = require('./utils/pause-free-timer-controller')
+const { createResumeFreeTimerController } = require('./utils/resume-free-timer-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -237,6 +239,8 @@ Page({
   _showCountdownInterruptConfirmController: null,
   _confirmEndTimerController: null,
   _endSessionController: null,
+  _pauseFreeTimerController: null,
+  _resumeFreeTimerController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1085,6 +1089,50 @@ Page({
     return this._endSessionController
   },
 
+  _getPauseFreeTimerController() {
+    if (!this._pauseFreeTimerController) {
+      this._pauseFreeTimerController = createPauseFreeTimerController({
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        now: () => api.now(),
+        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        updateFreeElapsed: () => this._updateFreeElapsed(),
+        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        setData: data => this.setData(data),
+        getElapsedSec: () => this._timerState.elapsedSec,
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'free pause snapshot'),
+        retryPendingSync: () => this._retryPendingPomodoroSync(),
+        showToast: toast => wx.showToast(toast),
+      })
+    }
+    return this._pauseFreeTimerController
+  },
+
+  _getResumeFreeTimerController() {
+    if (!this._resumeFreeTimerController) {
+      this._resumeFreeTimerController = createResumeFreeTimerController({
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        now: () => api.now(),
+        getPauseStartTime: () => this._timerState.pauseStartTime,
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'free resume adjustment'),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'free resume snapshot'),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        setData: data => this.setData(data),
+        startFreeTimerInterval: () => this._startFreeTimerInterval(),
+        retryPendingSync: () => this._retryPendingPomodoroSync(),
+        showToast: toast => wx.showToast(toast),
+      })
+    }
+    return this._resumeFreeTimerController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1116,69 +1164,11 @@ Page({
   },
 
   async _pauseFreeTimer() {
-    if (!this._timerState.sessionId || this.data.actionLoading) return
-    const sessionId = this._timerState.sessionId
-    const pauseStartedAt = api.now()
-
-    const pending = this._setPendingPomodoroSync('pause', sessionId, pauseStartedAt)
-    if (!pending) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-
-    this._updateFreeElapsed()
-    this._clearFreeTimerInterval()
-    this._timerState.pauseStartTime = pauseStartedAt
-    this._timerState.freeFriendlyText = formatElapsedSec(this._timerState.elapsedSec).friendly
-    this.setData({ isPaused: true, actionLoading: true })
-    this._safeSetPomodoroStorage('pomodoro_free_pause', {
-      totalPausedMs: this._timerState.totalPausedMs || 0,
-      pauseStartTime: pauseStartedAt,
-      sessionId,
-      elapsedSec: this._timerState.elapsedSec,
-      freeDisplayOffsetMs: 0,
-    }, 'free pause snapshot')
-
-    this.setData({ actionLoading: false })
-    this._retryPendingPomodoroSync().then(synced => {
-      if (!synced) wx.showToast({ title: '已暂停，网络恢复后自动同步', icon: 'none' })
-    })
+    return this._getPauseFreeTimerController().pause()
   },
 
   async _resumeFreeTimer() {
-    if (!this._timerState.sessionId || this.data.actionLoading) return
-    const sessionId = this._timerState.sessionId
-    const now = api.now()
-    const openPauseMs = this._timerState.pauseStartTime
-      ? Math.max(0, now - this._timerState.pauseStartTime)
-      : 0
-    const localTotalPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0) + openPauseMs)
-
-    // Queue ordering is important: if a previous /pause timed out, it stays ahead
-    // of this /resume and is synchronized first instead of being overwritten.
-    // Persist the intent before changing local UI so a storage failure cannot turn
-    // a durable paused state into an unrecoverable local-only resume.
-    const pending = this._setPendingPomodoroSync('resume', sessionId, now)
-    if (!pending) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-
-    this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
-      sessionId,
-      totalPausedMs: localTotalPausedMs,
-      savedAt: now,
-    }, 'free resume adjustment')
-    this._safeRemovePomodoroStorage('pomodoro_free_pause', 'free resume snapshot')
-    this._timerState.totalPausedMs = localTotalPausedMs
-    this._timerState.pauseStartTime = null
-    this.setData({ isPaused: false, ringCanvasVisible: true, actionLoading: true })
-    this._startFreeTimerInterval()
-
-    this.setData({ actionLoading: false })
-    this._retryPendingPomodoroSync().then(synced => {
-      if (!synced) wx.showToast({ title: '已继续计时，网络恢复后自动同步', icon: 'none' })
-    })
+    return this._getResumeFreeTimerController().resume()
   },
 
   async _reconcileAfterResumeError(e, sessionId) {

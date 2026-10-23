@@ -45,6 +45,8 @@ const MODULES = {
   'show-countdown-interrupt-confirm-controller.js': ['./end-confirm-view-model'],
   'confirm-end-timer-controller.js': [],
   'end-session-controller.js': [],
+  'pause-free-timer-controller.js': ['./timer-math'],
+  'resume-free-timer-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -64,7 +66,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2343
+const PAGE_MAX_LINES = 2333
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -105,6 +107,8 @@ const PAGE_METHODS = new Set([
   '_getShowCountdownInterruptConfirmController', '_showCountdownInterruptConfirm',
   '_getConfirmEndTimerController', 'confirmEndTimer',
   '_getEndSessionController', 'endSession',
+  '_getPauseFreeTimerController', '_pauseFreeTimer',
+  '_getResumeFreeTimerController', '_resumeFreeTimer',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -652,6 +656,30 @@ function pageViolations(source) {
         if (methodName === 'endSession' &&
             !returnsControllerCall(node, '_getEndSessionController', 'end', [])) {
           errors.push('end session must delegate to its controller')
+        }
+        if (methodName === '_getPauseFreeTimerController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPauseFreeTimerController',
+              '_pauseFreeTimerController',
+            )) {
+          errors.push('pause free timer must lazily assign its controller')
+        }
+        if (methodName === '_pauseFreeTimer' &&
+            !returnsControllerCall(node, '_getPauseFreeTimerController', 'pause', [])) {
+          errors.push('pause free timer must delegate to its controller')
+        }
+        if (methodName === '_getResumeFreeTimerController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createResumeFreeTimerController',
+              '_resumeFreeTimerController',
+            )) {
+          errors.push('resume free timer must lazily assign its controller')
+        }
+        if (methodName === '_resumeFreeTimer' &&
+            !returnsControllerCall(node, '_getResumeFreeTimerController', 'resume', [])) {
+          errors.push('resume free timer must delegate to its controller')
         }
       }
     }
