@@ -41,6 +41,9 @@ const {
   createReviewTimerController,
   safeReviewTickDelta,
 } = require('./utils/review-timer-controller')
+const {
+  createReviewMasterController,
+} = require('./utils/master-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -887,204 +890,57 @@ this._showQuestion(e.detail.index)
 this._persistReviewDraft()
 },
 tapMaster(e) {
-if (this.data.masterSubmitting || this.data.submittingGroup || this._masterUndoInFlight) return
-var q = e.detail && e.detail.question
-var scheduleId = q && q.schedule_id
-if (!scheduleId) return
-this.setData({ masterConfirmId: scheduleId })
+this._reviewMasterController().tap(e)
 },
 cancelMaster() {
-if (this.data.masterSubmitting) return
-this.setData({ masterConfirmId: null })
+this._reviewMasterController().cancel()
 },
 async confirmMaster() {
-if (this.data.masterSubmitting || this.data.submittingGroup) return
-const scheduleId = this.data.masterConfirmId
-const currentGroupSnapshot = (this.data.groupQuestions || []).slice()
-const question = currentGroupSnapshot.find(q => String(q.schedule_id) === String(scheduleId))
-const originalIndex = currentGroupSnapshot.findIndex(q => String(q.schedule_id) === String(scheduleId))
-const originalGroupIdx = Number(this.data.currentGroupIdx || 0)
-const groupsBeforeMaster = (this.data.groups || []).map(group => Array.isArray(group) ? group.slice() : [])
-if (!scheduleId || !question || originalIndex < 0) return
-this.setData({ masterSubmitting: true })
-if (!await this._syncReviewSessionDayIfNeeded()) {
-if (this._alive) this.setData({ masterSubmitting: false, masterConfirmId: null })
-return
-}
-try {
-const masterResult = await api.post(`/review/${scheduleId}/master`)
-if (!this._alive) return
-const serverTaskActive = !(masterResult && masterResult.active === false)
-const changedByThisRequest = serverTaskActive && !(masterResult && masterResult.changed === false)
-await this.refreshOverviewStatsSilently()
-if (!this._alive) return
-this._clearMasterUndo()
-if (changedByThisRequest) {
-this._pendingMasterUndo = {
-scheduleId,
-question,
-originalAnswer: this._reviewSession.answers[scheduleId],
-originalIndex: Math.max(0, originalIndex),
-originalGroupIdx,
-groupsBeforeMaster,
-}
-}
-const groupQuestions = currentGroupSnapshot.filter(q => String(q.schedule_id) !== String(scheduleId))
-const groups = groupsBeforeMaster.length > 0 ? groupsBeforeMaster.map(group => group.slice()) : [currentGroupSnapshot.slice()]
-let safeGroupIdx = originalGroupIdx
-if (safeGroupIdx < 0 || safeGroupIdx >= groups.length) safeGroupIdx = 0
-if (!groups.length) groups.push(groupQuestions.slice())
-else groups[safeGroupIdx] = groupQuestions.slice()
-let currentIndex = Number(this.data.currentIndex || 0)
-const answers = { ...this._reviewSession.answers }
-delete answers[scheduleId]
-this._reviewSession.answers = answers
-if (changedByThisRequest) this._masteredCount = (this._masteredCount || 0) + 1
-this._reviewSession.allQuestions = groupQuestions.slice()
-this.setData({
-masterConfirmId: null,
-masterSubmitting: false,
-groups,
-currentGroupIdx: safeGroupIdx,
-groupQuestions,
-masterUndoVisible: changedByThisRequest,
-masterUndoText: changedByThisRequest ? '已标记掌握，不再进入复习计划' : '',
-})
-if (changedByThisRequest) {
-this._armMasterUndoExpiry(5000)
-} else {
-wx.showToast({
-title: serverTaskActive ? '题目状态已同步' : '该题已移出复习计划',
-icon: 'none',
-})
-}
-if (groupQuestions.length === 0) {
-this._clearReviewTimer()
-const nextPhase = this.data.todayRemainingCount > 0 ? 'overview' : 'empty'
-this.setData({
-phase: nextPhase,
-groupQuestions: [],
-currentQuestion: null,
-currentIndex: 0,
-})
-return
-}
-if (currentIndex >= groupQuestions.length) {
-currentIndex = Math.max(0, groupQuestions.length - 1)
-}
-this.setData({ currentIndex })
-this._syncAnsweredFlags()
-this._showQuestion(currentIndex)
-} catch (e) {
-if (!this._alive) return
-console.error('标记掌握失败', e)
-this.setData({ masterSubmitting: false, masterConfirmId: null })
-wx.showToast({ title: '操作失败，请重试', icon: 'none' })
-}
+await this._reviewMasterController().confirm()
 },
 async undoMaster() {
-const pending = this._pendingMasterUndo
-if (!pending || this._masterUndoInFlight || this.data.masterSubmitting) return
-this._masterUndoInFlight = true
-if (this._masterUndoTimer) {
-clearTimeout(this._masterUndoTimer)
-this._masterUndoTimer = null
-}
-try {
-if (!await this._syncReviewSessionDayIfNeeded()) {
-if (this._alive && this._pendingMasterUndo === pending) {
-this.setData({ masterUndoVisible: true })
-this._armMasterUndoExpiry(5000)
-}
-return
-}
-const unmasterResult = await api.post(`/review/${pending.scheduleId}/unmaster`)
-if (!this._alive) return
-if (unmasterResult && unmasterResult.active === false) {
-this._clearMasterUndo()
-await this.refreshOverviewStatsSilently()
-if (this._alive) wx.showToast({ title: '该题已移出复习计划，无法撤销', icon: 'none' })
-return
-}
-const restoredQuestion = {
-...pending.question,
-occurrence_seq: unmasterResult && unmasterResult.occurrence_seq != null
-? unmasterResult.occurrence_seq
-: pending.question.occurrence_seq,
-}
-let restoredGroups = Array.isArray(pending.groupsBeforeMaster)
-? pending.groupsBeforeMaster.map(group => Array.isArray(group) ? group.slice() : [])
-: []
-let restoredGroupIdx = Number(pending.originalGroupIdx || 0)
-if (!restoredGroups.length) {
-restoredGroups = [(this._reviewSession.allQuestions || []).slice()]
-restoredGroupIdx = 0
-}
-if (restoredGroupIdx < 0 || restoredGroupIdx >= restoredGroups.length) restoredGroupIdx = 0
-let restoredGroup = restoredGroups[restoredGroupIdx].slice()
-let targetIndex = restoredGroup.findIndex(q => String(q.schedule_id) === String(pending.scheduleId))
-if (targetIndex >= 0) {
-restoredGroup[targetIndex] = restoredQuestion
-} else {
-targetIndex = Math.min(Math.max(0, Number(pending.originalIndex || 0)), restoredGroup.length)
-restoredGroup.splice(targetIndex, 0, restoredQuestion)
-}
-restoredGroups[restoredGroupIdx] = restoredGroup
-this._reviewSession.allQuestions = restoredGroup.slice()
-const restoredAnswers = { ...this._reviewSession.answers }
-if (pending.originalAnswer !== undefined) {
-restoredAnswers[pending.scheduleId] = pending.originalAnswer
-}
-this._reviewSession.answers = restoredAnswers
-this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1)
-this._clearMasterUndo()
-const restoredIndex = Math.min(targetIndex, Math.max(0, restoredGroup.length - 1))
-this.setData({
-phase: 'reviewing',
-groups: restoredGroups,
-currentGroupIdx: restoredGroupIdx,
-groupQuestions: restoredGroup,
-currentIndex: restoredIndex,
-masterUndoVisible: false,
+await this._reviewMasterController().undo()
+},
+_reviewMasterController() {
+return this._reviewMaster || (
+this._reviewMaster = createReviewMasterController({
+getData: () => this.data,
+getSession: () => this._reviewSession,
+setData: patch => this.setData(patch),
+isPageAlive: () => this._alive,
+isMasterSubmitting: () => this.data.masterSubmitting,
+isSubmittingGroup: () => this.data.submittingGroup,
+isMasterUndoInFlight: () => this._masterUndoInFlight,
+getPendingMasterUndo: () => this._pendingMasterUndo,
+setPendingMasterUndo: value => { this._pendingMasterUndo = value },
+setMasterUndoInFlight: value => { this._masterUndoInFlight = value },
+getMasterUndoTimer: () => this._masterUndoTimer,
+setMasterUndoTimer: timer => { this._masterUndoTimer = timer },
+incrementMasteredCount: () => { this._masteredCount = (this._masteredCount || 0) + 1 },
+decrementMasteredCount: () => { this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1) },
+syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
+postMaster: scheduleId => api.post(`/review/${scheduleId}/master`),
+postUnmaster: scheduleId => api.post(`/review/${scheduleId}/unmaster`),
+refreshOverviewStatsSilently: () => this.refreshOverviewStatsSilently(),
+clearUndo: () => this._clearMasterUndo(),
+armUndoExpiry: ms => this._armMasterUndoExpiry(ms),
+clearReviewTimer: () => this._clearReviewTimer(),
+getTodayRemainingCount: () => this.data.todayRemainingCount,
+syncAnsweredFlags: () => this._syncAnsweredFlags(),
+showQuestion: index => this._showQuestion(index),
+startReviewTimer: () => this._startReviewTimer(),
+showToast: options => wx.showToast(options),
+logError: (message, error) => console.error(message, error),
+setTimeout,
+clearTimeout,
 })
-this._syncAnsweredFlags()
-if (restoredGroup.length > 0) {
-this._showQuestion(restoredIndex)
-this._startReviewTimer()
-}
-await this.refreshOverviewStatsSilently()
-if (!this._alive) return
-wx.showToast({ title: '已撤销掌握', icon: 'none' })
-} catch (e) {
-if (!this._alive) return
-console.error('撤销掌握失败', e)
-if (this._pendingMasterUndo === pending) {
-this.setData({ masterUndoVisible: true })
-this._armMasterUndoExpiry(5000)
-}
-wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
-} finally {
-this._masterUndoInFlight = false
-}
+)
 },
 _armMasterUndoExpiry(ms) {
-if (this._masterUndoTimer) clearTimeout(this._masterUndoTimer)
-const duration = Number(ms) > 0 ? Number(ms) : 5000
-this._masterUndoTimer = setTimeout(() => {
-this._pendingMasterUndo = null
-this._masterUndoTimer = null
-if (this._alive) this.setData({ masterUndoVisible: false })
-}, duration)
+this._reviewMasterController().armUndoExpiry(ms)
 },
 _clearMasterUndo() {
-if (this._masterUndoTimer) {
-clearTimeout(this._masterUndoTimer)
-this._masterUndoTimer = null
-}
-this._pendingMasterUndo = null
-if (this._alive && this.data && this.data.masterUndoVisible) {
-this.setData({ masterUndoVisible: false })
-}
+this._reviewMasterController().clearUndo()
 },
 _getReviewRequestId(question) {
 const session = this._reviewSession || (this._reviewSession = this._createReviewSession())

@@ -380,6 +380,7 @@ jobs:
           node --test miniprogram/tests/test-review-next-group-controller.js
           node --test miniprogram/tests/test-review-result-dock-controller.js
           node --test miniprogram/tests/test-review-timer-controller.js
+          node --test miniprogram/tests/test-review-master-controller.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
           node miniprogram/tests/test-render-invariant.js
