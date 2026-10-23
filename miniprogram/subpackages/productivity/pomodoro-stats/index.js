@@ -17,6 +17,7 @@ const sessionViewModel = require('./session-view-model')
 const pieLabelLayout = require('./pie-label-layout')
 const trendChart = require('./trend-chart')
 const { createDurationAnimationController } = require('./duration-animation-controller')
+const { createPieTapController } = require('./pie-tap-controller')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -1778,60 +1779,24 @@ var pageConfig = {
   /* ==================== Touch Interactions ==================== */
 
   onPieTap(e) {
-    if (!this.data.distributionHasData) return
-    const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0])
-    const tapX = touch ? touch.clientX : e.detail && e.detail.x
-    const tapY = touch ? touch.clientY : e.detail && e.detail.y
-    if (typeof tapX !== 'number' || typeof tapY !== 'number') return
+    this._getPieTapController().handleTap(e)
+  },
 
-    const query = wx.createSelectorQuery().in(this)
-    query.select('#pie-canvas').boundingClientRect(rect => {
-      if (!rect || !rect.width) return
-      const x = tapX - rect.left
-      const y = tapY - rect.top
-      const geometry = this._getPieGeometry(rect)
-      const { centerX, centerY, radius, tilt } = geometry
-
-      const dx = x - centerX
-      const dy = (y - centerY) / tilt
-      const dist = Math.sqrt(dx * dx + dy * dy)
-
-      // Outside the 3D pie footprint — dismiss
-      if (dist > radius) {
-        if (this.data.selectedSubjectDetail) {
-          this.setData({
-            selectedSubjectDetail: null,
-            _selectedSubject: null,
-          }, () => { if (this._alive) this._renderPieChart(1) })
-        }
-        return
-      }
-
-      let angle = Math.atan2(dy, dx)
-      if (angle < -Math.PI / 2) angle += Math.PI * 2
-
-      const subjects = this.data.subjects
-      const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
-      let cumulativeStart = -Math.PI / 2
-      for (let subjectIndex = 0; subjectIndex < subjects.length; subjectIndex++) {
-        const s = subjects[subjectIndex]
-        const pct = (s.duration_sec || 0) / totalDur
-        const cumulativeEnd = cumulativeStart + Math.PI * 2 * pct
-        if (pct > 0 && angle >= cumulativeStart && angle < cumulativeEnd) {
-          this.setData({
-            selectedSubjectDetail: s,
-            _selectedSubject: s.subject,
-            pieTapped: true,
-          }, () => {
-            if (!this._alive) return
-            this._renderPieChart(1)
-            setTimeout(() => { if (this._alive) this.setData({ pieTapped: false }) }, 350)
-          })
-          return
-        }
-        cumulativeStart = cumulativeEnd
-      }
-    }).exec()
+  _getPieTapController() {
+    if (!this._pieTapController) {
+      this._pieTapController = createPieTapController({
+        isAlive: () => this._alive,
+        hasDistributionData: () => this.data.distributionHasData,
+        getSubjects: () => this.data.subjects,
+        getSelectedSubjectDetail: () => this.data.selectedSubjectDetail,
+        getGeometry: rect => this._getPieGeometry(rect),
+        createSelectorQuery: () => wx.createSelectorQuery().in(this),
+        setData: (patch, callback) => this.setData(patch, callback),
+        renderPie: progress => this._renderPieChart(progress),
+        setTimeout,
+      })
+    }
+    return this._pieTapController
   },
 
   closeDetail() {

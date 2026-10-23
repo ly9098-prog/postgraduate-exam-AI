@@ -51,6 +51,15 @@ assert.match(template, /class="detail-card" catchtap="noop" wx:if="\{\{selectedS
 // Load the actual page handlers with isolated dependencies and a synchronous selector mock.
 let pageConfig
 let selectedRectCallback
+const pieTapControllerModule = require('../subpackages/productivity/pomodoro-stats/pie-tap-controller')
+const wxQueryMock = {
+  createSelectorQuery: () => ({
+    in() { return this },
+    select(selector) { assert.equal(selector, '#pie-canvas'); return this },
+    boundingClientRect(callback) { selectedRectCallback = callback; return this },
+    exec() { selectedRectCallback(rect) },
+  }),
+}
 const timers = []
 const rect = { left: 10, top: 20, width: 200, height: 200 }
 vm.runInNewContext(fs.readFileSync(path.join(pageDir, 'index.js'), 'utf8'), {
@@ -67,6 +76,20 @@ vm.runInNewContext(fs.readFileSync(path.join(pageDir, 'index.js'), 'utf8'), {
   },
 }, { filename: path.join(pageDir, 'index.js') })
 
+// Expose the page controller factory for the isolated detail regression fixture.
+pageConfig._createPieTapControllerForPage = page =>
+  pieTapControllerModule.createPieTapController({
+    isAlive: () => page._alive,
+    hasDistributionData: () => page.data.distributionHasData,
+    getSubjects: () => page.data.subjects,
+    getSelectedSubjectDetail: () => page.data.selectedSubjectDetail,
+    getGeometry: pageRect => page._getPieGeometry(pageRect),
+    createSelectorQuery: () => wxQueryMock.createSelectorQuery(),
+    setData: (patch, callback) => page.setData(patch, callback),
+    renderPie: progress => page._renderPieChart(progress),
+    setTimeout: (callback, delay) => { timers.push({ callback, delay }) },
+  })
+
 const subjects = [
   { subject: 'math', duration_sec: 60, sessions: 1, _label: '数学' },
   { subject: 'english', duration_sec: 60, sessions: 1, _label: '英语' },
@@ -77,6 +100,10 @@ const page = {
   data: { ...pageConfig.data, subjects, distributionHasData: true },
   _alive: true,
   _getPieGeometry: () => ({ centerX: 100, centerY: 100, radius: 80, tilt: 0.5 }),
+  _getPieTapController() {
+    if (!this.__pieTapController) this.__pieTapController = pageConfig._createPieTapControllerForPage(this)
+    return this.__pieTapController
+  },
   _renderPieChart: progress => { renders.push(progress) },
   setData(patch, callback) {
     patches.push(patch)
