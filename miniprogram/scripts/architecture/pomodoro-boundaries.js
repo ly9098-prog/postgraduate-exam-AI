@@ -31,6 +31,7 @@ const MODULES = {
   'celebration-dismiss-controller.js': [],
   'break-restore-controller.js': [],
   'completion-celebration-controller.js': [],
+  'work-complete-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -50,7 +51,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2454
+const PAGE_MAX_LINES = 2453
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -77,6 +78,7 @@ const PAGE_METHODS = new Set([
   '_getCelebrationDismissController', 'dismissCelebration',
   '_getBreakRestoreController', '_restoreBreak',
   '_getCompletionCelebrationController', '_showCompletionCelebration',
+  '_getWorkCompleteController', '_onWorkComplete',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -456,6 +458,18 @@ function pageViolations(source) {
               ['sessionId', 'options'],
             )) {
           errors.push('completion celebration must delegate to its controller')
+        }
+        if (methodName === '_getWorkCompleteController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createWorkCompleteController',
+              '_workCompleteController',
+            )) {
+          errors.push('work complete must lazily assign its controller')
+        }
+        if (methodName === '_onWorkComplete' &&
+            !returnsControllerCall(node, '_getWorkCompleteController', 'complete', [])) {
+          errors.push('work complete must delegate to its controller')
         }
       }
     }

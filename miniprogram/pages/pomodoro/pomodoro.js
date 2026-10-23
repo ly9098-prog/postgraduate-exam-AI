@@ -57,6 +57,7 @@ const { createResumeErrorController } = require('./utils/resume-error-controller
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
 const { createCompletionCelebrationController } = require('./utils/completion-celebration-controller')
+const { createWorkCompleteController } = require('./utils/work-complete-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -209,6 +210,7 @@ Page({
   _celebrationDismissController: null,
   _breakRestoreController: null,
   _completionCelebrationController: null,
+  _workCompleteController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1820,29 +1822,26 @@ Page({
   },
 
   async _onWorkComplete() {
-    const sessionId = this._timerState.sessionId
-    if (!sessionId) {
-      this._resetToIdle()
-      return
+    return this._getWorkCompleteController().complete()
+  },
+
+  _getWorkCompleteController() {
+    if (!this._workCompleteController) {
+      this._workCompleteController = createWorkCompleteController({
+        timer: () => this._timerState,
+        resetIdle: () => this._resetToIdle(),
+        now: () => api.now(),
+        clearTimer: () => this._clearTimer(),
+        vibrateLong: () => wx.vibrateLong(),
+        completeWithRetry: (sessionId, completedAt) => this._completePomodoroWithRetry(sessionId, completedAt),
+        consumeTerminalConflict: (sessionId, action) => this._consumePomodoroTerminalConflict(sessionId, action),
+        handleTerminalConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
+        loadStats: () => this.loadTodayStats(),
+        showToast: toast => wx.showToast(toast),
+        showCompletionCelebration: sessionId => this._showCompletionCelebration(sessionId),
+      })
     }
-
-    const completedAt = api.now()
-    this._clearTimer()
-    wx.vibrateLong()
-    this._completePomodoroWithRetry(sessionId, completedAt).then(synced => {
-      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'complete')
-      if (conflict) {
-        this._handlePomodoroTerminalConflict(sessionId, conflict)
-        return
-      }
-      if (synced) {
-        this.loadTodayStats()
-      } else {
-        wx.showToast({ title: '已完成，网络恢复后自动同步', icon: 'none' })
-      }
-    })
-
-    this._showCompletionCelebration(sessionId)
+    return this._workCompleteController
   },
 
   dismissCelebration() {
