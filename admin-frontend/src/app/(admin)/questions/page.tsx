@@ -59,7 +59,7 @@ import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { exportQuestions } from "./question-api";
 
 import { useQuestionExport } from "./hooks/use-question-export";
-import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
+import { useQuestionDeleteDialog } from "./hooks/use-question-delete-dialog";
 import { useQuestionUpdate } from "./hooks/use-question-update";
 import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
 import { useQuestionEditor } from "./hooks/use-question-editor";
@@ -108,7 +108,6 @@ import {
   normalizedChoiceAnswerKeys,
 } from "./question-display-helpers";
 import { buildExportPayload } from "./question-export-payload";
-import { buildQuestionDeleteFeedback } from "./question-delete-feedback";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -131,8 +130,6 @@ const pageSizeOptions = [
   { label: "100 条/页", value: "100" },
 ];
 
-type ConfirmState = QuestionDeleteIntent | null;
-
 export default function QuestionsPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -148,7 +145,6 @@ export default function QuestionsPage() {
     setPageSize,
   } = useQuestionPagination(searchParams);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
-  const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const { message, setMessage, clearMessage } = useQuestionFeedback();
   const editorCallbacks = useRef<{
     setEditing: (value: boolean) => void;
@@ -243,6 +239,21 @@ export default function QuestionsPage() {
     toggleVersionHistory,
     swapVersions,
   } = useQuestionVersionHistory(selectedQuestionId);
+  const deleteDialog = useQuestionDeleteDialog(selectedIds, selectedQuestionId, {
+    clearSelection,
+    setSelectedQuestionId,
+    closeDetailDrawer: () => setIsDetailDrawerOpen(false),
+    onMessage: setMessage,
+  });
+  const {
+    confirmState,
+    deleteMutation,
+    requestBatchDelete,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
+    deleteDescription,
+  } = deleteDialog;
   const {
     editing, setEditing, editForm, setEditForm, editStemText, setEditStemText,
     dirty, unsavedIntent, setUnsavedIntent, startEditing, cancelEditing,
@@ -255,30 +266,6 @@ export default function QuestionsPage() {
     editorCallbacks.current.setEditing = setEditing;
     editorCallbacks.current.setEditForm = setEditForm;
   }, [setEditForm, setEditing]);
-
-  const deleteMutation = useQuestionDelete(selectedIds, {
-    onDeleted: (result, variables) => {
-      const feedback = buildQuestionDeleteFeedback({
-        result,
-        intent: variables,
-        selectedQuestionId,
-      });
-      setMessage(feedback.message);
-      if (feedback.closeDetailDrawer) {
-        setSelectedQuestionId(null);
-        setIsDetailDrawerOpen(false);
-      }
-      if (feedback.clearSelection) {
-        clearSelection();
-        setConfirmState(null);
-      }
-    },
-    onError: (error) => {
-      setMessage(
-        error instanceof Error ? error.message : "删除失败，请稍后重试。",
-      );
-    },
-  });
 
   const updateMutation = useQuestionUpdate({
     questionId: selectedQuestionId,
@@ -440,11 +427,6 @@ export default function QuestionsPage() {
     },
     getStorage: () => window.localStorage,
   });
-
-  const confirmDescription =
-    confirmState?.action === "batch-delete"
-      ? "删除后这些题目将从题库永久移除，此操作不可撤销。"
-      : "删除后该题目将从题库永久移除，此操作不可撤销。";
 
   return (
     <div className="space-y-4 pb-10">
@@ -1106,12 +1088,7 @@ export default function QuestionsPage() {
                       {canDelete ? (
                         <Button
                           variant="danger"
-                          onClick={() =>
-                            setConfirmState({
-                              action: "delete",
-                              id: selectedQuestion.id,
-                            })
-                          }
+                          onClick={() => requestDelete(selectedQuestion.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                           删除
@@ -1171,7 +1148,7 @@ export default function QuestionsPage() {
                 variant="danger"
                 size="sm"
                 disabled={deleteMutation.isPending}
-                onClick={() => setConfirmState({ action: "batch-delete" })}
+                onClick={requestBatchDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 批量删除
@@ -1246,12 +1223,7 @@ export default function QuestionsPage() {
                     variant="ghost"
                     size="sm"
                     className="text-slate-500 hover:bg-red-50 hover:text-red-600"
-                    onClick={() =>
-                      setConfirmState({
-                        action: "delete",
-                        id: selectedQuestionId,
-                      })
-                    }
+                    onClick={() => requestDelete(selectedQuestionId)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     删除
@@ -1902,15 +1874,12 @@ export default function QuestionsPage() {
       <ConfirmDialog
         open={confirmState !== null}
         title="确认删除题目"
-        description={confirmDescription}
+        description={deleteDescription}
         confirmText="删除"
         danger
         loading={deleteMutation.isPending}
-        onCancel={() => setConfirmState(null)}
-        onConfirm={() => {
-          if (!confirmState) return;
-          deleteMutation.mutate(confirmState);
-        }}
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
       />
     </div>
   );
