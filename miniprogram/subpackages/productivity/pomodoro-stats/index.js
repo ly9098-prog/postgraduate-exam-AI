@@ -34,6 +34,7 @@ const { createTrendAnimationController } = require('./trend-animation-controller
 const { createPieAnimationController } = require('./pie-animation-controller')
 const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
 const { createCancelWorkController } = require('./cancel-work-controller')
+const overviewMapping = require('./overview-mapping')
 
 const {
   getSubjectColor,
@@ -686,12 +687,8 @@ var pageConfig = {
         api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
       ])
       await subjectMetaPromise
-      const overview = initialResponses[0]
       const historyRes = initialResponses[1]
-      const stats = (overview && overview.stats) || {}
-      const trends = (overview && overview.trends) || []
-      const summary = (overview && overview.daily_summary) || {}
-      const lifetime = (overview && overview.lifetime_summary) || {}
+      const { stats, trends, summary, lifetime } = overviewMapping.normalizeOverview(initialResponses[0])
       if (
         !this._alive ||
         reqId !== this._requestId ||
@@ -720,9 +717,7 @@ var pageConfig = {
       const subjectBreakdown = (summary && summary.subjects) || []
       const selectedDurationSec = Number(summary && summary.duration_sec) || 0
       const selectedSessionCount = Number(summary && summary.sessions) || 0
-      const hasBleedInSubjects = subjectBreakdown.some(
-        item => Number(item.duration_sec) > 0 && Number(item.sessions) === 0
-      )
+      const hasBleedInSubjects = overviewMapping.hasCrossDayBleedInSubjects(subjectBreakdown)
       this._daySubjectsRaw = subjectBreakdown
       this._rawTodayDur = selectedDurationSec
       this._rawWeekDur = stats.week_duration_sec || 0
@@ -760,11 +755,7 @@ var pageConfig = {
         selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
         weekSessions: stats.week_sessions || 0,
         weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
-        trends: trends.map(item => ({
-          date: item.date,
-          duration_sec: item.duration_sec,
-          _shortDate: (item.date || '').slice(5),
-        })),
+        trends: trends,
         trendHasData: this._hasDistributionData(trends),
         subjects: displayDaySubjects ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
         distributionHasData: displayDaySubjects ? this._hasDistributionData(subjectBreakdown) : this.data.distributionHasData,
