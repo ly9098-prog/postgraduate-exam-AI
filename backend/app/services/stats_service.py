@@ -272,6 +272,7 @@ async def get_trends(
         start_date = today - timedelta(days=days - 1)
 
     since = _date_utc_range(start_date)[0]
+    until = _date_utc_range(start_date + timedelta(days=days))[0]
     day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     result = await db.execute(
@@ -284,6 +285,7 @@ async def get_trends(
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= since,
+            PracticeRecord.answered_at < until,
         )
         .group_by(day_expr)
         .order_by(day_expr)

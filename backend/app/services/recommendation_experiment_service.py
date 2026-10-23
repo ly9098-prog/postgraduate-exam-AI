@@ -5,6 +5,7 @@ import logging
 from datetime import date, timedelta
 
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import shanghai_date_utc_range, utcnow
@@ -13,6 +14,12 @@ from app.models.recommendation_experiment_assignment import (
     RecommendationExperimentAssignment,
 )
 from app.models.recommendation_log import RecommendationLog
+from app.services.unique_conflict import (
+    is_unique_violation as _is_unique_violation,
+)
+from app.services.unique_conflict import (
+    start_explicit_transaction as _start_explicit_transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,38 @@ def _stable_bucket(experiment_id: int, user_id: int, salt: str) -> float:
     """返回 [0, 1) 的稳定桶值；不同 salt 彼此独立。"""
     raw = f"{salt}:{experiment_id}:{user_id}"
     return int(hashlib.md5(raw.encode()).hexdigest(), 16) % 10000 / 10000.0
+
+
+async def _load_assignment(
+    db: AsyncSession,
+    *,
+    experiment_id: int,
+    user_id: int,
+) -> RecommendationExperimentAssignment | None:
+    result = await db.execute(
+        select(RecommendationExperimentAssignment).where(
+            RecommendationExperimentAssignment.experiment_id == experiment_id,
+            RecommendationExperimentAssignment.user_id == user_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _claim_assignment(
+    db: AsyncSession,
+    assignment: RecommendationExperimentAssignment,
+) -> RecommendationExperimentAssignment | None:
+    """Insert one assignment without poisoning the caller's transaction."""
+    await _start_explicit_transaction(db)
+    try:
+        async with db.begin_nested():
+            db.add(assignment)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
+        return None
+    return assignment
 
 
 async def get_active_experiment(
@@ -59,14 +98,11 @@ async def assign_user_to_variant(
 
     已分配则返回已有分组；未分配则按 variants.ratio 稳定 hash 分配。
     """
-    # 查已有分配
-    result = await db.execute(
-        select(RecommendationExperimentAssignment).where(
-            RecommendationExperimentAssignment.experiment_id == experiment_id,
-            RecommendationExperimentAssignment.user_id == user_id,
-        )
+    existing = await _load_assignment(
+        db,
+        experiment_id=experiment_id,
+        user_id=user_id,
     )
-    existing = result.scalar_one_or_none()
 
     # 获取实验信息。即使已经分过组，也要重新应用当前 traffic cap；管理员
     # 下调流量时才能立即把超出 cap 的历史用户移出实验。
@@ -138,14 +174,26 @@ async def assign_user_to_variant(
         variant_key=assigned_variant["key"],
         strategy=assigned_variant["strategy"],
     )
-    db.add(assignment)
-    await db.flush()
+    claimed = await _claim_assignment(db, assignment)
+    if claimed is None:
+        # A concurrent request may have won uq_rea_experiment_user. Reload the
+        # stable winner after the savepoint rollback instead of aborting the
+        # caller's outer transaction or silently switching this user to default.
+        assignment = await _load_assignment(
+            db,
+            experiment_id=experiment_id,
+            user_id=user_id,
+        )
+        if assignment is None:
+            raise RuntimeError(
+                "recommendation assignment disappeared after unique conflict"
+            )
 
     return {
         "experiment_id": experiment_id,
         "user_id": user_id,
-        "variant_key": assigned_variant["key"],
-        "strategy": assigned_variant["strategy"],
+        "variant_key": assignment.variant_key,
+        "strategy": assignment.strategy,
     }
 
 

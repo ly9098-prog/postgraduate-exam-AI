@@ -604,6 +604,9 @@ async def update_wrong(
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
+    await cache.delete(f"wrong_questions:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+
     question, knowledge_points = await _load_current_question_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
     return enrich_wq(wq, question, knowledge_points=knowledge_points, **extra)

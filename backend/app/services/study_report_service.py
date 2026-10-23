@@ -672,6 +672,7 @@ async def get_study_trend(
 ) -> dict:
     today = shanghai_today()
     since = _date_utc_range(today - timedelta(days=days - 1))[0]
+    until = _date_utc_range(today + timedelta(days=1))[0]
     day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     q = select(
@@ -684,6 +685,7 @@ async def get_study_trend(
     ).where(
         PracticeRecord.user_id == user_id,
         PracticeRecord.answered_at >= since,
+        PracticeRecord.answered_at < until,
     )
     if subject_id is not None:
         q = q.where(PracticeRecord.subject_id == subject_id)

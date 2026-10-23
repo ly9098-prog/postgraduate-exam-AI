@@ -38,6 +38,12 @@ from app.services.pomodoro_attribution import (
     split_session_duration_by_study_day,
     split_session_duration_excluding_intervals,
 )
+from app.services.unique_conflict import (
+    is_unique_violation as _is_unique_violation,
+)
+from app.services.unique_conflict import (
+    start_explicit_transaction as _start_explicit_transaction,
+)
 
 CATEGORIES = ("review", "weakness", "new", "exam")
 PRIORITY_LABELS = {
@@ -687,15 +693,21 @@ async def _ensure_day_snapshot(
         basis_json=basis,
     )
     try:
+        # SQLite may defer BEGIN until the first write. Start the caller's outer
+        # transaction before the savepoint so a losing claim cannot survive a
+        # later request rollback.
+        await _start_explicit_transaction(db)
         async with db.begin_nested():
             db.add(row)
             await db.flush()
         await db.commit()
         return row
-    except IntegrityError:
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
         # Two devices may materialize the same day's snapshot concurrently. The
-        # unique(plan_id, plan_date) constraint is authoritative; reload winner.
-        await db.rollback()
+        # unique(plan_id, plan_date) constraint is authoritative. Keep the outer
+        # transaction and loaded plan usable while reloading the winner.
         winner = await db.scalar(
             select(StudyPlanDay).where(
                 StudyPlanDay.plan_id == int(plan.id),
@@ -878,12 +890,15 @@ async def upsert_study_plan(
         try:
             # A savepoint keeps the outer request transaction usable if another
             # device wins the first-create race on uq_study_plans_user.
+            await _start_explicit_transaction(db)
             async with db.begin_nested():
                 db.add(candidate)
                 await db.flush()
             plan = candidate
             created = True
-        except IntegrityError:
+        except IntegrityError as exc:
+            if not _is_unique_violation(exc):
+                raise
             plan = await _get_user_plan(db, user_id, lock=True)
             if plan is None:
                 raise

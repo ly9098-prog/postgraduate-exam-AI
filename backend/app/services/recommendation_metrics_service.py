@@ -1,5 +1,6 @@
 """Phase 4 — 推荐指标聚合与查询服务。"""
 
+import hashlib
 import logging
 from datetime import date, timedelta
 
@@ -11,8 +12,35 @@ from app.models.recommendation_experiment import RecommendationExperiment
 from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
 from app.services.subject_resolution import resolve_subject_ids
+from app.services.unique_conflict import start_sqlite_write_transaction
 
 logger = logging.getLogger(__name__)
+
+_METRICS_LOCK_NAMESPACE = 0x524D44  # "RMD": recommendation metrics daily
+
+
+async def _lock_metrics_aggregation(
+    db: AsyncSession,
+    *,
+    target_date: date,
+    subject_id: int | None,
+) -> None:
+    """Serialize one daily aggregate across manual runs and schedulers."""
+    bind = db.get_bind()
+    dialect = getattr(getattr(bind, "dialect", None), "name", "")
+    if dialect == "postgresql":
+        scope = f"{target_date.isoformat()}:{subject_id if subject_id is not None else '*'}"
+        lock_key = int.from_bytes(hashlib.sha256(scope.encode()).digest()[:4], "big")
+        await db.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    _METRICS_LOCK_NAMESPACE,
+                    lock_key & 0x7FFFFFFF,
+                )
+            )
+        )
+        return
+    await start_sqlite_write_transaction(db)
 
 
 async def aggregate_recommendation_metrics_daily(
@@ -26,6 +54,12 @@ async def aggregate_recommendation_metrics_daily(
     """
     if target_date is None:
         target_date = shanghai_today()
+
+    await _lock_metrics_aggregation(
+        db,
+        target_date=target_date,
+        subject_id=subject_id,
+    )
 
     # recommendation_logs 按 naive UTC 存储，这里将北京时间自然日转换为 UTC 半开区间。
     day_start, day_end = shanghai_date_utc_range(target_date)
@@ -326,6 +360,11 @@ async def backfill_metrics(
     success_dates: list[str] = []
     failed_dates: list[str] = []
     errors: list[str] = []
+
+    # The whole backfill shares one caller transaction. Acquire SQLite's writer
+    # lock before the first savepoint so no concurrent aggregate can read the
+    # same pre-insert state.
+    await start_sqlite_write_transaction(db)
 
     current = date_from
     while current <= date_to:
