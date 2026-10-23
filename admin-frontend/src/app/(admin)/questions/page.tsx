@@ -75,6 +75,7 @@ import { useQuestionEditor } from "./hooks/use-question-editor";
 import { useQuestionFilterInteractions } from "./hooks/use-question-filter-interactions";
 import { useQuestionDetailNavigation } from "./hooks/use-question-detail-navigation";
 import { useQuestionSelection } from "./hooks/use-question-selection";
+import { useQuestionPagination } from "./hooks/use-question-pagination";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -93,13 +94,7 @@ import {
   useQuestionVersions,
 } from "./hooks/use-question-queries";
 
-import {
-  buildQuestionListHref,
-  normalizeQuestionPageSize,
-  positiveInt,
-  readQuestionListFilters,
-  type QuestionListFilters,
-} from "./question-list-state";
+import { buildQuestionListHref, positiveInt, type QuestionListFilters } from "./question-list-state";
 import {
   codeSegmentText,
   comparableText,
@@ -119,7 +114,6 @@ import {
   normalizedChoiceAnswerKeys,
 } from "./question-display-helpers";
 import { buildExportPayload } from "./question-export-payload";
-import { buildQueryParams } from "./question-query-params";
 import { buildQuestionDeleteFeedback } from "./question-delete-feedback";
 import {
   buildExportMessage,
@@ -153,7 +147,6 @@ export default function QuestionsPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
-  const [filters, setFilters] = useState<QuestionListFilters>(() => readQuestionListFilters(searchParams));
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
   >([]);
@@ -162,8 +155,15 @@ export default function QuestionsPage() {
       .then(setSubjectOptions)
       .catch(() => {});
   }, []);
-  const [page, setPage] = useState(() => positiveInt(searchParams.get("page"), 1) ?? 1);
-  const [pageSize, setPageSize] = useState(() => normalizeQuestionPageSize(searchParams.get("page_size")));
+  const {
+    filters,
+    page,
+    pageSize,
+    queryParams,
+    setFilters,
+    setPage,
+    setPageSize,
+  } = useQuestionPagination(searchParams);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [baseVersion, setBaseVersion] = useState<QuestionVersionSelection>("current");
   const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
@@ -187,14 +187,8 @@ export default function QuestionsPage() {
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
 
-  // Keep the list context in the address bar so leaving for a detail/editor page
-  // and returning restores the exact filter/page/selection instead of resetting.
-  const queryParams = useMemo(
-    () => buildQueryParams(filters, page, pageSize),
-    [page, pageSize, filters],
-  );
-
   const questions = useQuestionList(queryParams);
+
   const items = useMemo(
     () => questions.data?.items ?? [],
     [questions.data?.items],
@@ -461,13 +455,6 @@ export default function QuestionsPage() {
     const timer = window.setTimeout(() => setMessage(null), 3800);
     return () => window.clearTimeout(timer);
   }, [message]);
-
-  useEffect(() => {
-    const totalPages = questions.data?.total_pages;
-    if (typeof totalPages !== "number") return;
-    const safeLastPage = Math.max(1, totalPages);
-    if (page > safeLastPage) setPage(safeLastPage);
-  }, [page, questions.data?.total_pages]);
 
   useEffect(() => {
     if (!(isCommonFilterMenuOpen || isMoreFilterOpen || isExportMenuOpen)) return;
