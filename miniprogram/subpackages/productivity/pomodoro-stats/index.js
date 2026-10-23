@@ -40,6 +40,7 @@ const { buildDateViewState } = require('./date-view-state')
 const { createStatsCanvasInitController } = require('./canvas-init-controller')
 const { createThemeSyncController } = require('./theme-sync-controller')
 const { createDeferredHistoryController } = require('./deferred-history-controller')
+const { createLoadCommitController } = require('./load-commit-controller')
 
 const {
   getSubjectColor,
@@ -762,46 +763,14 @@ var pageConfig = {
       this._rawTodayDur = selectedDurationSec
       this._rawWeekDur = stats.week_duration_sec || 0
 
-      this.setData(viewState.dataPatch, () => {
-        if (!this._alive || !this._isVisible || reqId !== this._requestId) return
-        if (willAnimate) {
-          this._queueDeferredHistory(
-            reqId,
-            dateSeq,
-            effectiveDate,
-            daySessions,
-            effectiveHistory.total || 0
-          )
-        }
-
-        if (this._cumulativeCustomized && this.data.cumulativeStartDate) {
-          this._refreshCumulativeSummary(this.data.cumulativeStartDate, true)
-        }
-
-        if (!displayDaySubjects) {
-          // 周 / 月 / 自定义分布随当日锚点变化重新查询；不触碰柱状图挂载状态。
-          this._loadDistributionForPeriod(this.data.distributionPeriod, !willAnimate)
-        }
-
-        if (this.data.chartMode === 'pie' && displayDaySubjects) {
-          this._initCanvases(() => {
-            if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
-            if (willAnimate) {
-              this._renderPieChart(0, false)
-              const node = this._pieCanvasNode
-              const raf = node && node.requestAnimationFrame
-                ? cb => node.requestAnimationFrame(cb)
-                : cb => setTimeout(cb, 16)
-              const animReqId = this._requestId
-              raf(() => raf(() => this._startAnimations(animReqId)))
-            } else {
-              this._renderPieChart(1, true)
-            }
-          })
-        } else if (this.data.chartMode === 'bar' && this.data.barCanvasMounted) {
-          // 这里仅可能发生在用户已经主动切换过柱状图之后。
-          this._initTrendCanvas(() => this._renderTrendBars(1))
-        }
+      this._getLoadCommitController().commit(viewState, {
+        reqId,
+        dateSeq,
+        effectiveDate,
+        effectiveHistory,
+        willAnimate,
+        displayDaySubjects,
+        weekDurationSec: stats.week_duration_sec || 0,
       })
     } catch (e) {
       if (
@@ -829,6 +798,39 @@ var pageConfig = {
       getTaskTypeLabel: session => storage.pomodoroTaskTypes.labelForSession(session),
       getSubjectColor: key => getSubjectColor(key, this.data.themeMode),
     })
+  },
+
+  _getLoadCommitController() {
+    if (!this._loadCommitController) {
+      this._loadCommitController = createLoadCommitController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getRequestId: () => this._requestId,
+        setDisplayTodayDurationSec: value => { this._displayTodayDurationSec = value },
+        setDaySubjectsRaw: subjects => { this._daySubjectsRaw = subjects },
+        setRawTodayDuration: value => { this._rawTodayDur = value },
+        setRawWeekDuration: value => { this._rawWeekDur = value },
+        setData: (patch, callback) => this.setData(patch, callback),
+        queueDeferredHistory: (reqId, dateSeq, selectedDate, sessions, total) => {
+          this._queueDeferredHistory(reqId, dateSeq, selectedDate, sessions, total)
+        },
+        isCumulativeCustomized: () => this._cumulativeCustomized,
+        getCumulativeStartDate: () => this.data.cumulativeStartDate,
+        refreshCumulativeSummary: (startDate, silent) => this._refreshCumulativeSummary(startDate, silent),
+        getDistributionPeriod: () => this.data.distributionPeriod,
+        loadDistributionForPeriod: (period, animate) => this._loadDistributionForPeriod(period, animate),
+        getChartMode: () => this.data.chartMode,
+        initCanvases: callback => this._initCanvases(callback),
+        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
+        getPieCanvasNode: () => this._pieCanvasNode,
+        setTimeout,
+        startAnimations: reqId => this._startAnimations(reqId),
+        isBarMounted: () => !!this.data.barCanvasMounted,
+        initTrendCanvas: callback => this._initTrendCanvas(callback),
+        renderTrendBars: progress => this._renderTrendBars(progress),
+      })
+    }
+    return this._loadCommitController
   },
 
   _selectDate(date) {
