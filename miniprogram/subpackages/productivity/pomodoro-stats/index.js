@@ -22,6 +22,7 @@ const pieLabelRenderer = require('./pie-label-renderer')
 const pieSectorBuilder = require('./pie-sector-builder')
 const pieRenderer = require('./pie-renderer')
 const { createDistributionCommitController } = require('./distribution-commit-controller')
+const { createSaveDayStartController } = require('./save-day-start-controller')
 
 const {
   getSubjectColor,
@@ -1000,39 +1001,32 @@ var pageConfig = {
   },
 
   async _saveDayStart(minute) {
-    if (wx.showLoading) wx.showLoading({ title: '保存中', mask: true })
-    try {
-      await api.put('/pomodoro/settings', { day_start_minute: minute })
-      const today = chinaTime.getChinaStudyDate(minute)
-      let selectedDate = this.data.selectedDate
-      // 原 selectedDate 超过新的最大日期（今日）时自动收拢到今日
-      if (!selectedDate || selectedDate > today) selectedDate = today
-      this._settingsLoaded = true
-      this.setData({
-        dayStartMinute: minute,
-        dayStartTime: chinaTime.minuteToTimeText(minute),
-        studyDayRangeText: this._studyDayRangeText(minute),
-        _todayDate: today,
-        selectedDate,
-        pieDateLabel: this._formatPieDateLabel(selectedDate),
-        selectedDurationLabel: this._formatSelectedDurationLabel(selectedDate),
-        canGoNextDate: !!(selectedDate && selectedDate < today),
-        customRangeStartDate: this.data.customRangeStartDate && this.data.customRangeStartDate <= selectedDate
-          ? this.data.customRangeStartDate
-          : selectedDate,
-        selectedSubjectDetail: null,
-        _selectedSubject: null,
-      }, () => {
-        if (!this._alive || !this._viewReady) return
-        // 重新加载全部统计（stats / trends / daily-summary / history）并重绘图表
-        this.loadData()
+    await this._getSaveDayStartController().save(minute)
+  },
+
+  _getSaveDayStartController() {
+    if (!this._saveDayStartController) {
+      this._saveDayStartController = createSaveDayStartController({
+        isAlive: () => this._alive,
+        isViewReady: () => this._viewReady,
+        getSelectedDate: () => this.data.selectedDate,
+        getCustomRangeStartDate: () => this.data.customRangeStartDate,
+        markSettingsLoaded: () => { this._settingsLoaded = true },
+        showLoading: () => { if (wx.showLoading) wx.showLoading({ title: '保存中', mask: true }) },
+        hideLoading: () => { if (wx.hideLoading) wx.hideLoading() },
+        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
+        logError: (message, e) => console.error(message, e),
+        saveSettings: minute => api.put('/pomodoro/settings', { day_start_minute: minute }),
+        getChinaStudyDate: minute => chinaTime.getChinaStudyDate(minute),
+        minuteToTimeText: minute => chinaTime.minuteToTimeText(minute),
+        getStudyDayRangeText: minute => this._studyDayRangeText(minute),
+        formatPieDateLabel: date => this._formatPieDateLabel(date),
+        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
+        setData: (patch, callback) => this.setData(patch, callback),
+        loadData: () => this.loadData(),
       })
-    } catch (e) {
-      console.error('保存统计日设置失败', e)
-      if (wx.showToast) wx.showToast({ title: '保存失败，请重试', icon: 'none' })
-    } finally {
-      if (wx.hideLoading) wx.hideLoading()
     }
+    return this._saveDayStartController
   },
 
   goToToday() {
