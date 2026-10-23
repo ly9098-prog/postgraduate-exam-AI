@@ -23,6 +23,7 @@ const pendingSyncSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodor
 const terminalConflictSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/terminal-conflict-controller.js'), 'utf8')
 const terminalConflictHandlerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/terminal-conflict-handler.js'), 'utf8')
 const statsControllerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/stats-controller.js'), 'utf8')
+const activeSyncSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/active-sync-controller.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
 const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
@@ -667,9 +668,8 @@ t('reset-to-idle invalidates stale canvas init callbacks', () => {
   assert.ok(method('_resetToIdle').includes('this._canvasInitSeq = (this._canvasInitSeq || 0) + 1'))
 })
 t('free light-sync rebuilds canvas if page-hide interrupted initialization', () => {
-  const m = method('_syncActiveSessionLight')
-  assert.ok(m.includes('if (!this._canvasReady || !this._ctx)'))
-  assert.ok(m.includes('this.drawRing(0, false)'))
+  assert.ok(method('syncFreeTimer', activeSyncSrc, true).includes('!options.canvasReady() || !options.ctx()'))
+  assert.ok(method('ensureFreeCanvas', activeSyncSrc, true).includes('options.drawRing(0, false)'))
 })
 t('hide always discards native canvas context', () => {
   assert.ok(onHide.includes('this._canvasReady = false'))

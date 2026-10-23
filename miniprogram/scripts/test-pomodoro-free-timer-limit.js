@@ -46,6 +46,10 @@ var freeRestoreSrc = fs.readFileSync(
   path.join(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'),
   'utf8'
 )
+var activeSyncSrc = fs.readFileSync(
+  path.join(__dirname, '../pages/pomodoro/utils/active-sync-controller.js'),
+  'utf8'
+)
 
 t('FREE_TIMER_MAX_MS is defined', function () {
   assert.ok(js.indexOf('FREE_TIMER_MAX_MS') >= 0)
@@ -146,10 +150,11 @@ t('_restoreFreeSession calls _checkFreeTimerLimitAndAutoEnd after interval start
     '_restoreFreeSession should check limit after restoring')
 })
 
-t('_syncActiveSessionLight caps free timer display', function () {
-  var syncMethod = extractMethod(js, '_syncActiveSessionLight')
-  assert.ok(syncMethod.indexOf('FREE_TIMER_MAX_MS') >= 0,
-    '_syncActiveSessionLight should check FREE_TIMER_MAX_MS')
+t('active light sync caps free timer display', function () {
+  assert.ok(activeSyncSrc.indexOf('options.maxMs') >= 0,
+    'active light sync should cap the free display via options.maxMs')
+  assert.ok(js.indexOf('maxMs: FREE_TIMER_MAX_MS') >= 0,
+    'page must inject FREE_TIMER_MAX_MS as the sync cap')
 })
 
 t('onUnload clears timer interval', function () {
@@ -266,9 +271,9 @@ t('_clearTimer calls _clearFreeTimerInterval', function () {
   assert.ok(methodBody.indexOf('_clearFreeTimerInterval') >= 0)
 })
 
-t('_syncActiveSessionLight caps free timer elapsed at FREE_TIMER_MAX_MS', function () {
-  var methodBody = extractMethod(js, '_syncActiveSessionLight')
-  assert.ok(methodBody.indexOf('FREE_TIMER_MAX_MS') >= 0)
+t('active light sync caps free timer elapsed at the injected max', function () {
+  assert.ok(activeSyncSrc.indexOf('Math.min(elapsedMs, options.maxMs)') >= 0)
+  assert.ok(activeSyncSrc.indexOf('elapsedMs >= options.maxMs') >= 0)
 })
 
 t('_restoreFreeSession caps elapsed at max and calls _checkFreeTimerLimitAndAutoEnd', function () {

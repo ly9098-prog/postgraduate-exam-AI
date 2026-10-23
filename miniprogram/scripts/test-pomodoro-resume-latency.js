@@ -26,6 +26,7 @@ const cssPath = path.join(root, 'pages/pomodoro/pomodoro.wxss')
 const src = fs.readFileSync(jsPath, 'utf8')
 const css = fs.readFileSync(cssPath, 'utf8')
 const ringGeometrySrc = fs.readFileSync(path.join(root, 'pages/pomodoro/utils/ring-geometry.js'), 'utf8')
+const activeSyncSrc = fs.readFileSync(path.join(root, 'pages/pomodoro/utils/active-sync-controller.js'), 'utf8')
 
 function extractMethod(source, name) {
   const re = new RegExp('(?:^|\\n)  (?:async )?' + name.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&') + '\\([^\\n]*\\) \\{')
@@ -81,17 +82,17 @@ t('server recovery can clear stale local state through the page adapter', () => 
 })
 
 console.log('\n--- Countdown background resume ---')
-const lightSync = extractMethod(src, '_syncActiveSessionLight')
 t('light sync restarts normal countdown after onHide cleared timer', () => {
-  assert.ok(lightSync.includes('this._startTimer(totalSec, { remainingMs, forceRunning: true, reuseCanvas: true })'))
+  assert.ok(activeSyncSrc.includes(
+    'options.startTimer(totalSec, { remainingMs, forceRunning: true, reuseCanvas: true })'))
 })
 t('light sync derives remaining time from wall clock', () => {
-  assert.ok(lightSync.includes('now - this._timerState.sessionStartTime - totalPausedMs'))
-  assert.ok(lightSync.includes('totalSec * 1000 - elapsedMs'))
+  assert.ok(activeSyncSrc.includes('now - options.timer().sessionStartTime - totalPausedMs'))
+  assert.ok(activeSyncSrc.includes('totalSec * 1000 - elapsedMs'))
 })
 t('free timer interval is restarted only while running', () => {
-  assert.ok(lightSync.includes('if (!this.data.isPaused)'))
-  assert.ok(lightSync.includes('this._startFreeTimerInterval()'))
+  assert.ok(activeSyncSrc.includes('!options.view().isPaused'))
+  assert.ok(activeSyncSrc.includes('options.startFreeTimerInterval()'))
 })
 
 console.log('\n--- Canvas first paint and refresh ---')

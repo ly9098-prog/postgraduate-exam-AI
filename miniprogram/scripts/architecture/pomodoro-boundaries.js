@@ -25,6 +25,7 @@ const MODULES = {
   'stats-controller.js': [],
   'theme-controller.js': [],
   'end-confirm-snapshot.js': [],
+  'active-sync-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -44,7 +45,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2554
+const PAGE_MAX_LINES = 2495
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -64,6 +65,7 @@ const PAGE_METHODS = new Set([
   '_getStatsController', 'loadTodayStats',
   '_getThemeController', '_getThemeViewModel', '_syncThemeFromStorage',
   '_applyTheme', 'toggleTheme',
+  '_getActiveSyncController', '_canLightSyncActive', '_syncActiveSessionLight',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -344,6 +346,27 @@ function pageViolations(source) {
         if (methodName === 'toggleTheme' &&
             !returnsControllerCall(node, '_getThemeController', 'toggle', [])) {
           errors.push('theme toggle must delegate to its controller')
+        }
+        if (methodName === '_getActiveSyncController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createActiveSyncController',
+              '_activeSyncController',
+            )) {
+          errors.push('active sync must lazily assign its controller')
+        }
+        if (methodName === '_canLightSyncActive' &&
+            !returnsControllerCall(node, '_getActiveSyncController', 'canLightSync', ['active'])) {
+          errors.push('active light-sync eligibility must delegate to its controller')
+        }
+        if (methodName === '_syncActiveSessionLight' &&
+            !returnsControllerCall(
+              node,
+              '_getActiveSyncController',
+              'syncLight',
+              ['active', 'failClosed'],
+            )) {
+          errors.push('active light sync must delegate to its controller')
         }
       }
     }

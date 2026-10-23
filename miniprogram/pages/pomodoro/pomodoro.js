@@ -51,6 +51,7 @@ const {
   buildFreeConfirmSnapshot,
   buildCountdownInterruptSnapshot,
 } = require('./utils/end-confirm-snapshot')
+const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -199,6 +200,7 @@ Page({
   _syncRetryController: null,
   _statsController: null,
   _themeController: null,
+  _activeSyncController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1983,103 +1985,42 @@ Page({
   /* ==================== Session Restore ==================== */
 
   _canLightSyncActive(active) {
-    if (!this._timerState.sessionId) return false
-    if (active.id !== this._timerState.sessionId) return false
-    if (this.data.phase !== PHASE.RUNNING) return false
-    if ((active.status === 'paused') !== this.data.isPaused) return false
-    if ((active.preset === 'free') !== this.data.isFreeTimer) return false
-    if (typeof this._timerState.sessionStartTime !== 'number' || this._timerState.sessionStartTime <= 0) return false
-    return true
+    return this._getActiveSyncController().canLightSync(active)
   },
 
   _syncActiveSessionLight(active, failClosed = false) {
-    const now = api.now()
-    const serverStartTime = parseServerTime(active.start_time)
-    if (Number.isFinite(serverStartTime) && serverStartTime > 0) {
-      this._timerState.sessionStartTime = serverStartTime
-    }
-    const allocationMode = active.allocation_mode === 'equal_408_core_v1'
-      ? 'equal_408_core_v1'
-      : 'single'
-    if (allocationMode !== this.data.allocationMode) {
-      const subjectId = active.subject_id || this.data.selectedSubjectId
-      const subject = (this.data.subjects || []).find(
-        item => Number(item.id) === Number(subjectId)
-      ) || this.data.selectedSubject
-      this.setData({
-        allocationMode,
-        selectedSubject: subject
-          ? { ...subject, _isAggregate: allocationMode === 'equal_408_core_v1' }
-          : subject,
+    return this._getActiveSyncController().syncLight(active, failClosed)
+  },
+
+  _getActiveSyncController() {
+    if (!this._activeSyncController) {
+      this._activeSyncController = createActiveSyncController({
+        now: () => api.now(),
+        view: () => this.data,
+        timer: () => this._timerState,
+        runningPhase: PHASE.RUNNING,
+        parseServerTime,
+        setData: data => this.setData(data),
+        updateComputedFields: () => this._updateComputedFields(),
+        mergeLocalPauseAdjustment: (sessionId, serverPausedMs, failClosed) =>
+          this._mergeLocalPauseAdjustment(sessionId, serverPausedMs, failClosed),
+        persistenceError: () => this._showPomodoroPersistenceError(),
+        canvasReady: () => !!this._canvasReady,
+        ctx: () => this._ctx,
+        nextTick: callback => wx.nextTick(callback),
+        isPageVisible: () => this._pageVisible,
+        initCanvas: force => this._initCanvas(force),
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+        maxMs: FREE_TIMER_MAX_MS,
+        formatElapsedSec,
+        autoFinishFreeTimer: () => this._autoFinishFreeTimer(),
+        startFreeTimerInterval: () => this._startFreeTimerInterval(),
+        clearTimer: () => this._clearTimer(),
+        onWorkComplete: () => this._onWorkComplete(),
+        startTimer: (totalSec, timerOptions) => this._startTimer(totalSec, timerOptions),
       })
-      this._updateComputedFields()
     }
-
-    const serverPausedMs = Math.max(0, Number(active.total_paused_sec || 0) * 1000)
-    const localPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0))
-    const totalPausedMs = this._mergeLocalPauseAdjustment(
-      this._timerState.sessionId,
-      Math.max(serverPausedMs, localPausedMs),
-      failClosed
-    )
-    if (totalPausedMs === null) {
-      if (failClosed) this._showPomodoroPersistenceError()
-      return false
-    }
-    this._timerState.totalPausedMs = totalPausedMs
-
-    if (this.data.isFreeTimer) {
-      if (!this._canvasReady || !this._ctx) {
-        this._timerState.progress = 1
-        wx.nextTick(() => {
-          if (!this._pageVisible || this.data.phase !== PHASE.RUNNING || !this.data.isFreeTimer) return
-          this._initCanvas(true)
-          this.drawRing(0, false)
-        })
-      }
-      if (!this.data.isPaused) {
-        const elapsedMs = Math.max(0, now - this._timerState.sessionStartTime - totalPausedMs)
-        const cappedMs = Math.min(elapsedMs, FREE_TIMER_MAX_MS)
-        const elapsed = Math.floor(cappedMs / 1000)
-        if (elapsed !== this._timerState.elapsedSec) {
-          const fmt = formatElapsedSec(elapsed)
-          this._timerState.elapsedSec = elapsed
-          this.setData({ freeDisplayTime: fmt.display })
-        }
-        if (elapsedMs >= FREE_TIMER_MAX_MS) {
-          this._autoFinishFreeTimer()
-          return true
-        }
-        // onHide clears the interval, so onShow must always restart it.
-        this._startFreeTimerInterval()
-      }
-      return true
-    }
-
-    const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
-    if (this.data.isPaused) {
-      if (!this._canvasReady || !this._ctx) {
-        wx.nextTick(() => {
-          if (!this._pageVisible || this.data.phase !== PHASE.RUNNING || !this.data.isPaused) return
-          this._initCanvas(true)
-          this.drawRing(totalSec, false)
-        })
-      }
-      return true
-    }
-
-    const elapsedMs = Math.max(0, now - this._timerState.sessionStartTime - totalPausedMs)
-    const remainingMs = Math.max(0, totalSec * 1000 - elapsedMs)
-    if (remainingMs <= 0) {
-      this._clearTimer()
-      this._onWorkComplete()
-      return true
-    }
-
-    // onHide clears the timeout. Restart from wall-clock-derived remaining time
-    // instead of repainting only one frame and leaving the countdown stopped.
-    this._startTimer(totalSec, { remainingMs, forceRunning: true, reuseCanvas: true })
-    return true
+    return this._activeSyncController
   },
 
   _buildCachedActiveSession(local) {
