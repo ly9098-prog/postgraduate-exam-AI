@@ -15,6 +15,7 @@ const dateUtils = require('./date-utils')
 const viewHelpers = require('./view-helpers')
 const durationFormatter = require('./duration-formatter')
 const subjectDistribution = require('./subject-distribution')
+const sessionViewModel = require('./session-view-model')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -1074,43 +1075,10 @@ var pageConfig = {
   },
 
   _formatSession(s) {
-    // 统一按中国时间（UTC+8）格式化，不依赖设备时区
-    const timeStr = chinaTime.formatChinaTimeHM(s.start_time)
-    const dateStr = chinaTime.formatChinaMonthDay(s.start_time)
-    const durSec = s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0
-    const subjectName = s.subject_name || '未分类'
-    const subjectKey = s.subject_code || ''
-    const isReview = s.record_type === 'review'
-    const isPractice = s.record_type === 'practice' || isReview
-    const isFree = s.preset === 'free'
-    const isEqualCore = s.allocation_mode === 'equal_408_core_v1'
-    const sessionTaskType = storage.pomodoroTaskTypes.labelForSession(s)
-    const durationText = durationFormatter.formatDuration(durSec)
-    // 刷题会话：左侧明确标出「刷题」，状态为「刷题」而非「完成」，与番茄钟区分。
-    let _subjectLabel, _statusLabel, _statusClass
-    // 今日复习同样计入刷题时长，标签区分为「复习」。
-    if (isPractice) {
-      _subjectLabel = (isReview ? '复习 · ' : '刷题 · ') + subjectName
-      _statusLabel = isReview ? '复习' : '刷题'
-      _statusClass = 'status-done'
-    } else {
-      const attributedName = isEqualCore ? subjectName + '（四科均分）' : subjectName
-      _subjectLabel = isFree ? '自由计时 · ' + attributedName : attributedName
-      _statusLabel = s.status === 'completed' ? '完成' : '中断'
-      _statusClass = s.status === 'completed' ? 'status-done' : 'status-interrupt'
-    }
-    return {
-      ...s,
-      _time: timeStr,
-      _date: dateStr,
-      _duration: durationText,
-      _taskTypeLabel: sessionTaskType,
-      _subjectLabel,
-      _color: getSubjectColor(s.subject_id != null ? String(s.subject_id) : (subjectKey || subjectName), this.data.themeMode),
-      _statusLabel,
-      _statusClass,
-      _iconType: isPractice ? 'practice' : (isFree ? 'free' : 'focus'),
-    }
+    return sessionViewModel.formatSession(s, {
+      getTaskTypeLabel: session => storage.pomodoroTaskTypes.labelForSession(session),
+      getSubjectColor: key => getSubjectColor(key, this.data.themeMode),
+    })
   },
 
   _selectDate(date) {

@@ -45,7 +45,7 @@
 | `admin-frontend/src/app/(admin)/system/tasks/page.tsx` | 1599 | `SystemTasksPage` 1121 | 任务列表/详情/事件消费与 UI 编排边界待核查。 |
 | `miniprogram/pages/pomodoro/pomodoro.js` | 2180 | `onShow` 18 / `onHide` 30 | 展示恢复、离页持久化、倒计时/自由计时冷恢复、启动仪式、未知启动恢复、待同步动作、终态冲突、今日统计、主题、活动会话轻同步、暂停切换、恢复错误、庆祝消除、休息恢复、完成庆祝、工作完成、自由计时启动、取消结束确认、自由结束确认、倒计时暂停确认、倒计时中断确认、idle 重置及自由计时展示更新 controller 已独立；确认窗口快照纯规则已抽出，计时启动、自由计时已用时长及画布初始化/绘制已完成 controller 化；结束确认编排和其他页面职责仍待治理。 |
 | `miniprogram/subpackages/study/practice/practice.js` | 2262 | `_loadQuestions` 191 | 科目树规范化、可选择科目扁平化、图标/标记、最近科目装饰、父科目/子科目关系和范围解析已迁至 `practice/utils/subject-tree.js`；启动参数解析、定向题约束覆盖、fast/完整启动视图和启动 override 写入已迁至 `practice/utils/launch-preset.js`；发题请求参数构建、章节后代范围契约与题目 ID/题型/科目范围校验已迁至 `practice/utils/question-batch.js`；默认科目选择和最近科目去重/截断/持久化值构建已迁至 `practice/utils/recent-subjects.js`；失败/成功/顺序重置视图、批次凭据写回和顺序计时重置已迁至 `practice/utils/question-load-state.js`；顺序完成确认、reset 请求、迟响应/卸载守卫、失败提示和重载分发已迁至 `sequential-restart-controller.js`。存储读写、请求发送和其余迟响应守卫仍在页面。 |
-| `miniprogram/subpackages/productivity/pomodoro-stats/index.js` | 2318 | `_renderTrendBars` 182 | 日期解析/格式化/周月边界/分布区间纯规则已迁至 `date-utils.js`；缓动、日期标签、学习标签、分布数据判定与颜色加深纯规则已迁至 `view-helpers.js`；时长格式化与数字/单位分段文本纯规则已迁至 `duration-formatter.js`；科目树构建、聚合值分配与分布归一化纯规则已迁至 `subject-distribution.js`；统计映射/图形派生与视图写回待分离。 |
+| `miniprogram/subpackages/productivity/pomodoro-stats/index.js` | 2318 | `_renderTrendBars` 182 | 日期解析/格式化/周月边界/分布区间纯规则已迁至 `date-utils.js`；缓动、日期标签、学习标签、分布数据判定与颜色加深纯规则已迁至 `view-helpers.js`；时长格式化与数字/单位分段文本纯规则已迁至 `duration-formatter.js`；科目树构建、聚合值分配与分布归一化纯规则已迁至 `subject-distribution.js`；历史记录视图模型纯规则已迁至 `session-view-model.js`；统计映射/图形派生与视图写回待分离。 |
 
 ## 4. 依赖门禁与既有循环
 

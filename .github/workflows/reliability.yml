@@ -332,6 +332,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-view-helpers.js \
             miniprogram/tests/test-pomodoro-stats-duration-formatter.js \
             miniprogram/tests/test-pomodoro-stats-subject-distribution.js \
+            miniprogram/tests/test-pomodoro-stats-session-view-model.js \
             miniprogram/tests/test-pomodoro-theme-controller.js \
             miniprogram/tests/test-pomodoro-end-confirm-snapshot.js \
             miniprogram/tests/test-pomodoro-active-sync-controller.js \
