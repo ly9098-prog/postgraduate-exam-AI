@@ -14,14 +14,14 @@ const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../utils/subject-meta')
 const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
 const {
-  buildGroupOutcome,
-} = require('./utils/group-submission')
-const {
   createGroupSubmitConfirmController,
 } = require('./utils/submit-confirm-controller')
 const {
   createGroupSubmitRequestController,
 } = require('./utils/submit-request-controller')
+const {
+  createGroupSubmitResultController,
+} = require('./utils/submit-result-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1130,34 +1130,24 @@ enrichForResult: question => this._enrichForResult(question),
 failureNeedsRefresh: result => _reviewFailureNeedsRefresh(result),
 })
 if (submission.status !== 'submitted') return
-try {
-const groupResults = submission.groupResults
-// Drafts are removed only after the server confirms that exact immutable task
-// occurrence was submitted. Failed/skipped items remain available for retry.
-this._clearSubmittedReviewDraft(groupQuestions, groupResults)
-const outcome = buildGroupOutcome({
-groupResults,
-groupQuestions,
-groups: this.data.groups,
-allGroupResults: this._reviewSession.allGroupResults,
-sessionTodayTaskTotalCount: this._reviewSession.todayTaskTotalCount,
-dataTodayDueCount: this.data.todayDueCount,
-dataTodayCompletedCount: this.data.todayCompletedCount,
-completedBeforeSession: this._reviewSession.completedBeforeSession,
-currentGroupIdx: this.data.currentGroupIdx,
+const groupSubmitResultController = this._groupSubmitResultController || (
+this._groupSubmitResultController = createGroupSubmitResultController({
+getGroups: () => this.data.groups,
+getSession: () => this._reviewSession,
+getTodayDueCount: () => this.data.todayDueCount,
+getTodayCompletedCount: () => this.data.todayCompletedCount,
+getCurrentGroupIdx: () => this.data.currentGroupIdx,
+clearSubmittedDraft: (questions, results) => this._clearSubmittedReviewDraft(questions, results),
+showToast: options => wx.showToast(options),
+pauseTimer: () => this._pauseReviewTimer(),
+setData: patch => this.setData(patch),
+showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
 })
-if (outcome.failureToast) wx.showToast({ title: outcome.failureToast, icon: 'none' })
-Object.assign(this._reviewSession, outcome.session)
-this._pauseReviewTimer()
-this.setData({
-phase: 'group-result',
-...outcome.view,
-groupResults,
-showGroupDetails: false,
-submittingGroup: false,
-resultDockVisible: true,
-}, () => {
-if (outcome.view.todayRemainingCount <= 0) this._showResultDockAndRefreshTimer()
+)
+try {
+groupSubmitResultController.apply({
+groupQuestions,
+groupResults: submission.groupResults,
 })
 } catch (e) {
 if (!this._alive) return
