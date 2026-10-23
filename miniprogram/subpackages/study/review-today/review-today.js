@@ -25,6 +25,9 @@ const {
 const {
   createGroupSubmitEntryController,
 } = require('./utils/submit-entry-controller')
+const {
+  createNextRetryGroupController,
+} = require('./utils/next-retry-group-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1170,35 +1173,17 @@ return
 }
 const currentGroups = this.data.groups
 const nextGroupIdx = this.data.currentGroupIdx + 1
-if (nextGroupIdx < currentGroups.length && currentGroups[nextGroupIdx] && currentGroups[nextGroupIdx].length > 0) {
-const retryQuestions = currentGroups[nextGroupIdx]
-const previousAnswers = this._reviewSession.answers || {}
-const retryAnswers = {}
-retryQuestions.forEach(q => {
-const sid = String(q.schedule_id)
-if (Object.prototype.hasOwnProperty.call(previousAnswers, sid)) retryAnswers[sid] = previousAnswers[sid]
-else if (Object.prototype.hasOwnProperty.call(previousAnswers, q.schedule_id)) retryAnswers[q.schedule_id] = previousAnswers[q.schedule_id]
+const nextRetryGroupController = this._nextRetryGroupController || (
+this._nextRetryGroupController = createNextRetryGroupController({
+getGroups: () => this.data.groups,
+getSession: () => this._reviewSession,
+setData: patch => this.setData(patch),
+syncAnsweredFlags: () => this._syncAnsweredFlags(),
+showQuestion: index => this._showQuestion(index),
+startReviewTimer: () => this._startReviewTimer(),
 })
-this._reviewSession.answers = retryAnswers
-this._reviewSession.allQuestions = retryQuestions.slice()
-this.setData({
-phase: 'reviewing',
-currentGroupIdx: nextGroupIdx,
-groupQuestions: retryQuestions,
-currentIndex: 0,
-groupResults: [],
-groupWrongResults: [],
-groupCorrect: 0,
-groupWrong: 0,
-groupAccuracyPercent: 0,
-showGroupDetails: false,
-resultTransitioning: false,
-})
-this._syncAnsweredFlags()
-this._showQuestion(0)
-this._startReviewTimer()
-return
-}
+)
+if (nextRetryGroupController.enter(nextGroupIdx)) return
 if (this.data.todayRemainingCount > 0) {
 try {
 const batch = await api.post('/review/today/next-batch', {
