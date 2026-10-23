@@ -20,6 +20,7 @@ const canvasPalette = require('./canvas-palette')
 const subjectItems = require('./subject-items')
 const pieLabelRenderer = require('./pie-label-renderer')
 const pieSectorBuilder = require('./pie-sector-builder')
+const pieRenderer = require('./pie-renderer')
 
 const {
   getSubjectColor,
@@ -125,6 +126,7 @@ var pageConfig = {
     this._subjectMetaLoaded = false
     this._subjectMeta = null
     this._shadeColorCache = createShadeColorCache()
+    this._pieRenderCache = { sectors: null, wallSteps: null, labelLayout: null }
     this._subjectMetaPromise = null
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
@@ -679,9 +681,7 @@ var pageConfig = {
 
 
   _resetPieCache() {
-    this._pieSectors = null
-    this._pieWallSteps = null
-    this._pieLabelLayout = null
+    this._pieRenderCache = { sectors: null, wallSteps: null, labelLayout: null }
     if (this._shadeColorCache) this._shadeColorCache.reset()
   },
 
@@ -1164,7 +1164,7 @@ var pageConfig = {
   _revealPieLabelsIncrementally() {
     const ctx = this._pieCtx
     const rect = this._pieRect
-    const layout = this._pieLabelLayout
+    const layout = this._pieRenderCache.labelLayout
     if (!ctx || !rect || !layout || !layout.length) return
 
     const token = (this._pieLabelToken || 0) + 1
@@ -1399,151 +1399,19 @@ var pageConfig = {
   },
 
   _renderPieChart(progress, includeLabels = true) {
-    const subjects = this.data.subjects
-    const ctx = this._pieCtx
-    const rect = this._pieRect
-    if (!ctx || !rect || !rect.width) return
-
-    const geometry = this._getPieGeometry(rect)
-    const palette = this._getCanvasPalette()
-    const { w, h, centerX, centerY, radius, tilt, depth } = geometry
-    const reveal = Math.max(0, Math.min(1, (progress - 0.5) / 0.5))
-    const labelReveal = Math.max(0, Math.min(1, (progress - 0.62) / 0.38))
-
-    ctx.clearRect(0, 0, w, h)
-
-    const hasData = subjects && subjects.length && subjects.some(item => (item.duration_sec || 0) > 0)
-    // 空状态由 WXML 插画承载。Canvas 这里只保持透明，避免原来的
-    // “空饼图 + 暂无数据”穿透插画层，尤其是在真机/开发者工具的 Canvas 合成层中。
-    if (!hasData) return
-
-    // Geometry, shades and label positions are cached for the entire data set.
-    if (!this._pieSectors) {
-      const built = pieSectorBuilder.buildPieSectors(subjects, geometry, (hex, amount) => this._shadeColorCached(hex, amount))
-      this._pieSectors = built.sectors
-      this._pieWallSteps = built.wallSteps
-      this._pieLabelLayout = built.labelLayout
-    }
-
-    const sectors = this._pieSectors
-    const wallSteps = this._pieWallSteps
-    const selectedSubject = this.data._selectedSubject
-
-    // 1. Shadow fades in before completion instead of appearing on one heavy final frame.
-    if (reveal > 0) {
-      ctx.save()
-      ctx.globalAlpha = reveal
-      ctx.translate(centerX + 4, centerY + depth * 1.3)
-      ctx.scale(1, tilt)
-      const shadowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 1.05)
-      shadowGrad.addColorStop(0, palette.shadowStart)
-      shadowGrad.addColorStop(0.5, palette.shadowMid)
-      shadowGrad.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = shadowGrad
-      ctx.beginPath()
-      ctx.arc(0, 0, radius * 1.05, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
-    }
-
-    const sortedSectors = selectedSubject
-      ? sectors.slice().sort((a, b) => {
-          const aSelected = a.subject.subject === selectedSubject ? 1 : 0
-          const bSelected = b.subject.subject === selectedSubject ? 1 : 0
-          return aSelected - bSelected
-        })
-      : sectors
-
-    // 2. Side walls use a constant number of layers throughout the animation.
-    for (let layer = wallSteps; layer >= 1; layer--) {
-      const layerOffset = depth * layer / wallSteps * progress
-      sortedSectors.forEach(sec => {
-        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-        if (curEnd - sec.startA < 0.002) return
-        const mid = (sec.startA + curEnd) / 2
-        const isSelected = selectedSubject && sec.subject.subject === selectedSubject
-        const pull = isSelected ? 6 : 0
-        const cx = centerX + Math.cos(mid) * pull
-        const cy = centerY + Math.sin(mid) * pull * tilt + layerOffset
-        this._drawEllipticSector(
-          ctx, cx, cy, radius, tilt, sec.startA, curEnd,
-          sec._wallShades[layer - 1]
-        )
-      })
-    }
-
-    // 3. Top sectors.
-    sortedSectors.forEach(sec => {
-      const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-      if (curEnd - sec.startA < 0.002) return
-      const mid = (sec.startA + curEnd) / 2
-      const isSelected = selectedSubject && sec.subject.subject === selectedSubject
-      const pull = isSelected ? 6 : 0
-      const cx = centerX + Math.cos(mid) * pull
-      const cy = centerY + Math.sin(mid) * pull * tilt
-      const fillColor = isSelected ? this._shadeColorCached(sec.color, 12) : sec.color
-      this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, fillColor)
+    pieRenderer.renderPieChart({
+      ctx: this._pieCtx,
+      rect: this._pieRect,
+      subjects: this.data.subjects,
+      themeMode: this.data.themeMode,
+      dpr: this._pieDpr,
+      selectedSubject: this.data._selectedSubject,
+      progress,
+      includeLabels,
+      cache: this._pieRenderCache,
+      palette: this._getCanvasPalette(),
+      shade: (hex, amount) => this._shadeColorCached(hex, amount),
     })
-
-    // 4. Separators fade in progressively.
-    if (reveal > 0 && sectors.length > 1) {
-      ctx.save()
-      ctx.globalAlpha = reveal
-      ctx.translate(centerX, centerY)
-      ctx.scale(1, tilt)
-      ctx.strokeStyle = palette.separator
-      ctx.lineWidth = 1
-      sectors.forEach(sec => {
-        ctx.beginPath()
-        ctx.moveTo(0, 0)
-        ctx.lineTo(Math.cos(sec.startA) * radius, Math.sin(sec.startA) * radius)
-        ctx.stroke()
-      })
-      ctx.restore()
-    }
-
-    // 5. Unified lighting, also progressive to avoid a final-frame spike.
-    if (reveal > 0) {
-      ctx.save()
-      ctx.globalAlpha = reveal
-      ctx.translate(centerX, centerY)
-      ctx.scale(1, tilt)
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
-      ctx.clip()
-      const lightGrad = ctx.createRadialGradient(
-        -radius * 0.2, -radius * 0.2, 0,
-        -radius * 0.2, -radius * 0.2, radius
-      )
-      lightGrad.addColorStop(0, 'rgba(255,255,255,0.14)')
-      lightGrad.addColorStop(0.35, 'rgba(255,255,255,0.04)')
-      lightGrad.addColorStop(0.7, 'rgba(0,0,0,0.04)')
-      lightGrad.addColorStop(1, 'rgba(0,0,0,0.10)')
-      ctx.fillStyle = lightGrad
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
-    }
-
-    // 6. Selected state.
-    if (selectedSubject && reveal > 0.9) {
-      sectors.forEach(sec => {
-        if (sec.subject.subject === selectedSubject) return
-        ctx.save()
-        ctx.globalAlpha = 0.12
-        this._drawEllipticSector(
-          ctx, centerX, centerY, radius, tilt,
-          sec.startA, sec.endA, palette.selectedMask
-        )
-        ctx.restore()
-      })
-    }
-
-    // 7. Every sector gets a compact one-line callout near its own slice.
-    if (includeLabels) {
-      this._drawPieLabels(ctx, geometry, this._pieLabelLayout, labelReveal)
-    }
   },
 
   /* ==================== Touch Interactions ==================== */
