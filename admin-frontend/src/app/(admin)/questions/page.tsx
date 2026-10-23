@@ -74,6 +74,7 @@ import { useQuestionSubjectOptions } from "./hooks/use-question-subject-options"
 import { useQuestionMenus } from "./hooks/use-question-menus";
 import { useQuestionCopy } from "./hooks/use-question-copy";
 import { useQuestionVersionHistory } from "./hooks/use-question-version-history";
+import { useQuestionFeedback } from "./hooks/use-question-feedback";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -148,7 +149,7 @@ export default function QuestionsPage() {
   } = useQuestionPagination(searchParams);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const { message, setMessage, clearMessage } = useQuestionFeedback();
   const editorCallbacks = useRef<{
     setEditing: (value: boolean) => void;
     setEditForm: (value: Record<string, unknown>) => void;
@@ -439,12 +440,6 @@ export default function QuestionsPage() {
     },
     getStorage: () => window.localStorage,
   });
-
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(null), 3800);
-    return () => window.clearTimeout(timer);
-  }, [message]);
 
   const confirmDescription =
     confirmState?.action === "batch-delete"
@@ -1154,7 +1149,7 @@ export default function QuestionsPage() {
             <span>{message}</span>
             <button
               type="button"
-              onClick={() => setMessage(null)}
+              onClick={clearMessage}
               className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-text-hint)] transition hover:bg-[var(--color-success-light)] hover:text-[var(--color-success)]"
               aria-label="关闭提示"
             >
