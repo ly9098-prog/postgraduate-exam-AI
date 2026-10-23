@@ -15,11 +15,16 @@ function t(name, fn) {
 }
 
 const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+const freeRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
 const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
 const canvasLayoutSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/canvas-layout.js'), 'utf8')
 const cancelConfirmStateSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/cancel-confirm-state.js'), 'utf8')
+const completionCelebrationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/completion-celebration.js'), 'utf8')
+const endConfirmViewModelSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/end-confirm-view-model.js'), 'utf8')
+const pauseAdjustmentSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pause-adjustment.js'), 'utf8')
+const unknownStartHelpersSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-helpers.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
@@ -119,12 +124,13 @@ t('unload removes network callback to avoid page-instance leaks', () => {
 console.log('\n--- Free cold restore / canonical clock ---')
 const restoreFree = method('_restoreFreeSession')
 t('free restore uses server start_time as the single clock origin', () => {
-  assert.ok(restoreFree.includes('computeFreeRestore'))
+  assert.ok(restoreFree.includes('this._freeSessionRestoreController.restore(session)'))
+  assert.ok(freeRestoreSrc.includes('options.computeFreeRestore'))
   assert.ok(sessionRestoreSrc.includes('options.now - options.startTime - paused.totalPausedMs'))
-  assert.ok(restoreFree.includes('this._timerState.freeDisplayOffsetMs = 0'))
-  assert.ok(!restoreFree.includes('_localFreeDisplayOffsetMs'))
+  assert.ok(freeRestoreSrc.includes('page._timerState.freeDisplayOffsetMs = 0'))
+  assert.ok(!freeRestoreSrc.includes('_localFreeDisplayOffsetMs'))
 })
-t('free restore caps display at five hours', () => assert.ok(restoreFree.includes('FREE_TIMER_MAX_MS')))
+t('free restore caps display at five hours', () => assert.ok(freeRestoreSrc.includes('options.maxMs')))
 t('free elapsed helpers do not subtract a client-only startup offset', () => {
   assert.ok(!method('_getFreeElapsedMs').includes('displayOffsetMs'))
   assert.ok(!method('_getEffectiveFreeElapsedMs').includes('displayOffsetMs'))
@@ -347,15 +353,22 @@ t('critical active-session restore reads fail closed', () => {
   assert.ok(fetchActive.includes('storageUnreadable: true'))
   assert.ok(restoreCountdown.includes("_safeGetPomodoroStorage('pomodoro_confirm_pause'"))
   assert.ok(restoreCountdown.includes("_safeGetPomodoroStorage('pomodoro_pause'"))
-  assert.ok(restoreFree.includes("_safeGetPomodoroStorage('pomodoro_free_pause'"))
+  assert.ok(freeRestoreSrc.includes("_safeGetPomodoroStorage("))
+  assert.ok(freeRestoreSrc.includes("'pomodoro_free_pause'"))
 })
 t('pause adjustment read failures are distinguishable during cold restore', () => {
   const adjustment = method('_getLocalPauseAdjustment')
   const merge = method('_mergeLocalPauseAdjustment')
-  assert.ok(adjustment.includes('failClosed ? null : 0'))
-  assert.ok(merge.includes('if (localPausedMs === null) return null'))
+  assert.ok(adjustment.includes(
+    'getLocalPauseAdjustment(this._pauseAdjustmentStorage(), sessionId, failClosed)'
+  ))
+  assert.ok(merge.includes(
+    'mergeLocalPauseAdjustment(this._pauseAdjustmentStorage(), sessionId, serverPausedMs, failClosed)'
+  ))
+  assert.ok(pauseAdjustmentSrc.includes('if (!stored.ok) return failClosed ? null : 0'))
+  assert.ok(pauseAdjustmentSrc.includes('if (localPausedMs === null) return null'))
   assert.ok(restoreCountdown.includes('_mergeLocalPauseAdjustment(session.id, totalPausedMs, true)'))
-  assert.ok(restoreFree.includes('_mergeLocalPauseAdjustment(session.id, totalPausedMs, true)'))
+  assert.ok(freeRestoreSrc.includes('_mergeLocalPauseAdjustment(session.id, totalPausedMs, true)'))
 })
 t('terminal conflict acknowledgement is durable and happens after cleanup', () => {
   const consume = method('_consumePomodoroTerminalConflict')
@@ -444,7 +457,11 @@ t('late start response is queued for interrupt instead of becoming a ghost sessi
   assert.ok(postStart.includes("'interrupt'"))
   assert.ok(postStart.includes('session.id'))
   assert.ok(postStart.includes('_startCancellationAt(session, latestAttempt.cancelAt)'))
-  assert.ok(method('_startCancellationAt').includes('Math.max(serverStartAt, fallback)'))
+  assert.ok(method('_startCancellationAt').includes(
+    'startCancellationAt(session, cancelAt, api.now(), parseServerTime)'
+  ))
+  assert.ok(method('startCancellationAt', unknownStartHelpersSrc, true)
+    .includes('Math.max(serverStartAt, fallback)'))
   assert.ok(startSession.includes('_postPomodoroStartWithReconciliation'))
   assert.ok(startFree.includes('_postPomodoroStartWithReconciliation'))
 })
@@ -457,9 +474,11 @@ t('start uncertainty is persisted before POST and retried with the same idempote
 })
 t('unknown-start matching uses exact client_start_id, not preset/time-window guessing', () => {
   const match = method('_matchesUnknownStartAttempt')
-  assert.ok(match.includes('session.client_start_id === attempt.clientStartId'))
-  assert.ok(!match.includes('work_duration'))
-  assert.ok(!match.includes('start_time'))
+  const helper = method('matchesUnknownStartAttempt', unknownStartHelpersSrc, true)
+  assert.ok(match.includes('matchesUnknownStartAttempt(session, attempt)'))
+  assert.ok(helper.includes('session.client_start_id === attempt.clientStartId'))
+  assert.ok(!helper.includes('work_duration'))
+  assert.ok(!helper.includes('start_time'))
 })
 t('backend persists a per-user client_start_id unique key and checks it before active guard', () => {
   assert.ok(backendSchemaSrc.includes('client_start_id'))
@@ -515,12 +534,15 @@ const showCompletion = method('_showCompletionCelebration')
 const dismissCompletion = method('dismissCelebration')
 t('natural completion clears running snapshots before showing celebration', () => {
   assert.ok(showCompletion.includes("_safeRemovePomodoroStorage('pomodoro_running_state'"))
-  assert.ok(showCompletion.indexOf("_safeRemovePomodoroStorage('pomodoro_running_state'") < showCompletion.indexOf('showCelebration: true'))
+  assert.ok(showCompletion.indexOf("_safeRemovePomodoroStorage('pomodoro_running_state'") <
+    showCompletion.indexOf('this.setData(viewData)'))
+  assert.ok(completionCelebrationSrc.includes('showCelebration: true'))
 })
 t('completion marker persists break metadata across app restart', () => {
-  assert.ok(showCompletion.includes('breakSec'))
-  assert.ok(showCompletion.includes('breakDuration'))
-  assert.ok(dismissCompletion.includes('completionFlag.breakSec'))
+  assert.ok(showCompletion.includes("_safeSetPomodoroStorage('pomodoro_completion', completionFlag"))
+  assert.ok(completionCelebrationSrc.includes('breakSec'))
+  assert.ok(completionCelebrationSrc.includes('breakDuration'))
+  assert.ok(dismissCompletion.includes('resolveBreakSec(completionFlag'))
 })
 t('onShow keeps a valid completion marker authoritative until dismissal', () => {
   const restore = method('_restoreCompletionView')
@@ -586,7 +608,9 @@ const wxml = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro
 const wxss = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.wxss'), 'utf8')
 t('long confirm copy has an explicit third line for large-font safety', () => {
   assert.ok(wxml.includes('endConfirmLine3'))
-  assert.ok(src.includes("endConfirmLine3: hasElapsed ? '确认后将计入学习统计。' : ''"))
+  assert.ok(endConfirmViewModelSrc.includes(
+    "endConfirmLine3: hasElapsed ? '确认后将计入学习统计。' : ''"
+  ))
 })
 t('native canvas is truly hidden while end-confirm overlay is visible', () => {
   // Native Canvas can sit above cover-view on real devices even when CSS opacity is 0.

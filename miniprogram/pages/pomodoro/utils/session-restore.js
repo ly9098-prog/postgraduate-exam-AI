@@ -43,9 +43,14 @@ function computeCountdownRestore(options) {
 
 function computeFreeRestore(options) {
   const paused = resolvePausedMs(options)
-  let elapsed = Math.max(0, Math.floor((options.now - options.startTime - paused.totalPausedMs) / 1000))
+  const hasPausedOverride = options.totalPausedMs !== undefined && options.totalPausedMs !== null
+  const pausedOverride = Number(options.totalPausedMs)
+  const totalPausedMs = hasPausedOverride && Number.isFinite(pausedOverride)
+    ? Math.max(0, pausedOverride)
+    : paused.totalPausedMs
+  let elapsed = Math.max(0, Math.floor((options.now - options.startTime - totalPausedMs) / 1000))
   elapsed = Math.min(elapsed, Math.floor(options.maxMs / 1000))
-  return { ...paused, elapsed }
+  return { ...paused, totalPausedMs, elapsed }
 }
 
 function resolveRestoredSubject(options) {

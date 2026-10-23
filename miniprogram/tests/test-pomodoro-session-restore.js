@@ -149,6 +149,20 @@ assert.deepEqual(computeFreeRestore({
   elapsed: 18000,
 })
 
+assert.deepEqual(computeFreeRestore({
+  serverPausedSec: 0,
+  savedPause: null,
+  pausedAtMs: null,
+  now: 60000,
+  startTime: 1000,
+  maxMs: 5 * 60 * 60 * 1000,
+  totalPausedMs: 17000,
+}), {
+  totalPausedMs: 17000,
+  isPaused: false,
+  elapsed: 42,
+})
+
 assert.deepEqual(resolveRestoredSubject({
   session: { subject_id: 4, subject_code: 'data_structure', subject_name: '数据结构' },
   subjects: [{ id: 4, code: 'data_structure', name: '已缓存' }],

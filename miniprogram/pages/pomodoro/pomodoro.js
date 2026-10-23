@@ -36,6 +36,7 @@ const {
   computeFreeRestore,
   resolveRestoredSubject,
 } = require('./utils/session-restore')
+const { createFreeSessionRestoreController } = require('./utils/free-session-restore-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -183,6 +184,7 @@ Page({
   _pauseToggleUnlockTimer: null,
   _syncRetryController: null,
   _statsRequestSeq: 0,
+  _freeSessionRestoreController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -2667,99 +2669,22 @@ Page({
   },
 
   _restoreFreeSession(session) {
-    const startTime = parseServerTime(session.start_time)
-    if (!Number.isFinite(startTime) || startTime <= 0) {
-      this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
-      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-      this._resetToIdle()
-      return true
+    if (!this._freeSessionRestoreController) {
+      this._freeSessionRestoreController = createFreeSessionRestoreController({
+        page: this,
+        now: () => api.now(),
+        parseServerTime,
+        resolvePausedMs,
+        computeFreeRestore,
+        resolveRestoredSubject,
+        formatElapsedSec,
+        maxMs: FREE_TIMER_MAX_MS,
+        runningPhase: PHASE.RUNNING,
+        pomodoroTaskTypes,
+        nextTick: callback => wx.nextTick(callback),
+      })
     }
-
-    const storedPause = this._safeGetPomodoroStorage('pomodoro_free_pause', 'restore free pause')
-    if (!storedPause.ok) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    const pausedAtMs = session.paused_at ? parseServerTime(session.paused_at) : null
-    let totalPausedMs = resolvePausedMs({
-      serverPausedSec: session.total_paused_sec || 0,
-      savedPause: storedPause.value,
-      pausedAtMs,
-      now: api.now(),
-      sessionId: session.id,
-    }).totalPausedMs
-    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs, true)
-    if (totalPausedMs === null) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-
-    // Server start_time remains the only clock origin during cold restore too;
-    // legacy freeDisplayOffsetMs caches are intentionally ignored.
-    this._timerState.sessionId = session.id
-    this._timerState.sessionStartTime = startTime
-    this._timerState.totalPausedMs = totalPausedMs
-    this._timerState.freeDisplayOffsetMs = 0
-
-    const restore = computeFreeRestore({
-      serverPausedSec: session.total_paused_sec || 0,
-      savedPause: storedPause.value,
-      pausedAtMs,
-      now: api.now(),
-      startTime,
-      maxMs: FREE_TIMER_MAX_MS,
-      sessionId: session.id,
-    })
-    totalPausedMs = restore.totalPausedMs
-    const isPaused = restore.isPaused
-    const elapsed = restore.elapsed
-    const fmt = formatElapsedSec(elapsed)
-
-    this._timerState.pauseStartTime = isPaused ? api.now() : null
-
-    const subject = resolveRestoredSubject({
-      session,
-      subjects: this.data.subjects,
-      lookupSubjectIdByCode: code => this._lookupSubjectIdByCode(code),
-    })
-    const { subjectId, selectedSubject, aggregate: aggregateSession } = subject
-    const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
-    const activeTaskType = sessionTaskType || ''
-    const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
-    if (sessionTaskType) pomodoroTaskTypes.recordSession(session, sessionTaskType)
-
-    this._clearTimer()
-    this._timerState.elapsedSec = elapsed
-    this._timerState.freeFriendlyText = fmt.friendly
-    this._timerState.progress = 1
-    this.setData({
-      phase: PHASE.RUNNING,
-      ringCanvasVisible: true,
-      isFreeTimer: true,
-      selectedSubjectId: subjectId,
-      selectedSubject,
-      allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
-      selectedTaskType: activeTaskType,
-      selectedTaskTypeLabel: activeTaskTypeLabel,
-      selectedPreset: 'free',
-      workDuration: 0,
-      breakDuration: 0,
-      isPaused: isPaused,
-      freeDisplayTime: fmt.display,
-      showEndConfirm: false,
-    })
-    this._updateComputedFields()
-
-    wx.nextTick(() => {
-      this._initCanvas(true)
-      this.drawRing(0, false)
-    })
-
-    if (!isPaused) {
-      this._startFreeTimerInterval()
-      this._checkFreeTimerLimitAndAutoEnd()
-    }
-    return true
+    return this._freeSessionRestoreController.restore(session)
   },
 
   _restoreBreak() {

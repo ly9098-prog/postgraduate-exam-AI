@@ -68,6 +68,7 @@ const sandbox = {
     if (request === './utils/hide-storage') return require('../pages/pomodoro/utils/hide-storage')
     if (request === './utils/subject-options') return require('../pages/pomodoro/utils/subject-options')
     if (request === './utils/subject-selection') return require('../pages/pomodoro/utils/subject-selection')
+    if (request === './utils/subject-meta') return require('../pages/pomodoro/utils/subject-meta')
     if (request === './utils/countdown-controller') return require('../pages/pomodoro/utils/countdown-controller')
     if (request === './utils/free-timer-controller') return require('../pages/pomodoro/utils/free-timer-controller')
     if (request === './utils/ring-geometry') return require('../pages/pomodoro/utils/ring-geometry')
@@ -75,7 +76,23 @@ const sandbox = {
     if (request === './utils/canvas-layout') return require('../pages/pomodoro/utils/canvas-layout')
     if (request === './utils/sync-reconciliation') return require('../pages/pomodoro/utils/sync-reconciliation')
     if (request === './utils/session-restore') return require('../pages/pomodoro/utils/session-restore')
+    if (request === './utils/free-session-restore-controller') {
+      return require('../pages/pomodoro/utils/free-session-restore-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
+    if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
+    if (request === './utils/terminal-conflict-handler') {
+      return require('../pages/pomodoro/utils/terminal-conflict-handler')
+    }
+    if (request === './utils/pause-adjustment') return require('../pages/pomodoro/utils/pause-adjustment')
+    if (request === './utils/celebration-dismiss') return require('../pages/pomodoro/utils/celebration-dismiss')
+    if (request === './utils/end-confirm-view-model') return require('../pages/pomodoro/utils/end-confirm-view-model')
+    if (request === './utils/unknown-start-helpers') {
+      return require('../pages/pomodoro/utils/unknown-start-helpers')
+    }
+    if (request === './utils/cached-session-builder') {
+      return require('../pages/pomodoro/utils/cached-session-builder')
+    }
     if (request === '../../utils/api') return api
     if (request === '../../config') return {}
     if (request === '../../utils/route-params') return { safeDecodeURIComponent: v => v }

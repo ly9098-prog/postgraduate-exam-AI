@@ -42,6 +42,10 @@ function t(desc, fn) {
 console.log('\n--- 1. Source code constants ---')
 
 var js = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+var freeRestoreSrc = fs.readFileSync(
+  path.join(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'),
+  'utf8'
+)
 
 t('FREE_TIMER_MAX_MS is defined', function () {
   assert.ok(js.indexOf('FREE_TIMER_MAX_MS') >= 0)
@@ -133,14 +137,12 @@ t('_checkFreeTimerLimitAndAutoEnd returns early when isPaused', function () {
 })
 
 t('_restoreFreeSession caps elapsed at max', function () {
-  var restoreMethod = extractMethod(js, '_restoreFreeSession')
-  assert.ok(restoreMethod.indexOf('FREE_TIMER_MAX_MS') >= 0,
+  assert.ok(freeRestoreSrc.indexOf('options.maxMs') >= 0,
     '_restoreFreeSession should cap at FREE_TIMER_MAX_MS')
 })
 
 t('_restoreFreeSession calls _checkFreeTimerLimitAndAutoEnd after interval start', function () {
-  var restoreMethod = extractMethod(js, '_restoreFreeSession')
-  assert.ok(restoreMethod.indexOf('_checkFreeTimerLimitAndAutoEnd()') >= 0,
+  assert.ok(freeRestoreSrc.indexOf('_checkFreeTimerLimitAndAutoEnd()') >= 0,
     '_restoreFreeSession should check limit after restoring')
 })
 
@@ -270,10 +272,9 @@ t('_syncActiveSessionLight caps free timer elapsed at FREE_TIMER_MAX_MS', functi
 })
 
 t('_restoreFreeSession caps elapsed at max and calls _checkFreeTimerLimitAndAutoEnd', function () {
-  var methodBody = extractMethod(js, '_restoreFreeSession')
-  assert.ok(methodBody.indexOf('FREE_TIMER_MAX_MS') >= 0,
+  assert.ok(freeRestoreSrc.indexOf('options.maxMs') >= 0,
     '_restoreFreeSession must reference FREE_TIMER_MAX_MS')
-  assert.ok(methodBody.indexOf('_checkFreeTimerLimitAndAutoEnd') >= 0,
+  assert.ok(freeRestoreSrc.indexOf('_checkFreeTimerLimitAndAutoEnd') >= 0,
     '_restoreFreeSession must call _checkFreeTimerLimitAndAutoEnd')
 })
 

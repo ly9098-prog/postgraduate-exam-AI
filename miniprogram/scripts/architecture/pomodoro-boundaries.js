@@ -16,6 +16,7 @@ const MODULES = {
   'show-recovery.js': [],
   'sync-retry-controller.js': [],
   'subject-options.js': [],
+  'free-session-restore-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -35,13 +36,14 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 3159
+const PAGE_MAX_LINES = 3084
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
   '_hidePersistenceOptions', '_getSyncRetryController', '_registerNetworkStatusListener',
   '_unregisterNetworkStatusListener', '_isRetryablePomodoroSyncError',
   '_clearPendingPomodoroSyncRetryTimer', '_schedulePendingPomodoroSyncRetry',
+  '_restoreFreeSession',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -140,6 +142,10 @@ function pageViolations(source) {
       if (ts.isMethodDeclaration(node) && PAGE_METHODS.has(node.name.getText(file))) {
         methods.add(node.name.getText(file))
         functionSize(node, file, errors)
+        if (node.name.getText(file) === '_restoreFreeSession' &&
+            !hasFreeSessionRestoreWiring(node)) {
+          errors.push('free-session restore must create and delegate to its controller')
+        }
       }
     }
   }
@@ -149,6 +155,31 @@ function pageViolations(source) {
     if (!imports.has(target)) errors.push(`page no longer imports governed module: ${name}`)
   }
   return errors
+}
+
+function hasFreeSessionRestoreWiring(method) {
+  let creates = false
+  let delegates = false
+  function walk(node) {
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression) &&
+          node.expression.text === 'createFreeSessionRestoreController') {
+        creates = true
+      }
+      const call = node.expression
+      if (ts.isPropertyAccessExpression(call) && call.name.text === 'restore' &&
+          ts.isPropertyAccessExpression(call.expression) &&
+          call.expression.name.text === '_freeSessionRestoreController' &&
+          call.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+          node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]) &&
+          node.arguments[0].text === 'session') {
+        delegates = true
+      }
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(method)
+  return creates && delegates
 }
 
 function scanPomodoro(root = ROOT, read = filename => fs.readFileSync(filename, 'utf8')) {
