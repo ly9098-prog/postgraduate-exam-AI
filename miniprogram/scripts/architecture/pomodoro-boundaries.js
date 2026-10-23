@@ -24,6 +24,7 @@ const MODULES = {
   'terminal-conflict-controller.js': [],
   'stats-controller.js': [],
   'theme-controller.js': [],
+  'end-confirm-snapshot.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -43,7 +44,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2564
+const PAGE_MAX_LINES = 2554
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',

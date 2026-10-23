@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 34)
+  assert.equal(result.modules, 35)
   assert.equal(result.edges, 4)
 })
 
@@ -388,6 +388,15 @@ test('theme shell must lazily reuse one controller', () => {
     .includes('theme toggle must delegate to its controller'))
 })
 
+test('end-confirm snapshot module must stay wired into the page', () => {
+  const detached = pageSource.replace(
+    "require('./utils/end-confirm-snapshot')",
+    "require('./utils/legacy-confirm-snapshot')"
+  )
+  assert.ok(pageViolations(detached)
+    .includes('page no longer imports governed module: end-confirm-snapshot.js'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -400,6 +409,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 34)
+    assert.equal(result.modules, 35)
   }
 })

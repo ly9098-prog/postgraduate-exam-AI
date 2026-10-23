@@ -46,6 +46,11 @@ const { createPendingSyncController } = require('./utils/pending-sync-controller
 const { createTerminalConflictController } = require('./utils/terminal-conflict-controller')
 const { createStatsController } = require('./utils/stats-controller')
 const { createThemeController } = require('./utils/theme-controller')
+const {
+  isValidConfirmSnapshot,
+  buildFreeConfirmSnapshot,
+  buildCountdownInterruptSnapshot,
+} = require('./utils/end-confirm-snapshot')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -934,13 +939,7 @@ Page({
   },
 
   _isValidConfirmSnapshot(snapshot) {
-    if (!snapshot || !snapshot.sessionId) return false
-    if (!snapshot.mode) return false
-    if (snapshot.confirmVisible === false) return false
-    if (!snapshot.openedAt) return false
-    // Snapshots older than 1 hour are stale
-    if (api.now() - snapshot.openedAt > 3600000) return false
-    return true
+    return isValidConfirmSnapshot(snapshot, api.now())
   },
 
   async _showEndFreeConfirm() {
@@ -953,21 +952,16 @@ Page({
 
     const confirmActionSeq = (this._confirmActionSeq || 0) + 1
     this._confirmActionSeq = confirmActionSeq
-    const snapshot = {
-      mode: 'free-complete',
+    const snapshot = buildFreeConfirmSnapshot({
       confirmActionSeq,
       sessionId: this._timerState.sessionId,
       openedAt: now,
       wasPaused,
-      pausedByConfirm: !wasPaused,
       elapsedSec: elapsed,
       totalPausedMs: this._timerState.totalPausedMs || 0,
       pauseStartTime: this._timerState.pauseStartTime || null,
       sessionStartTime: this._timerState.sessionStartTime,
-      backendPauseDone: false,
-      confirmVisible: true,
-      freeDisplayOffsetMs: 0,
-    }
+    })
 
     if (!this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'free confirm snapshot')) {
       this._showPomodoroPersistenceError()
@@ -1044,26 +1038,22 @@ Page({
 
     const confirmActionSeq = (this._confirmActionSeq || 0) + 1
     this._confirmActionSeq = confirmActionSeq
-    const snapshot = {
-      mode: 'countdown-interrupt',
+    const snapshot = buildCountdownInterruptSnapshot({
       confirmActionSeq,
       sessionId: this._timerState.sessionId,
       openedAt: now,
-      wasPaused: wasPaused,
-      pausedByConfirm: !wasPaused,
+      wasPaused,
       phase: this.data.phase,
-      totalSec: totalSec,
-      totalMs: totalMs,
-      remainingMs: remainingMs,
-      remainingSec: remainingSec,
-      progress: progress,
+      totalSec,
+      totalMs,
+      remainingMs,
+      remainingSec,
+      progress,
       sessionStartTime: this._timerState.sessionStartTime,
       countdownEndAt: this._countdownEndAt,
       totalPausedMs: this._timerState.totalPausedMs || 0,
       pauseStartTime: this._timerState.pauseStartTime || null,
-      backendPauseDone: false,
-      confirmVisible: true,
-    }
+    })
 
     // The confirm snapshot and, when needed, the backend pause intent are both
     // durable before the local timer is stopped. This keeps the operation

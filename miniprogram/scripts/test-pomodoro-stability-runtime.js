@@ -100,6 +100,9 @@ const sandbox = {
     if (request === './utils/theme-controller') {
       return require('../pages/pomodoro/utils/theme-controller')
     }
+    if (request === './utils/end-confirm-snapshot') {
+      return require('../pages/pomodoro/utils/end-confirm-snapshot')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {
