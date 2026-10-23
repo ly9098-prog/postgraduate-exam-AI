@@ -49,6 +49,7 @@ const { createChartModeController } = require('./chart-mode-controller')
 const { createDynamicRefreshController } = require('./dynamic-refresh-controller')
 const { createLoadRequestController } = require('./load-request-controller')
 const { createLoadRequestControllerFactory } = require('./load-request-controller-factory')
+const { createPageInitController } = require('./page-init-controller')
 
 const {
   getSubjectColor,
@@ -126,53 +127,25 @@ var pageConfig = {
   },
 
   onLoad() {
-    this._alive = true
-    this._isVisible = false
-    this._requestId = 0
-    this._dynamicRefreshTimer = null
-    this._statsLoadInFlight = 0
-    this._viewReady = false
-    this._hasData = false
-    this._settingsLoaded = false
-    this._finalDrawn = false
-    this._displayTodayDurationSec = 0
-    this._durationAnimationToken = 0
-    this._durationAnimationTimer = null
-    this._deferredHistoryTimer = null
-    this._pendingHistoryCommit = null
-    this._canvasInitPending = false
-    this._canvasInitCallbacks = []
-    this._barInitPending = false
-    this._barInitCallbacks = []
-    this._barAnimationToken = 0
-    this._barRenderedOnce = false
-    this._cumulativeCustomized = false
-    this._cumulativeRequestSeq = 0
-    this._distributionRequestSeq = 0
-    this._daySubjectsRaw = []
-    this._distributionRawSubjects = []
-    this._subjectMetaLoaded = false
-    this._subjectMeta = null
-    this._shadeColorCache = createShadeColorCache()
-    this._pieRenderCache = { sectors: null, wallSteps: null, labelLayout: null }
-    this._subjectMetaPromise = null
-    const themeMode = pomodoroTheme.getTheme()
-    pomodoroTheme.applyNativeTheme(themeMode)
-    // 先用默认 day_start=0 计算当前中国统计日，settings 加载后若 day_start 不同会校正。
-    const today = chinaTime.getChinaStudyDate(0)
-    this.setData({
-      selectedDate: today,
-      _todayDate: today,
-      pieDateLabel: '今日',
-      canGoNextDate: false,
-      cumulativePickerStartDate: this._shiftDate(today, -365),
-      customRangePickerStartDate: this._shiftDate(today, -365),
-      customRangeStartDate: today,
-      distributionRangeStart: today,
-      distributionRangeEnd: today,
-      themeMode,
-    })
+    const initialized = this._getPageInitController().initialize()
+    Object.assign(this, initialized.internal)
+    this.setData(initialized.data)
     this._init()
+  },
+
+  _getPageInitController() {
+    if (!this._pageInitController) {
+      this._pageInitController = createPageInitController({
+        getTheme: () => pomodoroTheme.getTheme(),
+        applyNativeTheme: themeMode => pomodoroTheme.applyNativeTheme(themeMode),
+        getChinaStudyDate: minute => chinaTime.getChinaStudyDate(minute),
+        getDefaultDayStartMinute: () => 0,
+        shiftDate: (date, delta) => this._shiftDate(date, delta),
+        createShadeColorCache,
+        createPieRenderCache: () => ({ sectors: null, wallSteps: null, labelLayout: null }),
+      })
+    }
+    return this._pageInitController
   },
 
   async _init() {
