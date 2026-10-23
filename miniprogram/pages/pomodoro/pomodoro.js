@@ -70,6 +70,7 @@ const { createPauseSessionController } = require('./utils/pause-session-controll
 const { createResumeSessionController } = require('./utils/resume-session-controller')
 const { createShowCountdownInterruptConfirmController } = require('./utils/show-countdown-interrupt-confirm-controller')
 const { createConfirmEndTimerController } = require('./utils/confirm-end-timer-controller')
+const { createEndSessionController } = require('./utils/end-session-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -235,6 +236,7 @@ Page({
   _resumeSessionController: null,
   _showCountdownInterruptConfirmController: null,
   _confirmEndTimerController: null,
+  _endSessionController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1067,6 +1069,22 @@ Page({
     return this._confirmEndTimerController
   },
 
+  _getEndSessionController() {
+    if (!this._endSessionController) {
+      this._endSessionController = createEndSessionController({
+        getSessionId: () => this._timerState.sessionId,
+        clearTimer: () => this._clearTimer(),
+        completeWithRetry: (sessionId, now) => this._completePomodoroWithRetry(sessionId, now),
+        now: () => api.now(),
+        consumeTerminalConflict: (sessionId, action) => this._consumePomodoroTerminalConflict(sessionId, action),
+        handleTerminalConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
+        loadTodayStats: () => this.loadTodayStats(),
+        resetToIdle: () => this._resetToIdle(),
+      })
+    }
+    return this._endSessionController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1258,18 +1276,7 @@ Page({
   },
 
   async endSession() {
-    if (!this._timerState.sessionId) return
-    const sessionId = this._timerState.sessionId
-    this._clearTimer()
-    this._completePomodoroWithRetry(sessionId, api.now()).then(synced => {
-      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'complete')
-      if (conflict) {
-        this._handlePomodoroTerminalConflict(sessionId, conflict)
-        return
-      }
-      if (synced) this.loadTodayStats()
-    })
-    this._resetToIdle()
+    return this._getEndSessionController().end()
   },
 
   async interruptSession() {

@@ -348,7 +348,8 @@ jobs:
             miniprogram/tests/test-pomodoro-pause-session-controller.js \
             miniprogram/tests/test-pomodoro-resume-session-controller.js \
             miniprogram/tests/test-pomodoro-show-countdown-interrupt-confirm-controller.js \
-            miniprogram/tests/test-pomodoro-confirm-end-timer-controller.js
+            miniprogram/tests/test-pomodoro-confirm-end-timer-controller.js \
+            miniprogram/tests/test-pomodoro-end-session-controller.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js

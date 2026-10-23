@@ -160,6 +160,9 @@ const sandbox = {
     if (request === './utils/confirm-end-timer-controller') {
       return require('../pages/pomodoro/utils/confirm-end-timer-controller')
     }
+    if (request === './utils/end-session-controller') {
+      return require('../pages/pomodoro/utils/end-session-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {
