@@ -106,6 +106,7 @@ import {
   normalizedChoiceAnswerKeys,
 } from "./question-display-helpers";
 import { buildExportPayload } from "./question-export-payload";
+import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -886,32 +887,26 @@ export default function QuestionsPage() {
                 >
                   上一页
                 </button>
-                {Array.from(
-                  { length: Math.min(questions.data.total_pages, 5) },
-                  (_, i) => {
-                    const startPage = Math.max(
-                      1,
-                      Math.min(page - 2, questions.data.total_pages - 4),
-                    );
-                    const p = startPage + i;
-                    if (p > questions.data.total_pages) return null;
-                    const isActive = p === page;
-                    return (
-                      <button
-                        key={p}
-                        disabled={isActive || questions.isFetching}
-                        onClick={() => setPage(p)}
-                        className={
-                          isActive
-                            ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-sm"
-                            : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
-                        }
-                      >
-                        {p}
-                      </button>
-                    );
-                  },
-                )}
+                {buildQuestionPaginationViewport({
+                  page,
+                  totalPages: questions.data.total_pages,
+                }).map((p) => {
+                  const isActive = p === page;
+                  return (
+                    <button
+                      key={p}
+                      disabled={isActive || questions.isFetching}
+                      onClick={() => setPage(p)}
+                      className={
+                        isActive
+                          ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-sm"
+                          : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+                      }
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
                 <button
                   disabled={page >= (questions.data?.total_pages ?? 1) || questions.isFetching}
                   onClick={() => setPage((p) => p + 1)}
