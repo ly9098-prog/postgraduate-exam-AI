@@ -336,7 +336,8 @@ jobs:
             miniprogram/tests/test-pomodoro-celebration-dismiss-controller.js \
             miniprogram/tests/test-pomodoro-break-restore-controller.js \
             miniprogram/tests/test-pomodoro-completion-celebration-controller.js \
-            miniprogram/tests/test-pomodoro-work-complete-controller.js
+            miniprogram/tests/test-pomodoro-work-complete-controller.js \
+            miniprogram/tests/test-pomodoro-free-timer-begin-controller.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js

@@ -34,6 +34,7 @@ const completionCelebrationSrc = fs.readFileSync(path.resolve(__dirname, '../pag
 const endConfirmViewModelSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/end-confirm-view-model.js'), 'utf8')
 const pauseAdjustmentSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pause-adjustment.js'), 'utf8')
 const unknownStartHelpersSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-helpers.js'), 'utf8')
+const freeTimerBeginSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-timer-begin-controller.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
@@ -535,10 +536,9 @@ t('new countdown derives remaining time from server start_time', () => {
   assert.ok(!m.includes('Date.now() + totalSec * 1000'))
 })
 t('new free timer immediately displays server elapsed time', () => {
-  const m = method('_beginFreeTimer')
-  assert.ok(m.includes('now - startTime - totalPausedMs'))
-  assert.ok(m.includes('freeDisplayTime: fmt.display'))
-  assert.ok(m.includes('freeDisplayOffsetMs = 0'))
+  assert.ok(freeTimerBeginSrc.includes('now - startTime - totalPausedMs'))
+  assert.ok(freeTimerBeginSrc.includes('freeDisplayTime: fmt.display'))
+  assert.ok(freeTimerBeginSrc.includes('freeDisplayOffsetMs = 0'))
 })
 
 console.log('\n--- Completion lifecycle ---')

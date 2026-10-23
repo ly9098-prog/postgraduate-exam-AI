@@ -58,6 +58,7 @@ const { createCelebrationDismissController } = require('./utils/celebration-dism
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
 const { createCompletionCelebrationController } = require('./utils/completion-celebration-controller')
 const { createWorkCompleteController } = require('./utils/work-complete-controller')
+const { createFreeTimerBeginController } = require('./utils/free-timer-begin-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -211,6 +212,7 @@ Page({
   _breakRestoreController: null,
   _completionCelebrationController: null,
   _workCompleteController: null,
+  _freeTimerBeginController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -738,43 +740,29 @@ Page({
   },
 
   _beginFreeTimer(session) {
-    const startTime = parseServerTime(session.start_time)
-    const totalPausedMs = Math.max(0, Number(session.total_paused_sec || 0) * 1000)
-    const now = api.now()
-    const elapsedMs = Math.max(0, now - startTime - totalPausedMs)
-    const elapsedSec = Math.min(Math.floor(elapsedMs / 1000), Math.floor(FREE_TIMER_MAX_MS / 1000))
-    const fmt = formatElapsedSec(elapsedSec)
+    return this._getFreeTimerBeginController().begin(session)
+  },
 
-    this._clearTimer()
-    this._timerState.sessionId = session.id
-    this._timerState.sessionStartTime = startTime
-    this._timerState.totalPausedMs = totalPausedMs
-    // Server start_time is the single clock origin. Do not hide /start network
-    // latency behind a client-only display offset, otherwise UI and statistics
-    // diverge by the request round-trip time.
-    this._timerState.freeDisplayOffsetMs = 0
-    this._timerState.pauseStartTime = null
-    this._timerState.elapsedSec = elapsedSec
-    this._timerState.freeFriendlyText = fmt.friendly
-    this._timerState.progress = 1
-    this.setData({
-      phase: PHASE.RUNNING,
-      ringCanvasVisible: true,
-      isFreeTimer: true,
-      isPaused: false,
-      freeDisplayTime: fmt.display,
-      showEndConfirm: false,
-    })
-    this._updateComputedFields()
-    if (elapsedMs >= FREE_TIMER_MAX_MS) {
-      this._autoFinishFreeTimer()
-      return
+  _getFreeTimerBeginController() {
+    if (!this._freeTimerBeginController) {
+      this._freeTimerBeginController = createFreeTimerBeginController({
+        parseServerTime,
+        now: () => api.now(),
+        maxMs: FREE_TIMER_MAX_MS,
+        formatElapsedSec,
+        clearTimer: () => this._clearTimer(),
+        timer: () => this._timerState,
+        runningPhase: PHASE.RUNNING,
+        setData: data => this.setData(data),
+        updateComputedFields: () => this._updateComputedFields(),
+        autoFinishFreeTimer: () => this._autoFinishFreeTimer(),
+        startFreeTimerInterval: () => this._startFreeTimerInterval(),
+        nextTick: callback => wx.nextTick(callback),
+        initCanvas: force => this._initCanvas(force),
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+      })
     }
-    this._startFreeTimerInterval()
-    wx.nextTick(() => {
-      this._initCanvas(true)
-      this.drawRing(0, false)
-    })
+    return this._freeTimerBeginController
   },
 
   _updateFreeElapsed() {
