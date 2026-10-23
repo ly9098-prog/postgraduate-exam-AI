@@ -47,6 +47,9 @@ const {
 const {
   createPracticeAnswerInteractionController,
 } = require('./utils/answer-interaction-controller')
+const {
+  createPracticeQuestionDisplayController,
+} = require('./utils/question-display-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1354,82 +1357,13 @@ wx.showToast({ title: '加载题目失败', icon: 'none' })
 }
 },
 _getQuestionRenderView(q, forceRebuild) {
-if (!q) return null
-const session = this._practiceSession
-if (!session.questionRenderCache) session.questionRenderCache = Object.create(null)
-const questionId = String(q.id == null ? '' : q.id)
-const cacheKey = [
-questionId || 'anonymous',
-String(q.question_version_id || q.question_version || 'version-unknown'),
-session.safeModeActive ? 'safe' : 'normal',
-config.enableMathImage ? 'math-image' : 'math-native',
-].join(':')
-if (!forceRebuild && session.questionRenderCache[cacheKey]) {
-return session.questionRenderCache[cacheKey]
-}
-const isBlankChoice = adapter.isMultiBlankChoice(q)
-const rawBlankOptionGroups = isBlankChoice
-? adapter.getBlankOptionGroups(q)
-: []
-const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
-const flatOptions = typeof adapter.getQuestionOptions === 'function'
-? adapter.getQuestionOptions(q)
-: q.options
-const hasFlatOptions = flatOptions && Object.keys(flatOptions).length > 0
-const opts = (!isBlankChoice || rawBlankOptionGroups.length === 0) && hasFlatOptions
-? flatOptions
-: (!isBlankChoice && isTrueFalse ? { A: '正确', B: '错误' } : null)
-const optionKeys = opts ? Object.keys(opts) : []
-const renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
-if (session.safeModeActive) renderCfg.SAFE_MODE = true
-const renderModel = buildRenderModel(q, opts, renderCfg)
-const result = {
-question: Object.assign({}, q, {
-_renderModel: renderModel,
-_opts: opts,
-_optionKeys: optionKeys,
-_hasBlankOptionGroups: rawBlankOptionGroups.length > 0,
-}),
-optionKeys,
-rawBlankOptionGroups,
-}
-session.questionRenderCache[cacheKey] = result
-return result
+return this._questionDisplayController().getRenderView(q, forceRebuild)
 },
 _buildQuestionAnswerState(renderView, answer) {
-if (!renderView || !renderView.question) return null
-const q = renderView.question
-const normalizedAnswer = answer || ''
-const blankOptionGroups = renderView.rawBlankOptionGroups.length > 0
-? adapter.enrichBlankOptionGroups(renderView.rawBlankOptionGroups, normalizedAnswer)
-: []
-const isMulti = q.question_type === 'multiple_choice'
-const selectedFlags = {}
-for (let optionIndex = 0; optionIndex < renderView.optionKeys.length; optionIndex++) {
-const key = renderView.optionKeys[optionIndex]
-selectedFlags[key] = isMulti
-? normalizedAnswer.split(',').indexOf(key) >= 0
-: normalizedAnswer === key
-}
-return {
-questionId: String(q.id == null ? '' : q.id),
-optionList: blankOptionGroups.length > 0
-? []
-: adapter.buildOptionListFromFlags(q._opts, renderView.optionKeys, selectedFlags),
-blankOptionGroups,
-hasBlankOptionGroups: blankOptionGroups.length > 0,
-}
+return this._questionDisplayController().buildAnswerState(renderView, answer)
 },
 _buildQuestionViewModel(q, forceRebuild) {
-const renderView = this._getQuestionRenderView(q, forceRebuild)
-if (!renderView) return null
-const answer = this._practiceSession.answerMap[String(q.id)] || ''
-return {
-question: renderView.question,
-answerState: this._buildQuestionAnswerState(renderView, answer),
-optionKeys: renderView.optionKeys,
-renderView,
-}
+return this._questionDisplayController().buildViewModel(q, forceRebuild)
 },
 _warmQuestionImages(questions, index) {
 if (!Array.isArray(questions) || !questions.length) return
@@ -1479,45 +1413,7 @@ this._practiceSession.questionTimeMap = map
 this._practiceSession.currentQuestionStartedMonoMs = pause ? 0 : _monotonicNow()
 },
 _showQuestion(index) {
-this._settleQuestionTime()
-const q = this.data.questions[index]
-if (!q) return
-this._warmQuestionImages(this.data.questions, index)
-var viewModelResult
-try {
-viewModelResult = this._buildQuestionViewModel(q)
-} catch (renderErr) {
-console.error('切题渲染失败 index=' + index + ' id=' + q.id, renderErr)
-wx.showToast({ title: '题目渲染失败，已保留上一题', icon: 'none' })
-return
-}
-if (!viewModelResult) {
-console.error('切题渲染失败 index=' + index + ' id=' + q.id)
-wx.showToast({ title: '题目渲染失败，已保留上一题', icon: 'none' })
-return
-}
-const currentQuestion = viewModelResult.question
-const optionKeys = viewModelResult.optionKeys
-if (shouldDebugQuestion(q.id)) {
-debugLog(this._practiceSession.traceId || q.trace_id, 'BEFORE_RENDER', {
-questionId: q.id,
-index,
-optionKeys,
-blankGroupCount: (viewModelResult.answerState.blankOptionGroups || []).length,
-renderMode: (currentQuestion._renderModel || {}).mode,
-sourceLen: ((q.content && (q.content.text || q.content.stem)) || '').length,
-})
-}
-this._practiceSession.optionKeys = optionKeys
-this._practiceSession.currentQuestionStartedMonoMs = _monotonicNow()
-this.setData({
-currentIndex: index,
-currentQuestion: currentQuestion,
-currentAnswerState: viewModelResult.answerState,
-}, () => {
-this._updateComputedFields()
-})
-this._checkRenderInvariant(currentQuestion._renderModel)
+this._questionDisplayController().showQuestion(index)
 },
 goQuestion(e) {
 const idx = e.detail.index
@@ -1622,6 +1518,26 @@ errorText: '',
 feedbackVisible: false,
 })
 if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ scrollTop: 0, duration: 0 })
+},
+_questionDisplayController() {
+return this._questionDisplay || (
+this._questionDisplay = createPracticeQuestionDisplayController({
+getSession: () => this._practiceSession,
+getAnswerMap: () => this._practiceSession.answerMap,
+getQuestions: () => this.data.questions,
+isMathImageEnabled: () => config.enableMathImage,
+isDev: () => config.DEV,
+setData: (patch, cb) => this.setData(patch, cb),
+updateComputedFields: () => this._updateComputedFields(),
+checkRenderInvariant: model => this._checkRenderInvariant(model),
+showToast: options => wx.showToast(options),
+settleQuestionTime: () => this._settleQuestionTime(),
+warmQuestionImages: index => this._warmQuestionImages(this.data.questions, index),
+setOptionKeys: keys => { this._practiceSession.optionKeys = keys },
+setCurrentQuestionStartedMono: () => { this._practiceSession.currentQuestionStartedMonoMs = _monotonicNow() },
+getTraceId: q => this._practiceSession.traceId || q.trace_id,
+})
+)
 },
 _answerInteractionController() {
 return this._answerInteraction || (
