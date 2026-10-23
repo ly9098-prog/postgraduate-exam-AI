@@ -56,6 +56,9 @@ const {
 const {
   createAnswerFeedbackController,
 } = require('./utils/answer-feedback-controller')
+const {
+  createRenderInvariantController,
+} = require('./utils/render-invariant-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1567,6 +1570,14 @@ setFeedbackTimer: (cb, ms) => { this._feedbackTimer = setTimeout(cb, ms) },
 })
 )
 },
+_renderInvariantController() {
+return this._renderInvariant || (
+this._renderInvariant = createRenderInvariantController({
+isSafeModeActive: () => this._practiceSession.safeModeActive,
+enterSafeMode: () => this._enterSafeMode(),
+})
+)
+},
 _answerInteractionController() {
 return this._answerInteraction || (
 this._answerInteraction = createPracticeAnswerInteractionController({
@@ -1625,50 +1636,7 @@ _showAnswerFeedback(q, answer) {
 this._answerFeedbackController().show(q, answer)
 },
 _checkRenderInvariant(renderModel) {
-if (!renderModel) return
-let activePaths = 0
-if (renderModel.mode === 'SEGMENTS') activePaths++
-if (renderModel.mode === 'RICH_TEXT') activePaths++
-if (renderModel.mode === 'CODE') activePaths++
-if (renderModel.mode === 'LATEX') activePaths++
-if (renderModel.mode === 'MIXED') {
-activePaths++
-if (!renderModel.blocks || renderModel.blocks.length === 0) {
-console.error('[MIXED_RENDER_VIOLATION] MIXED mode but blocks is empty')
-}
-}
-if (activePaths !== 1) {
-console.error('[RENDER_INVARIANT] _renderModel.mode="' + renderModel.mode + '" yields ' + activePaths + ' active paths (expected 1)')
-}
-if (renderModel.mode === 'CODE' && renderModel.rawText) {
-var hasHtmlLeak = /&(?:nbsp|amp|lt|gt|#\d+);/.test(renderModel.rawText)
-if (hasHtmlLeak) {
-console.error(
-'[CODE_HTML_LEAK] CODE rawText contains HTML entities\n' +
-'  tail: ' + renderModel.rawText.slice(-60)
-)
-}
-var hasRenderViolation = renderModel.html.length > 0 || renderModel.richTextNodes.length > 0
-if (hasRenderViolation) {
-console.error(
-'[CODE_RENDER_VIOLATION] CODE mode leaked into html/richTextNodes ' +
-'(html=' + renderModel.html.length + ', nodes=' + renderModel.richTextNodes.length + ')'
-)
-}
-if ((hasHtmlLeak || hasRenderViolation) && !this._practiceSession.safeModeActive) {
-this._enterSafeMode()
-}
-}
-if (renderModel.mode === 'MIXED' && renderModel.blocks) {
-for (var mi = 0; mi < renderModel.blocks.length; mi++) {
-var mBlock = renderModel.blocks[mi]
-if (mBlock.type === 'CODE' && mBlock.rawText) {
-if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(mBlock.rawText)) {
-console.error('[CODE_HTML_LEAK] MIXED CODE block #' + mi + ' contains HTML entities')
-}
-}
-}
-}
+this._renderInvariantController().check(renderModel)
 },
 _enterSafeMode() {
 console.warn('[SELF_HEAL] CODE render violation detected — entering SAFE_MODE')

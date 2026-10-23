@@ -374,6 +374,7 @@ jobs:
           node --test miniprogram/tests/test-practice-question-display-controller.js
           node --test miniprogram/tests/test-practice-computed-fields-controller.js
           node --test miniprogram/tests/test-practice-answer-feedback-controller.js
+          node --test miniprogram/tests/test-practice-render-invariant-controller.js
           node --test miniprogram/tests/test-review-group-submission.js
           node --test miniprogram/tests/test-review-submit-confirm-controller.js
           node --test miniprogram/tests/test-review-submit-request-controller.js
