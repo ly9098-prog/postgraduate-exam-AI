@@ -33,6 +33,7 @@ const { createDistributionLoadController } = require('./distribution-load-contro
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
 const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
+const { createCancelWorkController } = require('./cancel-work-controller')
 
 const {
   getSubjectColor,
@@ -1080,35 +1081,43 @@ var pageConfig = {
   /* ==================== Animation Control ==================== */
 
   _cancelPendingWork() {
-    this._clearDynamicRefresh()
-    this._cancelDurationAnimation(false)
-    this._cancelDeferredHistory(true)
-    this._animActive = false
-    this._finalDrawn = false
-    this._requestId++
-    if (this._rafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
-      this._pieCanvasNode.cancelAnimationFrame(this._rafId)
+    this._getCancelWorkController().cancel()
+  },
+
+  _getCancelWorkController() {
+    if (!this._cancelWorkController) {
+      this._cancelWorkController = createCancelWorkController({
+        clearDynamicRefresh: () => this._clearDynamicRefresh(),
+        cancelDurationAnimation: resetState => this._cancelDurationAnimation(resetState),
+        cancelDeferredHistory: clearPending => this._cancelDeferredHistory(clearPending),
+        setAnimActive: value => { this._animActive = value },
+        setFinalDrawn: value => { this._finalDrawn = value },
+        incrementRequestId: () => { this._requestId++ },
+        getMainRafId: () => this._rafId,
+        getPieDateRafId: () => this._pieDateRafId,
+        getPieLabelRafId: () => this._pieLabelRafId,
+        getBarRafId: () => this._barRafId,
+        getPieCanvasNode: () => this._pieCanvasNode,
+        getTrendCanvasNode: () => this._trendCanvasNode,
+        cancelFrame: (id, node) => {
+          if (id && node && node.cancelAnimationFrame) node.cancelAnimationFrame(id)
+        },
+        setMainRafId: id => { this._rafId = id },
+        setPieDateRafId: id => { this._pieDateRafId = id },
+        setPieLabelRafId: id => { this._pieLabelRafId = id },
+        setBarRafId: id => { this._barRafId = id },
+        incrementPieAnimationToken: () => { this._pieAnimationToken = (this._pieAnimationToken || 0) + 1 },
+        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1 },
+        incrementBarAnimationToken: () => { this._barAnimationToken = (this._barAnimationToken || 0) + 1 },
+        clearAnimTimer: () => {
+          if (this._animTimer) {
+            clearTimeout(this._animTimer)
+            this._animTimer = null
+          }
+        },
+      })
     }
-    if (this._pieDateRafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
-      this._pieCanvasNode.cancelAnimationFrame(this._pieDateRafId)
-    }
-    if (this._pieLabelRafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
-      this._pieCanvasNode.cancelAnimationFrame(this._pieLabelRafId)
-    }
-    if (this._barRafId && this._trendCanvasNode && this._trendCanvasNode.cancelAnimationFrame) {
-      this._trendCanvasNode.cancelAnimationFrame(this._barRafId)
-    }
-    this._rafId = null
-    this._pieDateRafId = null
-    this._pieLabelRafId = null
-    this._barRafId = null
-    this._pieAnimationToken = (this._pieAnimationToken || 0) + 1
-    this._pieLabelToken = (this._pieLabelToken || 0) + 1
-    this._barAnimationToken = (this._barAnimationToken || 0) + 1
-    if (this._animTimer) {
-      clearTimeout(this._animTimer)
-      this._animTimer = null
-    }
+    return this._cancelWorkController
   },
 
   _initCanvases(callback) {
