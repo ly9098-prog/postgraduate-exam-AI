@@ -44,6 +44,9 @@ const {
 const {
   createSequentialRestartController,
 } = require('./utils/sequential-restart-controller')
+const {
+  createPracticeAnswerInteractionController,
+} = require('./utils/answer-interaction-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1620,6 +1623,36 @@ feedbackVisible: false,
 })
 if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ scrollTop: 0, duration: 0 })
 },
+_answerInteractionController() {
+return this._answerInteraction || (
+this._answerInteraction = createPracticeAnswerInteractionController({
+isSubmitted: () => this.data.submitted,
+isSubmissionLocked: () => this._isSubmissionLocked(),
+getCurrentQuestion: () => this.data.currentQuestion,
+getAnswerMap: () => this._practiceSession.answerMap,
+setAnswerMap: map => { this._practiceSession.answerMap = map },
+getAnsweredFlags: () => this._practiceSession.answeredFlags,
+setAnsweredFlags: flags => { this._practiceSession.answeredFlags = flags },
+getQuestions: () => this.data.questions,
+getCurrentIndex: () => this.data.currentIndex,
+getTotalQuestions: () => this.data.totalQuestions,
+getQuestionRenderView: q => this._getQuestionRenderView(q),
+buildQuestionAnswerState: (renderView, answer) => this._buildQuestionAnswerState(renderView, answer),
+setData: (patch, cb) => this.setData(patch, cb),
+updateComputedFields: () => this._updateComputedFields(),
+debugStateChange: (q, prev, next, count) => {
+if (shouldDebugQuestion(q.id)) {
+debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
+questionId: q.id, previousAnswer: prev, nextAnswer: next, answeredCount: count,
+})
+saveDebugSnapshot(this._practiceSession.traceId || q.trace_id, 'state_change', {
+questionId: q.id, previousAnswer: prev, nextAnswer: next, answeredCount: count,
+})
+}
+},
+})
+)
+},
 _isSubmissionLocked() {
 if (!this._practiceSession || !this._practiceSession.submissionSnapshot) return false
 const submission = this._practiceSession.submissionSnapshot
@@ -1632,119 +1665,10 @@ icon: 'none',
 return true
 },
 selectOption(e) {
-if (this.data.submitted || this._isSubmissionLocked()) return
-const opt = e.detail.option
-const q = this.data.currentQuestion
-if (!q) return
-const isMulti = q.question_type === 'multiple_choice'
-const key = String(q.id)
-const prev = this._practiceSession.answerMap[key] || ''
-let newAnswer
-if (isMulti) {
-const sel = prev ? prev.split(',') : []
-const idx = sel.indexOf(opt)
-if (idx >= 0) sel.splice(idx, 1)
-else sel.push(opt)
-sel.sort()
-newAnswer = sel.join(',')
-} else {
-newAnswer = prev === opt ? '' : opt
-}
-const answerMap = { ...this._practiceSession.answerMap }
-if (newAnswer) {
-answerMap[key] = newAnswer
-} else {
-delete answerMap[key]
-}
-const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
-const answeredCount = adapter.countAnswered(answeredFlags)
-const currentIdx = this.data.currentIndex
-const answered = !!answeredFlags[key]
-if (shouldDebugQuestion(q.id)) {
-debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
-questionId: q.id,
-previousAnswer: prev,
-nextAnswer: newAnswer,
-answeredCount,
-})
-saveDebugSnapshot(this._practiceSession.traceId || q.trace_id, 'state_change', {
-questionId: q.id,
-previousAnswer: prev,
-nextAnswer: newAnswer,
-answeredCount,
-})
-}
-const renderView = this._getQuestionRenderView(q)
-const answerState = this._buildQuestionAnswerState(renderView, newAnswer)
-this._practiceSession.answerMap = answerMap
-this._practiceSession.answeredFlags = answeredFlags
-this.setData({
-[`questions[${currentIdx}]._answered`]: answered,
-answeredCount,
-currentAnswerState: answerState,
-}, () => {
-this._updateComputedFields()
-})
+this._answerInteractionController().selectOption(e)
 },
 selectBlankOption(e) {
-if (this.data.submitted || this._isSubmissionLocked()) return
-const blankId = String(e.detail.blankId || '').trim()
-const opt = String(e.detail.option || '').trim().toUpperCase()
-const q = this.data.currentQuestion
-if (!q || !adapter.isMultiBlankChoice(q) || !blankId || !opt) return
-const key = String(q.id)
-const prev = this._practiceSession.answerMap[key] || ''
-const blankAnswers = adapter.normalizeBlankAnswer(prev)
-if (typeof adapter.isMultiBlankMultipleChoice === 'function' && adapter.isMultiBlankMultipleChoice(q)) {
-// 多空（多选）：在空内 key 集合中切换
-const current = String(blankAnswers[blankId] || '').split(',').filter(Boolean)
-const next = current.indexOf(opt) >= 0
-? current.filter(function (k) { return k !== opt })
-: current.concat([opt]).sort()
-if (next.length > 0) blankAnswers[blankId] = next.join(',')
-else delete blankAnswers[blankId]
-} else if (blankAnswers[blankId] === opt) {
-delete blankAnswers[blankId]
-} else {
-blankAnswers[blankId] = opt
-}
-const renderView = this._getQuestionRenderView(q)
-const rawGroups = renderView ? renderView.rawBlankOptionGroups : adapter.getBlankOptionGroups(q)
-const newAnswer = adapter.serializeBlankAnswer(rawGroups, blankAnswers)
-const answerMap = { ...this._practiceSession.answerMap }
-if (newAnswer) {
-answerMap[key] = newAnswer
-} else {
-delete answerMap[key]
-}
-const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
-const answeredCount = adapter.countAnswered(answeredFlags)
-const answerState = this._buildQuestionAnswerState(renderView, newAnswer)
-if (shouldDebugQuestion(q.id)) {
-debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
-questionId: q.id,
-previousAnswer: prev,
-nextAnswer: newAnswer,
-answeredCount,
-})
-saveDebugSnapshot(this._practiceSession.traceId || q.trace_id, 'state_change', {
-questionId: q.id,
-previousAnswer: prev,
-nextAnswer: newAnswer,
-answeredCount,
-})
-}
-this._practiceSession.answerMap = answerMap
-this._practiceSession.answeredFlags = answeredFlags
-const currentIdx = this.data.currentIndex
-const answered = !!answeredFlags[key]
-const totalQuestions = this.data.totalQuestions || 0
-this.setData({
-[`questions[${currentIdx}]._answered`]: answered,
-answeredCount,
-progressPercent: totalQuestions > 0 ? Math.round(answeredCount / totalQuestions * 100) : 0,
-currentAnswerState: answerState,
-})
+this._answerInteractionController().selectBlankOption(e)
 },
 _modeLabel: function(m) {
 var map = { random: '随机挑战', sequential: '顺序推进', smart: '智能推荐' }
