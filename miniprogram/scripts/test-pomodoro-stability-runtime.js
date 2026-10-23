@@ -118,6 +118,9 @@ const sandbox = {
     if (request === './utils/break-restore-controller') {
       return require('../pages/pomodoro/utils/break-restore-controller')
     }
+    if (request === './utils/completion-celebration-controller') {
+      return require('../pages/pomodoro/utils/completion-celebration-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

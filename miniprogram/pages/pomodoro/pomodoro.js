@@ -56,6 +56,7 @@ const { createPauseToggleController } = require('./utils/pause-toggle-controller
 const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
+const { createCompletionCelebrationController } = require('./utils/completion-celebration-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -207,6 +208,7 @@ Page({
   _resumeErrorController: null,
   _celebrationDismissController: null,
   _breakRestoreController: null,
+  _completionCelebrationController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1787,39 +1789,34 @@ Page({
   /* ==================== Work Complete ==================== */
 
   _showCompletionCelebration(sessionId, options) {
-    const celebration = buildCompletionCelebration(sessionId, options, {
-      data: this.data,
-      mottoes: MOTTOES,
-      nextCelebrationType: () => this._nextCelebrationType(),
-      MathRandom: Math.random,
-    })
-    const { completionFlag, viewData, breakSec } = celebration
-    // Re-assert attribution at completion so history keeps the task type even if
-    // an earlier start-response mapping was interrupted by a restart.
-    if (celebration.selectedTaskType) pomodoroTaskTypes.recordSession({ id: celebration.sessionId }, celebration.selectedTaskType)
+    return this._getCompletionCelebrationController().show(sessionId, options)
+  },
 
-    // Completion is final locally immediately. Remove every running snapshot
-    // before showing the animation so onHide cannot persist/resurrect this session.
-    this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
-    this._confirmTimerSnapshot = null
-    this._timerState.endConfirmMode = ''
-    this._completionBreakSec = breakSec
-
-    this._safeSetPomodoroStorage('pomodoro_completion', completionFlag, 'completion marker')
-
-    // Invalidate the native canvas before the running wx:if block disappears.
-    this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
-    this._canvasInitPending = false
-    this._canvasReady = false
-    this._ctx = null
-    this._ringCache = null
-    this._pendingDraw = null
-
-    this.setData(viewData)
+  _getCompletionCelebrationController() {
+    if (!this._completionCelebrationController) {
+      this._completionCelebrationController = createCompletionCelebrationController({
+        buildCompletionCelebration,
+        data: () => this.data,
+        mottoes: MOTTOES,
+        nextCelebrationType: () => this._nextCelebrationType(),
+        recordSession: (session, taskType) => pomodoroTaskTypes.recordSession(session, taskType),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        setStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
+        clearConfirmSnapshot: () => { this._confirmTimerSnapshot = null },
+        timer: () => this._timerState,
+        setCompletionBreakSec: value => { this._completionBreakSec = value },
+        invalidateCanvas: () => {
+          this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
+          this._canvasInitPending = false
+          this._canvasReady = false
+          this._ctx = null
+          this._ringCache = null
+          this._pendingDraw = null
+        },
+        setData: data => this.setData(data),
+      })
+    }
+    return this._completionCelebrationController
   },
 
   async _onWorkComplete() {
