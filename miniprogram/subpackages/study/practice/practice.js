@@ -59,6 +59,9 @@ const {
 const {
   createRenderInvariantController,
 } = require('./utils/render-invariant-controller')
+const {
+  createQuestionTimerController,
+} = require('./utils/question-timer-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1409,17 +1412,7 @@ for (let j = 0; j < urls.length; j++) neighborUrls.push(urls[j])
 if (neighborUrls.length) questionImageCache.preloadMany(neighborUrls, 2)
 },
 _settleQuestionTime(pause) {
-const { currentIndex, questions } = this.data
-const { currentQuestionStartedMonoMs, questionTimeMap } = this._practiceSession
-if (!currentQuestionStartedMonoMs || !questions.length) return
-const q = questions[currentIndex]
-if (!q) return
-const elapsed = Math.max(0, Math.floor((_monotonicNow() - currentQuestionStartedMonoMs) / 1000))
-const key = String(q.id)
-const map = { ...questionTimeMap }
-map[key] = (map[key] || 0) + elapsed
-this._practiceSession.questionTimeMap = map
-this._practiceSession.currentQuestionStartedMonoMs = pause ? 0 : _monotonicNow()
+this._questionTimerController().settle(pause)
 },
 _showQuestion(index) {
 this._questionDisplayController().showQuestion(index)
@@ -1575,6 +1568,19 @@ return this._renderInvariant || (
 this._renderInvariant = createRenderInvariantController({
 isSafeModeActive: () => this._practiceSession.safeModeActive,
 enterSafeMode: () => this._enterSafeMode(),
+})
+)
+},
+_questionTimerController() {
+return this._questionTimer || (
+this._questionTimer = createQuestionTimerController({
+getCurrentIndex: () => this.data.currentIndex,
+getQuestions: () => this.data.questions,
+getCurrentQuestionStartedMonoMs: () => this._practiceSession.currentQuestionStartedMonoMs,
+getQuestionTimeMap: () => this._practiceSession.questionTimeMap,
+setQuestionTimeMap: map => { this._practiceSession.questionTimeMap = map },
+setCurrentQuestionStartedMonoMs: ms => { this._practiceSession.currentQuestionStartedMonoMs = ms },
+monotonicNow: () => _monotonicNow(),
 })
 )
 },
