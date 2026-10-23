@@ -76,6 +76,7 @@ import { useQuestionCopy } from "./hooks/use-question-copy";
 import { useQuestionVersionHistory } from "./hooks/use-question-version-history";
 import { useQuestionFeedback } from "./hooks/use-question-feedback";
 import { useQuestionListInteractions } from "./hooks/use-question-list-interactions";
+import { useQuestionListUrlSync } from "./hooks/use-question-list-url-sync";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -89,7 +90,7 @@ import { QuestionVersionComparison } from "./components/question-version-compari
 import { questionDetailOptions } from "./question-queries";
 import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries";
 
-import { buildQuestionListHref, positiveInt } from "./question-list-state";
+import { positiveInt } from "./question-list-state";
 import {
   codeSegmentText,
   comparableText,
@@ -285,13 +286,10 @@ export default function QuestionsPage() {
     },
   });
 
-  useEffect(() => {
-    const nextHref = buildQuestionListHref(filters, page, pageSize, selectedQuestionId);
-    const currentHref = `${window.location.pathname}${window.location.search}`;
-    if (currentHref !== nextHref) {
-      window.history.replaceState(window.history.state, "", nextHref);
-    }
-  }, [filters, page, pageSize, selectedQuestionId]);
+  useQuestionListUrlSync(filters, page, pageSize, selectedQuestionId, {
+    getLocation: () => window.location,
+    replaceState: (state, title, url) => window.history.replaceState(state, title, url),
+  });
 
   const hasActiveFilters = Boolean(
     filters.subject_id ||
