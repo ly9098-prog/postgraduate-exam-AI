@@ -34,7 +34,6 @@ import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { MultiBlankQuestionOptions, QuestionOptions } from "@/components/question-options";
-import { QuestionImageField } from "@/components/questions/question-image-field";
 import { QuestionAnalysis } from "@/components/questions/question-analysis";
 import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
 import { QuestionKnowledgePointsDisplay, QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
@@ -88,7 +87,6 @@ import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries
 
 import { positiveInt } from "./question-list-state";
 import {
-  isPlainImageSegment,
   textForStemEditor,
   textFromContent,
 } from "./question-content-editing";
@@ -101,6 +99,7 @@ import { buildExportPayload } from "./question-export-payload";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
 import { QuestionAnswerEditor } from "./question-answer-editor";
 import { QuestionEditBasics } from "./question-edit-basics";
+import { QuestionStemEditor } from "./question-stem-editor";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -1188,69 +1187,16 @@ export default function QuestionsPage() {
                     subjectOptions={subjectOptions}
                   />
 
-                  <section className="border-b border-slate-200 py-5">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">题干</p>
-                        <p className="mt-1 text-[11px] text-slate-400">编辑题目正文、代码块与题干图片</p>
-                      </div>
-                    </div>
-                    <textarea
-                      wrap="soft"
-                      spellCheck={false}
-                      className="min-h-36 w-full resize-y overflow-x-hidden whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm leading-7 text-slate-800 outline-none transition [overflow-wrap:anywhere] placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
-                      value={editStemText}
-                      onChange={(e) => setEditStemText(e.target.value)}
-                    />
-                    <div className="mt-4">
-                      <p className="mb-2 text-xs font-medium text-slate-500">题干图片</p>
-                    {editingSegments.some(isPlainImageSegment) ||
-                    editingFallbackStemImageUrls.length > 0 ? (
-                      /* 已有图：大图直接占据插入区，hover 替换/删除；无插入按钮 */
-                      <div className="space-y-3">
-                        {editingSegments.map((seg, index) =>
-                          isPlainImageSegment(seg) ? (
-                            <div key={index} className="w-full max-w-xl">
-                              <QuestionImageField
-                                questionId={selectedQuestionId!}
-                                target="stem"
-                                valueUrl={typeof seg.url === "string" ? seg.url : null}
-                                canDelete
-                                dirty={dirty}
-                                beforeDirtyMutation={prepareImmediateQuestionMutation}
-                                addLabel="更换图片"
-                                onMutated={handleQuestionMutated}
-                              />
-                            </div>
-                          ) : null,
-                        )}
-                        {editingFallbackStemImageUrls.map((url, index) => (
-                          <div key={`legacy-${url}-${index}`} className="w-full max-w-xl">
-                            <QuestionImageField
-                              questionId={selectedQuestionId!}
-                              target="stem"
-                              valueUrl={url}
-                              canDelete
-                              dirty={dirty}
-                              beforeDirtyMutation={prepareImmediateQuestionMutation}
-                              addLabel="更换图片"
-                              onMutated={handleQuestionMutated}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <QuestionImageField
-                        questionId={selectedQuestionId!}
-                        target="stem"
-                        dirty={dirty}
-                        beforeDirtyMutation={prepareImmediateQuestionMutation}
-                        addLabel="插入题干图片"
-                        onMutated={handleQuestionMutated}
-                      />
-                    )}
-                    </div>
-                  </section>
+                  <QuestionStemEditor
+                    stemText={editStemText}
+                    setStemText={setEditStemText}
+                    segments={editingSegments}
+                    fallbackImageUrls={editingFallbackStemImageUrls}
+                    questionId={selectedQuestionId!}
+                    dirty={dirty}
+                    beforeDirtyMutation={prepareImmediateQuestionMutation}
+                    onMutated={handleQuestionMutated}
+                  />
 
                   <QuestionTableEditors
                     segments={editingSegments}
