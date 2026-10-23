@@ -26,6 +26,7 @@ const { createSaveDayStartController } = require('./save-day-start-controller')
 const { createSettingsController } = require('./settings-controller')
 const { reconcileFromServer } = require('./reconcile-controller')
 const { buildCumulativeSummaryPatch } = require('./cumulative-summary-patch')
+const { formatStudyDayRangeText } = require('./study-day-range-text')
 
 const {
   getSubjectColor,
@@ -217,10 +218,7 @@ var pageConfig = {
   },
 
   _studyDayRangeText(dsm) {
-    const minute = Math.max(0, Math.min(1439, Number(dsm) || 0))
-    if (!minute) return '统计日从 00:00 开始'
-    const t = chinaTime.minuteToTimeText(minute)
-    return '统计周期 ' + t + ' - 次日 ' + t
+    return formatStudyDayRangeText(dsm, minute => chinaTime.minuteToTimeText(minute))
   },
 
   onShow() {
