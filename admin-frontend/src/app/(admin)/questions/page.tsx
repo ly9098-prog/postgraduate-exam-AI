@@ -63,9 +63,6 @@ import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { buildQuestionCopyText } from "@/lib/question-copy";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import type {
-  AdminQuestion,
-} from "@/lib/api/types";
 
 import {
   exportQuestions,
@@ -77,6 +74,7 @@ import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-questi
 import { useQuestionUpdate } from "./hooks/use-question-update";
 import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
 import { useQuestionEditor } from "./hooks/use-question-editor";
+import { useQuestionFilterInteractions } from "./hooks/use-question-filter-interactions";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -97,7 +95,6 @@ import {
 
 import {
   buildQuestionListHref,
-  DEFAULT_QUESTION_FILTERS,
   normalizeQuestionPageSize,
   positiveInt,
   readQuestionListFilters,
@@ -121,10 +118,6 @@ import {
   isMultiChoice,
   normalizedChoiceAnswerKeys,
 } from "./question-display-helpers";
-import {
-  loadSavedFilters,
-  saveCurrentFilters,
-} from "./question-filter-persistence";
 import { buildExportPayload } from "./question-export-payload";
 import { buildQueryParams } from "./question-query-params";
 
@@ -149,9 +142,6 @@ const pageSizeOptions = [
   { label: "100 条/页", value: "100" },
 ];
 
-const KEYWORD_DEBOUNCE_MS = 300;
-const IMPORT_BATCH_DEBOUNCE_MS = 450;
-
 type ConfirmState = QuestionDeleteIntent | null;
 
 export default function QuestionsPage() {
@@ -159,9 +149,6 @@ export default function QuestionsPage() {
   const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
   const [filters, setFilters] = useState<QuestionListFilters>(() => readQuestionListFilters(searchParams));
-  const [keywordInput, setKeywordInput] = useState(filters.keyword);
-  const [searchDebouncing, setSearchDebouncing] = useState(false);
-  const [importBatchInput, setImportBatchInput] = useState(filters.import_batch_id);
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
   >([]);
@@ -402,7 +389,7 @@ export default function QuestionsPage() {
     setMessage,
   }, selectedQuestionIdRef);
 
-  const updateFilter = (key: keyof typeof filters, value: string) => {
+  const updateFilter = (key: keyof QuestionListFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
     // 与公式库保持一致：筛选刷新时保留详情上下文，等新列表返回后再自动校正选中项。
@@ -410,101 +397,37 @@ export default function QuestionsPage() {
     setIsDetailDrawerOpen(false);
   };
 
-  // 搜索框防抖：停止输入 KEYWORD_DEBOUNCE_MS 后才提交 filters.keyword 并请求
-  const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const importBatchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (keywordTimer.current) clearTimeout(keywordTimer.current);
-      if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
-    };
-  }, []);
-
-  const handleKeywordChange = (value: string) => {
-    setKeywordInput(value);
-    if (keywordTimer.current) clearTimeout(keywordTimer.current);
-    const next = value.trim();
-    if (next === filters.keyword) {
-      setSearchDebouncing(false);
-      return;
-    }
-    setSearchDebouncing(true);
-    if (next === "") {
-      keywordTimer.current = setTimeout(() => {
-        updateFilter("keyword", "");
-        setSearchDebouncing(false);
-      }, 100);
-      return;
-    }
-    keywordTimer.current = setTimeout(() => {
-      updateFilter("keyword", next);
-      setSearchDebouncing(false);
-    }, KEYWORD_DEBOUNCE_MS);
-  };
-
-  const handleImportBatchChange = (value: string) => {
-    setImportBatchInput(value);
-    if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
-    if (value.trim() === "") {
-      updateFilter("import_batch_id", "");
-      return;
-    }
-    importBatchTimer.current = setTimeout(() => {
-      updateFilter("import_batch_id", value.trim());
-    }, IMPORT_BATCH_DEBOUNCE_MS);
-  };
-
-  const handleResetFilters = () => {
-    if (keywordTimer.current) clearTimeout(keywordTimer.current);
-    if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
-    setKeywordInput("");
-    setSearchDebouncing(false);
-    setImportBatchInput("");
-    setFilters({ ...DEFAULT_QUESTION_FILTERS });
-    setPage(1);
-    setSelectedIds(new Set());
-    setIsDetailDrawerOpen(false);
-  };
-
-  const handlePageSizeChange = (value: string) => {
-    setPageSize(Number(value) || 20);
-    setPage(1);
-  };
-
-  const applyFilterPreset = (
-    patch: Partial<typeof filters>,
-  ) => {
-    if (keywordTimer.current) clearTimeout(keywordTimer.current);
-    if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
-    const next: QuestionListFilters = {
-      ...DEFAULT_QUESTION_FILTERS,
-      ...patch,
-    };
-    setFilters(next);
-    setKeywordInput(next.keyword);
-    setSearchDebouncing(false);
-    setImportBatchInput(next.import_batch_id);
-    setPage(1);
-    setSelectedIds(new Set());
-    setIsDetailDrawerOpen(false);
-    setIsCommonFilterMenuOpen(false);
-  };
-
-  const handleSaveCurrentFilters = () => {
-    const result = saveCurrentFilters(() => window.localStorage, filters);
-    setMessage(result.ok ? "当前筛选条件已保存到本机。 " : result.message);
-  };
-
-  const handleApplySavedFilters = () => {
-    const result = loadSavedFilters(() => window.localStorage);
-    if (result.ok) {
-      applyFilterPreset(result.filters);
-    } else {
-      setMessage(result.message);
-      if (result.closeMenu) setIsCommonFilterMenuOpen(false);
-    }
-  };
+  const {
+    keywordInput,
+    importBatchInput,
+    searchDebouncing,
+    handleKeywordChange,
+    handleImportBatchChange,
+    handleResetFilters,
+    handlePageSizeChange,
+    applyFilterPreset,
+    handleSaveCurrentFilters,
+    handleApplySavedFilters,
+  } = useQuestionFilterInteractions({
+    initialFilters: filters,
+    onFilterChanged: updateFilter,
+    onFilterPresetApplied: (next) => {
+      setFilters(next);
+      setPage(1);
+      setSelectedIds(new Set());
+      setIsDetailDrawerOpen(false);
+      setIsCommonFilterMenuOpen(false);
+    },
+    onPageSizeChanged: (nextPageSize) => {
+      setPageSize(nextPageSize);
+      setPage(1);
+    },
+    onMessage: (nextMessage) => {
+      setMessage(nextMessage);
+      setIsCommonFilterMenuOpen(false);
+    },
+    getStorage: () => window.localStorage,
+  });
 
   useEffect(() => {
     if (!message) return;
@@ -739,7 +662,7 @@ export default function QuestionsPage() {
 
                 <button
                   type="button"
-                  onClick={handleSaveCurrentFilters}
+                  onClick={() => handleSaveCurrentFilters(filters)}
                   className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
                 >
                   <Star className="h-4 w-4 text-[var(--color-text-secondary)]" />
