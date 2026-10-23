@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeQuestionPageSize, positiveInt } from "../question-list-state";
 import { buildQueryParams } from "../question-query-params";
+import { resolveQuestionSafeLastPage } from "./use-question-pagination";
 
 describe("question pagination state", () => {
   it("reads valid positive page values and falls back to page 1", () => {
@@ -14,6 +15,12 @@ describe("question pagination state", () => {
     expect(normalizeQuestionPageSize("100")).toBe(100);
     expect(normalizeQuestionPageSize("30")).toBe(20);
     expect(normalizeQuestionPageSize(null)).toBe(20);
+  });
+
+  it("keeps the last page at least one", () => {
+    expect(resolveQuestionSafeLastPage(0)).toBe(1);
+    expect(resolveQuestionSafeLastPage(7)).toBe(7);
+    expect(resolveQuestionSafeLastPage(undefined)).toBe(1);
   });
 
   it("keeps filters, page, and page size in the list query contract", () => {

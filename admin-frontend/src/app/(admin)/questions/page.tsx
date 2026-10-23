@@ -71,7 +71,10 @@ import { useQuestionEditor } from "./hooks/use-question-editor";
 import { useQuestionFilterInteractions } from "./hooks/use-question-filter-interactions";
 import { useQuestionDetailNavigation } from "./hooks/use-question-detail-navigation";
 import { useQuestionSelection } from "./hooks/use-question-selection";
-import { useQuestionPagination } from "./hooks/use-question-pagination";
+import {
+  resolveQuestionSafeLastPage,
+  useQuestionPagination,
+} from "./hooks/use-question-pagination";
 import { useQuestionSubjectOptions } from "./hooks/use-question-subject-options";
 import { useQuestionMenus } from "./hooks/use-question-menus";
 import { useQuestionCopy } from "./hooks/use-question-copy";
@@ -182,6 +185,11 @@ export default function QuestionsPage() {
   const canDelete = hasPermission(permissions, "question:delete");
 
   const questions = useQuestionList(queryParams);
+  const safeLastPage = resolveQuestionSafeLastPage(questions.data?.total_pages);
+
+  useEffect(() => {
+    if (page > safeLastPage) setPage(safeLastPage);
+  }, [page, safeLastPage, setPage]);
 
   const items = useMemo(
     () => questions.data?.items ?? [],

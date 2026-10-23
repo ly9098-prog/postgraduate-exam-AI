@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   normalizeQuestionPageSize,
   positiveInt,
@@ -7,7 +7,11 @@ import {
 } from "../question-list-state";
 import { buildQueryParams } from "../question-query-params";
 
-export function useQuestionPagination(searchParams: URLSearchParams, totalPages?: number) {
+export function resolveQuestionSafeLastPage(totalPages: number | undefined): number {
+  return typeof totalPages === "number" ? Math.max(1, totalPages) : 1;
+}
+
+export function useQuestionPagination(searchParams: URLSearchParams) {
   const [filters, setFilters] = useState<QuestionListFilters>(() =>
     readQuestionListFilters(searchParams),
   );
@@ -19,12 +23,6 @@ export function useQuestionPagination(searchParams: URLSearchParams, totalPages?
     () => buildQueryParams(filters, page, pageSize),
     [filters, page, pageSize],
   );
-
-  useEffect(() => {
-    if (typeof totalPages !== "number") return;
-    const safeLastPage = Math.max(1, totalPages);
-    if (page > safeLastPage) setPage(safeLastPage);
-  }, [page, totalPages]);
 
   return {
     filters,
