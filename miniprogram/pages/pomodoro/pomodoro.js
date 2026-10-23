@@ -73,6 +73,7 @@ const { createConfirmEndTimerController } = require('./utils/confirm-end-timer-c
 const { createEndSessionController } = require('./utils/end-session-controller')
 const { createPauseFreeTimerController } = require('./utils/pause-free-timer-controller')
 const { createResumeFreeTimerController } = require('./utils/resume-free-timer-controller')
+const { createInterruptSessionController } = require('./utils/interrupt-session-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -241,6 +242,7 @@ Page({
   _endSessionController: null,
   _pauseFreeTimerController: null,
   _resumeFreeTimerController: null,
+  _interruptSessionController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1133,6 +1135,18 @@ Page({
     return this._resumeFreeTimerController
   },
 
+  _getInterruptSessionController() {
+    if (!this._interruptSessionController) {
+      this._interruptSessionController = createInterruptSessionController({
+        getSessionId: () => this._timerState.sessionId,
+        isFreeTimer: () => this.data.isFreeTimer,
+        showEndFreeConfirm: () => this._showEndFreeConfirm(),
+        showCountdownInterruptConfirm: () => this._showCountdownInterruptConfirm(),
+      })
+    }
+    return this._interruptSessionController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1270,14 +1284,7 @@ Page({
   },
 
   async interruptSession() {
-    if (!this._timerState.sessionId) return
-
-    if (this.data.isFreeTimer) {
-      this._showEndFreeConfirm()
-      return
-    }
-
-    this._showCountdownInterruptConfirm()
+    return this._getInterruptSessionController().interrupt()
   },
 
   /* ==================== Countdown Timer ==================== */

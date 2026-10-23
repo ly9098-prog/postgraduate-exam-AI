@@ -47,6 +47,7 @@ const MODULES = {
   'end-session-controller.js': [],
   'pause-free-timer-controller.js': ['./timer-math'],
   'resume-free-timer-controller.js': [],
+  'interrupt-session-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -66,7 +67,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2333
+const PAGE_MAX_LINES = 2340
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -109,6 +110,7 @@ const PAGE_METHODS = new Set([
   '_getEndSessionController', 'endSession',
   '_getPauseFreeTimerController', '_pauseFreeTimer',
   '_getResumeFreeTimerController', '_resumeFreeTimer',
+  '_getInterruptSessionController', 'interruptSession',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -680,6 +682,18 @@ function pageViolations(source) {
         if (methodName === '_resumeFreeTimer' &&
             !returnsControllerCall(node, '_getResumeFreeTimerController', 'resume', [])) {
           errors.push('resume free timer must delegate to its controller')
+        }
+        if (methodName === '_getInterruptSessionController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createInterruptSessionController',
+              '_interruptSessionController',
+            )) {
+          errors.push('interrupt session must lazily assign its controller')
+        }
+        if (methodName === 'interruptSession' &&
+            !returnsControllerCall(node, '_getInterruptSessionController', 'interrupt', [])) {
+          errors.push('interrupt session must delegate to its controller')
         }
       }
     }
