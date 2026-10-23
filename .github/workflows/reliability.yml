@@ -341,6 +341,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-pie-geometry.js \
             miniprogram/tests/test-pomodoro-stats-shade-color-cache.js \
             miniprogram/tests/test-pomodoro-stats-canvas-palette.js \
+            miniprogram/tests/test-pomodoro-stats-subject-items.js \
             miniprogram/tests/test-pomodoro-theme-controller.js \
             miniprogram/tests/test-pomodoro-end-confirm-snapshot.js \
             miniprogram/tests/test-pomodoro-active-sync-controller.js \
