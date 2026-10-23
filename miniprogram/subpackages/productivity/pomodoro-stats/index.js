@@ -28,6 +28,7 @@ const { reconcileFromServer } = require('./reconcile-controller')
 const { buildCumulativeSummaryPatch } = require('./cumulative-summary-patch')
 const { formatStudyDayRangeText } = require('./study-day-range-text')
 const { createSelectDateController } = require('./select-date-controller')
+const { createCumulativeRefreshController } = require('./cumulative-refresh-controller')
 
 const {
   getSubjectColor,
@@ -417,22 +418,25 @@ var pageConfig = {
   },
 
   async _refreshCumulativeSummary(startDate, silent) {
-    const start = String(startDate || '').trim()
-    const end = this.data._todayDate
-    if (!start || !end) return
-    const seq = (this._cumulativeRequestSeq || 0) + 1
-    this._cumulativeRequestSeq = seq
-    if (!silent) this.setData({ cumulativeLoading: true })
-    try {
-      const summary = await api.get('/pomodoro/range-summary', { start_date: start, end_date: end })
-      if (!this._alive || seq !== this._cumulativeRequestSeq || start !== this.data.cumulativeStartDate) return
-      this.setData(this._cumulativeSummaryPatch(summary, start))
-    } catch (e) {
-      if (!this._alive || seq !== this._cumulativeRequestSeq) return
-      console.error('加载累计专注失败', e)
-      this.setData({ cumulativeLoading: false })
-      if (!silent && wx.showToast) wx.showToast({ title: '累计统计加载失败', icon: 'none' })
+    await this._getCumulativeRefreshController().refresh(startDate, silent)
+  },
+
+  _getCumulativeRefreshController() {
+    if (!this._cumulativeRefreshController) {
+      this._cumulativeRefreshController = createCumulativeRefreshController({
+        isAlive: () => this._alive,
+        getTodayDate: () => this.data._todayDate,
+        getCumulativeStartDate: () => this.data.cumulativeStartDate,
+        getRequestSeq: () => this._cumulativeRequestSeq,
+        setRequestSeq: value => { this._cumulativeRequestSeq = value },
+        getRangeSummary: (start, end) => api.get('/pomodoro/range-summary', { start_date: start, end_date: end }),
+        buildSummaryPatch: (summary, start) => this._cumulativeSummaryPatch(summary, start),
+        setData: patch => this.setData(patch),
+        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
+        logError: (message, e) => console.error(message, e),
+      })
     }
+    return this._cumulativeRefreshController
   },
 
   onCumulativeStartChange(e) {
