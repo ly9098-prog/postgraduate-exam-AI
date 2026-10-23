@@ -377,6 +377,7 @@ jobs:
           node --test miniprogram/tests/test-review-submit-entry-controller.js
           node --test miniprogram/tests/test-review-next-retry-group-controller.js
           node --test miniprogram/tests/test-review-next-remote-batch-controller.js
+          node --test miniprogram/tests/test-review-next-group-controller.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
           node miniprogram/tests/test-render-invariant.js

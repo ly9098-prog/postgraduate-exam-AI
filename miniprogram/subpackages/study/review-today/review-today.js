@@ -31,6 +31,9 @@ const {
 const {
   createNextRemoteBatchController,
 } = require('./utils/next-remote-batch-controller')
+const {
+  createNextGroupController,
+} = require('./utils/next-group-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1165,18 +1168,19 @@ this.setData({ submittingGroup: false })
 }
 },
 async nextGroup() {
-this._clearMasterUndo()
-this._clearResultDockFadeTimer()
-if (this.data.resultTransitioning) return
-const flowSeq = ++this._flowRequestSeq
-this.setData({ resultTransitioning: true })
-if (!await this._syncReviewSessionDayIfNeeded()) {
-if (this._alive && flowSeq === this._flowRequestSeq) this.setData({ resultTransitioning: false })
-return
-}
-const currentGroups = this.data.groups
-const nextGroupIdx = this.data.currentGroupIdx + 1
-const nextRetryGroupController = this._nextRetryGroupController || (
+const nextGroupController = this._nextGroupController || (
+this._nextGroupController = createNextGroupController({
+getData: () => this.data,
+setData: (patch, callback) => this.setData(patch, callback),
+clearMasterUndo: () => this._clearMasterUndo(),
+clearResultDockFadeTimer: () => this._clearResultDockFadeTimer(),
+nextFlowSeq: () => ++this._flowRequestSeq,
+isPageAlive: () => this._alive,
+isFlowCurrent: seq => seq === this._flowRequestSeq,
+syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
+getCurrentGroupIdx: () => this.data.currentGroupIdx,
+getTodayRemainingCount: () => this.data.todayRemainingCount,
+retryGroupController: this._nextRetryGroupController || (
 this._nextRetryGroupController = createNextRetryGroupController({
 getGroups: () => this.data.groups,
 getSession: () => this._reviewSession,
@@ -1185,10 +1189,8 @@ syncAnsweredFlags: () => this._syncAnsweredFlags(),
 showQuestion: index => this._showQuestion(index),
 startReviewTimer: () => this._startReviewTimer(),
 })
-)
-if (nextRetryGroupController.enter(nextGroupIdx)) return
-if (this.data.todayRemainingCount > 0) {
-const nextRemoteBatchController = this._nextRemoteBatchController || (
+),
+remoteBatchController: this._nextRemoteBatchController || (
 this._nextRemoteBatchController = createNextRemoteBatchController({
 getBatchSize: () => this.data.reviewBatchSize,
 postNextBatch: payload => api.post('/review/today/next-batch', payload),
@@ -1209,23 +1211,13 @@ startReviewTimer: () => this._startReviewTimer(),
 showToast: options => wx.showToast(options),
 refreshOverviewStatsSilently: () => this.refreshOverviewStatsSilently(),
 })
+),
+logError: (message, error) => console.error(message, error),
+showToast: options => wx.showToast(options),
+showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
+})
 )
-try {
-const remoteBatch = await nextRemoteBatchController.next(flowSeq)
-if (remoteBatch.status !== 'complete') return
-} catch (e) {
-if (!this._alive || flowSeq !== this._flowRequestSeq) return
-console.error('获取下一组失败', e)
-wx.showToast({ title: '获取下一组失败', icon: 'none' })
-this.setData({ resultTransitioning: false })
-return
-}
-}
-this.setData({
-todayRemainingCount: 0,
-resultTransitioning: false,
-resultDockVisible: true,
-}, () => this._showResultDockAndRefreshTimer())
+await nextGroupController.next()
 },
 _clearResultDockFadeTimer() {
 if (this._resultDockFadeTimer) {
