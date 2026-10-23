@@ -26,6 +26,10 @@ export function useReviewUpdateMutation(
   return useMutation({
     mutationFn: () => executeReviewSaveRequest(input),
     onSuccess: (result) => {
+      queryClient.setQueryData(
+        ["import-question-detail", input.previewId],
+        result,
+      );
       feedback.onSaved(result);
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["import-question-detail", input.previewId] });

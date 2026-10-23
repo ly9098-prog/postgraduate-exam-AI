@@ -5,6 +5,7 @@ import {
   cloneReviewSegments,
   createReviewEditSession,
   createReviewPreviewState,
+  createReviewServerEditState,
   hasUnsavedReviewDrawerChanges,
   serializeReviewEditState,
   serializeReviewSegments,
@@ -97,8 +98,43 @@ describe("review drawer state", () => {
     expect(session.segmentSnapshot).toBe(serializeReviewSegments(segments));
   });
 
-  it("ignores all changes while not editing", () => {
-    expect(dirty({ ...editState, answer: "B" }, serializeReviewEditState(editState), [], "[]", false)).toBe(false);
+  it("detects view-mode draft changes but ignores inactive segment changes", () => {
+    expect(dirty(
+      editState, serializeReviewEditState(editState), [], "[]", false,
+    )).toBe(false);
+    expect(dirty(
+      { ...editState, answer: "B" },
+      serializeReviewEditState(editState), [], "[]", false,
+    )).toBe(true);
+    expect(dirty(
+      editState,
+      serializeReviewEditState(editState),
+      [{ type: "text", text: "inactive" }],
+      "[]",
+      false,
+    )).toBe(false);
+  });
+
+  it("rebases the view-mode snapshot when full detail replaces the queue brief", () => {
+    const detailItem = {
+      ...item,
+      parsed_analysis: "loaded from detail",
+      parsed_content: {
+        stem: "full detail stem",
+        segments: [{ type: "text", text: "detail" }],
+      },
+    } as unknown as ImportQuestionItem;
+    const serverState = createReviewServerEditState(detailItem);
+
+    expect(serverState.editSnapshot).toBe(serializeReviewEditState(serverState.editState));
+    expect(dirty(serverState.editState, serverState.editSnapshot, [], "[]", false)).toBe(false);
+    expect(dirty(
+      { ...serverState.editState, answer: "B" },
+      serverState.editSnapshot,
+      [],
+      "[]",
+      false,
+    )).toBe(true);
   });
 
   it("detects edit and segment changes independently with the existing null fallback", () => {

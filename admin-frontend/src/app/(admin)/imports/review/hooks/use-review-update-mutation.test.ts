@@ -39,6 +39,10 @@ describe("useReviewUpdateMutation", () => {
     const cache = client();
     const events: unknown[] = [];
     vi.mocked(executeReviewSaveRequest).mockResolvedValue(result);
+    vi.spyOn(cache, "setQueryData").mockImplementation((queryKey) => {
+      events.push(["cache", queryKey]);
+      return result;
+    });
     vi.spyOn(cache, "invalidateQueries").mockImplementation(async (filters) => {
       events.push(filters?.queryKey);
     });
@@ -57,6 +61,7 @@ describe("useReviewUpdateMutation", () => {
 
     await expect(hook.mutateAsync()).resolves.toBe(result);
     expect(events).toEqual([
+      ["cache", ["import-question-detail", 7]],
       ["saved", result],
       ["import-review-queue"],
       ["import-question-detail", 7],

@@ -16,13 +16,21 @@ export function cloneReviewSegments(segments: ReviewSegments | undefined): Revie
   return JSON.parse(JSON.stringify(segments)) as ReviewSegments;
 }
 
-export function createReviewPreviewState(item: ImportQuestionItem) {
+export function createReviewServerEditState(item: ImportQuestionItem) {
   const editState = editStateFromItem(item);
+  return {
+    editState,
+    editSnapshot: serializeReviewEditState(editState),
+  };
+}
+
+export function createReviewPreviewState(item: ImportQuestionItem) {
+  const serverState = createReviewServerEditState(item);
   return {
     previewId: item.id,
     completedItem: null,
-    editState,
-    editSnapshot: serializeReviewEditState(editState),
+    editState: serverState.editState,
+    editSnapshot: serverState.editSnapshot,
     segmentSnapshot: serializeReviewSegments(
       item.parsed_content?.segments as ReviewSegments | undefined,
     ),
@@ -54,10 +62,10 @@ export function hasUnsavedReviewDrawerChanges({
   editedSegments: ReviewSegments;
   segmentSnapshot: string;
 }): boolean {
-  if (!editing) return false;
   const hasEditStateChanges = Boolean(
     editState && serializeReviewEditState(editState) !== editSnapshot,
   );
+  if (!editing) return hasEditStateChanges;
   const hasSegmentChanges = serializeReviewSegments(editedSegments) !== segmentSnapshot;
   return hasEditStateChanges || hasSegmentChanges;
 }

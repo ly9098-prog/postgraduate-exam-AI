@@ -7,8 +7,10 @@ import {
   type ReviewActionApiRequest,
   type ReviewActionState,
 } from "../review-action-requests";
-
-type ReviewActionResult = Awaited<ReturnType<typeof executeReviewActionRequest>>;
+import {
+  buildReviewActionFeedback,
+  type ReviewActionFeedback,
+} from "../review-action-feedback";
 
 type ReviewActionMutationInput = {
   batchId: string;
@@ -19,7 +21,7 @@ type ReviewActionMutationInput = {
 };
 
 type ReviewActionMutationFeedback = {
-  onSuccess: (result: ReviewActionResult, action: ReviewActionState) => void;
+  onSuccess: (feedback: ReviewActionFeedback) => void;
   onReset: () => void;
   onError: (error: unknown) => void;
 };
@@ -53,8 +55,9 @@ export function useReviewActionMutation(
     }),
     onSuccess: (result, action) => {
       idempotencyKeysRef.current.clear();
-      feedback.onSuccess(result, action);
-      feedback.onReset();
+      const actionFeedback = buildReviewActionFeedback(result, action);
+      feedback.onSuccess(actionFeedback);
+      if (actionFeedback.resetSelection) feedback.onReset();
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["import-batches"] });
       if (action.action !== "reject" && action.action !== "batch-reject") {

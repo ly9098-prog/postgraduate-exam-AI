@@ -32,10 +32,12 @@ describe("review action feedback", () => {
     expect(feedback(singleResult, { action: "approve", id: 7 })).toEqual({
       message: "导入题目 #7 已通过审核。",
       closeDrawer: true,
+      resetSelection: true,
     });
     expect(feedback(singleResult, { action: "reject", id: 8 })).toEqual({
       message: "导入题目 #8 已驳回。",
       closeDrawer: true,
+      resetSelection: true,
     });
   });
 
@@ -43,10 +45,26 @@ describe("review action feedback", () => {
     expect(feedback(batchResult, { action: "batch-approve" })).toEqual({
       message: "批量审核通过部分完成：成功 2，失败 2（#9、#4）。",
       closeDrawer: false,
+      resetSelection: true,
     });
     expect(feedback(batchResult, { action: "batch-reject" })).toEqual({
       message: "批量驳回部分完成：成功 2，失败 2（#9、#4）。",
       closeDrawer: false,
+      resetSelection: true,
+    });
+  });
+
+  it("keeps a fully failed batch selected and reports total failure", () => {
+    expect(feedback({
+      affected_count: 0,
+      errors: [
+        { id: 9, message: "conflict" },
+        { id: 4, message: "forbidden" },
+      ],
+    }, { action: "batch-approve" })).toEqual({
+      message: "批量审核通过全部失败：成功 0，失败 2（#9、#4）。",
+      closeDrawer: false,
+      resetSelection: false,
     });
   });
 
@@ -58,12 +76,14 @@ describe("review action feedback", () => {
     }, { action: "batch-approve" })).toEqual({
       message: "批量审核通过完成，影响 3 条导入题目。",
       closeDrawer: false,
+      resetSelection: true,
     });
     expect(feedback({
       status: "rejected",
     }, { action: "batch-reject" })).toEqual({
       message: "批量驳回完成，影响 0 条导入题目。",
       closeDrawer: false,
+      resetSelection: true,
     });
   });
 
@@ -75,6 +95,7 @@ describe("review action feedback", () => {
     }, { action: "batch-approve" })).toEqual({
       message: "批量审核通过完成，影响 6 条导入题目。",
       closeDrawer: false,
+      resetSelection: true,
     });
   });
 
@@ -84,6 +105,7 @@ describe("review action feedback", () => {
     } as unknown as ReviewActionState)).toEqual({
       message: "操作已完成，但未识别的审核动作；请刷新后确认审核结果。",
       closeDrawer: false,
+      resetSelection: true,
     });
   });
 
@@ -95,6 +117,7 @@ describe("review action feedback", () => {
     }, { action: "low-risk-batch-approve" })).toEqual({
       message: "低风险批量通过完成：通过 4 题，跳过 2 题（部分高风险/需检查题已跳过）",
       closeDrawer: false,
+      resetSelection: true,
     });
     expect(feedback({
       affected_count: 5,
@@ -103,6 +126,7 @@ describe("review action feedback", () => {
     }, { action: "low-risk-batch-approve" })).toEqual({
       message: "低风险批量通过完成：通过 5 题，跳过 0 题",
       closeDrawer: false,
+      resetSelection: true,
     });
   });
 });

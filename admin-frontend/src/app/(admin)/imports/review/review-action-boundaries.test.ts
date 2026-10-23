@@ -11,6 +11,13 @@ const modules = [
     ],
   },
   {
+    path: "./hooks/use-review-question-detail.ts",
+    imports: [
+      "react", "@tanstack/react-query", "@/lib/api/types",
+      "../review-detail-session",
+    ],
+  },
+  {
     path: "./hooks/use-review-update-mutation.ts",
     imports: ["@tanstack/react-query", "@/lib/api/types", "../review-save-request"],
   },
@@ -109,6 +116,10 @@ const modules = [
     imports: ["@/lib/api/types", "./review-edit-state"],
   },
   {
+    path: "./review-detail-session.ts",
+    imports: [],
+  },
+  {
     path: "./review-batch-complete-draft.ts",
     imports: [],
   },
@@ -201,6 +212,13 @@ describe("review action feature boundaries", () => {
 
   it("keeps the review page free of inline action mutation ownership", () => {
     const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    expect(source).toContain("createReviewServerEditState");
+    expect(source).toContain("useReviewQuestionDetail");
+    expect(source).toContain("syncServerEditState(detail.data)");
+    expect(source).toContain("syncedDetailRef.current.clear();\n    beginDetailSession(item.id);");
+    expect(source).toContain("previewDetailReady");
+    expect(source).not.toContain("if (!previewId || !canWrite) return;");
+    expect(source).not.toContain("setEditState(editStateFromItem(");
     expect(source).not.toContain("executeReviewActionRequest");
     expect(source).not.toContain("batchIdempotencyKeysRef");
     expect(source).not.toContain("buildMultiBlankSavePayload");

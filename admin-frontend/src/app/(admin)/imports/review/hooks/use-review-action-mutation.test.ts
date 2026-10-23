@@ -55,7 +55,7 @@ describe("useReviewActionMutation", () => {
       rejectReason: "",
       request,
     }, {
-      onSuccess: (value, intent) => { events.push(["success", value, intent]); },
+      onSuccess: (feedback) => { events.push(["success", feedback]); },
       onReset: () => { events.push("reset"); },
       onError: vi.fn(),
     }));
@@ -68,12 +68,45 @@ describe("useReviewActionMutation", () => {
       request,
     }));
     expect(events).toEqual([
-      ["success", result, action],
+      ["success", {
+        message: "批量审核通过完成，影响 2 条导入题目。",
+        closeDrawer: false,
+        resetSelection: true,
+      }],
       "reset",
       ["import-review-queue"],
       ["import-batches"],
       ["questions"],
     ]);
+  });
+
+  it("keeps selection and confirmation state when every batch item fails", async () => {
+    const cache = client();
+    const onSuccess = vi.fn();
+    const onReset = vi.fn();
+    const failed = {
+      affected_count: 0,
+      errors: [{ id: 2, message: "conflict" }],
+    };
+    vi.mocked(executeReviewActionRequest).mockResolvedValue(failed);
+    const invalidate = vi.spyOn(cache, "invalidateQueries");
+    const hook = renderHook(cache, () => useReviewActionMutation({
+      batchId: "",
+      batchIdParam: "",
+      selectedIds: new Set([2]),
+      rejectReason: "",
+      request,
+    }, { onSuccess, onReset, onError: vi.fn() }));
+
+    await hook.mutateAsync(action);
+
+    expect(onSuccess).toHaveBeenCalledWith({
+      message: "批量审核通过全部失败：成功 0，失败 1（#2）。",
+      closeDrawer: false,
+      resetSelection: false,
+    });
+    expect(onReset).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledTimes(3);
   });
 
   it("does not reset or invalidate when the request rejects", async () => {

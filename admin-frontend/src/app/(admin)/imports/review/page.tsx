@@ -29,7 +29,7 @@ import {
   type MultiBlankAction,
   type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
-import { editStateFromItem, isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
+import { isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
 import { ReviewAnswerPreview } from "./components/review-answer-preview";
 import { ReviewStemEditor } from "./components/review-stem-editor";
 import {
@@ -43,6 +43,7 @@ import { getReviewListBadges, getReviewTableBadges } from "./review-queue-badges
 import {
   createReviewEditSession,
   createReviewPreviewState,
+  createReviewServerEditState,
   hasUnsavedReviewDrawerChanges,
 } from "./review-drawer-state";
 import {
@@ -78,6 +79,7 @@ import {
   validateBatchCompleteRequest,
 } from "./review-batch-complete-request";
 import { useReviewActionMutation } from "./hooks/use-review-action-mutation";
+import { useReviewQuestionDetail } from "./hooks/use-review-question-detail";
 import { useReviewUpdateMutation } from "./hooks/use-review-update-mutation";
 import { useReviewAnswerMutations } from "./hooks/use-review-answer-mutations";
 import { useReviewCompleteMutation } from "./hooks/use-review-complete-mutation";
@@ -280,6 +282,11 @@ export default function ImportReviewPage() {
   const [segmentUploading, setSegmentUploading] = useState(-1);
   const editSnapshotRef = useRef("");
   const segmentSnapshotRef = useRef("");
+  const syncServerEditState = useCallback((item: ImportQuestionItem) => {
+    const serverState = createReviewServerEditState(item);
+    setEditState(serverState.editState);
+    editSnapshotRef.current = serverState.editSnapshot;
+  }, []);
 
   const [viewMode, setViewMode] = useState<"list" | "table">("list");
   const [showBatchComplete, setShowBatchComplete] = useState(false);
@@ -377,16 +384,16 @@ export default function ImportReviewPage() {
 
   const items = queue.data?.items ?? [];
 
-  // Fetch full detail when drawer opens
-  const detail = useQuery({
-    queryKey: ["import-question-detail", previewId],
-    queryFn: () => apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`),
-    enabled: previewId !== null,
-    retry: false,
-  });
+  const {
+    detail,
+    detailReady: previewDetailReady,
+    beginSession: beginDetailSession,
+    endSession: endDetailSession,
+  } = useReviewQuestionDetail(previewId, apiRequest);
 
   const queuedPreviewItem = items.find((item) => item.id === previewId) ?? null;
-  const previewItem = detail.data ?? (completedItem?.id === previewId ? completedItem : queuedPreviewItem);
+  const previewItem = (previewDetailReady ? detail.data : null) ??
+    (completedItem?.id === previewId ? completedItem : queuedPreviewItem);
 
   // Derive option visual model from preview item data
   const optionVisualModel: OptionVisualModel = useMemo(() => {
@@ -413,13 +420,13 @@ export default function ImportReviewPage() {
 
   // When full detail loads for the first time after drawer open, sync editState
   useEffect(() => {
-    if (detail.data && previewId === detail.data.id) {
+    if (previewDetailReady && detail.data && previewId === detail.data.id && !editing) {
       if (!syncedDetailRef.current.has(previewId)) {
         syncedDetailRef.current.add(previewId);
-        setEditState(editStateFromItem(detail.data));
+        syncServerEditState(detail.data);
       }
     }
-  }, [detail.data, previewId]);
+  }, [detail.data, editing, previewDetailReady, previewId, syncServerEditState]);
 
   const subjectsQuery = useQuery({
     queryKey: ["import-subject-options"],
@@ -485,7 +492,7 @@ export default function ImportReviewPage() {
   }, {
     onSaved: (result) => {
       updateMessage(`导入题目 #${result.id} 已保存。`);
-      setEditState(editStateFromItem(result));
+      syncServerEditState(result);
       setEditedSegments(null);
       setCompletedItem(result);
       syncedDetailRef.current.delete(result.id);
@@ -513,7 +520,7 @@ export default function ImportReviewPage() {
       syncedDetailRef.current.add(result.item.id);
       setPreviewId(result.item.id);
       setCompletedItem(result.item);
-      setEditState(editStateFromItem(result.item));
+      syncServerEditState(result.item);
     },
     onError: (error) => updateMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。"),
   });
@@ -634,7 +641,7 @@ export default function ImportReviewPage() {
     onDetailSynced: (refreshed) => {
       syncedDetailRef.current.add(refreshed.id);
       setCompletedItem(refreshed);
-      setEditState(editStateFromItem(refreshed));
+      syncServerEditState(refreshed);
     },
     onError: (error) => {
       updateMessage(error instanceof Error ? error.message : "批量补全失败，请稍后重试。");
@@ -692,6 +699,7 @@ export default function ImportReviewPage() {
   };
 
   const resetFilterScopedReviewState = () => {
+    endDetailSession();
     setPreviewId(null);
     setCompletedItem(null);
     setEditState(null);
@@ -724,6 +732,8 @@ export default function ImportReviewPage() {
       }
     }
     const preview = createReviewPreviewState(item);
+    syncedDetailRef.current.clear();
+    beginDetailSession(item.id);
     setPreviewId(preview.previewId);
     setCompletedItem(null);
     setEditState(preview.editState);
@@ -738,6 +748,7 @@ export default function ImportReviewPage() {
     if (hasUnsavedDraft()) {
       if (!window.confirm("有未保存的修改，确定关闭吗？")) return;
     }
+    endDetailSession();
     setPreviewId(null);
     setCompletedItem(null);
     setEditState(null);
@@ -745,7 +756,7 @@ export default function ImportReviewPage() {
     setEditing(false);
     syncedDetailRef.current.clear();
   }, [
-    completeMutation.isPending, hasUnsavedDraft, segmentUploading,
+    completeMutation.isPending, endDetailSession, hasUnsavedDraft, segmentUploading,
     setEditState, setEditing, setEditedSegments,
   ]);
 
@@ -759,8 +770,8 @@ export default function ImportReviewPage() {
   }, [previewId, closeDrawer]);
 
   const startEditing = () => {
-    if (!previewId || !canWrite) return;
-    const segs = previewItem?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
+    if (!previewId || !canWrite || !previewDetailReady) return;
+    const segs = detail.data?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
     const session = createReviewEditSession(editState, segs);
     setEditedSegments(session.editedSegments);
     segmentSnapshotRef.current = session.segmentSnapshot;
@@ -770,7 +781,11 @@ export default function ImportReviewPage() {
 
   const cancelEditing = () => {
     if (hasUnsavedDraft() && !window.confirm("有未保存的修改，确定取消编辑吗？")) return;
-    setEditState(previewItem ? editStateFromItem(previewItem) : null);
+    if (previewItem) {
+      syncServerEditState(previewItem);
+    } else {
+      setEditState(null);
+    }
     setEditedSegments(null);
     setEditing(false);
   };
@@ -1818,7 +1833,7 @@ export default function ImportReviewPage() {
                         )}
                         {completeMutation.isPending ? "审校中" : "AI 审校"}
                       </button>
-                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={!canWrite || segmentUploading >= 0} onClick={startEditing}>
+                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={!canWrite || !previewDetailReady || segmentUploading >= 0} onClick={startEditing}>
                         <FileText className="h-3.5 w-3.5" />
                         编辑
                       </Button>
