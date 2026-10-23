@@ -565,7 +565,7 @@ t('onShow keeps a valid completion marker authoritative until dismissal', () => 
 
 console.log('\n--- Break restore ---')
 const startBreak = method('_startBreak')
-const restoreBreak = method('_restoreBreak')
+const restoreBreak = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/break-restore-controller.js'), 'utf8')
 t('break restore preserves original start time and total duration', () => {
   assert.ok(src.includes('breakStartTime + totalMs - api.now()'))
   assert.ok(restoreBreak.includes('startTime: Number(saved.startTime)'))
@@ -573,7 +573,7 @@ t('break restore preserves original start time and total duration', () => {
 })
 t('break progress is based on original total instead of rebasing to remaining', () => {
   assert.ok(src.includes('this._timerState.progress = remainingMs / totalMs'))
-  assert.ok(!restoreBreak.includes('_startBreak(remaining'))
+  assert.ok(!restoreBreak.includes('startBreak(remaining'))
 })
 t('onShow restores break before pending network synchronization', () => {
   assert.ok(showOptions.includes('recoverActive: pending => this._recoverActiveSession(pending, activeSyncSeq)'))

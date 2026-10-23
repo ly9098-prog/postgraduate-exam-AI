@@ -55,6 +55,7 @@ const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
 const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
+const { createBreakRestoreController } = require('./utils/break-restore-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -205,6 +206,7 @@ Page({
   _pauseToggleController: null,
   _resumeErrorController: null,
   _celebrationDismissController: null,
+  _breakRestoreController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -2078,24 +2080,20 @@ Page({
   },
 
   _restoreBreak() {
-    try {
-      const saved = wx.getStorageSync('pomodoro_break')
-      if (!saved || !saved.startTime || !saved.totalSec) return false
-      const totalMs = Math.max(1, Number(saved.totalSec) * 1000)
-      const remainingMs = Math.max(0, Number(saved.startTime) + totalMs - api.now())
-      if (remainingMs <= 0) {
-        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-        this._resetToIdle()
-        return false
-      }
-      this._startBreak(Number(saved.totalSec), {
-        startTime: Number(saved.startTime),
-        remainingMs,
+    return this._getBreakRestoreController().restore()
+  },
+
+  _getBreakRestoreController() {
+    if (!this._breakRestoreController) {
+      this._breakRestoreController = createBreakRestoreController({
+        getStorageSync: key => wx.getStorageSync(key),
+        now: () => api.now(),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        resetIdle: () => this._resetToIdle(),
+        startBreak: (totalSec, breakOptions) => this._startBreak(totalSec, breakOptions),
       })
-      return true
-    } catch (_) {
-      return false
     }
+    return this._breakRestoreController
   },
 
   /* ==================== Progress Ring (Canvas 2D) ==================== */

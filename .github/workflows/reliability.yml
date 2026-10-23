@@ -333,7 +333,8 @@ jobs:
             miniprogram/tests/test-pomodoro-active-sync-controller.js \
             miniprogram/tests/test-pomodoro-pause-toggle-controller.js \
             miniprogram/tests/test-pomodoro-resume-error-controller.js \
-            miniprogram/tests/test-pomodoro-celebration-dismiss-controller.js
+            miniprogram/tests/test-pomodoro-celebration-dismiss-controller.js \
+            miniprogram/tests/test-pomodoro-break-restore-controller.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js
