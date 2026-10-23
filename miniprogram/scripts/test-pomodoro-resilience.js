@@ -17,6 +17,7 @@ function t(name, fn) {
 const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
 const countdownRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/countdown-session-restore-controller.js'), 'utf8')
 const freeRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'), 'utf8')
+const startSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-session-controller.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
 const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
@@ -442,19 +443,19 @@ t('complete endpoint exposes early completion as a 409 machine-readable conflict
 })
 
 console.log('\n--- Start lifecycle guards ---')
-const startSession = method('startSession')
-const startFree = method('_startFreeSession')
+const startSession = startSessionSrc
+const startFree = startSessionSrc
 const postStart = method('_postPomodoroStartWithReconciliation')
 const reconcileStart = method('_reconcileUnknownStartAttempt')
 t('start ceremony uses a lifecycle generation', () => assert.ok(startSession.includes('_startRequestSeq')))
 t('start has a dedicated in-flight lock against rapid double taps', () => {
-  assert.ok(startSession.includes('this._startInFlight'))
+  assert.ok(startSession.includes('page._startInFlight'))
   assert.ok(startSession.includes('finally'))
-  assert.ok(startSession.includes('this._startInFlight = false'))
+  assert.ok(startSession.includes('page._startInFlight = false'))
 })
 t('start ceremony aborts before POST after page hide', () => {
-  assert.ok(startSession.includes('!this._pageVisible || startSeq !== this._startRequestSeq'))
-  assert.ok(startSession.indexOf('!this._pageVisible || startSeq !== this._startRequestSeq') < startSession.indexOf('_postPomodoroStartWithReconciliation'))
+  assert.ok(startSession.includes('if (isStale(startSeq, options) || page.data.phase !== options.phases.CEREMONY) return'))
+  assert.ok(startSession.indexOf('if (isStale(startSeq, options) || page.data.phase !== options.phases.CEREMONY) return') < startSession.indexOf('_postPomodoroStartWithReconciliation'))
 })
 t('late start response is queued for interrupt instead of becoming a ghost session', () => {
   assert.ok(postStart.includes("'interrupt'"))
@@ -501,8 +502,8 @@ t('leaving during an uncertain start only cancels the exact idempotent session',
   assert.ok(reconcileStart.includes('_matchesUnknownStartAttempt(session, attempt)'))
 })
 t('new starts reconcile any unresolved prior idempotency key before creating another', () => {
-  assert.ok(startSession.includes('const unresolvedStart = await this._reconcileUnknownStartAttempt()'))
-  assert.ok(startSession.includes("unresolvedStart === 'offline'"))
+  assert.ok(startSession.includes('const unresolved = await page._reconcileUnknownStartAttempt()'))
+  assert.ok(startSession.includes("unresolved === 'offline'"))
   assert.ok(startSession.indexOf('_reconcileUnknownStartAttempt()') < startSession.indexOf('_postPomodoroStartWithReconciliation'))
 })
 t('onHide invalidates in-flight start requests', () => assert.ok(onHide.includes('_startRequestSeq = (this._startRequestSeq || 0) + 1')))

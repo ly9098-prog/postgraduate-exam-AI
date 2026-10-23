@@ -40,6 +40,7 @@ const {
   createCountdownSessionRestoreController,
 } = require('./utils/countdown-session-restore-controller')
 const { createFreeSessionRestoreController } = require('./utils/free-session-restore-controller')
+const { createStartSessionController } = require('./utils/start-session-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -189,6 +190,7 @@ Page({
   _statsRequestSeq: 0,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
+  _startSessionController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -830,148 +832,29 @@ Page({
 
   /* ==================== Start Ceremony ==================== */
 
-  async startSession() {
-    // A real in-flight lock is separate from lifecycle generations. A rapid
-    // double tap must not invalidate the first successful /start response and
-    // then enqueue an interrupt for the very session the UI is about to restore.
-    if (this._startInFlight || this.data.phase === PHASE.CEREMONY || this.data.phase === PHASE.RUNNING) return
-    this._startInFlight = true
-
-    const startSeq = (this._startRequestSeq || 0) + 1
-    this._startRequestSeq = startSeq
-
-    try {
-      // Never overwrite an unresolved idempotent start with a new client key.
-      // Replaying the previous key either restores that exact session or proves
-      // deterministically that no such start exists.
-      const unresolvedStart = await this._reconcileUnknownStartAttempt()
-      if (!this._pageVisible || startSeq !== this._startRequestSeq) return
-      if (unresolvedStart === 'offline') {
-        wx.showToast({ title: '上次启动结果待确认，请联网后重试', icon: 'none' })
-        return
-      }
-      if (unresolvedStart === 'storage_error') {
-        this._showPomodoroPersistenceError()
-        return
-      }
-      if (unresolvedStart === 'restored' || unresolvedStart === 'cancelled') return
-
-      // Flush any earlier local actions first. A terminal complete/interrupt that is
-      // still pending would otherwise make /start collide with the old active row.
-      const pendingQueue = this._getPendingPomodoroSyncQueue()
-      if (pendingQueue === null) {
-        this._showPomodoroPersistenceError()
-        return
-      }
-      if (pendingQueue.length) {
-        const synced = await this._retryPendingPomodoroSync()
-        if (!this._pageVisible || startSeq !== this._startRequestSeq) return
-        if (!synced) {
-          wx.showToast({ title: '上次专注尚未同步，请联网后重试', icon: 'none' })
-          return
-        }
-      }
-
-      if (!this.data.selectedSubjectId || !this.data.selectedSubject) {
-        wx.showToast({ title: '请选择学习科目', icon: 'none' })
-        return
-      }
-      if (this.data.subjectsError) {
-        wx.showToast({ title: '科目加载异常，请重试', icon: 'none' })
-        return
-      }
-
-      if (this.data.selectedPreset === 'free') {
-        await this._startFreeSession(startSeq)
-        return
-      }
-
-      this.setData({ phase: PHASE.CEREMONY })
-      await new Promise(r => setTimeout(r, this.data.selectedPreset === 'debug' ? 1000 : 2500))
-      if (!this._pageVisible || startSeq !== this._startRequestSeq || this.data.phase !== PHASE.CEREMONY) return
-
-      const startResult = await this._postPomodoroStartWithReconciliation({
-        subject_id: this.data.selectedSubjectId,
-        allocation_mode: this.data.allocationMode,
-        chapter_id: this.data.fromChapterId || null,
-        preset: this.data.selectedPreset,
-        work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
-        break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
-      }, startSeq)
-      if (startResult.handled || !startResult.session) return
-      pomodoroTaskTypes.recordSession(startResult.session, this.data.selectedTaskType)
-      this._beginCountdown(startResult.session)
-    } catch (e) {
-      if (!this._pageVisible || startSeq !== this._startRequestSeq) return
-      const detail = (e && (e.detail || e.message || '')) || ''
-      const isActiveConflict = (e && e.statusCode === 409) || /active|running|进行中/.test(detail)
-      if (isActiveConflict) {
-        wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
-        const active = await this._fetchActiveSession()
-        if (this._pageVisible && startSeq === this._startRequestSeq && this._isPomodoroStorageError(active)) {
-          this._showPomodoroPersistenceError()
-          this.setData({ phase: PHASE.IDLE })
-        } else if (this._pageVisible && startSeq === this._startRequestSeq && active) {
-          if (this._restoreSession(active) === false) this.setData({ phase: PHASE.IDLE })
-        } else if (this._pageVisible && startSeq === this._startRequestSeq) {
-          this.setData({ phase: PHASE.IDLE })
-        }
-      } else {
-        wx.showToast({ title: '启动失败', icon: 'none' })
-        this.setData({ phase: PHASE.IDLE })
-      }
-    } finally {
-      this._startInFlight = false
+  _getStartSessionController() {
+    if (!this._startSessionController) {
+      this._startSessionController = createStartSessionController({
+        page: this,
+        phases: PHASE,
+        ceremonyDelayMs: 2500,
+        debugCeremonyDelayMs: 1000,
+        wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+        showToast: payload => wx.showToast(payload),
+        pomodoroTaskTypes,
+      })
     }
+    return this._startSessionController
+  },
+
+  startSession() {
+    return this._getStartSessionController().start()
   },
 
   /* ==================== Free Timer ==================== */
 
-  async _startFreeSession(existingStartSeq) {
-    const startSeq = existingStartSeq || ((this._startRequestSeq || 0) + 1)
-    if (!existingStartSeq) this._startRequestSeq = startSeq
-
-    const pendingQueue = this._getPendingPomodoroSyncQueue()
-    if (pendingQueue === null) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-    if (pendingQueue.length) {
-      const synced = await this._retryPendingPomodoroSync()
-      if (!this._pageVisible || startSeq !== this._startRequestSeq) return
-      if (!synced) {
-        wx.showToast({ title: '上次专注尚未同步，请联网后重试', icon: 'none' })
-        return
-      }
-    }
-    try {
-      const startResult = await this._postPomodoroStartWithReconciliation({
-        subject_id: this.data.selectedSubjectId,
-        allocation_mode: this.data.allocationMode,
-        chapter_id: this.data.fromChapterId || null,
-        preset: 'free',
-        work_duration: 0,
-        break_duration: 0,
-      }, startSeq)
-      if (startResult.handled || !startResult.session) return
-      pomodoroTaskTypes.recordSession(startResult.session, this.data.selectedTaskType)
-      this._beginFreeTimer(startResult.session)
-    } catch (e) {
-      if (!this._pageVisible || startSeq !== this._startRequestSeq) return
-      const detail = (e && (e.detail || e.message || '')) || ''
-      const isActiveConflict = (e && e.statusCode === 409) || /active|running|进行中/.test(detail)
-      if (isActiveConflict) {
-        wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
-        const active = await this._fetchActiveSession()
-        if (this._pageVisible && startSeq === this._startRequestSeq && this._isPomodoroStorageError(active)) {
-          this._showPomodoroPersistenceError()
-        } else if (this._pageVisible && startSeq === this._startRequestSeq && active) {
-          this._restoreSession(active)
-        }
-      } else {
-        wx.showToast({ title: '启动失败，请重试', icon: 'none' })
-      }
-    }
+  _startFreeSession(existingStartSeq) {
+    return this._getStartSessionController().startFree(existingStartSeq)
   },
 
   _beginFreeTimer(session) {

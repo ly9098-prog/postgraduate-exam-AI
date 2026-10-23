@@ -322,7 +322,8 @@ jobs:
             miniprogram/tests/test-pomodoro-pending-sync.js \
             miniprogram/tests/test-pomodoro-timer-math.js \
             miniprogram/tests/test-pomodoro-countdown-session-restore-controller.js \
-            miniprogram/tests/test-pomodoro-free-session-restore-controller.js
+            miniprogram/tests/test-pomodoro-free-session-restore-controller.js \
+            miniprogram/tests/test-pomodoro-start-session-controller.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js

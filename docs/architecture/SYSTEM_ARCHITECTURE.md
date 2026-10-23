@@ -46,7 +46,7 @@
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-question-preview.tsx` | 详情题干和选项的渲染组合复用内容渲染器、多空与图片预览；页面保留运行时问题去重状态，组件保留内容回退、已消费资产过滤与多空优先级 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-answer-preview.tsx`、`review-display-text.ts` | 答案状态、来源、普通/多空答案与解析由展示组件负责；来源定位与答案来源共用原有文本有效性规则，页面继续持有审核数据和编辑草稿 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-stem-editor.tsx` | 题干输入和结构化表格编辑组合复用既有表格规范化/编辑器；回调按原片段索引更新或移除，页面保留草稿、片段状态及保存生命周期 |
-| `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js`、`utils/countdown-session-restore-controller.js`、`utils/free-session-restore-controller.js` | 时间计算、存储异常适配、待同步队列及两种计时模式的冷恢复分别由无页面依赖模块负责；两个恢复 controller 只经显式能力回调访问页面，并由页面适配壳创建和委托。Page 仍负责 `api.now()` 注入、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
+| `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js`、`utils/countdown-session-restore-controller.js`、`utils/free-session-restore-controller.js`、`utils/start-session-controller.js` | 时间计算、存储异常适配、待同步队列、两种计时模式的冷恢复及启动仪式分别由无页面依赖模块负责；恢复 controller 只经显式能力回调访问页面并由适配壳创建/委托，启动 controller 承接启动锁、未知启动前置、pending flush、free/倒计时分流、ceremony、409 active 恢复和错误收口，页面保留懒创建与单次委托。Page 仍负责 `api.now()` 注入、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
 
 这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；GET 发题入口已收敛，提交链路和番茄钟剩余 Page controller 仍待后续治理。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列与两个冷恢复 controller 不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。
 

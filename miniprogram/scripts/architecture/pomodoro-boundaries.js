@@ -18,6 +18,7 @@ const MODULES = {
   'subject-options.js': [],
   'countdown-session-restore-controller.js': [],
   'free-session-restore-controller.js': [],
+  'start-session-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -37,14 +38,15 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2950
+const PAGE_MAX_LINES = 2833
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
   '_hidePersistenceOptions', '_getSyncRetryController', '_registerNetworkStatusListener',
   '_unregisterNetworkStatusListener', '_isRetryablePomodoroSyncError',
   '_clearPendingPomodoroSyncRetryTimer', '_schedulePendingPomodoroSyncRetry',
-  '_restoreSession', '_restoreFreeSession',
+  '_restoreSession', '_restoreFreeSession', '_getStartSessionController',
+  'startSession', '_startFreeSession',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -169,6 +171,18 @@ function pageViolations(source) {
             errors.push('countdown restore must dispatch free sessions before controller delegation')
           }
         }
+        if (methodName === '_getStartSessionController' &&
+            !hasStartControllerAccessor(node)) {
+          errors.push('start ceremony must lazily assign its controller')
+        }
+        if (methodName === 'startSession' &&
+            !returnsStartControllerCall(node, 'start')) {
+          errors.push('startSession must delegate to its controller')
+        }
+        if (methodName === '_startFreeSession' &&
+            !returnsStartControllerCall(node, 'startFree', 'existingStartSeq')) {
+          errors.push('free start must delegate to its controller')
+        }
       }
     }
   }
@@ -292,6 +306,37 @@ function hasControllerWiring(method, factoryName, propertyName, options) {
   const wiring = controllerWiring(method, factoryName, propertyName, options)
   return wiring.assigned && wiring.delegated && wiring.assignedBeforeDelegate &&
     wiring.shellMatches
+}
+
+function hasStartControllerAccessor(method) {
+  const statements = ts.isBlock(method.body) ? method.body.statements : []
+  return statements.length === 2 &&
+    isGuardedControllerAssignment(
+      statements[0],
+      'createStartSessionController',
+      '_startSessionController',
+    ) &&
+    ts.isReturnStatement(statements[1]) &&
+    isThisProperty(statements[1].expression, '_startSessionController')
+}
+
+function returnsStartControllerCall(method, delegateName, expectedArgument) {
+  const statements = ts.isBlock(method.body) ? method.body.statements : []
+  if (statements.length !== 1 || !ts.isReturnStatement(statements[0])) return false
+  const call = statements[0].expression
+  if (!ts.isCallExpression(call) ||
+      !ts.isPropertyAccessExpression(call.expression) ||
+      call.expression.name.text !== delegateName ||
+      !ts.isCallExpression(call.expression.expression) ||
+      !ts.isPropertyAccessExpression(call.expression.expression.expression) ||
+      call.expression.expression.expression.expression.kind !== ts.SyntaxKind.ThisKeyword ||
+      call.expression.expression.expression.name.text !== '_getStartSessionController') {
+    return false
+  }
+  if (!expectedArgument) return call.arguments.length === 0
+  return call.arguments.length === 1 &&
+    ts.isIdentifier(call.arguments[0]) &&
+    call.arguments[0].text === expectedArgument
 }
 
 function scanPomodoro(root = ROOT, read = filename => fs.readFileSync(filename, 'utf8')) {

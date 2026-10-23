@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 28)
+  assert.equal(result.modules, 29)
   assert.equal(result.edges, 4)
 })
 
@@ -201,6 +201,29 @@ test('countdown restore dispatcher must create and delegate via AST calls', () =
     .includes('countdown restore shell must return exactly one guarded controller delegation'))
 })
 
+test('start ceremony shell must lazily reuse its controller for both modes', () => {
+  const unassigned = pageSource.replace(
+    'this._startSessionController = createStartSessionController({',
+    'void createStartSessionController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('start ceremony must lazily assign its controller'))
+
+  const detachedStart = pageSource.replace(
+    'return this._getStartSessionController().start()',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detachedStart)
+    .includes('startSession must delegate to its controller'))
+
+  const detachedFree = pageSource.replace(
+    'return this._getStartSessionController().startFree(existingStartSeq)',
+    'return this._getStartSessionController().start()'
+  )
+  assert.ok(pageViolations(detachedFree)
+    .includes('free start must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -213,6 +236,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 28)
+    assert.equal(result.modules, 29)
   }
 })
