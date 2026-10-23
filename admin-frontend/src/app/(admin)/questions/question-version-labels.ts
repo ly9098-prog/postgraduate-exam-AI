@@ -8,6 +8,13 @@ export type VersionDetailMap = {
   compareDetail: { data?: QuestionVersionDetail | null; isFetching: boolean };
 };
 
+export type QuestionVersionLabels = {
+  baseVersionLabel: string;
+  compareVersionLabel: string;
+  versionComparisonLoading: boolean;
+  pendingVersionLabel: string | null;
+};
+
 export function buildVersionLabels(map: VersionDetailMap) {
   const { base, compare, baseDetail, compareDetail } = map;
   const baseVersionLabel =
@@ -33,5 +40,10 @@ export function buildVersionLabels(map: VersionDetailMap) {
       : typeof compare === "number" && compareDetail.isFetching
         ? `v${compare}`
         : null;
-  return { baseVersionLabel, compareVersionLabel, versionComparisonLoading, pendingVersionLabel };
+  return {
+    baseVersionLabel,
+    compareVersionLabel,
+    versionComparisonLoading,
+    pendingVersionLabel,
+  } satisfies QuestionVersionLabels;
 }
