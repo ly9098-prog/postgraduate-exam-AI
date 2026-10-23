@@ -36,6 +36,7 @@ const { createPieLabelRevealController } = require('./pie-label-reveal-controlle
 const { createCancelWorkController } = require('./cancel-work-controller')
 const overviewMapping = require('./overview-mapping')
 const { buildLoadViewState } = require('./load-view-state')
+const { buildDateViewState } = require('./date-view-state')
 
 const {
   getSubjectColor,
@@ -957,39 +958,39 @@ var pageConfig = {
         if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
       }
 
-      const daySessions = (effectiveHistory && effectiveHistory.items) || []
-      const subjectBreakdown = (summary && summary.subjects) || []
-      const selectedDurationSec = Number(summary && summary.duration_sec) || 0
-      const selectedSessionCount = Number(summary && summary.sessions) || 0
-      const hasBleedInSubjects = subjectBreakdown.some(
-        item => Number(item.duration_sec) > 0 && Number(item.sessions) === 0
-      )
-      const previousDurationSec = Number.isFinite(this._displayTodayDurationSec)
-        ? this._displayTodayDurationSec
-        : (Number(this._rawTodayDur) || 0)
-      const previousSessionCount = Math.max(0, Number(this.data._dispTodaySessions) || 0)
+      const viewState = buildDateViewState({
+        summary,
+        effectiveHistory,
+        effectiveDate,
+        todayDate: this.data._todayDate,
+        showDayDistribution,
+        currentDisplayDurationSec: this._displayTodayDurationSec,
+        currentRawDurationSec: this._rawTodayDur,
+        currentDisplaySessions: this.data._dispTodaySessions,
+        currentSubjects: this.data.subjects,
+        currentDistributionHasData: this.data.distributionHasData,
+        currentRangeStart: this.data.distributionRangeStart,
+        currentRangeEnd: this.data.distributionRangeEnd,
+        hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
+        buildSubjectItems: subjects => this._buildSubjectItems(subjects),
+        hasDistributionData: subjects => this._hasDistributionData(subjects),
+        formatMin: sec => this._fmtMin(sec),
+        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
+        formatSession: item => this._formatSession(item),
+        formatPieDateLabel: date => this._formatPieDateLabel(date),
+      })
+      const {
+        selectedDurationSec,
+        selectedSessionCount,
+        previousDurationSec,
+        previousSessionCount,
+        dataPatch,
+      } = viewState
       this._rawTodayDur = selectedDurationSec
-      this._daySubjectsRaw = subjectBreakdown
+      this._daySubjectsRaw = viewState.subjectBreakdown
       if (showDayDistribution) this._resetPieCache()
 
-      this.setData({
-        todaySessions: selectedSessionCount,
-        subjects: showDayDistribution ? this._buildSubjectItems(subjectBreakdown) : this.data.subjects,
-        distributionHasData: showDayDistribution ? this._hasDistributionData(subjectBreakdown) : this.data.distributionHasData,
-        todayDurationText: this._fmtMin(selectedDurationSec),
-        selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
-        history: daySessions.slice(0, 20).map(item => this._formatSession(item)),
-        historyTotal: (effectiveHistory && effectiveHistory.total) || 0,
-        historyReady: true,
-        pieDateLabel: this._formatPieDateLabel(effectiveDate),
-        distributionRangeStart: showDayDistribution ? effectiveDate : this.data.distributionRangeStart,
-        distributionRangeEnd: showDayDistribution ? effectiveDate : this.data.distributionRangeEnd,
-        canGoNextDate: !!(effectiveDate && this.data._todayDate && effectiveDate < this.data._todayDate),
-        _crossDayBleedIn: hasBleedInSubjects,
-        pieLoading: false,
-        selectedSubjectDetail: null,
-        _selectedSubject: null,
-      }, () => {
+      this.setData(dataPatch, () => {
         if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
         this._animateSelectedDuration(previousDurationSec, selectedDurationSec, previousSessionCount, selectedSessionCount)
 
