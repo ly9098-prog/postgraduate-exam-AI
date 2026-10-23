@@ -33,6 +33,14 @@ const {
   selectDefaultSubject,
   rememberSubject,
 } = require('./utils/recent-subjects')
+const {
+  buildResetView,
+  applyBatchCredentials,
+  hasMissingBatchCredentials,
+  buildSequentialRestartView,
+  resetSequentialTiming,
+  buildLoadedView,
+} = require('./utils/question-load-state')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1149,15 +1157,7 @@ const subjectId = this.data.selectedSubjectId
 if (!subjectId) {
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-})
+this.setData(buildResetView())
 wx.showToast({ title: '请选择科目', icon: 'none' })
 return
 }
@@ -1188,16 +1188,7 @@ traceId: res && (res.trace_id || this._practiceSession.traceId),
 })
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-errorText: '章节专项范围校验失败，请更新后端服务后重试。',
-})
+this.setData(buildResetView('章节专项范围校验失败，请更新后端服务后重试。'))
 wx.showToast({ title: '章节专项暂不可用', icon: 'none' })
 return
 }
@@ -1222,16 +1213,7 @@ traceId: res.trace_id || this._practiceSession.traceId,
 })
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-errorText: '检测到练习批次题目异常，请重试。若持续出现，请更新后端服务。',
-})
+this.setData(buildResetView('检测到练习批次题目异常，请重试。若持续出现，请更新后端服务。'))
 wx.showToast({ title: '练习批次异常，请重试', icon: 'none' })
 return
 }
@@ -1243,16 +1225,7 @@ traceId: res.trace_id || this._practiceSession.traceId,
 })
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-errorText: '检测到当前版本暂不支持作答的题型，请重试或更新后端服务。',
-})
+this.setData(buildResetView('检测到当前版本暂不支持作答的题型，请重试或更新后端服务。'))
 wx.showToast({ title: '题型暂不支持，请重试', icon: 'none' })
 return
 }
@@ -1266,16 +1239,7 @@ traceId: res.trace_id || this._practiceSession.traceId,
 })
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-errorText: '检测到题目科目异常，请重试。若持续出现，请更新后端服务。',
-})
+this.setData(buildResetView('检测到题目科目异常，请重试。若持续出现，请更新后端服务。'))
 wx.showToast({ title: '题目科目异常，请重试', icon: 'none' })
 return
 }
@@ -1294,15 +1258,7 @@ const total = Number(sequentialProgress.total_questions || 0)
 const name = this.data.selectedSubjectName || String(subjectId)
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-})
+this.setData(buildResetView())
 const restart = await this._showSubmitConfirm({
 scenario: 'info',
 eyebrow: 'ROUND COMPLETE',
@@ -1326,15 +1282,8 @@ this.setData({ errorText: '重置顺序进度失败，请稍后重试' })
 wx.showToast({ title: '重置进度失败', icon: 'none' })
 return
 }
-this._practiceSession.activeStartedMonoMs = 0
-this._practiceSession.startedAtMs = 0
-this._practiceSession.backgroundMs = 0
-this._practiceSession._backgroundStartedMonoMs = null
-this.setData({
-started: true,
-errorText: '',
-sequentialProgress: null,
-})
+resetSequentialTiming(this._practiceSession)
+this.setData(buildSequentialRestartView())
 this._setPracticeUnloadGuard(true)
 await this._loadQuestions()
 return
@@ -1347,12 +1296,8 @@ saveDebugSnapshot(this._practiceSession.traceId, 'state_after_api', {
 total: questions.length,
 questionIds: questions.map(q => q.id),
 })
-this._practiceSession.comboCount = 0
-this._practiceSession.recommendationRequestId = res.request_id || ''
-this._practiceSession.batchToken = res.batch_token || ''
-this._practiceSession.batchMode = res.mode || mode
-if (res.submission_request_id) this._practiceSession.requestId = res.submission_request_id
-if (questions.length > 0 && (!this._practiceSession.batchToken || !this._practiceSession.requestId)) {
+applyBatchCredentials(this._practiceSession, res, mode)
+if (hasMissingBatchCredentials(this._practiceSession, questions.length)) {
 throw new Error('服务器未返回可提交的练习批次凭据')
 }
 if (questions.length > 0) this._warmQuestionImages(questions, 0)
@@ -1367,28 +1312,11 @@ firstQuestion = viewModelResult.question
 console.error('首题渲染失败', renderErr)
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-errorText: '题目解析失败，可重试或返回选题',
-})
+this.setData(buildResetView('题目解析失败，可重试或返回选题'))
 return
 }
 }
-this.setData({
-questions,
-totalQuestions: questions.length,
-currentIndex: firstIndex,
-currentQuestion: firstQuestion,
-currentAnswerState: viewModelResult ? viewModelResult.answerState : null,
-launchingPreset: false,
-loading: false,
-})
+this.setData(buildLoadedView(questions, viewModelResult))
 if (questions.length > 0 && firstQuestion) {
 if (!this._practiceSession.activeStartedMonoMs) {
 this._practiceSession.activeStartedMonoMs = _monotonicNow()
@@ -1404,10 +1332,10 @@ this._startTimer()
 this._updateComputedFields()
 this._checkRenderInvariant(firstQuestion._renderModel)
 } else if (questions.length === 0) {
-const name = this.data.selectedSubjectName || String(subjectId)
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({ started: false, launchingPreset: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null, currentAnswerState: null })
+const name = this.data.selectedSubjectName || String(subjectId)
+this.setData(buildResetView())
 await this._showSubmitConfirm({
 scenario: 'info',
 eyebrow: 'NO QUESTIONS',
@@ -1422,16 +1350,7 @@ if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
 console.error('加载题目失败', e)
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData({
-launchingPreset: false,
-loading: false,
-started: false,
-questions: [],
-totalQuestions: 0,
-currentQuestion: null,
-currentAnswerState: null,
-errorText: '加载题目失败，请重试或返回重新选择科目',
-})
+this.setData(buildResetView('加载题目失败，请重试或返回重新选择科目'))
 wx.showToast({ title: '加载题目失败', icon: 'none' })
 }
 },

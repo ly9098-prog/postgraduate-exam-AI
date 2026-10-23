@@ -368,6 +368,7 @@ jobs:
           node --test miniprogram/tests/test-practice-launch-preset.js
           node --test miniprogram/tests/test-practice-question-batch.js
           node --test miniprogram/tests/test-practice-recent-subjects.js
+          node --test miniprogram/tests/test-practice-question-load-state.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
           node miniprogram/tests/test-render-invariant.js
