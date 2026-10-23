@@ -38,6 +38,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
 import { QuestionVersionHistorySection } from "./question-version-history-section";
 import { QuestionEditSubmitFooter } from "./question-edit-submit-footer";
+import { QuestionListFeedback } from "./question-list-feedback";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
@@ -813,35 +814,13 @@ export default function QuestionsPage() {
               })}
               </div>
 
-              {!questions.isLoading && !questions.isError && items.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 rounded-[1.6rem] border border-dashed border-[var(--color-border)] bg-white/60 py-16 text-center animate-fade-in">
-                  <FileQuestion className="h-12 w-12 text-[var(--color-text-hint)]" />
-                  <p className="text-sm font-semibold text-[var(--color-text-secondary)]">
-                    暂无匹配题目
-                  </p>
-                  <p className="text-xs text-[var(--color-text-hint)]">
-                    尝试调整搜索关键词或筛选条件
-                  </p>
-                  {hasActiveFilters ? (
-                    <Button variant="secondary" size="sm" onClick={handleResetFilters}>
-                      清除筛选
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {questions.isError ? (
-                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-red-200 bg-red-50/45 py-12 text-center animate-fade-in">
-                  <AlertCircle className="h-9 w-9 text-red-400" />
-                  <div>
-                    <p className="text-sm font-semibold text-red-700">题目加载失败</p>
-                    <p className="mt-1 text-xs text-red-500">请检查查询条件或后端服务后重试</p>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={() => questions.refetch()}>
-                    重新加载
-                  </Button>
-                </div>
-              ) : null}
+              <QuestionListFeedback
+                emptyVisible={!questions.isLoading && !questions.isError && items.length === 0}
+                isError={questions.isError}
+                hasActiveFilters={hasActiveFilters}
+                onResetFilters={handleResetFilters}
+                onRetry={() => questions.refetch()}
+              />
               </div>
 
               {questions.data && questions.data.total_pages > 1 ? (
