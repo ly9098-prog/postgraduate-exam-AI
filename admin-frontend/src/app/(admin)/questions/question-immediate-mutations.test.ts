@@ -22,13 +22,14 @@ function setup(state: Parameters<typeof useQuestionImmediateMutations>[0] = inpu
   const cache = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
   clients.push(cache);
   const feedback = { setForm: vi.fn(), setStemText: vi.fn(), setMessage: vi.fn() };
+  const selectedQuestionId = { current: state.questionId };
   let hook!: ReturnType<typeof useQuestionImmediateMutations>;
   function Probe() {
-    hook = useQuestionImmediateMutations(state, feedback);
+    hook = useQuestionImmediateMutations(state, feedback, selectedQuestionId);
     return null;
   }
   renderToStaticMarkup(createElement(QueryClientProvider, { client: cache }, createElement(Probe)));
-  return { cache, feedback, hook };
+  return { cache, feedback, hook, selectedQuestionId };
 }
 function deferred() {
   let resolve!: (value: AdminQuestion) => void;
@@ -48,7 +49,7 @@ describe("question immediate writes", () => {
       ...input, dirty: false, questionId: null, question: null,
       unresolvedTableCount: 1, emptyCodeCount: 1,
     });
-    expect(await hook.prepareImmediateQuestionMutation()).toBe(true);
+    expect(await hook.prepareImmediateQuestionMutation()).toBeNull();
     expect(updateQuestion).not.toHaveBeenCalled();
     expect(feedback.setMessage).not.toHaveBeenCalled();
   });
@@ -63,7 +64,7 @@ describe("question immediate writes", () => {
   ])("keeps guard order and rejects before saving: %s", async (patch, message) => {
     const { hook, feedback, cache } = setup({ ...input, ...patch });
     const invalidate = vi.spyOn(cache, "invalidateQueries");
-    expect(await hook.prepareImmediateQuestionMutation()).toBe(false);
+    expect(await hook.prepareImmediateQuestionMutation()).toBeNull();
     expect(feedback.setMessage).toHaveBeenCalledExactlyOnceWith(message);
     expect(updateQuestion).not.toHaveBeenCalled();
     expect(feedback.setForm).not.toHaveBeenCalled();
@@ -72,7 +73,7 @@ describe("question immediate writes", () => {
 
   it("continues if a dirty flag resolves to an empty minimal PATCH", async () => {
     const { hook, feedback } = setup({ ...input, form: { ...input.form, answer: "A" } });
-    expect(await hook.prepareImmediateQuestionMutation()).toBe(true);
+    expect(await hook.prepareImmediateQuestionMutation()).toEqual({ questionId: 7, generation: 1 });
     expect(updateQuestion).not.toHaveBeenCalled();
     expect(feedback.setMessage).not.toHaveBeenCalled();
   });
@@ -98,7 +99,8 @@ describe("question immediate writes", () => {
     expect(updateQuestion).toHaveBeenCalledExactlyOnceWith(7, { answer: "B" });
     const saved = { ...question, answer: "B", content: { stem: "server stem" }, options: { A: "new" } };
     request.resolve(saved);
-    expect(await Promise.all([first, second])).toEqual([true, true]);
+    const owner = { questionId: 7, generation: 1 };
+    expect(await Promise.all([first, second])).toEqual([owner, owner]);
     expect(events).toEqual([
       { subject_id: null, question_type: "judge", difficulty: 2, answer: "B", analysis: "",
         options: { A: "new" }, content: { stem: "server stem" }, knowledge_points: undefined },
@@ -106,7 +108,9 @@ describe("question immediate writes", () => {
       "已先保存当前修改，将继续执行该操作。",
     ]);
     expect(cache.getQueryData(questionKeys.detail(7))).toEqual({ ...saved, import_record: metadata });
-    expect(await hook.prepareImmediateQuestionMutation()).toBe(true);
+    expect(await hook.prepareImmediateQuestionMutation()).toEqual({
+      questionId: 7, generation: 2,
+    });
     expect(updateQuestion).toHaveBeenCalledTimes(2);
   });
 
@@ -120,13 +124,15 @@ describe("question immediate writes", () => {
       const first = hook.prepareImmediateQuestionMutation();
       const second = hook.prepareImmediateQuestionMutation();
       request.reject(error);
-      expect(await Promise.all([first, second])).toEqual([false, false]);
+      expect(await Promise.all([first, second])).toEqual([null, null]);
       expect(feedback.setMessage).toHaveBeenCalledExactlyOnceWith(error instanceof Error
         ? "当前修改保存失败：conflict" : "当前修改保存失败，请稍后重试。");
       expect(feedback.setForm).not.toHaveBeenCalled();
       expect(cache.getQueryData(questionKeys.detail(7))).toBe(question);
       expect(invalidate).not.toHaveBeenCalled();
-      expect(await hook.prepareImmediateQuestionMutation()).toBe(true);
+    expect(await hook.prepareImmediateQuestionMutation()).toEqual({
+      questionId: 7, generation: 2,
+    });
       expect(updateQuestion).toHaveBeenCalledTimes(2);
     },
   );
@@ -139,7 +145,10 @@ describe("question immediate writes", () => {
     const results = [first.prepareImmediateQuestionMutation(), second.prepareImmediateQuestionMutation()];
     expect(updateQuestion).toHaveBeenCalledTimes(2);
     request.resolve(question);
-    expect(await Promise.all(results)).toEqual([true, true]);
+    expect(await Promise.all(results)).toEqual([
+      { questionId: 7, generation: 1 },
+      { questionId: 7, generation: 1 },
+    ]);
   });
 
   it("adopts immediate writes without discarding other local edits or detail metadata", () => {
@@ -165,13 +174,14 @@ describe("question immediate writes", () => {
     expect(feedback.setMessage).not.toHaveBeenCalled();
   });
 
-  it("seeds an absent detail cache but leaves a null selection uncached", () => {
+  it("seeds an absent detail cache without assigning it to a null form", () => {
     const first = setup();
     first.hook.handleQuestionMutated(question);
     expect(first.cache.getQueryData(questionKeys.detail(7))).toEqual(question);
     const second = setup({ ...input, questionId: null });
     second.hook.handleQuestionMutated(question);
-    expect(second.cache.getQueryCache().getAll()).toEqual([]);
+    expect(second.cache.getQueryData(questionKeys.detail(7))).toEqual(question);
+    expect(second.feedback.setForm).not.toHaveBeenCalled();
   });
 
   it("retains the existing null import-record fallback when the detail cache exists", () => {
@@ -179,5 +189,34 @@ describe("question immediate writes", () => {
     cache.setQueryData(questionKeys.detail(7), question);
     hook.handleQuestionMutated(question);
     expect(cache.getQueryData(questionKeys.detail(7))).toEqual({ ...question, import_record: null });
+  });
+
+  it("does not apply an unowned mismatch to the current form", () => {
+    const { hook, feedback, cache } = setup({
+      ...input, questionId: 8, question: { ...question, id: 8 },
+    });
+    const staleQuestion = { ...question, content: { stem: "old image" } };
+    const currentQuestion = { ...question, id: 8, content: { stem: "new question" } };
+    cache.setQueryData(questionKeys.detail(8), currentQuestion);
+
+    hook.handleQuestionMutated(staleQuestion);
+
+    expect(cache.getQueryData(questionKeys.detail(7))).toEqual(staleQuestion);
+    expect(cache.getQueryData(questionKeys.detail(8))).toEqual(currentQuestion);
+    expect(feedback.setForm).not.toHaveBeenCalled();
+    expect(feedback.setMessage).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates an unselected response without applying it to the form", () => {
+    const { hook, feedback, cache } = setup({
+      ...input, questionId: null, question: null,
+    });
+    hook.handleQuestionMutated({ ...question, content: { stem: "server stem" } });
+    expect(feedback.setForm).not.toHaveBeenCalled();
+    expect(feedback.setMessage).not.toHaveBeenCalled();
+    expect(cache.getQueryData(questionKeys.detail(7))).toEqual({
+      ...question,
+      content: { stem: "server stem" },
+    });
   });
 });

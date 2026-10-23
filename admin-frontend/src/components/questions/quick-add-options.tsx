@@ -8,6 +8,7 @@ import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import type { AdminQuestion } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
+import type { QuestionImmediateMutationOwner } from "@/app/(admin)/questions/hooks/use-question-immediate-mutations";
 
 type ParsedQuickOption = { key: string; text: string; conflict: boolean; invalid: boolean };
 
@@ -58,8 +59,8 @@ type QuickAddOptionsProps = {
   /** Set when the parent edit form has unsaved changes → confirm before writing. */
   dirty?: boolean;
   /** Persist the parent edit form before the immediate option mutation. */
-  beforeDirtyMutation?: () => Promise<boolean>;
-  onMutated: (question: AdminQuestion) => void;
+  beforeDirtyMutation?: () => Promise<QuestionImmediateMutationOwner | null>;
+  onMutated: (question: AdminQuestion, owner?: QuestionImmediateMutationOwner) => void;
 };
 
 /** Bulk-paste options editor that writes immediately via POST /questions/{id}/options. */
@@ -83,7 +84,7 @@ export function QuickAddOptions({
   const hasInvalid = parsed.some((p) => p.invalid);
   const hasText = parsed.length > 0;
 
-  const add = async () => {
+  const add = async (owner?: QuestionImmediateMutationOwner) => {
     setError(null);
     if (!hasText || hasConflict || hasInvalid) return;
     setBusy(true);
@@ -96,7 +97,7 @@ export function QuickAddOptions({
         }),
         headers: { "Content-Type": "application/json" },
       });
-      onMutated(question);
+      onMutated(question, owner);
       setText("");
       setExpanded(false);
     } catch (err) {
@@ -106,18 +107,18 @@ export function QuickAddOptions({
     }
   };
 
-  const prepareParentIfNeeded = async (): Promise<boolean> => {
-    if (!dirty) return true;
+  const prepareParentIfNeeded = async (): Promise<QuestionImmediateMutationOwner | null> => {
+    if (!dirty) return null;
     if (!beforeDirtyMutation) {
       setError("请先保存当前题目修改，再添加选项。");
-      return false;
+      return null;
     }
     setPreparing(true);
     try {
       return await beforeDirtyMutation();
     } catch (err) {
       setError(getErrorMessage(err));
-      return false;
+      return null;
     } finally {
       setPreparing(false);
     }
@@ -129,17 +130,17 @@ export function QuickAddOptions({
       setConfirmWrite(true);
       return;
     }
-    void add();
+    void prepareParentIfNeeded().then((owner) => add(owner ?? undefined));
   };
 
   const confirmAdd = async () => {
-    const ready = await prepareParentIfNeeded();
-    if (!ready) {
+    const owner = await prepareParentIfNeeded();
+    if (dirty && !owner) {
       setConfirmWrite(false);
       return;
     }
     setConfirmWrite(false);
-    await add();
+    await add(owner ?? undefined);
   };
 
   return (

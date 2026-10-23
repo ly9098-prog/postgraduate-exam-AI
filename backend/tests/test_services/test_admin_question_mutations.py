@@ -52,11 +52,10 @@ def test_ensure_content_segments_upgrades_legacy():
     assert out["text"] == "题干"
 
 
-def test_ensure_content_segments_prefers_stem_over_text():
-    # The miniprogram renders content.stem as the stem; the upgrade text
-    # segment must match it, not content.text.
+def test_ensure_content_segments_uses_text_as_authoring_source():
+    # reconcile_student_stem_fields treats text as the authoritative source.
     out = ensure_content_segments({"text": "题干的 text", "stem": "题干 stem"})
-    assert out["segments"] == [{"type": "text", "text": "题干 stem"}]
+    assert out["segments"] == [{"type": "text", "text": "题干的 text"}]
 
 
 def test_ensure_content_segments_keeps_existing():

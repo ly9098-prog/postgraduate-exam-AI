@@ -8,6 +8,7 @@ import { getErrorMessage } from "@/lib/api/errors";
 import type { AdminQuestion } from "@/lib/api/types";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
+import type { QuestionImmediateMutationOwner } from "@/app/(admin)/questions/hooks/use-question-immediate-mutations";
 
 const ACCEPT = "image/png,image/jpeg,image/webp";
 const ACCEPTED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -24,10 +25,10 @@ type QuestionImageFieldProps = {
   /** Set when the parent edit form has unsaved changes → confirm before writing. */
   dirty?: boolean;
   /** Persist the parent edit form before an immediate image mutation. */
-  beforeDirtyMutation?: () => Promise<boolean>;
+  beforeDirtyMutation?: () => Promise<QuestionImmediateMutationOwner | null>;
   /** "hero" (default): large stem image that fills the insert area; "row": compact square for option rows. */
   variant?: "hero" | "row";
-  onMutated: (question: AdminQuestion) => void;
+  onMutated: (question: AdminQuestion, owner?: QuestionImmediateMutationOwner) => void;
 };
 
 /**
@@ -83,10 +84,10 @@ export function QuestionImageField({
       setPendingConfirm("upload");
       return;
     }
-    void upload(file);
+    void prepareParentIfNeeded().then((owner) => upload(file, owner ?? undefined));
   };
 
-  const upload = async (file: File) => {
+  const upload = async (file: File, owner?: QuestionImmediateMutationOwner) => {
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
     setBusy(true);
@@ -99,7 +100,7 @@ export function QuestionImageField({
         method: "POST",
         body: fd,
       });
-      onMutated(question);
+      onMutated(question, owner);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -110,18 +111,18 @@ export function QuestionImageField({
     }
   };
 
-  const prepareParentIfNeeded = async (): Promise<boolean> => {
-    if (!dirty) return true;
+  const prepareParentIfNeeded = async (): Promise<QuestionImmediateMutationOwner | null> => {
+    if (!dirty) return null;
     if (!beforeDirtyMutation) {
       setError("请先保存当前题目修改，再执行图片操作。");
-      return false;
+      return null;
     }
     setPreparing(true);
     try {
       return await beforeDirtyMutation();
     } catch (err) {
       setError(getErrorMessage(err));
-      return false;
+      return null;
     } finally {
       setPreparing(false);
     }
@@ -133,8 +134,8 @@ export function QuestionImageField({
       setPendingConfirm(null);
       return;
     }
-    const ready = await prepareParentIfNeeded();
-    if (!ready) {
+    const owner = await prepareParentIfNeeded();
+    if (dirty && !owner) {
       setPendingConfirm(null);
       setPendingFile(null);
       if (inputRef.current) inputRef.current.value = "";
@@ -142,7 +143,7 @@ export function QuestionImageField({
     }
     setPendingConfirm(null);
     setPendingFile(null);
-    await upload(file);
+    await upload(file, owner ?? undefined);
   };
 
   const confirmDelete = async () => {
@@ -150,8 +151,8 @@ export function QuestionImageField({
       setPendingConfirm(null);
       return;
     }
-    const ready = await prepareParentIfNeeded();
-    if (!ready) {
+    const owner = await prepareParentIfNeeded();
+    if (dirty && !owner) {
       setPendingConfirm(null);
       return;
     }
@@ -164,7 +165,7 @@ export function QuestionImageField({
         body: JSON.stringify({ target, url: valueUrl }),
         headers: { "Content-Type": "application/json" },
       });
-      onMutated(question);
+      onMutated(question, owner ?? undefined);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

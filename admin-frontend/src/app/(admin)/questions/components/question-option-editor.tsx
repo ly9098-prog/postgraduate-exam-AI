@@ -12,6 +12,7 @@ import {
 import { canonicalizeQuestionType } from "@/lib/question-types";
 import type { AdminQuestion, QuestionEditRequest } from "@/lib/api/types";
 import type { Dispatch, SetStateAction } from "react";
+import type { QuestionImmediateMutationOwner } from "../hooks/use-question-immediate-mutations";
 
 type Props = {
   editForm: QuestionEditRequest;
@@ -19,8 +20,8 @@ type Props = {
   setEditForm: Dispatch<SetStateAction<QuestionEditRequest>>;
   selectedQuestionId: number;
   dirty: boolean;
-  beforeDirtyMutation: () => Promise<boolean>;
-  onMutated: (question: AdminQuestion) => void;
+  beforeDirtyMutation: () => Promise<QuestionImmediateMutationOwner | null>;
+  onMutated: (question: AdminQuestion, owner?: QuestionImmediateMutationOwner) => void;
 };
 
 function BlankOptionGroup({
@@ -178,7 +179,8 @@ function RegularOptionsEditor({ props, isChoiceType }: { props: Props; isChoiceT
         </div>
       )}
       <QuickAddOptions questionId={props.selectedQuestionId} existingKeys={options.map(({ key }) => key)}
-        disabled={!isChoiceType} dirty={props.dirty} beforeDirtyMutation={props.beforeDirtyMutation}
+        disabled={!isChoiceType}
+        dirty={props.dirty} beforeDirtyMutation={props.beforeDirtyMutation}
         onMutated={props.onMutated} />
     </section>
   );

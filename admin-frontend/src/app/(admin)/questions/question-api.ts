@@ -58,8 +58,8 @@ function flattenSubjects(items: SubjectNode[]): SubjectNode[] {
 }
 
 export async function fetchSubjectOptions(): Promise<Array<{ id: number; code: string; name: string }>> {
-  const response = await apiRequest<{ items: SubjectNode[] }>("/subjects");
-  return flattenSubjects(response.items ?? [])
+  const response = await apiRequest<SubjectNode[]>("/questions/subject-options");
+  return flattenSubjects(response ?? [])
     .filter((subject) => subject.level > 1);
 }
 

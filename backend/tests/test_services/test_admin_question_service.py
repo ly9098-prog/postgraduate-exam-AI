@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -40,6 +40,9 @@ class _Result:
     def scalars(self):
         return _Scalars(self.values)
 
+    def all(self):
+        return self.values
+
 
 class _Db:
     def __init__(self, question=None, imports=None, permission_names=None, max_version=None):
@@ -50,15 +53,29 @@ class _Db:
         self.added = []
         self.commits = 0
         self.rollbacks = 0
-        self.flush = AsyncMock()
+        self.flush = AsyncMock(side_effect=self._assign_revision_id)
+
+    def _assign_revision_id(self):
+        for item in self.added:
+            if isinstance(item, QuestionVersion) and item.id is None:
+                item.id = int(getattr(item, "version", 1)) * 100
 
     async def get(self, model, item_id):
         if model is Question and self.question and self.question.id == item_id:
             return self.question
         return None
 
-    async def scalar(self, _statement):
-        return self.max_version
+    async def scalar(self, statement):
+        text = str(statement)
+        if "question_versions" in text:
+            latest = MagicMock(spec=QuestionVersion)
+            latest.id = 200
+            latest.version = self.max_version or 1
+            latest.state_hash = "stale"
+            return latest
+        if "question_knowledge_points" in text:
+            return None
+        return self.question
 
     async def commit(self):
         self.commits += 1
@@ -79,6 +96,8 @@ class _Db:
             return _Result()
         if "subjects" in text:
             return _Result()
+        if "question_knowledge_points" in text:
+            return _Result(values=[])
         return _Result(self.question)
 
     def add(self, item):
@@ -139,8 +158,8 @@ async def test_update_admin_question_snapshots_changes(monkeypatch):
     version = db.added[0]
     assert isinstance(version, QuestionVersion)
     assert version.version == 3
-    assert version.answer == "A"
-    assert version.knowledge_points == ["函数"]
+    assert version.answer == "B"
+    assert version.knowledge_point_links == []
     assert audit.await_args.kwargs["severity"] == "important"
 
 

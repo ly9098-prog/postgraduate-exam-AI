@@ -96,13 +96,13 @@ describe("question read protocol", () => {
   it("flattens subjects in depth-first order and keeps original fields", async () => {
     const leaf = { id: 3, code: "c", name: "C", level: 3, path: "a/b/c" };
     const child = { id: 2, code: "b", name: "B", level: 2, path: "a/b", children: [leaf] };
-    request.mockResolvedValue({ items: [{ id: 1, level: 1, children: [child] }, { id: 4, level: 0 }] });
+    request.mockResolvedValue([{ id: 1, level: 1, children: [child] }, { id: 4, level: 0 }]);
     expect(await fetchSubjectOptions()).toEqual([child, leaf]);
-    expect(request).toHaveBeenCalledExactlyOnceWith("/subjects");
+    expect(request).toHaveBeenCalledExactlyOnceWith("/questions/subject-options");
   });
 
   it("accepts an absent subject list", async () => {
-    request.mockResolvedValue({});
+    request.mockResolvedValue(undefined);
     expect(await fetchSubjectOptions()).toEqual([]);
   });
 });

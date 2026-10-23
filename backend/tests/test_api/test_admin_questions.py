@@ -125,6 +125,38 @@ def test_list_admin_questions(monkeypatch):
     assert resp.json()["items"][0]["review_status"] == "approved"
 
 
+def test_question_subject_options_use_question_read_permission(monkeypatch):
+    now = datetime(2026, 5, 29)
+    subject = {
+        "id": 2,
+        "parent_id": 1,
+        "code": "math.linear",
+        "name": "线性代数",
+        "level": 2,
+        "path": "math/math.linear",
+        "sort_order": 0,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "children": [],
+    }
+    monkeypatch.setattr(
+        admin_questions, "list_subject_tree",
+        AsyncMock(return_value=[subject]),
+    )
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.get("/api/admin/v1/questions/subject-options")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["code"] == "math.linear"
+    assert body[0]["product_code"] is None
+
+
 def test_get_admin_question_detail(monkeypatch):
     detail = _question().__dict__ | {"import_record": _import_record()}
     monkeypatch.setattr(admin_questions, "get_admin_question_detail", AsyncMock(return_value=detail))

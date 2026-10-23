@@ -69,7 +69,7 @@ describe("question option editing rules", () => {
       setEditForm: () => undefined,
       selectedQuestionId: 1,
       dirty: false,
-      beforeDirtyMutation: async () => true,
+      beforeDirtyMutation: async () => ({ questionId: 1, generation: 1 }),
       onMutated: () => undefined,
     };
     const regular = renderToStaticMarkup(createElement(QuestionOptionEditor, props));

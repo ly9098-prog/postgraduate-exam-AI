@@ -38,6 +38,7 @@ from app.schemas.admin_questions import (
     AdminQuestionVersionListItem,
     validate_image_target,
 )
+from app.schemas.admin_subjects import AdminSubjectTreeNode
 from app.schemas.common import paginated_response
 from app.schemas.vector import EmbeddingBackfillRequest
 from app.services.admin_question_export_service import build_admin_question_export
@@ -58,6 +59,7 @@ from app.services.admin_question_service import (
     upsert_option_image,
     upsert_stem_image,
 )
+from app.services.admin_subject_service import list_subject_tree
 from app.services.knowledge_point_service import load_question_kps
 from app.services.storage_backend import compress_image, get_question_assets_storage
 from app.services.streaming_upload_handler import stream_to_temp
@@ -332,6 +334,16 @@ async def list_questions(
         page,
         page_size,
     )
+
+
+@router.get("/subject-options", response_model=list[AdminSubjectTreeNode])
+async def list_question_subject_options(
+    _=Depends(require_permissions("question:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Expose the active subject tree to question readers without subject governance."""
+    tree = await list_subject_tree(db)
+    return [AdminSubjectTreeNode.model_validate(item) for item in tree]
 
 
 @router.post("/export")
