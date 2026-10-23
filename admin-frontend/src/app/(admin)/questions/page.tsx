@@ -74,6 +74,7 @@ import { useQuestionUpdate } from "./hooks/use-question-update";
 import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mutations";
 import { useQuestionEditor } from "./hooks/use-question-editor";
 import { useQuestionFilterInteractions } from "./hooks/use-question-filter-interactions";
+import { useQuestionDetailNavigation } from "./hooks/use-question-detail-navigation";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -164,14 +165,6 @@ export default function QuestionsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(() => positiveInt(searchParams.get("page"), 1) ?? 1);
   const [pageSize, setPageSize] = useState(() => normalizeQuestionPageSize(searchParams.get("page_size")));
-  const [selectedQuestionId, setSelectedQuestionIdState] = useState<number | null>(() =>
-    positiveInt(searchParams.get("selected_id")),
-  );
-  const selectedQuestionIdRef = useRef(selectedQuestionId);
-  const setSelectedQuestionId = useCallback((id: number | null) => {
-    selectedQuestionIdRef.current = id;
-    setSelectedQuestionIdState(id);
-  }, []);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [baseVersion, setBaseVersion] = useState<QuestionVersionSelection>("current");
   const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
@@ -183,12 +176,10 @@ export default function QuestionsPage() {
   const [isCommonFilterMenuOpen, setIsCommonFilterMenuOpen] = useState(false);
   const [isMoreFilterOpen, setIsMoreFilterOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
-
-  useEffect(() => {
-    setVersionHistoryOpen(false);
-    setBaseVersion("current");
-    setCompareVersion(null);
-  }, [selectedQuestionId]);
+  const editorCallbacks = useRef<{
+    setEditing: (value: boolean) => void;
+    setEditForm: (value: Record<string, unknown>) => void;
+  }>({ setEditing: () => {}, setEditForm: () => {} });
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const moreFilterRef = useRef<HTMLDivElement | null>(null);
@@ -199,20 +190,39 @@ export default function QuestionsPage() {
 
   // Keep the list context in the address bar so leaving for a detail/editor page
   // and returning restores the exact filter/page/selection instead of resetting.
-  useEffect(() => {
-    const nextHref = buildQuestionListHref(filters, page, pageSize, selectedQuestionId);
-    const currentHref = `${window.location.pathname}${window.location.search}`;
-    if (currentHref !== nextHref) {
-      window.history.replaceState(window.history.state, "", nextHref);
-    }
-  }, [filters, page, pageSize, selectedQuestionId]);
-
   const queryParams = useMemo(
     () => buildQueryParams(filters, page, pageSize),
     [page, pageSize, filters],
   );
 
   const questions = useQuestionList(queryParams);
+  const items = useMemo(
+    () => questions.data?.items ?? [],
+    [questions.data?.items],
+  );
+
+  const {
+    selectedQuestionId,
+    selectedQuestionIdRef,
+    setSelectedQuestionId,
+    selectQuestion,
+    openDetail,
+    prefetchDetail,
+  } = useQuestionDetailNavigation({
+    initialSelectedQuestionId: positiveInt(searchParams.get("selected_id")),
+    setEditing: value => editorCallbacks.current.setEditing(value),
+    setEditForm: value => editorCallbacks.current.setEditForm(value),
+    openDetailDrawer: setIsDetailDrawerOpen,
+    prefetch: id => {
+      void queryClient.prefetchQuery({
+        ...questionDetailOptions(id),
+        staleTime: 30_000,
+      });
+    },
+    onScrollTop: () => detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" }),
+    requestAnimationFrame: callback => window.requestAnimationFrame(callback),
+    cancelAnimationFrame: frame => window.cancelAnimationFrame(frame),
+  });
   const detail = useQuestionDetail(selectedQuestionId);
   const versions = useQuestionVersions(selectedQuestionId);
   const baseVersionDetail = useQuestionVersion(selectedQuestionId, baseVersion);
@@ -224,6 +234,11 @@ export default function QuestionsPage() {
   } = useQuestionEditor(detail.data, {
     isDetailDrawerOpen, setIsDetailDrawerOpen, confirmState, detailScrollRef,
   });
+
+  useEffect(() => {
+    editorCallbacks.current.setEditing = setEditing;
+    editorCallbacks.current.setEditForm = setEditForm;
+  }, [setEditForm, setEditing]);
 
   useEffect(() => {
     if (!versionHistoryOpen || compareVersion !== null) return;
@@ -274,10 +289,20 @@ export default function QuestionsPage() {
     },
   });
 
-  const items = useMemo(
-    () => questions.data?.items ?? [],
-    [questions.data?.items],
-  );
+  useEffect(() => {
+    const nextHref = buildQuestionListHref(filters, page, pageSize, selectedQuestionId);
+    const currentHref = `${window.location.pathname}${window.location.search}`;
+    if (currentHref !== nextHref) {
+      window.history.replaceState(window.history.state, "", nextHref);
+    }
+  }, [filters, page, pageSize, selectedQuestionId]);
+
+  useEffect(() => {
+    setVersionHistoryOpen(false);
+    setBaseVersion("current");
+    setCompareVersion(null);
+  }, [selectedQuestionId]);
+
   const hasActiveFilters = Boolean(
     filters.subject_id ||
       filters.question_type ||
@@ -487,49 +512,6 @@ export default function QuestionsPage() {
     setSelectedIds((current) => toggleSingleSelection(current, id));
   };
 
-  const selectQuestion = useCallback((id: number) => {
-    setSelectedQuestionId(id);
-    setEditing(false);
-    setEditForm({});
-  }, [setEditForm, setEditing]);
-
-  const openDetail = useCallback(
-    (id: number) => {
-      selectQuestion(id);
-      setIsDetailDrawerOpen(true);
-    },
-    [selectQuestion],
-  );
-
-  const prefetchDetail = useCallback(
-    (id: number) => {
-      void queryClient.prefetchQuery({
-        ...questionDetailOptions(id),
-        staleTime: 30_000,
-      });
-    },
-    [queryClient],
-  );
-
-  useEffect(() => {
-    if (!items.length) {
-      if (!questions.isFetching) setSelectedQuestionId(null);
-      return;
-    }
-    if (selectedQuestionId === null || !items.some((item) => item.id === selectedQuestionId)) {
-      setSelectedQuestionId(items[0].id);
-      setEditing(false);
-      setEditForm({});
-    }
-  }, [items, questions.isFetching, selectedQuestionId, setEditForm, setEditing]);
-
-  useEffect(() => {
-    if (selectedQuestionId === null) return;
-    const frame = window.requestAnimationFrame(() => {
-      detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [selectedQuestionId]);
 
   const confirmDescription =
     confirmState?.action === "batch-delete"
