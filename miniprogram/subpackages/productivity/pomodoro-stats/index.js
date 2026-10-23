@@ -13,6 +13,7 @@ const LIGHT_TREND_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B
 const STATS_DYNAMIC_REFRESH_MS = 60 * 1000
 const dateUtils = require('./date-utils')
 const viewHelpers = require('./view-helpers')
+const durationFormatter = require('./duration-formatter')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -31,24 +32,6 @@ function getSubjectColor(subject, themeMode) {
 function getPieSubjectColor(subject, themeMode) {
   const colors = themeMode === 'light' ? LIGHT_PIE_COLORS : DARK_SUBJECT_COLORS
   return getColorBySubject(subject, colors)
-}
-
-/**
- * Format duration seconds into a human-readable hours/minutes string.
- *
- * Rules:
- *  - Floor to complete minutes (no rounding up).
- *  - < 1 hour: "X分钟" (e.g. "41分钟")
- *  - >= 1 hour: "X时Y分" (e.g. "4时19分", "1时0分")
- *  - Never show seconds.
- */
-function formatDuration(sec) {
-  var s = Math.max(0, sec || 0)
-  var totalMin = Math.floor(s / 60)
-  var hours = Math.floor(totalMin / 60)
-  var mins = totalMin % 60
-  if (hours > 0) return hours + '时' + mins + '分'
-  return mins + '分钟'
 }
 
 var pageConfig = {
@@ -1266,7 +1249,7 @@ var pageConfig = {
     const isFree = s.preset === 'free'
     const isEqualCore = s.allocation_mode === 'equal_408_core_v1'
     const sessionTaskType = storage.pomodoroTaskTypes.labelForSession(s)
-    const durationText = formatDuration(durSec)
+    const durationText = durationFormatter.formatDuration(durSec)
     // 刷题会话：左侧明确标出「刷题」，状态为「刷题」而非「完成」，与番茄钟区分。
     let _subjectLabel, _statusLabel, _statusClass
     // 今日复习同样计入刷题时长，标签区分为「复习」。
@@ -2481,35 +2464,19 @@ var pageConfig = {
   },
 
   _buildDurationSegments(text) {
-    const normalized = String(text || '').trim() || '0分钟'
-    const parts = []
-    const regex = /(\d+)|(小时|分钟|时|分)/g
-    let match = null
-    while ((match = regex.exec(normalized))) {
-      if (match[1]) parts.push({ type: 'num', text: match[1] })
-      else if (match[2]) parts.push({ type: 'unit', text: match[2] })
-    }
-    if (!parts.length) return [{ type: 'num', text: normalized }]
-    return parts
+    return durationFormatter.buildDurationSegments(text)
   },
 
   _fmtHourMinute(sec) {
-    const s = Math.max(0, sec || 0)
-    const m = Math.floor(s / 60)
-    const h = Math.floor(m / 60)
-    const mins = m % 60
-    return `${h}时${mins}分`
+    return durationFormatter.formatHourMinute(sec)
   },
 
   _fmtMin(sec) {
-    const s = Math.max(0, sec || 0)
-    const m = Math.floor(s / 60)
-    if (m < 60) return `${m}分钟`
-    return `${Math.floor(m / 60)}时${m % 60}分`
+    return durationFormatter.formatMin(sec)
   },
 }
 
 if (typeof Page === 'function') Page(pageConfig)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatDuration }
+  module.exports = { formatDuration: durationFormatter.formatDuration }
 }
