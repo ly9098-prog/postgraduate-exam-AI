@@ -28,6 +28,9 @@ const {
 const {
   createNextRetryGroupController,
 } = require('./utils/next-retry-group-controller')
+const {
+  createNextRemoteBatchController,
+} = require('./utils/next-remote-batch-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1185,51 +1188,31 @@ startReviewTimer: () => this._startReviewTimer(),
 )
 if (nextRetryGroupController.enter(nextGroupIdx)) return
 if (this.data.todayRemainingCount > 0) {
+const nextRemoteBatchController = this._nextRemoteBatchController || (
+this._nextRemoteBatchController = createNextRemoteBatchController({
+getBatchSize: () => this.data.reviewBatchSize,
+postNextBatch: payload => api.post('/review/today/next-batch', payload),
+isPageAlive: () => this._alive,
+isFlowCurrent: seq => seq === this._flowRequestSeq,
+normalizeQuestion: question => normalizeReviewQuestion(question),
+restoreDraft: questions => this._restoreReviewDraft(questions),
+getSession: () => this._reviewSession,
+setData: patch => this.setData(patch),
+getCurrentBatchNo: () => this.data.currentBatchNo,
+getTotalBatchCount: () => this.data.totalBatchCount,
+getTodayDueCount: () => this.data.todayDueCount,
+getTodayCompletedCount: () => this.data.todayCompletedCount,
+getTodayRemainingCount: () => this.data.todayRemainingCount,
+syncAnsweredFlags: () => this._syncAnsweredFlags(),
+showQuestion: index => this._showQuestion(index),
+startReviewTimer: () => this._startReviewTimer(),
+showToast: options => wx.showToast(options),
+refreshOverviewStatsSilently: () => this.refreshOverviewStatsSilently(),
+})
+)
 try {
-const batch = await api.post('/review/today/next-batch', {
-batch_size: this.data.reviewBatchSize,
-})
-if (!this._alive || flowSeq !== this._flowRequestSeq) return
-const rawQuestions = batch.questions || []
-if (rawQuestions.length > 0) {
-const questions = rawQuestions.map(normalizeReviewQuestion).filter(Boolean)
-const restoredDraft = this._restoreReviewDraft(questions)
-this._reviewSession.allQuestions = questions
-this._reviewSession.answers = restoredDraft.answers
-this.setData({
-phase: 'reviewing',
-groups: [questions],
-currentGroupIdx: 0,
-groupQuestions: questions,
-currentIndex: restoredDraft.currentIndex,
-currentBatchNo: batch.batch_no || this.data.currentBatchNo + 1,
-totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
-todayDueCount: this._reviewSession.todayTaskTotalCount || this.data.todayDueCount,
-todayCompletedCount: this.data.todayCompletedCount,
-todayRemainingCount: this.data.todayRemainingCount,
-groupResults: [],
-groupWrongResults: [],
-groupCorrect: 0,
-groupWrong: 0,
-groupAccuracyPercent: 0,
-showGroupDetails: false,
-resultTransitioning: false,
-})
-this._syncAnsweredFlags()
-this._showQuestion(restoredDraft.currentIndex)
-this._startReviewTimer()
-if (restoredDraft.restoredCount > 0) {
-wx.showToast({ title: `已恢复 ${restoredDraft.restoredCount} 题草稿`, icon: 'none' })
-}
-return
-}
-await this.refreshOverviewStatsSilently()
-if (!this._alive || flowSeq !== this._flowRequestSeq) return
-if (this.data.todayRemainingCount > 0) {
-wx.showToast({ title: '任务状态已更新，请稍后重试', icon: 'none' })
-this.setData({ resultTransitioning: false })
-return
-}
+const remoteBatch = await nextRemoteBatchController.next(flowSeq)
+if (remoteBatch.status !== 'complete') return
 } catch (e) {
 if (!this._alive || flowSeq !== this._flowRequestSeq) return
 console.error('获取下一组失败', e)
