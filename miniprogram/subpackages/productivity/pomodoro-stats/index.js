@@ -42,6 +42,8 @@ const { createThemeSyncController } = require('./theme-sync-controller')
 const { createDeferredHistoryController } = require('./deferred-history-controller')
 const { createLoadCommitController } = require('./load-commit-controller')
 const { createDateCommitController } = require('./date-commit-controller')
+const { createLoadFailureController } = require('./load-failure-controller')
+const { createDateFailureController } = require('./date-failure-controller')
 
 const {
   getSubjectColor,
@@ -774,21 +776,12 @@ var pageConfig = {
         weekDurationSec: stats.week_duration_sec || 0,
       })
     } catch (e) {
-      if (
-        !this._alive ||
-        reqId !== this._requestId ||
-        dateSeq !== this._dateRequestSeq ||
-        requestedDate !== this.data.selectedDate
-      ) return
-      console.error('加载统计失败', e)
-      if (background && this.data.contentReady) {
-        // Keep the last valid snapshot visible when a periodic refresh briefly
-        // fails. A later tick/onShow will retry without turning the whole page into
-        // an error state.
-        this.setData({ loading: false, pieLoading: false, cumulativeLoading: false })
-      } else {
-        this.setData({ loading: false, pieLoading: false, cumulativeLoading: false, errorText: '加载失败，请检查网络后重试' })
-      }
+      this._getLoadFailureController().handle(e, {
+        background,
+        reqId,
+        dateSeq,
+        requestedDate,
+      })
     } finally {
       this._statsLoadInFlight = Math.max(0, (this._statsLoadInFlight || 1) - 1)
     }
@@ -832,6 +825,21 @@ var pageConfig = {
       })
     }
     return this._loadCommitController
+  },
+
+  _getLoadFailureController() {
+    if (!this._loadFailureController) {
+      this._loadFailureController = createLoadFailureController({
+        isAlive: () => this._alive,
+        getRequestId: () => this._requestId,
+        getDateRequestSeq: () => this._dateRequestSeq,
+        getSelectedDate: () => this.data.selectedDate,
+        isContentReady: () => !!this.data.contentReady,
+        logError: (message, e) => console.error(message, e),
+        setData: patch => this.setData(patch),
+      })
+    }
+    return this._loadFailureController
   },
 
   _selectDate(date) {
@@ -995,10 +1003,7 @@ var pageConfig = {
         showDayDistribution,
       })
     } catch (e) {
-      if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
-      console.error('加载指定日期数据失败', e)
-      this.setData({ pieLoading: false, durationValueAnimating: false })
-      if (wx.showToast) wx.showToast({ title: '该日期数据加载失败', icon: 'none' })
+      this._getDateFailureController().handle(e, { seq })
     }
   },
 
@@ -1028,6 +1033,20 @@ var pageConfig = {
       })
     }
     return this._dateCommitController
+  },
+
+  _getDateFailureController() {
+    if (!this._dateFailureController) {
+      this._dateFailureController = createDateFailureController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getDateRequestSeq: () => this._dateRequestSeq,
+        logError: (message, e) => console.error(message, e),
+        setData: patch => this.setData(patch),
+        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
+      })
+    }
+    return this._dateFailureController
   },
 
   _getPieAnimationController() {
