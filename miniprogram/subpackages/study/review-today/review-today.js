@@ -22,6 +22,9 @@ const {
 const {
   createGroupSubmitResultController,
 } = require('./utils/submit-result-controller')
+const {
+  createGroupSubmitEntryController,
+} = require('./utils/submit-entry-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1083,12 +1086,16 @@ session.reviewRequestIds[key] = `review_${Date.now().toString(36)}_${randomPart}
 return session.reviewRequestIds[key]
 },
 async submitGroup() {
-const { groupQuestions, submittingGroup } = this.data
-if (submittingGroup || this._submitConfirmPending || this.data.masterSubmitting || this._masterUndoInFlight || !groupQuestions.length) return
-const totalCount = groupQuestions.length
-const answeredCount = adapter.computeAnsweredCount(groupQuestions, this._reviewSession.answers, KF)
-const unansweredCount = totalCount - answeredCount
-const groupSubmitConfirmController = this._groupSubmitConfirmController || (
+const { groupQuestions } = this.data
+const groupSubmitEntryController = this._groupSubmitEntryController || (
+this._groupSubmitEntryController = createGroupSubmitEntryController({
+getData: () => this.data,
+getSession: () => this._reviewSession,
+isConfirmPending: () => this._submitConfirmPending,
+isMasterUndoInFlight: () => this._masterUndoInFlight,
+isPageAlive: () => this._alive,
+computeAnsweredCount: (questions, answers) => adapter.computeAnsweredCount(questions, answers, KF),
+confirmController: this._groupSubmitConfirmController || (
 this._groupSubmitConfirmController = createGroupSubmitConfirmController({
 getConfirm: () => this.selectComponent('#submitConfirm'),
 setPending: value => { this._submitConfirmPending = value },
@@ -1097,21 +1104,16 @@ getPhase: () => this.data.phase,
 findUnansweredIndex: () => this.data.groupQuestions.findIndex(q => !adapter.isQuestionAnswered(q, this._reviewSession.answers, KF)),
 showQuestion: index => this._showQuestion(index),
 })
+),
+showToast: options => wx.showToast(options),
+clearMasterUndo: () => this._clearMasterUndo(),
+setSubmitting: value => this.setData({ submittingGroup: value }),
+syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
+})
 )
-if (!await groupSubmitConfirmController.confirm(totalCount, unansweredCount)) return
-// Revalidate after the asynchronous dialog; never submit a changed/incomplete batch.
-if (this.data.submittingGroup || this.data.groupQuestions !== groupQuestions) return
-const answers = { ...this._reviewSession.answers }
-if (adapter.computeAnsweredCount(groupQuestions, answers, KF) !== totalCount) {
-wx.showToast({ title: '请完成全部题目后再提交', icon: 'none' })
-return
-}
-this._clearMasterUndo()
-this.setData({ submittingGroup: true })
-if (!await this._syncReviewSessionDayIfNeeded()) {
-if (this._alive) this.setData({ submittingGroup: false })
-return
-}
+if (!await groupSubmitEntryController.confirm(groupQuestions)) return
+const answers = await groupSubmitEntryController.begin(groupQuestions)
+if (!answers) return
 const groupSubmitRequestController = this._groupSubmitRequestController || (
 this._groupSubmitRequestController = createGroupSubmitRequestController({
 postGrade: payload => api.post('/review/grade-batch', payload),
