@@ -19,6 +19,7 @@ const trendChart = require('./trend-chart')
 const { createDurationAnimationController } = require('./duration-animation-controller')
 const { createPieTapController } = require('./pie-tap-controller')
 const { createStartAnimationsController } = require('./start-animations-controller')
+const pieGeometry = require('./pie-geometry')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -1458,56 +1459,15 @@ var pageConfig = {
   },
 
   _drawEllipticSector(ctx, cx, cy, radius, scaleY, startA, endA, fillStyle, strokeStyle, lineW) {
-    ctx.save()
-    ctx.translate(cx, cy)
-    ctx.scale(1, scaleY)
-    ctx.beginPath()
-    ctx.moveTo(0, 0)
-    ctx.arc(0, 0, radius, startA, endA)
-    ctx.closePath()
-    if (fillStyle) {
-      ctx.fillStyle = fillStyle
-      ctx.fill()
-    }
-    if (strokeStyle) {
-      ctx.strokeStyle = strokeStyle
-      ctx.lineWidth = lineW || 1
-      ctx.stroke()
-    }
-    ctx.restore()
+    pieGeometry.drawEllipticSector(ctx, cx, cy, radius, scaleY, startA, endA, fillStyle, strokeStyle, lineW)
   },
 
   _getPieGeometry(rect) {
-    const w = rect.width
-    const h = rect.height
-    // Reserve explicit side gutters for reference-style labels.  The old 25.5%
-    // radius left too little horizontal room, forcing leader lines into a
-    // vertical stack on one side of the pie.
-    const radius = Math.min(w * 0.215, h * 0.275)
-    return {
-      w,
-      h,
-      centerX: w / 2,
-      centerY: h * 0.49,
-      radius,
-      tilt: 0.74,
-      depth: radius * 0.08,
-    }
+    return pieGeometry.getPieGeometry(rect)
   },
 
   _roundRectPath(ctx, x, y, width, height, radius) {
-    const r = Math.min(radius, width / 2, height / 2)
-    ctx.beginPath()
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + width - r, y)
-    ctx.quadraticCurveTo(x + width, y, x + width, y + r)
-    ctx.lineTo(x + width, y + height - r)
-    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
-    ctx.lineTo(x + r, y + height)
-    ctx.quadraticCurveTo(x, y + height, x, y + height - r)
-    ctx.lineTo(x, y + r)
-    ctx.quadraticCurveTo(x, y, x + r, y)
-    ctx.closePath()
+    pieGeometry.roundRectPath(ctx, x, y, width, height, radius)
   },
 
   _buildPieLabelLayout(sectors, geometry) {
