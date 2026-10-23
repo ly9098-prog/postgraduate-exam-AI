@@ -54,7 +54,6 @@ import { buildVersionLabels } from "./question-version-labels";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
-import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { exportQuestions } from "./question-api";
 
@@ -77,7 +76,7 @@ import { useQuestionVersionHistory } from "./hooks/use-question-version-history"
 import { useQuestionFeedback } from "./hooks/use-question-feedback";
 import { useQuestionListInteractions } from "./hooks/use-question-list-interactions";
 import { useQuestionListUrlSync } from "./hooks/use-question-list-url-sync";
-import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
+import { useQuestionEditingProjection } from "./hooks/use-question-editing-projection";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
 import { QuestionTableEditors } from "./components/question-table-editors";
@@ -92,10 +91,6 @@ import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries
 
 import { positiveInt } from "./question-list-state";
 import {
-  codeSegmentText,
-  comparableText,
-  contentSegments,
-  isCodeSegment,
   isPlainImageSegment,
   textForStemEditor,
   textFromContent,
@@ -332,43 +327,14 @@ export default function QuestionsPage() {
       baseDetail: baseVersionDetail,
       compareDetail: compareVersionDetail,
     });
-  const editingSegments = useMemo(
-    () => contentSegments(editForm.content),
-    [editForm.content],
-  );
-  const editingFallbackStemImageUrls = useMemo(
-    () =>
-      fallbackQuestionImageUrls(
-        selectedQuestion?.content,
-        selectedQuestion?.image_url,
-      ),
-    [selectedQuestion?.content, selectedQuestion?.image_url],
-  );
-  const unresolvedEditingTableCount = useMemo(
-    () => editingSegments.reduce((count, segment) => {
-      const table = normalizeStructuredTableSegment(segment);
-      return count + (table?.requires_review ? 1 : 0);
-    }, 0),
-    [editingSegments],
-  );
-  const emptyEditingCodeCount = useMemo(
-    () => editingSegments.reduce((count, segment) => {
-      if (!isCodeSegment(segment)) return count;
-      return count + (comparableText(codeSegmentText(segment)) ? 0 : 1);
-    }, 0),
-    [editingSegments],
-  );
-
-  const replaceEditingSegments = useCallback(
-    (segments: Array<Record<string, unknown>>) => {
-      setEditForm((current) => replaceQuestionSegments(current, segments));
-    },
-    [setEditForm],
-  );
-
-  const addEditingCodeSegment = useCallback(() => {
-    setEditForm(addQuestionCodeSegment);
-  }, [setEditForm]);
+  const {
+    editingSegments,
+    editingFallbackStemImageUrls,
+    unresolvedEditingTableCount,
+    emptyEditingCodeCount,
+    replaceEditingSegments,
+    addEditingCodeSegment,
+  } = useQuestionEditingProjection(editForm, selectedQuestion, { setEditForm });
 
   const {
     handleQuestionMutated,
