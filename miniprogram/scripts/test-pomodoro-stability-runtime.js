@@ -130,6 +130,9 @@ const sandbox = {
     if (request === './utils/cancel-end-confirm-controller') {
       return require('../pages/pomodoro/utils/cancel-end-confirm-controller')
     }
+    if (request === './utils/show-end-free-confirm-controller') {
+      return require('../pages/pomodoro/utils/show-end-free-confirm-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

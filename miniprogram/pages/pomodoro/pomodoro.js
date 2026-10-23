@@ -60,6 +60,7 @@ const { createCompletionCelebrationController } = require('./utils/completion-ce
 const { createWorkCompleteController } = require('./utils/work-complete-controller')
 const { createFreeTimerBeginController } = require('./utils/free-timer-begin-controller')
 const { createCancelEndConfirmController } = require('./utils/cancel-end-confirm-controller')
+const { createShowEndFreeConfirmController } = require('./utils/show-end-free-confirm-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -215,6 +216,7 @@ Page({
   _workCompleteController: null,
   _freeTimerBeginController: null,
   _cancelEndConfirmController: null,
+  _showEndFreeConfirmController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -799,6 +801,44 @@ Page({
     return this._cancelEndConfirmController
   },
 
+  _getShowEndFreeConfirmController() {
+    if (!this._showEndFreeConfirmController) {
+      this._showEndFreeConfirmController = createShowEndFreeConfirmController({
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        now: () => api.now(),
+        isPaused: () => !!this.data.isPaused,
+        getElapsedSec: () => this._timerState.elapsedSec,
+        formatElapsedSec,
+        incrementConfirmActionSeq: () => {
+          this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
+          return this._confirmActionSeq
+        },
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        getPauseStartTime: () => this._timerState.pauseStartTime || null,
+        getSessionStartTime: () => this._timerState.sessionStartTime,
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'free confirm snapshot'),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'free confirm rollback'),
+        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
+        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        setData: data => this.setData(data),
+        postPauseWithRetry: snapshot =>
+          this._postPauseWithRetry(this._timerState.sessionId, snapshot.openedAt)
+            .then(() => {
+              if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
+              snapshot.backendPauseDone = true
+              this._confirmTimerSnapshot = snapshot
+              this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
+            }),
+        warn: (msg, e) => console.warn(msg, e),
+      })
+    }
+    return this._showEndFreeConfirmController
+  },
+
   _updateFreeElapsed() {
     if (!this.data.isFreeTimer) return
     if (this.data.showEndConfirm) return
@@ -951,60 +991,7 @@ Page({
   },
 
   async _showEndFreeConfirm() {
-    if (!this._timerState.sessionId || this.data.actionLoading) return
-
-    const now = api.now()
-    const wasPaused = !!this.data.isPaused
-    const elapsed = Math.max(0, this._timerState.elapsedSec || 0)
-    const fmt = formatElapsedSec(elapsed)
-
-    const confirmActionSeq = (this._confirmActionSeq || 0) + 1
-    this._confirmActionSeq = confirmActionSeq
-    const snapshot = buildFreeConfirmSnapshot({
-      confirmActionSeq,
-      sessionId: this._timerState.sessionId,
-      openedAt: now,
-      wasPaused,
-      elapsedSec: elapsed,
-      totalPausedMs: this._timerState.totalPausedMs || 0,
-      pauseStartTime: this._timerState.pauseStartTime || null,
-      sessionStartTime: this._timerState.sessionStartTime,
-    })
-
-    if (!this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'free confirm snapshot')) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-    if (!wasPaused && !this._setPendingPomodoroSync('pause', this._timerState.sessionId, now)) {
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'free confirm rollback')
-      this._showPomodoroPersistenceError()
-      return
-    }
-
-    this._confirmTimerSnapshot = snapshot
-    this._clearFreeTimerInterval()
-    this._timerState.elapsedSec = elapsed
-    this._timerState.pauseStartTime = now
-    this._timerState.freeFriendlyText = fmt.friendly
-    this._timerState.endConfirmMode = 'free-complete'
-    this.setData({
-      ...buildEndConfirmViewModel('free-complete', snapshot),
-      ringCanvasVisible: true,
-      freeDisplayTime: fmt.display,
-      isPaused: true,
-    })
-
-    // Backend pause async — don't block UI
-    if (!wasPaused) {
-      this._postPauseWithRetry(this._timerState.sessionId, snapshot.openedAt)
-        .then(() => {
-          if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
-          snapshot.backendPauseDone = true
-          this._confirmTimerSnapshot = snapshot
-          this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
-        })
-        .catch(e => console.warn('free confirm pause backend sync failed', e))
-    }
+    return this._getShowEndFreeConfirmController().show()
   },
 
   _getCurrentTotalSec() {
