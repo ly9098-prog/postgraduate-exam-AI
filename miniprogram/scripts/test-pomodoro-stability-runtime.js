@@ -136,6 +136,9 @@ const sandbox = {
     if (request === './utils/pause-countdown-end-confirm-controller') {
       return require('../pages/pomodoro/utils/pause-countdown-end-confirm-controller')
     }
+    if (request === './utils/confirm-interrupt-countdown-controller') {
+      return require('../pages/pomodoro/utils/confirm-interrupt-countdown-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

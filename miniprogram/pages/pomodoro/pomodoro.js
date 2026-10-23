@@ -62,6 +62,7 @@ const { createFreeTimerBeginController } = require('./utils/free-timer-begin-con
 const { createCancelEndConfirmController } = require('./utils/cancel-end-confirm-controller')
 const { createShowEndFreeConfirmController } = require('./utils/show-end-free-confirm-controller')
 const { createPauseCountdownEndConfirmController } = require('./utils/pause-countdown-end-confirm-controller')
+const { createConfirmInterruptCountdownController } = require('./utils/confirm-interrupt-countdown-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -219,6 +220,7 @@ Page({
   _cancelEndConfirmController: null,
   _showEndFreeConfirmController: null,
   _pauseCountdownEndConfirmController: null,
+  _confirmInterruptCountdownController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -884,6 +886,32 @@ Page({
     return this._pauseCountdownEndConfirmController
   },
 
+  _getConfirmInterruptCountdownController() {
+    if (!this._confirmInterruptCountdownController) {
+      this._confirmInterruptCountdownController = createConfirmInterruptCountdownController({
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        getConfirmTimerSnapshot: () => this._confirmTimerSnapshot,
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        setTotalPausedMs: v => { this._timerState.totalPausedMs = v },
+        now: () => api.now(),
+        incrementConfirmActionSeq: () => { this._confirmActionSeq = (this._confirmActionSeq || 0) + 1 },
+        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        setData: data => this.setData(data),
+        retryPendingSync: () => this._retryPendingPomodoroSync(),
+        consumeTerminalConflict: (sessionId, action) => this._consumePomodoroTerminalConflict(sessionId, action),
+        handleTerminalConflict: (sessionId, conflict) => this._handlePomodoroTerminalConflict(sessionId, conflict),
+        showToast: toast => wx.showToast(toast),
+        loadTodayStats: () => this.loadTodayStats(),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
+        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
+        resetToIdle: () => this._resetToIdle(),
+      })
+    }
+    return this._confirmInterruptCountdownController
+  },
+
   _updateFreeElapsed() {
     if (!this.data.isFreeTimer) return
     if (this.data.showEndConfirm) return
@@ -1130,41 +1158,7 @@ Page({
   },
 
   async _confirmInterruptCountdown() {
-    if (!this._timerState.sessionId || this.data.actionLoading) return
-
-    const sessionId = this._timerState.sessionId
-    const snapshot = this._confirmTimerSnapshot
-    let totalPausedMs = this._timerState.totalPausedMs || 0
-    if (snapshot && snapshot.openedAt) {
-      totalPausedMs = Math.max(0, Number(snapshot.totalPausedMs || 0) + (api.now() - snapshot.openedAt))
-    }
-    this._timerState.totalPausedMs = totalPausedMs
-    this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-
-    // Persist the terminal intent before ending locally. Terminal actions have
-    // reserved queue capacity, so reaching the pause/resume safety valve still
-    // allows the user to finish the session.
-    if (!this._setPendingPomodoroSync('interrupt', sessionId, api.now())) {
-      this._showPomodoroPersistenceError()
-      this.setData({ actionLoading: false })
-      return
-    }
-    this._retryPendingPomodoroSync().then(synced => {
-      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'interrupt')
-      if (conflict) {
-        this._handlePomodoroTerminalConflict(sessionId, conflict)
-        return
-      }
-      if (!synced) wx.showToast({ title: '网络恢复后将自动同步', icon: 'none' })
-      else this.loadTodayStats()
-    })
-
-    wx.showToast({ title: '已结束本次专注', icon: 'none' })
-    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-    this._confirmTimerSnapshot = null
-    this.setData({ showEndConfirm: false, actionLoading: false })
-    this._resetToIdle()
+    return this._getConfirmInterruptCountdownController().confirm()
   },
 
   async endSession() {

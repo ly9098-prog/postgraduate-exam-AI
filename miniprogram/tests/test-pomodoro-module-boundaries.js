@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 46)
+  assert.equal(result.modules, 47)
   assert.equal(result.edges, 8)
 })
 
@@ -593,6 +593,22 @@ test('pause countdown end confirm shell must lazily reuse one controller', () =>
     .includes('pause countdown end confirm must delegate to its controller'))
 })
 
+test('confirm interrupt countdown shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._confirmInterruptCountdownController = createConfirmInterruptCountdownController({',
+    'void createConfirmInterruptCountdownController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('confirm interrupt countdown must lazily assign its controller'))
+
+  const detachedConfirm = pageSource.replace(
+    'this._getConfirmInterruptCountdownController().confirm()',
+    'this._getConfirmInterruptCountdownController().legacyConfirm()'
+  )
+  assert.ok(pageViolations(detachedConfirm)
+    .includes('confirm interrupt countdown must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -605,6 +621,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 46)
+    assert.equal(result.modules, 47)
   }
 })
