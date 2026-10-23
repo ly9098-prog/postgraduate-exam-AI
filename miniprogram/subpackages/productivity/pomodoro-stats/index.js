@@ -29,6 +29,7 @@ const { buildCumulativeSummaryPatch } = require('./cumulative-summary-patch')
 const { formatStudyDayRangeText } = require('./study-day-range-text')
 const { createSelectDateController } = require('./select-date-controller')
 const { createCumulativeRefreshController } = require('./cumulative-refresh-controller')
+const { createDistributionLoadController } = require('./distribution-load-controller')
 
 const {
   getSubjectColor,
@@ -477,50 +478,30 @@ var pageConfig = {
   },
 
   async _loadDistributionForPeriod(period, animate = true) {
-    const normalized = ['day', 'week', 'month', 'custom'].includes(period) ? period : 'day'
-    const range = this._resolveDistributionRange(normalized, this.data.selectedDate)
-    if (!range.start || !range.end) return
+    await this._getDistributionLoadController().load(period, animate)
+  },
 
-    if (normalized === 'day') {
-      this.setData({
-        distributionPeriod: 'day',
-        distributionRangeStart: range.start,
-        distributionRangeEnd: range.end,
+  _getDistributionLoadController() {
+    if (!this._distributionLoadController) {
+      this._distributionLoadController = createDistributionLoadController({
+        isAlive: () => this._alive,
+        getSelectedDate: () => this.data.selectedDate,
+        getDaySubjectsRaw: () => this._daySubjectsRaw || [],
+        getDistributionPeriod: () => this.data.distributionPeriod,
+        getDistributionRangeStart: () => this.data.distributionRangeStart,
+        getDistributionRangeEnd: () => this.data.distributionRangeEnd,
+        getRequestSeq: () => this._distributionRequestSeq,
+        setRequestSeq: value => { this._distributionRequestSeq = value },
+        resolveDistributionRange: (period, anchor) => this._resolveDistributionRange(period, anchor),
+        ensureSubjectMeta: () => this._ensureSubjectMeta(),
+        getRangeSummary: (start, end) => api.get('/pomodoro/range-summary', { start_date: start, end_date: end }),
+        commitDistributionSubjects: (subjects, animate) => this._commitDistributionSubjects(subjects, animate),
+        setData: patch => this.setData(patch),
+        showToast: title => { if (wx.showToast) wx.showToast({ title, icon: 'none' }) },
+        logError: (message, e) => console.error(message, e),
       })
-      this._commitDistributionSubjects(this._daySubjectsRaw || [], animate)
-      return
     }
-
-    const seq = (this._distributionRequestSeq || 0) + 1
-    this._distributionRequestSeq = seq
-    this.setData({
-      distributionPeriod: normalized,
-      distributionRangeStart: range.start,
-      distributionRangeEnd: range.end,
-      pieLoading: true,
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-    })
-    try {
-      await this._ensureSubjectMeta().catch(() => null)
-      const summary = await api.get('/pomodoro/range-summary', {
-        start_date: range.start,
-        end_date: range.end,
-      })
-      if (
-        !this._alive ||
-        seq !== this._distributionRequestSeq ||
-        normalized !== this.data.distributionPeriod ||
-        range.start !== this.data.distributionRangeStart ||
-        range.end !== this.data.distributionRangeEnd
-      ) return
-      this._commitDistributionSubjects((summary && summary.subjects) || [], animate)
-    } catch (e) {
-      if (!this._alive || seq !== this._distributionRequestSeq) return
-      console.error('加载区间专注分布失败', e)
-      this.setData({ pieLoading: false })
-      if (wx.showToast) wx.showToast({ title: '分布统计加载失败', icon: 'none' })
-    }
+    return this._distributionLoadController
   },
 
   onDistributionPeriodTap(e) {
