@@ -52,6 +52,7 @@ const {
   buildCountdownInterruptSnapshot,
 } = require('./utils/end-confirm-snapshot')
 const { createActiveSyncController } = require('./utils/active-sync-controller')
+const { createPauseToggleController } = require('./utils/pause-toggle-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -195,12 +196,11 @@ Page({
   _canvasInitSeq: 0,
   _startInFlight: false,
   _completionBreakSec: null,
-  _pauseToggleLocked: false,
-  _pauseToggleUnlockTimer: null,
   _syncRetryController: null,
   _statsController: null,
   _themeController: null,
   _activeSyncController: null,
+  _pauseToggleController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -468,21 +468,33 @@ Page({
   },
 
   _releasePauseToggleLock() {
-    if (this._pauseToggleUnlockTimer) {
-      clearTimeout(this._pauseToggleUnlockTimer)
-      this._pauseToggleUnlockTimer = null
+    this._getPauseToggleController().release()
+  },
+
+  _getPauseToggleController() {
+    if (!this._pauseToggleController) {
+      this._pauseToggleController = createPauseToggleController({
+        cooldownMs: POMODORO_PAUSE_TOGGLE_COOLDOWN_MS,
+        setTimeout: (callback, delay) => setTimeout(callback, delay),
+        clearTimeout: id => clearTimeout(id),
+        phase: () => this.data.phase,
+        runningPhase: PHASE.RUNNING,
+        sessionId: () => this._timerState.sessionId,
+        actionLoading: () => this.data.actionLoading,
+        showEndConfirm: () => this.data.showEndConfirm,
+        isFreeTimer: () => this.data.isFreeTimer,
+        isPaused: () => this.data.isPaused,
+        pauseFree: () => this._pauseFreeTimer(),
+        resumeFree: () => this._resumeFreeTimer(),
+        pauseCountdown: () => this._pauseSession(),
+        resumeCountdown: () => this._resumeSession(),
+      })
     }
-    this._pauseToggleLocked = false
+    return this._pauseToggleController
   },
 
   _acquirePauseToggleLock() {
-    if (this._pauseToggleLocked) return false
-    this._pauseToggleLocked = true
-    this._pauseToggleUnlockTimer = setTimeout(() => {
-      this._pauseToggleUnlockTimer = null
-      this._pauseToggleLocked = false
-    }, POMODORO_PAUSE_TOGGLE_COOLDOWN_MS)
-    return true
+    return this._getPauseToggleController().acquire()
   },
 
   /* ==================== Subject Loading ==================== */
@@ -1323,25 +1335,7 @@ Page({
   },
 
   togglePause() {
-    if (
-      this.data.phase !== PHASE.RUNNING ||
-      !this._timerState.sessionId ||
-      this.data.actionLoading ||
-      this.data.showEndConfirm ||
-      !this._acquirePauseToggleLock()
-    ) return
-
-    if (this.data.isFreeTimer) {
-      if (this.data.isPaused) {
-        this._resumeFreeTimer()
-      } else {
-        this._pauseFreeTimer()
-      }
-    } else if (this.data.isPaused) {
-      this._resumeSession()
-    } else {
-      this._pauseSession()
-    }
+    this._getPauseToggleController().toggle()
   },
 
   async _pauseSession() {

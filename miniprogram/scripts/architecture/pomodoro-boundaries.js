@@ -26,6 +26,7 @@ const MODULES = {
   'theme-controller.js': [],
   'end-confirm-snapshot.js': [],
   'active-sync-controller.js': [],
+  'pause-toggle-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -45,7 +46,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2495
+const PAGE_MAX_LINES = 2489
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -66,6 +67,8 @@ const PAGE_METHODS = new Set([
   '_getThemeController', '_getThemeViewModel', '_syncThemeFromStorage',
   '_applyTheme', 'toggleTheme',
   '_getActiveSyncController', '_canLightSyncActive', '_syncActiveSessionLight',
+  '_getPauseToggleController', '_acquirePauseToggleLock', '_releasePauseToggleLock',
+  'togglePause',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -368,6 +371,26 @@ function pageViolations(source) {
             )) {
           errors.push('active light sync must delegate to its controller')
         }
+        if (methodName === '_getPauseToggleController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPauseToggleController',
+              '_pauseToggleController',
+            )) {
+          errors.push('pause toggle must lazily assign its controller')
+        }
+        if (methodName === '_acquirePauseToggleLock' &&
+            !returnsControllerCall(node, '_getPauseToggleController', 'acquire', [])) {
+          errors.push('pause toggle acquire must delegate to its controller')
+        }
+        if (methodName === '_releasePauseToggleLock' &&
+            !callsControllerCall(node, '_getPauseToggleController', 'release', [])) {
+          errors.push('pause toggle release must delegate to its controller')
+        }
+        if (methodName === 'togglePause' &&
+            !callsControllerCall(node, '_getPauseToggleController', 'toggle', [])) {
+          errors.push('pause toggle must delegate to its controller')
+        }
       }
     }
   }
@@ -511,6 +534,25 @@ function hasLazyControllerAccessor(method, factoryName, propertyName) {
     ) &&
     ts.isReturnStatement(statements[1]) &&
     isThisProperty(statements[1].expression, propertyName)
+}
+
+function callsControllerCall(method, accessorName, delegateName, expectedArguments) {
+  const statements = ts.isBlock(method.body) ? method.body.statements : []
+  if (statements.length !== 1 || !ts.isExpressionStatement(statements[0])) return false
+  const call = statements[0].expression
+  if (!ts.isCallExpression(call) ||
+      !ts.isPropertyAccessExpression(call.expression) ||
+      call.expression.name.text !== delegateName ||
+      !ts.isCallExpression(call.expression.expression) ||
+      !ts.isPropertyAccessExpression(call.expression.expression.expression) ||
+      call.expression.expression.expression.expression.kind !== ts.SyntaxKind.ThisKeyword ||
+      call.expression.expression.expression.name.text !== accessorName) {
+    return false
+  }
+  return call.arguments.length === expectedArguments.length &&
+    expectedArguments.every((name, index) => (
+      ts.isIdentifier(call.arguments[index]) && call.arguments[index].text === name
+    ))
 }
 
 function returnsStartControllerCall(method, delegateName, expectedArgument) {
