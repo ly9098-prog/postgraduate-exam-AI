@@ -62,6 +62,9 @@ const {
 const {
   createQuestionTimerController,
 } = require('./utils/question-timer-controller')
+const {
+  createSelfHealController,
+} = require('./utils/self-heal-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1584,6 +1587,18 @@ monotonicNow: () => _monotonicNow(),
 })
 )
 },
+_selfHealController() {
+return this._selfHeal || (
+this._selfHeal = createSelfHealController({
+setSafeModeActive: v => { this._practiceSession.safeModeActive = v },
+getQuestions: () => this.data.questions,
+getCurrentIndex: () => this.data.currentIndex,
+clearRenderCache: () => { this._practiceSession.questionRenderCache = Object.create(null) },
+buildViewModel: (q, force) => this._buildQuestionViewModel(q, force),
+setData: patch => this.setData(patch),
+})
+)
+},
 _answerInteractionController() {
 return this._answerInteraction || (
 this._answerInteraction = createPracticeAnswerInteractionController({
@@ -1645,21 +1660,10 @@ _checkRenderInvariant(renderModel) {
 this._renderInvariantController().check(renderModel)
 },
 _enterSafeMode() {
-console.warn('[SELF_HEAL] CODE render violation detected — entering SAFE_MODE')
-this._practiceSession.safeModeActive = true
-this._reRenderCurrentQuestion()
+this._selfHealController().enterSafeMode()
 },
 _reRenderCurrentQuestion() {
-const q = this.data.questions[this.data.currentIndex]
-if (!q) return
-this._practiceSession.questionRenderCache = Object.create(null)
-const viewModelResult = this._buildQuestionViewModel(q, true)
-if (!viewModelResult) return
-this.setData({
-currentQuestion: viewModelResult.question,
-currentAnswerState: viewModelResult.answerState,
-})
-console.warn('[SELF_HEAL] Re-rendered q' + q.id + ' in SAFE_MODE, mode=' + viewModelResult.question._renderModel.mode)
+this._selfHealController().reRenderCurrentQuestion()
 },
 _showSubmitConfirm(opts) {
 var comp = this.selectComponent('#submitConfirm')
