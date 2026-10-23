@@ -61,6 +61,7 @@ const { createWorkCompleteController } = require('./utils/work-complete-controll
 const { createFreeTimerBeginController } = require('./utils/free-timer-begin-controller')
 const { createCancelEndConfirmController } = require('./utils/cancel-end-confirm-controller')
 const { createShowEndFreeConfirmController } = require('./utils/show-end-free-confirm-controller')
+const { createPauseCountdownEndConfirmController } = require('./utils/pause-countdown-end-confirm-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -217,6 +218,7 @@ Page({
   _freeTimerBeginController: null,
   _cancelEndConfirmController: null,
   _showEndFreeConfirmController: null,
+  _pauseCountdownEndConfirmController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -839,6 +841,49 @@ Page({
     return this._showEndFreeConfirmController
   },
 
+  _getPauseCountdownEndConfirmController() {
+    if (!this._pauseCountdownEndConfirmController) {
+      this._pauseCountdownEndConfirmController = createPauseCountdownEndConfirmController({
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        now: () => api.now(),
+        getCurrentTotalSec: () => this._getCurrentTotalSec(),
+        getCountdownEndAt: () => this._countdownEndAt,
+        getRemainingSec: () => this._timerState.remainingSec,
+        isPaused: () => !!this.data.isPaused,
+        getPhase: () => this.data.phase,
+        incrementConfirmActionSeq: () => {
+          this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
+          return this._confirmActionSeq
+        },
+        getSessionStartTime: () => this._timerState.sessionStartTime,
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        getPauseStartTime: () => this._timerState.pauseStartTime || null,
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'countdown confirm snapshot'),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        setPendingSync: (action, sessionId, now) => this._setPendingPomodoroSync(action, sessionId, now),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'countdown confirm rollback'),
+        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
+        clearTimer: () => this._clearTimer(),
+        setCountdownEndAt: v => { this._countdownEndAt = v },
+        formatCountdownDisplay: sec => this._formatCountdownDisplay(sec),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        setData: data => this.setData(data),
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+        postPauseWithRetry: snapshot =>
+          this._postPauseWithRetry(this._timerState.sessionId, snapshot.openedAt)
+            .then(() => {
+              if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
+              snapshot.backendPauseDone = true
+              this._confirmTimerSnapshot = snapshot
+              this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
+            }),
+        warn: (msg, e) => console.warn(msg, e),
+      })
+    }
+    return this._pauseCountdownEndConfirmController
+  },
+
   _updateFreeElapsed() {
     if (!this.data.isFreeTimer) return
     if (this.data.showEndConfirm) return
@@ -1017,86 +1062,7 @@ Page({
   },
 
   async _pauseCountdownForEndConfirm() {
-    if (!this._timerState.sessionId || this.data.actionLoading) return false
-
-    const now = api.now()
-    const totalSec = this._getCurrentTotalSec()
-    const totalMs = Math.max(1, totalSec * 1000)
-
-    const remainingMs = this._countdownEndAt
-      ? Math.max(0, this._countdownEndAt - now)
-      : Math.max(0, (this._timerState.remainingSec || 0) * 1000)
-
-    const remainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
-    const progress = totalMs > 0 ? remainingMs / totalMs : 0
-    const wasPaused = !!this.data.isPaused
-
-    const confirmActionSeq = (this._confirmActionSeq || 0) + 1
-    this._confirmActionSeq = confirmActionSeq
-    const snapshot = buildCountdownInterruptSnapshot({
-      confirmActionSeq,
-      sessionId: this._timerState.sessionId,
-      openedAt: now,
-      wasPaused,
-      phase: this.data.phase,
-      totalSec,
-      totalMs,
-      remainingMs,
-      remainingSec,
-      progress,
-      sessionStartTime: this._timerState.sessionStartTime,
-      countdownEndAt: this._countdownEndAt,
-      totalPausedMs: this._timerState.totalPausedMs || 0,
-      pauseStartTime: this._timerState.pauseStartTime || null,
-    })
-
-    // The confirm snapshot and, when needed, the backend pause intent are both
-    // durable before the local timer is stopped. This keeps the operation
-    // fail-closed when local storage is unavailable.
-    if (!this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'countdown confirm snapshot')) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    if (!wasPaused && !this._setPendingPomodoroSync('pause', this._timerState.sessionId, now)) {
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'countdown confirm rollback')
-      this._showPomodoroPersistenceError()
-      return false
-    }
-
-    this._confirmTimerSnapshot = snapshot
-    this._clearTimer()
-    this._countdownEndAt = 0
-
-    const fmt = this._formatCountdownDisplay(remainingSec)
-
-    this._timerState.pauseStartTime = now
-    this._timerState.remainingSec = remainingSec
-    this._timerState.progress = progress
-    this.setData({
-      isPaused: true,
-      displayMin: fmt.min,
-      displaySec: fmt.sec,
-    })
-
-    this.drawRing(totalSec, this.data.phase === 'break')
-
-    this._timerState.endConfirmMode = 'countdown-interrupt'
-
-    // Sync backend pause asynchronously; the dialog appears immediately. The
-    // confirmActionSeq guard prevents a late response from mutating a cancelled
-    // confirmation snapshot.
-    if (!wasPaused) {
-      this._postPauseWithRetry(this._timerState.sessionId, snapshot.openedAt)
-        .then(() => {
-          if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
-          snapshot.backendPauseDone = true
-          this._confirmTimerSnapshot = snapshot
-          this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
-        })
-        .catch(e => console.warn('confirm pause backend sync failed', e))
-    }
-
-    return true
+    return this._getPauseCountdownEndConfirmController().pause()
   },
 
   async _showCountdownInterruptConfirm() {
