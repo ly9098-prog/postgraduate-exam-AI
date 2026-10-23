@@ -64,6 +64,7 @@ const { createShowEndFreeConfirmController } = require('./utils/show-end-free-co
 const { createPauseCountdownEndConfirmController } = require('./utils/pause-countdown-end-confirm-controller')
 const { createConfirmInterruptCountdownController } = require('./utils/confirm-interrupt-countdown-controller')
 const { createResetToIdleController } = require('./utils/reset-to-idle-controller')
+const { createUpdateFreeElapsedController } = require('./utils/update-free-elapsed-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -223,6 +224,7 @@ Page({
   _pauseCountdownEndConfirmController: null,
   _confirmInterruptCountdownController: null,
   _resetToIdleController: null,
+  _updateFreeElapsedController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -942,31 +944,25 @@ Page({
     return this._resetToIdleController
   },
 
-  _updateFreeElapsed() {
-    if (!this.data.isFreeTimer) return
-    if (this.data.showEndConfirm) return
-
-    if (this.data.isPaused) {
-      const fmt = formatElapsedSec(this._timerState.elapsedSec || 0)
-      this.setData({
-        freeDisplayTime: fmt.display,
+  _getUpdateFreeElapsedController() {
+    if (!this._updateFreeElapsedController) {
+      this._updateFreeElapsedController = createUpdateFreeElapsedController({
+        isFreeTimer: () => this.data.isFreeTimer,
+        showEndConfirm: () => this.data.showEndConfirm,
+        isPaused: () => this.data.isPaused,
+        getElapsedSec: () => this._timerState.elapsedSec,
+        setData: data => this.setData(data),
+        setFreeFriendlyText: v => { this._timerState.freeFriendlyText = v },
+        getEffectiveFreeElapsedMs: () => this._getEffectiveFreeElapsedMs(),
+        maxMs: () => FREE_TIMER_MAX_MS,
+        setElapsedSec: v => { this._timerState.elapsedSec = v },
       })
-      this._timerState.freeFriendlyText = fmt.friendly
-      return
     }
+    return this._updateFreeElapsedController
+  },
 
-    const elapsedMs = this._getEffectiveFreeElapsedMs()
-    // Cap display at 5-hour max so UI never shows >05:00:00
-    const cappedMs = Math.min(elapsedMs, FREE_TIMER_MAX_MS)
-    const elapsedSec = Math.floor(cappedMs / 1000)
-
-    if (elapsedSec === this._timerState.elapsedSec) return
-    const fmt = formatElapsedSec(elapsedSec)
-    this._timerState.elapsedSec = elapsedSec
-    this._timerState.freeFriendlyText = fmt.friendly
-    this.setData({
-      freeDisplayTime: fmt.display,
-    })
+  _updateFreeElapsed() {
+    return this._getUpdateFreeElapsedController().update()
   },
 
   _getFreeTimerController() {

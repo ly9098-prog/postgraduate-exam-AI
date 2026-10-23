@@ -119,12 +119,12 @@ t('_checkFreeTimerLimitAndAutoEnd checks _freeTimerFinalizing', function () {
     'limit check must also guard on _freeTimerFinalizing')
 })
 
+var updateFreeElapsedCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/update-free-elapsed-controller.js'), 'utf8')
 t('_updateFreeElapsed caps display at FREE_TIMER_MAX_MS', function () {
-  var updateMethod = extractMethod(js, '_updateFreeElapsed')
-  assert.ok(updateMethod.indexOf('FREE_TIMER_MAX_MS') >= 0,
-    '_updateFreeElapsed should reference FREE_TIMER_MAX_MS')
-  assert.ok(updateMethod.indexOf('Math.min') >= 0,
-    '_updateFreeElapsed should use Math.min for capping')
+  assert.ok(updateFreeElapsedCtrlSrc.indexOf('maxMs') >= 0,
+    'update free elapsed controller should reference maxMs')
+  assert.ok(updateFreeElapsedCtrlSrc.indexOf('Math.min') >= 0,
+    'update free elapsed controller should use Math.min for capping')
 })
 
 t('Tick function calls _checkFreeTimerLimitAndAutoEnd', function () {
@@ -228,9 +228,8 @@ t('_checkFreeTimerLimitAndAutoEnd returns false early for paused/not-free/finali
 })
 
 t('_updateFreeElapsed caps display at 05:00:00 via Math.min', function () {
-  var methodBody = extractMethod(js, '_updateFreeElapsed')
-  assert.ok(methodBody.indexOf('Math.min') >= 0)
-  assert.ok(methodBody.indexOf('FREE_TIMER_MAX_MS') >= 0)
+  assert.ok(updateFreeElapsedCtrlSrc.indexOf('Math.min') >= 0)
+  assert.ok(updateFreeElapsedCtrlSrc.indexOf('maxMs') >= 0)
 })
 
 t('_autoFinishFreeTimer clears interval and fixes elapsed to 5h', function () {

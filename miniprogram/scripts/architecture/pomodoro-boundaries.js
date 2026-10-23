@@ -38,6 +38,7 @@ const MODULES = {
   'pause-countdown-end-confirm-controller.js': ['./end-confirm-snapshot'],
   'confirm-interrupt-countdown-controller.js': [],
   'reset-to-idle-controller.js': [],
+  'update-free-elapsed-controller.js': ['./timer-math'],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -57,7 +58,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2356
+const PAGE_MAX_LINES = 2352
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -91,6 +92,7 @@ const PAGE_METHODS = new Set([
   '_getPauseCountdownEndConfirmController', '_pauseCountdownForEndConfirm',
   '_getConfirmInterruptCountdownController', '_confirmInterruptCountdown',
   '_getResetToIdleController', '_resetToIdle',
+  '_getUpdateFreeElapsedController', '_updateFreeElapsed',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -554,6 +556,18 @@ function pageViolations(source) {
         if (methodName === '_resetToIdle' &&
             !returnsControllerCall(node, '_getResetToIdleController', 'reset', [])) {
           errors.push('reset to idle must delegate to its controller')
+        }
+        if (methodName === '_getUpdateFreeElapsedController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createUpdateFreeElapsedController',
+              '_updateFreeElapsedController',
+            )) {
+          errors.push('update free elapsed must lazily assign its controller')
+        }
+        if (methodName === '_updateFreeElapsed' &&
+            !returnsControllerCall(node, '_getUpdateFreeElapsedController', 'update', [])) {
+          errors.push('update free elapsed must delegate to its controller')
         }
       }
     }
