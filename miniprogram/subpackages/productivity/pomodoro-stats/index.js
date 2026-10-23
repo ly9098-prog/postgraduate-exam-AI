@@ -21,6 +21,7 @@ const subjectItems = require('./subject-items')
 const pieLabelRenderer = require('./pie-label-renderer')
 const pieSectorBuilder = require('./pie-sector-builder')
 const pieRenderer = require('./pie-renderer')
+const { createDistributionCommitController } = require('./distribution-commit-controller')
 
 const {
   getSubjectColor,
@@ -520,23 +521,26 @@ var pageConfig = {
   },
 
   _commitDistributionSubjects(rawSubjects, animate) {
-    this._distributionRawSubjects = Array.isArray(rawSubjects) ? rawSubjects.slice() : []
-    this._resetPieCache()
-    const subjectItems = this._buildSubjectItems(this._distributionRawSubjects)
-    this.setData({
-      subjects: subjectItems,
-      distributionHasData: this._hasDistributionData(subjectItems),
-      pieLoading: false,
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-    }, () => {
-      if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
-      this._initCanvases(() => {
-        if (!this._alive || !this._isVisible || this.data.chartMode !== 'pie') return
-        if (animate) this._animatePieOnly()
-        else this._renderPieChart(1, true)
+    this._getDistributionCommitController().commit(rawSubjects, animate)
+  },
+
+  _getDistributionCommitController() {
+    if (!this._distributionCommitController) {
+      this._distributionCommitController = createDistributionCommitController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getChartMode: () => this.data.chartMode,
+        setRawSubjects: subjects => { this._distributionRawSubjects = subjects },
+        resetPieCache: () => this._resetPieCache(),
+        buildSubjectItems: subjects => this._buildSubjectItems(subjects),
+        hasDistributionData: subjects => this._hasDistributionData(subjects),
+        setData: (patch, callback) => this.setData(patch, callback),
+        initCanvases: callback => this._initCanvases(callback),
+        animatePieOnly: () => this._animatePieOnly(),
+        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
       })
-    })
+    }
+    return this._distributionCommitController
   },
 
   async _loadDistributionForPeriod(period, animate = true) {
