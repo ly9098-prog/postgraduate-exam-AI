@@ -30,6 +30,7 @@ const { formatStudyDayRangeText } = require('./study-day-range-text')
 const { createSelectDateController } = require('./select-date-controller')
 const { createCumulativeRefreshController } = require('./cumulative-refresh-controller')
 const { createDistributionLoadController } = require('./distribution-load-controller')
+const { createTrendAnimationController } = require('./trend-animation-controller')
 
 const {
   getSubjectColor,
@@ -562,39 +563,29 @@ var pageConfig = {
   },
 
   _animateTrendOnly() {
-    if (!this._trendCtx || !this._trendBarsRect) {
-      this.setData({ barRendering: false })
-      return
-    }
-    const token = (this._barAnimationToken || 0) + 1
-    this._barAnimationToken = token
-    const duration = 620
-    const startedAt = Date.now()
-    const node = this._trendCanvasNode
-    const raf = node && node.requestAnimationFrame
-      ? cb => node.requestAnimationFrame(cb)
-      : cb => setTimeout(cb, 16)
-    let lastDrawAt = -Infinity
-    this._renderTrendBars(0)
+    this._getTrendAnimationController().animate()
+  },
 
-    const tick = () => {
-      if (!this._alive || !this._isVisible || token !== this._barAnimationToken || this.data.chartMode !== 'bar') return
-      const elapsed = Date.now() - startedAt
-      const raw = Math.min(1, elapsed / duration)
-      if (raw < 1 && elapsed - lastDrawAt >= 40) {
-        lastDrawAt = elapsed
-        this._renderTrendBars(this._easeOutCubic(raw))
-      }
-      if (raw < 1) {
-        this._barRafId = raf(tick)
-      } else {
-        this._renderTrendBars(1)
-        this._barRafId = null
-        this._barRenderedOnce = true
-        this.setData({ barRendering: false })
-      }
+  _getTrendAnimationController() {
+    if (!this._trendAnimationController) {
+      this._trendAnimationController = createTrendAnimationController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getChartMode: () => this.data.chartMode,
+        getTrendCtx: () => this._trendCtx,
+        getTrendBarsRect: () => this._trendBarsRect,
+        getTrendCanvasNode: () => this._trendCanvasNode,
+        getBarAnimationToken: () => this._barAnimationToken,
+        incrementBarAnimationToken: () => { this._barAnimationToken = (this._barAnimationToken || 0) + 1; return this._barAnimationToken },
+        setBarRafId: id => { this._barRafId = id },
+        markBarRenderedOnce: () => { this._barRenderedOnce = true },
+        now: () => Date.now(),
+        setTimeout,
+        setData: patch => this.setData(patch),
+        renderTrendBars: progress => this._renderTrendBars(progress),
+      })
     }
-    this._barRafId = raf(tick)
+    return this._trendAnimationController
   },
 
 
