@@ -19,7 +19,6 @@ import {
   Copy,
   Pencil,
   Trash2,
-  Save,
   X,
   RotateCcw,
   SlidersHorizontal,
@@ -38,6 +37,7 @@ import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
 import { QuestionVersionHistorySection } from "./question-version-history-section";
+import { QuestionEditSubmitFooter } from "./question-edit-submit-footer";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
@@ -1242,21 +1242,14 @@ export default function QuestionsPage() {
                     </div>
                   ) : null}
 
-                  <div className="sticky bottom-0 z-10 -mx-7 -mb-24 mt-8 flex justify-end gap-2 border-t border-slate-200 bg-white/96 px-7 py-4 shadow-[0_-12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl">
-                    <Button variant="secondary" className="min-w-24 border-slate-200 bg-white shadow-none" onClick={cancelEditing}>
-                      <X className="h-4 w-4" />
-                      取消
-                    </Button>
-                    <Button
-                      variant="primary"
-                      className="min-w-28 shadow-none"
-                      onClick={() => updateMutation.mutate()}
-                      disabled={!dirty || updateMutation.isPending || unresolvedEditingTableCount > 0 || emptyEditingCodeCount > 0}
-                    >
-                      <Save className="h-4 w-4" />
-                      {updateMutation.isPending ? "保存中..." : "保存修改"}
-                    </Button>
-                  </div>
+                  <QuestionEditSubmitFooter
+                    cancelEditing={cancelEditing}
+                    saveEditing={() => updateMutation.mutate()}
+                    saving={updateMutation.isPending}
+                    dirty={dirty}
+                    unresolvedTableCount={unresolvedEditingTableCount}
+                    emptyCodeCount={emptyEditingCodeCount}
+                  />
                 </div>
               ) : (
                 /* ===== Detail view ===== */
