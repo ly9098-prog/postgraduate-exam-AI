@@ -61,6 +61,9 @@ const {
 const {
   createRenderSafetyController,
 } = require('./utils/render-safety-controller')
+const {
+  createBatchSizeSheetController,
+} = require('./utils/batch-size-sheet-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -306,6 +309,21 @@ enterSafeMode: () => this._enterSafeMode(),
 getRenderTraces: () => this._reviewSession.renderTraces,
 setRenderTraces: traces => { this._reviewSession.renderTraces = traces },
 isDev: () => config.DEV,
+})
+)
+},
+_batchSizeSheetController() {
+return this._batchSizeSheet || (
+this._batchSizeSheet = createBatchSizeSheetController({
+getPhase: () => this.data.phase,
+isStarting: () => this.data.isStarting,
+isContinuing: () => this.data.isContinuing,
+getReviewBatchSize: () => this.data.reviewBatchSize,
+getPendingBatchSize: () => this.data.pendingBatchSize,
+getBatchSizeOptions: () => REVIEW_BATCH_SIZE_OPTIONS,
+normalizeBatchSize: v => normalizeReviewBatchSize(v),
+markUserSelected: () => { this._userSelectedReviewBatchSize = true },
+setData: patch => this.setData(patch),
 })
 )
 },
@@ -938,12 +956,7 @@ _clearReviewTimer() {
 this._reviewTimerController().clear()
 },
 showBatchSizeSelector() {
-if (this.data.phase !== 'overview') return
-if (this.data.isStarting || this.data.isContinuing) return
-this.setData({
-pendingBatchSize: this.data.reviewBatchSize,
-showBatchSizeSheet: true,
-})
+this._batchSizeSheetController().show()
 },
 handleBatchSheetMaskTap() {
 this.closeBatchSizeSheet()
@@ -951,21 +964,13 @@ this.closeBatchSizeSheet()
 stopBatchSheetPropagation() {
 },
 closeBatchSizeSheet() {
-this.setData({ showBatchSizeSheet: false })
+this._batchSizeSheetController().close()
 },
 selectPendingBatchSize(e) {
-var value = Number(e.currentTarget.dataset.value)
-if (REVIEW_BATCH_SIZE_OPTIONS.indexOf(value) === -1) return
-this.setData({ pendingBatchSize: value })
+this._batchSizeSheetController().selectPending(e)
 },
 confirmBatchSize() {
-var pending = this.data.pendingBatchSize
-pending = normalizeReviewBatchSize(pending)
-this._userSelectedReviewBatchSize = true
-this.setData({
-reviewBatchSize: pending,
-showBatchSizeSheet: false,
-})
+this._batchSizeSheetController().confirm()
 },
 })
 if (typeof module !== 'undefined' && module.exports) {
