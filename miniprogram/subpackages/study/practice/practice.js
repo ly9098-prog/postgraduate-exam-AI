@@ -53,6 +53,9 @@ const {
 const {
   createComputedFieldsController,
 } = require('./utils/computed-fields-controller')
+const {
+  createAnswerFeedbackController,
+} = require('./utils/answer-feedback-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1553,6 +1556,17 @@ setData: patch => this.setData(patch),
 })
 )
 },
+_answerFeedbackController() {
+return this._answerFeedback || (
+this._answerFeedback = createAnswerFeedbackController({
+getComboCount: () => this._practiceSession.comboCount,
+setComboCount: count => { this._practiceSession.comboCount = count },
+setData: patch => this.setData(patch),
+clearFeedbackTimer: () => { if (this._feedbackTimer) { clearTimeout(this._feedbackTimer); this._feedbackTimer = null } },
+setFeedbackTimer: (cb, ms) => { this._feedbackTimer = setTimeout(cb, ms) },
+})
+)
+},
 _answerInteractionController() {
 return this._answerInteraction || (
 this._answerInteraction = createPracticeAnswerInteractionController({
@@ -1608,68 +1622,7 @@ this._computedFieldsController().update(extras)
 },
 noop() {},
 _showAnswerFeedback(q, answer) {
-const isCorrect = adapter.isAnswerCorrect(q, answer)
-const hasAnswer = !!answer
-const nextCombo = isCorrect === true ? this._practiceSession.comboCount + 1 : (isCorrect === false ? 0 : this._practiceSession.comboCount)
-if (!hasAnswer) {
-this._practiceSession.comboCount = nextCombo
-this.setData({ feedbackVisible: false })
-return
-}
-if (isCorrect !== true && isCorrect !== false) {
-this._practiceSession.comboCount = nextCombo
-return
-}
-const feedbackType = isCorrect === true ? 'correct' : 'wrong'
-let feedbackTitle, feedbackDetail, feedbackComboText, feedbackComboLevel, feedbackStarCount
-if (isCorrect === true) {
-if (nextCombo >= 10) {
-feedbackTitle = '学霸连击'
-feedbackDetail = '状态火热，无人能挡'
-feedbackComboText = `🔥 ${nextCombo} 连对`
-feedbackComboLevel = 'fire'
-feedbackStarCount = 6
-} else if (nextCombo >= 5) {
-feedbackTitle = '五连斩'
-feedbackDetail = '进入心流状态，继续推进'
-feedbackComboText = `⚡ ${nextCombo} 连对`
-feedbackComboLevel = 'hot'
-feedbackStarCount = 5
-} else if (nextCombo >= 3) {
-feedbackTitle = '三连对'
-feedbackDetail = '手感正热，保持这个状态'
-feedbackComboText = `${nextCombo} 连对`
-feedbackComboLevel = 'warm'
-feedbackStarCount = 3
-} else {
-feedbackTitle = '回答正确'
-feedbackDetail = '这题很稳，保持当前节奏'
-feedbackComboText = ''
-feedbackComboLevel = ''
-feedbackStarCount = 0
-}
-} else {
-feedbackTitle = '继续加油'
-feedbackDetail = '先记录选择，交卷后集中复盘'
-feedbackComboText = ''
-feedbackComboLevel = ''
-feedbackStarCount = 0
-}
-if (this._feedbackTimer) clearTimeout(this._feedbackTimer)
-this._practiceSession.comboCount = nextCombo
-this.setData({
-feedbackVisible: true,
-feedbackType,
-feedbackTitle,
-feedbackDetail,
-feedbackComboText,
-feedbackComboLevel,
-feedbackStarCount,
-})
-this._feedbackTimer = setTimeout(() => {
-this.setData({ feedbackVisible: false })
-this._feedbackTimer = null
-}, feedbackComboText ? 2000 : 1200)
+this._answerFeedbackController().show(q, answer)
 },
 _checkRenderInvariant(renderModel) {
 if (!renderModel) return
