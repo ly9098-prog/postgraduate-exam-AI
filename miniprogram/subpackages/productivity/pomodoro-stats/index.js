@@ -23,6 +23,7 @@ const pieSectorBuilder = require('./pie-sector-builder')
 const pieRenderer = require('./pie-renderer')
 const { createDistributionCommitController } = require('./distribution-commit-controller')
 const { createSaveDayStartController } = require('./save-day-start-controller')
+const { createSettingsController } = require('./settings-controller')
 
 const {
   getSubjectColor,
@@ -164,57 +165,27 @@ var pageConfig = {
    * loadData 先 await 本方法再读取 selectedDate，保证首次加载就使用正确统计日。
    */
   _ensureSettings() {
-    if (this._settingsLoaded) return Promise.resolve()
-    if (this._settingsPromise) return this._settingsPromise
-    this._settingsPromise = this._loadSettings()
-    return this._settingsPromise
+    return this._getSettingsController().ensure()
   },
 
-  async _loadSettings() {
-    try {
-      const settings = await api.get('/pomodoro/settings')
-      // A concurrent _saveDayStart may have landed a newer day_start_minute while
-      // this GET was in flight; applying the stale response here would revert the
-      // just-saved setting (TOCTOU).  _saveDayStart sets _settingsLoaded before it
-      // resolves, so bail out without clobbering the UI.
-      if (this._settingsLoaded) return
-      const raw = Number(settings && settings.day_start_minute)
-      const dsm = Number.isFinite(raw) ? Math.max(0, Math.min(1439, raw)) : 0
-      const prevToday = this.data._todayDate
-      const today = chinaTime.getChinaStudyDate(dsm)
-      const patch = {
-        dayStartMinute: dsm,
-        dayStartTime: chinaTime.minuteToTimeText(dsm),
-        studyDayRangeText: this._studyDayRangeText(dsm),
-        cumulativePickerStartDate: this._shiftDate(today, -365),
-      }
-      if (today !== prevToday) patch._todayDate = today
-      // 用户停留在旧"今天"或原选中日期超过新最大日期时，跟随新的 today
-      if (!this.data.selectedDate || this.data.selectedDate === prevToday || this.data.selectedDate > today) {
-        patch.selectedDate = today
-        patch.pieDateLabel = '今日'
-        patch.selectedDurationLabel = '今日学习'
-      }
-      const nextSelected = patch.selectedDate || this.data.selectedDate
-      patch.canGoNextDate = !!(nextSelected && today && nextSelected < today)
-      if (nextSelected) {
-        const customMin = this._shiftDate(nextSelected, -365)
-        patch.customRangePickerStartDate = customMin
-        if (this.data.customRangeStartDate && this.data.customRangeStartDate > nextSelected) {
-          patch.customRangeStartDate = nextSelected
-        } else if (this.data.customRangeStartDate && this.data.customRangeStartDate < customMin) {
-          patch.customRangeStartDate = customMin
-        }
-      }
-      this._settingsLoaded = true
-      this.setData(patch)
-    } catch (e) {
-      // settings 请求失败不阻塞、不永久锁定：下一次 loadData 会重试，
-      // 同时 loadData 的后端统计校正（_reconcileFromServer）会兜底。
-      console.error('加载统计日设置失败', e)
-    } finally {
-      this._settingsPromise = null
+  _getSettingsController() {
+    if (!this._settingsController) {
+      this._settingsController = createSettingsController({
+        isLoaded: () => this._settingsLoaded,
+        markLoaded: () => { this._settingsLoaded = true },
+        getSettings: () => api.get('/pomodoro/settings'),
+        getTodayDate: () => this.data._todayDate,
+        getSelectedDate: () => this.data.selectedDate,
+        getCustomRangeStartDate: () => this.data.customRangeStartDate,
+        getChinaStudyDate: minute => chinaTime.getChinaStudyDate(minute),
+        minuteToTimeText: minute => chinaTime.minuteToTimeText(minute),
+        getStudyDayRangeText: minute => this._studyDayRangeText(minute),
+        shiftDate: (date, delta) => this._shiftDate(date, delta),
+        setData: patch => this.setData(patch),
+        logError: (message, e) => console.error(message, e),
+      })
     }
+    return this._settingsController
   },
 
   /**
