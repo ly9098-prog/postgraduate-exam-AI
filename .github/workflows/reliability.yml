@@ -385,6 +385,7 @@ jobs:
           node --test miniprogram/tests/test-review-draft-controller.js
           node --test miniprogram/tests/test-review-answer-interaction-controller.js
           node --test miniprogram/tests/test-review-question-display-controller.js
+          node --test miniprogram/tests/test-review-overview-vm-controller.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
           node miniprogram/tests/test-render-invariant.js
