@@ -42,6 +42,7 @@ function t(desc, fn) {
 console.log('\n--- 1. Source code constants ---')
 
 var js = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+var resetToIdleCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/reset-to-idle-controller.js'), 'utf8')
 var freeRestoreSrc = fs.readFileSync(
   path.join(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'),
   'utf8'
@@ -164,10 +165,9 @@ t('onUnload clears timer interval', function () {
 })
 
 t('_resetToIdle clears free timer state', function () {
-  var resetMethod = extractMethod(js, '_resetToIdle')
-  assert.ok(resetMethod.indexOf('_clearFreeTimerInterval') >= 0)
-  assert.ok(resetMethod.indexOf('isFreeTimer: false') >= 0)
-  assert.ok(resetMethod.indexOf("freeDisplayTime: '00:00:00'") >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf('clearFreeTimerInterval') >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf('isFreeTimer: false') >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf("freeDisplayTime: '00:00:00'") >= 0)
 })
 
 // ══════════════════════════════════════════════════════════════════
@@ -254,11 +254,10 @@ t('_completeFreeTimerSession uses retryable server-authoritative completion', fu
 })
 
 t('_resetToIdle fully clears free timer state', function () {
-  var methodBody = extractMethod(js, '_resetToIdle')
-  assert.ok(methodBody.indexOf('_clearFreeTimerInterval') >= 0)
-  assert.ok(methodBody.indexOf("isFreeTimer: false") >= 0)
-  assert.ok(methodBody.indexOf("freeDisplayTime: '00:00:00'") >= 0)
-  assert.ok(methodBody.indexOf('showEndConfirm: false') >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf('clearFreeTimerInterval') >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf('isFreeTimer: false') >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf("freeDisplayTime: '00:00:00'") >= 0)
+  assert.ok(resetToIdleCtrlSrc.indexOf('showEndConfirm: false') >= 0)
 })
 
 t('onUnload calls _clearTimer', function () {

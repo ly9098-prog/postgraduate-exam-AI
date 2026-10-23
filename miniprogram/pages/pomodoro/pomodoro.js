@@ -63,6 +63,7 @@ const { createCancelEndConfirmController } = require('./utils/cancel-end-confirm
 const { createShowEndFreeConfirmController } = require('./utils/show-end-free-confirm-controller')
 const { createPauseCountdownEndConfirmController } = require('./utils/pause-countdown-end-confirm-controller')
 const { createConfirmInterruptCountdownController } = require('./utils/confirm-interrupt-countdown-controller')
+const { createResetToIdleController } = require('./utils/reset-to-idle-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -221,6 +222,7 @@ Page({
   _showEndFreeConfirmController: null,
   _pauseCountdownEndConfirmController: null,
   _confirmInterruptCountdownController: null,
+  _resetToIdleController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -910,6 +912,34 @@ Page({
       })
     }
     return this._confirmInterruptCountdownController
+  },
+
+  _getResetToIdleController() {
+    if (!this._resetToIdleController) {
+      this._resetToIdleController = createResetToIdleController({
+        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
+        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
+        invalidateCanvas: () => {
+          this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
+          this._canvasReady = false
+          this._canvasInitPending = false
+          this._ctx = null
+          this._pendingDraw = null
+          this._lastDrawnProgress = undefined
+          this._lastDrawnIsBreak = undefined
+          this._ringCache = null
+        },
+        resetTimerState: () => { this._timerState = this._createTimerState() },
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
+        getSelectedTaskType: () => pomodoroTaskTypes.getSelected(),
+        taskTypeLabel: type => pomodoroTaskTypes.label(type),
+        idlePhase: () => PHASE.IDLE,
+        setData: data => this.setData(data),
+        setCompletionBreakSec: v => { this._completionBreakSec = v },
+        updateComputedFields: () => this._updateComputedFields(),
+      })
+    }
+    return this._resetToIdleController
   },
 
   _updateFreeElapsed() {
@@ -2186,47 +2216,7 @@ Page({
   },
 
   _resetToIdle() {
-    this._clearFreeTimerInterval()
-    this._confirmTimerSnapshot = null
-    // Invalidate any selector callback that still points at the running-state
-    // canvas before the wx:if block is removed.
-    this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
-    this._canvasReady = false
-    this._canvasInitPending = false
-    this._ctx = null
-    this._pendingDraw = null
-    this._lastDrawnProgress = undefined
-    this._lastDrawnIsBreak = undefined
-    this._ringCache = null
-    this._timerState = this._createTimerState()
-    this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
-    const preferredTaskType = pomodoroTaskTypes.getSelected()
-    this.setData({
-      phase: PHASE.IDLE,
-      selectedTaskType: preferredTaskType,
-      selectedTaskTypeLabel: pomodoroTaskTypes.label(preferredTaskType),
-      displayMin: '00',
-      displaySec: '00',
-      isPaused: false,
-      isFreeTimer: false,
-      freeDisplayTime: '00:00:00',
-      showEndConfirm: false,
-      ringCanvasPaintReady: false,
-      endConfirmTheme: '',
-      endConfirmTitle: '',
-      endConfirmText: '',
-      endConfirmLine1: '',
-      endConfirmLine2: '',
-      endConfirmLine3: '',
-    })
-    this._completionBreakSec = null
-    this._updateComputedFields()
+    return this._getResetToIdleController().reset()
   },
 
   /* ==================== Stats ==================== */

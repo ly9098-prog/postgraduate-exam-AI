@@ -600,6 +600,7 @@ t('drawRing self-heals a failed canvas initialization on a later tick', () => {
 
 console.log('\n--- Free end-confirm ring recovery ---')
 const cancelEndConfirmSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/cancel-end-confirm-controller.js'), 'utf8')
+const resetToIdleSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/reset-to-idle-controller.js'), 'utf8')
 const redrawFreeRing = method('_redrawFreeRingAfterOverlay')
 t('free ring recovery forces a fresh canvas after overlay dismissal', () => {
   assert.ok(redrawFreeRing.includes('this._timerState.progress = 1'))
@@ -666,7 +667,7 @@ t('canvas is revealed only after a successful draw', () => {
   assert.ok(method('drawRing').includes('this.setData({ ringCanvasPaintReady: true })'))
 })
 t('reset-to-idle invalidates stale canvas init callbacks', () => {
-  assert.ok(method('_resetToIdle').includes('this._canvasInitSeq = (this._canvasInitSeq || 0) + 1'))
+  assert.ok(resetToIdleSrc.includes('options.invalidateCanvas()'))
 })
 t('free light-sync rebuilds canvas if page-hide interrupted initialization', () => {
   assert.ok(method('syncFreeTimer', activeSyncSrc, true).includes('!options.canvasReady() || !options.ctx()'))

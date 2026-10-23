@@ -37,6 +37,7 @@ const MODULES = {
   'show-end-free-confirm-controller.js': ['./end-confirm-snapshot', './end-confirm-view-model'],
   'pause-countdown-end-confirm-controller.js': ['./end-confirm-snapshot'],
   'confirm-interrupt-countdown-controller.js': [],
+  'reset-to-idle-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -56,7 +57,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2366
+const PAGE_MAX_LINES = 2356
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -89,6 +90,7 @@ const PAGE_METHODS = new Set([
   '_getShowEndFreeConfirmController', '_showEndFreeConfirm',
   '_getPauseCountdownEndConfirmController', '_pauseCountdownForEndConfirm',
   '_getConfirmInterruptCountdownController', '_confirmInterruptCountdown',
+  '_getResetToIdleController', '_resetToIdle',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -540,6 +542,18 @@ function pageViolations(source) {
         if (methodName === '_confirmInterruptCountdown' &&
             !returnsControllerCall(node, '_getConfirmInterruptCountdownController', 'confirm', [])) {
           errors.push('confirm interrupt countdown must delegate to its controller')
+        }
+        if (methodName === '_getResetToIdleController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createResetToIdleController',
+              '_resetToIdleController',
+            )) {
+          errors.push('reset to idle must lazily assign its controller')
+        }
+        if (methodName === '_resetToIdle' &&
+            !returnsControllerCall(node, '_getResetToIdleController', 'reset', [])) {
+          errors.push('reset to idle must delegate to its controller')
         }
       }
     }
