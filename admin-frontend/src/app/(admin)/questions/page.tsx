@@ -7,7 +7,6 @@ import {
   Check,
   ChevronDown,
   Download,
-  FileQuestion,
   Filter,
   Loader2,
   AlertCircle,
@@ -30,7 +29,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
-import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
 import { QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
 import { useAuthStore } from "@/lib/auth/auth-store";
@@ -39,6 +37,7 @@ import { buildVersionLabels } from "./question-version-labels";
 import { QuestionVersionHistorySection } from "./question-version-history-section";
 import { QuestionEditSubmitFooter } from "./question-edit-submit-footer";
 import { QuestionListFeedback } from "./question-list-feedback";
+import { QuestionSideDetailPanel } from "./question-side-detail-panel";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
@@ -77,20 +76,10 @@ import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries
 import { positiveInt } from "./question-list-state";
 import {
   textForStemEditor,
-  textFromContent,
 } from "./question-content-editing";
 import { QuestionDetailView } from "./question-detail-view";
 import { buildExportPayload } from "./question-export-payload";
-import { isMultiBlankChoice } from "./question-display-helpers";
-import { MultiBlankQuestionOptions, QuestionOptions } from "@/components/question-options";
-import { QuestionAnalysis } from "@/components/questions/question-analysis";
-import { QuestionAnswerDisplay } from "./components/question-answer-display";
 import { QuestionSecondaryInfo } from "./components/question-secondary-info";
-import {
-  normalizeQuestionOptions,
-  resolveQuestionBlankOptionGroups,
-  resolveQuestionOptions,
-} from "@/lib/question-options";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
 import { QuestionAnswerEditor } from "./question-answer-editor";
 import { QuestionEditBasics } from "./question-edit-basics";
@@ -884,137 +873,24 @@ export default function QuestionsPage() {
             <aside className="hidden xl:block xl:min-h-0 xl:self-stretch">
               <div className="xl:sticky xl:top-0 xl:h-dvh xl:min-h-0 xl:overflow-hidden">
               <div className="flex h-full min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-white p-5">
-                {selectedQuestionId === null ? (
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center animate-fade-in">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-border)] bg-[var(--porcelain)] text-[var(--color-text-hint)] shadow-sm">
-                      <FileQuestion className="h-8 w-8" />
-                    </div>
-                    <p className="mt-5 text-2xl font-bold text-[var(--ink)]">
-                      选择一道题目
-                    </p>
-                    <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--color-text-secondary)]">
-                      在左侧列表中选择题目，查看详情、编辑内容或进行版本对比。
-                    </p>
-                  </div>
-                ) : selectedQuestion ? (
-                  <div
-                    ref={detailScrollRef}
-                    key={selectedQuestion.id}
-                    className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 animate-fade-in [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                  >
-                    <div className="sticky top-0 z-10 -mx-1 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/96 px-1 pb-4 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-white/88">
-                      <div className="min-w-0">
-                        <p className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">
-                          Question
-                        </p>
-                        <h3 className="mt-2 text-2xl font-bold text-[var(--ink)]">
-                          题目 #{selectedQuestion.id}
-                        </h3>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <TypeBadge type={selectedQuestion.question_type} />
-                          <DifficultyBadge difficulty={selectedQuestion.difficulty} />
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {copyQuestionButton}
-                        <Button
-                          variant="secondary"
-                          onClick={() => setIsDetailDrawerOpen(true)}
-                          className="shrink-0 rounded-lg border-slate-200 bg-white shadow-none transition hover:bg-slate-50"
-                        >
-                          <FileQuestion className="h-4 w-4" />
-                          完整详情
-                        </Button>
-                      </div>
-                    </div>
-
-                    <section className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-                      <p className="mb-3 flex items-center justify-between gap-3 font-semibold text-[var(--ink)]">
-                        <span>题干</span>
-                        <span className="font-mono text-[11px] font-normal text-[var(--color-text-hint)]">
-                          #{selectedQuestion.id}
-                        </span>
-                      </p>
-                      <div className="whitespace-pre-wrap text-base leading-8 text-[var(--ink)]">
-                        <QuestionContentRenderer
-                          content={selectedQuestion.content}
-                          fallbackText={textFromContent(selectedQuestion.content)}
-                          preserveCodeText
-                        />
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border border-slate-200 bg-white p-4">
-                      <p className="font-semibold text-[var(--ink)]">选项</p>
-                      <div className="mt-3">
-                        {isMultiBlankChoice(selectedQuestion.question_type) ? (
-                          <MultiBlankQuestionOptions
-                            groups={resolveQuestionBlankOptionGroups(selectedQuestion)}
-                          />
-                        ) : (
-                          <QuestionOptions
-                            options={normalizeQuestionOptions(resolveQuestionOptions(selectedQuestion))}
-                          />
-                        )}
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border border-slate-200 bg-white p-4">
-                      <p className="font-semibold text-slate-950">答案</p>
-                      <div className="mt-2 inline-flex min-h-9 items-center rounded-md bg-slate-50 px-2.5 py-1.5 text-sm font-semibold leading-6 text-slate-800">
-                        <QuestionAnswerDisplay
-                          questionType={selectedQuestion.question_type}
-                          answer={selectedQuestion.answer}
-                        />
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border border-slate-200 bg-white p-4">
-                      <p className="font-semibold text-slate-950">解析</p>
-                      <div className="mt-3">
-                        <QuestionAnalysis value={selectedQuestion.analysis} compact />
-                      </div>
-                    </section>
-
-                    <QuestionSecondaryInfo question={selectedQuestion} />
-
-                    <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
-                      {canWrite ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            startEditing();
-                            setIsDetailDrawerOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          编辑
-                        </Button>
-                      ) : null}
-                      {canDelete ? (
-                        <Button
-                          variant="danger"
-                          onClick={() => requestDelete(selectedQuestion.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          删除
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : detail.isError && selectedQuestionId !== null ? (
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-center animate-fade-in">
-                    <AlertCircle className="h-9 w-9 text-red-400" />
-                    <p className="text-sm font-semibold text-red-700">详情加载失败</p>
-                    <Button variant="secondary" size="sm" onClick={() => detail.refetch()}>重新加载</Button>
-                  </div>
-                ) : (
-                  <div className="min-h-0 flex-1 space-y-3 animate-fade-in">
-                    <div className="h-16 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/75" />
-                    <div className="h-28 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/60" />
-                    <div className="h-44 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/50" />
-                  </div>
-                )}
+                <QuestionSideDetailPanel
+                  questionId={selectedQuestionId}
+                  question={selectedQuestion}
+                  isError={detail.isError}
+                  scrollRef={detailScrollRef}
+                  copyButton={copyQuestionButton}
+                  canWrite={canWrite}
+                  canDelete={canDelete}
+                  onOpenFullDetail={() => setIsDetailDrawerOpen(true)}
+                  onEdit={() => {
+                    startEditing();
+                    setIsDetailDrawerOpen(true);
+                  }}
+                  onDelete={() => {
+                    if (selectedQuestion) requestDelete(selectedQuestion.id);
+                  }}
+                  onRetry={() => detail.refetch()}
+                />
               </div>
               </div>
             </aside>
