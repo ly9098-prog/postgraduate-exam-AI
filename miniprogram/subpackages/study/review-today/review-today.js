@@ -76,6 +76,9 @@ const {
 const {
   createReviewSelfHealController,
 } = require('./utils/self-heal-controller')
+const {
+  createOverviewSyncController,
+} = require('./utils/overview-sync-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -352,6 +355,15 @@ showQuestion: idx => this._showQuestion(idx),
 })
 )
 },
+_overviewSyncController() {
+return this._overviewSync || (
+this._overviewSync = createOverviewSyncController({
+getSession: () => this._reviewSession,
+getPhase: () => this.data.phase,
+getTodayDueCount: () => this.data.todayDueCount,
+})
+)
+},
 onLoad(options) {
 let statusBar = 20
 try {
@@ -428,11 +440,7 @@ try {
 const overview = await api.get('/review/today/overview')
 if (!this._alive || requestSeq !== this._overviewRequestSeq) return
 const vm = this.buildReviewOverviewVM(overview)
-this._reviewSession.reviewOverview = overview
-this._reviewSession.taskDate = String(overview.date || getChinaDate(0))
-this._reviewSession.allTodayQuestionIds = overview.all_question_ids || []
-this._reviewSession.completedQuestionIds = overview.completed_question_ids || []
-this._reviewSession.remainingQuestionIds = overview.remaining_question_ids || []
+this._overviewSyncController().applyOverviewToSession(overview, vm)
 const targetPhase = vm.todayRemainingCount > 0 ? 'overview' : 'empty'
 const shouldAutoStart = this._autoStartPending && targetPhase === 'overview'
 if (targetPhase === 'empty') this._autoStartPending = false
@@ -462,21 +470,8 @@ try {
 const overview = await api.get('/review/today/overview')
 if (!this._alive || requestSeq !== this._overviewRequestSeq) return
 const vm = this.buildReviewOverviewVM(overview)
-this._reviewSession.reviewOverview = overview
-this._reviewSession.allTodayQuestionIds = overview.all_question_ids || []
-this._reviewSession.completedQuestionIds = overview.completed_question_ids || []
-this._reviewSession.remainingQuestionIds = overview.remaining_question_ids || []
-if (this._reviewSession.todayTaskTotalCount > 0 && (this.data.phase === 'reviewing' || this.data.phase === 'group-result')) {
-const taskTotalCount = Math.max(
-Number(this._reviewSession.todayTaskTotalCount || 0),
-Number(this.data.todayDueCount || 0)
-)
-const remainingCount = Math.min(taskTotalCount, Math.max(0, Number(vm.todayRemainingCount || 0)))
-vm.todayDueCount = taskTotalCount
-vm.todayRemainingCount = remainingCount
-vm.todayCompletedCount = Math.max(0, taskTotalCount - remainingCount)
-vm.todayProgressPercent = taskTotalCount > 0 ? Math.round(vm.todayCompletedCount / taskTotalCount * 100) : 0
-}
+this._overviewSyncController().applyOverviewToSession(overview, vm)
+this._overviewSyncController().adjustVmForActiveSession(vm)
 this.setData({
 ...vm,
 })
@@ -493,17 +488,7 @@ try {
 const overview = await api.get('/review/today/overview')
 if (!this._alive) return false
 const vm = this.buildReviewOverviewVM(overview || {})
-session.taskDate = String((overview && overview.date) || currentDate)
-session.reviewOverview = overview || {}
-session.allTodayQuestionIds = (overview && overview.all_question_ids) || []
-session.completedQuestionIds = (overview && overview.completed_question_ids) || []
-session.remainingQuestionIds = (overview && overview.remaining_question_ids) || []
-session.allGroupResults = []
-session.totalCorrect = 0
-session.totalWrong = 0
-session.totalCompleted = 0
-session.todayTaskTotalCount = Math.max(0, Number(vm.todayDueCount || 0))
-session.completedBeforeSession = Math.max(0, Number(vm.todayCompletedCount || 0))
+this._overviewSyncController().applyOverviewWithDayReset(overview, vm)
 this._setDateStr()
 this.setData({
 ...vm,
