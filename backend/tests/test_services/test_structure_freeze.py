@@ -387,12 +387,18 @@ class TestAIRepairPreservesOptions:
             "duration_ms": 800,
         }
         mocks = {
+            "runtime": MagicMock(
+                api_key="test-key",
+                base_url="https://test.example.com",
+                model_name="test-model",
+                provider="test",
+            ),
             "is_available": MagicMock(return_value=True),
             "chat": AsyncMock(return_value=mock_response),
         }
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         # Frozen guard should reject the AI's option modification →
         # question goes to unrepaired, not repaired

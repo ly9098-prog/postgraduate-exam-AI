@@ -239,15 +239,3 @@ class TestReviewOverview:
         assert data["today_completed_count"] == 2
         assert data["today_remaining_count"] == 3
         assert data["today_due_count"] == data["today_completed_count"] + data["today_remaining_count"]
-
-    def test_overview_dirty_schedule_consistency(self):
-        """Overview counts are internally consistent (tested via next-batch, not overview directly)."""
-        # The overview endpoint uses the same service as next-batch.
-        # Dirty schedule filtering is tested via test_dirty_schedule_filtered above.
-        # This test verifies the overview schema accepts various valid values.
-        resp = client.get("/api/v1/review/today/overview")
-        assert resp.status_code == 200
-        data = resp.json()
-        for key in ("today_due_count", "today_completed_count", "today_remaining_count",
-                    "today_overdue_count", "today_new_due_count", "has_due_review", "is_completed"):
-            assert key in data

@@ -30,6 +30,7 @@ def _make_mock_db():
     db.refresh = AsyncMock()
     db.flush = AsyncMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=0)
     return db
 
 
@@ -75,10 +76,10 @@ class TestSeedDefaultStrategies:
 
         result = _run(seed_default_recommendation_strategies(db, force=False))
 
-        assert result["created"] == 5
+        assert result["created"] == 6
         assert result["updated"] == 0
         assert result["skipped"] == 0
-        assert db.add.call_count == 5
+        assert db.add.call_count == 6
 
     def test_seed_skips_when_all_exist_and_no_force(self):
         """所有策略已存在且字段完整时，force=False 全部 skip。"""
@@ -107,7 +108,7 @@ class TestSeedDefaultStrategies:
         result = _run(seed_default_recommendation_strategies(db, force=False))
 
         assert result["created"] == 0
-        assert result["skipped"] == 5
+        assert result["skipped"] == 6
         assert db.add.call_count == 0
 
     def test_seed_force_overwrites_existing(self):
@@ -133,7 +134,7 @@ class TestSeedDefaultStrategies:
         result = _run(seed_default_recommendation_strategies(db, force=True))
 
         assert result["created"] == 0
-        assert result["updated"] == 5
+        assert result["updated"] == 6
         assert result["skipped"] == 0
 
 
@@ -233,16 +234,19 @@ class TestExperimentSafetyValve:
         mock_exp.status = "running"
         mock_exp.auto_pause_on_error_rate = 0.3
         mock_exp.min_sample_size = 10
+        mock_exp.variants = [{"key": "A", "strategy": "random"}]
 
         # 查实验
         # 查指标聚合
-        mock_metric_row = MagicMock()
-        mock_metric_row.__getitem__ = lambda self, i: ("A", 50, 20, 100)[i]
-        # variant_key="A", answer_count=50, wrong_count=20, exposure_count=100
+        mock_metric_row = MagicMock(
+            exposure_count=100,
+            answer_count=50,
+            wrong_count=20,
+        )
 
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=mock_exp),
-            _make_execute_result(all=[mock_metric_row]),
+            _make_execute_result(one=mock_metric_row),
         ]
 
         result = _run(evaluate_experiment_safety(
@@ -268,12 +272,11 @@ class TestExperimentSafetyValve:
         mock_exp.min_sample_size = 100  # 需要 100 样本
 
         # 只有 10 个回答（< 100）
-        mock_metric_row = MagicMock()
-        mock_metric_row.__getitem__ = lambda self, i: ("A", 10, 5, 50)[i]
+        mock_metric_row = MagicMock(exposure_count=50, answer_count=10, wrong_count=5)
 
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=mock_exp),
-            _make_execute_result(all=[mock_metric_row]),
+            _make_execute_result(one=mock_metric_row),
         ]
 
         result = _run(evaluate_experiment_safety(
@@ -299,12 +302,11 @@ class TestExperimentSafetyValve:
         mock_exp.min_sample_size = 10
 
         # 错误率 10% (< 50%)
-        mock_metric_row = MagicMock()
-        mock_metric_row.__getitem__ = lambda self, i: ("A", 100, 10, 200)[i]
+        mock_metric_row = MagicMock(exposure_count=200, answer_count=100, wrong_count=10)
 
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=mock_exp),
-            _make_execute_result(all=[mock_metric_row]),
+            _make_execute_result(one=mock_metric_row),
         ]
 
         result = _run(evaluate_experiment_safety(
@@ -556,7 +558,7 @@ class TestPhase45Regression:
         db.execute.return_value = mock_result
 
         questions = _run(get_practice_questions(
-            db, user_id=1, subject_code="exam408-ds", count=5, mode="random",
+            db, user_id=1, subject_code="data_structure", count=5, mode="random",
         ))
         assert isinstance(questions, list)
 

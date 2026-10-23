@@ -1,6 +1,6 @@
 """Phase 4.6 — 推荐指标调度器 + 日志保留清理 + 策略权重重排 单元测试。"""
 import asyncio
-from datetime import date, timedelta
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure all ORM models are registered so string relationships resolve
@@ -115,64 +115,129 @@ class TestRecommendationMetricsScheduler:
 
         assert isinstance(recommendation_metrics_scheduler, RecommendationMetricsScheduler)
 
-    def test_safe_run_aggregates_yesterday(self):
+    def test_safe_run_delegates_to_system_task_service(self):
         from app.services.recommendation_metrics_scheduler import (
             RecommendationMetricsScheduler,
         )
 
-        sched = RecommendationMetricsScheduler.__new__(RecommendationMetricsScheduler)
-        handle = MagicMock()
-        handle.is_still_held.return_value = True
-        lock_cm = AsyncMock()
-        lock_cm.__aenter__.return_value = handle
-        lock_cm.__aexit__.return_value = False
-        sched._lock = MagicMock()
-        sched._lock.acquire_and_renew.return_value = lock_cm
-
-        mock_db = _make_mock_db()
-        session_cm = AsyncMock()
-        session_cm.__aenter__.return_value = mock_db
-        session_cm.__aexit__.return_value = False
-
-        yesterday = date.today() - timedelta(days=1)
+        sched = RecommendationMetricsScheduler()
+        outcome = MagicMock(status="success", message="completed")
 
         with patch(
-            "app.services.recommendation_metrics_scheduler.async_session",
-            return_value=session_cm,
-        ), patch(
-            "app.services.recommendation_metrics_scheduler.aggregate_recommendation_metrics_daily",
-            new=AsyncMock(return_value={"aggregated_rows": 3}),
-        ) as agg, patch(
-            "app.services.recommendation_metrics_scheduler.cleanup_expired_recommendation_logs",
-            new=AsyncMock(return_value=0),
-        ) as cleanup:
+            "app.services.system_task_service.execute_scheduled_task",
+            new=AsyncMock(return_value=outcome),
+        ) as execute:
             _run(sched._safe_run())
 
-            agg.assert_awaited_once()
-            assert agg.await_args.kwargs["target_date"] == yesterday
-            cleanup.assert_awaited_once()
-            mock_db.commit.assert_awaited()
+        execute.assert_awaited_once_with(
+            "recommendation_metrics_daily", source="scheduler"
+        )
 
-    def test_safe_run_skips_when_lock_held(self):
+    def test_safe_run_logs_skipped_outcome(self, caplog):
+        import logging
+
         from app.services.recommendation_metrics_scheduler import (
             RecommendationMetricsScheduler,
         )
 
-        sched = RecommendationMetricsScheduler.__new__(RecommendationMetricsScheduler)
-        handle = MagicMock()
-        handle.is_still_held.return_value = False
-        lock_cm = AsyncMock()
-        lock_cm.__aenter__.return_value = handle
-        lock_cm.__aexit__.return_value = False
-        sched._lock = MagicMock()
-        sched._lock.acquire_and_renew.return_value = lock_cm
+        sched = RecommendationMetricsScheduler()
+        outcome = MagicMock(status="skipped", message="already run")
 
-        with patch(
-            "app.services.recommendation_metrics_scheduler.aggregate_recommendation_metrics_daily",
-            new=AsyncMock(),
-        ) as agg:
+        with (
+            patch(
+                "app.services.system_task_service.execute_scheduled_task",
+                new=AsyncMock(return_value=outcome),
+            ),
+            caplog.at_level(logging.INFO, logger="2240ai.recommendation_metrics"),
+        ):
             _run(sched._safe_run())
-            agg.assert_not_awaited()
+
+        assert "推荐指标聚合跳过: already run" in caplog.text
+
+    def test_system_task_backfills_rolling_window_then_cleans(self):
+        from app.services import system_task_service as service
+
+        db = MagicMock()
+        db.commit = AsyncMock()
+        db.rollback = AsyncMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        aggregate = AsyncMock(return_value={"aggregated_rows": 2})
+        cleanup = AsyncMock(return_value=3)
+
+        async def run_work(task_id, source, lock_name, work, *, ttl=600):
+            assert (task_id, source, lock_name, ttl) == (
+                "recommendation_metrics_daily",
+                "scheduler",
+                "recommendation:metrics:daily",
+                600,
+            )
+            return await work()
+
+        with (
+            patch.object(service, "_run_with_lock", new=run_work),
+            patch("app.core.database.async_session", return_value=session_cm),
+            patch(
+                "app.services.recommendation_metrics_service.aggregate_recommendation_metrics_daily",
+                new=aggregate,
+            ),
+            patch(
+                "app.services.recommendation_log_service.cleanup_expired_recommendation_logs",
+                new=cleanup,
+            ),
+            patch.object(service, "shanghai_today", return_value=date(2026, 10, 23)),
+        ):
+            result = _run(service._run_recommendation_metrics("scheduler"))
+
+        target_dates = [call.kwargs["target_date"] for call in aggregate.await_args_list]
+        assert target_dates == [date(2026, 10, day) for day in range(16, 23)]
+        assert db.commit.await_count == 7
+        db.rollback.assert_not_awaited()
+        cleanup.assert_awaited_once()
+        assert result == "回补最近 7 天，聚合 14 行，清理 3 条推荐日志"
+
+    def test_system_task_failure_blocks_log_cleanup(self):
+        from app.services import system_task_service as service
+
+        db = MagicMock()
+        db.commit = AsyncMock()
+        db.rollback = AsyncMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        async def aggregate(_db, *, target_date):
+            if target_date == date(2026, 10, 20):
+                raise RuntimeError("aggregate failed")
+            return {"aggregated_rows": 1}
+
+        cleanup = AsyncMock(return_value=9)
+
+        async def run_work(_task_id, _source, _lock_name, work, *, ttl=600):
+            assert ttl == 600
+            return await work()
+
+        with (
+            patch.object(service, "_run_with_lock", new=run_work),
+            patch("app.core.database.async_session", return_value=session_cm),
+            patch(
+                "app.services.recommendation_metrics_service.aggregate_recommendation_metrics_daily",
+                new=AsyncMock(side_effect=aggregate),
+            ),
+            patch(
+                "app.services.recommendation_log_service.cleanup_expired_recommendation_logs",
+                new=cleanup,
+            ),
+            patch.object(service, "shanghai_today", return_value=date(2026, 10, 23)),
+        ):
+            result = _run(service._run_recommendation_metrics("scheduler"))
+
+        assert result.status == "failed"
+        assert "失败日期：2026-10-20" in result.message
+        assert "本轮未执行推荐日志清理" in result.message
+        db.rollback.assert_awaited_once()
+        cleanup.assert_not_awaited()
 
 
 # ── Test 3: _apply_strategy_weight_rerank 守卫与排序 ──

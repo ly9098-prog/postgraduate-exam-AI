@@ -1,7 +1,7 @@
-"""Regression tests for DeepSeek client model=None fallback.
+"""Regression tests for DeepSeek client model configuration.
 
 Covers:
-1. DeepSeekClient.chat() 内部兜底 model=None → 默认模型
+1. DeepSeekClient.chat() 在 model=None 时直接失败，禁止恢复隐藏默认模型
 2. 显式传模型名时不被覆盖
 """
 
@@ -39,42 +39,18 @@ def _make_client(api_key="sk-test-key", base_url="https://api.deepseek.com"):
 
 
 @pytest.mark.asyncio
-async def test_chat_model_none_falls_back():
-    """model=None 时应使用默认模型名（字符串）。"""
+async def test_chat_model_none_is_rejected():
+    """model=None 时应失败关闭，要求后台配置模型标识。"""
     client = _make_client()
 
-    with patch("app.ai.client.request_remote_bytes", return_value=_make_remote()) as mock_req:
-        result = await client.chat(
+    with patch("app.ai.client.request_remote_bytes") as mock_req, \
+            pytest.raises(RuntimeError, match="AI模型标识未配置"):
+        await client.chat(
             messages=[{"role": "user", "content": "hello"}],
             model=None,
         )
 
-    assert result is not None
-    request_body = mock_req.call_args.args[0]
-    assert "/v1/chat/completions" in request_body
-    payload = json.loads(mock_req.call_args.kwargs["body"])
-    assert isinstance(payload["model"], str), f"model 应是字符串, 实际: {payload['model']}"
-    assert payload["model"] == "deepseek-v4-flash"
-
-
-@pytest.mark.asyncio
-async def test_chat_model_none_no_settings_field():
-    """没有显式模型配置时也应兜底到默认模型名。"""
-    client = DeepSeekClient()
-    client._api_key = "sk-test-key"
-    client._base_url = "https://api.deepseek.com"
-    client.timeout = 60
-
-    with patch("app.ai.client.request_remote_bytes", return_value=_make_remote()) as mock_req:
-        result = await client.chat(
-            messages=[{"role": "user", "content": "hello"}],
-            model=None,
-        )
-
-    assert result is not None
-    payload = json.loads(mock_req.call_args.kwargs["body"])
-    assert isinstance(payload["model"], str)
-    assert payload["model"] == "deepseek-v4-flash"
+    mock_req.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -94,18 +70,14 @@ async def test_chat_passes_model_str():
 
 
 @pytest.mark.asyncio
-async def test_chat_model_none_sentry_tag_uses_fallback():
-    """Sentry tag 应使用兜底后的模型名。"""
+async def test_chat_model_none_does_not_start_request_or_tag():
+    """model=None 时不发请求，也不上报缺失模型的 Sentry tag。"""
     client = _make_client()
 
-    with patch("app.ai.client.request_remote_bytes", return_value=_make_remote()), \
-         patch("app.ai.client.set_tag") as mock_set_tag:
+    with patch("app.ai.client.request_remote_bytes") as mock_req, \
+            patch("app.ai.client.set_tag") as mock_set_tag, \
+            pytest.raises(RuntimeError, match="AI模型标识未配置"):
         await client.chat(messages=[{"role": "user", "content": "hi"}], model=None)
 
-    ai_model_calls = [
-        call for call in mock_set_tag.call_args_list
-        if call.args[0] == "ai.model"
-    ]
-    assert ai_model_calls, "应调用 set_tag('ai.model', ...)"
-    model_value = ai_model_calls[0].args[1]
-    assert isinstance(model_value, str), f"model tag 应是字符串: {model_value}"
+    mock_req.assert_not_called()
+    mock_set_tag.assert_not_called()

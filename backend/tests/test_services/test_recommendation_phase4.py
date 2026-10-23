@@ -245,6 +245,8 @@ class TestAssignUserToVariant:
         # 模拟实验
         mock_exp = MagicMock()
         mock_exp.id = 1
+        mock_exp.traffic_ratio = 1.0
+        mock_exp.max_traffic_percent = 100.0
         mock_exp.variants = [
             {"key": "A", "strategy": "random", "ratio": 0.25},
             {"key": "B", "strategy": "weakness_vector", "ratio": 0.25},
@@ -252,11 +254,10 @@ class TestAssignUserToVariant:
             {"key": "D", "strategy": "similar_vector", "ratio": 0.25},
         ]
 
-        # 第一次查: 无已有分配
-        # 第二次查: 获取实验信息
+        # First query: no prior assignment; second query: experiment traffic cap.
         db.execute.side_effect = [
-            _make_execute_result(scalar_one_or_none=None),  # 无已有分配
-            _make_execute_result(scalar_one_or_none=mock_exp),  # 实验信息
+            _make_execute_result(scalar_one_or_none=None),
+            _make_execute_result(scalar_one_or_none=mock_exp),
         ]
 
         result1 = _run(assign_user_to_variant(db, user_id=42, experiment_id=1))
@@ -270,6 +271,7 @@ class TestAssignUserToVariant:
 
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=mock_assignment),
+            _make_execute_result(scalar_one_or_none=mock_exp),
         ]
 
         result2 = _run(assign_user_to_variant(db, user_id=42, experiment_id=1))
@@ -530,22 +532,23 @@ class TestCompareExperimentVariants:
         mock_exp = MagicMock()
         mock_exp.id = 1
         mock_exp.name = "test_exp"
+        mock_exp.variants = [
+            {"key": "A", "strategy": "random"},
+            {"key": "B", "strategy": "knowledge_path"},
+        ]
 
-        # 查实验 → scalar_one_or_none
-        # 查 variant_keys → all
-        # GROUP BY 聚合 → all (一次查询所有 variant)
-        mock_group_row_a = MagicMock()
-        mock_group_row_a.__getitem__ = lambda self, i: ("A", 100, 40, 30, 0.75, 0.4, 0.1, 0.5)[i]
-        mock_group_row_b = MagicMock()
-        mock_group_row_b.__getitem__ = lambda self, i: ("B", 120, 50, 40, 0.8, 0.5, 0.15, 0.6)[i]
-
+        # Query experiment, then aggregate logs directly by variant.
+        mock_row_a = MagicMock(
+            variant_key="A", exposure_count=100, click_count=40,
+            answer_count=30, correct_count=22, avg_mastery_delta=0.5,
+        )
+        mock_row_b = MagicMock(
+            variant_key="B", exposure_count=120, click_count=50,
+            answer_count=40, correct_count=32, avg_mastery_delta=0.6,
+        )
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=mock_exp),
-            _make_execute_result(all=[
-                MagicMock(variant_key="A", strategy="random"),
-                MagicMock(variant_key="B", strategy="knowledge_path"),
-            ]),
-            _make_execute_result(all=[mock_group_row_a, mock_group_row_b]),
+            _make_execute_result(all=[mock_row_a, mock_row_b]),
         ]
 
         result = _run(compare_experiment_variants(
@@ -682,7 +685,7 @@ class TestSmartFallbackOnExperimentFailure:
             ):
                 # 即使实验服务失败，也不应抛异常
                 questions, meta = _run(get_smart_practice_questions(
-                    db, user_id=1, subject_code="exam408-ds", count=5,
+                    db, user_id=1, subject_code="data_structure", count=5,
                     smart_strategy="weakness_vector",
                 ))
 
@@ -710,7 +713,7 @@ class TestOriginalModesUnaffected:
         db.execute.return_value = mock_result
 
         questions = _run(get_practice_questions(
-            db, user_id=1, subject_code="exam408-ds", count=5, mode="random",
+            db, user_id=1, subject_code="data_structure", count=5, mode="random",
         ))
 
         assert isinstance(questions, list)
@@ -730,7 +733,7 @@ class TestOriginalModesUnaffected:
         db.execute.return_value = mock_result
 
         questions = _run(get_practice_questions(
-            db, user_id=1, subject_code="exam408-ds", count=5, mode="sequential",
+            db, user_id=1, subject_code="data_structure", count=5, mode="sequential",
         ))
 
         assert isinstance(questions, list)

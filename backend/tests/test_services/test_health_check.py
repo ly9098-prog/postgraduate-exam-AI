@@ -62,6 +62,7 @@ def _fake_db(models: list) -> AsyncMock:
     """Return an AsyncSession mock whose execute returns the given model list."""
     db = AsyncMock()
     db.execute.return_value = _FakeResult(models)
+    db.scalar.return_value = 0
     return db
 
 
@@ -167,17 +168,38 @@ _APP.include_router(system_health_router)
 # to prevent cross-test contamination of app.dependency_overrides.
 from types import SimpleNamespace as _SN
 
+from app.api.v1 import admin_system_health as _system_health_api
 from app.core import admin_security as _admin_sec_mod
 from app.core import database as _db_mod
+from app.core.admin_security import AdminPrincipal
 
 # Mutable holder for per-test DB model data — _fake_get_db reads from this.
 _db_models: list = []
 
 _original_get_permission_names = _admin_sec_mod._get_permission_names
+_route_permission_dependency = _system_health_api.router.routes[0].dependant.dependencies[0].call
+
+_TASK_DIAGNOSTICS_OK = {
+    "health": {"ok": True, "severity": "ok", "issues": []},
+    "outbox": {"unpublished": 0, "oldest_unpublished_seconds": 0},
+    "redis": {"available": True, "totals": {"ready": 0, "dead": 0}},
+    "projection": {"unprojected": 0},
+    "async_runtime_expected": False,
+}
 
 
 async def _fake_get_permission_names(db, role_id):
     return {"import:read", "import:write", "admin:*"}
+
+
+@pytest.fixture(autouse=True)
+def _stub_task_diagnostics():
+    """Keep API tests focused on AI health instead of runtime Redis/DB fixtures."""
+    with patch(
+        "app.services.task_observability_service.collect_task_diagnostics",
+        new=AsyncMock(return_value=_TASK_DIAGNOSTICS_OK),
+    ):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -194,14 +216,20 @@ def _isolate_api_overrides():
         fake_user = _SN(id=1, role_id=1, username="test", display_name="Test", is_active=True)
         return AdminPrincipal(user=fake_user, token_payload={})
 
+    async def _fake_require_permission():
+        fake_user = _SN(id=1, role_id=1, username="test", display_name="Test", is_active=True)
+        return AdminPrincipal(user=fake_user, token_payload={})
+
     _APP.dependency_overrides[_db_mod.get_db] = _fake_get_db
     _APP.dependency_overrides[_admin_sec_mod.get_current_admin] = _fake_get_current_admin
+    _APP.dependency_overrides[_route_permission_dependency] = _fake_require_permission
     _admin_sec_mod._get_permission_names = _fake_get_permission_names
 
     yield
 
     _APP.dependency_overrides.pop(_db_mod.get_db, None)
     _APP.dependency_overrides.pop(_admin_sec_mod.get_current_admin, None)
+    _APP.dependency_overrides.pop(_route_permission_dependency, None)
     _admin_sec_mod._get_permission_names = _original_get_permission_names
 # ------------------------------------------------------------
 
@@ -241,6 +269,7 @@ def test_api_system_health_enabled_without_default(client):
     assert resp.status_code == 200
     data = resp.json()
     # warning doesn't make ok=false by design (only error-level checks do)
+    assert data["ok"] is True
     ai = data["checks"]["ai_model_config"]
     assert ai["severity"] == "warning"
     assert ai["code"] == "AI_MODEL_DEFAULT_MISSING"

@@ -12,7 +12,7 @@ def test_collect_migration_checkpoints_is_a_non_empty_unique_chain():
 
     assert checkpoints
     assert len(checkpoints) == len(set(checkpoints))
-    assert checkpoints[-1] == "s408seq20260911"
+    assert checkpoints[-1] == "v19_pomodoro_subject_allocations"
 
 
 def test_load_migration_checkpoints_rejects_invalid_shape(tmp_path: Path):

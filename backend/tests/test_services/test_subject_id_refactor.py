@@ -307,7 +307,27 @@ class TestPublishPropagatesSubjectId:
                 pass
 
         db = Db()
-        result = await publish_single_question(db, qi)
+        with (
+            patch("app.features.question_publish_service.process_question_pipeline", return_value={
+                "is_valid": True,
+                "errors": [],
+                "normalized": {"stem": "What is 2+2?"},
+                "question_fields": {
+                    # The pipeline's subject value must be overwritten by the
+                    # import record's authoritative subject_id.
+                    "subject_id": 999,
+                    "question_type": "single_choice",
+                    "content": {"text": "What is 2+2?"},
+                    "options": {"A": "3", "B": "4", "C": "5", "D": "6"},
+                    "answer": "B",
+                    "analysis": "Simple addition",
+                },
+            }),
+            patch("app.services.question_revision_service.ensure_question_revision", new=AsyncMock()),
+            patch("app.services.question_revision_service.lock_question_for_revision", new=AsyncMock(return_value=qi)),
+            patch("app.services.knowledge_point_service.resolve_knowledge_points", new=AsyncMock(return_value=[])),
+        ):
+            result = await publish_single_question(db, qi)
 
         assert result["status"] == "published"
         assert len(created_questions) == 1
@@ -362,6 +382,9 @@ class TestDeleteReferencedSubject:
                 self.deleted = []
                 self.flush = AsyncMock()
 
+            def get_bind(self):
+                return None
+
             async def get(self, model, item_id):
                 if model is Subject and item_id == 1:
                     return subj
@@ -372,10 +395,15 @@ class TestDeleteReferencedSubject:
 
             async def scalar(self, stmt):
                 text = str(stmt)
-                if "subjects" in text:
-                    return 0  # no children
-                # Both Question and QuestionImport queries match "questions"
-                return 1  # 1 question references this subject
+                if "FROM question_imports" in text:
+                    return 0
+                if "FROM questions" in text:
+                    return 1
+                if "WHERE subjects.id" in text:
+                    return subj
+                if "subjects.parent_id" in text:
+                    return 0
+                return 0
 
             async def delete(self, item):
                 self.deleted.append(item)
@@ -399,6 +427,9 @@ class TestDeleteReferencedSubject:
                 self.deleted = []
                 self.flush = AsyncMock()
 
+            def get_bind(self):
+                return None
+
             async def get(self, model, item_id):
                 if model is Subject and item_id == 1:
                     return subj
@@ -408,7 +439,16 @@ class TestDeleteReferencedSubject:
                 return _Result(values=[])
 
             async def scalar(self, stmt):
-                return 0  # no children, no questions, no imports
+                text = str(stmt)
+                if "FROM question_imports" in text:
+                    return 0
+                if "FROM questions" in text:
+                    return 0
+                if "WHERE subjects.id" in text:
+                    return subj
+                if "subjects.parent_id" in text:
+                    return 0
+                return 0
 
             async def delete(self, item):
                 self.deleted.append(item)

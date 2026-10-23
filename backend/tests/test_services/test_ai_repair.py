@@ -2,8 +2,6 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.features.ai_repair import (
     _check_token_limit,
     _estimate_tokens,
@@ -186,9 +184,15 @@ class TestShouldRepair:
         do, _ = _should_repair(q, 0.6)
         assert not do  # above_threshold
 
-    @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_missing_answer_triggers(self):
-        q = {"confidence_score": 0.8, "is_valid": True, "question_type": "subjective", "options": [], "answer": "", "stem": "long enough stem"}
+        q = {
+            "confidence_score": 0.8,
+            "is_valid": True,
+            "question_type": "single_choice",
+            "options": [{"key": "A", "text": "x"}],
+            "answer": "",
+            "stem": "long enough stem",
+        }
         do, reason = _should_repair(q, 0.6)
         assert do
         assert reason == "missing_answer"
@@ -339,9 +343,18 @@ def _mock_chat_response(response_dict):
 class TestRepairQuestions:
     """集成测试：repair_questions 主函数。"""
 
-    def _patch_deepseek(self, available=True, chat_return=None):
-        """创建 mock patches。"""
+    def _patch_deepseek(self, available=True, chat_return=None):  # noqa: ARG002 - compatibility name retained
+        """Patch the gateway runtime and LLM transport used by repair_questions."""
+        runtime = None
+        if available:
+            runtime = MagicMock(
+                api_key="test-key",
+                base_url="https://test.example.com",
+                model_name="test-model",
+                provider="test",
+            )
         return {
+            "runtime": runtime,
             "is_available": MagicMock(return_value=available),
             "chat": AsyncMock(return_value=chat_return or _mock_chat_response(VALID_AI_RESPONSE)),
         }
@@ -349,9 +362,9 @@ class TestRepairQuestions:
     def test_repair_low_confidence_question(self):
         q = _make_question()
         mocks = self._patch_deepseek()
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 1
         assert result["stats"]["unrepaired"] == 0
@@ -369,8 +382,8 @@ class TestRepairQuestions:
     def test_high_confidence_question_skipped(self):
         q = _make_question({"confidence_score": 0.9, "is_valid": True, "stem": "long enough stem", "answer": "A", "options": [{"key": "A", "text": "2x"}], "errors": []})
         mocks = self._patch_deepseek()
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["skipped"] == 1
@@ -385,9 +398,9 @@ class TestRepairQuestions:
             "model": "deepseek-chat",
             "duration_ms": 200,
         })
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["unrepaired"] == 1
@@ -397,8 +410,8 @@ class TestRepairQuestions:
         """AI 不可用 → 全部 unrepaired，不抛异常。"""
         q = _make_question()
         mocks = self._patch_deepseek(available=False)
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["unrepaired"] == 1
@@ -409,9 +422,9 @@ class TestRepairQuestions:
         q = _make_question()
         mocks = self._patch_deepseek()
         mocks["chat"] = AsyncMock(side_effect=RuntimeError("network error"))
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["unrepaired"] == 1
@@ -431,23 +444,22 @@ class TestRepairQuestions:
         assert result["unrepaired"] == []
         assert result["skipped"] == []
 
-    @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_mixed_questions(self):
         """混合：1 修复 + 1 跳过 + 1 修复失败。"""
         q_low = _make_question()  # 低置信度 → 修复
         q_high = _make_question({"confidence_score": 0.9, "is_valid": True, "stem": "long enough stem", "answer": "A", "options": [{"key": "A", "text": "2x"}], "errors": []})  # 跳过高置信度 → 跳过
         q_bad = _make_question({"raw_text": ""})  # 有触发但 AI 失败
 
-        mocks = self._patch_deepseek()
-        # 第一次调用返回成功，第二次调用返回失败
-        mocks["chat"] = AsyncMock(side_effect=[
-            _mock_chat_response(VALID_AI_RESPONSE),
-            _mock_chat_response({"stem": "", "question_type": "unknown", "confidence": 0}),  # invalid
-        ])
+        # Two candidates are repaired in one batch call. The second result is
+        # intentionally invalid so the batch path records it as unrepaired.
+        mocks = self._patch_deepseek(chat_return=_mock_chat_response([
+            VALID_AI_RESPONSE,
+            {"stem": "", "question_type": "unknown", "confidence": 0},
+        ]))
 
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q_low, q_high, q_bad]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q_low, q_high, q_bad], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 1
         assert result["stats"]["skipped"] == 1
@@ -456,9 +468,9 @@ class TestRepairQuestions:
     def test_multiple_choice_repair(self):
         q = _make_question()
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(MULTI_CHOICE_RESPONSE))
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -468,9 +480,9 @@ class TestRepairQuestions:
     def test_true_false_repair(self):
         q = _make_question()
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(TF_RESPONSE))
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -480,9 +492,9 @@ class TestRepairQuestions:
     def test_fill_blank_repair(self):
         q = _make_question()
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(FILL_RESPONSE))
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -491,9 +503,9 @@ class TestRepairQuestions:
     def test_subjective_repair(self):
         q = _make_question()
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(SUBJECTIVE_RESPONSE))
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -503,18 +515,18 @@ class TestRepairQuestions:
         q1 = _make_question()
         q2 = _make_question()
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(VALID_AI_RESPONSE))
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q1, q2]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q1, q2], db=AsyncMock()))
 
         assert result["stats"]["total_tokens"] == 700  # 350 * 2
 
     def test_before_after_comparison(self):
         q = _make_question()
         mocks = self._patch_deepseek()
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         repaired = result["repaired"][0]
         assert repaired["before"]["is_valid"] is False
@@ -532,16 +544,16 @@ class TestRepairQuestions:
             "options": [{"key": "A", "text": "2x"}], "question_type": "subjective",
         })
         mocks = self._patch_deepseek()
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
-            result = asyncio.run(repair_questions([q], config={"confidence_threshold": 0.4}))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])):
+            result = asyncio.run(repair_questions([q], config={"confidence_threshold": 0.4}, db=AsyncMock()))
         assert result["stats"]["skipped"] == 1
 
     def test_source_info_preserved(self):
         q = _make_question()
         mocks = self._patch_deepseek()
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         after = result["repaired"][0]["after"]
         assert after["source"] == {"file": "test.pdf", "page": 1, "type": "pdf"}
@@ -550,9 +562,9 @@ class TestRepairQuestions:
     def test_repair_actions_recorded(self):
         q = _make_question()
         mocks = self._patch_deepseek()
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q]))
+        with patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])), \
+             patch("app.ai.client.llm.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q], db=AsyncMock()))
 
         actions = result["repaired"][0]["repair_actions"]
         assert isinstance(actions, list)
@@ -589,19 +601,33 @@ class TestTokenLimit:
         assert tb._token_usage["monthly"] == 550
 
     def test_repair_skipped_when_limit_exceeded(self):
-        """token 超限 → AI 返回 None → unrepaired。"""
+        """token 超限 → 不发 AI 请求 → unrepaired(ai_failed)。"""
         import app.features.token_budget as tb
         q = _make_question()
-        # 模拟超限
-        tb._token_usage["daily"] = 99900
+        tb._token_usage["daily"] = 0
         tb._token_usage["monthly"] = 0
 
         mocks = {
-            "is_available": MagicMock(return_value=True),
+            "runtime": MagicMock(
+                api_key="test-key",
+                base_url="https://test.example.com",
+                model_name="test-model",
+                provider="test",
+            ),
             "chat": AsyncMock(return_value=_mock_chat_response(VALID_AI_RESPONSE)),
         }
-        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
-             patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = asyncio.run(repair_questions([q], config={"daily_token_limit": 100000, "monthly_token_limit": 2000000}))
+        with (
+            patch("app.ai.gateway.resolve_llm_runtime_config", new=AsyncMock(return_value=mocks["runtime"])),
+            patch("app.ai.client.llm.chat", mocks["chat"]),
+            patch("app.features.token_budget._redis_usage", new=AsyncMock(return_value=None)),
+            patch("app.features.token_budget._restricted", return_value=False),
+        ):
+            result = asyncio.run(repair_questions(
+                [q],
+                config={"daily_token_limit": 1, "monthly_token_limit": 1},
+                db=AsyncMock(),
+            ))
 
-        assert result["stats"]["unrepaired"] >= 1
+        assert result["stats"]["unrepaired"] == 1
+        assert result["unrepaired"] == [{"question_index": 0, "reason": "ai_failed"}]
+        mocks["chat"].assert_not_awaited()

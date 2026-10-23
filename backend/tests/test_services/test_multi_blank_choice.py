@@ -518,7 +518,7 @@ class TestPipelineDetection:
 
         result = process_question_pipeline(
             {
-                "subject": "exam408-ds",
+                "subject": "data_structure",
                 "stem": "一个有 n 个顶点的图用邻接矩阵 A 表示，"
                         "若图为有向图，顶点 v_i 的入度是（ ）；"
                         "若图为无向图，顶点 v_i 的度是（ ）。",
@@ -592,7 +592,7 @@ class TestPipelineDetection:
 
         result = process_question_pipeline(
             {
-                "subject": "exam408-ds",
+                "subject": "data_structure",
                 "stem": "入度是（ ）；出度是（ ）。",
                 "options": {"A": "a", "B": "b", "C": "c", "D": "d"},
                 # No answer — detection succeeds but publish validation fails
@@ -614,7 +614,7 @@ class TestPipelineDetection:
         ]
         result = process_question_pipeline(
             {
-                "subject": "exam408-ds",
+                "subject": "data_structure",
                 "stem": "入度是（ ）；出度是（ ）。",
                 "blank_option_groups": groups,
                 "answer": "①:A;②:B",
@@ -643,7 +643,7 @@ class TestMultiBlankE2EPipeline:
         """Helper: run the full question pipeline."""
         from app.features.question_pipeline import process_question_pipeline
 
-        raw = {"subject": "exam408-ds", "stem": stem}
+        raw = {"subject": "data_structure", "stem": stem}
         if options is not None:
             raw["options"] = options
         if answer is not None:

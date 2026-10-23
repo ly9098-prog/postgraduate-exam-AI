@@ -494,6 +494,8 @@ class TestSchemaCompatibility:
             recommend_score=0.85,
             strategy="smart_vector",
             similarity=0.9,
+            question_version_id=1,
+            question_version=1,
         )
         assert pq.subject_id == 7
         assert pq.subject_code == "exam408-ds"
@@ -509,6 +511,8 @@ class TestSchemaCompatibility:
             subject_id=7,
             question_type="choice",
             content={"text": "test"},
+            question_version_id=1,
+            question_version=1,
         )
         assert pq.subject_id == 7
         assert pq.subject_code == ""

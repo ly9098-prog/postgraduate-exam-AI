@@ -12,7 +12,7 @@ from app.services.formula_image_cropper import crop_and_upload, crop_region
 from app.services.math_region_detector import MathRegion, MathRegionType, detect_page
 from app.services.storage_backend import LocalFileStorage
 
-FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+FIXTURES = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 
 
 def _make_math_page():

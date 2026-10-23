@@ -64,7 +64,7 @@ class TestGuessSubject:
 
     def test_subject_408_co_keywords(self):
         text = "cpu 存储器 指令 总线 cache 中断"
-        assert _guess_subject(text, min_score=2) == "exam408-co"
+        assert _guess_subject(text, min_score=2) == "computer_organization"
 
     def test_low_score_falls_back_to_parent(self):
         # 只命中 1 个数学关键词，min_score=2 不达标，应回退父科目 math2
@@ -103,7 +103,7 @@ class TestParsePdfPerQuestionSubject:
         assert len(results) >= 2
 
         # 第 1 题应识别为 408（含 cpu/存储器/指令）
-        assert results[0]["subject"] in {"exam408", "exam408-co"}
+        assert results[0]["subject"] in {"exam408", "computer_organization"}
         # 第 2 题应识别为数学（极限/导数）
         assert results[1]["subject"] in {"math2", "math2-calculus"}
 
@@ -206,6 +206,7 @@ class TestPracticeSubjectPrefixMatch:
         db = MagicMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
+        db.scalar = AsyncMock(return_value=1)
 
         # 模拟 db.execute 返回 questions
         q1 = MagicMock(spec=Question)

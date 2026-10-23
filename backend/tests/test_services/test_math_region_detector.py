@@ -15,7 +15,7 @@ from app.services.math_region_detector import (
     detect_page,
 )
 
-FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+FIXTURES = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 
 
 def _page_text(page):

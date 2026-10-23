@@ -191,7 +191,7 @@ class TestMatchSimilarQuestions:
 
     @pytest.mark.asyncio
     async def test_subject_cache_reused(self):
-        """Same subject queried only once even with multiple questions."""
+        """Same subject resolves once and scans the bank only once."""
         questions = [
             {"stem": "题目一", "subject": "math2"},
             {"stem": "题目二", "subject": "math2"},
@@ -204,7 +204,7 @@ class TestMatchSimilarQuestions:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         await match_similar_questions(questions, db=mock_db, config={"enabled": True})
-        assert mock_db.execute.call_count == 1
+        assert mock_db.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_ocr_garbled_matches_original(self):
@@ -248,7 +248,7 @@ class TestHashIndexInjection:
     """注入 hash_index 后：命中即 ratio=1.0 强匹配；miss 走 SQL 兜底（不再扫 subject 全表）。"""
 
     @pytest.mark.asyncio
-    async def test_hash_hit_skips_subject_scan(self):
+    async def test_hash_hit_runs_only_payload_query(self):
         questions = [{
             "stem": "题目原文一致",
             "subject": "exam408",
@@ -293,7 +293,6 @@ class TestHashIndexInjection:
         assert suggestion["source"] == "question_bank_hash"
 
         # 没扫 subject 全表（_load_subject_questions 不应调用）
-        # mock_db.execute 仅被 _load_question_payload 调用一次
         assert mock_db.execute.call_count == 1
 
     @pytest.mark.asyncio
