@@ -20,6 +20,8 @@ const freeRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodor
 const startSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-session-controller.js'), 'utf8')
 const unknownStartSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-controller.js'), 'utf8')
 const pendingSyncSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-controller.js'), 'utf8')
+const terminalConflictSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/terminal-conflict-controller.js'), 'utf8')
+const terminalConflictHandlerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/terminal-conflict-handler.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
 const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
@@ -241,16 +243,16 @@ t('logout clears pending, unknown-start and terminal-conflict pomodoro mutations
   assert.ok(storageSrc.includes("'pomodoro_terminal_conflict'"))
 })
 t('terminal conflicts persist across process death before pending cleanup', () => {
-  const record = method('_recordPomodoroTerminalConflict')
-  const ack = method('_ackPomodoroTerminalConflict')
-  const handle = method('_handlePomodoroTerminalConflict')
-  assert.ok(record.includes('_safeSetPomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY'))
+  const record = method('record', terminalConflictSrc, true)
+  const ack = method('ack', terminalConflictSrc, true)
+  assert.ok(record.includes('options.setStorage(options.storageKey'))
   assert.ok(record.includes('return false'))
   assert.ok(terminalResponse.includes('if (!options.recordTerminalConflict'))
   assert.ok(terminalResponse.indexOf('if (!options.recordTerminalConflict') <
     terminalResponse.indexOf('options.dropSessionActions'))
-  assert.ok(ack.includes('_safeRemovePomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY'))
-  assert.ok(handle.indexOf('_dropPendingPomodoroSessionActions') < handle.indexOf('_ackPomodoroTerminalConflict'))
+  assert.ok(ack.includes('options.removeStorage(options.storageKey'))
+  assert.ok(terminalConflictHandlerSrc.indexOf('options.dropSessionActions(sessionId)') <
+    terminalConflictHandlerSrc.indexOf('options.ackConflict(conflict)'))
   assert.ok(showOptions.includes('consumeConflict: () => this._consumeAnyPomodoroTerminalConflict()'))
 })
 t('canonical pause/resume sync clears local adjustment only after the session queue is drained', () => {
@@ -378,13 +380,14 @@ t('pause adjustment read failures are distinguishable during cold restore', () =
   assert.ok(freeRestoreSrc.includes('_mergeLocalPauseAdjustment(session.id, totalPausedMs, true)'))
 })
 t('terminal conflict acknowledgement is durable and happens after cleanup', () => {
-  const consume = method('_consumePomodoroTerminalConflict')
-  const ack = method('_ackPomodoroTerminalConflict')
-  const handle = method('_handlePomodoroTerminalConflict')
-  assert.ok(!consume.includes('_safeRemovePomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY'))
-  assert.ok(ack.includes('_safeRemovePomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY'))
-  assert.ok(handle.indexOf("_safeGetPomodoroStorage('pomodoro_completion'") < handle.indexOf('_ackPomodoroTerminalConflict'))
-  assert.ok(handle.indexOf('_dropPendingPomodoroSessionActions') < handle.indexOf('_ackPomodoroTerminalConflict'))
+  const consume = method('consume', terminalConflictSrc, true)
+  const ack = method('ack', terminalConflictSrc, true)
+  assert.ok(!consume.includes('options.removeStorage'))
+  assert.ok(ack.includes('options.removeStorage(options.storageKey'))
+  assert.ok(terminalConflictHandlerSrc.indexOf("options.getStorage('pomodoro_completion'") <
+    terminalConflictHandlerSrc.indexOf('options.ackConflict(conflict)'))
+  assert.ok(terminalConflictHandlerSrc.indexOf('options.dropSessionActions(sessionId)') <
+    terminalConflictHandlerSrc.indexOf('options.ackConflict(conflict)'))
 })
 
 t('pending queue read failures fail closed instead of masquerading as empty', () => {

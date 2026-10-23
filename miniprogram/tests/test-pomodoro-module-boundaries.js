@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 31)
+  assert.equal(result.modules, 32)
   assert.equal(result.edges, 4)
 })
 
@@ -284,6 +284,57 @@ test('pending sync shell must lazily reuse one controller', () => {
     .includes('retryable interrupt must delegate to its controller'))
 })
 
+test('terminal conflict shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._terminalConflictController = createTerminalConflictController({',
+    'void createTerminalConflictController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('terminal conflict must lazily assign its controller'))
+
+  const detachedRecord = pageSource.replace(
+    'this._getTerminalConflictController().record(',
+    'this._getTerminalConflictController().legacyRecord('
+  )
+  assert.ok(pageViolations(detachedRecord)
+    .includes('terminal conflict record must delegate to its controller'))
+
+  const detachedRead = pageSource.replace(
+    'this._getTerminalConflictController().read()',
+    'this._getTerminalConflictController().legacyRead()'
+  )
+  assert.ok(pageViolations(detachedRead)
+    .includes('terminal conflict read must delegate to its controller'))
+
+  const detachedConsume = pageSource.replace(
+    'this._getTerminalConflictController().consume(',
+    'this._getTerminalConflictController().legacyConsume('
+  )
+  assert.ok(pageViolations(detachedConsume)
+    .includes('terminal conflict consume must delegate to its controller'))
+
+  const detachedConsumeAny = pageSource.replace(
+    'this._getTerminalConflictController().consumeAny()',
+    'this._getTerminalConflictController().legacyConsumeAny()'
+  )
+  assert.ok(pageViolations(detachedConsumeAny)
+    .includes('terminal conflict consumeAny must delegate to its controller'))
+
+  const detachedAck = pageSource.replace(
+    'this._getTerminalConflictController().ack(',
+    'this._getTerminalConflictController().legacyAck('
+  )
+  assert.ok(pageViolations(detachedAck)
+    .includes('terminal conflict ack must delegate to its controller'))
+
+  const detachedHandle = pageSource.replace(
+    'this._getTerminalConflictController().handle(',
+    'this._getTerminalConflictController().legacyHandle('
+  )
+  assert.ok(pageViolations(detachedHandle)
+    .includes('terminal conflict handle must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -296,6 +347,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 31)
+    assert.equal(result.modules, 32)
   }
 })

@@ -43,6 +43,7 @@ const { createFreeSessionRestoreController } = require('./utils/free-session-res
 const { createStartSessionController } = require('./utils/start-session-controller')
 const { createUnknownStartController } = require('./utils/unknown-start-controller')
 const { createPendingSyncController } = require('./utils/pending-sync-controller')
+const { createTerminalConflictController } = require('./utils/terminal-conflict-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -195,6 +196,7 @@ Page({
   _startSessionController: null,
   _unknownStartController: null,
   _pendingSyncController: null,
+  _terminalConflictController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -1517,76 +1519,59 @@ Page({
     return conflictState.isStorageConflict(value)
   },
 
-  _recordPomodoroTerminalConflict(sessionId, requestedAction, serverStatus) {
-    const conflict = conflictState.createTerminalConflict(sessionId, requestedAction, serverStatus, api.now())
-    // The conflict marker is the durable bridge between a server-side terminal
-    // result and removal of the pending client mutation. Never acknowledge/drop
-    // the pending action unless this marker has actually reached local storage.
-    if (!this._safeSetPomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, conflict, 'terminal conflict')) {
-      return false
+  _getTerminalConflictController() {
+    if (!this._terminalConflictController) {
+      this._terminalConflictController = createTerminalConflictController({
+        storageKey: POMODORO_TERMINAL_CONFLICT_KEY,
+        getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+        setStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        now: () => api.now(),
+        createConflict: conflictState.createTerminalConflict,
+        isValidConflict: conflictState.isValidTerminalConflict,
+        matchesConflict: conflictState.matchesTerminalConflict,
+        isStorageConflict: value => conflictState.isStorageConflict(value),
+        handleTerminalConflict,
+        dropSessionActions: sessionId => this._dropPendingPomodoroSessionActions(sessionId),
+        persistenceError: () => this._showPomodoroPersistenceError(),
+        getCompletionBreakSec: () => this._completionBreakSec,
+        setCompletionBreakSec: value => { this._completionBreakSec = value },
+        clearTimer: () => this._clearTimer(),
+        setData: data => this.setData(data),
+        resetIdle: () => this._resetToIdle(),
+        showToast: toast => wx.showToast(toast),
+        loadStats: () => this.loadTodayStats(),
+      })
     }
-    this._pomodoroTerminalConflict = conflict
-    return true
+    return this._terminalConflictController
+  },
+
+  _recordPomodoroTerminalConflict(sessionId, requestedAction, serverStatus) {
+    return this._getTerminalConflictController().record(
+      sessionId,
+      requestedAction,
+      serverStatus
+    )
   },
 
   _readPomodoroTerminalConflict() {
-    if (this._pomodoroTerminalConflict) return this._pomodoroTerminalConflict
-    const stored = this._safeGetPomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, 'terminal conflict')
-    if (!stored.ok) return { storageUnreadable: true }
-    const conflict = stored.value
-    if (conflictState.isValidTerminalConflict(conflict)) {
-      this._pomodoroTerminalConflict = conflict
-      return conflict
-    }
-    return null
+    return this._getTerminalConflictController().read()
   },
 
-  // These helpers intentionally *peek* rather than durably deleting the marker.
-  // The marker is acknowledged only after _handlePomodoroTerminalConflict has
-  // successfully cleaned local state, so a process kill/storage error cannot
-  // lose the only evidence of a cross-device terminal result.
   _consumePomodoroTerminalConflict(sessionId, requestedAction) {
-    const conflict = this._readPomodoroTerminalConflict()
-    if (this._isPomodoroStorageError(conflict)) return conflict
-    if (!conflictState.matchesTerminalConflict(conflict, sessionId, requestedAction)) return null
-    return conflict
+    return this._getTerminalConflictController().consume(sessionId, requestedAction)
   },
 
   _consumeAnyPomodoroTerminalConflict() {
-    return this._readPomodoroTerminalConflict()
+    return this._getTerminalConflictController().consumeAny()
   },
 
   _ackPomodoroTerminalConflict(conflict) {
-    if (!conflict || this._isPomodoroStorageError(conflict)) return false
-    if (!this._safeRemovePomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, 'terminal conflict ack')) {
-      return false
-    }
-    if (
-      this._pomodoroTerminalConflict &&
-      this._pomodoroTerminalConflict.sessionId === conflict.sessionId &&
-      this._pomodoroTerminalConflict.requestedAction === conflict.requestedAction
-    ) {
-      this._pomodoroTerminalConflict = null
-    }
-    return true
+    return this._getTerminalConflictController().ack(conflict)
   },
 
   _handlePomodoroTerminalConflict(sessionId, conflict) {
-    return handleTerminalConflict({
-      isStorageError: (value) => this._isPomodoroStorageError(value),
-      persistenceError: () => this._showPomodoroPersistenceError(),
-      dropSessionActions: (id) => this._dropPendingPomodoroSessionActions(id),
-      getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
-      removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
-      ackConflict: (c) => this._ackPomodoroTerminalConflict(c),
-      get completionBreakSec() { return this._completionBreakSec },
-      set completionBreakSec(v) { this._completionBreakSec = v },
-      clearTimer: () => this._clearTimer(),
-      setData: (data) => this.setData(data),
-      resetIdle: () => this._resetToIdle(),
-      showToast: (toast) => wx.showToast(toast),
-      loadStats: () => this.loadTodayStats(),
-    }, sessionId, conflict)
+    return this._getTerminalConflictController().handle(sessionId, conflict)
   },
 
   _getPendingSyncController() {

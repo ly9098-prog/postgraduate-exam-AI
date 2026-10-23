@@ -43,7 +43,7 @@
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
 | `admin-frontend/src/app/(admin)/knowledge-graph/page.tsx` | 1809 | `KnowledgeGraphPage` 613 | 图谱转换和交互已有页面外函数；继续核查请求/布局/选择状态。 |
 | `admin-frontend/src/app/(admin)/system/tasks/page.tsx` | 1599 | `SystemTasksPage` 1121 | 任务列表/详情/事件消费与 UI 编排边界待核查。 |
-| `miniprogram/pages/pomodoro/pomodoro.js` | 2594 | `onShow` 18 / `onHide` 30 | 展示恢复、离页持久化、倒计时/自由计时冷恢复、启动仪式、未知启动恢复及待同步/终态动作 controller 已独立；确认操作、计时/画布、统计及其他页面职责仍待治理。 |
+| `miniprogram/pages/pomodoro/pomodoro.js` | 2579 | `onShow` 18 / `onHide` 30 | 展示恢复、离页持久化、倒计时/自由计时冷恢复、启动仪式、未知启动恢复、待同步动作及终态冲突 controller 已独立；确认操作、计时/画布、统计及其他页面职责仍待治理。 |
 | `miniprogram/subpackages/study/practice/practice.js` | 2633 | `_loadQuestions` 342 | 会话加载、响应转换与页面写回待分离，保留分包与渲染契约。 |
 | `miniprogram/subpackages/productivity/pomodoro-stats/index.js` | 2570 | `_renderTrendBars` 182 | 统计映射/图形派生与视图写回待分离。 |
 
@@ -89,11 +89,11 @@ CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界、ORM 注册
 
 `miniprogram/scripts/architecture/pomodoro-boundaries.js` 是独立 Node AST 检查入口，复用 `admin-frontend/package.json` 已声明的 TypeScript 开发依赖。先安装管理端依赖；解析器不进入小程序运行包，不修改小程序依赖清单，也不执行应用模块。
 
-- 当前覆盖 31 个已治理模块，路径均位于 `miniprogram/pages/pomodoro/utils/`；其中包括倒计时冷恢复 `countdown-session-restore-controller.js`、自由计时冷恢复 `free-session-restore-controller.js`、启动仪式 `start-session-controller.js`、未知启动恢复 `unknown-start-controller.js` 和待同步/终态动作 `pending-sync-controller.js`。恢复壳只创建对应 controller 并委托 `restore(session)`；启动壳懒创建单一 controller，并分别委托 `start()` / `startFree(startSeq)`；未知启动壳懒创建单一 controller，并委托 `reconcile(explicitAttempt)` / `postStart(payload, startSeq)`；待同步壳懒创建单一 controller，并分别委托 `reconcileFailure(pending, error)` / `drain()` / `complete(sessionId, clientActionAt)` / `interrupt(sessionId, clientActionAt)`。
+- 当前覆盖 32 个已治理模块，路径均位于 `miniprogram/pages/pomodoro/utils/`；其中包括倒计时冷恢复 `countdown-session-restore-controller.js`、自由计时冷恢复 `free-session-restore-controller.js`、启动仪式 `start-session-controller.js`、未知启动恢复 `unknown-start-controller.js`、待同步动作 `pending-sync-controller.js` 和终态冲突 `terminal-conflict-controller.js`。恢复壳只创建对应 controller 并委托 `restore(session)`；启动壳懒创建单一 controller，并分别委托 `start()` / `startFree(startSeq)`；未知启动壳懒创建单一 controller，并委托 `reconcile(explicitAttempt)` / `postStart(payload, startSeq)`；待同步壳懒创建单一 controller，并分别委托 `reconcileFailure(pending, error)` / `drain()` / `complete(sessionId, clientActionAt)` / `interrupt(sessionId, clientActionAt)`；终态冲突壳懒创建单一 controller，并分别委托 `record(sessionId, requestedAction, serverStatus)` / `read()` / `consume(sessionId, requestedAction)` / `consumeAny()` / `ack(conflict)` / `handle(sessionId, conflict)`。
 - 当前登记 4 条模块依赖：`confirm-recovery → timer-math`、`cancel-confirm-state → cancel-confirm-format`、`end-confirm-view-model → timer-math`，以及 `completion-celebration → ../../../utils/storage`。除此之外不导入页面、API、第三方或其他分包；require 必须直接接收单个字符串字面量，别名、计算参数、动态/ES 导入会失败。
 - 已治理模块不直接访问 wx/Page、隐式 this、全局时钟/定时器/网络或全局宿主；通过 options/storage 等显式能力回调访问外部副作用。静态检查允许属性名、注释与字符串出现同名词，不用文本搜索将它们判为越界。
-- 每个覆盖模块不超过 300 行，所有有函数体的函数、箭头、表达式、方法和访问器不超过 50 行。真实 `Page({...})` 中已治理的生命周期和适配方法也保持 50 行；页面总行数设为现存 2,594 行上限，因剩余未治理职责记录为技术债，后续抽取时应同步缩减上限，不扩增白名单掩盖增长。
-- 语法错误、空/仅注释文件、缺失源码、缺失治理方法/页面导入或异常 Page 定义会失败。18 项独立门禁回归覆盖违规注入、嵌套函数、虚假同名对象方法、两个恢复 controller 的精确委托壳、启动仪式/未知启动恢复/待同步动作的懒创建与精确委托接线和完整扫描失败路径。
+- 每个覆盖模块不超过 300 行，所有有函数体的函数、箭头、表达式、方法和访问器不超过 50 行。真实 `Page({...})` 中已治理的生命周期和适配方法也保持 50 行；页面总行数设为现存 2,579 行上限，因剩余未治理职责记录为技术债，后续抽取时应同步缩减上限，不扩增白名单掩盖增长。
+- 语法错误、空/仅注释文件、缺失源码、缺失治理方法/页面导入或异常 Page 定义会失败。19 项独立门禁回归覆盖违规注入、嵌套函数、虚假同名对象方法、两个恢复 controller 的精确委托壳、启动仪式/未知启动恢复/待同步动作/终态冲突的懒创建与精确委托接线和完整扫描失败路径。
 
 管理端依赖安装后，从仓库根目录运行：
 
@@ -102,9 +102,9 @@ node miniprogram/scripts/architecture/pomodoro-boundaries.js
 node miniprogram/tests/test-pomodoro-module-boundaries.js
 ```
 
-`.github/workflows/reliability.yml` 在既有 `admin-build` 的依赖安装后、构建前运行门禁、14 个 `node --test` 文件及页面韧性/恢复/渲染脚本。启动仪式 controller 的独立 14 项、未知启动恢复 controller 的独立 16 项和待同步/终态动作 controller 的独立 17 项回归已接入；远端 GitHub CI 尚未运行。没有新增小程序 `npm test`。
+`.github/workflows/reliability.yml` 在既有 `admin-build` 的依赖安装后、构建前运行门禁、15 个 `node --test` 文件及页面韧性/恢复/渲染脚本。启动仪式 controller 的独立 14 项、未知启动恢复 controller 的独立 16 项、待同步动作 controller 的独立 17 项和终态冲突 controller 的独立 16 项回归已接入；远端 GitHub CI 尚未运行。没有新增小程序 `npm test`。
 
-范围限制：该策略只覆盖明确列出的 31 个模块与页面方法，不证明其他小程序业务、所有分包边界或运行时能力隔离已完成；不是安全沙箱。主题/科目缓存等既有 wx 适配、其他页面、双份代码一致性和全仓尺寸基线仍需后续核查。行为正确性继续由独立回归和真实微信环境验收，不能由 AST 门禁替代。
+范围限制：该策略只覆盖明确列出的 32 个模块与页面方法，不证明其他小程序业务、所有分包边界或运行时能力隔离已完成；不是安全沙箱。主题/科目缓存等既有 wx 适配、其他页面、双份代码一致性和全仓尺寸基线仍需后续核查。行为正确性继续由独立回归和真实微信环境验收，不能由 AST 门禁替代。
 
 ## 6. 未完成的验收
 
