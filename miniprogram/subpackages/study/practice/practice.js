@@ -28,7 +28,11 @@ const {
   validateKnowledgeScope,
   findQuestionBatchError,
 } = require('./utils/question-batch')
-const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
+const {
+  RECENT_SUBJECTS_STORAGE_KEY,
+  selectDefaultSubject,
+  rememberSubject,
+} = require('./utils/recent-subjects')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -658,33 +662,20 @@ recentSubjects: [],
 })
 return
 }
-const availableSubjects = this._flattenSelectableSubjects(subjectTree)
 let stored = []
 try {
-const value = wx.getStorageSync(PRACTICE_RECENT_SUBJECTS_KEY)
+const value = wx.getStorageSync(RECENT_SUBJECTS_STORAGE_KEY)
 stored = Array.isArray(value) ? value : []
 } catch (e) {
 stored = []
 }
-const availableMap = {}
-availableSubjects.forEach((item) => { availableMap[item.subject_id] = item })
-const validStored = stored
-.map((item) => availableMap[Number(item.subject_id)])
-.filter(Boolean)
-const fallback = availableSubjects[0]
-const selected = validStored[0] || fallback
-if (!selected) return
-const recentBase = validStored.length > 0
-? validStored
-: [selected]
-const recentSubjects = this._decorateRecentSubjects(recentBase.slice(0, 4))
-this.setData({
-expandedSubjectId: selected.parent_subject_id || selected.subject_id,
-selectedSubjectId: selected.subject_id,
-selectedSubjectName: selected.display_name,
-selectedSubjectHasChildren: Boolean(selected.has_children),
-recentSubjects,
+const selection = selectDefaultSubject({
+subjectTree,
+storedSubjects: stored,
+flattenSelectableSubjects: tree => this._flattenSelectableSubjects(tree),
+decorateRecentSubjects: subjects => this._decorateRecentSubjects(subjects),
 })
+if (selection) this.setData(selection.view)
 },
 _initCustomNavigation() {
 try {
@@ -722,20 +713,17 @@ const id = Number(subjectId)
 if (!id || !subjectName) return
 const parentId = this._findParentSubjectId(id)
 const hasChildren = this._subjectHasChildren(id)
-const base = [{
-subject_id: id,
-display_name: subjectName,
-parent_subject_id: parentId || id,
-has_children: hasChildren,
-}].concat((this.data.recentSubjects || []).filter((item) => Number(item.subject_id) !== id))
-const recentSubjects = this._decorateRecentSubjects(base.slice(0, 4))
-this.setData({ recentSubjects })
+const result = rememberSubject({
+subjectId: id,
+subjectName,
+parentSubjectId: parentId,
+hasChildren,
+currentRecentSubjects: this.data.recentSubjects || [],
+decorateRecentSubjects: subjects => this._decorateRecentSubjects(subjects),
+})
+this.setData(result.view)
 try {
-wx.setStorageSync(PRACTICE_RECENT_SUBJECTS_KEY, recentSubjects.map((item) => ({
-subject_id: item.subject_id,
-display_name: item.display_name,
-parent_subject_id: item.parent_subject_id,
-})))
+wx.setStorageSync(RECENT_SUBJECTS_STORAGE_KEY, result.storageValue)
 } catch (e) {
 console.warn('保存最近使用科目失败', e)
 }
