@@ -41,6 +41,7 @@ const { createStatsCanvasInitController } = require('./canvas-init-controller')
 const { createThemeSyncController } = require('./theme-sync-controller')
 const { createDeferredHistoryController } = require('./deferred-history-controller')
 const { createLoadCommitController } = require('./load-commit-controller')
+const { createDateCommitController } = require('./date-commit-controller')
 
 const {
   getSubjectColor,
@@ -989,17 +990,9 @@ var pageConfig = {
       this._daySubjectsRaw = viewState.subjectBreakdown
       if (showDayDistribution) this._resetPieCache()
 
-      this.setData(dataPatch, () => {
-        if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
-        this._animateSelectedDuration(previousDurationSec, selectedDurationSec, previousSessionCount, selectedSessionCount)
-
-        if (!showDayDistribution) {
-          this._loadDistributionForPeriod(this.data.distributionPeriod, true)
-          return
-        }
-        if (this.data.chartMode !== 'pie') return
-        if (this._pieCtx && this._pieRect) this._animatePieOnly()
-        else this._initCanvases(() => this._animatePieOnly())
+      this._getDateCommitController().commit(viewState, {
+        seq,
+        showDayDistribution,
       })
     } catch (e) {
       if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
@@ -1011,6 +1004,30 @@ var pageConfig = {
 
   _animatePieOnly() {
     this._getPieAnimationController().animate()
+  },
+
+  _getDateCommitController() {
+    if (!this._dateCommitController) {
+      this._dateCommitController = createDateCommitController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getDateRequestSeq: () => this._dateRequestSeq,
+        setRawTodayDuration: value => { this._rawTodayDur = value },
+        setDaySubjectsRaw: subjects => { this._daySubjectsRaw = subjects },
+        resetPieCache: () => this._resetPieCache(),
+        setData: (patch, callback) => this.setData(patch, callback),
+        animateSelectedDuration: (fromSec, toSec, fromSessions, toSessions) => {
+          this._animateSelectedDuration(fromSec, toSec, fromSessions, toSessions)
+        },
+        getDistributionPeriod: () => this.data.distributionPeriod,
+        loadDistributionForPeriod: (period, animate) => this._loadDistributionForPeriod(period, animate),
+        getChartMode: () => this.data.chartMode,
+        isPieReady: () => !!(this._pieCtx && this._pieRect),
+        initCanvases: callback => this._initCanvases(callback),
+        animatePieOnly: () => this._animatePieOnly(),
+      })
+    }
+    return this._dateCommitController
   },
 
   _getPieAnimationController() {
