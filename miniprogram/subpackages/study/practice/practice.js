@@ -6,6 +6,16 @@ const adapter = require('../utils/question-runner-adapter')
 const questionImageCache = require('../utils/question-image-cache')
 const { filter408SubjectTree } = require('../utils/subject-scope')
 const { safeDecodeURIComponent } = require('../utils/route-params')
+const {
+  normalizeSubjectTree,
+  flattenSelectableSubjects,
+  subjectMark,
+  subjectIconMeta,
+  decorateRecentSubjects,
+  findParentSubjectId,
+  subjectHasChildren,
+  getPracticeSubjectScopeIds,
+} = require('./utils/subject-tree')
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
@@ -697,79 +707,7 @@ this._queueRememberSubject(Number(target.subject_id), target.display_name)
 return true
 },
 normalizeSubjectTree(raw) {
-if (!Array.isArray(raw) || raw.length === 0) return []
-const toId = (n) => (n.subject_id != null ? n.subject_id : n.id)
-const toName = (n) => (n.display_name != null ? n.display_name : (n.name != null ? n.name : ''))
-const toCode = (n) => (n.subject_code != null ? n.subject_code : (n.code != null ? n.code : ''))
-const bySort = (a, b) => (a.sort_order - b.sort_order) || (a.subject_id - b.subject_id)
-const normalize = (n) => {
-if (!n) return null
-if (n.is_active === false) return null
-return {
-subject_id: Number(toId(n)),
-display_name: toName(n),
-subject_code: toCode(n),
-parent_id: n.parent_id != null ? Number(n.parent_id) : null,
-level: n.level != null ? Number(n.level) : null,
-path: n.path || '',
-sort_order: n.sort_order != null ? Number(n.sort_order) : 0,
-is_active: true,
-children: Array.isArray(n.children)
-? n.children.map(normalize).filter(Boolean).sort(bySort)
-: [],
-}
-}
-const items = raw.map(normalize).filter(Boolean)
-if (items.length === 0) return []
-const parentItems = []
-const childItems = []
-const nodes = {}
-items.forEach((n) => {
-nodes[n.subject_id] = n
-const isParent = n.level === 1 || n.parent_id == null
-if (isParent) parentItems.push(n)
-else childItems.push(n)
-})
-childItems.forEach((child) => {
-const parent = child.parent_id != null ? nodes[child.parent_id] : null
-if (parent) {
-if (!parent.children.some((c) => c.subject_id === child.subject_id)) {
-parent.children.push(child)
-}
-parent.children.sort(bySort)
-} else {
-parentItems.push(child)
-}
-})
-parentItems.sort(bySort)
-const flattenDescendants = (node, depth, out) => {
-const children = Array.isArray(node.children) ? node.children : []
-children.forEach((child) => {
-const hasChildren = Array.isArray(child.children) && child.children.length > 0
-out.push({
-subject_id: Number(child.subject_id),
-display_name: hasChildren ? `${child.display_name}（全部）` : child.display_name,
-raw_display_name: child.display_name,
-parent_id: child.parent_id,
-level: child.level,
-has_children: hasChildren,
-depth,
-indent_rpx: Math.max(0, depth - 1) * 28,
-})
-flattenDescendants(child, depth + 1, out)
-})
-}
-parentItems.forEach((root) => {
-const flatChildren = []
-flattenDescendants(root, 1, flatChildren)
-root.flat_children = flatChildren
-root.descendant_count = flatChildren.length
-const iconMeta = this._subjectIconMeta(root.display_name, root.subject_code)
-root.icon_type = iconMeta.type
-root.icon_mark = iconMeta.mark
-root.icon_src = iconMeta.src
-})
-return parentItems
+  return normalizeSubjectTree(raw)
 },
 initDefaultSubject(subjectTree) {
 if (!subjectTree || subjectTree.length === 0) {
@@ -830,73 +768,16 @@ this.setData({ statusBarHeight: 20, navBarHeight: 44 })
 }
 },
 _flattenSelectableSubjects(subjectTree) {
-const result = []
-;(subjectTree || []).forEach((root) => {
-const rootId = Number(root.subject_id)
-const visit = (node) => {
-const children = Array.isArray(node.children) ? node.children : []
-children.forEach(visit)
-result.push({
-subject_id: Number(node.subject_id),
-display_name: children.length > 0 ? `${node.display_name}（全部）` : node.display_name,
-parent_subject_id: rootId,
-has_children: children.length > 0,
-})
-}
-const children = Array.isArray(root.children) ? root.children : []
-children.forEach(visit)
-result.push({
-subject_id: rootId,
-display_name: children.length > 0 ? `${root.display_name}（全部）` : root.display_name,
-parent_subject_id: rootId,
-has_children: children.length > 0,
-})
-})
-return result.filter((item) => item.subject_id && item.display_name)
+  return flattenSelectableSubjects(subjectTree)
 },
 _subjectMark(name) {
-const text = String(name || '')
-if (/数据|计算机|程序|代码|网络|操作系统/.test(text)) return '</>'
-if (/数学|代数|高数|概率|统计/.test(text)) return 'Σ'
-if (/英语|外语/.test(text)) return 'A'
-if (/政治|思政/.test(text)) return '政'
-return text.slice(0, 1) || '·'
+  return subjectMark(name)
 },
 _subjectIconMeta(name, code) {
-const text = `${String(name || '')} ${String(code || '')}`
-const codeText = String(code || '').trim()
-if (/计算机|数据结构|程序|代码|网络|操作系统|computer/i.test(text) || /^cs(?:408)?$/i.test(codeText)) {
-return { type: 'computer', mark: '', src: '/assets/icons/practice-subject/monitor.svg' }
-}
-if (/数学|代数|高数|概率|统计|math/i.test(text)) {
-return { type: 'math', mark: '', src: '/assets/icons/practice-subject/code-xml.svg' }
-}
-if (/英语|外语|english/i.test(text)) {
-return { type: 'english', mark: '', src: '/assets/icons/practice-subject/languages.svg' }
-}
-if (/政治|思政|politic/i.test(text)) {
-return { type: 'politics', mark: '', src: '/assets/icons/practice-subject/landmark.svg' }
-}
-return { type: 'default', mark: String(name || '').slice(0, 1) || '·', src: '' }
+  return subjectIconMeta(name, code)
 },
 _decorateRecentSubjects(subjects) {
-return (subjects || []).map((item) => {
-const subjectId = Number(item.subject_id)
-const hasChildren = item.has_children != null
-? Boolean(item.has_children)
-: this._subjectHasChildren(subjectId)
-return {
-subject_id: subjectId,
-display_name: item.display_name,
-parent_subject_id: Number(item.parent_subject_id || item.subject_id),
-has_children: hasChildren,
-mark: this._subjectMark(item.display_name),
-icon_src: this._subjectMark(item.display_name) === '</>'
-? '/assets/icons/practice-subject/code-xml.svg'
-: this._subjectIconMeta(item.display_name).src,
-scope_label: hasChildren ? '全部范围' : '继续练习',
-}
-})
+  return decorateRecentSubjects(subjects, id => this._subjectHasChildren(id))
 },
 _rememberSubject(subjectId, subjectName) {
 const id = Number(subjectId)
@@ -933,58 +814,13 @@ if (!pending) return
 this._rememberSubject(pending.subjectId, pending.subjectName)
 },
 _findParentSubjectId(subjectId) {
-const id = Number(subjectId)
-const tree = this.data.subjectTree || []
-for (let i = 0; i < tree.length; i += 1) {
-const root = tree[i]
-if (Number(root.subject_id) === id) return Number(root.subject_id)
-const stack = (root.children || []).slice()
-while (stack.length) {
-const node = stack.pop()
-if (Number(node.subject_id) === id) return Number(root.subject_id)
-if (Array.isArray(node.children)) Array.prototype.push.apply(stack, node.children)
-}
-}
-return null
+  return findParentSubjectId(subjectId, this.data.subjectTree)
 },
 _subjectHasChildren(subjectId) {
-const id = Number(subjectId)
-const tree = this.data.subjectTree || []
-const stack = tree.slice()
-while (stack.length) {
-const node = stack.pop()
-if (Number(node.subject_id) === id) {
-return Array.isArray(node.children) && node.children.length > 0
-}
-if (Array.isArray(node.children)) Array.prototype.push.apply(stack, node.children)
-}
-return false
+  return subjectHasChildren(subjectId, this.data.subjectTree)
 },
 _getPracticeSubjectScopeIds(subjectId, includeChildren) {
-const id = Number(subjectId)
-if (!id) return []
-if (!includeChildren) return [id]
-const tree = this.data.subjectTree || []
-const stack = tree.slice()
-let target = null
-while (stack.length) {
-const node = stack.pop()
-if (Number(node.subject_id) === id) {
-target = node
-break
-}
-if (Array.isArray(node.children)) Array.prototype.push.apply(stack, node.children)
-}
-if (!target) return []
-const scope = []
-const descendants = [target]
-while (descendants.length) {
-const node = descendants.pop()
-const nodeId = Number(node && node.subject_id)
-if (nodeId) scope.push(nodeId)
-if (node && Array.isArray(node.children)) Array.prototype.push.apply(descendants, node.children)
-}
-return Array.from(new Set(scope.length ? scope : [id]))
+  return getPracticeSubjectScopeIds(subjectId, includeChildren, this.data.subjectTree)
 },
 toggleSettings() {
 this.setData({ settingsExpanded: !this.data.settingsExpanded })
