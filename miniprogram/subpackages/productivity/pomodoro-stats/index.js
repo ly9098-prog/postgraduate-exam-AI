@@ -8,8 +8,6 @@ const LIGHT_SUBJECT_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C477
 // A clearer jewel-toned palette used only by the light-mode pie chart.
 // History accents and the trend chart keep their existing colors.
 const LIGHT_PIE_COLORS = ['#E76F51', '#2A9D8F', '#457B9D', '#E9C46A', '#8E6BBE', '#F28482', '#6A994E', '#43AA8B', '#B56576', '#577590']
-const DARK_TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
-const LIGHT_TREND_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3']
 const STATS_DYNAMIC_REFRESH_MS = 60 * 1000
 const dateUtils = require('./date-utils')
 const viewHelpers = require('./view-helpers')
@@ -17,6 +15,7 @@ const durationFormatter = require('./duration-formatter')
 const subjectDistribution = require('./subject-distribution')
 const sessionViewModel = require('./session-view-model')
 const pieLabelLayout = require('./pie-label-layout')
+const trendChart = require('./trend-chart')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -1543,185 +1542,12 @@ var pageConfig = {
   /* ==================== Trend Bars ==================== */
 
   _renderTrendBars(progress) {
-    const trendColors = this.data.themeMode === 'light' ? LIGHT_TREND_COLORS : DARK_TREND_COLORS
-    const palette = this._getCanvasPalette()
-    const trends = this.data.trends
-    if (!trends || !trends.length) return
-    const ctx = this._trendCtx
-    const rect = this._trendBarsRect
-    if (!ctx || !rect || !rect.width) return
-
-    const w = rect.width
-    const h = rect.height
-    const padL = 44
-    const padR = 16
-    const padT = 24
-    const padB = 32
-    const chartW = w - padL - padR
-    const chartH = h - padT - padB
-    const barW = Math.min(32, chartW / trends.length * 0.5)
-    const gap = chartW / trends.length
-    const maxDur = Math.max.apply(Math, [1].concat(trends.map(t => t.duration_sec || 0)))
-    const depth = Math.min(7, barW * 0.28)
-    const topTilt = 0.45
-
-    const isFinal = progress >= 1
-    const fadeIn = (start) => Math.max(0, Math.min(1, (progress - start) / (1 - start)))
-    const finalFade = fadeIn(0.82)
-
-    ctx.clearRect(0, 0, w, h)
-
-    // Grid lines — subtle horizontal guides
-    for (let i = 0; i <= 3; i++) {
-      const y = padT + chartH * (1 - i / 3)
-      ctx.beginPath()
-      ctx.strokeStyle = palette.grid
-      ctx.lineWidth = 0.5
-      ctx.moveTo(padL, y)
-      ctx.lineTo(w - padR, y)
-      ctx.stroke()
-    }
-
-    // Baseline
-    ctx.beginPath()
-    ctx.strokeStyle = palette.baseline
-    ctx.lineWidth = 1
-    ctx.moveTo(padL, padT + chartH)
-    ctx.lineTo(w - padR, padT + chartH)
-    ctx.stroke()
-
-    trends.forEach((t, i) => {
-      const x = padL + gap * i + (gap - barW) / 2
-      const finalBarH = (t.duration_sec || 0) / maxDur * chartH
-      const barH = Math.max(0, finalBarH * progress)
-      const baseY = padT + chartH
-      const topY = baseY - barH
-      const show3D = finalFade > 0.01 && barH > depth * topTilt * 2
-
-      if (t.duration_sec > 0 && barH > 0) {
-        // Ground shadow — soft ellipse at base, fades in with finalFade
-        if (finalFade > 0) {
-          ctx.save()
-          ctx.globalAlpha = finalFade * 0.45
-          ctx.translate(x + barW / 2, baseY + 2)
-          ctx.scale(1, 0.28)
-          const shGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, barW * 0.75)
-          shGrad.addColorStop(0, 'rgba(0,0,0,0.32)')
-          shGrad.addColorStop(0.5, 'rgba(0,0,0,0.14)')
-          shGrad.addColorStop(1, 'rgba(0,0,0,0)')
-          ctx.fillStyle = shGrad
-          ctx.beginPath()
-          ctx.arc(0, 0, barW * 0.75, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.restore()
-        }
-
-        // Per-bar color
-        const barColor = trendColors[i % trendColors.length]
-        const rc = parseInt(barColor.slice(1, 3), 16)
-        const gc = parseInt(barColor.slice(3, 5), 16)
-        const bc = parseInt(barColor.slice(5, 7), 16)
-
-        // Right side face — darker crystal depth
-        if (show3D) {
-          ctx.save()
-          ctx.globalAlpha = finalFade
-          ctx.fillStyle = `rgba(${Math.round(rc*0.5)},${Math.round(gc*0.5)},${Math.round(bc*0.5)},0.85)`
-          ctx.beginPath()
-          ctx.moveTo(x + barW, topY)
-          ctx.lineTo(x + barW + depth, topY - depth * topTilt)
-          ctx.lineTo(x + barW + depth, baseY - depth * topTilt)
-          ctx.lineTo(x + barW, baseY)
-          ctx.closePath()
-          ctx.fill()
-          ctx.restore()
-        }
-
-        // Left edge glow — light escaping crystal facet
-        ctx.fillStyle = `rgba(${Math.min(255,rc+110)},${Math.min(255,gc+110)},${Math.min(255,bc+110)},0.3)`
-        ctx.fillRect(x, topY + 2, 1.5, barH - 4)
-
-        // Front face — translucent crystal gradient
-        const barGrad = ctx.createLinearGradient(0, topY, 0, baseY)
-        barGrad.addColorStop(0, 'rgba(255,255,255,0.12)')
-        barGrad.addColorStop(0.1, `rgba(${rc},${gc},${bc},0.6)`)
-        barGrad.addColorStop(0.42, `rgba(${rc},${gc},${bc},0.92)`)
-        barGrad.addColorStop(0.82, `rgba(${Math.round(rc*0.7)},${Math.round(gc*0.7)},${Math.round(bc*0.7)},0.72)`)
-        barGrad.addColorStop(1, `rgba(${Math.round(rc*0.4)},${Math.round(gc*0.4)},${Math.round(bc*0.4)},0.5)`)
-        ctx.fillStyle = barGrad
-        ctx.fillRect(x, topY, barW, barH)
-
-        // Center light channel — light pipe through crystal
-        if (barH > 8) {
-          const lcW = Math.max(2, barW * 0.28)
-          const lcX = x + (barW - lcW) / 2
-          const lcGrad = ctx.createLinearGradient(0, topY, 0, topY + barH * 0.7)
-          lcGrad.addColorStop(0, 'rgba(255,255,255,0.52)')
-          lcGrad.addColorStop(0.35, 'rgba(255,255,255,0.12)')
-          lcGrad.addColorStop(1, 'rgba(255,255,255,0)')
-          ctx.fillStyle = lcGrad
-          ctx.fillRect(lcX, topY, lcW, barH)
-        }
-
-        // Front top-edge highlight — sharp crystal rim
-        if (barH > 4) {
-          ctx.fillStyle = 'rgba(255,255,255,0.35)'
-          ctx.fillRect(x, topY, barW, Math.min(2.5, barH / 5))
-          ctx.fillStyle = 'rgba(255,255,255,0.15)'
-          ctx.fillRect(x, topY + Math.min(2.5, barH / 5), barW, Math.min(1.5, barH / 8))
-        }
-
-        // Front gloss sweep — refined light wash on upper portion
-        if (show3D && barH > 20) {
-          ctx.save()
-          ctx.globalAlpha = fadeIn(0.84) * 0.28
-          const fg = ctx.createLinearGradient(x, topY, x + barW, topY)
-          fg.addColorStop(0, 'rgba(255,255,255,0)')
-          fg.addColorStop(0.2, 'rgba(255,255,255,0.5)')
-          fg.addColorStop(0.45, 'rgba(255,255,255,0.04)')
-          fg.addColorStop(1, 'rgba(255,255,255,0)')
-          ctx.fillStyle = fg
-          ctx.fillRect(x, topY, barW, barH * 0.55)
-          ctx.restore()
-        }
-
-        // Top face — bright crystal facet
-        if (show3D) {
-          ctx.save()
-          ctx.globalAlpha = fadeIn(0.83)
-          ctx.fillStyle = `rgba(${Math.min(255,rc+100)},${Math.min(255,gc+100)},${Math.min(255,bc+100)},0.6)`
-          ctx.beginPath()
-          ctx.moveTo(x, topY)
-          ctx.lineTo(x + depth, topY - depth * topTilt)
-          ctx.lineTo(x + barW + depth, topY - depth * topTilt)
-          ctx.lineTo(x + barW, topY)
-          ctx.closePath()
-          ctx.fill()
-
-          // Crystal ridge — bright seam along front-top edge
-          ctx.fillStyle = 'rgba(255,255,255,0.4)'
-          ctx.fillRect(x + depth * 0.15, topY - depth * topTilt * 0.3, barW * 0.7, depth * topTilt * 0.3)
-
-          // Top facet highlight spot
-          ctx.fillStyle = 'rgba(255,255,255,0.18)'
-          const spotW = barW * 0.3
-          const spotX = x + barW * 0.5
-          ctx.fillRect(spotX, topY - depth * topTilt * 0.65, spotW, depth * topTilt * 0.35)
-          ctx.restore()
-        }
-      } else if (t.duration_sec > 0) {
-        ctx.fillStyle = palette.emptyBar
-        ctx.fillRect(x, baseY - 1, barW, 1)
-      } else {
-        ctx.fillStyle = palette.pendingBar
-        ctx.fillRect(x, baseY - 2, barW, 2)
-      }
-
-      // Date label
-      ctx.fillStyle = palette.dateText
-      ctx.font = '9px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(t._shortDate || '', x + barW / 2, baseY + 18)
+    trendChart.renderTrendBars(this._trendCtx, {
+      trends: this.data.trends,
+      rect: this._trendBarsRect,
+      progress,
+      themeMode: this.data.themeMode,
+      palette: this._getCanvasPalette(),
     })
   },
 
