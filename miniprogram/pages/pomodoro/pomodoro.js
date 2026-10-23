@@ -45,6 +45,7 @@ const { createUnknownStartController } = require('./utils/unknown-start-controll
 const { createPendingSyncController } = require('./utils/pending-sync-controller')
 const { createTerminalConflictController } = require('./utils/terminal-conflict-controller')
 const { createStatsController } = require('./utils/stats-controller')
+const { createThemeController } = require('./utils/theme-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -192,6 +193,7 @@ Page({
   _pauseToggleUnlockTimer: null,
   _syncRetryController: null,
   _statsController: null,
+  _themeController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -399,10 +401,7 @@ Page({
     this._clearPendingPomodoroSyncRetryTimer(true)
     this._getStatsController().invalidate()
     this._unregisterNetworkStatusListener()
-    if (this._themeSwitchTimer) {
-      clearTimeout(this._themeSwitchTimer)
-      this._themeSwitchTimer = null
-    }
+    this._getThemeController().clearSwitchTimer()
     // Do not overwrite the native navigation bar with a blue fallback here.
     // That global write survived page teardown and appeared as a blue rectangle
     // before the next pomodoro theme frame was applied on re-entry.
@@ -2453,57 +2452,45 @@ Page({
 
   /* ==================== Theme ==================== */
 
-  _getThemeViewModel(mode) {
-    const themeMode = pomodoroTheme.normalizeTheme(mode)
-    const isLight = themeMode === 'light'
-    return {
-      themeMode,
-      sliderBlockColor: isLight ? '#153323' : '#ffffff',
-      sliderTrackColor: isLight ? 'rgba(21,51,35,0.12)' : 'rgba(255,255,255,0.06)',
-      celebrationTheme: isLight ? 'light' : 'dark',
+  _getThemeController() {
+    if (!this._themeController) {
+      this._themeController = createThemeController({
+        normalizeTheme: mode => pomodoroTheme.normalizeTheme(mode),
+        getTheme: () => pomodoroTheme.getTheme(),
+        setTheme: value => pomodoroTheme.setTheme(value),
+        applyNativeTheme: value => pomodoroTheme.applyNativeTheme(value),
+        getCurrentMode: () => this.data.themeMode,
+        setData: (data, callback) => this.setData(data, callback),
+        setTimeout: (callback, delay) => setTimeout(callback, delay),
+        clearTimeout: id => clearTimeout(id),
+        afterThemeApplied: () => {
+          this._ringCache = null
+          this._lastDrawnProgress = undefined
+          this._lastDrawnIsBreak = undefined
+          if ((this.data.phase === PHASE.RUNNING || this.data.phase === PHASE.BREAK) &&
+              this.data.ringCanvasVisible && !this.data.showEndConfirm) {
+            wx.nextTick(() => this.drawRing(this._getCurrentTotalSec(), this.data.phase === PHASE.BREAK))
+          }
+        },
+      })
     }
+    return this._themeController
+  },
+
+  _getThemeViewModel(mode) {
+    return this._getThemeController().viewModel(mode)
   },
 
   _syncThemeFromStorage() {
-    const themeMode = pomodoroTheme.getTheme()
-    pomodoroTheme.applyNativeTheme(themeMode)
-    if (themeMode === this.data.themeMode) return
-    this._applyTheme(themeMode, false, false)
+    return this._getThemeController().sync()
   },
 
   _applyTheme(mode, persist, animate) {
-    const themeMode = pomodoroTheme.normalizeTheme(mode)
-    if (persist) pomodoroTheme.setTheme(themeMode)
-    pomodoroTheme.applyNativeTheme(themeMode)
-
-    if (this._themeSwitchTimer) {
-      clearTimeout(this._themeSwitchTimer)
-      this._themeSwitchTimer = null
-    }
-
-    const patch = this._getThemeViewModel(themeMode)
-    if (animate) patch.themeSwitching = true
-    this.setData(patch, () => {
-      this._ringCache = null
-      this._lastDrawnProgress = undefined
-      this._lastDrawnIsBreak = undefined
-      if ((this.data.phase === PHASE.RUNNING || this.data.phase === PHASE.BREAK) &&
-          this.data.ringCanvasVisible && !this.data.showEndConfirm) {
-        wx.nextTick(() => this.drawRing(this._getCurrentTotalSec(), this.data.phase === PHASE.BREAK))
-      }
-    })
-
-    if (animate) {
-      this._themeSwitchTimer = setTimeout(() => {
-        this._themeSwitchTimer = null
-        this.setData({ themeSwitching: false })
-      }, 520)
-    }
+    return this._getThemeController().apply(mode, persist, animate)
   },
 
   toggleTheme() {
-    const next = this.data.themeMode === 'dark' ? 'light' : 'dark'
-    this._applyTheme(next, true, true)
+    return this._getThemeController().toggle()
   },
 
   /* ==================== Font Size Toggle ==================== */

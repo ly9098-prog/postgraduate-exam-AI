@@ -23,6 +23,7 @@ const MODULES = {
   'pending-sync-controller.js': [],
   'terminal-conflict-controller.js': [],
   'stats-controller.js': [],
+  'theme-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -42,7 +43,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2577
+const PAGE_MAX_LINES = 2564
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -60,6 +61,8 @@ const PAGE_METHODS = new Set([
   '_consumeAnyPomodoroTerminalConflict', '_ackPomodoroTerminalConflict',
   '_handlePomodoroTerminalConflict',
   '_getStatsController', 'loadTodayStats',
+  '_getThemeController', '_getThemeViewModel', '_syncThemeFromStorage',
+  '_applyTheme', 'toggleTheme',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -315,6 +318,31 @@ function pageViolations(source) {
         if (methodName === 'loadTodayStats' &&
             !returnsControllerCall(node, '_getStatsController', 'load', [])) {
           errors.push('today stats must delegate to its controller')
+        }
+        if (methodName === '_getThemeController' &&
+            !hasLazyControllerAccessor(node, 'createThemeController', '_themeController')) {
+          errors.push('theme must lazily assign its controller')
+        }
+        if (methodName === '_getThemeViewModel' &&
+            !returnsControllerCall(node, '_getThemeController', 'viewModel', ['mode'])) {
+          errors.push('theme view model must delegate to its controller')
+        }
+        if (methodName === '_syncThemeFromStorage' &&
+            !returnsControllerCall(node, '_getThemeController', 'sync', [])) {
+          errors.push('theme storage sync must delegate to its controller')
+        }
+        if (methodName === '_applyTheme' &&
+            !returnsControllerCall(
+              node,
+              '_getThemeController',
+              'apply',
+              ['mode', 'persist', 'animate'],
+            )) {
+          errors.push('theme apply must delegate to its controller')
+        }
+        if (methodName === 'toggleTheme' &&
+            !returnsControllerCall(node, '_getThemeController', 'toggle', [])) {
+          errors.push('theme toggle must delegate to its controller')
         }
       }
     }

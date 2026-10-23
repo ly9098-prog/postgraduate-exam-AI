@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 33)
+  assert.equal(result.modules, 34)
   assert.equal(result.edges, 4)
 })
 
@@ -351,6 +351,43 @@ test('today stats shell must lazily reuse one controller', () => {
     .includes('today stats must delegate to its controller'))
 })
 
+test('theme shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._themeController = createThemeController({',
+    'void createThemeController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('theme must lazily assign its controller'))
+
+  const detachedViewModel = pageSource.replace(
+    'this._getThemeController().viewModel(mode)',
+    'this._getThemeController().legacyViewModel(mode)'
+  )
+  assert.ok(pageViolations(detachedViewModel)
+    .includes('theme view model must delegate to its controller'))
+
+  const detachedSync = pageSource.replace(
+    'this._getThemeController().sync()',
+    'this._getThemeController().legacySync()'
+  )
+  assert.ok(pageViolations(detachedSync)
+    .includes('theme storage sync must delegate to its controller'))
+
+  const detachedApply = pageSource.replace(
+    'this._getThemeController().apply(mode, persist, animate)',
+    'this._getThemeController().legacyApply(mode, persist, animate)'
+  )
+  assert.ok(pageViolations(detachedApply)
+    .includes('theme apply must delegate to its controller'))
+
+  const detachedToggle = pageSource.replace(
+    'this._getThemeController().toggle()',
+    'this._getThemeController().legacyToggle()'
+  )
+  assert.ok(pageViolations(detachedToggle)
+    .includes('theme toggle must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -363,6 +400,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 33)
+    assert.equal(result.modules, 34)
   }
 })
