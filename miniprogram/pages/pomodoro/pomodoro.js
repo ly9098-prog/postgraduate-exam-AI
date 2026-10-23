@@ -68,6 +68,7 @@ const { createUpdateFreeElapsedController } = require('./utils/update-free-elaps
 const { createBeginCountdownController } = require('./utils/begin-countdown-controller')
 const { createPauseSessionController } = require('./utils/pause-session-controller')
 const { createResumeSessionController } = require('./utils/resume-session-controller')
+const { createShowCountdownInterruptConfirmController } = require('./utils/show-countdown-interrupt-confirm-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -231,6 +232,7 @@ Page({
   _beginCountdownController: null,
   _pauseSessionController: null,
   _resumeSessionController: null,
+  _showCountdownInterruptConfirmController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1032,6 +1034,21 @@ Page({
     return this._resumeSessionController
   },
 
+  _getShowCountdownInterruptConfirmController() {
+    if (!this._showCountdownInterruptConfirmController) {
+      this._showCountdownInterruptConfirmController = createShowCountdownInterruptConfirmController({
+        isActionLoading: () => this.data.actionLoading,
+        pauseCountdown: () => this._pauseCountdownForEndConfirm(),
+        getConfirmTimerSnapshot: () => this._confirmTimerSnapshot,
+        setData: data => this.setData(data),
+        nextTick: callback => wx.nextTick(callback),
+        initCanvas: force => this._initCanvas(force),
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+      })
+    }
+    return this._showCountdownInterruptConfirmController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1191,22 +1208,7 @@ Page({
   },
 
   async _showCountdownInterruptConfirm() {
-    if (this.data.actionLoading) return
-
-    const ok = await this._pauseCountdownForEndConfirm()
-    if (!ok || !this._confirmTimerSnapshot) return
-
-    const snapshot = this._confirmTimerSnapshot
-
-    this.setData({
-      ...buildEndConfirmViewModel('countdown-interrupt', snapshot),
-      ringCanvasVisible: true,
-    })
-
-    wx.nextTick(() => {
-      this._initCanvas(true)
-      this.drawRing(snapshot.totalSec, snapshot.phase === 'break')
-    })
+    return this._getShowCountdownInterruptConfirmController().show()
   },
 
   async cancelEndConfirm() {

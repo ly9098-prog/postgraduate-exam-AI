@@ -42,6 +42,7 @@ const MODULES = {
   'begin-countdown-controller.js': [],
   'pause-session-controller.js': [],
   'resume-session-controller.js': [],
+  'show-countdown-interrupt-confirm-controller.js': ['./end-confirm-view-model'],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -61,7 +62,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2337
+const PAGE_MAX_LINES = 2339
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -99,6 +100,7 @@ const PAGE_METHODS = new Set([
   '_getBeginCountdownController', '_beginCountdown',
   '_getPauseSessionController', '_pauseSession',
   '_getResumeSessionController', '_resumeSession',
+  '_getShowCountdownInterruptConfirmController', '_showCountdownInterruptConfirm',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -610,6 +612,18 @@ function pageViolations(source) {
         if (methodName === '_resumeSession' &&
             !returnsControllerCall(node, '_getResumeSessionController', 'resume', [])) {
           errors.push('resume session must delegate to its controller')
+        }
+        if (methodName === '_getShowCountdownInterruptConfirmController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createShowCountdownInterruptConfirmController',
+              '_showCountdownInterruptConfirmController',
+            )) {
+          errors.push('show countdown interrupt confirm must lazily assign its controller')
+        }
+        if (methodName === '_showCountdownInterruptConfirm' &&
+            !returnsControllerCall(node, '_getShowCountdownInterruptConfirmController', 'show', [])) {
+          errors.push('show countdown interrupt confirm must delegate to its controller')
         }
       }
     }
