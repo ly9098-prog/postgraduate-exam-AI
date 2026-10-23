@@ -337,6 +337,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-trend-chart.js \
             miniprogram/tests/test-pomodoro-stats-duration-animation-controller.js \
             miniprogram/tests/test-pomodoro-stats-pie-tap-controller.js \
+            miniprogram/tests/test-pomodoro-stats-start-animations-controller.js \
             miniprogram/tests/test-pomodoro-theme-controller.js \
             miniprogram/tests/test-pomodoro-end-confirm-snapshot.js \
             miniprogram/tests/test-pomodoro-active-sync-controller.js \

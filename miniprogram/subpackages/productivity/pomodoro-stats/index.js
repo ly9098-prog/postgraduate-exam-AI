@@ -18,6 +18,7 @@ const pieLabelLayout = require('./pie-label-layout')
 const trendChart = require('./trend-chart')
 const { createDurationAnimationController } = require('./duration-animation-controller')
 const { createPieTapController } = require('./pie-tap-controller')
+const { createStartAnimationsController } = require('./start-animations-controller')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -1405,71 +1406,37 @@ var pageConfig = {
   },
 
   _startAnimations(reqId) {
-    if (!this._alive || !this._isVisible || reqId !== this._requestId || this.data.chartMode !== 'pie') return
-    this._animActive = true
-    this._finalDrawn = false
-    this._pieLabelToken = (this._pieLabelToken || 0) + 1
-    const pieAnimDuration = 980
-    const startTime = Date.now()
+    this._getStartAnimationsController().start(reqId)
+  },
 
-    // 首屏只做“当日专注”数字 + 扇形图动画。柱状图完全留到用户点击切换后。
-    const targetSessions = this.data.todaySessions
-    const numberDuration = 420
-    const totalSteps = 7
-    let step = 0
-    const numTick = () => {
-      if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
-      step += 1
-      const p = Math.min(1, step / totalSteps)
-      const eased = this._easeOutCubic(p)
-      const displayDurationSec = Math.round(this._rawTodayDur * eased)
-      this._displayTodayDurationSec = displayDurationSec
-      this.setData({
-        _dispTodaySessions: Math.round(targetSessions * eased),
-        ...this._getTodayDurationDisplayPatch(this._fmtMin(displayDurationSec)),
-        durationValueAnimating: p < 1,
+  _getStartAnimationsController() {
+    if (!this._startAnimationsController) {
+      this._startAnimationsController = createStartAnimationsController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getRequestId: () => this._requestId,
+        getChartMode: () => this.data.chartMode,
+        getTodaySessions: () => this.data.todaySessions,
+        getRawTodayDurationSec: () => this._rawTodayDur,
+        getAnimActive: () => this._animActive,
+        getFinalDrawn: () => this._finalDrawn,
+        getPieCanvasNode: () => this._pieCanvasNode,
+        setAnimActive: value => { this._animActive = value },
+        setFinalDrawn: value => { this._finalDrawn = value },
+        setDisplayDurationSec: value => { this._displayTodayDurationSec = value },
+        setAnimTimer: timer => { this._animTimer = timer },
+        setRafId: id => { this._rafId = id },
+        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1 },
+        now: () => Date.now(),
+        setTimeout,
+        setData: patch => this.setData(patch),
+        getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
+        formatMin: sec => this._fmtMin(sec),
+        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
+        revealPieLabelsIncrementally: () => this._revealPieLabelsIncrementally(),
       })
-      if (step < totalSteps) {
-        this._animTimer = setTimeout(numTick, Math.round(numberDuration / totalSteps))
-      } else {
-        this._animTimer = null
-      }
     }
-    numTick()
-
-    const node = this._pieCanvasNode
-    const raf = node && node.requestAnimationFrame
-      ? cb => node.requestAnimationFrame(cb)
-      : cb => setTimeout(cb, 16)
-    let lastPieDraw = -Infinity
-    const tick = () => {
-      if (
-        !this._animActive ||
-        !this._alive ||
-        !this._isVisible ||
-        reqId !== this._requestId ||
-        this.data.chartMode !== 'pie'
-      ) return
-      const elapsed = Date.now() - startTime
-      const raw = Math.min(1, elapsed / pieAnimDuration)
-      if (raw < 1 && elapsed - lastPieDraw >= 28) {
-        lastPieDraw = elapsed
-        this._renderPieChart(this._easeInOutCubic(raw), false)
-      }
-      if (raw < 1) {
-        this._rafId = raf(tick)
-      } else if (!this._finalDrawn) {
-        this._finalDrawn = true
-        this._animActive = false
-        this._renderPieChart(1, false)
-        this._rafId = raf(() => {
-          this._rafId = null
-          if (!this._alive || !this._isVisible || reqId !== this._requestId || this.data.chartMode !== 'pie') return
-          this._revealPieLabelsIncrementally()
-        })
-      }
-    }
-    this._rafId = raf(tick)
+    return this._startAnimationsController
   },
 
   /* ==================== Trend Bars ==================== */
