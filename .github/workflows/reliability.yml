@@ -349,6 +349,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-save-day-start-controller.js \
             miniprogram/tests/test-pomodoro-stats-settings-controller.js \
             miniprogram/tests/test-pomodoro-stats-reconcile-controller.js \
+            miniprogram/tests/test-pomodoro-stats-cumulative-summary-patch.js \
             miniprogram/tests/test-pomodoro-theme-controller.js \
             miniprogram/tests/test-pomodoro-end-confirm-snapshot.js \
             miniprogram/tests/test-pomodoro-active-sync-controller.js \

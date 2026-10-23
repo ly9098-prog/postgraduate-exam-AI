@@ -25,6 +25,7 @@ const { createDistributionCommitController } = require('./distribution-commit-co
 const { createSaveDayStartController } = require('./save-day-start-controller')
 const { createSettingsController } = require('./settings-controller')
 const { reconcileFromServer } = require('./reconcile-controller')
+const { buildCumulativeSummaryPatch } = require('./cumulative-summary-patch')
 
 const {
   getSubjectColor,
@@ -413,20 +414,7 @@ var pageConfig = {
 
 
   _cumulativeSummaryPatch(summary, requestedStart) {
-    const data = summary || {}
-    const startDate = requestedStart || data.start_date || this.data._todayDate || ''
-    const sessions = Math.max(0, Number(data.sessions) || 0)
-    const durationSec = Math.max(0, Number(data.duration_sec) || 0)
-    const activeDays = Math.max(0, Number(data.active_days) || 0)
-    const averageSec = activeDays > 0 ? Math.floor(durationSec / activeDays) : 0
-    return {
-      cumulativeStartDate: startDate,
-      cumulativeSessions: sessions,
-      cumulativeDurationText: this._fmtMin(durationSec),
-      cumulativeAverageText: this._fmtMin(averageSec),
-      cumulativeActiveDays: activeDays,
-      cumulativeLoading: false,
-    }
+    return buildCumulativeSummaryPatch(summary, requestedStart, this.data._todayDate, sec => this._fmtMin(sec))
   },
 
   async _refreshCumulativeSummary(startDate, silent) {
