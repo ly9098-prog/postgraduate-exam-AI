@@ -11,6 +11,7 @@ const LIGHT_PIE_COLORS = ['#E76F51', '#2A9D8F', '#457B9D', '#E9C46A', '#8E6BBE',
 const DARK_TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
 const LIGHT_TREND_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3']
 const STATS_DYNAMIC_REFRESH_MS = 60 * 1000
+const dateUtils = require('./date-utils')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -453,69 +454,33 @@ var pageConfig = {
   },
 
   _parseDateStr(s) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''))
-    if (!m) return null
-    return [Number(m[1]), Number(m[2]), Number(m[3])]
+    return dateUtils.parseDateStr(s)
   },
-
   _formatDateParts(parts) {
-    if (!parts) return ''
-    const pad = n => String(n).padStart(2, '0')
-    return `${parts[0]}-${pad(parts[1])}-${pad(parts[2])}`
+    return dateUtils.formatDateParts(parts)
   },
-
   _shiftDate(value, deltaDays) {
-    const parts = this._parseDateStr(value)
-    if (!parts) return value || ''
-    const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + Number(deltaDays || 0)))
-    return this._formatDateParts([utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate()])
+    return dateUtils.shiftDate(value, deltaDays)
   },
-
   _startOfWeek(value) {
-    const parts = this._parseDateStr(value)
-    if (!parts) return value || ''
-    const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]))
-    const weekday = utc.getUTCDay()
-    const offset = weekday === 0 ? -6 : 1 - weekday
-    return this._shiftDate(value, offset)
+    return dateUtils.startOfWeek(value)
   },
-
   _monthStart(value) {
-    const parts = this._parseDateStr(value)
-    return parts ? this._formatDateParts([parts[0], parts[1], 1]) : (value || '')
+    return dateUtils.monthStart(value)
   },
-
   _monthEnd(value) {
-    const parts = this._parseDateStr(value)
-    if (!parts) return value || ''
-    const utc = new Date(Date.UTC(parts[0], parts[1], 0))
-    return this._formatDateParts([utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate()])
+    return dateUtils.monthEnd(value)
   },
-
   _minDate(a, b) {
-    if (!a) return b || ''
-    if (!b) return a || ''
-    return a <= b ? a : b
+    return dateUtils.minDate(a, b)
   },
-
   _resolveDistributionRange(period, anchorDate) {
-    const anchor = anchorDate || this.data.selectedDate || this.data._todayDate
-    const today = this.data._todayDate || anchor
-    if (period === 'week') {
-      const start = this._startOfWeek(anchor)
-      return { start, end: this._minDate(this._shiftDate(start, 6), today) }
-    }
-    if (period === 'month') {
-      return { start: this._monthStart(anchor), end: this._minDate(this._monthEnd(anchor), today) }
-    }
-    if (period === 'custom') {
-      let start = this.data.customRangeStartDate || anchor
-      if (start > anchor) start = anchor
-      return { start, end: anchor }
-    }
-    return { start: anchor, end: anchor }
+    return dateUtils.resolveDistributionRange(period, anchorDate, {
+      selectedDate: this.data.selectedDate,
+      todayDate: this.data._todayDate,
+      customRangeStartDate: this.data.customRangeStartDate,
+    })
   },
-
   _formatPieDateLabel(value) {
     if (!value) return '今日'
     if (value === this.data._todayDate) return '今日'
