@@ -210,6 +210,8 @@ export default function QuestionsPage() {
     prefetchDetail,
   } = useQuestionDetailNavigation({
     initialSelectedQuestionId: positiveInt(searchParams.get("selected_id")),
+    items,
+    isFetching: questions.isFetching,
     setEditing: value => editorCallbacks.current.setEditing(value),
     setEditForm: value => editorCallbacks.current.setEditForm(value),
     openDetailDrawer: setIsDetailDrawerOpen,
@@ -223,6 +225,7 @@ export default function QuestionsPage() {
     requestAnimationFrame: callback => window.requestAnimationFrame(callback),
     cancelAnimationFrame: frame => window.cancelAnimationFrame(frame),
   });
+
   const detail = useQuestionDetail(selectedQuestionId);
   const versions = useQuestionVersions(selectedQuestionId);
   const baseVersionDetail = useQuestionVersion(selectedQuestionId, baseVersion);
