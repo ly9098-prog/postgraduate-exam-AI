@@ -53,7 +53,6 @@ import {
   updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { useOutsideClick } from "@/lib/use-outside-click";
 import { buildVersionLabels } from "./question-version-labels";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -76,6 +75,7 @@ import { useQuestionDetailNavigation } from "./hooks/use-question-detail-navigat
 import { useQuestionSelection } from "./hooks/use-question-selection";
 import { useQuestionPagination } from "./hooks/use-question-pagination";
 import { useQuestionSubjectOptions } from "./hooks/use-question-subject-options";
+import { useQuestionMenus } from "./hooks/use-question-menus";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -164,18 +164,21 @@ export default function QuestionsPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [copyingQuestion, setCopyingQuestion] = useState(false);
-  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const [isCommonFilterMenuOpen, setIsCommonFilterMenuOpen] = useState(false);
-  const [isMoreFilterOpen, setIsMoreFilterOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
   const editorCallbacks = useRef<{
     setEditing: (value: boolean) => void;
     setEditForm: (value: Record<string, unknown>) => void;
   }>({ setEditing: () => {}, setEditForm: () => {} });
-  const exportMenuRef = useRef<HTMLDivElement | null>(null);
-  const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
-  const moreFilterRef = useRef<HTMLDivElement | null>(null);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
+  const {
+    menus,
+    commonFilterMenuRef,
+    moreFilterRef,
+    exportMenuRef,
+    toggleMenu,
+    closeCommonFilterMenu,
+    closeAllMenus,
+  } = useQuestionMenus();
 
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
@@ -430,7 +433,7 @@ export default function QuestionsPage() {
       setPage(1);
       clearSelection();
       setIsDetailDrawerOpen(false);
-      setIsCommonFilterMenuOpen(false);
+      closeCommonFilterMenu();
     },
     onPageSizeChanged: (nextPageSize) => {
       setPageSize(nextPageSize);
@@ -438,7 +441,7 @@ export default function QuestionsPage() {
     },
     onMessage: (nextMessage) => {
       setMessage(nextMessage);
-      setIsCommonFilterMenuOpen(false);
+      closeCommonFilterMenu();
     },
     getStorage: () => window.localStorage,
   });
@@ -449,26 +452,10 @@ export default function QuestionsPage() {
     return () => window.clearTimeout(timer);
   }, [message]);
 
-  useEffect(() => {
-    if (!(isCommonFilterMenuOpen || isMoreFilterOpen || isExportMenuOpen)) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setIsCommonFilterMenuOpen(false);
-      setIsMoreFilterOpen(false);
-      setIsExportMenuOpen(false);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isCommonFilterMenuOpen, isMoreFilterOpen, isExportMenuOpen]);
-
-  useOutsideClick(commonFilterMenuRef, isCommonFilterMenuOpen, () => setIsCommonFilterMenuOpen(false), "pointerdown");
-  useOutsideClick(moreFilterRef, isMoreFilterOpen, () => setIsMoreFilterOpen(false), "pointerdown");
-  useOutsideClick(exportMenuRef, isExportMenuOpen, () => setIsExportMenuOpen(false), "pointerdown");
-
   const handleExport = async (format: "csv" | "docx") => {
     try {
       setExportingFormat(format);
-      setIsExportMenuOpen(false);
+      closeAllMenus();
       const response = await exportQuestions(
         buildExportPayload(format, filters, selectedIds),
       );
@@ -565,20 +552,18 @@ export default function QuestionsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsCommonFilterMenuOpen((open) => !open);
-                      setIsMoreFilterOpen(false);
-                      setIsExportMenuOpen(false);
+                      toggleMenu("isCommonFilterOpen");
                     }}
-                    aria-expanded={isCommonFilterMenuOpen}
+                    aria-expanded={menus.isCommonFilterOpen}
                     aria-haspopup="menu"
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
                   >
                     常用筛选
                     <ChevronDown
-                      className={`h-4 w-4 text-[var(--color-text-hint)] transition ${isCommonFilterMenuOpen ? "rotate-180" : ""}`}
+                      className={`h-4 w-4 text-[var(--color-text-hint)] transition ${menus.isCommonFilterOpen ? "rotate-180" : ""}`}
                     />
                   </button>
-                  {isCommonFilterMenuOpen ? (
+                  {menus.isCommonFilterOpen ? (
                     <div className="absolute left-0 top-full z-30 mt-2 min-w-[176px] animate-drop-in overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
                       <button
                         type="button"
@@ -720,18 +705,16 @@ export default function QuestionsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsMoreFilterOpen((open) => !open);
-                      setIsCommonFilterMenuOpen(false);
-                      setIsExportMenuOpen(false);
+                      toggleMenu("isMoreFilterOpen");
                     }}
-                    aria-expanded={isMoreFilterOpen}
+                    aria-expanded={menus.isMoreFilterOpen}
                     aria-haspopup="dialog"
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
                   >
                     <SlidersHorizontal className="h-4 w-4 text-[var(--color-text-secondary)]" />
                     更多条件
                   </button>
-                  {isMoreFilterOpen ? (
+                  {menus.isMoreFilterOpen ? (
                     <div className="absolute right-0 top-full z-30 mt-2 w-[320px] animate-drop-in rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-floating)]">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
                         导入批次 ID
@@ -813,11 +796,9 @@ export default function QuestionsPage() {
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    setIsExportMenuOpen((value) => !value);
-                    setIsCommonFilterMenuOpen(false);
-                    setIsMoreFilterOpen(false);
+                    toggleMenu("isExportOpen");
                   }}
-                  aria-expanded={isExportMenuOpen}
+                  aria-expanded={menus.isExportOpen}
                   aria-haspopup="menu"
                   disabled={!!exportingFormat}
                   className="h-9 rounded-full px-3"
@@ -829,10 +810,10 @@ export default function QuestionsPage() {
                       : "导出 Word 中..."
                     : "导出"}
                   <ChevronDown
-                    className={`h-4 w-4 transition ${isExportMenuOpen ? "rotate-180" : ""}`}
+                    className={`h-4 w-4 transition ${menus.isExportOpen ? "rotate-180" : ""}`}
                   />
                 </Button>
-                {isExportMenuOpen ? (
+                {menus.isExportOpen ? (
                   <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] animate-drop-in overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
                     <button
                       type="button"
