@@ -32,6 +32,7 @@ const { createCumulativeRefreshController } = require('./cumulative-refresh-cont
 const { createDistributionLoadController } = require('./distribution-load-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
+const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
 
 const {
   getSubjectColor,
@@ -1053,33 +1054,27 @@ var pageConfig = {
   },
 
   _revealPieLabelsIncrementally() {
-    const ctx = this._pieCtx
-    const rect = this._pieRect
-    const layout = this._pieRenderCache.labelLayout
-    if (!ctx || !rect || !layout || !layout.length) return
+    this._getPieLabelRevealController().reveal()
+  },
 
-    const token = (this._pieLabelToken || 0) + 1
-    this._pieLabelToken = token
-    const geometry = this._getPieGeometry(rect)
-    const node = this._pieCanvasNode
-    const raf = node && node.requestAnimationFrame
-      ? cb => node.requestAnimationFrame(cb)
-      : cb => setTimeout(cb, 16)
-    let index = 0
-
-    const drawNext = () => {
-      if (!this._alive || !this._isVisible || token !== this._pieLabelToken) return
-      const end = Math.min(layout.length, index + 2)
-      this._drawPieLabels(ctx, geometry, layout, 1, index, end)
-      index = end
-      if (index < layout.length) {
-        this._pieLabelRafId = raf(drawNext)
-      } else {
-        this._pieLabelRafId = null
-      }
+  _getPieLabelRevealController() {
+    if (!this._pieLabelRevealController) {
+      this._pieLabelRevealController = createPieLabelRevealController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getPieCtx: () => this._pieCtx,
+        getPieRect: () => this._pieRect,
+        getPieCanvasNode: () => this._pieCanvasNode,
+        getLabelLayout: () => this._pieRenderCache.labelLayout,
+        getPieLabelToken: () => this._pieLabelToken,
+        incrementPieLabelToken: () => { this._pieLabelToken = (this._pieLabelToken || 0) + 1; return this._pieLabelToken },
+        setPieLabelRafId: id => { this._pieLabelRafId = id },
+        getGeometry: rect => this._getPieGeometry(rect),
+        setTimeout,
+        drawPieLabels: (ctx, geometry, layout, reveal, start, end) => this._drawPieLabels(ctx, geometry, layout, reveal, start, end),
+      })
     }
-
-    this._pieLabelRafId = raf(drawNext)
+    return this._pieLabelRevealController
   },
 
   /* ==================== Animation Control ==================== */

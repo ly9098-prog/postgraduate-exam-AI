@@ -355,6 +355,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-cumulative-refresh-controller.js \
             miniprogram/tests/test-pomodoro-stats-distribution-load-controller.js \
             miniprogram/tests/test-pomodoro-stats-pie-animation-controller.js \
+            miniprogram/tests/test-pomodoro-stats-pie-label-reveal-controller.js \
             miniprogram/tests/test-pomodoro-stats-trend-animation-controller.js \
             miniprogram/tests/test-pomodoro-theme-controller.js \
             miniprogram/tests/test-pomodoro-end-confirm-snapshot.js \
