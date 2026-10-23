@@ -13,6 +13,10 @@ normalizeChoiceAnswer, serializeChoiceAnswer, serializeBlankAnswer,
 const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../utils/subject-meta')
 const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
+const {
+  buildGroupReviews,
+  buildGroupResult,
+} = require('./utils/group-submission')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1144,34 +1148,23 @@ if (!await this._syncReviewSessionDayIfNeeded()) {
 if (this._alive) this.setData({ submittingGroup: false })
 return
 }
-const reviews = []
-for (let questionIndex = 0; questionIndex < groupQuestions.length; questionIndex++) {
-const q = groupQuestions[questionIndex]
-const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
-if (!isAnswered) {
-this.setData({ submittingGroup: false })
-return
-}
-const requestId = this._getReviewRequestId(q)
-if (!q.question_version_id || q.occurrence_seq === undefined || q.occurrence_seq === null || !requestId) {
+const reviewBuild = buildGroupReviews({
+groupQuestions,
+answers,
+isQuestionAnswered: (question, answerMap) => adapter.isQuestionAnswered(question, answerMap, KF),
+getRequestId: question => this._getReviewRequestId(question),
+})
+if (reviewBuild.error === 'version') {
 wx.showToast({ title: '复习任务版本信息缺失，请刷新后重试', icon: 'none' })
 this.setData({ submittingGroup: false })
 return
 }
-reviews.push({
-schedule_id: q.schedule_id,
-question_id: q.question_id,
-question_version_id: q.question_version_id,
-occurrence_seq: q.occurrence_seq,
-request_id: requestId,
-user_answer: answers[q.schedule_id] || '',
-})
-}
-if (reviews.length === 0) {
+if (reviewBuild.error) {
 wx.showToast({ title: '请完成全部题目后再提交', icon: 'none' })
 this.setData({ submittingGroup: false })
 return
 }
+const reviews = reviewBuild.reviews
 // 时长在发请求前锁定，不含提交接口网络耗时
 const timingSession = this._buildReviewTimingSession()
 const gradePayload = timingSession ? { reviews, session: timingSession } : { reviews }
@@ -1190,41 +1183,15 @@ this.setData({ submittingGroup: false })
 return
 }
 }
-const groupResults = groupQuestions.map(q => {
-const resultQuestion = this._enrichForResult(q)
-const r = results.find(rr => {
-if (rr.schedule_id !== undefined && rr.schedule_id !== null) {
-if (String(rr.schedule_id) !== String(q.schedule_id)) return false
-if (rr.question_version_id != null && String(rr.question_version_id) !== String(q.question_version_id)) return false
-if (rr.occurrence_seq != null && String(rr.occurrence_seq) !== String(q.occurrence_seq)) return false
-return true
-}
-return String(rr.question_id) === String(q.question_id)
-})
-const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
-const expectedResult = submittedScheduleIds.has(String(q.schedule_id))
-const resultMissing = expectedResult && !r
-const submitFailed = resultMissing || !!(r && r.success === false)
-const wasSubmitted = !!r && !submitFailed
-const refreshRequired = !!(r && _reviewFailureNeedsRefresh(r))
-const retryable = resultMissing || !!(r && r.success === false && !refreshRequired && r.retryable !== false)
-return {
-...resultQuestion,
-isCorrect: wasSubmitted ? !!r.is_correct : false,
-correctAnswer: wasSubmitted ? (r.correct_answer || '') : '',
-userAnswer: answers[q.schedule_id] || '',
-wasAnswered: isAnswered,
-wasSubmitted,
-submitFailed,
-submitError: submitFailed ? ((r && r.error) || (resultMissing ? '批改结果缺失，已保留待重试' : '提交失败，请重试')) : '',
-submitErrorCode: r && r.error_code ? String(r.error_code) : '',
-refreshRequired,
-retryable,
-wasSkipped: !expectedResult && !isAnswered && !wasSubmitted && !submitFailed,
-masteryPercent: wasSubmitted && Number.isFinite(Number(r.mastery_percent)) ? Number(r.mastery_percent) : null,
-mastered: !!(wasSubmitted && r.mastered),
-}
-})
+const groupResults = groupQuestions.map(q => buildGroupResult({
+question: q,
+results,
+reviews,
+answers,
+isQuestionAnswered: (question, answerMap) => adapter.isQuestionAnswered(question, answerMap, KF),
+enrichForResult: question => this._enrichForResult(question),
+failureNeedsRefresh: result => _reviewFailureNeedsRefresh(result),
+}))
 // Drafts are removed only after the server confirms that exact immutable task
 // occurrence was submitted. Failed/skipped items remain available for retry.
 this._clearSubmittedReviewDraft(groupQuestions, groupResults)
