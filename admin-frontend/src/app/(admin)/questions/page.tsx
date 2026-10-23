@@ -75,6 +75,7 @@ import { useQuestionMenus } from "./hooks/use-question-menus";
 import { useQuestionCopy } from "./hooks/use-question-copy";
 import { useQuestionVersionHistory } from "./hooks/use-question-version-history";
 import { useQuestionFeedback } from "./hooks/use-question-feedback";
+import { useQuestionListInteractions } from "./hooks/use-question-list-interactions";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -88,7 +89,7 @@ import { QuestionVersionComparison } from "./components/question-version-compari
 import { questionDetailOptions } from "./question-queries";
 import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries";
 
-import { buildQuestionListHref, positiveInt, type QuestionListFilters } from "./question-list-state";
+import { buildQuestionListHref, positiveInt } from "./question-list-state";
 import {
   codeSegmentText,
   comparableText,
@@ -388,14 +389,15 @@ export default function QuestionsPage() {
     setMessage,
   }, selectedQuestionIdRef);
 
-  const updateFilter = (key: keyof QuestionListFilters, value: string) => {
-    setFilters((current) => ({ ...current, [key]: value }));
-    setPage(1);
-    // 与公式库保持一致：筛选刷新时保留详情上下文，等新列表返回后再自动校正选中项。
-    clearSelection();
-    setIsDetailDrawerOpen(false);
-  };
-
+  const { updateFilter, applyFilterPreset: applyNextFilters, updatePageSize } =
+    useQuestionListInteractions(
+      { setFilters, setPage, setPageSize },
+      {
+        clearSelection,
+        closeDetailDrawer: () => setIsDetailDrawerOpen(false),
+        closeCommonFilterMenu,
+      },
+    );
   const {
     keywordInput,
     importBatchInput,
@@ -404,23 +406,14 @@ export default function QuestionsPage() {
     handleImportBatchChange,
     handleResetFilters,
     handlePageSizeChange,
-    applyFilterPreset,
     handleSaveCurrentFilters,
     handleApplySavedFilters,
+    applyFilterPreset,
   } = useQuestionFilterInteractions({
     initialFilters: filters,
     onFilterChanged: updateFilter,
-    onFilterPresetApplied: (next) => {
-      setFilters(next);
-      setPage(1);
-      clearSelection();
-      setIsDetailDrawerOpen(false);
-      closeCommonFilterMenu();
-    },
-    onPageSizeChanged: (nextPageSize) => {
-      setPageSize(nextPageSize);
-      setPage(1);
-    },
+    onFilterPresetApplied: applyNextFilters,
+    onPageSizeChanged: updatePageSize,
     onMessage: (nextMessage) => {
       setMessage(nextMessage);
       closeCommonFilterMenu();
