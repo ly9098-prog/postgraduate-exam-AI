@@ -54,6 +54,7 @@ const {
 const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
 const { createResumeErrorController } = require('./utils/resume-error-controller')
+const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -203,6 +204,7 @@ Page({
   _activeSyncController: null,
   _pauseToggleController: null,
   _resumeErrorController: null,
+  _celebrationDismissController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1845,21 +1847,25 @@ Page({
   },
 
   dismissCelebration() {
-    const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'dismiss celebration')
-    if (!completionStored.ok) {
-      this._showPomodoroPersistenceError()
-      return
+    return this._getCelebrationDismissController().dismiss()
+  },
+
+  _getCelebrationDismissController() {
+    if (!this._celebrationDismissController) {
+      this._celebrationDismissController = createCelebrationDismissController({
+        getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        resolveBreakSec,
+        getCompletionBreakSec: () => this._completionBreakSec,
+        setCompletionBreakSec: value => { this._completionBreakSec = value },
+        view: () => this.data,
+        setData: data => this.setData(data),
+        persistenceError: () => this._showPomodoroPersistenceError(),
+        startBreak: breakSec => this._startBreak(breakSec),
+        resetIdle: () => this._resetToIdle(),
+      })
     }
-    const completionFlag = completionStored.value
-    const breakSec = resolveBreakSec(completionFlag, this._completionBreakSec, this.data)
-    this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
-    this._completionBreakSec = null
-    this.setData({ showCelebration: false })
-    if (breakSec > 0) {
-      this._startBreak(breakSec)
-    } else {
-      this._resetToIdle()
-    }
+    return this._celebrationDismissController
   },
 
   /* ==================== Break Timer ==================== */

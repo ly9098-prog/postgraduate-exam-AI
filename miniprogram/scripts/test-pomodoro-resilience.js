@@ -543,7 +543,7 @@ t('new free timer immediately displays server elapsed time', () => {
 
 console.log('\n--- Completion lifecycle ---')
 const showCompletion = method('_showCompletionCelebration')
-const dismissCompletion = method('dismissCelebration')
+const dismissCompletion = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/celebration-dismiss-controller.js'), 'utf8')
 t('natural completion clears running snapshots before showing celebration', () => {
   assert.ok(showCompletion.includes("_safeRemovePomodoroStorage('pomodoro_running_state'"))
   assert.ok(showCompletion.indexOf("_safeRemovePomodoroStorage('pomodoro_running_state'") <
@@ -554,7 +554,7 @@ t('completion marker persists break metadata across app restart', () => {
   assert.ok(showCompletion.includes("_safeSetPomodoroStorage('pomodoro_completion', completionFlag"))
   assert.ok(completionCelebrationSrc.includes('breakSec'))
   assert.ok(completionCelebrationSrc.includes('breakDuration'))
-  assert.ok(dismissCompletion.includes('resolveBreakSec(completionFlag'))
+  assert.ok(dismissCompletion.includes('options.resolveBreakSec(completionFlag'))
 })
 t('onShow keeps a valid completion marker authoritative until dismissal', () => {
   const restore = method('_restoreCompletionView')

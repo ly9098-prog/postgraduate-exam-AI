@@ -28,6 +28,7 @@ const MODULES = {
   'active-sync-controller.js': [],
   'pause-toggle-controller.js': [],
   'resume-error-controller.js': [],
+  'celebration-dismiss-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -47,7 +48,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2453
+const PAGE_MAX_LINES = 2459
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -71,6 +72,7 @@ const PAGE_METHODS = new Set([
   '_getPauseToggleController', '_acquirePauseToggleLock', '_releasePauseToggleLock',
   'togglePause',
   '_getResumeErrorController', '_reconcileAfterResumeError',
+  '_getCelebrationDismissController', 'dismissCelebration',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -409,6 +411,18 @@ function pageViolations(source) {
               ['e', 'sessionId'],
             )) {
           errors.push('resume error reconcile must delegate to its controller')
+        }
+        if (methodName === '_getCelebrationDismissController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createCelebrationDismissController',
+              '_celebrationDismissController',
+            )) {
+          errors.push('celebration dismiss must lazily assign its controller')
+        }
+        if (methodName === 'dismissCelebration' &&
+            !returnsControllerCall(node, '_getCelebrationDismissController', 'dismiss', [])) {
+          errors.push('celebration dismiss must delegate to its controller')
         }
       }
     }
