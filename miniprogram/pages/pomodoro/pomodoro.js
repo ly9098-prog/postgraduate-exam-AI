@@ -42,6 +42,7 @@ const {
 const { createFreeSessionRestoreController } = require('./utils/free-session-restore-controller')
 const { createStartSessionController } = require('./utils/start-session-controller')
 const { createUnknownStartController } = require('./utils/unknown-start-controller')
+const { createPendingSyncController } = require('./utils/pending-sync-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -193,6 +194,7 @@ Page({
   _countdownSessionRestoreController: null,
   _startSessionController: null,
   _unknownStartController: null,
+  _pendingSyncController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -1587,154 +1589,66 @@ Page({
     }, sessionId, conflict)
   },
 
-  async _reconcilePendingPomodoroSyncFailure(pending, error) {
-    if (!canReconcilePendingSync(error)) return false
-    let active
-    try {
-      active = await api.get('/pomodoro/active')
-    } catch (_) {
-      return false
-    }
-    const decision = decidePendingSyncReconciliation(pending, error, active)
-    if (decision.kind === 'not-reconcilable' || decision.kind === 'keep-pending') {
-      return false
-    }
-    if (decision.kind === 'acknowledge') {
-      if (!this._clearPendingPomodoroSync(pending)) return false
-      this._maybeClearLocalPauseAdjustment(pending.sessionId)
-      return true
-    }
-    if (decision.kind === 'retry-with-calibration') {
-      this._updatePendingPomodoroSync(pending, {
-        clientActionAt: api.now(),
-        clockSkewRetries: decision.retries + 1,
+  _getPendingSyncController() {
+    if (!this._pendingSyncController) {
+      this._pendingSyncController = createPendingSyncController({
+        getQueue: () => this._getPendingPomodoroSyncQueue(),
+        clearPending: expected => this._clearPendingPomodoroSync(expected),
+        updatePending: (expected, patch) => this._updatePendingPomodoroSync(expected, patch),
+        enqueue: (action, sessionId, clientActionAt) => (
+          this._setPendingPomodoroSync(action, sessionId, clientActionAt)
+        ),
+        hasPending: (sessionId, action) => this._hasPendingPomodoroAction(sessionId, action),
+        canReconcile: error => canReconcilePendingSync(error),
+        decideReconciliation: (pending, error, active) => (
+          decidePendingSyncReconciliation(pending, error, active)
+        ),
+        formatClientActionAt: timestamp => {
+          try {
+            return new Date(timestamp).toISOString()
+          } catch (_) {
+            return null
+          }
+        },
+        post: (path, body) => api.post(path, body),
+        getActive: () => api.get('/pomodoro/active'),
+        now: () => api.now(),
+        isVisible: () => this._pageVisible,
+        restoreSession: active => this._restoreSession(active),
+        maybeClearAdjustment: sessionId => this._maybeClearLocalPauseAdjustment(sessionId),
+        dropSessionActions: sessionId => this._dropPendingPomodoroSessionActions(sessionId),
+        getStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        setCompletionBreakSec: value => { this._completionBreakSec = value },
+        setData: data => this.setData(data),
+        recordTerminalConflict: (sessionId, action, status) => (
+          this._recordPomodoroTerminalConflict(sessionId, action, status)
+        ),
+        readConflict: () => this._readPomodoroTerminalConflict(),
+        isStorageConflict: value => this._isPomodoroStorageError(value),
+        clearRetryTimer: reset => this._clearPendingPomodoroSyncRetryTimer(reset),
+        scheduleRetry: error => this._schedulePendingPomodoroSyncRetry(error),
+        persistenceError: () => this._showPomodoroPersistenceError(),
+        logError: (...args) => console.error(...args),
       })
-      return true
     }
-    if (decision.kind === 'restore-active') {
-      if (decision.clearTerminalCompletion) {
-        const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
-        if (!completionStored.ok) return false
-        const completion = completionStored.value
-        if (
-          completion && completion.sessionId === pending.sessionId &&
-          !this._safeRemovePomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
-        ) return false
-        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-        this._completionBreakSec = null
-        this.setData({ showCelebration: false, showEndConfirm: false })
-      }
-      if (this._pageVisible && this._restoreSession(active) === false) return false
-      if (!this._clearPendingPomodoroSync(pending)) return false
-      this._maybeClearLocalPauseAdjustment(pending.sessionId)
-      return true
-    }
-    return this._dropPendingPomodoroSessionActions(pending.sessionId)
+    return this._pendingSyncController
   },
 
-  async _retryPendingPomodoroSync() {
-    if (this._pendingSyncDrainPromise) return this._pendingSyncDrainPromise
-
-    this._pendingSyncDrainPromise = (async () => {
-      while (true) {
-        const queue = this._getPendingPomodoroSyncQueue()
-        if (queue === null) {
-          this._showPomodoroPersistenceError()
-          return false
-        }
-        if (!queue.length) {
-          this._clearPendingPomodoroSyncRetryTimer(true)
-          return true
-        }
-        const pending = queue[0]
-        try {
-          let body = {}
-          const actionAtMs = Number(pending.clientActionAt)
-          if (Number.isFinite(actionAtMs) && actionAtMs > 0) {
-            try {
-              body = { client_action_at: new Date(actionAtMs).toISOString() }
-            } catch (_) {}
-          }
-          const response = await api.post(`/pomodoro/${pending.sessionId}/${pending.action}`, body)
-          if (pending.action === 'complete' || pending.action === 'interrupt') {
-            const expectedStatus = pending.action === 'complete' ? 'completed' : 'interrupted'
-            if (response && response.status && response.status !== expectedStatus) {
-              if (!this._recordPomodoroTerminalConflict(pending.sessionId, pending.action, response.status)) {
-                // Server already committed a terminal state, but without a durable
-                // conflict marker we must keep the pending mutation as the recovery
-                // credential. A later retry is state-idempotent and can reconcile.
-                this._showPomodoroPersistenceError()
-                return false
-              }
-              if (!this._dropPendingPomodoroSessionActions(pending.sessionId)) {
-                this._showPomodoroPersistenceError()
-                return false
-              }
-              this._clearPendingPomodoroSyncRetryTimer(true)
-              continue
-            }
-          }
-
-          // Any successful mutation proves the server is reachable again, so the
-          // next transient failure starts a fresh backoff sequence. Persistently
-          // removing the head is part of acknowledging the server commit; if local
-          // storage cannot do that, stop instead of spinning duplicate POSTs.
-          this._clearPendingPomodoroSyncRetryTimer(true)
-          if (!this._clearPendingPomodoroSync(pending)) {
-            console.error('pomodoro pending action committed but local acknowledgement could not be persisted', pending)
-            this._showPomodoroPersistenceError()
-            return false
-          }
-          if (pending.action === 'pause' || pending.action === 'resume') {
-            this._maybeClearLocalPauseAdjustment(pending.sessionId)
-          }
-        } catch (error) {
-          const reconciled = await this._reconcilePendingPomodoroSyncFailure(pending, error)
-          if (reconciled) {
-            this._clearPendingPomodoroSyncRetryTimer(true)
-            continue
-          }
-          this._schedulePendingPomodoroSyncRetry(error)
-          return false
-        }
-      }
-    })()
-
-    try {
-      return await this._pendingSyncDrainPromise
-    } finally {
-      this._pendingSyncDrainPromise = null
-    }
+  _reconcilePendingPomodoroSyncFailure(pending, error) {
+    return this._getPendingSyncController().reconcileFailure(pending, error)
   },
 
-  async _completePomodoroWithRetry(sessionId, clientActionAt) {
-    if (!sessionId) return false
-    const pending = this._setPendingPomodoroSync('complete', sessionId, clientActionAt)
-    if (!pending) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    const synced = await this._retryPendingPomodoroSync()
-    const conflict = this._readPomodoroTerminalConflict()
-    if (this._isPomodoroStorageError(conflict)) return false
-    return !!synced && !this._hasPendingPomodoroAction(sessionId, 'complete') && !(
-      conflict && conflict.sessionId === sessionId && conflict.requestedAction === 'complete'
-    )
+  _retryPendingPomodoroSync() {
+    return this._getPendingSyncController().drain()
   },
 
-  async _interruptPomodoroWithRetry(sessionId, clientActionAt) {
-    if (!sessionId) return false
-    const pending = this._setPendingPomodoroSync('interrupt', sessionId, clientActionAt)
-    if (!pending) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    const synced = await this._retryPendingPomodoroSync()
-    const conflict = this._readPomodoroTerminalConflict()
-    if (this._isPomodoroStorageError(conflict)) return false
-    return !!synced && !this._hasPendingPomodoroAction(sessionId, 'interrupt') && !(
-      conflict && conflict.sessionId === sessionId && conflict.requestedAction === 'interrupt'
-    )
+  _completePomodoroWithRetry(sessionId, clientActionAt) {
+    return this._getPendingSyncController().complete(sessionId, clientActionAt)
+  },
+
+  _interruptPomodoroWithRetry(sessionId, clientActionAt) {
+    return this._getPendingSyncController().interrupt(sessionId, clientActionAt)
   },
 
   /* ==================== Local Pause Adjustment ==================== */

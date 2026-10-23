@@ -88,6 +88,9 @@ const sandbox = {
     if (request === './utils/unknown-start-controller') {
       return require('../pages/pomodoro/utils/unknown-start-controller')
     }
+    if (request === './utils/pending-sync-controller') {
+      return require('../pages/pomodoro/utils/pending-sync-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {
@@ -693,11 +696,9 @@ async function test(name, fn) {
       callback({ isConnected: true })
       callback({ isConnected: true })
       assert.strictEqual(posts, 1)
-      const drain = page._pendingSyncDrainPromise
-      assert.ok(drain)
       resolvePost({ status: 'paused' })
       await new Promise(resolve => setImmediate(resolve))
-      assert.strictEqual(page._pendingSyncDrainPromise, null)
+      await new Promise(resolve => setImmediate(resolve))
       assert.strictEqual(page._getPendingPomodoroSyncQueue().length, 0)
       assert.strictEqual(posts, 1)
     } finally {

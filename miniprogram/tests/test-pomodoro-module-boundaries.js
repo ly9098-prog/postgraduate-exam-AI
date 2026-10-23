@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 30)
+  assert.equal(result.modules, 31)
   assert.equal(result.edges, 4)
 })
 
@@ -247,6 +247,43 @@ test('unknown-start recovery shell must lazily reuse one controller', () => {
     .includes('reconciled pomodoro POST must delegate to its controller'))
 })
 
+test('pending sync shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._pendingSyncController = createPendingSyncController({',
+    'void createPendingSyncController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('pending sync must lazily assign its controller'))
+
+  const detachedReconcile = pageSource.replace(
+    'return this._getPendingSyncController().reconcileFailure(pending, error)',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detachedReconcile)
+    .includes('pending sync reconciliation must delegate to its controller'))
+
+  const detachedDrain = pageSource.replace(
+    'return this._getPendingSyncController().drain()',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detachedDrain)
+    .includes('pending sync drain must delegate to its controller'))
+
+  const detachedComplete = pageSource.replace(
+    'return this._getPendingSyncController().complete(sessionId, clientActionAt)',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detachedComplete)
+    .includes('retryable completion must delegate to its controller'))
+
+  const detachedInterrupt = pageSource.replace(
+    'return this._getPendingSyncController().interrupt(sessionId, clientActionAt)',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detachedInterrupt)
+    .includes('retryable interrupt must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -259,6 +296,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 30)
+    assert.equal(result.modules, 31)
   }
 })

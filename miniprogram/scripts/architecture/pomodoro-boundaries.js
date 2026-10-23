@@ -20,6 +20,7 @@ const MODULES = {
   'free-session-restore-controller.js': [],
   'start-session-controller.js': [],
   'unknown-start-controller.js': [],
+  'pending-sync-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -39,7 +40,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2680
+const PAGE_MAX_LINES = 2594
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -49,6 +50,9 @@ const PAGE_METHODS = new Set([
   '_restoreSession', '_restoreFreeSession', '_getStartSessionController',
   'startSession', '_startFreeSession', '_getUnknownStartController',
   '_reconcileUnknownStartAttempt', '_postPomodoroStartWithReconciliation',
+  '_getPendingSyncController', '_reconcilePendingPomodoroSyncFailure',
+  '_retryPendingPomodoroSync', '_completePomodoroWithRetry',
+  '_interruptPomodoroWithRetry',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -210,6 +214,45 @@ function pageViolations(source) {
               ['payload', 'startSeq'],
             )) {
           errors.push('reconciled pomodoro POST must delegate to its controller')
+        }
+        if (methodName === '_getPendingSyncController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPendingSyncController',
+              '_pendingSyncController',
+            )) {
+          errors.push('pending sync must lazily assign its controller')
+        }
+        if (methodName === '_reconcilePendingPomodoroSyncFailure' &&
+            !returnsControllerCall(
+              node,
+              '_getPendingSyncController',
+              'reconcileFailure',
+              ['pending', 'error'],
+            )) {
+          errors.push('pending sync reconciliation must delegate to its controller')
+        }
+        if (methodName === '_retryPendingPomodoroSync' &&
+            !returnsControllerCall(node, '_getPendingSyncController', 'drain', [])) {
+          errors.push('pending sync drain must delegate to its controller')
+        }
+        if (methodName === '_completePomodoroWithRetry' &&
+            !returnsControllerCall(
+              node,
+              '_getPendingSyncController',
+              'complete',
+              ['sessionId', 'clientActionAt'],
+            )) {
+          errors.push('retryable completion must delegate to its controller')
+        }
+        if (methodName === '_interruptPomodoroWithRetry' &&
+            !returnsControllerCall(
+              node,
+              '_getPendingSyncController',
+              'interrupt',
+              ['sessionId', 'clientActionAt'],
+            )) {
+          errors.push('retryable interrupt must delegate to its controller')
         }
       }
     }
