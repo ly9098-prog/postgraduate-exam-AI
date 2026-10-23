@@ -50,6 +50,9 @@ const {
 const {
   createPracticeQuestionDisplayController,
 } = require('./utils/question-display-controller')
+const {
+  createComputedFieldsController,
+} = require('./utils/computed-fields-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1539,6 +1542,17 @@ getTraceId: q => this._practiceSession.traceId || q.trace_id,
 })
 )
 },
+_computedFieldsController() {
+return this._computedFields || (
+this._computedFields = createComputedFieldsController({
+getSelectedMode: () => this.data.selectedMode,
+getCount: () => this.data.count,
+getTotalQuestions: () => this.data.totalQuestions,
+getAnsweredCount: () => this.data.answeredCount,
+setData: patch => this.setData(patch),
+})
+)
+},
 _answerInteractionController() {
 return this._answerInteraction || (
 this._answerInteraction = createPracticeAnswerInteractionController({
@@ -1587,21 +1601,10 @@ selectBlankOption(e) {
 this._answerInteractionController().selectBlankOption(e)
 },
 _modeLabel: function(m) {
-var map = { random: '随机挑战', sequential: '顺序推进', smart: '智能推荐' }
-return map[m] || m || ''
+return this._computedFieldsController().modeLabel(m)
 },
 _updateComputedFields: function(extras) {
-var data = {}
-data.selectedModeLabel = this._modeLabel(this.data.selectedMode)
-var count = Number(this.data.count || 5)
-var minutesMap = { 5: 10, 10: 20, 20: 40 }
-data.countDisplay = count < 10 ? ('0' + count) : String(count)
-data.estimatedMinutes = minutesMap[count] || Math.max(5, count * 2)
-var total = this.data.totalQuestions || 0
-var answered = this.data.answeredCount || 0
-data.progressPercent = total > 0 ? Math.round(answered / total * 100) : 0
-if (extras) Object.assign(data, extras)
-this.setData(data)
+this._computedFieldsController().update(extras)
 },
 noop() {},
 _showAnswerFeedback(q, answer) {
