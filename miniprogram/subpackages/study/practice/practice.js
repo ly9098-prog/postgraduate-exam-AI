@@ -23,6 +23,11 @@ const {
   resolvedLaunchPresetView,
   applyLaunchOverrides,
 } = require('./utils/launch-preset')
+const {
+  buildQuestionRequestParams,
+  validateKnowledgeScope,
+  findQuestionBatchError,
+} = require('./utils/question-batch')
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
@@ -1169,42 +1174,24 @@ wx.showToast({ title: '请选择科目', icon: 'none' })
 return
 }
 const mode = this.data.selectedMode || 'random'
-const params = {
-subject_id: subjectId,
-include_children: Boolean(
-this.data.selectedSubjectHasChildren && (mode === 'random' || mode === 'smart')
-),
-count: this.data.count || 5,
-mode,
-_traceId: this._practiceSession.traceId,
-}
-if (mode === 'sequential') {
-params.exclude_answered = false
-params.use_leitner = false
-} else if (this._launchQuestionIds) {
-params.question_ids = this._launchQuestionIds
-params.exclude_answered = false
-params.use_leitner = false
-} else {
-params.exclude_answered = !this._launchAllowRepeat
-if (!this._launchAllowRepeat) params.no_repeat_days = 30
-params.use_leitner = true
-}
-if (this._launchPlanToken) params.plan_token = this._launchPlanToken
-if (this._launchKnowledgePointId) {
-params.knowledge_point_id = this._launchKnowledgePointId
-if (this._launchIncludeDescendants) params.include_descendants = true
-} else if (this._launchKnowledgePoint) {
-params.knowledge_point = this._launchKnowledgePoint
-}
+const params = buildQuestionRequestParams({
+subjectId,
+selectedMode: this.data.selectedMode,
+selectedSubjectHasChildren: this.data.selectedSubjectHasChildren,
+count: this.data.count,
+traceId: this._practiceSession.traceId,
+launchQuestionIds: this._launchQuestionIds,
+launchAllowRepeat: this._launchAllowRepeat,
+launchPlanToken: this._launchPlanToken,
+launchKnowledgePointId: this._launchKnowledgePointId,
+launchIncludeDescendants: this._launchIncludeDescendants,
+launchKnowledgePoint: this._launchKnowledgePoint,
+})
 const res = await api.get('/practice/questions', params)
 if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
 if (this._launchIncludeDescendants) {
 const scope = res && res.knowledge_scope
-const rootId = Number(scope && scope.root_knowledge_point_id)
-const scopeSize = Number(scope && scope.knowledge_point_count)
-if (!scope || rootId !== Number(this._launchKnowledgePointId) ||
-scope.include_descendants !== true || !Number.isInteger(scopeSize) || scopeSize < 1) {
+if (!validateKnowledgeScope(scope, this._launchKnowledgePointId)) {
 console.error('[PRACTICE_KNOWLEDGE_SCOPE_MISMATCH]', {
 requestedRootId: this._launchKnowledgePointId,
 requestedIncludeDescendants: true,
@@ -1231,26 +1218,18 @@ this._practiceSession.knowledgeScope = res && res.knowledge_scope
 ? Object.assign({}, res.knowledge_scope)
 : null
 const rawQuestions = Array.isArray(res.questions) ? res.questions : []
-const seenQuestionIds = new Set()
-const invalidQuestionIds = []
-const duplicateQuestionIds = []
-rawQuestions.forEach((q) => {
-const questionId = Number(q && q.id)
-if (!Number.isInteger(questionId) || questionId <= 0) {
-invalidQuestionIds.push(q && q.id)
-return
-}
-if (seenQuestionIds.has(questionId)) {
-duplicateQuestionIds.push(questionId)
-return
-}
-seenQuestionIds.add(questionId)
+const allowedScopeIds = new Set(
+this._getPracticeSubjectScopeIds(subjectId, params.include_children).map(Number)
+)
+const batchError = findQuestionBatchError(rawQuestions, {
+answerableTypes: PRACTICE_ANSWERABLE_TYPES,
+allowedScopeIds,
 })
-if (invalidQuestionIds.length > 0 || duplicateQuestionIds.length > 0) {
+if (batchError && batchError.kind === 'invalid_ids') {
 console.error('[PRACTICE_INVALID_BATCH_QUESTION_IDS]', {
 selectedSubjectId: Number(subjectId),
-invalidQuestionIds,
-duplicateQuestionIds,
+invalidQuestionIds: batchError.invalidQuestionIds,
+duplicateQuestionIds: batchError.duplicateQuestionIds,
 traceId: res.trace_id || this._practiceSession.traceId,
 })
 this._clearTimer()
@@ -1268,18 +1247,10 @@ errorText: '检测到练习批次题目异常，请重试。若持续出现，�
 wx.showToast({ title: '练习批次异常，请重试', icon: 'none' })
 return
 }
-const unsupportedQuestions = rawQuestions.filter((q) => {
-const questionType = String((q && q.question_type) || '')
-return !PRACTICE_ANSWERABLE_TYPES.has(questionType)
-})
-if (unsupportedQuestions.length > 0) {
+if (batchError && batchError.kind === 'unsupported_type') {
 console.error('[PRACTICE_UNSUPPORTED_QUESTION_TYPE]', {
 selectedSubjectId: Number(subjectId),
-rejected: unsupportedQuestions.map((q) => ({
-id: q && q.id,
-question_type: q && q.question_type,
-subject_id: q && q.subject_id,
-})),
+rejected: batchError.rejected,
 traceId: res.trace_id || this._practiceSession.traceId,
 })
 this._clearTimer()
@@ -1297,26 +1268,12 @@ errorText: '检测到当前版本暂不支持作答的题型，请重试或更�
 wx.showToast({ title: '题型暂不支持，请重试', icon: 'none' })
 return
 }
-const allowedScopeIds = new Set(
-this._getPracticeSubjectScopeIds(subjectId, params.include_children).map(Number)
-)
-const canValidateSubjectScope = allowedScopeIds.size > 0
-const outOfScopeQuestions = canValidateSubjectScope
-? rawQuestions.filter((q) => {
-const questionSubjectId = Number(q && q.subject_id)
-return !questionSubjectId || !allowedScopeIds.has(questionSubjectId)
-})
-: []
-if (outOfScopeQuestions.length > 0) {
+if (batchError && batchError.kind === 'subject_scope') {
 console.error('[PRACTICE_SUBJECT_SCOPE_MISMATCH]', {
 selectedSubjectId: Number(subjectId),
 includeChildren: Boolean(params.include_children),
-allowedScopeIds: Array.from(allowedScopeIds),
-rejected: outOfScopeQuestions.map((q) => ({
-id: q && q.id,
-subject_id: q && q.subject_id,
-subject_code: q && q.subject_code,
-})),
+allowedScopeIds: batchError.allowedScopeIds,
+rejected: batchError.rejected,
 traceId: res.trace_id || this._practiceSession.traceId,
 })
 this._clearTimer()
