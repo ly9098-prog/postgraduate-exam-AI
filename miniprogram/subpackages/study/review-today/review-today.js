@@ -70,6 +70,9 @@ const {
 const {
   createReviewSessionController,
 } = require('./utils/review-session-controller')
+const {
+  createNavBackController,
+} = require('./utils/nav-back-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -317,6 +320,19 @@ return this._reviewSessionCtl || (
 this._reviewSessionCtl = createReviewSessionController({
 getSession: () => this._reviewSession,
 setData: patch => this.setData(patch),
+})
+)
+},
+_navBackController() {
+return this._navBack || (
+this._navBack = createNavBackController({
+getPhase: () => this.data.phase,
+setData: patch => this.setData(patch),
+clearMasterUndo: () => this._clearMasterUndo(),
+clearReviewTimer: () => this._clearReviewTimer(),
+getCurrentPages: () => getCurrentPages(),
+navigateBack: () => wx.navigateBack(),
+reLaunch: options => wx.reLaunch(options),
 })
 )
 },
@@ -806,24 +822,13 @@ goPractice() {
 wx.navigateTo({ url: '/subpackages/study/practice/practice' })
 },
 onNavBack() {
-if (this.data.phase === 'reviewing') {
-this.setData({ exitConfirmVisible: true })
-return
-}
-const pages = getCurrentPages()
-if (pages.length > 1) wx.navigateBack()
-else wx.reLaunch({ url: '/pages/home/home' })
+this._navBackController().onNavBack()
 },
 closeExitConfirm() {
-this.setData({ exitConfirmVisible: false })
+this._navBackController().closeExitConfirm()
 },
 confirmExitReview() {
-this._clearMasterUndo()
-this._clearReviewTimer()
-this.setData({ exitConfirmVisible: false })
-const pages = getCurrentPages()
-if (pages.length > 1) wx.navigateBack()
-else wx.reLaunch({ url: '/pages/home/home' })
+this._navBackController().confirmExitReview()
 },
 toggleGroupDetails() {
 this._showResultDockAndRefreshTimer()
