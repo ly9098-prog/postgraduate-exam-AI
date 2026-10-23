@@ -37,6 +37,7 @@ const { createCancelWorkController } = require('./cancel-work-controller')
 const overviewMapping = require('./overview-mapping')
 const { buildLoadViewState } = require('./load-view-state')
 const { buildDateViewState } = require('./date-view-state')
+const { createStatsCanvasInitController } = require('./canvas-init-controller')
 
 const {
   getSubjectColor,
@@ -1102,100 +1103,49 @@ var pageConfig = {
   },
 
   _initCanvases(callback) {
-    // Compatibility name retained for existing callers/tests; this method now
-    // initializes the pie canvas only.  The bar canvas has a separate lazy path.
-    const doneCallback = typeof callback === 'function' ? callback : () => {}
-    if (this._pieCanvasNode && this._pieCtx && this._pieRect) {
-      doneCallback()
-      return
-    }
-    if (this._canvasInitPending) {
-      this._canvasInitCallbacks.push(doneCallback)
-      return
-    }
-    this._canvasInitPending = true
-    this._canvasInitCallbacks = [doneCallback]
-
-    const finish = () => {
-      this._canvasInitPending = false
-      const callbacks = this._canvasInitCallbacks.slice()
-      this._canvasInitCallbacks.length = 0
-      callbacks.forEach(cb => cb())
-    }
-    const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-    // Use the real device pixel ratio. Clamping to 2 left 3x devices rendering a
-    // 2x backing store upscaled to the panel, which is exactly what blurred the
-    // small percentage digits inside the leader-line badges.
-    const dpr = windowInfo.pixelRatio || 2
-    wx.createSelectorQuery().in(this)
-      .select('#pie-canvas')
-      .fields({ node: true, size: true })
-      .exec(res => {
-        if (!this._alive || !res || !res[0] || !res[0].node) { finish(); return }
-        const node = res[0].node
-        const ctx = node.getContext('2d')
-        const w = res[0].width
-        const h = res[0].height
-        // hidden Canvas may report a zero-sized node. Do not cache that node;
-        // the next data-bearing render will initialize it again at its real size.
-        if (!w || !h) { finish(); return }
-        node.width = Math.round(w * dpr)
-        node.height = Math.round(h * dpr)
-        ctx.scale(dpr, dpr)
-        this._pieCanvasNode = node
-        this._pieCtx = ctx
-        this._pieRect = { width: w, height: h }
-        this._pieDpr = dpr
-        finish()
-      })
+    this._getStatsCanvasInitController().initPie(callback)
   },
 
   _initTrendCanvas(callback) {
-    const doneCallback = typeof callback === 'function' ? callback : () => {}
-    if (!this.data.barCanvasMounted) {
-      doneCallback()
-      return
-    }
-    if (this._trendCanvasNode && this._trendCtx && this._trendBarsRect) {
-      doneCallback()
-      return
-    }
-    if (this._barInitPending) {
-      this._barInitCallbacks.push(doneCallback)
-      return
-    }
-    this._barInitPending = true
-    this._barInitCallbacks = [doneCallback]
+    this._getStatsCanvasInitController().initTrend(callback)
+  },
 
-    const finish = () => {
-      this._barInitPending = false
-      const callbacks = this._barInitCallbacks.slice()
-      this._barInitCallbacks.length = 0
-      callbacks.forEach(cb => cb())
-    }
-    const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
-    // Match the pie canvas: no clamp, so the bar labels stay crisp on 3x screens.
-    const dpr = windowInfo.pixelRatio || 2
-    wx.createSelectorQuery().in(this)
-      .select('#trend-bars-canvas')
-      .fields({ node: true, size: true })
-      .exec(res => {
-        if (!this._alive || !res || !res[0] || !res[0].node) { finish(); return }
-        const node = res[0].node
-        const ctx = node.getContext('2d')
-        const w = res[0].width
-        const h = res[0].height
-        // hidden Canvas may report a zero-sized node. Do not cache that node;
-        // the next data-bearing render will initialize it again at its real size.
-        if (!w || !h) { finish(); return }
-        node.width = Math.round(w * dpr)
-        node.height = Math.round(h * dpr)
-        ctx.scale(dpr, dpr)
-        this._trendCanvasNode = node
-        this._trendCtx = ctx
-        this._trendBarsRect = { width: w, height: h }
-        finish()
+  _getStatsCanvasInitController() {
+    if (!this._statsCanvasInitController) {
+      this._statsCanvasInitController = createStatsCanvasInitController({
+        isAlive: () => this._alive,
+        getPage: () => this,
+        createQuery: () => wx.createSelectorQuery(),
+        getWindowInfo: () => (wx.getWindowInfo ? wx.getWindowInfo() : {}),
+        pieSelector: () => '#pie-canvas',
+        trendSelector: () => '#trend-bars-canvas',
+        isPieReady: () => !!(this._pieCanvasNode && this._pieCtx && this._pieRect),
+        isPiePending: () => !!this._canvasInitPending,
+        setPiePending: value => { this._canvasInitPending = value },
+        getPieCallbacks: () => this._canvasInitCallbacks,
+        setPieCallbacks: value => { this._canvasInitCallbacks = value },
+        addPieCallback: callback => this._canvasInitCallbacks.push(callback),
+        commitPie: value => {
+          this._pieCanvasNode = value.node
+          this._pieCtx = value.ctx
+          this._pieRect = value.rect
+          this._pieDpr = value.dpr
+        },
+        isTrendMounted: () => !!this.data.barCanvasMounted,
+        isTrendReady: () => !!(this._trendCanvasNode && this._trendCtx && this._trendBarsRect),
+        isTrendPending: () => !!this._barInitPending,
+        setTrendPending: value => { this._barInitPending = value },
+        getTrendCallbacks: () => this._barInitCallbacks,
+        setTrendCallbacks: value => { this._barInitCallbacks = value },
+        addTrendCallback: callback => this._barInitCallbacks.push(callback),
+        commitTrend: value => {
+          this._trendCanvasNode = value.node
+          this._trendCtx = value.ctx
+          this._trendBarsRect = value.rect
+        },
       })
+    }
+    return this._statsCanvasInitController
   },
 
   _shadeColorCached(hex, amount) {
