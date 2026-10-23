@@ -3,17 +3,13 @@ const { test } = require('node:test')
 const {
   createLoadRequestControllerFactory,
 } = require('../subpackages/productivity/pomodoro-stats/load-request-controller-factory')
+const {
+  CAPABILITY_NAMES,
+} = require('../subpackages/productivity/pomodoro-stats/load-request-controller-capabilities')
 
 test('creates the controller with every explicitly supplied capability', () => {
   const passedOptions = []
-  const capabilities = Object.fromEntries(
-    ['isAlive', 'ensureSettings', 'ensureSubjectMeta', 'getRequestId', 'getSelectedDate',
-      'getTodayDate', 'incrementDateRequestSeq', 'getDateRequestSeq', 'hasData', 'setHasData',
-      'cancelDeferredHistory', 'setData', 'incrementStatsLoadInFlight', 'decrementStatsLoadInFlight',
-      'getInitialResponses', 'getHistory', 'normalizeOverview', 'reconcileFromServer', 'logError',
-      'getDistributionPeriod', 'resetPieCache', 'cancelDurationAnimation', 'buildLoadViewState',
-      'commitLoad', 'handleLoadFailure'].map(name => [name, () => name])
-  )
+  const capabilities = Object.fromEntries(CAPABILITY_NAMES.map(name => [name, () => name]))
   const controller = {}
   const factory = createLoadRequestControllerFactory({
     ...capabilities,
@@ -30,6 +26,7 @@ test('creates the controller with every explicitly supplied capability', () => {
   for (const [name, capability] of Object.entries(capabilities)) {
     assert.equal(passedOptions[0][name], capability)
   }
+  assert.deepEqual(Object.keys(passedOptions[0]), CAPABILITY_NAMES)
 })
 
 test('creates a new controller instance on each call', () => {
