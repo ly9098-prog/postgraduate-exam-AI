@@ -175,6 +175,9 @@ const sandbox = {
     if (request === './utils/confirm-end-free-timer-controller') {
       return require('../pages/pomodoro/utils/confirm-end-free-timer-controller')
     }
+    if (request === './utils/free-timer-limit-controller') {
+      return require('../pages/pomodoro/utils/free-timer-limit-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

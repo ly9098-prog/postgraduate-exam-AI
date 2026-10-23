@@ -43,6 +43,7 @@ console.log('\n--- 1. Source code constants ---')
 
 var js = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
 var confirmEndFreeTimerCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/confirm-end-free-timer-controller.js'), 'utf8')
+var freeTimerLimitCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/free-timer-limit-controller.js'), 'utf8')
 var resetToIdleCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/reset-to-idle-controller.js'), 'utf8')
 var freeRestoreSrc = fs.readFileSync(
   path.join(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'),
@@ -101,21 +102,17 @@ t('_completeFreeTimerSession is called from _confirmEndFreeTimer', function () {
 })
 
 t('_autoFinishFreeTimer uses _completeFreeTimerSession', function () {
-  var autoMethod = extractMethod(js, '_autoFinishFreeTimer')
-  assert.ok(autoMethod.indexOf('_completeFreeTimerSession') >= 0,
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('await complete(options)') >= 0,
     '_autoFinishFreeTimer should use shared _completeFreeTimerSession')
 })
 
 t('_autoFinishFreeTimer checks _freeTimerFinalizing reentry guard', function () {
-  var autoMethod = extractMethod(js, '_autoFinishFreeTimer')
-  assert.ok(autoMethod.indexOf('_freeTimerFinalizing') >= 0,
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('if (options.finalizing()) return') >= 0,
     'auto finish must have reentry protection')
-  assert.ok(autoMethod.indexOf('if (this._freeTimerFinalizing) return') >= 0)
 })
 
 t('_checkFreeTimerLimitAndAutoEnd checks _freeTimerFinalizing', function () {
-  var checkMethod = extractMethod(js, '_checkFreeTimerLimitAndAutoEnd')
-  assert.ok(checkMethod.indexOf('_freeTimerFinalizing') >= 0,
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('options.finalizing()') >= 0,
     'limit check must also guard on _freeTimerFinalizing')
 })
 
@@ -133,12 +130,8 @@ t('Tick function calls _checkFreeTimerLimitAndAutoEnd', function () {
 })
 
 t('_checkFreeTimerLimitAndAutoEnd returns early when isPaused', function () {
-  var checkMethod = extractMethod(js, '_checkFreeTimerLimitAndAutoEnd')
-  assert.ok(checkMethod.indexOf('this.data.isPaused') >= 0,
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('options.isPaused()') >= 0,
     'limit check should guard on isPaused')
-  assert.ok(checkMethod.indexOf('!this.data.isPaused') >= 0 ||
-    checkMethod.indexOf('this.data.isPaused') < checkMethod.indexOf('return'),
-    'should return when isPaused is true')
 })
 
 t('_restoreFreeSession caps elapsed at max', function () {
@@ -219,12 +212,9 @@ t('formatElapsedSec handles negative gracefully', function () {
 console.log('\n--- 4. Behavior via static analysis ---')
 
 t('_checkFreeTimerLimitAndAutoEnd returns false early for paused/not-free/finalizing', function () {
-  var methodBody = extractMethod(js, '_checkFreeTimerLimitAndAutoEnd')
-  // Return early conditions
-  assert.ok(methodBody.indexOf('if (!this.data.isFreeTimer') >= 0 ||
-    methodBody.indexOf("if(!this.data.isFreeTimer") >= 0)
-  assert.ok(methodBody.indexOf('this.data.isPaused') >= 0)
-  assert.ok(methodBody.indexOf('_freeTimerFinalizing') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('!options.isFreeTimer()') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('options.isPaused()') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('options.finalizing()') >= 0)
 })
 
 t('_updateFreeElapsed caps display at 05:00:00 via Math.min', function () {
@@ -233,10 +223,9 @@ t('_updateFreeElapsed caps display at 05:00:00 via Math.min', function () {
 })
 
 t('_autoFinishFreeTimer clears interval and fixes elapsed to 5h', function () {
-  var methodBody = extractMethod(js, '_autoFinishFreeTimer')
-  assert.ok(methodBody.indexOf('_clearFreeTimerInterval') >= 0)
-  assert.ok(methodBody.indexOf('FREE_TIMER_MAX_MS') >= 0)
-  assert.ok(methodBody.indexOf('_completeFreeTimerSession') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('clearFreeTimerInterval') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('options.maxMs()') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('await complete(options)') >= 0)
 })
 
 t('_confirmEndFreeTimer calls _completeFreeTimerSession', function () {
@@ -244,11 +233,10 @@ t('_confirmEndFreeTimer calls _completeFreeTimerSession', function () {
 })
 
 t('_completeFreeTimerSession uses retryable server-authoritative completion', function () {
-  var methodBody = extractMethod(js, '_completeFreeTimerSession')
-  assert.ok(methodBody.indexOf('_completePomodoroWithRetry') >= 0)
-  assert.ok(methodBody.indexOf('actual_duration_sec') < 0, 'no client actual_duration_sec (server computes it)')
-  assert.ok(methodBody.indexOf('_resetToIdle') >= 0)
-  assert.ok(methodBody.indexOf('loadTodayStats') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('completeWithRetry') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('actual_duration_sec') < 0, 'no client actual_duration_sec (server computes it)')
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('resetToIdle') >= 0)
+  assert.ok(freeTimerLimitCtrlSrc.indexOf('loadTodayStats') >= 0)
 })
 
 t('_resetToIdle fully clears free timer state', function () {

@@ -299,7 +299,7 @@ t('completion is queued after earlier pause/resume actions', () => {
   assert.ok(terminalEnqueue.includes('drain(options, state)'))
 })
 t('automatic countdown completion uses retryable completion', () => assert.ok(fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/work-complete-controller.js'), 'utf8').includes('options.completeWithRetry')))
-t('free completion uses retryable completion', () => assert.ok(method('_completeFreeTimerSession').includes('_completePomodoroWithRetry')))
+t('free completion uses retryable completion', () => assert.ok(fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-timer-limit-controller.js'), 'utf8').includes('options.completeWithRetry')))
 t('cold-start pending terminal conflicts are consumed before keeping celebration state', () => {
   assert.ok(showOptions.includes('consumeConflict: () => this._consumeAnyPomodoroTerminalConflict()'))
 })

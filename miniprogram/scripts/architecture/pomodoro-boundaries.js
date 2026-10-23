@@ -49,6 +49,7 @@ const MODULES = {
   'resume-free-timer-controller.js': [],
   'interrupt-session-controller.js': [],
   'confirm-end-free-timer-controller.js': [],
+  'free-timer-limit-controller.js': ['./timer-math'],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -68,7 +69,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2346
+const PAGE_MAX_LINES = 2336
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -113,6 +114,8 @@ const PAGE_METHODS = new Set([
   '_getResumeFreeTimerController', '_resumeFreeTimer',
   '_getInterruptSessionController', 'interruptSession',
   '_getConfirmEndFreeTimerController', '_confirmEndFreeTimer',
+  '_getFreeTimerLimitController', '_checkFreeTimerLimitAndAutoEnd',
+  '_autoFinishFreeTimer', '_completeFreeTimerSession',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -708,6 +711,26 @@ function pageViolations(source) {
         if (methodName === '_confirmEndFreeTimer' &&
             !returnsControllerCall(node, '_getConfirmEndFreeTimerController', 'confirm', [])) {
           errors.push('confirm end free timer must delegate to its controller')
+        }
+        if (methodName === '_getFreeTimerLimitController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createFreeTimerLimitController',
+              '_freeTimerLimitController',
+            )) {
+          errors.push('free timer limit must lazily assign its controller')
+        }
+        if (methodName === '_checkFreeTimerLimitAndAutoEnd' &&
+            !returnsControllerCall(node, '_getFreeTimerLimitController', 'check', [])) {
+          errors.push('free timer limit check must delegate to its controller')
+        }
+        if (methodName === '_autoFinishFreeTimer' &&
+            !returnsControllerCall(node, '_getFreeTimerLimitController', 'autoFinish', [])) {
+          errors.push('auto finish free timer must delegate to its controller')
+        }
+        if (methodName === '_completeFreeTimerSession' &&
+            !returnsControllerCall(node, '_getFreeTimerLimitController', 'complete', [])) {
+          errors.push('complete free timer session must delegate to its controller')
         }
       }
     }

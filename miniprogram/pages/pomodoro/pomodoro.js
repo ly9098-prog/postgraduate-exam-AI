@@ -75,6 +75,7 @@ const { createPauseFreeTimerController } = require('./utils/pause-free-timer-con
 const { createResumeFreeTimerController } = require('./utils/resume-free-timer-controller')
 const { createInterruptSessionController } = require('./utils/interrupt-session-controller')
 const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-free-timer-controller')
+const { createFreeTimerLimitController } = require('./utils/free-timer-limit-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -245,6 +246,7 @@ Page({
   _resumeFreeTimerController: null,
   _interruptSessionController: null,
   _confirmEndFreeTimerController: null,
+  _freeTimerLimitController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1165,6 +1167,36 @@ Page({
     return this._confirmEndFreeTimerController
   },
 
+  _getFreeTimerLimitController() {
+    if (!this._freeTimerLimitController) {
+      this._freeTimerLimitController = createFreeTimerLimitController({
+        finalizing: () => this._freeTimerFinalizing,
+        setFinalizing: value => { this._freeTimerFinalizing = value },
+        autoFinish: () => this._autoFinishFreeTimer(),
+        isFreeTimer: () => this.data.isFreeTimer,
+        isPaused: () => this.data.isPaused,
+        getEffectiveFreeElapsedMs: () => this._getEffectiveFreeElapsedMs(),
+        maxMs: FREE_TIMER_MAX_MS,
+        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
+        formatElapsedSec,
+        setElapsedSec: value => { this._timerState.elapsedSec = value },
+        setData: data => this.setData(data),
+        showToast: toast => wx.showToast(toast),
+        getSessionId: () => this._timerState.sessionId,
+        now: () => api.now(),
+        completeWithRetry: (sessionId, clientActionAt) =>
+          this._completePomodoroWithRetry(sessionId, clientActionAt),
+        consumeTerminalConflict: (sessionId, requestedAction) =>
+          this._consumePomodoroTerminalConflict(sessionId, requestedAction),
+        handleTerminalConflict: (sessionId, conflict) =>
+          this._handlePomodoroTerminalConflict(sessionId, conflict),
+        loadTodayStats: () => this.loadTodayStats(),
+        resetToIdle: () => this._resetToIdle(),
+      })
+    }
+    return this._freeTimerLimitController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1570,57 +1602,15 @@ Page({
   },
 
   _checkFreeTimerLimitAndAutoEnd() {
-    if (!this.data.isFreeTimer || this.data.isPaused || this._freeTimerFinalizing) return false
-    const elapsedMs = this._getEffectiveFreeElapsedMs()
-    if (elapsedMs >= FREE_TIMER_MAX_MS) {
-      this._autoFinishFreeTimer()
-      return true
-    }
-    return false
+    return this._getFreeTimerLimitController().check()
   },
 
   async _autoFinishFreeTimer() {
-    if (this._freeTimerFinalizing) return
-    this._freeTimerFinalizing = true
-
-    this._clearFreeTimerInterval()
-
-    // Fix elapsed to exactly 5 hours for the record
-    const elapsedSec = Math.floor(FREE_TIMER_MAX_MS / 1000)
-
-    this._timerState.elapsedSec = elapsedSec
-    const fmt = formatElapsedSec(elapsedSec)
-    this.setData({ freeDisplayTime: fmt.display })
-
-    wx.showToast({ title: '自由计时已达5小时上限，已自动结束', icon: 'none', duration: 2000 })
-
-    await this._completeFreeTimerSession()
-
-    this._freeTimerFinalizing = false
+    return this._getFreeTimerLimitController().autoFinish()
   },
 
   async _completeFreeTimerSession() {
-    const sessionId = this._timerState.sessionId
-    if (!sessionId) return
-    this._clearFreeTimerInterval()
-    const completedAt = api.now()
-
-    this._completePomodoroWithRetry(sessionId, completedAt).then(synced => {
-      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'complete')
-      if (conflict) {
-        this._handlePomodoroTerminalConflict(sessionId, conflict)
-        return
-      }
-      wx.showToast({
-        title: synced ? '已记录本次专注' : '网络恢复后将自动同步',
-        icon: 'none',
-        duration: 2000,
-      })
-      if (synced) this.loadTodayStats()
-    })
-
-    // Do not keep the end-confirm UI blocked behind a 30s request timeout.
-    this._resetToIdle()
+    return this._getFreeTimerLimitController().complete()
   },
 
   _getEffectivePausedMsFromSession(session) {
