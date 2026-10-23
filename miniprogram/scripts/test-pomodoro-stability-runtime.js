@@ -178,6 +178,9 @@ const sandbox = {
     if (request === './utils/free-timer-limit-controller') {
       return require('../pages/pomodoro/utils/free-timer-limit-controller')
     }
+    if (request === './utils/free-elapsed-controller') {
+      return require('../pages/pomodoro/utils/free-elapsed-controller')
+    }
     if (request === './utils/start-break-controller') {
       return require('../pages/pomodoro/utils/start-break-controller')
     }

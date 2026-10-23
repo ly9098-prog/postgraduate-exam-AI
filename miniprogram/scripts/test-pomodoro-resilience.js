@@ -35,6 +35,7 @@ const endConfirmViewModelSrc = fs.readFileSync(path.resolve(__dirname, '../pages
 const pauseAdjustmentSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pause-adjustment.js'), 'utf8')
 const unknownStartHelpersSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-helpers.js'), 'utf8')
 const freeTimerBeginSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-timer-begin-controller.js'), 'utf8')
+const freeElapsedSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-elapsed-controller.js'), 'utf8')
 const beginCountdownSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/begin-countdown-controller.js'), 'utf8')
 const pauseSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pause-session-controller.js'), 'utf8')
 const resumeSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/resume-session-controller.js'), 'utf8')
@@ -147,8 +148,7 @@ t('free restore uses server start_time as the single clock origin', () => {
 })
 t('free restore caps display at five hours', () => assert.ok(freeRestoreSrc.includes('options.maxMs')))
 t('free elapsed helpers do not subtract a client-only startup offset', () => {
-  assert.ok(!method('_getFreeElapsedMs').includes('displayOffsetMs'))
-  assert.ok(!method('_getEffectiveFreeElapsedMs').includes('displayOffsetMs'))
+  assert.ok(!freeElapsedSrc.includes('displayOffsetMs'))
 })
 
 console.log('\n--- Optimistic pause/resume ---')

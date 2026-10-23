@@ -50,6 +50,7 @@ const MODULES = {
   'interrupt-session-controller.js': [],
   'confirm-end-free-timer-controller.js': [],
   'free-timer-limit-controller.js': ['./timer-math'],
+  'free-elapsed-controller.js': ['./timer-math'],
   'start-break-controller.js': ['./countdown-controller'],
   'start-timer-controller.js': ['./countdown-controller'],
   'canvas-init-controller.js': ['./canvas-layout'],
@@ -73,7 +74,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2170
+const PAGE_MAX_LINES = 2180
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -120,6 +121,7 @@ const PAGE_METHODS = new Set([
   '_getConfirmEndFreeTimerController', '_confirmEndFreeTimer',
   '_getFreeTimerLimitController', '_checkFreeTimerLimitAndAutoEnd',
   '_autoFinishFreeTimer', '_completeFreeTimerSession',
+  '_getFreeElapsedMs', '_getEffectiveFreeElapsedMs', '_getFreeElapsedController',
   '_getStartBreakController', '_startBreak',
   '_getStartTimerController', '_startTimer',
   '_initCanvas', '_scheduleCanvasInit', '_getCanvasInitController',
@@ -739,6 +741,27 @@ function pageViolations(source) {
         if (methodName === '_completeFreeTimerSession' &&
             !returnsControllerCall(node, '_getFreeTimerLimitController', 'complete', [])) {
           errors.push('complete free timer session must delegate to its controller')
+        }
+        if (methodName === '_getFreeElapsedController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createFreeElapsedController',
+              '_freeElapsedController',
+            )) {
+          errors.push('free elapsed must lazily assign its controller')
+        }
+        if (methodName === '_getFreeElapsedMs' &&
+            !returnsControllerCall(node, '_getFreeElapsedController', 'getElapsedMs', ['now'])) {
+          errors.push('free elapsed must delegate to its controller')
+        }
+        if (methodName === '_getEffectiveFreeElapsedMs' &&
+            !returnsControllerCall(
+              node,
+              '_getFreeElapsedController',
+              'getEffectiveElapsedMs',
+              ['now'],
+            )) {
+          errors.push('effective free elapsed must delegate to its controller')
         }
         if (methodName === '_getStartBreakController' &&
             !hasLazyControllerAccessor(

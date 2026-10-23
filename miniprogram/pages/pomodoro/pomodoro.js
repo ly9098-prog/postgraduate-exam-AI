@@ -71,6 +71,7 @@ const { createResumeFreeTimerController } = require('./utils/resume-free-timer-c
 const { createInterruptSessionController } = require('./utils/interrupt-session-controller')
 const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-free-timer-controller')
 const { createFreeTimerLimitController } = require('./utils/free-timer-limit-controller')
+const { createFreeElapsedController } = require('./utils/free-elapsed-controller')
 const { createStartBreakController } = require('./utils/start-break-controller')
 const { createStartTimerController } = require('./utils/start-timer-controller')
 const { createCanvasInitController } = require('./utils/canvas-init-controller')
@@ -81,7 +82,7 @@ const {
   findLegacySubject,
   findSubjectById,
 } = require('./utils/subject-selection')
-const { formatElapsedSec, formatCountdownDisplay, calculateElapsedMs } = require('./utils/timer-math')
+const { formatElapsedSec, formatCountdownDisplay } = require('./utils/timer-math')
 const { buildCompletionCelebration } = require('./utils/completion-celebration')
 const { handleTerminalConflict } = require('./utils/terminal-conflict-handler')
 const {
@@ -246,6 +247,7 @@ Page({
   _interruptSessionController: null,
   _confirmEndFreeTimerController: null,
   _freeTimerLimitController: null,
+  _freeElapsedController: null,
   _startBreakController: null,
   _startTimerController: null,
   _canvasInitController: null,
@@ -1591,17 +1593,25 @@ Page({
   /* ==================== Free Timer Display Offset ==================== */
 
   _getFreeElapsedMs(now) {
-    if (typeof now !== 'number') now = api.now()
-    return calculateElapsedMs(now, this._timerState.sessionStartTime, this._timerState.totalPausedMs || 0)
+    return this._getFreeElapsedController().getElapsedMs(now)
   },
 
   _getEffectiveFreeElapsedMs(now) {
-    if (typeof now !== 'number') now = api.now()
-    const startTime = Number(this._timerState.sessionStartTime)
-    if (!Number.isFinite(startTime) || startTime <= 0) return 0
-    let totalPausedMs = Number(this._timerState.totalPausedMs || 0)
-    totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
-    return calculateElapsedMs(now, startTime, totalPausedMs)
+    return this._getFreeElapsedController().getEffectiveElapsedMs(now)
+  },
+
+  _getFreeElapsedController() {
+    if (!this._freeElapsedController) {
+      this._freeElapsedController = createFreeElapsedController({
+        now: () => api.now(),
+        getSessionId: () => this._timerState.sessionId,
+        getSessionStartTime: () => this._timerState.sessionStartTime,
+        getTotalPausedMs: () => this._timerState.totalPausedMs,
+        mergeLocalPauseAdjustment: (sessionId, totalPausedMs) =>
+          this._mergeLocalPauseAdjustment(sessionId, totalPausedMs),
+      })
+    }
+    return this._freeElapsedController
   },
 
   _checkFreeTimerLimitAndAutoEnd() {
