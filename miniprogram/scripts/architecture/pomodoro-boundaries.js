@@ -19,6 +19,7 @@ const MODULES = {
   'countdown-session-restore-controller.js': [],
   'free-session-restore-controller.js': [],
   'start-session-controller.js': [],
+  'unknown-start-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -38,7 +39,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2833
+const PAGE_MAX_LINES = 2680
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -46,7 +47,8 @@ const PAGE_METHODS = new Set([
   '_unregisterNetworkStatusListener', '_isRetryablePomodoroSyncError',
   '_clearPendingPomodoroSyncRetryTimer', '_schedulePendingPomodoroSyncRetry',
   '_restoreSession', '_restoreFreeSession', '_getStartSessionController',
-  'startSession', '_startFreeSession',
+  'startSession', '_startFreeSession', '_getUnknownStartController',
+  '_reconcileUnknownStartAttempt', '_postPomodoroStartWithReconciliation',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -183,6 +185,32 @@ function pageViolations(source) {
             !returnsStartControllerCall(node, 'startFree', 'existingStartSeq')) {
           errors.push('free start must delegate to its controller')
         }
+        if (methodName === '_getUnknownStartController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createUnknownStartController',
+              '_unknownStartController',
+            )) {
+          errors.push('unknown-start recovery must lazily assign its controller')
+        }
+        if (methodName === '_reconcileUnknownStartAttempt' &&
+            !returnsControllerCall(
+              node,
+              '_getUnknownStartController',
+              'reconcile',
+              ['explicitAttempt'],
+            )) {
+          errors.push('unknown-start reconciliation must delegate to its controller')
+        }
+        if (methodName === '_postPomodoroStartWithReconciliation' &&
+            !returnsControllerCall(
+              node,
+              '_getUnknownStartController',
+              'postStart',
+              ['payload', 'startSeq'],
+            )) {
+          errors.push('reconciled pomodoro POST must delegate to its controller')
+        }
       }
     }
   }
@@ -309,18 +337,35 @@ function hasControllerWiring(method, factoryName, propertyName, options) {
 }
 
 function hasStartControllerAccessor(method) {
+  return hasLazyControllerAccessor(
+    method,
+    'createStartSessionController',
+    '_startSessionController',
+  )
+}
+
+function hasLazyControllerAccessor(method, factoryName, propertyName) {
   const statements = ts.isBlock(method.body) ? method.body.statements : []
   return statements.length === 2 &&
     isGuardedControllerAssignment(
       statements[0],
-      'createStartSessionController',
-      '_startSessionController',
+      factoryName,
+      propertyName,
     ) &&
     ts.isReturnStatement(statements[1]) &&
-    isThisProperty(statements[1].expression, '_startSessionController')
+    isThisProperty(statements[1].expression, propertyName)
 }
 
 function returnsStartControllerCall(method, delegateName, expectedArgument) {
+  return returnsControllerCall(
+    method,
+    '_getStartSessionController',
+    delegateName,
+    expectedArgument ? [expectedArgument] : [],
+  )
+}
+
+function returnsControllerCall(method, accessorName, delegateName, expectedArguments) {
   const statements = ts.isBlock(method.body) ? method.body.statements : []
   if (statements.length !== 1 || !ts.isReturnStatement(statements[0])) return false
   const call = statements[0].expression
@@ -330,13 +375,13 @@ function returnsStartControllerCall(method, delegateName, expectedArgument) {
       !ts.isCallExpression(call.expression.expression) ||
       !ts.isPropertyAccessExpression(call.expression.expression.expression) ||
       call.expression.expression.expression.expression.kind !== ts.SyntaxKind.ThisKeyword ||
-      call.expression.expression.expression.name.text !== '_getStartSessionController') {
+      call.expression.expression.expression.name.text !== accessorName) {
     return false
   }
-  if (!expectedArgument) return call.arguments.length === 0
-  return call.arguments.length === 1 &&
-    ts.isIdentifier(call.arguments[0]) &&
-    call.arguments[0].text === expectedArgument
+  return call.arguments.length === expectedArguments.length &&
+    expectedArguments.every((name, index) => (
+      ts.isIdentifier(call.arguments[index]) && call.arguments[index].text === name
+    ))
 }
 
 function scanPomodoro(root = ROOT, read = filename => fs.readFileSync(filename, 'utf8')) {

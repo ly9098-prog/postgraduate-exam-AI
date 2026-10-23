@@ -85,6 +85,9 @@ const sandbox = {
     if (request === './utils/start-session-controller') {
       return require('../pages/pomodoro/utils/start-session-controller')
     }
+    if (request === './utils/unknown-start-controller') {
+      return require('../pages/pomodoro/utils/unknown-start-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

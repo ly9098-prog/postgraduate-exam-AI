@@ -18,6 +18,7 @@ const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.
 const countdownRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/countdown-session-restore-controller.js'), 'utf8')
 const freeRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'), 'utf8')
 const startSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-session-controller.js'), 'utf8')
+const unknownStartSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-controller.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
 const syncReconciliationSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/sync-reconciliation.js'), 'utf8')
@@ -392,16 +393,15 @@ t('pending queue read failures fail closed instead of masquerading as empty', ()
   assert.ok(onShow.includes('await recoverOnShow(this._showRecoveryOptions(activeSyncSeq), pendingSync)'))
 })
 t('start request is gated on durable unknown-start recovery state', () => {
-  const startPost = method('_postPomodoroStartWithReconciliation')
-  assert.ok(startPost.includes("_safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY"))
-  assert.ok(startPost.indexOf("_safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY") < startPost.indexOf("api.post('/pomodoro/start'"))
-  assert.ok(startPost.includes("_safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'accepted pomodoro start')"))
+  const requestPost = method('postStart', unknownStartSrc, true)
+  assert.ok(requestPost.includes('page._safeSetPomodoroStorage('))
+  assert.ok(requestPost.indexOf('page._safeSetPomodoroStorage(') < requestPost.indexOf("options.post('/pomodoro/start'"))
+  assert.ok(unknownStartSrc.includes("'accepted pomodoro start'"))
 })
 t('late start response retains exact cancel credential when pending persistence fails', () => {
-  const startPost = method('_postPomodoroStartWithReconciliation')
-  assert.ok(startPost.includes("const pending = this._setPendingPomodoroSync('interrupt'"))
-  assert.ok(startPost.includes('cancelIfFound: true'))
-  assert.ok(startPost.includes("'retain cancelled start after response'"))
+  assert.ok(unknownStartSrc.includes("page._setPendingPomodoroSync('interrupt'"))
+  assert.ok(unknownStartSrc.includes('cancelIfFound: true'))
+  assert.ok(unknownStartSrc.includes("'retain cancelled start after response'"))
 })
 t('critical pomodoro lifecycle storage mutations use guarded helpers', () => {
   const unsafe = /wx\.(?:setStorageSync|removeStorageSync)\('pomodoro_(?:completion|confirm_pause|running_state|pause|free_pause|pause_adjustment|break)'/g
@@ -445,8 +445,8 @@ t('complete endpoint exposes early completion as a 409 machine-readable conflict
 console.log('\n--- Start lifecycle guards ---')
 const startSession = startSessionSrc
 const startFree = startSessionSrc
-const postStart = method('_postPomodoroStartWithReconciliation')
-const reconcileStart = method('_reconcileUnknownStartAttempt')
+const postStart = method('postStart', unknownStartSrc, true)
+const reconcileStart = method('reconcile', unknownStartSrc, true)
 t('start ceremony uses a lifecycle generation', () => assert.ok(startSession.includes('_startRequestSeq')))
 t('start has a dedicated in-flight lock against rapid double taps', () => {
   assert.ok(startSession.includes('page._startInFlight'))
@@ -458,11 +458,11 @@ t('start ceremony aborts before POST after page hide', () => {
   assert.ok(startSession.indexOf('if (isStale(startSeq, options) || page.data.phase !== options.phases.CEREMONY) return') < startSession.indexOf('_postPomodoroStartWithReconciliation'))
 })
 t('late start response is queued for interrupt instead of becoming a ghost session', () => {
-  assert.ok(postStart.includes("'interrupt'"))
-  assert.ok(postStart.includes('session.id'))
-  assert.ok(postStart.includes('_startCancellationAt(session, latestAttempt.cancelAt)'))
-  assert.ok(method('_startCancellationAt').includes(
-    'startCancellationAt(session, cancelAt, api.now(), parseServerTime)'
+  assert.ok(unknownStartSrc.includes("'interrupt'"))
+  assert.ok(unknownStartSrc.includes('session.id'))
+  assert.ok(unknownStartSrc.includes('cancellationAt(session, latestAttempt.cancelAt, options)'))
+  assert.ok(method('cancellationAt', unknownStartSrc, true).includes(
+    'options.startCancellationAt('
   ))
   assert.ok(method('startCancellationAt', unknownStartHelpersSrc, true)
     .includes('Math.max(serverStartAt, fallback)'))
@@ -470,16 +470,15 @@ t('late start response is queued for interrupt instead of becoming a ghost sessi
   assert.ok(startFree.includes('_postPomodoroStartWithReconciliation'))
 })
 t('start uncertainty is persisted before POST and retried with the same idempotency key', () => {
-  assert.ok(postStart.indexOf('wx.setStorageSync(POMODORO_UNKNOWN_START_KEY') < postStart.indexOf("api.post('/pomodoro/start'"))
-  assert.ok(postStart.includes('api.createClientStartId()'))
-  assert.ok(reconcileStart.includes("api.post('/pomodoro/start', payload)"))
-  assert.ok(reconcileStart.includes('_matchesUnknownStartAttempt'))
-  assert.ok(!reconcileStart.includes("api.get('/pomodoro/active')"))
+  assert.ok(postStart.indexOf('page._safeSetPomodoroStorage(') < postStart.indexOf("options.post('/pomodoro/start'"))
+  assert.ok(postStart.includes('options.createClientStartId()'))
+  assert.ok(reconcileStart.includes("options.post('/pomodoro/start', prepared.payload)"))
+  assert.ok(unknownStartSrc.includes('options.matches(session, attempt)'))
+  assert.ok(!unknownStartSrc.includes("'/pomodoro/active'"))
 })
 t('unknown-start matching uses exact client_start_id, not preset/time-window guessing', () => {
-  const match = method('_matchesUnknownStartAttempt')
   const helper = method('matchesUnknownStartAttempt', unknownStartHelpersSrc, true)
-  assert.ok(match.includes('matchesUnknownStartAttempt(session, attempt)'))
+  assert.ok(unknownStartSrc.includes('options.matches(session, attempt)'))
   assert.ok(helper.includes('session.client_start_id === attempt.clientStartId'))
   assert.ok(!helper.includes('work_duration'))
   assert.ok(!helper.includes('start_time'))
@@ -497,9 +496,10 @@ t('backend persists a per-user client_start_id unique key and checks it before a
 t('leaving during an uncertain start only cancels the exact idempotent session', () => {
   assert.ok(onHide.includes('cancelUnknownStartOnHide(persistence)'))
   assert.ok(method('_hidePersistenceOptions').includes('now: () => api.now()'))
-  assert.ok(reconcileStart.includes('storedAttempt.clientStartId === attempt.clientStartId'))
-  assert.ok(reconcileStart.includes('attempt.cancelIfFound &&'))
-  assert.ok(reconcileStart.includes('_matchesUnknownStartAttempt(session, attempt)'))
+  assert.ok(method('resolveStoredAttempt', unknownStartSrc, true)
+    .includes('storedAttempt.clientStartId !== explicitAttempt.clientStartId'))
+  assert.ok(unknownStartSrc.includes('attempt.cancelIfFound && isActive(session)'))
+  assert.ok(unknownStartSrc.includes('options.matches(session, attempt)'))
 })
 t('new starts reconcile any unresolved prior idempotency key before creating another', () => {
   assert.ok(startSession.includes('const unresolved = await page._reconcileUnknownStartAttempt()'))

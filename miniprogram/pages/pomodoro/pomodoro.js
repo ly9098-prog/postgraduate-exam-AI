@@ -41,6 +41,7 @@ const {
 } = require('./utils/countdown-session-restore-controller')
 const { createFreeSessionRestoreController } = require('./utils/free-session-restore-controller')
 const { createStartSessionController } = require('./utils/start-session-controller')
+const { createUnknownStartController } = require('./utils/unknown-start-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -191,6 +192,7 @@ Page({
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
+  _unknownStartController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -647,187 +649,32 @@ Page({
     }
   },
 
-  _buildUnknownStartAttempt(overrides = {}) {
-    return buildUnknownStartAttempt(this.data, overrides, api.createClientStartId, api.now())
+  _getUnknownStartController() {
+    if (!this._unknownStartController) {
+      this._unknownStartController = createUnknownStartController({
+        page: this,
+        storageKey: POMODORO_UNKNOWN_START_KEY,
+        post: (path, payload) => api.post(path, payload),
+        createClientStartId: () => api.createClientStartId(),
+        now: () => api.now(),
+        parseServerTime,
+        buildAttempt: buildUnknownStartAttempt,
+        buildPayload: buildUnknownStartPayload,
+        matches: matchesUnknownStartAttempt,
+        startCancellationAt,
+        recordSession: (session, taskType) => pomodoroTaskTypes.recordSession(session, taskType),
+        reconcile: attempt => this._reconcileUnknownStartAttempt(attempt),
+      })
+    }
+    return this._unknownStartController
   },
 
-  _unknownStartPayload(attempt) {
-    return buildUnknownStartPayload(attempt)
+  _reconcileUnknownStartAttempt(explicitAttempt) {
+    return this._getUnknownStartController().reconcile(explicitAttempt)
   },
 
-  _matchesUnknownStartAttempt(session, attempt) {
-    return matchesUnknownStartAttempt(session, attempt)
-  },
-
-  _startCancellationAt(session, cancelAt) {
-    return startCancellationAt(session, cancelAt, api.now(), parseServerTime)
-  },
-
-  async _reconcileUnknownStartAttempt(explicitAttempt) {
-    let attempt = explicitAttempt
-    const stored = this._safeGetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'unknown start')
-    if (!stored.ok) return 'storage_error'
-
-    // onHide may mark the persisted attempt cancelIfFound while the original
-    // request is still unwinding. Prefer that latest copy even when the caller
-    // passes its older in-memory attempt object.
-    const storedAttempt = stored.value
-    if (storedAttempt && (!attempt || storedAttempt.clientStartId === attempt.clientStartId)) {
-      attempt = storedAttempt
-    }
-
-    if (!attempt || !attempt.clientStartId) {
-      if (attempt && !this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'invalid unknown start')) {
-        return 'storage_error'
-      }
-      return 'none'
-    }
-
-    const payload = this._unknownStartPayload(attempt)
-    if (!payload) {
-      return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'invalid unknown start payload')
-        ? 'none'
-        : 'storage_error'
-    }
-
-    let session
-    try {
-      // Retry the exact same idempotent /start instead of guessing from /active.
-      // If the first request committed, the backend returns that same row. If it
-      // did not commit and another device owns the active row, this gets a 409 and
-      // never mistakes/interrupts the other device's timer.
-      session = await api.post('/pomodoro/start', payload)
-    } catch (e) {
-      const statusCode = Number(e && e.statusCode) || 0
-      if (statusCode === 0 || statusCode >= 500) return 'offline'
-      return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'settled failed start')
-        ? 'none'
-        : 'storage_error'
-    }
-
-    if (!this._matchesUnknownStartAttempt(session, attempt)) {
-      return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'mismatched unknown start')
-        ? 'none'
-        : 'storage_error'
-    }
-
-    pomodoroTaskTypes.recordSession(session, attempt.taskType || this.data.selectedTaskType)
-
-    if (attempt.cancelIfFound && (session.status === 'running' || session.status === 'paused')) {
-      const cancelAt = this._startCancellationAt(session, attempt.cancelAt)
-      const pending = this._setPendingPomodoroSync('interrupt', session.id, cancelAt)
-      if (!pending) {
-        // Keep/reinforce the idempotent start marker so a later storage recovery
-        // can still find and cancel the server row. Never clear the only recovery
-        // credential when the interrupt intent itself was not durable.
-        this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, {
-          ...attempt,
-          cancelIfFound: true,
-          cancelAt,
-        }, 'retain cancelled unknown start')
-        return 'storage_error'
-      }
-      this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'interrupt queued for unknown start')
-      await this._retryPendingPomodoroSync()
-      this._resetToIdle()
-      return 'cancelled'
-    }
-
-    if (session.status === 'running' || session.status === 'paused') {
-      // Do not restore a timer while its unknown-start marker is still durable.
-      // If cleanup fails, a later onHide could otherwise mark the stale marker as
-      // cancelIfFound and unexpectedly interrupt a legitimate running session.
-      if (!this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'resolved active start')) {
-        return 'storage_error'
-      }
-      if (this._pageVisible && this._restoreSession(session) === false) return 'storage_error'
-      return 'restored'
-    }
-
-    return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'resolved terminal start')
-      ? 'settled'
-      : 'storage_error'
-  },
-
-  async _postPomodoroStartWithReconciliation(payload, startSeq) {
-    const clientStartId = payload.client_start_id || api.createClientStartId()
-    const requestPayload = { ...payload, client_start_id: clientStartId }
-    const attempt = this._buildUnknownStartAttempt({
-      clientStartId,
-      subjectId: requestPayload.subject_id,
-      chapterId: requestPayload.chapter_id || null,
-      preset: requestPayload.preset,
-      workDuration: requestPayload.work_duration,
-      breakDuration: requestPayload.break_duration,
-      notificationEnabled: !!requestPayload.notification_enabled,
-    })
-
-    // The idempotency key is useful only if it survives a lost response. Refuse
-    // to send /start unless the recovery credential is durable first.
-    if (!this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, attempt, 'before pomodoro start')) {
-      this._showPomodoroPersistenceError()
-      this._resetToIdle()
-      return { handled: true, session: null }
-    }
-
-    let session
-    try {
-      session = await api.post('/pomodoro/start', requestPayload)
-    } catch (e) {
-      const statusCode = Number(e && e.statusCode) || 0
-      const resultIsUncertain = statusCode === 0 || statusCode >= 500
-      if (resultIsUncertain) {
-        const resolution = await this._reconcileUnknownStartAttempt(attempt)
-        if (resolution === 'cancelled' || resolution === 'restored') {
-          return { handled: true, session: null }
-        }
-        if (resolution === 'settled') {
-          this._resetToIdle()
-          return { handled: true, session: null }
-        }
-        if (resolution === 'storage_error') {
-          this._showPomodoroPersistenceError()
-          this._resetToIdle()
-          return { handled: true, session: null }
-        }
-      } else if (!this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'failed pomodoro start')) {
-        this._showPomodoroPersistenceError()
-        this._resetToIdle()
-        return { handled: true, session: null }
-      }
-      throw e
-    }
-
-    const latestStored = this._safeGetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'completed pomodoro start')
-    const latestAttempt = latestStored.ok && latestStored.value ? latestStored.value : attempt
-
-    if (!this._pageVisible || startSeq !== this._startRequestSeq) {
-      const cancelAt = this._startCancellationAt(session, latestAttempt.cancelAt)
-      const pending = this._setPendingPomodoroSync('interrupt', session.id, cancelAt)
-      if (pending) {
-        // Once the interrupt intent is durable, pending sync becomes the recovery
-        // source of truth and the start marker may be removed best-effort.
-        this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'start cancelled after response')
-        this._retryPendingPomodoroSync()
-      } else {
-        // If pending storage is unavailable, preserve the original idempotent key
-        // and mark it for cancellation. A later onShow can safely replay /start and
-        // enqueue the interrupt without guessing which active row belongs to us.
-        this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, {
-          ...latestAttempt,
-          cancelIfFound: true,
-          cancelAt,
-        }, 'retain cancelled start after response')
-      }
-      return { handled: true, session: null }
-    }
-
-    if (!latestStored.ok || !this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'accepted pomodoro start')) {
-      this._showPomodoroPersistenceError()
-      this._resetToIdle()
-      return { handled: true, session: null }
-    }
-    return { handled: false, session }
+  _postPomodoroStartWithReconciliation(payload, startSeq) {
+    return this._getUnknownStartController().postStart(payload, startSeq)
   },
 
   /* ==================== Start Ceremony ==================== */
