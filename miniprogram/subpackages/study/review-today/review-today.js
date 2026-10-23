@@ -34,6 +34,9 @@ const {
 const {
   createNextGroupController,
 } = require('./utils/next-group-controller')
+const {
+  createResultDockController,
+} = require('./utils/result-dock-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1226,17 +1229,21 @@ this._resultDockFadeTimer = null
 }
 },
 _showResultDockAndRefreshTimer() {
-if (this.data.phase !== 'group-result' || this.data.todayRemainingCount > 0) return
-this._clearResultDockFadeTimer()
-if (!this.data.resultDockVisible) {
-this.setData({ resultDockVisible: true })
-}
-this._resultDockFadeTimer = setTimeout(() => {
-this._resultDockFadeTimer = null
-if (this._alive && this.data.phase === 'group-result' && this.data.todayRemainingCount <= 0) {
-this.setData({ resultDockVisible: false })
-}
-}, 5000)
+const resultDockController = this._resultDockController || (
+this._resultDockController = createResultDockController({
+getPhase: () => this.data.phase,
+getTodayRemainingCount: () => this.data.todayRemainingCount,
+getResultDockVisible: () => this.data.resultDockVisible,
+setData: patch => this.setData(patch),
+clearFadeTimer: () => this._clearResultDockFadeTimer(),
+setFadeTimer: timer => { this._resultDockFadeTimer = timer },
+setTimeout,
+clearTimeout,
+isPageAlive: () => this._alive,
+getFadeDelay: () => 5000,
+})
+)
+resultDockController.show()
 },
 onResultPageInteraction() {
 this._showResultDockAndRefreshTimer()
