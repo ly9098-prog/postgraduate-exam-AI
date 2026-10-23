@@ -76,6 +76,7 @@ const { createResumeFreeTimerController } = require('./utils/resume-free-timer-c
 const { createInterruptSessionController } = require('./utils/interrupt-session-controller')
 const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-free-timer-controller')
 const { createFreeTimerLimitController } = require('./utils/free-timer-limit-controller')
+const { createStartBreakController } = require('./utils/start-break-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -247,6 +248,7 @@ Page({
   _interruptSessionController: null,
   _confirmEndFreeTimerController: null,
   _freeTimerLimitController: null,
+  _startBreakController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1789,78 +1791,40 @@ Page({
     return this._celebrationDismissController
   },
 
+  _getStartBreakController() {
+    if (!this._startBreakController) {
+      this._startBreakController = createStartBreakController({
+        now: () => api.now(),
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'break snapshot'),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        formatCountdownDisplay: sec => this._formatCountdownDisplay(sec),
+        breakPhase: () => PHASE.BREAK,
+        setData: data => this.setData(data),
+        clearTimer: () => this._clearTimer(),
+        initCanvas: force => this._initCanvas(force),
+        setCountdownTotalSec: value => { this._countdownTotalSec = value },
+        setCountdownEndAt: value => { this._countdownEndAt = value },
+        getCountdownEndAt: () => this._countdownEndAt,
+        getRemainingSec: () => this._timerState.remainingSec,
+        getProgress: () => this._timerState.progress,
+        drawRing: (total, isBreak) => this.drawRing(total, isBreak),
+        resetToIdle: () => this._resetToIdle(),
+        getTimerController: () => this._timerController,
+        setTimerController: controller => { this._timerController = controller },
+        setTimeout: (fn, delay) => setTimeout(fn, delay),
+        clearTimeout: timer => clearTimeout(timer),
+        clearInterval: timer => clearInterval(timer),
+      })
+    }
+    return this._startBreakController
+  },
+
   /* ==================== Break Timer ==================== */
 
   _startBreak(totalSec, options = {}) {
-    const originalTotalSec = Math.max(1, Number(totalSec) || 1)
-    const breakStartTime = Number.isFinite(options.startTime) ? options.startTime : api.now()
-    const totalMs = originalTotalSec * 1000
-    const naturalRemainingMs = Math.max(0, breakStartTime + totalMs - api.now())
-    const remainingMs = Number.isFinite(options.remainingMs)
-      ? Math.max(0, Math.min(totalMs, options.remainingMs))
-      : naturalRemainingMs
-
-    if (remainingMs <= 0) {
-      this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-      this._resetToIdle()
-      return
-    }
-
-    // Preserve the original break start/total across page restores. Re-basing the
-    // timer to `remaining` made the dial jump back to a full ring on every onShow.
-    this._safeSetPomodoroStorage('pomodoro_break', { startTime: breakStartTime, totalSec: originalTotalSec }, 'break snapshot')
-    this._timerState.breakStartTime = breakStartTime
-    this._timerState.remainingSec = Math.ceil(remainingMs / 1000)
-    this._timerState.progress = remainingMs / totalMs
-    const firstFmt = this._formatCountdownDisplay(this._timerState.remainingSec)
-    this.setData({
-      phase: PHASE.BREAK,
-      ringCanvasVisible: true,
-      displayMin: firstFmt.min,
-      displaySec: firstFmt.sec,
-    })
-    this._clearTimer()
-    this._initCanvas(true)
-    this._countdownTotalSec = originalTotalSec
-    this._countdownEndAt = breakStartTime + totalMs
-    this.drawRing(originalTotalSec, true)
-
-    const tick = () => {
-      const currentRemainingMs = Math.max(0, this._countdownEndAt - api.now())
-      const displayRemainingSec = currentRemainingMs <= 0 ? 0 : Math.ceil(currentRemainingMs / 1000)
-      const progress = currentRemainingMs / totalMs
-      const fmt = this._formatCountdownDisplay(displayRemainingSec)
-
-      if (
-        displayRemainingSec !== this._timerState.remainingSec ||
-        Math.abs(progress - this._timerState.progress) > 0.002
-      ) {
-        this._timerState.remainingSec = displayRemainingSec
-        this._timerState.progress = progress
-        this.setData({ displayMin: fmt.min, displaySec: fmt.sec })
-      }
-      this.drawRing(originalTotalSec, true)
-
-      if (currentRemainingMs <= 0) {
-        this._clearTimer()
-        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-        this._resetToIdle()
-        return
-      }
-
-      const nextDelay = Math.max(80, Math.min(250, currentRemainingMs % 1000 || 250))
-      if (!this._timerController) {
-        this._timerController = createCountdownController({
-          setTimeout: (fn, delay) => setTimeout(fn, delay),
-          clearTimeout: timer => clearTimeout(timer),
-          clearInterval: timer => clearInterval(timer),
-        })
-      }
-      this._timerController.scheduleTick(tick, nextDelay)
-    }
-    tick()
+    return this._getStartBreakController().start(totalSec, options)
   },
-
   skipBreak() {
     this._clearTimer()
     this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
