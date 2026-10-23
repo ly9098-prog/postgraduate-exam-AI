@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 50)
+  assert.equal(result.modules, 52)
   assert.equal(result.edges, 9)
 })
 
@@ -657,6 +657,38 @@ test('begin countdown shell must lazily reuse one controller', () => {
     .includes('begin countdown must delegate to its controller'))
 })
 
+test('pause session shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._pauseSessionController = createPauseSessionController({',
+    'void createPauseSessionController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('pause session must lazily assign its controller'))
+
+  const detachedPause = pageSource.replace(
+    'this._getPauseSessionController().pause()',
+    'this._getPauseSessionController().legacyPause()'
+  )
+  assert.ok(pageViolations(detachedPause)
+    .includes('pause session must delegate to its controller'))
+})
+
+test('resume session shell must lazily reuse one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._resumeSessionController = createResumeSessionController({',
+    'void createResumeSessionController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('resume session must lazily assign its controller'))
+
+  const detachedResume = pageSource.replace(
+    'this._getResumeSessionController().resume()',
+    'this._getResumeSessionController().legacyResume()'
+  )
+  assert.ok(pageViolations(detachedResume)
+    .includes('resume session must delegate to its controller'))
+})
+
 test('missing governed source aborts the scan instead of reducing coverage', () => {
   assert.throws(() => scanPomodoro(root, filename => {
     if (filename.endsWith('/show-recovery.js')) throw new Error('synthetic missing source')
@@ -669,6 +701,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 50)
+    assert.equal(result.modules, 52)
   }
 })

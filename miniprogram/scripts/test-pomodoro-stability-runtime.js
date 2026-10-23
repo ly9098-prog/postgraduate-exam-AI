@@ -148,6 +148,12 @@ const sandbox = {
     if (request === './utils/begin-countdown-controller') {
       return require('../pages/pomodoro/utils/begin-countdown-controller')
     }
+    if (request === './utils/pause-session-controller') {
+      return require('../pages/pomodoro/utils/pause-session-controller')
+    }
+    if (request === './utils/resume-session-controller') {
+      return require('../pages/pomodoro/utils/resume-session-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

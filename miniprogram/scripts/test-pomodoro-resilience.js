@@ -36,6 +36,8 @@ const pauseAdjustmentSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pom
 const unknownStartHelpersSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-helpers.js'), 'utf8')
 const freeTimerBeginSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-timer-begin-controller.js'), 'utf8')
 const beginCountdownSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/begin-countdown-controller.js'), 'utf8')
+const pauseSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pause-session-controller.js'), 'utf8')
+const resumeSessionSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/resume-session-controller.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
@@ -148,7 +150,21 @@ t('free elapsed helpers do not subtract a client-only startup offset', () => {
 })
 
 console.log('\n--- Optimistic pause/resume ---')
-for (const name of ['_pauseSession', '_pauseFreeTimer']) {
+// Controller-extracted methods use injected callbacks (no underscore prefix);
+// page methods still use this._xxx.
+t('_pauseSession updates paused UI before network drain', () => {
+  assert.ok(pauseSessionSrc.indexOf('isPaused: true') >= 0)
+  assert.ok(pauseSessionSrc.indexOf('isPaused: true') < pauseSessionSrc.indexOf('retryPendingSync'))
+})
+t('_pauseSession persists a pending pause sync before changing local pause state', () => {
+  assert.ok(pauseSessionSrc.includes("setPendingSync('pause'"))
+  assert.ok(pauseSessionSrc.indexOf("setPendingSync('pause'") < pauseSessionSrc.indexOf('isPaused: true'))
+  assert.ok(pauseSessionSrc.includes('showPersistenceError'))
+})
+t('_pauseSession releases actionLoading before network completes', () => {
+  assert.ok(pauseSessionSrc.indexOf('actionLoading: false') < pauseSessionSrc.indexOf('retryPendingSync'))
+})
+for (const name of ['_pauseFreeTimer']) {
   const m = method(name)
   t(name + ' updates paused UI before network drain', () => {
     assert.ok(m.indexOf('isPaused: true') >= 0)
@@ -163,7 +179,19 @@ for (const name of ['_pauseSession', '_pauseFreeTimer']) {
     assert.ok(m.indexOf('actionLoading: false') < m.indexOf('_retryPendingPomodoroSync'))
   })
 }
-for (const name of ['_resumeSession', '_resumeFreeTimer']) {
+t('_resumeSession updates running UI before network drain', () => {
+  assert.ok(resumeSessionSrc.indexOf('isPaused: false') >= 0)
+  assert.ok(resumeSessionSrc.indexOf('isPaused: false') < resumeSessionSrc.indexOf('retryPendingSync'))
+})
+t('_resumeSession persists a pending resume sync before changing local running state', () => {
+  assert.ok(resumeSessionSrc.includes("setPendingSync('resume'"))
+  assert.ok(resumeSessionSrc.indexOf("setPendingSync('resume'") < resumeSessionSrc.indexOf('isPaused: false'))
+  assert.ok(resumeSessionSrc.includes('showPersistenceError'))
+})
+t('_resumeSession releases actionLoading before network completes', () => {
+  assert.ok(resumeSessionSrc.indexOf('actionLoading: false') < resumeSessionSrc.indexOf('retryPendingSync'))
+})
+for (const name of ['_resumeFreeTimer']) {
   const m = method(name)
   t(name + ' updates running UI before network drain', () => {
     assert.ok(m.indexOf('isPaused: false') >= 0)

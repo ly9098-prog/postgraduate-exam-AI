@@ -66,6 +66,8 @@ const { createConfirmInterruptCountdownController } = require('./utils/confirm-i
 const { createResetToIdleController } = require('./utils/reset-to-idle-controller')
 const { createUpdateFreeElapsedController } = require('./utils/update-free-elapsed-controller')
 const { createBeginCountdownController } = require('./utils/begin-countdown-controller')
+const { createPauseSessionController } = require('./utils/pause-session-controller')
+const { createResumeSessionController } = require('./utils/resume-session-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -227,6 +229,8 @@ Page({
   _resetToIdleController: null,
   _updateFreeElapsedController: null,
   _beginCountdownController: null,
+  _pauseSessionController: null,
+  _resumeSessionController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -981,6 +985,53 @@ Page({
     return this._beginCountdownController
   },
 
+  _getPauseSessionController() {
+    if (!this._pauseSessionController) {
+      this._pauseSessionController = createPauseSessionController({
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        now: () => api.now(),
+        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        clearTimer: () => this._clearTimer(),
+        setPauseStartTime: v => { this._timerState.pauseStartTime = v },
+        setData: data => this.setData(data),
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'countdown pause snapshot'),
+        retryPendingSync: () => this._retryPendingPomodoroSync(),
+        showToast: toast => wx.showToast(toast),
+      })
+    }
+    return this._pauseSessionController
+  },
+
+  _getResumeSessionController() {
+    if (!this._resumeSessionController) {
+      this._resumeSessionController = createResumeSessionController({
+        getSessionStartTime: () => this._timerState.sessionStartTime,
+        warn: (msg, val) => console.warn(msg, val),
+        resetToIdle: () => this._resetToIdle(),
+        getSessionId: () => this._timerState.sessionId,
+        isActionLoading: () => this.data.actionLoading,
+        now: () => api.now(),
+        getPauseStartTime: () => this._timerState.pauseStartTime,
+        getTotalPausedMs: () => this._timerState.totalPausedMs || 0,
+        isDebugPreset: () => this.data.selectedPreset === 'debug',
+        getWorkDurationMinutes: () => this.data.workDuration,
+        setPendingSync: (action, sid, now) => this._setPendingPomodoroSync(action, sid, now),
+        showPersistenceError: () => this._showPomodoroPersistenceError(),
+        safeSetStorage: (key, value) => this._safeSetPomodoroStorage(key, value, 'countdown resume adjustment'),
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'countdown resume snapshot'),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        setData: data => this.setData(data),
+        startTimer: (totalSec, opts) => this._startTimer(totalSec, opts),
+        retryPendingSync: () => this._retryPendingPomodoroSync(),
+        showToast: toast => wx.showToast(toast),
+      })
+    }
+    return this._resumeSessionController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1244,71 +1295,11 @@ Page({
   },
 
   async _pauseSession() {
-    if (!this._timerState.sessionId || this.data.actionLoading) return
-    const sessionId = this._timerState.sessionId
-    const pauseStartedAt = api.now()
-
-    const pending = this._setPendingPomodoroSync('pause', sessionId, pauseStartedAt)
-    if (!pending) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-
-    this._clearTimer()
-    this._timerState.pauseStartTime = pauseStartedAt
-    this.setData({ isPaused: true, actionLoading: true })
-    this._safeSetPomodoroStorage('pomodoro_pause', {
-      totalPausedMs: this._timerState.totalPausedMs || 0,
-      pauseStartTime: pauseStartedAt,
-      sessionId,
-    }, 'countdown pause snapshot')
-
-    this.setData({ actionLoading: false })
-    this._retryPendingPomodoroSync().then(synced => {
-      if (!synced) wx.showToast({ title: '已暂停，网络恢复后自动同步', icon: 'none' })
-    })
+    return this._getPauseSessionController().pause()
   },
 
   async _resumeSession() {
-    if (typeof this._timerState.sessionStartTime !== 'number' || this._timerState.sessionStartTime <= 0) {
-      console.warn('resume aborted: invalid sessionStartTime', this._timerState.sessionStartTime)
-      this._resetToIdle()
-      return
-    }
-    if (!this._timerState.sessionId || this.data.actionLoading) return
-
-    const sessionId = this._timerState.sessionId
-    const now = api.now()
-    const openPauseMs = this._timerState.pauseStartTime
-      ? Math.max(0, now - this._timerState.pauseStartTime)
-      : 0
-    const localTotalPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0) + openPauseMs)
-    const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
-
-    const pending = this._setPendingPomodoroSync('resume', sessionId, now)
-    if (!pending) {
-      this._showPomodoroPersistenceError()
-      return
-    }
-
-    this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
-      sessionId,
-      totalPausedMs: localTotalPausedMs,
-      savedAt: now,
-    }, 'countdown resume adjustment')
-    this._safeRemovePomodoroStorage('pomodoro_pause', 'countdown resume snapshot')
-    this._timerState.totalPausedMs = localTotalPausedMs
-    this._timerState.pauseStartTime = null
-    this.setData({ isPaused: false, ringCanvasVisible: true, actionLoading: true })
-
-    const elapsedMs = Math.max(0, now - this._timerState.sessionStartTime - localTotalPausedMs)
-    const remainingMs = Math.max(0, totalSec * 1000 - elapsedMs)
-    this._startTimer(totalSec, { remainingMs, forceRunning: true, reuseCanvas: true })
-
-    this.setData({ actionLoading: false })
-    this._retryPendingPomodoroSync().then(synced => {
-      if (!synced) wx.showToast({ title: '已继续计时，网络恢复后自动同步', icon: 'none' })
-    })
+    return this._getResumeSessionController().resume()
   },
 
   _formatCountdownDisplay(sec) {
