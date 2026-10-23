@@ -12,6 +12,7 @@ const DARK_TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA'
 const LIGHT_TREND_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3']
 const STATS_DYNAMIC_REFRESH_MS = 60 * 1000
 const dateUtils = require('./date-utils')
+const viewHelpers = require('./view-helpers')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -444,13 +445,11 @@ var pageConfig = {
   /* ==================== Color Helpers ==================== */
 
   _easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3)
+    return viewHelpers.easeOutCubic(t)
   },
 
   _easeInOutCubic(t) {
-    return t < 0.5
-      ? 4 * t * t * t
-      : 1 - Math.pow(-2 * t + 2, 3) / 2
+    return viewHelpers.easeInOutCubic(t)
   },
 
   _parseDateStr(s) {
@@ -482,28 +481,15 @@ var pageConfig = {
     })
   },
   _formatPieDateLabel(value) {
-    if (!value) return '今日'
-    if (value === this.data._todayDate) return '今日'
-    const today = this._parseDateStr(this.data._todayDate)
-    const target = this._parseDateStr(value)
-    if (today && target) {
-      // 用 Date.UTC 计算日历日差，避免设备时区偏差
-      const diffDays = Math.round(
-        (Date.UTC(today[0], today[1] - 1, today[2]) - Date.UTC(target[0], target[1] - 1, target[2])) / 86400000
-      )
-      if (diffDays === 1) return '昨日'
-      return `${target[1]}月${target[2]}日`
-    }
-    return value
+    return viewHelpers.formatPieDateLabel(value, this.data._todayDate)
   },
 
   _formatSelectedDurationLabel(value) {
-    const dateLabel = this._formatPieDateLabel(value)
-    return dateLabel === '今日' ? '今日学习' : `${dateLabel}学习`
+    return viewHelpers.formatSelectedDurationLabel(value, this.data._todayDate)
   },
 
   _hasDistributionData(subjects) {
-    return Array.isArray(subjects) && subjects.some(item => Number(item && item.duration_sec) > 0)
+    return viewHelpers.hasDistributionData(subjects)
   },
 
 
@@ -1954,13 +1940,7 @@ var pageConfig = {
   /* ==================== Pie Chart ==================== */
 
   _shadeColor(hex, amount) {
-    const safeHex = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#3B82F6'
-    const num = parseInt(safeHex.slice(1), 16)
-    const clamp = value => Math.max(0, Math.min(255, value))
-    const r = clamp((num >> 16) + amount)
-    const g = clamp(((num >> 8) & 0xff) + amount)
-    const b = clamp((num & 0xff) + amount)
-    return `rgb(${r}, ${g}, ${b})`
+    return viewHelpers.shadeColor(hex, amount)
   },
 
   _drawEllipticSector(ctx, cx, cy, radius, scaleY, startA, endA, fillStyle, strokeStyle, lineW) {
