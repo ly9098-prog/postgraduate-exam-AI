@@ -41,6 +41,9 @@ const {
   resetSequentialTiming,
   buildLoadedView,
 } = require('./utils/question-load-state')
+const {
+  createSequentialRestartController,
+} = require('./utils/sequential-restart-controller')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1254,38 +1257,31 @@ questions.length === 0 &&
 sequentialProgress &&
 sequentialProgress.cycle_completed
 ) {
-const total = Number(sequentialProgress.total_questions || 0)
-const name = this.data.selectedSubjectName || String(subjectId)
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView())
-const restart = await this._showSubmitConfirm({
-scenario: 'info',
-eyebrow: 'ROUND COMPLETE',
-title: '本轮顺序刷题已完成',
-message: `「${name}」本轮 ${total} 题已全部完成。\n重新开始后会从第一道题按顺序再刷一轮。`,
-confirmText: '重新开始一轮',
-cancelText: '返回选题',
+if (!this._sequentialRestartController) {
+this._sequentialRestartController = createSequentialRestartController({
+clearTimer: () => this._clearTimer(),
+setUnloadGuard: value => this._setPracticeUnloadGuard(value),
+setData: data => this.setData(data),
+buildResetView: () => buildResetView(),
+showRestartConfirm: options => this._showSubmitConfirm(options),
+isPageAlive: () => this._pageAlive,
+getRequestSeq: () => this._questionsRequestSeq,
+getTraceId: () => this._practiceSession.traceId,
+resetSequentialProgress: payload => api.post('/practice/sequential/reset', payload),
+logError: (...args) => console.error(...args),
+showToast: options => wx.showToast(options),
+getSession: () => this._practiceSession,
+resetSequentialTiming: session => resetSequentialTiming(session),
+buildSequentialRestartView: () => buildSequentialRestartView(),
+reloadQuestions: () => this._loadQuestions(),
 })
-if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
-if (!restart) return
-try {
-await api.post('/practice/sequential/reset', {
-subject_id: subjectId,
-_traceId: this._practiceSession.traceId,
-})
-if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
-} catch (resetErr) {
-if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
-console.error('重置顺序刷题进度失败', resetErr)
-this.setData({ errorText: '重置顺序进度失败，请稍后重试' })
-wx.showToast({ title: '重置进度失败', icon: 'none' })
-return
 }
-resetSequentialTiming(this._practiceSession)
-this.setData(buildSequentialRestartView())
-this._setPracticeUnloadGuard(true)
-await this._loadQuestions()
+await this._sequentialRestartController.restart(
+sequentialProgress,
+subjectId,
+this.data.selectedSubjectName,
+loadSeq
+)
 return
 }
 debugLog(this._practiceSession.traceId, 'STATE_AFTER_API', {
