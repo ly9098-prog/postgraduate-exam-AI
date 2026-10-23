@@ -47,6 +47,9 @@ const {
 const {
   createStartBatchController,
 } = require('./utils/start-batch-controller')
+const {
+  createReviewDraftController,
+} = require('./utils/draft-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -200,108 +203,44 @@ timingStartedAtMs: 0,
 }
 },
 _getReviewDraftKey() {
+return this._reviewDraftController().key()
+},
+_readReviewDraft() {
+return this._reviewDraftController().read()
+},
+_writeReviewDraft(payload) {
+this._reviewDraftController().write(payload)
+},
+_persistReviewDraft() {
+this._reviewDraftController().persist()
+},
+_restoreReviewDraft(questions) {
+return this._reviewDraftController().restore(questions)
+},
+_clearSubmittedReviewDraft(groupQuestions, groupResults) {
+this._reviewDraftController().clearSubmitted(groupQuestions, groupResults)
+},
+_reviewDraftController() {
+return this._reviewDraft || (
+this._reviewDraft = createReviewDraftController({
+getDraftKey: () => {
 const session = this._reviewSession || (this._reviewSession = this._createReviewSession())
 const user = storage.get(storage.KEYS.USER) || {}
 const userId = user.id != null ? user.id : (user.user_id != null ? user.user_id : 'current')
 const taskDate = String(session.taskDate || getChinaDate(0))
 return REVIEW_DRAFT_PREFIX + ':' + String(userId) + ':' + taskDate
 },
-_readReviewDraft() {
-const raw = storage.get(this._getReviewDraftKey())
-if (!raw || typeof raw !== 'object') return { answers: {}, position: null }
-return {
-answers: raw.answers && typeof raw.answers === 'object' ? raw.answers : {},
-position: raw.position && typeof raw.position === 'object' ? raw.position : null,
-}
-},
-_writeReviewDraft(payload) {
-const answers = payload && payload.answers && typeof payload.answers === 'object' ? payload.answers : {}
-const hasAnswers = Object.keys(answers).length > 0
-if (!hasAnswers) {
-storage.remove(this._getReviewDraftKey())
-return
-}
-storage.set(this._getReviewDraftKey(), {
-version: 1,
-date: String(this._reviewSession.taskDate || getChinaDate(0)),
-updated_at: Date.now(),
-answers,
-position: payload.position || null,
+readStorage: key => storage.get(key),
+writeStorage: (key, value) => storage.set(key, value),
+removeStorage: key => storage.remove(key),
+getSession: () => this._reviewSession,
+getCurrentDate: () => getChinaDate(0),
+getPhase: () => this.data.phase,
+getGroupQuestions: () => this.data.groupQuestions,
+getCurrentQuestion: () => this.data.currentQuestion,
+now: () => Date.now(),
 })
-},
-_persistReviewDraft() {
-if (!this._reviewSession || this.data.phase !== 'reviewing') return
-const questions = this.data.groupQuestions || []
-if (!questions.length) return
-const stored = this._readReviewDraft()
-const entries = { ...stored.answers }
-const answers = this._reviewSession.answers || {}
-questions.forEach(q => {
-const sid = String(q.schedule_id || '')
-if (!sid) return
-const answer = answers[q.schedule_id] != null ? answers[q.schedule_id] : answers[sid]
-if (answer !== undefined && answer !== null && String(answer) !== '') {
-entries[sid] = {
-schedule_id: q.schedule_id,
-question_id: q.question_id,
-question_version_id: q.question_version_id,
-occurrence_seq: q.occurrence_seq,
-answer: String(answer),
-}
-} else {
-delete entries[sid]
-}
-})
-const current = this.data.currentQuestion
-const position = current ? {
-schedule_id: current.schedule_id,
-question_version_id: current.question_version_id,
-occurrence_seq: current.occurrence_seq,
-} : stored.position
-this._writeReviewDraft({ answers: entries, position })
-},
-_restoreReviewDraft(questions) {
-const list = questions || []
-const stored = this._readReviewDraft()
-const answers = {}
-let restoredCount = 0
-let currentIndex = 0
-list.forEach((q, index) => {
-const sid = String(q.schedule_id || '')
-const entry = sid ? stored.answers[sid] : null
-if (
-entry &&
-String(entry.question_id) === String(q.question_id) &&
-String(entry.question_version_id) === String(q.question_version_id) &&
-String(entry.occurrence_seq) === String(q.occurrence_seq) &&
-String(entry.answer || '') !== ''
-) {
-answers[q.schedule_id] = String(entry.answer)
-restoredCount++
-}
-const pos = stored.position
-if (
-pos &&
-String(pos.schedule_id) === sid &&
-String(pos.question_version_id) === String(q.question_version_id) &&
-String(pos.occurrence_seq) === String(q.occurrence_seq)
-) {
-currentIndex = index
-}
-})
-return { answers, currentIndex, restoredCount }
-},
-_clearSubmittedReviewDraft(groupQuestions, groupResults) {
-const successfulIds = new Set(
-(groupResults || []).filter(item => item && item.wasSubmitted).map(item => String(item.schedule_id))
 )
-if (!successfulIds.size) return
-const stored = this._readReviewDraft()
-const entries = { ...stored.answers }
-successfulIds.forEach(sid => { delete entries[sid] })
-let position = stored.position
-if (position && successfulIds.has(String(position.schedule_id))) position = null
-this._writeReviewDraft({ answers: entries, position })
 },
 onLoad(options) {
 let statusBar = 20
