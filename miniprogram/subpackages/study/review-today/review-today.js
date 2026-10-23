@@ -37,6 +37,10 @@ const {
 const {
   createResultDockController,
 } = require('./utils/result-dock-controller')
+const {
+  createReviewTimerController,
+  safeReviewTickDelta,
+} = require('./utils/review-timer-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1290,95 +1294,44 @@ if (name) return name
 return getSubjectName(code || name)
 },
 _safeTickDelta(rawMs) {
-if (rawMs < 0) return 0
-if (rawMs > 10000) return 10000
-return rawMs
+return safeReviewTickDelta(rawMs)
+},
+_reviewTimerController() {
+return this._reviewTimer || (
+this._reviewTimer = createReviewTimerController({
+getSession: () => this._reviewSession,
+isPageAlive: () => this._alive,
+monotonicNow: () => _reviewMonotonicNow(),
+serverNow: () => _reviewServerNow(),
+getTimerId: () => this._timerInterval,
+setTimerId: id => { this._timerInterval = id },
+setInterval,
+clearInterval,
+setData: patch => this.setData(patch),
+formatElapsed: seconds => formatReviewElapsed(seconds),
+createRequestId: () => (typeof api.createRequestId === 'function' ? api.createRequestId() : undefined),
+})
+)
 },
 _startReviewTimer() {
-if (this._timerInterval) return
-this._reviewSession.timerElapsedMs = 0
-this._reviewSession.timerStartedAt = _reviewMonotonicNow()
-this._reviewSession.timerLastTickAt = this._reviewSession.timerStartedAt
-this._reviewSession.timerRunning = true
-this._reviewSession.timingSegmentId = ''
-this._reviewSession.timingStartedAtMs = _reviewServerNow()
-var self = this
-this._timerInterval = setInterval(function () {
-if (!self._alive) return
-var session = self._reviewSession
-var now = _reviewMonotonicNow()
-var lastTickAt = session.timerLastTickAt || session.timerStartedAt || now
-session.timerElapsedMs += self._safeTickDelta(now - lastTickAt)
-session.timerLastTickAt = now
-self.setData({ elapsedText: formatReviewElapsed(Math.floor(session.timerElapsedMs / 1000)) })
-}, 1000)
+this._reviewTimerController().start()
 },
 // 本组前台计时快照（不修改计时状态）：提交失败重试沿用同一分段 id，
 // 服务端按 request_id 幂等，只记录首次成功的一次。
 _buildReviewTimingSession() {
-const session = this._reviewSession
-if (!session || !session.timingStartedAtMs) return null
-var elapsedMs = session.timerElapsedMs || 0
-if (session.timerRunning && session.timerLastTickAt) {
-elapsedMs += this._safeTickDelta(_reviewMonotonicNow() - session.timerLastTickAt)
-}
-var durationSec = Math.floor(elapsedMs / 1000)
-if (durationSec <= 0) return null
-if (!session.timingSegmentId) {
-session.timingSegmentId = typeof api.createRequestId === 'function'
-? api.createRequestId()
-: ('req_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10))
-}
-var finishedAtMs = _reviewServerNow()
-var startedAtMs = Math.min(session.timingStartedAtMs, finishedAtMs - durationSec * 1000)
-return {
-request_id: session.timingSegmentId,
-started_at: new Date(startedAtMs).toISOString(),
-finished_at: new Date(finishedAtMs).toISOString(),
-duration_sec: durationSec,
-}
+return this._reviewTimerController().buildTimingSession()
 },
 _pauseReviewTimer() {
-if (!this._timerInterval) return
-var now = _reviewMonotonicNow()
-var lastTickAt = this._reviewSession.timerLastTickAt || this._reviewSession.timerStartedAt || now
-this._reviewSession.timerElapsedMs += this._safeTickDelta(now - lastTickAt)
-this._reviewSession.timerLastTickAt = 0
-this._reviewSession.timerRunning = false
-clearInterval(this._timerInterval)
-this._timerInterval = null
+this._reviewTimerController().pause()
 },
 _resumeReviewTimer() {
-if (this._timerInterval || this._reviewSession.timerRunning) return
-this._reviewSession.timerStartedAt = _reviewMonotonicNow()
-this._reviewSession.timerLastTickAt = this._reviewSession.timerStartedAt
-this._reviewSession.timerRunning = true
-var self = this
-this._timerInterval = setInterval(function () {
-if (!self._alive) return
-var session = self._reviewSession
-var now = _reviewMonotonicNow()
-var lastTickAt = session.timerLastTickAt || session.timerStartedAt || now
-session.timerElapsedMs += self._safeTickDelta(now - lastTickAt)
-session.timerLastTickAt = now
-self.setData({ elapsedText: formatReviewElapsed(Math.floor(session.timerElapsedMs / 1000)) })
-}, 1000)
+this._reviewTimerController().resume()
 },
 _resetReviewTimer() {
-this._pauseReviewTimer()
-this._reviewSession.timerElapsedMs = 0
-this._reviewSession.timerStartedAt = 0
-this._reviewSession.timerLastTickAt = 0
-this._reviewSession.timerRunning = false
-this.setData({ elapsedText: '00:00' })
+this._reviewTimerController().reset()
 },
 _clearReviewTimer() {
-if (this._timerInterval) {
-clearInterval(this._timerInterval)
-this._timerInterval = null
-}
-this._reviewSession.timerLastTickAt = 0
-this._reviewSession.timerRunning = false
+this._reviewTimerController().clear()
 },
 showBatchSizeSelector() {
 if (this.data.phase !== 'overview') return
