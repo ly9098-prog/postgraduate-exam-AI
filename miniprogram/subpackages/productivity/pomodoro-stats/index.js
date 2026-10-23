@@ -50,6 +50,7 @@ const { createDynamicRefreshController } = require('./dynamic-refresh-controller
 const { createLoadRequestController } = require('./load-request-controller')
 const { createLoadRequestControllerFactory } = require('./load-request-controller-factory')
 const { buildLoadRequestControllerCapabilities } = require('./load-request-controller-capabilities')
+const { buildPieRenderCapabilities } = require('./pie-render-capabilities')
 const { createPageInitController } = require('./page-init-controller')
 const { createLifecycleController } = require('./lifecycle-controller')
 
@@ -1167,17 +1168,19 @@ var pageConfig = {
 
   _renderPieChart(progress, includeLabels = true) {
     pieRenderer.renderPieChart({
-      ctx: this._pieCtx,
-      rect: this._pieRect,
-      subjects: this.data.subjects,
-      themeMode: this.data.themeMode,
-      dpr: this._pieDpr,
-      selectedSubject: this.data._selectedSubject,
+      ...buildPieRenderCapabilities({
+        getCtx: () => this._pieCtx,
+        getRect: () => this._pieRect,
+        getSubjects: () => this.data.subjects,
+        getThemeMode: () => this.data.themeMode,
+        getDpr: () => this._pieDpr,
+        getSelectedSubject: () => this.data._selectedSubject,
+        getCache: () => this._pieRenderCache,
+        getPalette: () => this._getCanvasPalette(),
+        getShade: () => (hex, amount) => this._shadeColorCached(hex, amount),
+      }),
       progress,
       includeLabels,
-      cache: this._pieRenderCache,
-      palette: this._getCanvasPalette(),
-      shade: (hex, amount) => this._shadeColorCached(hex, amount),
     })
   },
 

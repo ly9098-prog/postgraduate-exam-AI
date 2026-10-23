@@ -356,6 +356,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-distribution-load-controller.js \
             miniprogram/tests/test-pomodoro-stats-pie-animation-controller.js \
             miniprogram/tests/test-pomodoro-stats-pie-label-reveal-controller.js \
+            miniprogram/tests/test-pomodoro-stats-pie-render-capabilities.js \
             miniprogram/tests/test-pomodoro-stats-cancel-work-controller.js \
             miniprogram/tests/test-pomodoro-stats-overview-mapping.js \
             miniprogram/tests/test-pomodoro-stats-load-view-state.js \
