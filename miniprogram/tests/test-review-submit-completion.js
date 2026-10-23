@@ -35,6 +35,7 @@ function page(answers = {}, choice = true) {
     async _syncReviewSessionDayIfNeeded() { return true },
     _getReviewRequestId(q) { return `test-${q.schedule_id}` },
     _buildReviewTimingSession() { return null },
+    _enrichForResult(q) { return q },
   })
   return target
 }

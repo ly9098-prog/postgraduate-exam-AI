@@ -14,13 +14,14 @@ const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../utils/subject-meta')
 const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
 const {
-  buildGroupReviews,
-  buildGroupResult,
   buildGroupOutcome,
 } = require('./utils/group-submission')
 const {
   createGroupSubmitConfirmController,
 } = require('./utils/submit-confirm-controller')
+const {
+  createGroupSubmitRequestController,
+} = require('./utils/submit-request-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -1111,50 +1112,26 @@ if (!await this._syncReviewSessionDayIfNeeded()) {
 if (this._alive) this.setData({ submittingGroup: false })
 return
 }
-const reviewBuild = buildGroupReviews({
+const groupSubmitRequestController = this._groupSubmitRequestController || (
+this._groupSubmitRequestController = createGroupSubmitRequestController({
+postGrade: payload => api.post('/review/grade-batch', payload),
+showToast: options => wx.showToast(options),
+setSubmitting: value => this.setData({ submittingGroup: value }),
+isPageAlive: () => this._alive,
+})
+)
+const submission = await groupSubmitRequestController.submit({
 groupQuestions,
 answers,
 isQuestionAnswered: (question, answerMap) => adapter.isQuestionAnswered(question, answerMap, KF),
 getRequestId: question => this._getReviewRequestId(question),
-})
-if (reviewBuild.error === 'version') {
-wx.showToast({ title: '复习任务版本信息缺失，请刷新后重试', icon: 'none' })
-this.setData({ submittingGroup: false })
-return
-}
-if (reviewBuild.error) {
-wx.showToast({ title: '请完成全部题目后再提交', icon: 'none' })
-this.setData({ submittingGroup: false })
-return
-}
-const reviews = reviewBuild.reviews
-// 时长在发请求前锁定，不含提交接口网络耗时
-const timingSession = this._buildReviewTimingSession()
-const gradePayload = timingSession ? { reviews, session: timingSession } : { reviews }
-try {
-const res = await api.post('/review/grade-batch', gradePayload)
-if (!this._alive) return
-const results = Array.isArray(res && res.results) ? res.results : []
-const submittedScheduleIds = new Set(reviews.map(item => String(item.schedule_id)))
-if (results.length < reviews.length) {
-wx.showToast({
-title: results.length ? '部分题目批改失败' : '批改结果为空，请重试',
-icon: 'none'
-})
-if (!results.length) {
-this.setData({ submittingGroup: false })
-return
-}
-}
-const groupResults = groupQuestions.map(q => buildGroupResult({
-question: q,
-results,
-reviews,
-answers,
-isQuestionAnswered: (question, answerMap) => adapter.isQuestionAnswered(question, answerMap, KF),
+buildTimingSession: () => this._buildReviewTimingSession(),
 enrichForResult: question => this._enrichForResult(question),
 failureNeedsRefresh: result => _reviewFailureNeedsRefresh(result),
-}))
+})
+if (submission.status !== 'submitted') return
+try {
+const groupResults = submission.groupResults
 // Drafts are removed only after the server confirms that exact immutable task
 // occurrence was submitted. Failed/skipped items remain available for retry.
 this._clearSubmittedReviewDraft(groupQuestions, groupResults)
