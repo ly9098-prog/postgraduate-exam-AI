@@ -20,6 +20,7 @@ const { createDurationAnimationController } = require('./duration-animation-cont
 const { createPieTapController } = require('./pie-tap-controller')
 const { createStartAnimationsController } = require('./start-animations-controller')
 const pieGeometry = require('./pie-geometry')
+const { createShadeColorCache } = require('./shade-color-cache')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -138,6 +139,7 @@ var pageConfig = {
     this._distributionRawSubjects = []
     this._subjectMetaLoaded = false
     this._subjectMeta = null
+    this._shadeColorCache = createShadeColorCache()
     this._subjectMetaPromise = null
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
@@ -757,7 +759,7 @@ var pageConfig = {
     this._pieSectors = null
     this._pieWallSteps = null
     this._pieLabelLayout = null
-    this._shadeCache = null
+    if (this._shadeColorCache) this._shadeColorCache.reset()
   },
 
   _cancelDeferredHistory(clearPending) {
@@ -1398,12 +1400,7 @@ var pageConfig = {
   },
 
   _shadeColorCached(hex, amount) {
-    const key = hex + '|' + amount
-    if (!this._shadeCache) this._shadeCache = {}
-    if (this._shadeCache[key]) return this._shadeCache[key]
-    const v = this._shadeColor(hex, amount)
-    this._shadeCache[key] = v
-    return v
+    return this._shadeColorCache.shade(hex, amount)
   },
 
   _startAnimations(reqId) {
