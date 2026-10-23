@@ -16,6 +16,7 @@ const subjectDistribution = require('./subject-distribution')
 const sessionViewModel = require('./session-view-model')
 const pieLabelLayout = require('./pie-label-layout')
 const trendChart = require('./trend-chart')
+const { createDurationAnimationController } = require('./duration-animation-controller')
 
 function getColorBySubject(subject, colors) {
   let hash = 0
@@ -796,100 +797,31 @@ var pageConfig = {
   },
 
   _cancelDurationAnimation(resetState) {
-    this._durationAnimationToken = (this._durationAnimationToken || 0) + 1
-    if (this._durationAnimationTimer) {
-      clearTimeout(this._durationAnimationTimer)
-      this._durationAnimationTimer = null
-    }
-    if (resetState && this._alive) {
-      this.setData({ durationValueAnimating: false })
-    }
+    this._getDurationAnimationController().cancel(resetState)
   },
 
   _animateSelectedDuration(fromSec, toSec, fromSessions, toSessions) {
-    const startValue = Math.max(0, Number(fromSec) || 0)
-    const targetValue = Math.max(0, Number(toSec) || 0)
-    const startSessions = Math.max(0, Number(fromSessions) || 0)
-    const targetSessions = Math.max(0, Number(toSessions) || 0)
+    this._getDurationAnimationController().animate(fromSec, toSec, fromSessions, toSessions)
+  },
 
-    this._cancelDurationAnimation(false)
-    const token = this._durationAnimationToken
-    const startText = this._fmtMin(startValue)
-    const targetText = this._fmtMin(targetValue)
-
-    this._displayTodayDurationSec = startValue
-    if (startText === targetText && startSessions === targetSessions) {
-      this._displayTodayDurationSec = targetValue
-      this.setData({
-        _dispTodaySessions: targetSessions,
-        ...this._getTodayDurationDisplayPatch(targetText),
-        durationValueAnimating: false,
+  _getDurationAnimationController() {
+    if (!this._durationAnimationController) {
+      this._durationAnimationController = createDurationAnimationController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getToken: () => this._durationAnimationToken,
+        incrementToken: () => { this._durationAnimationToken = (this._durationAnimationToken || 0) + 1 },
+        getTimer: () => this._durationAnimationTimer,
+        setTimer: timer => { this._durationAnimationTimer = timer },
+        clearTimeout,
+        setTimeout,
+        getDisplaySessions: () => this.data._dispTodaySessions,
+        setDisplayDurationSec: value => { this._displayTodayDurationSec = value },
+        getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
+        setData: patch => this.setData(patch),
       })
-      return
     }
-
-    // Keep the selected-day count and duration on one transition clock. Sparse
-    // setData ticks leave the canvas animation enough main-thread time.
-    const duration = 620
-    const steps = 12
-    const interval = Math.round(duration / steps)
-    const delta = targetValue - startValue
-    const sessionDelta = targetSessions - startSessions
-    let step = 0
-    let lastText = startText
-    let lastValue = startValue
-    let lastSessions = startSessions
-
-    this.setData({ durationValueAnimating: true })
-
-    const tick = () => {
-      if (
-        !this._alive ||
-        !this._isVisible ||
-        token !== this._durationAnimationToken
-      ) return
-
-      step += 1
-      const progress = Math.min(1, step / steps)
-      const eased = this._easeInOutCubic(progress)
-      let nextValue = Math.round(startValue + delta * eased)
-      let nextSessions = Math.round(startSessions + sessionDelta * eased)
-
-      // Guard against rounding producing a one-frame reversal.
-      nextValue = delta >= 0
-        ? Math.max(lastValue, Math.min(targetValue, nextValue))
-        : Math.min(lastValue, Math.max(targetValue, nextValue))
-      nextSessions = sessionDelta >= 0
-        ? Math.max(lastSessions, Math.min(targetSessions, nextSessions))
-        : Math.min(lastSessions, Math.max(targetSessions, nextSessions))
-
-      if (progress >= 1) {
-        nextValue = targetValue
-        nextSessions = targetSessions
-      }
-      lastValue = nextValue
-      lastSessions = nextSessions
-      this._displayTodayDurationSec = nextValue
-
-      const nextText = this._fmtMin(nextValue)
-      const isFinal = progress >= 1
-      if (nextText !== lastText || nextSessions !== this.data._dispTodaySessions || isFinal) {
-        lastText = nextText
-        this.setData({
-          _dispTodaySessions: nextSessions,
-          ...this._getTodayDurationDisplayPatch(nextText),
-          durationValueAnimating: !isFinal,
-        })
-      }
-
-      if (!isFinal) {
-        this._durationAnimationTimer = setTimeout(tick, interval)
-      } else {
-        this._durationAnimationTimer = null
-      }
-    }
-
-    this._durationAnimationTimer = setTimeout(tick, interval)
+    return this._durationAnimationController
   },
 
   /* ==================== Data Loading ==================== */
