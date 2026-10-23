@@ -67,7 +67,6 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import {
   exportQuestions,
   fetchSubjectOptions,
-  type BatchDeleteResult,
 } from "./question-api";
 
 import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
@@ -120,6 +119,7 @@ import {
 } from "./question-display-helpers";
 import { buildExportPayload } from "./question-export-payload";
 import { buildQueryParams } from "./question-query-params";
+import { buildQuestionDeleteFeedback } from "./question-delete-feedback";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -231,29 +231,20 @@ export default function QuestionsPage() {
 
   const deleteMutation = useQuestionDelete(selectedIds, {
     onDeleted: (result, variables) => {
-      if (variables.action === "delete") {
-        setMessage(`题目 #${variables.id} 已删除。`);
+      const feedback = buildQuestionDeleteFeedback({
+        result,
+        intent: variables,
+        selectedQuestionId,
+      });
+      setMessage(feedback.message);
+      if (feedback.closeDetailDrawer) {
         setSelectedQuestionId(null);
         setIsDetailDrawerOpen(false);
-      } else {
-        const r = result as BatchDeleteResult;
-        const successIds = r.success_ids ?? r.successIds ?? [];
-        const failedItems = r.failed_items ?? r.failedItems ?? [];
-        const failurePreview = failedItems
-          .slice(0, 5)
-          .map((item) => `#${item.id} ${item.error}`)
-          .join("；");
-        const failures = failedItems.length
-          ? `失败 ${failedItems.length} 条：${failurePreview}${failedItems.length > 5 ? "；…" : ""}`
-          : "无失败项";
-        setMessage(`批量删除完成，成功 ${successIds.length} 条，${failures}。`);
-        if (selectedQuestionId !== null && successIds.includes(selectedQuestionId)) {
-          setSelectedQuestionId(null);
-          setIsDetailDrawerOpen(false);
-        }
       }
-      setSelectedIds(new Set());
-      setConfirmState(null);
+      if (feedback.clearSelection) {
+        setSelectedIds(new Set());
+        setConfirmState(null);
+      }
     },
     onError: (error) => {
       setMessage(
