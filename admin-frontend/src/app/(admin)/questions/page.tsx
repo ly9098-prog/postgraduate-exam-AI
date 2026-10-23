@@ -59,8 +59,6 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
-import { buildQuestionCopyText } from "@/lib/question-copy";
-import { copyTextToClipboard } from "@/lib/clipboard";
 
 import {
   exportQuestions,
@@ -76,6 +74,7 @@ import { useQuestionSelection } from "./hooks/use-question-selection";
 import { useQuestionPagination } from "./hooks/use-question-pagination";
 import { useQuestionSubjectOptions } from "./hooks/use-question-subject-options";
 import { useQuestionMenus } from "./hooks/use-question-menus";
+import { useQuestionCopy } from "./hooks/use-question-copy";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -163,7 +162,6 @@ export default function QuestionsPage() {
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [copyingQuestion, setCopyingQuestion] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
   const editorCallbacks = useRef<{
     setEditing: (value: boolean) => void;
@@ -313,18 +311,10 @@ export default function QuestionsPage() {
       filters.knowledge_point_id,
   );
   const selectedQuestion = detail.data;
-  const handleCopyQuestion = async () => {
-    if (!selectedQuestion || copyingQuestion) return;
-    setCopyingQuestion(true);
-    try {
-      await copyTextToClipboard(buildQuestionCopyText(selectedQuestion));
-      setMessage("题干和选项已复制。");
-    } catch {
-      setMessage("复制失败，请检查浏览器剪贴板权限后重试。");
-    } finally {
-      setCopyingQuestion(false);
-    }
-  };
+  const {
+    copyingQuestion,
+    copyQuestion: handleCopyQuestion,
+  } = useQuestionCopy(selectedQuestion, setMessage);
   const copyQuestionButton = (
     <button
       type="button"
