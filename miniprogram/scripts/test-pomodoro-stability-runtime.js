@@ -184,6 +184,9 @@ const sandbox = {
     if (request === './utils/start-timer-controller') {
       return require('../pages/pomodoro/utils/start-timer-controller')
     }
+    if (request === './utils/draw-ring-controller') {
+      return require('../pages/pomodoro/utils/draw-ring-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

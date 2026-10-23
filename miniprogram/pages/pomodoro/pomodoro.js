@@ -78,6 +78,7 @@ const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-fre
 const { createFreeTimerLimitController } = require('./utils/free-timer-limit-controller')
 const { createStartBreakController } = require('./utils/start-break-controller')
 const { createStartTimerController } = require('./utils/start-timer-controller')
+const { createDrawRingController } = require('./utils/draw-ring-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -251,6 +252,7 @@ Page({
   _freeTimerLimitController: null,
   _startBreakController: null,
   _startTimerController: null,
+  _drawRingController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -2031,89 +2033,38 @@ Page({
     return buildRingCache(this._ctx, this._canvasSize, isBreak, this.data.isFreeTimer)
   },
 
+  _getDrawRingController() {
+    if (!this._drawRingController) {
+      this._drawRingController = createDrawRingController({
+        getCtx: () => this._ctx,
+        setPendingDraw: value => { this._pendingDraw = value },
+        isPageVisible: () => this._pageVisible,
+        showEndConfirm: () => this.data.showEndConfirm,
+        ringCanvasVisible: () => this.data.ringCanvasVisible,
+        canvasInitPending: () => this._canvasInitPending,
+        initCanvas: force => this._initCanvas(force),
+        getProgress: () => this._timerState.progress,
+        now: () => api.now(),
+        getLastDrawnProgress: () => this._lastDrawnProgress,
+        getLastDrawnIsBreak: () => this._lastDrawnIsBreak,
+        getLastDrawnAt: () => this._lastDrawnAt,
+        setLastDrawnProgress: v => { this._lastDrawnProgress = v },
+        setLastDrawnIsBreak: v => { this._lastDrawnIsBreak = v },
+        setLastDrawnAt: v => { this._lastDrawnAt = v },
+        isFreeTimer: () => this.data.isFreeTimer,
+        themeMode: () => this.data.themeMode,
+        getRingCache: () => this._ringCache,
+        setRingCache: v => { this._ringCache = v },
+        buildRingCache: isBreak => this._buildRingCache(isBreak),
+        ringCanvasPaintReady: () => this.data.ringCanvasPaintReady,
+        setData: data => this.setData(data),
+      })
+    }
+    return this._drawRingController
+  },
+
   drawRing(totalSec, isBreak) {
-    if (!this._ctx) {
-      this._pendingDraw = { totalSec, isBreak }
-      // Self-heal after an unusually slow native-canvas mount. If the first
-      // initialization exhausted its retry window, the next timer tick retries
-      // automatically instead of leaving a permanently blank ring.
-      if (this._pageVisible && !this.data.showEndConfirm && this.data.ringCanvasVisible && !this._canvasInitPending) {
-        this._initCanvas(false)
-      }
-      return
-    }
-    var ctx = this._ctx
-    var progress = this._timerState.progress
-    var now = api.now()
-    // Keep throttling expensive canvas work, but guarantee a visible refresh at
-    // least about once per second. The old fixed 1/360 threshold meant a 25-min
-    // ring could wait ~4.2s and a 50-min ring ~8.3s before moving.
-    if (!shouldDrawRing(progress, isBreak, {
-      progress: this._lastDrawnProgress,
-      isBreak: this._lastDrawnIsBreak,
-      totalSec,
-      at: this._lastDrawnAt,
-    }, now)) return
-    this._lastDrawnProgress = progress
-    this._lastDrawnIsBreak = isBreak
-    this._lastDrawnAt = now
-
-    // 缓存渐变和几何，仅在 isBreak/freeTimer 切换时重建
-    var cacheKey = (isBreak ? 'break' : (this.data.isFreeTimer ? 'free' : 'focus')) + '|' + this.data.themeMode
-    if (!this._ringCache || this._ringCache._key !== cacheKey) {
-      this._ringCache = this._buildRingCache(isBreak)
-      if (this._ringCache) this._ringCache._key = cacheKey
-    }
-    var cache = this._ringCache
-    if (!cache) return
-
-    var center = cache.center
-    var radius = cache.radius
-    var lineWidth = cache.lineWidth
-    var colors = cache.colors
-
-    ctx.clearRect(0, 0, cache.size, cache.size)
-
-    if (progress > 0) {
-      ctx.beginPath()
-      ctx.strokeStyle = cache.glowGrad
-      ctx.lineWidth = lineWidth + 14
-      ctx.lineCap = 'round'
-      ctx.globalAlpha = 0.18
-      ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
-      ctx.stroke()
-      ctx.globalAlpha = 1
-    }
-
-    ctx.beginPath()
-    ctx.strokeStyle = this.data.themeMode === 'light' ? 'rgba(21,51,35,0.12)' : 'rgba(255,255,255,0.06)'
-    ctx.lineWidth = lineWidth
-    ctx.arc(center, center, radius, 0, Math.PI * 2)
-    ctx.stroke()
-
-    ctx.beginPath()
-    ctx.strokeStyle = cache.grad
-    ctx.lineWidth = lineWidth
-    ctx.lineCap = 'round'
-    ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
-    ctx.stroke()
-
-    if (progress > 0 && progress < 1) {
-      var endAngle = -Math.PI / 2 + Math.PI * 2 * progress
-      var endX = center + radius * Math.cos(endAngle)
-      var endY = center + radius * Math.sin(endAngle)
-      ctx.beginPath()
-      ctx.fillStyle = colors.dot
-      ctx.arc(endX, endY, lineWidth / 2 + 1, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    // Only reveal the canvas after a successful paint at a stable layout
-    // position. Until then the glow/center text remain visible, preventing a
-    // one-frame native-canvas flash at the top of the page.
-    if (!this.data.ringCanvasPaintReady) {
-      this.setData({ ringCanvasPaintReady: true })
-    }
+    return this._getDrawRingController().draw(totalSec, isBreak)
   },
 
   _resetToIdle() {

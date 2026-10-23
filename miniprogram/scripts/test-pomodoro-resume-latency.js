@@ -98,18 +98,19 @@ t('free timer interval is restarted only while running', () => {
 console.log('\n--- Canvas first paint and refresh ---')
 const initCanvas = extractMethod(src, '_initCanvas')
 const drawRing = extractMethod(src, 'drawRing')
+const drawRingCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/draw-ring-controller.js'), 'utf8')
 t('canvas rebuild clears previous draw throttle state', () => {
   assert.ok(initCanvas.includes('this._lastDrawnProgress = undefined'))
   assert.ok(initCanvas.includes('this._lastDrawnIsBreak = undefined'))
   assert.ok(initCanvas.includes('this._lastDrawnAt = 0'))
 })
 t('ring throttle is duration-aware instead of fixed 1/360 only', () => {
-  assert.ok(drawRing.includes('shouldDrawRing(progress, isBreak'))
+  assert.ok(drawRingCtrlSrc.includes('shouldDrawRing(progress, isBreak'))
   assert.ok(ringGeometrySrc.includes('0.8 / previous.totalSec'))
 })
 t('ring is forced to refresh within about one second', () => {
   assert.ok(ringGeometrySrc.includes('sinceLastDraw >= 1000'))
-  assert.ok(drawRing.includes('this._lastDrawnAt = now'))
+  assert.ok(drawRingCtrlSrc.includes('options.setLastDrawnAt(now)'))
 })
 t('removed artificial 50/100/200ms drawRing startup delays', () => {
   assert.ok(!/setTimeout\([^\n]*drawRing[^\n]*,\s*(50|100|200)\s*\)/.test(src))

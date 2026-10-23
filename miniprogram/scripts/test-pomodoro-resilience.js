@@ -608,6 +608,7 @@ t('onShow restores break before pending network synchronization', () => {
 
 console.log('\n--- Canvas reuse ---')
 const startTimerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/start-timer-controller.js'), 'utf8')
+const drawRingSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/draw-ring-controller.js'), 'utf8')
 const initCanvas = method('_initCanvas')
 t('timer restart can reuse an existing/in-flight canvas', () => assert.ok(startTimerSrc.includes('options.initCanvas(!startOptions.reuseCanvas)')))
 t('canvas init suppresses duplicate in-flight initialization', () => assert.ok(initCanvas.includes('this._canvasInitPending')))
@@ -617,9 +618,8 @@ t('canvas initialization waits substantially longer on slow devices', () => {
   assert.ok(method('_scheduleCanvasInit').includes('canvasRetryDelay(retryCount)'))
 })
 t('drawRing self-heals a failed canvas initialization on a later tick', () => {
-  const draw = method('drawRing')
-  assert.ok(draw.includes('!this._canvasInitPending'))
-  assert.ok(draw.includes('this._initCanvas(false)'))
+  assert.ok(drawRingSrc.includes('!options.canvasInitPending()'))
+  assert.ok(drawRingSrc.includes('options.initCanvas(false)'))
 })
 
 console.log('\n--- Free end-confirm ring recovery ---')
@@ -688,7 +688,7 @@ t('canvas waits for a stable stage-aligned layout before binding context', () =>
 })
 t('canvas is revealed only after a successful draw', () => {
   assert.ok(src.includes('ringCanvasPaintReady: false'))
-  assert.ok(method('drawRing').includes('this.setData({ ringCanvasPaintReady: true })'))
+  assert.ok(drawRingSrc.includes("options.setData({ ringCanvasPaintReady: true })"))
 })
 t('reset-to-idle invalidates stale canvas init callbacks', () => {
   assert.ok(resetToIdleSrc.includes('options.invalidateCanvas()'))
