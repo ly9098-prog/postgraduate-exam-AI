@@ -77,6 +77,7 @@ import { useQuestionFeedback } from "./hooks/use-question-feedback";
 import { useQuestionListInteractions } from "./hooks/use-question-list-interactions";
 import { useQuestionListUrlSync } from "./hooks/use-question-list-url-sync";
 import { useQuestionEditingProjection } from "./hooks/use-question-editing-projection";
+import { useQuestionToolbarState } from "./hooks/use-question-toolbar-state";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
 import { QuestionTableEditors } from "./components/question-table-editors";
@@ -286,16 +287,7 @@ export default function QuestionsPage() {
     replaceState: (state, title, url) => window.history.replaceState(state, title, url),
   });
 
-  const hasActiveFilters = Boolean(
-    filters.subject_id ||
-      filters.question_type ||
-      filters.year ||
-      filters.is_active !== "true" ||
-      filters.keyword ||
-      filters.difficulty ||
-      filters.import_batch_id ||
-      filters.knowledge_point_id,
-  );
+  const { hasActiveFilters } = useQuestionToolbarState(filters);
   const selectedQuestion = detail.data;
   const {
     copyingQuestion,
