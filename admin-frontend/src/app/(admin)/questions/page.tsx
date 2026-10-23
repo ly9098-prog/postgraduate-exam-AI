@@ -65,7 +65,6 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 
 import {
   exportQuestions,
-  fetchSubjectOptions,
 } from "./question-api";
 
 import { useQuestionDelete, type QuestionDeleteIntent } from "./hooks/use-question-delete";
@@ -76,6 +75,7 @@ import { useQuestionFilterInteractions } from "./hooks/use-question-filter-inter
 import { useQuestionDetailNavigation } from "./hooks/use-question-detail-navigation";
 import { useQuestionSelection } from "./hooks/use-question-selection";
 import { useQuestionPagination } from "./hooks/use-question-pagination";
+import { useQuestionSubjectOptions } from "./hooks/use-question-subject-options";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -147,14 +147,7 @@ export default function QuestionsPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const permissions = useAuthStore((state) => state.permissions);
-  const [subjectOptions, setSubjectOptions] = useState<
-    Array<{ id: number; code: string; name: string }>
-  >([]);
-  useEffect(() => {
-    fetchSubjectOptions()
-      .then(setSubjectOptions)
-      .catch(() => {});
-  }, []);
+  const subjectOptions = useQuestionSubjectOptions();
   const {
     filters,
     page,
