@@ -53,7 +53,6 @@ import {
   updateMultiBlankChoiceAnswer,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { toggleAllSelection, toggleSingleSelection } from "@/lib/selection-ops";
 import { useOutsideClick } from "@/lib/use-outside-click";
 import { buildVersionLabels } from "./question-version-labels";
 import { resolveAssetUrl } from "@/lib/asset-url";
@@ -75,6 +74,7 @@ import { useQuestionImmediateMutations } from "./hooks/use-question-immediate-mu
 import { useQuestionEditor } from "./hooks/use-question-editor";
 import { useQuestionFilterInteractions } from "./hooks/use-question-filter-interactions";
 import { useQuestionDetailNavigation } from "./hooks/use-question-detail-navigation";
+import { useQuestionSelection } from "./hooks/use-question-selection";
 import { addQuestionCodeSegment, replaceQuestionSegments } from "./question-segment-editing";
 import { QuestionCodeEditor } from "./components/question-code-editor";
 import { QuestionOptionEditor } from "./components/question-option-editor";
@@ -162,7 +162,6 @@ export default function QuestionsPage() {
       .then(setSubjectOptions)
       .catch(() => {});
   }, []);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(() => positiveInt(searchParams.get("page"), 1) ?? 1);
   const [pageSize, setPageSize] = useState(() => normalizeQuestionPageSize(searchParams.get("page_size")));
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
@@ -200,6 +199,13 @@ export default function QuestionsPage() {
     () => questions.data?.items ?? [],
     [questions.data?.items],
   );
+  const {
+    selectedIds,
+    allChecked,
+    clearSelection,
+    toggleAll,
+    toggleOne,
+  } = useQuestionSelection({ items });
 
   const {
     selectedQuestionId,
@@ -264,7 +270,7 @@ export default function QuestionsPage() {
         setIsDetailDrawerOpen(false);
       }
       if (feedback.clearSelection) {
-        setSelectedIds(new Set());
+        clearSelection();
         setConfirmState(null);
       }
     },
@@ -316,8 +322,6 @@ export default function QuestionsPage() {
       filters.import_batch_id ||
       filters.knowledge_point_id,
   );
-  const allChecked =
-    items.length > 0 && items.every((item) => selectedIds.has(item.id));
   const selectedQuestion = detail.data;
   const handleCopyQuestion = async () => {
     if (!selectedQuestion || copyingQuestion) return;
@@ -416,7 +420,7 @@ export default function QuestionsPage() {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
     // 与公式库保持一致：筛选刷新时保留详情上下文，等新列表返回后再自动校正选中项。
-    setSelectedIds(new Set());
+    clearSelection();
     setIsDetailDrawerOpen(false);
   };
 
@@ -437,7 +441,7 @@ export default function QuestionsPage() {
     onFilterPresetApplied: (next) => {
       setFilters(next);
       setPage(1);
-      setSelectedIds(new Set());
+      clearSelection();
       setIsDetailDrawerOpen(false);
       setIsCommonFilterMenuOpen(false);
     },
@@ -506,15 +510,6 @@ export default function QuestionsPage() {
       setExportingFormat(null);
     }
   };
-
-  const toggleAll = () => {
-    setSelectedIds(() => toggleAllSelection(items.map((item) => item.id), allChecked));
-  };
-
-  const toggleOne = (id: number) => {
-    setSelectedIds((current) => toggleSingleSelection(current, id));
-  };
-
 
   const confirmDescription =
     confirmState?.action === "batch-delete"
@@ -1260,7 +1255,7 @@ export default function QuestionsPage() {
             ) : null}
             <button
               type="button"
-              onClick={() => setSelectedIds(new Set())}
+              onClick={clearSelection}
               className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-hint)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
               aria-label="清除选择"
             >
