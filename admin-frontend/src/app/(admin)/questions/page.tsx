@@ -33,20 +33,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
-import { MultiBlankQuestionOptions, QuestionOptions } from "@/components/question-options";
-import { QuestionAnalysis } from "@/components/questions/question-analysis";
 import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
-import { QuestionKnowledgePointsDisplay, QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
+import { QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
 import { QuestionVersionPicker } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
-import {
-  normalizeQuestionOptions,
-  resolveQuestionBlankOptionGroups,
-  resolveQuestionOptions,
-} from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
-import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
@@ -79,8 +71,6 @@ import { QuestionTableEditors } from "./components/question-table-editors";
 import { DifficultyBadge } from "./components/question-difficulty-badge";
 import { TypeBadge } from "./components/question-type-badge";
 import { CustomCheckbox } from "./components/question-custom-checkbox";
-import { QuestionAnswerDisplay } from "./components/question-answer-display";
-import { QuestionSecondaryInfo } from "./components/question-secondary-info";
 import { QuestionVersionComparison } from "./components/question-version-comparison";
 import { questionDetailOptions } from "./question-queries";
 import { useQuestionDetail, useQuestionList } from "./hooks/use-question-queries";
@@ -90,12 +80,18 @@ import {
   textForStemEditor,
   textFromContent,
 } from "./question-content-editing";
-import {
-  comparableAssetUrl,
-  fallbackQuestionImageUrls,
-  isMultiBlankChoice,
-} from "./question-display-helpers";
+import { QuestionDetailView } from "./question-detail-view";
 import { buildExportPayload } from "./question-export-payload";
+import { isMultiBlankChoice } from "./question-display-helpers";
+import { MultiBlankQuestionOptions, QuestionOptions } from "@/components/question-options";
+import { QuestionAnalysis } from "@/components/questions/question-analysis";
+import { QuestionAnswerDisplay } from "./components/question-answer-display";
+import { QuestionSecondaryInfo } from "./components/question-secondary-info";
+import {
+  normalizeQuestionOptions,
+  resolveQuestionBlankOptionGroups,
+  resolveQuestionOptions,
+} from "@/lib/question-options";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
 import { QuestionAnswerEditor } from "./question-answer-editor";
 import { QuestionEditBasics } from "./question-edit-basics";
@@ -1270,122 +1266,8 @@ export default function QuestionsPage() {
                 </div>
               ) : (
                 /* ===== Detail view ===== */
-                <div className="question-drawer-detail px-7 py-6 text-sm">
-                  <section className="border-b border-slate-200 pb-6">
-                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                      <p className="text-sm font-semibold text-slate-950">
-                        题干
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <TypeBadge type={selectedQuestion.question_type} />
-                        <DifficultyBadge
-                          difficulty={selectedQuestion.difficulty}
-                        />
-                      </div>
-                    </div>
-                    <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
-                      <QuestionContentRenderer
-                        content={selectedQuestion.content}
-                        fallbackText={textFromContent(selectedQuestion.content)}
-                        showTableMetadata
-                        preserveCodeText
-                      />
-                    </div>
-                  </section>
-
-                  {/* ── Legacy/fallback question images ── */}
-                  {(() => {
-                    // Structured content already renders image segments above.
-                    // `image_url` is a legacy mirror on many records; rendering
-                    // both produced duplicate images in the detail drawer.
-                    const fallbackUrls = fallbackQuestionImageUrls(
-                      selectedQuestion.content,
-                      selectedQuestion.image_url,
-                    );
-                    if (fallbackUrls.length === 0) return null;
-                    return (
-                      <section className="border-b border-slate-200 py-6">
-                        <p className="mb-3 text-sm font-semibold text-slate-950">其他题目图片</p>
-                        <div className="grid gap-3">
-                          {fallbackUrls.map((raw, idx) => {
-                            const src = resolveAssetUrl(raw) || raw;
-                            return (
-                              <a
-                                key={`${comparableAssetUrl(raw)}-${idx}`}
-                                href={src}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group/img relative block overflow-hidden rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                                aria-label={`在新窗口查看题目图片 ${idx + 1}`}
-                              >
-                                <img
-                                  src={src}
-                                  alt={`题目图片 ${idx + 1}`}
-                                  className="max-w-full cursor-zoom-in rounded-lg transition-transform duration-300 group-hover/img:scale-[1.02]"
-                                  style={{ maxHeight: "400px", width: "auto", objectFit: "contain" }}
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    target.style.display = "none";
-                                    target.closest("a")?.classList.add("hidden");
-                                  }}
-                                />
-                                <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5" />
-                              </a>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    );
-                  })()}
-
-                  <section className="border-b border-slate-200 py-6">
-                    <p className="text-sm font-semibold text-slate-950">
-                      选项
-                    </p>
-                    <div className="mt-3">
-                      {isMultiBlankChoice(selectedQuestion.question_type) ? (
-                        <MultiBlankQuestionOptions
-                          groups={resolveQuestionBlankOptionGroups(selectedQuestion)}
-                        />
-                      ) : (
-                        <QuestionOptions
-                          options={normalizeQuestionOptions(
-                            resolveQuestionOptions(selectedQuestion),
-                          )}
-                        />
-                      )}
-                    </div>
-                  </section>
-
-                  <section className="border-b border-slate-200 py-6">
-                    <p className="text-sm font-semibold text-slate-950">
-                      答案
-                    </p>
-                    <div className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[15px] font-semibold leading-6 text-slate-800">
-                      <QuestionAnswerDisplay
-                        questionType={selectedQuestion.question_type}
-                        answer={selectedQuestion.answer}
-                      />
-                    </div>
-                  </section>
-
-                  <section className="border-b border-slate-200 py-6">
-                    <p className="text-sm font-semibold text-slate-950">
-                      解析
-                    </p>
-                    <div className="mt-3">
-                      <QuestionAnalysis value={selectedQuestion.analysis} />
-                    </div>
-                  </section>
-
-                  <section className="border-b border-slate-200 py-6">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-slate-950">知识点与难度</p>
-                      <DifficultyBadge difficulty={selectedQuestion.difficulty} />
-                    </div>
-                    <QuestionKnowledgePointsDisplay value={selectedQuestion.knowledge_points} />
-                  </section>
-
+                <>
+                  <QuestionDetailView question={selectedQuestion} />
                   <section className="py-6">
                     <button
                       type="button"
@@ -1473,7 +1355,7 @@ export default function QuestionsPage() {
                   </section>
 
                   <QuestionSecondaryInfo question={selectedQuestion} />
-                </div>
+                </>
               )
             ) : detail.isError ? (
               <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 px-7 text-center">
