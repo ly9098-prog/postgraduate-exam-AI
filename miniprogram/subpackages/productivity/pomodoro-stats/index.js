@@ -44,6 +44,7 @@ const { createLoadCommitController } = require('./load-commit-controller')
 const { createDateCommitController } = require('./date-commit-controller')
 const { createLoadFailureController } = require('./load-failure-controller')
 const { createDateFailureController } = require('./date-failure-controller')
+const { createDateRequestController } = require('./date-request-controller')
 const { createLoadRequestController } = require('./load-request-controller')
 
 const {
@@ -880,82 +881,7 @@ var pageConfig = {
   },
 
   async loadDateData(date) {
-    const requestDate = String(date || '').trim()
-    if (!requestDate) return
-    this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
-    const seq = this._dateRequestSeq
-    const showDayDistribution = this.data.distributionPeriod === 'day'
-    if (showDayDistribution) this.setData({ pieLoading: true })
-    const viewingToday = requestDate === this.data._todayDate
-    try {
-      const dateResponses = await Promise.all([
-        // 查看“今日”时不传 date，由后端返回权威当前学习日。
-        api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestDate }),
-        api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestDate }),
-      ])
-      const summary = dateResponses[0]
-      const historyRes = dateResponses[1]
-      if (
-        !this._alive ||
-        !this._isVisible ||
-        seq !== this._dateRequestSeq ||
-        requestDate !== this.data.selectedDate
-      ) return
-
-      const reconciled = this._reconcileFromServer(null, viewingToday ? summary : null)
-      if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
-
-      const effectiveDate = this.data.selectedDate
-      let effectiveHistory = historyRes
-      if (viewingToday && reconciled.changedToday && effectiveDate !== requestDate) {
-        try {
-          effectiveHistory = await api.get('/pomodoro/history', { page: 1, page_size: 20, date: effectiveDate })
-        } catch (err) {
-          console.error('重取今日 history 失败', err)
-          effectiveHistory = { items: [], total: 0 }
-        }
-        if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
-      }
-
-      const viewState = buildDateViewState({
-        summary,
-        effectiveHistory,
-        effectiveDate,
-        todayDate: this.data._todayDate,
-        showDayDistribution,
-        currentDisplayDurationSec: this._displayTodayDurationSec,
-        currentRawDurationSec: this._rawTodayDur,
-        currentDisplaySessions: this.data._dispTodaySessions,
-        currentSubjects: this.data.subjects,
-        currentDistributionHasData: this.data.distributionHasData,
-        currentRangeStart: this.data.distributionRangeStart,
-        currentRangeEnd: this.data.distributionRangeEnd,
-        hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
-        buildSubjectItems: subjects => this._buildSubjectItems(subjects),
-        hasDistributionData: subjects => this._hasDistributionData(subjects),
-        formatMin: sec => this._fmtMin(sec),
-        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
-        formatSession: item => this._formatSession(item),
-        formatPieDateLabel: date => this._formatPieDateLabel(date),
-      })
-      const {
-        selectedDurationSec,
-        selectedSessionCount,
-        previousDurationSec,
-        previousSessionCount,
-        dataPatch,
-      } = viewState
-      this._rawTodayDur = selectedDurationSec
-      this._daySubjectsRaw = viewState.subjectBreakdown
-      if (showDayDistribution) this._resetPieCache()
-
-      this._getDateCommitController().commit(viewState, {
-        seq,
-        showDayDistribution,
-      })
-    } catch (e) {
-      this._getDateFailureController().handle(e, { seq })
-    }
+    return this._getDateRequestController().load(date)
   },
 
   _animatePieOnly() {
@@ -998,6 +924,52 @@ var pageConfig = {
       })
     }
     return this._dateFailureController
+  },
+
+  _getDateRequestController() {
+    if (!this._dateRequestController) {
+      this._dateRequestController = createDateRequestController({
+        isAlive: () => this._alive,
+        isVisible: () => this._isVisible,
+        getDateRequestSeq: () => this._dateRequestSeq,
+        incrementDateRequestSeq: () => { this._dateRequestSeq = (this._dateRequestSeq || 0) + 1 },
+        getSelectedDate: () => this.data.selectedDate,
+        getTodayDate: () => this.data._todayDate,
+        getDistributionPeriod: () => this.data.distributionPeriod,
+        setData: patch => this.setData(patch),
+        getInitialResponses: (requestDate, viewingToday) => Promise.all([
+          // 查看“今日”时不传 date，由后端返回权威当前学习日。
+          api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestDate }),
+          api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestDate }),
+        ]),
+        getHistory: date => api.get('/pomodoro/history', { page: 1, page_size: 20, date }),
+        reconcileFromServer: (stats, summary) => this._reconcileFromServer(stats, summary),
+        logError: (message, e) => console.error(message, e),
+        buildDateViewState: overrides => buildDateViewState({
+          ...overrides,
+          currentDisplayDurationSec: this._displayTodayDurationSec,
+          currentRawDurationSec: this._rawTodayDur,
+          currentDisplaySessions: this.data._dispTodaySessions,
+          currentSubjects: this.data.subjects,
+          currentDistributionHasData: this.data.distributionHasData,
+          currentRangeStart: this.data.distributionRangeStart,
+          currentRangeEnd: this.data.distributionRangeEnd,
+          hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
+          buildSubjectItems: subjects => this._buildSubjectItems(subjects),
+          hasDistributionData: subjects => this._hasDistributionData(subjects),
+          formatMin: sec => this._fmtMin(sec),
+          formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
+          formatSession: item => this._formatSession(item),
+          formatPieDateLabel: date => this._formatPieDateLabel(date),
+        }),
+        setRawTodayDuration: value => { this._rawTodayDur = value },
+        setDaySubjectsRaw: value => { this._daySubjectsRaw = value },
+        resetPieCache: () => this._resetPieCache(),
+        commitDate: (viewState, context) => this._getDateCommitController().commit(viewState, context),
+        handleDateFailure: (error, context) => this._getDateFailureController().handle(error, context),
+      })
+    }
+    return this._dateRequestController
   },
 
   _getPieAnimationController() {
