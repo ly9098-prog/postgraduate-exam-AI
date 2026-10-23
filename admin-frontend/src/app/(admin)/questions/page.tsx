@@ -49,7 +49,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
-import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
+import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { exportQuestions } from "./question-api";
 
@@ -100,6 +100,7 @@ import {
 import { buildExportPayload } from "./question-export-payload";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
 import { QuestionAnswerEditor } from "./question-answer-editor";
+import { QuestionEditBasics } from "./question-edit-basics";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -1181,55 +1182,11 @@ export default function QuestionsPage() {
               editing ? (
                 /* ===== Edit form ===== */
                 <div className="question-drawer-edit px-7 pb-24 pt-1">
-                  <section className="border-b border-slate-200 py-5">
-                    <div className="grid gap-x-4 gap-y-3 md:grid-cols-3">
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                        科目
-                      </p>
-                      <CustomSelect
-                        value={String(editForm.subject_id ?? "")}
-                        onChange={(v) => setEditForm({ ...editForm, subject_id: v ? Number(v) : null })}
-                        options={subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))}
-                        placeholder="选择科目"
-                        clearable={false}
-                        className="rounded-lg border-slate-200 bg-slate-50/60 shadow-none hover:border-slate-400"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                        题型
-                      </p>
-                      <CustomSelect
-                        value={editForm.question_type ?? ""}
-                        onChange={(v) =>
-                          setEditForm({
-                            ...editForm,
-                            question_type: v,
-                          })
-                        }
-                        options={canonicalizeQuestionType(editForm.question_type) || !editForm.question_type
-                          ? QUESTION_TYPE_OPTIONS
-                          : [...QUESTION_TYPE_OPTIONS, { value: editForm.question_type!, label: formatUnknownType(editForm.question_type!), disabled: true }]
-                        }
-                        clearable={false}
-                        className="rounded-lg border-slate-200 bg-slate-50/60 shadow-none hover:border-slate-400"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                        难度
-                      </p>
-                      <CustomSelect
-                        value={String(editForm.difficulty ?? 3)}
-                        onChange={(v) => setEditForm({ ...editForm, difficulty: Number(v) })}
-                        options={["简单", "较易", "中等", "较难", "困难"].map((label, index) => ({ label, value: String(index + 1) }))}
-                        clearable={false}
-                        className="rounded-lg border-slate-200 bg-slate-50/60 shadow-none hover:border-slate-400"
-                      />
-                    </div>
-                    </div>
-                  </section>
+                  <QuestionEditBasics
+                    editForm={editForm}
+                    setEditForm={setEditForm}
+                    subjectOptions={subjectOptions}
+                  />
 
                   <section className="border-b border-slate-200 py-5">
                     <div className="mb-3 flex items-center justify-between gap-3">
