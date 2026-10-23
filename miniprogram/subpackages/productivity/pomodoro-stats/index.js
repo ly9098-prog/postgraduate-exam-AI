@@ -44,6 +44,7 @@ const { createLoadCommitController } = require('./load-commit-controller')
 const { createDateCommitController } = require('./date-commit-controller')
 const { createLoadFailureController } = require('./load-failure-controller')
 const { createDateFailureController } = require('./date-failure-controller')
+const { createLoadRequestController } = require('./load-request-controller')
 
 const {
   getSubjectColor,
@@ -671,120 +672,7 @@ var pageConfig = {
   /* ==================== Data Loading ==================== */
 
   async loadData(options) {
-    const background = !!(options && options.background)
-    await this._ensureSettings()
-    const subjectMetaPromise = this._ensureSubjectMeta().catch(() => null)
-    if (!this._alive) return
-    const reqId = this._requestId
-    const requestedDate = this.data.selectedDate
-    this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
-    const dateSeq = this._dateRequestSeq
-    if (this._hasData) this._cancelDeferredHistory(true)
-    if (!background) this.setData({ loading: true, errorText: '' })
-    this._statsLoadInFlight = (this._statsLoadInFlight || 0) + 1
-    const viewingToday = !requestedDate || requestedDate === this.data._todayDate
-    try {
-      const initialResponses = await Promise.all([
-        // 首屏只请求组合接口 + 当前日 history；柱状图 canvas 不在这里挂载。
-        api.get('/pomodoro/statistics-overview', viewingToday ? {} : { date: requestedDate }),
-        api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
-      ])
-      await subjectMetaPromise
-      const historyRes = initialResponses[1]
-      const { stats, trends, summary, lifetime } = overviewMapping.normalizeOverview(initialResponses[0])
-      if (
-        !this._alive ||
-        reqId !== this._requestId ||
-        dateSeq !== this._dateRequestSeq ||
-        requestedDate !== this.data.selectedDate
-      ) return
-
-      // 以后端为准校正“今日”（settings 失败 / 设备时钟偏差兜底）。
-      const reconciled = this._reconcileFromServer(stats, viewingToday ? summary : null)
-      if (!this._alive || reqId !== this._requestId || dateSeq !== this._dateRequestSeq) return
-
-      const effectiveDate = this.data.selectedDate
-      const authoritativeToday = reconciled.today || this.data._todayDate || effectiveDate
-      let effectiveHistory = historyRes
-      if (reconciled.changedToday && viewingToday && effectiveDate !== requestedDate) {
-        try {
-          effectiveHistory = await api.get('/pomodoro/history', { page: 1, page_size: 20, date: effectiveDate })
-        } catch (err) {
-          console.error('重取今日 history 失败', err)
-          effectiveHistory = { items: [], total: 0 }
-        }
-        if (!this._alive || reqId !== this._requestId || dateSeq !== this._dateRequestSeq) return
-      }
-
-      const willAnimate = !this._hasData
-      this._hasData = true
-      this._cancelDurationAnimation(false)
-      const displayDaySubjects = this.data.distributionPeriod === 'day'
-      if (displayDaySubjects) this._resetPieCache()
-      const viewState = buildLoadViewState({
-        stats,
-        summary,
-        lifetime,
-        trends,
-        effectiveHistory,
-        effectiveDate,
-        authoritativeToday,
-        willAnimate,
-        displayDaySubjects,
-        currentLifetimeStartDate: this.data.lifetimeStartDate,
-        currentSubjects: this.data.subjects,
-        currentDistributionHasData: this.data.distributionHasData,
-        currentRangeStart: this.data.distributionRangeStart,
-        currentRangeEnd: this.data.distributionRangeEnd,
-        hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
-        formatSession: item => this._formatSession(item),
-        formatMin: sec => this._fmtMin(sec),
-        formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
-        hasDistributionData: items => this._hasDistributionData(items),
-        buildSubjectItems: subjects => this._buildSubjectItems(subjects),
-        formatPieDateLabel: date => this._formatPieDateLabel(date),
-        getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
-        buildCumulativePatch: (lifetimeSummary, lifetimeStart) => this._cumulativeCustomized
-          ? { lifetimeStartDate: lifetimeStart }
-          : {
-              lifetimeStartDate: lifetimeStart,
-              ...this._cumulativeSummaryPatch({
-                ...lifetimeSummary,
-                start_date: lifetimeStart,
-              }, lifetimeStart),
-            },
-      })
-
-      const {
-        daySessions,
-        subjectBreakdown,
-        selectedDurationSec,
-        selectedSessionCount,
-      } = viewState
-      this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
-      this._daySubjectsRaw = subjectBreakdown
-      this._rawTodayDur = selectedDurationSec
-      this._rawWeekDur = stats.week_duration_sec || 0
-
-      this._getLoadCommitController().commit(viewState, {
-        reqId,
-        dateSeq,
-        effectiveDate,
-        effectiveHistory,
-        willAnimate,
-        displayDaySubjects,
-        weekDurationSec: stats.week_duration_sec || 0,
-      })
-    } catch (e) {
-      this._getLoadFailureController().handle(e, {
-        background,
-        reqId,
-        dateSeq,
-        requestedDate,
-      })
-    } finally {
-      this._statsLoadInFlight = Math.max(0, (this._statsLoadInFlight || 1) - 1)
-    }
+    return this._getLoadRequestController().load(!!(options && options.background))
   },
 
   _formatSession(s) {
@@ -840,6 +728,69 @@ var pageConfig = {
       })
     }
     return this._loadFailureController
+  },
+
+  _getLoadRequestController() {
+    if (!this._loadRequestController) {
+      this._loadRequestController = createLoadRequestController({
+        isAlive: () => this._alive,
+        ensureSettings: () => this._ensureSettings(),
+        ensureSubjectMeta: () => this._ensureSubjectMeta(),
+        getRequestId: () => this._requestId,
+        getSelectedDate: () => this.data.selectedDate,
+        getTodayDate: () => this.data._todayDate,
+        incrementDateRequestSeq: () => { this._dateRequestSeq = (this._dateRequestSeq || 0) + 1 },
+        getDateRequestSeq: () => this._dateRequestSeq,
+        hasData: () => this._hasData,
+        setHasData: value => { this._hasData = value },
+        cancelDeferredHistory: clearPending => this._cancelDeferredHistory(clearPending),
+        setData: patch => this.setData(patch),
+        incrementStatsLoadInFlight: () => { this._statsLoadInFlight = (this._statsLoadInFlight || 0) + 1 },
+        decrementStatsLoadInFlight: () => {
+          this._statsLoadInFlight = Math.max(0, (this._statsLoadInFlight || 1) - 1)
+        },
+        getInitialResponses: (requestedDate, viewingToday) => Promise.all([
+          // 首屏只请求组合接口 + 当前日 history；柱状图 canvas 不在这里挂载。
+          api.get('/pomodoro/statistics-overview', viewingToday ? {} : { date: requestedDate }),
+          api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
+        ]),
+        getHistory: date => api.get('/pomodoro/history', { page: 1, page_size: 20, date }),
+        normalizeOverview: response => overviewMapping.normalizeOverview(response),
+        reconcileFromServer: (stats, summary) => this._reconcileFromServer(stats, summary),
+        logError: (message, e) => console.error(message, e),
+        getDistributionPeriod: () => this.data.distributionPeriod,
+        resetPieCache: () => this._resetPieCache(),
+        cancelDurationAnimation: resetState => this._cancelDurationAnimation(resetState),
+        buildLoadViewState: overrides => buildLoadViewState({
+          ...overrides,
+          currentLifetimeStartDate: this.data.lifetimeStartDate,
+          currentSubjects: this.data.subjects,
+          currentDistributionHasData: this.data.distributionHasData,
+          currentRangeStart: this.data.distributionRangeStart,
+          currentRangeEnd: this.data.distributionRangeEnd,
+          hasCrossDayBleedInSubjects: overviewMapping.hasCrossDayBleedInSubjects,
+          formatSession: item => this._formatSession(item),
+          formatMin: sec => this._fmtMin(sec),
+          formatSelectedDurationLabel: date => this._formatSelectedDurationLabel(date),
+          hasDistributionData: items => this._hasDistributionData(items),
+          buildSubjectItems: subjects => this._buildSubjectItems(subjects),
+          formatPieDateLabel: date => this._formatPieDateLabel(date),
+          getDurationDisplayPatch: text => this._getTodayDurationDisplayPatch(text),
+          buildCumulativePatch: (lifetimeSummary, lifetimeStart) => this._cumulativeCustomized
+            ? { lifetimeStartDate: lifetimeStart }
+            : {
+                lifetimeStartDate: lifetimeStart,
+                ...this._cumulativeSummaryPatch({
+                  ...lifetimeSummary,
+                  start_date: lifetimeStart,
+                }, lifetimeStart),
+              },
+        }),
+        commitLoad: (viewState, context) => this._getLoadCommitController().commit(viewState, context),
+        handleLoadFailure: (error, context) => this._getLoadFailureController().handle(error, context),
+      })
+    }
+    return this._loadRequestController
   },
 
   _selectDate(date) {
