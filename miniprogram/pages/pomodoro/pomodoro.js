@@ -74,6 +74,7 @@ const { createEndSessionController } = require('./utils/end-session-controller')
 const { createPauseFreeTimerController } = require('./utils/pause-free-timer-controller')
 const { createResumeFreeTimerController } = require('./utils/resume-free-timer-controller')
 const { createInterruptSessionController } = require('./utils/interrupt-session-controller')
+const { createConfirmEndFreeTimerController } = require('./utils/confirm-end-free-timer-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -243,6 +244,7 @@ Page({
   _pauseFreeTimerController: null,
   _resumeFreeTimerController: null,
   _interruptSessionController: null,
+  _confirmEndFreeTimerController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -1147,6 +1149,22 @@ Page({
     return this._interruptSessionController
   },
 
+  _getConfirmEndFreeTimerController() {
+    if (!this._confirmEndFreeTimerController) {
+      this._confirmEndFreeTimerController = createConfirmEndFreeTimerController({
+        isActionLoading: () => this.data.actionLoading,
+        getSessionId: () => this._timerState.sessionId,
+        incrementConfirmActionSeq: () => { this._confirmActionSeq = (this._confirmActionSeq || 0) + 1 },
+        setConfirmTimerSnapshot: v => { this._confirmTimerSnapshot = v },
+        safeRemoveStorage: key => this._safeRemovePomodoroStorage(key, 'best-effort cleanup'),
+        setData: data => this.setData(data),
+        clearFreeTimerInterval: () => this._clearFreeTimerInterval(),
+        completeFreeTimerSession: () => this._completeFreeTimerSession(),
+      })
+    }
+    return this._confirmEndFreeTimerController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1260,19 +1278,7 @@ Page({
   },
 
   async _confirmEndFreeTimer() {
-    if (this.data.actionLoading) return
-    const sessionId = this._timerState.sessionId
-    if (!sessionId) {
-      this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-      this._confirmTimerSnapshot = null
-      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
-      this.setData({ showEndConfirm: false, actionLoading: false })
-      return
-    }
-    this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
-    this.setData({ showEndConfirm: false, actionLoading: false })
-    this._clearFreeTimerInterval()
-    this._completeFreeTimerSession()
+    return this._getConfirmEndFreeTimerController().confirm()
   },
 
   async _confirmInterruptCountdown() {

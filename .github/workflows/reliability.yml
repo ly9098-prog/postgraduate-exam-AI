@@ -352,7 +352,8 @@ jobs:
             miniprogram/tests/test-pomodoro-end-session-controller.js \
             miniprogram/tests/test-pomodoro-pause-free-timer-controller.js \
             miniprogram/tests/test-pomodoro-resume-free-timer-controller.js \
-            miniprogram/tests/test-pomodoro-interrupt-session-controller.js
+            miniprogram/tests/test-pomodoro-interrupt-session-controller.js \
+            miniprogram/tests/test-pomodoro-confirm-end-free-timer-controller.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js

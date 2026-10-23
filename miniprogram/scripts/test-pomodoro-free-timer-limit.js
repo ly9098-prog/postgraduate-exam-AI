@@ -42,6 +42,7 @@ function t(desc, fn) {
 console.log('\n--- 1. Source code constants ---')
 
 var js = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+var confirmEndFreeTimerCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/confirm-end-free-timer-controller.js'), 'utf8')
 var resetToIdleCtrlSrc = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/utils/reset-to-idle-controller.js'), 'utf8')
 var freeRestoreSrc = fs.readFileSync(
   path.join(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'),
@@ -95,8 +96,7 @@ t('_checkFreeTimerLimitAndAutoEnd method exists', function () {
 })
 
 t('_completeFreeTimerSession is called from _confirmEndFreeTimer', function () {
-  var confirmMethod = extractMethod(js, '_confirmEndFreeTimer')
-  assert.ok(confirmMethod.indexOf('_completeFreeTimerSession') >= 0,
+  assert.ok(confirmEndFreeTimerCtrlSrc.indexOf('completeFreeTimerSession') >= 0,
     '_confirmEndFreeTimer should use shared _completeFreeTimerSession')
 })
 
@@ -240,8 +240,7 @@ t('_autoFinishFreeTimer clears interval and fixes elapsed to 5h', function () {
 })
 
 t('_confirmEndFreeTimer calls _completeFreeTimerSession', function () {
-  var methodBody = extractMethod(js, '_confirmEndFreeTimer')
-  assert.ok(methodBody.indexOf('_completeFreeTimerSession') >= 0)
+  assert.ok(confirmEndFreeTimerCtrlSrc.indexOf('completeFreeTimerSession') >= 0)
 })
 
 t('_completeFreeTimerSession uses retryable server-authoritative completion', function () {
