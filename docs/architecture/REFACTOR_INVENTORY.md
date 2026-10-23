@@ -43,7 +43,7 @@
 | `admin-frontend/src/app/(admin)/questions/page.tsx` | 2397 | `QuestionsPage` 2044 | 查询/保存/草稿与部分编辑已抽出，其余页面组合待迁移。 |
 | `admin-frontend/src/app/(admin)/knowledge-graph/page.tsx` | 1809 | `KnowledgeGraphPage` 613 | 图谱转换和交互已有页面外函数；继续核查请求/布局/选择状态。 |
 | `admin-frontend/src/app/(admin)/system/tasks/page.tsx` | 1599 | `SystemTasksPage` 1121 | 任务列表/详情/事件消费与 UI 编排边界待核查。 |
-| `miniprogram/pages/pomodoro/pomodoro.js` | 3631 | `onShow` 18 / `onHide` 30 | 展示恢复与离页持久化已独立；确认操作、计时/画布、统计及其他职责仍待治理。 |
+| `miniprogram/pages/pomodoro/pomodoro.js` | 2950 | `onShow` 18 / `onHide` 30 | 展示恢复、离页持久化、倒计时/自由计时冷恢复 controller 已独立；确认操作、计时/画布、统计及其他职责仍待治理。 |
 | `miniprogram/subpackages/study/practice/practice.js` | 2633 | `_loadQuestions` 342 | 会话加载、响应转换与页面写回待分离，保留分包与渲染契约。 |
 | `miniprogram/subpackages/productivity/pomodoro-stats/index.js` | 2570 | `_renderTrendBars` 182 | 统计映射/图形派生与视图写回待分离。 |
 
@@ -89,11 +89,11 @@ CI 已将新依赖测试、预热协议/架构、DOCX 字体/边界、ORM 注册
 
 `miniprogram/scripts/architecture/pomodoro-boundaries.js` 是独立 Node AST 检查入口，复用 `admin-frontend/package.json` 已声明的 TypeScript 开发依赖。先安装管理端依赖；解析器不进入小程序运行包，不修改小程序依赖清单，也不执行应用模块。
 
-- 当前覆盖 9 个已治理模块：`timer-math.js`、`session-storage.js`、`pending-sync-queue.js`、`active-session-recovery.js`、`completion-recovery.js`、`confirm-recovery.js`、`hide-storage.js`、`show-recovery.js`、`sync-retry-controller.js`，路径均位于 `miniprogram/pages/pomodoro/utils/`。
-- 唯一许可的模块依赖是 `confirm-recovery → timer-math`；其他模块不导入页面、API、全局存储、第三方或其他分包。require 必须直接接收单个字符串字面量；别名、计算参数、动态/ES 导入会失败。
+- 当前覆盖 28 个已治理模块，路径均位于 `miniprogram/pages/pomodoro/utils/`；其中包括倒计时冷恢复 `countdown-session-restore-controller.js` 与自由计时冷恢复 `free-session-restore-controller.js`。页面适配壳只创建对应 controller 并委托 `restore(session)`。
+- 当前登记 4 条模块依赖：`confirm-recovery → timer-math`、`cancel-confirm-state → cancel-confirm-format`、`end-confirm-view-model → timer-math`，以及 `completion-celebration → ../../../utils/storage`。除此之外不导入页面、API、第三方或其他分包；require 必须直接接收单个字符串字面量，别名、计算参数、动态/ES 导入会失败。
 - 已治理模块不直接访问 wx/Page、隐式 this、全局时钟/定时器/网络或全局宿主；通过 options/storage 等显式能力回调访问外部副作用。静态检查允许属性名、注释与字符串出现同名词，不用文本搜索将它们判为越界。
-- 每个覆盖模块不超过 300 行，所有有函数体的函数、箭头、表达式、方法和访问器不超过 50 行。真实 `Page({...})` 中已治理的生命周期和适配方法也保持 50 行；页面总行数设为现存 3,631 行上限，因剩余未治理职责记录为技术债，后续抽取时应同步缩减上限，不扩增白名单掩盖增长。
-- 语法错误、空/仅注释文件、缺失源码、缺失治理方法/页面导入或异常 Page 定义会失败。13 项独立反例测试覆盖违规注入、嵌套函数、虚假同名对象方法和完整扫描失败路径。
+- 每个覆盖模块不超过 300 行，所有有函数体的函数、箭头、表达式、方法和访问器不超过 50 行。真实 `Page({...})` 中已治理的生命周期和适配方法也保持 50 行；页面总行数设为现存 2,950 行上限，因剩余未治理职责记录为技术债，后续抽取时应同步缩减上限，不扩增白名单掩盖增长。
+- 语法错误、空/仅注释文件、缺失源码、缺失治理方法/页面导入或异常 Page 定义会失败。15 项独立反例测试覆盖违规注入、嵌套函数、虚假同名对象方法、两个恢复 controller 的创建/委托接线和完整扫描失败路径。
 
 管理端依赖安装后，从仓库根目录运行：
 
@@ -102,9 +102,9 @@ node miniprogram/scripts/architecture/pomodoro-boundaries.js
 node miniprogram/tests/test-pomodoro-module-boundaries.js
 ```
 
-`.github/workflows/reliability.yml` 在既有 `admin-build` 的依赖安装后、构建前运行门禁、9 个独立 Node 测试文件及页面韧性/恢复/渲染脚本。本地执行新增步骤的原始命令通过，独立 Node 测试共 85 项；远端 GitHub CI 尚未运行。没有新增小程序 `npm test`。
+`.github/workflows/reliability.yml` 在既有 `admin-build` 的依赖安装后、构建前运行门禁、11 个 `node --test` 文件及页面韧性/恢复/渲染脚本。完整小程序步骤已在本地按工作流顺序重放通过；远端 GitHub CI 尚未运行。没有新增小程序 `npm test`。
 
-范围限制：该策略只覆盖明确列出的 9 个模块与页面方法，不证明其他小程序业务、所有分包边界或运行时能力隔离已完成；不是安全沙箱。主题/科目缓存等既有 wx 适配、其他页面、双份代码一致性和全仓尺寸基线仍需后续核查。行为正确性继续由独立回归和真实微信环境验收，不能由 AST 门禁替代。
+范围限制：该策略只覆盖明确列出的 28 个模块与页面方法，不证明其他小程序业务、所有分包边界或运行时能力隔离已完成；不是安全沙箱。主题/科目缓存等既有 wx 适配、其他页面、双份代码一致性和全仓尺寸基线仍需后续核查。行为正确性继续由独立回归和真实微信环境验收，不能由 AST 门禁替代。
 
 ## 6. 未完成的验收
 

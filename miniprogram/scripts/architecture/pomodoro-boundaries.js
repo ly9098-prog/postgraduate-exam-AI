@@ -16,6 +16,7 @@ const MODULES = {
   'show-recovery.js': [],
   'sync-retry-controller.js': [],
   'subject-options.js': [],
+  'countdown-session-restore-controller.js': [],
   'free-session-restore-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
@@ -36,14 +37,14 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 3084
+const PAGE_MAX_LINES = 2950
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
   '_hidePersistenceOptions', '_getSyncRetryController', '_registerNetworkStatusListener',
   '_unregisterNetworkStatusListener', '_isRetryablePomodoroSyncError',
   '_clearPendingPomodoroSyncRetryTimer', '_schedulePendingPomodoroSyncRetry',
-  '_restoreFreeSession',
+  '_restoreSession', '_restoreFreeSession',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -142,9 +143,31 @@ function pageViolations(source) {
       if (ts.isMethodDeclaration(node) && PAGE_METHODS.has(node.name.getText(file))) {
         methods.add(node.name.getText(file))
         functionSize(node, file, errors)
-        if (node.name.getText(file) === '_restoreFreeSession' &&
-            !hasFreeSessionRestoreWiring(node)) {
-          errors.push('free-session restore must create and delegate to its controller')
+        const methodName = node.name.getText(file)
+        if (methodName === '_restoreFreeSession' &&
+            !hasControllerWiring(
+              node,
+              'createFreeSessionRestoreController',
+              '_freeSessionRestoreController',
+            )) {
+          errors.push('free-session restore must assign a controller and delegate to it')
+        }
+        if (methodName === '_restoreSession') {
+          const wiring = controllerWiring(
+            node,
+            'createCountdownSessionRestoreController',
+            '_countdownSessionRestoreController',
+            { requireFreeDispatch: true },
+          )
+          if (!wiring.assigned || !wiring.delegated || !wiring.assignedBeforeDelegate) {
+            errors.push('countdown restore must assign a controller and delegate to it')
+          }
+          if (!wiring.shellMatches) {
+            errors.push('countdown restore shell must return exactly one guarded controller delegation')
+          }
+          if (!wiring.freeDispatchBeforeDelegate) {
+            errors.push('countdown restore must dispatch free sessions before controller delegation')
+          }
         }
       }
     }
@@ -157,29 +180,118 @@ function pageViolations(source) {
   return errors
 }
 
-function hasFreeSessionRestoreWiring(method) {
-  let creates = false
-  let delegates = false
-  function walk(node) {
-    if (ts.isCallExpression(node)) {
-      if (ts.isIdentifier(node.expression) &&
-          node.expression.text === 'createFreeSessionRestoreController') {
-        creates = true
-      }
-      const call = node.expression
-      if (ts.isPropertyAccessExpression(call) && call.name.text === 'restore' &&
-          ts.isPropertyAccessExpression(call.expression) &&
-          call.expression.name.text === '_freeSessionRestoreController' &&
-          call.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
-          node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]) &&
-          node.arguments[0].text === 'session') {
-        delegates = true
-      }
-    }
-    ts.forEachChild(node, walk)
+function isThisProperty(node, propertyName) {
+  return ts.isPropertyAccessExpression(node) &&
+    node.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    node.name.text === propertyName
+}
+
+function isSessionCall(node, methodName) {
+  return ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    node.expression.name.text === methodName &&
+    node.arguments.length === 1 &&
+    ts.isIdentifier(node.arguments[0]) &&
+    node.arguments[0].text === 'session'
+}
+
+function isSessionPresetFree(node) {
+  if (!ts.isBinaryExpression(node) ||
+      node.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken) return false
+  const leftIsPreset = ts.isPropertyAccessExpression(node.left) &&
+    ts.isIdentifier(node.left.expression) &&
+    node.left.expression.text === 'session' &&
+    node.left.name.text === 'preset'
+  const rightIsPreset = ts.isPropertyAccessExpression(node.right) &&
+    ts.isIdentifier(node.right.expression) &&
+    node.right.expression.text === 'session' &&
+    node.right.name.text === 'preset'
+  return (leftIsPreset && ts.isStringLiteral(node.right) && node.right.text === 'free') ||
+    (rightIsPreset && ts.isStringLiteral(node.left) && node.left.text === 'free')
+}
+
+function returnsFreeRestore(statement) {
+  let candidate = statement
+  if (ts.isBlock(statement) && statement.statements.length === 1) {
+    candidate = statement.statements[0]
   }
-  walk(method)
-  return creates && delegates
+  return ts.isReturnStatement(candidate) &&
+    isSessionCall(candidate.expression, '_restoreFreeSession')
+}
+
+function isGuardedControllerAssignment(statement, factoryName, propertyName) {
+  if (!ts.isIfStatement(statement) ||
+      !ts.isPrefixUnaryExpression(statement.expression) ||
+      statement.expression.operator !== ts.SyntaxKind.ExclamationToken ||
+      !isThisProperty(statement.expression.operand, propertyName) ||
+      !ts.isBlock(statement.thenStatement) ||
+      statement.thenStatement.statements.length !== 1) {
+    return false
+  }
+  const assignment = statement.thenStatement.statements[0]
+  return ts.isExpressionStatement(assignment) &&
+    ts.isBinaryExpression(assignment.expression) &&
+    assignment.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    isThisProperty(assignment.expression.left, propertyName) &&
+    ts.isCallExpression(assignment.expression.right) &&
+    ts.isIdentifier(assignment.expression.right.expression) &&
+    assignment.expression.right.expression.text === factoryName
+}
+
+function isControllerDelegateStatement(statement, propertyName) {
+  const expression = ts.isReturnStatement(statement)
+    ? statement.expression
+    : ts.isExpressionStatement(statement)
+      ? statement.expression
+      : null
+  return !!expression &&
+    ts.isCallExpression(expression) &&
+    ts.isPropertyAccessExpression(expression.expression) &&
+    expression.expression.name.text === 'restore' &&
+    isThisProperty(expression.expression.expression, propertyName) &&
+    expression.arguments.length === 1 &&
+    ts.isIdentifier(expression.arguments[0]) &&
+    expression.arguments[0].text === 'session'
+}
+
+function controllerWiring(method, factoryName, propertyName, options = {}) {
+  const statements = ts.isBlock(method.body) ? method.body.statements : []
+  const requireFreeDispatch = options.requireFreeDispatch === true
+  const assignmentIndex = statements.findIndex(statement => (
+    isGuardedControllerAssignment(statement, factoryName, propertyName)
+  ))
+  const delegateIndex = statements.findIndex(statement => (
+    isControllerDelegateStatement(statement, propertyName)
+  ))
+  const freeDispatchIndex = statements.findIndex(statement => (
+    ts.isIfStatement(statement) &&
+    isSessionPresetFree(statement.expression) &&
+    returnsFreeRestore(statement.thenStatement)
+  ))
+  const expectedAssignmentIndex = requireFreeDispatch ? 1 : 0
+  const expectedDelegateIndex = requireFreeDispatch ? 2 : 1
+  const shellMatches = statements.length === expectedDelegateIndex + 1 &&
+    assignmentIndex === expectedAssignmentIndex &&
+    delegateIndex === expectedDelegateIndex &&
+    delegateIndex >= 0 &&
+    ts.isReturnStatement(statements[delegateIndex]) &&
+    (!requireFreeDispatch || freeDispatchIndex === 0)
+  return {
+    assigned: assignmentIndex >= 0,
+    delegated: delegateIndex >= 0,
+    shellMatches,
+    assignedBeforeDelegate:
+      assignmentIndex >= 0 && delegateIndex >= 0 && assignmentIndex < delegateIndex,
+    freeDispatchBeforeDelegate:
+      freeDispatchIndex >= 0 && delegateIndex >= 0 && freeDispatchIndex < delegateIndex,
+  }
+}
+
+function hasControllerWiring(method, factoryName, propertyName, options) {
+  const wiring = controllerWiring(method, factoryName, propertyName, options)
+  return wiring.assigned && wiring.delegated && wiring.assignedBeforeDelegate &&
+    wiring.shellMatches
 }
 
 function scanPomodoro(root = ROOT, read = filename => fs.readFileSync(filename, 'utf8')) {

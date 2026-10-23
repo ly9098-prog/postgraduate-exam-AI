@@ -15,6 +15,7 @@ function t(name, fn) {
 }
 
 const src = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+const countdownRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/countdown-session-restore-controller.js'), 'utf8')
 const freeRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-session-restore-controller.js'), 'utf8')
 const queueSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pending-sync-queue.js'), 'utf8')
 const sessionRestoreSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/session-restore.js'), 'utf8')
@@ -126,7 +127,7 @@ const restoreFree = method('_restoreFreeSession')
 t('free restore uses server start_time as the single clock origin', () => {
   assert.ok(restoreFree.includes('this._freeSessionRestoreController.restore(session)'))
   assert.ok(freeRestoreSrc.includes('options.computeFreeRestore'))
-  assert.ok(sessionRestoreSrc.includes('options.now - options.startTime - paused.totalPausedMs'))
+  assert.ok(sessionRestoreSrc.includes('options.now - options.startTime - totalPausedMs'))
   assert.ok(freeRestoreSrc.includes('page._timerState.freeDisplayOffsetMs = 0'))
   assert.ok(!freeRestoreSrc.includes('_localFreeDisplayOffsetMs'))
 })
@@ -268,8 +269,9 @@ t('cold-start pending terminal conflicts are consumed before keeping celebration
   assert.ok(showOptions.includes('consumeConflict: () => this._consumeAnyPomodoroTerminalConflict()'))
 })
 t('expired countdown restore consumes terminal conflict from retry result', () => {
-  const restore = method('_restoreSession')
-  assert.ok(restore.includes("_consumePomodoroTerminalConflict(session.id, 'complete')"))
+  assert.ok(countdownRestoreSrc.includes(
+    "_consumePomodoroTerminalConflict(session.id, 'complete')"
+  ))
 })
 
 console.log('\n--- Long-term stability hardening ---')
@@ -277,7 +279,7 @@ const queueWriter = method('writeQueue', queueSrc, true)
 const queueSetter = method('enqueueAction', queueSrc, true)
 const retryScheduler = method('_schedulePendingPomodoroSyncRetry')
 const retryClassifier = method('_isRetryablePomodoroSyncError')
-const restoreCountdown = method('_restoreSession')
+const restoreCountdown = countdownRestoreSrc
 const statsLoader = method('loadTodayStats')
 t('pending queue has a non-destructive safety valve and reserves terminal capacity', () => {
   assert.ok(queueSrc.includes('POMODORO_PENDING_SYNC_MAX_ACTIONS = 200'))
@@ -351,8 +353,9 @@ t('critical active-session restore reads fail closed', () => {
   assert.ok(cached.includes('storageUnreadable: true'))
   assert.ok(fetchActive.includes("_safeGetPomodoroStorage('pomodoro_running_state'"))
   assert.ok(fetchActive.includes('storageUnreadable: true'))
-  assert.ok(restoreCountdown.includes("_safeGetPomodoroStorage('pomodoro_confirm_pause'"))
-  assert.ok(restoreCountdown.includes("_safeGetPomodoroStorage('pomodoro_pause'"))
+  assert.ok(restoreCountdown.includes('_safeGetPomodoroStorage('))
+  assert.ok(restoreCountdown.includes("'pomodoro_confirm_pause'"))
+  assert.ok(restoreCountdown.includes("'pomodoro_pause'"))
   assert.ok(freeRestoreSrc.includes("_safeGetPomodoroStorage("))
   assert.ok(freeRestoreSrc.includes("'pomodoro_free_pause'"))
 })

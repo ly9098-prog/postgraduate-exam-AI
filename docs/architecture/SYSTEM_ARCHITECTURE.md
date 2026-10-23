@@ -46,9 +46,9 @@
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-question-preview.tsx` | 详情题干和选项的渲染组合复用内容渲染器、多空与图片预览；页面保留运行时问题去重状态，组件保留内容回退、已消费资产过滤与多空优先级 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-answer-preview.tsx`、`review-display-text.ts` | 答案状态、来源、普通/多空答案与解析由展示组件负责；来源定位与答案来源共用原有文本有效性规则，页面继续持有审核数据和编辑草稿 |
 | `admin-frontend/src/app/(admin)/imports/review/page.tsx` | 同目录 `components/review-stem-editor.tsx` | 题干输入和结构化表格编辑组合复用既有表格规范化/编辑器；回调按原片段索引更新或移除，页面保留草稿、片段状态及保存生命周期 |
-| `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js` | 时间计算、存储异常适配和待同步队列分别由无页面依赖模块负责；Page 仍负责 `api.now()`、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
+| `miniprogram/pages/pomodoro/pomodoro.js` | 同目录 `utils/timer-math.js`、`utils/session-storage.js`、`utils/pending-sync-queue.js`、`utils/countdown-session-restore-controller.js`、`utils/free-session-restore-controller.js` | 时间计算、存储异常适配、待同步队列及两种计时模式的冷恢复分别由无页面依赖模块负责；两个恢复 controller 只经显式能力回调访问页面，并由页面适配壳创建和委托。Page 仍负责 `api.now()` 注入、本地暂停修正、网络重试/冲突处理、生命周期与五小时上限。队列按 Page 实例注入存储适配器，持久化键与顺序、去重、容量阀值保持不变 |
 
-这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；GET 发题入口已收敛，提交链路和番茄钟 Page controller 仍待后续治理。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列模块不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。
+这些是已接入实际入口的等价抽取，不代表长页面、底层选题实现或完整学习域已经治理完毕；GET 发题入口已收敛，提交链路和番茄钟剩余 Page controller 仍待后续治理。请求范围、候选/最终守卫及签名响应模块只协调既有服务能力，不反向导入路由；API 路由定义、事务、存储键、界面和分包边界均未更改。小程序队列与两个冷恢复 controller 不依赖 `Page`、全局 `wx`、网络或共享可变队列，存储读写失败保持闭锁语义。
 
 OCR 架构测试 `backend/tests/architecture/test_architecture_boundaries.py` 已修正仓库根路径；源码扫描必须发现非空 Python 文件集合，缺失/空目录直接失败，注入越界导入的测试验证扫描器能检出违规。刷题投影和请求筛选纯规则另有 AST 检查，禁止直接依赖路由、FastAPI、SQLAlchemy 或数据库会话模块；请求范围、候选策略、到期筛选、最终守卫和签名响应编排允许数据库会话类型，但禁止路由、FastAPI、数据库会话工厂依赖及 `commit`/`rollback` 调用。管理端新增 API 边界测试，限制题库 API 模块依赖既有 client/types，并检查不直接调用原生 fetch 和新增业务文件/函数预算。实际回归结果与历史失败修复见 `prompts/tasks/current_task.md` 执行记录。
 

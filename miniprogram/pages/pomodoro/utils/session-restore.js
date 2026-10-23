@@ -25,18 +25,24 @@ function resolvePausedMs(options) {
 
 function computeCountdownRestore(options) {
   const paused = resolvePausedMs(options)
-  const elapsed = Math.floor((options.now - options.startTime - paused.totalPausedMs) / 1000)
+  const hasPausedOverride = options.totalPausedMs !== undefined && options.totalPausedMs !== null
+  const pausedOverride = Number(options.totalPausedMs)
+  const totalPausedMs = hasPausedOverride && Number.isFinite(pausedOverride)
+    ? Math.max(0, pausedOverride)
+    : paused.totalPausedMs
+  const elapsed = Math.floor((options.now - options.startTime - totalPausedMs) / 1000)
   const remaining = Number.isFinite(options.totalSec) && Number.isFinite(elapsed)
     ? Math.max(0, options.totalSec - elapsed)
     : 0
   return {
     ...paused,
+    totalPausedMs,
     elapsed,
     remaining,
     progress: options.totalSec > 0 ? remaining / options.totalSec : 0,
     completedAt: Math.min(
       options.now,
-      options.startTime + Math.max(0, paused.totalPausedMs) + options.totalSec * 1000,
+      options.startTime + Math.max(0, totalPausedMs) + options.totalSec * 1000,
     ),
   }
 }

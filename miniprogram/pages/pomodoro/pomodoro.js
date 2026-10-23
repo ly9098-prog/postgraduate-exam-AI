@@ -36,6 +36,9 @@ const {
   computeFreeRestore,
   resolveRestoredSubject,
 } = require('./utils/session-restore')
+const {
+  createCountdownSessionRestoreController,
+} = require('./utils/countdown-session-restore-controller')
 const { createFreeSessionRestoreController } = require('./utils/free-session-restore-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
@@ -185,6 +188,7 @@ Page({
   _syncRetryController: null,
   _statsRequestSeq: 0,
   _freeSessionRestoreController: null,
+  _countdownSessionRestoreController: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -2508,164 +2512,26 @@ Page({
   },
 
   _restoreSession(session) {
-    // Free timer recovery
     if (session.preset === 'free') {
       return this._restoreFreeSession(session)
     }
-
-    // Guard: if confirm snapshot is active, don't overwrite with server state.
-    // A storage read failure is not equivalent to "no confirm snapshot".
-    let confirmSnapshot = this._confirmTimerSnapshot
-    if (!confirmSnapshot) {
-      const storedConfirm = this._safeGetPomodoroStorage('pomodoro_confirm_pause', 'restore countdown confirm')
-      if (!storedConfirm.ok) {
-        this._showPomodoroPersistenceError()
-        return false
-      }
-      confirmSnapshot = storedConfirm.value
-    }
-    if (confirmSnapshot && confirmSnapshot.sessionId === session.id && this.data.showEndConfirm) {
-      return true
-    }
-
-    const startTime = parseServerTime(session.start_time)
-    const totalSec = session.work_duration * 60
-
-    if (!Number.isFinite(startTime) || !Number.isFinite(totalSec) || totalSec <= 0) {
-      this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
-      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-      this._resetToIdle()
-      wx.showToast({ title: '番茄钟状态异常，已重置', icon: 'none' })
-      return true
-    }
-
-    // Compute effective paused ms: server base + current segment + local adjustment
-    const storedPause = this._safeGetPomodoroStorage('pomodoro_pause', 'restore countdown pause')
-    if (!storedPause.ok) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-    const pausedAtMs = session.paused_at ? parseServerTime(session.paused_at) : null
-    let totalPausedMs = resolvePausedMs({
-      serverPausedSec: session.total_paused_sec || 0,
-      savedPause: storedPause.value,
-      pausedAtMs,
-      now: api.now(),
-      sessionId: session.id,
-    }).totalPausedMs
-
-    // Apply local pause adjustment (e.g. from cancelEndConfirm). During cold
-    // restore this is critical state: unreadable storage must stop reconciliation
-    // instead of silently treating the adjustment as zero.
-    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs, true)
-    if (totalPausedMs === null) {
-      this._showPomodoroPersistenceError()
-      return false
-    }
-
-    const restore = computeCountdownRestore({
-      serverPausedSec: session.total_paused_sec || 0,
-      savedPause: storedPause.value,
-      pausedAtMs,
-      now: api.now(),
-      startTime,
-      totalSec,
-      sessionId: session.id,
-    })
-    totalPausedMs = restore.totalPausedMs
-    const isPaused = restore.isPaused
-    const remaining = restore.remaining
-    const subject = resolveRestoredSubject({
-      session,
-      subjects: this.data.subjects,
-      lookupSubjectIdByCode: code => this._lookupSubjectIdByCode(code),
-    })
-    const { subjectId, selectedSubject, aggregate: aggregateSession } = subject
-    const sessionTaskType = pomodoroTaskTypes.typeForSession(session)
-    const activeTaskType = sessionTaskType || ''
-    const activeTaskTypeLabel = sessionTaskType ? pomodoroTaskTypes.label(sessionTaskType) : '未分类'
-    // Old sessions have no task-type metadata. Show them as unclassified rather
-    // than borrowing the user's current selector and corrupting history semantics.
-    if (sessionTaskType) pomodoroTaskTypes.recordSession(session, sessionTaskType)
-
-    if (remaining <= 0) {
-      this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
-      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
-      const completedAt = restore.completedAt
-      this._completePomodoroWithRetry(session.id, completedAt).then(synced => {
-        const conflict = this._consumePomodoroTerminalConflict(session.id, 'complete')
-        if (conflict) {
-          this._handlePomodoroTerminalConflict(session.id, conflict)
-          return
-        }
-        if (synced) this.loadTodayStats()
-      }).catch(() => {})
-      this._timerState.totalPausedMs = 0
-      this._timerState.pauseStartTime = null
-      this.setData({
-        selectedSubjectId: subjectId,
-        selectedSubject: subjectId ? selectedSubject : null,
-        allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
-        selectedTaskType: activeTaskType,
-        selectedTaskTypeLabel: activeTaskTypeLabel,
-        selectedPreset: session.preset || 'standard',
-        workDuration: session.work_duration,
-        breakDuration: session.break_duration,
-        isPaused: false,
+    if (!this._countdownSessionRestoreController) {
+      this._countdownSessionRestoreController = createCountdownSessionRestoreController({
+        page: this,
+        now: () => api.now(),
+        parseServerTime,
+        resolvePausedMs,
+        computeCountdownRestore,
+        resolveRestoredSubject,
+        formatCountdownDisplay,
+        runningPhase: PHASE.RUNNING,
+        pomodoroTaskTypes,
+        nextTick: callback => wx.nextTick(callback),
+        vibrateLong: () => wx.vibrateLong(),
+        showToast: payload => wx.showToast(payload),
       })
-      this._updateComputedFields()
-      this.loadTodayStats()
-      wx.vibrateLong()
-      this._showCompletionCelebration(session.id, {
-        selectedPreset: session.preset || 'standard',
-        workDuration: session.work_duration,
-        breakDuration: session.break_duration,
-        selectedSubjectId: subjectId,
-        selectedSubject: subjectId ? selectedSubject : null,
-        selectedTaskType: activeTaskType,
-        selectedTaskTypeLabel: activeTaskTypeLabel,
-      })
-      return true
     }
-
-    this._timerState.sessionId = session.id
-    this._timerState.sessionStartTime = startTime
-    this._timerState.remainingSec = remaining
-    this._timerState.totalPausedMs = totalPausedMs
-    this._timerState.pauseStartTime = isPaused ? api.now() : null
-    this._timerState.progress = restore.progress
-    this.setData({
-      phase: PHASE.RUNNING,
-      ringCanvasVisible: true,
-      selectedSubjectId: subjectId,
-      selectedSubject: subjectId ? selectedSubject : null,
-      allocationMode: aggregateSession ? 'equal_408_core_v1' : 'single',
-      selectedTaskType: activeTaskType,
-      selectedTaskTypeLabel: activeTaskTypeLabel,
-      selectedPreset: session.preset || 'standard',
-      workDuration: session.work_duration,
-      breakDuration: session.break_duration,
-      displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
-      displaySec: String(remaining % 60).padStart(2, '0'),
-      isPaused: isPaused,
-    })
-
-    if (isPaused) {
-      this._safeSetPomodoroStorage('pomodoro_pause', {
-        totalPausedMs: totalPausedMs,
-        pauseStartTime: api.now(),
-        sessionId: session.id,
-      })
-      // Draw ring at the paused progress — canvas never destroyed with hidden
-      wx.nextTick(() => {
-        this._initCanvas(true)
-        this.drawRing(totalSec, false)
-      })
-    } else {
-      this._startTimer(totalSec)
-    }
-    this._updateComputedFields()
-    return true
+    return this._countdownSessionRestoreController.restore(session)
   },
 
   _restoreFreeSession(session) {

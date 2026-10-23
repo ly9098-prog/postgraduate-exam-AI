@@ -76,6 +76,9 @@ const sandbox = {
     if (request === './utils/canvas-layout') return require('../pages/pomodoro/utils/canvas-layout')
     if (request === './utils/sync-reconciliation') return require('../pages/pomodoro/utils/sync-reconciliation')
     if (request === './utils/session-restore') return require('../pages/pomodoro/utils/session-restore')
+    if (request === './utils/countdown-session-restore-controller') {
+      return require('../pages/pomodoro/utils/countdown-session-restore-controller')
+    }
     if (request === './utils/free-session-restore-controller') {
       return require('../pages/pomodoro/utils/free-session-restore-controller')
     }

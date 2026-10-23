@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 27)
+  assert.equal(result.modules, 28)
   assert.equal(result.edges, 4)
 })
 
@@ -121,14 +121,84 @@ test('free-session restore wrapper must create and delegate via AST calls', () =
     'return undefined'
   )
   assert.ok(pageViolations(detached)
-    .includes('free-session restore must create and delegate to its controller'))
+    .includes('free-session restore must assign a controller and delegate to it'))
 
   const uncreated = pageSource.replace(
     'this._freeSessionRestoreController = createFreeSessionRestoreController({',
     'this._freeSessionRestoreController = ({'
   )
   assert.ok(pageViolations(uncreated)
-    .includes('free-session restore must create and delegate to its controller'))
+    .includes('free-session restore must assign a controller and delegate to it'))
+})
+
+test('countdown restore dispatcher must create and delegate via AST calls', () => {
+  const detached = pageSource.replace(
+    'return this._countdownSessionRestoreController.restore(session)',
+    'return undefined'
+  )
+  assert.ok(pageViolations(detached)
+    .includes('countdown restore must assign a controller and delegate to it'))
+
+  const uncreated = pageSource.replace(
+    'this._countdownSessionRestoreController = createCountdownSessionRestoreController({',
+    'this._countdownSessionRestoreController = ({'
+  )
+  assert.ok(pageViolations(uncreated)
+    .includes('countdown restore must assign a controller and delegate to it'))
+
+  const unassigned = pageSource.replace(
+    'this._countdownSessionRestoreController = createCountdownSessionRestoreController({',
+    'void createCountdownSessionRestoreController({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('countdown restore must assign a controller and delegate to it'))
+
+  const withoutFreeDispatch = pageSource.replace(
+    "    if (session.preset === 'free') {\n" +
+    '      return this._restoreFreeSession(session)\n' +
+    '    }\n',
+    ''
+  )
+  assert.ok(pageViolations(withoutFreeDispatch)
+    .includes('countdown restore must dispatch free sessions before controller delegation'))
+
+  const unreachableAssignment = pageSource.replace(
+    'if (!this._countdownSessionRestoreController) {',
+    'if (false) {'
+  )
+  assert.ok(pageViolations(unreachableAssignment)
+    .includes('countdown restore must assign a controller and delegate to it'))
+
+  const earlyDelegate = pageSource.replace(
+    "    if (session.preset === 'free') {",
+    '    this._countdownSessionRestoreController.restore(session)\n' +
+    "    if (session.preset === 'free') {"
+  )
+  assert.ok(pageViolations(earlyDelegate)
+    .includes('countdown restore must dispatch free sessions before controller delegation'))
+
+  const bareDelegate = pageSource.replace(
+    'return this._countdownSessionRestoreController.restore(session)',
+    'this._countdownSessionRestoreController.restore(session)'
+  )
+  assert.ok(pageViolations(bareDelegate)
+    .includes('countdown restore shell must return exactly one guarded controller delegation'))
+
+  const duplicateDelegate = pageSource.replace(
+    'return this._countdownSessionRestoreController.restore(session)',
+    'this._countdownSessionRestoreController.restore(session)\n' +
+    '    return this._countdownSessionRestoreController.restore(session)'
+  )
+  assert.ok(pageViolations(duplicateDelegate)
+    .includes('countdown restore shell must return exactly one guarded controller delegation'))
+
+  const earlyReturn = pageSource.replace(
+    "    if (session.preset === 'free') {",
+    '    return true\n' +
+    "    if (session.preset === 'free') {"
+  )
+  assert.ok(pageViolations(earlyReturn)
+    .includes('countdown restore shell must return exactly one guarded controller delegation'))
 })
 
 test('missing governed source aborts the scan instead of reducing coverage', () => {
@@ -143,6 +213,6 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 27)
+    assert.equal(result.modules, 28)
   }
 })
