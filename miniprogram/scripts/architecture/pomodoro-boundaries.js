@@ -27,6 +27,7 @@ const MODULES = {
   'end-confirm-snapshot.js': [],
   'active-sync-controller.js': [],
   'pause-toggle-controller.js': [],
+  'resume-error-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -46,7 +47,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2489
+const PAGE_MAX_LINES = 2453
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -69,6 +70,7 @@ const PAGE_METHODS = new Set([
   '_getActiveSyncController', '_canLightSyncActive', '_syncActiveSessionLight',
   '_getPauseToggleController', '_acquirePauseToggleLock', '_releasePauseToggleLock',
   'togglePause',
+  '_getResumeErrorController', '_reconcileAfterResumeError',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -390,6 +392,23 @@ function pageViolations(source) {
         if (methodName === 'togglePause' &&
             !callsControllerCall(node, '_getPauseToggleController', 'toggle', [])) {
           errors.push('pause toggle must delegate to its controller')
+        }
+        if (methodName === '_getResumeErrorController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createResumeErrorController',
+              '_resumeErrorController',
+            )) {
+          errors.push('resume error must lazily assign its controller')
+        }
+        if (methodName === '_reconcileAfterResumeError' &&
+            !returnsControllerCall(
+              node,
+              '_getResumeErrorController',
+              'reconcile',
+              ['e', 'sessionId'],
+            )) {
+          errors.push('resume error reconcile must delegate to its controller')
         }
       }
     }

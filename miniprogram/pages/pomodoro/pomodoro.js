@@ -53,6 +53,7 @@ const {
 } = require('./utils/end-confirm-snapshot')
 const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
+const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -201,6 +202,7 @@ Page({
   _themeController: null,
   _activeSyncController: null,
   _pauseToggleController: null,
+  _resumeErrorController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -887,69 +889,31 @@ Page({
   },
 
   async _reconcileAfterResumeError(e, sessionId) {
-    if (!e || e.code !== 404) {
-      wx.showToast({ title: '继续失败，请重试', icon: 'none' })
-      return
+    return this._getResumeErrorController().reconcile(e, sessionId)
+  },
+
+  _getResumeErrorController() {
+    if (!this._resumeErrorController) {
+      this._resumeErrorController = createResumeErrorController({
+        getActive: path => api.get(path),
+        parseServerTime,
+        showToast: toast => wx.showToast(toast),
+        resetIdle: () => this._resetToIdle(),
+        timer: () => this._timerState,
+        isFreeTimer: () => this.data.isFreeTimer,
+        mergeLocalPauseAdjustment: (sessionId, serverPausedMs) =>
+          this._mergeLocalPauseAdjustment(sessionId, serverPausedMs),
+        getEffectiveFreeElapsedMs: () => this._getEffectiveFreeElapsedMs(),
+        formatElapsedSec,
+        setData: data => this.setData(data),
+        startFreeTimerInterval: () => this._startFreeTimerInterval(),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        now: () => api.now(),
+        getCurrentTotalSec: () => this._getCurrentTotalSec(),
+        startTimer: totalSec => this._startTimer(totalSec),
+      })
     }
-    try {
-      const active = await api.get('/pomodoro/active')
-      if (!active || active.id !== sessionId) {
-        this._resetToIdle()
-        wx.showToast({ title: '当前专注已结束或失效', icon: 'none' })
-        return
-      }
-      if (active.status !== 'running') {
-        wx.showToast({ title: '继续失败，请稍后重试', icon: 'none' })
-        return
-      }
-      // Server says running — fix local state and continue
-      const startTime = parseServerTime(active.start_time)
-      const totalPausedSec = active.total_paused_sec || 0
-      const totalPausedMs = totalPausedSec * 1000
-      if (this.data.isFreeTimer) {
-        this._timerState.sessionStartTime = startTime
-        this._timerState.totalPausedMs = this._mergeLocalPauseAdjustment(active.id, totalPausedMs)
-        this._timerState.pauseStartTime = null
-
-        const elapsedMs = this._getEffectiveFreeElapsedMs()
-        const elapsed = Math.floor(elapsedMs / 1000)
-        const fmt = formatElapsedSec(elapsed)
-        this._timerState.elapsedSec = elapsed
-        this.setData({
-          isPaused: false,
-          freeDisplayTime: fmt.display,
-          ringCanvasVisible: true,
-        })
-        this._startFreeTimerInterval()
-        this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
-      } else {
-        const now = api.now()
-        const totalSec = this._getCurrentTotalSec()
-
-        // Merge with local pause adjustment
-        const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(active.id, totalPausedMs)
-
-        const elapsed = Math.floor((now - startTime - effectiveTotalPausedMs) / 1000)
-        const remainingSec = Math.max(0, totalSec - elapsed)
-        this._timerState.sessionStartTime = startTime
-        this._timerState.totalPausedMs = effectiveTotalPausedMs
-        this._timerState.pauseStartTime = null
-        this._timerState.remainingSec = remainingSec
-        this._timerState.progress = totalSec > 0 ? remainingSec / totalSec : 0
-        this.setData({
-          isPaused: false,
-          remainingSec,
-          displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
-          displaySec: String(remainingSec % 60).padStart(2, '0'),
-          ringCanvasVisible: true,
-        })
-        this._startTimer(totalSec)
-        this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
-      }
-      wx.showToast({ title: '已恢复计时', icon: 'none' })
-    } catch (_) {
-      wx.showToast({ title: '继续失败，请重试', icon: 'none' })
-    }
+    return this._resumeErrorController
   },
 
   _isValidConfirmSnapshot(snapshot) {
