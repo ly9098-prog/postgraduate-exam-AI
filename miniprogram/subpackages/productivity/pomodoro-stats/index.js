@@ -38,6 +38,7 @@ const overviewMapping = require('./overview-mapping')
 const { buildLoadViewState } = require('./load-view-state')
 const { buildDateViewState } = require('./date-view-state')
 const { createStatsCanvasInitController } = require('./canvas-init-controller')
+const { createThemeSyncController } = require('./theme-sync-controller')
 
 const {
   getSubjectColor,
@@ -299,33 +300,37 @@ var pageConfig = {
   },
 
   _syncThemeFromStorage() {
-    const themeMode = pomodoroTheme.getTheme()
-    pomodoroTheme.applyNativeTheme(themeMode)
-    if (themeMode === this.data.themeMode) return false
-    const subjects = (this.data.subjects || []).map(item => ({
-      ...item,
-      _color: getPieSubjectColor(item.subject_id != null ? String(item.subject_id) : (item.subject_code || item._label), themeMode),
-    }))
-    const history = (this.data.history || []).map(item => ({
-      ...item,
-      _color: getSubjectColor(item.subject_id != null ? String(item.subject_id) : (item.subject_code || item._subjectLabel), themeMode),
-    }))
-    this.setData({ themeMode, subjects, history }, () => {
-      this._resetPieCache()
-      if (!this._alive || !this._viewReady || !this._hasData) return
-      const redraw = () => {
-        if (!this._alive || !this._isVisible) return
-        if (this.data.chartMode === 'pie') {
-          this._renderPieChart(1, true)
-        } else if (this.data.barCanvasMounted && this._trendCtx) {
-          // 柱状图只有在用户主动挂载过后才允许参与主题重绘。
-          this._renderTrendBars(1)
-        }
-      }
-      if (wx.nextTick) wx.nextTick(redraw)
-      else setTimeout(redraw, 0)
-    })
-    return true
+    return this._getThemeSyncController().sync()
+  },
+
+  _getThemeSyncController() {
+    if (!this._themeSyncController) {
+      this._themeSyncController = createThemeSyncController({
+        getStoredTheme: () => pomodoroTheme.getTheme(),
+        applyNativeTheme: themeMode => pomodoroTheme.applyNativeTheme(themeMode),
+        getCurrentTheme: () => this.data.themeMode,
+        getSubjects: () => this.data.subjects,
+        getHistory: () => this.data.history,
+        getPieSubjectColor: (key, themeMode) => getPieSubjectColor(key, themeMode),
+        getSubjectColor: (key, themeMode) => getSubjectColor(key, themeMode),
+        setData: (patch, callback) => this.setData(patch, callback),
+        resetPieCache: () => this._resetPieCache(),
+        isAlive: () => this._alive,
+        isViewReady: () => this._viewReady,
+        hasData: () => this._hasData,
+        isVisible: () => this._isVisible,
+        getChartMode: () => this.data.chartMode,
+        renderPie: (progress, includeLabels) => this._renderPieChart(progress, includeLabels),
+        isBarMounted: () => !!this.data.barCanvasMounted,
+        hasTrendContext: () => !!this._trendCtx,
+        renderTrendBars: progress => this._renderTrendBars(progress),
+        nextTick: callback => {
+          if (wx.nextTick) wx.nextTick(callback)
+          else setTimeout(callback, 0)
+        },
+      })
+    }
+    return this._themeSyncController
   },
 
   _getCanvasPalette() {
