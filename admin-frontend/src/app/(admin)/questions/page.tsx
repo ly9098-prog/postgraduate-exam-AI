@@ -120,6 +120,10 @@ import {
 import { buildExportPayload } from "./question-export-payload";
 import { buildQueryParams } from "./question-query-params";
 import { buildQuestionDeleteFeedback } from "./question-delete-feedback";
+import {
+  buildExportMessage,
+  exportQuestionDownload,
+} from "./question-export-download";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -456,18 +460,16 @@ export default function QuestionsPage() {
       const response = await exportQuestions(
         buildExportPayload(format, filters, selectedIds),
       );
-      const url = URL.createObjectURL(response.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download =
-        response.filename ?? `questions-export.${format === "docx" ? "docx" : "csv"}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage(
-        format === "csv" ? "CSV 导出已开始。" : "Word 导出已开始。",
-      );
+      exportQuestionDownload(response, format, {
+        createObjectURL: blob => URL.createObjectURL(blob),
+        revokeObjectURL: url => URL.revokeObjectURL(url),
+        createAnchor: () => document.createElement("a"),
+        appendAnchor: anchor => document.body.appendChild(anchor),
+        removeAnchor: anchor => anchor.remove(),
+        clickAnchor: anchor => anchor.click(),
+        setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+      });
+      setMessage(buildExportMessage(format));
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "导出失败，请稍后重试。",
