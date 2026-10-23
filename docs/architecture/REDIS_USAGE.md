@@ -38,6 +38,10 @@ Redis 在本项目中不是可选缓存，而是生产环境的核心基础设�
 
 `backend/app/services/task_queue_service.py`
 
+队列 Lua 脚本文本位于 `task_queue_lua_v1.py`、`task_queue_lua_v1_recovery.py`、
+`task_queue_lua_v2_claim.py` 与 `task_queue_lua_v2_transitions.py`；key 构造集中在
+`task_queue_keys.py`。`task_queue_service.py` 继续持有运行时连接、脚本缓存和状态迁移编排。
+
 | Key | 类型 | 用途 |
 |-----|------|------|
 | `taskq:v2:ready:{type}` | List | 待执行队列 |
@@ -252,6 +256,8 @@ bash deploy/scripts/deploy.sh update      # 如仅 Redis 配置变更，可单�
 | AI 限流 | `backend/app/core/ai_runtime_guard.py` |
 | Token 预算 | `backend/app/features/token_budget.py` |
 | 任务队列 | `backend/app/services/task_queue_service.py` |
+| 任务队列 key 协议 | `backend/app/services/task_queue_keys.py` |
+| 任务队列 Lua 协议 | `backend/app/services/task_queue_lua_v1.py`、`task_queue_lua_v1_recovery.py`、`task_queue_lua_v2_claim.py`、`task_queue_lua_v2_transitions.py` |
 | Worker | `backend/app/services/task_queue_worker.py` |
 | Outbox | `backend/app/services/outbox_service.py` |
 | 安全态 | `backend/app/core/security.py`、`backend/app/core/admin_security.py` |

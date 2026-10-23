@@ -5,7 +5,7 @@
 
 ## 1. 范围与证据
 
-- 后端直接解析 `backend/app/**/*.py`：584 个模块、2,265 条模块导入边（2026-10-23 用 `backend/tests/architecture/dependency_scan.py` 复跑；0 静态循环）。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
+- 后端直接解析 `backend/app/**/*.py`：591 个模块、2,282 条模块导入边（2026-10-23 用 `backend/tests/architecture/dependency_scan.py` 复跑；0 静态循环）。覆盖函数内和 TYPE_CHECKING 内的导入、相对导入及字面量动态导入（相对动态导入需同时给出字面量 package）；不执行应用代码，不读取数据库或真实配置。
 - 路由以 `backend/app/api/v1/router.py`、`backend/app/api/admin/router.py` 和 `backend/app/api/router.py` 的实际注册为准。Public/Admin 使用同一个后端，另有内部 OCR worker 路由；本清单不按文件名推断是否对外启用。
 - 管理端通过 TypeScript AST 检查 `admin-frontend/src/app/**/page.tsx`：32 个页面入口，含登录和重定向页；枚举导入及函数长度，不把外层 React 函数的 JSX 行数等同于业务复杂度。
 - 小程序从 `miniprogram/app.json` 的 pages/subPackages 解析 25 个注册页面，再用 TypeScript AST 读取实际 JS、require 和方法长度；不根据目录位置推断主包归属，例如番茄钟位于 pages 下但实际注册为分包。
@@ -34,7 +34,7 @@
 | --- | ---: | --- | --- |
 | `backend/app/features/pipeline_orchestrator.py` | 7151 | `_run_split` 473 | 阶段输入/输出、检查点、恢复与异常传播；复用已有 stages，待故障注入。 |
 | `backend/app/services/practice_service.py` | 4132 | `get_smart_practice_questions` 446 / `get_smart_scored_questions` 144 | smart 策略编排仍由入口持有；scored 满额/缺口补充已迁至 `practice.smart_scored_supplement`，查询、评分、最终日志与事务仍由调用方负责，后续继续收口其余分支。 |
-| `backend/app/services/task_queue_service.py` | 3535 | `fail_v2` 187 | 状态迁移/租约/重试/存储耦合，须数据库与队列集成。 |
+| `backend/app/services/task_queue_service.py` | 2763 | `fail_v2` 187 | 20 个 Lua 脚本与键空间构造已迁至独立协议模块，脚本字节和 key 命名保持不变；`DurableTaskQueue` 仍持有入队、认领、租约、重试、死信和 v1→v2 迁移编排，须继续结合真实队列集成拆分。 |
 | `backend/app/services/ai_service.py` | 2301 | `analyze_error` 790 | revision 协议已移至中立模块，解除预热循环；分析执行编排仍待治理，保持凭据和画像边界。 |
 | `backend/app/main.py` | 461 | `lifespan` 174 | HTTP/观测/关闭、schema/seed/自检及HTTP角色/隔离/失败策略已独立；执行器/孤儿协调器/OCR资源装配与归属已独立；其他角色启动与完整失败清理仍待治理。 |
 | `backend/app/core/bootstrap.py` | 282 | `_run_role_async` 50 | 独立worker/scheduler入口；审计/推荐启动与HTTP共用，原TaskRegistry/失败策略保留。完整worker/scheduler runner初始化/等待/关闭受控契约已建立；失败清理存在既有缺口；隔离子进程SIGTERM/SIGINT和CLI正常退出已测，真实外部依赖全链未验收。 |
@@ -52,6 +52,8 @@
 `backend/tests/architecture/test_dependency_direction.py` 扫描全应用，service/feature 到 API 的静态导入必须为零。相对导入、局部导入和可静态解析的字面量动态导入也参与检查；源码语法错误、空目录或目录缺失不会静默跳过。
 
 `dependency_scan.cyclic_edges` 计算强连通分量内部的全部边。第五十八批后全应用静态循环为零，`import_cycle_baseline.json` 已缩减为空数组；既有门禁继续拒绝任意新增循环边，不设组级白名单。扫描仍包含局部和 TYPE_CHECKING 导入；零静态循环不等于运行时资源、完整角色或业务端到端验收完成。
+
+2026-10-23 队列协议边界批次将 `task_queue_service.py` 的 3,535 行降至 2,763 行：20 个 Lua 脚本文本按 v1 生命周期、v1 恢复、v2 入队/认领/回收、v2 终态转换拆入四个纯数据模块，Redis key 构造迁入 `task_queue_keys.py`；原服务继续重导出既有私有 key helper 和 prefix，任务 API、脚本参数、key 命名空间和状态返回均未改变。脚本 SHA-256 20/20 与原实现一致，新增 5 项脚本/key/尺寸门禁；111 项非集成队列与调用方回归通过。另用只绑定 `127.0.0.1:6380`、禁用持久化的一次性 Redis 7.2.5 运行 69 项 v1/v2 集成测试，覆盖入队、幂等、owner+generation fencing、租约回收、重试/死信、取消、损坏任务和 v1→v2 drain，全部通过后关闭实例。该证据仍不替代生产 Redis 中断、完整 worker、多 dispatcher、lease 回收或备份恢复演练。
 
 第三十八批已解除 embedding / vector config 的 2 模块循环：`services/embedding_endpoints.py` 统一 URL 构造，运行请求与管理端连通测试直接依赖该纯规则，后者不再导入 embedding 执行服务；原配置读取方式不变。26 项端点/调用方回归及 302 组新旧规则对照验证行为一致，对应两条循环边已从基线移除。
 
