@@ -31,6 +31,7 @@ from app.services.task_queue_keys import (
     _v2_retry_key,
     _v2_task_hash_key,
 )
+from app.services.task_queue_script_bindings import SCRIPT_BINDINGS
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 SERVICE_PATH = APP_ROOT / "services" / "task_queue_service.py"
@@ -40,6 +41,7 @@ PROTOCOL_MODULES = (
     APP_ROOT / "services" / "task_queue_lua_v1_recovery.py",
     APP_ROOT / "services" / "task_queue_lua_v2_claim.py",
     APP_ROOT / "services" / "task_queue_lua_v2_transitions.py",
+    APP_ROOT / "services" / "task_queue_script_bindings.py",
 )
 
 # These hashes are the wire-level Lua contract captured before the extraction.
@@ -133,6 +135,48 @@ def test_service_delegates_lua_text_to_protocol_modules() -> None:
     assert assignments == set()
 
 
+def test_script_bindings_preserve_attribute_order_and_protocol_sources() -> None:
+    protocol = {
+        name: value
+        for module in (
+            task_queue_lua_v1,
+            task_queue_lua_v1_recovery,
+            task_queue_lua_v2_claim,
+            task_queue_lua_v2_transitions,
+        )
+        for name in EXPECTED_SCRIPT_SHA256
+        if hasattr(module, name)
+        for value in (getattr(module, name),)
+    }
+    expected_attributes = (
+        "_lua_enqueue",
+        "_lua_enqueue_non_idempotent",
+        "_lua_claim",
+        "_lua_heartbeat",
+        "_lua_complete",
+        "_lua_fail_retry",
+        "_lua_fail_dead",
+        "_lua_reaper",
+        "_lua_retry_claim",
+        "_lua_enqueue_v2",
+        "_lua_enqueue_non_idempotent_v2",
+        "_lua_claim_v2",
+        "_lua_heartbeat_v2",
+        "_lua_complete_v2",
+        "_lua_fail_retry_v2",
+        "_lua_fail_dead_v2",
+        "_lua_reaper_v2",
+        "_lua_retry_claim_v2",
+        "_lua_mark_corrupt_v2",
+        "_lua_cancel_v2",
+    )
+
+    assert tuple(attribute for attribute, _ in SCRIPT_BINDINGS) == expected_attributes
+    assert [script for _, script in SCRIPT_BINDINGS] == [
+        protocol[name] for name in EXPECTED_SCRIPT_SHA256
+    ]
+
+
 def test_protocol_modules_are_data_only_and_below_line_budget() -> None:
     for path in PROTOCOL_MODULES:
         tree = ast.parse(path.read_text())
@@ -147,7 +191,7 @@ def test_protocol_modules_are_data_only_and_below_line_budget() -> None:
 
 
 def test_queue_service_stays_below_extraction_baseline() -> None:
-    assert len(SERVICE_PATH.read_text().splitlines()) <= 2770
+    assert len(SERVICE_PATH.read_text().splitlines()) <= 2690
 
 
 def test_redis_key_builders_preserve_namespaces() -> None:

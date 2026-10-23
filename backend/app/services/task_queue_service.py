@@ -70,34 +70,7 @@ from app.services.task_queue_keys import (
     _v2_retry_key,
     _v2_task_hash_key,
 )
-from app.services.task_queue_lua_v1 import (
-    _LUA_CLAIM,
-    _LUA_COMPLETE,
-    _LUA_ENQUEUE,
-    _LUA_ENQUEUE_NON_IDEMPOTENT,
-    _LUA_HEARTBEAT,
-)
-from app.services.task_queue_lua_v1_recovery import (
-    _LUA_FAIL_DEAD,
-    _LUA_FAIL_RETRY,
-    _LUA_REAPER,
-    _LUA_RETRY_CLAIM,
-)
-from app.services.task_queue_lua_v2_claim import (
-    _LUA_CLAIM_V2,
-    _LUA_ENQUEUE_NON_IDEMPOTENT_V2,
-    _LUA_ENQUEUE_V2,
-    _LUA_HEARTBEAT_V2,
-    _LUA_REAPER_V2,
-    _LUA_RETRY_CLAIM_V2,
-)
-from app.services.task_queue_lua_v2_transitions import (
-    _LUA_CANCEL_V2,
-    _LUA_COMPLETE_V2,
-    _LUA_FAIL_DEAD_V2,
-    _LUA_FAIL_RETRY_V2,
-    _LUA_MARK_CORRUPT_V2,
-)
+from app.services.task_queue_script_bindings import SCRIPT_BINDINGS
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -430,27 +403,8 @@ class DurableTaskQueue:
         self._pool: redis_async.ConnectionPool | None = (
             None  # shared pool for script ops
         )
-        self._lua_enqueue = None
-        self._lua_enqueue_non_idempotent = None
-        self._lua_claim = None
-        self._lua_heartbeat = None
-        self._lua_complete = None
-        self._lua_fail_retry = None
-        self._lua_fail_dead = None
-        self._lua_reaper = None
-        self._lua_retry_claim = None
-        # v2 Lua script SHA caches
-        self._lua_enqueue_v2 = None
-        self._lua_enqueue_non_idempotent_v2 = None
-        self._lua_claim_v2 = None
-        self._lua_heartbeat_v2 = None
-        self._lua_complete_v2 = None
-        self._lua_fail_retry_v2 = None
-        self._lua_fail_dead_v2 = None
-        self._lua_reaper_v2 = None
-        self._lua_retry_claim_v2 = None
-        self._lua_mark_corrupt_v2 = None
-        self._lua_cancel_v2 = None
+        for attribute, _ in SCRIPT_BINDINGS:
+            setattr(self, attribute, None)
 
     @property
     def _allow_local_fallback(self) -> bool:
@@ -504,31 +458,8 @@ class DurableTaskQueue:
         """Load Lua scripts into Redis and cache SHA hashes."""
         if self._lua_enqueue is not None and self._lua_enqueue_v2 is not None:
             return
-        self._lua_enqueue = await client.script_load(_LUA_ENQUEUE)
-        self._lua_enqueue_non_idempotent = await client.script_load(
-            _LUA_ENQUEUE_NON_IDEMPOTENT
-        )
-        self._lua_claim = await client.script_load(_LUA_CLAIM)
-        self._lua_heartbeat = await client.script_load(_LUA_HEARTBEAT)
-        self._lua_complete = await client.script_load(_LUA_COMPLETE)
-        self._lua_fail_retry = await client.script_load(_LUA_FAIL_RETRY)
-        self._lua_fail_dead = await client.script_load(_LUA_FAIL_DEAD)
-        self._lua_reaper = await client.script_load(_LUA_REAPER)
-        self._lua_retry_claim = await client.script_load(_LUA_RETRY_CLAIM)
-        # v2 scripts
-        self._lua_enqueue_v2 = await client.script_load(_LUA_ENQUEUE_V2)
-        self._lua_enqueue_non_idempotent_v2 = await client.script_load(
-            _LUA_ENQUEUE_NON_IDEMPOTENT_V2
-        )
-        self._lua_claim_v2 = await client.script_load(_LUA_CLAIM_V2)
-        self._lua_heartbeat_v2 = await client.script_load(_LUA_HEARTBEAT_V2)
-        self._lua_complete_v2 = await client.script_load(_LUA_COMPLETE_V2)
-        self._lua_fail_retry_v2 = await client.script_load(_LUA_FAIL_RETRY_V2)
-        self._lua_fail_dead_v2 = await client.script_load(_LUA_FAIL_DEAD_V2)
-        self._lua_reaper_v2 = await client.script_load(_LUA_REAPER_V2)
-        self._lua_retry_claim_v2 = await client.script_load(_LUA_RETRY_CLAIM_V2)
-        self._lua_mark_corrupt_v2 = await client.script_load(_LUA_MARK_CORRUPT_V2)
-        self._lua_cancel_v2 = await client.script_load(_LUA_CANCEL_V2)
+        for attribute, script in SCRIPT_BINDINGS:
+            setattr(self, attribute, await client.script_load(script))
 
     async def close(self) -> None:
         """Close the persistent Redis connection and shared pool."""
@@ -559,26 +490,8 @@ class DurableTaskQueue:
             return await client.evalsha(sha, num_keys, *args)
         except redis_exc.NoScriptError:
             # SCRIPT FLUSH or restart — all scripts were evicted. Reload everything.
-            self._lua_enqueue = None
-            self._lua_enqueue_non_idempotent = None
-            self._lua_claim = None
-            self._lua_heartbeat = None
-            self._lua_complete = None
-            self._lua_fail_retry = None
-            self._lua_fail_dead = None
-            self._lua_reaper = None
-            self._lua_retry_claim = None
-            self._lua_enqueue_v2 = None
-            self._lua_enqueue_non_idempotent_v2 = None
-            self._lua_claim_v2 = None
-            self._lua_heartbeat_v2 = None
-            self._lua_complete_v2 = None
-            self._lua_fail_retry_v2 = None
-            self._lua_fail_dead_v2 = None
-            self._lua_reaper_v2 = None
-            self._lua_retry_claim_v2 = None
-            self._lua_mark_corrupt_v2 = None
-            self._lua_cancel_v2 = None
+            for attribute, _ in SCRIPT_BINDINGS:
+                setattr(self, attribute, None)
             await self._load_scripts(client)
             sha = getattr(self, sha_name, None)
             return await client.evalsha(sha, num_keys, *args)
