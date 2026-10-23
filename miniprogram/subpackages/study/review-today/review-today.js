@@ -64,6 +64,9 @@ const {
 const {
   createBatchSizeSheetController,
 } = require('./utils/batch-size-sheet-controller')
+const {
+  createQuestionEnrichmentController,
+} = require('./utils/question-enrichment-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -327,6 +330,16 @@ setData: patch => this.setData(patch),
 })
 )
 },
+_questionEnrichmentController() {
+return this._questionEnrichment || (
+this._questionEnrichment = createQuestionEnrichmentController({
+isDev: () => config.DEV,
+isSafeModeActive: () => this._reviewSession.safeModeActive,
+isTrueFalse: t => isTrueFalseType(t),
+subjectLabel: (name, code) => this.subjectLabel(name, code),
+})
+)
+},
 onLoad(options) {
 let statusBar = 20
 try {
@@ -538,68 +551,13 @@ logError: (...args) => console.error(...args),
 )
 },
 _splitGroups(questions, size) {
-const groups = []
-for (let i = 0; i < questions.length; i += size) {
-groups.push(questions.slice(i, i + size))
-}
-return groups
+return this._questionEnrichmentController().splitGroups(questions, size)
 },
 _enrichQuestion(q) {
-const stemText = (q.content && (q.content.text || q.content.stem)) || q.stem || ''
-let opts = null
-let optionKeys = []
-if (q.options && Object.keys(q.options).length > 0) {
-opts = q.options
-optionKeys = Object.keys(opts)
-}
-if (isTrueFalseType(q.question_type)) {
-opts = { A: '正确', B: '错误' }
-optionKeys = ['A', 'B']
-}
-const hasBlankGroups = adapter.isMultiBlankChoice(q) && adapter.getBlankOptionGroups(q).length > 0
-const blankOptionGroups = hasBlankGroups ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), '') : []
-var renderCfg = { enableMathImage: false, DEV: config.DEV }
-if (this._reviewSession.safeModeActive) renderCfg.SAFE_MODE = true
-const _renderModel = buildRenderModel(q, opts, renderCfg)
-const optText = {}
-const optNeedsRich = {}
-const optHtml = {}
-for (let optionIndex = 0; optionIndex < optionKeys.length; optionIndex++) {
-const key = optionKeys[optionIndex]
-const raw = (opts && opts[key]) || ''
-const text = stripLeadingOptionLabel(key, raw)
-const plain = toPlainInlineMathText(text)
-optText[key] = plain || text
-optNeedsRich[key] = !plain && needsRichRender(text)
-optHtml[key] = optNeedsRich[key] ? textToHtml(text) : ''
-}
-return {
-...q,
-_opts: opts,
-_optionKeys: optionKeys,
-_optText: optText,
-_optNeedsRich: optNeedsRich,
-_optHtml: optHtml,
-_blankOptionGroups: blankOptionGroups,
-_hasBlankOptionGroups: blankOptionGroups.length > 0,
-_optionList: [],
-_renderModel,
-_stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
-_subjectLabel: this.subjectLabel(q.subject_name, q.subject_code),
-}
+return this._questionEnrichmentController().enrich(q)
 },
 _enrichForResult(q) {
-if (q._renderModel) return q
-try {
-return this._enrichQuestion(q)
-} catch (e) {
-console.error('题目渲染数据生成失败，退化为纯文本预览', e)
-const stemText = (q.content && (q.content.text || q.content.stem)) || q.stem || ''
-return Object.assign({}, q, {
-_renderModel: null,
-_stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
-})
-}
+return this._questionEnrichmentController().enrichForResult(q)
 },
 _checkRenderInvariant(renderModel) {
 this._renderSafetyController().checkInvariant(renderModel)
