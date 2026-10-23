@@ -16,17 +16,18 @@ const {
   subjectHasChildren,
   getPracticeSubjectScopeIds,
 } = require('./utils/subject-tree')
+const {
+  parseLaunchPreset,
+  launchPresetOverrides,
+  fastLaunchPresetView,
+  resolvedLaunchPresetView,
+  applyLaunchOverrides,
+} = require('./utils/launch-preset')
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice', 'multi_blank_multiple_choice'])
-function _normalizePracticeReturnRoute(value) {
-const route = safeDecodeURIComponent(value, '').trim().slice(0, 512)
-if (!route) return ''
-if (!/^\/subpackages\/study\/knowledge-(?:detail|subject)\/index(?:\?.*)?$/.test(route)) return ''
-return route
-}
 let _practicePerformanceClock = null
 function _monotonicNow() {
 try {
@@ -591,68 +592,17 @@ if (!options.silent) wx.showToast({ title: '加载科目失败', icon: 'none' })
 }
 },
 _parseLaunchPreset(options) {
-const subjectId = Number(options && options.subject_id)
-const subjectCode = String((options && options.subject_code) || '').trim().slice(0, 64)
-const modeValue = String((options && options.mode) || '').trim()
-const allowedModes = new Set(['random', 'smart', 'sequential'])
-const rawCount = Number(options && options.count)
-const count = Number.isFinite(rawCount) ? Math.max(1, Math.min(50, Math.round(rawCount))) : null
-const knowledgePoint = safeDecodeURIComponent(options && options.knowledge_point, '').trim()
-const knowledgePointId = Number(options && options.knowledge_point_id)
-const rawQuestionIds = String((options && options.question_ids) || '').trim()
-let questionIds = ''
-if (rawQuestionIds) {
-const parsed = rawQuestionIds
-.split(',')
-.map(value => Number(String(value || '').trim()))
-.filter(value => Number.isInteger(value) && value > 0)
-const unique = Array.from(new Set(parsed)).slice(0, 50)
-if (unique.length === parsed.length && unique.length > 0) questionIds = unique.join(',')
-}
-return {
-subjectId: Number.isInteger(subjectId) && subjectId > 0 ? subjectId : null,
-mode: allowedModes.has(modeValue) ? modeValue : null,
-count,
-knowledgePoint,
-knowledgePointId: Number.isInteger(knowledgePointId) && knowledgePointId > 0 ? knowledgePointId : null,
-questionIds,
-allowRepeat: String((options && options.allow_repeat) || '') === '1',
-autostart: String((options && options.autostart) || '') === '1',
-source: String((options && options.source) || '').trim().slice(0, 32),
-planToken: String((options && options.plan_token) || '').trim().slice(0, 2048),
-subjectName: safeDecodeURIComponent(options && options.subject_name, '').trim().slice(0, 80),
-includeChildren: String((options && options.include_children) || '') === '1',
-includeDescendants: String((options && options.include_descendants) || '') === '1',
-subjectCode,
-returnTo: _normalizePracticeReturnRoute(options && options.return_to),
-}
+return parseLaunchPreset(options, safeDecodeURIComponent)
 },
 async _applyFastLaunchPreset() {
 const preset = this._launchPreset
 if (!preset || !preset.subjectId || !preset.autostart) return false
-const mode = preset.questionIds ? 'random' : (preset.mode || 'random')
-const count = preset.questionIds
-? preset.questionIds.split(',').length
-: (preset.count || this.data.count || 5)
-this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
-this._launchKnowledgePointId = preset.questionIds ? null : preset.knowledgePointId
-this._launchIncludeDescendants = Boolean(!preset.questionIds && preset.includeDescendants && preset.knowledgePointId)
-this._launchQuestionIds = preset.questionIds
-this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
-this._launchSource = preset.source
-this._launchPlanToken = preset.planToken || ''
-this._launchReturnTo = preset.returnTo || ''
-const includeChildren = Boolean(preset.includeChildren || preset.knowledgePointId)
 const subjectName = preset.subjectName || this.data.selectedSubjectName || '专项练习'
+applyLaunchOverrides(this, launchPresetOverrides(preset))
 await new Promise(resolve => {
-this.setData({
-selectedSubjectId: Number(preset.subjectId),
-selectedSubjectName: subjectName,
-selectedSubjectHasChildren: includeChildren,
-expandedSubjectId: Number(preset.subjectId),
-selectedMode: mode,
-count,
-}, () => {
+const view = fastLaunchPresetView(preset, this.data.selectedMode, this.data.count)
+view.selectedSubjectName = subjectName
+this.setData(view, () => {
 this._updateComputedFields()
 resolve()
 })
@@ -678,27 +628,10 @@ if (preset.questionIds && preset.mode && preset.mode !== 'random') {
 console.warn('[PRACTICE_LAUNCH_PRESET] targeted questions require random mode')
 return false
 }
-const mode = preset.questionIds ? 'random' : (preset.mode || this.data.selectedMode || 'random')
-const count = preset.questionIds
-? preset.questionIds.split(',').length
-: (preset.count || this.data.count || 5)
-this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
-this._launchKnowledgePointId = preset.questionIds ? null : preset.knowledgePointId
-this._launchIncludeDescendants = Boolean(!preset.questionIds && preset.includeDescendants && preset.knowledgePointId)
-this._launchQuestionIds = preset.questionIds
-this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
-this._launchSource = preset.source
-this._launchPlanToken = preset.planToken || ''
-this._launchReturnTo = preset.returnTo || ''
+applyLaunchOverrides(this, launchPresetOverrides(preset))
 await new Promise((resolve) => {
-this.setData({
-expandedSubjectId: target.parent_subject_id || target.subject_id,
-selectedSubjectId: Number(target.subject_id),
-selectedSubjectName: target.display_name,
-selectedSubjectHasChildren: Boolean(target.has_children),
-selectedMode: mode,
-count,
-}, () => {
+const view = resolvedLaunchPresetView(preset, target, this.data.selectedMode, this.data.count)
+this.setData(view, () => {
 this._updateComputedFields()
 resolve()
 })
