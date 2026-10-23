@@ -145,6 +145,9 @@ const sandbox = {
     if (request === './utils/update-free-elapsed-controller') {
       return require('../pages/pomodoro/utils/update-free-elapsed-controller')
     }
+    if (request === './utils/begin-countdown-controller') {
+      return require('../pages/pomodoro/utils/begin-countdown-controller')
+    }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')
     if (request === './utils/terminal-conflict-handler') {

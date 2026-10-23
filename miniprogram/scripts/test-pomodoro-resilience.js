@@ -35,6 +35,7 @@ const endConfirmViewModelSrc = fs.readFileSync(path.resolve(__dirname, '../pages
 const pauseAdjustmentSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/pause-adjustment.js'), 'utf8')
 const unknownStartHelpersSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/unknown-start-helpers.js'), 'utf8')
 const freeTimerBeginSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/free-timer-begin-controller.js'), 'utf8')
+const beginCountdownSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/begin-countdown-controller.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
@@ -530,10 +531,9 @@ t('clock calibration prefers explicit server_now and better RTT samples', () => 
 
 console.log('\n--- Canonical start-time display ---')
 t('new countdown derives remaining time from server start_time', () => {
-  const m = method('_beginCountdown')
-  assert.ok(m.includes('api.now() - startTime - totalPausedMs'))
-  assert.ok(m.includes('remainingMs'))
-  assert.ok(!m.includes('Date.now() + totalSec * 1000'))
+  assert.ok(beginCountdownSrc.includes('options.now() - startTime - totalPausedMs'))
+  assert.ok(beginCountdownSrc.includes('remainingMs'))
+  assert.ok(!beginCountdownSrc.includes('Date.now() + totalSec * 1000'))
 })
 t('new free timer immediately displays server elapsed time', () => {
   assert.ok(freeTimerBeginSrc.includes('now - startTime - totalPausedMs'))

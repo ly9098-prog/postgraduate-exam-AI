@@ -39,6 +39,7 @@ const MODULES = {
   'confirm-interrupt-countdown-controller.js': [],
   'reset-to-idle-controller.js': [],
   'update-free-elapsed-controller.js': ['./timer-math'],
+  'begin-countdown-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -58,7 +59,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2352
+const PAGE_MAX_LINES = 2346
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -93,6 +94,7 @@ const PAGE_METHODS = new Set([
   '_getConfirmInterruptCountdownController', '_confirmInterruptCountdown',
   '_getResetToIdleController', '_resetToIdle',
   '_getUpdateFreeElapsedController', '_updateFreeElapsed',
+  '_getBeginCountdownController', '_beginCountdown',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
@@ -568,6 +570,18 @@ function pageViolations(source) {
         if (methodName === '_updateFreeElapsed' &&
             !returnsControllerCall(node, '_getUpdateFreeElapsedController', 'update', [])) {
           errors.push('update free elapsed must delegate to its controller')
+        }
+        if (methodName === '_getBeginCountdownController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createBeginCountdownController',
+              '_beginCountdownController',
+            )) {
+          errors.push('begin countdown must lazily assign its controller')
+        }
+        if (methodName === '_beginCountdown' &&
+            !returnsControllerCall(node, '_getBeginCountdownController', 'begin', ['session'])) {
+          errors.push('begin countdown must delegate to its controller')
         }
       }
     }

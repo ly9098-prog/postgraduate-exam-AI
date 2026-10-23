@@ -65,6 +65,7 @@ const { createPauseCountdownEndConfirmController } = require('./utils/pause-coun
 const { createConfirmInterruptCountdownController } = require('./utils/confirm-interrupt-countdown-controller')
 const { createResetToIdleController } = require('./utils/reset-to-idle-controller')
 const { createUpdateFreeElapsedController } = require('./utils/update-free-elapsed-controller')
+const { createBeginCountdownController } = require('./utils/begin-countdown-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findRouteSubject,
@@ -225,6 +226,7 @@ Page({
   _confirmInterruptCountdownController: null,
   _resetToIdleController: null,
   _updateFreeElapsedController: null,
+  _beginCountdownController: null,
   _freeSessionRestoreController: null,
   _countdownSessionRestoreController: null,
   _startSessionController: null,
@@ -961,6 +963,24 @@ Page({
     return this._updateFreeElapsedController
   },
 
+  _getBeginCountdownController() {
+    if (!this._beginCountdownController) {
+      this._beginCountdownController = createBeginCountdownController({
+        parseServerTime,
+        isDebugPreset: () => this.data.selectedPreset === 'debug',
+        getWorkDurationMinutes: () => this.data.workDuration,
+        now: () => api.now(),
+        setTimerFields: patch => Object.assign(this._timerState, patch),
+        runningPhase: () => PHASE.RUNNING,
+        setData: data => this.setData(data),
+        updateComputedFields: () => this._updateComputedFields(),
+        onWorkComplete: () => this._onWorkComplete(),
+        startTimer: (totalSec, opts) => this._startTimer(totalSec, opts),
+      })
+    }
+    return this._beginCountdownController
+  },
+
   _updateFreeElapsed() {
     return this._getUpdateFreeElapsedController().update()
   },
@@ -1216,33 +1236,7 @@ Page({
   /* ==================== Countdown Timer ==================== */
 
   _beginCountdown(session) {
-    const startTime = parseServerTime(session.start_time)
-    const totalSec = this.data.selectedPreset === 'debug' ? 10 : this.data.workDuration * 60
-    const totalPausedMs = Math.max(0, Number(session.total_paused_sec || 0) * 1000)
-    const elapsedMs = Math.max(0, api.now() - startTime - totalPausedMs)
-    const remainingMs = Math.max(0, totalSec * 1000 - elapsedMs)
-
-    this._timerState.sessionId = session.id
-    this._timerState.sessionStartTime = startTime
-    this._timerState.remainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
-    this._timerState.progress = totalSec > 0 ? remainingMs / (totalSec * 1000) : 0
-    this._timerState.totalPausedMs = totalPausedMs
-    this._timerState.pauseStartTime = null
-    this.setData({
-      phase: PHASE.RUNNING,
-      ringCanvasVisible: true,
-      isPaused: false,
-    })
-    this._updateComputedFields()
-
-    // Use the server-issued start_time as the only clock origin. If /start took
-    // two seconds to return, the first frame correctly begins near 24:58 instead
-    // of showing a client-only 25:00 that disagrees with persisted statistics.
-    if (remainingMs <= 0) {
-      this._onWorkComplete()
-      return
-    }
-    this._startTimer(totalSec, { remainingMs, forceRunning: true })
+    return this._getBeginCountdownController().begin(session)
   },
 
   togglePause() {
