@@ -27,16 +27,14 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
-import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
-import { QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
 import { QuestionVersionHistorySection } from "./question-version-history-section";
-import { QuestionEditSubmitFooter } from "./question-edit-submit-footer";
 import { QuestionListFeedback } from "./question-list-feedback";
 import { QuestionSideDetailPanel } from "./question-side-detail-panel";
 import { QuestionDrawerHeader } from "./question-drawer-header";
+import { QuestionDrawerEditForm } from "./question-drawer-edit-form";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
@@ -63,9 +61,6 @@ import { useQuestionListInteractions } from "./hooks/use-question-list-interacti
 import { useQuestionListUrlSync } from "./hooks/use-question-list-url-sync";
 import { useQuestionEditingProjection } from "./hooks/use-question-editing-projection";
 import { useQuestionToolbarState } from "./hooks/use-question-toolbar-state";
-import { QuestionCodeEditor } from "./components/question-code-editor";
-import { QuestionOptionEditor } from "./components/question-option-editor";
-import { QuestionTableEditors } from "./components/question-table-editors";
 import { DifficultyBadge } from "./components/question-difficulty-badge";
 import { TypeBadge } from "./components/question-type-badge";
 import { CustomCheckbox } from "./components/question-custom-checkbox";
@@ -80,9 +75,6 @@ import { QuestionDetailView } from "./question-detail-view";
 import { buildExportPayload } from "./question-export-payload";
 import { QuestionSecondaryInfo } from "./components/question-secondary-info";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
-import { QuestionAnswerEditor } from "./question-answer-editor";
-import { QuestionEditBasics } from "./question-edit-basics";
-import { QuestionStemEditor } from "./question-stem-editor";
 
 const activeOptions = [
   { label: "全部状态", value: "" },
@@ -297,8 +289,6 @@ export default function QuestionsPage() {
     editingFallbackStemImageUrls,
     unresolvedEditingTableCount,
     emptyEditingCodeCount,
-    replaceEditingSegments,
-    addEditingCodeSegment,
   } = useQuestionEditingProjection(editForm, selectedQuestion, { setEditForm });
 
   const {
@@ -976,87 +966,24 @@ export default function QuestionsPage() {
             {selectedQuestion ? (
               editing ? (
                 /* ===== Edit form ===== */
-                <div className="question-drawer-edit px-7 pb-24 pt-1">
-                  <QuestionEditBasics
-                    editForm={editForm}
-                    setEditForm={setEditForm}
-                    subjectOptions={subjectOptions}
-                  />
-
-                  <QuestionStemEditor
-                    stemText={editStemText}
-                    setStemText={setEditStemText}
-                    segments={editingSegments}
-                    fallbackImageUrls={editingFallbackStemImageUrls}
-                    questionId={selectedQuestionId!}
-                    dirty={dirty}
-                    beforeDirtyMutation={prepareImmediateQuestionMutation}
-                    onMutated={handleQuestionMutated}
-                  />
-
-                  <QuestionTableEditors
-                    segments={editingSegments}
-                    onReplace={replaceEditingSegments}
-                  />
-                  <QuestionCodeEditor
-                    segments={editingSegments}
-                    onReplace={replaceEditingSegments}
-                    onAdd={addEditingCodeSegment}
-                  />
-
-                  <QuestionOptionEditor
-                    editForm={editForm}
-                    editStemText={editStemText}
-                    setEditForm={setEditForm}
-                    selectedQuestionId={selectedQuestionId!}
-                    dirty={dirty}
-                    beforeDirtyMutation={prepareImmediateQuestionMutation}
-                    onMutated={handleQuestionMutated}
-                  />
-
-                  {/* Answer editor */}
-                  <QuestionAnswerEditor
-                    editForm={editForm}
-                    setEditForm={setEditForm}
-                  />
-
-                  <QuestionKnowledgePointsEditor
-                    value={editForm.knowledge_points ?? []}
-                    onChange={(knowledgePoints) =>
-                      setEditForm((current) => ({
-                        ...current,
-                        knowledge_points: knowledgePoints,
-                      }))
-                    }
-                  />
-
-                  <QuestionAnalysisEditor
-                    value={editForm.analysis ?? ""}
-                    onChange={(analysis) =>
-                      setEditForm((current) => ({ ...current, analysis }))
-                    }
-                  />
-
-                  {unresolvedEditingTableCount > 0 ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      仍有 {unresolvedEditingTableCount} 个结构化表格需要人工核验。请检查单元格和合并关系，并点击“标记人工已核验”后再保存。
-                    </div>
-                  ) : null}
-                  {emptyEditingCodeCount > 0 ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      仍有 {emptyEditingCodeCount} 个代码块正文为空。请输入代码内容，或删除空代码块后再保存。
-                    </div>
-                  ) : null}
-
-                  <QuestionEditSubmitFooter
-                    cancelEditing={cancelEditing}
-                    saveEditing={() => updateMutation.mutate()}
-                    saving={updateMutation.isPending}
-                    dirty={dirty}
-                    unresolvedTableCount={unresolvedEditingTableCount}
-                    emptyCodeCount={emptyEditingCodeCount}
-                  />
-                </div>
+                <QuestionDrawerEditForm
+                  questionId={selectedQuestionId}
+                  editForm={editForm}
+                  setEditForm={setEditForm}
+                  setStemText={setEditStemText}
+                  stemText={editStemText}
+                  subjectOptions={subjectOptions}
+                  segments={editingSegments}
+                  fallbackImageUrls={editingFallbackStemImageUrls}
+                  dirty={dirty}
+                  unresolvedTableCount={unresolvedEditingTableCount}
+                  emptyCodeCount={emptyEditingCodeCount}
+                  saving={updateMutation.isPending}
+                  beforeDirtyMutation={prepareImmediateQuestionMutation}
+                  onMutated={handleQuestionMutated}
+                  cancelEditing={cancelEditing}
+                  saveEditing={() => updateMutation.mutate()}
+                />
               ) : (
                 /* ===== Detail view ===== */
                 <>
