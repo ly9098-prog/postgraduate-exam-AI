@@ -107,6 +107,10 @@ from app.services.task_queue_v2_reaper_contract import (
     normalize_v2_reaper_result,
 )
 from app.services.task_queue_v2_health_contract import v2_oldest_ready_age
+from app.services.task_queue_v2_diagnostics_contract import (
+    build_v2_corrupt_entry,
+    build_v2_dead_entry,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -2090,13 +2094,7 @@ class DurableTaskQueue:
             result = []
             for tid in task_ids:
                 raw = await client.hget(_v2_task_hash_key(tid), "data")
-                if raw:
-                    try:
-                        result.append(json.loads(raw))
-                    except json.JSONDecodeError:
-                        result.append({"task_id": tid, "error": "corrupt_payload"})
-                else:
-                    result.append({"task_id": tid, "error": "hash_expired"})
+                result.append(build_v2_dead_entry(tid, raw))
             await client.aclose()
             return result
         except Exception as e:
@@ -2157,13 +2155,7 @@ class DurableTaskQueue:
             result = []
             for tid, score in members:
                 raw = await client.hget(_v2_task_hash_key(tid), "data")
-                entry = {"task_id": tid, "discovered_at": score}
-                if raw:
-                    try:
-                        entry.update(json.loads(raw))
-                    except json.JSONDecodeError:
-                        entry["error"] = "corrupt_payload"
-                result.append(entry)
+                result.append(build_v2_corrupt_entry(tid, score, raw))
             await client.aclose()
             return result
         except Exception as e:
