@@ -4,6 +4,40 @@
  */
 
 import type { Role } from "@/lib/api/types";
+import { chinaDateToUtcIso } from "@/lib/time";
+
+
+export type PaginationItem = number | "ellipsis-left" | "ellipsis-right";
+
+export type StatusFilter = "all" | "active" | "inactive";
+
+/**
+ * Build a compact pagination item list with ellipses for large page counts.
+ */
+export function buildPagination(current: number, total: number): PaginationItem[] {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis-right", total];
+  if (current >= total - 3) return [1, "ellipsis-left", total - 4, total - 3, total - 2, total - 1, total];
+  return [1, "ellipsis-left", current - 1, current, current + 1, "ellipsis-right", total];
+}
+
+/**
+ * Convert a China calendar date to the UTC ISO string of its end (23:59:59.999).
+ */
+export function endOfChinaDateUtcIso(date: string): string {
+  const nextDay = chinaDateToUtcIso(date, 1);
+  if (!nextDay) return "";
+  return new Date(new Date(nextDay).getTime() - 1).toISOString();
+}
+
+/**
+ * Map a status filter to the API boolean value, or undefined for "all".
+ */
+export function statusToQuery(status: StatusFilter): boolean | undefined {
+  if (status === "active") return true;
+  if (status === "inactive") return false;
+  return undefined;
+}
 
 export const ADMIN_ROLE_NAMES = new Set(["super_admin", "admin", "user"]);
 

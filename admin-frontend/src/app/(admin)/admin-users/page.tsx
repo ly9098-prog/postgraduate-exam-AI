@@ -51,6 +51,11 @@ import {
   buildRoleOptions,
   findSelectedFormRole,
   isSuperAdminUser,
+  buildPagination,
+  endOfChinaDateUtcIso,
+  statusToQuery,
+  type PaginationItem,
+  type StatusFilter,
 } from "@/lib/admin-user-utils";
 import { chinaDateString, chinaDateToUtcIso, formatChinaDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -71,8 +76,6 @@ type FormState = {
   is_active: boolean;
 };
 
-type StatusFilter = "all" | "active" | "inactive";
-type PaginationItem = number | "ellipsis-left" | "ellipsis-right";
 
 const emptyForm: FormState = {
   username: "",
@@ -96,25 +99,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: "100", label: "100 条/页" },
 ];
 
-
-function buildPagination(current: number, total: number): PaginationItem[] {
-  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
-  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis-right", total];
-  if (current >= total - 3) return [1, "ellipsis-left", total - 4, total - 3, total - 2, total - 1, total];
-  return [1, "ellipsis-left", current - 1, current, current + 1, "ellipsis-right", total];
-}
-
-function endOfChinaDateUtcIso(date: string): string {
-  const nextDay = chinaDateToUtcIso(date, 1);
-  if (!nextDay) return "";
-  return new Date(new Date(nextDay).getTime() - 1).toISOString();
-}
-
-function statusToQuery(status: StatusFilter): boolean | undefined {
-  if (status === "active") return true;
-  if (status === "inactive") return false;
-  return undefined;
-}
 
 function RoleBadge({ role }: { role?: Role }) {
   if (!role) return <span className="text-xs text-[var(--color-text-hint)]">—</span>;

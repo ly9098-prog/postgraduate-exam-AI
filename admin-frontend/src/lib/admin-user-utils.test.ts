@@ -8,6 +8,9 @@ import {
   buildRoleOptions,
   findSelectedFormRole,
   isSuperAdminUser,
+  buildPagination,
+  endOfChinaDateUtcIso,
+  statusToQuery,
 } from "./admin-user-utils";
 import type { Role } from "./api/types";
 
@@ -133,5 +136,46 @@ describe("isSuperAdminUser", () => {
   });
   it("false when no super_admin role exists", () => {
     expect(isSuperAdminUser({ role_id: 1 }, roles.filter((r) => r.name !== "super_admin"))).toBe(false);
+  });
+});
+
+describe("buildPagination", () => {
+  it("returns all pages when total <= 7", () => {
+    expect(buildPagination(1, 5)).toEqual([1, 2, 3, 4, 5]);
+  });
+  it("returns compact list when current near start", () => {
+    expect(buildPagination(2, 10)).toEqual([1, 2, 3, 4, 5, "ellipsis-right", 10]);
+  });
+  it("returns compact list when current near end", () => {
+    expect(buildPagination(9, 10)).toEqual([1, "ellipsis-left", 6, 7, 8, 9, 10]);
+  });
+  it("returns centered list in middle", () => {
+    expect(buildPagination(5, 10)).toEqual([1, "ellipsis-left", 4, 5, 6, "ellipsis-right", 10]);
+  });
+  it("handles total of 7 exactly", () => {
+    expect(buildPagination(1, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+});
+
+describe("endOfChinaDateUtcIso", () => {
+  it("returns non-empty string for valid date", () => {
+    const result = endOfChinaDateUtcIso("2025-01-15");
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe("string");
+  });
+  it("returns empty string for empty input", () => {
+    expect(endOfChinaDateUtcIso("")).toBe("");
+  });
+});
+
+describe("statusToQuery", () => {
+  it("returns true for active", () => {
+    expect(statusToQuery("active")).toBe(true);
+  });
+  it("returns false for inactive", () => {
+    expect(statusToQuery("inactive")).toBe(false);
+  });
+  it("returns undefined for all", () => {
+    expect(statusToQuery("all")).toBeUndefined();
   });
 });
