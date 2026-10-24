@@ -37,6 +37,7 @@ import { formatChinaDate } from "@/lib/time";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import type { FormulaCategoryNode } from "@/components/formulas/formula-category-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
+import { positiveInt, buildFormulaListHref, findCategoryNode } from "@/lib/formula-list-utils";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { PaginatedResponse, FormulaGraphAsset } from "@/lib/api/types";
@@ -127,16 +128,6 @@ type AdminFormulaCategoryNode = Omit<FormulaCategoryNode, "children"> & {
   subtree_formula_count?: number;
   children: AdminFormulaCategoryNode[];
 };
-
-function findCategoryNode(nodes: AdminFormulaCategoryNode[], id: number | null): AdminFormulaCategoryNode | null {
-  if (id === null) return null;
-  for (const node of nodes) {
-    if (node.id === id) return node;
-    const found = findCategoryNode(node.children ?? [], id);
-    if (found) return found;
-  }
-  return null;
-}
 
 type BatchReviewResponse = {
   items: Array<{ id: number; status: string }>;
@@ -240,22 +231,6 @@ type FormulaListFilters = {
 const EMPTY_FORMULA_FILTERS: FormulaListFilters = {
   status: "", category_id: "", q: "", tags: "", library_type: "", study_card_type: "", graph_status: "",
 };
-
-function positiveInt(value: string | null, fallback: number | null = null): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function buildFormulaListHref(filters: FormulaListFilters, page: number, selectedId: number | null): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value) params.set(key, value);
-  }
-  if (page > 1) params.set("page", String(page));
-  if (selectedId) params.set("selected_id", String(selectedId));
-  const query = params.toString();
-  return query ? `/formulas?${query}` : "/formulas";
-}
 
 export default function FormulasPage() {
   const queryClient = useQueryClient();
