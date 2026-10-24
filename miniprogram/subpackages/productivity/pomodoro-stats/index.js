@@ -29,6 +29,7 @@ const { buildCumulativeSummaryPatch } = require('./cumulative-summary-patch')
 const { formatStudyDayRangeText } = require('./study-day-range-text')
 const { createSelectDateController } = require('./select-date-controller')
 const { createCumulativeRefreshController } = require('./cumulative-refresh-controller')
+const { createCumulativeStartController } = require('./cumulative-start-controller')
 const { createDistributionLoadController } = require('./distribution-load-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
@@ -448,17 +449,22 @@ var pageConfig = {
   },
 
   onCumulativeStartChange(e) {
-    let date = e && e.detail ? String(e.detail.value || '') : ''
-    if (!date) return
-    const minDate = this.data.cumulativePickerStartDate || this._shiftDate(this.data._todayDate, -365)
-    const maxDate = this.data._todayDate
-    if (minDate && date < minDate) date = minDate
-    if (maxDate && date > maxDate) date = maxDate
-    if (date === this.data.cumulativeStartDate) return
-    this._cumulativeCustomized = true
-    this.setData({ cumulativeStartDate: date, cumulativeLoading: true }, () => {
-      this._refreshCumulativeSummary(date, false)
-    })
+    this._getCumulativeStartController().change(e)
+  },
+
+  _getCumulativeStartController() {
+    if (!this._cumulativeStartController) {
+      this._cumulativeStartController = createCumulativeStartController({
+        getTodayDate: () => this.data._todayDate,
+        getPickerStartDate: () => this.data.cumulativePickerStartDate,
+        getCumulativeStartDate: () => this.data.cumulativeStartDate,
+        shiftDate: (date, delta) => this._shiftDate(date, delta),
+        markCustomized: () => { this._cumulativeCustomized = true },
+        setData: (patch, callback) => this.setData(patch, callback),
+        refreshCumulativeSummary: (date, silent) => this._refreshCumulativeSummary(date, silent),
+      })
+    }
+    return this._cumulativeStartController
   },
 
   _commitDistributionSubjects(rawSubjects, animate) {

@@ -353,6 +353,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-study-day-range-text.js \
             miniprogram/tests/test-pomodoro-stats-select-date-controller.js \
             miniprogram/tests/test-pomodoro-stats-cumulative-refresh-controller.js \
+            miniprogram/tests/test-pomodoro-stats-cumulative-start-controller.js \
             miniprogram/tests/test-pomodoro-stats-distribution-load-controller.js \
             miniprogram/tests/test-pomodoro-stats-pie-animation-controller.js \
             miniprogram/tests/test-pomodoro-stats-pie-label-reveal-controller.js \
