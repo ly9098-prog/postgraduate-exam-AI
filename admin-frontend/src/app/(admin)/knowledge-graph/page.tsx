@@ -30,50 +30,22 @@ import type {
   KnowledgeGraphResponse,
   KnowledgeGraphSubject,
 } from "@/lib/api/types";
+import {
+  RELATIONS,
+  shortName,
+  clamp,
+  edgeStrength,
+  collapseEdgesByPair,
+  nodeRadius,
+  estimatedLabelWidth,
+  relationLabel,
+  relationColor,
+  difficultyText,
+  type RelationKey,
+} from "@/lib/knowledge-graph-utils";
 import { cn } from "@/lib/utils";
 
-const RELATIONS = {
-  prerequisite: { label: "前置", color: "#4a6f8a", text: "学习目标所依赖的基础知识" },
-  parent: { label: "父子", color: "#5b8c5b", text: "概念与细分知识点的层级关系" },
-  next: { label: "后续", color: "#c49a6b", text: "掌握当前知识后自然衔接的节点" },
-  related: { label: "相关", color: "#8b7c97", text: "没有强依赖但语义关联紧密" },
-} as const;
-
-type RelationKey = keyof typeof RELATIONS;
 type PositionedNode = KnowledgeGraphNode & { x: number; y: number; level: number };
-
-function shortName(name: string, length = 9) {
-  return name.length > length ? `${name.slice(0, length)}…` : name;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function edgeStrength(edge: KnowledgeGraphEdge) {
-  const normalizedWeight = clamp(edge.weight / 10, 0, 1);
-  return edge.confidence * 0.76 + normalizedWeight * 0.24;
-}
-
-function collapseEdgesByPair(edges: KnowledgeGraphEdge[]) {
-  const byPair = new Map<string, KnowledgeGraphEdge>();
-  for (const edge of edges) {
-    const key = edge.source < edge.target ? `${edge.source}:${edge.target}` : `${edge.target}:${edge.source}`;
-    const current = byPair.get(key);
-    if (!current || edgeStrength(edge) > edgeStrength(current)) byPair.set(key, edge);
-  }
-  return [...byPair.values()];
-}
-
-function nodeRadius(node: KnowledgeGraphNode) {
-  return clamp(16 + Math.sqrt(Math.max(0, node.degree)) * 2.05, 18, 28);
-}
-
-function estimatedLabelWidth(node: KnowledgeGraphNode) {
-  const text = shortName(node.name, 11);
-  // 中文字符在当前字号下接近等宽，按略宽于 1em 的值估算，给碰撞检测留出余量。
-  return clamp(text.length * 10.8 + 18, 54, 154);
-}
 
 function cubicPoint(
   start: { x: number; y: number },
@@ -374,22 +346,6 @@ function buildLayout(
   }
 
   return positioned;
-}
-
-function relationLabel(type: string) {
-  return RELATIONS[type as RelationKey]?.label ?? type;
-}
-
-function relationColor(type: string) {
-  return RELATIONS[type as RelationKey]?.color ?? "#8a9ba9";
-}
-
-function difficultyText(level: number) {
-  if (level <= 1) return "基础";
-  if (level === 2) return "较易";
-  if (level === 3) return "中等";
-  if (level === 4) return "较难";
-  return "进阶";
 }
 
 type NodeLabelPlacement = {
