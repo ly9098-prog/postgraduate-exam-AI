@@ -17,7 +17,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.subject_scope import (
-    EXAM408_CORE_CODES,
     EXAM408_DISPLAY_ORDER,
     canonical_408_code,
     is_study_subject_enabled,
@@ -26,7 +25,6 @@ from app.core.subject_scope import (
     study_subject_display_name,
 )
 from app.core.time_utils import (
-    normalize_to_naive_utc,
     shanghai_date_utc_range,
     shanghai_today,
     utcnow,
@@ -62,6 +60,33 @@ from app.services.practice.chapter_scope import (
 )
 from app.services.practice.chapter_scope import (
     knowledge_bucket as _chapter_knowledge_bucket,
+)
+from app.services.practice.normalization import (
+    PRACTICE_ALLOWED_MODES,
+)
+from app.services.practice.normalization import (
+    PRACTICE_ANSWER_MAX_USED_TIME_SEC as PRACTICE_ANSWER_MAX_USED_TIME_SEC,  # noqa: F401 — re-exported for tests
+)
+from app.services.practice.normalization import (
+    PRACTICE_SESSION_MAX_DURATION_SEC as PRACTICE_SESSION_MAX_DURATION_SEC,  # noqa: F401 — re-exported for tests
+)
+from app.services.practice.normalization import (
+    detect_408_subject_mismatch as _detect_408_subject_mismatch,
+)
+from app.services.practice.normalization import (
+    normalize_answer_used_time as _normalize_answer_used_time,
+)
+from app.services.practice.normalization import (
+    normalize_practice_request_id as _normalize_practice_request_id,
+)
+from app.services.practice.normalization import (
+    normalize_practice_session as _normalize_practice_session,
+)
+from app.services.practice.normalization import (
+    parse_session_datetime as _parse_session_datetime,
+)
+from app.services.practice.normalization import (
+    question_stem_for_subject_guard as _question_stem_for_subject_guard,
 )
 from app.services.practice.recommendation_pipeline import (
     merge_recommendation_results,
@@ -115,13 +140,11 @@ class PracticeBatchTokenError(ValueError):
 
 # 单次刷题会话时长上限（秒）。自由计时番茄钟上限 5h，刷题会话留余量到 6h；
 # 用于防御异常客户端上报 duration_sec=999999999。
-PRACTICE_SESSION_MAX_DURATION_SEC = 6 * 60 * 60
-PRACTICE_ANSWER_MAX_USED_TIME_SEC = PRACTICE_SESSION_MAX_DURATION_SEC
+# Duration constants imported from practice.normalization.
 PRACTICE_BATCH_MAX_QUESTIONS = 50
 PRACTICE_BATCH_TOKEN_TTL_SEC = 24 * 60 * 60
 PRACTICE_ANSWER_DURATION_TOLERANCE_SEC = 5
 PRACTICE_BATCH_CLOCK_SKEW_SEC = 5 * 60
-PRACTICE_ALLOWED_MODES = {"random", "smart", "similar", "sequential"}
 # The current mini-program runner only provides interactive controls for these
 # question types.  Text/free-response revisions must not be issued into a batch
 # until the runner has an input path for them, otherwise the user can never mark
@@ -339,20 +362,6 @@ def _validate_practice_batch_token(
     return revisions, issued_order, payload
 
 
-def _normalize_answer_used_time(value) -> int | None:
-    if value is None:
-        return None
-    try:
-        used_time = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("answers.used_time 必须为整数") from exc
-    if used_time < 0 or used_time > PRACTICE_ANSWER_MAX_USED_TIME_SEC:
-        raise ValueError(
-            f"answers.used_time 必须在 0~{PRACTICE_ANSWER_MAX_USED_TIME_SEC} 秒之间"
-        )
-    return used_time
-
-
 async def _china_date_expr(db: AsyncSession, column):
     bind = await db.connection()
     if bind.sync_connection.dialect.name == "sqlite":
@@ -371,128 +380,6 @@ async def _start_explicit_transaction(db: AsyncSession) -> None:
     bind = db.get_bind()
     if bind is not None and bind.dialect.name == "sqlite":
         await db.execute(text("BEGIN"))
-
-
-_PRACTICE_DURATION_ROUNDING_TOLERANCE = (
-    2  # 允许 finished-start 与 duration 的少量取整误差
-)
-
-
-def _parse_session_datetime(value) -> "datetime | None":
-    """Parse an ISO-8601 datetime (may carry ``Z`` / ``+00:00``) into naive UTC."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            logger.warning(
-                "practice session datetime 缺少时区信息，按 UTC 处理: %s", value
-            )
-        return normalize_to_naive_utc(value)
-    text_val = str(value).strip()
-    if not text_val:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text_val.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        # 客户端未带时区：无法区分是中国本地时间还是 UTC，按 UTC 处理并告警，
-        # 避免把中国本地时间静默当成 UTC 导致统计日偏移 8h。
-        logger.warning(
-            "practice session datetime 缺少时区信息，按 UTC 处理（若为北京时间将偏移 8h）: %s",
-            text_val,
-        )
-    return normalize_to_naive_utc(parsed)
-
-
-def _normalize_practice_request_id(value) -> str | None:
-    request_id = str(value or "").strip() or None
-    if request_id is not None and len(request_id) > 128:
-        raise ValueError("request_id 长度不得超过 128")
-    return request_id
-
-
-def _normalize_practice_session(
-    session_meta: dict,
-    *,
-    user_id: int,
-    answered_count: int,
-    total_correct: int,
-    total_wrong: int,
-) -> dict:
-    """Validate the mandatory server-issued practice session metadata."""
-    if not session_meta:
-        raise ValueError("session 不能为空")
-
-    started_at = _parse_session_datetime(session_meta.get("started_at"))
-    finished_at = _parse_session_datetime(session_meta.get("finished_at"))
-    if started_at is None or finished_at is None:
-        raise ValueError("session.start_at / session.finished_at 必须为合法 ISO 时间")
-    if finished_at < started_at:
-        raise ValueError("session.finished_at 不得早于 session.started_at")
-
-    duration_sec = session_meta.get("duration_sec")
-    try:
-        duration_sec = int(duration_sec) if duration_sec is not None else None
-    except (TypeError, ValueError):
-        raise ValueError("session.duration_sec 必须为整数")
-
-    wall_sec = max(0, int((finished_at - started_at).total_seconds()))
-    if duration_sec is None or duration_sec < 0:
-        # 缺省/非法：退化为墙钟时长
-        duration_sec = wall_sec
-    # 不允许明显超过墙钟（保留少量取整误差），异常值直接拒绝，避免
-    # fingerprint 与最终落库 duration 不一致。
-    if duration_sec > wall_sec + _PRACTICE_DURATION_ROUNDING_TOLERANCE:
-        raise ValueError(
-            "session.duration_sec 不得超过 started_at/finished_at 墙钟时长"
-        )
-    if duration_sec > PRACTICE_SESSION_MAX_DURATION_SEC:
-        raise ValueError("session.duration_sec 超过允许上限")
-
-    # 数据库列 String(256)：超长 request_id 使用稳定 hash，避免截断碰撞。
-    request_id = _normalize_practice_request_id(session_meta.get("request_id"))
-    subject_id = session_meta.get("subject_id")
-    try:
-        subject_id = int(subject_id) if subject_id is not None else None
-    except (TypeError, ValueError):
-        raise ValueError("session.subject_id 必须为整数")
-
-    mode = str(session_meta.get("mode") or "random")
-    if mode not in PRACTICE_ALLOWED_MODES:
-        raise ValueError("session.mode 无效")
-
-    reported_answered_count = session_meta.get("answered_count")
-    try:
-        reported_answered_count = int(reported_answered_count)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("session.answered_count 必须为整数") from exc
-    if reported_answered_count != answered_count:
-        raise ValueError("session.answered_count 与 answers 数量不一致")
-
-    question_count = session_meta.get("question_count")
-    try:
-        question_count = (
-            int(question_count) if question_count is not None else answered_count
-        )
-    except (TypeError, ValueError):
-        question_count = answered_count
-    question_count = max(0, question_count)
-
-    return {
-        "user_id": user_id,
-        "subject_id": subject_id,
-        "request_id": request_id,
-        "mode": mode,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "duration_sec": duration_sec,
-        "question_count": question_count,
-        "answered_count": max(0, answered_count),
-        "correct_count": max(0, total_correct),
-        "wrong_count": max(0, total_wrong),
-        "status": "completed",
-    }
 
 
 def _is_unique_violation(err: IntegrityError) -> bool:
@@ -629,201 +516,6 @@ async def resolve_subject_id_to_code(
     if subj is None or not is_study_subject_enabled(subj):
         return None
     return (subj.code, subj.name)
-
-
-_TRUE_FALSE_TRUE = {"a", "true", "对", "是", "正确", "t", "yes", "1"}
-_TRUE_FALSE_FALSE = {"b", "false", "错", "否", "错误", "f", "no", "0"}
-
-
-def _normalize_true_false_answer(value: str) -> str:
-    v = str(value or "").strip().lower()
-    if v in _TRUE_FALSE_TRUE:
-        return "A"
-    if v in _TRUE_FALSE_FALSE:
-        return "B"
-    return v.upper()
-
-
-# High-confidence, discipline-specific anchors used only as a safety net for
-# already-published 408 questions whose subject_id was historically assigned to
-# the wrong discipline.  The guard is intentionally conservative: a mismatch is
-# reported only when another discipline has several independent signals and a
-# clear lead over the stored subject.  Normal cross-discipline terminology must
-# not make a valid question disappear from practice.
-_408_CONTENT_ANCHORS: dict[str, tuple[str, ...]] = {
-    "data_structure": (
-        "二叉树",
-        "二叉排序树",
-        "平衡二叉树",
-        "红黑树",
-        "b树",
-        "b+树",
-        "线索二叉树",
-        "哈夫曼树",
-        "链表",
-        "顺序表",
-        "邻接表",
-        "邻接矩阵",
-        "最小生成树",
-        "拓扑排序",
-        "关键路径",
-        "散列表",
-        "哈希表",
-        "散列",
-        "二分查找",
-        "折半查找",
-        "快速排序",
-        "归并排序",
-        "堆排序",
-        "希尔排序",
-        "插入排序",
-        "冒泡排序",
-        "深度优先",
-        "广度优先",
-        "dfs",
-        "bfs",
-    ),
-    "operating_system": (
-        "进程",
-        "线程",
-        "死锁",
-        "信号量",
-        "临界区",
-        "管程",
-        "银行家算法",
-        "页面置换",
-        "缺页",
-        "页表",
-        "页框",
-        "页号",
-        "虚拟内存",
-        "虚拟页",
-        "分段存储",
-        "段表",
-        "段号",
-        "段内地址",
-        "工作集",
-        "驻留集",
-        "抖动",
-        "文件系统",
-        "磁盘调度",
-        "时间片",
-        "pv操作",
-    ),
-    "computer_organization": (
-        "cpu",
-        "alu",
-        "cache",
-        "高速缓存",
-        "主存",
-        "存储器层次",
-        "指令周期",
-        "指令字",
-        "微指令",
-        "微程序",
-        "流水线",
-        "控制器",
-        "运算器",
-        "总线",
-        "dma",
-        "中断向量",
-        "寻址方式",
-        "补码",
-        "原码",
-        "浮点数",
-        "ieee754",
-        "ieee 754",
-        "机器字长",
-        "存储字长",
-    ),
-    "computer_network": (
-        "tcp",
-        "udp",
-        "ipv4",
-        "ipv6",
-        "ip地址",
-        "子网掩码",
-        "路由表",
-        "路由协议",
-        "ospf",
-        "rip",
-        "bgp",
-        "arp",
-        "dns",
-        "http",
-        "以太网",
-        "csma",
-        "mac地址",
-        "数据链路层",
-        "网络层",
-        "传输层",
-        "应用层",
-        "拥塞窗口",
-        "三次握手",
-        "四次挥手",
-    ),
-}
-
-
-def _canonical_408_subject(code: str | None, name: str | None = None) -> str | None:
-    # Runtime subject identity is code-only. ``name`` is intentionally ignored so
-    # a stale/incorrect code cannot be masked by a matching display name.
-    value = str(code or "").strip().lower()
-    return value if value in EXAM408_CORE_CODES else None
-
-
-def _question_stem_for_subject_guard(content: dict | None) -> str:
-    if not isinstance(content, dict):
-        return ""
-    # Do not use analysis/knowledge-point text here: those fields can themselves
-    # be wrong after a historical subject misclassification and would hide the
-    # very mismatch this guard is meant to catch.
-    value = content.get("text") or content.get("stem") or ""
-    return str(value).strip().lower()
-
-
-def _detect_408_subject_mismatch(
-    *,
-    subject_code: str | None,
-    subject_name: str | None,
-    stem: str,
-) -> tuple[str | None, dict[str, int]]:
-    """Return an inferred conflicting 408 discipline only at high confidence."""
-    expected = _canonical_408_subject(subject_code, subject_name)
-    if expected is None or not stem:
-        return None, {}
-
-    compact = stem.replace(" ", "")
-    scores: dict[str, int] = {}
-    for discipline, anchors in _408_CONTENT_ANCHORS.items():
-        matched = 0
-        for anchor in anchors:
-            candidate = anchor.lower()
-            haystack = compact if " " not in candidate else stem
-            needle = candidate.replace(" ", "") if " " not in candidate else candidate
-            if needle and needle in haystack:
-                matched += 1
-        scores[discipline] = matched
-
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    if not ranked:
-        return None, scores
-    best_subject, best_score = ranked[0]
-    second_score = ranked[1][1] if len(ranked) > 1 else 0
-    expected_score = scores.get(expected, 0)
-
-    # At least two independent anchors, a two-signal advantage over the stored
-    # discipline, and a clear overall lead.  This catches e.g. "进程 + 段表 +
-    # 段号 + 段内地址" stored as 数据结构, while leaving interdisciplinary or
-    # ambiguous stems untouched.
-    if (
-        best_subject != expected
-        and best_score >= 2
-        and best_score - expected_score >= 2
-        and best_score - second_score >= 1
-    ):
-        return best_subject, scores
-    return None, scores
 
 
 def _practice_revision_scope_condition(subject_ids: list[int]):
@@ -3042,7 +2734,11 @@ async def _load_smart_scored_candidates(
         else await resolve_subject_ids(db, subject_code)
     )
     conditions, excluded_sub = _build_smart_scored_candidate_conditions(
-        user_id, scope_ids, exclude_answered, no_repeat_days, now,
+        user_id,
+        scope_ids,
+        exclude_answered,
+        no_repeat_days,
+        now,
     )
 
     candidates = await _execute_candidate_query(db, conditions, candidate_limit)
@@ -3055,10 +2751,18 @@ async def _load_smart_scored_candidates(
         relaxed = [c for c in conditions if c is not conditions[-1]]
         active_candidate_conditions = relaxed
         candidates = await _execute_candidate_query(
-            db, relaxed, candidate_limit,
+            db,
+            relaxed,
+            candidate_limit,
         )
 
-    return candidates, active_candidate_conditions, scope_ids, excluded_sub, fallback_level
+    return (
+        candidates,
+        active_candidate_conditions,
+        scope_ids,
+        excluded_sub,
+        fallback_level,
+    )
 
 
 async def _execute_candidate_query(
@@ -3083,7 +2787,10 @@ async def _execute_candidate_query(
         .options(selectinload(Question.subject_ref))
     )
     query = _random_sample_query(
-        query, total, min(candidate_limit, total), Question.id,
+        query,
+        total,
+        min(candidate_limit, total),
+        Question.id,
     )
     result = await db.execute(query)
     return list(result.scalars().all())
@@ -3116,16 +2823,24 @@ async def _load_knowledge_and_graph_context(
     }
 
     graph_context: dict = {
-        "blocked_targets": {}, "prerequisite_candidates": {}, "prerequisites_by_target": {},
+        "blocked_targets": {},
+        "prerequisite_candidates": {},
+        "prerequisites_by_target": {},
     }
     try:
         from app.core.config import settings as _settings
 
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
             graph_context = await _expand_graph_candidates(
-                db, user_id, scope_ids, candidates,
-                active_candidate_conditions, kp_mastery,
-                graph_runtime, count, graph_context,
+                db,
+                user_id,
+                scope_ids,
+                candidates,
+                active_candidate_conditions,
+                kp_mastery,
+                graph_runtime,
+                count,
+                graph_context,
             )
     except Exception:
         # Graph is an enhancement, never a single point of failure.
@@ -3133,7 +2848,9 @@ async def _load_knowledge_and_graph_context(
             "V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True
         )
         graph_context = {
-            "blocked_targets": {}, "prerequisite_candidates": {}, "prerequisites_by_target": {},
+            "blocked_targets": {},
+            "prerequisite_candidates": {},
+            "prerequisites_by_target": {},
         }
     return kp_mastery, kp_observations, graph_context
 
@@ -3154,9 +2871,7 @@ async def _fetch_graph_context(
         subject_ids=subject_ids,
         max_depth=int(graph_runtime.get("max_depth", 2)),
         max_nodes=int(graph_runtime.get("max_nodes", 24)),
-        min_mastery=float(
-            graph_runtime.get("prerequisite_mastery_threshold", 60.0)
-        ),
+        min_mastery=float(graph_runtime.get("prerequisite_mastery_threshold", 60.0)),
         min_confidence=float(
             graph_runtime.get("prerequisite_confidence_threshold", 0.3)
         ),
@@ -3177,12 +2892,8 @@ async def _extend_with_graph_question_candidates(
 
     existing_ids = {q.id for q in candidates}
     graph_limit = max(count * 3, 30)
-    graph_question_ids = select(
-        QuestionKnowledgePoint.question_id
-    ).where(
-        QuestionKnowledgePoint.knowledge_point_id.in_(
-            graph_candidate_ids
-        )
+    graph_question_ids = select(QuestionKnowledgePoint.question_id).where(
+        QuestionKnowledgePoint.knowledge_point_id.in_(graph_candidate_ids)
     )
     graph_query = (
         select(Question)
@@ -3235,8 +2946,12 @@ async def _expand_graph_candidates(
         from app.services import adaptive_learning_service
 
         graph_context = await _fetch_graph_context(
-            adaptive_learning_service, db, user_id,
-            weak_target_ids, scope_ids, graph_runtime,
+            adaptive_learning_service,
+            db,
+            user_id,
+            weak_target_ids,
+            scope_ids,
+            graph_runtime,
         )
         graph_candidate_ids = list(
             graph_context.get("prerequisite_candidates", {}).keys()
@@ -3244,8 +2959,13 @@ async def _expand_graph_candidates(
         if not graph_candidate_ids:
             return graph_context
         await _extend_with_graph_question_candidates(
-            db, user_id, candidates, active_candidate_conditions,
-            graph_candidate_ids, weak_target_ids, count,
+            db,
+            user_id,
+            candidates,
+            active_candidate_conditions,
+            graph_candidate_ids,
+            weak_target_ids,
+            count,
         )
     return graph_context
 
@@ -3300,7 +3020,9 @@ async def _load_candidate_states(
 
 
 async def _load_kp_names(
-    db: AsyncSession, q_kp_map: dict[int, list[int]], scope_ids: list[int],
+    db: AsyncSession,
+    q_kp_map: dict[int, list[int]],
+    scope_ids: list[int],
 ) -> dict[int, str]:
     """Load KP names for all candidate knowledge points."""
     all_candidate_kp_ids = list({kid for kids in q_kp_map.values() for kid in kids})
@@ -3405,11 +3127,22 @@ async def get_smart_scored_questions(
     graph_runtime = scored_runtime.get("graph") or {}
 
     candidate_limit = max(count * 5, 50)
-    candidates, active_candidate_conditions, scope_ids, excluded_sub, fallback_level = (
-        await _load_smart_scored_candidates(
-            db, user_id, subject_code, subject_ids, candidate_limit,
-            exclude_answered, no_repeat_days, count, now,
-        )
+    (
+        candidates,
+        active_candidate_conditions,
+        scope_ids,
+        excluded_sub,
+        fallback_level,
+    ) = await _load_smart_scored_candidates(
+        db,
+        user_id,
+        subject_code,
+        subject_ids,
+        candidate_limit,
+        exclude_answered,
+        no_repeat_days,
+        count,
+        now,
     )
     subject_cond = Question.subject_id.in_(scope_ids)
 
@@ -3419,23 +3152,44 @@ async def get_smart_scored_questions(
         )
         return [], metadata
 
-    kp_mastery, kp_observations, graph_context = await _load_knowledge_and_graph_context(
-        db, user_id, scope_ids, candidates, active_candidate_conditions,
-        graph_runtime, count,
+    (
+        kp_mastery,
+        kp_observations,
+        graph_context,
+    ) = await _load_knowledge_and_graph_context(
+        db,
+        user_id,
+        scope_ids,
+        candidates,
+        active_candidate_conditions,
+        graph_runtime,
+        count,
     )
 
     cand_ids = {q.id for q in candidates}
     q_state_map, recent_kp_ids, q_kp_map = await _load_candidate_states(
-        db, user_id, cand_ids, scope_ids,
+        db,
+        user_id,
+        cand_ids,
+        scope_ids,
     )
-    blocked_kps, graph_candidates, prerequisites_by_target = _extract_graph_context(graph_context)
+    blocked_kps, graph_candidates, prerequisites_by_target = _extract_graph_context(
+        graph_context
+    )
     kp_names = await _load_kp_names(db, q_kp_map, scope_ids)
     rec_weights = await _compute_recommendation_weights(
-        db, user_id, system_weights,
+        db,
+        user_id,
+        system_weights,
     )
 
     scored = score_and_rank_candidates(
-        candidates, q_state_map, q_kp_map, kp_mastery, recent_kp_ids, now,
+        candidates,
+        q_state_map,
+        q_kp_map,
+        kp_mastery,
+        recent_kp_ids,
+        now,
         kp_observations=kp_observations,
         blocked_kps=blocked_kps,
         graph_candidates=graph_candidates,
@@ -3456,7 +3210,10 @@ async def get_smart_scored_questions(
 
     def scored_metadata(score: float, reasons: list[str], kp_ids: list[int]) -> dict:
         return _build_scored_metadata(
-            score, reasons, kp_ids, kp_names,
+            score,
+            reasons,
+            kp_ids,
+            kp_names,
             graph_candidates=graph_candidates,
             blocked_kps=blocked_kps,
             kp_mastery=kp_mastery,
@@ -3465,7 +3222,11 @@ async def get_smart_scored_questions(
         )
 
     selected, selected_ids, relaxed_diversity = select_scored_candidates(
-        scored, count, q_kp_map, metadata, scored_metadata,
+        scored,
+        count,
+        q_kp_map,
+        metadata,
+        scored_metadata,
     )
     if relaxed_diversity:
         fallback_level = max(fallback_level, 2)
@@ -3957,9 +3718,7 @@ async def batch_submit_answers(
                 "knowledge_points": revision_kps.get(int(q.question_version_id), []),
                 "is_wrong_added": int(q.id) in wrong_question_ids,
                 "wrong_question_id": wrong_question_ids.get(int(q.id)),
-                "error_diagnosis": getattr(
-                    record, "_error_diagnosis_payload", None
-                ),
+                "error_diagnosis": getattr(record, "_error_diagnosis_payload", None),
             }
         for q in skipped_questions:
             response_by_question[int(q.id)] = {
