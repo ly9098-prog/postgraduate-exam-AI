@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 
 from app.services.task_queue_v2_reaper_contract import (
+    apply_v1_reaper_result,
     apply_v2_reaper_result,
+    normalize_v1_reaper_result,
     normalize_v2_reaper_result,
 )
 
@@ -27,3 +29,12 @@ def test_positive_reclaims_are_actionable():
     assert apply_v2_reaper_result(100)
     assert not apply_v2_reaper_result(0)
     assert not apply_v2_reaper_result(-1)
+
+
+def test_v1_reaper_result_preserves_historical_contract():
+    assert normalize_v1_reaper_result(None) == 0
+    assert normalize_v1_reaper_result(0) == 0
+    assert normalize_v1_reaper_result(5) == 5
+    assert apply_v1_reaper_result(1)
+    assert not apply_v1_reaper_result(0)
+    assert not apply_v1_reaper_result(-1)

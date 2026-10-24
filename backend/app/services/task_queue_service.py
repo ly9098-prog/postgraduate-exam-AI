@@ -96,7 +96,9 @@ from app.services.task_queue_v2_admin_contract import (
     v2_mark_corrupt_success,
 )
 from app.services.task_queue_v2_reaper_contract import (
+    apply_v1_reaper_result,
     apply_v2_reaper_result,
+    normalize_v1_reaper_result,
     normalize_v2_reaper_result,
 )
 from app.services.task_queue_v2_health_contract import v2_oldest_ready_age
@@ -1037,11 +1039,11 @@ class DurableTaskQueue:
                 )
                 or 0
             )
-            reclaimed = int(reclaimed)
+            reclaimed = normalize_v1_reaper_result(reclaimed)
 
             await client.aclose()
 
-            if reclaimed:
+            if apply_v1_reaper_result(reclaimed):
                 logger.info("Reclaimed %d expired tasks for %s", reclaimed, task_type)
                 queue_metrics["reaper_reclaimed"] += reclaimed
 
