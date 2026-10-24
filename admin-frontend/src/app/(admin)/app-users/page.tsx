@@ -31,17 +31,20 @@ import {
   buildUserCsvRow,
   filterBatchActionCandidates,
   noCandidatesMessage,
+  buildPagination,
+  statusToQueryValue,
+  endOfChinaDateUtcIso,
   type UserAction,
+  type UserStatusFilter,
+  type PaginationItem,
 } from "@/lib/app-user-utils";
 
-type UserStatusFilter = "all" | "active" | "banned";
 type ConfirmState = {
   action: UserAction;
   userIds: number[];
   label: string;
 } | null;
 type Notice = { tone: "success" | "error"; text: string } | null;
-type PaginationItem = number | "ellipsis-left" | "ellipsis-right";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "全部状态" },
@@ -55,29 +58,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: "50", label: "50 条/页" },
   { value: "100", label: "100 条/页" },
 ];
-
-function statusToQueryValue(status: UserStatusFilter): boolean | undefined {
-  if (status === "active") return false;
-  if (status === "banned") return true;
-  return undefined;
-}
-
-function endOfChinaDateUtcIso(date: string): string {
-  const nextDay = chinaDateToUtcIso(date, 1);
-  if (!nextDay) return "";
-  // The backend filter is inclusive (<=). Emit the final microsecond before
-  // the next China calendar day so PostgreSQL microsecond precision is covered.
-  return new Date(new Date(nextDay).getTime() - 1000).toISOString().replace(/\.\d{3}Z$/, ".999999Z");
-}
-
-function buildPagination(current: number, total: number): PaginationItem[] {
-  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
-
-  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis-right", total];
-  if (current >= total - 3) return [1, "ellipsis-left", total - 4, total - 3, total - 2, total - 1, total];
-
-  return [1, "ellipsis-left", current - 1, current, current + 1, "ellipsis-right", total];
-}
 
 
 function UserAvatar({ user }: { user: AppUser }) {

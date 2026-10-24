@@ -5,6 +5,9 @@ import {
   buildUserCsvRow,
   filterBatchActionCandidates,
   noCandidatesMessage,
+  buildPagination,
+  statusToQueryValue,
+  endOfChinaDateUtcIso,
   type AppUserLike,
 } from "./app-user-utils";
 
@@ -103,5 +106,50 @@ describe("noCandidatesMessage", () => {
   });
   it("unban message", () => {
     expect(noCandidatesMessage("unban")).toBe("所选用户均为正常状态，无需解封。");
+  });
+});
+
+describe("buildPagination", () => {
+  it("returns all pages when total <= 7", () => {
+    expect(buildPagination(1, 5)).toEqual([1, 2, 3, 4, 5]);
+  });
+  it("returns compact list when current near start", () => {
+    expect(buildPagination(2, 10)).toEqual([1, 2, 3, 4, 5, "ellipsis-right", 10]);
+  });
+  it("returns compact list when current near end", () => {
+    expect(buildPagination(9, 10)).toEqual([1, "ellipsis-left", 6, 7, 8, 9, 10]);
+  });
+  it("returns centered list in middle", () => {
+    expect(buildPagination(5, 10)).toEqual([1, "ellipsis-left", 4, 5, 6, "ellipsis-right", 10]);
+  });
+  it("handles total of 7 exactly", () => {
+    expect(buildPagination(1, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+});
+
+describe("statusToQueryValue", () => {
+  it("returns false for active (not banned)", () => {
+    expect(statusToQueryValue("active")).toBe(false);
+  });
+  it("returns true for banned", () => {
+    expect(statusToQueryValue("banned")).toBe(true);
+  });
+  it("returns undefined for all", () => {
+    expect(statusToQueryValue("all")).toBeUndefined();
+  });
+});
+
+describe("endOfChinaDateUtcIso", () => {
+  it("returns non-empty string for valid date", () => {
+    const result = endOfChinaDateUtcIso("2025-01-15");
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe("string");
+  });
+  it("returns empty string for empty input", () => {
+    expect(endOfChinaDateUtcIso("")).toBe("");
+  });
+  it("ends with microsecond precision", () => {
+    const result = endOfChinaDateUtcIso("2025-01-15");
+    expect(result.endsWith(".999999Z")).toBe(true);
   });
 });

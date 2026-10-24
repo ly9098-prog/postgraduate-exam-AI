@@ -1,9 +1,49 @@
 /**
  * Pure helpers for app-users page, extracted from app-users/page.tsx.
- * Covers CSV escaping, user-row building, and batch-action candidate filtering.
+ * Covers CSV escaping, user-row building, batch-action candidate filtering,
+ * pagination, and date/status query mapping.
  */
 
+import { chinaDateToUtcIso } from "@/lib/time";
+
 export type UserAction = "ban" | "unban";
+
+export type UserStatusFilter = "all" | "active" | "banned";
+
+export type PaginationItem = number | "ellipsis-left" | "ellipsis-right";
+
+/**
+ * Build a compact pagination item list with ellipses for large page counts.
+ */
+export function buildPagination(current: number, total: number): PaginationItem[] {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+
+  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis-right", total];
+  if (current >= total - 3) return [1, "ellipsis-left", total - 4, total - 3, total - 2, total - 1, total];
+
+  return [1, "ellipsis-left", current - 1, current, current + 1, "ellipsis-right", total];
+}
+
+/**
+ * Map a user status filter to the API boolean value, or undefined for "all".
+ * Note: "active" maps to false (not banned), "banned" maps to true.
+ */
+export function statusToQueryValue(status: UserStatusFilter): boolean | undefined {
+  if (status === "active") return false;
+  if (status === "banned") return true;
+  return undefined;
+}
+
+/**
+ * Convert a China calendar date to the UTC ISO string of its end.
+ * Emits the final microsecond before the next China calendar day so
+ * PostgreSQL microsecond precision is covered.
+ */
+export function endOfChinaDateUtcIso(date: string): string {
+  const nextDay = chinaDateToUtcIso(date, 1);
+  if (!nextDay) return "";
+  return new Date(new Date(nextDay).getTime() - 1000).toISOString().replace(/\.\d{3}Z$/, ".999999Z");
+}
 
 export type AppUserLike = {
   id: number;
