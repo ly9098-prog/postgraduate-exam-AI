@@ -87,6 +87,9 @@ const {
   isDeterministicReject,
   resolveRejectMessage,
 } = require('./utils/submit-payload-builder')
+const {
+  classifyAnswers,
+} = require('./utils/answer-classification')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1722,20 +1725,17 @@ const activeStartedMonoMs = this._practiceSession.activeStartedMonoMs
 const comboCount = this._practiceSession.comboCount
 const total = questions.length || 0
 const answeredFlags = adapter.buildAnsweredFlags(questions, answerMap, 'id')
-const answeredCount = adapter.countAnswered(answeredFlags)
-const completedQuestions = questions.filter(function(q) {
-return answeredFlags[String(q.id)]
+const answerClassification = classifyAnswers({
+questions,
+answerMap,
+answeredFlags,
+isMultiBlank: adapter.isMultiBlankChoice,
 })
-const partialQuestionIds = questions
-.filter(function(q) {
-const key = String(q.id)
-return !answeredFlags[key] && adapter.isMultiBlankChoice(q) && !!answerMap[key]
-})
-.map(function(q) { return q.id })
-const skippedQuestionIds = questions
-.filter(function(q) { return !answeredFlags[String(q.id)] })
-.map(function(q) { return q.id })
-const unanswered = total - answeredCount
+const answeredCount = answerClassification.answeredCount
+const completedQuestions = answerClassification.completedQuestions
+const partialQuestionIds = answerClassification.partialQuestionIds
+const skippedQuestionIds = answerClassification.skippedQuestionIds
+const unanswered = answerClassification.unanswered
 if (answeredCount === 0 && partialQuestionIds.length === 0) {
 wx.showToast({ title: '请至少完成或填写 1 题再提交', icon: 'none' })
 return
