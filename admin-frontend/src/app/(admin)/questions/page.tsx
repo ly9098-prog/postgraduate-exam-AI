@@ -24,7 +24,7 @@ import { QuestionDrawerHeader } from "./question-drawer-header";
 import { QuestionDrawerBody } from "./question-drawer-body";
 import { QuestionFilterToolbar } from "./question-filter-toolbar";
 import { QuestionListToolbar } from "./question-list-toolbar";
-import { CustomSelect } from "@/components/ui/custom-select";
+import { QuestionListPagination } from "./question-list-pagination";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { exportQuestions } from "./question-api";
 
@@ -60,13 +60,6 @@ import {
   textForStemEditor,
 } from "./question-content-editing";
 import { buildExportPayload } from "./question-export-payload";
-import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
-
-const pageSizeOptions = [
-  { label: "20 条/页", value: "20" },
-  { label: "50 条/页", value: "50" },
-  { label: "100 条/页", value: "100" },
-];
 
 export default function QuestionsPage() {
   const queryClient = useQueryClient();
@@ -478,62 +471,16 @@ export default function QuestionsPage() {
               />
               </div>
 
-              {questions.data && questions.data.total_pages > 1 ? (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-[1.2rem] border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm">
-              <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-                <span>
-                  共 <span className="font-semibold text-[var(--ink)]">{questions.data.total}</span> 条
-                </span>
-                <span>
-                  第 <span className="font-semibold text-[var(--ink)]">{questions.data.page}</span> / {questions.data.total_pages} 页
-                </span>
-                <CustomSelect
-                  className="h-10 min-w-[116px] rounded-full border-[var(--color-border)] bg-white px-3"
-                  value={String(pageSize)}
-                  onChange={handlePageSizeChange}
-                  options={pageSizeOptions}
-                  clearable={false}
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  disabled={page <= 1 || questions.isFetching}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
-                >
-                  上一页
-                </button>
-                {buildQuestionPaginationViewport({
-                  page,
-                  totalPages: questions.data.total_pages,
-                }).map((p) => {
-                  const isActive = p === page;
-                  return (
-                    <button
-                      key={p}
-                      disabled={isActive || questions.isFetching}
-                      onClick={() => setPage(p)}
-                      className={
-                        isActive
-                          ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-sm"
-                          : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
-                      }
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
-                <button
-                  disabled={page >= (questions.data?.total_pages ?? 1) || questions.isFetching}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-              ) : null}
+              <QuestionListPagination
+                visible={Boolean(questions.data && questions.data.total_pages > 1)}
+                total={questions.data?.total ?? 0}
+                page={page}
+                totalPages={questions.data?.total_pages ?? 1}
+                pageSize={pageSize}
+                isFetching={questions.isFetching}
+                onPageSizeChange={handlePageSizeChange}
+                onSetPage={setPage}
+              />
             </section>
 
             <aside className="hidden xl:block xl:min-h-0 xl:self-stretch">
