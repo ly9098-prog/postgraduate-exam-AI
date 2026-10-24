@@ -2,7 +2,7 @@ const api = require('../../../utils/api')
 const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
 const { buildFinalSubmitAnswers, isRetryableSubmitError } = require('../utils/submit-helpers')
-const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl } = require('../utils/hydrate-helpers')
+const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl } = require('../utils/hydrate-helpers')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -261,13 +261,7 @@ Page({
     this._clearTimer()
     const targetRoute = 'subpackages/exam/paper-list/index'
     const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
-    let targetIndex = -1
-    for (let i = pages.length - 2; i >= 0; i -= 1) {
-      if (String((pages[i] || {}).route || '').replace(/^\//, '') === targetRoute) {
-        targetIndex = i
-        break
-      }
-    }
+    const targetIndex = findPageInStack(pages, targetRoute)
     const fail = () => {
       this._terminalNavigation = false
       this._navigationLocked = false
@@ -277,7 +271,7 @@ Page({
       wx.navigateBack({ delta: Math.max(1, pages.length - 1 - targetIndex), fail })
       return
     }
-    wx.redirectTo({ url: '/subpackages/exam/paper-list/index', fail })
+    wx.redirectTo({ url: buildPaperListUrl(), fail })
   },
 
   async loadAttempt() {

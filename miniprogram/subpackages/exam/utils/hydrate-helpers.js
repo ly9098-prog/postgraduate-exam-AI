@@ -35,3 +35,27 @@ function buildExamResultUrl(attemptId) {
 }
 
 module.exports = { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl }
+
+/**
+ * Find the index of a target route in the page stack (searching backwards).
+ *
+ * Pure function — extracted from exam-runner _navigateToPaperList.
+ * Returns -1 if not found.
+ */
+function findPageInStack(pages, targetRoute) {
+  for (var i = pages.length - 2; i >= 0; i -= 1) {
+    if (String((pages[i] || {}).route || '').replace(/^\//, '') === targetRoute) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
+ * Build the paper list URL.
+ */
+function buildPaperListUrl() {
+  return '/subpackages/exam/paper-list/index'
+}
+
+module.exports = { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl }

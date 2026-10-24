@@ -60,3 +60,47 @@ test('buildExamResultUrl: builds correct URL', () => {
     '/subpackages/exam/result/index?attempt_id=123'
   )
 })
+
+const { findPageInStack, buildPaperListUrl } = require('../subpackages/exam/utils/hydrate-helpers')
+
+test('findPageInStack: finds target route', () => {
+  const pages = [
+    { route: 'pages/home/home' },
+    { route: 'subpackages/exam/paper-list/index' },
+    { route: 'subpackages/exam/exam-runner/index' },
+  ]
+  assert.equal(findPageInStack(pages, 'subpackages/exam/paper-list/index'), 1)
+})
+
+test('findPageInStack: handles leading slash in route', () => {
+  const pages = [
+    { route: '/subpackages/exam/paper-list/index' },
+    { route: 'subpackages/exam/exam-runner/index' },
+  ]
+  assert.equal(findPageInStack(pages, 'subpackages/exam/paper-list/index'), 0)
+})
+
+test('findPageInStack: returns -1 when not found', () => {
+  const pages = [
+    { route: 'pages/home/home' },
+    { route: 'subpackages/exam/exam-runner/index' },
+  ]
+  assert.equal(findPageInStack(pages, 'subpackages/exam/paper-list/index'), -1)
+})
+
+test('findPageInStack: handles empty pages', () => {
+  assert.equal(findPageInStack([], 'test'), -1)
+})
+
+test('findPageInStack: skips current page (last)', () => {
+  const pages = [
+    { route: 'subpackages/exam/paper-list/index' },
+    { route: 'subpackages/exam/paper-list/index' },
+  ]
+  // Should find index 0, not 1 (current page)
+  assert.equal(findPageInStack(pages, 'subpackages/exam/paper-list/index'), 0)
+})
+
+test('buildPaperListUrl: returns correct URL', () => {
+  assert.equal(buildPaperListUrl(), '/subpackages/exam/paper-list/index')
+})
