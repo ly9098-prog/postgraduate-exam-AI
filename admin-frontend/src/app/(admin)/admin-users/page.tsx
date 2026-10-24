@@ -41,6 +41,17 @@ import type {
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission, type PermissionKey } from "@/lib/permissions/permissions";
+import {
+  ADMIN_ROLE_NAMES,
+  checkPassword,
+  isPasswordReady,
+  isFormReady,
+  filterManagedRoles,
+  filterEditableRoles,
+  buildRoleOptions,
+  findSelectedFormRole,
+  isSuperAdminUser,
+} from "@/lib/admin-user-utils";
 import { chinaDateString, chinaDateToUtcIso, formatChinaDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -85,7 +96,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: "100", label: "100 条/页" },
 ];
 
-const ADMIN_ROLE_NAMES = new Set(["super_admin", "admin", "user"]);
 
 function buildPagination(current: number, total: number): PaginationItem[] {
   if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
@@ -246,40 +256,31 @@ export default function AdminUsersPage() {
   });
 
   const managedRoles = useMemo(
-    () => (roles.data?.items ?? []).filter((item) => ADMIN_ROLE_NAMES.has(item.name)),
+    () => filterManagedRoles(roles.data?.items ?? []),
     [roles.data?.items],
   );
   const editableRoles = useMemo(
-    () => managedRoles.filter((item) => item.name !== "super_admin"),
+    () => filterEditableRoles(managedRoles),
     [managedRoles],
   );
   const roleOptions = useMemo(
-    () => managedRoles.map((item) => ({ value: String(item.id), label: item.display_name })),
+    () => buildRoleOptions(managedRoles),
     [managedRoles],
   );
   const selectedFormRole = useMemo(
-    () => editableRoles.find((item) => String(item.id) === form.role_id),
+    () => findSelectedFormRole(editableRoles, form.role_id),
     [editableRoles, form.role_id],
   );
   const passwordChecks = useMemo(
-    () => ({
-      length: form.password.length >= 12,
-      uppercase: /[A-Z]/.test(form.password),
-      lowercase: /[a-z]/.test(form.password),
-      digit: /\d/.test(form.password),
-    }),
+    () => checkPassword(form.password),
     [form.password],
   );
-  const passwordReady = Object.values(passwordChecks).every(Boolean);
-  const formReady = Boolean(
-    form.role_id &&
-      (form.id || (form.username.trim().length > 0 && passwordReady)),
-  );
+  const passwordReady = isPasswordReady(form.password);
+  const formReady = isFormReady(form);
 
   const isSuperAdmin = useCallback(
     (user: AdminUserSummary) => {
-      const superAdminRole = managedRoles.find((item) => item.name === "super_admin");
-      return Boolean(superAdminRole && user.role_id === superAdminRole.id);
+      return isSuperAdminUser(user, managedRoles);
     },
     [managedRoles],
   );
