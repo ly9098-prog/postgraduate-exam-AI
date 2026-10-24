@@ -2,7 +2,7 @@ const api = require('../../../utils/api')
 const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
 const { buildFinalSubmitAnswers, isRetryableSubmitError } = require('../utils/submit-helpers')
-const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl } = require('../utils/hydrate-helpers')
+const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl, buildPendingItem, computeAnsweredProgress } = require('../utils/hydrate-helpers')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -456,21 +456,11 @@ Page({
   },
 
   _setCountsOnly() {
-    const questions = this.data.questions || []
-    const answeredCount = questions.reduce((n, q) => n + (q._answered ? 1 : 0), 0)
-    this.setData({
-      answeredCount,
-      progressPercent: questions.length ? Math.round((answeredCount / questions.length) * 100) : 0,
-    })
+    this.setData(computeAnsweredProgress(this.data.questions))
   },
 
   _queueItem(itemId) {
-    const a = this._answers[String(itemId)] || {}
-    this._pending[String(itemId)] = {
-      selected_answer: a.selected_answer || null,
-      marked_for_review: !!a.marked_for_review,
-      used_time: Math.max(0, Number(a.used_time || 0)),
-    }
+    this._pending[String(itemId)] = buildPendingItem(this._answers[String(itemId)])
     this._persistPending()
   },
 

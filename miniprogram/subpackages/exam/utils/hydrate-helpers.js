@@ -59,3 +59,33 @@ function buildPaperListUrl() {
 }
 
 module.exports = { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl }
+
+/**
+ * Build a pending item state from an answer object.
+ *
+ * Pure function — extracted from exam-runner _queueItem.
+ */
+function buildPendingItem(answer) {
+  var a = answer || {}
+  return {
+    selected_answer: a.selected_answer || null,
+    marked_for_review: !!a.marked_for_review,
+    used_time: Math.max(0, Number(a.used_time || 0)),
+  }
+}
+
+/**
+ * Compute answered count and progress percent from a question list.
+ *
+ * Pure function — extracted from exam-runner _setCountsOnly.
+ */
+function computeAnsweredProgress(questions) {
+  var qs = questions || []
+  var answeredCount = qs.reduce(function(n, q) { return n + (q._answered ? 1 : 0) }, 0)
+  return {
+    answeredCount: answeredCount,
+    progressPercent: qs.length ? Math.round((answeredCount / qs.length) * 100) : 0,
+  }
+}
+
+module.exports = { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl, buildPendingItem, computeAnsweredProgress }

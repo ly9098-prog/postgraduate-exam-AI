@@ -104,3 +104,54 @@ test('findPageInStack: skips current page (last)', () => {
 test('buildPaperListUrl: returns correct URL', () => {
   assert.equal(buildPaperListUrl(), '/subpackages/exam/paper-list/index')
 })
+
+const { buildPendingItem, computeAnsweredProgress } = require('../subpackages/exam/utils/hydrate-helpers')
+
+test('buildPendingItem: builds from answer', () => {
+  const item = buildPendingItem({ selected_answer: 'A', marked_for_review: true, used_time: 30 })
+  assert.equal(item.selected_answer, 'A')
+  assert.equal(item.marked_for_review, true)
+  assert.equal(item.used_time, 30)
+})
+
+test('buildPendingItem: defaults missing fields', () => {
+  const item = buildPendingItem({})
+  assert.equal(item.selected_answer, null)
+  assert.equal(item.marked_for_review, false)
+  assert.equal(item.used_time, 0)
+})
+
+test('buildPendingItem: clamps negative used_time', () => {
+  const item = buildPendingItem({ used_time: -10 })
+  assert.equal(item.used_time, 0)
+})
+
+test('buildPendingItem: handles null', () => {
+  const item = buildPendingItem(null)
+  assert.equal(item.selected_answer, null)
+  assert.equal(item.marked_for_review, false)
+  assert.equal(item.used_time, 0)
+})
+
+test('computeAnsweredProgress: counts answered questions', () => {
+  const result = computeAnsweredProgress([
+    { _answered: true },
+    { _answered: false },
+    { _answered: true },
+  ])
+  assert.equal(result.answeredCount, 2)
+  assert.equal(result.progressPercent, 67)
+})
+
+test('computeAnsweredProgress: handles empty list', () => {
+  assert.deepEqual(computeAnsweredProgress([]), { answeredCount: 0, progressPercent: 0 })
+})
+
+test('computeAnsweredProgress: handles null', () => {
+  assert.deepEqual(computeAnsweredProgress(null), { answeredCount: 0, progressPercent: 0 })
+})
+
+test('computeAnsweredProgress: 100% when all answered', () => {
+  const result = computeAnsweredProgress([{ _answered: true }, { _answered: true }])
+  assert.equal(result.progressPercent, 100)
+})
