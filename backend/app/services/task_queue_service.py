@@ -118,6 +118,7 @@ from app.services.task_queue_v2_dead_retry_contract import (
     parse_v2_dead_retry_payload,
 )
 from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
+from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -2388,26 +2389,31 @@ class DurableTaskQueue:
                     str(settings.TASK_QUEUE_CORRUPT_MAX),
                     str(_FENCING_TOMBSTONE_TTL),
                 )
-                if not result or result[0] == "empty":
+                step = parse_v1_to_v2_result(result)
+                if not step.should_continue:
                     break
-                outcome, task_id = result
-                if outcome == "queue_full":
-                    logger.warning(
-                        "v1→v2 drain paused: v2 ready queue full for %s", task_type
-                    )
+                if step.should_stop:
+                    if step.outcome == "queue_full":
+                        logger.warning(
+                            "v1→v2 drain paused: v2 ready queue full for %s",
+                            task_type,
+                        )
+                    else:
+                        logger.warning(
+                            "v1→v2 drain paused: task %s has v2 state without guard",
+                            step.task_id,
+                        )
                     break
-                if outcome == "conflict":
-                    logger.warning(
-                        "v1→v2 drain paused: task %s has v2 state without guard",
-                        task_id,
-                    )
-                    break
-                if outcome == "migrated":
+                if step.is_migrated:
                     migrated += 1
-                elif outcome == "duplicate":
-                    logger.info("v1→v2 drain: task %s already in v2, skipping", task_id)
-                elif outcome == "corrupt":
-                    logger.warning("v1→v2 drain: task %s preserved as corrupt", task_id)
+                elif step.outcome == "duplicate":
+                    logger.info(
+                        "v1→v2 drain: task %s already in v2, skipping", step.task_id
+                    )
+                elif step.outcome == "corrupt":
+                    logger.warning(
+                        "v1→v2 drain: task %s preserved as corrupt", step.task_id
+                    )
 
             if migrated:
                 logger.info(
