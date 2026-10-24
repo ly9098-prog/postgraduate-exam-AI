@@ -79,6 +79,9 @@ const {
 const {
   buildRecoveryQuestions,
 } = require('./utils/recovery-questions-builder')
+const {
+  buildSubmissionSnapshot,
+} = require('./utils/submission-snapshot-builder')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1793,12 +1796,12 @@ hideEyebrow: true,
 })
 return
 }
-submission = {
+submission = buildSubmissionSnapshot({
 requestId,
 traceId: this._practiceSession.traceId || '',
 answers,
-skippedQuestionIds: skippedQuestionIds.slice(),
-partialQuestionIds: partialQuestionIds.slice(),
+skippedQuestionIds,
+partialQuestionIds,
 session,
 duration,
 total,
@@ -1806,18 +1809,12 @@ unanswered,
 selectedSubjectId,
 selectedSubjectName,
 comboCount,
-answerMap: Object.assign({}, answerMap),
-answeredFlags: Object.assign({}, answeredFlags),
+answerMap,
+answeredFlags,
 recoveryQuestions,
 batchToken: this._practiceSession.batchToken || '',
-knowledgeScope: this._practiceSession.knowledgeScope
-? Object.assign({}, this._practiceSession.knowledgeScope)
-: null,
-retryBlocked: false,
-serverAccepted: false,
-pendingPersisted: false,
-keepPendingUntilResult: false,
-}
+knowledgeScope: this._practiceSession.knowledgeScope,
+})
 this._practiceSession.submissionSnapshot = submission
 submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '')
 this._setPracticeUnloadGuard(
