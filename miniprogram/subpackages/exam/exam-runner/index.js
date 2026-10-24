@@ -18,6 +18,9 @@ const {
 const {
   createExamAttemptReconcileController,
 } = require('../utils/exam-attempt-reconcile-controller')
+const {
+  createExamSubmitOutcomeController,
+} = require('../utils/exam-submit-outcome-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -668,40 +671,37 @@ Page({
       await this._settleCurrentTime({ sync: false })
       const finalAnswers = this._buildFinalSubmitAnswers()
       const result = await this._postSubmitWithRetry(finalAnswers)
-      if (result && result._reconciled) {
-        this._attemptTerminal = true
-        if (this._pageAlive && !this._terminalNavigation) {
-          if (this._attemptAbandoned) this._navigateToPaperList()
-          else this._navigateToResult()
-        }
-        return
-      }
-
-      this._pending = Object.create(null)
-      this._retainPendingForSubmit = false
-      this._clearPendingStorage()
-      this._attemptTerminal = true
-      this._navigateToResult()
+      this._examSubmitOutcomeController().applySuccess(result)
+      return
     } catch (error) {
-      // Keep the local pending snapshot intact on every uncertain failure.  A
-      // later reconnect can retry the same idempotent submit payload safely.
-      if (!this._pageAlive) return false
-      if (await this._reconcileAttemptState()) {
-        this._attemptTerminal = true
-        if (this._pageAlive && !this._terminalNavigation) {
-          if (this._attemptAbandoned) this._navigateToPaperList()
-          else this._navigateToResult()
-        }
-        return
-      }
-      if (this._pageAlive) this.setData({ submitting: false })
-      if (auto) {
-        if (this._pageAlive) {
+      return this._examSubmitOutcomeController().applyFailure(error, auto)
+    }
+  },
+
+  _examSubmitOutcomeController() {
+    return this._examSubmitOutcome || (
+      this._examSubmitOutcome = createExamSubmitOutcomeController({
+        isPageAlive: () => this._pageAlive,
+        clearPending: () => {
+          this._pending = Object.create(null)
+          this._retainPendingForSubmit = false
+          this._clearPendingStorage()
+        },
+        setAttemptTerminal: value => { this._attemptTerminal = value },
+        navigateReconciled: () => {
+          if (this._pageAlive && !this._terminalNavigation) {
+            if (this._attemptAbandoned) this._navigateToPaperList()
+            else this._navigateToResult()
+          }
+        },
+        navigateToResult: () => this._navigateToResult(),
+        reconcileAttemptState: () => this._reconcileAttemptState(),
+        setSubmitting: value => this.setData({ submitting: value }),
+        showAutoSubmitPending: () => {
           this.setData({ timeExpired: true, remainingText: '已到时 · 待联网交卷' })
           wx.showToast({ title: '时间已到，答案已保留，联网后将自动交卷', icon: 'none' })
-        }
-      } else {
-        if (this._pageAlive) {
+        },
+        showManualSubmitError: error => {
           wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
           const remaining = this._currentRemainingSec()
           if (remaining == null || remaining > 0) this._startTimer(remaining)
@@ -715,10 +715,9 @@ Page({
               }
             }, 0)
           }
-        }
-      }
-      return false
-    }
+        },
+      })
+    )
   },
 
   retry() { this.loadAttempt() },
