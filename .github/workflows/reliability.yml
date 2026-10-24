@@ -373,6 +373,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-page-init-controller.js \
             miniprogram/tests/test-pomodoro-stats-lifecycle-controller.js \
             miniprogram/tests/test-pomodoro-stats-date-request-controller.js \
+            miniprogram/tests/test-pomodoro-stats-date-navigation-controller.js \
             miniprogram/tests/test-pomodoro-stats-chart-mode-controller.js \
             miniprogram/tests/test-pomodoro-stats-dynamic-refresh-controller.js \
             miniprogram/tests/test-pomodoro-stats-date-failure-controller.js \

@@ -45,6 +45,7 @@ const { createDateCommitController } = require('./date-commit-controller')
 const { createLoadFailureController } = require('./load-failure-controller')
 const { createDateFailureController } = require('./date-failure-controller')
 const { createDateRequestController } = require('./date-request-controller')
+const { createDateNavigationController } = require('./date-navigation-controller')
 const { createChartModeController } = require('./chart-mode-controller')
 const { createDynamicRefreshController } = require('./dynamic-refresh-controller')
 const { createLoadRequestController } = require('./load-request-controller')
@@ -806,18 +807,11 @@ var pageConfig = {
   },
 
   goPrevDay() {
-    const current = this.data.selectedDate || this.data._todayDate
-    if (!current) return
-    this._selectDate(this._shiftDate(current, -1))
+    this._getDateNavigationController().previous()
   },
 
   goNextDay() {
-    if (!this.data.canGoNextDate) return
-    const current = this.data.selectedDate || this.data._todayDate
-    const today = this.data._todayDate
-    if (!current || !today) return
-    const next = this._shiftDate(current, 1)
-    this._selectDate(next > today ? today : next)
+    this._getDateNavigationController().next()
   },
 
   /* ==================== 统计日设置 ==================== */
@@ -860,9 +854,20 @@ var pageConfig = {
   },
 
   goToToday() {
-    const today = this.data._todayDate
-    if (!today || today === this.data.selectedDate) return
-    this._selectDate(today)
+    this._getDateNavigationController().today()
+  },
+
+  _getDateNavigationController() {
+    if (!this._dateNavigationController) {
+      this._dateNavigationController = createDateNavigationController({
+        getTodayDate: () => this.data._todayDate,
+        getSelectedDate: () => this.data.selectedDate,
+        canGoNextDate: () => this.data.canGoNextDate,
+        shiftDate: (date, delta) => this._shiftDate(date, delta),
+        selectDate: date => this._selectDate(date),
+      })
+    }
+    return this._dateNavigationController
   },
 
   async loadDateData(date) {
