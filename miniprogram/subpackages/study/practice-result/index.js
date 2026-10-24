@@ -11,6 +11,7 @@ const { isPayloadRequestValid: _isPayloadRequestValid, extractCreatedAtFromCache
 const { resolveResultCounts } = require('./utils/result-counts');
 const { buildReviewItem: _buildReviewItem, normalizeReviewItem: _normalizeReviewItem } = require('./utils/review-item-builder');
 const { normalizePercent: _normalizePercent, getQuestionListHeightRpx: _getQuestionListHeightRpx, formatDuration: _formatDuration, buildErrorDonutGradient: _buildErrorDonutGradient } = require('./utils/format-helpers');
+const { stripLevelPrefix: _stripLevelPrefix, growthFromTotalExp: _growthFromTotalExp, normalizeGrowthProfile: _normalizeGrowthProfile, growthFromOverview: _growthFromOverview } = require('./utils/growth-helpers');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -383,96 +384,10 @@ return value.split(/[,，、]/).map(v => v.trim()).filter(Boolean);
 }
 return [];
 }
-function stripLevelPrefix(title, level) {
-const text = String(title || '').trim();
-if (!text) return level === 1 ? '起步' : '';
-return text.replace(/^Lv\s*\d+\s*/i, '').trim() || text;
-}
-function growthFromTotalExp(totalExp, streakDays = 0, badges = []) {
-const total = Math.max(0, Math.round(Number(totalExp) || 0));
-const levels = [
-{ lo: 0, hi: 200, level: 1, title: 'Lv1 起步' },
-{ lo: 200, hi: 600, level: 2, title: 'Lv2 坚持者' },
-{ lo: 600, hi: 1500, level: 3, title: 'Lv3 刷题达人' },
-{ lo: 1500, hi: 3500, level: 4, title: 'Lv4 高效进阶' },
-{ lo: 3500, hi: null, level: 5, title: 'Lv5 上岸冲刺' }
-];
-let current = levels[0];
-levels.forEach(item => {
-if (total >= item.lo) current = item;
-});
-const expCurrent = Math.max(0, total - current.lo);
-const expToNext = current.hi === null ? 0 : current.hi - current.lo;
-const progress = current.hi === null
-? 100
-: Math.min(100, Math.round(expCurrent / expToNext * 100));
-return {
-...DEFAULT_GROWTH,
-total_exp: total,
-level: current.level,
-level_title: current.title,
-levelTitle: stripLevelPrefix(current.title, current.level),
-level_progress_pct: progress,
-exp_current: expCurrent,
-exp_to_next: expToNext,
-streak_days: Math.max(0, Number(streakDays) || 0),
-badges: Array.isArray(badges) ? badges : []
-};
-}
-function normalizeGrowthProfile(raw) {
-if (!raw || typeof raw !== 'object') return null;
-const source = raw.growth && typeof raw.growth === 'object'
-? raw.growth
-: raw;
-const level = Math.max(1, Number(source.level) || 1);
-const levelTitleFull =
-source.level_title ||
-source.levelTitle ||
-`Lv${level} ${level === 1 ? '起步' : ''}`.trim();
-const totalExpValue = Number(source.total_exp ?? source.totalExp);
-const expCurrentValue = Number(source.exp_current ?? source.expCurrent);
-const expToNextValue = Number(source.exp_to_next ?? source.expToNext);
-const progressValue = Number(source.level_progress_pct ?? source.levelProgressPct);
-const totalExp = Number.isFinite(totalExpValue) ? Math.max(0, totalExpValue) : 0;
-const expCurrent = Number.isFinite(expCurrentValue) ? Math.max(0, expCurrentValue) : 0;
-const expToNext = Number.isFinite(expToNextValue)
-? Math.max(0, expToNextValue)
-: (level >= 5 ? 0 : 200);
-let progress = Number.isFinite(progressValue)
-? clamp(progressValue, 0, 100)
-: (expToNext > 0 ? Math.round(expCurrent / expToNext * 100) : (level >= 5 ? 100 : 0));
-if (progress === 0 && expCurrent > 0 && expToNext > 0) {
-progress = Math.min(100, Math.round(expCurrent / expToNext * 100));
-}
-return {
-...DEFAULT_GROWTH,
-...source,
-total_exp: totalExp,
-level,
-level_title: levelTitleFull,
-levelTitle: stripLevelPrefix(levelTitleFull, level),
-level_progress_pct: progress,
-exp_current: expCurrent,
-exp_to_next: expToNext,
-streak_days: Math.max(0, Number(source.streak_days ?? source.streakDays) || 0),
-badges: Array.isArray(source.badges) ? source.badges : []
-};
-}
-function growthFromOverview(overview) {
-if (!overview || typeof overview !== 'object') return null;
-const totalQuestions = Math.max(0, Number(overview.total_questions ?? overview.totalQuestions) || 0);
-const accuracyRaw = Number(overview.accuracy);
-const accuracy = Number.isFinite(accuracyRaw)
-? (accuracyRaw > 1 ? accuracyRaw / 100 : accuracyRaw)
-: 0;
-const streak = Math.max(0, Number(overview.consecutive_days ?? overview.consecutiveDays) || 0);
-const mastered = Math.max(0, Number(overview.mastered_count ?? overview.masteredCount) || 0);
-let totalExp = totalQuestions * 10 + mastered * 20 + streak * 5;
-if (accuracy >= 0.7 && totalQuestions >= 10) {
-totalExp += Math.floor(totalQuestions * accuracy * 5);
-}
-return growthFromTotalExp(totalExp, streak);
-}
+function stripLevelPrefix(title, level) { return _stripLevelPrefix(title, level) }
+function growthFromTotalExp(totalExp, streakDays, badges) { return _growthFromTotalExp(totalExp, streakDays, badges) }
+function normalizeGrowthProfile(raw) { return _normalizeGrowthProfile(raw) }
+function growthFromOverview(overview) { return _growthFromOverview(overview) }
 Page({
 data: {
 tabs: [
