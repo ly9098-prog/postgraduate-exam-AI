@@ -471,6 +471,7 @@ jobs:
           node --test miniprogram/tests/test-exam-pending-cache-controller.js
           node --test miniprogram/tests/test-exam-answer-sync-controller.js
           node --test miniprogram/tests/test-exam-submit-retry-controller.js
+          node --test miniprogram/tests/test-exam-attempt-reconcile-controller.js
           node --test miniprogram/tests/test-exam-submit-helpers.js
           node --test miniprogram/tests/test-exam-hydrate-helpers.js
           node --test miniprogram/tests/test-exam-paper-search.js

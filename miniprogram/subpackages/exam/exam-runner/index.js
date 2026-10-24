@@ -15,6 +15,9 @@ const {
 const {
   createExamSubmitRetryController,
 } = require('../utils/exam-submit-retry-controller')
+const {
+  createExamAttemptReconcileController,
+} = require('../utils/exam-attempt-reconcile-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -497,34 +500,33 @@ Page({
   },
 
   async _reconcileAttemptState() {
-    if (!this._pageAlive) return false
-    try {
-      const payload = await api.get(
-        `/exams/attempts/${this.data.attemptId}`,
-        {},
-        { timeout: 10000, suppressNetworkToast: true }
-      )
-      if (!payload || payload.status === 'in_progress') return false
-      if (payload.status === 'abandoned') {
-        this._pending = Object.create(null)
-        this._retainPendingForSubmit = false
-        this._clearPendingStorage()
-        this._attemptTerminal = true
-        this._attemptAbandoned = true
-        if (this._pageAlive && !this.data.submitting) this._navigateToPaperList()
-        return true
-      }
-      if (payload.status !== 'submitted' && payload.status !== 'expired') return false
-      this._pending = Object.create(null)
-      this._retainPendingForSubmit = false
-      this._clearPendingStorage()
-      this._attemptTerminal = true
-      this._attemptAbandoned = false
-      if (this._pageAlive && !this.data.submitting) this._navigateToResult()
-      return true
-    } catch (_) {
-      return false
-    }
+    return this._examAttemptReconcileController().reconcile()
+  },
+
+  _examAttemptReconcileController() {
+    return this._examAttemptReconcile || (
+      this._examAttemptReconcile = createExamAttemptReconcileController({
+        isPageAlive: () => this._pageAlive,
+        getAttempt: () => api.get(
+          `/exams/attempts/${this.data.attemptId}`,
+          {},
+          { timeout: 10000, suppressNetworkToast: true }
+        ),
+        clearPending: () => {
+          this._pending = Object.create(null)
+          this._retainPendingForSubmit = false
+          this._clearPendingStorage()
+        },
+        setAttemptTerminal: value => { this._attemptTerminal = value },
+        setAttemptAbandoned: value => { this._attemptAbandoned = value },
+        onAbandoned: () => {
+          if (this._pageAlive && !this.data.submitting) this._navigateToPaperList()
+        },
+        onTerminal: () => {
+          if (this._pageAlive && !this.data.submitting) this._navigateToResult()
+        },
+      })
+    )
   },
 
   _buildFinalSubmitAnswers() {
