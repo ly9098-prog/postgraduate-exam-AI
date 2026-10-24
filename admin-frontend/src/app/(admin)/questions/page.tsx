@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
   Copy,
-  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -18,6 +17,7 @@ import { QuestionDrawerBody } from "./question-drawer-body";
 import { QuestionFilterToolbar } from "./question-filter-toolbar";
 import { QuestionListCard } from "./question-list-card";
 import { QuestionBatchSelectionBar } from "./question-batch-selection-bar";
+import { QuestionMessageToast } from "./question-message-toast";
 import { exportQuestions } from "./question-api";
 
 import { useQuestionExport } from "./hooks/use-question-export";
@@ -389,25 +389,7 @@ export default function QuestionsPage() {
         </CardContent>
       </Card>
 
-      {message ? (
-        <div className="fixed right-6 top-24 z-[60] max-w-[calc(100vw-3rem)] animate-fade-in">
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex max-w-sm items-center gap-3 rounded-full border border-[var(--color-success)]/30 bg-white/92 py-2 pl-5 pr-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)] backdrop-blur-xl"
-          >
-            <span>{message}</span>
-            <button
-              type="button"
-              onClick={clearMessage}
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-text-hint)] transition hover:bg-[var(--color-success-light)] hover:text-[var(--color-success)]"
-              aria-label="关闭提示"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <QuestionMessageToast message={message} onClose={clearMessage} />
 
       <QuestionBatchSelectionBar
         selectedCount={selectedIds.size}
