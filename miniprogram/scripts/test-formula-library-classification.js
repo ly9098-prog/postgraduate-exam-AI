@@ -86,6 +86,16 @@ async function run() {
   assert.equal(formulaItems.length, 4, 'the formula tab should include every formula, including graph entries')
   assert.deepEqual(graphItems.map((item) => item.id), [1, 3], 'the graph tab should only contain resolved graph entries')
 
+  const subjectCatalog = pageConfig.normalizeCatalog([
+    { code: 'elementary_math', name: '初等数学' },
+    { code: 'math2_high_math', name: '高等数学' },
+  ])
+  assert.deepEqual(
+    subjectCatalog.map((item) => item.code),
+    [],
+    'the shorthand subject selector should hide both legacy math leaves',
+  )
+
   const originalRequest = api.request
   const requests = []
   api.request = async (method, url, params) => {
@@ -123,6 +133,3 @@ run().catch((error) => {
   console.error(error)
   process.exitCode = 1
 })
-
-const subjectCatalog = pageConfig.normalizeCatalog([{ code: 'elementary_math', name: '初等数学' }, { code: 'math2_high_math', name: '高等数学' }])
-assert.deepEqual(subjectCatalog.map(item => item.code), ['math2_high_math'], '速记学科选择器应隐藏初等数学')

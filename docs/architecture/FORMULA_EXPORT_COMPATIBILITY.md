@@ -103,7 +103,7 @@ node miniprogram/tests/test-formula-reader-layout.js
 node miniprogram/tests/test-export-capability-error.js
 ```
 
-本地重放（2026-10-24，SQLite in-memory，无 Redis/真实存储）：
+首轮本地重放（2026-10-24，SQLite in-memory，无 Redis/真实存储）：
 
 ```text
 tests/test_api/test_formulas.py
@@ -115,20 +115,25 @@ tests/export/test_export_comprehensive.py
 结果：159 collected，156 passed，3 failed
 ```
 
-失败均为既有测试期望与当前统一错误契约/测试环境不一致，不是本基线新增生产改动：
+首轮失败均为既有测试期望与当前统一错误契约/测试环境不一致，不是该基线新增生产改动。次日测试对齐后复核：
 
-- `test_formulas_api.py::test_favorites_list_endpoint_exists` 只 mock auth、未提供公式表或 DB mock，直接请求真实 in-memory DB 导致 `no such table: formula_cards`；该测试自身允许 500，但断言前已先失败。
-- `test_export_api_security.py` 两个用例仍断言 FastAPI 原始 `detail.error_code`，而当前全局处理器返回统一 `error.code`；404/403 状态本身正确。该文件不在当前 CI static 显式清单中，不应把本次失败描述为 CI 门禁失败。
+- `tests/test_api/test_formulas.py + tests/export/test_export_api_security.py` 复核结果：47 passed。
+- `test_export_api_security.py` 两个用例已从 FastAPI 原始 `detail.error_code` 对齐到当前全局处理器的 `error.code` envelope（404→`HTTP_404`，403→`HTTP_403`）。
+- `test_formulas_api.py::test_favorites_list_endpoint_exists` 仍保留原问题：只 mock auth、未提供公式表或 DB mock，直接请求真实 in-memory DB 导致 `no such table: formula_cards`；该测试自身允许 500，但断言前已先失败。
 
 除上述 3 项外，公式 API/数学 scope、导出安全用例、状态机与 processor/快照/幂等/本地路径安全回归均通过。
 
-小程序本地重放（2026-10-24，Node 静态/单元脚本）：
+首轮小程序重放（2026-10-24，Node 静态/单元脚本）：
 
 - 通过：`test-formula-library-compact-ui.js`、`test-formula-library-title-rendering.js`、`test-formula-graph.js`、`tests/test-formula-reader-layout.js`、`tests/test-export-capability-error.js`（27/27）。
 - 失败：`test-formula-library-classification.js` 期望目录保留高等数学旧科目，而当前数学逻辑 scope 已合并为一个 `math` 学科；该脚本还在异步 `run()` 外同步读取 `pageConfig`，脚本结构也已漂移。
 - 失败：`test-formula-reader-rendering.js` 旧断言要求 KaTeX radical 保留 `.hide-tail` 包装节点；当前 `katex-mini`/组件渲染实现已改为其他 SVG containment 形状，需专项用真实渲染输出重新刻画，不能在本兼容文档中猜测哪一方是正确行为。
 
-上述两个失败是既有脚本与当前实现/脚本结构漂移，不是本基线引入的行为变化；未列入当前 CI 清单的脚本不能被描述为可靠门禁。
+测试对齐复核（2026-10-24）：
+
+- `test-formula-library-classification.js`：科目断言移入异步 `run()`，按当前数学逻辑 scope 同步断言 `elementary_math` 与 `math2_high_math` 均隐藏；脚本通过。
+- `test-formula-reader-rendering.js`：当前实现实际仍保留 `.hide-tail`，但块公式节点已迁入 `readingRows[0].fullLineItem.mathNodes`；修正读取路径后原有 SVG containment 断言完整通过，未放宽任何宽度/裁剪约束。
+- 上述两个脚本与 `node --check` 均通过；它们仍是 Node 静态/单元证据，不能升级为真实微信渲染验收。
 
 ## 7. 未完成与未验证
 

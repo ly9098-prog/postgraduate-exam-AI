@@ -875,7 +875,9 @@ function renderFormulaBlockNodesThroughFormulaCard(latex, id) {
     title: '根号回归测试',
     formula_blocks: [{ label: '幂函数展开', latex: latex }],
   }, null)
-  return ctx.data.formulaBlocks[0].mathNodes
+  var block = ctx.data.formulaBlocks[0]
+  var lineItem = block.readingRows[0].fullLineItem
+  return lineItem.mathNodes
 }
 
 function findNodeByClass(nodes, targetClass) {

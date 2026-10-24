@@ -210,7 +210,7 @@ class TestDeleteExportStorage:
 
             resp = client.delete("/api/v1/exports/99999")
         assert resp.status_code == 404
-        assert _get_detail(resp)["error_code"] == "task_not_found"
+        assert _get_detail(resp)["error"]["code"] == "HTTP_404"
 
     @pytest.mark.asyncio
     async def test_deleted_export_not_downloadable(self):
@@ -314,4 +314,4 @@ class TestCreateExportPermission:
                 "file_format": "docx",
             })
         assert resp.status_code == 403
-        assert _get_detail(resp)["error_code"] == "docx_disabled"
+        assert _get_detail(resp)["error"]["code"] == "HTTP_403"
