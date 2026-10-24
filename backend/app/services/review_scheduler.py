@@ -24,6 +24,30 @@ from app.services.question_revision_service import (
     load_latest_question_revision_ids,
     load_revision_views,
 )
+from app.services.review_text_utils import (
+    _CODE_OP_SPLIT_RE,
+    _CODE_SIGNALS,
+    _CONTROL_KW,
+    _DS_KW,
+)
+from app.services.review_text_utils import (
+    contains_code as _contains_code,
+)
+from app.services.review_text_utils import (
+    fix_code_operator_splits as _fix_code_operator_splits,
+)
+from app.services.review_text_utils import (
+    sanitize_review_content as _sanitize_review_content,
+)
+from app.services.review_text_utils import (
+    sanitize_review_option_value as _sanitize_review_option_value,
+)
+from app.services.review_text_utils import (
+    sanitize_review_options as _sanitize_review_options,
+)
+from app.services.review_text_utils import (
+    sanitize_review_text as _sanitize_review_text,
+)
 from app.services.sm2_service import calc_sm2
 from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
@@ -56,146 +80,6 @@ def _review_408_scope_condition(subject_ids: set[int]):
 # Keep review payload rendering consistent with the practice/wrong-book APIs.
 # Review used to return raw immutable revision content, which meant OCR line
 # breaks/admin-only fields could reappear only in the review flow.
-_CODE_OP_SPLIT_RE = re.compile(r"(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$")
-_CODE_SIGNALS = [
-    "return",
-    "printf",
-    "scanf",
-    "malloc",
-    "free",
-    "NULL",
-    "struct",
-    "typedef",
-    "enum",
-    "union",
-    "int ",
-    "void ",
-    "char ",
-    "float ",
-    "double ",
-    "bool",
-    "const",
-    "static",
-    "sizeof",
-    "->",
-    "::",
-    "{",
-    "}",
-    ";",
-    "++",
-    "--",
-    "+=",
-    "-=",
-    "*=",
-    "/=",
-    "#include",
-    "#define",
-]
-_CONTROL_KW = [
-    "for",
-    "while",
-    "if",
-    "else if",
-    "else",
-    "switch",
-    "return",
-    "break",
-    "continue",
-    "case",
-    "do",
-]
-_DS_KW = [
-    "LNode",
-    "TNode",
-    "BiTNode",
-    "BiTree",
-    "BSTNode",
-    "LinkList",
-    "SqList",
-    "Stack",
-    "Queue",
-    "SqStack",
-    "ElemType",
-    "Status",
-]
-
-
-def _contains_code(text: str) -> bool:
-    if not isinstance(text, str) or not text:
-        return False
-    score = sum(1 for sig in _CODE_SIGNALS if sig in text)
-    score += sum(2 for kw in _DS_KW if kw in text)
-    score += sum(
-        1 for kw in _CONTROL_KW if re.search(r"\b" + re.escape(kw) + r"\b", text)
-    )
-    return score >= 3
-
-
-def _fix_code_operator_splits(text: str) -> str:
-    if not isinstance(text, str) or "\n" not in text:
-        return text
-    lines = text.split("\n")
-    merged = [lines[0]]
-    for line in lines[1:]:
-        if _CODE_OP_SPLIT_RE.search(merged[-1]):
-            merged[-1] += line.lstrip()
-        else:
-            merged.append(line)
-    return "\n".join(merged)
-
-
-def _sanitize_review_text(value: str | None) -> str | None:
-    if not isinstance(value, str):
-        return value
-    value = re.sub(r"\r\n?", "\n", value)
-    if _contains_code(value):
-        return _fix_code_operator_splits(value)
-    value = deduplicate_repeated_text(value)
-    value = _split_inline_roman_subitems(value)
-    return _fix_code_operator_splits(value)
-
-
-def _sanitize_review_content(content: dict | str | None) -> dict:
-    if isinstance(content, str):
-        content = {"text": content}
-    elif not isinstance(content, dict):
-        content = {}
-    sanitized = dict(content)
-    for field in ("text", "stem"):
-        if field in sanitized:
-            sanitized[field] = _sanitize_review_text(sanitized[field])
-    if sanitized.get("stem"):
-        sanitized["text"] = sanitized["stem"]
-    for field in (
-        "source_snapshot_url",
-        "source_snapshot_full_page",
-        "visual_regions",
-        "visual_region_ids",
-    ):
-        sanitized.pop(field, None)
-    return strip_student_segment_metadata(sanitized)
-
-
-def _sanitize_review_option_value(value):
-    if isinstance(value, str):
-        value = re.sub(r"\r\n?", "\n", value)
-        value = _fix_code_operator_splits(value)
-        return re.sub(r"\n+", " ", value).strip()
-    if isinstance(value, dict):
-        result = dict(value)
-        text = result.get("text")
-        if text in (None, ""):
-            text = result.get("value")
-        if isinstance(text, str):
-            result["text"] = _sanitize_review_option_value(text)
-        return result
-    return value
-
-
-def _sanitize_review_options(options) -> dict:
-    if not isinstance(options, dict):
-        return {}
-    return {key: _sanitize_review_option_value(value) for key, value in options.items()}
 
 
 def _review_question_payload(schedule: ReviewSchedule, revision) -> dict:
@@ -304,7 +188,9 @@ async def _sync_schedule_to_wq(
 
     # ReviewSchedule is always rebound when a newer wrong revision is produced.
     # Keep the wrong-book row and schedule on exactly the same immutable revision.
-    version_changed = int(wq.question_version_id or 0) != int(schedule.question_version_id)
+    version_changed = int(wq.question_version_id or 0) != int(
+        schedule.question_version_id
+    )
     wq.question_version_id = int(schedule.question_version_id)
     if version_changed:
         # AI analysis is revision-specific.  Once review moves to a newer
@@ -378,10 +264,7 @@ async def _prepare_latest_review_revisions(
         # rather than silently dropping it.
         revision_id = latest_version_id or int(schedule.question_version_id)
         revision = latest_views.get(int(revision_id))
-        if (
-            revision is None
-            or int(revision.question_id) != question_id
-        ):
+        if revision is None or int(revision.question_id) != question_id:
             logger.warning(
                 "review.latest_revision_missing uid=%s schedule_id=%s question_id=%s",
                 user_id,
