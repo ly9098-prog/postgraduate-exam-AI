@@ -25,8 +25,10 @@ from app.services.learning_time_projection import (
     today_utc as _today_utc,
 )
 from app.services.study_report_projection import (
+    build_knowledge_mastery_response,
     build_overview_response,
     build_review_plan_item,
+    build_wrong_question_item,
     calc_priority,
     classify_mastery,
     extract_title,
@@ -449,34 +451,7 @@ async def get_knowledge_mastery(
     q = q.limit(limit)
     rows = (await db.execute(q)).all()
 
-    summary = {
-        "weak_count": 0,
-        "normal_count": 0,
-        "good_count": 0,
-        "mastered_count": 0,
-        "unknown_count": 0,
-    }
-    items = []
-    for r in rows:
-        status = _classify_mastery(r.confidence, r.mastery_score)
-        summary[f"{status}_count"] = summary.get(f"{status}_count", 0) + 1
-        items.append(
-            {
-                "knowledge_point_id": r.knowledge_point_id,
-                "knowledge_point_name": r.kp_name,
-                "mastery_score": round(r.mastery_score, 1),
-                "confidence": round(r.confidence, 2),
-                "answer_count": r.attempt_count,
-                "correct_count": r.correct_count,
-                "wrong_count": r.wrong_count,
-                "recent_wrong_count": r.recent_wrong_count,
-                "last_practiced_at": r.last_practiced_at,
-                "status": status,
-                "suggestion": _mastery_suggestion(status),
-            }
-        )
-
-    return {"summary": summary, "items": items}
+    return build_knowledge_mastery_response(rows)
 
 
 # ── 5. Wrong Questions ──────────────────────────────────────────────
@@ -565,29 +540,8 @@ async def get_wrong_questions_summary(
 
     items = []
     for r in rows:
-        if r.wrong_count >= 3:
-            status = "repeated_wrong"
-        elif r.correct_count == 0:
-            status = "not_mastered"
-        else:
-            status = "needs_review"
-
         kp = kp_map.get(r.question_id)
-        items.append(
-            {
-                "question_id": r.question_id,
-                "title": _extract_title(r.q_content),
-                "knowledge_point_id": kp[0] if kp else None,
-                "knowledge_point_name": kp[1] if kp else None,
-                "wrong_count": r.wrong_count,
-                "correct_count": r.correct_count,
-                "answer_count": r.answer_count,
-                "last_answered_at": r.last_answered_at,
-                "next_review_at": r.next_review_at,
-                "box_level": r.box_level,
-                "status": status,
-            }
-        )
+        items.append(build_wrong_question_item(row=r, knowledge_point=kp))
 
     return {
         "wrong_question_count": int(wrong_total),

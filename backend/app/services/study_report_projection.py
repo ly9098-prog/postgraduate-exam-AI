@@ -128,3 +128,61 @@ def build_review_plan_item(
         "overdue_days": overdue_days,
         "priority": calc_priority(overdue_days, row.wrong_count, row.box_level),
     }
+
+
+def build_knowledge_mastery_response(rows: list) -> dict:
+    """Classify knowledge rows and preserve rounded mastery projections."""
+    summary = {
+        "weak_count": 0,
+        "normal_count": 0,
+        "good_count": 0,
+        "mastered_count": 0,
+        "unknown_count": 0,
+    }
+    items = []
+    for row in rows:
+        status = classify_mastery(row.confidence, row.mastery_score)
+        summary[f"{status}_count"] = summary.get(f"{status}_count", 0) + 1
+        items.append(
+            {
+                "knowledge_point_id": row.knowledge_point_id,
+                "knowledge_point_name": row.kp_name,
+                "mastery_score": round(row.mastery_score, 1),
+                "confidence": round(row.confidence, 2),
+                "answer_count": row.attempt_count,
+                "correct_count": row.correct_count,
+                "wrong_count": row.wrong_count,
+                "recent_wrong_count": row.recent_wrong_count,
+                "last_practiced_at": row.last_practiced_at,
+                "status": status,
+                "suggestion": mastery_suggestion(status),
+            }
+        )
+    return {"summary": summary, "items": items}
+
+
+def build_wrong_question_item(
+    *,
+    row: object,
+    knowledge_point: tuple[int, str] | None,
+) -> dict:
+    """Project one wrong-question row and preserve status precedence."""
+    if row.wrong_count >= 3:
+        status = "repeated_wrong"
+    elif row.correct_count == 0:
+        status = "not_mastered"
+    else:
+        status = "needs_review"
+    return {
+        "question_id": row.question_id,
+        "title": extract_title(row.q_content),
+        "knowledge_point_id": knowledge_point[0] if knowledge_point else None,
+        "knowledge_point_name": knowledge_point[1] if knowledge_point else None,
+        "wrong_count": row.wrong_count,
+        "correct_count": row.correct_count,
+        "answer_count": row.answer_count,
+        "last_answered_at": row.last_answered_at,
+        "next_review_at": row.next_review_at,
+        "box_level": row.box_level,
+        "status": status,
+    }

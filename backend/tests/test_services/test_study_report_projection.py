@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from app.services.study_report_projection import (
+    build_knowledge_mastery_response,
     build_overview_response,
     build_review_plan_item,
+    build_wrong_question_item,
     calc_priority,
     classify_mastery,
     extract_title,
@@ -103,6 +105,31 @@ class ReviewRow:
     next_review_at: datetime | None
 
 
+@dataclass
+class KnowledgeRow:
+    knowledge_point_id: int
+    kp_name: str
+    mastery_score: float
+    confidence: float
+    attempt_count: int
+    correct_count: int
+    wrong_count: int
+    recent_wrong_count: int
+    last_practiced_at: datetime | None
+
+
+@dataclass
+class WrongRow:
+    question_id: int
+    wrong_count: int
+    correct_count: int
+    answer_count: int
+    last_answered_at: datetime | None
+    next_review_at: datetime | None
+    box_level: int
+    q_content: object
+
+
 def test_review_plan_item_projects_overdue_priority_and_knowledge_point():
     now = datetime(2026, 10, 25, 12, 0, 0)
     overdue = build_review_plan_item(
@@ -129,3 +156,48 @@ def test_review_plan_item_projects_overdue_priority_and_knowledge_point():
     assert missing["priority"] == "normal"
     assert missing["knowledge_point_id"] is None
     assert no_time["overdue_days"] == 0
+
+
+def test_knowledge_mastery_response_classifies_and_rounds_rows():
+    response = build_knowledge_mastery_response(
+        [
+            KnowledgeRow(1, "weak", 20.04, 0.8, 10, 2, 8, 3, None),
+            KnowledgeRow(2, "unknown", 50.0, 0.1, 1, 0, 1, 1, None),
+            KnowledgeRow(3, "mastered", 92.0, 0.9, 20, 18, 2, 0, None),
+        ]
+    )
+
+    assert response["summary"] == {
+        "weak_count": 1,
+        "normal_count": 0,
+        "good_count": 0,
+        "mastered_count": 1,
+        "unknown_count": 1,
+    }
+    assert response["items"][0]["mastery_score"] == 20.0
+    assert response["items"][0]["confidence"] == 0.8
+    assert response["items"][1]["suggestion"].startswith("数据较少")
+    assert response["items"][2]["status"] == "mastered"
+
+
+def test_wrong_question_item_preserves_status_precedence_and_title():
+    repeated = build_wrong_question_item(
+        row=WrongRow(1, 4, 1, 5, None, None, 0, [{"type": "text", "text": "题干"}]),
+        knowledge_point=(7, "操作系统"),
+    )
+    not_mastered = build_wrong_question_item(
+        row=WrongRow(2, 1, 0, 1, None, None, 0, None),
+        knowledge_point=None,
+    )
+    needs_review = build_wrong_question_item(
+        row=WrongRow(3, 2, 3, 5, None, None, 2, "普通题干"),
+        knowledge_point=None,
+    )
+
+    assert repeated["status"] == "repeated_wrong"
+    assert repeated["title"] == "题干"
+    assert repeated["knowledge_point_name"] == "操作系统"
+    assert not_mastered["status"] == "not_mastered"
+    assert not_mastered["knowledge_point_id"] is None
+    assert needs_review["status"] == "needs_review"
+    assert needs_review["title"] == "普通题干"
