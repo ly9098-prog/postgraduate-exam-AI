@@ -55,6 +55,11 @@ import {
   reduceReviewActionDialogState,
 } from "./review-action-dialog-state";
 import { reduceReviewFilterSelection } from "./review-filter-selection";
+import {
+  isReviewFacetFilter,
+  reduceReviewFilters,
+  type ReviewFilterKey,
+} from "./review-filter-interaction";
 import { toggleAllSelection, toggleSingleSelection } from "@/lib/selection-ops";
 import {
   buildBatchAnswerViewState,
@@ -536,11 +541,14 @@ export default function ImportReviewPage() {
     });
   };
 
-  const updateFilter = (key: keyof typeof filters, value: string) => {
+  const updateFilter = (key: ReviewFilterKey, value: string) => {
     setFilters((current) => {
-      const nextFilters = { ...current, [key]: value };
+      const nextFilters = reduceReviewFilters(current, key, value);
       updateSelectedIds((selectedIds) =>
-        reduceReviewFilterSelection({ filters: nextFilters, selectedIds }, "facet").selectedIds,
+        reduceReviewFilterSelection(
+          { filters: nextFilters, selectedIds },
+          isReviewFacetFilter(key) ? "facet" : "keyword",
+        ).selectedIds,
       );
       return nextFilters;
     });
