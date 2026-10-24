@@ -65,6 +65,14 @@ const {
 const {
   createSelfHealController,
 } = require('./utils/self-heal-controller')
+const {
+  buildPracticeResultUrl,
+} = require('./utils/result-url-builder')
+const {
+  buildStoredResults,
+  buildLightQuestions,
+  computeDisplaySkippedCount,
+} = require('./utils/submit-result-builder')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1937,49 +1945,18 @@ const selectedSubjectId = submission.selectedSubjectId
 const selectedSubjectName = submission.selectedSubjectName
 const duration = Number(submission.duration) || 0
 const comboCount = Number(submission.comboCount) || 0
-const partialQuestionIdSet = {}
-;(submission.partialQuestionIds || []).forEach(function(id) { partialQuestionIdSet[String(id)] = true })
-let storedResults = (submitResult.results || []).map(function(rr) {
-const questionId = String(rr.question_id)
-const isPartial = rr.status === 'skipped' && partialQuestionIdSet[questionId]
-return Object.assign({}, rr, {
-status: isPartial ? 'partial' : rr.status,
-_local_partial: !!isPartial,
-user_answer: snapshotAnswerMap[questionId] || '',
-})
-})
-var submittedResultMap = {}
-storedResults.forEach(function(rr) { submittedResultMap[String(rr.question_id)] = true })
 const questionSource = questions.length ? questions : (submission.recoveryQuestions || [])
-questionSource.forEach(function(q) {
-if (!q || !q.id || submittedResultMap[String(q.id)] || snapshotAnsweredFlags[String(q.id)]) return
-const isPartial = !!partialQuestionIdSet[String(q.id)]
-storedResults.push({
-question_id: q.id,
-user_answer: snapshotAnswerMap[String(q.id)] || '',
-is_correct: false,
-status: isPartial ? 'partial' : 'skipped',
-_local_partial: isPartial,
-_local_skipped: !isPartial,
+const storedResults = buildStoredResults({
+serverResults: submitResult.results || [],
+partialQuestionIds: submission.partialQuestionIds || [],
+snapshotAnswerMap,
+snapshotAnsweredFlags,
+questionSource,
 })
-})
-var lightQuestions = []
-for (var qi = 0; qi < questionSource.length; qi++) {
-var qq = questionSource[qi]
-if (qq && qq.id) {
-lightQuestions.push({
-id: qq.id,
-question_version_id: qq.question_version_id || null,
-question_version: qq.question_version || null,
-stem: (qq.content && (qq.content.text || qq.content.stem)) || qq.stem || '',
-options: qq.options || null,
-question_type: qq.question_type || '',
-})
-}
-}
+const lightQuestions = buildLightQuestions(questionSource)
 const partialCount = (submission.partialQuestionIds || []).length
 const serverSkippedCount = Number(submitResult.total_skipped ?? unanswered) || 0
-const displaySkippedCount = Math.max(0, serverSkippedCount - partialCount)
+const displaySkippedCount = computeDisplaySkippedCount(serverSkippedCount, partialCount)
 var userId = this._getCurrentUserId()
 var cacheCreatedAt = Date.now()
 var cacheKey = 'pr_' + cacheCreatedAt + '_' + Math.random().toString(36).slice(2, 8)
@@ -2010,22 +1987,21 @@ resultCacheStored = true
 } catch (storageError) {
 console.warn('答题已提交成功，但本地结果缓存失败', storageError)
 }
-const resultUrl = [
-`/subpackages/study/practice-result/index`,
-`?correct=${submitResult.total_correct || 0}`,
-`&wrong=${submitResult.total_wrong || 0}`,
-`&skipped=${displaySkippedCount}`,
-`&partial=${partialCount}`,
-`&total=${total}`,
-`&subject_id=${selectedSubjectId}`,
-`&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
-`&duration=${duration}`,
-`&_ck=${cacheKey}`,
-`&_rid=${encodeURIComponent(submission.requestId || '')}`,
-`&_recover=${resultCacheStored ? '0' : '1'}`,
-`&source=${encodeURIComponent(this._launchSource || '')}`,
-`&return_to=${encodeURIComponent(this._launchReturnTo || '')}`,
-].join('')
+const resultUrl = buildPracticeResultUrl({
+correct: submitResult.total_correct || 0,
+wrong: submitResult.total_wrong || 0,
+skipped: displaySkippedCount,
+partial: partialCount,
+total,
+subjectId: selectedSubjectId,
+subjectName: selectedSubjectName || '',
+duration,
+cacheKey,
+requestId: submission.requestId || '',
+resultCacheStored,
+source: this._launchSource || '',
+returnTo: this._launchReturnTo || '',
+})
 submission.keepPendingUntilResult = !resultCacheStored
 this._pendingResultUrl = resultUrl
 submission.pendingPersisted = this._persistPendingSubmission(submission, 'submitted', resultUrl) || submission.pendingPersisted
