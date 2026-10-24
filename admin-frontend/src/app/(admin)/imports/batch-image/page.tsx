@@ -8,23 +8,21 @@ import { cn } from "@/lib/utils";
 import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
 import { connectSSE } from "@/lib/api/sse";
 import type { BatchImageJobStatusResponse, BatchImageUploadResponse, BatchImageReparseResponse, TraceEvent } from "@/lib/api/types";
+import {
+  IMAGE_MIME,
+  MAX_FILES,
+  DEFAULT_CONCURRENCY,
+  dedupeFiles,
+  taskProgress,
+  computeBatchStats,
+} from "@/lib/batch-image-utils";
 import { AiModelConfigBanner } from "@/components/ai-model-config-banner";
 import { useImportConfig } from "../hooks/useImportConfig";
 import { OcrModeSelector } from "../components/ocr-mode-selector";
 import { ImportMetric, ImportPanelHeader, ImportProgressBar, ImportWorkspaceHeader } from "../components/import-workspace";
 import { ImportToast } from "../components/import-toast";
 
-const MAX_FILES = (() => {
-  const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_MAX_FILES);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
-})();
-const DEFAULT_CONCURRENCY = (() => {
-  const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_DEFAULT_CONCURRENCY);
-  return Number.isFinite(n) && n >= 1 && n <= 4 ? String(Math.floor(n)) : "2";
-})();
 const ACCEPT = ".jpg,.jpeg,.png,.webp";
-const IMAGE_MIME = /^image\/(jpeg|png|webp)$/;
-
 // ── Types ────────────────────────────────────────────────────
 
 type QueuePhase = "idle" | "uploading" | "polling" | "done";
@@ -52,39 +50,6 @@ type ImageTask = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────
-
-function dedupeFiles(existing: File[], incoming: File[]) {
-  const seen = new Set(existing.map((f) => `${f.name}_${f.size}`));
-  const merged = [...existing];
-  for (const file of incoming) {
-    const key = `${file.name}_${file.size}`;
-    if (!seen.has(key) && IMAGE_MIME.test(file.type || "")) {
-      seen.add(key);
-      merged.push(file);
-    }
-  }
-  return merged.slice(0, MAX_FILES);
-}
-
-function taskProgress(task: ImageTask) {
-  if (task.status === "succeeded" || task.status === "failed") return 100;
-  if (task.status === "uploading") return 10;
-  if (task.status === "pending") return task.jobId ? 15 : 0;
-
-  const hasPipelineSuccess = task.traceEvents.some(
-    (event) => event.step === "pipeline" && event.status === "success",
-  );
-  if (hasPipelineSuccess) return 90;
-  const hasPipelineRunning = task.traceEvents.some(
-    (event) => event.step === "pipeline" && event.status === "running",
-  );
-  if (hasPipelineRunning) return 55;
-  const hasOcrSuccess = task.traceEvents.some(
-    (event) => event.step === "ocr" && event.status === "success",
-  );
-  if (hasOcrSuccess) return 40;
-  return 20;
-}
 
 // ── Component ─────────────────────────────────────────────────
 
@@ -381,14 +346,7 @@ export default function BatchImagePage() {
   // ── Computed aggregate values ────────────────────────────────
 
   const totalImages = imageTasks.length;
-  const progressPct = totalImages > 0
-    ? Math.round(imageTasks.reduce((sum, task) => sum + taskProgress(task), 0) / totalImages)
-    : 0;
-  const succeededCount = imageTasks.filter((t) => t.status === "succeeded").length;
-  const failedCount = imageTasks.filter((t) => t.status === "failed").length;
-  const totalQuestions = imageTasks.reduce((s, t) => s + t.questionCount, 0);
-  const uploadingCount = imageTasks.filter((t) => t.status === "uploading").length;
-  const processingCount = imageTasks.filter((t) => t.status === "processing").length;
+  const { succeededCount, failedCount, totalQuestions, uploadingCount, processingCount, totalProgress: progressPct } = computeBatchStats(imageTasks);
   const isJobActive = queuePhase !== "idle";
 
   // ── Drag / drop / paste ──────────────────────────────────────
