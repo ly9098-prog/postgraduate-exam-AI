@@ -403,6 +403,7 @@ jobs:
             tests/test_services/test_coverage_service_compatibility.py \
             tests/test_services/test_behavior_service_compatibility.py \
             tests/test_services/test_wrong_question_compatibility.py \
+            tests/test_services/test_subject_resolution_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
