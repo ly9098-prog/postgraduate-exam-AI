@@ -2839,19 +2839,48 @@ class TestPageRangePersistence:
     @pytest.mark.asyncio
     async def test_upload_response_page_range(self, tmp_path):
         """Test that start_import_pipeline returns page_range immediately."""
+        from types import SimpleNamespace
+
+        from app.services import (
+            import_document_upload,
+            import_pipeline_admission,
+            import_pipeline_service,
+        )
         from app.services.import_upload_service import start_import_pipeline
+        from app.services.task_queue_service import EnqueueResult
 
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 test content")
+
+        async def admit(*_args, **_kwargs):
+            return "synthetic-sha256"
+
+        async def stage(*_args, **_kwargs):
+            return SimpleNamespace(object_id="synthetic-staging")
+
+        async def queue(*_args, **_kwargs):
+            return EnqueueResult(accepted=True, task_id="task-1")
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(import_pipeline_admission, "admit_pipeline_record", admit)
+        monkeypatch.setattr(import_document_upload, "admit_pipeline_record", admit)
+        monkeypatch.setattr(import_document_upload, "async_store_file", stage)
+        monkeypatch.setattr(
+            import_pipeline_service, "_acquire_pipeline_reservation", admit
+        )
+        monkeypatch.setattr(
+            import_pipeline_service, "_release_pipeline_reservation", admit
+        )
+        monkeypatch.setattr(
+            "app.services.task_queue_worker.enqueue_import_pipeline",
+            queue,
+        )
+
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         mock_doc.__len__ = MagicMock(return_value=10)
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.core.resource_guard.ResourceGuard.can_accept_work",
-                   return_value=(True, "")), \
-             patch("app.services.task_queue_worker.enqueue_import_pipeline",
-                   new_callable=AsyncMock, return_value=MagicMock(reason=None)):
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
             result = await start_import_pipeline(
                 file_path=str(pdf_file),
                 filename="test.pdf",
@@ -2859,12 +2888,6 @@ class TestPageRangePersistence:
                 page_start=3,
                 page_end=7,
             )
-
-        assert result.page_range is not None
-        assert result.page_range.effective_start == 3
-        assert result.page_range.effective_end == 7
-        assert result.page_range.selected_page_count == 5
-        assert result.page_range.total_pages == 10
 
         assert result.page_range is not None
         assert result.page_range.effective_start == 3
@@ -2951,23 +2974,48 @@ class TestNonPdfPageRangeRejection:
 
     @pytest.mark.asyncio
     async def test_pdf_with_page_range_ok(self, tmp_path):
+        from types import SimpleNamespace
+
+        from app.services import (
+            import_document_upload,
+            import_pipeline_admission,
+            import_pipeline_service,
+        )
         from app.services.import_upload_service import start_import_pipeline
+        from app.services.task_queue_service import EnqueueResult
 
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 test")
+
+        async def admit(*_args, **_kwargs):
+            return "synthetic-sha256"
+
+        async def stage(*_args, **_kwargs):
+            return SimpleNamespace(object_id="synthetic-staging")
+
+        async def queue(*_args, **_kwargs):
+            return EnqueueResult(accepted=True, task_id="task-2")
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(import_pipeline_admission, "admit_pipeline_record", admit)
+        monkeypatch.setattr(import_document_upload, "admit_pipeline_record", admit)
+        monkeypatch.setattr(import_document_upload, "async_store_file", stage)
+        monkeypatch.setattr(
+            import_pipeline_service, "_acquire_pipeline_reservation", admit
+        )
+        monkeypatch.setattr(
+            import_pipeline_service, "_release_pipeline_reservation", admit
+        )
+        monkeypatch.setattr(
+            "app.services.task_queue_worker.enqueue_import_pipeline",
+            queue,
+        )
+
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         mock_doc.__len__ = MagicMock(return_value=10)
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.core.resource_guard.ResourceGuard.can_accept_work",
-                   return_value=(True, "")), \
-             patch("app.core.resource_guard.ResourceGuard.acquire_reservation",
-                   new_callable=AsyncMock, return_value="fake-reservation-token"), \
-             patch("app.core.resource_guard.ResourceGuard.release_reservation",
-                   new_callable=AsyncMock), \
-             patch("app.services.task_queue_worker.enqueue_import_pipeline",
-                   new_callable=AsyncMock, return_value=MagicMock(reason=None)):
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
             result = await start_import_pipeline(
                 file_path=str(pdf_file),
                 filename="test.pdf",
