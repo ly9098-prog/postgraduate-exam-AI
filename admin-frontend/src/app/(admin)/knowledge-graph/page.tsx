@@ -43,74 +43,15 @@ import {
   difficultyText,
   type RelationKey,
 } from "@/lib/knowledge-graph-utils";
+import {
+  cubicPoint,
+  cubicUnitNormal,
+  segmentsProperlyIntersect,
+  polylineIntersectionCount,
+} from "@/lib/knowledge-graph-geometry";
 import { cn } from "@/lib/utils";
 
 type PositionedNode = KnowledgeGraphNode & { x: number; y: number; level: number };
-
-function cubicPoint(
-  start: { x: number; y: number },
-  control1: { x: number; y: number },
-  control2: { x: number; y: number },
-  end: { x: number; y: number },
-  t: number,
-) {
-  const mt = 1 - t;
-  return {
-    x: mt * mt * mt * start.x + 3 * mt * mt * t * control1.x + 3 * mt * t * t * control2.x + t * t * t * end.x,
-    y: mt * mt * mt * start.y + 3 * mt * mt * t * control1.y + 3 * mt * t * t * control2.y + t * t * t * end.y,
-  };
-}
-
-function cubicUnitNormal(
-  start: { x: number; y: number },
-  control1: { x: number; y: number },
-  control2: { x: number; y: number },
-  end: { x: number; y: number },
-  t: number,
-) {
-  const mt = 1 - t;
-  const dx = 3 * mt * mt * (control1.x - start.x)
-    + 6 * mt * t * (control2.x - control1.x)
-    + 3 * t * t * (end.x - control2.x);
-  const dy = 3 * mt * mt * (control1.y - start.y)
-    + 6 * mt * t * (control2.y - control1.y)
-    + 3 * t * t * (end.y - control2.y);
-  const length = Math.max(0.001, Math.hypot(dx, dy));
-  return { x: -dy / length, y: dx / length };
-}
-
-function segmentsProperlyIntersect(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-  c: { x: number; y: number },
-  d: { x: number; y: number },
-) {
-  const cross = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
-    (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
-  const abC = cross(a, b, c);
-  const abD = cross(a, b, d);
-  const cdA = cross(c, d, a);
-  const cdB = cross(c, d, b);
-  const epsilon = 0.01;
-
-  // 只统计真正穿过的交叉，不把端点接触或近似共线当成交叉，
-  // 否则多条关系共同连接同一个知识点时会被误判。
-  return ((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon))
-    && ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon));
-}
-
-function polylineIntersectionCount(
-  route: Array<{ x: number; y: number }>,
-  other: Array<{ x: number; y: number }>,
-) {
-  let count = 0;
-  for (let i = 0; i < route.length - 1; i += 1) {
-    for (let j = 0; j < other.length - 1; j += 1) {
-      if (segmentsProperlyIntersect(route[i], route[i + 1], other[j], other[j + 1])) count += 1;
-    }
-  }
-  return count;
-}
 
 function buildLayout(
   nodes: KnowledgeGraphNode[],
