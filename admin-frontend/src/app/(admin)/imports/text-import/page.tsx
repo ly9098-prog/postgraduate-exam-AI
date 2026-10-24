@@ -28,6 +28,7 @@ import { ImportMetric, ImportPanelHeader, ImportWorkspaceHeader } from "../compo
 import { ImportToast } from "../components/import-toast";
 import { getQuestionTypeLabel, QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { inspectLatexImportText, normalizeLatexImportDelimiters } from "@/lib/latex-import";
+import { validateEditStructure, buildEditFormLatexText } from "@/lib/text-import-validation-utils";
 
 type ParsedOption = { key: string; text: string };
 
@@ -372,26 +373,12 @@ export default function TextImportPage() {
   const latexInspection = useMemo(() => inspectLatexImportText(text), [text]);
   const editLatexInspection = useMemo(() => {
     if (!editForm) return inspectLatexImportText("");
-    return inspectLatexImportText([
-      editForm.stem,
-      ...editForm.options.map((option) => option.text),
-      typeof editForm.answer === "string" ? editForm.answer : "",
-      editForm.analysis ?? "",
-    ].filter(Boolean).join("\n"));
+    return inspectLatexImportText(buildEditFormLatexText(editForm));
   }, [editForm]);
 
   const editStructureIssues = useMemo(() => {
     if (!editForm) return [] as string[];
-    const issues: string[] = [];
-    if (!editForm.stem.trim()) issues.push("题干不能为空");
-    const answerEmpty = editForm.answer === null || editForm.answer === undefined || editForm.answer === "" || (Array.isArray(editForm.answer) && editForm.answer.length === 0);
-    if (answerEmpty) issues.push("答案不能为空");
-    if (editForm.question_type === "single_choice" || editForm.question_type === "multiple_choice") {
-      const optionKeys = new Set(editForm.options.map((option) => option.key.toUpperCase()));
-      const missing = ["A", "B", "C", "D"].filter((key) => !optionKeys.has(key));
-      if (missing.length > 0) issues.push(`选择题缺少 ${missing.join(" / ")} 选项`);
-    }
-    return issues;
+    return validateEditStructure(editForm);
   }, [editForm]);
 
   const resetParsedState = () => {
