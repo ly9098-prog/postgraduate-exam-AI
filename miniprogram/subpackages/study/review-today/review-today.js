@@ -82,6 +82,9 @@ const {
 const {
   createOverviewLoadController,
 } = require('./utils/overview-load-controller')
+const {
+  createReviewDaySyncController,
+} = require('./utils/day-sync-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -462,27 +465,25 @@ async refreshOverviewStatsSilently() {
     )
   },
 async _syncReviewSessionDayIfNeeded() {
-const session = this._reviewSession
-const currentDate = getChinaDate(0)
-if (!session || !session.taskDate || String(session.taskDate) === currentDate) return true
-try {
-const overview = await api.get('/review/today/overview')
-if (!this._alive) return false
-const vm = this.buildReviewOverviewVM(overview || {})
-this._overviewSyncController().applyOverviewWithDayReset(overview, vm)
-this._setDateStr()
-this.setData({
-...vm,
-})
-wx.showToast({ title: '日期已切换，已同步今日复习进度', icon: 'none' })
-return true
-} catch (e) {
-if (!this._alive) return false
-console.error('跨天同步复习进度失败', e)
-wx.showToast({ title: '日期已切换，请联网同步后继续', icon: 'none' })
-return false
-}
+  return this._reviewDaySyncController().syncIfNeeded()
 },
+
+  _reviewDaySyncController() {
+    return this._reviewDaySync || (
+      this._reviewDaySync = createReviewDaySyncController({
+        isSameDay: () => this._overviewSyncController().isSameDay(),
+        isPageAlive: () => this._alive,
+        getOverview: () => api.get('/review/today/overview'),
+        buildOverviewVM: overview => this.buildReviewOverviewVM(overview),
+        applyOverviewWithDayReset: (overview, vm) => this._overviewSyncController().applyOverviewWithDayReset(overview, vm),
+        setDateStr: () => this._setDateStr(),
+        setData: patch => this.setData(patch),
+        showSuccessToast: () => wx.showToast({ title: '日期已切换，已同步今日复习进度', icon: 'none' }),
+        showFailureToast: () => wx.showToast({ title: '日期已切换，请联网同步后继续', icon: 'none' }),
+        logError: (...args) => console.error(...args),
+      })
+    )
+  },
 buildReviewOverviewVM(overview) {
 return this._overviewVMController().buildVM(overview)
 },
