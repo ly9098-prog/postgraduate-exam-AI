@@ -26,8 +26,15 @@ import type {
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
-
-type FlatSubject = AdminSubjectNode & { depth: number };
+import {
+  flattenSubjects,
+  buildSubjectRelations,
+  summarizeSubjects,
+  scopeLabel,
+  scopeTone,
+  updateSubjectTreeStatus,
+  type FlatSubject,
+} from "@/lib/subject-tree-utils";
 
 type PendingToggle = {
   subject: AdminSubjectNode;
@@ -39,75 +46,6 @@ type ActionNotice = {
   title: string;
   message: string;
 } | null;
-
-function flattenSubjects(items: AdminSubjectNode[], depth = 0): FlatSubject[] {
-  return items.flatMap((item) => [
-    { ...item, depth },
-    ...flattenSubjects(item.children || [], depth + 1),
-  ]);
-}
-
-function buildSubjectRelations(items: AdminSubjectNode[]) {
-  const activeDescendantsById = new Map<number, AdminSubjectNode[]>();
-  const inactiveAncestorsById = new Map<number, AdminSubjectNode[]>();
-
-  function walk(item: AdminSubjectNode, ancestors: AdminSubjectNode[]): AdminSubjectNode[] {
-    inactiveAncestorsById.set(item.id, ancestors.filter((ancestor) => !ancestor.is_active));
-
-    const activeDescendants: AdminSubjectNode[] = [];
-    for (const child of item.children || []) {
-      if (child.is_active) activeDescendants.push(child);
-      activeDescendants.push(...walk(child, [...ancestors, item]));
-    }
-    activeDescendantsById.set(item.id, activeDescendants);
-    return activeDescendants;
-  }
-
-  for (const item of items) walk(item, []);
-
-  return { activeDescendantsById, inactiveAncestorsById };
-}
-
-function summarizeSubjects(subjects: AdminSubjectNode[], max = 3) {
-  const names = subjects.slice(0, max).map((subject) => subject.name);
-  if (subjects.length <= max) return names.join("、");
-  return `${names.join("、")} 等 ${subjects.length} 个科目`;
-}
-
-function scopeLabel(subject: AdminSubjectNode) {
-  if (subject.is_product_root) return "产品根科目";
-  if (subject.product_scope === "exam408") return "核心科目";
-  return "扩展科目";
-}
-
-function scopeTone(subject: AdminSubjectNode): "accent" | "neutral" {
-  return subject.product_scope === "exam408" ? "accent" : "neutral";
-}
-
-function updateSubjectTreeStatus(items: AdminSubjectNode[], subjectId: number, isActive: boolean): AdminSubjectNode[] {
-  if (!isActive) {
-    return items.map((item) => ({
-      ...item,
-      is_active: item.id === subjectId ? false : item.is_active,
-      children: updateSubjectTreeStatus(item.children || [], subjectId, false),
-    }));
-  }
-
-  function activatePath(item: AdminSubjectNode): [AdminSubjectNode, boolean] {
-    const childResults = (item.children || []).map(activatePath);
-    const containsTarget = item.id === subjectId || childResults.some(([, contains]) => contains);
-    return [
-      {
-        ...item,
-        is_active: containsTarget ? true : item.is_active,
-        children: childResults.map(([child]) => child),
-      },
-      containsTarget,
-    ];
-  }
-
-  return items.map((item) => activatePath(item)[0]);
-}
 
 export default function SubjectsPage() {
   const queryClient = useQueryClient();
