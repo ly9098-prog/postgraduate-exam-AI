@@ -4,6 +4,7 @@ import {
   cubicUnitNormal,
   segmentsProperlyIntersect,
   polylineIntersectionCount,
+  getNodeLabelPlacement,
 } from "./knowledge-graph-geometry";
 
 describe("cubicPoint", () => {
@@ -66,5 +67,42 @@ describe("polylineIntersectionCount", () => {
   });
   it("returns 0 for single-point polylines", () => {
     expect(polylineIntersectionCount([{x:0,y:0}], [{x:1,y:1}])).toBe(0);
+  });
+});
+
+describe("getNodeLabelPlacement", () => {
+  it("places label below when no anchor", () => {
+    const p = getNodeLabelPlacement({ id: 1, x: 0, y: 0, name: "A" }, null, 20, false, 60);
+    expect(p.textAnchor).toBe("middle");
+    expect(p.y).toBe(37);
+  });
+  it("places label below when anchor is self", () => {
+    const node = { id: 1, x: 0, y: 0, name: "A" };
+    const p = getNodeLabelPlacement(node, node, 20, false, 60);
+    expect(p.textAnchor).toBe("middle");
+  });
+  it("places label right when node is to the right of anchor", () => {
+    const p = getNodeLabelPlacement({ id: 2, x: 100, y: 0, name: "B" }, { id: 1, x: 0, y: 0 }, 20, false, 60);
+    expect(p.textAnchor).toBe("start");
+    expect(p.x).toBe(30);
+  });
+  it("places label left when node is to the left of anchor", () => {
+    const p = getNodeLabelPlacement({ id: 2, x: -100, y: 0, name: "B" }, { id: 1, x: 0, y: 0 }, 20, false, 60);
+    expect(p.textAnchor).toBe("end");
+    expect(p.x).toBe(-30);
+  });
+  it("places label above when node is above anchor", () => {
+    const p = getNodeLabelPlacement({ id: 2, x: 0, y: -100, name: "B" }, { id: 1, x: 0, y: 0 }, 20, false, 60);
+    expect(p.textAnchor).toBe("middle");
+    expect(p.y).toBe(-30);
+  });
+  it("places label below when node is below anchor", () => {
+    const p = getNodeLabelPlacement({ id: 2, x: 0, y: 100, name: "B" }, { id: 1, x: 0, y: 0 }, 20, false, 60);
+    expect(p.textAnchor).toBe("middle");
+    expect(p.y).toBe(37);
+  });
+  it("includes meta line offset when withMeta is true", () => {
+    const p = getNodeLabelPlacement({ id: 1, x: 0, y: 0, name: "A" }, null, 20, true, 60);
+    expect(p.metaY).toBe(50);
   });
 });

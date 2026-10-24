@@ -48,6 +48,8 @@ import {
   cubicUnitNormal,
   segmentsProperlyIntersect,
   polylineIntersectionCount,
+  getNodeLabelPlacement,
+  type NodeLabelPlacement,
 } from "@/lib/knowledge-graph-geometry";
 import { cn } from "@/lib/utils";
 
@@ -289,71 +291,6 @@ function buildLayout(
   return positioned;
 }
 
-type NodeLabelPlacement = {
-  x: number;
-  y: number;
-  metaY: number;
-  textAnchor: "start" | "middle" | "end";
-  box: { x: number; y: number; width: number; height: number };
-};
-
-function getNodeLabelPlacement(
-  node: PositionedNode,
-  anchor: PositionedNode | null,
-  radius: number,
-  withMeta: boolean,
-): NodeLabelPlacement {
-  const width = estimatedLabelWidth(node);
-  const height = withMeta ? 32 : 19;
-  if (!anchor || anchor.id === node.id) {
-    return {
-      x: 0,
-      y: radius + 17,
-      metaY: radius + 30,
-      textAnchor: "middle",
-      box: { x: node.x - width / 2, y: node.y + radius + 5, width, height },
-    };
-  }
-
-  const dx = node.x - anchor.x;
-  const dy = node.y - anchor.y;
-  // 标签始终尽量放在“远离当前中心”的外侧，避免第一层节点的文字回压到中心节点。
-  if (Math.abs(dx) > Math.abs(dy) * 1.12) {
-    const right = dx > 0;
-    const x = (right ? 1 : -1) * (radius + 10);
-    return {
-      x,
-      y: withMeta ? -3 : 3,
-      metaY: withMeta ? 10 : 15,
-      textAnchor: right ? "start" : "end",
-      box: {
-        x: right ? node.x + radius + 5 : node.x - radius - 5 - width,
-        y: node.y - height / 2 - 2,
-        width,
-        height,
-      },
-    };
-  }
-
-  if (dy < 0) {
-    return {
-      x: 0,
-      y: -radius - (withMeta ? 18 : 10),
-      metaY: -radius - 5,
-      textAnchor: "middle",
-      box: { x: node.x - width / 2, y: node.y - radius - height - 8, width, height },
-    };
-  }
-
-  return {
-    x: 0,
-    y: radius + 17,
-    metaY: radius + 30,
-    textAnchor: "middle",
-    box: { x: node.x - width / 2, y: node.y + radius + 5, width, height },
-  };
-}
-
 function GraphCanvas({
   data,
   selectedId,
@@ -492,7 +429,7 @@ function GraphCanvas({
       radius,
       showLabel,
       withMeta,
-      placement: getNodeLabelPlacement(node, activeNode, radius, withMeta),
+      placement: getNodeLabelPlacement(node, activeNode, radius, withMeta, estimatedLabelWidth(node)),
     }];
   })), [activeNode, data.focus_id, directNeighborIds, nodes, selectedId]);
 

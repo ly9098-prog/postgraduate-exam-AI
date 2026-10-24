@@ -81,3 +81,71 @@ export function polylineIntersectionCount(
   }
   return count;
 }
+
+export type NodeLabelPlacement = {
+  x: number;
+  y: number;
+  metaY: number;
+  textAnchor: "start" | "middle" | "end";
+  box: { x: number; y: number; width: number; height: number };
+};
+
+/**
+ * Compute label placement for a graph node relative to an anchor node.
+ * Labels are placed on the outer side to avoid overlapping the center.
+ */
+export function getNodeLabelPlacement(
+  node: { id: number; x: number; y: number; name: string },
+  anchor: { id: number; x: number; y: number } | null,
+  radius: number,
+  withMeta: boolean,
+  width: number,
+): NodeLabelPlacement {
+  const height = withMeta ? 32 : 19;
+  if (!anchor || anchor.id === node.id) {
+    return {
+      x: 0,
+      y: radius + 17,
+      metaY: radius + 30,
+      textAnchor: "middle",
+      box: { x: node.x - width / 2, y: node.y + radius + 5, width, height },
+    };
+  }
+
+  const dx = node.x - anchor.x;
+  const dy = node.y - anchor.y;
+  if (Math.abs(dx) > Math.abs(dy) * 1.12) {
+    const right = dx > 0;
+    const x = (right ? 1 : -1) * (radius + 10);
+    return {
+      x,
+      y: withMeta ? -3 : 3,
+      metaY: withMeta ? 10 : 15,
+      textAnchor: right ? "start" : "end",
+      box: {
+        x: right ? node.x + radius + 5 : node.x - radius - 5 - width,
+        y: node.y - height / 2 - 2,
+        width,
+        height,
+      },
+    };
+  }
+
+  if (dy < 0) {
+    return {
+      x: 0,
+      y: -radius - (withMeta ? 18 : 10),
+      metaY: -radius - 5,
+      textAnchor: "middle",
+      box: { x: node.x - width / 2, y: node.y - radius - height - 8, width, height },
+    };
+  }
+
+  return {
+    x: 0,
+    y: radius + 17,
+    metaY: radius + 30,
+    textAnchor: "middle",
+    box: { x: node.x - width / 2, y: node.y + radius + 5, width, height },
+  };
+}
