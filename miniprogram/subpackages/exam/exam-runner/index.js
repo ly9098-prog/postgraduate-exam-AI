@@ -6,6 +6,9 @@ const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInS
 const {
   createExamTimerController,
 } = require('../utils/exam-timer-controller')
+const {
+  createExamPendingCacheController,
+} = require('../utils/exam-pending-cache-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -158,56 +161,11 @@ Page({
   },
 
   _loadPending(attemptId) {
-    try {
-      let raw = wx.getStorageSync(cacheKey(attemptId))
-      let savedAt = 0
-      let items = null
-      let submitPending = false
-
-      if (raw && typeof raw === 'object' && raw.items && typeof raw.items === 'object') {
-        savedAt = Number(raw.saved_at || 0)
-        items = sanitizePendingItems(raw.items)
-        submitPending = raw.submit_pending === true
-      } else {
-        // v2 stored metadata (schema_version/saved_at) beside numeric item IDs.
-        // That shape could accidentally make the sync loop PATCH pseudo item IDs
-        // such as /answers/saved_at after a restart. Migrate only numeric keys.
-        const v2 = wx.getStorageSync(v2CacheKey(attemptId))
-        const v1 = wx.getStorageSync(legacyCacheKey(attemptId))
-        const legacy = v2 && typeof v2 === 'object' ? v2 : (v1 && typeof v1 === 'object' ? v1 : null)
-        if (legacy) {
-          savedAt = Number(legacy.saved_at || 0)
-          items = sanitizePendingItems(legacy.items && typeof legacy.items === 'object' ? legacy.items : legacy)
-          submitPending = legacy.submit_pending === true
-        }
-      }
-
-      if (!items) return Object.create(null)
-      const ttl = submitPending ? EXAM_SUBMIT_PENDING_TTL_MS : EXAM_DRAFT_TTL_MS
-      if (savedAt > 0 && api.now() - savedAt > ttl) {
-        this._clearPendingStorage(attemptId)
-        return Object.create(null)
-      }
-      this._retainPendingForSubmit = submitPending
-
-      try {
-        wx.setStorageSync(cacheKey(attemptId), {
-          schema_version: EXAM_CACHE_SCHEMA_VERSION,
-          saved_at: savedAt || api.now(),
-          submit_pending: submitPending,
-          items,
-        })
-        wx.removeStorageSync(v2CacheKey(attemptId))
-        wx.removeStorageSync(legacyCacheKey(attemptId))
-      } catch (_) {}
-      return items
-    } catch (_) {
-      return Object.create(null)
-    }
+    return this._examPendingCacheController().load(attemptId)
   },
 
   _clearPendingStorage(attemptId = this.data.attemptId) {
-    examAttemptCache.clearPendingAttempt(attemptId)
+    this._examPendingCacheController().clear(attemptId)
   },
 
   _pendingItemIds() {
@@ -215,19 +173,31 @@ Page({
   },
 
   _persistPending() {
-    try {
-      const keys = this._pendingItemIds()
-      if (keys.length) {
-        const items = Object.create(null)
-        keys.forEach((key) => { items[key] = Object.assign({}, this._pending[key]) })
-        wx.setStorageSync(cacheKey(this.data.attemptId), {
-          schema_version: EXAM_CACHE_SCHEMA_VERSION,
-          saved_at: api.now(),
-          submit_pending: !!this._retainPendingForSubmit,
-          items,
-        })
-      } else this._clearPendingStorage()
-    } catch (_) {}
+    this._examPendingCacheController().persist(
+      this._pending,
+      this.data.attemptId,
+      this._retainPendingForSubmit
+    )
+  },
+  _examPendingCacheController() {
+    return this._examPendingCache || (
+      this._examPendingCache = createExamPendingCacheController({
+        readStorage: key => wx.getStorageSync(key),
+        writeStorage: (key, value) => wx.setStorageSync(key, value),
+        removeStorage: key => wx.removeStorageSync(key),
+        cacheKey,
+        v2CacheKey,
+        legacyCacheKey,
+        clearPendingAttempt: attemptId => examAttemptCache.clearPendingAttempt(attemptId),
+        now: () => api.now(),
+        sanitizePendingItems,
+        isPendingItemKey,
+        getSchemaVersion: () => EXAM_CACHE_SCHEMA_VERSION,
+        getDraftTtlMs: () => EXAM_DRAFT_TTL_MS,
+        getSubmitPendingTtlMs: () => EXAM_SUBMIT_PENDING_TTL_MS,
+        setRetainPendingForSubmit: value => { this._retainPendingForSubmit = value },
+      })
+    )
   },
 
   _navigateToResult() {
