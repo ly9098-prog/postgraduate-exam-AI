@@ -50,6 +50,7 @@ from app.services.knowledge_point_service import (
 from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
 )
+from app.services.practice.aggregated_smart import run_aggregated_smart
 from app.services.practice.batch_token import (
     PRACTICE_ANSWER_DURATION_TOLERANCE_SEC,
     PRACTICE_BATCH_CLOCK_SKEW_SEC,
@@ -916,91 +917,26 @@ async def get_aggregated_smart_questions(
     """
     from app.models.admin import Subject
 
-    # 批量加载子科目 code 映射
-    subj_result = await db.execute(select(Subject).where(Subject.id.in_(subject_ids)))
-    subj_map: dict[int, str] = {s.id: s.code for s in subj_result.scalars().all()}
+    async def load_subjects(ids: list[int]) -> list[Subject]:
+        result = await db.execute(select(Subject).where(Subject.id.in_(ids)))
+        return list(result.scalars().all())
 
-    all_buckets: list[list[tuple[Question, dict]]] = []
-
-    for sid in subject_ids:
-        sid_code = subj_map.get(sid)
-        if not sid_code:
-            continue
-
-        qs, meta = await get_smart_practice_questions(
-            db=db,
-            user_id=user_id,
-            subject_code=sid_code,
-            count=count,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-            use_leitner=use_leitner,
-            request_id=request_id,
-            smart_strategy=smart_strategy,
-            skip_finalize=True,
-            subject_ids=[sid],
-        )
-        if qs:
-            all_buckets.append([(q, meta.get(q.id, {})) for q in qs])
-
-    if not all_buckets:
-        logger.info(
-            "[AGG_SMART] subject_code=%s subject_ids=%s count=%d no_buckets",
-            subject_code,
-            subject_ids,
-            count,
-        )
-        return [], {}
-
-    if len(all_buckets) <= 1:
-        merged = all_buckets[0] if all_buckets else []
-        merged_qs = [item[0] for item in merged[:count]]
-        merged_meta = {item[0].id: item[1] for item in merged[:count]}
-        logger.info(
-            "[AGG_SMART] subject_code=%s subject_ids=%s count=%d buckets=%d returned=%d (single)",
-            subject_code,
-            subject_ids,
-            count,
-            len(all_buckets),
-            len(merged_qs),
-        )
-        return await _finalize_smart(
-            merged_qs,
-            merged_meta,
-            db,
-            user_id,
-            subject_code,
-            request_id=request_id,
-        )
-
-    merged_qs, merged_meta = _round_robin_merge_with_metadata(
-        all_buckets,
-        count,
-        randomize_order=False,
-    )
-
-    from collections import Counter
-
-    per_subject = Counter(q.subject_id for q in merged_qs)
-    logger.info(
-        "[AGG_SMART] subject_code=%s subject_ids=%s count=%d "
-        "non_empty_buckets=%d returned=%d per_subject=%s",
-        subject_code,
-        subject_ids,
-        count,
-        len(all_buckets),
-        len(merged_qs),
-        dict(per_subject),
-    )
-
-    # 统一写入推荐日志（仅记录最终实际返回的题目）
-    return await _finalize_smart(
-        merged_qs,
-        merged_meta,
-        db,
-        user_id,
-        subject_code,
+    return await run_aggregated_smart(
+        db=db,
+        user_id=user_id,
+        subject_code=subject_code,
+        subject_ids=subject_ids,
+        count=count,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        use_leitner=use_leitner,
         request_id=request_id,
+        smart_strategy=smart_strategy,
+        logger=logger,
+        load_subjects=load_subjects,
+        load_smart=get_smart_practice_questions,
+        merge_metadata=_round_robin_merge_with_metadata,
+        finalize=_finalize_smart,
     )
 
 
