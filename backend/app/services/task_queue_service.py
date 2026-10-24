@@ -28,7 +28,6 @@ from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.services.task_queue_contract import (
     _CURRENT_TASK_SCHEMA_VERSION,
-    _MINIMUM_WORKER_VERSION,
     _minimum_worker_version_for_task,
     _normalize_task_schema_version,
     EnqueueResult,
@@ -76,6 +75,13 @@ from app.services.task_queue_keys import (
     _v2_task_hash_key,
 )
 from app.services.task_queue_script_bindings import SCRIPT_BINDINGS
+from app.services.task_queue_v2_fail_contract import (
+    apply_v2_dead_result,
+    apply_v2_retry_result,
+    build_v2_dead_plan,
+    build_v2_retry_plan,
+    resolve_v2_fail_identity,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1672,28 +1678,31 @@ class DurableTaskQueue:
             0 — owner mismatch
            -1 — generation mismatch
         """
-        if isinstance(task_or_id, Task):
-            task = task_or_id
-            task_id = task.task_id
-            tt = task.task_type
-            token = task.owner_token
-        else:
-            task_id = task_or_id
-            tt = task_type or ""
-            token = ""
-
-        if not task_id or not tt or not token:
+        identity = resolve_v2_fail_identity(task_or_id, task_type=task_type)
+        if (
+            identity is None
+            or not identity.task_id
+            or not identity.task_type
+            or not identity.owner_token
+        ):
             return 0
+        task_id = identity.task_id
+        tt = identity.task_type
+        token = identity.owner_token
 
         if not self._redis_enabled:
             return 0
 
         retry_count = 0
         max_retries = _DEFAULT_MAX_RETRIES
-        updated_at = time.time()
+        retry_plan = None
         if isinstance(task_or_id, Task):
-            retry_count = task.retry_count + 1
-            max_retries = task.max_retries
+            task = task_or_id
+            retry_plan = build_v2_retry_plan(
+                task_or_id, error, _DEFAULT_RETRY_BASE_DELAY
+            )
+            retry_count = retry_plan.retry_count
+            max_retries = retry_plan.max_retries
 
         try:
             client = await self._get_script_client()
@@ -1702,19 +1711,9 @@ class DurableTaskQueue:
             await self._load_scripts(client)
 
             if isinstance(task_or_id, Task) and retry_count < max_retries:
-                delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (retry_count - 1))
-                task_data = task.to_dict()
-                task_data.update(
-                    {
-                        "status": TaskStatus.FAILED.value,
-                        "retry_count": retry_count,
-                        "error": error,
-                        "updated_at": updated_at,
-                        "lease_expires_at": 0.0,
-                        "owner_token": "",
-                    }
-                )
-                task_json = json.dumps(task_data, default=str)
+                assert retry_plan is not None
+                delay = retry_plan.delay
+                task_json = retry_plan.task_json
 
                 result = await self._evalsha_or_reload(
                     client,
@@ -1740,11 +1739,7 @@ class DurableTaskQueue:
 
                 result = int(result) if result is not None else 0
                 if result == 1:
-                    task.retry_count = retry_count
-                    task.error = error
-                    task.updated_at = updated_at
-                    task.status = TaskStatus.FAILED
-                    task.lease_expires_at = 0.0
+                    apply_v2_retry_result(task, retry_plan, error)
                     logger.warning(
                         "v2 Fail/retry (%d/%d, +%ds): task_id=%s",
                         retry_count,
@@ -1753,11 +1748,13 @@ class DurableTaskQueue:
                         task_id,
                     )
                 elif result == 2:
-                    task.retry_count = retry_count
-                    task.error = error
-                    task.updated_at = updated_at
-                    task.status = TaskStatus.DEAD
-                    task.lease_expires_at = 0.0
+                    dead_plan = build_v2_dead_plan(
+                        task,
+                        error,
+                        retry_count=retry_count,
+                        updated_at=retry_plan.updated_at,
+                    )
+                    apply_v2_dead_result(task, dead_plan, error)
                     logger.warning(
                         "v2 Fail/retry-full dead: task_id=%s (retry ZSET full)",
                         task_id,
@@ -1771,29 +1768,13 @@ class DurableTaskQueue:
                 return result
 
             # Dead-letter path
-            if isinstance(task_or_id, Task):
-                task_data = task.to_dict()
-                task_data.update(
-                    {
-                        "status": TaskStatus.DEAD.value,
-                        "retry_count": retry_count,
-                        "error": error,
-                        "lease_expires_at": 0.0,
-                        "owner_token": "",
-                        "updated_at": updated_at,
-                    }
-                )
-                task_json = json.dumps(task_data, default=str)
-            else:
-                task_json = json.dumps(
-                    {
-                        "task_id": task_id,
-                        "task_type": tt,
-                        "payload": {},
-                        "status": "dead",
-                    },
-                    default=str,
-                )
+            dead_plan = build_v2_dead_plan(
+                task_or_id,
+                error,
+                retry_count=retry_count,
+                task_type=tt,
+            )
+            task_json = dead_plan.task_json
             result = await self._evalsha_or_reload(
                 client,
                 "_lua_fail_dead_v2",
@@ -1813,12 +1794,7 @@ class DurableTaskQueue:
 
             result = int(result) if result is not None else 0
             if result == 1:
-                if isinstance(task_or_id, Task):
-                    task_or_id.retry_count = retry_count
-                    task_or_id.error = error
-                    task_or_id.updated_at = updated_at
-                    task_or_id.status = TaskStatus.DEAD
-                    task_or_id.lease_expires_at = 0.0
+                apply_v2_dead_result(task_or_id, dead_plan, error)
                 logger.error("v2 Dead-letter: task_id=%s type=%s", task_id, tt)
             elif result == 0:
                 logger.warning("v2 Fail/dead owner mismatch: task_id=%s", task_id)
