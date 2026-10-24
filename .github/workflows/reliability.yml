@@ -410,6 +410,7 @@ jobs:
             miniprogram/tests/test-pomodoro-canvas-init-controller.js \
             miniprogram/tests/test-pomodoro-draw-ring-controller.js
             miniprogram/tests/test-pomodoro-apply-subjects-controller.js
+            miniprogram/tests/test-pomodoro-effective-paused-ms.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
           node miniprogram/scripts/test-pomodoro-resume-latency.js

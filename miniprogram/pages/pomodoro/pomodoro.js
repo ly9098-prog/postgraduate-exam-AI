@@ -17,6 +17,7 @@ const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
 const { buildSubjectChoices, subjectIconByCode } = require('./utils/subject-options')
 const { buildApplySubjectsPlan } = require('./utils/apply-subjects-controller')
+const { buildEffectivePausedMs } = require('./utils/effective-paused-ms')
 const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
 const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
@@ -1607,17 +1608,11 @@ Page({
   },
 
   _getEffectivePausedMsFromSession(session) {
-    const serverBaseMs = (session.total_paused_sec || 0) * 1000
-    let serverEffectiveMs = serverBaseMs
-
-    if (session.paused_at) {
-      const pausedAtMs = parseServerTime(session.paused_at)
-      if (Number.isFinite(pausedAtMs)) {
-        serverEffectiveMs += Math.max(0, api.now() - pausedAtMs)
-      }
-    }
-
-    return this._mergeLocalPauseAdjustment(session.id, serverEffectiveMs)
+    return buildEffectivePausedMs(session, {
+      parseServerTime,
+      now: () => api.now(),
+      mergeLocalAdjustment: (sessionId, ms) => this._mergeLocalPauseAdjustment(sessionId, ms),
+    })
   },
 
   _startTimer(totalSec, options = {}) {
