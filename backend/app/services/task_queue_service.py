@@ -115,6 +115,9 @@ from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
 from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
 from app.services.task_queue_v2_enqueue_contract import (
     build_v2_enqueue_plan,
+    v2_enqueue_duplicate,
+    v2_enqueue_internal_error,
+    v2_enqueue_queue_full,
     v2_enqueue_unavailable,
 )
 
@@ -1344,21 +1347,14 @@ class DurableTaskQueue:
             if result == "__duplicate__":
                 logger.info("v2 Duplicate task: task_id=%s", tid)
                 queue_metrics["duplicate_enqueue_prevented"] += 1
-                return EnqueueResult(accepted=True, task_id=tid, reason="duplicate")
+                return v2_enqueue_duplicate(tid)
             if result == "__queue_full__":
                 logger.warning("v2 Queue full: task_id=%s type=%s", tid, task_type)
                 queue_metrics["enqueue_rejected"] += 1
-                return EnqueueResult(
-                    accepted=False, task_id=None, reason="queue_full", retry_after=30
-                )
+                return v2_enqueue_queue_full()
             if result is None:
                 logger.error("v2 Enqueue nil: task_id=%s type=%s", tid, task_type)
-                return EnqueueResult(
-                    accepted=False,
-                    task_id=None,
-                    reason="internal_error",
-                    retry_after=30,
-                )
+                return v2_enqueue_internal_error()
 
             return EnqueueResult(accepted=True, task_id=tid)
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:

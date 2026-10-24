@@ -8,6 +8,9 @@ import pytest
 
 from app.services.task_queue_v2_enqueue_contract import (
     build_v2_enqueue_plan,
+    v2_enqueue_duplicate,
+    v2_enqueue_internal_error,
+    v2_enqueue_queue_full,
     v2_enqueue_unavailable,
 )
 
@@ -84,3 +87,22 @@ def test_unavailable_result_preserves_historical_shape():
     assert result.task_id is None
     assert result.reason == "redis_unavailable"
     assert result.retry_after == 30
+
+
+def test_lua_result_shapes_preserve_historical_contracts():
+    duplicate = v2_enqueue_duplicate("task-1")
+    assert duplicate.accepted is True
+    assert duplicate.task_id == "task-1"
+    assert duplicate.reason == "duplicate"
+
+    queue_full = v2_enqueue_queue_full()
+    assert queue_full.accepted is False
+    assert queue_full.task_id is None
+    assert queue_full.reason == "queue_full"
+    assert queue_full.retry_after == 30
+
+    internal_error = v2_enqueue_internal_error()
+    assert internal_error.accepted is False
+    assert internal_error.task_id is None
+    assert internal_error.reason == "internal_error"
+    assert internal_error.retry_after == 30

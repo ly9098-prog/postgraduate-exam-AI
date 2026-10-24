@@ -81,3 +81,25 @@ def v2_enqueue_unavailable() -> EnqueueResult:
         reason="redis_unavailable",
         retry_after=30,
     )
+
+
+def v2_enqueue_duplicate(task_id: str) -> EnqueueResult:
+    return EnqueueResult(accepted=True, task_id=task_id, reason="duplicate")
+
+
+def v2_enqueue_queue_full() -> EnqueueResult:
+    return EnqueueResult(
+        accepted=False,
+        task_id=None,
+        reason="queue_full",
+        retry_after=30,
+    )
+
+
+def v2_enqueue_internal_error() -> EnqueueResult:
+    return EnqueueResult(
+        accepted=False,
+        task_id=None,
+        reason="internal_error",
+        retry_after=30,
+    )
