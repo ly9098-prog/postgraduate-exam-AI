@@ -53,6 +53,16 @@ import type {
   TaskTraceItem,
   TaskTraceResponse,
 } from "@/lib/api/types";
+import {
+  statusLabelZh,
+  asyncTaskName,
+  taskStatusMeta,
+  runResultMeta,
+  taskMatchesStatus as taskMatchesStatusHelper,
+  computeQueueTotal,
+  computeFailedQueueTotal,
+  type TaskStatusFilter,
+} from "@/lib/system-task-utils";
 
 function duration(seconds?: number | null) {
   const value = Math.max(0, Number(seconds || 0));
@@ -91,48 +101,6 @@ function traceStatusTone(status?: string | null) {
   if (["failed", "dead", "corrupt"].includes(status || "")) return "danger" as const;
   if (["processing", "retry", "pending", "leased"].includes(status || "")) return "warning" as const;
   return "neutral" as const;
-}
-
-const STATUS_LABELS_ZH: Record<string, string> = {
-  pending: "待发布",
-  leased: "发布中",
-  published: "已发布",
-  failed: "失败",
-  cancelled: "已取消",
-  ready: "待处理",
-  processing: "处理中",
-  retry: "等待重试",
-  dead: "死信",
-  corrupt: "损坏",
-  completed: "已完成",
-  success: "成功",
-  skipped: "已跳过",
-  running: "运行中",
-  idle: "空闲",
-  disabled: "已停用",
-  unavailable: "不可用",
-  unobservable: "不可观测",
-  prerequisite_failed: "运行条件异常",
-  database_unavailable: "数据库不可用",
-  database_unobservable: "数据库不可观测",
-  loop_unavailable: "执行循环未启动",
-  stopped: "未启动",
-  stale: "心跳过期",
-  redis_unavailable: "Redis 不可用",
-  cancel_requested: "取消中",
-  review_required: "待人工处理",
-  active: "运行中",
-  inactive: "未运行",
-  activating: "启动中",
-  deactivating: "停止中",
-  not_found: "未找到",
-  "not-found": "未找到",
-};
-
-function statusLabelZh(value?: string | null) {
-  if (!value) return "未知";
-  const key = String(value).trim().toLowerCase();
-  return STATUS_LABELS_ZH[key] || value;
 }
 
 function queueLocationLabelZh(value?: string | null) {
@@ -339,45 +307,6 @@ type PendingOperation =
   | { kind: "run-scheduled"; task: ScheduledSystemTask }
   | { kind: "cancel-async"; task: AsyncTaskSummary };
 
-const ASYNC_TASK_LABELS: Record<string, string> = {
-  import_pipeline: "题目导入流水线",
-  image_pipeline: "图片导入处理",
-  excel_pipeline: "Excel 导入处理",
-  resume_pipeline: "导入恢复任务",
-  admin_resume: "管理端恢复任务",
-  batch_image: "批量图片处理",
-  formula_batch: "公式批处理",
-  prewarm_analysis: "AI 预热分析",
-  export_mistakes: "错题导出",
-  answer_projection: "答题投影",
-  ocr_pipeline: "OCR 处理",
-};
-
-function asyncTaskName(taskType: string) {
-  return ASYNC_TASK_LABELS[taskType] || taskType;
-}
-
-function taskStatusMeta(status: string, location?: string | null) {
-  const value = (location || status || "").toLowerCase();
-  if (["failed", "dead", "corrupt"].includes(value) || status === "failed") {
-    return { label: value === "corrupt" ? "异常" : "失败", tone: "danger" as const };
-  }
-  if (["processing", "running"].includes(value)) return { label: "运行中", tone: "success" as const };
-  if (value === "retry") return { label: "等待重试", tone: "warning" as const };
-  if (["unavailable", "unobservable"].includes(value)) return { label: statusLabelZh(value), tone: "warning" as const };
-  if (["ready", "pending", "idle"].includes(value)) return { label: "等待中", tone: "neutral" as const };
-  if (value === "disabled") return { label: "已停用", tone: "neutral" as const };
-  if (["completed", "published", "success"].includes(value)) return { label: "成功", tone: "success" as const };
-  return { label: statusLabelZh(status), tone: "neutral" as const };
-}
-
-function runResultMeta(status?: string | null) {
-  if (status === "success") return { label: "成功", tone: "success" as const };
-  if (status === "failed") return { label: "失败", tone: "danger" as const };
-  if (status === "skipped") return { label: "跳过", tone: "warning" as const };
-  return { label: "暂无记录", tone: "neutral" as const };
-}
-
 function TaskTrendChart({ data }: { data: Array<{
   date: string;
   label: string;
@@ -481,7 +410,7 @@ export default function SystemTasksPage() {
   const [traceId, setTraceId] = useState("");
   const [taskScope, setTaskScope] = useState<TaskScope>("all");
   const [taskSearch, setTaskSearch] = useState("");
-  const [taskStatus, setTaskStatus] = useState("all");
+  const [taskStatus, setTaskStatus] = useState<TaskStatusFilter>("all");
   const [selectedScheduledId, setSelectedScheduledId] = useState<string | null>(null);
   const [selectedAsyncId, setSelectedAsyncId] = useState<string | null>(null);
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
@@ -632,16 +561,8 @@ export default function SystemTasksPage() {
   const systemRows = scheduledRows.filter((task) => task.task_type === "system");
   const asyncRows = asyncTasks.data?.tasks || [];
 
-  const taskMatchesStatus = (status: string, location?: string | null) => {
-    if (taskStatus === "all") return true;
-    const value = (location || status || "").toLowerCase();
-    if (taskStatus === "running") return ["running", "processing"].includes(value);
-    if (taskStatus === "waiting") return ["idle", "ready", "pending", "retry"].includes(value);
-    if (taskStatus === "failed") return ["failed", "dead", "corrupt"].includes(value);
-    if (taskStatus === "unavailable") return ["unavailable", "unobservable"].includes(value);
-    if (taskStatus === "disabled") return value === "disabled";
-    return true;
-  };
+  const taskMatchesStatus = (status: string, location?: string | null) =>
+    taskMatchesStatusHelper(taskStatus, status, location);
 
   const filteredScheduledTasks = useMemo(() => {
     if (taskScope === "async") return [];
@@ -670,14 +591,8 @@ export default function SystemTasksPage() {
   const selectedScheduledTask = scheduledRows.find((task) => task.task_id === selectedScheduledId) || null;
   const visibleTaskCount = filteredScheduledTasks.length + filteredAsyncTasks.length;
 
-  const queueTotal = data
-    ? data.redis.totals.ready
-      + data.redis.totals.processing
-      + data.redis.totals.retry
-      + data.redis.totals.dead
-      + data.redis.totals.corrupt
-    : 0;
-  const failedQueueTotal = data ? data.redis.totals.dead + data.redis.totals.corrupt : 0;
+  const queueTotal = data ? computeQueueTotal(data.redis.totals) : 0;
+  const failedQueueTotal = data ? computeFailedQueueTotal(data.redis.totals) : 0;
   const outboxTotal = statusPieData.reduce((sum, item) => sum + item.value, 0);
 
   const openTrace = (value?: string | null) => {
@@ -1039,7 +954,7 @@ export default function SystemTasksPage() {
                     </div>
                     <Select
                       value={taskStatus}
-                      onChange={setTaskStatus}
+                      onChange={(v) => setTaskStatus(v as TaskStatusFilter)}
                       className="w-[112px] border-[var(--color-border)]"
                       options={[
                         { value: "all", label: "全部状态" },
