@@ -3,6 +3,9 @@ const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
 const { buildFinalSubmitAnswers, isRetryableSubmitError } = require('../utils/submit-helpers')
 const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl, findPageInStack, buildPaperListUrl, buildPendingItem, computeAnsweredProgress } = require('../utils/hydrate-helpers')
+const {
+  createExamTimerController,
+} = require('../utils/exam-timer-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -364,48 +367,46 @@ Page({
   },
 
   _startTimer(initialRemaining) {
-    this._clearTimer()
-    const remaining = initialRemaining == null ? null : Math.max(0, Number(initialRemaining || 0))
-    this._timerBaseRemaining = remaining
-    this._timerStartedAt = api.now()
-    this._tickTimer()
-    if (!this.data.timeExpired && this._timerBaseRemaining != null) {
-      this._timer = setInterval(() => this._tickTimer(), 1000)
-    }
+    this._examTimerController().start(initialRemaining)
   },
 
   _currentRemainingSec() {
-    if (this._timerBaseRemaining == null) return null
-    const elapsed = Math.max(0, Math.floor((api.now() - this._timerStartedAt) / 1000))
-    return Math.max(0, this._timerBaseRemaining - elapsed)
+    return this._examTimerController().currentRemainingSec()
   },
 
   _tickTimer() {
-    if (!this._pageAlive || this._attemptTerminal || this._terminalNavigation) return
-    if (this._timerBaseRemaining == null) {
-      if (this.data.remainingText !== '不限时') this.setData({ remainingText: '不限时' })
-      return
-    }
-    const left = this._currentRemainingSec()
-    if (left > 0) {
-      const text = `剩余 ${formatClock(left)}`
-      if (this.data.remainingText !== text || this.data.timeExpired) {
-        this.setData({ remainingText: text, timeExpired: false })
-      }
-      return
-    }
-    this._clearTimer()
-    if (!this.data.timeExpired || this.data.remainingText !== '已到时 · 正在交卷') {
-      this.setData({ timeExpired: true, remainingText: '已到时 · 正在交卷' })
-    }
-    this._retainPendingForSubmit = true
-    this._persistPending()
-    this.submitExam({ auto: true }).catch(() => {})
+    this._examTimerController().tick()
   },
 
   _clearTimer() {
-    if (this._timer) clearInterval(this._timer)
-    this._timer = null
+    this._examTimerController().clear()
+  },
+  _examTimerController() {
+    return this._examTimer || (
+      this._examTimer = createExamTimerController({
+        now: () => api.now(),
+        formatClock,
+        isPageAlive: () => this._pageAlive,
+        isAttemptTerminal: () => this._attemptTerminal,
+        isTerminalNavigation: () => this._terminalNavigation,
+        isTimeExpired: () => this.data.timeExpired,
+        getRemainingText: () => this.data.remainingText,
+        setData: patch => this.setData(patch),
+        getBaseRemaining: () => this._timerBaseRemaining,
+        setBaseRemaining: value => { this._timerBaseRemaining = value },
+        getStartedAt: () => this._timerStartedAt,
+        setStartedAt: value => { this._timerStartedAt = value },
+        getTimer: () => this._timer,
+        setTimer: timer => { this._timer = timer },
+        setInterval,
+        clearInterval,
+        onExpired: () => {
+          this._retainPendingForSubmit = true
+          this._persistPending()
+          this.submitExam({ auto: true }).catch(() => {})
+        },
+      })
+    )
   },
 
   _currentItemId() {
