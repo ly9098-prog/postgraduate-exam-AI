@@ -12,12 +12,12 @@ import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
 import { QuestionSideDetailPanel } from "./question-side-detail-panel";
-import { QuestionDrawerHeader } from "./question-drawer-header";
 import { QuestionDrawerBody } from "./question-drawer-body";
 import { QuestionFilterToolbar } from "./question-filter-toolbar";
 import { QuestionListCard } from "./question-list-card";
 import { QuestionBatchSelectionBar } from "./question-batch-selection-bar";
 import { QuestionMessageToast } from "./question-message-toast";
+import { QuestionDetailDrawer } from "./question-detail-drawer";
 import { exportQuestions } from "./question-api";
 
 import { useQuestionExport } from "./hooks/use-question-export";
@@ -399,76 +399,63 @@ export default function QuestionsPage() {
         onClearSelection={clearSelection}
       />
 
-      {/* Detail drawer */}
-      {isDetailDrawerOpen && selectedQuestionId !== null ? (
-        <div
-          className="fixed inset-0 z-40 flex justify-end bg-slate-950/25 backdrop-blur-[1px] animate-fade-in"
-          onClick={closeDetailDrawer}
-        >
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label={editing ? "编辑题目" : "题目详情"}
-            className="question-detail-drawer h-full w-full max-w-[880px] overflow-y-auto overscroll-contain border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] animate-drop-in"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <QuestionDrawerHeader
-              editing={editing}
-              dirty={dirty}
-              questionId={selectedQuestionId}
-              canWrite={canWrite}
-              canDelete={canDelete}
-              copyButton={copyQuestionButton}
-              onBackToDetail={cancelEditing}
-              onEdit={startEditing}
-              onDelete={() => requestDelete(selectedQuestionId)}
-              onClose={closeDetailDrawer}
-            />
-
-            <QuestionDrawerBody
-              editing={editing}
-              question={selectedQuestion}
-              detailError={detail.isError}
-              editForm={editForm}
-              setEditForm={setEditForm}
-              setStemText={setEditStemText}
-              stemText={editStemText}
-              subjectOptions={subjectOptions}
-              segments={editingSegments}
-              fallbackImageUrls={editingFallbackStemImageUrls}
-              dirty={dirty}
-              unresolvedTableCount={unresolvedEditingTableCount}
-              emptyCodeCount={emptyEditingCodeCount}
-              saving={updateMutation.isPending}
-              beforeDirtyMutation={prepareImmediateQuestionMutation}
-              onMutated={handleQuestionMutated}
-              cancelEditing={cancelEditing}
-              saveEditing={() => updateMutation.mutate()}
-              versions={versions}
-              history={{
-                open: versionHistoryOpen,
-                toggle: toggleVersionHistory,
-                base: baseVersion,
-                compare: compareVersion,
-                setBase: setBaseVersion,
-                setCompare: setCompareVersion,
-                swap: swapVersions,
-              }}
-              details={{
-                base: baseVersionDetail.data,
-                compare: compareVersionDetail.data,
-              }}
-              labels={{
-                baseVersionLabel,
-                compareVersionLabel,
-                versionComparisonLoading,
-                pendingVersionLabel,
-              }}
-              onRetry={() => detail.refetch()}
-            />
-          </aside>
-        </div>
-      ) : null}
+      <QuestionDetailDrawer
+        open={isDetailDrawerOpen}
+        questionId={selectedQuestionId}
+        editing={editing}
+        dirty={dirty}
+        canWrite={canWrite}
+        canDelete={canDelete}
+        copyButton={copyQuestionButton}
+        onBackToDetail={cancelEditing}
+        onEdit={startEditing}
+        onDelete={() => {
+          if (selectedQuestionId !== null) requestDelete(selectedQuestionId);
+        }}
+        onClose={closeDetailDrawer}
+      >
+        <QuestionDrawerBody
+          editing={editing}
+          question={selectedQuestion}
+          detailError={detail.isError}
+          editForm={editForm}
+          setEditForm={setEditForm}
+          setStemText={setEditStemText}
+          stemText={editStemText}
+          subjectOptions={subjectOptions}
+          segments={editingSegments}
+          fallbackImageUrls={editingFallbackStemImageUrls}
+          dirty={dirty}
+          unresolvedTableCount={unresolvedEditingTableCount}
+          emptyCodeCount={emptyEditingCodeCount}
+          saving={updateMutation.isPending}
+          beforeDirtyMutation={prepareImmediateQuestionMutation}
+          onMutated={handleQuestionMutated}
+          cancelEditing={cancelEditing}
+          saveEditing={() => updateMutation.mutate()}
+          versions={versions}
+          history={{
+            open: versionHistoryOpen,
+            toggle: toggleVersionHistory,
+            base: baseVersion,
+            compare: compareVersion,
+            setBase: setBaseVersion,
+            setCompare: setCompareVersion,
+            swap: swapVersions,
+          }}
+          details={{
+            base: baseVersionDetail.data,
+            compare: compareVersionDetail.data,
+          }}
+          labels={{
+            baseVersionLabel,
+            compareVersionLabel,
+            versionComparisonLoading,
+            pendingVersionLabel,
+          }}
+          onRetry={() => detail.refetch()}
+        />
+      </QuestionDetailDrawer>
 
       <ConfirmDialog
         open={unsavedIntent !== null}
