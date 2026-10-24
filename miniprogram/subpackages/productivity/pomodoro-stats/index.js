@@ -33,6 +33,7 @@ const { createCumulativeStartController } = require('./cumulative-start-controll
 const { createDistributionLoadController } = require('./distribution-load-controller')
 const { createDistributionEntryController } = require('./distribution-entry-controller')
 const { createCloseDetailController } = require('./close-detail-controller')
+const { createSubjectMetaController } = require('./subject-meta-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
 const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
@@ -386,25 +387,24 @@ var pageConfig = {
 
 
   _ensureSubjectMeta() {
-    if (this._subjectMetaLoaded) return Promise.resolve(this._subjectMeta)
-    if (this._subjectMetaPromise) return this._subjectMetaPromise
-    this._subjectMetaPromise = this._loadSubjectMeta()
-    return this._subjectMetaPromise
+    return this._getSubjectMetaController().ensure()
   },
 
-  async _loadSubjectMeta() {
-    try {
-      const rawTree = await api.get('/practice/subjects')
-      this._subjectMeta = this._buildSubjectMeta(rawTree)
-      return this._subjectMeta
-    } catch (e) {
-      console.error('加载科目树失败', e)
-      this._subjectMeta = null
-      return null
-    } finally {
-      this._subjectMetaLoaded = true
-      this._subjectMetaPromise = null
+  _getSubjectMetaController() {
+    if (!this._subjectMetaController) {
+      this._subjectMetaController = createSubjectMetaController({
+        isLoaded: () => this._subjectMetaLoaded,
+        getMeta: () => this._subjectMeta,
+        setMeta: value => { this._subjectMeta = value },
+        getPromise: () => this._subjectMetaPromise,
+        setPromise: value => { this._subjectMetaPromise = value },
+        markLoaded: () => { this._subjectMetaLoaded = true },
+        getSubjectTree: () => api.get('/practice/subjects'),
+        buildSubjectMeta: tree => this._buildSubjectMeta(tree),
+        logError: (message, error) => console.error(message, error),
+      })
     }
+    return this._subjectMetaController
   },
 
   _buildSubjectMeta(tree) {

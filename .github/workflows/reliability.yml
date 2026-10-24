@@ -332,6 +332,7 @@ jobs:
             miniprogram/tests/test-pomodoro-stats-view-helpers.js \
             miniprogram/tests/test-pomodoro-stats-duration-formatter.js \
             miniprogram/tests/test-pomodoro-stats-subject-distribution.js \
+            miniprogram/tests/test-pomodoro-stats-subject-meta-controller.js \
             miniprogram/tests/test-pomodoro-stats-session-view-model.js \
             miniprogram/tests/test-pomodoro-stats-pie-label-layout.js \
             miniprogram/tests/test-pomodoro-stats-trend-chart.js \
