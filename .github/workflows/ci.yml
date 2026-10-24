@@ -413,6 +413,7 @@ jobs:
             tests/test_services/test_ai_import_helpers_compatibility.py \
             tests/test_services/test_formula_graph_expr_parser_compatibility.py \
             tests/test_services/test_ai_teacher_408_compatibility.py \
+            tests/test_services/test_safe_remote_fetch_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
