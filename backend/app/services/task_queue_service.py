@@ -117,6 +117,7 @@ from app.services.task_queue_v2_dead_retry_contract import (
     build_v2_dead_retry_payload,
     parse_v2_dead_retry_payload,
 )
+from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -2298,18 +2299,7 @@ class DurableTaskQueue:
             if not await client.exists(_v2_task_hash_key(task_id)):
                 return None
             raw = await client.hgetall(_v2_task_hash_key(task_id))
-            if not raw:
-                return None
-            result: dict = {"task_id": task_id}
-            for k, v in raw.items():
-                if k == "data":
-                    try:
-                        result[k] = json.loads(v)
-                    except (json.JSONDecodeError, TypeError):
-                        result[k] = v
-                else:
-                    result[k] = v
-            return result
+            return build_v2_task_inspection(task_id, raw)
         except redis_exc.RedisError as e:
             raise QueueHealthError(f"Redis error fetching task {task_id}: {e}") from e
         finally:
