@@ -709,8 +709,11 @@ showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
     )
   },
 async nextGroup() {
-const nextGroupController = this._nextGroupController || (
-this._nextGroupController = createNextGroupController({
+return this._nextGroupController().next()
+},
+_nextGroupController() {
+return this._nextGroup || (
+this._nextGroup = createNextGroupController({
 getData: () => this.data,
 setData: (patch, callback) => this.setData(patch, callback),
 clearMasterUndo: () => this._clearMasterUndo(),
@@ -758,7 +761,6 @@ showToast: options => wx.showToast(options),
 showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
 })
 )
-await nextGroupController.next()
 },
 _clearResultDockFadeTimer() {
 if (this._resultDockFadeTimer) {
