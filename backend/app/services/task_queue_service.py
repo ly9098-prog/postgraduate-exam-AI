@@ -127,6 +127,11 @@ from app.services.task_queue_v1_claim_contract import (
     build_v1_claimed_task,
     build_v1_retry_claimed_task,
 )
+from app.services.task_queue_v1_heartbeat_contract import (
+    apply_v1_heartbeat_result,
+    resolve_v1_heartbeat_identity,
+    v1_heartbeat_expiry,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -713,7 +718,7 @@ class DurableTaskQueue:
 
     async def heartbeat(
         self,
-        task_or_id: Task | str,
+        task_or_id: Task | str | tuple[Any, ...],
         *,
         task_type: str | None = None,
         lease_sec: int = _DEFAULT_LEASE_SEC,
@@ -730,19 +735,12 @@ class DurableTaskQueue:
         When given a bare task_id without owner_token, falls back to simple
         SETEX (legacy compatibility, no fencing).
         """
-        if isinstance(task_or_id, Task):
-            task_id = task_or_id.task_id
-            token = task_or_id.owner_token
-            task_type = task_or_id.task_type
-        elif isinstance(task_or_id, tuple):
-            task_id, tt_hint, token = task_or_id
-            task_type = task_type or tt_hint
-        else:
-            task_id = task_or_id
-            token = ""
-
-        if not task_id or not task_type:
+        identity = resolve_v1_heartbeat_identity(task_or_id, task_type=task_type)
+        if not identity.is_valid():
             return False
+        task_id = identity.task_id
+        task_type = identity.task_type
+        token = identity.owner_token
 
         if self._redis_enabled:
             try:
@@ -752,7 +750,7 @@ class DurableTaskQueue:
                 await self._load_scripts(client)
 
                 if token:
-                    new_expiry = time.time() + lease_sec
+                    new_expiry = v1_heartbeat_expiry(lease_sec)
                     result = await self._evalsha_or_reload(
                         client,
                         "_lua_heartbeat",
@@ -766,19 +764,19 @@ class DurableTaskQueue:
                     )
                     await client.aclose()
 
-                    if result == 0:
+                    accepted = apply_v1_heartbeat_result(
+                        task_or_id,
+                        result=int(result) if result is not None else 0,
+                        lease_expires_at=new_expiry,
+                    )
+                    if not accepted:
                         logger.warning(
                             "Heartbeat rejected (owner mismatch): task_id=%s",
                             task_id,
                         )
                         queue_metrics["lease_renewal_failure"] += 1
                         queue_metrics["owner_fencing_rejected"] += 1
-                        return False
-
-                    # Update in-memory Task object if available
-                    if isinstance(task_or_id, Task):
-                        task_or_id.lease_expires_at = new_expiry
-                    return True
+                    return accepted
                 else:
                     # Legacy path (no owner_token) — just extend TTL
                     await client.expire(_heartbeat_key(task_id), lease_sec)
