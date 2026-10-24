@@ -187,13 +187,21 @@ t('Card has background for visibility', function () {
 console.log('\n--- 3. JS interaction guards ---')
 
 var js = fs.readFileSync(path.join(__dirname, '../pages/pomodoro/pomodoro.js'), 'utf8')
+var confirmEndTimerController = fs.readFileSync(
+  path.join(__dirname, '../pages/pomodoro/utils/confirm-end-timer-controller.js'),
+  'utf8'
+)
+var cancelEndConfirmController = fs.readFileSync(
+  path.join(__dirname, '../pages/pomodoro/utils/cancel-end-confirm-controller.js'),
+  'utf8'
+)
 
 t('confirmEndTimer has actionLoading guard', function () {
-  assert.ok(js.indexOf('if (this.data.actionLoading) return') >= 0)
+  assert.ok(confirmEndTimerController.indexOf('options.isActionLoading()') >= 0)
 })
 
 t('cancelEndConfirm has actionLoading guard', function () {
-  assert.ok(js.indexOf('if (this.data.actionLoading) return') >= 0)
+  assert.ok(cancelEndConfirmController.indexOf('options.isActionLoading()') >= 0)
 })
 
 t('confirmEndTimer exists as method', function () {
@@ -213,8 +221,8 @@ t('_confirmEndFreeTimer does not reset showEndConfirm before API completes', fun
 })
 
 t('confirmEndTimer handles both free-complete and countdown-interrupt modes', function () {
-  assert.ok(js.indexOf("mode === 'free-complete'") >= 0)
-  assert.ok(js.indexOf("mode === 'countdown-interrupt'") >= 0)
+  assert.ok(confirmEndTimerController.indexOf("mode === 'free-complete'") >= 0)
+  assert.ok(confirmEndTimerController.indexOf("mode === 'countdown-interrupt'") >= 0)
 })
 
 // ══════════════════════════════════════════════════════════════════

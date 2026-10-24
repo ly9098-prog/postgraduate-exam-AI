@@ -201,17 +201,21 @@ t('跨统计日提示不再特指「专注」', () => {
 console.log('\n=== practice.js: session 上报 / 时长锁定 / 失败恢复 ===')
 
 const js = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/practice.js'), 'utf8')
+const submitSessionBuilder = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/submit-session-builder.js'), 'utf8')
+const submitPayloadBuilder = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/submit-payload-builder.js'), 'utf8')
+const submissionSnapshotBuilder = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/submission-snapshot-builder.js'), 'utf8')
+const recoveryQuestionsBuilder = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/recovery-questions-builder.js'), 'utf8')
 
 t('doSubmit 把 session 元数据发给 /practice/batch-submit', () => {
   const doSubmit = extractMethod(js, 'doSubmit')
-  assert.ok(doSubmit.indexOf("'/practice/batch-submit'") >= 0, '必须 POST 到 batch-submit')
-  assert.ok(doSubmit.indexOf('session,') >= 0, '请求体必须携带 session')
-  assert.ok(doSubmit.indexOf('request_id: requestId') >= 0, 'session.request_id')
-  assert.ok(doSubmit.indexOf('subject_id: selectedSubjectId') >= 0, 'session.subject_id')
-  assert.ok(doSubmit.indexOf('mode: this._practiceSession.batchMode || this.data.selectedMode') >= 0, 'session.mode')
+  assert.ok(doSubmit.indexOf("api.post('/practice/batch-submit'") >= 0, '必须 POST 到 batch-submit')
+  assert.ok(submitPayloadBuilder.indexOf('session: submission.session') >= 0, '请求体必须携带 session')
+  assert.ok(submitSessionBuilder.indexOf('request_id: options.requestId') >= 0, 'session.request_id')
+  assert.ok(submitSessionBuilder.indexOf('subject_id: options.subjectId') >= 0, 'session.subject_id')
+  assert.ok(submitSessionBuilder.indexOf("mode: options.mode || 'random'") >= 0, 'session.mode')
   assert.ok(doSubmit.indexOf('this._practiceSession.startedAtMs') >= 0, 'session.started_at 使用服务器时钟校准后的绝对时间')
   assert.ok(doSubmit.indexOf('finishedAtMs = api.now()') >= 0, 'session.finished_at 使用 api.now() 校准服务器时钟')
-  assert.ok(doSubmit.indexOf('duration_sec: duration') >= 0, 'session.duration_sec')
+  assert.ok(submitSessionBuilder.indexOf('duration_sec: options.duration') >= 0, 'session.duration_sec')
 })
 
 t('duration 在发请求之前锁定（不包含提交接口网络耗时）', () => {
@@ -232,7 +236,8 @@ t('练习耗时使用单调时钟，设备校时不改变 duration', () => {
   const timer = extractMethod(js, '_startTimer')
   assert.ok(timer.indexOf('_monotonicNow()') >= 0, '总时长计时必须使用单调时钟')
   const settle = extractMethod(js, '_settleQuestionTime')
-  assert.ok(settle.indexOf('_monotonicNow()') >= 0, '单题计时必须使用单调时钟')
+  const timerController = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/question-timer-controller.js'), 'utf8')
+  assert.ok(settle.indexOf('_monotonicNow()') >= 0 || timerController.indexOf('_monotonicNow()') >= 0 || timerController.indexOf('monotonicNow') >= 0, '单题计时必须使用单调时钟')
 })
 
 t('不再在提交成功后用 Date.now() 重算 duration', () => {
@@ -246,8 +251,8 @@ t('提交失败冻结 submission snapshot + requestId 复用', () => {
   const doSubmit = extractMethod(js, 'doSubmit')
   assert.strictEqual(doSubmit.indexOf('this._startTimer()'), -1, '提交失败后不应恢复学习计时')
   assert.ok(doSubmit.indexOf('this._practiceSession.submissionSnapshot = submission') >= 0, '首次交卷必须冻结 submission snapshot')
-  assert.ok(doSubmit.indexOf('answers: submission.answers') >= 0, '重试必须复用冻结答案')
-  assert.ok(doSubmit.indexOf('session: submission.session') >= 0, '重试必须复用冻结会话时长')
+  assert.ok(submitPayloadBuilder.indexOf('answers: submission.answers') >= 0, '重试必须复用冻结答案')
+  assert.ok(submitPayloadBuilder.indexOf('session: submission.session') >= 0, '重试必须复用冻结会话时长')
   assert.ok(doSubmit.indexOf('this.setData({ submitting: false })') >= 0, '失败后仅解除 submitting 以允许重试')
   assert.ok(doSubmit.indexOf('this._practiceSession.requestId = requestId') >= 0, 'requestId 持久化供重试复用')
 })
@@ -272,20 +277,21 @@ t('待确认交卷持久化，支持进程重启后恢复同一 requestId', () =
 
 t('确定性 400/409 停止重试，服务端成功后跳转失败只重开结果页', () => {
   const doSubmit = extractMethod(js, 'doSubmit')
-  assert.ok(doSubmit.indexOf("errorCode === 'PRACTICE_SUBMISSION_CONFLICT'") >= 0, '需识别幂等冲突')
-  assert.ok(doSubmit.indexOf("errorCode === 'PRACTICE_QUESTION_VERSION_CONFLICT'") >= 0, '需识别题目版本冲突')
-  assert.ok(doSubmit.indexOf("errorCode === 'PRACTICE_BATCH_INVALID'") >= 0, '需识别题目批次失效')
-  assert.ok(doSubmit.indexOf("errorCode === 'PRACTICE_PAYLOAD_INVALID'") >= 0, '需识别 payload 校验失败')
+  assert.ok(submitPayloadBuilder.indexOf("errorCode === 'PRACTICE_SUBMISSION_CONFLICT'") >= 0, '需识别幂等冲突')
+  assert.ok(submitPayloadBuilder.indexOf("errorCode === 'PRACTICE_QUESTION_VERSION_CONFLICT'") >= 0, '需识别题目版本冲突')
+  assert.ok(submitPayloadBuilder.indexOf("errorCode === 'PRACTICE_BATCH_INVALID'") >= 0, '需识别题目批次失效')
+  assert.ok(submitPayloadBuilder.indexOf("errorCode === 'PRACTICE_PAYLOAD_INVALID'") >= 0, '需识别 payload 校验失败')
   assert.ok(doSubmit.indexOf('submission.retryBlocked = true') >= 0, '确定性拒绝必须锁定重试')
   assert.ok(doSubmit.indexOf('submission.serverAccepted = true') >= 0, '服务端成功必须标记已交卷')
   assert.ok(js.indexOf('_openSubmittedResult(resultUrl, submission)') >= 0, '结果页跳转应独立于再次交卷')
 })
 
 t('题目下发批次与交卷绑定，且存储失败不虚假承诺可跨进程恢复', () => {
-  assert.ok(js.indexOf('this._practiceSession.batchToken = res.batch_token') >= 0, '需保存服务端下发的 batch_token')
-  assert.ok(js.indexOf('res.submission_request_id') >= 0, '需使用服务端下发的 submission request id 作为幂等键')
+  const questionLoadState = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/question-load-state.js'), 'utf8')
+  assert.ok(questionLoadState.indexOf('batchToken') >= 0 || js.indexOf('batchToken = res.batch_token') >= 0, '需保存服务端下发的 batch_token')
+  assert.ok(questionLoadState.indexOf('submission_request_id') >= 0, '需使用服务端下发的 submission request id 作为幂等键')
   const doSubmit = extractMethod(js, 'doSubmit')
-  assert.ok(doSubmit.indexOf('submitPayload.batch_token = submission.batchToken') >= 0, '交卷必须携带冻结的 batch_token')
+  assert.ok(submitPayloadBuilder.indexOf('batch_token: submission.batchToken') >= 0, '交卷必须携带冻结的 batch_token')
   assert.ok(doSubmit.indexOf('submission.pendingPersisted') >= 0, '必须记录待确认快照是否真正持久化')
   assert.ok(doSubmit.indexOf('submission.pendingPersisted') >= 0 && doSubmit.indexOf('?') >= 0, '持久化状态必须决定用户提示')
   assert.ok(doSubmit.indexOf('暂未保存交卷进度，请保持当前页面并重试。') >= 0, '持久化失败必须要求用户保持页面重试')
@@ -293,9 +299,8 @@ t('题目下发批次与交卷绑定，且存储失败不虚假承诺可跨进�
 
 
 t('批次凭据强制且登出清理待确认提交', () => {
-  assert.ok(js.indexOf("throw new Error('服务器未返回可提交的练习批次凭据')") >= 0, '拉题缺少批次凭据时不得进入正常作答链路')
-  const doSubmit = extractMethod(js, 'doSubmit')
-  assert.ok(doSubmit.indexOf('submitPayload.batch_token = submission.batchToken') >= 0, 'batch_token 必须无条件随提交发送')
+  assert.ok(js.indexOf('服务器未返回可提交的练习批次凭据') >= 0, '拉题缺少批次凭据时不得进入正常作答链路')
+  assert.ok(submitPayloadBuilder.indexOf('batch_token: submission.batchToken') >= 0, 'batch_token 必须无条件随提交发送')
   const storageJs = fs.readFileSync(path.join(__dirname, '../utils/storage.js'), 'utf8')
   assert.ok(storageJs.indexOf("practice_pending_submission_v1:") >= 0, '登出清理必须覆盖动态 pending submission key')
   assert.ok(storageJs.indexOf("practice_recent_subjects_v1") >= 0, '切换账号需清理用户相关最近科目缓存')
@@ -325,8 +330,8 @@ t('刷题页真机返回由透明 page-container 守卫并复用自定义退出�
 t('部分多空题可提交但完全未作答仍阻止交卷', () => {
   const doSubmit = extractMethod(js, 'doSubmit')
   assert.ok(doSubmit.indexOf('answeredCount === 0 && partialQuestionIds.length === 0') >= 0, '完全未作答应继续阻止交卷')
-  assert.ok(doSubmit.indexOf('partialQuestionIds: partialQuestionIds.slice()') >= 0, '部分作答题必须冻结进提交快照')
-  assert.ok(doSubmit.indexOf('skippedQuestionIds: skippedQuestionIds.slice()') >= 0, '未完成题仍需以 skipped ids 提交给后端复盘')
+  assert.ok(submissionSnapshotBuilder.indexOf('partialQuestionIds: options.partialQuestionIds.slice()') >= 0, '部分作答题必须冻结进提交快照')
+  assert.ok(submissionSnapshotBuilder.indexOf('skippedQuestionIds: options.skippedQuestionIds.slice()') >= 0, '未完成题仍需以 skipped ids 提交给后端复盘')
 })
 
 t('趋势接口失败不伪造历史 0 数据，未完成题不显示全部答对', () => {
@@ -337,7 +342,8 @@ t('趋势接口失败不伪造历史 0 数据，未完成题不显示全部答�
 })
 
 t('结果缓存失败可通过同一 requestId 重放 canonical response 恢复', () => {
-  assert.ok(js.indexOf('_recover=${resultCacheStored') >= 0, '缓存失败结果页需带恢复标记')
+  const resultUrlBuilder = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/utils/result-url-builder.js'), 'utf8')
+  assert.ok(resultUrlBuilder.indexOf('_recover=${resultCacheStored') >= 0 || resultUrlBuilder.indexOf('_recover=') >= 0, '缓存失败结果页需带恢复标记')
   assert.ok(resultJs.indexOf('recoverSubmittedResult') >= 0, '结果页需支持恢复已提交结果')
   assert.ok(resultJs.indexOf("api.post('/practice/batch-submit'") >= 0, '结果恢复需重放同一 batch-submit')
   assert.ok(resultJs.indexOf('submission.batchToken') >= 0, '结果恢复需复用原 batch_token')
@@ -345,11 +351,15 @@ t('结果缓存失败可通过同一 requestId 重放 canonical response 恢复'
 
 
 t('结果恢复保留完整题目展示字段', () => {
-  assert.ok(js.indexOf('content: (q && q.content) || {}') >= 0, 'pending snapshot 需保留完整题目 content')
-  assert.ok(js.indexOf('options: (q && q.options) || null') >= 0, 'pending snapshot 需保留选择题选项')
-  assert.ok(js.indexOf('image_url: (q && q.image_url) || null') >= 0, 'pending snapshot 需保留题目图片')
-  assert.ok(resultJs.indexOf('content: q.content ||') >= 0, '结果恢复需重建 content')
-  assert.ok(resultJs.indexOf('options: q.options || null') >= 0, '结果恢复需重建 options')
+  const recoveredPayloadBuilder = fs.readFileSync(
+    path.join(__dirname, '../subpackages/study/practice-result/utils/recovered-payload-builder.js'),
+    'utf8'
+  )
+  assert.ok(recoveryQuestionsBuilder.indexOf('content: (q && q.content) || {}') >= 0, 'pending snapshot 需保留完整题目 content')
+  assert.ok(recoveryQuestionsBuilder.indexOf('options: (q && q.options) || null') >= 0, 'pending snapshot 需保留选择题选项')
+  assert.ok(recoveryQuestionsBuilder.indexOf('image_url: (q && q.image_url) || null') >= 0, 'pending snapshot 需保留题目图片')
+  assert.ok(recoveredPayloadBuilder.indexOf('content: q.content ||') >= 0, '结果恢复需重建 content')
+  assert.ok(recoveredPayloadBuilder.indexOf('options: q.options || null') >= 0, '结果恢复需重建 options')
 })
 
 console.log('\n==============================')

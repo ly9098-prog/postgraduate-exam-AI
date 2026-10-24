@@ -69,6 +69,12 @@ const sandbox = {
     if (request === './utils/subject-options') return require('../pages/pomodoro/utils/subject-options')
     if (request === './utils/subject-selection') return require('../pages/pomodoro/utils/subject-selection')
     if (request === './utils/subject-meta') return require('../pages/pomodoro/utils/subject-meta')
+    if (request === './utils/apply-subjects-controller') {
+      return require('../pages/pomodoro/utils/apply-subjects-controller')
+    }
+    if (request === './utils/effective-paused-ms') {
+      return require('../pages/pomodoro/utils/effective-paused-ms')
+    }
     if (request === './utils/countdown-controller') return require('../pages/pomodoro/utils/countdown-controller')
     if (request === './utils/free-timer-controller') return require('../pages/pomodoro/utils/free-timer-controller')
     if (request === './utils/ring-geometry') return require('../pages/pomodoro/utils/ring-geometry')
