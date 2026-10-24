@@ -32,6 +32,7 @@ const { createCumulativeRefreshController } = require('./cumulative-refresh-cont
 const { createCumulativeStartController } = require('./cumulative-start-controller')
 const { createDistributionLoadController } = require('./distribution-load-controller')
 const { createDistributionEntryController } = require('./distribution-entry-controller')
+const { createCloseDetailController } = require('./close-detail-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
 const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
@@ -1223,10 +1224,18 @@ var pageConfig = {
   },
 
   closeDetail() {
-    this.setData({
-      selectedSubjectDetail: null,
-      _selectedSubject: null,
-    }, () => { if (this._alive) this._renderPieChart(1) })
+    this._getCloseDetailController().close()
+  },
+
+  _getCloseDetailController() {
+    if (!this._closeDetailController) {
+      this._closeDetailController = createCloseDetailController({
+        isAlive: () => this._alive,
+        setData: (patch, callback) => this.setData(patch, callback),
+        renderPie: progress => this._renderPieChart(progress),
+      })
+    }
+    return this._closeDetailController
   },
 
   noop() {},
