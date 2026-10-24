@@ -15,6 +15,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { useOutsideClick } from "@/lib/use-outside-click";
 import { reviewPageStyles } from "./review-page-styles";
 import { executeSegmentReplace, resolveSegmentFileChange } from "./review-segment-replace";
+import { buildQuestionTypeChange } from "./review-question-type-change";
 import type { BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
   reduceMultiBlankEditState,
@@ -673,39 +674,20 @@ export default function ImportReviewPage() {
   /** 安全切换题型：保护多空选择题结构化数据；在单选/多选多空之间切换时保留分组 */
   const handleQuestionTypeChange = useCallback((newCode: string) => {
     if (!editState) return;
-    if (editState.question_type === newCode) return;
-    const wasMultiBlank = isMultiBlankChoice(editState.question_type);
-    const isMultiBlankTarget = isMultiBlankChoice(newCode);
-    if (wasMultiBlank && !isMultiBlankTarget && editState.multiBlank?.groups && editState.multiBlank.groups.length > 0) {
-      const confirmed = window.confirm("切换题型将清空多空选择分组数据，是否继续？");
-      if (!confirmed) return;
-      setEditState({
-        ...editState,
-        question_type: newCode,
-        multiBlank: undefined,
-        options: [],
-      });
-      return;
+    const result = buildQuestionTypeChange({
+      currentType: editState.question_type,
+      newCode,
+      hasMultiBlankGroups: !!editState.multiBlank?.groups && editState.multiBlank.groups.length > 0,
+      confirmed: window.confirm("切换题型将清空多空选择分组数据，是否继续？"),
+    });
+    if (result.action === "noop") return;
+    if (result.action === "clear_multi_blank") {
+      setEditState({ ...editState, ...result.nextState });
+    } else if (result.action === "init_multi_blank") {
+      setEditState({ ...editState, ...result.nextState });
+    } else {
+      setEditState({ ...editState, ...result.nextState });
     }
-    if (wasMultiBlank && isMultiBlankTarget) {
-      // 单选 ↔ 多选互转：保留分组数据，仅更新题型 code
-      setEditState({ ...editState, question_type: newCode });
-      return;
-    }
-    if (isMultiBlankTarget) {
-      setEditState({
-        ...editState,
-        question_type: newCode,
-        multiBlank: {
-          groups: [],
-          answerMap: {},
-          usesSharedOptions: false,
-          sharedOptions: [],
-        },
-      });
-      return;
-    }
-    setEditState({ ...editState, question_type: newCode });
   }, [editState]);
 
   /** Multi-blank choice reducer action dispatcher — runs inside functional setState */
