@@ -9,6 +9,8 @@ from app.services.stats_ai_projection import (
     build_dashboard_ai_prompt,
     build_dashboard_ai_response,
     build_rule_based_dashboard_analysis,
+    build_knowledge_point_stats,
+    build_local_ai_diagnosis,
     normalize_knowledge_points,
 )
 
@@ -172,3 +174,65 @@ def test_rule_based_analysis_empty_data_and_risk_priority():
     assert analysis["actions"][1]["type"] == "wrong"
     assert analysis["actions"][2]["type"] == "subject"
     assert any("topic" in risk for risk in analysis["risks"])
+
+
+def test_knowledge_point_stats_project_subject_rows():
+    stats = build_knowledge_point_stats(
+        [
+            ("data_structure", 4, 1),
+            ("network", None, None),
+        ]
+    )
+
+    assert stats == [
+        {
+            "knowledge_point": "data_structure",
+            "mastery_rate": 0.25,
+            "mastered": 1,
+            "total_wrong": 4,
+        },
+        {
+            "knowledge_point": "network",
+            "mastery_rate": 0.0,
+            "mastered": 0,
+            "total_wrong": 0,
+        },
+    ]
+
+
+def test_local_ai_diagnosis_sorts_weak_and_strong_points():
+    diagnosis = build_local_ai_diagnosis(
+        knowledge_point_stats=[
+            {"knowledge_point": "a", "mastery_rate": 0.4, "total_wrong": 2},
+            {"knowledge_point": "b", "mastery_rate": 0.2, "total_wrong": 5},
+            {"knowledge_point": "c", "mastery_rate": 0.6, "total_wrong": 1},
+            {"knowledge_point": "d", "mastery_rate": 0.8, "total_wrong": 2},
+            {"knowledge_point": "e", "mastery_rate": 0.9, "total_wrong": 1},
+        ],
+        subject_count=5,
+        total_questions=30,
+    )
+
+    assert [item["knowledge_point"] for item in diagnosis["weak_points"]] == ["b", "a"]
+    assert [item["knowledge_point"] for item in diagnosis["strong_points"]] == ["e", "d"]
+    assert diagnosis["learning_suggestions"][0].startswith("优先复盘b错题")
+    assert diagnosis["learning_suggestions"][1].startswith("其次巩固a")
+    assert "累计到 50 题以上" in diagnosis["learning_suggestions"][2]
+    assert diagnosis["summary"] == "基于最近60天5个科目的错题数据生成诊断。"
+    assert diagnosis["generated"] is False
+
+
+def test_local_ai_diagnosis_provider_failure_summary_and_caps():
+    diagnosis = build_local_ai_diagnosis(
+        knowledge_point_stats=[
+            {"knowledge_point": f"w{i}", "mastery_rate": 0.1, "total_wrong": i}
+            for i in range(5)
+        ],
+        subject_count=5,
+        total_questions=100,
+        provider_failed=True,
+    )
+
+    assert len(diagnosis["weak_points"]) == 3
+    assert diagnosis["learning_suggestions"][-1] == "优先处理重复出错且尚未掌握的题目，并按复习计划回看"
+    assert diagnosis["summary"].startswith("AI 模型响应较慢")

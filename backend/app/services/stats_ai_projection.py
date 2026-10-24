@@ -113,6 +113,81 @@ def normalize_knowledge_points(value: object, *, limit: int) -> list[dict]:
     return normalized
 
 
+def build_knowledge_point_stats(subject_rows: list) -> list[dict]:
+    """Project recent wrong-question subject rows into prompt statistics."""
+    stats: list[dict] = []
+    for row in subject_rows:
+        subject = row[0]
+        total = int(row[1] or 0)
+        mastered = int(row[2] or 0)
+        mastery_rate = round(mastered / total, 2) if total > 0 else 0.0
+        stats.append(
+            {
+                "knowledge_point": subject,
+                "mastery_rate": mastery_rate,
+                "mastered": mastered,
+                "total_wrong": total,
+            }
+        )
+    return stats
+
+
+def build_local_ai_diagnosis(
+    *,
+    knowledge_point_stats: list[dict],
+    subject_count: int,
+    total_questions: int,
+    provider_failed: bool = False,
+) -> dict:
+    """Build the deterministic wrong-question diagnosis fallback."""
+    weak = sorted(
+        (item for item in knowledge_point_stats if item["mastery_rate"] < 0.5),
+        key=lambda item: (item["mastery_rate"], -item["total_wrong"]),
+    )
+    strong = sorted(
+        (item for item in knowledge_point_stats if item["mastery_rate"] >= 0.7),
+        key=lambda item: (-item["mastery_rate"], -item["total_wrong"]),
+    )
+    suggestions: list[str] = []
+    if weak:
+        suggestions.append(
+            f"优先复盘{weak[0]['knowledge_point']}错题，"
+            f"当前错题掌握率约{int(weak[0]['mastery_rate'] * 100)}%"
+        )
+    if len(weak) > 1:
+        suggestions.append(
+            f"其次巩固{weak[1]['knowledge_point']}，建议集中完成一轮错题复盘"
+        )
+    if total_questions < 50:
+        suggestions.append("当前练习样本较少，累计到 50 题以上后洞察会更稳定")
+    suggestions.append("优先处理重复出错且尚未掌握的题目，并按复习计划回看")
+    return {
+        "weak_points": [
+            {
+                "knowledge_point": item["knowledge_point"],
+                "accuracy": item["mastery_rate"],
+                "suggestion": "建议针对性复盘并完成一次间隔复习",
+            }
+            for item in weak[:3]
+        ],
+        "strong_points": [
+            {
+                "knowledge_point": item["knowledge_point"],
+                "accuracy": item["mastery_rate"],
+                "suggestion": "已较好掌握错题，保持当前复习节奏",
+            }
+            for item in strong[:2]
+        ],
+        "learning_suggestions": suggestions[:5],
+        "summary": (
+            "AI 模型响应较慢，本次先基于最近 60 天错题数据生成即时洞察；可稍后刷新获取 AI 增强分析。"
+            if provider_failed
+            else f"基于最近60天{subject_count}个科目的错题数据生成诊断。"
+        ),
+        "generated": False,
+    }
+
+
 def build_dashboard_ai_payload(
     *,
     overview: dict,
