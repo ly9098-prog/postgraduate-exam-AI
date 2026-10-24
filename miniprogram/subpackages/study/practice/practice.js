@@ -66,6 +66,9 @@ const {
   createQuestionLoadController,
 } = require('./utils/question-load-controller')
 const {
+  createPendingSubmissionController,
+} = require('./utils/pending-submission-controller')
+const {
   monotonicNow,
 } = require('./utils/monotonic-clock')
 const {
@@ -264,102 +267,38 @@ const userId = this._getCurrentUserId()
 return userId ? `${PRACTICE_PENDING_SUBMISSION_KEY_PREFIX}:${userId}` : ''
 },
 _readPendingSubmission() {
-const key = this._pendingSubmissionStorageKey()
-if (!key) return null
-try {
-const item = wx.getStorageSync(key)
-if (!item || item.version !== 1 || !item.submission) return null
-const createdAt = Number(item.createdAt) || 0
-const freshnessAt = Number(item.updatedAt) || createdAt
-if (!freshnessAt || Date.now() - freshnessAt > PRACTICE_PENDING_SUBMISSION_TTL_MS) {
-wx.removeStorageSync(key)
-return null
-}
-return item
-} catch (_) {
-return null
-}
+return this._pendingSubmissionController().read()
 },
 _persistPendingSubmission(submission, status, resultUrl) {
-const key = this._pendingSubmissionStorageKey()
-if (!key || !submission) return false
-const previousPersisted = !!submission.pendingPersisted
-try {
-const previous = wx.getStorageSync(key)
-const createdAt = previous && previous.submission && previous.submission.requestId === submission.requestId
-? (Number(previous.createdAt) || Date.now())
-: Date.now()
-submission.pendingPersisted = true
-wx.setStorageSync(key, {
-version: 1,
-createdAt,
-updatedAt: Date.now(),
-status: status || 'pending',
-resultUrl: resultUrl || '',
-submission,
-})
-return true
-} catch (e) {
-submission.pendingPersisted = previousPersisted
-console.warn('保存待确认交卷失败', e)
-return false
-}
+return this._pendingSubmissionController().persist(submission, status, resultUrl)
 },
 _clearPendingSubmission(requestId) {
-const key = this._pendingSubmissionStorageKey()
-if (!key) return
-try {
-const item = wx.getStorageSync(key)
-if (!requestId || !item || !item.submission || item.submission.requestId === requestId) {
-wx.removeStorageSync(key)
-}
-} catch (_) {}
+this._pendingSubmissionController().clear(requestId)
 },
 async _offerPendingSubmissionRecovery() {
-const pending = this._readPendingSubmission()
-if (!pending || !this._pageAlive) return false
-const submission = pending.submission
-if (pending.status === 'submitted' && pending.resultUrl) {
-const confirmed = await this._showSubmitConfirm({
-scenario: 'info',
-title: '上次练习已交卷',
-message: '结果页尚未确认打开，是否继续查看？',
-confirmText: '查看结果',
-cancelText: '稍后处理',
-hideEyebrow: true,
-})
-if (confirmed && this._pageAlive) {
+return this._pendingSubmissionController().offerRecovery()
+},
+_pendingSubmissionController() {
+return this._pendingSubmission || (
+this._pendingSubmission = createPendingSubmissionController({
+getStorageKey: () => this._pendingSubmissionStorageKey(),
+readStorage: key => wx.getStorageSync(key),
+writeStorage: (key, value) => wx.setStorageSync(key, value),
+removeStorage: key => wx.removeStorageSync(key),
+now: () => Date.now(),
+getTtlMs: () => PRACTICE_PENDING_SUBMISSION_TTL_MS,
+isPageAlive: () => this._pageAlive,
+showConfirm: options => this._showSubmitConfirm(options),
+logWarn: (...args) => console.warn(...args),
+restoreSubmittedSnapshot: (submission, resultUrl) => {
 this._practiceSession.submissionSnapshot = submission
 this._practiceSession.requestId = submission.requestId || ''
-this._pendingResultUrl = pending.resultUrl
+this._pendingResultUrl = resultUrl
 this.setData({ submitted: true, submitting: false })
 this._setPracticeUnloadGuard(false)
-this._openSubmittedResult(pending.resultUrl, submission)
-return true
-}
-return false
-}
-if (pending.status === 'blocked' || submission.retryBlocked) {
-const confirmed = await this._showSubmitConfirm({
-scenario: 'danger',
-title: '上次交卷无法继续确认',
-message: '该提交已被服务器拒绝。清除本地状态后即可重新开始。',
-confirmText: '清除状态',
-cancelText: '暂不处理',
-hideEyebrow: true,
-})
-if (confirmed) this._clearPendingSubmission(submission.requestId)
-return false
-}
-const confirmed = await this._showSubmitConfirm({
-scenario: 'info',
-title: '发现待确认交卷',
-message: '可继续确认上次交卷，不会重复计入答题记录。',
-confirmText: '继续确认',
-cancelText: '稍后处理',
-hideEyebrow: true,
-})
-if (!confirmed || !this._pageAlive) return false
+this._openSubmittedResult(resultUrl, submission)
+},
+resumePendingSubmission: async submission => {
 this._resetSession()
 this._practiceSession.submissionSnapshot = submission
 this._practiceSession.requestId = submission.requestId || ''
@@ -373,6 +312,9 @@ this.setData({ started: false })
 return false
 }
 return true
+},
+})
+)
 },
 _openSubmittedResult(resultUrl, submission) {
 if (!resultUrl || !this._pageAlive) return
