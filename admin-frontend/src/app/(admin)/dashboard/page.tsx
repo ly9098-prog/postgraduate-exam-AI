@@ -27,7 +27,16 @@ import {
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import { numberValue, toPieData, normalizeSeries } from "@/lib/dashboard-utils";
+import {
+  numberValue,
+  toPieData,
+  normalizeSeries,
+  computeReviewRate,
+  computeQueuePending,
+  computeQueueErrors,
+  computeRedisStatus,
+  computeTaskQueueStatus,
+} from "@/lib/dashboard-utils";
 import type {
   AIStatsResponse,
   DashboardDailyPoint,
@@ -312,42 +321,26 @@ export default function DashboardPage() {
   ];
 
   const reviewTotal = pieData.reduce((sum, item) => sum + item.count, 0);
-  const reviewedCount = pieData
-    .filter((item) => ["approved", "published"].includes(item.name))
-    .reduce((sum, item) => sum + item.count, 0);
-  const reviewedRate = reviewTotal > 0 ? `${((reviewedCount / reviewTotal) * 100).toFixed(1)}%` : "--";
+  const reviewedRate = computeReviewRate(pieData);
   const subjects = [...(stats.data?.by_subject ?? [])].filter((item) => item.count > 0);
   const difficultyCount = (stats.data?.by_difficulty ?? []).filter((item) => item.count > 0).length;
   const topSubject = subjects.sort((a, b) => b.count - a.count)[0];
 
   const queueTotals = taskDiagnostics.data?.redis.totals;
-  const queuePending = (queueTotals?.ready ?? 0) + (queueTotals?.processing ?? 0) + (queueTotals?.retry ?? 0);
-  const queueErrors = (queueTotals?.dead ?? 0) + (queueTotals?.corrupt ?? 0);
+  const queuePending = computeQueuePending(queueTotals);
+  const queueErrors = computeQueueErrors(queueTotals);
 
   const dateLabel = chinaDateString();
 
   const redisConfigured = taskDiagnostics.data?.redis.configured === true;
   const redisAvailable = redisConfigured && taskDiagnostics.data?.redis.available === true;
-  const redisStatus = taskDiagnostics.isLoading
-    ? { tone: "muted" as const, label: "检测中" }
-    : taskDiagnostics.data
-      ? !redisConfigured
-        ? { tone: "muted" as const, label: "未配置" }
-        : redisAvailable
-          ? { tone: "ok" as const, label: "正常" }
-          : { tone: "error" as const, label: "不可用" }
-      : { tone: "muted" as const, label: "未获取" };
-  const taskQueueStatus = taskDiagnostics.isLoading
-    ? { tone: "muted" as const, label: "检测中" }
-    : taskDiagnostics.data
-      ? !redisConfigured
-        ? { tone: "muted" as const, label: "未启用" }
-        : queueErrors > 0
-          ? { tone: "error" as const, label: `异常 ${queueErrors}` }
-          : queuePending > 0
-            ? { tone: "warning" as const, label: `积压 ${queuePending}` }
-            : { tone: "ok" as const, label: "正常" }
-      : { tone: "muted" as const, label: "未获取" };
+  const redisStatus = computeRedisStatus(taskDiagnostics.isLoading, taskDiagnostics.data?.redis);
+  const taskQueueStatus = computeTaskQueueStatus(
+    taskDiagnostics.isLoading,
+    taskDiagnostics.data?.redis,
+    queuePending,
+    queueErrors,
+  );
 
   const refreshAll = async () => {
     setManualRefreshing(true);
