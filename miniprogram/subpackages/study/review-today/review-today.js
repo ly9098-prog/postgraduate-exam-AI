@@ -79,6 +79,9 @@ const {
 const {
   createOverviewSyncController,
 } = require('./utils/overview-sync-controller')
+const {
+  createOverviewLoadController,
+} = require('./utils/overview-load-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -433,53 +436,31 @@ _setDateStr() {
 this._reviewSessionController().setDateStr()
 },
 async loadTodayReviewOverview() {
-const requestSeq = ++this._overviewRequestSeq
-this._reviewSession.overviewLoading = true
-this.setData({ phase: 'loading', isStarting: false, isContinuing: false })
-try {
-const overview = await api.get('/review/today/overview')
-if (!this._alive || requestSeq !== this._overviewRequestSeq) return
-const vm = this.buildReviewOverviewVM(overview)
-this._overviewSyncController().applyOverviewToSession(overview, vm)
-const targetPhase = vm.todayRemainingCount > 0 ? 'overview' : 'empty'
-const shouldAutoStart = this._autoStartPending && targetPhase === 'overview'
-if (targetPhase === 'empty') this._autoStartPending = false
-this._reviewSession.overviewLoading = false
-this.setData({
-...vm,
-phase: targetPhase,
-}, () => {
-if (shouldAutoStart && this._alive && requestSeq === this._overviewRequestSeq) {
-this._autoStartPending = false
-this.startTodayReview()
-}
-})
-} catch (e) {
-if (!this._alive || requestSeq !== this._overviewRequestSeq) return
-console.error('加载复习概览失败', e)
-this._reviewSession.overviewLoading = false
-this.setData({
-phase: 'error',
-errorText: '复习计划加载失败，请稍后重试',
-})
-}
+  await this._overviewLoadController().load()
 },
 async refreshOverviewStatsSilently() {
-const requestSeq = ++this._overviewRequestSeq
-try {
-const overview = await api.get('/review/today/overview')
-if (!this._alive || requestSeq !== this._overviewRequestSeq) return
-const vm = this.buildReviewOverviewVM(overview)
-this._overviewSyncController().applyOverviewToSession(overview, vm)
-this._overviewSyncController().adjustVmForActiveSession(vm)
-this.setData({
-...vm,
-})
-} catch (e) {
-if (!this._alive || requestSeq !== this._overviewRequestSeq) return
-console.error('刷新复习概览失败', e)
-}
+  await this._overviewLoadController().refreshSilently()
 },
+
+  _overviewLoadController() {
+    return this._overviewLoad || (
+      this._overviewLoad = createOverviewLoadController({
+        nextRequestSeq: () => ++this._overviewRequestSeq,
+        isRequestCurrent: seq => seq === this._overviewRequestSeq,
+        isPageAlive: () => this._alive,
+        isAutoStartPending: () => this._autoStartPending,
+        setAutoStartPending: value => { this._autoStartPending = value },
+        setOverviewLoading: value => { this._reviewSession.overviewLoading = value },
+        getOverview: () => api.get('/review/today/overview'),
+        buildOverviewVM: overview => this.buildReviewOverviewVM(overview),
+        applyOverviewToSession: (overview, vm) => this._overviewSyncController().applyOverviewToSession(overview, vm),
+        adjustVmForActiveSession: vm => this._overviewSyncController().adjustVmForActiveSession(vm),
+        setData: (patch, callback) => this.setData(patch, callback),
+        startReview: () => this.startTodayReview(),
+        logError: (...args) => console.error(...args),
+      })
+    )
+  },
 async _syncReviewSessionDayIfNeeded() {
 const session = this._reviewSession
 const currentDate = getChinaDate(0)

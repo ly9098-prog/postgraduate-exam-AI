@@ -465,6 +465,7 @@ jobs:
           node --test miniprogram/tests/test-review-nav-back-controller.js
           node --test miniprogram/tests/test-review-self-heal-controller.js
           node --test miniprogram/tests/test-review-overview-sync-controller.js
+          node --test miniprogram/tests/test-review-overview-load-controller.js
           node miniprogram/tests/test-storage-session-cleanup.js
           node miniprogram/tests/test-exam-terminal-navigation.js
           node --test miniprogram/tests/test-exam-timer-controller.js
