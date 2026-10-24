@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
 const examAttemptCache = require('../utils/exam-attempt-cache')
+const { normalizeSearchValue, fuzzyIncludes, matchesPaper, paperRenderSignature } = require('../utils/paper-search')
 
 const SEARCH_DEBOUNCE_MS = 280
 
@@ -20,60 +21,6 @@ function typeHint(type) {
   return type === 'past_exam_choice'
     ? '历年真题 · 只做适合手机作答的选择题'
     : '模拟训练 · 只做适合手机作答的选择题'
-}
-
-function normalizeSearchValue(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/408/g, '')
-    .replace(/[\s\-_/.,，。:：;；|｜()[\]{}【】（）'"“”‘’·]+/g, '')
-}
-
-function fuzzyIncludes(target, term) {
-  if (!term) return true
-  if (target.indexOf(term) !== -1) return true
-
-  let termIndex = 0
-  for (let i = 0; i < target.length && termIndex < term.length; i += 1) {
-    if (target[i] === term[termIndex]) termIndex += 1
-  }
-  return termIndex === term.length
-}
-
-function matchesPaper(paper, query) {
-  const rawTerms = String(query || '').trim().split(/\s+/).filter(Boolean)
-  if (!rawTerms.length) return true
-
-  const target = normalizeSearchValue([
-    paper.title,
-    paper.source,
-    paper.typeLabel,
-    paper.typeHint,
-    paper.year,
-    paper.question_count ? `${paper.question_count}题` : '',
-    paper.scoreText ? `${paper.scoreText}分` : '',
-    paper.durationMinutes ? `${paper.durationMinutes}分钟` : '',
-  ].join(' '))
-
-  return rawTerms.every((rawTerm) => fuzzyIncludes(target, normalizeSearchValue(rawTerm)))
-}
-
-function paperRenderSignature(papers) {
-  return (Array.isArray(papers) ? papers : []).map((item) => [
-    item.id,
-    item.title,
-    item.source,
-    item.typeLabel,
-    item.year,
-    item.question_count,
-    item.scoreText,
-    item.durationMinutes,
-    item.bestScoreText,
-    item.canResume ? 1 : 0,
-    item.latest_attempt_id || '',
-    item.isSuggested ? 1 : 0,
-    item.isLatestYear ? 1 : 0,
-  ].join('|')).join('||')
 }
 
 Page({
