@@ -106,6 +106,7 @@ from app.services.task_queue_v2_reaper_contract import (
     apply_v2_reaper_result,
     normalize_v2_reaper_result,
 )
+from app.services.task_queue_v2_health_contract import v2_oldest_ready_age
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1984,13 +1985,8 @@ class DurableTaskQueue:
             raise QueueHealthError("Cannot obtain Redis client")
         try:
             task_id = await client.lindex(_v2_q_key(task_type), 0)
-            if not task_id:
-                return 0.0
             raw = await client.hget(_v2_task_hash_key(task_id), "data")
-            if not raw:
-                return 0.0
-            created_at = float(json.loads(raw).get("created_at", 0) or 0)
-            return max(0.0, time.time() - created_at) if created_at else 0.0
+            return v2_oldest_ready_age(task_id, raw, now=time.time())
         except (ValueError, TypeError, json.JSONDecodeError):
             return 0.0
         except redis_exc.RedisError as exc:
