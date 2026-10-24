@@ -62,64 +62,17 @@ import {
   computeQueueTotal,
   computeFailedQueueTotal,
   type TaskStatusFilter,
+  formatDuration,
+  formatShortDate,
+  formatBytes,
+  healthTone,
+  traceStatusTone,
+  queueLocationLabelZh,
+  severityLabelZh,
 } from "@/lib/system-task-utils";
-
-function duration(seconds?: number | null) {
-  const value = Math.max(0, Number(seconds || 0));
-  if (value < 60) return `${Math.round(value)} 秒`;
-  if (value < 3600) return `${Math.round(value / 60)} 分钟`;
-  return `${(value / 3600).toFixed(value >= 36_000 ? 0 : 1)} 小时`;
-}
 
 function formatTime(value?: string | null) {
   return formatChinaDateTime(value);
-}
-
-function formatShortDate(value: string) {
-  const [year, month, day] = value.split("-");
-  if (!year || !month || !day) return value;
-  return `${month}-${day}`;
-}
-
-function formatBytes(value?: number | null) {
-  const bytes = Math.max(0, Number(value || 0));
-  if (!bytes) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
-
-function healthTone(severity: "ok" | "warning" | "error") {
-  if (severity === "ok") return "success" as const;
-  if (severity === "warning") return "warning" as const;
-  return "danger" as const;
-}
-
-function traceStatusTone(status?: string | null) {
-  if (status === "completed" || status === "published") return "success" as const;
-  if (["failed", "dead", "corrupt"].includes(status || "")) return "danger" as const;
-  if (["processing", "retry", "pending", "leased"].includes(status || "")) return "warning" as const;
-  return "neutral" as const;
-}
-
-function queueLocationLabelZh(value?: string | null) {
-  if (!value) return "—";
-  const key = String(value).trim().toLowerCase();
-  const labels: Record<string, string> = {
-    ready: "待处理队列",
-    processing: "处理中队列",
-    retry: "重试队列",
-    dead: "死信队列",
-    corrupt: "损坏队列",
-  };
-  return labels[key] || `${statusLabelZh(value)}队列`;
-}
-
-function severityLabelZh(value?: string | null) {
-  if (value === "error") return "错误";
-  if (value === "warning") return "警告";
-  return "正常";
 }
 
 const ISSUE_CODE_LABELS_ZH: Record<string, string> = {
@@ -747,7 +700,7 @@ export default function SystemTasksPage() {
                 <RuntimeNode
                   title="PostgreSQL Outbox"
                   subtitle={`${data.outbox.unpublished} 条待发布`}
-                  value={data.outbox.unpublished ? duration(data.outbox.oldest_unpublished_seconds) : "实时"}
+                  value={data.outbox.unpublished ? formatDuration(data.outbox.oldest_unpublished_seconds) : "实时"}
                   tone={data.outbox.unpublished > 0 ? "warning" : "success"}
                 />
                 <ArrowRight className="my-auto h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
@@ -779,14 +732,14 @@ export default function SystemTasksPage() {
             <MetricCard
               label="Outbox 未发布"
               value={data.outbox.unpublished}
-              hint={`最老等待 ${duration(data.outbox.oldest_unpublished_seconds)}`}
+              hint={`最老等待 ${formatDuration(data.outbox.oldest_unpublished_seconds)}`}
               icon={<Database className="h-4 w-4" />}
               tone={data.outbox.unpublished > 0 ? "warning" : "success"}
             />
             <MetricCard
               label="Redis 待处理"
               value={data.redis.available ? data.redis.totals.ready : "—"}
-              hint={data.redis.available ? `最老等待 ${duration(data.redis.oldest_ready_seconds)}` : "Redis 不可用，队列表改用 Outbox 数据补位"}
+              hint={data.redis.available ? `最老等待 ${formatDuration(data.redis.oldest_ready_seconds)}` : "Redis 不可用，队列表改用 Outbox 数据补位"}
               icon={<Workflow className="h-4 w-4" />}
               tone={data.redis.available ? (data.redis.totals.ready > 0 ? "primary" : "success") : "danger"}
             />
@@ -809,7 +762,7 @@ export default function SystemTasksPage() {
             <MetricCard
               label="未完成答题投影"
               value={data.projection.unprojected}
-              hint={`最老 ${duration(data.projection.oldest_age_sec)} · 24h 补偿 ${data.projection.repairs_scheduled_24h}`}
+              hint={`最老 ${formatDuration(data.projection.oldest_age_sec)} · 24h 补偿 ${data.projection.repairs_scheduled_24h}`}
               icon={<TimerReset className="h-4 w-4" />}
               tone={data.projection.unprojected > 0 ? "warning" : "success"}
             />

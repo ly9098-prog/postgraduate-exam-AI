@@ -149,3 +149,78 @@ describe("computeFailedQueueTotal", () => {
     expect(computeFailedQueueTotal(undefined)).toBe(0);
   });
 });
+
+import { formatDuration, formatShortDate, formatBytes, healthTone, traceStatusTone, queueLocationLabelZh, severityLabelZh } from "./system-task-utils";
+
+describe("formatDuration", () => {
+  it("formats seconds", () => { expect(formatDuration(30)).toBe("30 秒"); });
+  it("formats minutes", () => { expect(formatDuration(120)).toBe("2 分钟"); });
+  it("formats hours", () => { expect(formatDuration(7200)).toBe("2.0 小时"); });
+  it("formats 10+ hours without decimal", () => { expect(formatDuration(36000)).toBe("10 小时"); });
+  it("handles null/undefined as 0", () => { expect(formatDuration(null)).toBe("0 秒"); });
+  it("clamps negative to 0", () => { expect(formatDuration(-5)).toBe("0 秒"); });
+});
+
+describe("formatShortDate", () => {
+  it("formats YYYY-MM-DD to MM-DD", () => { expect(formatShortDate("2024-06-15")).toBe("06-15"); });
+  it("returns original for invalid format", () => { expect(formatShortDate("invalid")).toBe("invalid"); });
+  it("returns original for partial date", () => { expect(formatShortDate("2024-06")).toBe("2024-06"); });
+});
+
+describe("formatBytes", () => {
+  it("formats 0", () => { expect(formatBytes(0)).toBe("0 B"); });
+  it("formats bytes", () => { expect(formatBytes(512)).toBe("512 B"); });
+  it("formats KB", () => { expect(formatBytes(1024)).toBe("1.0 KB"); });
+  it("formats MB", () => { expect(formatBytes(1048576)).toBe("1.0 MB"); });
+  it("formats GB", () => { expect(formatBytes(1073741824)).toBe("1.00 GB"); });
+  it("handles null", () => { expect(formatBytes(null)).toBe("0 B"); });
+});
+
+describe("healthTone", () => {
+  it("ok -> success", () => { expect(healthTone("ok")).toBe("success"); });
+  it("warning -> warning", () => { expect(healthTone("warning")).toBe("warning"); });
+  it("error -> danger", () => { expect(healthTone("error")).toBe("danger"); });
+});
+
+describe("traceStatusTone", () => {
+  it("completed/published -> success", () => {
+    expect(traceStatusTone("completed")).toBe("success");
+    expect(traceStatusTone("published")).toBe("success");
+  });
+  it("failed/dead/corrupt -> danger", () => {
+    expect(traceStatusTone("failed")).toBe("danger");
+    expect(traceStatusTone("dead")).toBe("danger");
+    expect(traceStatusTone("corrupt")).toBe("danger");
+  });
+  it("processing/retry/pending/leased -> warning", () => {
+    expect(traceStatusTone("processing")).toBe("warning");
+    expect(traceStatusTone("retry")).toBe("warning");
+    expect(traceStatusTone("pending")).toBe("warning");
+    expect(traceStatusTone("leased")).toBe("warning");
+  });
+  it("unknown -> neutral", () => {
+    expect(traceStatusTone("unknown")).toBe("neutral");
+    expect(traceStatusTone(null)).toBe("neutral");
+    expect(traceStatusTone(undefined)).toBe("neutral");
+  });
+});
+
+describe("queueLocationLabelZh", () => {
+  it("maps known locations", () => {
+    expect(queueLocationLabelZh("ready")).toBe("待处理队列");
+    expect(queueLocationLabelZh("dead")).toBe("死信队列");
+  });
+  it("returns — for null/undefined", () => {
+    expect(queueLocationLabelZh(null)).toBe("—");
+    expect(queueLocationLabelZh(undefined)).toBe("—");
+  });
+  it("falls back to statusLabelZh for unknown", () => {
+    expect(queueLocationLabelZh("custom")).toBe("custom队列");
+  });
+});
+
+describe("severityLabelZh", () => {
+  it("error -> 错误", () => { expect(severityLabelZh("error")).toBe("错误"); });
+  it("warning -> 警告", () => { expect(severityLabelZh("warning")).toBe("警告"); });
+  it("default -> 正常", () => { expect(severityLabelZh("ok")).toBe("正常"); expect(severityLabelZh(null)).toBe("正常"); });
+});

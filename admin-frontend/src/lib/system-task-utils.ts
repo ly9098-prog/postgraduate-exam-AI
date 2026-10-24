@@ -144,3 +144,78 @@ export function computeFailedQueueTotal(
   if (!totals) return 0;
   return totals.dead + totals.corrupt;
 }
+
+/**
+ * Format a duration in seconds to a human-readable Chinese string.
+ */
+export function formatDuration(seconds?: number | null): string {
+  const value = Math.max(0, Number(seconds || 0));
+  if (value < 60) return `${Math.round(value)} 秒`;
+  if (value < 3600) return `${Math.round(value / 60)} 分钟`;
+  return `${(value / 3600).toFixed(value >= 36_000 ? 0 : 1)} 小时`;
+}
+
+/**
+ * Format a short date from "YYYY-MM-DD" to "MM-DD".
+ */
+export function formatShortDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${month}-${day}`;
+}
+
+/**
+ * Format bytes to a human-readable string.
+ */
+export function formatBytes(value?: number | null): string {
+  const bytes = Math.max(0, Number(value || 0));
+  if (!bytes) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+/**
+ * Map health severity to badge tone.
+ */
+export function healthTone(severity: "ok" | "warning" | "error"): StatusTone {
+  if (severity === "ok") return "success";
+  if (severity === "warning") return "warning";
+  return "danger";
+}
+
+/**
+ * Map a trace/outbox/queue status to a badge tone.
+ */
+export function traceStatusTone(status?: string | null): StatusTone {
+  if (status === "completed" || status === "published") return "success";
+  if (["failed", "dead", "corrupt"].includes(status || "")) return "danger";
+  if (["processing", "retry", "pending", "leased"].includes(status || "")) return "warning";
+  return "neutral";
+}
+
+/**
+ * Map a queue location value to its Chinese label.
+ */
+export function queueLocationLabelZh(value?: string | null): string {
+  if (!value) return "—";
+  const key = String(value).trim().toLowerCase();
+  const labels: Record<string, string> = {
+    ready: "待处理队列",
+    processing: "处理中队列",
+    retry: "重试队列",
+    dead: "死信队列",
+    corrupt: "损坏队列",
+  };
+  return labels[key] || `${statusLabelZh(value)}队列`;
+}
+
+/**
+ * Map a severity level to its Chinese label.
+ */
+export function severityLabelZh(value?: string | null): string {
+  if (value === "error") return "错误";
+  if (value === "warning") return "警告";
+  return "正常";
+}
