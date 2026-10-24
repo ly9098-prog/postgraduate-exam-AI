@@ -134,6 +134,14 @@ const questionsRoute: AdminRoute = {
   icon: FileQuestion,
 };
 
+const questionReviewRoute: AdminRoute = {
+  href: "/review",
+  label: "重审工作台",
+  description: "已入库题目重审与回滚",
+  permission: "question:review",
+  icon: ClipboardCheck,
+};
+
 const examsRoute: AdminRoute = {
   href: "/exams",
   label: "试卷管理",
@@ -265,6 +273,7 @@ export const adminRoutes: AdminRoute[] = [
   adminUsersRoute,
   subjectsRoute,
   questionsRoute,
+  questionReviewRoute,
   examsRoute,
   importsRoute,
   rolesRoute,
@@ -309,7 +318,7 @@ export const adminNavigation: AdminNavigationItem[] = [
     label: "题目管理",
     description: "科目、题库、导入、知识图谱、考纲与覆盖率",
     icon: FileQuestion,
-    children: [subjectsRoute, questionsRoute, examsRoute, importsRoute, knowledgeGraphRoute, syllabusRoute, coverageRoute],
+    children: [subjectsRoute, questionsRoute, questionReviewRoute, examsRoute, importsRoute, knowledgeGraphRoute, syllabusRoute, coverageRoute],
   },
   {
     type: "group",

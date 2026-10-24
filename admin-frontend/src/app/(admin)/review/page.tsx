@@ -2,21 +2,23 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Eye, Filter, Search, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Search, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
+import { useAuthStore } from "@/lib/auth/auth-store";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import { normalizeStructuredTableSegment } from "@/lib/structured-table";
+import { hasPermission } from "@/lib/permissions/permissions";
 import { unresolvedTableCount, textFromContent, renderJson, statusTone, duplicateStatusTone } from "@/lib/review-page-utils";
-import type { AdminQuestion, AdminQuestionDetail, AdminQuestionImportSummary, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
+import type { AdminQuestion, AdminQuestionDetail, AdminQuestionImportSummary, AdminQuestionRollbackRequest, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
 
 type ConfirmState =
   | { action: "approve"; id: number }
   | { action: "reject"; id: number }
+  | { action: "rollback"; id: number; version: number }
   | null;
 
 function renderDuplicateInfo(importRecord: AdminQuestionImportSummary | null | undefined) {
@@ -81,8 +83,13 @@ function renderDiff(label: string, current: unknown, previous: unknown) {
 
 export default function ReviewPage() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((state) => state.permissions);
+  const canReview = hasPermission(permissions, "question:review");
+  const canRollback = canReview && hasPermission(permissions, "question:write");
+  const canBatchReview = hasPermission(permissions, "question:batch_review");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [keyword, setKeyword] = useState("");
-  const [tab, setTab] = useState<"pending" | "re_pending">("pending");
+  const [tab, setTab] = useState<"re_pending" | "rejected">("re_pending");
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
@@ -152,6 +159,47 @@ export default function ReviewPage() {
     },
   });
 
+  const batchReviewMutation = useMutation({
+    mutationFn: async (decision: "approved" | "rejected") =>
+      apiRequest<AdminQuestion[]>(`/questions/batch-${decision === "approved" ? "approve" : "reject"}`, {
+        method: "POST",
+        body: JSON.stringify({ ids: selectedIds }),
+      }),
+    onSuccess: (_result, decision) => {
+      setMessage(`批量${decision === "approved" ? "通过" : "拒绝"}已提交。`);
+      setSelectedIds([]);
+      queryClient.invalidateQueries({ queryKey: ["review-questions"] });
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "批量审核失败，请稍后重试。");
+    },
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async (state: Extract<ConfirmState, null | { action: "rollback" }>) => {
+      if (!state) throw new Error("缺少回滚目标");
+      return apiRequest<AdminQuestion>(`/questions/${state.id}/rollback`, {
+        method: "POST",
+        body: JSON.stringify({
+          version: state.version,
+          reason: rejectReason || "恢复历史版本",
+        } satisfies AdminQuestionRollbackRequest),
+      });
+    },
+    onSuccess: (result) => {
+      setMessage(`操作成功，题目 #${result.id} 已回滚并恢复审核通过。`);
+      setConfirmState(null);
+      setRejectReason("");
+      queryClient.invalidateQueries({ queryKey: ["review-questions"] });
+      if (previewId === result.id) {
+        queryClient.invalidateQueries({ queryKey: ["review-preview", previewId] });
+      }
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "回滚失败，请稍后重试。");
+    },
+  });
+
   const pendingQuestion: AdminQuestionDetail | undefined = preview.data;
   const pendingQuestionTableReviewCount = unresolvedTableCount(pendingQuestion?.content);
   const previousVersion = previewVersionDetail.data;
@@ -177,13 +225,13 @@ export default function ReviewPage() {
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">支持快速审核、diff 预览、驳回说明，提交后自动刷新列表。</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant={tab === "pending" ? "primary" : "secondary"} onClick={() => { setTab("pending"); setPreviewId(null); }}>
-              <Filter className="h-4 w-4" />
-              pending
-            </Button>
             <Button variant={tab === "re_pending" ? "primary" : "secondary"} onClick={() => { setTab("re_pending"); setPreviewId(null); }}>
               <AlertTriangle className="h-4 w-4" />
               re_pending
+            </Button>
+            <Button variant={tab === "rejected" ? "primary" : "secondary"} onClick={() => { setTab("rejected"); setPreviewId(null); }}>
+              <XCircle className="h-4 w-4" />
+              rejected
             </Button>
           </div>
         </CardHeader>
@@ -200,28 +248,65 @@ export default function ReviewPage() {
               onChange={(event) => setKeyword(event.target.value)}
             />
           </label>
+          {canBatchReview && items.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                disabled={selectedIds.length === 0 || batchReviewMutation.isPending}
+                onClick={() => batchReviewMutation.mutate("approved")}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                批量通过 {selectedIds.length ? `(${selectedIds.length})` : ""}
+              </Button>
+              <Button
+                variant="danger"
+                disabled={selectedIds.length === 0 || batchReviewMutation.isPending}
+                onClick={() => batchReviewMutation.mutate("rejected")}
+              >
+                <XCircle className="h-4 w-4" />
+                批量拒绝 {selectedIds.length ? `(${selectedIds.length})` : ""}
+              </Button>
+            </div>
+          ) : null}
           <div className="grid gap-4 xl:grid-cols-2">
             {items.map((question) => (
               <article key={question.id} className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-5">
                 <div className="flex items-center justify-between gap-4">
-                  <StatusBadge tone={statusTone(question.review_status)}>{question.review_status || "pending"}</StatusBadge>
+                  <div className="flex items-center gap-2">
+                    {canBatchReview ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(question.id)}
+                        onChange={(event) => {
+                          setSelectedIds((current) => event.target.checked
+                            ? [...current, question.id]
+                            : current.filter((id) => id !== question.id));
+                        }}
+                      />
+                    ) : null}
+                    <StatusBadge tone={statusTone(question.review_status)}>{question.review_status}</StatusBadge>
+                  </div>
                   <div className="flex gap-2">
                     <Button variant="ghost" onClick={() => setPreviewId(question.id)}>
                       <Eye className="h-4 w-4" />
                       预览
                     </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={unresolvedTableCount(question.content) > 0}
-                      onClick={() => setConfirmState({ action: "approve", id: question.id })}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      通过
-                    </Button>
-                    <Button variant="danger" onClick={() => setConfirmState({ action: "reject", id: question.id })}>
-                      <XCircle className="h-4 w-4" />
-                      拒绝
-                    </Button>
+                    {canReview ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          disabled={unresolvedTableCount(question.content) > 0}
+                          onClick={() => setConfirmState({ action: "approve", id: question.id })}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          通过
+                        </Button>
+                        <Button variant="danger" onClick={() => setConfirmState({ action: "reject", id: question.id })}>
+                          <XCircle className="h-4 w-4" />
+                          拒绝
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
                 <h4 className="mt-4 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">
@@ -252,18 +337,34 @@ export default function ReviewPage() {
             <div className="flex items-center justify-between gap-4">
               <h3 className="font-display text-2xl font-bold text-[var(--ink)]">题目详情与 Diff</h3>
               <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  disabled={pendingQuestionTableReviewCount > 0}
-                  onClick={() => setConfirmState({ action: "approve", id: previewId })}
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  通过
-                </Button>
-                <Button variant="danger" onClick={() => setConfirmState({ action: "reject", id: previewId })}>
-                  <XCircle className="h-4 w-4" />
-                  拒绝
-                </Button>
+                {canReview ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      disabled={pendingQuestionTableReviewCount > 0}
+                      onClick={() => setConfirmState({ action: "approve", id: previewId })}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      通过
+                    </Button>
+                    <Button variant="danger" onClick={() => setConfirmState({ action: "reject", id: previewId })}>
+                      <XCircle className="h-4 w-4" />
+                      拒绝
+                    </Button>
+                  </>
+                ) : null}
+                {canRollback && previousVersion ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setConfirmState({
+                      action: "rollback",
+                      id: previewId,
+                      version: previousVersion.version,
+                    })}
+                  >
+                    回滚到 v{previousVersion.version}
+                  </Button>
+                ) : null}
                 <Button variant="ghost" onClick={() => setPreviewId(null)}>关闭</Button>
               </div>
             </div>
@@ -311,14 +412,15 @@ export default function ReviewPage() {
         }
         confirmText="提交"
         danger={confirmState?.action === "reject"}
-        loading={reviewMutation.isPending}
+        loading={reviewMutation.isPending || rollbackMutation.isPending}
         onCancel={() => setConfirmState(null)}
         onConfirm={() => {
           if (!confirmState) return;
-          reviewMutation.mutate(confirmState);
+          if (confirmState.action === "rollback") rollbackMutation.mutate(confirmState);
+          else reviewMutation.mutate(confirmState);
         }}
       />
-      {confirmState?.action === "reject" ? (
+      {confirmState?.action === "reject" || confirmState?.action === "rollback" ? (
         <div className="fixed inset-x-0 bottom-6 z-[60] mx-auto w-full max-w-md px-4">
           <textarea
             className="min-h-24 w-full rounded-2xl border border-[var(--color-border)] bg-white p-3 text-sm outline-none focus:border-[var(--color-primary)]"

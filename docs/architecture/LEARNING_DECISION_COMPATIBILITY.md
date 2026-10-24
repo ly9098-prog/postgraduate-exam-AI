@@ -65,5 +65,5 @@
 
 - PostgreSQL advisory lock 只通过 SQL 构造审查和 SQLite 并发等价验证；本机没有 PostgreSQL 服务端，未执行真实 PG 并发验收。
 - 未执行生产 Admin 浏览器、真实推荐日志回填、完整 scheduler/worker 循环或 Redis 中断恢复。
-- `questions.review_status = re_pending`、已入库题目重审/版本回滚仍是设计预留。
+- 已入库题目 `re_pending`、重审/版本回滚已由 Admin 题库域实现；学习决策域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
 - `practice_service.use_leitner` 的 TODO(V3) 仍未实现；向量/path 结果后的到期过滤与 Leitner fallback 会改变选题行为，需单独立项。

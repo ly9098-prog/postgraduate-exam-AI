@@ -8,10 +8,14 @@ from app.models.admin import AdminUser, QuestionVersion
 from app.models.question import Question
 from app.schemas.admin_questions import (
     AdminQuestionPatchRequest,
+    AdminQuestionRollbackRequest,
     AdminQuestionToggleActiveRequest,
 )
 from app.services import admin_question_service
 from app.services.admin_question_service import (
+    batch_review_admin_questions,
+    rollback_admin_question,
+    review_admin_question,
     soft_delete_admin_question,
     toggle_active_admin_question,
     update_admin_question,
@@ -32,7 +36,9 @@ class _Scalars:
 class _Result:
     def __init__(self, value=None, values=None):
         self.value = value
-        self.values = values if values is not None else ([] if value is None else [value])
+        self.values = (
+            values if values is not None else ([] if value is None else [value])
+        )
 
     def scalar_one_or_none(self):
         return self.value
@@ -45,7 +51,9 @@ class _Result:
 
 
 class _Db:
-    def __init__(self, question=None, imports=None, permission_names=None, max_version=None):
+    def __init__(
+        self, question=None, imports=None, permission_names=None, max_version=None
+    ):
         self.question = question
         self.imports = imports or []
         self.permission_names = permission_names or []
@@ -105,14 +113,20 @@ class _Db:
 
 
 def _principal(user_id=9, role_id=2):
-    user = AdminUser(id=user_id, username="operator", password_hash="hash", is_active=True, role_id=role_id)
+    user = AdminUser(
+        id=user_id,
+        username="operator",
+        password_hash="hash",
+        is_active=True,
+        role_id=role_id,
+    )
     return AdminPrincipal(user, {})
 
 
-def _question(review_status="approved", is_active=True):
+def _question(question_id=1, review_status="approved", is_active=True):
     now = datetime(2026, 5, 29)
     return Question(
-        id=1,
+        id=question_id,
         subject_id=1,
         question_type="choice",
         content={"text": "题干"},
@@ -128,29 +142,95 @@ def _question(review_status="approved", is_active=True):
     )
 
 
+def _version(version=2, answer="旧答案", subject_id=1):
+    return QuestionVersion(
+        id=version * 100,
+        question_id=1,
+        version=version,
+        subject_id=subject_id,
+        question_type="choice",
+        content={"text": "旧题干"},
+        options={"A": "旧选项"},
+        answer=answer,
+        analysis="旧解析",
+        difficulty=2,
+        is_active=True,
+        source="source",
+        source_type="manual",
+        source_file=None,
+        raw_content="旧原文",
+        image_url=[],
+        year=2025,
+        edited_by=1,
+        change_source="admin",
+        state_hash=f"hash-{version}",
+        edit_reason="历史版本",
+        created_at=datetime(2026, 5, 29),
+    )
+
+
 def _patch_kps(monkeypatch, kps=None):
     """patch load_question_kps / replace_question_knowledge_points（关联表为数据源）。"""
     import app.services.knowledge_point_service as kpsvc
 
     kps = kps if kps is not None else ["函数"]
     monkeypatch.setattr(
-        admin_question_service, "load_question_kps",
+        admin_question_service,
+        "load_question_kps",
         AsyncMock(return_value={1: list(kps)}),
     )
     monkeypatch.setattr(
-        kpsvc, "replace_question_knowledge_points", AsyncMock(return_value={}),
+        kpsvc,
+        "replace_question_knowledge_points",
+        AsyncMock(return_value={}),
     )
+
+
+def _make_scalar(db):
+    async def scalar(statement):
+        text = str(statement)
+        if "question_versions" in text:
+            if "version = :version_1" in text or "version=" in text:
+                return db.version
+            latest = MagicMock(spec=QuestionVersion)
+            latest.id = 300
+            latest.version = 3
+            latest.state_hash = "stale"
+            return latest
+        return db.question
+
+    return scalar
+
+
+def _make_execute(db):
+    async def execute(statement):
+        text = str(statement)
+        if "question_version_knowledge_points" in text:
+            return _Result(values=["旧知识点"])
+        if "question_knowledge_points" in text:
+            return _Result(values=[])
+        if "subjects" in text:
+            return _Result()
+        return _Result(db.question)
+
+    return execute
 
 
 @pytest.mark.asyncio
 async def test_update_admin_question_snapshots_changes(monkeypatch):
     _patch_kps(monkeypatch)
     question = _question()
-    db = _Db(question=question, max_version=2)
+    db = _Db(
+        question=question,
+        permission_names=["question:review"],
+        max_version=2,
+    )
     audit = AsyncMock()
     monkeypatch.setattr(admin_question_service, "write_admin_audit", audit)
 
-    result = await update_admin_question(db, 1, AdminQuestionPatchRequest(answer="B", edit_reason="修正"), _principal())
+    result = await update_admin_question(
+        db, 1, AdminQuestionPatchRequest(answer="B", edit_reason="修正"), _principal()
+    )
 
     assert result.answer == "B"
     assert result.review_status == "approved"
@@ -171,7 +251,9 @@ async def test_update_admin_question_keeps_approved_with_review_permission(monke
     audit = AsyncMock()
     monkeypatch.setattr(admin_question_service, "write_admin_audit", audit)
 
-    result = await update_admin_question(db, 1, AdminQuestionPatchRequest(answer="B"), _principal())
+    result = await update_admin_question(
+        db, 1, AdminQuestionPatchRequest(answer="B"), _principal()
+    )
 
     assert result.answer == "B"
     assert result.review_status == "approved"
@@ -190,7 +272,11 @@ async def test_soft_delete_and_toggle_active(monkeypatch):
     assert deleted.is_active is False
     assert audit.await_args.kwargs["severity"] == "critical"
 
-    toggled = await toggle_active_admin_question(db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal())
+    question.review_status = "approved"
+    question.is_active = True
+    toggled = await toggle_active_admin_question(
+        db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal()
+    )
     assert toggled.is_active is True
 
 
@@ -199,4 +285,109 @@ async def test_toggle_active_rejects_non_approved():
     db = _Db(question=_question(review_status="re_pending", is_active=False))
 
     with pytest.raises(ValueError, match="非已审核题目不能激活"):
-        await toggle_active_admin_question(db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal())
+        await toggle_active_admin_question(
+            db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal()
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_without_review_permission_marks_re_pending(monkeypatch):
+    _patch_kps(monkeypatch)
+    question = _question()
+    db = _Db(question=question, permission_names=[])
+    monkeypatch.setattr(admin_question_service, "write_admin_audit", AsyncMock())
+
+    result = await update_admin_question(
+        db, 1, AdminQuestionPatchRequest(answer="B"), _principal()
+    )
+
+    assert result.review_status == "re_pending"
+    assert result.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_review_approve_restores_re_pending(monkeypatch):
+    _patch_kps(monkeypatch)
+    question = _question(review_status="re_pending", is_active=True)
+    db = _Db(question=question)
+    audit = AsyncMock()
+    monkeypatch.setattr(admin_question_service, "write_admin_audit", audit)
+
+    result = await review_admin_question(db, 1, "approved", _principal())
+
+    assert result.review_status == "approved"
+    assert result.is_active is True
+    assert audit.await_args.args[2] == "question.approved"
+    assert audit.await_args.kwargs["severity"] == "important"
+
+
+@pytest.mark.asyncio
+async def test_review_reject_requires_reason_and_deactivates(monkeypatch):
+    _patch_kps(monkeypatch)
+    question = _question(review_status="re_pending", is_active=True)
+    db = _Db(question=question)
+
+    with pytest.raises(ValueError, match="拒绝原因不能为空"):
+        await review_admin_question(db, 1, "rejected", _principal())
+
+    result = await review_admin_question(
+        db, 1, "rejected", _principal(), reason="答案错误"
+    )
+    assert result.review_status == "rejected"
+    assert result.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_review_rejects_invalid_transition():
+    db = _Db(question=_question(review_status="approved", is_active=True))
+
+    with pytest.raises(ValueError, match="当前状态不能执行"):
+        await review_admin_question(db, 1, "rejected", _principal(), reason="重复操作")
+
+
+@pytest.mark.asyncio
+async def test_batch_review_returns_success_and_failed_items(monkeypatch):
+    _patch_kps(monkeypatch)
+    approved = _question(question_id=1, review_status="re_pending")
+    invalid = _question(question_id=2, review_status="approved")
+    db = _Db(question=approved)
+    db.questions = {1: approved, 2: invalid}
+    db.get = AsyncMock(side_effect=lambda model, item_id: db.questions.get(item_id))
+    audit = AsyncMock()
+    monkeypatch.setattr(admin_question_service, "write_admin_audit", audit)
+
+    result = await batch_review_admin_questions(db, [1, 2], "approved", _principal())
+
+    assert result.success_ids == [1]
+    assert result.failed_items[0].id == 2
+    assert audit.await_args.args[2] == "question.batch_approved"
+    assert audit.await_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_rollback_restores_target_revision(monkeypatch):
+    _patch_kps(monkeypatch, ["旧知识点"])
+    question = _question(review_status="re_pending", is_active=True)
+    question.answer = "新答案"
+    question.difficulty = 5
+    target = _version(version=2, answer="旧答案")
+    db = _Db(question=question)
+    db.version = target
+    db.scalar = AsyncMock(side_effect=_make_scalar(db))
+    db.execute = AsyncMock(side_effect=_make_execute(db))
+    audit = AsyncMock()
+    monkeypatch.setattr(admin_question_service, "write_admin_audit", audit)
+
+    result = await rollback_admin_question(
+        db,
+        1,
+        AdminQuestionRollbackRequest(version=2, reason="恢复旧答案"),
+        _principal(),
+    )
+
+    assert result.answer == "旧答案"
+    assert result.difficulty == 2
+    assert result.review_status == "approved"
+    assert result.is_active is True
+    assert audit.await_args.args[2] == "question.rollback"
+    assert audit.await_args.kwargs["severity"] == "critical"

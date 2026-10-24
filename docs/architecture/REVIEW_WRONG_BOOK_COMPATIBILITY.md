@@ -162,5 +162,5 @@ node miniprogram/tests/test-wrong-book-date-filter.js
 - 未执行真实微信开发者工具/模拟器/真机、真实弱网或进程终止、生产 Admin 浏览器、真实 Redis 中断恢复、完整 worker/scheduler、PostgreSQL 并发、外部 OCR/AI 或备份恢复演练。上述 SQLite 与 Node 证据均不能升级为生产或设备验收。
 - 错题本 `delete` 是硬删除路径，测试仅允许临时 SQLite；尚未对生产或用户数据做任何删除操作。
 - AI 错因建议的完整外部模型调用与 worker 循环未在本次验证；只完成代码语义和静态/单元边界盘点。
-- `questions.review_status = re_pending`、重审工作台、已入库题目重审/版本回滚仍是设计预留；本基线不改变审核状态机。
+- 已入库题目 `re_pending`、重审工作台与版本回滚已由 Admin 题库域实现；错题复习域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
 - `practice_service.use_leitner` 仍有 TODO(V3)。实现向量/path 结果后的到期过滤和 Leitner fallback 会改变选题行为，必须单独立项，不能混入本批等价审查。

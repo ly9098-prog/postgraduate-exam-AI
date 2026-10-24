@@ -96,5 +96,5 @@ node miniprogram/tests/test-storage-session-cleanup.js
 - 考试专项测试当前仅覆盖服务层开始/提交主链；未覆盖完整 API 错误映射、过时 grace、取消并发、历史分页、PostgreSQL 行锁/部分唯一索引并发和真实外部环境。
 - 未执行真实微信开发者工具/模拟器/真机、真实弱网/进程终止、生产 Admin 浏览器、真实 Redis 中断恢复、完整 worker、PostgreSQL 并发、外部 OCR/AI 或备份恢复演练。
 - 考试域仍需后续按“开始 → 保存 → 过时 → 交卷 → 结果 → 历史”补专项测试与真实设备/生产验证。
-- `questions.review_status = re_pending`、重审工作台、已入库题目重审/版本回滚仍是设计预留。
+- 已入库题目 `re_pending`、重审工作台与版本回滚已由 Admin 题库域实现；考试域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
 - `practice_service.use_leitner` 仍有 TODO(V3)，不能混入本批等价审查。

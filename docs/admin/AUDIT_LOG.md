@@ -172,9 +172,14 @@ question.update           # important（编辑；含图片上传/替换/删除�
 question.delete           # critical（软删除）
 question.toggle_active    # important（上下架；非已审核题目不可激活）
 question.batch_delete     # critical（批量软删除）
+question.approved         # important（已入库题目重审通过）
+question.rejected         # important（已入库题目重审拒绝）
+question.batch_approved   # critical（已入库题目批量重审通过）
+question.batch_rejected   # critical（已入库题目批量重审拒绝）
+question.rollback         # critical（回滚到指定版本并追加新版本）
 question.backfill_embeddings # normal（批量回填 embedding 向量）
 
-> 2026-08-10 同步：题目审核（通过/拒绝）走导入管理接口（import 级，见 REVIEW_FLOW.md §3），审核动作记录在 `question_imports.status / reviewed_by / reviewed_at`，不写 `question.*` 审计动作。代码中不存在 `question.approve` / `question.reject` / `question.batch_approve` / `question.batch_reject` / `question.rollback`；编辑统一写 `question.update`（含图片/选项操作，复用 update_admin_question 写入），旧文档示例 `question.edit` 已废弃。
+> 2026-10-24 同步：首次导入审核走导入管理接口（import 级，见 REVIEW_FLOW.md §3），审核动作记录在 `question_imports.status / reviewed_by / reviewed_at`，不写 `question.*` 审计动作。已入库题目重审/回滚写上表 `question.*` 动作；编辑统一写 `question.update`（含图片/选项操作，复用 update_admin_question 写入），旧文档示例 `question.edit` 已废弃。
 >
 > 2026-10-23 同步：本清单按代码实际写入值逐项核对补全——科目/后台管理员/小程序用户的 `.edit` 旧名更正为 `.update`（代码无 `subject.edit` / `admin_user.edit` / `app_user.edit`）；补齐 `import.batch_answer_image_fill`、`knowledge.create_edge` / `knowledge.infer_edges`、`syllabus.*`、`vector_config.update`、`admin_user.change_password` / `admin_user.reset_password` / `admin_user.force_logout`、`app_user.update` / `app_user.bind_admin` / `app_user.unbind_admin`。「具体 action 以实现写入值为准」的原则适用于全部章节；severity 缺省为 `normal`（`write_admin_audit` 默认值）。
 

@@ -22,6 +22,7 @@ from app.schemas.admin_questions import (
     AdminQuestionBatchFailure,
     AdminQuestionBatchResult,
     AdminQuestionPatchRequest,
+    AdminQuestionRollbackRequest,
     AdminQuestionToggleActiveRequest,
 )
 from app.services.admin_audit_service import write_admin_audit
@@ -53,6 +54,25 @@ _EDIT_FIELDS = (
 )
 
 _CONTENT_PREVIEW_MAX_LENGTH = 200
+_REVIEW_ALLOWED_TRANSITIONS = {
+    "re_pending": ("approved", "rejected"),
+    "rejected": ("approved",),
+}
+_ROLLBACK_QUESTION_FIELDS = (
+    "subject_id",
+    "question_type",
+    "content",
+    "options",
+    "answer",
+    "analysis",
+    "difficulty",
+    "image_url",
+    "source",
+    "source_type",
+    "source_file",
+    "raw_content",
+    "year",
+)
 
 
 def _escape_like_keyword(keyword: str) -> str:
@@ -186,6 +206,28 @@ async def _resolve_question_subject(db: AsyncSession, question: Question) -> Non
         question.subject_ref = result.scalar_one_or_none()
 
 
+async def _has_question_review_permission(
+    db: AsyncSession, operator: AdminPrincipal
+) -> bool:
+    from app.core.admin_security import _get_permission_names
+
+    return "question:review" in await _get_permission_names(db, operator.role_id)
+
+
+def _review_audit_detail(
+    question: Question,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    reason: str | None,
+) -> dict[str, Any]:
+    return {
+        "question": _question_summary(question),
+        "before": before,
+        "after": after,
+        "reason": reason,
+    }
+
+
 async def list_admin_questions(
     db: AsyncSession,
     page: int,
@@ -205,7 +247,11 @@ async def list_admin_questions(
     if subject_id is not None:
         conditions.append(Question.subject_id == subject_id)
     if subject_codes:
-        normalized_codes = tuple(dict.fromkeys(code.strip() for code in subject_codes if code and code.strip()))
+        normalized_codes = tuple(
+            dict.fromkeys(
+                code.strip() for code in subject_codes if code and code.strip()
+            )
+        )
         if normalized_codes:
             conditions.append(
                 Question.subject_id.in_(
@@ -391,6 +437,9 @@ async def update_admin_question(
     if not changed_fields:
         return question
 
+    previous_review_status = question.review_status
+    needs_re_review = not await _has_question_review_permission(db, operator)
+
     # Audit keeps the pre-change values; immutable question revisions are
     # created *after* the mutation reaches its final scalar + KP state.
     before_changed = {
@@ -431,6 +480,9 @@ async def update_admin_question(
 
     await _resolve_question_subject(db, question)
 
+    if needs_re_review:
+        question.review_status = "re_pending"
+
     after_kp_map = await load_question_kps(db, [question.id])
     after_kps = after_kp_map.get(question.id, [])
     after_changed = {
@@ -459,6 +511,8 @@ async def update_admin_question(
             "changed_fields": changed_fields,
             "before": before_changed,
             "after": after_changed,
+            "review_status_before": previous_review_status,
+            "review_status_after": question.review_status,
             "edit_reason": edit_reason,
         },
         request=request,
@@ -834,6 +888,14 @@ async def toggle_active_admin_question(
 
     if data.is_active and question.review_status != "approved":
         raise ValueError("非已审核题目不能激活")
+    if (
+        data.is_active
+        and question.review_status == "approved"
+        and not question.is_active
+    ):
+        # Restoring a rejected question through the generic toggle would bypass
+        # the dedicated re-review audit path.
+        raise ValueError("已拒绝题目不能通过上下架恢复，请使用重审通过")
     before = {"is_active": question.is_active}
     changed = question.is_active != data.is_active
     question.is_active = data.is_active
@@ -859,6 +921,194 @@ async def toggle_active_admin_question(
             "question": _question_summary(question),
             "before": before,
             "after": {"is_active": question.is_active},
+        },
+        request=request,
+    )
+    return question
+
+
+async def review_admin_question(
+    db: AsyncSession,
+    question_id: int,
+    decision: str,
+    operator: AdminPrincipal,
+    reason: str | None = None,
+    request: Request | None = None,
+) -> Question:
+    """Re-review an already published question.
+
+    ``re_pending`` is the normal queue entry.  A previously rejected question can
+    be restored by a reviewer, but approval never bypasses the active flag.
+    """
+    if decision not in ("approved", "rejected"):
+        raise ValueError("无效的审核操作")
+    if decision == "rejected" and not (reason or "").strip():
+        raise ValueError("拒绝原因不能为空")
+
+    question = await get_admin_question(db, question_id)
+    await _resolve_question_subject(db, question)
+    allowed = _REVIEW_ALLOWED_TRANSITIONS.get(str(question.review_status or ""), ())
+    if decision not in allowed:
+        raise ValueError("该题目当前状态不能执行此审核操作")
+
+    before = {"review_status": question.review_status, "is_active": question.is_active}
+    question.review_status = decision
+    question.is_active = decision == "approved"
+
+    from app.services.question_revision_service import ensure_question_revision
+
+    await ensure_question_revision(
+        db,
+        question,
+        editor_id=operator.id,
+        change_source="admin",
+        edit_reason=(reason or "").strip() or "re-review approve",
+    )
+    await write_admin_audit(
+        db,
+        operator,
+        f"question.{decision}",
+        "question",
+        question.id,
+        severity="important",
+        detail=_review_audit_detail(
+            question,
+            before,
+            {"review_status": question.review_status, "is_active": question.is_active},
+            (reason or "").strip() or None,
+        ),
+        request=request,
+    )
+    return question
+
+
+async def batch_review_admin_questions(
+    db: AsyncSession,
+    ids: list[int],
+    decision: str,
+    operator: AdminPrincipal,
+    reason: str | None = None,
+    request: Request | None = None,
+) -> AdminQuestionBatchResult:
+    success_ids: list[int] = []
+    failed_items: list[AdminQuestionBatchFailure] = []
+
+    for question_id in ids:
+        try:
+            await review_admin_question(
+                db, question_id, decision, operator, reason, request
+            )
+            success_ids.append(question_id)
+        except ValueError as exc:
+            failed_items.append(
+                AdminQuestionBatchFailure(id=question_id, error=str(exc))
+            )
+
+    await write_admin_audit(
+        db,
+        operator,
+        f"question.batch_{decision}",
+        "question_batch",
+        None,
+        severity="critical",
+        detail={
+            "requested_ids": ids,
+            "success_ids": success_ids,
+            "failed_items": [
+                {"id": item.id, "error": item.error} for item in failed_items
+            ],
+            "success_count": len(success_ids),
+            "failed_count": len(failed_items),
+            "decision": decision,
+            "reason": reason,
+        },
+        request=request,
+    )
+    return AdminQuestionBatchResult(success_ids=success_ids, failed_items=failed_items)
+
+
+async def rollback_admin_question(
+    db: AsyncSession,
+    question_id: int,
+    data: AdminQuestionRollbackRequest,
+    operator: AdminPrincipal,
+    request: Request | None = None,
+) -> Question:
+    """Restore a mutable projection from an immutable revision.
+
+    Rollback is itself a new revision, not a pointer move.  This preserves the
+    audit trail of the rejected/current state and keeps practice records bound to
+    the immutable version they were issued from.
+    """
+    question = await get_admin_question(db, question_id)
+    await _resolve_question_subject(db, question)
+    target = await db.scalar(
+        select(QuestionVersion).where(
+            QuestionVersion.question_id == question.id,
+            QuestionVersion.version == data.version,
+        )
+    )
+    if target is None:
+        raise ValueError("版本不存在")
+    if target.subject_id is None:
+        raise ValueError("目标版本缺少科目，不能回滚")
+
+    kp_result = await db.execute(
+        select(KnowledgePoint.name)
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .where(QuestionVersionKnowledgePoint.question_version_id == target.id)
+        .order_by(
+            QuestionVersionKnowledgePoint.position,
+            QuestionVersionKnowledgePoint.id,
+        )
+    )
+    target_kps = list(kp_result.scalars().all())
+
+    before = build_question_audit_snapshot(
+        question,
+        (await load_question_kps(db, [question.id])).get(question.id, []),
+    )
+    for field in _ROLLBACK_QUESTION_FIELDS:
+        setattr(question, field, getattr(target, field))
+    await db.flush()
+
+    from app.services.knowledge_point_service import (
+        replace_question_knowledge_points,
+    )
+
+    await replace_question_knowledge_points(db, question, target_kps, source="admin")
+    question.review_status = "approved"
+    question.is_active = True
+
+    from app.services.question_revision_service import ensure_question_revision
+
+    revision = await ensure_question_revision(
+        db,
+        question,
+        editor_id=operator.id,
+        change_source="admin",
+        edit_reason=data.reason,
+    )
+    await write_admin_audit(
+        db,
+        operator,
+        "question.rollback",
+        "question",
+        question.id,
+        severity="critical",
+        detail={
+            "question": _question_summary(question),
+            "before": before,
+            "after": build_question_audit_snapshot(
+                question,
+                (await load_question_kps(db, [question.id])).get(question.id, []),
+            ),
+            "target_version": int(target.version),
+            "new_version": int(revision.version),
+            "reason": data.reason,
         },
         request=request,
     )

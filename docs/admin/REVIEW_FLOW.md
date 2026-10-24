@@ -1,10 +1,11 @@
 # 题目审核流程设计
 
-> 版本：v2.3（审核工作台过滤与 re_pending 页面登记） | 状态：可启动开发 | 更新：2026-10-23
+> 版本：v2.4（已入库题目重审与版本回滚实现） | 状态：部分实现 | 更新：2026-10-24
 > 修订自审计报告 C6：完善 editing/re_pending 状态机；引入 question_versions 快照；权限分级
 > 2026-05-30 变更原因：同步题库 Level 1 完全重复检测；导入阶段标记疑似重复，审核发布阶段按 `subject + question_hash` 拦截。
 > 2026-08-10 变更原因：题目知识点改由 `question_knowledge_points` 关联表保存（`questions.knowledge_points` 列移除）；编辑审计动作统一为 `question.update`。
 > 2026-10-23 变更原因：§6 审核工作台按 `review-query-state.ts` / `page.tsx` 复核改写（过滤条件清单、答案状态筛选、re_pending 孤儿页面登记）。
+> 2026-10-24 变更原因：实现已入库题目 `re_pending` 写入、单题/批量重审与版本回滚；首次导入审核仍保持在 `/imports`。
 
 ---
 
@@ -79,15 +80,15 @@
 - 首次审核操作 `question_imports`，接口为 `POST /api/admin/v1/imports/questions/{importId}/approve`（审核即发布）与 `POST /api/admin/v1/imports/questions/{importId}/reject`；未人工确认的 import 不得进入正式刷题池。
 - 导入阶段 Level 1 重复检测只写 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`；不删除、不自动拒绝导入题。
 - 审核通过 / 发布写入 `questions` 前必须按 `subject_id + question_hash` 查询正式题库；命中完全重复时不重复创建，将导入题置为 `published` 并挂到已发布题目 `question_id`。
-- 已入库题目重审（approve/reject）当前**未实现**——无 `/questions/{id}/approve` 等接口；重审设计见 §3.4（设计预留）。
-- `re_pending` 状态为**设计预留**：当前 `PATCH /questions/{id}` 编辑不改变 review_status（`_EDIT_FIELDS` 不含 review_status），FastAPI 端无需过滤；未来实现时须过滤非 approved 题目。
+- 已入库题目重审已实现：`POST /questions/{id}/approve`、`POST /questions/{id}/reject`、`POST /questions/batch-approve`、`POST /questions/batch-reject`；仅 `re_pending` 可通过/拒绝，`rejected` 可重审通过。
+- `re_pending` 写入已实现：`PATCH /questions/{id}` 发生实际字段变更且操作者无 `question:review` 权限时，`review_status → re_pending`；持有 `question:review` 的编辑者保持原状态。
 - `is_active=false` 时，**无论 review_status 是什么**，题目不会出现在小程序刷题池。
 
 ---
 
 ## 三、审核操作 API
 
-> 2026-08-10 同步：审核全部走**导入管理**接口（`/api/admin/v1/imports`，权限 `import:write`），审核即发布——approve 直接写入正式 `questions`。**不存在** `POST /questions/{id}/approve`、`/reject`、`/batch-approve`、`/batch-reject` 等接口（§3.2/3.3/3.4 原设计未实现，归入 §3.4 预留说明）。
+> 2026-10-24 同步：**首次审核**仍走导入管理接口（`/api/admin/v1/imports`，权限 `import:write`），审核即发布。**已入库题目重审**走 `/questions`（单题权限 `question:review`，批量权限 `question:batch_review`），不创建新题目，只更新既有 `questions.review_status/is_active`、追加版本并写审计。
 
 ### 3.1 首次审核导入题目（question_imports）
 
@@ -123,14 +124,13 @@ PUT  /api/admin/v1/imports/questions/{importId}            # 修改导入题字�
 
 AI 补全只作为辅助任务，结果写入导入题字段（`parsed_*` / `ai_*`），**不绕过人工确认**；`/complete` 与 `/batch-complete` 分别写 `import.complete` / `import.batch_complete` 审计。
 
-### 3.4 已入库题目重审（设计预留，未实现）
+### 3.4 已入库题目重审（已实现）
 
-以下原设计端点当前**未实现**，仅保留路径命名以便未来扩展：
 - `POST /questions/{id}/approve`（重审通过，`review_status → approved`、`is_active → true`）
-- `POST /questions/{id}/reject`（重审拒绝，`review_status → rejected`、`is_active → false`）
+- `POST /questions/{id}/reject`（重审拒绝，`review_status → rejected`、`is_active → false`；body `reason` 必填）
 - `POST /questions/batch-approve` / `POST /questions/batch-reject`（批量重审，ids 上限 50）
 
-实现时须遵循：每条独立事务、失败写 `failedItems`、整体写一条 critical 审计（`detail.extra.successIds / failedItems / count`）；已入库题目的 `review_status` 目前只会是 `approved`（无其他写入口）。
+批量接口逐题执行，失败项写入 `failedItems`，整体提交后写一条 critical 审计（`success_ids / failed_items / success_count / failed_count`）。批量拒绝使用统一 reason；需要逐题理由时使用单题接口。
 
 ---
 
@@ -152,7 +152,7 @@ Body: { content?, options?, answer?, analysis?, difficulty?, knowledgePoints?, e
    - 只改 subject → 旧知识点名在新科目重建
    - 同时改 → 新 subject + 新知识点
    - `knowledgePoints: null` → 显式清空映射
-4. 更新 review_status（**当前未实现**——设计预留）：原设计根据 operator 权限决定——持有 question:review → 保持原 review_status；仅持有 question:write → review_status → "re_pending"。当前实现 `_EDIT_FIELDS` 不含 `review_status`，编辑不改变审核状态，响应 `reviewStatus` 恒为当前值（通常 approved）。
+4. 更新 review_status：持有 question:review → 保持原 review_status；仅持有 question:write → review_status → "re_pending"。
 5. 写 audit_log（severity: important，action=`question.update`）
    detail: { question, changed_fields, before, after, editReason }
 
@@ -183,7 +183,7 @@ GET /api/admin/v1/questions/:id/versions
 }
 ```
 
-### 4.3 回滚到指定版本（保留预留位）
+### 4.3 回滚到指定版本（已实现）
 
 ```
 POST /api/admin/v1/questions/:id/rollback
@@ -195,7 +195,7 @@ Body: { "version": 2, "reason": "原版本更准确" }
 - 用目标版本内容覆盖 questions
 - 写 audit_log（severity: critical）
 
-注：**未实现**（设计预留，保留 API 路径以便未来扩展不影响命名）。
+权限为 `question:write + question:review`。实现为“用目标版本覆盖当前投影，再追加新版本”，不是移动 `current_version_id` 指针；回滚后 `review_status=approved`、`is_active=true`，写 critical 审计 `question.rollback`。目标版本缺少科目时拒绝回滚。
 ```
 
 ---
@@ -220,7 +220,7 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 
 ### 过滤条件（当前实现）
 
-- 审核状态（`status`，默认 `pending`）：下拉选项 `pending` / `approved` / `rejected` / `published` / 全部（`re_pending` 为设计预留，当前无此状态数据）
+- 审核状态（`status`，默认 `pending`）：下拉选项 `pending` / `approved` / `rejected` / `published` / 全部；`re_pending` 属已入库题目重审域，在 `/review` 工作台处理
 - 科目（`subject_id`）：subjects 下拉选择（单选，非树形）
 - 来源（`source_type`）：手动上传 / AI 导入 / PDF 导入
 - 风险等级（`risk_level`）：`high` / `medium` / `low`
@@ -237,18 +237,17 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 - 拒绝时弹出 reason 输入框（必填）
 - 批量选中（上限 50） + 批量通过/拒绝
 
-### re_pending 工作台（后端未实现；前端存在未接入导航的孤儿页面）
+### re_pending 工作台（已实现）
 
-- 后端无 re_pending 写入路径：`_EDIT_FIELDS` 不含 review_status（`backend/app/services/admin_question_service.py:37-53`），生产代码无 re_pending 赋值（仅 CSV 导入可显式带入，`backend/app/services/question_csv_import_service.py:241-268`）；审核页没有可用写入路径（`REVIEW_QUEUE_COMPATIBILITY.md` §5）。
-- 管理端存在历史页面 `admin-frontend/src/app/(admin)/review/page.tsx`：含 `pending | re_pending` 两个 Tab；re_pending Tab 查询 `/questions?review_status=re_pending`（page.tsx:131），并拉取版本历史做 diff 展示（page.tsx:146-195）。
-- 该页面不在导航中：`admin-frontend/src/lib/routes.ts` 的 nav 项无 `/review`（只有 `/imports/review` 等），全仓无指向 `/review` 的链接，只能手输 URL 到达。
-- 「版本对比（左：上次 approved 版本，右：当前编辑版本，diff 高亮）」与「接受变更 / 回滚」仅为 UI 预留，后端无对应写入端点；后续由 pm 决定删除该孤儿页面或补后端实现。
+- 管理端 `/review` 已接入导航，权限为 `question:review`；页面查询 `re_pending` / `rejected` 队列，展示当前内容与最近历史版本 diff。
+- 单题通过/拒绝按权限显示；批量通过/拒绝需要 `question:batch_review`；回滚按钮需要同时具备 `question:write` 与 `question:review`。
+- 首次导入审核仍在 `/imports/review`，`/review` 不承担 pending import 队列。
 
 ---
 
 ## 七、审计日志格式
 
-> 2026-08-10 同步：审核（通过/拒绝）本身**不写** `question.*` 审计，动作记录在 `question_imports.status / reviewed_by / reviewed_at`；题目编辑统一写 `question.update`。以下 `question.approve` / `question.batch_approve` 为设计参考（未实现），`import.batch_complete` 为实际批量动作样例。
+> 2026-10-24 同步：首次导入审核不写 `question.*` 审计，动作记录在 `question_imports.status / reviewed_by / reviewed_at`；已入库题目重审写 `question.approved` / `question.rejected` / `question.batch_approved` / `question.batch_rejected`。题目编辑统一写 `question.update`。
 
 ### question.update（编辑，实际实现）
 
@@ -288,11 +287,11 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 }
 ```
 
-### question.approve（设计参考，未实现）
+### question.approved（已入库重审，实际实现）
 
 ```json
 {
-  "action": "question.approve",
+    "action": "question.approved",
   "severity": "important",
   "resourceType": "question",
   "resourceId": "123",
@@ -305,11 +304,11 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 }
 ```
 
-### question.batch_approve（设计参考，未实现）
+### question.batch_approved（已入库批量重审，实际实现）
 
 ```json
 {
-  "action": "question.batch_approve",
+    "action": "question.batch_approved",
   "severity": "critical",
   "resourceType": "question",
   "resourceId": "batch",
@@ -337,8 +336,10 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 | 导入题审核通过/拒绝（§3.1） | ✓ import:write | ✓ | ✗ |
 | 批量审核（§3.2） | ✓ import:write | ✓ | ✗ |
 | 删除题目 | ✓ question:delete | ✗ | ✗ |
-| 编辑后是否进 re_pending（未实现） | N/A | N/A | N/A |
-| 回滚版本（未实现） | N/A | ✗ | ✗ |
+| 编辑后进 re_pending | N/A | question:write（无 review 权限时） | ✓ |
+| 已入库题目重审 | ✓ question:review | ✓ | ✗ |
+| 批量重审 | ✓ question:batch_review | ✓ | ✗ |
+| 回滚版本 | ✓ question:write + question:review | ✗ | ✗ |
 
 ---
 
@@ -349,6 +350,6 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 1. **编辑必留痕**：每次 questions 写操作（有实际字段变更）必先写 question_versions 快照
 2. **审核必有据**：approve/reject 必有 operatorId（非脚本场景）
 3. **批量必返明细**：批量接口必须返回 successIds + failedItems
-4. **状态机闭合**：`question_imports.status` 取值在 `{pending, approved, rejected, published}` 内；`questions.review_status` 目前仅 `approved`（`re_pending` 为设计预留，未实现时无写入路径）
+4. **状态机闭合**：`question_imports.status` 取值在 `{pending, approved, rejected, published}` 内；`questions.review_status` 取值在 `{approved, re_pending, rejected}` 内，转换仅允许 `re_pending → approved/rejected`、`rejected → approved`
 5. **审计先行**：critical 操作的 audit_log 写入失败 → 整个事务回滚
 6. **AppUser 不可见**：is_active=false 或 review_status ≠ approved 的题目，**绝不可**出现在小程序刷题池

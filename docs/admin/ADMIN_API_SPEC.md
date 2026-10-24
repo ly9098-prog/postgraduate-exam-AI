@@ -186,10 +186,15 @@ POST   /v1/auth/refresh
 | POST | `/questions/{id}/images` | 上传/替换题干或选项图片（multipart） | question:write |
 | DELETE | `/questions/{id}/images` | 删除题干或选项图片 | question:write |
 | PATCH | `/questions/{id}/toggle-active` | 上下架（非已审核题目不可激活） | question:write |
+| POST | `/questions/{id}/approve` | 已入库题目重审通过（仅 re_pending/rejected） | question:review |
+| POST | `/questions/{id}/reject` | 已入库题目重审拒绝（仅 re_pending；reason 必填） | question:review |
+| POST | `/questions/batch-approve` | 已入库题目批量重审通过（ids 上限 50） | question:batch_review |
+| POST | `/questions/batch-reject` | 已入库题目批量重审拒绝（ids 上限 50） | question:batch_review |
+| POST | `/questions/{id}/rollback` | 回滚到指定版本并追加新版本 | question:write + question:review |
 | POST | `/questions/embeddings/backfill` | 批量回填题目 embedding 向量 | question:write |
 | GET | `/questions/embeddings/status` | 查看向量功能状态与 embedding 统计 | question:read |
 
-> **审核通过/拒绝不走 `/questions`**：题目审核（含批量）全部在导入管理 `/imports`（§3.8，权限 `import:write`）。历史上文档化的 `POST /questions/{id}/approve`、`/reject`、`/batch-approve`、`/batch-reject`、`/rollback` **均未实现**，勿按此调用。
+> **首次导入审核不走 `/questions`**：pending import 审核全部在导入管理 `/imports`（§3.8，权限 `import:write`）。`/questions` 的 approve/reject/rollback 只处理已入库题目重审与版本回滚。
 
 **`GET /questions` keyword 搜索（2026-08-09 同步）**：
 - `keyword` 命中范围：`answer`、`analysis`、`raw_content` 模糊匹配，以及 `Question.id` 命中知识点的子查询。
@@ -687,7 +692,7 @@ operatorId=1&action=question.*&severity=critical
 
 ## 七、批量操作规范（I3 修订）
 
-> 2026-08-10 同步：题目批量接口为 `POST /questions/batch-delete`（question:delete）。`POST /questions/batch-approve` / `batch-reject` **未实现**——题目审核（含批量）走导入管理 `/imports/questions/batch-complete`（AI 补全）与 `/imports/{batchId}/approve|reject|publish`（§3.8）。
+> 2026-10-24 同步：题目批量接口包括 `POST /questions/batch-delete`（question:delete）与 `POST /questions/batch-approve` / `batch-reject`（question:batch_review，仅已入库重审）。首次导入审核仍走 `/imports/{batchId}/approve|reject|publish`；`/imports/questions/batch-complete` 是 AI 补全，不是审核。
 
 ```
 POST /v1/questions/batch-delete

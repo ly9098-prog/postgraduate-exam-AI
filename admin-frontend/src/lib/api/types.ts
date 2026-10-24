@@ -413,6 +413,15 @@ export type QuestionVersionDetail = QuestionVersion & {
   knowledge_points: string[];
 };
 
+export type AdminQuestionReviewRejectRequest = {
+  reason: string;
+};
+
+export type AdminQuestionRollbackRequest = {
+  version: number;
+  reason: string;
+};
+
 export type BatchFailure = {
   id: number;
   error: string;

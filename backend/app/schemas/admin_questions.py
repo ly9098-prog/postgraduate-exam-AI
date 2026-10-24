@@ -138,6 +138,15 @@ class AdminQuestionToggleActiveRequest(BaseModel):
     is_active: bool
 
 
+class AdminQuestionReviewRejectRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=256)
+
+
+class AdminQuestionRollbackRequest(BaseModel):
+    version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=256)
+
+
 class AdminQuestionBatchRequest(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=50)
 

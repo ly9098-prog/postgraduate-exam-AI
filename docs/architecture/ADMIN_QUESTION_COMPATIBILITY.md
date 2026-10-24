@@ -39,4 +39,4 @@
 
 - `questions/page.tsx` 仍承担筛选、列表/表格、抽屉展示、版本比较和多类编辑组合；本基线不宣称页面控制器已拆完。
 - 未在真实 Admin 登录会话中执行文件选择、上传、删除图片、快速添加选项和浏览器网络竞态验收。
-- `questions.review_status = re_pending`、已入库题目重审/回滚与对应 approve/reject/rollback 写入路径仍是设计预留，不属于本次等价治理。
+- 已入库题目 `re_pending`、重审 approve/reject 与 rollback 已在 Admin 题库域实现；本兼容基线原先的“设计预留”结论已被 2026-10-24 实现取代。

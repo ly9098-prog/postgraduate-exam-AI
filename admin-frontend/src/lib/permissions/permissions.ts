@@ -12,6 +12,8 @@ export type PermissionKey =
   | "question:read"
   | "question:write"
   | "question:delete"
+  | "question:review"
+  | "question:batch_review"
   | "subject:read"
   | "subject:write"
   | "subject:delete"

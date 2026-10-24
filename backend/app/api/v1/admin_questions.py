@@ -33,6 +33,8 @@ from app.schemas.admin_questions import (
     AdminQuestionExportRequest,
     AdminQuestionListItem,
     AdminQuestionPatchRequest,
+    AdminQuestionReviewRejectRequest,
+    AdminQuestionRollbackRequest,
     AdminQuestionToggleActiveRequest,
     AdminQuestionVersionDetail,
     AdminQuestionVersionListItem,
@@ -43,6 +45,7 @@ from app.schemas.common import paginated_response
 from app.schemas.vector import EmbeddingBackfillRequest
 from app.services.admin_question_export_service import build_admin_question_export
 from app.services.admin_question_service import (
+    batch_review_admin_questions,
     batch_delete_admin_questions,
     delete_question_asset_if_orphan,
     get_admin_question,
@@ -53,6 +56,8 @@ from app.services.admin_question_service import (
     merge_options,
     remove_option_image,
     remove_stem_image,
+    review_admin_question,
+    rollback_admin_question,
     soft_delete_admin_question,
     toggle_active_admin_question,
     update_admin_question,
@@ -305,9 +310,7 @@ async def list_questions(
     db: AsyncSession = Depends(get_db),
 ):
     normalized_subject_codes = [
-        code.strip()
-        for code in (subject_codes or "").split(",")
-        if code.strip()
+        code.strip() for code in (subject_codes or "").split(",") if code.strip()
     ]
     questions, total = await list_admin_questions(
         db,
@@ -372,8 +375,33 @@ async def export_questions(
 async def batch_delete_questions(
     data: AdminQuestionBatchRequest,
     request: Request,
+    current_admin: AdminPrincipal = Depends(require_permissions("question:delete")),
+    _: None = Depends(admin_rate_limit),
+    idem: IdempotencyClaim = Depends(require_idempotency),
+    db: AsyncSession = Depends(get_db),
+):
+    if idem.response is not None:
+        return AdminQuestionBatchResult(**idem.response)
+    try:
+        result = await batch_delete_admin_questions(
+            db, data.ids, current_admin, request
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await release_idempotent_request(idem)
+        raise
+    # Once committed, retain the pending reservation if Redis is unavailable.
+    await finish_idempotency(idem, result.model_dump(mode="json"))
+    return result
+
+
+@router.post("/batch-approve", response_model=AdminQuestionBatchResult)
+async def batch_approve_questions(
+    data: AdminQuestionBatchRequest,
+    request: Request,
     current_admin: AdminPrincipal = Depends(
-        require_permissions("question:delete")
+        require_permissions("question:batch_review")
     ),
     _: None = Depends(admin_rate_limit),
     idem: IdempotencyClaim = Depends(require_idempotency),
@@ -382,13 +410,45 @@ async def batch_delete_questions(
     if idem.response is not None:
         return AdminQuestionBatchResult(**idem.response)
     try:
-        result = await batch_delete_admin_questions(db, data.ids, current_admin, request)
+        result = await batch_review_admin_questions(
+            db, data.ids, "approved", current_admin, request=request
+        )
         await db.commit()
     except Exception:
         await db.rollback()
         await release_idempotent_request(idem)
         raise
-    # Once committed, retain the pending reservation if Redis is unavailable.
+    await finish_idempotency(idem, result.model_dump(mode="json"))
+    return result
+
+
+@router.post("/batch-reject", response_model=AdminQuestionBatchResult)
+async def batch_reject_questions(
+    data: AdminQuestionBatchRequest,
+    request: Request,
+    current_admin: AdminPrincipal = Depends(
+        require_permissions("question:batch_review")
+    ),
+    _: None = Depends(admin_rate_limit),
+    idem: IdempotencyClaim = Depends(require_idempotency),
+    db: AsyncSession = Depends(get_db),
+):
+    if idem.response is not None:
+        return AdminQuestionBatchResult(**idem.response)
+    try:
+        result = await batch_review_admin_questions(
+            db,
+            data.ids,
+            "rejected",
+            current_admin,
+            reason="批量重审拒绝",
+            request=request,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await release_idempotent_request(idem)
+        raise
     await finish_idempotency(idem, result.model_dump(mode="json"))
     return result
 
@@ -495,6 +555,76 @@ async def patch_question(
     except PermissionError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+
+@router.post("/{question_id}/approve", response_model=AdminQuestionListItem)
+async def approve_question(
+    question_id: int,
+    request: Request,
+    current_admin=Depends(require_permissions("question:review")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        question = await review_admin_question(
+            db, question_id, "approved", current_admin, request=request
+        )
+        await db.commit()
+        await db.refresh(question)
+        kp_map = await load_question_kps(db, [question.id])
+        return _to_admin_item(question, kp_map.get(question.id, []))
+    except ValueError as exc:
+        await db.rollback()
+        _raise_question_error(exc)
+
+
+@router.post("/{question_id}/reject", response_model=AdminQuestionListItem)
+async def reject_question(
+    question_id: int,
+    data: AdminQuestionReviewRejectRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("question:review")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        question = await review_admin_question(
+            db,
+            question_id,
+            "rejected",
+            current_admin,
+            reason=data.reason,
+            request=request,
+        )
+        await db.commit()
+        await db.refresh(question)
+        kp_map = await load_question_kps(db, [question.id])
+        return _to_admin_item(question, kp_map.get(question.id, []))
+    except ValueError as exc:
+        await db.rollback()
+        _raise_question_error(exc)
+
+
+@router.post(
+    "/{question_id}/rollback",
+    response_model=AdminQuestionListItem,
+)
+async def rollback_question(
+    question_id: int,
+    data: AdminQuestionRollbackRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("question:write", "question:review")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        question = await rollback_admin_question(
+            db, question_id, data, current_admin, request=request
+        )
+        await db.commit()
+        await db.refresh(question)
+        kp_map = await load_question_kps(db, [question.id])
+        return _to_admin_item(question, kp_map.get(question.id, []))
+    except ValueError as exc:
+        await db.rollback()
+        _raise_question_error(exc)
 
 
 @router.delete("/{question_id}")
