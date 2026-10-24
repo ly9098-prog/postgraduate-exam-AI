@@ -393,6 +393,7 @@ jobs:
             tests/test_services/test_adaptive_learning_service.py \
             tests/test_services/test_adaptive_learning_concurrency.py \
             tests/test_services/test_knowledge_map_compatibility.py \
+            tests/test_services/test_ai_analysis_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
