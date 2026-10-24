@@ -7,6 +7,7 @@ const { getChinaDate } = require('../../../utils/china-time');
 const errorDiagnosis = require('../utils/error-diagnosis');
 const { buildLocalErrorDistribution: _buildLocalErrorDistribution, getResultTip: _getResultTip } = require('./utils/result-tips');
 const { hasDetailedPracticePayload: _hasDetailedPayload, readSummaryFromOptions: _readSummaryFromOptions } = require('./utils/payload-readers');
+const { isPayloadRequestValid: _isPayloadRequestValid, extractCreatedAtFromCacheKey } = require('./utils/cache-validation');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -733,14 +734,7 @@ return '';
 }
 },
 _isPayloadRequestValid(value, expectedRequestId) {
-if (!value || typeof value !== 'object') return false;
-const source = value.data && typeof value.data === 'object' ? value.data : value;
-const expected = String(expectedRequestId || '').trim();
-if (!expected) return true;
-const actual = String(
-source.request_id || source.requestId || value.request_id || value.requestId || ''
-).trim();
-return !!actual && actual === expected;
+return _isPayloadRequestValid(value, expectedRequestId);
 },
 _isResultCacheValid(value, expectedCacheKey, expectedRequestId) {
 if (!value || typeof value !== 'object') return false;
@@ -750,10 +744,7 @@ const currentUserId = this._getCurrentUserId();
 const cachedUserId = value._userId === undefined || value._userId === null ? '' : String(value._userId);
 if (cachedUserId && (!currentUserId || cachedUserId !== currentUserId)) return false;
 let createdAt = Number(value._createdAt || 0);
-if (!(createdAt > 0) && value._cacheKey) {
-const match = /^pr_(\d+)_/.exec(String(value._cacheKey));
-if (match) createdAt = Number(match[1]) || 0;
-}
+if (!(createdAt > 0)) createdAt = extractCreatedAtFromCacheKey(value._cacheKey);
 if (createdAt > 0 && Date.now() - createdAt > RESULT_CACHE_MAX_AGE_MS) return false;
 return true;
 },
