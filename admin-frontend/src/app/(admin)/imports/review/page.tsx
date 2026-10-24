@@ -14,7 +14,7 @@ import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { useOutsideClick } from "@/lib/use-outside-click";
 import { reviewPageStyles } from "./review-page-styles";
-import { updateSegUrl } from "@/lib/segment-utils";
+import { executeSegmentReplace, resolveSegmentFileChange } from "./review-segment-replace";
 import type { BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
   reduceMultiBlankEditState,
@@ -726,35 +726,27 @@ export default function ImportReviewPage() {
   }, []);
 
   const handleSegmentReplace = useCallback(async (si: number, file: File) => {
-    if (!file || !canWrite) return;
-    const targetPreviewId = previewId;
-    setSegmentUploading(si);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const result = await apiRequest<{ url: string; filename: string }>("/imports/segment-image/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (previewId !== targetPreviewId) return;
-      setEditedSegments((prev) => {
-        if (!prev || si >= prev.length) return prev;
-        return updateSegUrl(prev, si, result.url);
-      });
-      updateMessage(`图片已替换：${result.filename}`);
-    } catch (err) {
-      updateMessage(err instanceof Error ? err.message : "图片上传失败");
-    } finally {
-      setSegmentUploading(-1);
-    }
-  }, [canWrite, previewId]);
+    await executeSegmentReplace(si, file, {
+      canWrite,
+      previewId,
+      setSegmentUploading,
+      setEditedSegments,
+      updateMessage,
+      uploadSegmentImage: async (f: File) => {
+        const formData = new FormData();
+        formData.append("file", f);
+        return apiRequest<{ url: string; filename: string }>("/imports/segment-image/upload", {
+          method: "POST",
+          body: formData,
+        });
+      },
+    });
+  }, [canWrite, previewId, apiRequest, setSegmentUploading, setEditedSegments, updateMessage]);
 
   const handleSegmentFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    const idx = segmentReplaceIdxRef.current;
+    const { file, index } = resolveSegmentFileChange(e, segmentReplaceIdxRef.current);
     segmentReplaceIdxRef.current = -1;
-    if (file && idx >= 0) handleSegmentReplace(idx, file);
+    if (file && index >= 0) handleSegmentReplace(index, file);
   }, [handleSegmentReplace]);
 
   const canBatchOperate = items.length > 0 && (selectedIds.size > 0 || Boolean(filters.batch_id || batchIdParam));
