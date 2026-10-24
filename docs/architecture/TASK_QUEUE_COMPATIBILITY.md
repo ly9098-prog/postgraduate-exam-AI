@@ -1,6 +1,6 @@
 # 任务队列语义与兼容基线
 
-核对日期：2026-10-23。对应重构计划阶段 0/3；范围仅限 `DurableTaskQueue`、v2 worker/outbox 调用和 Redis 键空间，不代表完整 worker 循环、生产 Redis 故障恢复或备份演练已完成。
+核对日期：2026-10-25。对应重构计划阶段 0/3；范围仅限 `DurableTaskQueue`、v2 worker/outbox 调用和 Redis 键空间，不代表完整 worker 循环、生产 Redis 故障恢复或备份演练已完成。
 
 ## 1. 入口与消费者
 
@@ -15,6 +15,7 @@
 | 过期回收 | `_reclaim_expired_v2`、`run_reaper_loop_v2` | scheduler/HTTP worker 启动 | 只回收 lease 已过期且 heartbeat 缺失的任务；v2 Lua 使用 Redis 时间。 |
 | 健康统计 | `queue_length_v2` 等、`get_metrics_v2` | Admin 任务页、readiness、指标采样 | v2 健康方法在 Redis 不可用时抛 `QueueHealthError`，不能伪装为空队列。 |
 | 死信/损坏管理 | `list_*_v2`、`retry_from_dead_v2`、`delete_*_v2`、`purge_dead_v2` | Admin 任务页/运维接口 | 保留可见错误摘要、FIFO/LIFO 顺序和受限容量；管理重试开启新 retry cycle。 |
+| v1 兼容健康/死信 | `queue_length`、`get_metrics`、`oldest_ready_age`、`list_dead`、`purge_dead` | 旧调用/迁移与诊断入口 | v1 深度、指标聚合、就绪年龄与死信投影规则已拆为纯契约；仍保留 v1 吞 Redis 异常、返回 0/本地计数的旧语义，不得与 v2 抛错语义合并。 |
 | v1→v2 迁移 | `drain_v1_to_v2`、`drain_all_v1_to_v2`、`delete_v1_keys` | 一次性迁移/运维工具 | v1 仅兼容保留，不被 v2 dispatcher 消费；每个任务由原子 Lua 迁移，校验身份、写 v2 hash/admission guard/ready list 后才移除 v1 位置。v2 满时保留 v1 队头；payload 缺失或身份不符时转为 v2 corrupt 诊断。 |
 
 ## 2. Redis 键空间与版本边界
@@ -32,6 +33,9 @@
 - worker 版本不兼容属于不可重试的业务拒绝，应进入死信/人工处理，而不是无限重试。
 - `TaskQueueUnavailableError` 只在 v2 dequeue/complete/fail 的 Redis 连接、超时或响应协议错误时抛出；调用方据此暂停/降级，不能用空任务代替。
 - v1 health 方法为了兼容旧调用会吞 Redis 异常并返回 0/本地计数；v2 health 方法必须抛错。不能把两套错误语义合并。
+- v1 `oldest_ready_age` 的历史口径保留：无任务/无 payload 或 `created_at=0` 返回 0；有效未来时间可返回负年龄；损坏 JSON、非数值时间戳等 payload 错误由外层异常兜底归零。v2 口径独立：无效载荷/时间归零，未来时间钳制为 0。
+- v1 死信列表保留有效 JSON 原对象、缺失 hash 标记 `hash_expired`、损坏 JSON 标记 `corrupt_payload`；purge 对缺失/损坏 payload 只移除列表不删 hash，对过期有效 payload 同时删除列表与 hash，边界时间为严格大于且不删除。
+- v1/v2 指标聚合均复制进程内计数器并按传入类型累加 `ready/processing/retry/dead`，不修改原计数器字典；v1 与 v2 的 Redis 错误边界仍由各自长度方法持有。
 - reaper 只能回收“lease 过期且 heartbeat 不存在”的任务；仍有心跳的 processing 任务不得被回收。
 - 管理重试死信任务必须重置 retry budget/error，但保留 generation/fencing 事实；普通 `retry_from_dead_v2` 与 LREM 删除是不同操作。
 
