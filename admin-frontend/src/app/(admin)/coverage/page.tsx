@@ -41,6 +41,13 @@ import type {
   KnowledgeGraphSubject,
   SyllabusVersionSummary,
 } from "@/lib/api/types";
+import {
+  computeStatusCounts,
+  filterCoverageItems,
+  computeIntegrityIssueCount,
+  computeQualitySampleCount,
+  hasGraphIssues,
+} from "@/lib/coverage-utils";
 
 const STATUS_LABEL: Record<CoverageStatus, string> = {
   empty: "无题",
@@ -146,12 +153,7 @@ export default function CoveragePage() {
   });
 
   const filteredItems = useMemo(() => {
-    const normalized = keyword.trim().toLowerCase();
-    return (reportQuery.data?.items ?? []).filter((item) => {
-      if (status && item.status !== status) return false;
-      if (!normalized) return true;
-      return `${item.subject_name} ${item.subject_code} ${item.name}`.toLowerCase().includes(normalized);
-    });
+    return filterCoverageItems(reportQuery.data?.items ?? [], keyword, status);
   }, [keyword, reportQuery.data?.items, status]);
 
   const summary = reportQuery.data?.summary;
@@ -176,31 +178,13 @@ export default function CoveragePage() {
     ? Math.round((summary.mapped_questions / summary.total_questions) * 100)
     : 0;
   const statusCounts = useMemo(() => {
-    const counts: Record<CoverageStatus, number> = { empty: 0, insufficient: 0, imbalanced: 0, healthy: 0 };
-    for (const item of reportQuery.data?.items ?? []) counts[item.status] += 1;
-    return counts;
+    return computeStatusCounts(reportQuery.data?.items ?? []);
   }, [reportQuery.data?.items]);
   const hasLocalFilters = Boolean(keyword.trim() || status);
   const hasScopeFilters = Boolean(subjectId || yearFrom || yearTo || minQuestions !== 10 || minQuestionsInput !== "10");
-  const integrityIssueCount = summary
-    ? summary.unversioned_questions
-      + summary.syllabus_snapshot_missing_questions
-      + Number(graph?.summary?.isolated_count ?? 0)
-      + Number(graph?.summary?.cycle_count ?? 0)
-    : 0;
-  const qualitySampleCount = quality
-    ? quality.unmapped_question_ids.length
-      + quality.missing_analysis_question_ids.length
-      + quality.image_reference_anomaly_question_ids.length
-      + quality.unversioned_question_ids.length
-      + quality.syllabus_snapshot_missing_question_ids.length
-      + quality.duplicate_groups.length
-    : 0;
-  const hasGraphIssues = Boolean(
-    (graph?.warnings?.length ?? 0)
-      || Number(graph?.summary?.isolated_count ?? 0)
-      || Number(graph?.summary?.cycle_count ?? 0),
-  );
+  const integrityIssueCount = computeIntegrityIssueCount(summary, graph);
+  const qualitySampleCount = computeQualitySampleCount(quality);
+  const hasGraphIssuesResult = hasGraphIssues(graph);
   const examYears = reportQuery.data?.exam_years ?? [];
 
   const resetScope = () => {
@@ -525,8 +509,8 @@ export default function CoveragePage() {
 
       ) : null}
 
-      {qualitySampleCount > 0 || hasGraphIssues ? (
-        <div className={`grid gap-5 ${qualitySampleCount > 0 && hasGraphIssues ? "xl:grid-cols-2" : ""}`}>
+      {qualitySampleCount > 0 || hasGraphIssuesResult ? (
+        <div className={`grid gap-5 ${qualitySampleCount > 0 && hasGraphIssuesResult ? "xl:grid-cols-2" : ""}`}>
           {qualitySampleCount > 0 ? (
             <ManagementPanel variant="quiet" title="题库质量样本" description="从每类异常中抽取可直接定位的题目样本。" icon={<ShieldAlert className="h-4 w-4" />}>
           {quality ? (
@@ -572,7 +556,7 @@ export default function CoveragePage() {
             </ManagementPanel>
           ) : null}
 
-          {hasGraphIssues ? (
+          {hasGraphIssuesResult ? (
             <ManagementPanel variant="quiet" title="知识图谱联动" description="复用现有 Knowledge Quality Report，并将统计范围限制到当前考纲知识点。" icon={<CircleHelp className="h-4 w-4" />}>
           <div className="space-y-4">
             {(graph?.warnings ?? []).length ? (
