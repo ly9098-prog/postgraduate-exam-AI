@@ -60,3 +60,45 @@ export function difficultyText(level: number): string {
   if (level === 4) return "较难";
   return "进阶";
 }
+
+import type { KnowledgeGraphSubject } from "@/lib/api/types";
+
+/**
+ * Select the default subject for the knowledge graph view.
+ * Prefers data_structure, falls back to the subject with the most edges/knowledge points.
+ */
+export function selectDefaultSubject(subjects: KnowledgeGraphSubject[]): KnowledgeGraphSubject | undefined {
+  if (!subjects.length) return undefined;
+  const dataStructure = subjects.find(
+    (item) => item.code === "data_structure" || item.name.trim() === "数据结构",
+  );
+  if (dataStructure) return dataStructure;
+  return [...subjects].sort(
+    (a, b) => b.edge_count - a.edge_count || b.knowledge_point_count - a.knowledge_point_count,
+  )[0];
+}
+
+/**
+ * Build conic-gradient stops for the relation donut chart.
+ * Returns an array of "color start% end%" strings.
+ */
+export function buildDonutStops(counts: Record<string, number>): string[] {
+  const entries = (Object.keys(RELATIONS) as RelationKey[])
+    .map((key) => ({ key, value: Number(counts[key]) || 0 }))
+    .filter((item) => item.value > 0);
+  const total = entries.reduce((sum, item) => sum + item.value, 0);
+  let cursor = 0;
+  return entries.map((item) => {
+    const start = cursor;
+    cursor += total ? (item.value / total) * 100 : 0;
+    return `${RELATIONS[item.key].color} ${start}% ${cursor}%`;
+  });
+}
+
+/**
+ * Compute the total count for the relation donut chart.
+ */
+export function computeDonutTotal(counts: Record<string, number>): number {
+  return (Object.keys(RELATIONS) as RelationKey[])
+    .reduce((sum, key) => sum + (Number(counts[key]) || 0), 0);
+}

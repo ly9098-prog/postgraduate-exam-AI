@@ -102,3 +102,74 @@ describe("difficultyText", () => {
   it("returns 较难 for level 4", () => { expect(difficultyText(4)).toBe("较难"); });
   it("returns 进阶 for level > 4", () => { expect(difficultyText(5)).toBe("进阶"); });
 });
+
+import { selectDefaultSubject, buildDonutStops, computeDonutTotal } from "./knowledge-graph-utils";
+import type { KnowledgeGraphSubject } from "./api/types";
+
+const subjects: KnowledgeGraphSubject[] = [
+  { id: 1, code: "computer_network", name: "计算机网络", level: 1, path: "/cn", knowledge_point_count: 50, edge_count: 80 },
+  { id: 2, code: "data_structure", name: "数据结构", level: 1, path: "/ds", knowledge_point_count: 60, edge_count: 100 },
+  { id: 3, code: "operating_system", name: "操作系统", level: 1, path: "/os", knowledge_point_count: 40, edge_count: 70 },
+];
+
+describe("selectDefaultSubject", () => {
+  it("prefers data_structure by code", () => {
+    expect(selectDefaultSubject(subjects)?.id).toBe(2);
+  });
+  it("prefers 数据结构 by name when no code match", () => {
+    const s = [{ ...subjects[0], code: "ds", name: "数据结构" }];
+    expect(selectDefaultSubject(s)?.name).toBe("数据结构");
+  });
+  it("falls back to highest edge_count", () => {
+    const s = [
+      { ...subjects[0], code: "x", name: "Other", edge_count: 50 },
+      { ...subjects[2], code: "y", name: "Another", edge_count: 200 },
+    ];
+    expect(selectDefaultSubject(s)?.id).toBe(subjects[2].id);
+  });
+  it("falls back to highest knowledge_point_count when edges equal", () => {
+    const s = [
+      { id: 1, code: "a", name: "A", level: 1, path: "", knowledge_point_count: 10, edge_count: 50 },
+      { id: 2, code: "b", name: "B", level: 1, path: "", knowledge_point_count: 20, edge_count: 50 },
+    ];
+    expect(selectDefaultSubject(s)?.id).toBe(2);
+  });
+  it("returns undefined for empty list", () => {
+    expect(selectDefaultSubject([])).toBeUndefined();
+  });
+});
+
+describe("buildDonutStops", () => {
+  it("returns empty for all-zero counts", () => {
+    expect(buildDonutStops({})).toEqual([]);
+  });
+  it("builds single stop when one relation", () => {
+    const stops = buildDonutStops({ prerequisite: 5 });
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toContain("0%");
+    expect(stops[0]).toContain("100%");
+  });
+  it("builds multiple stops proportionally", () => {
+    const stops = buildDonutStops({ prerequisite: 3, related: 1 });
+    expect(stops).toHaveLength(2);
+    expect(stops[0]).toContain("0%");
+    expect(stops[0]).toContain("75%");
+    expect(stops[1]).toContain("75%");
+    expect(stops[1]).toContain("100%");
+  });
+  it("handles NaN values as 0", () => {
+    expect(buildDonutStops({ prerequisite: NaN })).toEqual([]);
+  });
+});
+
+describe("computeDonutTotal", () => {
+  it("sums all relation counts", () => {
+    expect(computeDonutTotal({ prerequisite: 3, related: 2, next: 1 })).toBe(6);
+  });
+  it("returns 0 for empty", () => {
+    expect(computeDonutTotal({})).toBe(0);
+  });
+  it("treats NaN as 0", () => {
+    expect(computeDonutTotal({ prerequisite: NaN, related: 3 })).toBe(3);
+  });
+});

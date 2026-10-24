@@ -42,6 +42,9 @@ import {
   relationColor,
   difficultyText,
   type RelationKey,
+  selectDefaultSubject,
+  buildDonutStops,
+  computeDonutTotal,
 } from "@/lib/knowledge-graph-utils";
 import {
   cubicPoint,
@@ -853,16 +856,8 @@ function GraphCanvas({
 }
 
 function RelationDonut({ counts }: { counts: Record<string, number> }) {
-  const entries = (Object.keys(RELATIONS) as RelationKey[])
-    .map((key) => ({ key, value: Number(counts[key] ?? 0) }))
-    .filter((item) => item.value > 0);
-  const total = entries.reduce((sum, item) => sum + item.value, 0);
-  let cursor = 0;
-  const stops = entries.map((item) => {
-    const start = cursor;
-    cursor += total ? (item.value / total) * 100 : 0;
-    return `${RELATIONS[item.key].color} ${start}% ${cursor}%`;
-  });
+  const stops = buildDonutStops(counts);
+  const total = computeDonutTotal(counts);
 
   return (
     <div className="grid grid-cols-[88px_1fr] items-center gap-4">
@@ -1053,9 +1048,7 @@ export default function KnowledgeGraphPage() {
 
   useEffect(() => {
     if (subjectId || !subjects.data?.length) return;
-    const dataStructure = subjects.data.find((item) => item.code === "data_structure" || item.name.trim() === "数据结构");
-    const fallback = [...subjects.data].sort((a, b) => b.edge_count - a.edge_count || b.knowledge_point_count - a.knowledge_point_count)[0];
-    const selected = dataStructure ?? fallback;
+    const selected = selectDefaultSubject(subjects.data);
     if (selected) setSubjectId(String(selected.id));
   }, [subjectId, subjects.data]);
 
