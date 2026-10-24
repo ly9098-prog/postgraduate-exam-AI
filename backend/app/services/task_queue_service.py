@@ -101,7 +101,10 @@ from app.services.task_queue_v2_reaper_contract import (
     normalize_v1_reaper_result,
     normalize_v2_reaper_result,
 )
-from app.services.task_queue_v2_health_contract import v2_oldest_ready_age
+from app.services.task_queue_v2_health_contract import (
+    v1_oldest_ready_age,
+    v2_oldest_ready_age,
+)
 from app.services.task_queue_v2_diagnostics_contract import (
     build_v2_corrupt_entry,
     build_v2_dead_entry,
@@ -1163,17 +1166,9 @@ class DurableTaskQueue:
             if client is None:
                 return 0.0
             task_id = await client.lindex(_q_key(task_type), 0)
-            if not task_id:
-                await client.aclose()
-                return 0.0
             raw = await client.hget(_task_hash_key(task_id), "data")
             await client.aclose()
-            if raw:
-                task_data = json.loads(raw)
-                created_at = task_data.get("created_at", 0)
-                if created_at:
-                    return time.time() - created_at
-            return 0.0
+            return v1_oldest_ready_age(task_id, raw, now=time.time())
         except Exception:
             return 0.0
 

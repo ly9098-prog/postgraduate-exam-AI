@@ -20,3 +20,18 @@ def v2_oldest_ready_age(
     except (ValueError, TypeError, json.JSONDecodeError):
         return 0.0
     return max(0.0, now - created_at) if created_at else 0.0
+
+
+def v1_oldest_ready_age(
+    task_id: Any,
+    raw_payload: Any,
+    *,
+    now: float,
+) -> float:
+    """Return the exact historical v1 age, including negative future ages."""
+    if not task_id:
+        return 0.0
+    if not raw_payload:
+        return 0.0
+    created_at = json.loads(raw_payload).get("created_at", 0)
+    return now - created_at if created_at else 0.0
