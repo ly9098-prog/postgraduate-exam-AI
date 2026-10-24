@@ -387,6 +387,7 @@ jobs:
             tests/architecture/test_unique_conflict_boundaries.py \
             tests/test_services/test_pomodoro_scheduler.py \
             tests/test_services/test_practice_session_stats.py \
+            tests/test_services/test_exam_attempt_semantics.py \
             tests/test_services/test_adaptive_learning_service.py \
             tests/test_services/test_adaptive_learning_concurrency.py \
             tests/test_services/test_mastery_concurrency.py \
