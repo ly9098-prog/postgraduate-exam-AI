@@ -9,6 +9,7 @@ const { buildLocalErrorDistribution: _buildLocalErrorDistribution, getResultTip:
 const { hasDetailedPracticePayload: _hasDetailedPayload, readSummaryFromOptions: _readSummaryFromOptions } = require('./utils/payload-readers');
 const { isPayloadRequestValid: _isPayloadRequestValid, extractCreatedAtFromCacheKey } = require('./utils/cache-validation');
 const { resolveResultCounts } = require('./utils/result-counts');
+const { buildReviewItem: _buildReviewItem, normalizeReviewItem: _normalizeReviewItem } = require('./utils/review-item-builder');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -1024,72 +1025,10 @@ errorDonutSvg: buildErrorDonutSvg(localErrorDistribution)
 if (this._resultVisible) this.refreshWrongDiagnoses();
 },
 buildReviewItem(question, result, answer, index) {
-const questionId =
-question.id ??
-question.question_id ??
-question.questionId ??
-result.question_id ??
-result.questionId ??
-index + 1;
-const normalizedDiagnosis = errorDiagnosis.normalizeDiagnosis(result.error_diagnosis ?? result.errorDiagnosis);
-const isCorrectRaw =
-result.is_correct ??
-result.isCorrect ??
-answer.is_correct ??
-answer.isCorrect ??
-false;
-const status = normalizeReviewStatus(
-Object.assign({}, answer || {}, result || {}),
-!!isCorrectRaw
-);
-const kpList = normalizeKpList(
-result.knowledge_points ??
-result.knowledgePoints ??
-question.knowledge_points ??
-question.knowledgePoints
-);
-return {
-questionId,
-questionVersionId: result.question_version_id ?? result.questionVersionId ?? question.question_version_id ?? question.questionVersionId ?? null,
-wrongQuestionId: result.wrong_question_id ?? result.wrongQuestionId ?? null,
-displayIndex: pad2(index + 1),
-title: getQuestionTitle(question) || `第 ${index + 1} 题`,
-status,
-isCorrect: status === 'correct',
-isSkipped: status === 'skipped',
-isPartial: status === 'partial',
-userAnswer: formatAnswerPreview(answer.user_answer ?? answer.userAnswer ?? result.user_answer ?? result.userAnswer ?? ''),
-correctAnswer: formatAnswerPreview(result.correct_answer ?? result.correctAnswer ?? question.answer ?? ''),
-analysis: result.analysis ?? question.analysis ?? '',
-knowledgePoints: kpList,
-knowledgePoint: kpList[0] || '未标注知识点',
-errorDiagnosis: normalizedDiagnosis,
-errorDiagnosisLabel: normalizedDiagnosis ? normalizedDiagnosis.primaryLabel : errorDiagnosis.labelOf('unknown')
-};
+  return _buildReviewItem(question, result, answer, index, { normalizeReviewStatus, pad2, getQuestionTitle, formatAnswerPreview, formatMathPreviewText, normalizeKpList });
 },
 normalizeReviewItem(item, index) {
-const normalizedDiagnosis = errorDiagnosis.normalizeDiagnosis(item.errorDiagnosis ?? item.error_diagnosis);
-const isCorrectRaw = item.is_correct ?? item.isCorrect ?? item.correct ?? false;
-const status = normalizeReviewStatus(item, !!isCorrectRaw);
-const kpList = normalizeKpList(item.knowledge_points ?? item.knowledgePoints ?? item.knowledgePoint);
-return {
-questionId: item.questionId ?? item.question_id ?? item.id ?? index + 1,
-questionVersionId: item.questionVersionId ?? item.question_version_id ?? null,
-wrongQuestionId: item.wrongQuestionId ?? item.wrong_question_id ?? null,
-displayIndex: item.displayIndex || pad2(index + 1),
-title: formatMathPreviewText(item.title || getQuestionTitle(item)) || `第 ${index + 1} 题`,
-status,
-isCorrect: status === 'correct',
-isSkipped: status === 'skipped',
-isPartial: status === 'partial',
-userAnswer: formatAnswerPreview(item.userAnswer ?? item.user_answer ?? item.wrong_answer ?? ''),
-correctAnswer: formatAnswerPreview(item.correctAnswer ?? item.correct_answer ?? item.answer ?? ''),
-analysis: item.analysis ?? '',
-knowledgePoints: kpList,
-knowledgePoint: item.knowledgePoint || kpList[0] || '未标注知识点',
-errorDiagnosis: normalizedDiagnosis,
-errorDiagnosisLabel: normalizedDiagnosis ? normalizedDiagnosis.primaryLabel : errorDiagnosis.labelOf(item.error_type || 'unknown')
-};
+  return _normalizeReviewItem(item, index, { normalizeReviewStatus, pad2, getQuestionTitle, formatAnswerPreview, formatMathPreviewText, normalizeKpList });
 },
 _showAppOptions(opts) {
 const dialog = this.selectComponent('#appDialog');
