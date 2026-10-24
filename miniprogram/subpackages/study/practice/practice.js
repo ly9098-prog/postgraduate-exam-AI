@@ -83,6 +83,9 @@ const {
   computeDisplaySkippedCount,
 } = require('./utils/submit-result-builder')
 const {
+  buildSubmitResultPayload,
+} = require('./utils/submit-result-payload')
+const {
   resolveBatchErrorRecovery,
 } = require('./utils/batch-error-recovery')
 const {
@@ -1642,48 +1645,23 @@ return
 }
 submission.serverAccepted = true
 submission.retryBlocked = false
-const snapshotAnswerMap = submission.answerMap || {}
-const snapshotAnsweredFlags = submission.answeredFlags || {}
-const total = Number(submission.total) || 0
-const unanswered = Number(submission.unanswered) || 0
-const selectedSubjectId = submission.selectedSubjectId
-const selectedSubjectName = submission.selectedSubjectName
-const duration = Number(submission.duration) || 0
-const comboCount = Number(submission.comboCount) || 0
-const questionSource = questions.length ? questions : (submission.recoveryQuestions || [])
-const storedResults = buildStoredResults({
-serverResults: submitResult.results || [],
-partialQuestionIds: submission.partialQuestionIds || [],
-snapshotAnswerMap,
-snapshotAnsweredFlags,
-questionSource,
-})
-const lightQuestions = buildLightQuestions(questionSource)
 const partialCount = (submission.partialQuestionIds || []).length
-const serverSkippedCount = Number(submitResult.total_skipped ?? unanswered) || 0
-const displaySkippedCount = computeDisplaySkippedCount(serverSkippedCount, partialCount)
 var userId = this._getCurrentUserId()
 var cacheCreatedAt = Date.now()
 var cacheKey = 'pr_' + cacheCreatedAt + '_' + Math.random().toString(36).slice(2, 8)
-const localResultPayload = {
-correct: submitResult.total_correct || 0,
-wrong: submitResult.total_wrong || 0,
-skipped: displaySkippedCount,
-partial: partialCount,
-total,
-subject_id: selectedSubjectId,
-subject_name: selectedSubjectName,
-duration,
-traceId: submitResult.trace_id || submission.traceId || this._practiceSession.traceId,
-results: storedResults,
-questions: lightQuestions,
-comboCount,
-knowledge_session: submitResult.knowledge_session || submission.knowledgeScope || null,
-request_id: submission.requestId || '',
-_cacheKey: cacheKey,
-_userId: userId,
-_createdAt: cacheCreatedAt,
-}
+const localResultPayload = buildSubmitResultPayload({
+submission,
+submitResult,
+questions,
+traceId: this._practiceSession.traceId,
+cacheKey,
+userId,
+createdAt: cacheCreatedAt,
+buildStoredResults,
+buildLightQuestions,
+computeDisplaySkippedCount,
+})
+const displaySkippedCount = localResultPayload.skipped
 this._submittedResultPayload = localResultPayload
 var resultCacheStored = false
 try {
@@ -1693,14 +1671,14 @@ resultCacheStored = true
 console.warn('答题已提交成功，但本地结果缓存失败', storageError)
 }
 const resultUrl = buildPracticeResultUrl({
-correct: submitResult.total_correct || 0,
-wrong: submitResult.total_wrong || 0,
+correct: localResultPayload.correct,
+wrong: localResultPayload.wrong,
 skipped: displaySkippedCount,
 partial: partialCount,
-total,
-subjectId: selectedSubjectId,
-subjectName: selectedSubjectName || '',
-duration,
+total: localResultPayload.total,
+subjectId: localResultPayload.subject_id,
+subjectName: localResultPayload.subject_name || '',
+duration: localResultPayload.duration,
 cacheKey,
 requestId: submission.requestId || '',
 resultCacheStored,
