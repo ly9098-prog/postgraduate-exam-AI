@@ -133,6 +133,10 @@ from app.services.practice.smart_scored_supplement import (
     ScoredSupplementRequest,
     run_scored_supplement,
 )
+from app.services.practice.smart_path_supplement import (
+    SmartPathRequest,
+    run_smart_path,
+)
 from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
     _pick_graph_target_kps,
@@ -1601,8 +1605,6 @@ async def get_smart_practice_questions(
     # 在向量/path 召回后用 question_review_service.get_due_question_ids() 二次
     # 过滤 next_review_at > now 的题目，不足时用 random fallback 补齐（见
     # question_issuance.issue_practice_questions）。本函数只负责候选召回。
-    metadata: dict[int, dict] = {}
-
     # Phase 4: 实验策略解析（best-effort）
     experiment_info = {
         "experiment_id": None,
@@ -1665,123 +1667,58 @@ async def get_smart_practice_questions(
 
     # Phase 3: 知识路径策略
     if smart_strategy == "path":
-        try:
-            from app.services import knowledge_path_service
+        from app.services import knowledge_path_service
 
-            path_result = await knowledge_path_service.get_user_path_recommendations(
+        def build_path_conditions(
+            *,
+            candidate_ids: list[int],
+            scope_ids: list[int],
+            user_id: int,
+            exclude_answered: bool,
+            no_repeat_days: int | None,
+        ) -> list:
+            conditions = [
+                Question.id.in_(candidate_ids),
+                Question.is_active,
+                Question.subject_id.in_(scope_ids),
+                _practice_revision_scope_condition(scope_ids),
+            ]
+            excluded_sub = _build_excluded_question_subquery(
+                user_id=user_id,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+            )
+            if excluded_sub is not None:
+                conditions.append(Question.id.notin_(excluded_sub))
+            return conditions
+
+        path_result = await run_smart_path(
+            SmartPathRequest(
                 db=db,
                 user_id=user_id,
-                subject=subject_code,
-                limit=8,
-                questions_per_node=3,
-                write_logs=False,
+                subject_code=subject_code,
+                count=count,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+                scope_ids=scope_ids,
+                skip_finalize=skip_finalize,
+                experiment_id=experiment_info.get("experiment_id"),
+                variant_key=experiment_info.get("variant_key"),
+                request_id=request_id,
+                logger=logger,
+                load_path=knowledge_path_service.get_user_path_recommendations,
+                load_fallback=_smart_weakness_vector,
+                merge_results=merge_recommendation_results,
+                finalize=_maybe_finalize_smart,
+                build_conditions=build_path_conditions,
             )
-            path_qids = path_result.get("recommended_question_ids", [])
-            if path_qids:
-                # 获取题目。知识路径服务本身会尽量排除已做题，但最终刷题
-                # 接口仍需在当前 PracticeRecord 快照上强制执行 repeat-window，
-                # 防止缓存/并发写入导致已刚做过的题再次下发。
-                path_candidate_ids = list(
-                    dict.fromkeys(int(qid) for qid in path_qids if qid is not None)
-                )
-                path_conditions = [
-                    Question.id.in_(path_candidate_ids),
-                    Question.is_active,
-                    Question.subject_id.in_(scope_ids),
-                    _practice_revision_scope_condition(scope_ids),
-                ]
-                path_excluded_sub = _build_excluded_question_subquery(
-                    user_id=user_id,
-                    exclude_answered=exclude_answered,
-                    no_repeat_days=no_repeat_days,
-                )
-                if path_excluded_sub is not None:
-                    path_conditions.append(Question.id.notin_(path_excluded_sub))
-                q_result = await db.execute(
-                    select(Question)
-                    .where(and_(*path_conditions))
-                    .options(selectinload(Question.subject_ref))
-                )
-                q_map = {q.id: q for q in q_result.scalars().all()}
-                # 保持 path_qids 的顺序（按优先级排序）
-                # 先过滤再截断，避免前 count 个推荐中恰有近期已做题时，
-                # 后面的合法 path 候选明明存在却被无谓丢掉。
-                path_questions = [
-                    q_map[qid] for qid in path_candidate_ids if qid in q_map
-                ][:count]
+        )
+        if path_result is not None:
+            return path_result
+        # path 策略完全失败或没有可用候选，继续走 weakness_vector 逻辑
 
-                # 构建 metadata
-                node_map = {}
-                for node in path_result.get("nodes", []):
-                    for qid in node.get("recommended_question_ids", []):
-                        node_map[qid] = node
-
-                for q in path_questions:
-                    node = node_map.get(q.id, {})
-                    metadata[q.id] = {
-                        "recommend_reason": node.get(
-                            "reason", f"知识路径推荐：{node.get('name', '')}"
-                        ),
-                        "recommend_score": node.get("priority"),
-                        "strategy": "knowledge_path",
-                        "similarity": None,
-                    }
-
-                if len(path_questions) >= count:
-                    return await _maybe_finalize_smart(
-                        path_questions[:count],
-                        metadata,
-                        skip_finalize,
-                        db,
-                        user_id,
-                        subject_code,
-                        request_id=request_id,
-                        experiment_id=experiment_info.get("experiment_id"),
-                        variant_key=experiment_info.get("variant_key"),
-                    )
-
-                # 不足时 fallback 到 weakness_vector
-                logger.info(
-                    "path 策略题量不足 (%d/%d)，fallback 到 weakness_vector",
-                    len(path_questions),
-                    count,
-                )
-                remaining = count - len(path_questions)
-                fallback_questions, fallback_meta = await _smart_weakness_vector(
-                    db,
-                    user_id,
-                    subject_code,
-                    count=remaining,
-                    exclude_answered=exclude_answered,
-                    no_repeat_days=no_repeat_days,
-                    use_leitner=use_leitner,
-                    exclude_ids={q.id for q in path_questions},
-                    subject_ids=scope_ids,
-                )
-                path_questions, metadata = merge_recommendation_results(
-                    path_questions,
-                    metadata,
-                    fallback_questions,
-                    fallback_meta,
-                    count=count,
-                )
-                return await _maybe_finalize_smart(
-                    path_questions[:count],
-                    metadata,
-                    skip_finalize,
-                    db,
-                    user_id,
-                    subject_code,
-                    request_id=request_id,
-                    experiment_id=experiment_info.get("experiment_id"),
-                    variant_key=experiment_info.get("variant_key"),
-                )
-        except Exception:
-            logger.warning(
-                "knowledge_path 策略失败，fallback 到 weakness_vector", exc_info=True
-            )
-        # path 策略完全失败，继续走 weakness_vector 逻辑
-
+    metadata: dict[int, dict] = {}
     # 1. 获取薄弱知识点（Phase 2 优先使用掌握度画像）
     weak_kps: list[dict] = []
     try:
