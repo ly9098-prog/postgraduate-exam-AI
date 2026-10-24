@@ -86,6 +86,11 @@ from app.services.task_queue_v2_claim_contract import (
     build_v2_claimed_task,
     v2_dequeue_unavailable,
 )
+from app.services.task_queue_v2_completion_contract import (
+    apply_v2_completed_result,
+    build_v2_completed_payload,
+    v2_complete_unavailable,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1583,35 +1588,20 @@ class DurableTaskQueue:
                 return 0
             await self._load_scripts(client)
 
+            updated_at = time.time()
             if isinstance(task_or_id, Task):
-                task_data = task_or_id.to_dict()
-                task_data.update(
-                    {
-                        "status": TaskStatus.COMPLETED.value,
-                        "updated_at": time.time(),
-                        "lease_expires_at": 0.0,
-                        "owner_token": "",
-                        "error": "",
-                    }
+                task_json = build_v2_completed_payload(
+                    task_or_id,
+                    updated_at=updated_at,
                 )
-                task_json = json.dumps(task_data, default=str)
             else:
                 current = await client.hget(_v2_task_hash_key(task_id), "data")
-                data = (
-                    json.loads(current)
-                    if current
-                    else {"task_id": task_id, "task_type": tt, "payload": {}}
+                task_json = build_v2_completed_payload(
+                    task_id,
+                    task_type=tt,
+                    current_payload=current,
+                    updated_at=updated_at,
                 )
-                data.update(
-                    {
-                        "status": "completed",
-                        "updated_at": time.time(),
-                        "lease_expires_at": 0.0,
-                        "owner_token": "",
-                        "error": "",
-                    }
-                )
-                task_json = json.dumps(data, default=str)
 
             result = await self._evalsha_or_reload(
                 client,
@@ -1639,10 +1629,7 @@ class DurableTaskQueue:
                 queue_metrics["owner_fencing_rejected"] += 1
             else:
                 if isinstance(task_or_id, Task):
-                    task_or_id.status = TaskStatus.COMPLETED
-                    task_or_id.updated_at = time.time()
-                    task_or_id.lease_expires_at = 0.0
-                    task_or_id.error = ""
+                    apply_v2_completed_result(task_or_id, updated_at=updated_at)
                 logger.info("v2 Task completed: task_id=%s", task_id)
 
             return result
@@ -1653,7 +1640,7 @@ class DurableTaskQueue:
             redis_exc.ResponseError,
         ) as exc:
             raise TaskQueueUnavailableError(
-                f"Redis unavailable during complete: {exc}",
+                v2_complete_unavailable(exc),
                 retry_after=2,
             ) from exc
         except Exception as e:
