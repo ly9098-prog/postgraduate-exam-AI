@@ -97,4 +97,4 @@ node miniprogram/tests/test-storage-session-cleanup.js
 - 未执行真实微信开发者工具/模拟器/真机、真实弱网/进程终止、生产 Admin 浏览器、真实 Redis 中断恢复、完整 worker、PostgreSQL 并发、外部 OCR/AI 或备份恢复演练。
 - 考试域仍需后续按“开始 → 保存 → 过时 → 交卷 → 结果 → 历史”补专项测试与真实设备/生产验证。
 - 已入库题目 `re_pending`、重审工作台与版本回滚已由 Admin 题库域实现；考试域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
-- `practice_service.use_leitner` 仍有 TODO(V3)，不能混入本批等价审查。
+- `practice_service.use_leitner` 的到期过滤与 fallback 已由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行，考试域不参与选题调度。

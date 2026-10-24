@@ -142,4 +142,4 @@ tests/export/test_export_comprehensive.py
 - 本轮未执行真实微信开发者工具/模拟器/真机、真实 COS/Redis/WebSocket、生产 Admin 浏览器、外部 OCR/AI、完整 scheduler/worker 或备份恢复演练；上述 SQLite/Node 结果不能升级为设备、生产或外部服务验收。
 - 导出 Redis 集成测试需要显式集成环境；本机未启动 Redis 时不能记录为真实故障恢复通过。
 - 已入库题目 `re_pending` 重审/回滚已由 Admin 题库域实现；公式/导出域不参与审核状态迁移。
-- `practice_service.use_leitner` 仍有 TODO(V3)，实现会改变选题行为，需单独立项，不能混入公式/导出等价审查。
+- `practice_service.use_leitner` 的到期过滤与 fallback 已由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行；公式/导出域不参与选题调度。

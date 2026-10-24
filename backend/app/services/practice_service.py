@@ -1585,9 +1585,10 @@ async def get_similar_practice_questions(
     返回: (questions_list, metadata_dict)
         metadata_dict: {question_id: {"recommend_reason": ..., "recommend_score": ..., "strategy": ..., "similarity": ...}}
     """
-    # TODO(V3): use_leitner 参数当前未使用。向量召回后应通过
-    # question_review_service.get_due_question_ids() 做二次过滤，
-    # 过滤掉 next_review_at > now 的题目，不足时用 Leitner fallback 补齐。
+    # use_leitner 由 issuance 层统一执行：candidate_schedule.filter_due_candidates
+    # 在向量召回后用 question_review_service.get_due_question_ids() 二次过滤
+    # next_review_at > now 的题目，不足时用 random fallback 补齐（见
+    # question_issuance.issue_practice_questions）。本函数只负责候选召回。
     metadata: dict[int, dict] = {}
     scope_ids = (
         subject_ids
@@ -1868,9 +1869,10 @@ async def get_smart_practice_questions(
     Phase 2: 优先使用 UserKnowledgeState 画像，fallback 到近 30 天 PracticeRecord 统计。
     返回: (questions_list, metadata_dict)
     """
-    # TODO(V3): use_leitner 参数当前未使用。向量召回和 path 推荐结果应通过
-    # question_review_service.get_due_question_ids() 做二次过滤，
-    # 过滤掉 next_review_at > now 的题目，不足时用 Leitner fallback 补齐。
+    # use_leitner 由 issuance 层统一执行：candidate_schedule.filter_due_candidates
+    # 在向量/path 召回后用 question_review_service.get_due_question_ids() 二次
+    # 过滤 next_review_at > now 的题目，不足时用 random fallback 补齐（见
+    # question_issuance.issue_practice_questions）。本函数只负责候选召回。
     metadata: dict[int, dict] = {}
 
     # Phase 4: 实验策略解析（best-effort）

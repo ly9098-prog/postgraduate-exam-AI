@@ -92,4 +92,4 @@
 - 本机没有 PostgreSQL 服务端；`test_practice_submit_postgres.py` 在未设置 `PRACTICE_TEST_POSTGRES_URL` 时按设计跳过。上述真实 PG 并发/回滚证据是历史服务器隔离库验收，不能扩大为当前生产验收或完整 worker 验收。
 - 未执行真实微信开发者工具/模拟器/真机交卷恢复、真实弱网/进程终止、外部 OCR/AI、生产 Admin 浏览器、Redis 中断恢复、完整 worker、多 dispatcher 或备份恢复演练。
 - 已入库题目 `re_pending` 重审/回滚已由 Admin 题库域实现；刷题提交域仍只消费 `approved + is_active` 题目，本基线不参与审核状态迁移。
-- `practice_service` 的 `get_similar_practice_questions` 与 `get_smart_practice_questions` 仍有 `use_leitner` TODO(V3)。实现向量/path 结果后的到期过滤和 Leitner fallback 会改变选题行为，必须单独立项，不能混入等价重构。
+- `practice_service` 的 `get_similar_practice_questions` / `get_smart_practice_questions` 保留 `use_leitner` 形参，但实际到期过滤与 fallback 由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行（`question_issuance.issue_practice_questions` 调用），不再在各召回函数内重复实现。

@@ -64,4 +64,4 @@ Still unverified/unfinished:
 
 - No real WeChat `jscode2session`, real-device login, production Admin browser login/role exit, external OCR/AI, Redis outage, multi-worker auth replay, or backup restore exercise in this baseline.
 - This is not a recommendation to move `/api/v1/cache` or `/api/v1/sync` in this refactor. Any URL compatibility migration is a separate API/versioning decision.
-- `re_pending` re-review workspace/rollback and `practice_service.use_leitner` TODO(V3) remain explicit non-goals of this baseline.
+- `re_pending` re-review workspace/rollback and `practice_service.use_leitner` scheduling behavior remain explicit non-goals of this baseline; they are implemented in their respective domains.
