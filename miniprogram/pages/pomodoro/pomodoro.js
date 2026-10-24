@@ -15,7 +15,8 @@ const {
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('./utils/route-params')
 const pomodoroTheme = require('./utils/pomodoro-theme')
-const { buildSubjectChoices, normalizeCachedSubjects, subjectIconByCode } = require('./utils/subject-options')
+const { buildSubjectChoices, subjectIconByCode } = require('./utils/subject-options')
+const { buildApplySubjectsPlan } = require('./utils/apply-subjects-controller')
 const { createCountdownController } = require('./utils/countdown-controller')
 const { createFreeTimerController } = require('./utils/free-timer-controller')
 const { buildRingCache, shouldDrawRing } = require('./utils/ring-geometry')
@@ -78,8 +79,6 @@ const { createCanvasInitController } = require('./utils/canvas-init-controller')
 const { createDrawRingController } = require('./utils/draw-ring-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
-  findRouteSubject,
-  findLegacySubject,
   findSubjectById,
 } = require('./utils/subject-selection')
 const { formatElapsedSec, formatCountdownDisplay } = require('./utils/timer-math')
@@ -576,33 +575,14 @@ Page({
   },
 
   _applySubjects(flat) {
-    // Resolve presentation from current assets, not the cached icon paths.
-    const { choices, aggregate, leaves, coreSubjects } = normalizeCachedSubjects(flat)
-    this.setData({
-      subjects: choices,
-      aggregateAvailable: !!aggregate && coreSubjects.length === 4,
-      coreSubjects,
-      subjectsLoading: false,
-      subjectsError: '',
-    })
-    // 旧版 pomodoro_running_state 缓存可能只带 subject_code，用已加载列表迁移到 subject_id
+    const { patches, leaves } = buildApplySubjectsPlan(flat, this.data)
+    for (const patch of patches) {
+      this.setData(patch)
+    }
+    if (patches.length > 1) {
+      this._updateComputedFields()
+    }
     this._migrateRunningStateCache(leaves)
-
-    // Route presets can target either a stable subject_id or the canonical 408 subject_code.
-    // subject_code keeps strategy-driven Next Best Action usable before a subject has practice data.
-    const route = { subjectId: this.data.fromSubjectId, subjectCode: this.data.fromSubjectCode }
-    const routeSelection = (route.subjectId || route.subjectCode)
-      ? findRouteSubject({ route, aggregate, leaves, coreSubjects }) : null
-    if (routeSelection) {
-      this.setData(routeSelection)
-      this._updateComputedFields()
-    }
-    // 恢复的旧会话可能只有 subject_code（无 subject_id），用已加载列表回填
-    const legacySelection = findLegacySubject(this.data.selectedSubject, leaves)
-    if (legacySelection) {
-      this.setData(legacySelection)
-      this._updateComputedFields()
-    }
   },
 
   _lookupSubjectIdByCode(code) {
