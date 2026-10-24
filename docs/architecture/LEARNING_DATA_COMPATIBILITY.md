@@ -93,3 +93,11 @@
 - growth 分区保留已解锁徽章优先、不足 3 个时按锁定进度降序补足、已解锁超过 3 个时取输入顺序最后 3 个；adaptive 分区保留可见性、状态标签、目标召回率默认 0.8，并由既有 `_adaptive_summary` 生成摘要；yearly 分区保留 365 天活跃天数、总题数、最佳日期后 5 位文本与“暂无记录”回退。
 - 可选分区查询失败仍静默降级为 `None`，不把异常传播给整个 dashboard；这不是外部 AI 故障验收，只登记当前兼容行为。缓存命中仍直接返回，不重新计算分区。
 - 回归入口：`test_stats_dashboard_projection.py`、`test_trends_previous_period.py`、`test_stats_recommendation_compatibility.py`、`test_dashboard_stats_compatibility.py`。2026-10-25 定向运行 61 项通过；仍不覆盖真实 PostgreSQL、微信页面、生产 Admin 浏览器或外部 AI。
+
+## 8. 学习 AI 诊断与看板 LLM 降级边界
+
+- `stats_ai_projection.py` 只承接 provider 输出净化、LLM 输入 payload、prompt、成功响应投影和规则降级；`stats_service` 继续持有数据库聚合、模型配置解析、一次 provider 调用、42 秒同步超时、900/1000 token 预算、日志和异常边界。
+- `get_ai_diagnosis` 的 provider/config/JSON/空结果失败都返回本地数据诊断，不向同步小程序请求抛 500；无最近 60 天错题时直接返回“暂无足够错题数据”。知识点名称必须为字符串，建议非字符串置空，accuracy 大于 1 时按百分数归一并钳制到 0-1。
+- `get_dashboard_llm_analysis` 只发送聚合 payload：overview、趋势整体比率、最多 12 个科目、遗忘风险与 top topics 前 5；不发送原始题目、用户身份或凭据。provider 返回必须为 JSON object，summary 截断 320 字符，findings/risks/actions 分别限 6/4/4，空结果回落规则分析。
+- 规则降级保持 `model="rule-based"`、`generated=False`，并按“到期复习 → 高频遗忘/长期未掌握 → 薄弱学科 → 保持练习”生成行动；这不是外部 AI 可用性验收，只保证模型/配置/超时失败时响应可用。
+- 回归入口：`test_stats_ai_projection.py`、`test_dashboard_stats_compatibility.py`。2026-10-25 定向运行 35 项通过；未调用真实外部模型，不证明生产 AI 超时、网络故障或模型配置数据库行为。
