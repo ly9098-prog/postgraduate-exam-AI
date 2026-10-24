@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import timedelta
 
@@ -25,6 +24,13 @@ from app.services.learning_time_projection import (
 from app.services.learning_time_projection import (
     today_utc as _today_utc,
 )
+from app.services.study_report_projection import (
+    calc_priority,
+    classify_mastery,
+    extract_title,
+    mastery_suggestion,
+    safe_accuracy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,64 +38,11 @@ logger = logging.getLogger(__name__)
 # ── helpers ──────────────────────────────────────────────────────────
 
 
-def _safe_accuracy(correct: int, total: int) -> float:
-    if total == 0:
-        return 0.0
-    return round(correct / total * 100, 2)
-
-
-def _extract_title(content_json) -> str:
-    """从 Question.content (JSON) 中提取纯文本前 100 字符。"""
-    if not content_json:
-        return ""
-    # 如果已经是字符串且不是 JSON 格式，直接截断返回
-    if isinstance(content_json, str):
-        stripped = content_json.strip()
-        if not (stripped.startswith("[") or stripped.startswith("{")):
-            return content_json[:100]
-    try:
-        content = (
-            json.loads(content_json) if isinstance(content_json, str) else content_json
-        )
-        if isinstance(content, list):
-            for seg in content:
-                if isinstance(seg, dict) and seg.get("type") == "text":
-                    return seg.get("text", "")[:100]
-        if isinstance(content, str):
-            return content[:100]
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return ""
-
-
-def _classify_mastery(confidence: float, mastery_score: float) -> str:
-    if confidence < 0.3:
-        return "unknown"
-    if mastery_score < 40:
-        return "weak"
-    if mastery_score < 70:
-        return "normal"
-    if mastery_score < 85:
-        return "good"
-    return "mastered"
-
-
-def _mastery_suggestion(status: str) -> str:
-    return {
-        "weak": "建议优先复习该知识点，并补充同类新题",
-        "normal": "建议保持练习，重点关注错题",
-        "good": "掌握较好，可以低频复习",
-        "mastered": "已较稳定掌握，后续偶尔复现即可",
-        "unknown": "数据较少，建议继续练习以提高判断准确度",
-    }.get(status, "")
-
-
-def _calc_priority(overdue_days: int, wrong_count: int, box_level: int) -> str:
-    if overdue_days >= 3 or wrong_count >= 3 or box_level <= 1:
-        return "high"
-    if overdue_days >= 1 or wrong_count >= 1:
-        return "medium"
-    return "normal"
+_safe_accuracy = safe_accuracy
+_extract_title = extract_title
+_classify_mastery = classify_mastery
+_mastery_suggestion = mastery_suggestion
+_calc_priority = calc_priority
 
 
 async def _subject_exists(db: AsyncSession, subject_id: int) -> bool:

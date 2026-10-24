@@ -449,6 +449,7 @@ jobs:
             tests/test_services/test_pomodoro_history_projection.py \
             tests/test_services/test_stats_dashboard_projection.py \
             tests/test_services/test_stats_ai_projection.py \
+            tests/test_services/test_study_report_projection.py \
             tests/test_services/test_vector_config_service_compatibility.py \
             tests/test_services/test_formula_graph_spec_renderer_compatibility.py \
             tests/test_services/test_formula_graph_batch_state_compatibility.py \
