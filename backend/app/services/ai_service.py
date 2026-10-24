@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import json
 import logging
 import re
@@ -34,20 +33,25 @@ from app.ai.prompts import (
 )
 from app.services.ai.analysis_content import (
     _ANALYSIS_WRAPPER_KEYS,
-    _canonical_answer_check_list,
-    _canonical_answer_echo,
+    _canonical_answer_check_list,  # noqa: F401 — historical public import
+    _canonical_answer_echo,  # noqa: F401 — historical public import
     _coerce_analysis_text,
     _decode_structured_content,
-    _extract_analysis_fields,
-    _extract_answer_check,
-    _looks_like_structured_analysis_text,
+    _extract_analysis_fields,  # noqa: F401 — historical public import
+    _extract_answer_check,  # noqa: F401 — historical public import
+    _looks_like_structured_analysis_text,  # noqa: F401 — historical public import
     _normalize_ai_analysis,
-    _parse_titled_analysis_text,
-    _pick_field,
-    _strip_code_fence,
+    _parse_titled_analysis_text,  # noqa: F401 — historical public import
+    _pick_field,  # noqa: F401 — historical public import
+    _strip_code_fence,  # noqa: F401 — historical public import
     _validate_answer_check,
     is_valid_ai_analysis,
     parse_error_analysis_content,
+)
+from app.services.ai.analysis_cache import (
+    _analysis_input_signature,
+    _analysis_model_signature,
+    build_cached_error_analysis_response,
 )
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
@@ -57,11 +61,11 @@ from app.services.ai.visual_cache import (
     _detect_image_mime,
     _extract_structured_visual,
     _image_bytes_to_data_url,
-    _iter_url_values,
+    _iter_url_values,  # noqa: F401 — historical public import
     _question_has_unresolved_visual_slot,
     _visual_evidence_is_valid,
     ai_analysis_generated_at,
-    is_ai_analysis_fresh,
+    is_ai_analysis_fresh,  # noqa: F401 — historical public import
 )
 from app.core.config import settings
 from app.models.admin import QuestionVersion
@@ -456,94 +460,6 @@ def _extract_visual_evidence(raw: str) -> str:
         return ""
 
     return find(decoded)
-
-
-def _analysis_input_signature(
-    wq: WrongQuestion,
-    q: Question,
-    knowledge_points: list[str] | None,
-    *,
-    visual_sources: list[str] | None = None,
-) -> str:
-    """Hash every persisted input that can materially change wrong-detail advice.
-
-    The digest lets us invalidate a cache when the question, answer, visual
-    source, user's latest wrong answer, error classification, review count, or
-    knowledge-point mapping changes without storing duplicate source content in
-    ``_meta``.  ``default=str`` keeps the signature deterministic for datetime
-    or enum-like values that may appear in JSON payloads.
-    """
-    payload = {
-        "prompt_version": AI_ANALYSIS_PROMPT_VERSION,
-        "question_id": q.id,
-        "wrong_question_version_id": getattr(wq, "question_version_id", None),
-        "question_version_id": (
-            getattr(q, "question_version_id", None)
-            or getattr(q, "current_version_id", None)
-        ),
-        "question_sync_version": getattr(q, "sync_version", None),
-        "question_updated_at": getattr(q, "updated_at", None),
-        "question_type": getattr(q, "question_type", None),
-        "content": q.content,
-        "options": q.options,
-        "answer": q.answer,
-        "image_sources": visual_sources
-        if visual_sources is not None
-        else _collect_question_visual_sources(q),
-        "knowledge_points": list(knowledge_points or []),
-        "wrong_answer": wq.wrong_answer,
-        "error_type": wq.error_type,
-        "review_count": int(wq.review_count or 0),
-    }
-    raw = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _analysis_model_signature(runtime) -> str | None:
-    """Return a stable digest for the currently selected analysis model."""
-    if runtime is None:
-        return None
-    payload = {
-        "model_config_id": runtime.model_config_id,
-        "provider": runtime.provider,
-        "model_name": runtime.model_name,
-        "base_url": runtime.base_url,
-    }
-    raw = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def build_cached_error_analysis_response(
-    wq,
-    *,
-    requires_visual: bool = False,
-    expected_input_signature: str | None = None,
-    expected_model_signature: str | None = None,
-) -> dict | None:
-    """If the wrong question has a fresh cached AI analysis, return it; otherwise None."""
-    if not is_ai_analysis_fresh(
-        wq.ai_analysis,
-        requires_visual=requires_visual,
-        expected_input_signature=expected_input_signature,
-        expected_model_signature=expected_model_signature,
-    ):
-        return None
-    meta = (wq.ai_analysis or {}).get("_meta") or {}
-    return {
-        "content": _normalize_ai_analysis(wq.ai_analysis),
-        "from_cache": True,
-        "from_fallback": False,
-        "tokens_used": 0,
-        "model": "cache",
-        "duration_ms": 0,
-        "visual_input_count": int(meta.get("visual_input_count") or 0),
-        "visual_evidence": meta.get("visual_evidence") or None,
-        "generated_at": ai_analysis_generated_at(wq.ai_analysis),
-    }
 
 
 def build_any_cached_error_analysis_response(wq) -> dict | None:
