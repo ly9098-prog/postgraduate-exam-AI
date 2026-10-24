@@ -405,6 +405,7 @@ jobs:
             tests/test_services/test_wrong_question_compatibility.py \
             tests/test_services/test_subject_resolution_compatibility.py \
             tests/test_services/test_upload_validator_compatibility.py \
+            tests/test_services/test_study_hub_plan_token_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
