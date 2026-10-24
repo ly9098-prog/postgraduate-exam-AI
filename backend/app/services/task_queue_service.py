@@ -91,6 +91,11 @@ from app.services.task_queue_v2_completion_contract import (
     build_v2_completed_payload,
     v2_complete_unavailable,
 )
+from app.services.task_queue_v2_heartbeat_contract import (
+    apply_v2_heartbeat_result,
+    resolve_v2_heartbeat_identity,
+    v2_heartbeat_mismatch,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1482,7 +1487,7 @@ class DurableTaskQueue:
 
     async def heartbeat_v2(
         self,
-        task_or_id: Task | str,
+        task_or_id: Task | str | tuple[Any, ...],
         *,
         task_type: str | None = None,
         lease_sec: int = _DEFAULT_LEASE_SEC,
@@ -1494,19 +1499,12 @@ class DurableTaskQueue:
             0 — owner mismatch (stale worker)
            -1 — generation mismatch (claim superseded)
         """
-        if isinstance(task_or_id, Task):
-            task_id = task_or_id.task_id
-            token = task_or_id.owner_token
-            task_type = task_or_id.task_type
-        elif isinstance(task_or_id, tuple):
-            task_id, tt_hint, token = task_or_id
-            task_type = task_type or tt_hint
-        else:
-            task_id = task_or_id
-            token = ""
-
-        if not task_id or not task_type or not token:
+        identity = resolve_v2_heartbeat_identity(task_or_id, task_type=task_type)
+        if not identity.is_valid():
             return 0
+        task_id = identity.task_id
+        task_type = identity.task_type
+        token = identity.owner_token
 
         if not self._redis_enabled:
             return 0
@@ -1533,21 +1531,16 @@ class DurableTaskQueue:
             await client.aclose()
 
             result = int(result) if result is not None else 0
-            if result == 0:
+            mismatch = v2_heartbeat_mismatch(result)
+            if mismatch is not None:
                 logger.warning(
-                    "v2 Heartbeat owner mismatch: task_id=%s",
+                    "v2 Heartbeat %s mismatch: task_id=%s",
+                    mismatch,
                     task_id,
                 )
                 queue_metrics["owner_fencing_rejected"] += 1
-            elif result == -1:
-                logger.warning(
-                    "v2 Heartbeat generation mismatch: task_id=%s",
-                    task_id,
-                )
-                queue_metrics["owner_fencing_rejected"] += 1
-            elif result == 1 and isinstance(task_or_id, Task):
-                # Best-effort local lease estimate (Redis TIME is authoritative)
-                task_or_id.lease_expires_at = time.time() + lease_sec
+            else:
+                apply_v2_heartbeat_result(task_or_id, result=result, lease_sec=lease_sec)
 
             return result
 
