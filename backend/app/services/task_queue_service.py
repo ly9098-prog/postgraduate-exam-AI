@@ -112,6 +112,11 @@ from app.services.task_queue_v2_diagnostics_contract import (
     build_v2_dead_entry,
 )
 from app.services.task_queue_v2_dead_purge_contract import build_v2_dead_purge_plan
+from app.services.task_queue_v2_dead_retry_contract import (
+    V2DeadRetryPayloadError,
+    build_v2_dead_retry_payload,
+    parse_v2_dead_retry_payload,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -2207,59 +2212,22 @@ class DurableTaskQueue:
                 return False
 
             try:
-                task_data = json.loads(raw)
-            except (TypeError, json.JSONDecodeError) as exc:
-                logger.warning(
-                    "v2 Dead task payload is corrupt: task_id=%s error=%s", task_id, exc
+                task_data = parse_v2_dead_retry_payload(
+                    raw,
+                    task_id=task_id,
+                    task_type=task_type,
                 )
-                return False
-            if not isinstance(task_data, dict):
+            except V2DeadRetryPayloadError as exc:
                 logger.warning(
-                    "v2 Dead task payload is not an object: task_id=%s", task_id
-                )
-                return False
-            if (
-                task_data.get("task_id") != task_id
-                or task_data.get("task_type") != task_type
-            ):
-                logger.warning(
-                    "v2 Dead task identity mismatch: expected=%s/%s actual=%s/%s",
+                    "v2 Dead task payload rejected: task_id=%s reason=%s",
                     task_id,
-                    task_type,
-                    task_data.get("task_id"),
-                    task_data.get("task_type"),
+                    exc,
                 )
                 return False
-
-            now = time.time()
-            raw_schema_version = int(task_data.get("schema_version", 1) or 1)
-            schema_version = _normalize_task_schema_version(
-                task_type,
-                raw_schema_version,
+            task_json = build_v2_dead_retry_payload(
+                task_data,
+                task_type=task_type,
             )
-            if task_type == ANSWER_PROJECTION_TASK_TYPE:
-                parse_answer_projection_payload(task_data.get("payload"))
-            required_worker = _minimum_worker_version_for_task(
-                task_type, schema_version
-            )
-            task_data.update(
-                {
-                    "status": TaskStatus.PENDING.value,
-                    "retry_count": 0,
-                    "error": "",
-                    "updated_at": now,
-                    "lease_expires_at": 0.0,
-                    "owner_token": "",
-                    # Re-evaluate the worker floor for a fresh retry cycle. The
-                    # schema itself was validated above and is never auto-upgraded.
-                    "schema_version": schema_version,
-                    "minimum_worker_version": max(
-                        int(task_data.get("minimum_worker_version", 1) or 1),
-                        required_worker,
-                    ),
-                }
-            )
-            task_json = json.dumps(task_data, default=str)
 
             # Keep the hash and embedded JSON metadata consistent.  LREM count=0
             # also heals duplicate dead-list entries left by older queue code.
