@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { numberValue, toPieData, normalizeSeries } from "@/lib/dashboard-utils";
 import type {
   AIStatsResponse,
   DashboardDailyPoint,
@@ -61,20 +62,6 @@ const TONE_STYLES: Record<Tone, { icon: string; iconBg: string; line: string }> 
   purple: { icon: "text-[#82758f]", iconBg: "bg-[#f1eef3]", line: "#8b7c97" },
   slate: { icon: "text-[#6f8391]", iconBg: "bg-[#eef2f4]", line: "#78909f" },
 };
-
-function numberValue(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-CN") : "--";
-}
-
-function toPieData(input?: DashboardQuestionStats["by_review_status"]): Array<{ name: string; count: number }> {
-  if (!input) return [];
-  if (Array.isArray(input)) return input;
-  return Object.entries(input).map(([name, count]) => ({ name, count: Number(count) }));
-}
-
-function normalizeSeries(values: Array<number | undefined | null>) {
-  return values.map((value) => (typeof value === "number" && Number.isFinite(value) ? value : 0));
-}
 
 function MiniSparkline({ values, color }: { values?: number[]; color: string }) {
   if (!values || values.length < 2) return null;
