@@ -199,7 +199,7 @@ def test_protocol_modules_are_data_only_and_below_line_budget() -> None:
 
 
 def test_queue_service_stays_below_extraction_baseline() -> None:
-    assert len(SERVICE_PATH.read_text().splitlines()) <= 2421
+    assert len(SERVICE_PATH.read_text().splitlines()) <= 2412
 
 
 def test_redis_key_builders_preserve_namespaces() -> None:

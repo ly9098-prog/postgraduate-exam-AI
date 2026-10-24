@@ -443,6 +443,7 @@ jobs:
             tests/test_services/test_task_queue_v2_enqueue_contract.py \
             tests/test_services/test_task_queue_v1_claim_contract.py \
             tests/test_services/test_task_queue_v1_heartbeat_contract.py \
+            tests/test_services/test_task_queue_v1_transition_contract.py \
             tests/test_services/test_vector_config_service_compatibility.py \
             tests/test_services/test_formula_graph_spec_renderer_compatibility.py \
             tests/test_services/test_formula_graph_batch_state_compatibility.py \

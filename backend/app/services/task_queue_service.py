@@ -132,6 +132,14 @@ from app.services.task_queue_v1_heartbeat_contract import (
     resolve_v1_heartbeat_identity,
     v1_heartbeat_expiry,
 )
+from app.services.task_queue_v1_transition_contract import (
+    apply_v1_failure_attempt,
+    apply_v1_local_retry,
+    build_v1_fail_dead_payload,
+    prepare_v1_retry_task,
+    resolve_v1_transition_identity,
+    should_v1_retry,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -807,17 +815,12 @@ class DurableTaskQueue:
         Returns True on success. Returns False if owner mismatch (fencing
         rejection) — caller should not retry as the task was re-assigned.
         """
-        if isinstance(task_or_id, Task):
-            task_id = task_or_id.task_id
-            tt = task_or_id.task_type
-            token = task_or_id.owner_token
-        else:
-            task_id = task_or_id
-            tt = task_type or ""
-            token = ""
-
-        if not task_id or not tt:
+        identity = resolve_v1_transition_identity(task_or_id, task_type=task_type)
+        if not identity.is_valid():
             return False
+        task_id = identity.task_id
+        tt = identity.task_type
+        token = identity.owner_token
 
         if self._redis_enabled:
             try:
@@ -879,28 +882,20 @@ class DurableTaskQueue:
 
         Returns True on success. Returns False if owner mismatch (fencing).
         """
-        if isinstance(task_or_id, Task):
-            task = task_or_id
-            task_id = task.task_id
-            tt = task.task_type
-            token = task.owner_token
-        else:
-            task_id = task_or_id
-            tt = task_type or ""
-            token = ""
-
-        if not task_id or not tt:
+        identity = resolve_v1_transition_identity(task_or_id, task_type=task_type)
+        if not identity.is_valid():
             return False
+        task_id = identity.task_id
+        tt = identity.task_type
+        token = identity.owner_token
 
-        if isinstance(task_or_id, Task):
-            task.retry_count += 1
-            task.error = error
-            task.updated_at = time.time()
+        is_task = apply_v1_failure_attempt(task_or_id, error)
 
         # Retry path (requires Task object for retry tracking)
-        if isinstance(task_or_id, Task) and task.retry_count < task.max_retries:
+        if is_task and should_v1_retry(task_or_id):
+            task = task_or_id
             delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (task.retry_count - 1))
-            task.status = TaskStatus.FAILED
+            prepare_v1_retry_task(task)
 
             if self._redis_enabled:
                 try:
@@ -942,9 +937,10 @@ class DurableTaskQueue:
                     logger.warning("Task fail/retry Redis error: %s", e)
                     return False
             else:
-                if self._allow_local_fallback:
-                    task.status = TaskStatus.PENDING
-                    task.lease_expires_at = 0
+                apply_v1_local_retry(
+                    task,
+                    allow_local_fallback=self._allow_local_fallback,
+                )
 
             logger.warning(
                 "Task failed (retry %d/%d, +%ds): task_id=%s error=%s",
@@ -965,12 +961,7 @@ class DurableTaskQueue:
                 await self._load_scripts(client)
 
                 p_key = _p_key(tt)
-                task_json = json.dumps(
-                    task.to_dict()
-                    if isinstance(task_or_id, Task)
-                    else {"task_id": task_id},
-                    default=str,
-                )
+                task_json = build_v1_fail_dead_payload(task_or_id)
 
                 result = await self._evalsha_or_reload(
                     client,
