@@ -40,6 +40,12 @@ from app.services.stats_dashboard_projection import (
     build_dashboard_yearly_summary,
     previous_trend_start,
 )
+from app.services.stats_ai_projection import (
+    extract_json_object,
+    normalize_dashboard_actions,
+    normalize_knowledge_points,
+    normalize_text_list,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,82 +55,9 @@ logger = logging.getLogger(__name__)
 _SYNC_AI_PROVIDER_TIMEOUT_SEC = 42.0
 _AI_DIAGNOSIS_MAX_TOKENS = 900
 _DASHBOARD_AI_MAX_TOKENS = 1000
-_DASHBOARD_ACTION_TYPES = frozenset({"review", "wrong", "practice", "subject"})
-
-
-def _extract_json_object(content: object) -> dict | None:
-    """Parse a provider response that is expected to contain one JSON object.
-
-    Compatible providers occasionally wrap JSON in markdown or prepend a short
-    explanation.  Extract the outer object but never attempt lossy repair: a
-    malformed response must fall back to deterministic local analysis.
-    """
-    text_value = str(content or "").strip()
-    if not text_value:
-        return None
-    if text_value.startswith("```"):
-        first_newline = text_value.find("\n")
-        if first_newline >= 0:
-            text_value = text_value[first_newline + 1 :]
-        if text_value.endswith("```"):
-            text_value = text_value[:-3].rstrip()
-    left = text_value.find("{")
-    right = text_value.rfind("}")
-    if left >= 0 and right > left:
-        text_value = text_value[left : right + 1]
-    try:
-        parsed = json.loads(text_value)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _normalize_text_list(
-    value: object, *, limit: int, max_chars: int = 240
-) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    result: list[str] = []
-    for item in value:
-        # Provider JSON occasionally returns objects/numbers inside text arrays.
-        # Ignore malformed items instead of leaking Python reprs to the API/UI.
-        if not isinstance(item, str):
-            continue
-        text_value = item.strip()
-        if not text_value:
-            continue
-        result.append(text_value[:max_chars])
-        if len(result) >= limit:
-            break
-    return result
-
-
-def _normalize_dashboard_actions(value: object, *, limit: int = 4) -> list[dict]:
-    if not isinstance(value, list):
-        return []
-    result: list[dict] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        action_type = str(item.get("type") or "").strip().lower()
-        if action_type not in _DASHBOARD_ACTION_TYPES:
-            continue
-        raw_title = item.get("title")
-        raw_desc = item.get("desc")
-        title = raw_title.strip() if isinstance(raw_title, str) else ""
-        desc = raw_desc.strip() if isinstance(raw_desc, str) else ""
-        if not title:
-            continue
-        result.append(
-            {
-                "type": action_type,
-                "title": title[:80],
-                "desc": desc[:220],
-            }
-        )
-        if len(result) >= limit:
-            break
-    return result
+_extract_json_object = extract_json_object
+_normalize_text_list = normalize_text_list
+_normalize_dashboard_actions = normalize_dashboard_actions
 
 
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
@@ -982,46 +915,8 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             )
             return local_diagnosis(provider_failed=True)
 
-        def normalize_points(value, limit: int) -> list[dict]:
-            if not isinstance(value, list):
-                return []
-            normalized: list[dict] = []
-            for item in value:
-                if not isinstance(item, dict):
-                    continue
-                raw_name = item.get("knowledge_point")
-                raw_suggestion = item.get("suggestion")
-                # Do not stringify arbitrary provider JSON. A malformed object
-                # here would otherwise leak Python/JSON-looking repr text into
-                # the student UI even though the request technically succeeded.
-                if not isinstance(raw_name, str):
-                    continue
-                name = raw_name.strip()
-                suggestion = (
-                    raw_suggestion.strip() if isinstance(raw_suggestion, str) else ""
-                )
-                if not name:
-                    continue
-                try:
-                    score = float(item.get("accuracy", 0) or 0)
-                except (TypeError, ValueError):
-                    score = 0.0
-                if score > 1:
-                    score = score / 100.0
-                score = max(0.0, min(1.0, score))
-                normalized.append(
-                    {
-                        "knowledge_point": name[:80],
-                        "accuracy": round(score, 4),
-                        "suggestion": suggestion[:240],
-                    }
-                )
-                if len(normalized) >= limit:
-                    break
-            return normalized
-
-        weak_points = normalize_points(parsed.get("weak_points"), 5)
-        strong_points = normalize_points(parsed.get("strong_points"), 3)
+        weak_points = normalize_knowledge_points(parsed.get("weak_points"), limit=5)
+        strong_points = normalize_knowledge_points(parsed.get("strong_points"), limit=3)
         suggestions = _normalize_text_list(
             parsed.get("learning_suggestions"),
             limit=5,
