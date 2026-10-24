@@ -85,6 +85,9 @@ const {
 const {
   createReviewDaySyncController,
 } = require('./utils/day-sync-controller')
+const {
+  createGroupSubmitFlowController,
+} = require('./utils/group-submit-flow-controller')
 var KF = 'schedule_id'
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 var REVIEW_DRAFT_PREFIX = 'review_today_draft_v1'
@@ -632,9 +635,28 @@ _getReviewRequestId(question) {
 return this._reviewSessionController().getRequestId(question)
 },
 async submitGroup() {
-const { groupQuestions } = this.data
-const groupSubmitEntryController = this._groupSubmitEntryController || (
-this._groupSubmitEntryController = createGroupSubmitEntryController({
+await this._groupSubmitFlowController().submit()
+},
+
+  _groupSubmitFlowController() {
+    return this._groupSubmitFlow || (
+      this._groupSubmitFlow = createGroupSubmitFlowController({
+        getGroupQuestions: () => this.data.groupQuestions,
+        confirm: groupQuestions => this._groupSubmitEntryController().confirm(groupQuestions),
+        begin: groupQuestions => this._groupSubmitEntryController().begin(groupQuestions),
+        request: input => this._groupSubmitRequestController().submit(input),
+        applyResult: input => this._groupSubmitResultController().apply(input),
+        isPageAlive: () => this._alive,
+        logError: (...args) => console.error(...args),
+        showResultFailureToast: () => wx.showToast({ title: '提交失败，请重试', icon: 'none' }),
+        setSubmitting: value => this.setData({ submittingGroup: value }),
+      })
+    )
+  },
+
+  _groupSubmitEntryController() {
+    return this._groupSubmitEntry || (
+      this._groupSubmitEntry = createGroupSubmitEntryController({
 getData: () => this.data,
 getSession: () => this._reviewSession,
 isConfirmPending: () => this._submitConfirmPending,
@@ -651,35 +673,28 @@ findUnansweredIndex: () => this.data.groupQuestions.findIndex(q => !adapter.isQu
 showQuestion: index => this._showQuestion(index),
 })
 ),
-showToast: options => wx.showToast(options),
-clearMasterUndo: () => this._clearMasterUndo(),
-setSubmitting: value => this.setData({ submittingGroup: value }),
-syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
-})
-)
-if (!await groupSubmitEntryController.confirm(groupQuestions)) return
-const answers = await groupSubmitEntryController.begin(groupQuestions)
-if (!answers) return
-const groupSubmitRequestController = this._groupSubmitRequestController || (
-this._groupSubmitRequestController = createGroupSubmitRequestController({
+        showToast: options => wx.showToast(options),
+        clearMasterUndo: () => this._clearMasterUndo(),
+        setSubmitting: value => this.setData({ submittingGroup: value }),
+        syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
+      })
+    )
+  },
+
+  _groupSubmitRequestController() {
+    return this._groupSubmitRequest || (
+      this._groupSubmitRequest = createGroupSubmitRequestController({
 postGrade: payload => api.post('/review/grade-batch', payload),
 showToast: options => wx.showToast(options),
 setSubmitting: value => this.setData({ submittingGroup: value }),
 isPageAlive: () => this._alive,
-})
-)
-const submission = await groupSubmitRequestController.submit({
-groupQuestions,
-answers,
-isQuestionAnswered: (question, answerMap) => adapter.isQuestionAnswered(question, answerMap, KF),
-getRequestId: question => this._getReviewRequestId(question),
-buildTimingSession: () => this._buildReviewTimingSession(),
-enrichForResult: question => this._enrichForResult(question),
-failureNeedsRefresh: result => _reviewFailureNeedsRefresh(result),
-})
-if (submission.status !== 'submitted') return
-const groupSubmitResultController = this._groupSubmitResultController || (
-this._groupSubmitResultController = createGroupSubmitResultController({
+      })
+    )
+  },
+
+  _groupSubmitResultController() {
+    return this._groupSubmitResult || (
+      this._groupSubmitResult = createGroupSubmitResultController({
 getGroups: () => this.data.groups,
 getSession: () => this._reviewSession,
 getTodayDueCount: () => this.data.todayDueCount,
@@ -690,20 +705,9 @@ showToast: options => wx.showToast(options),
 pauseTimer: () => this._pauseReviewTimer(),
 setData: patch => this.setData(patch),
 showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
-})
-)
-try {
-groupSubmitResultController.apply({
-groupQuestions,
-groupResults: submission.groupResults,
-})
-} catch (e) {
-if (!this._alive) return
-console.error('提交失败', e)
-wx.showToast({ title: '提交失败，请重试', icon: 'none' })
-this.setData({ submittingGroup: false })
-}
-},
+      })
+    )
+  },
 async nextGroup() {
 const nextGroupController = this._nextGroupController || (
 this._nextGroupController = createNextGroupController({
