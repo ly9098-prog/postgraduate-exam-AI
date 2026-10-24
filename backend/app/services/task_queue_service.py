@@ -27,16 +27,9 @@ import redis.exceptions as redis_exc
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.services.task_queue_contract import (
-    _CURRENT_TASK_SCHEMA_VERSION,
-    _minimum_worker_version_for_task,
-    _normalize_task_schema_version,
     EnqueueResult,
     Task,
     TaskStatus,
-)
-from app.services.practice.answer_projection_contract import (
-    ANSWER_PROJECTION_TASK_TYPE,
-    parse_answer_projection_payload,
 )
 from app.services.task_queue_keys import (
     _CORRUPT_PREFIX,
@@ -120,6 +113,10 @@ from app.services.task_queue_v2_dead_retry_contract import (
 from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
 from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
 from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
+from app.services.task_queue_v2_enqueue_contract import (
+    build_v2_enqueue_plan,
+    v2_enqueue_unavailable,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1297,58 +1294,29 @@ class DurableTaskQueue:
         Same semantics as ``enqueue()`` but uses v2 Redis keys
         (``taskq:v2:*`` namespace).
         """
-        tid = task_id or f"task_{uuid.uuid4().hex}"
-        trace_id, request_id = _task_correlation(payload)
-        effective_schema_version = int(
-            _CURRENT_TASK_SCHEMA_VERSION if schema_version is None else schema_version
-        )
-        if effective_schema_version <= 0:
-            raise ValueError("schema_version must be positive")
-        effective_schema_version = _normalize_task_schema_version(
-            task_type, effective_schema_version
-        )
-        if task_type == ANSWER_PROJECTION_TASK_TYPE:
-            # Reject retired batch-shaped payloads at the producer boundary.
-            # Do not enqueue an incompatible task and hope a newer worker can
-            # reinterpret it later.
-            parse_answer_projection_payload(payload)
-        effective_minimum_worker_version = int(
-            _minimum_worker_version_for_task(task_type, effective_schema_version)
-            if minimum_worker_version is None
-            else minimum_worker_version
-        )
-        if effective_minimum_worker_version <= 0:
-            raise ValueError("minimum_worker_version must be positive")
-        task = Task(
-            task_id=tid,
-            task_type=task_type,
-            payload=payload,
+        plan = build_v2_enqueue_plan(
+            task_type,
+            payload,
+            task_id=task_id,
             max_retries=max_retries,
-            trace_id=trace_id,
-            request_id=request_id,
-            schema_version=effective_schema_version,
-            minimum_worker_version=effective_minimum_worker_version,
+            schema_version=schema_version,
+            minimum_worker_version=minimum_worker_version,
+            correlation=_task_correlation,
         )
-        task_json = json.dumps(task.to_dict(), default=str)
+        tid = plan.task.task_id
+        task_json = plan.task_json
         max_ready = _get_max_ready(task_type)
 
         if not self._redis_enabled:
-            return EnqueueResult(
-                accepted=False, task_id=None, reason="redis_unavailable", retry_after=30
-            )
+            return v2_enqueue_unavailable()
         client = None
         try:
             client = await self._get_script_client()
             if client is None:
-                return EnqueueResult(
-                    accepted=False,
-                    task_id=None,
-                    reason="redis_unavailable",
-                    retry_after=30,
-                )
+                return v2_enqueue_unavailable()
             await self._load_scripts(client)
 
-            if task_id is not None:
+            if plan.idempotent:
                 result = await self._evalsha_or_reload(
                     client,
                     "_lua_enqueue_v2",
