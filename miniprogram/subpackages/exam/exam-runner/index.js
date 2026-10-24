@@ -1,6 +1,7 @@
 const api = require('../../../utils/api')
 const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
+const { buildFinalSubmitAnswers, isRetryableSubmitError } = require('../utils/submit-helpers')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -583,20 +584,11 @@ Page({
   },
 
   _buildFinalSubmitAnswers() {
-    return this._pendingItemIds().map((itemId) => {
-      const value = this._pending[itemId] || {}
-      return {
-        item_id: Number(itemId),
-        selected_answer: String(value.selected_answer || '').trim().toUpperCase() || null,
-        marked_for_review: !!value.marked_for_review,
-        used_time: Math.min(6 * 60 * 60, Math.max(0, Number(value.used_time || 0))),
-      }
-    })
+    return buildFinalSubmitAnswers(this._pendingItemIds(), this._pending)
   },
 
   _isRetryableSubmitError(error) {
-    const status = Number(error && error.statusCode)
-    return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500
+    return isRetryableSubmitError(error)
   },
 
   async _postSubmitWithRetry(finalAnswers) {
