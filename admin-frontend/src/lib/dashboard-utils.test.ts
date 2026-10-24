@@ -40,10 +40,10 @@ describe("toPieData", () => {
   });
   it("passes through array input", () => {
     const input = [{ name: "a", count: 1 }];
-    expect(toPieData(input as any)).toEqual(input);
+    expect(toPieData(input)).toEqual(input);
   });
   it("converts object to array", () => {
-    const result = toPieData({ a: 1, b: 2 } as any);
+    const result = toPieData({ a: 1, b: 2 } as unknown as Array<{ name: string; count: number }>);
     expect(result.length).toBe(2);
     expect(result[0]).toEqual({ name: "a", count: 1 });
   });
