@@ -15,6 +15,16 @@ import type {
   RecommendationStrategy,
   SeedStrategiesResponse,
 } from "@/lib/api/types";
+import {
+  SCORED_WEIGHT_FIELDS,
+  DEFAULT_GRAPH_CONFIG,
+  asRecord,
+  getStrategyType,
+  isScoredStrategy,
+  getScoredWeights,
+  getGraphConfig,
+  parseNumberField,
+} from "@/lib/recommendation-strategy-utils";
 
 const SCENE_LABELS: Record<string, string> = {
   practice_smart: "智能刷题",
@@ -32,81 +42,6 @@ const STRATEGY_TYPE_LABELS: Record<string, string> = {
   fallback_random: "随机兜底",
   fallback: "兜底",
 };
-
-const SCORED_WEIGHT_FIELDS = [
-  ["due_weight", "复习到期"],
-  ["weakness_weight", "薄弱知识"],
-  ["wrong_weight", "历史错题"],
-  ["new_question_weight", "新题探索"],
-  ["diversity_weight", "知识多样性"],
-  ["path_weight", "知识图谱/路径"],
-] as const;
-
-type ScoredWeightKey = (typeof SCORED_WEIGHT_FIELDS)[number][0];
-
-const DEFAULT_SCORED_WEIGHTS: Record<ScoredWeightKey, number> = {
-  due_weight: 1,
-  weakness_weight: 1,
-  wrong_weight: 1,
-  new_question_weight: 1,
-  diversity_weight: 1,
-  path_weight: 1,
-};
-
-const DEFAULT_GRAPH_CONFIG = {
-  weak_target_limit: 5,
-  max_depth: 2,
-  max_nodes: 24,
-  prerequisite_mastery_threshold: 60,
-  prerequisite_confidence_threshold: 0.3,
-};
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function getStrategyType(strategy: RecommendationStrategy): string {
-  const configured = asRecord(strategy.config_json).strategy_type;
-  if (configured) return String(configured);
-  const byName: Record<string, string> = {
-    default_scored: "scored",
-    default_weakness_vector: "weakness_vector",
-    default_knowledge_path: "knowledge_path",
-    default_similar_vector: "similar_vector",
-    default_random: "fallback_random",
-    default_fallback: "fallback",
-  };
-  return byName[strategy.name] ?? "";
-}
-
-function isScoredStrategy(strategy: RecommendationStrategy): boolean {
-  return strategy.name === "default_scored" || ["scored", "hybrid_graph"].includes(getStrategyType(strategy));
-}
-
-function getScoredWeights(strategy: RecommendationStrategy): Record<ScoredWeightKey, number> {
-  const scored = asRecord(asRecord(strategy.config_json).scored_weights);
-  return Object.fromEntries(
-    SCORED_WEIGHT_FIELDS.map(([key]) => {
-      const value = Number(scored[key]);
-      return [key, Number.isFinite(value) ? value : DEFAULT_SCORED_WEIGHTS[key]];
-    }),
-  ) as Record<ScoredWeightKey, number>;
-}
-
-function getGraphConfig(strategy: RecommendationStrategy) {
-  const graph = asRecord(asRecord(strategy.config_json).graph);
-  const num = (key: keyof typeof DEFAULT_GRAPH_CONFIG) => {
-    const value = Number(graph[key]);
-    return Number.isFinite(value) ? value : DEFAULT_GRAPH_CONFIG[key];
-  };
-  return {
-    weak_target_limit: num("weak_target_limit"),
-    max_depth: num("max_depth"),
-    max_nodes: num("max_nodes"),
-    prerequisite_mastery_threshold: num("prerequisite_mastery_threshold"),
-    prerequisite_confidence_threshold: num("prerequisite_confidence_threshold"),
-  };
-}
 
 function showToast(msg: string, error = false) {
   const el = document.createElement("div");
@@ -169,13 +104,6 @@ export default function RecommendationStrategiesPage() {
   const submitEdit = () => {
     if (!editing) return;
 
-    const parseNumber = (key: string, min: number, max: number) => {
-      const raw = form[key]?.trim();
-      if (!raw) return null;
-      const value = Number(raw);
-      return Number.isFinite(value) && value >= min && value <= max ? value : null;
-    };
-
     const legacyKeys = [
       "weight_vector_similarity",
       "weight_knowledge_overlap",
@@ -184,7 +112,7 @@ export default function RecommendationStrategiesPage() {
       "weight_path_priority",
       "exploration_ratio",
     ];
-    const legacyValues = Object.fromEntries(legacyKeys.map((key) => [key, parseNumber(key, 0, 1)]));
+    const legacyValues = Object.fromEntries(legacyKeys.map((key) => [key, parseNumberField(form, key, 0, 1)]));
     if (Object.values(legacyValues).some((value) => value == null)) {
       showToast("请完整填写 0~1 范围内的策略权重", true);
       return;
@@ -193,7 +121,7 @@ export default function RecommendationStrategiesPage() {
     let configJson = editing.config_json;
     if (isScoredStrategy(editing)) {
       const scoredValues = Object.fromEntries(
-        SCORED_WEIGHT_FIELDS.map(([key]) => [key, parseNumber(`scored_${key}`, 0, 2)]),
+        SCORED_WEIGHT_FIELDS.map(([key]) => [key, parseNumberField(form, `scored_${key}`, 0, 2)]),
       );
       if (Object.values(scoredValues).some((value) => value == null)) {
         showToast("综合推荐权重必须完整填写，范围为 0~2", true);
