@@ -421,6 +421,9 @@ jobs:
             tests/test_services/test_embedding_endpoints_compatibility.py \
             tests/test_services/test_task_queue_metrics_compatibility.py \
             tests/test_services/test_task_queue_keys_compatibility.py \
+            tests/test_services/test_vector_config_service_compatibility.py \
+            tests/test_services/test_formula_graph_spec_renderer_compatibility.py \
+            tests/test_services/test_formula_graph_batch_state_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
