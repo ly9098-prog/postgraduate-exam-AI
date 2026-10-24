@@ -37,7 +37,17 @@ import { formatChinaDate } from "@/lib/time";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import type { FormulaCategoryNode } from "@/components/formulas/formula-category-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
-import { positiveInt, buildFormulaListHref, findCategoryNode } from "@/lib/formula-list-utils";
+import {
+  positiveInt,
+  buildFormulaListHref,
+  findCategoryNode,
+  pruneCategoryTree,
+  sumCategoryFormulaCount,
+  hasActiveFormulaFilters,
+  computeSafeSelectedIds,
+  computeBatchSelectionState,
+  isBatchableStatus,
+} from "@/lib/formula-list-utils";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { PaginatedResponse, FormulaGraphAsset } from "@/lib/api/types";
@@ -389,7 +399,7 @@ export default function FormulasPage() {
 
   const items = useMemo(() => formulas.data?.items ?? [], [formulas.data?.items]);
   const selectedCard = detail.data;
-  const isBatchable = currentFilterStatus === "pending_review" || currentFilterStatus === "draft";
+  const isBatchable = isBatchableStatus(currentFilterStatus);
 
   useEffect(() => {
     if (!categories.data?.items?.length) return;
@@ -418,16 +428,13 @@ export default function FormulasPage() {
   }, [selectedId]);
 
   // ── Batch selection logic ──
-  const safeSelectedIds = useMemo(() => {
-    if (!items.length) return selectedIds;
-    const valid = new Set(items.map((c) => c.id));
-    return new Set([...selectedIds].filter((id) => valid.has(id)));
-  }, [items, selectedIds]);
+  const safeSelectedIds = useMemo(
+    () => computeSafeSelectedIds(items, selectedIds),
+    [items, selectedIds],
+  );
 
   const allCurrentIds = useMemo(() => items.map((c) => c.id), [items]);
-  const allSelected = items.length > 0 && safeSelectedIds.size === items.length;
-  const indeterminate = safeSelectedIds.size > 0 && !allSelected;
-  const selectedCount = safeSelectedIds.size;
+  const { allSelected, indeterminate, selectedCount } = computeBatchSelectionState(items, selectedIds);
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -520,18 +527,7 @@ export default function FormulasPage() {
   };
 
   const filteredCategoryTree = useMemo(() => {
-    const roots = categories.data?.items ?? [];
-    const query = categorySearch.trim().toLowerCase();
-    if (!query) return roots;
-
-    const prune = (nodes: AdminFormulaCategoryNode[]): AdminFormulaCategoryNode[] =>
-      nodes.flatMap((node) => {
-        const children = prune(node.children ?? []);
-        const matches = node.name.toLowerCase().includes(query) || node.code.toLowerCase().includes(query);
-        return matches || children.length ? [{ ...node, children }] : [];
-      });
-
-    return prune(roots);
+    return pruneCategoryTree(categories.data?.items ?? [], categorySearch);
   }, [categories.data?.items, categorySearch]);
 
   const selectedCategory = useMemo(
@@ -539,10 +535,10 @@ export default function FormulasPage() {
     [categories.data?.items, filters.category_id],
   );
   const totalCategoryFormulaCount = useMemo(
-    () => (categories.data?.items ?? []).reduce((sum, node) => sum + (node.subtree_formula_count ?? node.formula_count ?? 0), 0),
+    () => sumCategoryFormulaCount(categories.data?.items ?? []),
     [categories.data?.items],
   );
-  const hasActiveFilters = Boolean(filters.status || filters.category_id || filters.q || filters.library_type || filters.study_card_type || filters.graph_status);
+  const hasActiveFilters = hasActiveFormulaFilters(filters);
   const listReturnHref = useMemo(
     () => buildFormulaListHref(filters, page, selectedId),
     [filters, page, selectedId],

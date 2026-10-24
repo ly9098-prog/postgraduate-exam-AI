@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { positiveInt, buildFormulaListHref, findCategoryNode } from "./formula-list-utils";
+import {
+  positiveInt,
+  buildFormulaListHref,
+  findCategoryNode,
+  pruneCategoryTree,
+  sumCategoryFormulaCount,
+  hasActiveFormulaFilters,
+  computeSafeSelectedIds,
+  computeBatchSelectionState,
+  isBatchableStatus,
+} from "./formula-list-utils";
 
 describe("positiveInt", () => {
   it("parses positive integer", () => {
@@ -67,5 +77,168 @@ describe("findCategoryNode", () => {
   });
   it("handles empty tree", () => {
     expect(findCategoryNode([], 1)).toBeNull();
+  });
+});
+
+describe("pruneCategoryTree", () => {
+  const tree = [
+    { id: 1, name: "网络", code: "NET", children: [
+      { id: 3, name: "传输层", code: "TCP", children: [] },
+      { id: 4, name: "应用层", code: "APP", children: [] },
+    ]},
+    { id: 2, name: "数据结构", code: "DS", children: [] },
+  ];
+  it("returns roots unchanged when query is empty", () => {
+    expect(pruneCategoryTree(tree, "")).toBe(tree);
+  });
+  it("returns roots unchanged when query is whitespace only", () => {
+    expect(pruneCategoryTree(tree, "   ")).toBe(tree);
+  });
+  it("keeps a node matching by name", () => {
+    const out = pruneCategoryTree(tree, "数据");
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe(2);
+  });
+  it("keeps a node matching by code", () => {
+    const out = pruneCategoryTree(tree, "NET");
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe(1);
+  });
+  it("keeps a parent when a child matches", () => {
+    const out = pruneCategoryTree(tree, "传输");
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe(1);
+    expect(out[0].children).toHaveLength(1);
+    expect(out[0].children[0].id).toBe(3);
+  });
+  it("matches case-insensitively", () => {
+    expect(pruneCategoryTree(tree, "app")).toHaveLength(1);
+  });
+  it("returns empty when no match", () => {
+    expect(pruneCategoryTree(tree, "不存在")).toEqual([]);
+  });
+  it("does not mutate input nodes", () => {
+    const snapshot = JSON.stringify(tree);
+    pruneCategoryTree(tree, "传输");
+    expect(JSON.stringify(tree)).toBe(snapshot);
+  });
+});
+
+describe("sumCategoryFormulaCount", () => {
+  it("sums subtree_formula_count when present", () => {
+    expect(sumCategoryFormulaCount([
+      { subtree_formula_count: 10, formula_count: 3 },
+      { subtree_formula_count: 5, formula_count: 1 },
+    ])).toBe(15);
+  });
+  it("falls back to formula_count", () => {
+    expect(sumCategoryFormulaCount([
+      { formula_count: 7 },
+      { formula_count: 2 },
+    ])).toBe(9);
+  });
+  it("treats missing counts as zero", () => {
+    expect(sumCategoryFormulaCount([{}, { formula_count: 4 }])).toBe(4);
+  });
+  it("returns zero for empty list", () => {
+    expect(sumCategoryFormulaCount([])).toBe(0);
+  });
+});
+
+describe("hasActiveFormulaFilters", () => {
+  it("false when all empty", () => {
+    expect(hasActiveFormulaFilters({})).toBe(false);
+  });
+  it("true when status set", () => {
+    expect(hasActiveFormulaFilters({ status: "draft" })).toBe(true);
+  });
+  it("true when category_id set", () => {
+    expect(hasActiveFormulaFilters({ category_id: "5" })).toBe(true);
+  });
+  it("true when q set", () => {
+    expect(hasActiveFormulaFilters({ q: "tcp" })).toBe(true);
+  });
+  it("true when graph_status set", () => {
+    expect(hasActiveFormulaFilters({ graph_status: "ready" })).toBe(true);
+  });
+  it("false for extra keys only without passing them", () => {
+    expect(hasActiveFormulaFilters({ custom: "x" } as Record<string, string>)).toBe(false);
+  });
+  it("true when an extra key is provided and set", () => {
+    expect(hasActiveFormulaFilters({ custom: "x" } as Record<string, string>, "custom")).toBe(true);
+  });
+});
+
+describe("computeSafeSelectedIds", () => {
+  const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  it("returns the input set when items is empty", () => {
+    const sel = new Set([1, 2]);
+    expect(computeSafeSelectedIds([], sel)).toBe(sel);
+  });
+  it("keeps ids present in items", () => {
+    const sel = new Set([1, 2]);
+    const out = computeSafeSelectedIds(items, sel);
+    expect([...out]).toEqual([1, 2]);
+  });
+  it("drops stale ids not in items", () => {
+    const sel = new Set([1, 99]);
+    const out = computeSafeSelectedIds(items, sel);
+    expect([...out]).toEqual([1]);
+  });
+  it("returns empty when nothing matches", () => {
+    const out = computeSafeSelectedIds(items, new Set([99]));
+    expect(out.size).toBe(0);
+  });
+});
+
+describe("computeBatchSelectionState", () => {
+  const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  it("allSelected when all items selected", () => {
+    const s = computeBatchSelectionState(items, new Set([1, 2, 3]));
+    expect(s.allSelected).toBe(true);
+    expect(s.indeterminate).toBe(false);
+    expect(s.selectedCount).toBe(3);
+  });
+  it("indeterminate when some selected", () => {
+    const s = computeBatchSelectionState(items, new Set([1, 2]));
+    expect(s.allSelected).toBe(false);
+    expect(s.indeterminate).toBe(true);
+    expect(s.selectedCount).toBe(2);
+  });
+  it("not all selected when empty set", () => {
+    const s = computeBatchSelectionState(items, new Set());
+    expect(s.allSelected).toBe(false);
+    expect(s.indeterminate).toBe(false);
+    expect(s.selectedCount).toBe(0);
+  });
+  it("all false when items empty", () => {
+    const s = computeBatchSelectionState([], new Set([1, 2]));
+    expect(s.allSelected).toBe(false);
+    expect(s.indeterminate).toBe(true);
+    expect(s.selectedCount).toBe(2);
+  });
+  it("ignores stale selected ids", () => {
+    const s = computeBatchSelectionState(items, new Set([1, 2, 99]));
+    expect(s.allSelected).toBe(false);
+    expect(s.indeterminate).toBe(true);
+    expect(s.selectedCount).toBe(2);
+  });
+});
+
+describe("isBatchableStatus", () => {
+  it("true for pending_review", () => {
+    expect(isBatchableStatus("pending_review")).toBe(true);
+  });
+  it("true for draft", () => {
+    expect(isBatchableStatus("draft")).toBe(true);
+  });
+  it("false for published", () => {
+    expect(isBatchableStatus("published")).toBe(false);
+  });
+  it("false for undefined", () => {
+    expect(isBatchableStatus(undefined)).toBe(false);
+  });
+  it("false for empty string", () => {
+    expect(isBatchableStatus("")).toBe(false);
   });
 });
