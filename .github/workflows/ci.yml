@@ -435,6 +435,7 @@ jobs:
             tests/test_services/test_task_queue_v2_reaper_contract.py \
             tests/test_services/test_task_queue_v2_health_contract.py \
             tests/test_services/test_task_queue_v2_diagnostics_contract.py \
+            tests/test_services/test_task_queue_v2_dead_purge_contract.py \
             tests/test_services/test_vector_config_service_compatibility.py \
             tests/test_services/test_formula_graph_spec_renderer_compatibility.py \
             tests/test_services/test_formula_graph_batch_state_compatibility.py \

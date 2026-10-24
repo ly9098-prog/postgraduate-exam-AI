@@ -111,6 +111,7 @@ from app.services.task_queue_v2_diagnostics_contract import (
     build_v2_corrupt_entry,
     build_v2_dead_entry,
 )
+from app.services.task_queue_v2_dead_purge_contract import build_v2_dead_purge_plan
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -2115,19 +2116,15 @@ class DurableTaskQueue:
             purged = 0
             for tid in task_ids:
                 raw = await client.hget(_v2_task_hash_key(tid), "data")
-                if raw:
-                    try:
-                        task_dict = json.loads(raw)
-                        updated = task_dict.get("updated_at", 0)
-                        if now - updated > max_age_sec:
-                            await client.lrem(dk, 1, tid)
-                            await client.delete(_v2_task_hash_key(tid))
-                            purged += 1
-                    except json.JSONDecodeError:
-                        await client.lrem(dk, 1, tid)
-                        purged += 1
-                else:
+                plan = build_v2_dead_purge_plan(
+                    raw,
+                    now=now,
+                    max_age_sec=max_age_sec,
+                )
+                if plan.remove_from_dead:
                     await client.lrem(dk, 1, tid)
+                    if plan.delete_hash:
+                        await client.delete(_v2_task_hash_key(tid))
                     purged += 1
             await client.aclose()
             if purged:
