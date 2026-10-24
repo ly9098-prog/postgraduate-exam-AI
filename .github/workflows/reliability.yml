@@ -423,6 +423,7 @@ jobs:
           node --test miniprogram/tests/test-practice-sequential-restart-controller.js
           node --test miniprogram/tests/test-practice-answer-interaction-controller.js
           node --test miniprogram/tests/test-practice-question-display-controller.js
+          node --test miniprogram/tests/test-practice-monotonic-clock.js
           node --test miniprogram/tests/test-practice-computed-fields-controller.js
           node --test miniprogram/tests/test-practice-answer-feedback-controller.js
           node --test miniprogram/tests/test-practice-render-invariant-controller.js

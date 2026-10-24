@@ -63,6 +63,9 @@ const {
   createQuestionTimerController,
 } = require('./utils/question-timer-controller')
 const {
+  monotonicNow,
+} = require('./utils/monotonic-clock')
+const {
   createSelfHealController,
 } = require('./utils/self-heal-controller')
 const {
@@ -98,178 +101,6 @@ const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice', 'multi_blank_multiple_choice'])
-let _practicePerformanceClock = null
-function _monotonicNow() {
-try {
-if (!_practicePerformanceClock && typeof wx !== 'undefined' && typeof wx.getPerformance === 'function') {
-_practicePerformanceClock = wx.getPerformance()
-}
-if (_practicePerformanceClock && typeof _practicePerformanceClock.now === 'function') {
-return _practicePerformanceClock.now()
-}
-} catch (_) {}
-return Date.now()
-}
-function _deduplicateLines(text) {
-if (!text) return text
-const lines = text.split('\n')
-const out = []
-for (let i = 0; i < lines.length; i++) {
-if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) {
-out.push(lines[i])
-}
-}
-return out.join('\n')
-}
-function _needsRichRender(text) {
-if (!text) return false
-return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
-}
-function _escapeRegExp(text) {
-return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-function _replaceSimpleLatexCommands(text) {
-return String(text || '')
-.replace(/\\leq/g, '≤')
-.replace(/\\geq/g, '≥')
-.replace(/\\neq/g, '≠')
-.replace(/\\times/g, '×')
-.replace(/\\cdot/g, '·')
-.replace(/\\lt/g, '<')
-.replace(/\\gt/g, '>')
-}
-function _toPlainInlineMathText(text) {
-if (!text) return ''
-const source = String(text)
-if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
-let plain = source.replace(/\$([^$\n]+?)\$/g, function(_, expr) {
-return _replaceSimpleLatexCommands(expr).trim()
-})
-if (/\\[a-zA-Z]+/.test(plain)) return null
-plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
-return plain
-}
-function _stripLeadingOptionLabel(key, value) {
-const text = String(value || '').trim()
-if (!key || !text) return text
-const label = _escapeRegExp(String(key).trim())
-const labelPattern = new RegExp(`^${label}[\\s\\u00A0]*[.．、:：）)]\\s*`, 'i')
-if (/^\s*\$/.test(text)) {
-const inner = text.replace(/^\s*\$\s*/, '')
-return '$' + inner.replace(labelPattern, '')
-}
-return text.replace(labelPattern, '')
-}
-function _normalizeOptionText(text) {
-return String(text || '')
-.replace(/<[^>]+>/g, ' ')
-.replace(/&nbsp;/gi, ' ')
-.replace(/\s+/g, ' ')
-.trim()
-}
-function _buildOptionPattern(key, value) {
-const label = _escapeRegExp(String(key || '').trim())
-const normalizedValue = _normalizeOptionText(value)
-if (!label || !normalizedValue) return ''
-const spaces = '[\\s\\u00A0]*'
-const separator = '[.．、:：）)]'
-const valuePattern = _escapeRegExp(normalizedValue).replace(/\s+/g, '[\\s\\u00A0]+')
-return `${label}${spaces}${separator}${spaces}${valuePattern}`
-}
-function _stripEmbeddedOptionBlock(stemText, options) {
-if (!stemText || !options) return stemText
-const patterns = Object.keys(options)
-.sort()
-.map((key) => _buildOptionPattern(key, options[key]))
-.filter(Boolean)
-if (patterns.length < 2) return stemText
-const gap = '(?:\\s|<br>|\\n|\\r|&nbsp;)*'
-const blockRegex = new RegExp(`${gap}${patterns.join(gap)}\\s*$`, 'i')
-return blockRegex.test(stemText) ? stemText.replace(blockRegex, '').trim() : stemText
-}
-function _stripTrailingOptionBlockByLabels(stemText, optionKeys) {
-if (!stemText || !optionKeys || optionKeys.length < 2) return stemText
-const matches = _findOptionLabelMatches(stemText, optionKeys)
-if (matches.length < 2) return stemText
-for (let matchIndex = 0; matchIndex < matches.length; matchIndex++) {
-const index = matches[matchIndex]
-const suffix = stemText.slice(index)
-if (_hasTrailingOptionBlock(suffix, optionKeys)) return stemText.slice(0, index).trim()
-}
-return stemText
-}
-function _findOptionLabelMatches(text, optionKeys) {
-if (!text || !optionKeys || optionKeys.length < 2) return []
-const labels = optionKeys.map(_escapeRegExp).join('|')
-const labelMarker = `(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`
-const labelRegex = new RegExp(labelMarker, 'g')
-const matches = []
-let match
-while ((match = labelRegex.exec(text)) !== null) {
-const index = match.index + (match[0].match(/^[\s\n\r]/) ? 1 : 0)
-matches.push(index)
-}
-return matches
-}
-function _containsTrailingOptionBlock(text, optionKeys) {
-const matches = _findOptionLabelMatches(text, optionKeys)
-if (matches.length < 2) return false
-return matches.some(index => _hasTrailingOptionBlock(String(text || '').slice(index), optionKeys))
-}
-function _hasTrailingOptionBlock(text, optionKeys) {
-if (!text || !optionKeys || optionKeys.length < 2) return false
-const keys = optionKeys.map(key => String(key || '').trim()).filter(Boolean)
-if (keys.length < 2) return false
-const spaces = '[\\s\\u00A0]*'
-const separator = '[.．、:：）)]'
-const marker = (key, prefix) => `${prefix}${_escapeRegExp(key)}${spaces}${separator}`
-const first = marker(keys[0], '^' + spaces)
-const second = marker(keys[1], '[\\s\\n\\r]+')
-const required = new RegExp(first + '[\\s\\S]+?' + second, 'i')
-if (!required.test(text)) return false
-const labels = keys.map(_escapeRegExp).join('|')
-const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})${spaces}${separator}`, 'g')
-const found = []
-let match
-while ((match = labelRegex.exec(text)) !== null) {
-found.push(String(match[0]).replace(/^[\s\n\r]+/, '').charAt(0).toUpperCase())
-}
-if (found.length < 2) return false
-return found[0] === keys[0].toUpperCase() && found[1] === keys[1].toUpperCase()
-}
-function _shortText(text) {
-const normalized = String(text || '').replace(/\s+/g, ' ').trim()
-return normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized
-}
-function _textToSegments(text) {
-if (!text) return []
-const lines = String(text).split('\n')
-const segments = []
-lines.forEach((line, index) => {
-if (line) segments.push({ type: 'text', text: line })
-if (index < lines.length - 1) segments.push({ type: 'newline' })
-})
-return segments
-}
-function _cleanStemText(stemText, options, optionKeys) {
-const dedupedStem = _deduplicateLines(stemText)
-const withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
-const withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
-return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
-}
-function _removeTrailingOptionKeys(text, optionKeys) {
-if (!text || !optionKeys || optionKeys.length === 0) return text
-const keys = optionKeys.map(_escapeRegExp).join('')
-const pattern = new RegExp('\\s+[' + keys + ']\\s*$', 'g')
-return text.replace(pattern, '')
-}
-function _optionTextToHtml(key, value) {
-const text = String(value || '').trim()
-if (!key) return _textToHtml(text)
-const keyPattern = new RegExp(`^${_escapeRegExp(String(key))}[\\s\\u00A0]*[.．、:：）)]?\\s*`, 'i')
-const normalized = keyPattern.test(text) ? text : `${key}. ${text}`
-return _textToHtml(normalized)
-}
 Page({
 _pageAlive: false,
 _practiceSession: {},
@@ -591,11 +422,11 @@ onShow() {
 const s = this._practiceSession
 if (s && s._timingPauseActive) return
 if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs !== null) {
-s.backgroundMs = (s.backgroundMs || 0) + (_monotonicNow() - s._backgroundStartedMonoMs)
+s.backgroundMs = (s.backgroundMs || 0) + (monotonicNow() - s._backgroundStartedMonoMs)
 s._backgroundStartedMonoMs = null
 }
 if (s && s.activeStartedMonoMs && this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
-s.currentQuestionStartedMonoMs = _monotonicNow()
+s.currentQuestionStartedMonoMs = monotonicNow()
 }
 },
 onHide() {
@@ -605,7 +436,7 @@ if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs === null) {
 if (this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
 this._settleQuestionTime(true)
 }
-s._backgroundStartedMonoMs = _monotonicNow()
+s._backgroundStartedMonoMs = monotonicNow()
 }
 },
 async onReady() {
@@ -1107,7 +938,7 @@ _startTimer() {
 this._clearTimer()
 this._timer = setInterval(() => {
 if (!this._pageAlive || !this._practiceSession.activeStartedMonoMs) return
-const now = _monotonicNow()
+const now = monotonicNow()
 const backgroundMs = (this._practiceSession.backgroundMs || 0) + (
 this._practiceSession._backgroundStartedMonoMs !== null
 ? Math.max(0, now - this._practiceSession._backgroundStartedMonoMs)
@@ -1339,14 +1170,14 @@ return
 this.setData(buildLoadedView(questions, viewModelResult))
 if (questions.length > 0 && firstQuestion) {
 if (!this._practiceSession.activeStartedMonoMs) {
-this._practiceSession.activeStartedMonoMs = _monotonicNow()
+this._practiceSession.activeStartedMonoMs = monotonicNow()
 this._practiceSession.startedAtMs = api.now()
 this._practiceSession.backgroundMs = 0
 this._practiceSession._backgroundStartedMonoMs = null
 this._practiceSession.elapsedSec = 0
 }
 this._practiceSession.optionKeys = viewModelResult.optionKeys
-this._practiceSession.currentQuestionStartedMonoMs = _monotonicNow()
+this._practiceSession.currentQuestionStartedMonoMs = monotonicNow()
 this._setPracticeUnloadGuard(true)
 this._startTimer()
 this._updateComputedFields()
@@ -1542,7 +1373,7 @@ showToast: options => wx.showToast(options),
 settleQuestionTime: () => this._settleQuestionTime(),
 warmQuestionImages: index => this._warmQuestionImages(this.data.questions, index),
 setOptionKeys: keys => { this._practiceSession.optionKeys = keys },
-setCurrentQuestionStartedMono: () => { this._practiceSession.currentQuestionStartedMonoMs = _monotonicNow() },
+setCurrentQuestionStartedMono: () => { this._practiceSession.currentQuestionStartedMonoMs = monotonicNow() },
 getTraceId: q => this._practiceSession.traceId || q.trace_id,
 })
 )
@@ -1586,7 +1417,7 @@ getCurrentQuestionStartedMonoMs: () => this._practiceSession.currentQuestionStar
 getQuestionTimeMap: () => this._practiceSession.questionTimeMap,
 setQuestionTimeMap: map => { this._practiceSession.questionTimeMap = map },
 setCurrentQuestionStartedMonoMs: ms => { this._practiceSession.currentQuestionStartedMonoMs = ms },
-monotonicNow: () => _monotonicNow(),
+monotonicNow: () => monotonicNow(),
 })
 )
 },
@@ -1678,7 +1509,7 @@ return comp.show(opts)
 },
 async _showSubmitConfirmPaused(opts) {
 const session = this._practiceSession
-const pauseStartedMonoMs = _monotonicNow()
+const pauseStartedMonoMs = monotonicNow()
 if (session) session._timingPauseActive = true
 this._settleQuestionTime(true)
 this._clearTimer()
@@ -1686,7 +1517,7 @@ let confirmed = false
 try {
 confirmed = await this._showSubmitConfirm(opts)
 } finally {
-const pausedMs = Math.max(0, _monotonicNow() - pauseStartedMonoMs)
+const pausedMs = Math.max(0, monotonicNow() - pauseStartedMonoMs)
 if (session) {
 session.backgroundMs = (session.backgroundMs || 0) + pausedMs
 session._timingPauseActive = false
@@ -1697,7 +1528,7 @@ if (
 this.data.started && !this.data.submitted && !this.data.submitting &&
 session && !session.submissionSnapshot
 ) {
-session.currentQuestionStartedMonoMs = _monotonicNow()
+session.currentQuestionStartedMonoMs = monotonicNow()
 this._startTimer()
 }
 return !!confirmed
@@ -1767,7 +1598,7 @@ confirmed = true
 if (!confirmed) return
 this._clearTimer()
 this._settleQuestionTime(true)
-const finishedMonoMs = _monotonicNow()
+const finishedMonoMs = monotonicNow()
 const finishedAtMs = api.now()
 const duration = Math.max(0, Math.floor(
 (finishedMonoMs - activeStartedMonoMs - (this._practiceSession.backgroundMs || 0)) / 1000,
