@@ -10,6 +10,7 @@ const { hasDetailedPracticePayload: _hasDetailedPayload, readSummaryFromOptions:
 const { isPayloadRequestValid: _isPayloadRequestValid, extractCreatedAtFromCacheKey } = require('./utils/cache-validation');
 const { resolveResultCounts } = require('./utils/result-counts');
 const { buildReviewItem: _buildReviewItem, normalizeReviewItem: _normalizeReviewItem } = require('./utils/review-item-builder');
+const { normalizePercent: _normalizePercent, getQuestionListHeightRpx: _getQuestionListHeightRpx, formatDuration: _formatDuration, buildErrorDonutGradient: _buildErrorDonutGradient } = require('./utils/format-helpers');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -40,12 +41,7 @@ const n = Number(value);
 if (!Number.isFinite(n)) return min;
 return Math.min(max, Math.max(min, n));
 }
-function normalizePercent(value) {
-const n = Number(value);
-if (!Number.isFinite(n)) return 0;
-if (n >= 0 && n <= 1) return Math.round(n * 100);
-return Math.round(clamp(n, 0, 100));
-}
+function normalizePercent(value) { return _normalizePercent(value) }
 function normalizeReviewStatus(source, isCorrectFallback) {
 const raw = String(
 source && (source.status ?? source.answer_status ?? source.answerStatus) || ''
@@ -59,10 +55,7 @@ return isCorrectFallback ? 'correct' : 'wrong';
 function pad2(n) {
 return String(Math.max(0, Number(n) || 0)).padStart(2, '0');
 }
-function getQuestionListHeightRpx(count) {
-const total = Math.max(0, Number(count) || 0);
-return total > 0 ? total * 86 : 96;
-}
+function getQuestionListHeightRpx(count) { return _getQuestionListHeightRpx(count) }
 function buildTrendPlot(data) {
 const list = Array.isArray(data) ? data : [];
 if (!list.length) return { points: [], segments: [], lastPoint: null };
@@ -115,23 +108,7 @@ areaStyle: areaPolygon.length
 : ''
 };
 }
-function buildErrorDonutGradient(distribution) {
-const list = Array.isArray(distribution)
-? distribution.filter(item => Number(item && item.count) > 0)
-: [];
-const total = list.reduce((sum, item) => sum + Number(item.count || 0), 0);
-if (!total) return '#EEF2EF';
-let cursor = 0;
-const stops = [];
-list.forEach((item, index) => {
-const ratio = Number(item.count || 0) / total * 100;
-const start = cursor;
-const end = index === list.length - 1 ? 100 : cursor + ratio;
-stops.push(`${item.color || ERROR_COLORS[index % ERROR_COLORS.length]} ${start.toFixed(3)}% ${end.toFixed(3)}%`);
-cursor = end;
-});
-return `conic-gradient(${stops.join(', ')})`;
-}
+function buildErrorDonutGradient(distribution) { return _buildErrorDonutGradient(distribution) }
 function getErrorDonutMetrics() {
 let windowWidth = 375;
 try {
@@ -178,14 +155,7 @@ return `<path d="M ${p1.x.toFixed(3)} ${p1.y.toFixed(3)} A ${pathRadius.toFixed(
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.toFixed(3)} ${size.toFixed(3)}" shape-rendering="geometricPrecision"><circle cx="${cx.toFixed(3)}" cy="${cy.toFixed(3)}" r="${pathRadius.toFixed(3)}" fill="none" stroke="#EEF2EF" stroke-width="${lineWidth.toFixed(3)}"/>${paths}</svg>`;
 return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
-function formatDuration(seconds) {
-const total = Math.max(0, Math.round(Number(seconds) || 0));
-const h = Math.floor(total / 3600);
-const m = Math.floor((total % 3600) / 60);
-const s = total % 60;
-if (h > 0) return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
-return `${pad2(m)}分${pad2(s)}秒`;
-}
+function formatDuration(seconds) { return _formatDuration(seconds) }
 function safeDecodeJson(value) {
 if (!value || typeof value !== 'string') return null;
 const candidates = [value];
