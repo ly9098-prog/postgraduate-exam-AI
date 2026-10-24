@@ -146,6 +146,7 @@ from app.services.task_queue_v1_dead_contract import (
     build_v1_dead_entry,
     build_v1_dead_purge_plan,
 )
+from app.services.task_queue_v1_metrics_contract import build_v1_metrics_snapshot
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1183,25 +1184,14 @@ class DurableTaskQueue:
 
         Returns both cumulative counters and current queue length snapshots.
         """
-        results = dict(queue_metrics)
-        types = task_types or []
-
-        ready = 0
-        processing = 0
-        retry_count = 0
-        dead = 0
-
-        for tt in types:
-            ready += await self.queue_length(tt)
-            processing += await self.processing_length(tt)
-            retry_count += await self.retry_length(tt)
-            dead += await self.dead_length(tt)
-
-        results["ready"] = ready
-        results["processing"] = processing
-        results["retry"] = retry_count
-        results["dead"] = dead
-        return results
+        return await build_v1_metrics_snapshot(
+            base_metrics=queue_metrics,
+            task_types=task_types or [],
+            ready_length=self.queue_length,
+            processing_length=self.processing_length,
+            retry_length=self.retry_length,
+            dead_length=self.dead_length,
+        )
 
     async def list_dead(self, task_type: str, limit: int = 100) -> list[dict]:
         """List dead-letter entries for a task type (newest first)."""
