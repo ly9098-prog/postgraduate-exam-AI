@@ -14,6 +14,7 @@ const { normalizePercent: _normalizePercent, getQuestionListHeightRpx: _getQuest
 const { stripLevelPrefix: _stripLevelPrefix, growthFromTotalExp: _growthFromTotalExp, normalizeGrowthProfile: _normalizeGrowthProfile, growthFromOverview: _growthFromOverview } = require('./utils/growth-helpers');
 const { buildTrendPlot: _buildTrendPlot } = require('./utils/trend-plot-builder');
 const { buildRecoveredResultPayload: _buildRecoveredResultPayload } = require('./utils/recovered-payload-builder');
+const { normalizePracticeReturnRoute: _normalizePracticeReturnRoute, safeDecodeJson: _safeDecodeJson } = require('./utils/route-helpers');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -33,12 +34,7 @@ streak_title: '',
 daily_boost: '',
 badges: []
 };
-function normalizePracticeReturnRoute(value) {
-const route = safeDecodeURIComponent(value, '').trim().slice(0, 512);
-if (!route) return '';
-if (!/^\/subpackages\/(?:knowledge\/knowledge-(?:detail|subject)|study\/knowledge-(?:detail|subject))\/index(?:\?.*)?$/.test(route)) return '';
-return route;
-}
+function normalizePracticeReturnRoute(value) { return _normalizePracticeReturnRoute(value) }
 function clamp(value, min, max) {
 const n = Number(value);
 if (!Number.isFinite(n)) return min;
@@ -108,19 +104,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.toFixed
 return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 function formatDuration(seconds) { return _formatDuration(seconds) }
-function safeDecodeJson(value) {
-if (!value || typeof value !== 'string') return null;
-const candidates = [value];
-try { candidates.push(decodeURIComponent(value)); } catch (e) {}
-for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
-const text = candidates[candidateIndex];
-try {
-const parsed = JSON.parse(text);
-if (parsed && typeof parsed === 'object') return parsed;
-} catch (e) {}
-}
-return null;
-}
+function safeDecodeJson(value) { return _safeDecodeJson(value) }
 function formatMathPreviewText(value) {
 if (value === undefined || value === null) return '';
 const source = String(value)
