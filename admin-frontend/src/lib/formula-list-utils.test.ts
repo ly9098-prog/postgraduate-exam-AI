@@ -9,6 +9,7 @@ import {
   computeSafeSelectedIds,
   computeBatchSelectionState,
   isBatchableStatus,
+  computePageWindow,
 } from "./formula-list-utils";
 
 describe("positiveInt", () => {
@@ -240,5 +241,42 @@ describe("isBatchableStatus", () => {
   });
   it("false for empty string", () => {
     expect(isBatchableStatus("")).toBe(false);
+  });
+});
+
+describe("computePageWindow", () => {
+  it("returns empty when totalPages <= 1", () => {
+    expect(computePageWindow(1, 1)).toEqual([]);
+    expect(computePageWindow(1, 0)).toEqual([]);
+  });
+  it("returns all pages when total <= window", () => {
+    expect(computePageWindow(1, 3)).toEqual([1, 2, 3]);
+    expect(computePageWindow(2, 3)).toEqual([1, 2, 3]);
+    expect(computePageWindow(3, 3)).toEqual([1, 2, 3]);
+  });
+  it("clamps window to 5 pages for large totals", () => {
+    expect(computePageWindow(5, 20)).toHaveLength(5);
+    expect(computePageWindow(5, 20)).toEqual([3, 4, 5, 6, 7]);
+  });
+  it("starts at 1 for early pages", () => {
+    expect(computePageWindow(1, 20)).toEqual([1, 2, 3, 4, 5]);
+    expect(computePageWindow(2, 20)).toEqual([1, 2, 3, 4, 5]);
+    expect(computePageWindow(3, 20)).toEqual([1, 2, 3, 4, 5]);
+  });
+  it("slides to end for late pages", () => {
+    expect(computePageWindow(19, 20)).toEqual([16, 17, 18, 19, 20]);
+    expect(computePageWindow(20, 20)).toEqual([16, 17, 18, 19, 20]);
+  });
+  it("respects custom windowSize", () => {
+    expect(computePageWindow(5, 20, 3)).toEqual([4, 5, 6]);
+    expect(computePageWindow(1, 20, 3)).toEqual([1, 2, 3]);
+    expect(computePageWindow(20, 20, 3)).toEqual([18, 19, 20]);
+  });
+  it("windowSize 1 returns single page", () => {
+    expect(computePageWindow(5, 20, 1)).toEqual([5]);
+  });
+  it("does not exceed totalPages near boundary", () => {
+    expect(computePageWindow(4, 4)).toEqual([1, 2, 3, 4]);
+    expect(computePageWindow(4, 6, 5)).toEqual([2, 3, 4, 5, 6]);
   });
 });

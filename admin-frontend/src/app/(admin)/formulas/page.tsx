@@ -47,6 +47,7 @@ import {
   computeSafeSelectedIds,
   computeBatchSelectionState,
   isBatchableStatus,
+  computePageWindow,
 } from "@/lib/formula-list-utils";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
@@ -922,10 +923,7 @@ export default function FormulasPage() {
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
-                  {Array.from({ length: Math.min(formulas.data.total_pages, 5) }, (_, i) => {
-                    const startPage = Math.max(1, Math.min(page - 2, formulas.data.total_pages - 4));
-                    const pageNumber = startPage + i;
-                    if (pageNumber > formulas.data.total_pages) return null;
+                  {computePageWindow(page, formulas.data.total_pages, 5).map((pageNumber) => {
                     return (
                       <button
                         key={pageNumber}

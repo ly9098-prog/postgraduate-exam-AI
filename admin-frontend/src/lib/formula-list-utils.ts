@@ -146,3 +146,28 @@ export function computeBatchSelectionState<
 export function isBatchableStatus(status: string | undefined): boolean {
   return status === "pending_review" || status === "draft";
 }
+
+/**
+ * Compute the visible page-number window for a compact pager that shows at
+ * most `windowSize` buttons centered on the current page. Returns the array
+ * of page numbers (empty when total <= 1). The window slides so the current
+ * page stays roughly centered; near the start it clamps to 1, and near the
+ * end it clamps so the last page is the final button.
+ */
+export function computePageWindow(
+  page: number,
+  totalPages: number,
+  windowSize = 5,
+): number[] {
+  if (totalPages <= 1) return [];
+  const size = Math.min(totalPages, Math.max(1, windowSize));
+  const half = Math.floor(size / 2);
+  const startPage = Math.max(1, Math.min(page - half, totalPages - (size - 1)));
+  const out: number[] = [];
+  for (let i = 0; i < size; i++) {
+    const pageNumber = startPage + i;
+    if (pageNumber > totalPages) break;
+    out.push(pageNumber);
+  }
+  return out;
+}
