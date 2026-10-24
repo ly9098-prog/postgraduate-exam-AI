@@ -1,10 +1,38 @@
 /**
  * Pure helpers for syllabus page, extracted from syllabus/page.tsx.
- * Covers catalog filtering, grouping, membership dirty-checking, and
- * included-id extraction.
+ * Covers catalog filtering, grouping, membership dirty-checking,
+ * included-id extraction, and status/relation label mapping.
  */
 
 import type { SyllabusCatalogItem } from "@/lib/api/types";
+
+export type BadgeTone = "success" | "warning" | "neutral";
+
+export const STATUS_LABEL: Record<string, string> = {
+  draft: "草稿",
+  active: "当前生效",
+  archived: "已归档",
+};
+
+export const RELATION_LABEL: Record<string, string> = {
+  unchanged: "保持",
+  renamed: "重命名",
+  added: "新增",
+  removed: "移除",
+  merged: "合并",
+  split: "拆分",
+  replaced: "替换",
+};
+
+/**
+ * Map a syllabus version status to a badge tone.
+ */
+export function statusTone(status: string): BadgeTone {
+  if (status === "active") return "success";
+  if (status === "draft") return "warning";
+  return "neutral";
+}
+
 
 export const SUBJECT_PREFERRED_ORDER = [
   "data_structure",

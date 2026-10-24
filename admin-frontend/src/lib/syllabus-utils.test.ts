@@ -5,6 +5,9 @@ import {
   extractIncludedIds,
   isMembershipDirty,
   SUBJECT_PREFERRED_ORDER,
+  STATUS_LABEL,
+  RELATION_LABEL,
+  statusTone,
 } from "./syllabus-utils";
 import type { SyllabusCatalogItem } from "./api/types";
 
@@ -85,5 +88,40 @@ describe("isMembershipDirty", () => {
   });
   it("true when selected has extra", () => {
     expect(isMembershipDirty(new Set([1, 2, 3]), new Set([1, 2]))).toBe(true);
+  });
+});
+
+describe("statusTone", () => {
+  it("returns success for active", () => {
+    expect(statusTone("active")).toBe("success");
+  });
+  it("returns warning for draft", () => {
+    expect(statusTone("draft")).toBe("warning");
+  });
+  it("returns neutral for archived", () => {
+    expect(statusTone("archived")).toBe("neutral");
+  });
+  it("returns neutral for unknown status", () => {
+    expect(statusTone("unknown")).toBe("neutral");
+  });
+});
+
+describe("STATUS_LABEL", () => {
+  it("has all status labels", () => {
+    expect(STATUS_LABEL.draft).toBe("草稿");
+    expect(STATUS_LABEL.active).toBe("当前生效");
+    expect(STATUS_LABEL.archived).toBe("已归档");
+  });
+});
+
+describe("RELATION_LABEL", () => {
+  it("has all relation labels", () => {
+    expect(RELATION_LABEL.unchanged).toBe("保持");
+    expect(RELATION_LABEL.renamed).toBe("重命名");
+    expect(RELATION_LABEL.added).toBe("新增");
+    expect(RELATION_LABEL.removed).toBe("移除");
+    expect(RELATION_LABEL.merged).toBe("合并");
+    expect(RELATION_LABEL.split).toBe("拆分");
+    expect(RELATION_LABEL.replaced).toBe("替换");
   });
 });

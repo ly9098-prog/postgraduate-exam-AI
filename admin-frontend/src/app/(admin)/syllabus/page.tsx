@@ -34,29 +34,10 @@ import {
   groupCatalogBySubject,
   extractIncludedIds,
   isMembershipDirty,
+  STATUS_LABEL,
+  RELATION_LABEL,
+  statusTone,
 } from "@/lib/syllabus-utils";
-
-const STATUS_LABEL: Record<string, string> = {
-  draft: "草稿",
-  active: "当前生效",
-  archived: "已归档",
-};
-
-const RELATION_LABEL: Record<string, string> = {
-  unchanged: "保持",
-  renamed: "重命名",
-  added: "新增",
-  removed: "移除",
-  merged: "合并",
-  split: "拆分",
-  replaced: "替换",
-};
-
-function statusTone(status: string) {
-  if (status === "active") return "success" as const;
-  if (status === "draft") return "warning" as const;
-  return "neutral" as const;
-}
 
 const selectClass = "h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm text-[var(--ink)] outline-none transition focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[rgba(74,111,138,0.12)] disabled:cursor-not-allowed disabled:opacity-50";
 
