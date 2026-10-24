@@ -27,6 +27,7 @@ import type {
   AdminExamPaperType,
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
+import { statusMeta, paperKindLabel, computePaperSummary, filterPapers, buildStatusSegments } from "@/lib/exam-paper-utils";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { DEFAULT_EXAM_YEAR, EXAM_YEAR_OPTIONS, isSupportedExamYear } from "@/lib/exam-years";
 
@@ -41,17 +42,6 @@ const statusOptions = [
   { label: "已发布", value: "published" },
   { label: "已归档", value: "archived" },
 ];
-
-function statusMeta(status: AdminExamPaperListItem["status"]) {
-  if (status === "published") return { label: "已发布", tone: "success" as const };
-  if (status === "archived") return { label: "已归档", tone: "neutral" as const };
-  return { label: "草稿", tone: "warning" as const };
-}
-
-function paperKindLabel(paper: AdminExamPaperListItem) {
-  if (paper.paper_type === "past_exam_choice") return `${paper.year ?? "年份未设置"} 真题`;
-  return paper.year ? `${paper.year} 模拟卷` : "模拟卷";
-}
 
 export default function ExamPapersPage() {
   const router = useRouter();
@@ -107,12 +97,7 @@ export default function ExamPapersPage() {
   });
 
   const papers = query.data ?? [];
-  const summary = useMemo(() => ({
-    total: papers.length,
-    draft: papers.filter((paper) => paper.status === "draft").length,
-    published: papers.filter((paper) => paper.status === "published").length,
-    attempts: papers.reduce((total, paper) => total + paper.attempt_count, 0),
-  }), [papers]);
+  const summary = useMemo(() => computePaperSummary(papers), [papers]);
   const normalizedKeyword = settledKeyword.trim().toLowerCase();
 
   const updateResultsTransitionPhase = useCallback((phase: "idle" | "leaving" | "pre-enter" | "entering") => {
@@ -234,11 +219,10 @@ export default function ExamPapersPage() {
     clearEnterFrames();
   }, [clearEnterFallback, clearEnterFrames, clearLeaveFallback]);
 
-  const filteredPapers = useMemo(() => papers.filter((paper) => {
-    if (displayStatusFilter && paper.status !== displayStatusFilter) return false;
-    if (!displayKeyword) return true;
-    return `${paper.title} ${paper.source ?? ""} ${paper.year ?? ""} ${paper.version}`.toLowerCase().includes(displayKeyword);
-  }), [displayKeyword, displayStatusFilter, papers]);
+  const filteredPapers = useMemo(
+    () => filterPapers(papers, displayStatusFilter, displayKeyword),
+    [displayKeyword, displayStatusFilter, papers],
+  );
   const isSearchSettling = settledKeyword !== keyword;
   const isResultsTransitioning = isSearchSettling || resultsTransitionPhase !== "idle";
   const stableDesktopListHeight = papers.length > 0
@@ -247,12 +231,7 @@ export default function ExamPapersPage() {
   const stableMobileListHeight = papers.length > 0
     ? Math.max(240, Math.min(560, papers.length * 96))
     : 240;
-  const statusSegments = [
-    { value: "", label: "全部", count: summary.total },
-    { value: "draft", label: "草稿", count: summary.draft },
-    { value: "published", label: "已发布", count: summary.published },
-    { value: "archived", label: "已归档", count: papers.filter((paper) => paper.status === "archived").length },
-  ];
+  const statusSegments = buildStatusSegments(papers, summary);
 
   return (
     <ManagementPage className="space-y-6">
