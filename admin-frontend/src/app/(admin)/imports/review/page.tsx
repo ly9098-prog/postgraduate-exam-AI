@@ -1,17 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, FileText, Save, Sparkles, X, XCircle } from "lucide-react";
+import { CheckCircle2, FileText, Sparkles, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CustomSelect } from "@/components/ui/custom-select";
-import { StatusBadge } from "@/components/status-badge";
-import { cn } from "@/lib/utils";
 import { formatChinaClock } from "@/lib/time";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { useAuthStore } from "@/lib/auth/auth-store";
@@ -19,18 +15,14 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { useOutsideClick } from "@/lib/use-outside-click";
 import { reviewPageStyles } from "./review-page-styles";
 import { updateSegUrl } from "@/lib/segment-utils";
-import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import type { BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
-  getMultiBlankSaveState,
   reduceMultiBlankEditState,
   syncDerivedMultiBlankFields,
   type MultiBlankAction,
   type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
 import { isMultiBlankChoice, type EditState } from "./review-edit-state";
-import { ReviewAnswerPreview } from "./components/review-answer-preview";
-import { ReviewStemEditor } from "./components/review-stem-editor";
 import {
   buildReviewQueueParams,
   createDefaultReviewFilters,
@@ -82,34 +74,16 @@ import { useReviewBatchAnswerMutations } from "./hooks/use-review-batch-answer-m
 import { useReviewBatchCompleteMutation } from "./hooks/use-review-batch-complete-mutation";
 import { useReviewImageAnswerFlow } from "./hooks/use-review-image-answer-flow";
 import { useReviewSegmentDrag } from "./hooks/use-review-segment-drag";
-import { ReviewVisualSegmentEditor } from "./components/review-visual-segment-editor";
-import { ReviewAnswerEditor } from "./components/review-answer-editor";
-import { ReviewQuestionPreview } from "./components/review-question-preview";
-import { ReviewOptionEditor } from "./components/review-option-editor";
-import { ReviewSourceEvidence } from "./components/review-source-evidence";
-import { ReviewJsonView } from "./components/review-json-view";
 import { ReviewFilterToolbar } from "./components/review-filter-toolbar";
 import { ReviewList } from "./components/review-list";
 import { ReviewPagination } from "./components/review-pagination";
 import { ReviewBatchCompleteDialog } from "./components/review-batch-complete-dialog";
 import { ReviewBatchAnswerDialog } from "./components/review-batch-answer-dialog";
+import { ReviewDetailDrawer } from "./components/review-detail-drawer";
 import { extractOptionVisualModel, type OptionVisualModel } from "@/lib/option-visual-utils";
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 
 type ConfirmState = ReviewActionState | null;
-
-function renderJson(value: unknown) {
-  if (value === undefined || value === null || value === "") return "—";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value, null, 2);
-}
-
-function statusTone(status: string) {
-  if (status === "approved") return "success";
-  if (status === "rejected") return "danger";
-  if (status === "published") return "primary";
-  return "warning";
-}
 
 export default function ImportReviewPage() {
   const searchParams = useSearchParams();
@@ -922,405 +896,55 @@ export default function ImportReviewPage() {
         </CardContent>
       </Card>
 
-      {/* ── Scholar's Study Detail Drawer ── */}
-      {previewId !== null && previewItem && editState ? (
-        <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.38)] backdrop-blur-[1px]" role="presentation" onClick={closeDrawer}>
-          <aside role="dialog" aria-modal="true" aria-labelledby="drawer-title"
-            className="flex h-full w-full max-w-3xl flex-col overflow-y-auto shadow-[var(--shadow-floating)] animate-slide-in bg-noise"
-            style={{
-              background: 'var(--color-bg)',
-              backgroundImage: 'linear-gradient(var(--blueprint-line) 1px, transparent 1px), linear-gradient(90deg, var(--blueprint-line) 1px, transparent 1px), url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'0.025\'/%3E%3C/svg%3E")',
-              backgroundSize: '24px 24px, 24px 24px, 128px 128px',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* ===== Compact Status Bar ===== */}
-            <div className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-2 backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="shrink-0 font-mono text-[11px] text-[var(--color-text-hint)]">#{previewItem.id}</span>
-                  <span className="h-3 w-px bg-[var(--color-border)]" />
-                  <StatusBadge tone={statusTone(previewItem.status)}>{previewItem.status}</StatusBadge>
-                  {previewItem.risk_level === "high" ? (
-                    <span className="risk-seal risk-seal-high !py-0 !text-[10px]"><span className="text-current opacity-60">◉</span> 高风险</span>
-                  ) : previewItem.risk_level === "medium" ? (
-                    <span className="risk-seal risk-seal-medium !py-0 !text-[10px]"><span className="text-current opacity-60">◉</span> 需检查</span>
-                  ) : previewItem.risk_level === "low" ? (
-                    <span className="risk-seal risk-seal-low !py-0 !text-[10px]"><span className="text-current opacity-60">◉</span> 低风险</span>
-                  ) : null}
-                  {editState.subject_id ? (
-                    <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">{subjectOptions.find((s) => s.id === editState.subject_id)?.name || `#${editState.subject_id}`}</span>
-                  ) : null}
-                  {/* ── 原题定位 ── */}
-                  {previewItem.source_question_no || previewItem.source_image_seq != null ? (
-                    <span className="hidden md:inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">
-                      {previewItem.source_image_seq != null ? `图${previewItem.source_image_seq}` : null}
-                      {previewItem.source_image_seq != null && previewItem.source_page_start != null ? " · " : null}
-                      {previewItem.source_page_start != null ? `第${previewItem.source_page_start}页` : null}
-                      {((previewItem.source_image_seq != null || previewItem.source_page_start != null) && previewItem.source_question_no) ? " · " : null}
-                      {previewItem.source_question_no ? `原题${previewItem.source_question_no}` : null}
-                    </span>
-                  ) : null}
-                  {previewItem.risk_reasons && previewItem.risk_reasons.length > 0 ? (
-                    <span className="hidden md:inline-block max-w-[200px] truncate text-[10px] text-red-600" title={previewItem.risk_reasons.join("；")}>
-                      {previewItem.risk_reasons[0]}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* View toggle */}
-                  <div className="flex overflow-hidden rounded-md border border-[var(--color-border)] bg-white/70">
-                    <button type="button" className={`px-2 py-1 text-[10px] font-semibold transition ${detailView === "formatted" ? "bg-[var(--color-primary)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)]"}`} onClick={() => setDetailView("formatted")}>文本</button>
-                    <button type="button" className={`px-2 py-1 text-[10px] font-semibold transition ${detailView === "json" ? "bg-[var(--color-primary)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)]"}`} onClick={() => setDetailView("json")}>JSON</button>
-                  </div>
-                  <button className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]" onClick={closeDrawer}>
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* ===== Content (main focus) ===== */}
-            <div className="relative flex-1 px-6 py-5 space-y-5">
-              {completeMutation.isPending ? (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-bg)]/70 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-5">
-                    {/* Ink spread animation */}
-                    <div className="relative flex items-center justify-center">
-                      <div className="absolute h-20 w-20 rounded-full border border-[var(--color-primary)]/10 animate-ink-spread" />
-                      <div className="absolute h-14 w-14 rounded-full border border-[var(--color-primary)]/20 animate-ink-spread" style={{ animationDelay: "0.3s" }} />
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_0_20px_rgba(91,123,154,0.15)]">
-                        <Sparkles className="h-5 w-5 text-[var(--color-primary)]" />
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-[var(--color-text-secondary)]">AI 正在审校</p>
-                      <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">分析题目结构，生成补全建议</p>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {detailView === "formatted" && !editing ? (
-                <>
-                  <ReviewQuestionPreview
-                    content={previewItem.parsed_content}
-                    draft={editState}
-                    visualModel={optionVisualModel}
-                    onRuntimeIssue={(issue) => setRuntimeIssues((prev) => prev.includes(issue) ? prev : [...prev, issue])}
-                  />
-
-                  {/* ── Answer Card ── */}
-                  <ReviewAnswerPreview item={previewItem} draft={editState} />
-
-                  {/* ── OCR Raw Data ── */}
-                  <ReviewSourceEvidence raw_data={previewItem.raw_data} parsed_content={previewItem.parsed_content} />
-
-                  {/* ── AI Suggestion Stamp ── */}
-                  {completeSuggestion ? (
-                    <section className="animate-fade-up drawer-section-delay-5 section-scroll section-scroll-ink rounded-2xl border border-[var(--color-primary)]/20 bg-gradient-to-br from-[var(--color-primary-light)]/60 to-white/90 p-5 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-primary)] shadow-sm">
-                            <Sparkles className="h-4 w-4 text-white" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-[var(--color-primary-dark)]">AI 补全建议</p>
-                            <p className="text-[10px] text-[var(--color-text-hint)]">由语言模型自动生成，请复核后采纳</p>
-                          </div>
-                        </div>
-                        {answerSuggestion ? (
-                          <button
-                            type="button"
-                            disabled={!canWrite || answerSuggestionApplied}
-                            onClick={() => {
-                              if (!canWrite || answerSuggestionApplied) return;
-                              setEditState((prev) => prev ? { ...prev, answer: answerSuggestion } : prev);
-                            }}
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold shadow-sm transition",
-                              answerSuggestionApplied
-                                ? "cursor-not-allowed border-emerald-200 bg-emerald-50 text-emerald-700 opacity-80"
-                                : "border-[var(--color-primary)]/30 bg-white text-[var(--color-primary-dark)] hover:bg-[var(--color-primary)] hover:text-white",
-                            )}
-                          >
-                            {answerSuggestionApplied ? <Check className="h-3 w-3" /> : null}
-                            {answerSuggestionApplied ? "已应用" : "应用答案"}
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="mt-3 rounded-xl border border-[var(--color-primary)]/10 bg-white/80 p-3">
-                        <pre className="max-h-36 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
-                      </div>
-                    </section>
-                  ) : null}
-                </>
-              ) : detailView === "json" && !editing ? (
-                /* ── JSON View ── */
-                <ReviewJsonView item={previewItem} />
-              ) : (
-                /* ── Edit Mode ── */
-                <div className="space-y-5 pb-16">
-                  {/* Subject / Type */}
-                  <div className="grid gap-3 md:grid-cols-2 animate-fade-up drawer-section-delay-1">
-                    <div className="space-y-1">
-                      <label className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]/60" />
-                        科目
-                      </label>
-                      <div className="relative">
-                        <button
-                          ref={subjectEditBtnRef}
-                          type="button"
-                          className="flex h-11 w-full items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                          onClick={() => {
-                            const next = !subjectEditDropdownOpen;
-                            setSubjectEditDropdownOpen(next);
-                            if (next && subjectEditBtnRef.current) {
-                              const r = subjectEditBtnRef.current.getBoundingClientRect();
-                              const maxRight = window.innerWidth - 16;
-                              const w = Math.min(r.width, maxRight - 16);
-                              setSubjectEditDropdownStyle({ top: r.bottom + 4, left: Math.min(r.left, maxRight - w), width: w });
-                            }
-                          }}
-                          onBlur={() => setTimeout(() => setSubjectEditDropdownOpen(false), 150)}
-                        >
-                          <span className={`min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left ${editState.subject_id ? "" : "text-[var(--color-text-hint)]"}`} title={editState.subject_id ? (subjectOptions.find((s) => s.id === editState.subject_id)?.name || "") : ""}>
-                            {editState.subject_id
-                              ? (subjectOptions.find((s) => s.id === editState.subject_id)?.name || `#${editState.subject_id}`)
-                              : "选择科目"}
-                          </span>
-                          {subjectsQuery.isLoading ? (
-                            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]" />
-                          ) : (
-                            <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform ${subjectEditDropdownOpen ? "rotate-180" : ""}`} />
-                          )}
-                        </button>
-                        {subjectEditDropdownOpen ? createPortal(
-                          <div className="fixed z-[200] max-h-56 overflow-y-auto scrollbar-hide rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg" style={subjectEditDropdownStyle}>
-                            <button
-                              type="button"
-                              className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
-                                !editState.subject_id
-                                  ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
-                                  : "text-[var(--color-text-hint)]"
-                              }`}
-                              onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: null }); setSubjectEditDropdownOpen(false); }}
-                            >
-                              {!editState.subject_id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
-                              不设置
-                            </button>
-                            {leafSubjectOptions.map((s) => (
-                              <button
-                                key={s.id}
-                                type="button"
-                                className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
-                                  editState.subject_id === s.id
-                                    ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
-                                    : "text-[var(--color-text-primary)]"
-                                }`}
-                                onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: s.id }); setSubjectEditDropdownOpen(false); }}
-                              >
-                                {editState.subject_id === s.id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
-                                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title={s.name}>{s.name}</span>
-                                <span className="ml-auto shrink-0 text-[10px] text-[var(--color-text-hint)]">{s.code}</span>
-                              </button>
-                            ))}
-                          </div>,
-                          document.body
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]/60" />
-                        题型
-                      </label>
-                      <CustomSelect
-                        value={editState.question_type}
-                        onChange={handleQuestionTypeChange}
-                        options={
-                          canonicalizeQuestionType(editState.question_type) || !editState.question_type
-                            ? QUESTION_TYPE_OPTIONS
-                            : [...QUESTION_TYPE_OPTIONS, { value: editState.question_type, label: formatUnknownType(editState.question_type), disabled: true }]
-                        }
-                        placeholder="选择题型"
-                        clearable={false}
-                      />
-                    </div>
-                  </div>
-                  {/* Stem edit */}
-                  <ReviewStemEditor
-                    stem={editState.stem}
-                    segments={editedSegments}
-                    onStemChange={(stem) => setEditState({ ...editState, stem })}
-                    onSegmentsChange={setEditedSegments}
-                  />
-
-                  {/* ── Visual Segment Editor (stem) ── */}
-                  <ReviewVisualSegmentEditor
-                    segments={editedSegments}
-                    options={editState.options}
-                    uploading={segmentUploading}
-                    drag={segmentDrag}
-                    inputRef={segmentReplaceInputRef}
-                    onFileChange={handleSegmentFileChange}
-                    onChange={setEditedSegments}
-                    onReplace={(index) => {
-                      segmentReplaceIdxRef.current = index;
-                      segmentReplaceInputRef.current?.click();
-                    }}
-                  />
-
-                  {/* Options edit */}
-                  <ReviewOptionEditor
-                    questionType={editState.question_type}
-                    options={editState.options}
-                    multiBlank={editState.multiBlank}
-                    visualModel={optionVisualModel}
-                    onOptionsChange={(options) => setEditState({ ...editState, options })}
-                    onMultiBlankAction={onMultiBlankAction}
-                    onRequestTextModeOverride={() => {
-                      setRuntimeIssues((prev) => [...prev, "placeholder_missing → text mode override requires explicit confirmation"]);
-                    }}
-                  />
-
-                  {/* Answer & Analysis edit */}
-                  <ReviewAnswerEditor
-                    questionType={editState.question_type}
-                    options={editState.options}
-                    answer={editState.answer}
-                    analysis={editState.analysis}
-                    onAnswerChange={(answer) => setEditState({ ...editState, answer })}
-                    onAnalysisChange={(analysis) => setEditState({ ...editState, analysis })}
-                  />
-
-                  {/* AI suggestion in edit mode */}
-                  {completeSuggestion ? (
-                    <section className="animate-fade-up drawer-section-delay-5 section-scroll section-scroll-ink rounded-2xl border border-[var(--color-primary)]/20 bg-gradient-to-br from-[var(--color-primary-light)]/60 to-white/90 p-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-primary)] shadow-sm">
-                            <Sparkles className="h-3.5 w-3.5 text-white" />
-                          </div>
-                          <p className="text-sm font-bold text-[var(--color-primary-dark)]">AI 补全建议</p>
-                        </div>
-                        {answerSuggestion ? (
-                          <button
-                            type="button"
-                            disabled={!canWrite || answerSuggestionApplied}
-                            onClick={() => {
-                              if (!canWrite || answerSuggestionApplied) return;
-                              setEditState({ ...editState, answer: answerSuggestion });
-                            }}
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold shadow-sm transition",
-                              answerSuggestionApplied
-                                ? "cursor-not-allowed border-emerald-200 bg-emerald-50 text-emerald-700 opacity-80"
-                                : "border-[var(--color-primary)]/30 bg-white text-[var(--color-primary-dark)] hover:bg-[var(--color-primary)] hover:text-white",
-                            )}
-                          >
-                            {answerSuggestionApplied ? <Check className="h-3 w-3" /> : null}
-                            {answerSuggestionApplied ? "已应用" : "应用答案"}
-                          </button>
-                        ) : null}
-                      </div>
-                      <pre className="mt-3 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-primary)]/10 bg-white/80 p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
-                    </section>
-                  ) : null}
-                </div>
-              )}
-
-              {/* ===== Sticky Bottom Footer ===== */}
-              {!editing ? (
-                <div className="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-3 backdrop-blur-xl">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={!canWrite || previewItem.status === "published" || isBlockedByVisualIssues} onClick={() => updateConfirmState({ action: "approve", id: previewItem.id })}>
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        通过
-                      </Button>
-                      <Button variant="danger" className="h-8 px-3.5 text-xs" disabled={!canWrite || previewItem.status === "published"} onClick={() => updateConfirmState({ action: "reject", id: previewItem.id })}>
-                        <XCircle className="h-3.5 w-3.5" />
-                        驳回
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        disabled={!canWrite || completeMutation.isPending || previewItem.status !== "pending"}
-                        onClick={() => {
-                          if (canWrite) completeMutation.mutate(previewItem.id);
-                        }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold tracking-wider transition-all ${
-                          completeMutation.isPending
-                            ? "bg-[var(--color-primary)]/10 text-[var(--color-primary-dark)] cursor-wait"
-                            : "bg-[var(--color-primary)]/10 text-[var(--color-primary-dark)] hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-40 disabled:pointer-events-none"
-                        }`}
-                      >
-                        {completeMutation.isPending ? (
-                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent" />
-                        ) : (
-                          <Sparkles className="h-3 w-3" />
-                        )}
-                        {completeMutation.isPending ? "审校中" : "AI 审校"}
-                      </button>
-                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={!canWrite || !previewDetailReady || segmentUploading >= 0} onClick={startEditing}>
-                        <FileText className="h-3.5 w-3.5" />
-                        编辑
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : (() => {
-                const mb = isMultiBlankChoice(editState.question_type) ? (editState.multiBlank ?? null) : null;
-                const saveState = mb && mb.groups.length >= 2
-                  ? getMultiBlankSaveState(mb.groups, mb.answerMap, mb.dedupWarnings, mb.dedupErrors, mb.hasUnappliedDraft)
-                  : null;
-                const canSave = saveState ? saveState.canSave : true;
-                return (
-                <div className="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-3 backdrop-blur-xl">
-                  {saveState && saveState.errors.length > 0 ? (
-                    <div className="mb-3 rounded-xl border border-red-200/50 bg-red-50/70 p-3">
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-400"><AlertTriangle className="h-3 w-3" /></span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-medium text-red-700">无法保存，请先处理以下问题</p>
-                          <ol className="mt-1.5 list-inside list-decimal space-y-0.5">
-                            {saveState.errors.map((err, i) => (
-                              <li key={i} className="text-[10px] text-red-600">{err}</li>
-                            ))}
-                          </ol>
-                        </div>
-                      </div>
-                      {saveState.warnings.length > 0 ? (
-                        <div className="mt-2 border-t border-red-200/30 pt-2">
-                          {saveState.warnings.map((w, i) => (
-                            <p key={i} className="text-[10px] text-amber-600">{w}</p>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="flex items-center justify-end gap-2">
-                    <Button className="h-8 px-3 text-xs" variant="ghost" onClick={cancelEditing}>
-                      <X className="h-3.5 w-3.5" />
-                      取消
-                    </Button>
-                    <Button className="h-8 px-3 text-xs" variant="primary" disabled={!canWrite || !canSave || updateMutation.isPending || previewItem.status === "published"} onClick={() => {
-                      if (canWrite) updateMutation.mutate();
-                    }}>
-                      <Save className="h-3.5 w-3.5" />
-                      {updateMutation.isPending ? "保存中..." : "保存"}
-                    </Button>
-                  </div>
-                </div>
-                );
-              })()}
-            </div>
-          </aside>
-        </div>
-      ) : null}
-
+      <ReviewDetailDrawer
+        open={previewId !== null && previewItem !== null && editState !== null}
+        item={previewItem as ImportQuestionItem}
+        editState={editState as EditState}
+        canWrite={canWrite}
+        detailView={detailView}
+        editing={editing}
+        subjectsLoading={subjectsQuery.isLoading}
+        subjectOptions={subjectOptions}
+        leafSubjectOptions={leafSubjectOptions}
+        optionVisualModel={optionVisualModel}
+        completeSuggestion={completeSuggestion}
+        answerSuggestion={answerSuggestion}
+        answerSuggestionApplied={answerSuggestionApplied}
+        completePending={completeMutation.isPending}
+        updatePending={updateMutation.isPending}
+        previewDetailReady={previewDetailReady}
+        segmentUploading={segmentUploading}
+        editedSegments={editedSegments}
+        segmentDrag={segmentDrag}
+        segmentReplaceInputRef={segmentReplaceInputRef}
+        subjectEditDropdownOpen={subjectEditDropdownOpen}
+        subjectEditDropdownStyle={subjectEditDropdownStyle}
+        subjectEditButtonRef={subjectEditBtnRef}
+        isBlockedByVisualIssues={isBlockedByVisualIssues}
+        onClose={closeDrawer}
+        onDetailViewChange={setDetailView}
+        onEditStateChange={setEditState}
+        onRuntimeIssue={(issue) => setRuntimeIssues((prev) => prev.includes(issue) ? prev : [...prev, issue])}
+        onApplyAnswerSuggestion={(answer) => setEditState((prev) => prev ? { ...prev, answer } : prev)}
+        onQuestionTypeChange={handleQuestionTypeChange}
+        onSubjectDropdownOpenChange={setSubjectEditDropdownOpen}
+        onSubjectDropdownStyleChange={setSubjectEditDropdownStyle}
+        onSegmentsChange={setEditedSegments}
+        onSegmentFileChange={handleSegmentFileChange}
+        onSegmentReplace={(index) => {
+          segmentReplaceIdxRef.current = index;
+          segmentReplaceInputRef.current?.click();
+        }}
+        onMultiBlankAction={onMultiBlankAction}
+        onStartEditing={startEditing}
+        onCancelEditing={cancelEditing}
+        onSave={() => updateMutation.mutate()}
+        onApprove={() => { if (previewItem) updateConfirmState({ action: "approve", id: previewItem.id }); }}
+        onReject={() => { if (previewItem) updateConfirmState({ action: "reject", id: previewItem.id }); }}
+        onComplete={() => {
+          if (previewItem) completeMutation.mutate(previewItem.id);
+        }}
+      />
       <ReviewBatchCompleteDialog
         open={showBatchComplete}
         selectedCount={selectedIds.size}
