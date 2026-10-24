@@ -5,6 +5,7 @@ const api = require('../../../utils/api');
 const { knowledgePracticeSync } = require('../../../utils/storage');
 const { getChinaDate } = require('../../../utils/china-time');
 const errorDiagnosis = require('../utils/error-diagnosis');
+const { buildLocalErrorDistribution: _buildLocalErrorDistribution, getResultTip: _getResultTip } = require('./utils/result-tips');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -1245,38 +1246,10 @@ if (!failedCount) wx.showToast({ title: `已标记 ${succeeded.length} 题`, ico
 else wx.showToast({ title: `成功 ${succeeded.length} 题，${failedCount} 题失败`, icon: 'none' });
 },
 buildLocalErrorDistribution(wrongItems) {
-if (!wrongItems.length) return [];
-const map = {};
-wrongItems.forEach(item => {
-const label = item.knowledgePoint || '其他';
-map[label] = (map[label] || 0) + 1;
-});
-const sorted = Object.keys(map)
-.map(label => ({ label, count: map[label] }))
-.sort((a, b) => b.count - a.count);
-let display = sorted.slice(0, 4);
-if (sorted.length > 4) {
-const rest = sorted.slice(4).reduce((sum, item) => sum + item.count, 0);
-display.push({ label: '其他', count: rest });
-}
-const total = display.reduce((sum, item) => sum + item.count, 0);
-return display.map((item, index) => ({
-...item,
-percent: total ? Math.round(item.count / total * 100) : 0,
-color: ERROR_COLORS[index % ERROR_COLORS.length]
-}));
+return _buildLocalErrorDistribution(wrongItems);
 },
 getResultTip(accuracy, wrongCount, skippedCount, partialCount, totalCount) {
-if (wrongCount === 0 && skippedCount === 0 && partialCount === 0 && Number(totalCount) > 0) return '本组表现稳定，可以继续挑战更高难度。';
-if (wrongCount === 0 && (skippedCount > 0 || partialCount > 0)) {
-const parts = [];
-if (partialCount > 0) parts.push(`${partialCount} 题未完成`);
-if (skippedCount > 0) parts.push(`${skippedCount} 题跳过`);
-return `本组有 ${parts.join('、')}，建议补看答案与解析后再继续。`;
-}
-if (accuracy >= 80) return '整体掌握较好，建议快速复盘错题后继续练习。';
-if (accuracy >= 60) return '基础已掌握，优先复盘错题对应知识点。';
-return '本组错题较多，建议先定位错误原因，再进行同类题巩固。';
+return _getResultTip(accuracy, wrongCount, skippedCount, partialCount, totalCount);
 },
 async loadDashboardData() {
 if (!this._pageAlive) return;

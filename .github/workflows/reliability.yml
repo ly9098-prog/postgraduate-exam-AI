@@ -463,6 +463,7 @@ jobs:
           node miniprogram/tests/test-exam-terminal-navigation.js
           node --test miniprogram/tests/test-exam-submit-helpers.js
           node --test miniprogram/tests/test-exam-hydrate-helpers.js
+          node --test miniprogram/tests/test-practice-result-tips.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
 
