@@ -2,6 +2,7 @@ const api = require('../../../utils/api')
 const examAttemptCache = require('../utils/exam-attempt-cache')
 const view = require('../utils/exam-runner-view')
 const { buildFinalSubmitAnswers, isRetryableSubmitError } = require('../utils/submit-helpers')
+const { buildServerAnswersMap, mergeAnswerState, buildExamResultUrl } = require('../utils/hydrate-helpers')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -232,7 +233,7 @@ Page({
     this._navigationLocked = true
     this._clearTimer()
     wx.redirectTo({
-      url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}`,
+      url: buildExamResultUrl(this.data.attemptId),
       fail: () => {
         this._terminalNavigation = false
         if (this._pageAlive) {
@@ -312,18 +313,11 @@ Page({
   },
 
   _hydrate(payload) {
-    const serverAnswers = Object.create(null)
-    ;(payload.answers || []).forEach((a) => {
-      serverAnswers[String(a.item_id)] = {
-        selected_answer: a.selected_answer || null,
-        marked_for_review: !!a.marked_for_review,
-        used_time: Math.max(0, Number(a.used_time || 0)),
-      }
-    })
+    const serverAnswers = buildServerAnswersMap(payload.answers)
     const pending = this._pending || {}
     const questions = (payload.questions || []).map((raw) => {
       const itemId = String(raw.item_id)
-      const answer = Object.assign({}, serverAnswers[itemId] || {}, pending[itemId] || {})
+      const answer = mergeAnswerState(serverAnswers[itemId], pending[itemId])
       this._answers[itemId] = answer
       const rv = view.buildRenderView(raw)
       this._renderCache[itemId] = rv
