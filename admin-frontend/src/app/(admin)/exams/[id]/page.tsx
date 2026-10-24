@@ -51,6 +51,15 @@ import type {
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { EXAM_YEAR_OPTIONS, isSupportedExamYear } from "@/lib/exam-years";
+import {
+  SUBJECT_ORDER as EXAM_SUBJECT_ORDER,
+  groupDraftItemsBySubject,
+  filterCandidates,
+  countMatchedSelected,
+  computeDraftScore,
+  hasStaleVersion as hasStaleVersionHelper,
+  buildCandidateSearchSummary,
+} from "@/lib/exam-detail-utils";
 import { ImportToast, type ImportToastTone } from "../../imports/components/import-toast";
 
 const typeOptions = [
@@ -66,12 +75,7 @@ const CORE_SUBJECT_CODES = new Set([
 ]);
 const CORE_SUBJECT_CODE_QUERY = Array.from(CORE_SUBJECT_CODES).join(",");
 
-const SUBJECT_ORDER = [
-  "data_structure",
-  "computer_organization",
-  "operating_system",
-  "computer_network",
-];
+const SUBJECT_ORDER = EXAM_SUBJECT_ORDER;
 
 const SUBJECT_JUMP_STYLE: Record<string, { dot: string; chip: string }> = {
   data_structure: { dot: "bg-[#4a6f8a]", chip: "border-[#bfd0db] bg-[#edf4f7] text-[#2d5068] hover:border-[#7f9fb2] hover:bg-[#e4eef3]" },
@@ -390,11 +394,11 @@ export default function ExamPaperDetailPage() {
   // subject_code 二次过滤，否则历史响应中 subject_code 为空时会把已命中的题全部误删。
   const candidatePageItems = candidateQuery.data?.items || [];
   const candidates = useMemo(
-    () => candidatePageItems.filter((question) => !selectedIds.has(question.id)),
+    () => filterCandidates(candidatePageItems, selectedIds),
     [candidatePageItems, selectedIds],
   );
   const matchedSelectedCount = useMemo(
-    () => candidatePageItems.filter((question) => selectedIds.has(question.id)).length,
+    () => countMatchedSelected(candidatePageItems, selectedIds),
     [candidatePageItems, selectedIds],
   );
   const candidateTotal = candidateQuery.data?.total ?? 0;
@@ -402,26 +406,10 @@ export default function ExamPaperDetailPage() {
   const searchIsSettling = normalizedKeyword !== debouncedKeyword;
   const searchIsBusy = searchIsSettling || candidateQuery.isFetching;
   const searchSummary = normalizedKeyword
-    ? `匹配 ${candidateTotal} 道 · 已在卷中 ${matchedSelectedCount} 道 · 可添加 ${candidates.length} 道`
-    : `当前可添加 ${candidates.length} 道`;
+    ? buildCandidateSearchSummary(candidateTotal, matchedSelectedCount, candidates.length, normalizedKeyword)
+    : buildCandidateSearchSummary(0, 0, candidates.length, "");
   const questionGroups = useMemo(() => {
-    const grouped = new Map<string, { subject_code: string; subject_name: string; entries: Array<{ index: number; item: DraftItem }> }>();
-    items.forEach((item, index) => {
-      const key = item.subject_code || item.subject_name || "unknown";
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.entries.push({ index, item });
-      } else {
-        grouped.set(key, { subject_code: item.subject_code || "unknown", subject_name: item.subject_name || "未归类", entries: [{ index, item }] });
-      }
-    });
-    return Array.from(grouped.values()).sort((left, right) => {
-      const leftOrder = SUBJECT_ORDER.indexOf(left.subject_code);
-      const rightOrder = SUBJECT_ORDER.indexOf(right.subject_code);
-      const leftRank = leftOrder === -1 ? Number.MAX_SAFE_INTEGER : leftOrder;
-      const rightRank = rightOrder === -1 ? Number.MAX_SAFE_INTEGER : rightOrder;
-      return leftRank - rightRank || left.subject_name.localeCompare(right.subject_name, "zh-CN");
-    });
+    return groupDraftItemsBySubject(items);
   }, [items]);
   const activeItem = items[activeQuestionIndex];
   const activeSubjectName = activeItem?.subject_name || "未定位";
@@ -698,8 +686,8 @@ export default function ExamPaperDetailPage() {
 
   const status = statusMeta(paper.status);
   const pastExamItemsManaged = paper.paper_type === "past_exam_choice" || paperType === "past_exam_choice";
-  const draftScore = items.reduce((total, item) => total + (Number(item.score) || 0), 0);
-  const hasStaleVersion = items.some((item) => item.version_is_current === false);
+  const draftScore = computeDraftScore(items);
+  const hasStaleVersion = hasStaleVersionHelper(items);
   const metaDirty = Boolean(isDraft && (
     title.trim() !== paper.title
     || paperType !== paper.paper_type
