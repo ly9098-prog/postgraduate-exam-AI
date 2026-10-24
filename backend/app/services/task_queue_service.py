@@ -142,6 +142,10 @@ from app.services.task_queue_v1_transition_contract import (
     resolve_v1_transition_identity,
     should_v1_retry,
 )
+from app.services.task_queue_v1_dead_contract import (
+    build_v1_dead_entry,
+    build_v1_dead_purge_plan,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1211,13 +1215,7 @@ class DurableTaskQueue:
             result = []
             for tid in task_ids:
                 raw = await client.hget(_task_hash_key(tid), "data")
-                if raw:
-                    try:
-                        result.append(json.loads(raw))
-                    except json.JSONDecodeError:
-                        result.append({"task_id": tid, "error": "corrupt_payload"})
-                else:
-                    result.append({"task_id": tid, "error": "hash_expired"})
+                result.append(build_v1_dead_entry(tid, raw))
             await client.aclose()
             return result
         except Exception as e:
@@ -1241,20 +1239,15 @@ class DurableTaskQueue:
             purged = 0
             for tid in task_ids:
                 raw = await client.hget(_task_hash_key(tid), "data")
-                if raw:
-                    try:
-                        task_dict = json.loads(raw)
-                        updated = task_dict.get("updated_at", 0)
-                        if now - updated > max_age_sec:
-                            await client.lrem(dk, 1, tid)
-                            await client.delete(_task_hash_key(tid))
-                            purged += 1
-                    except json.JSONDecodeError:
-                        await client.lrem(dk, 1, tid)
-                        purged += 1
-                else:
-                    # Hash already expired — clean up list entry
+                plan = build_v1_dead_purge_plan(
+                    raw,
+                    now=now,
+                    max_age_sec=max_age_sec,
+                )
+                if plan.remove_from_dead:
                     await client.lrem(dk, 1, tid)
+                    if plan.delete_hash:
+                        await client.delete(_task_hash_key(tid))
                     purged += 1
             await client.aclose()
             if purged:
