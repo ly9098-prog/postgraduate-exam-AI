@@ -25,9 +25,16 @@ import { apiRequest, toQuery } from "@/lib/api/client";
 import type { AppUser, PaginatedResponse } from "@/lib/api/types";
 import { chinaDateString, chinaDateToUtcIso, formatChinaDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import {
+  csvEscape,
+  buildUserCsvHeader,
+  buildUserCsvRow,
+  filterBatchActionCandidates,
+  noCandidatesMessage,
+  type UserAction,
+} from "@/lib/app-user-utils";
 
 type UserStatusFilter = "all" | "active" | "banned";
-type UserAction = "ban" | "unban";
 type ConfirmState = {
   action: UserAction;
   userIds: number[];
@@ -72,10 +79,6 @@ function buildPagination(current: number, total: number): PaginationItem[] {
   return [1, "ellipsis-left", current - 1, current, current + 1, "ellipsis-right", total];
 }
 
-function csvEscape(value: string | number | null | undefined): string {
-  const text = value === null || value === undefined ? "" : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
-}
 
 function UserAvatar({ user }: { user: AppUser }) {
   const initial = (user.nickname || "用户").trim().charAt(0).toUpperCase() || "U";
@@ -300,12 +303,12 @@ export default function AppUsersPage() {
   };
 
   const openBatchAction = (action: UserAction) => {
-    const candidates = selectedOnPage.filter((user) => (action === "ban" ? !user.is_banned : user.is_banned));
+    const candidates = filterBatchActionCandidates(selectedOnPage, action);
     setBatchAction("");
     if (!candidates.length) {
       setNotice({
         tone: "error",
-        text: action === "ban" ? "所选用户均已处于封禁状态。" : "所选用户均为正常状态，无需解封。",
+        text: noCandidatesMessage(action),
       });
       return;
     }
@@ -345,16 +348,8 @@ export default function AppUsersPage() {
         records.push(...result.items);
       }
 
-      const header = ["ID", "昵称", "OpenID", "状态", "封禁原因", "封禁时间（北京时间）", "创建时间（北京时间）"];
-      const rows = records.map((user) => [
-        user.id,
-        user.nickname || "未设置昵称",
-        user.openid,
-        user.is_banned ? "已封禁" : "正常",
-        user.banned_reason || "",
-        user.banned_at ? formatChinaDateTime(user.banned_at) : "",
-        user.created_at ? formatChinaDateTime(user.created_at) : "",
-      ]);
+      const header = buildUserCsvHeader();
+      const rows = records.map((user) => buildUserCsvRow(user, formatChinaDateTime));
       const csv = `\uFEFF${[header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n")}`;
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
