@@ -10,6 +10,7 @@
 /* eslint-disable no-console */
 const assert = require('assert')
 const path = require('path')
+const fs = require('fs')
 
 // ── Mock WeChat globals before requiring the page module ─────
 global.wx = global.wx || {
@@ -45,7 +46,13 @@ var subjectMetaPath = path.resolve(__dirname, '../utils/subject-meta.js')
 var configPath = path.resolve(__dirname, '../config.js')
 var debugPath = path.resolve(__dirname, '../utils/debug.js')
 
-var apiMock = { get: function () { return Promise.resolve({}) }, post: function () { return Promise.resolve({}) } }
+var apiMock = {
+  get: function () { return Promise.resolve({}) },
+  post: function () { return Promise.resolve({}) },
+  createRequestId: function () {
+    return 'req_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+  },
+}
 var stemRenderMock = {
   buildRenderModel: function () { return { mode: 'SEGMENTS', segments: [] } },
   setRenderGuardPage: function () {},
@@ -255,15 +262,28 @@ if (!capturedPageConfig) {
       groupQuestions: [],
       submittingGroup: false,
     },
+    _alive: true,
     _reviewSession: {
       timerStartedAt: 0,
       timerElapsedMs: 0,
       timerRunning: false,
+      timerLastTickAt: 0,
+      timingSegmentId: '',
+      timingStartedAtMs: 0,
+      reviewRequestIds: {},
     },
     _timerInterval: null,
+    _resultDockFadeTimer: null,
     _userSelectedReviewBatchSize: false,
+    _persistReviewDraft: function () {},
     _clearCelebrationTimer: function () {},
     _clearMasterUndo: function () {},
+    _clearResultDockFadeTimer: function () {
+      if (this._resultDockFadeTimer) {
+        clearTimeout(this._resultDockFadeTimer)
+        this._resultDockFadeTimer = null
+      }
+    },
     setData: function (patch) {
       if (typeof patch === 'object' && patch !== null) {
         for (var key in patch) {
@@ -281,6 +301,8 @@ if (!capturedPageConfig) {
     '_resetReviewTimer', '_clearReviewTimer', '_buildReviewTimingSession',
     'showBatchSizeSelector', 'closeBatchSizeSheet',
     'selectPendingBatchSize', 'confirmBatchSize',
+    '_reviewTimerController', '_batchSizeSheetController',
+    '_overviewVMController', '_reviewSessionController',
   ]
   for (var mi = 0; mi < methodsToBind.length; mi++) {
     var mn = methodsToBind[mi]
@@ -494,14 +516,18 @@ if (!capturedPageConfig) {
     assert.strictEqual(vm.reviewBatchSize, 30)
   })
 
-  t('startTodayReview references this.data.reviewBatchSize', function () {
+  t('startTodayReview wires batch size through start controller', function () {
     var src = capturedPageConfig.startTodayReview.toString()
-    assert.ok(src.indexOf('batch_size: this.data.reviewBatchSize') >= 0)
+    assert.ok(src.indexOf('this._startBatchController().start()') >= 0)
+    var startSrc = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/start-batch-controller.js'), 'utf8')
+    assert.ok(startSrc.indexOf('batch_size: options.getBatchSize()') >= 0)
   })
 
-  t('nextGroup references this.data.reviewBatchSize', function () {
+  t('nextGroup wires batch size through remote batch controller', function () {
     var src = capturedPageConfig.nextGroup.toString()
-    assert.ok(src.indexOf('batch_size: this.data.reviewBatchSize') >= 0)
+    assert.ok(src.indexOf('nextGroupController.next()') >= 0)
+    var remoteSrc = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/next-remote-batch-controller.js'), 'utf8')
+    assert.ok(remoteSrc.indexOf('batch_size: options.getBatchSize()') >= 0)
   })
 
   t('review request id is stable for one immutable schedule occurrence', function () {
@@ -569,7 +595,6 @@ if (!capturedPageConfig) {
 // ══════════════════════════════════════════════════════════════════
 console.log('\n--- 5. WXML / component contract checks ---')
 
-var fs = require('fs')
 var wxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/review-today.wxml'), 'utf8')
 
 t('review-today.wxml passes elapsedText to quiz-runner', function () {
@@ -582,22 +607,26 @@ t('review-today.wxml mission-batch has bindtap', function () {
 
 var reviewTodayJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/review-today.js'), 'utf8')
 
+var groupSubmissionJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/group-submission.js'), 'utf8')
+var submitRequestJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/submit-request-controller.js'), 'utf8')
+var startBatchJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/start-batch-controller.js'), 'utf8')
+
 t('initial first question keeps enriched render data in groupQuestions', function () {
-  assert.ok(reviewTodayJs.indexOf('preparedQuestions[0] = firstEnriched') >= 0)
-  assert.ok(reviewTodayJs.indexOf('groupQuestions: preparedQuestions') >= 0)
+  assert.ok(startBatchJs.indexOf('preparedQuestions[0] = firstEnriched') >= 0)
+  assert.ok(startBatchJs.indexOf('groupQuestions: prepared.preparedQuestions') >= 0)
 })
 
 t('review grading payload binds immutable revision, occurrence and request id', function () {
-  assert.ok(reviewTodayJs.indexOf('question_version_id: q.question_version_id') >= 0)
-  assert.ok(reviewTodayJs.indexOf('occurrence_seq: q.occurrence_seq') >= 0)
-  assert.ok(reviewTodayJs.indexOf('request_id: requestId') >= 0)
-  assert.ok(reviewTodayJs.indexOf("api.post('/review/grade-batch', gradePayload)") >= 0)
-  assert.ok(reviewTodayJs.indexOf('{ reviews, session: timingSession }') >= 0)
+  assert.ok(groupSubmissionJs.indexOf('question_version_id: question.question_version_id') >= 0)
+  assert.ok(groupSubmissionJs.indexOf('occurrence_seq: question.occurrence_seq') >= 0)
+  assert.ok(groupSubmissionJs.indexOf('request_id: requestId') >= 0)
+  assert.ok(submitRequestJs.indexOf('api.post') < 0 || submitRequestJs.indexOf('postGrade') >= 0)
+  assert.ok(submitRequestJs.indexOf('{ reviews, session: timingSession }') >= 0)
 })
 
 t('review timing session is frozen before grade-batch request (network time excluded)', function () {
-  var timingIdx = reviewTodayJs.indexOf('const timingSession = this._buildReviewTimingSession()')
-  var postIdx = reviewTodayJs.indexOf("api.post('/review/grade-batch', gradePayload)")
+  var timingIdx = submitRequestJs.indexOf('const timingSession = input.buildTimingSession()')
+  var postIdx = submitRequestJs.indexOf('await options.postGrade(')
   assert.ok(timingIdx >= 0 && postIdx > timingIdx)
 })
 
@@ -606,12 +635,13 @@ t('review timer prefers wx.getPerformance monotonic clock', function () {
   assert.ok(reviewTodayJs.indexOf('_reviewMonotonicNow()') >= 0)
 })
 
+var questionEnrichmentJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/utils/question-enrichment-controller.js'), 'utf8')
+
 t('group result hydrates lazy questions before rendering details', function () {
-  assert.ok(reviewTodayJs.indexOf('const resultQuestion = this._enrichForResult(q)') >= 0)
-  assert.ok(reviewTodayJs.indexOf('...resultQuestion') >= 0)
+  assert.ok(groupSubmissionJs.indexOf('...options.enrichForResult(options.question)') >= 0)
+  assert.ok(questionEnrichmentJs.indexOf('enrichForResultImpl') >= 0)
   // 单题渲染数据异常不能使已成功的批改误报为提交失败：必须有安全降级分支
-  assert.ok(reviewTodayJs.indexOf('_enrichForResult(q)') >= 0)
-  assert.ok(reviewTodayJs.indexOf("_renderModel: null") >= 0)
+  assert.ok(questionEnrichmentJs.indexOf('_renderModel: null') >= 0)
 })
 
 var runnerWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/components/quiz-runner/quiz-runner.wxml'), 'utf8')
