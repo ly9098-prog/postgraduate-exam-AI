@@ -30,6 +30,13 @@ from app.services.learning_time_projection import (
 from app.services.learning_time_projection import (
     today_utc as _today_utc,
 )
+from app.services.stats_dashboard_projection import (
+    build_dashboard_overview,
+    build_dashboard_review_risk,
+    build_dashboard_subjects,
+    build_dashboard_trends,
+    previous_trend_start,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -642,29 +649,7 @@ async def get_dashboard_v2(
 
     # 1. Overview
     overview = await get_overview(db, user_id)
-    wrong_count = overview.get("wrong_question_count", 0)
-    mastered_count = overview.get("mastered_count", 0)
-    ov = {
-        "total_questions": overview["total_questions"],
-        "total_correct": overview["total_correct"],
-        "total_wrong": overview["total_wrong"],
-        "accuracy": overview["accuracy"],
-        "today_questions": overview["today_questions"],
-        "today_correct": overview["today_correct"],
-        "today_accuracy": round(
-            overview["today_correct"] / max(1, overview["today_questions"]), 4
-        )
-        if overview["today_questions"] > 0
-        else 0.0,
-        "today_duration_sec": overview["today_duration_sec"],
-        "consecutive_days": overview["consecutive_days"],
-        "due_review_count": overview["due_review_count"],
-        "wrong_question_count": wrong_count,
-        "mastered_wrong_count": mastered_count,
-        "mastery_rate": round(mastered_count / wrong_count, 4)
-        if wrong_count > 0
-        else 0.0,
-    }
+    ov = build_dashboard_overview(overview)
 
     # 2. Recommendation
     forgetting_data = await get_forgetting_trends(db, user_id)
@@ -677,52 +662,22 @@ async def get_dashboard_v2(
     # 3. Trends (current + previous period)
     trend_points = await get_trends(db, user_id, trend_days)
     today = shanghai_today()
-    previous_start = today - timedelta(days=2 * trend_days - 1)
+    previous_start = previous_trend_start(today, trend_days)
     previous_points = await get_trends(
         db, user_id, trend_days, start_date=previous_start
     )
 
-    trend_total = sum(t.get("questions", 0) for t in trend_points)
-    trend_correct = sum(t.get("correct", 0) for t in trend_points)
-    trend_active = sum(1 for t in trend_points if t.get("questions", 0) > 0)
-    trend_avg_acc = round(trend_correct / trend_total, 4) if trend_total > 0 else 0.0
-
-    prev_total = sum(p.get("questions", 0) for p in previous_points)
-    prev_correct = sum(p.get("correct", 0) for p in previous_points)
-    prev_active = sum(1 for p in previous_points if p.get("questions", 0) > 0)
-    prev_avg_acc = round(prev_correct / prev_total, 4) if prev_total > 0 else 0.0
-
-    tr = {
-        "days": trend_days,
-        "points": trend_points,
-        "previous_points": previous_points,
-        "total_questions": trend_total,
-        "active_days": trend_active,
-        "avg_accuracy": trend_avg_acc,
-        "previous_total_questions": prev_total,
-        "previous_active_days": prev_active,
-        "previous_avg_accuracy": prev_avg_acc,
-        "summary": f"近{trend_days}天累计做题{trend_total}题，平均正确率{round(trend_avg_acc * 100)}%，活跃{trend_active}天。",
-    }
+    tr = build_dashboard_trends(
+        trend_days=trend_days,
+        trend_points=trend_points,
+        previous_points=previous_points,
+    )
 
     # 4. Subjects
-    strongest = max(subj_items, key=lambda s: s["accuracy"]) if subj_items else None
-    weakest = min(subj_items, key=lambda s: s["accuracy"]) if subj_items else None
-    sa = {
-        "items": subj_items,
-        "strongest": strongest,
-        "weakest": weakest,
-        "total_questions": sum(s.get("total_questions", 0) for s in subj_items),
-    }
+    sa = build_dashboard_subjects(subj_items)
 
     # 5. Review risk
-    pseudo_count = len(forgetting_data.get("pseudo_mastered", []))
-    rr = {
-        "high_forget_count": forgetting_data.get("high_forget_count", 0),
-        "stuck_questions": forgetting_data.get("stuck_questions", 0),
-        "pseudo_mastered_count": pseudo_count,
-        "top_topics": forgetting_data.get("top_forgotten_topics", [])[:5],
-    }
+    rr = build_dashboard_review_risk(forgetting_data)
 
     # 6. Growth (best-effort)
     growth_data = None
