@@ -12,6 +12,7 @@ const { resolveResultCounts } = require('./utils/result-counts');
 const { buildReviewItem: _buildReviewItem, normalizeReviewItem: _normalizeReviewItem } = require('./utils/review-item-builder');
 const { normalizePercent: _normalizePercent, getQuestionListHeightRpx: _getQuestionListHeightRpx, formatDuration: _formatDuration, buildErrorDonutGradient: _buildErrorDonutGradient } = require('./utils/format-helpers');
 const { stripLevelPrefix: _stripLevelPrefix, growthFromTotalExp: _growthFromTotalExp, normalizeGrowthProfile: _normalizeGrowthProfile, growthFromOverview: _growthFromOverview } = require('./utils/growth-helpers');
+const { buildTrendPlot: _buildTrendPlot } = require('./utils/trend-plot-builder');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -57,58 +58,7 @@ function pad2(n) {
 return String(Math.max(0, Number(n) || 0)).padStart(2, '0');
 }
 function getQuestionListHeightRpx(count) { return _getQuestionListHeightRpx(count) }
-function buildTrendPlot(data) {
-const list = Array.isArray(data) ? data : [];
-if (!list.length) return { points: [], segments: [], lastPoint: null };
-const plotWidthRpx = 580;
-const plotHeightRpx = 206;
-const aspect = plotHeightRpx / plotWidthRpx;
-const denominator = Math.max(1, list.length - 1);
-const points = list.map((item, index) => {
-const accuracy = clamp(item && item.accuracy, 0, 100);
-const leftPct = list.length === 1 ? 50 : (index / denominator) * 100;
-const topPct = 100 - accuracy;
-const rawDate = String((item && item.date) || '');
-const dateLabel = rawDate.slice(5).replace('-', '/') || String(index + 1);
-return {
-key: `${rawDate || 'day'}-${index}`,
-accuracy,
-leftPct: Number(leftPct.toFixed(3)),
-topPct: Number(topPct.toFixed(3)),
-badgeTopPct: Number(Math.max(0, topPct).toFixed(3)),
-dateLabel,
-isLast: index === list.length - 1
-};
-});
-const segments = [];
-for (let index = 0; index < points.length - 1; index += 1) {
-const from = points[index];
-const to = points[index + 1];
-const dxPct = to.leftPct - from.leftPct;
-const dyPct = to.topPct - from.topPct;
-const scaledDy = dyPct * aspect;
-const widthPct = Math.sqrt(dxPct * dxPct + scaledDy * scaledDy);
-const angleDeg = Math.atan2(scaledDy, dxPct) * 180 / Math.PI;
-segments.push({
-key: `segment-${index}`,
-leftPct: from.leftPct,
-topPct: from.topPct,
-widthPct: Number(widthPct.toFixed(3)),
-angleDeg: Number(angleDeg.toFixed(3))
-});
-}
-const areaPolygon = points.length > 1
-? ['0% 100%'].concat(points.map(point => `${point.leftPct}% ${point.topPct}%`), ['100% 100%'])
-: [];
-return {
-points,
-segments,
-lastPoint: points[points.length - 1] || null,
-areaStyle: areaPolygon.length
-? `clip-path: polygon(${areaPolygon.join(', ')});`
-: ''
-};
-}
+function buildTrendPlot(data) { return _buildTrendPlot(data) }
 function buildErrorDonutGradient(distribution) { return _buildErrorDonutGradient(distribution) }
 function getErrorDonutMetrics() {
 let windowWidth = 375;
