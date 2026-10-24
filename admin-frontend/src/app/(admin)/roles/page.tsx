@@ -36,6 +36,11 @@ import { apiRequest } from "@/lib/api/client";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import type { Permission, Role } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
+import {
+  computePermissionChanges,
+  sortCategoryEntries,
+  computeTotalPermissionCount,
+} from "@/lib/role-permission-utils";
 
 const CATEGORY_META: Record<string, { label: string; description: string }> = {
   dashboard: { label: "仪表盘", description: "统计概览与运营数据" },
@@ -292,27 +297,11 @@ export default function RolesPage() {
   const isDirty = Boolean(selectedRole && !samePermissionSet(originalPermissionIds, activePermissionIds));
 
   const permissionChanges = useMemo(() => {
-    let added = 0;
-    let removed = 0;
-    activePermissionIds.forEach((id) => {
-      if (!originalPermissionIds.has(id)) added += 1;
-    });
-    originalPermissionIds.forEach((id) => {
-      if (!activePermissionIds.has(id)) removed += 1;
-    });
-    return { added, removed };
+    return computePermissionChanges(originalPermissionIds, activePermissionIds);
   }, [activePermissionIds, originalPermissionIds]);
 
   const allCategoryEntries = useMemo(() => {
-    const entries = Object.entries(permissions.data ?? {});
-    return entries.sort(([left], [right]) => {
-      const leftIndex = CATEGORY_ORDER.indexOf(left);
-      const rightIndex = CATEGORY_ORDER.indexOf(right);
-      if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-      if (leftIndex === -1) return 1;
-      if (rightIndex === -1) return -1;
-      return leftIndex - rightIndex;
-    });
+    return sortCategoryEntries(Object.entries(permissions.data ?? {}), CATEGORY_ORDER);
   }, [permissions.data]);
 
   const categoryMatrices = useMemo<CategoryMatrix[]>(() => {
@@ -340,7 +329,7 @@ export default function RolesPage() {
   }, [activePermissionIds, allCategoryEntries, onlyGranted, searchQuery]);
 
   const totalPermissionCount = useMemo(
-    () => allCategoryEntries.reduce((total, [, items]) => total + items.length, 0),
+    () => computeTotalPermissionCount(allCategoryEntries),
     [allCategoryEntries],
   );
 
