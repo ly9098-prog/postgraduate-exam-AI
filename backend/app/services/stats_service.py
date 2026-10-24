@@ -31,10 +31,13 @@ from app.services.learning_time_projection import (
     today_utc as _today_utc,
 )
 from app.services.stats_dashboard_projection import (
+    build_dashboard_adaptive,
+    build_dashboard_growth,
     build_dashboard_overview,
     build_dashboard_review_risk,
     build_dashboard_subjects,
     build_dashboard_trends,
+    build_dashboard_yearly_summary,
     previous_trend_start,
 )
 
@@ -684,34 +687,7 @@ async def get_dashboard_v2(
     if include_growth:
         try:
             g = await get_growth_profile(db, user_id, overview=overview)
-            badges = g.get("badges", [])
-            unlocked = [b for b in badges if b.get("unlocked")]
-            locked_sorted = sorted(
-                [b for b in badges if not b.get("unlocked")],
-                key=lambda b: b.get("progress", 0),
-                reverse=True,
-            )
-            featured = (
-                unlocked[-3:]
-                if len(unlocked) >= 3
-                else unlocked + locked_sorted[: 3 - len(unlocked)]
-            )[:3]
-            growth_data = {
-                "level": g.get("level", 1),
-                "level_title": g.get("level_title", ""),
-                "level_progress_pct": g.get("level_progress_pct", 0),
-                "streak_title": g.get("streak_title", ""),
-                "featured_badges": [
-                    {
-                        "key": b["key"],
-                        "title": b["title"],
-                        "desc": b["desc"],
-                        "unlocked": b.get("unlocked", False),
-                        "progress_text": b.get("progress_text", ""),
-                    }
-                    for b in featured
-                ],
-            }
+            growth_data = build_dashboard_growth(g)
         except Exception:
             pass
 
@@ -723,25 +699,12 @@ async def get_dashboard_v2(
 
             a = await get_adaptive_overview(db, user_id)
             if a:
-                status_map = {
-                    "fast_forgetting": "遗忘较快",
-                    "slightly_fast_forgetting": "略偏快遗忘",
-                    "normal": "节奏正常",
-                    "stable_memory": "记忆稳定",
-                }
-                status = a.get("interval_status", "normal")
-                label = status_map.get(status, "节奏正常")
-                recall_rate = a.get("recent_due_recall_rate", 0)
-                target = a.get("target_recall_rate", 0.8)
-                adaptive_data = {
-                    "visible": (a.get("interval_factor") != 1.0)
-                    or (a.get("hard_question_count", 0) > 0),
-                    "interval_status": status,
-                    "interval_status_label": label,
-                    "recent_due_recall_rate": recall_rate,
-                    "target_recall_rate": target,
-                    "summary": _adaptive_summary(status, recall_rate, target),
-                }
+                adaptive_data = build_dashboard_adaptive(a)
+                adaptive_data["summary"] = _adaptive_summary(
+                    adaptive_data["interval_status"],
+                    adaptive_data["recent_due_recall_rate"],
+                    adaptive_data["target_recall_rate"],
+                )
         except Exception:
             pass
 
@@ -750,23 +713,7 @@ async def get_dashboard_v2(
     if include_yearly_summary:
         try:
             yearly_trends = await get_trends(db, user_id, 365)
-            active_days = sum(1 for t in yearly_trends if t.get("questions", 0) > 0)
-            total_q = sum(t.get("questions", 0) for t in yearly_trends)
-            best = (
-                max(yearly_trends, key=lambda t: t.get("questions", 0))
-                if yearly_trends
-                else {}
-            )
-            best_text = (
-                f"{best.get('date', '')[-5:]} · {best.get('questions', 0)}题"
-                if best.get("questions", 0)
-                else "暂无记录"
-            )
-            yearly_data = {
-                "active_days": active_days,
-                "total_questions": total_q,
-                "best_day_text": best_text,
-            }
+            yearly_data = build_dashboard_yearly_summary(yearly_trends)
         except Exception:
             pass
 

@@ -5,10 +5,13 @@ from __future__ import annotations
 from datetime import date
 
 from app.services.stats_dashboard_projection import (
+    build_dashboard_adaptive,
+    build_dashboard_growth,
     build_dashboard_overview,
     build_dashboard_review_risk,
     build_dashboard_subjects,
     build_dashboard_trends,
+    build_dashboard_yearly_summary,
     previous_trend_start,
 )
 
@@ -96,3 +99,81 @@ def test_review_risk_limits_topics_and_counts_pseudo_items():
 
     assert risk["pseudo_mastered_count"] == 3
     assert risk["top_topics"] == ["a", "b", "c", "d", "e"]
+
+
+def test_growth_features_recent_unlocks_then_locked_progress():
+    growth = build_dashboard_growth(
+        {
+            "level": 4,
+            "level_title": "进阶",
+            "level_progress_pct": 37,
+            "streak_title": "连续7天",
+            "badges": [
+                {"key": "u1", "title": "U1", "desc": "D1", "unlocked": True},
+                {"key": "l1", "title": "L1", "desc": "D2", "progress": 10},
+                {"key": "u2", "title": "U2", "desc": "D3", "unlocked": True},
+                {"key": "l2", "title": "L2", "desc": "D4", "progress": 90},
+                {"key": "l3", "title": "L3", "desc": "D5", "progress": 50},
+            ],
+        }
+    )
+
+    assert growth["level"] == 4
+    assert [badge["key"] for badge in growth["featured_badges"]] == ["u1", "u2", "l2"]
+    assert growth["featured_badges"][0]["unlocked"] is True
+
+
+def test_growth_with_three_unlocked_uses_last_three_in_input_order():
+    growth = build_dashboard_growth(
+        {
+            "badges": [
+                {"key": "u1", "title": "U1", "desc": "D1", "unlocked": True},
+                {"key": "u2", "title": "U2", "desc": "D2", "unlocked": True},
+                {"key": "u3", "title": "U3", "desc": "D3", "unlocked": True},
+                {"key": "u4", "title": "U4", "desc": "D4", "unlocked": True},
+            ]
+        }
+    )
+
+    assert [badge["key"] for badge in growth["featured_badges"]] == ["u2", "u3", "u4"]
+
+
+def test_adaptive_visibility_labels_and_defaults():
+    adaptive = build_dashboard_adaptive(
+        {
+            "interval_status": "fast_forgetting",
+            "interval_factor": 0.8,
+            "recent_due_recall_rate": 0.4,
+            "hard_question_count": 0,
+        }
+    )
+    assert adaptive["visible"] is True
+    assert adaptive["interval_status_label"] == "遗忘较快"
+
+    hidden = build_dashboard_adaptive(
+        {"interval_factor": 1.0, "hard_question_count": 0}
+    )
+    assert hidden["visible"] is False
+    assert hidden["interval_status"] == "normal"
+    assert hidden["interval_status_label"] == "节奏正常"
+    assert hidden["target_recall_rate"] == 0.8
+
+
+def test_yearly_summary_counts_active_days_and_best_day():
+    summary = build_dashboard_yearly_summary(
+        [
+            {"date": "2026-10-01", "questions": 2},
+            {"date": "2026-10-02", "questions": 0},
+            {"date": "2026-10-03", "questions": 5},
+        ]
+    )
+    assert summary == {
+        "active_days": 2,
+        "total_questions": 7,
+        "best_day_text": "10-03 · 5题",
+    }
+    assert build_dashboard_yearly_summary([]) == {
+        "active_days": 0,
+        "total_questions": 0,
+        "best_day_text": "暂无记录",
+    }

@@ -94,3 +94,77 @@ def build_dashboard_review_risk(forgetting_data: dict[str, Any]) -> dict[str, An
         "pseudo_mastered_count": pseudo_count,
         "top_topics": forgetting_data.get("top_forgotten_topics", [])[:5],
     }
+
+
+def build_dashboard_growth(growth: dict[str, Any]) -> dict[str, Any]:
+    """Project the growth profile and prioritize recently unlocked badges."""
+    badges = growth.get("badges", [])
+    unlocked = [badge for badge in badges if badge.get("unlocked")]
+    locked_sorted = sorted(
+        [badge for badge in badges if not badge.get("unlocked")],
+        key=lambda badge: badge.get("progress", 0),
+        reverse=True,
+    )
+    featured = (
+        unlocked[-3:]
+        if len(unlocked) >= 3
+        else unlocked + locked_sorted[: 3 - len(unlocked)]
+    )[:3]
+    return {
+        "level": growth.get("level", 1),
+        "level_title": growth.get("level_title", ""),
+        "level_progress_pct": growth.get("level_progress_pct", 0),
+        "streak_title": growth.get("streak_title", ""),
+        "featured_badges": [
+            {
+                "key": badge["key"],
+                "title": badge["title"],
+                "desc": badge["desc"],
+                "unlocked": badge.get("unlocked", False),
+                "progress_text": badge.get("progress_text", ""),
+            }
+            for badge in featured
+        ],
+    }
+
+
+def build_dashboard_adaptive(adaptive: dict[str, Any]) -> dict[str, Any]:
+    """Project adaptive-learning state and preserve the normal fallback."""
+    status_map = {
+        "fast_forgetting": "遗忘较快",
+        "slightly_fast_forgetting": "略偏快遗忘",
+        "normal": "节奏正常",
+        "stable_memory": "记忆稳定",
+    }
+    status = adaptive.get("interval_status", "normal")
+    recall_rate = adaptive.get("recent_due_recall_rate", 0)
+    target = adaptive.get("target_recall_rate", 0.8)
+    return {
+        "visible": (adaptive.get("interval_factor") != 1.0)
+        or (adaptive.get("hard_question_count", 0) > 0),
+        "interval_status": status,
+        "interval_status_label": status_map.get(status, "节奏正常"),
+        "recent_due_recall_rate": recall_rate,
+        "target_recall_rate": target,
+    }
+
+
+def build_dashboard_yearly_summary(yearly_trends: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate the 365-day trend into the compact yearly card."""
+    active_days = sum(1 for point in yearly_trends if point.get("questions", 0) > 0)
+    total_questions = sum(point.get("questions", 0) for point in yearly_trends)
+    best = (
+        max(yearly_trends, key=lambda point: point.get("questions", 0))
+        if yearly_trends
+        else {}
+    )
+    best_text = (
+        f"{best.get('date', '')[-5:]} · {best.get('questions', 0)}题"
+        if best.get("questions", 0)
+        else "暂无记录"
+    )
+    return {
+        "active_days": active_days,
+        "total_questions": total_questions,
+        "best_day_text": best_text,
+    }
