@@ -5,12 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
   Copy,
-  Trash2,
   X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
@@ -19,6 +17,7 @@ import { QuestionDrawerHeader } from "./question-drawer-header";
 import { QuestionDrawerBody } from "./question-drawer-body";
 import { QuestionFilterToolbar } from "./question-filter-toolbar";
 import { QuestionListCard } from "./question-list-card";
+import { QuestionBatchSelectionBar } from "./question-batch-selection-bar";
 import { exportQuestions } from "./question-api";
 
 import { useQuestionExport } from "./hooks/use-question-export";
@@ -410,35 +409,13 @@ export default function QuestionsPage() {
         </div>
       ) : null}
 
-      {selectedIds.size > 0 ? (
-        <div className="fixed bottom-8 left-1/2 z-30 -translate-x-1/2 animate-drop-in">
-          <div className="flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-white/94 py-2 pl-4 pr-2 shadow-[var(--shadow-floating)] backdrop-blur-xl">
-            <span className="text-sm text-[var(--color-text-secondary)]">
-              已选 <strong className="text-[var(--ink)]">{selectedIds.size}</strong> 项
-            </span>
-            <span className="h-5 w-px bg-[var(--color-border)]" />
-            {canDelete ? (
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={deleteMutation.isPending}
-                onClick={requestBatchDelete}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                批量删除
-              </Button>
-            ) : null}
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-hint)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-              aria-label="清除选择"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <QuestionBatchSelectionBar
+        selectedCount={selectedIds.size}
+        canDelete={canDelete}
+        deleting={deleteMutation.isPending}
+        onBatchDelete={requestBatchDelete}
+        onClearSelection={clearSelection}
+      />
 
       {/* Detail drawer */}
       {isDetailDrawerOpen && selectedQuestionId !== null ? (
