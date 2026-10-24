@@ -48,10 +48,11 @@
 - `backend/tests/core/test_task_queue_script_bindings.py`：加载顺序、重复加载幂等、NOSCRIPT 全量重载。
 - `backend/tests/core/test_task_queue_v1_to_v2_migration.py`：使用 fakeredis + Lua 执行原子迁移成功、v2 满保留 v1、缺失/错配 payload 转 corrupt、已有 v2 guard 去重及半写 v2 hash 冲突保护。
 - `backend/tests/core/test_queue_metrics.py`、`test_runtime_metrics_contract.py`：Task 基础字段、指标采样和队列端口契约。
-- `backend/tests/integration/test_queue_hardening.py`、`test_queue_fencing.py`、`test_queue_integration.py`：需要 `--run-integration` 和真实临时 Redis；当前环境未启动 Redis，因此只能执行静态/替身回归，不能宣称通过。
+- `backend/tests/integration/test_queue_hardening.py`、`test_queue_fencing.py`、`test_queue_integration.py`：需要 `--run-integration` 和真实临时 Redis。2026-10-24 本机 `redis-server 7.2.5`（127.0.0.1:6380，DB1，无持久化）重放结果：hardening 23 passed、fencing 26 passed、integration 20 passed。
 
 ## 6. 已知风险与后续
 
-- `drain_v1_to_v2` 的 fakeredis Lua 契约已覆盖上述丢失路径；但本机没有可用 `redis-server`，尚未在真实 Redis 执行迁移、容量并发或故障注入，不能把 fakeredis 结果记为真实集成通过。
-- 完整 worker 主循环、lease 过期回收、多 dispatcher 并发、Redis 中断恢复、生产角色退出和备份恢复演练仍未验证。
+- `drain_v1_to_v2` 的 fakeredis Lua 契约与上述真实 Redis hardening 集成都已覆盖迁移、容量和 cancel/terminal 语义。
+- 同日补跑 `backend/tests/integration/test_worker_sigterm.py --run-integration`（真实 Redis，worker dispatcher 端口/替身）：7 passed，覆盖 drain 停止新领取、未知类型 dead-letter、heartbeat 安全/不安全 Redis 超时与 Lua 拒绝、取消 checkpoint、并发=1 时不超额执行。修复的是测试端口漂移：`set_draining_v2`/`stop_worker_v2` 现在是 async，heartbeat 替身需抛 `redis.exceptions.TimeoutError`，并保存/恢复模块级 running 标志；未改生产 worker 语义。
+- 仍未验证：跨进程完整 worker 主循环、多 dispatcher 并发、Redis 进程中断后自动恢复的端到端故障注入、生产角色退出和备份恢复演练。上述单进程集成测试不能替代这些生产验收。
 - Admin 任务页的真实浏览器操作、真实死信重试和长任务取消仍未验收。

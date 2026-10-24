@@ -52,32 +52,33 @@ async def test_draining_stops_new_claims():
     original_concurrency = settings.WORKER_CONCURRENCY
     settings.WORKER_CONCURRENCY = 2
 
-    from app.services.task_queue_worker import (
-        _v2_worker_draining,
-        _v2_worker_running,
-        is_draining_v2,
-        run_dispatcher_v2,
-        set_draining_v2,
-        stop_worker_v2,
-    )
+    import app.services.task_queue_worker as tqw
 
+    dispatcher = None
     try:
-        assert is_draining_v2() is False
+        assert tqw.is_draining_v2() is False
 
         # Start dispatcher briefly
-        asyncio.create_task(run_dispatcher_v2(poll_interval=0.5))
+        dispatcher = asyncio.create_task(
+            tqw.run_dispatcher_v2(poll_interval=0.5)
+        )
         await asyncio.sleep(0.3)
-        assert _v2_worker_running is True
-        assert _v2_worker_draining is False
+        assert tqw._v2_worker_running is True
+        assert tqw._v2_worker_draining is False
 
         # Set draining
-        set_draining_v2()
+        await tqw.set_draining_v2()
         await asyncio.sleep(0.3)
 
         # Verify draining is set and stays
-        assert is_draining_v2() is True
+        assert tqw.is_draining_v2() is True
     finally:
-        stop_worker_v2()
+        await tqw.stop_worker_v2()
+        dispatcher.cancel()
+        try:
+            await dispatcher
+        except asyncio.CancelledError:
+            pass
         settings.WORKER_CONCURRENCY = original_concurrency
 
 
@@ -171,7 +172,9 @@ async def test_heartbeat_lease_window_safe_retry():
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            raise TimeoutError("transient timeout")
+            from redis.exceptions import TimeoutError as RedisTimeoutError
+
+            raise RedisTimeoutError("transient timeout")
         return 1
 
     from app.services.task_queue_service import task_queue as real_queue
@@ -202,15 +205,16 @@ async def test_heartbeat_lease_window_safe_retry():
 async def _run_heartbeat_test(task, lease_sec, owner_lost):
     """Run the new heartbeat loop with lease-window awareness."""
     # Set running flag so loop doesn't exit immediately
-    from app.services.task_queue_worker import (
-        _v2_heartbeat_loop_with_lease_window,
-        _v2_worker_running,
-    )
-    _v2_worker_running = True  # noqa: F811
+    import app.services.task_queue_worker as tqw
+
+    previous_running = tqw._v2_worker_running
+    tqw._v2_worker_running = True
     try:
-        await _v2_heartbeat_loop_with_lease_window(task, lease_sec, owner_lost)
+        await tqw._v2_heartbeat_loop_with_lease_window(
+            task, lease_sec, owner_lost
+        )
     finally:
-        _v2_worker_running = False
+        tqw._v2_worker_running = previous_running
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -237,7 +241,9 @@ async def test_heartbeat_unsafe_window_immediate_owner_lost():
     owner_lost = asyncio.Event()
 
     async def _mock_failing_heartbeat(t, **_kw):
-        raise TimeoutError("transient timeout")
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        raise RedisTimeoutError("transient timeout")
 
     from app.services.task_queue_service import task_queue as real_queue
     original_heartbeat = real_queue.heartbeat_v2
@@ -396,7 +402,7 @@ async def test_dispatcher_concurrency_limit(test_suffix: str):
     finally:
         tqw._process_claimed_task_v2 = original_process
         settings.WORKER_CONCURRENCY = original_concurrency
-        tqw.stop_worker_v2()
+        await tqw.stop_worker_v2()
         # Clean up v2 queue
         cursor = 0
         pattern = f"taskq:v2:*:{tt}*"
