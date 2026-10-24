@@ -47,6 +47,7 @@ from app.services.pomodoro_statistics_window import (
     StatisticsWindowRequest,
     requested_statistics_period,
 )
+from app.services.pomodoro_history_projection import build_history_item
 from app.services.pomodoro_subject_projection import (
     allocate_seconds_by_weight,
     allocation_group_key,
@@ -1548,36 +1549,12 @@ async def get_history(
     items: list[dict] = []
     for r in rows:
         subj = subject_map.get(r.subject_id) if r.subject_id is not None else None
-        allocations = allocation_map.get(r.id, []) if r.record_type == "pomodoro" else []
-        if r.record_type == "pomodoro" and not allocations:
-            allocations = [
-                {
-                    "subject_id": r.subject_id,
-                    "subject_code": subj.code if subj else "",
-                    "subject_name": subj.name if subj else "未分类",
-                    "weight_basis_points": 10000,
-                }
-            ]
         items.append(
-            {
-                "record_key": f"{r.record_type}:{r.id}",
-                "record_type": r.record_type,
-                "id": r.id,
-                "user_id": r.user_id,
-                "subject_id": r.subject_id,
-                "subject_code": subj.code if subj else "",
-                "subject_name": subj.name if subj else "未分类",
-                "start_time": r.start_time,
-                "end_time": r.end_time,
-                "actual_duration": r.actual_duration,
-                "status": r.status,
-                "preset": r.preset,
-                "allocation_mode": (
-                    EQUAL_408_MODE
-                    if len(allocations) > 1
-                    else "single"
-                ) if r.record_type == "pomodoro" else None,
-                "subject_allocations": allocations,
-            }
+            build_history_item(
+                row=r,
+                subject=subj,
+                allocations=allocation_map.get(r.id, []),
+                equal_408_mode=EQUAL_408_MODE,
+            )
         )
     return items, total
