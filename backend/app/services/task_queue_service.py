@@ -119,6 +119,7 @@ from app.services.task_queue_v2_dead_retry_contract import (
 )
 from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
 from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
+from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -2066,25 +2067,14 @@ class DurableTaskQueue:
         self, task_types: list[str] | None = None
     ) -> dict[str, Any]:
         """v2 queue metrics. Raises QueueHealthError on Redis error."""
-        results = dict(queue_metrics)
-        types = task_types or []
-
-        ready = 0
-        processing = 0
-        retry_count = 0
-        dead = 0
-
-        for tt in types:
-            ready += await self.queue_length_v2(tt)
-            processing += await self.processing_length_v2(tt)
-            retry_count += await self.retry_length_v2(tt)
-            dead += await self.dead_length_v2(tt)
-
-        results["ready"] = ready
-        results["processing"] = processing
-        results["retry"] = retry_count
-        results["dead"] = dead
-        return results
+        return await build_v2_metrics_snapshot(
+            base_metrics=queue_metrics,
+            task_types=task_types or [],
+            ready_length=self.queue_length_v2,
+            processing_length=self.processing_length_v2,
+            retry_length=self.retry_length_v2,
+            dead_length=self.dead_length_v2,
+        )
 
     # ══════════════════════════════════════════════════════════════════════════
     # v2 Dead/Corrupt Management API
