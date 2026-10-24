@@ -96,6 +96,12 @@ from app.services.task_queue_v2_heartbeat_contract import (
     resolve_v2_heartbeat_identity,
     v2_heartbeat_mismatch,
 )
+from app.services.task_queue_v2_admin_contract import (
+    normalize_v2_admin_result,
+    should_log_v2_cancel,
+    v2_cancel_reason,
+    v2_mark_corrupt_success,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1829,7 +1835,7 @@ class DurableTaskQueue:
                 str(_FENCING_TOMBSTONE_TTL),
             )
             await client.aclose()
-            return bool(result)
+            return v2_mark_corrupt_success(result)
 
         except Exception as e:
             logger.warning("v2 Mark corrupt error: %s", e)
@@ -1879,13 +1885,13 @@ class DurableTaskQueue:
                 _V2_TASK_PREFIX,
                 _V2_FENCING_PREFIX,
                 task_id,
-                reason[:200],
+                v2_cancel_reason(reason),
                 str(_FENCING_TOMBSTONE_TTL),
             )
             await client.aclose()
 
-            result = int(result) if result is not None else 0
-            if result > 0:
+            result = normalize_v2_admin_result(result)
+            if should_log_v2_cancel(result):
                 logger.info(
                     "v2 Cancel (code=%d): task_id=%s type=%s",
                     result,
