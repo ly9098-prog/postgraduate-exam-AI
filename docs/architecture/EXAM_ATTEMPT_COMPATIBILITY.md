@@ -67,11 +67,20 @@
 
 ## 8. 可执行基线
 
-后端：当前 `exam_service` 没有专项单元/API 测试目录（仓库未发现 `test_exam*` 文件），考试域行为由集成路径和架构门禁间接覆盖：
+后端：当前已有专项 Real-SQLite 服务语义回归：
 
-- `backend/tests/architecture/test_ai_prewarm_boundaries.py` 确认 `exam_service` 是 `prewarm_revision` 合法消费者，且不直接导入 worker。
-- `backend/tests/test_services/test_phase5_2_vector_acceptance.py` 等涉及 `record_error_event` 的考试错因路径在练习/向量验收中覆盖。
-- 本轮未新增后端考试测试；未运行真实 PostgreSQL/Redis/外部 AI/微信或生产集成。
+```bash
+cd backend
+APP_ENV=test APP_SECRET=ci-refactor-test-secret-not-production \
+DATABASE_URL=sqlite+aiosqlite:///:memory: REDIS_URL= SENTRY_DSN= \
+STAGING_STORAGE_DIR=/tmp/exam-attempt-test \
+.venv/bin/python -m pytest tests/test_services/test_exam_attempt_semantics.py \
+-q --tb=short
+```
+
+结果（2026-10-24）：`1 passed`。覆盖已发布试卷开始作答、最终答案原子应用、固定 revision 判题、终态快照、同 request 重放、重复 submit 返回不可变快照，以及 `PracticeRecord`、错题、exam 错因事实和 answer projection outbox 同事务落库。
+
+另有间接边界：`backend/tests/architecture/test_ai_prewarm_boundaries.py` 确认 `exam_service` 是 `prewarm_revision` 合法消费者，且不直接导入 worker；`backend/tests/test_services/test_phase5_2_vector_acceptance.py` 等涉及 `record_error_event` 的考试错因路径在练习/向量验收中覆盖。专项 API/OpenAPI、过时/取消并发、历史分页和真实 PostgreSQL/Redis/外部 AI/微信或生产集成仍未执行。
 
 小程序本地重放（2026-10-24，Node 静态脚本）：
 
@@ -84,7 +93,7 @@ node miniprogram/tests/test-storage-session-cleanup.js
 
 ## 9. 未完成与未验证
 
-- 未新增/运行后端考试 API/服务专项测试；不能由架构门禁和间接覆盖宣称考试域全链验收。
+- 考试专项测试当前仅覆盖服务层开始/提交主链；未覆盖完整 API 错误映射、过时 grace、取消并发、历史分页、PostgreSQL 行锁/部分唯一索引并发和真实外部环境。
 - 未执行真实微信开发者工具/模拟器/真机、真实弱网/进程终止、生产 Admin 浏览器、真实 Redis 中断恢复、完整 worker、PostgreSQL 并发、外部 OCR/AI 或备份恢复演练。
 - 考试域仍需后续按“开始 → 保存 → 过时 → 交卷 → 结果 → 历史”补专项测试与真实设备/生产验证。
 - `questions.review_status = re_pending`、重审工作台、已入库题目重审/版本回滚仍是设计预留。
