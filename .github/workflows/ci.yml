@@ -395,6 +395,7 @@ jobs:
             tests/test_services/test_knowledge_map_compatibility.py \
             tests/test_services/test_ai_analysis_compatibility.py \
             tests/test_services/test_ai_advice_compatibility.py \
+            tests/test_features/test_pipeline_checkpoint_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
