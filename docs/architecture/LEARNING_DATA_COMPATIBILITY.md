@@ -1,6 +1,6 @@
 # 学习数据域语义与兼容基线
 
-核对日期：2026-10-22。对应重构计划阶段 0；这里只对明确列出的用例给出审查结论，不表示学习数据域或全栈审查全部完成。
+核对日期：2026-10-25。对应重构计划阶段 0；这里只对明确列出的用例给出审查结论，不表示学习数据域或全栈审查全部完成。
 
 推荐实验、学习计划、用户趋势、推荐指标并发和错题编辑缓存的补充基线见 `LEARNING_DECISION_COMPATIBILITY.md`（2026-10-23）。
 
@@ -12,7 +12,7 @@
 | 当前专注和统计日设置 | 同上 `/active`、`/settings` | 番茄钟页面、`subpackages/productivity/pomodoro-stats/index.js` | 保留服务端 active 事实、`day_start_minute` 和既有本地恢复队列；不是题库同步。 |
 | 当日、趋势、区间和累计专注统计 | 同上 `/stats`、`/trends`、`/daily-summary`、`/range-summary`、`/statistics-overview` → `build_pomodoro_statistics_snapshot` | 番茄钟及统计页 | 本批只抽取无 IO 的科目投影；查询窗口、归属引擎、次数定义和响应组合保留在原调用点。 |
 | 统一学习记录 history | 同上 `/history` → `get_history` | 统计页的首屏及日期切换、分页 | 保留三来源 UNION ALL 后统一排序/分页，不改成每来源先截断再拼接。 |
-| 用户学习看板 | `api/v1/stats.py` → `stats_service.py` | `pages/home/home.js`、`pages/dashboard/dashboard.js` | 保留 `/dashboard-v2` 与旧 `/dashboard` 回退、可选成长与自适应字段、缓存和 AI 降级；未迁移其聚合实现。 |
+| 用户学习看板 | `api/v1/stats.py` → `stats_service.py` | `pages/home/home.js`、`pages/dashboard/dashboard.js` | 保留 `/dashboard-v2` 与旧 `/dashboard` 回退、可选成长与自适应字段、缓存和 AI 降级；overview、趋势、学科、风险、成长、自适应与年度摘要的纯投影已分离，见第 7 节。 |
 | 学习报告 | `api/v1/study_report.py` → `study_report_service.py` | Public API 注册；具体当前客户端消费仍待逐端核对 | 保留独立报告 schema、筛选及状态来源，不因函数同名就与 stats 合并。 |
 | 学习计划完成量 | `services/study_plan_service.py` 的 `_today_completion`、`_load_activity_dates` | `/study-plan/overview`，首页消费 | 与番茄钟共用时间归属引擎，但科目范围分配保留现有独立语义，见第 4 节。 |
 | Admin dashboard | `/api/admin/v1/dashboard/*` → `admin_dashboard_service.py` | `admin-frontend/src/app/(admin)/dashboard/page.tsx` | 是管理统计和运维指标，使用 Admin client/JWT；不迁入用户学习看板。 |
@@ -28,6 +28,7 @@
 - `pomodoro_attribution.py` 是专注/刷题/复习时长拆日及重叠扣除的现有权威实现；统计日由用户 `day_start_minute` 决定，修改后历史即时重算。`stats_service`、`study_report_service` 的今日答题聚合使用北京时间自然日，不等价于可配置专注统计日。
 - 刷题及今日复习只补充专注活跃区间未覆盖的时长，不增加顶层番茄次数。科目级 sessions 和 participation_sessions 的含义不同，不能把两者合成一个字段。
 - history 按 `start_time DESC, record_type DESC, id DESC` 排序，record_key 包含来源；只有 pomodoro 来源装配 subject_allocations，同 ID 的 practice/review 不能套用其分配。
+- history 的逐行响应投影已迁至 `pomodoro_history_projection.py`：pomodoro 无持久化分配时保留单科 10000 权重回退；多分配时保留 `equal_408_core_v1`，单分配/回退为 `single`；非 pomodoro 的 `allocation_mode` 为 `None` 且不得继承同 ID 分配；缺失科目显示“未分类”。UNION ALL 查询、过滤、分页、科目与分配装载仍由 service 持有。
 
 ## 3. 本批治理的科目投影
 
@@ -84,3 +85,11 @@
 - 新架构门禁检查单向依赖、50 行函数预算、真实消费者指向和新进程无配置/模型/服务副作用。原趋势回归的 SQLite fixture 补齐 schema 当前必填的 `question_version_id`，并同时冻结 `utcnow` 与 `shanghai_today`，只恢复原测试所声称的固定自然日窗口，不更改生产规则。
 - 相关 stats/report/trend/真实 SQLite 日期聚合与架构回归共 153 项通过；新增后原 CI static 清单131文件、2,437项通过；readiness 69项、cloud OCR 30项通过。SQLite真查询覆盖跨北京时间零点及用户隔离；PG 查询仅由既有测试编译 SQL，不称真库验收。
 - `pomodoro_service.build_pomodoro_statistics_snapshot` 已由第116/117批将窗口规划、响应与两来源累计分离，入口现155行；仍持有设置/请求装载、状态初始化和调用顺序。累计模块仍拥有顶层状态口径，真实 PostgreSQL 专注统计、客户端与生产镜像更新未验证。
+
+## 7. 用户学习看板 v2 投影边界
+
+- `stats_dashboard_projection.py` 只承接无 IO 响应投影；`get_dashboard_v2` 继续持有缓存 key/TTL、数据库查询、`include_growth` / `include_adaptive` / `include_yearly_summary` 开关、异常吞掉后的 `None` 降级和最终响应组装。
+- overview 保留今日正确率、错题掌握率的 4 位小数与 0 值边界；trends 保留当前/上一周期相邻且不重叠、整体正确率而非逐日平均、活跃天数和摘要文案；subjects 保留原列表顺序及 `max/min` 的首个平局选择；review risk 保留伪掌握数量与 top topics 前 5。
+- growth 分区保留已解锁徽章优先、不足 3 个时按锁定进度降序补足、已解锁超过 3 个时取输入顺序最后 3 个；adaptive 分区保留可见性、状态标签、目标召回率默认 0.8，并由既有 `_adaptive_summary` 生成摘要；yearly 分区保留 365 天活跃天数、总题数、最佳日期后 5 位文本与“暂无记录”回退。
+- 可选分区查询失败仍静默降级为 `None`，不把异常传播给整个 dashboard；这不是外部 AI 故障验收，只登记当前兼容行为。缓存命中仍直接返回，不重新计算分区。
+- 回归入口：`test_stats_dashboard_projection.py`、`test_trends_previous_period.py`、`test_stats_recommendation_compatibility.py`、`test_dashboard_stats_compatibility.py`。2026-10-25 定向运行 61 项通过；仍不覆盖真实 PostgreSQL、微信页面、生产 Admin 浏览器或外部 AI。
