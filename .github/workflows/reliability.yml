@@ -464,6 +464,7 @@ jobs:
           node --test miniprogram/tests/test-exam-submit-helpers.js
           node --test miniprogram/tests/test-exam-hydrate-helpers.js
           node --test miniprogram/tests/test-practice-result-tips.js
+          node --test miniprogram/tests/test-practice-result-payload-readers.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
 
