@@ -123,6 +123,10 @@ from app.services.task_queue_v2_enqueue_contract import (
     v2_enqueue_queue_full,
     v2_enqueue_unavailable,
 )
+from app.services.task_queue_v1_claim_contract import (
+    build_v1_claimed_task,
+    build_v1_retry_claimed_task,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -610,13 +614,12 @@ class DurableTaskQueue:
                 )
 
                 if result is not None:
-                    raw_payload, stored_token, stored_gen = result
-                    task = Task.from_dict(json.loads(raw_payload))
-                    task.status = TaskStatus.PROCESSING
-                    task.lease_expires_at = lease_expiry
-                    task.owner_token = stored_token or owner_token
-                    task.generation = int(stored_gen or generation)
-                    task.updated_at = time.time()
+                    task = build_v1_claimed_task(
+                        result,
+                        owner_token=owner_token,
+                        lease_expiry=lease_expiry,
+                        generation=generation,
+                    )
                     logger.info(
                         "Task dequeued: task_id=%s type=%s lease=%ds gen=%d",
                         task.task_id,
@@ -635,14 +638,12 @@ class DurableTaskQueue:
                 )
                 if retry_data is None:
                     return None
-
-                raw_payload, task_id, rtoken, rgen = retry_data
-                task = Task.from_dict(json.loads(raw_payload))
-                task.status = TaskStatus.PROCESSING
-                task.lease_expires_at = time.time() + lease_sec
-                task.owner_token = rtoken
-                task.generation = int(rgen or generation)
-                task.updated_at = time.time()
+                task = build_v1_retry_claimed_task(
+                    retry_data,
+                    owner_token=owner_token,
+                    generation=generation,
+                    lease_sec=lease_sec,
+                )
 
                 logger.info(
                     "Task dequeued (retry): task_id=%s type=%s lease=%ds gen=%d",
