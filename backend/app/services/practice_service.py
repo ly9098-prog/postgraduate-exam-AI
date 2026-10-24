@@ -1,4 +1,3 @@
-import json
 import logging
 import random
 from datetime import date, datetime, timedelta
@@ -10,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
+from app.core.config import settings  # noqa: F401 — historical public import
 from app.core.subject_scope import (
     EXAM408_DISPLAY_ORDER,
     canonical_408_code,
@@ -53,13 +52,13 @@ from app.services.practice.answer_projection_contract import (
 from app.services.practice.aggregated_smart import run_aggregated_smart
 from app.services.practice.batch_token import (
     PRACTICE_ANSWER_DURATION_TOLERANCE_SEC,
-    PRACTICE_BATCH_CLOCK_SKEW_SEC,
+    PRACTICE_BATCH_CLOCK_SKEW_SEC,  # noqa: F401 — historical public import
     PRACTICE_BATCH_MAX_QUESTIONS,
     PracticeBatchTokenError,
-    _PRACTICE_BATCH_TOKEN_VERSION,
-    _decode_practice_batch_token,
+    _PRACTICE_BATCH_TOKEN_VERSION,  # noqa: F401 — historical public import
+    _decode_practice_batch_token,  # noqa: F401 — historical public import
     _validate_practice_batch_token,
-    create_practice_batch_token,
+    create_practice_batch_token,  # noqa: F401 — historical public import
 )
 from app.services.practice.chapter_scope import (
     bucket_targets as _chapter_bucket_targets,
@@ -83,9 +82,6 @@ from app.services.practice.merge_utils import (
     round_robin_merge_with_metadata as _round_robin_merge_with_metadata,
 )
 from app.services.practice.normalization import (
-    PRACTICE_ALLOWED_MODES,
-)
-from app.services.practice.normalization import (
     PRACTICE_ANSWER_MAX_USED_TIME_SEC as PRACTICE_ANSWER_MAX_USED_TIME_SEC,  # noqa: F401 — re-exported for tests
 )
 from app.services.practice.normalization import (
@@ -102,9 +98,6 @@ from app.services.practice.normalization import (
 )
 from app.services.practice.normalization import (
     normalize_practice_session as _normalize_practice_session,
-)
-from app.services.practice.normalization import (
-    parse_session_datetime as _parse_session_datetime,
 )
 from app.services.practice.normalization import (
     question_stem_for_subject_guard as _question_stem_for_subject_guard,
@@ -132,6 +125,10 @@ from app.services.practice.sequential_service import (
 from app.services.practice.smart_scored_supplement import (
     ScoredSupplementRequest,
     run_scored_supplement,
+)
+from app.services.practice.smart_weakness_vector import (
+    SmartWeaknessVectorRequest,
+    run_smart_weakness_vector,
 )
 from app.services.practice.smart_path_supplement import (
     SmartPathRequest,
@@ -2039,164 +2036,100 @@ async def _smart_weakness_vector(
     exclude_ids: 需要额外排除的题目 ID 集合（如 path 策略已选的题）。
     subject_ids: 精确 subject_id 列表，提供时跳过 resolve_subject_ids 递归扩展。
     """
-    exclude_ids = exclude_ids or set()
-    metadata: dict[int, dict] = {}
-    scope_ids = (
-        subject_ids
-        if subject_ids is not None
-        else await resolve_subject_ids(db, subject_code)
-    )
+    from app.services import mastery_service, vector_retrieval_service
 
-    # 获取薄弱知识点
-    weak_kps: list[dict] = []
-    try:
-        from app.services import mastery_service
-
-        weak_kps = await mastery_service.get_user_weak_knowledge_points(
-            db,
-            user_id,
-            subject_code,
-            limit=5,
+    async def load_vector_matches(
+        recalls: list[dict],
+        scope_ids: list[int],
+        exclude_ids: set[int],
+    ) -> list[tuple[Question, dict]]:
+        rec_ids = [
+            recall["question_id"]
+            for recall in recalls
+            if recall["question_id"] not in exclude_ids
+        ]
+        if not rec_ids:
+            return []
+        vector_conditions = [
+            Question.id.in_(rec_ids),
+            Question.is_active,
+            Question.subject_id.in_(scope_ids),
+            _practice_revision_scope_condition(scope_ids),
+        ]
+        vector_excluded_sub = _build_excluded_question_subquery(
+            user_id=user_id,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
-    except Exception:
-        logger.warning(
-            "mastery_service.get_user_weak_knowledge_points failed", exc_info=True
+        if vector_excluded_sub is not None:
+            vector_conditions.append(Question.id.notin_(vector_excluded_sub))
+        result = await db.execute(
+            select(Question)
+            .where(and_(*vector_conditions))
+            .options(selectinload(Question.subject_ref))
         )
+        by_id = {question.id: question for question in result.scalars().all()}
+        return [
+            (by_id[recall["question_id"]], recall)
+            for recall in recalls
+            if recall["question_id"] in by_id
+            and recall["question_id"] not in exclude_ids
+        ]
 
-    if not weak_kps:
-        weak_kps = await _compute_weak_knowledge_points(
-            db,
-            user_id,
-            scope_ids,
+    async def load_fill_questions(
+        remaining: int,
+        scope_ids: list[int],
+        existing_ids: set[int],
+    ) -> list[Question]:
+        conditions = [
+            Question.is_active,
+            Question.subject_id.in_(scope_ids),
+            _practice_revision_scope_condition(scope_ids),
+            Question.id.notin_(existing_ids),
+        ]
+        excluded_sub = _build_excluded_question_subquery(
+            user_id=user_id,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
+        if excluded_sub is not None:
+            conditions.append(Question.id.notin_(excluded_sub))
+        total = (
+            await db.execute(
+                select(func.count()).select_from(
+                    select(Question).where(and_(*conditions)).subquery()
+                )
+            )
+        ).scalar() or 0
+        query = (
+            select(Question)
+            .where(and_(*conditions))
+            .options(selectinload(Question.subject_ref))
+        )
+        query = _random_sample_query(query, total, remaining, Question.id)
+        return list((await db.execute(query)).scalars().all())
 
-    if not weak_kps:
-        # 退化为随机
-        # ``exclude_ids`` is used when this helper supplements path/scored
-        # results. Over-fetch by exactly that many so filtering an already
-        # selected question does not unnecessarily reduce the final batch size.
-        fallback_fetch_count = count + len(exclude_ids)
-        questions = await get_practice_questions(
+    return await run_smart_weakness_vector(
+        SmartWeaknessVectorRequest(
             db=db,
             user_id=user_id,
             subject_code=subject_code,
-            count=fallback_fetch_count,
-            mode="random",
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-            use_leitner=use_leitner,
-            subject_ids=scope_ids,
-        )
-        for q in questions:
-            if q.id not in exclude_ids:
-                metadata[q.id] = {
-                    "recommend_reason": "随机推荐（薄弱知识点数据不足）",
-                    "recommend_score": None,
-                    "strategy": "random_fallback",
-                    "similarity": None,
-                }
-        return [q for q in questions if q.id not in exclude_ids][:count], metadata
-
-    kp_names = [kp["name"] for kp in weak_kps[:5]]
-    query_text = (
-        f"科目：{subject_code}。请推荐这些薄弱知识点的练习题："
-        f"{'、'.join(kp_names)}。要求题目适合查漏补缺和变式训练。"
-    )
-
-    result_questions: list[Question] = []
-    vector_excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-    )
-    try:
-        from app.services import vector_retrieval_service
-
-        recalls = await vector_retrieval_service.vector_recall_by_text(
-            db=db,
-            user_id=user_id,
-            subject=subject_code,
-            query_text=query_text,
             count=count,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
+            exclude_ids=exclude_ids,
+            subject_ids=subject_ids,
+            logger=logger,
+            resolve_scope_ids=resolve_subject_ids,
+            load_mastery=mastery_service.get_user_weak_knowledge_points,
+            compute_weak_kps=_compute_weak_knowledge_points,
+            load_random=get_practice_questions,
+            load_vector_recalls=vector_retrieval_service.vector_recall_by_text,
+            load_vector_matches=load_vector_matches,
+            load_fill_questions=load_fill_questions,
         )
-        if recalls:
-            rec_ids = [
-                r["question_id"] for r in recalls if r["question_id"] not in exclude_ids
-            ]
-            if rec_ids:
-                vector_conditions = [
-                    Question.id.in_(rec_ids),
-                    Question.is_active,
-                    Question.subject_id.in_(scope_ids),
-                    _practice_revision_scope_condition(scope_ids),
-                ]
-                if vector_excluded_sub is not None:
-                    vector_conditions.append(Question.id.notin_(vector_excluded_sub))
-                q_result = await db.execute(
-                    select(Question)
-                    .where(and_(*vector_conditions))
-                    .options(selectinload(Question.subject_ref))
-                )
-                q_map = {q.id: q for q in q_result.scalars().all()}
-                for rec in recalls:
-                    q = q_map.get(rec["question_id"])
-                    if q and q.id not in exclude_ids:
-                        result_questions.append(q)
-                        metadata[q.id] = {
-                            "recommend_reason": f"薄弱知识点推荐：{'、'.join(kp_names[:3])}",
-                            "recommend_score": rec.get("recommend_score"),
-                            "strategy": "smart_vector",
-                            "similarity": rec.get("similarity"),
-                        }
-    except Exception:
-        logger.warning("weakness_vector 向量召回失败", exc_info=True)
-
-    if len(result_questions) >= count:
-        return result_questions[:count], metadata
-
-    # 随机补齐
-    existing_ids = {q.id for q in result_questions} | exclude_ids
-    subject_cond = Question.subject_id.in_(scope_ids)
-    conditions = [
-        Question.is_active,
-        subject_cond,
-        _practice_revision_scope_condition(scope_ids),
-        Question.id.notin_(existing_ids),
-    ]
-    # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
-    excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
     )
-    if excluded_sub is not None:
-        conditions.append(Question.id.notin_(excluded_sub))
-
-    remaining = count - len(result_questions)
-    fill_count_q = select(func.count()).select_from(
-        select(Question).where(and_(*conditions)).subquery()
-    )
-    total = (await db.execute(fill_count_q)).scalar() or 0
-    fill_q = (
-        select(Question)
-        .where(and_(*conditions))
-        .options(selectinload(Question.subject_ref))
-    )
-    fill_q = _random_sample_query(fill_q, total, remaining, Question.id)
-    fill_result = await db.execute(fill_q)
-    fill_questions = list(fill_result.scalars().all())
-    for fq in fill_questions:
-        metadata[fq.id] = {
-            "recommend_reason": "薄弱知识点补齐",
-            "recommend_score": None,
-            "strategy": "kp_fallback",
-            "similarity": None,
-        }
-    result_questions.extend(fill_questions)
-
-    return result_questions[:count], metadata
 
 
 # ── V4: 智能推荐综合打分 ─────────────────────────────────────────

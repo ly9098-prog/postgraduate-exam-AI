@@ -330,6 +330,7 @@ jobs:
             tests/practice/test_smart_path_supplement_contract.py \
             tests/practice/test_smart_weakness_vector_contract.py \
             tests/architecture/test_aggregated_smart_boundaries.py \
+            tests/architecture/test_smart_weakness_vector_boundaries.py \
             tests/architecture/test_scored_selection_boundaries.py \
             tests/architecture/test_scored_fallback_boundaries.py \
             tests/architecture/test_scored_ranking_boundaries.py \
