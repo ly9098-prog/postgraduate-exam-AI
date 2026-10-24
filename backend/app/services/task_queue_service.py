@@ -82,6 +82,10 @@ from app.services.task_queue_v2_fail_contract import (
     build_v2_retry_plan,
     resolve_v2_fail_identity,
 )
+from app.services.task_queue_v2_claim_contract import (
+    build_v2_claimed_task,
+    v2_dequeue_unavailable,
+)
 
 __all__ = [
     "_CORRUPT_PREFIX",
@@ -1409,44 +1413,41 @@ class DurableTaskQueue:
             if result is None:
                 return None
 
-            task_id, raw_payload, stored_token, stored_gen, lease_expiry = result
-            try:
-                payload = json.loads(raw_payload)
-                task = Task.from_dict(payload)
-                if task.task_id != task_id or task.task_type != task_type:
-                    raise ValueError(
-                        f"task identity mismatch: hash={task_id}/{task_type} "
-                        f"payload={task.task_id}/{task.task_type}"
-                    )
-            except Exception as exc:
-                await self.mark_corrupt_v2(task_id, task_type, str(exc)[:200])
+            claim = build_v2_claimed_task(
+                result,
+                task_type=task_type,
+                owner_token=owner_token,
+            )
+            if claim.corrupt_error is not None:
+                corrupt_task_id, corrupt_error = claim.corrupt_error.split(":", 1)
+                await self.mark_corrupt_v2(corrupt_task_id, task_type, corrupt_error)
                 logger.error(
-                    "v2 Claimed corrupt task: task_id=%s error=%s", task_id, exc
+                    "v2 Claimed corrupt task: task_id=%s error=%s",
+                    corrupt_task_id,
+                    corrupt_error,
                 )
                 return None
 
-            task.status = TaskStatus.PROCESSING
-            task.lease_expires_at = float(lease_expiry or 0)
-            task.owner_token = stored_token or owner_token
-            task.generation = int(stored_gen or 0)
-            task.updated_at = time.time()
+            if claim.task is None:
+                return None
             logger.info(
                 "v2 Dequeued: task_id=%s type=%s gen=%d",
-                task.task_id,
+                claim.task.task_id,
                 task_type,
-                task.generation,
+                claim.task.generation,
             )
+            task = claim.task
             return task
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as exc:
             logger.error("v2 Dequeue Redis unavailable: %s", exc)
             raise TaskQueueUnavailableError(
-                f"Redis unavailable during dequeue: {exc}",
+                v2_dequeue_unavailable(exc),
                 retry_after=30,
             ) from exc
         except redis_exc.ResponseError as exc:
             logger.error("v2 Dequeue Redis protocol error: %s", exc)
             raise TaskQueueUnavailableError(
-                f"Redis protocol error during dequeue: {exc}",
+                v2_dequeue_unavailable(exc),
                 retry_after=30,
             ) from exc
 
