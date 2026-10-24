@@ -86,6 +86,9 @@ const {
   buildSubmitResultPayload,
 } = require('./utils/submit-result-payload')
 const {
+  createSubmitErrorController,
+} = require('./utils/submit-error-controller')
+const {
   resolveBatchErrorRecovery,
 } = require('./utils/batch-error-recovery')
 const {
@@ -1601,46 +1604,7 @@ const submitPayload = buildSubmitPayload(submission, this._practiceSession.trace
 submitResult = await api.post('/practice/batch-submit', submitPayload)
 if (!this._pageAlive) return
 } catch (e) {
-if (!this._pageAlive) return
-console.error('提交失败', e)
-this._practiceSession.currentQuestionStartedMonoMs = 0
-this.setData({ submitting: false })
-const statusCode = Number(e && e.statusCode) || 0
-const errorCode = String((e && e.code) || '')
-const deterministicReject = isDeterministicReject(e)
-if (deterministicReject) {
-submission.retryBlocked = true
-submission.pendingPersisted = this._persistPendingSubmission(submission, 'blocked', '') || submission.pendingPersisted
-this._setPracticeUnloadGuard(true, '本次提交未通过。')
-const rejectMsg = resolveRejectMessage(errorCode)
-let rejectTitle = rejectMsg.title
-let rejectContent = rejectMsg.content
-await this._showSubmitConfirm({
-scenario: 'danger',
-title: rejectTitle,
-message: rejectContent,
-showCancel: false,
-confirmText: '知道了',
-hideEyebrow: true,
-})
-} else {
-const persisted = this._persistPendingSubmission(submission, 'pending', '')
-submission.pendingPersisted = persisted || submission.pendingPersisted
-this._setPracticeUnloadGuard(
-true,
-'交卷仍在确认中。',
-)
-await this._showSubmitConfirm({
-scenario: 'info',
-title: '交卷结果未确认',
-message: submission.pendingPersisted
-? '已保存交卷进度，可稍后继续确认。'
-: '暂未保存交卷进度，请保持当前页面并重试。',
-showCancel: false,
-confirmText: '知道了',
-hideEyebrow: true,
-})
-}
+await this._submitErrorController().handle(submission, e)
 return
 }
 submission.serverAccepted = true
@@ -1691,5 +1655,20 @@ submission.pendingPersisted = this._persistPendingSubmission(submission, 'submit
 this._setPracticeUnloadGuard(false)
 this.setData({ submitting: false, submitted: true })
 this._openSubmittedResult(resultUrl, submission)
+},
+_submitErrorController() {
+return this._submitError || (
+this._submitError = createSubmitErrorController({
+isPageAlive: () => this._pageAlive,
+logError: (...args) => console.error(...args),
+pauseQuestionTiming: () => { this._practiceSession.currentQuestionStartedMonoMs = 0 },
+setData: patch => this.setData(patch),
+isDeterministicReject,
+persistPendingSubmission: (submission, status, resultUrl) => this._persistPendingSubmission(submission, status, resultUrl),
+setUnloadGuard: (enabled, message) => this._setPracticeUnloadGuard(enabled, message),
+resolveRejectMessage,
+showConfirm: options => this._showSubmitConfirm(options),
+})
+)
 },
 })

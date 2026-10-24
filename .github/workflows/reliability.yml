@@ -423,6 +423,7 @@ jobs:
           node --test miniprogram/tests/test-practice-question-load-controller.js
           node --test miniprogram/tests/test-practice-pending-submission-controller.js
           node --test miniprogram/tests/test-practice-submit-result-payload.js
+          node --test miniprogram/tests/test-practice-submit-error-controller.js
           node --test miniprogram/tests/test-practice-sequential-restart-controller.js
           node --test miniprogram/tests/test-practice-answer-interaction-controller.js
           node --test miniprogram/tests/test-practice-question-display-controller.js
