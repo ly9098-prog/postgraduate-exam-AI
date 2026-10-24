@@ -5,6 +5,12 @@ import {
   computeIntegrityIssueCount,
   computeQualitySampleCount,
   hasGraphIssues,
+  coverageTone,
+  examStatusTone,
+  questionBankHref,
+  questionIdHref,
+  COVERAGE_STATUS_LABEL,
+  EXAM_STATUS_LABEL,
   type CoverageItemLike,
   type CoverageSummaryLike,
   type CoverageQualityLike,
@@ -120,5 +126,73 @@ describe("hasGraphIssues", () => {
   it("false for null/undefined", () => {
     expect(hasGraphIssues(null)).toBe(false);
     expect(hasGraphIssues(undefined)).toBe(false);
+  });
+});
+
+describe("coverageTone", () => {
+  it("returns success for healthy", () => {
+    expect(coverageTone("healthy")).toBe("success");
+  });
+  it("returns danger for empty", () => {
+    expect(coverageTone("empty")).toBe("danger");
+  });
+  it("returns warning for insufficient", () => {
+    expect(coverageTone("insufficient")).toBe("warning");
+  });
+  it("returns warning for imbalanced", () => {
+    expect(coverageTone("imbalanced")).toBe("warning");
+  });
+});
+
+describe("examStatusTone", () => {
+  it("returns success for complete", () => {
+    expect(examStatusTone("complete")).toBe("success");
+  });
+  it("returns neutral for archived", () => {
+    expect(examStatusTone("archived")).toBe("neutral");
+  });
+  it("returns danger for missing", () => {
+    expect(examStatusTone("missing")).toBe("danger");
+  });
+  it("returns danger for invalid", () => {
+    expect(examStatusTone("invalid")).toBe("danger");
+  });
+  it("returns warning for draft", () => {
+    expect(examStatusTone("draft")).toBe("warning");
+  });
+});
+
+describe("questionBankHref", () => {
+  it("builds URL with knowledge_point_id", () => {
+    const href = questionBankHref(42);
+    expect(href).toContain("knowledge_point_id=42");
+    expect(href).toContain("is_active=true");
+    expect(href).toMatch(/^\/questions\?/);
+  });
+});
+
+describe("questionIdHref", () => {
+  it("builds URL with keyword hash", () => {
+    const href = questionIdHref(99);
+    expect(href).toContain("keyword=%2399");
+    expect(href).toContain("is_active=true");
+    expect(href).toMatch(/^\/questions\?/);
+  });
+});
+
+describe("COVERAGE_STATUS_LABEL", () => {
+  it("has all status labels", () => {
+    expect(COVERAGE_STATUS_LABEL.empty).toBe("无题");
+    expect(COVERAGE_STATUS_LABEL.healthy).toBe("良好");
+    expect(COVERAGE_STATUS_LABEL.insufficient).toBe("题量不足");
+    expect(COVERAGE_STATUS_LABEL.imbalanced).toBe("结构失衡");
+  });
+});
+
+describe("EXAM_STATUS_LABEL", () => {
+  it("has all status labels", () => {
+    expect(EXAM_STATUS_LABEL.missing).toBe("缺失");
+    expect(EXAM_STATUS_LABEL.complete).toBe("完整");
+    expect(EXAM_STATUS_LABEL.archived).toBe("已归档");
   });
 });

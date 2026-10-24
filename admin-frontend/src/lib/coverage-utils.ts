@@ -1,9 +1,66 @@
 /**
  * Pure helpers for coverage page, extracted from coverage/page.tsx.
- * Covers status counting, item filtering, and issue aggregation.
+ * Covers status counting, item filtering, issue aggregation,
+ * status-to-tone mapping, and question link generation.
  */
 
-import type { CoverageStatus } from "@/lib/api/types";
+import type { CoverageStatus, ExamYearCoverageStatus } from "@/lib/api/types";
+
+export type BadgeTone = "success" | "warning" | "danger" | "neutral";
+
+export const COVERAGE_STATUS_LABEL: Record<CoverageStatus, string> = {
+  empty: "无题",
+  insufficient: "题量不足",
+  imbalanced: "结构失衡",
+  healthy: "良好",
+};
+
+export const EXAM_STATUS_LABEL: Record<ExamYearCoverageStatus, string> = {
+  missing: "缺失",
+  draft: "草稿未发布",
+  invalid: "发布态异常",
+  complete: "完整",
+  archived: "已归档",
+};
+
+/**
+ * Map a coverage status to a badge tone.
+ */
+export function coverageTone(status: CoverageStatus): BadgeTone {
+  if (status === "healthy") return "success";
+  if (status === "empty") return "danger";
+  return "warning";
+}
+
+/**
+ * Map an exam year coverage status to a badge tone.
+ */
+export function examStatusTone(status: ExamYearCoverageStatus): BadgeTone {
+  if (status === "complete") return "success";
+  if (status === "archived") return "neutral";
+  if (status === "missing" || status === "invalid") return "danger";
+  return "warning";
+}
+
+/**
+ * Build a link to the question bank filtered by knowledge point.
+ */
+export function questionBankHref(knowledgePointId: number): string {
+  return `/questions?${new URLSearchParams({
+    is_active: "true",
+    knowledge_point_id: String(knowledgePointId),
+  }).toString()}`;
+}
+
+/**
+ * Build a link to a specific question by ID.
+ */
+export function questionIdHref(questionId: number): string {
+  return `/questions?${new URLSearchParams({
+    is_active: "true",
+    keyword: `#${questionId}`,
+  }).toString()}`;
+}
 
 export type CoverageItemLike = {
   status: CoverageStatus;

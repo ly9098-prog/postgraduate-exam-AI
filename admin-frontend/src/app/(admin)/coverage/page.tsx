@@ -37,7 +37,6 @@ import type {
   CoverageMatrixItem,
   CoverageReportResponse,
   CoverageStatus,
-  ExamYearCoverageItem,
   KnowledgeGraphSubject,
   SyllabusVersionSummary,
 } from "@/lib/api/types";
@@ -47,49 +46,13 @@ import {
   computeIntegrityIssueCount,
   computeQualitySampleCount,
   hasGraphIssues,
+  COVERAGE_STATUS_LABEL as STATUS_LABEL,
+  EXAM_STATUS_LABEL,
+  coverageTone,
+  examStatusTone,
+  questionBankHref,
+  questionIdHref,
 } from "@/lib/coverage-utils";
-
-const STATUS_LABEL: Record<CoverageStatus, string> = {
-  empty: "无题",
-  insufficient: "题量不足",
-  imbalanced: "结构失衡",
-  healthy: "良好",
-};
-
-function coverageTone(status: CoverageStatus) {
-  if (status === "healthy") return "success" as const;
-  if (status === "empty") return "danger" as const;
-  return "warning" as const;
-}
-
-const EXAM_STATUS_LABEL: Record<ExamYearCoverageItem["status"], string> = {
-  missing: "缺失",
-  draft: "草稿未发布",
-  invalid: "发布态异常",
-  complete: "完整",
-  archived: "已归档",
-};
-
-function examStatusTone(status: ExamYearCoverageItem["status"]) {
-  if (status === "complete") return "success" as const;
-  if (status === "archived") return "neutral" as const;
-  if (status === "missing" || status === "invalid") return "danger" as const;
-  return "warning" as const;
-}
-
-function questionBankHref(knowledgePointId: number) {
-  return `/questions?${new URLSearchParams({
-    is_active: "true",
-    knowledge_point_id: String(knowledgePointId),
-  }).toString()}`;
-}
-
-function questionIdHref(questionId: number) {
-  return `/questions?${new URLSearchParams({
-    is_active: "true",
-    keyword: `#${questionId}`,
-  }).toString()}`;
-}
 
 export default function CoveragePage() {
   const [versionId, setVersionId] = useState("");
