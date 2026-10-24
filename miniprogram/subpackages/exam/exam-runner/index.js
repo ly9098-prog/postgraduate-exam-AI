@@ -21,6 +21,9 @@ const {
 const {
   createExamSubmitOutcomeController,
 } = require('../utils/exam-submit-outcome-controller')
+const {
+  createExamSubmitPreparationController,
+} = require('../utils/exam-submit-preparation-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -656,26 +659,30 @@ Page({
   },
 
   async _performSubmit(auto) {
-    const remainingBeforeSubmit = this._currentRemainingSec()
-    auto = !!auto || this.data.timeExpired || (remainingBeforeSubmit != null && remainingBeforeSubmit <= 0)
-    if (auto) {
-      this._retainPendingForSubmit = true
-      this._persistPending()
-    }
-    this.setData({ submitting: true })
-    this._clearTimer()
     try {
-      // Only settle the local final time slice.  Do not issue N PATCH requests
-      // here: all still-pending rows are embedded in the single submit request
-      // and persisted atomically with grading on the server.
-      await this._settleCurrentTime({ sync: false })
-      const finalAnswers = this._buildFinalSubmitAnswers()
-      const result = await this._postSubmitWithRetry(finalAnswers)
+      const prepared = await this._examSubmitPreparationController().prepare(auto)
+      const result = await this._postSubmitWithRetry(prepared.finalAnswers)
       this._examSubmitOutcomeController().applySuccess(result)
       return
     } catch (error) {
-      return this._examSubmitOutcomeController().applyFailure(error, auto)
+      return this._examSubmitOutcomeController().applyFailure(error, this._lastSubmitAuto)
     }
+  },
+
+  _examSubmitPreparationController() {
+    return this._examSubmitPreparation || (
+      this._examSubmitPreparation = createExamSubmitPreparationController({
+        getCurrentRemainingSec: () => this._currentRemainingSec(),
+        isTimeExpired: () => this.data.timeExpired,
+        setRetainPendingForSubmit: value => { this._retainPendingForSubmit = value },
+        persistPending: () => this._persistPending(),
+        setSubmitting: value => this.setData({ submitting: value }),
+        clearTimer: () => this._clearTimer(),
+        settleCurrentTime: options => this._settleCurrentTime(options),
+        buildFinalSubmitAnswers: () => this._buildFinalSubmitAnswers(),
+        onAutoResolved: value => { this._lastSubmitAuto = value },
+      })
+    )
   },
 
   _examSubmitOutcomeController() {
