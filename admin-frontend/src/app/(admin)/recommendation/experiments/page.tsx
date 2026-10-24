@@ -12,6 +12,7 @@ import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { chinaDateString } from "@/lib/time";
 import type { ExperimentCreate, RecommendationExperiment, VariantComparisonResponse } from "@/lib/api/types";
+import { parseExperimentVariants, buildExperimentPayload } from "@/lib/recommendation-experiment-utils";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -131,45 +132,19 @@ export default function RecommendationExperimentsPage() {
       return;
     }
 
-    let raw: unknown;
-    try {
-      raw = JSON.parse(variantsText || "[]");
-    } catch {
-      showToast("分组 JSON 格式错误", true);
-      return;
-    }
-    if (!Array.isArray(raw) || raw.length < 2) {
-      showToast("分组必须是 JSON 数组，且至少需要 2 个分组", true);
+    const result = parseExperimentVariants(variantsText);
+    if (!result.ok) {
+      showToast(result.message, true);
       return;
     }
 
-    const parsed = raw as ExperimentCreate["variants"];
-    const validShape = parsed.every((variant) =>
-      variant
-      && typeof variant.key === "string"
-      && variant.key.trim().length > 0
-      && typeof variant.strategy === "string"
-      && variant.strategy.trim().length > 0
-      && typeof variant.ratio === "number"
-      && Number.isFinite(variant.ratio)
-      && variant.ratio >= 0
-      && variant.ratio <= 1,
-    );
-    if (!validShape) {
-      showToast("每个分组都需要有效的 key、strategy 和 0~1 ratio", true);
-      return;
-    }
-    if (new Set(parsed.map((variant) => variant.key.trim())).size !== parsed.length) {
-      showToast("分组 key 不能重复", true);
-      return;
-    }
-    const ratioSum = parsed.reduce((sum, variant) => sum + variant.ratio, 0);
-    if (Math.abs(ratioSum - 1) > 1e-6) {
-      showToast(`分组 ratio 总和必须为 1，当前为 ${ratioSum.toFixed(4)}`, true);
+    const payload = buildExperimentPayload(name, scene, result.variants);
+    if (!payload) {
+      showToast("请输入实验名称", true);
       return;
     }
 
-    createMutation.mutate({ name: name.trim(), scene, variants: parsed, traffic_ratio: 1.0 });
+    createMutation.mutate(payload);
   };
 
   const rows = experiments.data ?? [];
