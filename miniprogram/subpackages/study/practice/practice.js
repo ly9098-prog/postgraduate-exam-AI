@@ -63,6 +63,9 @@ const {
   createQuestionTimerController,
 } = require('./utils/question-timer-controller')
 const {
+  createQuestionLoadController,
+} = require('./utils/question-load-controller')
+const {
   monotonicNow,
 } = require('./utils/monotonic-clock')
 const {
@@ -1034,20 +1037,126 @@ console.warn('系统返回退出确认处理失败', err)
 })
 },
 async _loadQuestions() {
-const loadSeq = ++this._questionsRequestSeq
-if (!this.data.loading) this.setData({ loading: true })
-try {
-const subjectId = this.data.selectedSubjectId
-if (!subjectId) {
+return this._questionLoadController().load()
+},
+_questionLoadController() {
+return this._questionLoad || (
+this._questionLoad = createQuestionLoadController({
+nextRequestSeq: () => ++this._questionsRequestSeq,
+getRequestSeq: () => this._questionsRequestSeq,
+isPageAlive: () => this._pageAlive,
+isLoading: () => this.data.loading,
+setData: (data, cb) => this.setData(data, cb),
+getSubjectId: () => this.data.selectedSubjectId,
+getSelectedMode: () => this.data.selectedMode,
+buildRequestParams: () => this._buildQuestionRequestParams(),
+requestQuestions: params => api.get('/practice/questions', params),
+validateKnowledgeScope: res => {
+if (!this._launchIncludeDescendants) return null
+const scope = res && res.knowledge_scope
+if (validateKnowledgeScope(scope, this._launchKnowledgePointId)) return null
+return {
+logTag: '[PRACTICE_KNOWLEDGE_SCOPE_MISMATCH]',
+logDetail: {
+requestedRootId: this._launchKnowledgePointId,
+requestedIncludeDescendants: true,
+receivedScope: scope || null,
+traceId: res && (res.trace_id || this._practiceSession.traceId),
+},
+resetMessage: '章节专项范围校验失败，请更新后端服务后重试。',
+toastTitle: '章节专项暂不可用',
+}
+},
+applyKnowledgeScope: res => {
+this._practiceSession.knowledgeScope = res && res.knowledge_scope
+? Object.assign({}, res.knowledge_scope)
+: null
+},
+findBatchError: res => findQuestionBatchError(
+Array.isArray(res.questions) ? res.questions : [],
+{
+answerableTypes: PRACTICE_ANSWERABLE_TYPES,
+allowedScopeIds: new Set(
+this._getPracticeSubjectScopeIds(
+this.data.selectedSubjectId,
+this._buildQuestionRequestParams().include_children
+).map(Number)
+),
+}
+),
+resolveBatchErrorRecovery: (batchError, res) => resolveBatchErrorRecovery(batchError, {
+subjectId: this.data.selectedSubjectId,
+includeChildren: this._buildQuestionRequestParams().include_children,
+traceId: res.trace_id || this._practiceSession.traceId,
+}),
+applyAnsweredFlags: res => adapter.applyAnsweredFlags(
+Array.isArray(res.questions) ? res.questions : [],
+{},
+'id'
+),
+restartSequential: (progress, subjectId, loadSeq) => this._sequentialRestartController().restart(
+progress,
+subjectId,
+this.data.selectedSubjectName,
+loadSeq
+),
+debugAfterApi: (res, questions) => {
+debugLog(this._practiceSession.traceId, 'STATE_AFTER_API', {
+total: questions.length,
+responseTraceId: res.trace_id,
+})
+saveDebugSnapshot(this._practiceSession.traceId, 'state_after_api', {
+total: questions.length,
+questionIds: questions.map(q => q.id),
+})
+},
+applyBatchCredentials: (res, mode) => applyBatchCredentials(this._practiceSession, res, mode),
+hasMissingBatchCredentials: count => hasMissingBatchCredentials(this._practiceSession, count),
+warmQuestionImages: (questions, index) => this._warmQuestionImages(questions, index),
+buildFirstViewModel: q => this._buildQuestionViewModel(q),
+buildLoadedView: (questions, viewModel) => buildLoadedView(questions, viewModel),
+startLoadedSession: viewModel => {
+if (!this._practiceSession.activeStartedMonoMs) {
+this._practiceSession.activeStartedMonoMs = monotonicNow()
+this._practiceSession.startedAtMs = api.now()
+this._practiceSession.backgroundMs = 0
+this._practiceSession._backgroundStartedMonoMs = null
+this._practiceSession.elapsedSec = 0
+}
+this._practiceSession.optionKeys = viewModel.optionKeys
+this._practiceSession.currentQuestionStartedMonoMs = monotonicNow()
+this._setPracticeUnloadGuard(true)
+this._startTimer()
+this._updateComputedFields()
+},
+checkRenderInvariant: model => this._checkRenderInvariant(model),
+showNoQuestions: subjectId => {
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
+const name = this.data.selectedSubjectName || String(subjectId)
 this.setData(buildResetView())
-wx.showToast({ title: '请选择科目', icon: 'none' })
-return
-}
-const mode = this.data.selectedMode || 'random'
-const params = buildQuestionRequestParams({
-subjectId,
+this._showSubmitConfirm({
+scenario: 'info',
+eyebrow: 'NO QUESTIONS',
+title: '该科目暂无可练题目',
+message: `「${name}」目前没有可在本页作答的已发布题目。\n可检查导入审核状态、题型与科目分类，或选择其他科目。`,
+confirmText: '返回选择科目',
+hideCancel: true,
+})
+},
+resetToSetup: errorText => {
+this._clearTimer()
+this._setPracticeUnloadGuard(false)
+this.setData(buildResetView(errorText))
+},
+logError: (...args) => console.error(...args),
+showToast: options => wx.showToast(options),
+})
+)
+},
+_buildQuestionRequestParams() {
+return buildQuestionRequestParams({
+subjectId: this.data.selectedSubjectId,
 selectedMode: this.data.selectedMode,
 selectedSubjectHasChildren: this.data.selectedSubjectHasChildren,
 count: this.data.count,
@@ -1059,151 +1168,6 @@ launchKnowledgePointId: this._launchKnowledgePointId,
 launchIncludeDescendants: this._launchIncludeDescendants,
 launchKnowledgePoint: this._launchKnowledgePoint,
 })
-const res = await api.get('/practice/questions', params)
-if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
-if (this._launchIncludeDescendants) {
-const scope = res && res.knowledge_scope
-if (!validateKnowledgeScope(scope, this._launchKnowledgePointId)) {
-console.error('[PRACTICE_KNOWLEDGE_SCOPE_MISMATCH]', {
-requestedRootId: this._launchKnowledgePointId,
-requestedIncludeDescendants: true,
-receivedScope: scope || null,
-traceId: res && (res.trace_id || this._practiceSession.traceId),
-})
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView('章节专项范围校验失败，请更新后端服务后重试。'))
-wx.showToast({ title: '章节专项暂不可用', icon: 'none' })
-return
-}
-}
-this._practiceSession.knowledgeScope = res && res.knowledge_scope
-? Object.assign({}, res.knowledge_scope)
-: null
-const rawQuestions = Array.isArray(res.questions) ? res.questions : []
-const allowedScopeIds = new Set(
-this._getPracticeSubjectScopeIds(subjectId, params.include_children).map(Number)
-)
-const batchError = findQuestionBatchError(rawQuestions, {
-answerableTypes: PRACTICE_ANSWERABLE_TYPES,
-allowedScopeIds,
-})
-const batchRecovery = resolveBatchErrorRecovery(batchError, {
-subjectId,
-includeChildren: params.include_children,
-traceId: res.trace_id || this._practiceSession.traceId,
-})
-if (batchRecovery) {
-console.error(batchRecovery.logTag, batchRecovery.logDetail)
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView(batchRecovery.resetMessage))
-wx.showToast({ title: batchRecovery.toastTitle, icon: 'none' })
-return
-}
-const questions = adapter.applyAnsweredFlags(rawQuestions, {}, 'id')
-const sequentialProgress = mode === 'sequential'
-? (res.sequential_progress || null)
-: null
-this.setData({ sequentialProgress })
-if (
-mode === 'sequential' &&
-questions.length === 0 &&
-sequentialProgress &&
-sequentialProgress.cycle_completed
-) {
-if (!this._sequentialRestartController) {
-this._sequentialRestartController = createSequentialRestartController({
-clearTimer: () => this._clearTimer(),
-setUnloadGuard: value => this._setPracticeUnloadGuard(value),
-setData: data => this.setData(data),
-buildResetView: () => buildResetView(),
-showRestartConfirm: options => this._showSubmitConfirm(options),
-isPageAlive: () => this._pageAlive,
-getRequestSeq: () => this._questionsRequestSeq,
-getTraceId: () => this._practiceSession.traceId,
-resetSequentialProgress: payload => api.post('/practice/sequential/reset', payload),
-logError: (...args) => console.error(...args),
-showToast: options => wx.showToast(options),
-getSession: () => this._practiceSession,
-resetSequentialTiming: session => resetSequentialTiming(session),
-buildSequentialRestartView: () => buildSequentialRestartView(),
-reloadQuestions: () => this._loadQuestions(),
-})
-}
-await this._sequentialRestartController.restart(
-sequentialProgress,
-subjectId,
-this.data.selectedSubjectName,
-loadSeq
-)
-return
-}
-debugLog(this._practiceSession.traceId, 'STATE_AFTER_API', {
-total: questions.length,
-responseTraceId: res.trace_id,
-})
-saveDebugSnapshot(this._practiceSession.traceId, 'state_after_api', {
-total: questions.length,
-questionIds: questions.map(q => q.id),
-})
-applyBatchCredentials(this._practiceSession, res, mode)
-if (hasMissingBatchCredentials(this._practiceSession, questions.length)) {
-throw new Error('服务器未返回可提交的练习批次凭据')
-}
-if (questions.length > 0) this._warmQuestionImages(questions, 0)
-var firstQuestion = null
-var firstIndex = 0
-if (questions.length > 0) {
-try {
-var viewModelResult = this._buildQuestionViewModel(questions[0])
-if (!viewModelResult) throw new Error('_buildQuestionViewModel returned null')
-firstQuestion = viewModelResult.question
-} catch (renderErr) {
-console.error('首题渲染失败', renderErr)
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView('题目解析失败，可重试或返回选题'))
-return
-}
-}
-this.setData(buildLoadedView(questions, viewModelResult))
-if (questions.length > 0 && firstQuestion) {
-if (!this._practiceSession.activeStartedMonoMs) {
-this._practiceSession.activeStartedMonoMs = monotonicNow()
-this._practiceSession.startedAtMs = api.now()
-this._practiceSession.backgroundMs = 0
-this._practiceSession._backgroundStartedMonoMs = null
-this._practiceSession.elapsedSec = 0
-}
-this._practiceSession.optionKeys = viewModelResult.optionKeys
-this._practiceSession.currentQuestionStartedMonoMs = monotonicNow()
-this._setPracticeUnloadGuard(true)
-this._startTimer()
-this._updateComputedFields()
-this._checkRenderInvariant(firstQuestion._renderModel)
-} else if (questions.length === 0) {
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-const name = this.data.selectedSubjectName || String(subjectId)
-this.setData(buildResetView())
-await this._showSubmitConfirm({
-scenario: 'info',
-eyebrow: 'NO QUESTIONS',
-title: '该科目暂无可练题目',
-message: `「${name}」目前没有可在本页作答的已发布题目。\n可检查导入审核状态、题型与科目分类，或选择其他科目。`,
-confirmText: '返回选择科目',
-hideCancel: true,
-})
-}
-} catch (e) {
-if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
-console.error('加载题目失败', e)
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView('加载题目失败，请重试或返回重新选择科目'))
-wx.showToast({ title: '加载题目失败', icon: 'none' })
-}
 },
 _getQuestionRenderView(q, forceRebuild) {
 return this._questionDisplayController().getRenderView(q, forceRebuild)
@@ -1418,6 +1382,27 @@ getQuestionTimeMap: () => this._practiceSession.questionTimeMap,
 setQuestionTimeMap: map => { this._practiceSession.questionTimeMap = map },
 setCurrentQuestionStartedMonoMs: ms => { this._practiceSession.currentQuestionStartedMonoMs = ms },
 monotonicNow: () => monotonicNow(),
+})
+)
+},
+_sequentialRestartController() {
+return this._sequentialRestart || (
+this._sequentialRestart = createSequentialRestartController({
+clearTimer: () => this._clearTimer(),
+setUnloadGuard: value => this._setPracticeUnloadGuard(value),
+setData: data => this.setData(data),
+buildResetView: () => buildResetView(),
+showRestartConfirm: options => this._showSubmitConfirm(options),
+isPageAlive: () => this._pageAlive,
+getRequestSeq: () => this._questionsRequestSeq,
+getTraceId: () => this._practiceSession.traceId,
+resetSequentialProgress: payload => api.post('/practice/sequential/reset', payload),
+logError: (...args) => console.error(...args),
+showToast: options => wx.showToast(options),
+getSession: () => this._practiceSession,
+resetSequentialTiming: session => resetSequentialTiming(session),
+buildSequentialRestartView: () => buildSequentialRestartView(),
+reloadQuestions: () => this._loadQuestions(),
 })
 )
 },
