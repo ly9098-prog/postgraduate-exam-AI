@@ -418,6 +418,7 @@ jobs:
             tests/test_services/test_worker_credential_service_compatibility.py \
             tests/test_services/test_visual_region_types_compatibility.py \
             tests/test_services/test_task_observability_rules_compatibility.py \
+            tests/test_services/test_embedding_endpoints_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
