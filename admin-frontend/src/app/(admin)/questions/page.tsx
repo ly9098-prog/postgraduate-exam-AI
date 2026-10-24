@@ -9,7 +9,6 @@ import {
   Download,
   Filter,
   Loader2,
-  AlertCircle,
   Search,
   BookOpen,
   Tag,
@@ -30,11 +29,10 @@ import { MathFormula } from "@/components/ui/math-formula";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { buildVersionLabels } from "./question-version-labels";
-import { QuestionVersionHistorySection } from "./question-version-history-section";
 import { QuestionListFeedback } from "./question-list-feedback";
 import { QuestionSideDetailPanel } from "./question-side-detail-panel";
 import { QuestionDrawerHeader } from "./question-drawer-header";
-import { QuestionDrawerEditForm } from "./question-drawer-edit-form";
+import { QuestionDrawerBody } from "./question-drawer-body";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS } from "@/lib/question-types";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
@@ -71,9 +69,7 @@ import { positiveInt } from "./question-list-state";
 import {
   textForStemEditor,
 } from "./question-content-editing";
-import { QuestionDetailView } from "./question-detail-view";
 import { buildExportPayload } from "./question-export-payload";
-import { QuestionSecondaryInfo } from "./components/question-secondary-info";
 import { buildQuestionPaginationViewport } from "./question-pagination-viewport";
 
 const activeOptions = [
@@ -963,83 +959,47 @@ export default function QuestionsPage() {
               onClose={closeDetailDrawer}
             />
 
-            {selectedQuestion ? (
-              editing ? (
-                /* ===== Edit form ===== */
-                <QuestionDrawerEditForm
-                  questionId={selectedQuestionId}
-                  editForm={editForm}
-                  setEditForm={setEditForm}
-                  setStemText={setEditStemText}
-                  stemText={editStemText}
-                  subjectOptions={subjectOptions}
-                  segments={editingSegments}
-                  fallbackImageUrls={editingFallbackStemImageUrls}
-                  dirty={dirty}
-                  unresolvedTableCount={unresolvedEditingTableCount}
-                  emptyCodeCount={emptyEditingCodeCount}
-                  saving={updateMutation.isPending}
-                  beforeDirtyMutation={prepareImmediateQuestionMutation}
-                  onMutated={handleQuestionMutated}
-                  cancelEditing={cancelEditing}
-                  saveEditing={() => updateMutation.mutate()}
-                />
-              ) : (
-                /* ===== Detail view ===== */
-                <>
-                  <QuestionDetailView question={selectedQuestion} />
-                  <QuestionVersionHistorySection
-                    question={selectedQuestion}
-                    versions={versions}
-                    history={{
-                      open: versionHistoryOpen,
-                      toggle: toggleVersionHistory,
-                      base: baseVersion,
-                      compare: compareVersion,
-                      setBase: setBaseVersion,
-                      setCompare: setCompareVersion,
-                      swap: swapVersions,
-                    }}
-                    details={{
-                      base: baseVersionDetail.data,
-                      compare: compareVersionDetail.data,
-                    }}
-                    labels={{
-                      baseVersionLabel,
-                      compareVersionLabel,
-                      versionComparisonLoading,
-                      pendingVersionLabel,
-                    }}
-                  />
-
-                  <QuestionSecondaryInfo question={selectedQuestion} />
-                </>
-              )
-            ) : detail.isError ? (
-              <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 px-7 text-center">
-                <AlertCircle className="h-8 w-8 text-red-400" />
-                <div>
-                  <p className="text-sm font-semibold text-red-700">题目详情加载失败</p>
-                  <p className="mt-1 text-xs text-slate-400">请检查网络连接后重试。</p>
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="border-slate-200 bg-white shadow-none"
-                  onClick={() => detail.refetch()}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  重新加载
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3 px-7 py-6">
-                <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
-                <div className="h-32 animate-pulse rounded-xl bg-slate-100/80" />
-                <div className="h-24 animate-pulse rounded-xl bg-slate-100/60" />
-              </div>
-            )}
+            <QuestionDrawerBody
+              editing={editing}
+              question={selectedQuestion}
+              detailError={detail.isError}
+              editForm={editForm}
+              setEditForm={setEditForm}
+              setStemText={setEditStemText}
+              stemText={editStemText}
+              subjectOptions={subjectOptions}
+              segments={editingSegments}
+              fallbackImageUrls={editingFallbackStemImageUrls}
+              dirty={dirty}
+              unresolvedTableCount={unresolvedEditingTableCount}
+              emptyCodeCount={emptyEditingCodeCount}
+              saving={updateMutation.isPending}
+              beforeDirtyMutation={prepareImmediateQuestionMutation}
+              onMutated={handleQuestionMutated}
+              cancelEditing={cancelEditing}
+              saveEditing={() => updateMutation.mutate()}
+              versions={versions}
+              history={{
+                open: versionHistoryOpen,
+                toggle: toggleVersionHistory,
+                base: baseVersion,
+                compare: compareVersion,
+                setBase: setBaseVersion,
+                setCompare: setCompareVersion,
+                swap: swapVersions,
+              }}
+              details={{
+                base: baseVersionDetail.data,
+                compare: compareVersionDetail.data,
+              }}
+              labels={{
+                baseVersionLabel,
+                compareVersionLabel,
+                versionComparisonLoading,
+                pendingVersionLabel,
+              }}
+              onRetry={() => detail.refetch()}
+            />
           </aside>
         </div>
       ) : null}
