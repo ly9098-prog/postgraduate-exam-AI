@@ -422,6 +422,11 @@ export type AdminQuestionRollbackRequest = {
   reason: string;
 };
 
+export type AdminQuestionBatchRequest = {
+  ids: number[];
+  reason?: string;
+};
+
 export type BatchFailure = {
   id: number;
   error: string;

@@ -185,11 +185,11 @@ POST   /v1/auth/refresh
 | POST | `/questions/{id}/options` | 快捷添加选项（single_choice/multiple_choice） | question:write |
 | POST | `/questions/{id}/images` | 上传/替换题干或选项图片（multipart） | question:write |
 | DELETE | `/questions/{id}/images` | 删除题干或选项图片 | question:write |
-| PATCH | `/questions/{id}/toggle-active` | 上下架（非已审核题目不可激活） | question:write |
+| PATCH | `/questions/{id}/toggle-active` | 上下架（仅 approved 可激活；rejected 须走重审通过） | question:write |
 | POST | `/questions/{id}/approve` | 已入库题目重审通过（仅 re_pending/rejected） | question:review |
 | POST | `/questions/{id}/reject` | 已入库题目重审拒绝（仅 re_pending；reason 必填） | question:review |
-| POST | `/questions/batch-approve` | 已入库题目批量重审通过（ids 上限 50） | question:batch_review |
-| POST | `/questions/batch-reject` | 已入库题目批量重审拒绝（ids 上限 50） | question:batch_review |
+| POST | `/questions/batch-approve` | 已入库题目批量重审通过（ids 上限 50；可选 reason） | question:batch_review |
+| POST | `/questions/batch-reject` | 已入库题目批量重审拒绝（ids 上限 50；可选 reason，默认"批量重审拒绝"） | question:batch_review |
 | POST | `/questions/{id}/rollback` | 回滚到指定版本并追加新版本 | question:write + question:review |
 | POST | `/questions/embeddings/backfill` | 批量回填题目 embedding 向量 | question:write |
 | GET | `/questions/embeddings/status` | 查看向量功能状态与 embedding 统计 | question:read |

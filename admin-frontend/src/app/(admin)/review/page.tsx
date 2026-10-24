@@ -12,8 +12,8 @@ import { QuestionContentRenderer } from "@/components/question-content-renderer"
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { unresolvedTableCount, textFromContent, renderJson, statusTone, duplicateStatusTone } from "@/lib/review-page-utils";
-import type { AdminQuestion, AdminQuestionDetail, AdminQuestionImportSummary, AdminQuestionRollbackRequest, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
+import { unresolvedTableCount, textFromContent, renderJson, statusTone, duplicateStatusTone, selectRollbackBaselineVersion, toggleBatchSelection, pruneStaleSelections } from "@/lib/review-page-utils";
+import type { AdminQuestion, AdminQuestionBatchRequest, AdminQuestionDetail, AdminQuestionImportSummary, AdminQuestionRollbackRequest, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
 
 type ConfirmState =
   | { action: "approve"; id: number }
@@ -113,19 +113,28 @@ export default function ReviewPage() {
 
   const previewVersions = useQuery({
     queryKey: ["review-preview", previewId, "versions"],
-    queryFn: () => apiRequest<PaginatedResponse<{ version: number }>>(`/questions/${previewId}/versions${toQuery({ page: 1, page_size: 1 })}`),
+    queryFn: () => apiRequest<PaginatedResponse<{ version: number }>>(`/questions/${previewId}/versions${toQuery({ page: 1, page_size: 2 })}`),
     enabled: previewId !== null && tab === "re_pending",
     retry: false,
   });
 
   const previewVersionDetail = useQuery({
     queryKey: ["review-preview", previewId, "version-detail"],
-    queryFn: () => apiRequest<QuestionVersionDetail>(`/questions/${previewId}/versions/${previewVersions.data?.items?.[0]?.version}`),
-    enabled: previewId !== null && tab === "re_pending" && Boolean(previewVersions.data?.items?.[0]?.version),
+    queryFn: () => apiRequest<QuestionVersionDetail>(`/questions/${previewId}/versions/${previewVersions.data?.items?.[1]?.version}`),
+    enabled: previewId !== null && tab === "re_pending" && Boolean(previewVersions.data?.items?.[1]?.version),
     retry: false,
   });
 
   const items = useMemo(() => questions.data?.items ?? [], [questions.data]);
+
+  // Derive valid selections: filter out ids that are no longer visible in the
+  // current question list (e.g. after status change or keyword filter). This
+  // avoids stale selections without a setState-in-effect. The backend caps
+  // batch ids at 50; the checkbox onChange enforces the same cap on the client.
+  const validSelectedIds = useMemo(
+    () => pruneStaleSelections(selectedIds, items),
+    [selectedIds, items],
+  );
 
   const reviewMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
@@ -163,11 +172,17 @@ export default function ReviewPage() {
     mutationFn: async (decision: "approved" | "rejected") =>
       apiRequest<AdminQuestion[]>(`/questions/batch-${decision === "approved" ? "approve" : "reject"}`, {
         method: "POST",
-        body: JSON.stringify({ ids: selectedIds }),
+        body: JSON.stringify({
+          ids: validSelectedIds,
+          ...(decision === "rejected" && rejectReason.trim()
+            ? { reason: rejectReason.trim() }
+            : {}),
+        } satisfies AdminQuestionBatchRequest),
       }),
     onSuccess: (_result, decision) => {
       setMessage(`批量${decision === "approved" ? "通过" : "拒绝"}已提交。`);
       setSelectedIds([]);
+      setRejectReason("");
       queryClient.invalidateQueries({ queryKey: ["review-questions"] });
     },
     onError: (error) => {
@@ -203,7 +218,7 @@ export default function ReviewPage() {
   const pendingQuestion: AdminQuestionDetail | undefined = preview.data;
   const pendingQuestionTableReviewCount = unresolvedTableCount(pendingQuestion?.content);
   const previousVersion = previewVersionDetail.data;
-  const baselineVersion = previewVersions.data?.items?.[0]?.version;
+  const baselineVersion = selectRollbackBaselineVersion(previewVersions.data?.items);
   const diffUnreliable = tab === "re_pending" && (
     previewVersions.isError ||
     previewVersionDetail.isError ||
@@ -225,11 +240,11 @@ export default function ReviewPage() {
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">支持快速审核、diff 预览、驳回说明，提交后自动刷新列表。</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant={tab === "re_pending" ? "primary" : "secondary"} onClick={() => { setTab("re_pending"); setPreviewId(null); }}>
+            <Button variant={tab === "re_pending" ? "primary" : "secondary"} onClick={() => { setTab("re_pending"); setPreviewId(null); setSelectedIds([]); }}>
               <AlertTriangle className="h-4 w-4" />
               re_pending
             </Button>
-            <Button variant={tab === "rejected" ? "primary" : "secondary"} onClick={() => { setTab("rejected"); setPreviewId(null); }}>
+            <Button variant={tab === "rejected" ? "primary" : "secondary"} onClick={() => { setTab("rejected"); setPreviewId(null); setSelectedIds([]); }}>
               <XCircle className="h-4 w-4" />
               rejected
             </Button>
@@ -252,19 +267,19 @@ export default function ReviewPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="secondary"
-                disabled={selectedIds.length === 0 || batchReviewMutation.isPending}
+                disabled={validSelectedIds.length === 0 || batchReviewMutation.isPending}
                 onClick={() => batchReviewMutation.mutate("approved")}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                批量通过 {selectedIds.length ? `(${selectedIds.length})` : ""}
+                批量通过 {validSelectedIds.length ? `(${validSelectedIds.length})` : ""}
               </Button>
               <Button
                 variant="danger"
-                disabled={selectedIds.length === 0 || batchReviewMutation.isPending}
+                disabled={validSelectedIds.length === 0 || batchReviewMutation.isPending}
                 onClick={() => batchReviewMutation.mutate("rejected")}
               >
                 <XCircle className="h-4 w-4" />
-                批量拒绝 {selectedIds.length ? `(${selectedIds.length})` : ""}
+                批量拒绝 {validSelectedIds.length ? `(${validSelectedIds.length})` : ""}
               </Button>
             </div>
           ) : null}
@@ -276,11 +291,11 @@ export default function ReviewPage() {
                     {canBatchReview ? (
                       <input
                         type="checkbox"
-                        checked={selectedIds.includes(question.id)}
+                        checked={validSelectedIds.includes(question.id)}
                         onChange={(event) => {
-                          setSelectedIds((current) => event.target.checked
-                            ? [...current, question.id]
-                            : current.filter((id) => id !== question.id));
+                          setSelectedIds((current) =>
+                            toggleBatchSelection(current, question.id, event.target.checked),
+                          );
                         }}
                       />
                     ) : null}

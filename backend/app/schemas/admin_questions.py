@@ -149,6 +149,7 @@ class AdminQuestionRollbackRequest(BaseModel):
 
 class AdminQuestionBatchRequest(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=50)
+    reason: str | None = Field(default=None, max_length=256)
 
 
 class AdminQuestionExportRequest(BaseModel):

@@ -411,7 +411,12 @@ async def batch_approve_questions(
         return AdminQuestionBatchResult(**idem.response)
     try:
         result = await batch_review_admin_questions(
-            db, data.ids, "approved", current_admin, request=request
+            db,
+            data.ids,
+            "approved",
+            current_admin,
+            reason=data.reason,
+            request=request,
         )
         await db.commit()
     except Exception:
@@ -441,7 +446,7 @@ async def batch_reject_questions(
             data.ids,
             "rejected",
             current_admin,
-            reason="批量重审拒绝",
+            reason=(data.reason or "").strip() or "批量重审拒绝",
             request=request,
         )
         await db.commit()

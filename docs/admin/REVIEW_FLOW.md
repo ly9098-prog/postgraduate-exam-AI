@@ -81,6 +81,7 @@
 - 导入阶段 Level 1 重复检测只写 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`；不删除、不自动拒绝导入题。
 - 审核通过 / 发布写入 `questions` 前必须按 `subject_id + question_hash` 查询正式题库；命中完全重复时不重复创建，将导入题置为 `published` 并挂到已发布题目 `question_id`。
 - 已入库题目重审已实现：`POST /questions/{id}/approve`、`POST /questions/{id}/reject`、`POST /questions/batch-approve`、`POST /questions/batch-reject`；仅 `re_pending` 可通过/拒绝，`rejected` 可重审通过。
+- 批量重审 `POST /questions/batch-approve`、`POST /questions/batch-reject` 支持可选 `reason` 字段（最长 256 字符）；`batch-reject` 省略 `reason` 时使用默认 `"批量重审拒绝"`。批量操作按逐题 savepoint 隔离，单题非 `ValueError` 异常不会中断整批，失败项以 `failed_items` 返回。
 - `re_pending` 写入已实现：`PATCH /questions/{id}` 发生实际字段变更且操作者无 `question:review` 权限时，`review_status → re_pending`；持有 `question:review` 的编辑者保持原状态。
 - `is_active=false` 时，**无论 review_status 是什么**，题目不会出现在小程序刷题池。
 
@@ -210,6 +211,9 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 副作用：
 - questions.is_active → 指定值
 - audit_log（severity: important）
+约束：
+- 仅 `review_status=approved` 的题目可激活；`rejected` 必须走重审通过（`POST /approve`），`re_pending` 必须走审核
+- 软删除（`is_active=false`）后的 approved 题目可通过 toggle-active 重新激活
 ```
 
 ---

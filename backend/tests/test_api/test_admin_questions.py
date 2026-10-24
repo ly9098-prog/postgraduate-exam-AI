@@ -15,6 +15,21 @@ from app.models.question_import import QuestionImport
 client = TestClient(app)
 
 
+async def _noop_idempotency():
+    from app.core.admin_redis import IdempotencyClaim
+
+    return IdempotencyClaim(
+        redis_key="admin:idempotency:test-key",
+        fingerprint="test-fp",
+        pending_value=None,
+        response=None,
+    )
+
+
+async def _noop_none():
+    return None
+
+
 @pytest.fixture(autouse=True)
 def _kp_patch(monkeypatch):
     """端点统一从关联表读取知识点；测试内 patch 为固定返回值。"""
@@ -259,6 +274,77 @@ def test_batch_approve_and_reject(monkeypatch):
     assert reject_resp.status_code == 200
     assert reject_resp.json()["review_status"] == "rejected"
     reject.assert_awaited_once()
+
+
+def test_batch_reject_passes_custom_reason(monkeypatch):
+    """POST /questions/batch-reject should forward an optional reason to the
+    service layer instead of always using the hardcoded fallback."""
+    captured = {}
+
+    async def fake_batch_review(_db, ids, decision, *_args, **kwargs):
+        captured["ids"] = ids
+        captured["decision"] = decision
+        captured["reason"] = kwargs.get("reason")
+        from app.schemas.admin_questions import AdminQuestionBatchResult
+
+        return AdminQuestionBatchResult(success_ids=ids, failed_items=[])
+
+    monkeypatch.setattr(
+        admin_questions, "batch_review_admin_questions", fake_batch_review
+    )
+    monkeypatch.setattr(admin_questions, "finish_idempotency", AsyncMock())
+    monkeypatch.setattr(admin_questions, "release_idempotent_request", AsyncMock())
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    from app.core.admin_guards import admin_rate_limit, require_idempotency
+
+    app.dependency_overrides[admin_rate_limit] = _noop_none
+    app.dependency_overrides[require_idempotency] = _noop_idempotency
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/batch-reject",
+            json={"ids": [1, 2], "reason": "答案与解析矛盾"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert captured["decision"] == "rejected"
+    assert captured["reason"] == "答案与解析矛盾"
+
+
+def test_batch_reject_uses_default_reason_when_omitted(monkeypatch):
+    """Omitting reason falls back to the historical default so existing callers
+    are unaffected."""
+    captured = {}
+
+    async def fake_batch_review(_db, ids, decision, *_args, **kwargs):
+        captured["reason"] = kwargs.get("reason")
+        from app.schemas.admin_questions import AdminQuestionBatchResult
+
+        return AdminQuestionBatchResult(success_ids=ids, failed_items=[])
+
+    monkeypatch.setattr(
+        admin_questions, "batch_review_admin_questions", fake_batch_review
+    )
+    monkeypatch.setattr(admin_questions, "finish_idempotency", AsyncMock())
+    monkeypatch.setattr(admin_questions, "release_idempotent_request", AsyncMock())
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    from app.core.admin_guards import admin_rate_limit, require_idempotency
+
+    app.dependency_overrides[admin_rate_limit] = _noop_none
+    app.dependency_overrides[require_idempotency] = _noop_idempotency
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/batch-reject",
+            json={"ids": [1]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert captured["reason"] == "批量重审拒绝"
 
 
 def test_question_versions(monkeypatch):

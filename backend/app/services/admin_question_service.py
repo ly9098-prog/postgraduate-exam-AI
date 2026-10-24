@@ -886,16 +886,14 @@ async def toggle_active_admin_question(
     question = await get_admin_question(db, question_id)
     await _resolve_question_subject(db, question)
 
-    if data.is_active and question.review_status != "approved":
-        raise ValueError("非已审核题目不能激活")
-    if (
-        data.is_active
-        and question.review_status == "approved"
-        and not question.is_active
-    ):
-        # Restoring a rejected question through the generic toggle would bypass
-        # the dedicated re-review audit path.
+    if data.is_active and question.review_status == "rejected":
+        # Rejected questions must be restored through the dedicated re-review
+        # approve path so the re-review audit and revision snapshot are written.
         raise ValueError("已拒绝题目不能通过上下架恢复，请使用重审通过")
+    if data.is_active and question.review_status not in ("approved",):
+        # Only approved questions may be (re)activated. re_pending must go
+        # through review; rejected must go through re-review approve.
+        raise ValueError("非已审核题目不能激活")
     before = {"is_active": question.is_active}
     changed = question.is_active != data.is_active
     question.is_active = data.is_active
@@ -994,14 +992,32 @@ async def batch_review_admin_questions(
     failed_items: list[AdminQuestionBatchFailure] = []
 
     for question_id in ids:
+        # Per-item isolation: each review runs in its own savepoint so a
+        # non-ValueError DB/runtime failure on one item cannot abort the whole
+        # batch. ValueError stays the expected per-item contract (bad state,
+        # missing reason, invalid transition); everything else is captured and
+        # reported in failed_items rather than propagating to the caller.
         try:
-            await review_admin_question(
-                db, question_id, decision, operator, reason, request
-            )
+            async with db.begin_nested():
+                await review_admin_question(
+                    db, question_id, decision, operator, reason, request
+                )
             success_ids.append(question_id)
         except ValueError as exc:
             failed_items.append(
                 AdminQuestionBatchFailure(id=question_id, error=str(exc))
+            )
+        except Exception as exc:  # noqa: BLE001 — per-item isolation contract
+            logger.warning(
+                "question batch review item failed id=%s decision=%s",
+                question_id,
+                decision,
+                exc_info=True,
+            )
+            failed_items.append(
+                AdminQuestionBatchFailure(
+                    id=question_id, error=f"处理失败：{type(exc).__name__}"
+                )
             )
 
     await write_admin_audit(

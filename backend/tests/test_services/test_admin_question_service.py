@@ -33,6 +33,16 @@ class _Scalars:
         return self.values[0] if self.values else None
 
 
+class _NoopSavepoint:
+    """Async cm stand-in for SQLAlchemy ``db.begin_nested()`` in mocked tests."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 class _Result:
     def __init__(self, value=None, values=None):
         self.value = value
@@ -90,6 +100,12 @@ class _Db:
 
     async def rollback(self):
         self.rollbacks += 1
+
+    def begin_nested(self):
+        # Mocked sessions have no real transaction; provide a no-op savepoint
+        # context manager so batch_review_admin_questions per-item isolation
+        # can be exercised without a live SQLAlchemy session.
+        return _NoopSavepoint()
 
     async def execute(self, statement):
         text = str(statement)
@@ -288,6 +304,73 @@ async def test_toggle_active_rejects_non_approved():
         await toggle_active_admin_question(
             db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal()
         )
+
+
+@pytest.mark.asyncio
+async def test_toggle_active_reactivates_soft_deleted_approved(monkeypatch):
+    """Regression: soft-deleting an approved question then reactivating it via
+    toggle-active must succeed. The previous guard rejected reactivation
+    whenever ``review_status == 'approved' and not is_active``, which wrongly
+    blocked archived approved questions (only rejected ones should be blocked).
+    """
+    _patch_kps(monkeypatch)
+    question = _question(review_status="approved", is_active=False)
+    db = _Db(question=question)
+    monkeypatch.setattr(admin_question_service, "write_admin_audit", AsyncMock())
+
+    result = await toggle_active_admin_question(
+        db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal()
+    )
+    assert result.is_active is True
+    assert result.review_status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_toggle_active_blocks_rejected_reactivation():
+    """Rejected questions must go through re-review approve, not toggle-active."""
+    db = _Db(question=_question(review_status="rejected", is_active=False))
+
+    with pytest.raises(ValueError, match="已拒绝题目不能通过上下架恢复"):
+        await toggle_active_admin_question(
+            db, 1, AdminQuestionToggleActiveRequest(is_active=True), _principal()
+        )
+
+
+@pytest.mark.asyncio
+async def test_batch_review_isolates_non_value_error(monkeypatch):
+    """A non-ValueError failure on one item must not abort the whole batch.
+
+    Per-item savepoint isolation means item 1 succeeds even when item 2 raises
+    a database/runtime error (e.g. IntegrityError). The failing item is
+    reported in failed_items with a generic type-name message, while the
+    successful item appears in success_ids.
+    """
+    _patch_kps(monkeypatch)
+    good = _question(question_id=1, review_status="re_pending")
+    bad = _question(question_id=2, review_status="re_pending")
+    db = _Db(question=good)
+    db.questions = {1: good, 2: bad}
+    db.get = AsyncMock(side_effect=lambda model, item_id: db.questions.get(item_id))
+    monkeypatch.setattr(admin_question_service, "write_admin_audit", AsyncMock())
+
+    original_review = admin_question_service.review_admin_question
+    call_count = {"n": 0}
+
+    async def flaky_review(_db, question_id, decision, *_args, **_kwargs):
+        call_count["n"] += 1
+        if question_id == 2:
+            raise RuntimeError("simulated DB outage")
+        return await original_review(_db, question_id, decision, *_args, **_kwargs)
+
+    monkeypatch.setattr(admin_question_service, "review_admin_question", flaky_review)
+
+    result = await batch_review_admin_questions(db, [1, 2], "approved", _principal())
+
+    assert result.success_ids == [1]
+    assert len(result.failed_items) == 1
+    assert result.failed_items[0].id == 2
+    assert "RuntimeError" in result.failed_items[0].error
+    assert call_count["n"] == 2
 
 
 @pytest.mark.asyncio
