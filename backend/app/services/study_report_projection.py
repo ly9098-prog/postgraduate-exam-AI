@@ -66,3 +66,65 @@ def calc_priority(overdue_days: int, wrong_count: int, box_level: int) -> str:
     if overdue_days >= 1 or wrong_count >= 1:
         return "medium"
     return "normal"
+
+
+def build_overview_response(
+    *,
+    today_count: int,
+    today_correct: int,
+    recent_count: int,
+    recent_correct: int,
+    total_count: int,
+    total_correct: int,
+    due_count: int,
+    overdue_count: int,
+    weak_count: int,
+    unstable_count: int,
+    mastered_count: int,
+    wrong_total: int,
+    repeated_wrong: int,
+) -> dict:
+    """Project overview counters while preserving percentage accuracy."""
+    return {
+        "today_answer_count": today_count,
+        "today_correct_count": today_correct,
+        "today_accuracy": safe_accuracy(today_correct, today_count),
+        "recent_answer_count": recent_count,
+        "recent_correct_count": recent_correct,
+        "recent_accuracy": safe_accuracy(recent_correct, recent_count),
+        "total_answer_count": total_count,
+        "total_correct_count": total_correct,
+        "total_accuracy": safe_accuracy(total_correct, total_count),
+        "due_review_count": due_count,
+        "overdue_review_count": overdue_count,
+        "weak_knowledge_count": weak_count,
+        "unstable_knowledge_count": unstable_count,
+        "mastered_knowledge_count": mastered_count,
+        "wrong_question_count": wrong_total,
+        "repeated_wrong_question_count": repeated_wrong,
+    }
+
+
+def build_review_plan_item(
+    *,
+    row: object,
+    knowledge_point: tuple[int, str] | None,
+    now: object,
+) -> dict:
+    """Project one due question row and preserve overdue/priority rules."""
+    overdue_days = (
+        max(0, int((now - row.next_review_at).total_seconds() // 86400))
+        if row.next_review_at
+        else 0
+    )
+    return {
+        "question_id": row.question_id,
+        "knowledge_point_id": knowledge_point[0] if knowledge_point else None,
+        "knowledge_point_name": knowledge_point[1] if knowledge_point else None,
+        "box_level": row.box_level,
+        "wrong_count": row.wrong_count,
+        "correct_count": row.correct_count,
+        "next_review_at": row.next_review_at,
+        "overdue_days": overdue_days,
+        "priority": calc_priority(overdue_days, row.wrong_count, row.box_level),
+    }

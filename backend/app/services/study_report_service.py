@@ -25,6 +25,8 @@ from app.services.learning_time_projection import (
     today_utc as _today_utc,
 )
 from app.services.study_report_projection import (
+    build_overview_response,
+    build_review_plan_item,
     calc_priority,
     classify_mastery,
     extract_title,
@@ -177,24 +179,21 @@ async def get_overview(
     if subject_id is not None:
         if not await _subject_exists(db, subject_id):
             # 该 subject_id 不存在，知识点统计返回 0，但错题统计仍有效
-            return {
-                "today_answer_count": today_count,
-                "today_correct_count": today_correct,
-                "today_accuracy": _safe_accuracy(today_correct, today_count),
-                "recent_answer_count": recent_count,
-                "recent_correct_count": recent_correct,
-                "recent_accuracy": _safe_accuracy(recent_correct, recent_count),
-                "total_answer_count": total_count,
-                "total_correct_count": total_correct,
-                "total_accuracy": _safe_accuracy(total_correct, total_count),
-                "due_review_count": int(due_count),
-                "overdue_review_count": int(overdue_count),
-                "weak_knowledge_count": 0,
-                "unstable_knowledge_count": 0,
-                "mastered_knowledge_count": 0,
-                "wrong_question_count": int(wrong_total),
-                "repeated_wrong_question_count": int(repeated_wrong),
-            }
+            return build_overview_response(
+                today_count=today_count,
+                today_correct=today_correct,
+                recent_count=recent_count,
+                recent_correct=recent_correct,
+                total_count=total_count,
+                total_correct=total_correct,
+                due_count=int(due_count),
+                overdue_count=int(overdue_count),
+                weak_count=0,
+                unstable_count=0,
+                mastered_count=0,
+                wrong_total=int(wrong_total),
+                repeated_wrong=int(repeated_wrong),
+            )
         ks_subject_filter.append(UserKnowledgeState.subject_id == subject_id)
 
     def _ks_count_q(where_extra):
@@ -237,24 +236,21 @@ async def get_overview(
         )
     ).scalar_one()
 
-    return {
-        "today_answer_count": today_count,
-        "today_correct_count": today_correct,
-        "today_accuracy": _safe_accuracy(today_correct, today_count),
-        "recent_answer_count": recent_count,
-        "recent_correct_count": recent_correct,
-        "recent_accuracy": _safe_accuracy(recent_correct, recent_count),
-        "total_answer_count": total_count,
-        "total_correct_count": total_correct,
-        "total_accuracy": _safe_accuracy(total_correct, total_count),
-        "due_review_count": int(due_count),
-        "overdue_review_count": int(overdue_count),
-        "weak_knowledge_count": int(weak_count),
-        "unstable_knowledge_count": int(unstable_count),
-        "mastered_knowledge_count": int(mastered_count),
-        "wrong_question_count": int(wrong_total),
-        "repeated_wrong_question_count": int(repeated_wrong),
-    }
+    return build_overview_response(
+        today_count=today_count,
+        today_correct=today_correct,
+        recent_count=recent_count,
+        recent_correct=recent_correct,
+        total_count=total_count,
+        total_correct=total_correct,
+        due_count=int(due_count),
+        overdue_count=int(overdue_count),
+        weak_count=int(weak_count),
+        unstable_count=int(unstable_count),
+        mastered_count=int(mastered_count),
+        wrong_total=int(wrong_total),
+        repeated_wrong=int(repeated_wrong),
+    )
 
 
 # ── 2. Review Plan ──────────────────────────────────────────────────
@@ -349,25 +345,8 @@ async def get_review_plan(
 
     items = []
     for r in rows:
-        overdue_days = (
-            max(0, int((now - r.next_review_at).total_seconds() // 86400))
-            if r.next_review_at
-            else 0
-        )
         kp = kp_map.get(r.question_id)
-        items.append(
-            {
-                "question_id": r.question_id,
-                "knowledge_point_id": kp[0] if kp else None,
-                "knowledge_point_name": kp[1] if kp else None,
-                "box_level": r.box_level,
-                "wrong_count": r.wrong_count,
-                "correct_count": r.correct_count,
-                "next_review_at": r.next_review_at,
-                "overdue_days": overdue_days,
-                "priority": _calc_priority(overdue_days, r.wrong_count, r.box_level),
-            }
-        )
+        items.append(build_review_plan_item(row=r, knowledge_point=kp, now=now))
 
     return {
         "due_count": int(due_count),
