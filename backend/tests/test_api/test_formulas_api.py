@@ -46,6 +46,15 @@ def _fake_category(id, parent_id, node_type, code, name, sort_order=0, is_active
     return c
 
 
+class _Db:
+    def __init__(self, *results):
+        self._results = list(results)
+        self.commit = AsyncMock()
+
+    async def execute(self, _statement):
+        return self._results.pop(0) if self._results else MagicMock()
+
+
 class TestFormulaCatalog:
     """GET /formulas/catalog"""
 
@@ -242,6 +251,35 @@ class TestFormulaFavoritesList:
         _clear_overrides()
 
     def test_favorites_list_endpoint_exists(self):
-        """Endpoint responds."""
-        resp = client.get("/api/v1/formulas/favorites/list")
-        assert resp.status_code in (200, 500)
+        """Endpoint accepts the same filter set and returns a page."""
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        card_result = MagicMock()
+        card_result.scalars.return_value.all.return_value = []
+        db = _Db(count_result, card_result)
+        app.dependency_overrides[formulas_router.get_db] = lambda: db
+
+        resp = client.get(
+            "/api/v1/formulas/favorites/list",
+            params={
+                "subject_code": "math",
+                "chapter_id": 2,
+                "category_id": 3,
+                "tags": "basic",
+                "q": "极限",
+                "library_type": "function_graph",
+                "study_card_type": "formula",
+                "exam_scope": "math2",
+                "page": 1,
+                "page_size": 20,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "items": [],
+            "total": 0,
+            "page": 1,
+            "page_size": 20,
+            "total_pages": 0,
+        }

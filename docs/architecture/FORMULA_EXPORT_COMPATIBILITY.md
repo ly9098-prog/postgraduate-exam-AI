@@ -119,9 +119,10 @@ tests/export/test_export_comprehensive.py
 
 - `tests/test_api/test_formulas.py + tests/export/test_export_api_security.py` 复核结果：47 passed。
 - `test_export_api_security.py` 两个用例已从 FastAPI 原始 `detail.error_code` 对齐到当前全局处理器的 `error.code` envelope（404→`HTTP_404`，403→`HTTP_403`）。
-- `test_formulas_api.py::test_favorites_list_endpoint_exists` 仍保留原问题：只 mock auth、未提供公式表或 DB mock，直接请求真实 in-memory DB 导致 `no such table: formula_cards`；该测试自身允许 500，但断言前已先失败。
+- `test_formulas_api.py::test_favorites_list_endpoint_exists` 已改为显式 DB result double，覆盖收藏列表全部过滤参数与空页响应；不再让请求落到未建表的真实 in-memory DB。
+- 复核完整首轮清单：159 passed，原有 3 项失败均清零。
 
-除上述 3 项外，公式 API/数学 scope、导出安全用例、状态机与 processor/快照/幂等/本地路径安全回归均通过。
+首轮除上述 3 项外，公式 API/数学 scope、导出安全用例、状态机与 processor/快照/幂等/本地路径安全回归均通过；对齐后同一清单已全部通过。
 
 首轮小程序重放（2026-10-24，Node 静态/单元脚本）：
 
