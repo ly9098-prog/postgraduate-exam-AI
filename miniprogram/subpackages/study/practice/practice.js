@@ -89,6 +89,9 @@ const {
   createSubmitErrorController,
 } = require('./utils/submit-error-controller')
 const {
+  createSubmitEntryController,
+} = require('./utils/submit-entry-controller')
+const {
   resolveBatchErrorRecovery,
 } = require('./utils/batch-error-recovery')
 const {
@@ -1486,113 +1489,8 @@ return
 }
 const questions = this.data.questions || []
 if (!submission) {
-const selectedSubjectId = this.data.selectedSubjectId
-const selectedSubjectName = this.data.selectedSubjectName
-const answerMap = this._practiceSession.answerMap
-const activeStartedMonoMs = this._practiceSession.activeStartedMonoMs
-const comboCount = this._practiceSession.comboCount
-const total = questions.length || 0
-const answeredFlags = adapter.buildAnsweredFlags(questions, answerMap, 'id')
-const answerClassification = classifyAnswers({
-questions,
-answerMap,
-answeredFlags,
-isMultiBlank: adapter.isMultiBlankChoice,
-})
-const answeredCount = answerClassification.answeredCount
-const completedQuestions = answerClassification.completedQuestions
-const partialQuestionIds = answerClassification.partialQuestionIds
-const skippedQuestionIds = answerClassification.skippedQuestionIds
-const unanswered = answerClassification.unanswered
-if (answeredCount === 0 && partialQuestionIds.length === 0) {
-wx.showToast({ title: '请至少完成或填写 1 题再提交', icon: 'none' })
-return
-}
-var confirmed = false
-if (unanswered > 0) {
-confirmed = await this._showSubmitConfirmPaused({
-scenario: 'unanswered',
-title: `还有 ${unanswered} 题未完成`,
-message: '现在交卷会将未完成题记为跳过。',
-confirmText: '仍然交卷',
-cancelText: '继续答题',
-})
-} else if (skipConfirm !== true) {
-confirmed = await this._showSubmitConfirmPaused({
-scenario: 'all-done',
-title: '确认交卷？',
-message: `已完成 ${answeredCount} / ${total} 题`,
-confirmText: '确认交卷',
-cancelText: '继续检查',
-})
-} else {
-confirmed = true
-}
-if (!confirmed) return
-this._clearTimer()
-this._settleQuestionTime(true)
-const finishedMonoMs = monotonicNow()
-const finishedAtMs = api.now()
-const duration = Math.max(0, Math.floor(
-(finishedMonoMs - activeStartedMonoMs - (this._practiceSession.backgroundMs || 0)) / 1000,
-))
-const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
-this._practiceSession.requestId = requestId
-const recommendationRequestId = this._practiceSession.recommendationRequestId || null
-const questionTimeMap = this._practiceSession.questionTimeMap
-const answers = buildSubmitAnswers({
-completedQuestions,
-answerMap,
-questionTimeMap,
-recommendationRequestId,
-})
-const session = buildSubmitSession({
-requestId,
-subjectId: selectedSubjectId,
-mode: this._practiceSession.batchMode || this.data.selectedMode || 'random',
-startedAtMs: this._practiceSession.startedAtMs,
-finishedAtMs,
-duration,
-total,
-answeredCount,
-})
-const recoveryQuestions = buildRecoveryQuestions(questions)
-if (!this._practiceSession.batchToken) {
-await this._showSubmitConfirm({
-scenario: 'info',
-title: '练习批次已失效',
-message: '请返回后重新获取本组题目。',
-showCancel: false,
-confirmText: '知道了',
-hideEyebrow: true,
-})
-return
-}
-submission = buildSubmissionSnapshot({
-requestId,
-traceId: this._practiceSession.traceId || '',
-answers,
-skippedQuestionIds,
-partialQuestionIds,
-session,
-duration,
-total,
-unanswered,
-selectedSubjectId,
-selectedSubjectName,
-comboCount,
-answerMap,
-answeredFlags,
-recoveryQuestions,
-batchToken: this._practiceSession.batchToken || '',
-knowledgeScope: this._practiceSession.knowledgeScope,
-})
-this._practiceSession.submissionSnapshot = submission
-submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '')
-this._setPracticeUnloadGuard(
-true,
-'交卷仍在确认中。',
-)
+submission = await this._submitEntryController().prepare(skipConfirm)
+if (!submission) return
 } else {
 this._clearTimer()
 submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '') || submission.pendingPersisted
@@ -1668,6 +1566,47 @@ persistPendingSubmission: (submission, status, resultUrl) => this._persistPendin
 setUnloadGuard: (enabled, message) => this._setPracticeUnloadGuard(enabled, message),
 resolveRejectMessage,
 showConfirm: options => this._showSubmitConfirm(options),
+})
+)
+},
+_submitEntryController() {
+return this._submitEntry || (
+this._submitEntry = createSubmitEntryController({
+getQuestions: () => this.data.questions || [],
+getSelectedSubjectId: () => this.data.selectedSubjectId,
+getSelectedSubjectName: () => this.data.selectedSubjectName,
+getAnswerMap: () => this._practiceSession.answerMap,
+getActiveStartedMonoMs: () => this._practiceSession.activeStartedMonoMs,
+getComboCount: () => this._practiceSession.comboCount,
+buildAnsweredFlags: adapter.buildAnsweredFlags,
+classifyAnswers,
+isMultiBlank: adapter.isMultiBlankChoice,
+showToast: options => wx.showToast(options),
+showPausedConfirm: options => this._showSubmitConfirmPaused(options),
+showConfirm: options => this._showSubmitConfirm(options),
+clearTimer: () => this._clearTimer(),
+settleQuestionTime: pause => this._settleQuestionTime(pause),
+monotonicNow,
+now: () => api.now(),
+getBackgroundMs: () => this._practiceSession.backgroundMs,
+getRequestId: () => this._practiceSession.requestId,
+buildRequestId: () => 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+setRequestId: requestId => { this._practiceSession.requestId = requestId },
+buildSubmitAnswers,
+getQuestionTimeMap: () => this._practiceSession.questionTimeMap,
+getRecommendationRequestId: () => this._practiceSession.recommendationRequestId,
+buildSubmitSession,
+getBatchMode: () => this._practiceSession.batchMode,
+getSelectedMode: () => this.data.selectedMode,
+getStartedAtMs: () => this._practiceSession.startedAtMs,
+buildRecoveryQuestions,
+getBatchToken: () => this._practiceSession.batchToken,
+buildSubmissionSnapshot,
+getTraceId: () => this._practiceSession.traceId,
+getKnowledgeScope: () => this._practiceSession.knowledgeScope,
+setSubmissionSnapshot: submission => { this._practiceSession.submissionSnapshot = submission },
+persistPendingSubmission: (submission, status, resultUrl) => this._persistPendingSubmission(submission, status, resultUrl),
+setUnloadGuard: (enabled, message) => this._setPracticeUnloadGuard(enabled, message),
 })
 )
 },
