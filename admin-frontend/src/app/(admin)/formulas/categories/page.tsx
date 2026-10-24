@@ -26,6 +26,13 @@ import { FormulaCategoryDialog } from "@/components/formulas/formula-category-di
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest } from "@/lib/api/client";
+import {
+  findNodeInTree,
+  findParentNode,
+  findPathToNode,
+  countDescendants,
+  filterCategoryTree,
+} from "@/lib/category-tree-utils";
 import type { FormulaCategoryNode } from "@/components/formulas/formula-category-picker";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -45,52 +52,6 @@ type AdminFormulaCategoryNode = Omit<FormulaCategoryNode, "children"> & {
 };
 
 type CategoryTab = "basic" | "children";
-
-function findNode(nodes: AdminFormulaCategoryNode[], id: number | null): AdminFormulaCategoryNode | null {
-  if (id === null) return null;
-  for (const node of nodes) {
-    if (node.id === id) return node;
-    const found = findNode(node.children ?? [], id);
-    if (found) return found;
-  }
-  return null;
-}
-
-function findParent(nodes: AdminFormulaCategoryNode[], id: number | null, parent: AdminFormulaCategoryNode | null = null): AdminFormulaCategoryNode | null {
-  if (id === null) return null;
-  for (const node of nodes) {
-    if (node.id === id) return parent;
-    const found = findParent(node.children ?? [], id, node);
-    if (found) return found;
-  }
-  return null;
-}
-
-function findPath(nodes: AdminFormulaCategoryNode[], id: number | null): AdminFormulaCategoryNode[] {
-  if (id === null) return [];
-  for (const node of nodes) {
-    if (node.id === id) return [node];
-    const childPath = findPath(node.children ?? [], id);
-    if (childPath.length) return [node, ...childPath];
-  }
-  return [];
-}
-
-function countDescendants(node: AdminFormulaCategoryNode | null): number {
-  if (!node) return 0;
-  return (node.children ?? []).reduce((total, child) => total + 1 + countDescendants(child), 0);
-}
-
-function filterTree(nodes: AdminFormulaCategoryNode[], query: string): AdminFormulaCategoryNode[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return nodes;
-
-  return nodes.flatMap((node) => {
-    const children = filterTree(node.children ?? [], normalized);
-    const selfMatches = node.name.toLowerCase().includes(normalized) || node.code.toLowerCase().includes(normalized);
-    return selfMatches || children.length ? [{ ...node, children }] : [];
-  });
-}
 
 export default function FormulaCategoriesPage() {
   const queryClient = useQueryClient();
@@ -116,10 +77,10 @@ export default function FormulaCategoriesPage() {
   });
 
   const roots = useMemo(() => data?.items ?? [], [data?.items]);
-  const visibleTree = useMemo(() => filterTree(roots, search), [roots, search]);
-  const selectedNode = useMemo(() => findNode(roots, selectedId), [roots, selectedId]);
-  const parentNode = useMemo(() => findParent(roots, selectedId), [roots, selectedId]);
-  const selectedPath = useMemo(() => findPath(roots, selectedId), [roots, selectedId]);
+  const visibleTree = useMemo(() => filterCategoryTree(roots, search), [roots, search]);
+  const selectedNode = useMemo(() => findNodeInTree(roots, selectedId), [roots, selectedId]);
+  const parentNode = useMemo(() => findParentNode(roots, selectedId), [roots, selectedId]);
+  const selectedPath = useMemo(() => findPathToNode(roots, selectedId), [roots, selectedId]);
   const descendantCount = useMemo(() => countDescendants(selectedNode), [selectedNode]);
 
   useEffect(() => {
@@ -127,7 +88,7 @@ export default function FormulaCategoriesPage() {
       setSelectedId(null);
       return;
     }
-    if (selectedId === null || !findNode(roots, selectedId)) {
+    if (selectedId === null || !findNodeInTree(roots, selectedId)) {
       setSelectedId(roots[0].id);
     }
   }, [roots, selectedId]);
