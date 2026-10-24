@@ -466,6 +466,7 @@ jobs:
           node --test miniprogram/tests/test-practice-result-tips.js
           node --test miniprogram/tests/test-practice-result-payload-readers.js
           node --test miniprogram/tests/test-practice-result-cache-validation.js
+          node --test miniprogram/tests/test-practice-result-counts.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
 

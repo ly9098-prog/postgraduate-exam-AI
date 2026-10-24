@@ -8,6 +8,7 @@ const errorDiagnosis = require('../utils/error-diagnosis');
 const { buildLocalErrorDistribution: _buildLocalErrorDistribution, getResultTip: _getResultTip } = require('./utils/result-tips');
 const { hasDetailedPracticePayload: _hasDetailedPayload, readSummaryFromOptions: _readSummaryFromOptions } = require('./utils/payload-readers');
 const { isPayloadRequestValid: _isPayloadRequestValid, extractCreatedAtFromCacheKey } = require('./utils/cache-validation');
+const { resolveResultCounts } = require('./utils/result-counts');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -930,33 +931,12 @@ reviewItems = source.reviewItems.map((item, index) => this.normalizeReviewItem(i
 } else if (results.length) {
 reviewItems = results.map((item, index) => this.normalizeReviewItem(item, index));
 }
-const explicitCorrect = source.total_correct ?? source.totalCorrect ?? source.correctCount ?? source.correct_count;
-const explicitWrong = source.total_wrong ?? source.totalWrong ?? source.wrongCount ?? source.wrong_count;
-const explicitSkipped = source.total_skipped ?? source.totalSkipped ?? source.skippedCount ?? source.skipped_count ?? source.skipped;
-const explicitPartial = source.total_partial ?? source.totalPartial ?? source.partialCount ?? source.partial_count ?? source.partial;
-let correctCount = Number.isFinite(Number(explicitCorrect))
-? Number(explicitCorrect)
-: reviewItems.filter(item => item.status === 'correct').length;
-let wrongCount = Number.isFinite(Number(explicitWrong))
-? Number(explicitWrong)
-: reviewItems.filter(item => item.status === 'wrong').length;
-let skippedCount = Number.isFinite(Number(explicitSkipped))
-? Number(explicitSkipped)
-: reviewItems.filter(item => item.status === 'skipped').length;
-let partialCount = Number.isFinite(Number(explicitPartial))
-? Number(explicitPartial)
-: reviewItems.filter(item => item.status === 'partial').length;
-let totalCount =
-Number(source.totalCount ?? source.total_count ?? source.total) ||
-(correctCount + wrongCount + skippedCount + partialCount) ||
-reviewItems.length;
-if (!correctCount && !wrongCount && !skippedCount && !partialCount && reviewItems.length) {
-correctCount = reviewItems.filter(item => item.status === 'correct').length;
-wrongCount = reviewItems.filter(item => item.status === 'wrong').length;
-skippedCount = reviewItems.filter(item => item.status === 'skipped').length;
-partialCount = reviewItems.filter(item => item.status === 'partial').length;
-totalCount = reviewItems.length;
-}
+const resultCounts = resolveResultCounts(source, reviewItems);
+let correctCount = resultCounts.correctCount;
+let wrongCount = resultCounts.wrongCount;
+let skippedCount = resultCounts.skippedCount;
+let partialCount = resultCounts.partialCount;
+let totalCount = resultCounts.totalCount;
 const answeredTotal = correctCount + wrongCount;
 const explicitAccuracy = source.accuracy ?? source.accuracyPct ?? source.correctRate ?? source.correct_rate;
 const accuracyPct = explicitAccuracy !== undefined && explicitAccuracy !== null
