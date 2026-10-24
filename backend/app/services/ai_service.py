@@ -796,28 +796,39 @@ def _looks_like_structured_analysis_text(text: str) -> bool:
 
 def _decode_structured_content(raw: str):
     """Decode JSON/Python-literal model output, including text around the object."""
-    text = _strip_code_fence((raw or "").strip())
-    if not text:
+    original = (raw or "").strip()
+    decoder = json.JSONDecoder()
+
+    def decode_candidates(value: str):
+        starts = [0]
+        starts.extend(i for i, char in enumerate(value) if i > 0 and char in "{[")
+        for start in starts:
+            candidate = value[start:].lstrip()
+            if not candidate:
+                continue
+            try:
+                decoded, _ = decoder.raw_decode(candidate)
+                return decoded
+            except (json.JSONDecodeError, ValueError):
+                pass
+            try:
+                decoded = ast.literal_eval(candidate)
+                if isinstance(decoded, (dict, list, str)):
+                    return decoded
+            except (SyntaxError, ValueError):
+                pass
         return None
 
-    starts = [0]
-    starts.extend(i for i, ch in enumerate(text) if i > 0 and ch in "{[")
-    decoder = json.JSONDecoder()
-    for start in starts:
-        candidate = text[start:].lstrip()
-        if not candidate:
-            continue
-        try:
-            value, _ = decoder.raw_decode(candidate)
-            return value
-        except (json.JSONDecodeError, ValueError):
-            pass
-        try:
-            value = ast.literal_eval(candidate)
-            if isinstance(value, (dict, list, str)):
-                return value
-        except (SyntaxError, ValueError):
-            pass
+    # Parse the original value first. A valid JSON object can contain a fenced
+    # JSON string as one field value; stripping fences before parsing would cut
+    # that outer object apart and lose the embedded analysis fields.
+    decoded = decode_candidates(original)
+    if decoded is not None:
+        return decoded
+
+    stripped = _strip_code_fence(original)
+    if stripped != original:
+        return decode_candidates(stripped)
     return None
 
 
