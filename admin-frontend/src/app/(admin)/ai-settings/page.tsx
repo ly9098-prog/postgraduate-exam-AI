@@ -17,6 +17,7 @@ import { ModelCards } from "./components/model-cards";
 import { OcrAccordion } from "./components/ocr-accordion";
 import { AiCompletionPreview } from "./components/ai-completion";
 import { VectorConfigSection } from "./components/vector-config-section";
+import { resolveAiModels, computeUsageRate } from "@/lib/ai-model-resolver";
 
 type Tab = "overview" | "models" | "ocr" | "completion" | "vector" | "system";
 
@@ -72,38 +73,16 @@ export default function AISettingsPage() {
     queryFn: () => apiRequest<AdminAiModelConfig[]>("/ai-models"),
   });
 
-  const resolvedModels = useMemo(() => {
-    const list = models.data ?? [];
-    const isPaddleOcr = (provider: string) => { const p = provider.toLowerCase().replace(/_/g, "-"); return p === "paddle" || p.startsWith("paddleocr"); };
-    const resolve = (featurePriority: string[], mode: "chat" | "paddle" = "chat"): string | null => {
-      const candidates = list.filter((m) => {
-        const features = m.features ?? (m.feature ? [m.feature] : []);
-        const isEmbedding = features.includes("embedding");
-        return m.is_enabled
-          && !isEmbedding
-          && (mode === "paddle" ? isPaddleOcr(m.provider) : !isPaddleOcr(m.provider));
-      });
-      for (const feature of featurePriority) {
-        const featured = candidates.find((m) => (m.features ?? []).includes(feature));
-        if (featured) return featured.display_name;
-      }
-      const untagged = candidates.find((m) => !m.features || m.features.length === 0);
-      if (untagged) return untagged.display_name;
-      return candidates[0]?.display_name ?? null;
-    };
-    return {
-      ocr: resolve(["ocr_fix", "text_correction", "ocr"]),
-      completion: resolve(["completion"]),
-      analysis: resolve(["analysis"]),
-      vision: resolve(["vision"], "paddle"),
-    };
-  }, [models.data]);
+  const resolvedModels = useMemo(
+    () => resolveAiModels(models.data ?? []),
+    [models.data],
+  );
 
   const current = settings.data;
-  const usageRate = useMemo(() => {
-    if (!current || current.monthly_call_limit <= 0) return 0;
-    return Math.min(Math.round((current.current_usage.call_count / current.monthly_call_limit) * 100), 100);
-  }, [current]);
+  const usageRate = useMemo(
+    () => current ? computeUsageRate(current.current_usage.call_count, current.monthly_call_limit) : 0,
+    [current],
+  );
 
   const updateMutation = useMutation({
     mutationFn: (payload: AISettingsPatchRequest) =>
