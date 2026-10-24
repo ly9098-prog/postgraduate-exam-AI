@@ -126,6 +126,42 @@ const PAGE_METHODS = new Set([
   '_getStartTimerController', '_startTimer',
   '_initCanvas', '_scheduleCanvasInit', '_getCanvasInitController',
   '_getDrawRingController', 'drawRing',
+  // Lifecycle and routing
+  'onLoad', '_createTimerState',
+  // Subject selection and migration
+  '_loadSubjects', '_applySubjects', '_lookupSubjectIdByCode',
+  '_migrateRunningStateCache', 'selectSubject', 'selectTaskType',
+  // Preset / duration / touch UI handlers
+  'selectPreset', 'onWorkChange', 'onBreakChange', 'noop', 'onCustomAreaTouch',
+  'onTouchStart', 'onTouchEnd', 'onExamTap', 'skipBreak',
+  // Computed fields and labels
+  '_updateComputedFields', 'subjectLabel', 'subjectColor', 'presetLabel',
+  'cycleFontSize', 'getDateStr', '_getExamDays', '_nextCelebrationType',
+  // Free timer interval helpers
+  '_getFreeTimerController', '_clearFreeTimerInterval', '_startFreeTimerInterval',
+  '_restartFreeTimerInterval',
+  // Timer state and formatting
+  '_clearTimer', '_getCurrentTotalSec', '_formatCountdownDisplay',
+  // Storage helpers
+  '_safeGetPomodoroStorage', '_safeSetPomodoroStorage', '_safeRemovePomodoroStorage',
+  '_showPomodoroPersistenceError',
+  // Pending sync queue helpers
+  '_getPendingSyncStore', '_writePendingPomodoroSyncQueue',
+  '_getPendingPomodoroSyncQueue', '_getPendingPomodoroSync',
+  '_hasPendingPomodoroAction', '_setPendingPomodoroSync',
+  '_clearPendingPomodoroSync', '_updatePendingPomodoroSync',
+  '_dropPendingPomodoroSessionActions', '_isPomodoroStorageError',
+  '_isValidConfirmSnapshot', '_postPauseWithRetry',
+  // Pause adjustment helpers
+  '_pauseAdjustmentStorage', '_clearLocalPauseAdjustment',
+  '_maybeClearLocalPauseAdjustment', '_getLocalPauseAdjustment',
+  '_mergeLocalPauseAdjustment', '_getEffectivePausedMsFromSession',
+  // Active session cache/fetch
+  '_buildCachedActiveSession', '_getCachedActiveSession', '_fetchActiveSession',
+  // Ring cache and redraw
+  '_buildRingCache', '_redrawFreeRingAfterOverlay',
+  // Stats navigation
+  'goStats',
 ])
 const FORBIDDEN = new Set([
   'wx', 'Page', 'App', 'getApp', 'getCurrentPages', 'api', 'globalThis', 'global',
