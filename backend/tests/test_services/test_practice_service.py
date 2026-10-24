@@ -89,6 +89,10 @@ def _make_batch_token(user_id=1, pairs=((1, 900001),), subject_id=1, mode="rando
     import uuid
 
     import app.services.practice_service as ps
+    from app.services.practice.batch_token import (
+        _practice_batch_signing_key,
+        _urlsafe_b64encode,
+    )
 
     rid = f"practice_{uuid.uuid4().hex}"
     payload = {
@@ -102,12 +106,12 @@ def _make_batch_token(user_id=1, pairs=((1, 900001),), subject_id=1, mode="rando
         "exp": int(time.time()) + 3600,
         "questions": [list(pair) for pair in pairs],
     }
-    body = ps._urlsafe_b64encode(
+    body = _urlsafe_b64encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     )
-    signature = ps._urlsafe_b64encode(
+    signature = _urlsafe_b64encode(
         hmac.new(
-            ps._practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256
+            _practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256
         ).digest()
     )
     return body + "." + signature, rid

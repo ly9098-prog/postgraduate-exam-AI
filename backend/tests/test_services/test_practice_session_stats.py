@@ -593,6 +593,7 @@ async def _signed_submission(db, uid, subj, answers, request_id="req-stats"):
     from app.core.time_utils import utcnow
     from app.models.question import Question
     from app.services import practice_service as svc
+    from app.services.practice import batch_token
     from app.services.question_revision_service import load_latest_question_revision_ids
 
     finished = utcnow()
@@ -600,7 +601,11 @@ async def _signed_submission(db, uid, subj, answers, request_id="req-stats"):
     questions = [await db.get(Question, answer["question_id"]) for answer in answers]
     revisions = await load_latest_question_revision_ids(db, [q.id for q in questions])
     # Issue at the session's start, retaining the real HMAC and expiry validator.
-    with patch.object(svc.time, "time", return_value=started.replace(tzinfo=UTC).timestamp()):
+    with patch.object(
+        batch_token.time,
+        "time",
+        return_value=started.replace(tzinfo=UTC).timestamp(),
+    ):
         token, _, signed_id = svc.create_practice_batch_token(
             user_id=uid, subject_id=subj, mode="random", questions=questions,
             revision_ids=revisions, submission_request_id=request_id,

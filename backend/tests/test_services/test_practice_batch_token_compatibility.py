@@ -17,10 +17,12 @@ from app.services.practice_service import (
     PRACTICE_BATCH_MAX_QUESTIONS,
     PracticeBatchTokenError,
     _decode_practice_batch_token,
-    _practice_batch_signing_key,
-    _urlsafe_b64encode,
     _validate_practice_batch_token,
     create_practice_batch_token,
+)
+from app.services.practice.batch_token import (
+    _practice_batch_signing_key,
+    _urlsafe_b64encode,
 )
 
 
