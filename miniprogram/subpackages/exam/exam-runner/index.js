@@ -9,6 +9,9 @@ const {
 const {
   createExamPendingCacheController,
 } = require('../utils/exam-pending-cache-controller')
+const {
+  createExamAnswerSyncController,
+} = require('../utils/exam-answer-sync-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -451,49 +454,38 @@ Page({
   },
 
   async _syncItem(itemId) {
-    itemId = String(itemId)
-    if (this._syncing[itemId]) return this._syncing[itemId]
-    const run = async () => {
-      while (this._pending[itemId]) {
-        const snapshot = Object.assign({}, this._pending[itemId])
-        try {
-          const res = await api.request('PATCH', `/exams/attempts/${this.data.attemptId}/answers/${itemId}`, snapshot)
-          if (res && res.status && res.status !== 'in_progress') {
-            delete this._pending[itemId]
-            this._persistPending()
-            this._attemptTerminal = true
-            if (this._pageAlive && !this.data.submitting) this._navigateToResult()
-            return
-          }
-          const current = this._pending[itemId]
-          if (current && JSON.stringify(current) === JSON.stringify(snapshot)) {
-            delete this._pending[itemId]
-            this._persistPending()
-          }
-        } catch (error) {
-          if (await this._resolveTerminalSyncConflict(error)) return
-          throw error
-        }
-      }
-    }
-    this._syncing[itemId] = run().finally(() => { delete this._syncing[itemId] })
-    return this._syncing[itemId]
+    return this._examAnswerSyncController().syncItem(itemId)
   },
 
   async _flushAllPending(options = {}) {
-    try {
-      // Re-scan after each pass. This matters during lifecycle/network callbacks:
-      // an item can be queued while an earlier item is awaiting its PATCH.
-      // Submission freezes editing, so the loop deterministically converges.
-      while (true) {
-        const ids = this._pendingItemIds()
-        if (!ids.length) return true
-        for (let idIndex = 0; idIndex < ids.length; idIndex++) await this._syncItem(ids[idIndex])
-      }
-    } catch (error) {
-      if (!options.quiet) wx.showToast({ title: '还有答案未同步，请检查网络', icon: 'none' })
-      throw error
-    }
+    return this._examAnswerSyncController().flushAllPending(options)
+  },
+
+  _examAnswerSyncController() {
+    return this._examAnswerSync || (
+      this._examAnswerSync = createExamAnswerSyncController({
+        getPendingItem: itemId => this._pending[String(itemId)],
+        removePendingItem: itemId => { delete this._pending[String(itemId)] },
+        getPendingItemIds: () => this._pendingItemIds(),
+        isPendingItemUnchanged: (itemId, snapshot) => {
+          const current = this._pending[String(itemId)]
+          return !!current && JSON.stringify(current) === JSON.stringify(snapshot)
+        },
+        getMaxSyncPasses: () => 2,
+        persistPending: () => this._persistPending(),
+        patchAnswer: (itemId, snapshot) => api.request(
+          'PATCH',
+          `/exams/attempts/${this.data.attemptId}/answers/${itemId}`,
+          snapshot
+        ),
+        onTerminalSync: () => {
+          this._attemptTerminal = true
+          if (this._pageAlive && !this.data.submitting) this._navigateToResult()
+        },
+        resolveTerminalSyncConflict: error => this._resolveTerminalSyncConflict(error),
+        showFlushError: () => wx.showToast({ title: '还有答案未同步，请检查网络', icon: 'none' }),
+      })
+    )
   },
 
   async _resolveTerminalSyncConflict(error) {

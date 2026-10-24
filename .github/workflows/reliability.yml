@@ -469,6 +469,7 @@ jobs:
           node miniprogram/tests/test-exam-terminal-navigation.js
           node --test miniprogram/tests/test-exam-timer-controller.js
           node --test miniprogram/tests/test-exam-pending-cache-controller.js
+          node --test miniprogram/tests/test-exam-answer-sync-controller.js
           node --test miniprogram/tests/test-exam-submit-helpers.js
           node --test miniprogram/tests/test-exam-hydrate-helpers.js
           node --test miniprogram/tests/test-exam-paper-search.js
