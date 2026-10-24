@@ -31,6 +31,7 @@ const { createSelectDateController } = require('./select-date-controller')
 const { createCumulativeRefreshController } = require('./cumulative-refresh-controller')
 const { createCumulativeStartController } = require('./cumulative-start-controller')
 const { createDistributionLoadController } = require('./distribution-load-controller')
+const { createDistributionEntryController } = require('./distribution-entry-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
 const { createPieLabelRevealController } = require('./pie-label-reveal-controller')
@@ -518,23 +519,26 @@ var pageConfig = {
   },
 
   onDistributionPeriodTap(e) {
-    const period = e && e.currentTarget && e.currentTarget.dataset
-      ? e.currentTarget.dataset.period
-      : ''
-    if (!period || period === this.data.distributionPeriod) return
-    this._loadDistributionForPeriod(period, true)
+    this._getDistributionEntryController().tapPeriod(e)
   },
 
   onCustomRangeStartChange(e) {
-    let date = e && e.detail ? String(e.detail.value || '') : ''
-    if (!date) return
-    const anchor = this.data.selectedDate || this.data._todayDate
-    const minDate = this.data.customRangePickerStartDate || (anchor ? this._shiftDate(anchor, -365) : '')
-    if (minDate && date < minDate) date = minDate
-    if (anchor && date > anchor) date = anchor
-    this.setData({ customRangeStartDate: date, distributionPeriod: 'custom' }, () => {
-      this._loadDistributionForPeriod('custom', true)
-    })
+    this._getDistributionEntryController().changeCustomStart(e)
+  },
+
+  _getDistributionEntryController() {
+    if (!this._distributionEntryController) {
+      this._distributionEntryController = createDistributionEntryController({
+        getSelectedDate: () => this.data.selectedDate,
+        getTodayDate: () => this.data._todayDate,
+        getDistributionPeriod: () => this.data.distributionPeriod,
+        getCustomRangePickerStartDate: () => this.data.customRangePickerStartDate,
+        shiftDate: (date, delta) => this._shiftDate(date, delta),
+        setData: (patch, callback) => this.setData(patch, callback),
+        loadDistributionForPeriod: (period, animate) => this._loadDistributionForPeriod(period, animate),
+      })
+    }
+    return this._distributionEntryController
   },
 
   toggleChartMode() {
