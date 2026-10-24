@@ -90,6 +90,10 @@ const {
 const {
   classifyAnswers,
 } = require('./utils/answer-classification')
+const {
+  buildSubmitAnswers,
+  buildSubmitSession,
+} = require('./utils/submit-session-builder')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1772,23 +1776,22 @@ const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' 
 this._practiceSession.requestId = requestId
 const recommendationRequestId = this._practiceSession.recommendationRequestId || null
 const questionTimeMap = this._practiceSession.questionTimeMap
-const answers = completedQuestions.map(q => ({
-question_id: q.id,
-user_answer: answerMap[String(q.id)] || '',
-used_time: questionTimeMap[String(q.id)] || 0,
-request_id: recommendationRequestId,
-}))
-const session = {
-request_id: requestId,
-subject_id: selectedSubjectId,
+const answers = buildSubmitAnswers({
+completedQuestions,
+answerMap,
+questionTimeMap,
+recommendationRequestId,
+})
+const session = buildSubmitSession({
+requestId,
+subjectId: selectedSubjectId,
 mode: this._practiceSession.batchMode || this.data.selectedMode || 'random',
-started_at: new Date(this._practiceSession.startedAtMs || (finishedAtMs - duration * 1000)).toISOString(),
-finished_at: new Date(finishedAtMs).toISOString(),
-duration_sec: duration,
-question_count: total,
-answered_count: answeredCount,
-status: 'completed',
-}
+startedAtMs: this._practiceSession.startedAtMs,
+finishedAtMs,
+duration,
+total,
+answeredCount,
+})
 const recoveryQuestions = buildRecoveryQuestions(questions)
 if (!this._practiceSession.batchToken) {
 await this._showSubmitConfirm({
