@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, Upload, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, FileText, Save, Sparkles, Upload, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { useOutsideClick } from "@/lib/use-outside-click";
 import { reviewPageStyles } from "./review-page-styles";
 import { updateSegUrl } from "@/lib/segment-utils";
-import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
-import type { SelectOption } from "@/components/ui/custom-select";
+import { QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import type { BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
   getMultiBlankSaveState,
@@ -29,17 +28,15 @@ import {
   type MultiBlankAction,
   type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
-import { isMultiBlankChoice, textFromImport, type EditState } from "./review-edit-state";
+import { isMultiBlankChoice, type EditState } from "./review-edit-state";
 import { ReviewAnswerPreview } from "./components/review-answer-preview";
 import { ReviewStemEditor } from "./components/review-stem-editor";
 import {
   buildReviewQueueParams,
   createDefaultReviewFilters,
-  shouldShowReviewFilterReset,
 } from "./review-query-state";
 import { getLeafSubjectOptions } from "./review-subject-state";
-import { getSourceLocator, getSourceQuestionNo } from "./review-source-location";
-import { getReviewListBadges, getReviewTableBadges } from "./review-queue-badges";
+import { getSourceQuestionNo } from "./review-source-location";
 import {
   createReviewEditSession,
   createReviewPreviewState,
@@ -95,84 +92,11 @@ import { ReviewQuestionPreview } from "./components/review-question-preview";
 import { ReviewOptionEditor } from "./components/review-option-editor";
 import { ReviewSourceEvidence } from "./components/review-source-evidence";
 import { ReviewJsonView } from "./components/review-json-view";
-import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
+import { ReviewFilterToolbar } from "./components/review-filter-toolbar";
+import { ReviewList } from "./components/review-list";
+import { ReviewPagination } from "./components/review-pagination";
 import { extractOptionVisualModel, type OptionVisualModel } from "@/lib/option-visual-utils";
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
-
-type FilterDropdownOption = {
-  value: string;
-  label: string;
-  shortLabel?: string;
-};
-
-function FilterDropdown({
-  label,
-  value,
-  options,
-  open,
-  setOpen,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: FilterDropdownOption[];
-  open: boolean;
-  setOpen: (open: boolean | ((current: boolean) => boolean)) => void;
-  onChange: (value: string) => void;
-}) {
-  const activeOption = options.find((o) => o.value === value);
-  const buttonLabel = value
-    ? `${label}：${activeOption?.shortLabel || activeOption?.label || value}`
-    : label;
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs outline-none transition ${
-          value
-            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)]"
-            : "border-[var(--color-border)] bg-white text-[var(--color-text-primary)] hover:border-[var(--color-primary)]/50"
-        }`}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{buttonLabel}</span>
-        <ChevronDown className={`h-3 w-3 text-[var(--color-text-hint)] transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open ? (
-        <div className="absolute left-0 top-full z-30 mt-1 min-w-[120px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
-          {options.map((opt) => {
-            const active = value === opt.value;
-            return (
-              <button
-                key={opt.value || "all"}
-                type="button"
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
-                  active
-                    ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
-                    : "text-[var(--color-text-primary)]"
-                }`}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  onChange(opt.value);
-                  setOpen(false);
-                }}
-              >
-                {active ? (
-                  <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
-                ) : (
-                  <span className="inline-block w-3.5 shrink-0" />
-                )}
-                <span>{opt.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 type ConfirmState = ReviewActionState | null;
 
@@ -181,30 +105,6 @@ function renderJson(value: unknown) {
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value, null, 2);
 }
-
-const STATUS_OPTIONS = [
-  { value: "pending", label: "待审核" },
-  { value: "approved", label: "已通过" },
-  { value: "rejected", label: "已驳回" },
-  { value: "published", label: "已发布" },
-  { value: "", label: "全部状态" },
-] as const;
-
-const RISK_FILTER_OPTIONS = [
-  { value: "", label: "全部", shortLabel: "全部" },
-  { value: "high", label: "高风险", shortLabel: "高" },
-  { value: "medium", label: "中风险", shortLabel: "中" },
-  { value: "low", label: "低风险", shortLabel: "低" },
-];
-
-const ANSWER_STATUS_FILTER_OPTIONS = [
-  { value: "", label: "全部", shortLabel: "全部" },
-  { value: "missing", label: "答案缺失", shortLabel: "缺失" },
-  { value: "ai_filled", label: "AI补全", shortLabel: "AI补全" },
-  { value: "imported", label: "已导入", shortLabel: "已导入" },
-  { value: "manual_verified", label: "已验证", shortLabel: "已验证" },
-  { value: "abnormal", label: "答案异常", shortLabel: "异常" },
-];
 
 function statusTone(status: string) {
   if (status === "approved") return "success";
@@ -949,481 +849,61 @@ export default function ImportReviewPage() {
               </div>
             </div>
           </div>
-          {/* ── Inline filter bar ── */}
-          <div className="filter-bar flex flex-wrap items-center gap-2 px-3 py-2">
-            {/* Search */}
-            <div className="relative min-w-[180px] flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-hint)]" />
-              <input
-                className="h-8 w-full rounded-lg border border-[var(--color-border)] bg-white pl-8 pr-3 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
-                placeholder="搜索题干 / OCR 原文..."
-                value={filters.keyword}
-                onChange={(event) => updateKeywordFilter(event.target.value)}
-              />
-            </div>
-
-            {/* Risk dropdown */}
-            <FilterDropdown
-              label="风险"
-              value={filters.risk_level}
-              options={RISK_FILTER_OPTIONS}
-              open={riskDropdownOpen}
-              setOpen={(fn) => { setRiskDropdownOpen(fn); setAnswerStatusDropdownOpen(false); setSubjectDropdownOpen(false); setStatusDropdownOpen(false); }}
-              onChange={(value) => updateFilter("risk_level", value)}
-            />
-
-            {/* Answer Status dropdown */}
-            <FilterDropdown
-              label="答案"
-              value={filters.answer_status}
-              options={ANSWER_STATUS_FILTER_OPTIONS}
-              open={answerStatusDropdownOpen}
-              setOpen={(fn) => { setAnswerStatusDropdownOpen(fn); setRiskDropdownOpen(false); setSubjectDropdownOpen(false); setStatusDropdownOpen(false); }}
-              onChange={(value) => updateFilter("answer_status", value)}
-            />
-
-            {/* Subject dropdown */}
-            <div className="relative">
-              <button
-                ref={subjectBtnRef}
-                type="button"
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
-                onClick={() => setSubjectDropdownOpen((v) => !v)}
-              >
-                <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap" title={filters.subject_id ? (subjectOptions.find((s) => String(s.id) === filters.subject_id)?.name || filters.subject_id) : ""}>
-                  {filters.subject_id ? (subjectOptions.find((s) => String(s.id) === filters.subject_id)?.name || filters.subject_id) : "全部科目"}
-                </span>
-                <ChevronDown className={`h-3 w-3 shrink-0 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
-              </button>
-              {subjectDropdownOpen ? (
-                <div className="absolute left-0 top-full z-20 mt-1 min-w-[220px] max-w-[320px] max-h-72 overflow-y-auto scrollbar-hide rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
-                  <button
-                    type="button"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
-                      !filters.subject_id ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-primary)]"
-                    }`}
-                    onMouseDown={(e) => { e.preventDefault(); updateFilter("subject_id", ""); setSubjectDropdownOpen(false); }}
-                  >
-                    {!filters.subject_id ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
-                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">全部科目</span>
-                  </button>
-                  {leafSubjectOptions.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
-                        filters.subject_id === String(s.id) ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-primary)]"
-                      }`}
-                      onMouseDown={(e) => { e.preventDefault(); updateFilter("subject_id", String(s.id)); setSubjectDropdownOpen(false); }}
-                    >
-                      {filters.subject_id === String(s.id) ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
-                      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title={s.name}>{s.name}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            {/* Batch ID selector */}
-            <div className="relative" ref={batchDropdownRef}>
-              <div className="relative">
-                <input
-                  className="h-8 w-48 rounded-lg border border-[var(--color-border)] bg-white px-2.5 pr-14 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
-                  placeholder="批次 ID"
-                  value={filters.batch_id || batchIdParam}
-                  onChange={(event) => updateFilter("batch_id", event.target.value)}
-                  onFocus={() => setBatchDropdownOpen(true)}
-                />
-                {(filters.batch_id || batchIdParam) ? (
-                  <button
-                    type="button"
-                    className="absolute right-6 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-[var(--color-text-hint)] hover:text-[var(--color-danger)] transition"
-                    onClick={() => { updateFilter("batch_id", ""); setBatchDropdownOpen(false); }}
-                    title="清空批次"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-[var(--color-text-hint)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)] transition"
-                  onClick={() => setBatchDropdownOpen((v) => !v)}
-                >
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${batchDropdownOpen ? "rotate-180" : ""}`} />
-                </button>
-              </div>
-              {batchDropdownOpen ? (
-                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[300px] max-w-[360px] max-h-60">
-                  {batchesQuery.isLoading ? (
-                    <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">加载中…</div>
-                  ) : batchesQuery.data?.items?.length ? (
-                    batchesQuery.data.items
-                      .filter((b) => b.batch_id && b.batch_id.trim() && b.pending_count > 0)
-                      .map((b) => (
-                      <button
-                        key={b.batch_id}
-                        type="button"
-                        className={`flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs transition cursor-pointer hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] ${
-                          (filters.batch_id || batchIdParam) === b.batch_id ? "bg-[var(--color-primary-light)]/20 font-semibold text-[var(--color-primary-dark)]" : "text-[var(--color-text-primary)]"
-                        }`}
-                        onMouseDown={(e) => { e.preventDefault(); updateFilter("batch_id", b.batch_id); setBatchDropdownOpen(false); }}
-                      >
-                        {(filters.batch_id || batchIdParam) === b.batch_id ? (
-                          <Check className="h-3 w-3 shrink-0 text-[var(--color-primary)]" />
-                        ) : (
-                          <span className="inline-block w-3 shrink-0" />
-                        )}
-                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
-                        <span className="tag-chip shrink-0 bg-[var(--color-success-light)] text-[var(--color-success)]">{b.pending_count}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">暂无可选批次</div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            {/* Status dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
-                onClick={() => setStatusDropdownOpen((v) => !v)}
-                onBlur={() => setTimeout(() => setStatusDropdownOpen(false), 150)}
-              >
-                <span>{STATUS_OPTIONS.find((o) => o.value === filters.status)?.label}</span>
-                <ChevronDown className={`h-3 w-3 text-[var(--color-text-hint)] transition-transform ${statusDropdownOpen ? "rotate-180" : ""}`} />
-              </button>
-              {statusDropdownOpen ? (
-                <div className="absolute right-0 top-full z-20 mt-1 min-w-[120px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
-                  {STATUS_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
-                        filters.status === opt.value
-                          ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
-                          : "text-[var(--color-text-primary)]"
-                      }`}
-                      onMouseDown={(e) => { e.preventDefault(); updateFilter("status", opt.value); setStatusDropdownOpen(false); }}
-                    >
-                      {filters.status === opt.value ? (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
-                      ) : (
-                        <span className="inline-block w-3.5 shrink-0" />
-                      )}
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            {shouldShowReviewFilterReset(filters) ? (
-              <button
-                type="button"
-                className="flex h-7 items-center gap-1 rounded-lg px-2 text-[10px] font-medium text-[var(--color-text-hint)] hover:text-[var(--color-danger)] transition-colors"
-                onClick={resetFilters}
-              >
-                重置
-              </button>
-            ) : null}
-          </div>
+          <ReviewFilterToolbar
+            filters={filters}
+            batchIdParam={batchIdParam}
+            subjectOptions={subjectOptions}
+            leafSubjectOptions={leafSubjectOptions}
+            batches={batchesQuery.data?.items ?? []}
+            batchesLoading={batchesQuery.isLoading}
+            dropdownState={{
+              risk: riskDropdownOpen,
+              answerStatus: answerStatusDropdownOpen,
+              subject: subjectDropdownOpen,
+              batch: batchDropdownOpen,
+              status: statusDropdownOpen,
+            }}
+            subjectButtonRef={subjectBtnRef}
+            batchDropdownRef={batchDropdownRef}
+            onKeywordChange={updateKeywordFilter}
+            onFilterChange={updateFilter}
+            onReset={resetFilters}
+            onDropdownChange={(key, open) => {
+              if (key === "risk") setRiskDropdownOpen(open);
+              if (key === "answerStatus") setAnswerStatusDropdownOpen(open);
+              if (key === "subject") setSubjectDropdownOpen(open);
+              if (key === "batch") setBatchDropdownOpen(open);
+              if (key === "status") setStatusDropdownOpen(open);
+            }}
+          />
         </CardHeader>
         <CardContent className="space-y-1.5 pt-0">
           <section className="space-y-1">
               <div className={`flex items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-primary-light)]/10 px-3 py-1.5 ${selectedIds.size > 0 ? "" : "invisible"}`}>
                 <span className="text-xs font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span>
               </div>
-              {items.length > 0 && viewMode === "table" ? (
-                <div className="w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
-                  <table className="w-full table-fixed text-[11px]">
-                    <thead>
-                      <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-input)]/50">
-                        <th className="w-9 px-2.5 py-2 text-left font-semibold text-[var(--color-text-secondary)]">
-                          <label className="group/cb relative flex cursor-pointer items-center justify-center">
-                            <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
-                              <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
-                              <Check className="h-2.5 w-2.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                            </span>
-                          </label>
-                        </th>
-                        <th className="w-[56px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题号</th>
-                        <th className="w-[100px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
-                        <th className="px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题干</th>
-                        <th className="w-[60px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
-                        <th className="w-[132px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">答案</th>
-                        <th className="w-[72px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
-                        <th className="w-[52px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
-                        <th className="w-[136px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item, index) => {
-                        const { answerStatusLabel, answerStatusStyle, riskLabel, riskStyle } = getReviewTableBadges(item);
-                        const srcNo = getSourceQuestionNo(item);
-                        const questionTypeCode = canonicalizeQuestionType(item.question_type);
-                        const isSingleChoice = questionTypeCode === "single_choice";
-                        const isMultiChoice = questionTypeCode === "multiple_choice";
-                        const isTrueFalse = questionTypeCode === "true_false";
-                        const draftAnswer = quickAnswerDrafts[item.id] ?? item.parsed_answer ?? "";
-                        const hasDraftChanged = draftAnswer !== (item.parsed_answer ?? "");
-                        const sourceLocator = getSourceLocator(item);
-                        const stemText = item.content_preview || textFromImport(item) || "—";
-                        const typeLabel = getQuestionTypeLabel(item.question_type);
-                        const shortTypeLabel = getQuestionTypeShortLabel(item.question_type);
-                        return (
-                          <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
-                            <td className="px-2.5 py-2">
-                              <label className="group/cb relative flex cursor-pointer items-center justify-center">
-                                <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
-                                  <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleOne(item.id)} className="peer absolute inset-0 cursor-pointer opacity-0" />
-                                  <Check className="h-2.5 w-2.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                                </span>
-                              </label>
-                            </td>
-                            <td className="w-[56px] px-2 py-2">
-                              <span className="block min-w-0 truncate font-mono text-[11px] font-medium text-[var(--color-text-secondary)]" title={srcNo || ""}>{srcNo || "—"}</span>
-                            </td>
-                            <td className="w-[100px] px-2 py-2">
-                              <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={sourceLocator}>{sourceLocator || "—"}</span>
-                            </td>
-                            <td className="px-2 py-2">
-                              <span className="block min-w-0 truncate text-[11px] text-[var(--ink)]" title={stemText}>{stemText}</span>
-                            </td>
-                            <td className="w-[60px] px-2 py-2 text-center">
-                              <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={typeLabel}>{shortTypeLabel}</span>
-                            </td>
-                            <td className="w-[132px] px-2 py-2 text-center">
-                              {isSingleChoice ? (
-                                <div className="grid w-full grid-cols-4 gap-1">
-                                  {["A","B","C","D"].map((opt) => (
-                                    <button
-                                      key={opt}
-                                      onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
-                                      disabled={!canWrite}
-                                      className={`h-6 min-w-0 rounded text-[10px] font-bold transition border ${
-                                        draftAnswer === opt
-                                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
-                                          : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                                      }`}
-                                    >
-                                      {opt}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : isTrueFalse ? (
-                                <div className="flex items-center justify-center gap-1">
-                                  {["T","F"].map((opt) => (
-                                    <button
-                                      key={opt}
-                                      onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
-                                      disabled={!canWrite}
-                                      className={`h-6 shrink-0 rounded px-2 text-[10px] font-bold transition border ${
-                                        draftAnswer === opt
-                                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
-                                          : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                                      }`}
-                                    >
-                                      {opt === "T" ? "正确" : "错误"}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <input
-                                  className="h-6 w-full rounded border border-[var(--color-border)] bg-white px-1.5 text-center text-[10px] font-mono font-bold outline-none transition focus:border-[var(--color-primary)]"
-                                  value={draftAnswer}
-                                  onChange={(e) => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                                  placeholder={isMultiChoice ? "如 AC" : "答案"}
-                                  disabled={!canWrite}
-                                />
-                              )}
-                            </td>
-                            <td className="w-[72px] px-2 py-2 text-center">
-                              <span className="block min-w-0 truncate text-[10px]" style={answerStatusStyle} title={answerStatusLabel}>{answerStatusLabel}</span>
-                            </td>
-                            <td className="w-[52px] px-2 py-2 text-center">
-                              <span className="block min-w-0 truncate text-[10px]" style={riskStyle}>{riskLabel}</span>
-                            </td>
-                            <td className="w-[136px] px-2 py-2 text-center">
-                              <div className="inline-flex w-[124px] items-center justify-end gap-1">
-                                <button className="w-9 rounded border border-[var(--color-border)] bg-white px-1 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)} title="查看详情">查</button>
-                                <button
-                                  onClick={() => {
-                                    if (canWrite) quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer });
-                                  }}
-                                  disabled={!canWrite || quickAnswerMutation.isPending || !hasDraftChanged}
-                                  className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
-                                    hasDraftChanged
-                                      ? "visible opacity-100 border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                                      : "invisible opacity-0 border-transparent"
-                                  }`}
-                                  title="保存答案"
-                                >
-                                  存
-                                </button>
-                                <button
-                                  className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
-                                    hasDraftChanged
-                                      ? "visible opacity-100 border-[var(--color-border)] bg-white text-[var(--color-text-secondary)]"
-                                      : "invisible opacity-0 border-transparent"
-                                  }`}
-                                  onClick={() => {
-                                    setQuickAnswerDrafts((prev) => {
-                                      const next = { ...prev };
-                                      delete next[item.id];
-                                      return next;
-                                    });
-                                  }}
-                                  title="取消编辑"
-                                >
-                                  消
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (canWrite) verifyAnswerMutation.mutate(item.id);
-                                  }}
-                                  disabled={!canWrite || verifyAnswerMutation.isPending || !item.parsed_answer}
-                                  className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
-                                    item.parsed_answer
-                                      ? "visible opacity-100 border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
-                                      : "invisible opacity-0 border-transparent"
-                                  }`}
-                                  title="确认答案"
-                                >
-                                  确
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-              {items.length > 0 && viewMode === "list" ? (
-              <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
-                <div className="flex items-center gap-3 border-b border-[var(--color-border)]/50 px-3.5 py-2">
-                  <label className="group/cb relative flex cursor-pointer items-center gap-2">
-                    <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
-                      <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
-                      <Check className="h-2.5 w-2.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                    </span>
-                    <span className="text-xs text-[var(--color-text-secondary)]">全选本页</span>
-                  </label>
-                </div>
-                {items.map((item, index) => {
-                  const { riskColor, hasAnswerMissing, reasonCount, sourceLabel, answerStatusLabel, answerStatusColor } = getReviewListBadges(item);
-
-                  return (
-                    <div key={item.id}>
-                      {index > 0 && <div className="h-px bg-[var(--color-border)]/50" />}
-                      <div
-                        className="group flex items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-[var(--color-bg-input)]/40"
-                      >
-                        {/* Risk dot */}
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: riskColor }} />
-
-                        {/* Checkbox */}
-                        <label className="group/cb relative flex shrink-0 cursor-pointer items-center justify-center">
-                          <span className="flex h-[18px] w-[18px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(item.id)}
-                              onChange={() => toggleOne(item.id)}
-                              className="peer absolute inset-0 cursor-pointer opacity-0"
-                            />
-                            <Check className="h-3 w-3 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                          </span>
-                        </label>
-
-                        {/* ID */}
-                        <span className="w-[38px] shrink-0 font-mono text-[11px] text-[var(--color-text-hint)]">#{item.id}</span>
-
-                        {/* Subject */}
-                        {item.subject_name || item.subject_code ? (
-                          <span className="shrink-0 rounded bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">
-                            {item.subject_name || item.subject_code}
-                          </span>
-                        ) : (
-                          <span className="w-9 shrink-0 text-center text-[10px] text-[var(--color-text-hint)]">未分类</span>
-                        )}
-
-                        {/* Type */}
-                        <span className="w-6 shrink-0 text-center text-[10px] text-[var(--color-text-hint)]">
-                          {getQuestionTypeLabel(item.question_type)}
-                        </span>
-
-                        {/* Source question badge */}
-                        {sourceLabel ? (
-                          <span className="shrink-0 rounded bg-[var(--color-bg-input)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">{sourceLabel}</span>
-                        ) : null}
-
-                        {/* Stem (truncated single line) */}
-                        <p className="min-w-0 flex-1 cursor-pointer truncate text-[13px] leading-snug text-[var(--ink)]" onClick={() => openPreview(item)}>
-                          {item.content_preview || textFromImport(item) || <span className="italic text-xs text-[var(--color-text-hint)]">导入题目 #{item.id}</span>}
-                        </p>
-
-                        {/* Flags */}
-                        <div className="flex shrink-0 items-center gap-1">
-                          {item.risk_level === "high" && (
-                            <span className="rounded bg-[#fef2f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#b03a3a]">高风险</span>
-                          )}
-                          {item.risk_level === "medium" && (
-                            <span className="rounded bg-[#fffbeb] px-1.5 py-0.5 text-[9px] font-semibold text-[#b87a30]">需检查</span>
-                          )}
-                          {answerStatusLabel ? (
-                            <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold border" style={{ color: answerStatusColor, borderColor: answerStatusColor }}>{answerStatusLabel}</span>
-                          ) : null}
-                          {hasAnswerMissing && !answerStatusLabel && (
-                            <span className="rounded bg-[#fef2f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#b03a3a]">无答案</span>
-                          )}
-                          {item.ai_answer_flag && !answerStatusLabel && (
-                            <span className="rounded bg-[#fef7f0] px-1.5 py-0.5 text-[9px] font-semibold text-[#c46a3a]">AI</span>
-                          )}
-                          {item.duplicate_status === "possible_duplicate" && (
-                            <span className="rounded bg-[#fffbeb] px-1.5 py-0.5 text-[9px] font-semibold text-[#b87a30]">疑似重复</span>
-                          )}
-                          {reasonCount > 0 && (
-                            <span className="rounded bg-[var(--color-bg-input)] px-1.5 py-0.5 text-[9px] text-[var(--color-text-hint)]" title={item.risk_reasons?.join("；")}>
-                              ⚠ {reasonCount}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex shrink-0 items-center gap-1">
-                          <button
-                            className="grid h-7 w-7 place-items-center rounded-md border border-[var(--color-border)] bg-white text-[11px] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                            onClick={() => openPreview(item)}
-                            title="预览详情"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-success)] bg-[var(--color-success-light)] px-2.5 text-[10px] font-semibold text-[var(--color-success)] transition-colors hover:bg-[var(--color-success)] hover:text-white disabled:opacity-30"
-                            disabled={!canWrite || item.status === "published"}
-                            onClick={() => updateConfirmState({ action: "approve", id: item.id })}
-                          >
-                            <CheckCircle2 className="h-3 w-3" />
-                            通过
-                          </button>
-                          <button
-                            className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-danger)] bg-white px-2.5 text-[10px] font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:opacity-30"
-                            disabled={!canWrite || item.status === "published"}
-                            onClick={() => updateConfirmState({ action: "reject", id: item.id })}
-                          >
-                            <XCircle className="h-3 w-3" />
-                            驳回
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
+              <ReviewList
+                viewMode={viewMode}
+                items={items}
+                selectedIds={selectedIds}
+                allChecked={allChecked}
+                canWrite={canWrite}
+                quickAnswerDrafts={quickAnswerDrafts}
+                quickAnswerPending={quickAnswerMutation.isPending}
+                verifyAnswerPending={verifyAnswerMutation.isPending}
+                onToggleAll={toggleAll}
+                onToggleOne={toggleOne}
+                onOpenPreview={openPreview}
+                onQuickAnswerDraftChange={(id, answer) => setQuickAnswerDrafts((prev) => ({ ...prev, [id]: answer }))}
+                onQuickAnswerDraftReset={(id) => setQuickAnswerDrafts((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
                 })}
-              </div>
-              ) : null}
+                onQuickAnswerSave={(id, answer) => quickAnswerMutation.mutate({ id, answer })}
+                onVerifyAnswer={(id) => verifyAnswerMutation.mutate(id)}
+                onReviewAction={(action, id) => updateConfirmState({ action, id })}
+              />
               {!queue.isLoading && items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-14 text-center">
                   <div className="empty-ink-drop mb-4" />
@@ -1434,60 +914,13 @@ export default function ImportReviewPage() {
               {queue.isError ? <p className="text-sm text-[var(--color-danger)]">待审核接口当前不可用。</p> : null}
             </section>
 
-            {/* ── Pagination ── */}
-            {queue.data && queue.data.total_pages > 1 ? (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--blueprint-line)] bg-white/80 px-5 py-3 shadow-[var(--shadow-crisp)]">
-                <span className="font-display text-sm tracking-wide text-[var(--color-text-secondary)]">
-                  <span className="font-semibold text-[var(--ink)]">{queue.data.total}</span>{" "}
-                  条记录
-                  <span className="mx-2 text-[var(--color-text-hint)]">/</span>
-                  <span className="text-[var(--color-text-hint)]">第 </span>
-                  <span className="font-semibold text-[var(--ink)]">{queue.data.page}</span>
-                  <span className="text-[var(--color-text-hint)]"> / {queue.data.total_pages} 页</span>
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-                    上一页
-                  </button>
-                  {Array.from(
-                    { length: Math.min(queue.data.total_pages, 5) },
-                    (_, i) => {
-                      const start = Math.max(1, Math.min(page - 2, queue.data.total_pages - 4));
-                      const p = start + i;
-                      if (p > queue.data.total_pages) return null;
-                      const isActive = p === page;
-                      return (
-                        <button
-                          key={p}
-                          disabled={isActive}
-                          onClick={() => setPage(p)}
-                          className={
-                            isActive
-                              ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-[var(--shadow-crisp)]"
-                              : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white/80 text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
-                          }
-                        >
-                          {p}
-                        </button>
-                      );
-                    },
-                  )}
-                  <button
-                    disabled={page >= (queue.data?.total_pages ?? 1)}
-                    onClick={() => setPage((p) => p + 1)}
-                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    下一页
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                  </button>
-                </div>
-              </div>
-            ) : null}
+            <ReviewPagination
+              page={page}
+              total={queue.data?.total}
+              currentPage={queue.data?.page}
+              totalPages={queue.data?.total_pages}
+              onPageChange={setPage}
+            />
         </CardContent>
       </Card>
 
