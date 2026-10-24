@@ -82,6 +82,11 @@ const {
 const {
   buildSubmissionSnapshot,
 } = require('./utils/submission-snapshot-builder')
+const {
+  buildSubmitPayload,
+  isDeterministicReject,
+  resolveRejectMessage,
+} = require('./utils/submit-payload-builder')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1828,13 +1833,7 @@ submission.pendingPersisted = this._persistPendingSubmission(submission, 'pendin
 this.setData({ submitting: true })
 let submitResult
 try {
-const submitPayload = {
-answers: submission.answers,
-skipped_question_ids: submission.skippedQuestionIds,
-session: submission.session,
-_traceId: submission.traceId || this._practiceSession.traceId,
-}
-submitPayload.batch_token = submission.batchToken
+const submitPayload = buildSubmitPayload(submission, this._practiceSession.traceId)
 submitResult = await api.post('/practice/batch-submit', submitPayload)
 if (!this._pageAlive) return
 } catch (e) {
@@ -1844,29 +1843,14 @@ this._practiceSession.currentQuestionStartedMonoMs = 0
 this.setData({ submitting: false })
 const statusCode = Number(e && e.statusCode) || 0
 const errorCode = String((e && e.code) || '')
-const deterministicReject = (
-errorCode === 'PRACTICE_SUBMISSION_CONFLICT' ||
-errorCode === 'PRACTICE_QUESTION_VERSION_CONFLICT' ||
-errorCode === 'PRACTICE_BATCH_INVALID' ||
-errorCode === 'PRACTICE_PAYLOAD_INVALID' ||
-(statusCode >= 400 && statusCode < 500 && ![401, 408, 429].includes(statusCode))
-)
+const deterministicReject = isDeterministicReject(e)
 if (deterministicReject) {
 submission.retryBlocked = true
 submission.pendingPersisted = this._persistPendingSubmission(submission, 'blocked', '') || submission.pendingPersisted
 this._setPracticeUnloadGuard(true, '本次提交未通过。')
-let rejectTitle = '交卷内容未通过校验'
-let rejectContent = '服务器已明确拒绝本次提交，继续重试相同内容不会成功。请退出后重新开始。'
-if (errorCode === 'PRACTICE_SUBMISSION_CONFLICT') {
-rejectTitle = '交卷标识冲突'
-rejectContent = '该 request_id 已对应另一份提交。为避免结果串单，本次内容不会继续重试，请退出后重新开始。'
-} else if (errorCode === 'PRACTICE_QUESTION_VERSION_CONFLICT') {
-rejectTitle = '题目版本无法恢复'
-rejectContent = '本组练习中有题目的历史版本无法恢复。为避免使用错误版本判题，本次提交已停止，请返回重新获取题目。'
-} else if (errorCode === 'PRACTICE_BATCH_INVALID') {
-rejectTitle = '练习批次已失效'
-rejectContent = '本次题目批次已过期或与提交内容不一致。为避免串题，请退出后重新获取题目。'
-}
+const rejectMsg = resolveRejectMessage(errorCode)
+let rejectTitle = rejectMsg.title
+let rejectContent = rejectMsg.content
 await this._showSubmitConfirm({
 scenario: 'danger',
 title: rejectTitle,
