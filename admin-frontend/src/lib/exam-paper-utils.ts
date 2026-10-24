@@ -70,3 +70,21 @@ export function buildStatusSegments(
     { value: "archived", label: "已归档", count: papers.filter((p) => p.status === "archived").length },
   ];
 }
+
+/**
+ * Stable desktop list height: clamp between 260 and 720 based on paper count.
+ * Each paper row contributes ~78px; the container has a 46px header offset.
+ */
+export function stableDesktopListHeight(paperCount: number): number {
+  if (paperCount <= 0) return 260;
+  return Math.max(260, Math.min(720, 46 + paperCount * 78));
+}
+
+/**
+ * Stable mobile list height: clamp between 240 and 560 based on paper count.
+ * Each paper row contributes ~96px on mobile.
+ */
+export function stableMobileListHeight(paperCount: number): number {
+  if (paperCount <= 0) return 240;
+  return Math.max(240, Math.min(560, paperCount * 96));
+}

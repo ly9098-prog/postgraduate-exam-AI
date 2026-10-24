@@ -27,7 +27,7 @@ import type {
   AdminExamPaperType,
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
-import { statusMeta, paperKindLabel, computePaperSummary, filterPapers, buildStatusSegments } from "@/lib/exam-paper-utils";
+import { statusMeta, paperKindLabel, computePaperSummary, filterPapers, buildStatusSegments, stableDesktopListHeight, stableMobileListHeight } from "@/lib/exam-paper-utils";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { DEFAULT_EXAM_YEAR, EXAM_YEAR_OPTIONS, isSupportedExamYear } from "@/lib/exam-years";
 
@@ -225,12 +225,8 @@ export default function ExamPapersPage() {
   );
   const isSearchSettling = settledKeyword !== keyword;
   const isResultsTransitioning = isSearchSettling || resultsTransitionPhase !== "idle";
-  const stableDesktopListHeight = papers.length > 0
-    ? Math.max(260, Math.min(720, 46 + papers.length * 78))
-    : 260;
-  const stableMobileListHeight = papers.length > 0
-    ? Math.max(240, Math.min(560, papers.length * 96))
-    : 240;
+  const stableDesktopHeight = stableDesktopListHeight(papers.length);
+  const stableMobileHeight = stableMobileListHeight(papers.length);
   const statusSegments = buildStatusSegments(papers, summary);
 
   return (
@@ -390,7 +386,7 @@ export default function ExamPapersPage() {
           >
             <div
               className="hidden max-h-[720px] overflow-auto [scrollbar-gutter:stable] md:block"
-              style={{ minHeight: stableDesktopListHeight }}
+              style={{ minHeight: stableDesktopHeight }}
             >
               {filteredPapers.length > 0 ? (
                 <table className="w-full min-w-[920px] text-sm">
@@ -446,7 +442,7 @@ export default function ExamPapersPage() {
 
             <div
               className="divide-y divide-[var(--color-border-light)] md:hidden"
-              style={{ minHeight: stableMobileListHeight }}
+              style={{ minHeight: stableMobileHeight }}
             >
               {filteredPapers.length > 0 ? filteredPapers.map((paper) => {
                 const status = statusMeta(paper.status);

@@ -5,6 +5,8 @@ import {
   computePaperSummary,
   filterPapers,
   buildStatusSegments,
+  stableDesktopListHeight,
+  stableMobileListHeight,
 } from "./exam-paper-utils";
 import type { AdminExamPaperListItem } from "./api/types";
 
@@ -108,5 +110,44 @@ describe("buildStatusSegments", () => {
     expect(segments[1]).toEqual({ value: "draft", label: "草稿", count: 1 });
     expect(segments[2]).toEqual({ value: "published", label: "已发布", count: 1 });
     expect(segments[3]).toEqual({ value: "archived", label: "已归档", count: 1 });
+  });
+});
+
+describe("stableDesktopListHeight", () => {
+  it("returns 260 for zero papers", () => {
+    expect(stableDesktopListHeight(0)).toBe(260);
+  });
+  it("returns 260 for negative", () => {
+    expect(stableDesktopListHeight(-1)).toBe(260);
+  });
+  it("returns header+offset for single paper", () => {
+    expect(stableDesktopListHeight(1)).toBe(260);
+  });
+  it("clamps to max 720 for many papers", () => {
+    expect(stableDesktopListHeight(20)).toBe(720);
+  });
+  it("grows linearly in the middle range", () => {
+    expect(stableDesktopListHeight(5)).toBe(436);  // 46 + 5*78 = 436, within [260, 720]
+  });
+  it("clamps to 720 when formula exceeds max", () => {
+    expect(stableDesktopListHeight(9)).toBe(720);  // 46 + 9*78 = 748, clamped
+  });
+});
+
+describe("stableMobileListHeight", () => {
+  it("returns 240 for zero papers", () => {
+    expect(stableMobileListHeight(0)).toBe(240);
+  });
+  it("returns 240 for negative", () => {
+    expect(stableMobileListHeight(-1)).toBe(240);
+  });
+  it("returns row*count for single paper", () => {
+    expect(stableMobileListHeight(1)).toBe(240);  // 96 < 240, clamped to min
+  });
+  it("clamps to max 560 for many papers", () => {
+    expect(stableMobileListHeight(10)).toBe(560);
+  });
+  it("grows linearly in the middle range", () => {
+    expect(stableMobileListHeight(4)).toBe(384);  // 4*96=384, within [240, 560]
   });
 });
