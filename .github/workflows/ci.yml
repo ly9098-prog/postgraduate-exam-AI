@@ -408,6 +408,7 @@ jobs:
             tests/test_services/test_study_hub_plan_token_compatibility.py \
             tests/test_services/test_watermark_service_compatibility.py \
             tests/test_services/test_asset_reference_compatibility.py \
+            tests/test_services/test_batch_answer_compatibility.py \
             tests/test_services/test_mastery_concurrency.py \
             tests/test_services/test_recommendation_assignment_concurrency.py \
             tests/test_services/test_recommendation_metrics_concurrency.py \
