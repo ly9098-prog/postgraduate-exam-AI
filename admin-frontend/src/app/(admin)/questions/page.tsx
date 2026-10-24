@@ -4,13 +4,8 @@ import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
-  Check,
-  ChevronDown,
-  Download,
-  Loader2,
   BookOpen,
   Tag,
-  Layers,
   Clock,
   Copy,
   Trash2,
@@ -28,6 +23,7 @@ import { QuestionSideDetailPanel } from "./question-side-detail-panel";
 import { QuestionDrawerHeader } from "./question-drawer-header";
 import { QuestionDrawerBody } from "./question-drawer-body";
 import { QuestionFilterToolbar } from "./question-filter-toolbar";
+import { QuestionListToolbar } from "./question-list-toolbar";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { looksLikeProgrammingCode } from "@/lib/math-text";
 import { exportQuestions } from "./question-api";
@@ -357,102 +353,21 @@ export default function QuestionsPage() {
         <CardContent className="space-y-4">
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
             <section className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[var(--color-primary-light)] px-3 text-xs font-semibold text-[var(--color-primary-dark)]">
-                <Layers className="h-3.5 w-3.5" />
-                题目总览
-              </span>
-              <span className="inline-flex h-9 items-center rounded-full bg-[var(--porcelain)] px-3 text-xs font-semibold text-[var(--ink)]">
-                当前页 {items.length} 题
-              </span>
-              {questions.isFetching && !questions.isLoading ? (
-                <span className="inline-flex h-9 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-[var(--color-text-hint)]">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  更新中
-                </span>
-              ) : null}
-              {questions.data ? (
-                <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
-                  共 {questions.data.total} 题
-                </span>
-              ) : null}
-              {hasActiveFilters ? (
-                <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
-                  已启用筛选
-                </span>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {selectedIds.size > 0 ? (
-                <span className="inline-flex h-9 items-center rounded-full bg-[var(--color-primary-light)] px-4 text-sm font-semibold text-[var(--color-primary-dark)]">
-                  已选 {selectedIds.size} 项
-                </span>
-              ) : null}
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={allChecked}
-                onClick={toggleAll}
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
-              >
-                <span
-                  aria-hidden="true"
-                  className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-                    allChecked
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
-                      : "border-[var(--color-border)] bg-white"
-                  }`}
-                >
-                  {allChecked ? (
-                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                  ) : null}
-                </span>
-                <span className="font-medium">选择当前页</span>
-              </button>
-              <div ref={exportMenuRef} className="relative">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    toggleMenu("isExportOpen");
-                  }}
-                  aria-expanded={menus.isExportOpen}
-                  aria-haspopup="menu"
-                  disabled={!!exportingFormat}
-                  className="h-9 rounded-full px-3"
-                >
-                  <Download className="h-4 w-4" />
-                  {exportingFormat
-                    ? exportingFormat === "csv"
-                      ? "导出 CSV 中..."
-                      : "导出 Word 中..."
-                    : "导出"}
-                  <ChevronDown
-                    className={`h-4 w-4 transition ${menus.isExportOpen ? "rotate-180" : ""}`}
-                  />
-                </Button>
-                {menus.isExportOpen ? (
-                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] animate-drop-in overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
-                    <button
-                      type="button"
-                      onClick={() => void handleExport("csv")}
-                      className="flex w-full items-center rounded-xl px-3 py-2 text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
-                    >
-                      导出 CSV
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleExport("docx")}
-                      className="flex w-full items-center rounded-xl px-3 py-2 text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
-                    >
-                      导出 Word
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-              </div>
+              <QuestionListToolbar
+                itemCount={items.length}
+                total={questions.data?.total}
+                isFetching={questions.isFetching}
+                isLoading={questions.isLoading}
+                hasActiveFilters={hasActiveFilters}
+                selectedCount={selectedIds.size}
+                allChecked={allChecked}
+                exportOpen={menus.isExportOpen}
+                exportingFormat={exportingFormat}
+                exportMenuRef={exportMenuRef}
+                onToggleAll={toggleAll}
+                onToggleExportMenu={() => toggleMenu("isExportOpen")}
+                onExport={(format) => void handleExport(format)}
+              />
 
               <div className={`space-y-2.5 transition-opacity duration-200 ${questions.isFetching && !questions.isLoading ? "opacity-70" : "opacity-100"}`}>
               {questions.isLoading ? (
