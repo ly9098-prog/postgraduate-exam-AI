@@ -12,6 +12,9 @@ const {
 const {
   createExamAnswerSyncController,
 } = require('../utils/exam-answer-sync-controller')
+const {
+  createExamSubmitRetryController,
+} = require('../utils/exam-submit-retry-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -533,31 +536,27 @@ Page({
   },
 
   async _postSubmitWithRetry(finalAnswers) {
-    // POST /submit is server-idempotent: once the attempt is terminal it returns
-    // the immutable result snapshot. That lets us safely retry ambiguous network
-    // failures (request committed but response lost) without duplicate records.
-    const delays = [0, 450, 1200]
-    let lastError = null
-    for (let i = 0; i < delays.length; i += 1) {
-      if (!this._pageAlive || this._terminalNavigation) throw lastError || new Error('页面已关闭')
-      if (delays[i] > 0) await sleep(delays[i])
-      try {
-        return await api.post(
+    return this._examSubmitRetryController().postWithRetry(finalAnswers)
+  },
+
+  _examSubmitRetryController() {
+    return this._examSubmitRetry || (
+      this._examSubmitRetry = createExamSubmitRetryController({
+        isPageAlive: () => this._pageAlive,
+        isTerminalNavigation: () => this._terminalNavigation,
+        getRetryDelays: () => [0, 450, 1200],
+        sleep,
+        postSubmit: finalAnswers => api.post(
           `/exams/attempts/${this.data.attemptId}/submit`,
           { answers: finalAnswers },
           { timeout: 12000, suppressNetworkToast: true }
-        )
-      } catch (error) {
-        lastError = error
-        if (!this._pageAlive) throw error
-        // First determine whether the previous POST actually committed.  The
-        // attempt GET is now side-effect free, so this reconciliation cannot
-        // accidentally grade an expired draft before its pending answers arrive.
-        if (await this._reconcileAttemptState()) return { _reconciled: true }
-        if (!this._isRetryableSubmitError(error) || i === delays.length - 1) throw error
-      }
-    }
-    throw lastError || new Error('交卷失败')
+        ),
+        reconcileAttemptState: () => this._reconcileAttemptState(),
+        isRetryableSubmitError,
+        getPageClosedMessage: () => '页面已关闭',
+        getSubmitFailedMessage: () => '交卷失败',
+      })
+    )
   },
 
   async _recoverPendingAfterReconnect() {
