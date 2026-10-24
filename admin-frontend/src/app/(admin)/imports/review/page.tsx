@@ -14,6 +14,13 @@ import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { useOutsideClick } from "@/lib/use-outside-click";
 import { reviewPageStyles } from "./review-page-styles";
+import {
+  reviewDrawerDirty,
+  shouldCancelReviewEditing,
+  shouldKeepClosedReviewDrawer,
+  shouldKeepCurrentReviewDrawer,
+  startReviewEditingFlow,
+} from "./review-drawer-flow";
 import { executeSegmentReplace, resolveSegmentFileChange } from "./review-segment-replace";
 import { buildQuestionTypeChange } from "./review-question-type-change";
 import type { BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
@@ -31,10 +38,8 @@ import {
 import { getLeafSubjectOptions } from "./review-subject-state";
 import { getSourceQuestionNo } from "./review-source-location";
 import {
-  createReviewEditSession,
   createReviewPreviewState,
   createReviewServerEditState,
-  hasUnsavedReviewDrawerChanges,
 } from "./review-drawer-state";
 import {
   clearBatchCompleteDraft,
@@ -595,7 +600,7 @@ export default function ImportReviewPage() {
   const confirmDialogState = buildReviewConfirmDialogState(confirmState, selectedIds.size);
 
   const hasUnsavedDraft = useCallback(() => (
-    hasUnsavedReviewDrawerChanges({
+    reviewDrawerDirty({
       editing,
       editState,
       editSnapshot: editSnapshotRef.current,
@@ -605,15 +610,13 @@ export default function ImportReviewPage() {
   ), [editing, editState, editedSegments]);
 
   const openPreview = (item: ImportQuestionItem) => {
-    if (segmentUploading >= 0 || completeMutation.isPending) return;
-    if (previewId !== null) {
-      if (
-        hasUnsavedDraft() &&
-        !window.confirm("有未保存的修改，确定切换到其他题目吗？")
-      ) {
-        return;
-      }
-    }
+    if (shouldKeepCurrentReviewDrawer({
+      previewId,
+      segmentUploading,
+      completePending: completeMutation.isPending,
+      hasUnsavedDraft: hasUnsavedDraft(),
+      confirm: message => window.confirm(message),
+    })) return;
     const preview = createReviewPreviewState(item);
     syncedDetailRef.current.clear();
     beginDetailSession(item.id);
@@ -627,10 +630,12 @@ export default function ImportReviewPage() {
   };
 
   const closeDrawer = useCallback(() => {
-    if (segmentUploading >= 0 || completeMutation.isPending) return;
-    if (hasUnsavedDraft()) {
-      if (!window.confirm("有未保存的修改，确定关闭吗？")) return;
-    }
+    if (shouldKeepClosedReviewDrawer({
+      segmentUploading,
+      completePending: completeMutation.isPending,
+      hasUnsavedDraft: hasUnsavedDraft(),
+      confirm: message => window.confirm(message),
+    })) return;
     endDetailSession();
     setPreviewId(null);
     setCompletedItem(null);
@@ -653,9 +658,15 @@ export default function ImportReviewPage() {
   }, [previewId, closeDrawer]);
 
   const startEditing = () => {
-    if (!previewId || !canWrite || !previewDetailReady) return;
     const segs = detail.data?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
-    const session = createReviewEditSession(editState, segs);
+    const session = startReviewEditingFlow({
+      previewId,
+      canWrite,
+      detailReady: previewDetailReady,
+      editState,
+      segments: segs,
+    });
+    if (!session) return;
     setEditedSegments(session.editedSegments);
     segmentSnapshotRef.current = session.segmentSnapshot;
     editSnapshotRef.current = session.editSnapshot;
@@ -663,7 +674,10 @@ export default function ImportReviewPage() {
   };
 
   const cancelEditing = () => {
-    if (hasUnsavedDraft() && !window.confirm("有未保存的修改，确定取消编辑吗？")) return;
+    if (shouldCancelReviewEditing({
+      hasUnsavedDraft: hasUnsavedDraft(),
+      confirm: message => window.confirm(message),
+    })) return;
     if (previewItem) {
       syncServerEditState(previewItem);
     } else {

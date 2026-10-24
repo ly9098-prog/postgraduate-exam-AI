@@ -116,6 +116,10 @@ const modules = [
     imports: ["@/lib/api/types", "./review-edit-state"],
   },
   {
+    path: "./review-drawer-flow.ts",
+    imports: ["./review-drawer-state", "./review-edit-state"],
+  },
+  {
     path: "./review-detail-session.ts",
     imports: [],
   },
