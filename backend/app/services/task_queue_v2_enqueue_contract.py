@@ -103,3 +103,37 @@ def v2_enqueue_internal_error() -> EnqueueResult:
         reason="internal_error",
         retry_after=30,
     )
+
+
+def build_v1_enqueue_task(
+    task_type: str,
+    payload: dict[str, Any],
+    *,
+    task_id: str | None,
+    max_retries: int,
+    correlation: Callable[[dict[str, Any]], tuple[str, str]],
+) -> Task:
+    """Build the historical v1 task shape without schema-version controls."""
+    tid = task_id or f"task_{uuid.uuid4().hex}"
+    trace_id, request_id = correlation(payload)
+    return Task(
+        task_id=tid,
+        task_type=task_type,
+        payload=payload,
+        max_retries=max_retries,
+        trace_id=trace_id,
+        request_id=request_id,
+    )
+
+
+def v1_enqueue_failed() -> EnqueueResult:
+    return EnqueueResult(
+        accepted=False,
+        task_id=None,
+        reason="enqueue_failed",
+        retry_after=30,
+    )
+
+
+def v1_enqueue_no_backend() -> EnqueueResult:
+    return EnqueueResult(accepted=False, task_id=None, reason="no_backend")

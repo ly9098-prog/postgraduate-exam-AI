@@ -7,7 +7,10 @@ import json
 import pytest
 
 from app.services.task_queue_v2_enqueue_contract import (
+    build_v1_enqueue_task,
     build_v2_enqueue_plan,
+    v1_enqueue_failed,
+    v1_enqueue_no_backend,
     v2_enqueue_duplicate,
     v2_enqueue_internal_error,
     v2_enqueue_queue_full,
@@ -106,3 +109,30 @@ def test_lua_result_shapes_preserve_historical_contracts():
     assert internal_error.task_id is None
     assert internal_error.reason == "internal_error"
     assert internal_error.retry_after == 30
+
+
+def test_v1_enqueue_task_and_terminal_results_preserve_historical_shape():
+    task = build_v1_enqueue_task(
+        "demo",
+        {"trace_id": "trace", "request_id": "request"},
+        task_id=None,
+        max_retries=2,
+        correlation=correlation,
+    )
+    assert task.task_id.startswith("task_")
+    assert task.task_type == "demo"
+    assert task.max_retries == 2
+    assert task.schema_version == 2
+    assert task.trace_id == "trace"
+    assert task.request_id == "request"
+
+    failed = v1_enqueue_failed()
+    assert failed.accepted is False
+    assert failed.task_id is None
+    assert failed.reason == "enqueue_failed"
+    assert failed.retry_after == 30
+
+    no_backend = v1_enqueue_no_backend()
+    assert no_backend.accepted is False
+    assert no_backend.task_id is None
+    assert no_backend.reason == "no_backend"

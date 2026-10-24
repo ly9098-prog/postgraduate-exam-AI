@@ -114,7 +114,10 @@ from app.services.task_queue_v2_inspection_contract import build_v2_task_inspect
 from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
 from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
 from app.services.task_queue_v2_enqueue_contract import (
+    build_v1_enqueue_task,
     build_v2_enqueue_plan,
+    v1_enqueue_failed,
+    v1_enqueue_no_backend,
     v2_enqueue_duplicate,
     v2_enqueue_internal_error,
     v2_enqueue_queue_full,
@@ -440,17 +443,14 @@ class DurableTaskQueue:
                 task_id or "?",
                 task_type,
             )
-        tid = task_id or f"task_{uuid.uuid4().hex}"
-
-        trace_id, request_id = _task_correlation(payload)
-        task = Task(
-            task_id=tid,
-            task_type=task_type,
-            payload=payload,
+        task = build_v1_enqueue_task(
+            task_type,
+            payload,
+            task_id=task_id,
             max_retries=max_retries,
-            trace_id=trace_id,
-            request_id=request_id,
+            correlation=_task_correlation,
         )
+        tid = task.task_id
         task_json = json.dumps(task.to_dict(), default=str)
 
         max_ready = _get_max_ready(task_type)
@@ -548,12 +548,7 @@ class DurableTaskQueue:
                 if not self._allow_local_fallback:
                     logger.error("Redis enqueue failed (no fallback): %s", e)
                     queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(
-                        accepted=False,
-                        task_id=None,
-                        reason="enqueue_failed",
-                        retry_after=30,
-                    )
+                    return v1_enqueue_failed()
                 logger.warning("Redis enqueue failed, falling back to local: %s", e)
 
         # Local fallback (dev only, bounded)
@@ -569,7 +564,7 @@ class DurableTaskQueue:
             self._local_tasks[tid] = task
             return EnqueueResult(accepted=True, task_id=tid)
 
-        return EnqueueResult(accepted=False, task_id=None, reason="no_backend")
+        return v1_enqueue_no_backend()
 
     # ── dequeue ──
 
