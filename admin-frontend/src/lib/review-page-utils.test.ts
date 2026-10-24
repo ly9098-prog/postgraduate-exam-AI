@@ -5,7 +5,10 @@ import {
   renderJson,
   statusTone,
   duplicateStatusTone,
+  isBlockedByVisualIssues,
+  buildVisualBlockReasons,
 } from "./review-page-utils";
+import type { OptionVisualModel } from "@/lib/option-visual-utils";
 
 describe("unresolvedTableCount", () => {
   it("returns 0 for null", () => {
@@ -72,4 +75,74 @@ describe("duplicateStatusTone", () => {
   it("returns success for normal", () => { expect(duplicateStatusTone("normal")).toBe("success"); });
   it("returns neutral for null", () => { expect(duplicateStatusTone(null)).toBe("neutral"); });
   it("returns neutral for undefined", () => { expect(duplicateStatusTone(undefined)).toBe("neutral"); });
+});
+
+const baseModel: OptionVisualModel = {
+  mode: "none",
+  optionImages: {},
+  placeholderKeys: [],
+  missingImageKeys: [],
+  hasValidVisual: false,
+  expectedOptionKeys: [],
+  detectedOptionKeys: [],
+  consumedSegmentIds: [],
+  legacy: false,
+  issues: [],
+};
+
+describe("isBlockedByVisualIssues", () => {
+  it("false when all clear", () => {
+    expect(isBlockedByVisualIssues(baseModel, 0, [])).toBe(false);
+  });
+  it("true for placeholder_missing mode", () => {
+    expect(isBlockedByVisualIssues({ ...baseModel, mode: "placeholder_missing" }, 0, [])).toBe(true);
+  });
+  it("true for unknown_visual mode", () => {
+    expect(isBlockedByVisualIssues({ ...baseModel, mode: "unknown_visual" }, 0, [])).toBe(true);
+  });
+  it("true when legacy and issues exist", () => {
+    expect(isBlockedByVisualIssues({ ...baseModel, legacy: true, issues: ["x"] }, 0, [])).toBe(true);
+  });
+  it("false when legacy but no issues", () => {
+    expect(isBlockedByVisualIssues({ ...baseModel, legacy: true, issues: [] }, 0, [])).toBe(false);
+  });
+  it("true when unresolved tables exist", () => {
+    expect(isBlockedByVisualIssues(baseModel, 1, [])).toBe(true);
+  });
+  it("true when runtime issues exist", () => {
+    expect(isBlockedByVisualIssues(baseModel, 0, ["error"])).toBe(true);
+  });
+});
+
+describe("buildVisualBlockReasons", () => {
+  it("returns null when not blocked", () => {
+    expect(buildVisualBlockReasons(baseModel, 0, [])).toBeNull();
+  });
+  it("includes placeholder reason", () => {
+    const r = buildVisualBlockReasons({ ...baseModel, mode: "placeholder_missing" }, 0, []);
+    expect(r).toEqual(["选项图片缺失"]);
+  });
+  it("includes unknown_visual reason", () => {
+    const r = buildVisualBlockReasons({ ...baseModel, mode: "unknown_visual" }, 0, []);
+    expect(r).toEqual(["选项状态未知，需人工确认"]);
+  });
+  it("includes table count reason", () => {
+    const r = buildVisualBlockReasons(baseModel, 3, []);
+    expect(r).toEqual(["3 个结构化表格尚未人工核验"]);
+  });
+  it("includes runtime issues", () => {
+    const r = buildVisualBlockReasons(baseModel, 0, ["图片加载失败"]);
+    expect(r).toEqual(["图片加载失败"]);
+  });
+  it("combines multiple reasons in order", () => {
+    const r = buildVisualBlockReasons(
+      { ...baseModel, mode: "placeholder_missing" },
+      2,
+      ["运行时错误"],
+    );
+    expect(r).toEqual(["选项图片缺失", "2 个结构化表格尚未人工核验", "运行时错误"]);
+  });
+  it("returns null for legacy without issues", () => {
+    expect(buildVisualBlockReasons({ ...baseModel, legacy: true, issues: [] }, 0, [])).toBeNull();
+  });
 });

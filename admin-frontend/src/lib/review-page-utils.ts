@@ -3,6 +3,7 @@
  */
 
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
+import type { OptionVisualModel } from "@/lib/option-visual-utils";
 
 export function unresolvedTableCount(content: unknown): number {
   if (!content || typeof content !== "object" || Array.isArray(content)) return 0;
@@ -42,4 +43,42 @@ export function duplicateStatusTone(status: string | null | undefined): "warning
   if (status === "possible_duplicate") return "warning";
   if (status === "normal") return "success";
   return "neutral";
+}
+
+/**
+ * Determine whether the review drawer's save action should be blocked by
+ * visual/table/runtime issues that require manual attention.
+ */
+export function isBlockedByVisualIssues(
+  optionVisualModel: OptionVisualModel,
+  unresolvedTableCount: number,
+  runtimeIssues: string[],
+): boolean {
+  return (
+    optionVisualModel.mode === "placeholder_missing" ||
+    optionVisualModel.mode === "unknown_visual" ||
+    (optionVisualModel.legacy && optionVisualModel.issues.length > 0) ||
+    unresolvedTableCount > 0 ||
+    runtimeIssues.length > 0
+  );
+}
+
+/**
+ * Build the list of human-readable reasons explaining why save is blocked.
+ * Returns null when there are no blocking issues.
+ */
+export function buildVisualBlockReasons(
+  optionVisualModel: OptionVisualModel,
+  unresolvedTableCount: number,
+  runtimeIssues: string[],
+): string[] | null {
+  if (!isBlockedByVisualIssues(optionVisualModel, unresolvedTableCount, runtimeIssues)) {
+    return null;
+  }
+  const reasons: string[] = [];
+  if (optionVisualModel.mode === "placeholder_missing") reasons.push("选项图片缺失");
+  if (optionVisualModel.mode === "unknown_visual") reasons.push("选项状态未知，需人工确认");
+  if (unresolvedTableCount > 0) reasons.push(`${unresolvedTableCount} 个结构化表格尚未人工核验`);
+  reasons.push(...runtimeIssues);
+  return reasons;
 }

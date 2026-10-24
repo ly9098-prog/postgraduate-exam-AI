@@ -88,6 +88,10 @@ import { ReviewBatchAnswerDialog } from "./components/review-batch-answer-dialog
 import { ReviewDetailDrawer } from "./components/review-detail-drawer";
 import { extractOptionVisualModel, type OptionVisualModel } from "@/lib/option-visual-utils";
 import { normalizeStructuredTableSegment } from "@/lib/structured-table";
+import {
+  isBlockedByVisualIssues as isBlockedByVisualIssuesHelper,
+  buildVisualBlockReasons,
+} from "@/lib/review-page-utils";
 
 type ConfirmState = ReviewActionState | null;
 
@@ -289,12 +293,11 @@ export default function ImportReviewPage() {
     }, 0);
   }, [editing, editedSegments, previewItem]);
 
-  const isBlockedByVisualIssues =
-    optionVisualModel.mode === "placeholder_missing" ||
-    optionVisualModel.mode === "unknown_visual" ||
-    (optionVisualModel.legacy && optionVisualModel.issues.length > 0) ||
-    unresolvedTableCount > 0 ||
-    runtimeIssues.length > 0;
+  const isBlockedByVisualIssues = isBlockedByVisualIssuesHelper(
+    optionVisualModel,
+    unresolvedTableCount,
+    runtimeIssues,
+  );
 
   // When full detail loads for the first time after drawer open, sync editState
   useEffect(() => {
@@ -353,12 +356,11 @@ export default function ImportReviewPage() {
       },
   });
 
-  const visualBlockReasons = isBlockedByVisualIssues ? [
-    ...(optionVisualModel.mode === "placeholder_missing" ? ["选项图片缺失"] : []),
-    ...(optionVisualModel.mode === "unknown_visual" ? ["选项状态未知，需人工确认"] : []),
-    ...(unresolvedTableCount > 0 ? [`${unresolvedTableCount} 个结构化表格尚未人工核验`] : []),
-    ...runtimeIssues,
-  ] : null;
+  const visualBlockReasons = buildVisualBlockReasons(
+    optionVisualModel,
+    unresolvedTableCount,
+    runtimeIssues,
+  );
 
   const updateMutation = useReviewUpdateMutation({
     previewId,
