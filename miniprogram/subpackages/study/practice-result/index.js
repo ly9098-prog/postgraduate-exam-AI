@@ -13,6 +13,7 @@ const { buildReviewItem: _buildReviewItem, normalizeReviewItem: _normalizeReview
 const { normalizePercent: _normalizePercent, getQuestionListHeightRpx: _getQuestionListHeightRpx, formatDuration: _formatDuration, buildErrorDonutGradient: _buildErrorDonutGradient } = require('./utils/format-helpers');
 const { stripLevelPrefix: _stripLevelPrefix, growthFromTotalExp: _growthFromTotalExp, normalizeGrowthProfile: _normalizeGrowthProfile, growthFromOverview: _growthFromOverview } = require('./utils/growth-helpers');
 const { buildTrendPlot: _buildTrendPlot } = require('./utils/trend-plot-builder');
+const { buildRecoveredResultPayload: _buildRecoveredResultPayload } = require('./utils/recovered-payload-builder');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
@@ -633,52 +634,9 @@ wx.removeStorageSync(key);
 }
 } catch (_) {}
 },
-_buildRecoveredResultPayload(submission, submitResult, options) {
-const answerMap = submission.answerMap || {};
-const partialSet = {};
-;(submission.partialQuestionIds || []).forEach(id => { partialSet[String(id)] = true; });
-const results = (submitResult.results || []).map(item => {
-const qid = String(item.question_id);
-const isPartial = item.status === 'skipped' && !!partialSet[qid];
-return {
-...item,
-status: isPartial ? 'partial' : item.status,
-_local_partial: isPartial,
-_local_skipped: item.status === 'skipped' && !isPartial,
-user_answer: answerMap[qid] || '',
-};
-});
-const partialCount = (submission.partialQuestionIds || []).length;
-const skippedCount = Math.max(0, (Number(submitResult.total_skipped) || 0) - partialCount);
-const cacheKey = String((options || {})._ck || '');
-return {
-correct: Number(submitResult.total_correct) || 0,
-wrong: Number(submitResult.total_wrong) || 0,
-skipped: skippedCount,
-partial: partialCount,
-total: Number(submission.total) || results.length,
-subject_id: submission.selectedSubjectId ?? (submission.session && submission.session.subject_id) ?? null,
-subject_name: submission.selectedSubjectName || '',
-duration: Number(submission.duration ?? (submission.session && submission.session.duration_sec)) || 0,
-traceId: submitResult.trace_id || submission.traceId || '',
-results,
-questions: (submission.recoveryQuestions || []).map(q => ({
-...q,
-id: q.id,
-stem: q.stem || '',
-question_type: q.question_type || '',
-content: q.content || (q.stem ? { stem: q.stem } : {}),
-options: q.options || null,
-image_url: q.image_url || null,
-})),
-comboCount: Number(submission.comboCount) || 0,
-knowledge_session: submitResult.knowledge_session || submission.knowledgeScope || null,
-request_id: submission.requestId || '',
-_cacheKey: cacheKey,
-_userId: this._getCurrentUserId(),
-_createdAt: Date.now(),
-};
-},
+  _buildRecoveredResultPayload(submission, submitResult, options) {
+    return _buildRecoveredResultPayload(submission, submitResult, String((options || {})._ck || ""));
+  },
 async recoverSubmittedResult(options) {
 const requestId = String(this._practiceRequestId || safeDecodeURIComponent((options || {})._rid, '')).trim();
 const pending = this._readPendingSubmissionForRecovery(requestId);

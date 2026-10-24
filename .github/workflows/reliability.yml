@@ -472,6 +472,7 @@ jobs:
           node --test miniprogram/tests/test-practice-result-format-helpers.js
           node --test miniprogram/tests/test-practice-result-growth-helpers.js
           node --test miniprogram/tests/test-practice-result-trend-plot.js
+          node --test miniprogram/tests/test-practice-result-recovered-payload.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
 
