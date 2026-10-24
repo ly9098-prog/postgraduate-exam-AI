@@ -61,6 +61,21 @@ from app.services.practice.chapter_scope import (
 from app.services.practice.chapter_scope import (
     knowledge_bucket as _chapter_knowledge_bucket,
 )
+from app.services.practice.merge_utils import (
+    build_fallback_metadata as _build_fallback_metadata,
+)
+from app.services.practice.merge_utils import (
+    extract_graph_context as _extract_graph_context,
+)
+from app.services.practice.merge_utils import (
+    practice_submission_fingerprint as _practice_submission_fingerprint,
+)
+from app.services.practice.merge_utils import (
+    round_robin_merge as _round_robin_merge,
+)
+from app.services.practice.merge_utils import (
+    round_robin_merge_with_metadata as _round_robin_merge_with_metadata,
+)
 from app.services.practice.normalization import (
     PRACTICE_ALLOWED_MODES,
 )
@@ -990,94 +1005,6 @@ async def get_knowledge_scope_practice_questions(
         len(selected[:count]),
     )
     return selected[:count]
-
-
-def _round_robin_merge(
-    buckets: list[list[object]],
-    count: int,
-    randomize_order: bool = False,
-) -> list[object]:
-    """轮询合并多个桶中的元素，使各桶输出尽量均衡。
-
-    Args:
-        buckets: 每个元素是一个桶（元素列表），桶内已按期望顺序排列。
-        count: 期望返回的元素总数。
-        randomize_order: 是否随机化桶的起始顺序（random 模式使用）。
-
-    Returns:
-        轮询合并后的元素列表，不超出 count。每个元素只出现一次（按 object
-        identity 去重）。桶内顺序保持，桶间轮询。
-    """
-    if count <= 0 or not buckets:
-        return []
-
-    non_empty = [b for b in buckets if b]
-    if not non_empty:
-        return []
-
-    if randomize_order:
-        random.shuffle(non_empty)
-
-    result: list[object] = []
-    seen: set[int] = set()
-    max_len = max(len(b) for b in non_empty)
-
-    for i in range(max_len):
-        for bucket in non_empty:
-            if i < len(bucket):
-                item = bucket[i]
-                item_id = id(item)
-                if hasattr(item, "id"):
-                    item_id = item.id
-                if item_id not in seen:
-                    result.append(item)
-                    seen.add(item_id)
-                    if len(result) >= count:
-                        return result
-    return result
-
-
-def _round_robin_merge_with_metadata(
-    buckets: list[list[tuple[object, dict]]],
-    count: int,
-    randomize_order: bool = False,
-) -> tuple[list[object], dict[int, dict]]:
-    """轮询合并带 metadata 的桶（smart 模式用）。
-
-    每个桶的元素为 (question, metadata_dict)。返回 (merged_questions, merged_metadata)，
-    其中 merged_metadata 为 {question_id: metadata_dict}。
-    """
-    merged: list[object] = []
-    metadata: dict[int, dict] = {}
-
-    if count <= 0:
-        return merged, metadata
-
-    if not buckets:
-        return merged, metadata
-
-    non_empty = [b for b in buckets if b]
-    if not non_empty:
-        return merged, metadata
-
-    if randomize_order:
-        random.shuffle(non_empty)
-
-    seen_ids: set[int] = set()
-    max_len = max(len(b) for b in non_empty)
-
-    for i in range(max_len):
-        for bucket in non_empty:
-            if i < len(bucket):
-                item, meta = bucket[i]
-                item_id = item.id if hasattr(item, "id") else id(item)
-                if item_id not in seen_ids:
-                    merged.append(item)
-                    metadata[item_id] = meta
-                    seen_ids.add(item_id)
-                    if len(merged) >= count:
-                        return merged, metadata
-    return merged, metadata
 
 
 async def get_aggregated_random_questions(
@@ -2636,16 +2563,6 @@ def _build_scored_metadata(
     }
 
 
-def _build_fallback_metadata(reason: str, strategy: str) -> dict:
-    """Build a random/repeat-window fallback metadata entry."""
-    return {
-        "recommend_score": None,
-        "recommend_reason": reason,
-        "strategy": strategy,
-        "similarity": None,
-    }
-
-
 async def _load_scored_runtime_config(db: AsyncSession) -> dict:
     """Load scored recommendation config, falling back to built-in defaults."""
     # Admin 全局配置：default_scored 控制系统级权重和图谱门槛。
@@ -3040,15 +2957,6 @@ async def _load_kp_names(
     return {row.id: row.name for row in kp_name_result.all()}
 
 
-def _extract_graph_context(graph_context: dict) -> tuple[dict, dict, dict]:
-    """Unpack graph context fields with empty defaults."""
-    return (
-        graph_context.get("blocked_targets", {}),
-        graph_context.get("prerequisite_candidates", {}),
-        graph_context.get("prerequisites_by_target", {}),
-    )
-
-
 async def _compute_recommendation_weights(
     db: AsyncSession,
     user_id: int,
@@ -3364,58 +3272,6 @@ async def _create_answer_projection_outbox(
         },
         schema_version=ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
     )
-
-
-def _practice_submission_fingerprint(
-    *,
-    answers: list[dict],
-    skipped_question_ids: list[int],
-    session_meta: dict,
-    batch_token: str,
-) -> str:
-    """Hash the exact immutable submission represented by one request_id."""
-    normalized_answers = []
-    for answer in answers:
-        normalized_answers.append(
-            {
-                "question_id": int(answer.get("question_id")),
-                "user_answer": str(
-                    answer.get("user_answer", answer.get("answer", "")) or ""
-                ).strip(),
-                "used_time": (
-                    None
-                    if answer.get("used_time") is None
-                    else int(answer.get("used_time"))
-                ),
-                "request_id": _normalize_practice_request_id(answer.get("request_id")),
-            }
-        )
-    normalized_answers.sort(key=lambda item: item["question_id"])
-    payload = {
-        "v": 3,
-        "answers": normalized_answers,
-        "skipped_question_ids": sorted(int(qid) for qid in skipped_question_ids),
-        "session": {
-            "request_id": _normalize_practice_request_id(
-                session_meta.get("request_id")
-            ),
-            "subject_id": int(session_meta.get("subject_id")),
-            "mode": str(session_meta.get("mode") or "random"),
-            "started_at": str(session_meta.get("started_at") or ""),
-            "finished_at": str(session_meta.get("finished_at") or ""),
-            "duration_sec": int(session_meta.get("duration_sec") or 0),
-            "question_count": int(session_meta.get("question_count") or 0),
-            "answered_count": int(session_meta.get("answered_count") or 0),
-        },
-        "batch_token": str(batch_token),
-    }
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _raise_practice_submission_conflict(message: str) -> None:
