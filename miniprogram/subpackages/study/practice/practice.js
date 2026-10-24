@@ -73,6 +73,9 @@ const {
   buildLightQuestions,
   computeDisplaySkippedCount,
 } = require('./utils/submit-result-builder')
+const {
+  resolveBatchErrorRecovery,
+} = require('./utils/batch-error-recovery')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -1236,43 +1239,17 @@ const batchError = findQuestionBatchError(rawQuestions, {
 answerableTypes: PRACTICE_ANSWERABLE_TYPES,
 allowedScopeIds,
 })
-if (batchError && batchError.kind === 'invalid_ids') {
-console.error('[PRACTICE_INVALID_BATCH_QUESTION_IDS]', {
-selectedSubjectId: Number(subjectId),
-invalidQuestionIds: batchError.invalidQuestionIds,
-duplicateQuestionIds: batchError.duplicateQuestionIds,
+const batchRecovery = resolveBatchErrorRecovery(batchError, {
+subjectId,
+includeChildren: params.include_children,
 traceId: res.trace_id || this._practiceSession.traceId,
 })
+if (batchRecovery) {
+console.error(batchRecovery.logTag, batchRecovery.logDetail)
 this._clearTimer()
 this._setPracticeUnloadGuard(false)
-this.setData(buildResetView('检测到练习批次题目异常，请重试。若持续出现，请更新后端服务。'))
-wx.showToast({ title: '练习批次异常，请重试', icon: 'none' })
-return
-}
-if (batchError && batchError.kind === 'unsupported_type') {
-console.error('[PRACTICE_UNSUPPORTED_QUESTION_TYPE]', {
-selectedSubjectId: Number(subjectId),
-rejected: batchError.rejected,
-traceId: res.trace_id || this._practiceSession.traceId,
-})
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView('检测到当前版本暂不支持作答的题型，请重试或更新后端服务。'))
-wx.showToast({ title: '题型暂不支持，请重试', icon: 'none' })
-return
-}
-if (batchError && batchError.kind === 'subject_scope') {
-console.error('[PRACTICE_SUBJECT_SCOPE_MISMATCH]', {
-selectedSubjectId: Number(subjectId),
-includeChildren: Boolean(params.include_children),
-allowedScopeIds: batchError.allowedScopeIds,
-rejected: batchError.rejected,
-traceId: res.trace_id || this._practiceSession.traceId,
-})
-this._clearTimer()
-this._setPracticeUnloadGuard(false)
-this.setData(buildResetView('检测到题目科目异常，请重试。若持续出现，请更新后端服务。'))
-wx.showToast({ title: '题目科目异常，请重试', icon: 'none' })
+this.setData(buildResetView(batchRecovery.resetMessage))
+wx.showToast({ title: batchRecovery.toastTitle, icon: 'none' })
 return
 }
 const questions = adapter.applyAnsweredFlags(rawQuestions, {}, 'id')
