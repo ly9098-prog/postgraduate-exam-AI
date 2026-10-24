@@ -29,6 +29,12 @@ import type {
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
+import {
+  filterCatalogItems,
+  groupCatalogBySubject,
+  extractIncludedIds,
+  isMembershipDirty,
+} from "@/lib/syllabus-utils";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "草稿",
@@ -220,41 +226,16 @@ export default function SyllabusPage() {
   const catalog = catalogQuery.data?.items ?? [];
   const normalizedCatalogKeyword = catalogKeyword.trim().toLowerCase();
   const visibleCatalog = useMemo(() => {
-    if (!normalizedCatalogKeyword) return catalog;
-    return catalog.filter((item) => `${item.subject_name} ${item.name} ${item.knowledge_point_id}`.toLowerCase().includes(normalizedCatalogKeyword));
+    return filterCatalogItems(catalog, normalizedCatalogKeyword);
   }, [catalog, normalizedCatalogKeyword]);
   const groupedCatalog = useMemo(() => {
-    const groups = new Map<string, typeof visibleCatalog>();
-    for (const item of visibleCatalog) {
-      const key = `${item.subject_code}::${item.subject_name}`;
-      const bucket = groups.get(key) ?? [];
-      bucket.push(item);
-      groups.set(key, bucket);
-    }
-    const preferredOrder = [
-      "data_structure",
-      "computer_organization",
-      "operating_system",
-      "computer_network",
-    ];
-    return [...groups.entries()].sort(([, leftItems], [, rightItems]) => {
-      const leftCode = leftItems[0]?.subject_code ?? "";
-      const rightCode = rightItems[0]?.subject_code ?? "";
-      const leftIndex = preferredOrder.indexOf(leftCode);
-      const rightIndex = preferredOrder.indexOf(rightCode);
-      if (leftIndex >= 0 || rightIndex >= 0) {
-        if (leftIndex < 0) return 1;
-        if (rightIndex < 0) return -1;
-        return leftIndex - rightIndex;
-      }
-      return (leftItems[0]?.subject_name ?? "").localeCompare(rightItems[0]?.subject_name ?? "", "zh-CN");
-    });
+    return groupCatalogBySubject(visibleCatalog);
   }, [visibleCatalog]);
   const activeVersion = versionsQuery.data?.find((item) => item.status === "active");
   const coveragePct = Math.round((coverageQuery.data?.coverage_ratio ?? 0) * 100);
   const saving = membershipMutation.isPending || activateMutation.isPending || archiveMutation.isPending || mappingMutation.isPending || deleteMappingMutation.isPending;
-  const includedIds = useMemo(() => new Set(catalog.filter((item) => item.included).map((item) => item.knowledge_point_id)), [catalog]);
-  const membershipDirty = selectedKnowledgePointIds.size !== includedIds.size || [...selectedKnowledgePointIds].some((id) => !includedIds.has(id));
+  const includedIds = useMemo(() => extractIncludedIds(catalog), [catalog]);
+  const membershipDirty = isMembershipDirty(selectedKnowledgePointIds, includedIds);
 
   function toggleKnowledgePoint(id: number) {
     if (!detail || detail.status !== "draft" || !canWrite) return;
