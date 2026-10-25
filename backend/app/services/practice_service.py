@@ -184,6 +184,10 @@ from app.services.practice.smart_weakness_vector import (
     SmartWeaknessVectorRequest,
     run_smart_weakness_vector,
 )
+from app.services.practice.legacy_weakness_vector import (
+    LegacyWeaknessRequest,
+    run_legacy_weakness_vector,
+)
 from app.services.practice.smart_path_supplement import (
     SmartPathRequest,
     run_smart_path,
@@ -1231,251 +1235,37 @@ async def _legacy_weakness_vector(
     variant_key: str | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """Legacy weakness-vector branch retained for direct smart-entry fallback."""
+    import app.services.mastery_service as mastery_service
+    import app.services.vector_retrieval_service as vector_retrieval_service
+    from app.services import recommendation_strategy_service
 
-    metadata: dict[int, dict] = {}
-    # 1. 获取薄弱知识点（Phase 2 优先使用掌握度画像）
-    weak_kps: list[dict] = []
-    try:
-        from app.services import mastery_service
-
-        weak_kps = await mastery_service.get_user_weak_knowledge_points(
+    return await run_legacy_weakness_vector(
+        LegacyWeaknessRequest(
             db,
             user_id,
             subject_code,
-            limit=5,
-        )
-        if weak_kps:
-            pass
-    except Exception:
-        logger.warning(
-            "mastery_service.get_user_weak_knowledge_points failed, fallback",
-            exc_info=True,
-        )
-
-    if not weak_kps:
-        # Fallback: Phase 1 的临时统计
-        weak_kps = await _compute_weak_knowledge_points(
-            db,
-            user_id,
-            subject_ids or [],
-        )
-        if weak_kps:
-            pass
-
-    if not weak_kps:
-        # 没有足够的做题记录来判断薄弱点，退化为随机
-        logger.info("smart 模式: 无足够做题记录，退化为随机")
-        questions = await get_practice_questions(
-            db=db,
-            user_id=user_id,
-            subject_code=subject_code,
             count=count,
-            mode="random",
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
             use_leitner=use_leitner,
             subject_ids=subject_ids,
-        )
-        for q in questions:
-            metadata[q.id] = {
-                "recommend_reason": "随机推荐（无足够做题记录）",
-                "recommend_score": None,
-                "strategy": "random_fallback",
-                "similarity": None,
-            }
-        return await _maybe_finalize_smart(
-            questions,
-            metadata,
-            skip_finalize,
-            db,
-            user_id,
-            subject_code,
+            skip_finalize=skip_finalize,
             request_id=request_id,
             experiment_id=experiment_id,
             variant_key=variant_key,
+            logger=logger,
+            load_mastery=mastery_service.get_user_weak_knowledge_points,
+            compute_weak_kps=_compute_weak_knowledge_points,
+            load_random=get_practice_questions,
+            vector_recall=vector_retrieval_service.vector_recall_by_text,
+            load_strategy_config=recommendation_strategy_service.get_strategy_config,
+            rerank=_apply_strategy_weight_rerank,
+            build_excluded=_build_excluded_question_subquery,
+            revision_condition=_practice_revision_scope_condition,
+            kp_any_condition=kp_any_condition,
+            random_sample=_random_sample_query,
+            finalize=_maybe_finalize_smart,
         )
-
-    # 2. 构造 query_text 并向量召回
-    kp_names = [kp["name"] for kp in weak_kps[:5]]
-    query_text = (
-        f"科目：{subject_code}。请推荐这些薄弱知识点的练习题："
-        f"{'、'.join(kp_names)}。要求题目适合查漏补缺和变式训练。"
-    )
-
-    vector_questions: list[Question] = []
-    vector_excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-    )
-    try:
-        from app.services import vector_retrieval_service
-
-        recalls = await vector_retrieval_service.vector_recall_by_text(
-            db=db,
-            user_id=user_id,
-            subject=subject_code,
-            query_text=query_text,
-            count=count,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-        )
-        if recalls:
-            rec_ids = [r["question_id"] for r in recalls]
-            vector_conditions = [
-                Question.id.in_(rec_ids),
-                Question.is_active,
-                Question.subject_id.in_(subject_ids or []),
-                _practice_revision_scope_condition(subject_ids or []),
-            ]
-            if vector_excluded_sub is not None:
-                vector_conditions.append(Question.id.notin_(vector_excluded_sub))
-            q_result = await db.execute(
-                select(Question)
-                .where(and_(*vector_conditions))
-                .options(selectinload(Question.subject_ref))
-            )
-            q_map = {q.id: q for q in q_result.scalars().all()}
-            for rec in recalls:
-                q = q_map.get(rec["question_id"])
-                if q:
-                    vector_questions.append(q)
-                    metadata[q.id] = {
-                        "recommend_reason": f"薄弱知识点推荐：{'、'.join(kp_names[:3])}",
-                        "recommend_score": rec.get("recommend_score"),
-                        "strategy": "smart_vector",
-                        "similarity": rec.get("similarity"),
-                    }
-    except Exception:
-        logger.warning("smart 模式向量召回失败，回退", exc_info=True)
-
-    # Phase 4.6: 策略权重重排（best-effort；无 DB 配置时保持原顺序）
-    strategy_config = None
-    try:
-        from app.services import recommendation_strategy_service
-
-        # weakness_vector 的 rerank 必须显式读取自己的配置；practice_smart
-        # 的 scene 默认现在是 default_scored，不能误拿 scored 的 legacy 0 权重。
-        strategy_config = await recommendation_strategy_service.get_strategy_config(
-            db,
-            "practice_smart",
-            strategy_name="default_weakness_vector",
-        )
-    except Exception:
-        logger.debug("获取推荐策略配置失败，跳过权重重排", exc_info=True)
-
-    if strategy_config:
-        vector_questions, metadata = await _apply_strategy_weight_rerank(
-            db,
-            user_id,
-            vector_questions,
-            metadata,
-            strategy_config,
-            kp_names,
-        )
-
-    if len(vector_questions) >= count:
-        return await _maybe_finalize_smart(
-            vector_questions[:count],
-            metadata,
-            skip_finalize,
-            db,
-            user_id,
-            subject_code,
-            request_id=request_id,
-            experiment_id=experiment_id,
-            variant_key=variant_key,
-        )
-
-    # 3. 补齐：按薄弱知识点过滤 + 随机
-    existing_ids = {q.id for q in vector_questions}
-    subject_cond = Question.subject_id.in_(subject_ids or [])
-    conditions = [
-        Question.is_active,
-        subject_cond,
-        _practice_revision_scope_condition(subject_ids or []),
-        Question.id.notin_(existing_ids),
-    ]
-    # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
-    excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-    )
-    if excluded_sub is not None:
-        conditions.append(Question.id.notin_(excluded_sub))
-
-    # 优先按薄弱知识点过滤（OR 语义，normalized_name 精确匹配）
-    kp_cond = kp_any_condition(kp_names) if kp_names else None
-    if kp_cond is not None:
-        # Count first, then use random offset to avoid ORDER BY random() on large tables
-        kp_count_q = select(func.count()).select_from(
-            select(Question).where(and_(*conditions, kp_cond)).subquery()
-        )
-        kp_total = (await db.execute(kp_count_q)).scalar() or 0
-        kp_remaining = count - len(vector_questions)
-        if kp_total > 0 and kp_remaining > 0:
-            kp_q = (
-                select(Question)
-                .where(and_(*conditions, kp_cond))
-                .options(selectinload(Question.subject_ref))
-            )
-            kp_q = _random_sample_query(
-                kp_q, kp_total, min(kp_remaining, kp_total), Question.id
-            )
-            result = await db.execute(kp_q)
-            kp_fill = list(result.scalars().all())
-
-            for fq in kp_fill:
-                if fq.id not in existing_ids:
-                    existing_ids.add(fq.id)
-                    vector_questions.append(fq)
-                    metadata[fq.id] = {
-                        "recommend_reason": f"薄弱知识点补齐：{'、'.join(kp_names[:3])}",
-                        "recommend_score": None,
-                        "strategy": "kp_fallback",
-                        "similarity": None,
-                    }
-                    if len(vector_questions) >= count:
-                        break
-
-    # 4. 最终随机补齐
-    if len(vector_questions) < count:
-        remaining = count - len(vector_questions)
-        fill_q = select(func.count()).select_from(
-            select(Question)
-            .where(and_(*conditions, Question.id.notin_(existing_ids)))
-            .subquery()
-        )
-        total = (await db.execute(fill_q)).scalar() or 0
-        fill_q = (
-            select(Question)
-            .where(and_(*conditions, Question.id.notin_(existing_ids)))
-            .options(selectinload(Question.subject_ref))
-        )
-        fill_q = _random_sample_query(fill_q, total, remaining, Question.id)
-        result = await db.execute(fill_q)
-        random_fill = list(result.scalars().all())
-
-        for fq in random_fill:
-            metadata[fq.id] = {
-                "recommend_reason": "随机补齐",
-                "recommend_score": None,
-                "strategy": "random_fallback",
-                "similarity": None,
-            }
-        vector_questions.extend(random_fill)
-
-    return await _maybe_finalize_smart(
-        vector_questions[:count],
-        metadata,
-        skip_finalize,
-        db,
-        user_id,
-        subject_code,
-        request_id=request_id,
-        experiment_id=experiment_id,
-        variant_key=variant_key,
     )
 
 
