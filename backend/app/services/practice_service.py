@@ -77,6 +77,13 @@ from app.services.practice.knowledge_scope import (
     load_descendant_scope,
     root_scope,
 )
+from app.services.practice.leitner_query import (
+    LeitnerQueryRequest,
+    due_condition,
+    due_soon_condition,
+    leitner_query,
+    oldest_first_order,
+)
 from app.services.practice.merge_utils import (
     build_fallback_metadata as _build_fallback_metadata,
 )
@@ -847,8 +854,6 @@ async def _get_questions_with_leitner(
     no_repeat_days: int | None = None,
 ) -> list[Question]:
     """V2 Leitner 取题：新题 + 到期复习题优先，逐步 fallback。"""
-    from app.models.user_question_state import UserQuestionState
-
     now = utcnow()
     # ``use_leitner`` only controls *which* questions are due; it must not
     # silently disable the caller's repeat-window contract.  The practice page
@@ -862,66 +867,33 @@ async def _get_questions_with_leitner(
         no_repeat_days=no_repeat_days,
     )
 
+    query_request = LeitnerQueryRequest(
+        user_id=user_id,
+        base_conditions=base_conditions,
+        mode=mode,
+        count=count,
+        excluded_sub=excluded_sub,
+        random_sample=_random_sample_query,
+        scalar=db.scalar,
+        execute=db.execute,
+    )
+
     async def _leitner_query(
         due_condition,
         exclude_ids: set[int] | None = None,
         limit: int | None = None,
         extra_order=None,
     ) -> list[Question]:
-        """Leitner 内部查询：outer join UserQuestionState + 到期条件。"""
-        conds = list(base_conditions)
-        if excluded_sub is not None:
-            conds.append(Question.id.notin_(excluded_sub))
-        if exclude_ids:
-            conds.append(Question.id.notin_(exclude_ids))
-
-        base_q = (
-            select(Question)
-            .outerjoin(
-                UserQuestionState,
-                and_(
-                    UserQuestionState.question_id == Question.id,
-                    UserQuestionState.user_id == user_id,
-                ),
-            )
-            .where(and_(*conds, due_condition))
-            .options(selectinload(Question.subject_ref))
+        return await leitner_query(
+            query_request,
+            due_condition,
+            exclude_ids=exclude_ids,
+            limit=limit,
+            extra_order=extra_order,
         )
-        limit_value = limit if limit is not None else count
-        if extra_order is not None:
-            q = base_q.order_by(extra_order).limit(limit_value)
-        elif mode == "random":
-            # Default practice uses Leitner, so random-mode performance must be
-            # bounded here as well (not only in the V1 fallback).  Keep true
-            # random ordering for ordinary per-subject pools and switch to the
-            # bounded random-offset strategy for unusually large pools.
-            count_base = (
-                select(Question.id)
-                .outerjoin(
-                    UserQuestionState,
-                    and_(
-                        UserQuestionState.question_id == Question.id,
-                        UserQuestionState.user_id == user_id,
-                    ),
-                )
-                .where(and_(*conds, due_condition))
-                .subquery()
-            )
-            total = int(
-                (await db.scalar(select(func.count()).select_from(count_base))) or 0
-            )
-            q = _random_sample_query(base_q, total, limit_value, Question.id)
-        else:
-            q = base_q.order_by(Question.id.asc()).limit(limit_value)
-        result = await db.execute(q)
-        return list(result.scalars().all())
 
     # 第一层：新题 + 已到期复习题
-    due_cond = or_(
-        UserQuestionState.id.is_(None),
-        UserQuestionState.next_review_at.is_(None),
-        UserQuestionState.next_review_at <= now,
-    )
+    due_cond = due_condition(now)
     questions = await _leitner_query(due_cond)
 
     if len(questions) >= count:
@@ -937,11 +909,7 @@ async def _get_questions_with_leitner(
 
     # 第二层：快到期题（next_review_at <= now + 1 天）
     soon = now + timedelta(days=1)
-    due_soon_cond = or_(
-        UserQuestionState.id.is_(None),
-        UserQuestionState.next_review_at.is_(None),
-        UserQuestionState.next_review_at <= soon,
-    )
+    due_soon_cond = due_soon_condition(soon)
     more = await _leitner_query(
         due_soon_cond, exclude_ids=existing_ids, limit=count - len(questions)
     )
@@ -958,16 +926,12 @@ async def _get_questions_with_leitner(
         return questions[:count]
 
     # 第三层：最久未做的题（last_answered_at ASC NULLS FIRST）
-    all_cond = or_(
-        UserQuestionState.id.is_(None),
-        UserQuestionState.next_review_at.is_(None),
-        UserQuestionState.next_review_at <= soon + timedelta(days=30),
-    )
+    all_cond = due_soon_condition(soon + timedelta(days=30))
     more = await _leitner_query(
         all_cond,
         exclude_ids=existing_ids,
         limit=count - len(questions),
-        extra_order=UserQuestionState.last_answered_at.asc().nulls_first(),
+        extra_order=oldest_first_order(),
     )
     questions.extend(more)
     existing_ids.update(q.id for q in more)
