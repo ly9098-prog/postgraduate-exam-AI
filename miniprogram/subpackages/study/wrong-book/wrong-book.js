@@ -750,115 +750,120 @@ this.onBatchAction({ currentTarget: { dataset: { action } } })
 },
 closeBatchMore() {},
 noop() {},
-async onBatchAction(e) {
-if (this.data.batchSubmitting || this._batchMasterUndoInFlight) return
-const action = e.currentTarget.dataset.action
-if (this.data.batchMoreVisible) this.setData({ batchMoreVisible: false })
-const ids = (this.data.selectedIds || []).map(id => {
-const n = Number(id)
-return Number.isFinite(n) && String(n) === String(id) ? n : id
-})
-if (!ids.length) {
-wx.showToast({ title: '请先选择错题', icon: 'none' })
-return
-}
-const labels = {
-add_to_review: '加入今日复习',
-mark_mastered: '标记为已掌握',
-remove_from_book: '移出错题本',
-delete: '永久删除',
-}
-const dangerous = action === 'delete' || action === 'remove_from_book'
-if (dangerous) {
-const confirmed = await this._confirmBatchAction(
-labels[action],
-action === 'delete'
-? `将永久删除已选择的 ${ids.length} 道错题记录，是否继续？`
-: `将把已选择的 ${ids.length} 道题移出错题本，是否继续？`
-)
-if (!confirmed) return
-}
-this.setData({ batchSubmitting: true })
-wx.showLoading({ title: '正在处理', mask: true })
-try {
-const result = await api.post('/wrong-questions/batch', { action, ids })
-wx.hideLoading()
-if (this._destroyed) return
-if (action === 'mark_mastered') {
-const hasSkippedIds = Array.isArray(result && result.skipped_ids)
-const skippedSet = new Set(hasSkippedIds ? result.skipped_ids.map(id => String(id)) : [])
-const reportedUpdatedCount = result && result.updated_count != null ? Number(result.updated_count) : ids.length
-const undoIds = hasSkippedIds
-? ids.filter(id => !skippedSet.has(String(id)))
-: (reportedUpdatedCount === ids.length ? ids.slice() : [])
-const updatedCount = Math.max(0, Number.isFinite(reportedUpdatedCount) ? reportedUpdatedCount : undoIds.length)
-this._clearBatchMasterUndo()
-this._batchMasterUndoIds = undoIds.slice()
-const canUndo = undoIds.length > 0
-this.setData({
-batchSubmitting: false,
-batchMasterUndoVisible: canUndo,
-_batchMasterUndoCount: canUndo ? undoIds.length : 0,
-selectionPulse: false,
-selectedIds: [],
-selectedIdMap: {},
-selectedCount: 0,
-allVisibleSelected: false,
-})
-if (canUndo) {
-this._batchMasterUndoTimer = setTimeout(() => {
-this._clearBatchMasterUndo()
-}, 5000)
-} else {
-wx.showToast({
-title: updatedCount > 0 ? `已标记掌握 ${updatedCount} 项` : '所选题目状态未变化',
-icon: 'none',
-})
-}
-await this._reloadAfterBatch()
-return
-}
-wx.showToast({
-title: `${labels[action]}成功 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
-icon: 'success',
-})
-this._clearBatchCapsuleIdleTimer()
-this.setData({
-batchSubmitting: false,
-batchMode: false,
-batchCapsuleVisible: true,
-batchMoreVisible: false,
-selectionPulse: false,
-selectedIds: [],
-selectedIdMap: {},
-selectedCount: 0,
-allVisibleSelected: false,
-})
-await this._reloadAfterBatch()
-} catch (err) {
-wx.hideLoading()
-if (this._destroyed) return
-this.setData({ batchSubmitting: false })
-const isMissingEndpoint = err && (err.statusCode === 404 || err.statusCode === 405)
-if (isMissingEndpoint) {
-const modal = this.selectComponent('#actionConfirm')
-if (modal) {
-await modal.show({
-scenario: 'info',
-eyebrow: 'NOTICE',
-title: '批量接口尚未接入',
-message: '当前页面交互已经完成，但后端暂不支持该批量操作。',
-confirmText: '知道了',
-hideCancel: true,
-})
-} else {
-wx.showToast({ title: '批量接口尚未接入', icon: 'none' })
-}
-} else {
-wx.showToast({ title: (err && err.message) || '批量操作失败', icon: 'none' })
-}
-}
-},
+  async onBatchAction(e) {
+    if (this.data.batchSubmitting || this._batchMasterUndoInFlight) return
+    const action = e.currentTarget.dataset.action
+    if (this.data.batchMoreVisible) this.setData({ batchMoreVisible: false })
+    const ids = this._resolveBatchIds()
+    if (!ids.length) { wx.showToast({ title: '请先选择错题', icon: 'none' }); return }
+    const labels = this._batchActionLabels()
+    if (this._isDangerousBatchAction(action)) {
+      const confirmed = await this._confirmBatchAction(labels[action], this._batchConfirmMessage(action, ids.length))
+      if (!confirmed) return
+    }
+    this.setData({ batchSubmitting: true })
+    wx.showLoading({ title: '正在处理', mask: true })
+    try {
+      const result = await api.post('/wrong-questions/batch', { action, ids })
+      wx.hideLoading()
+      if (this._destroyed) return
+      if (action === 'mark_mastered') {
+        await this._handleBatchMastered(result, ids)
+        return
+      }
+      this._handleBatchSuccess(result, labels, action)
+      await this._reloadAfterBatch()
+    } catch (err) {
+      this._handleBatchError(err)
+    }
+  },
+
+  _resolveBatchIds() {
+    return (this.data.selectedIds || []).map(id => {
+      const n = Number(id)
+      return Number.isFinite(n) && String(n) === String(id) ? n : id
+    })
+  },
+
+  _batchActionLabels() {
+    return {
+      add_to_review: '加入今日复习', mark_mastered: '标记为已掌握',
+      remove_from_book: '移出错题本', delete: '永久删除',
+    }
+  },
+
+  _isDangerousBatchAction(action) {
+    return action === 'delete' || action === 'remove_from_book'
+  },
+
+  _batchConfirmMessage(action, count) {
+    return action === 'delete'
+      ? `将永久删除已选择的 ${count} 道错题记录，是否继续？`
+      : `将把已选择的 ${count} 道题移出错题本，是否继续？`
+  },
+
+  async _handleBatchMastered(result, ids) {
+    const hasSkippedIds = Array.isArray(result && result.skipped_ids)
+    const skippedSet = new Set(hasSkippedIds ? result.skipped_ids.map(id => String(id)) : [])
+    const reportedUpdatedCount = result && result.updated_count != null ? Number(result.updated_count) : ids.length
+    const undoIds = hasSkippedIds
+      ? ids.filter(id => !skippedSet.has(String(id)))
+      : (reportedUpdatedCount === ids.length ? ids.slice() : [])
+    const updatedCount = Math.max(0, Number.isFinite(reportedUpdatedCount) ? reportedUpdatedCount : undoIds.length)
+    this._clearBatchMasterUndo()
+    this._batchMasterUndoIds = undoIds.slice()
+    const canUndo = undoIds.length > 0
+    this.setData({
+      batchSubmitting: false, batchMasterUndoVisible: canUndo,
+      _batchMasterUndoCount: canUndo ? undoIds.length : 0,
+      selectionPulse: false, selectedIds: [], selectedIdMap: {},
+      selectedCount: 0, allVisibleSelected: false,
+    })
+    if (canUndo) {
+      this._batchMasterUndoTimer = setTimeout(() => { this._clearBatchMasterUndo() }, 5000)
+    } else {
+      wx.showToast({ title: updatedCount > 0 ? `已标记掌握 ${updatedCount} 项` : '所选题目状态未变化', icon: 'none' })
+    }
+    await this._reloadAfterBatch()
+  },
+
+  _handleBatchSuccess(result, labels, action) {
+    wx.showToast({
+      title: `${labels[action]}成功 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
+      icon: 'success',
+    })
+    this._clearBatchCapsuleIdleTimer()
+    this.setData({
+      batchSubmitting: false, batchMode: false, batchCapsuleVisible: true,
+      batchMoreVisible: false, selectionPulse: false, selectedIds: [],
+      selectedIdMap: {}, selectedCount: 0, allVisibleSelected: false,
+    })
+  },
+
+  _handleBatchError(err) {
+    wx.hideLoading()
+    if (this._destroyed) return
+    this.setData({ batchSubmitting: false })
+    const isMissingEndpoint = err && (err.statusCode === 404 || err.statusCode === 405)
+    if (isMissingEndpoint) {
+      this._showBatchMissingEndpoint()
+    } else {
+      wx.showToast({ title: (err && err.message) || '批量操作失败', icon: 'none' })
+    }
+  },
+
+  async _showBatchMissingEndpoint() {
+    const modal = this.selectComponent('#actionConfirm')
+    if (modal) {
+      await modal.show({
+        scenario: 'info', eyebrow: 'NOTICE', title: '批量接口尚未接入',
+        message: '当前页面交互已经完成，但后端暂不支持该批量操作。',
+        confirmText: '知道了', hideCancel: true,
+      })
+    } else {
+      wx.showToast({ title: '批量接口尚未接入', icon: 'none' })
+    }
+  },
 _reloadAfterBatch() {
 if (this._destroyed) return Promise.resolve([])
 return Promise.all([this.loadStats(), this.loadList(true)])
@@ -1087,88 +1092,81 @@ return this.data.aiDiagnosis
 }
 return this._requestAiDiagnosis({ background: true, refresh: sourceChanged })
 },
-async _requestAiDiagnosis(opts) {
-var self = this
-opts = opts || {}
-var hasData = !!this.data.aiDiagnosis
-var requestId = ++this._aiDiagnosisRequestId
-if (!hasData) {
-this.setData({ aiDiagnosisLoading: true, aiDiagnosisError: false })
-} else {
-this.setData({ aiDiagnosisRefreshing: true, aiDiagnosisError: false })
-}
-this._aiDiagnosisPromise = (async function() {
-try {
-var params = (opts.force || opts.refresh) ? { refresh: 'true' } : {}
-var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
-if (self._isAiDiagnosisPending(diagnosis)) {
-diagnosis = await self._pollAiDiagnosis(diagnosis, requestId)
-}
-if (self._isAiDiagnosisPending(diagnosis)) {
-throw new Error(String((diagnosis && (diagnosis.detail || diagnosis.message)) || 'AI 解析仍在生成，请稍后重试'))
-}
-if (requestId !== self._aiDiagnosisRequestId || !self._alive) return self.data.aiDiagnosis
-var normalized = self._normalizeAiDiagnosis(diagnosis)
-var hasContent = self._hasAiDiagnosisContent(normalized)
-if (hasContent) {
-var sig = self._buildAiDiagnosisSourceSignature()
-var uid = self._getUserId()
-var now = Date.now()
-self._aiDiagnosisCachedAt = now
-aiCache.save(uid, normalized, sig)
-var detailState = self._buildAiInsightDetails(normalized)
-self.setData({
-aiDiagnosis: normalized,
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(now),
-aiDiagnosisCacheStale: false,
-aiDiagnosisError: false,
-aiInsightText: self._oneLineInsight(normalized.summary) || self.data.aiInsightText,
-...detailState,
-})
-return normalized
-}
-if (hasData) {
-self.setData({
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-})
-return self.data.aiDiagnosis
-}
-self.setData({
-aiDiagnosis: null,
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-aiDiagnosisError: true,
-})
-return null
-} catch (e) {
-console.error('加载 AI 诊断失败', e)
-if (requestId !== self._aiDiagnosisRequestId || !self._alive) return self.data.aiDiagnosis
-if (hasData) {
-self.setData({
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-})
-if (opts.force) {
-wx.showToast({ title: (e && typeof e.message === 'string' && e.message) || '更新失败，请稍后重试', icon: 'none' })
-}
-return self.data.aiDiagnosis
-}
-self.setData({
-aiDiagnosis: null,
-aiDiagnosisLoading: false,
-aiDiagnosisRefreshing: false,
-aiDiagnosisError: true,
-})
-return null
-} finally {
-self._aiDiagnosisPromise = null
-}
-})()
-return this._aiDiagnosisPromise
-},
+  async _requestAiDiagnosis(opts) {
+    opts = opts || {}
+    var hasData = !!this.data.aiDiagnosis
+    var requestId = ++this._aiDiagnosisRequestId
+    this.setData(hasData ? { aiDiagnosisRefreshing: true, aiDiagnosisError: false } : { aiDiagnosisLoading: true, aiDiagnosisError: false })
+    this._aiDiagnosisPromise = this._executeAiDiagnosisRequest(opts, hasData, requestId)
+    return this._aiDiagnosisPromise
+  },
+
+  async _executeAiDiagnosisRequest(opts, hasData, requestId) {
+    try {
+      var diagnosis = await this._fetchAiDiagnosisData(opts, requestId)
+      if (requestId !== this._aiDiagnosisRequestId || !this._alive) return this.data.aiDiagnosis
+      return this._applyAiDiagnosisResult(diagnosis, hasData)
+    } catch (e) {
+      return this._handleAiDiagnosisError(e, opts, hasData, requestId)
+    } finally {
+      this._aiDiagnosisPromise = null
+    }
+  },
+
+  async _fetchAiDiagnosisData(opts, requestId) {
+    var params = (opts.force || opts.refresh) ? { refresh: true } : {}
+    var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
+    if (this._isAiDiagnosisPending(diagnosis)) {
+      diagnosis = await this._pollAiDiagnosis(diagnosis, requestId)
+    }
+    if (this._isAiDiagnosisPending(diagnosis)) {
+      throw new Error(String((diagnosis && (diagnosis.detail || diagnosis.message)) || 'AI 解析仍在生成，请稍后重试'))
+    }
+    return diagnosis
+  },
+
+  _applyAiDiagnosisResult(diagnosis, hasData) {
+    var normalized = this._normalizeAiDiagnosis(diagnosis)
+    var hasContent = this._hasAiDiagnosisContent(normalized)
+    if (hasContent) return this._commitAiDiagnosisContent(normalized)
+    if (hasData) {
+      this.setData({ aiDiagnosisLoading: false, aiDiagnosisRefreshing: false })
+      return this.data.aiDiagnosis
+    }
+    this.setData({ aiDiagnosis: null, aiDiagnosisLoading: false, aiDiagnosisRefreshing: false, aiDiagnosisError: true })
+    return null
+  },
+
+  _commitAiDiagnosisContent(normalized) {
+    var sig = this._buildAiDiagnosisSourceSignature()
+    var uid = this._getUserId()
+    var now = Date.now()
+    this._aiDiagnosisCachedAt = now
+    aiCache.save(uid, normalized, sig)
+    var detailState = this._buildAiInsightDetails(normalized)
+    this.setData({
+      aiDiagnosis: normalized, aiDiagnosisLoading: false, aiDiagnosisRefreshing: false,
+      aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(now), aiDiagnosisCacheStale: false,
+      aiDiagnosisError: false,
+      aiInsightText: this._oneLineInsight(normalized.summary) || this.data.aiInsightText,
+      ...detailState,
+    })
+    return normalized
+  },
+
+  _handleAiDiagnosisError(e, opts, hasData, requestId) {
+    console.error('加载 AI 诊断失败', e)
+    if (requestId !== this._aiDiagnosisRequestId || !this._alive) return this.data.aiDiagnosis
+    if (hasData) {
+      this.setData({ aiDiagnosisLoading: false, aiDiagnosisRefreshing: false })
+      if (opts.force) {
+        wx.showToast({ title: (e && typeof e.message === 'string' && e.message) || '更新失败，请稍后重试', icon: 'none' })
+      }
+      return this.data.aiDiagnosis
+    }
+    this.setData({ aiDiagnosis: null, aiDiagnosisLoading: false, aiDiagnosisRefreshing: false, aiDiagnosisError: true })
+    return null
+  },
 _buildAiInsightDetails(diagnosis) {
 const data = diagnosis || {}
 const weakPoints = (Array.isArray(data.weak_points) ? data.weak_points : [])
@@ -1242,64 +1240,64 @@ wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
 wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
 }
 },
-_decorateItem(item) {
-const wrongCount = this._positiveNumber(
-item.wrong_count || item.error_count || item.mistake_count || item.incorrect_count,
-1
-)
-const reviewCountRaw = item.review_record_count !== undefined && item.review_record_count !== null
-? item.review_record_count
-: item.review_count
-const reviewCount = this._positiveNumber(reviewCountRaw, 0)
-const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
-const mastery = this._masteryProgress(item, reviewCount)
-const explicitMastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
-const isMastered = explicitMastered
-const dueInfo = this._reviewDueInfo(item, isMastered)
-const isRecent = this._isRecentDate(item.created_at || item.last_wrong_at || item.updated_at, 14)
-let taskStatusLabel = '待巩固'
-let statusTone = 'waiting'
-if (isMastered) {
-taskStatusLabel = '已掌握'
-statusTone = 'mastered'
-} else if (dueInfo.overdue) {
-taskStatusLabel = '已逾期'
-statusTone = 'overdue'
-} else if (dueInfo.today) {
-taskStatusLabel = '今天到期'
-statusTone = 'due'
-} else if (isRecent) {
-taskStatusLabel = '最近新增'
-statusTone = 'recent'
-} else if (dueInfo.date) {
-taskStatusLabel = this._shortDateLabel(dueInfo.date) + '复习'
-}
-const rawContent = item.content
-const contentText = typeof rawContent === 'string'
-? rawContent
-: (rawContent && (rawContent.text || rawContent.stem)) || ''
-const cleanText = this._toCleanText(contentText)
-const hasImage = Array.isArray(item.image_url) ? item.image_url.length > 0 : !!item.image_url
-return {
-...item,
-_subjectLabel: this._subjectLabel(item.subject_code, item.subject_name),
-_errorTypeLabel: this._errorTypeLabel(item.error_type),
-_timeLabel: this._timeLabel(item.created_at),
-_lastErrorLabel: this._timeLabel(lastErrorAt) || '待记录',
-_wrongCount: wrongCount,
-_reviewCount: reviewCount,
-_masteryPercent: mastery.percent,
-_masteryLabel: mastery.label,
-_cleanText: cleanText || (hasImage ? '图片题 · 点击查看完整题目' : ''),
-_isMastered: isMastered,
-_isTodayDue: dueInfo.today,
-_isOverdue: dueInfo.overdue,
-_isRecent: isRecent,
-_nextReviewAt: dueInfo.date ? dueInfo.date.toISOString() : '',
-_taskStatusLabel: taskStatusLabel,
-_statusTone: statusTone,
-}
-},
+  _decorateItem(item) {
+    const wrongCount = this._positiveNumber(item.wrong_count || item.error_count || item.mistake_count || item.incorrect_count, 0)
+    const reviewCount = this._resolveReviewCount(item)
+    const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
+    const mastery = this._masteryProgress(item, reviewCount)
+    const isMastered = item.is_mastered === true || item.status === "mastered" || item.mastered === true
+    const dueInfo = this._reviewDueInfo(item, isMastered)
+    const isRecent = this._isRecentDate(item.created_at || item.last_wrong_at || item.updated_at, 14)
+    const statusInfo = this._resolveItemStatus(isMastered, dueInfo, isRecent)
+    const contentInfo = this._resolveItemContent(item)
+    return this._buildDecoratedItem(item, { wrongCount, reviewCount, lastErrorAt, mastery, isMastered, dueInfo, isRecent, statusInfo, contentInfo })
+  },
+
+  _resolveReviewCount(item) {
+    const raw = item.review_record_count !== undefined && item.review_record_count !== null ? item.review_record_count : item.review_count
+    return this._positiveNumber(raw, 0)
+  },
+
+  _resolveItemStatus(isMastered, dueInfo, isRecent) {
+    let label = "待巩固", tone = "waiting"
+    if (isMastered) { label = "已掌握"; tone = "mastered" }
+    else if (dueInfo.overdue) { label = "已逾期"; tone = "overdue" }
+    else if (dueInfo.today) { label = "今天到期"; tone = "due" }
+    else if (isRecent) { label = "最近新增"; tone = "recent" }
+    else if (dueInfo.date) { label = this._shortDateLabel(dueInfo.date) + "复习" }
+    return { label, tone }
+  },
+
+  _resolveItemContent(item) {
+    const rawContent = item.content
+    const contentText = typeof rawContent === "string" ? rawContent : (rawContent && (rawContent.text || rawContent.stem)) || ""
+    const cleanText = this._toCleanText(contentText)
+    const hasImage = Array.isArray(item.image_url) ? item.image_url.length > 0 : !!item.image_url
+    return { cleanText, hasImage }
+  },
+
+  _buildDecoratedItem(item, ctx) {
+    const { wrongCount, reviewCount, lastErrorAt, mastery, isMastered, dueInfo, isRecent, statusInfo, contentInfo } = ctx
+    return {
+      ...item,
+      _subjectLabel: this._subjectLabel(item.subject_code, item.subject_name),
+      _errorTypeLabel: this._errorTypeLabel(item.error_type),
+      _timeLabel: this._timeLabel(item.created_at),
+      _lastErrorLabel: this._timeLabel(lastErrorAt) || "待记录",
+      _wrongCount: wrongCount,
+      _reviewCount: reviewCount,
+      _masteryPercent: mastery.percent,
+      _masteryLabel: mastery.label,
+      _cleanText: contentInfo.cleanText || (contentInfo.hasImage ? "图片题 · 点击查看完整题目" : ""),
+      _isMastered: isMastered,
+      _isTodayDue: dueInfo.today,
+      _isOverdue: dueInfo.overdue,
+      _isRecent: isRecent,
+      _nextReviewAt: dueInfo.date ? dueInfo.date.toISOString() : "",
+      _taskStatusLabel: statusInfo.label,
+      _statusTone: statusInfo.tone,
+    }
+  },
 _reviewDueInfo(item, isMastered) {
 if (isMastered) return { today: false, overdue: false, date: null }
 const raw = item.next_review_at || item.review_due_at || item.scheduled_at || item.due_at
