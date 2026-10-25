@@ -56,53 +56,58 @@ function animateImpl(options, fromSec, toSec, fromSessions, toSessions) {
   const interval = Math.round(620 / steps)
   const durationDelta = targetValue - startValue
   const sessionDelta = targetSessionCount - startSessionCount
-  let step = 0
-  let lastText = startText
-  let lastValue = startValue
-  let lastSessions = startSessionCount
+  const state = {
+    step: 0,
+    lastText: startText,
+    lastValue: startValue,
+    lastSessions: startSessionCount,
+  }
 
   options.setData({ durationValueAnimating: true })
 
-  const tick = () => {
-    if (!options.isAlive() || !options.isVisible() || token !== options.getToken()) return
+  const tick = () => durationTick(options, {
+    token, steps, interval, startValue, targetValue,
+    startSessionCount, targetSessionCount, durationDelta, sessionDelta,
+    displayPatch, state,
+  })
+  options.setTimer(options.setTimeout(tick, interval))
+}
 
-    step += 1
-    const progress = Math.min(1, step / steps)
-    const eased = viewHelpers.easeInOutCubic(progress)
-    let nextValue = Math.round(startValue + durationDelta * eased)
-    let nextSessions = Math.round(startSessionCount + sessionDelta * eased)
+function durationTick(options, ctx) {
+  if (!options.isAlive() || !options.isVisible() || ctx.token !== options.getToken()) return
+  const { steps, interval, startValue, targetValue, startSessionCount, targetSessionCount, durationDelta, sessionDelta, displayPatch, state } = ctx
 
-    nextValue = durationDelta >= 0
-      ? Math.max(lastValue, Math.min(targetValue, nextValue))
-      : Math.min(lastValue, Math.max(targetValue, nextValue))
-    nextSessions = sessionDelta >= 0
-      ? Math.max(lastSessions, Math.min(targetSessionCount, nextSessions))
-      : Math.min(lastSessions, Math.max(targetSessionCount, nextSessions))
+  state.step += 1
+  const progress = Math.min(1, state.step / steps)
+  const eased = viewHelpers.easeInOutCubic(progress)
+  let nextValue = Math.round(startValue + durationDelta * eased)
+  let nextSessions = Math.round(startSessionCount + sessionDelta * eased)
 
-    const isFinal = progress >= 1
-    if (isFinal) {
-      nextValue = targetValue
-      nextSessions = targetSessionCount
-    }
-    lastValue = nextValue
-    lastSessions = nextSessions
-    options.setDisplayDurationSec(nextValue)
+  nextValue = durationDelta >= 0
+    ? Math.max(state.lastValue, Math.min(targetValue, nextValue))
+    : Math.min(state.lastValue, Math.max(targetValue, nextValue))
+  nextSessions = sessionDelta >= 0
+    ? Math.max(state.lastSessions, Math.min(targetSessionCount, nextSessions))
+    : Math.min(state.lastSessions, Math.max(targetSessionCount, nextSessions))
 
-    const nextText = formatMin(nextValue)
-    if (nextText !== lastText || nextSessions !== options.getDisplaySessions() || isFinal) {
-      lastText = nextText
-      options.setData({
-        _dispTodaySessions: nextSessions,
-        ...displayPatch(nextText),
-        durationValueAnimating: !isFinal,
-      })
-    }
+  const isFinal = progress >= 1
+  if (isFinal) { nextValue = targetValue; nextSessions = targetSessionCount }
+  state.lastValue = nextValue
+  state.lastSessions = nextSessions
+  options.setDisplayDurationSec(nextValue)
 
-    if (!isFinal) options.setTimer(options.setTimeout(tick, interval))
-    else options.setTimer(null)
+  const nextText = formatMin(nextValue)
+  if (nextText !== state.lastText || nextSessions !== options.getDisplaySessions() || isFinal) {
+    state.lastText = nextText
+    options.setData({
+      _dispTodaySessions: nextSessions,
+      ...displayPatch(nextText),
+      durationValueAnimating: !isFinal,
+    })
   }
 
-  options.setTimer(options.setTimeout(tick, interval))
+  if (!isFinal) options.setTimer(options.setTimeout(() => durationTick(options, ctx), interval))
+  else options.setTimer(null)
 }
 
 module.exports = {

@@ -1,14 +1,7 @@
 function buildLoadViewState(options) {
   const {
-    stats,
-    summary,
-    lifetime,
-    trends,
-    effectiveHistory,
-    effectiveDate,
-    authoritativeToday,
-    willAnimate,
-    displayDaySubjects,
+    stats, summary, lifetime, trends, effectiveHistory,
+    effectiveDate, authoritativeToday, willAnimate, displayDaySubjects,
   } = options
 
   const daySessions = (effectiveHistory && effectiveHistory.items) || []
@@ -16,26 +9,36 @@ function buildLoadViewState(options) {
   const selectedDurationSec = Number(summary && summary.duration_sec) || 0
   const selectedSessionCount = Number(summary && summary.sessions) || 0
   const lifetimeStart = lifetime.start_date
-    || options.currentLifetimeStartDate
-    || effectiveDate
-    || authoritativeToday
+    || options.currentLifetimeStartDate || effectiveDate || authoritativeToday
 
-  const historyPatch = willAnimate
+  const historyPatch = buildHistoryPatch(options, effectiveHistory, daySessions, willAnimate)
+  const state = {
+    daySessions, subjectBreakdown, selectedDurationSec, selectedSessionCount,
+    hasBleedInSubjects: options.hasCrossDayBleedInSubjects(subjectBreakdown),
+    lifetimeStart,
+  }
+  const dataPatch = buildDataPatch(options, stats, trends, lifetime, subjectBreakdown, {
+    lifetime,
+    effectiveDate, authoritativeToday, willAnimate, displayDaySubjects,
+    selectedDurationSec, selectedSessionCount, lifetimeStart, historyPatch,
+  })
+  return { ...state, historyPatch, dataPatch }
+}
+
+function buildHistoryPatch(options, effectiveHistory, daySessions, willAnimate) {
+  return willAnimate
     ? { history: [], historyTotal: effectiveHistory.total || 0, historyReady: false }
     : {
         history: daySessions.map(options.formatSession),
         historyTotal: effectiveHistory.total || 0,
         historyReady: true,
       }
-  const state = {
-    daySessions,
-    subjectBreakdown,
-    selectedDurationSec,
-    selectedSessionCount,
-    hasBleedInSubjects: options.hasCrossDayBleedInSubjects(subjectBreakdown),
-    lifetimeStart,
-  }
-  const dataPatch = {
+}
+
+function buildDataPatch(options, stats, trends, lifetime, subjectBreakdown, ctx) {
+  const { effectiveDate, authoritativeToday, willAnimate, displayDaySubjects,
+    selectedDurationSec, selectedSessionCount, lifetimeStart, historyPatch } = ctx
+  return {
     todaySessions: selectedSessionCount,
     todayDurationText: options.formatMin(selectedDurationSec),
     selectedDurationLabel: options.formatSelectedDurationLabel(effectiveDate),
@@ -54,10 +57,7 @@ function buildLoadViewState(options) {
     distributionRangeEnd: displayDaySubjects ? effectiveDate : options.currentRangeEnd,
     canGoNextDate: !!(effectiveDate && authoritativeToday && effectiveDate < authoritativeToday),
     _crossDayBleedIn: options.hasCrossDayBleedInSubjects(subjectBreakdown),
-    pieLoading: false,
-    loading: false,
-    contentReady: true,
-    errorText: '',
+    pieLoading: false, loading: false, contentReady: true, errorText: '',
     _dispTodaySessions: willAnimate ? 0 : selectedSessionCount,
     ...options.getDurationDisplayPatch(willAnimate ? '0分钟' : options.formatMin(selectedDurationSec)),
     durationValueAnimating: willAnimate,
@@ -66,7 +66,6 @@ function buildLoadViewState(options) {
     ...options.buildCumulativePatch(lifetime, lifetimeStart),
     ...historyPatch,
   }
-  return { ...state, historyPatch, dataPatch }
 }
 
 module.exports = {
