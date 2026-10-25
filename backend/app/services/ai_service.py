@@ -83,14 +83,9 @@ from app.services.ai.advice_snapshot import (
     build_advice_snapshot,
     parse_advice_content,
 )
-from app.services.ai.prewarm_transition import (
-    failure_category,
-    finish_prewarm_result,
-    recovery_regenerated,
-    revision_changed,
-    skipped_not_found,
-    superseded_regenerated,
-    superseded_revision,
+from app.services.ai.prewarm_execution import (
+    PrewarmExecutionRequest,
+    execute_prewarm,
 )
 from app.services.ai.provider_exception import classify_ai_provider_exception
 from app.services.ai.provider_invocation import (
@@ -959,80 +954,24 @@ async def prewarm_wrong_question_analysis(
     fallback results are converted to :class:`PrewarmAnalysisError`, carrying a
     stable ``error_code`` plus whether the durable/local worker may retry.
     """
+    from app.ai.prewarm_revision import build_prewarm_revision
     from app.core.database import async_session
 
-    async with async_session() as bg_db:
-        wq_result = await bg_db.execute(
-            select(WrongQuestion).where(
-                WrongQuestion.id == wrong_question_id,
-                WrongQuestion.user_id == user_id,
-            )
-        )
-        wq = wq_result.scalar_one_or_none()
-        if not wq:
-            logger.info(
-                "[prewarm] skipped_not_found id=%d uid=%d",
-                wrong_question_id,
-                user_id,
-            )
-            return skipped_not_found()
-
-        if expected_revision:
-            from app.ai.prewarm_revision import build_prewarm_revision
-
-            if revision_changed(
-                wrong_question=wq,
-                expected_revision=expected_revision,
-                build_revision=build_prewarm_revision,
-            ):
-                logger.info(
-                    "[prewarm] superseded id=%d uid=%d expected_revision=%s current_revision=%s",
-                    wrong_question_id,
-                    user_id,
-                    expected_revision,
-                    build_prewarm_revision(
-                        review_count=wq.review_count,
-                        wrong_answer=wq.wrong_answer,
-                    ),
-                )
-                return superseded_revision()
-
-        # A recovery task is queued only after the mini-program transport times
-        # out. The original HTTP handler may still finish successfully. For force
-        # regeneration, skip the backup call when a new persisted generation has
-        # already replaced the baseline; otherwise the recovery task would cause a
-        # second paid regeneration after the first one eventually completed.
-        if force_regenerate and baseline_generated_at is not None:
-            if recovery_regenerated(
-                wrong_question=wq,
-                baseline_generated_at=baseline_generated_at,
-                generated_at=ai_analysis_generated_at,
-            ):
-                current_generated_at = ai_analysis_generated_at(wq.ai_analysis) or ""
-                logger.info(
-                    "[prewarm] recovery_superseded id=%d uid=%d baseline=%s current=%s",
-                    wrong_question_id,
-                    user_id,
-                    baseline_generated_at or "empty",
-                    current_generated_at or "empty",
-                )
-                return superseded_regenerated()
-
-        result = await analyze_error(
-            bg_db,
-            user_id,
-            wrong_question_id,
-            force_regenerate=force_regenerate,
-        )
-
-        return finish_prewarm_result(
-            result,
+    return await execute_prewarm(
+        PrewarmExecutionRequest(
             wrong_question_id=wrong_question_id,
             user_id=user_id,
             expected_revision=expected_revision,
+            force_regenerate=force_regenerate,
+            baseline_generated_at=baseline_generated_at,
             logger=logger,
+            async_session=async_session,
+            build_revision=build_prewarm_revision,
+            generated_at=ai_analysis_generated_at,
+            analyze_error=analyze_error,
             failure_factory=_prewarm_failure_from_result,
         )
+    )
 
 
 async def generate_advice(
