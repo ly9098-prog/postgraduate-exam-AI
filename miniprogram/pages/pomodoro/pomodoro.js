@@ -53,6 +53,7 @@ const { createPauseToggleController } = require('./utils/pause-toggle-controller
 const { createPomodoroPauseSyncController } = require('./utils/pause-sync-controller')
 const { createPomodoroSessionActionDropper } = require('./utils/session-action-dropper')
 const { createPomodoroActiveSessionReconciler } = require('./utils/active-session-reconciler')
+const { createPomodoroRunningStateMigrator } = require('./utils/running-state-migrator')
 const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
@@ -602,18 +603,18 @@ Page({
   },
 
   _migrateRunningStateCache(subjects) {
-    const stored = this._safeGetPomodoroStorage('pomodoro_running_state', 'migrate running snapshot')
-    if (!stored.ok) return false
-    const local = stored.value
-    if (!local || local.selectedSubjectId || !local.selectedSubjectCode) return true
-    const match = (subjects || []).find(s => s.code === local.selectedSubjectCode)
-    if (match) {
-      local.selectedSubjectId = match.id
-      if (!local.selectedSubjectName) local.selectedSubjectName = match.name || ''
-      return this._safeSetPomodoroStorage('pomodoro_running_state', local, 'running snapshot refresh')
+    return this._runningStateMigrator().migrate(subjects)
+  },
+
+  _runningStateMigrator() {
+    if (!this._runningStateMigrationController) {
+      this._runningStateMigrationController = createPomodoroRunningStateMigrator({
+        safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+        safeSetPomodoroStorage: (key, value, context) => this._safeSetPomodoroStorage(key, value, context),
+        safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+      })
     }
-    // 无法映射的旧 code 缓存 → 安全清除，避免恢复出无科目会话
-    return this._safeRemovePomodoroStorage('pomodoro_running_state', 'stale running snapshot')
+    return this._runningStateMigrationController
   },
 
   /* ==================== UI Handlers ==================== */

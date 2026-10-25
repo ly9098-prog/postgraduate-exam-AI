@@ -80,10 +80,11 @@ const MODULES = {
   'cached-session-builder.js': [],
   'active-session-reconciler.js': [],
   'session-action-dropper.js': [],
+  'running-state-migrator.js': [],
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2184
+const PAGE_MAX_LINES = 2185
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -167,6 +168,7 @@ const PAGE_METHODS = new Set([
   '_getSessionActionDropController',
   '_pauseSyncController',
   '_activeSessionReconciler',
+  '_runningStateMigrator',
   // Pause adjustment helpers
   '_pauseAdjustmentStorage', '_clearLocalPauseAdjustment',
   '_maybeClearLocalPauseAdjustment', '_getLocalPauseAdjustment',
@@ -328,6 +330,14 @@ function pageViolations(source) {
               '_activeSessionReconcile',
             )) {
           errors.push('active session reconcile must lazily assign its controller')
+        }
+        if (methodName === '_runningStateMigrator' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPomodoroRunningStateMigrator',
+              '_runningStateMigrationController',
+            )) {
+          errors.push('running state migrator must lazily assign its controller')
         }
         if (methodName === 'startSession' &&
             !returnsStartControllerCall(node, 'start')) {

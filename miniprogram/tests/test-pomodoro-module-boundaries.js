@@ -13,8 +13,17 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 74)
+  assert.equal(result.modules, 75)
   assert.equal(result.edges, 18)
+})
+
+test('running state migrator shell lazily reuses one controller', () => {
+  const unassigned = pageSource.replace(
+    'this._runningStateMigrationController = createPomodoroRunningStateMigrator({',
+    'void createPomodoroRunningStateMigrator({'
+  )
+  assert.ok(pageViolations(unassigned)
+    .includes('running state migrator must lazily assign its controller'))
 })
 
 test('dependency injection examples cannot import page, API, storage or another package', () => {
@@ -910,7 +919,7 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 74)
+    assert.equal(result.modules, 75)
   }
 })
 test('confirm end timer shell must lazily reuse one controller', () => {

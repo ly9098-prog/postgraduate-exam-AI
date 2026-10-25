@@ -124,6 +124,9 @@ const sandbox = {
     if (request === './utils/active-session-reconciler') {
       return require('../pages/pomodoro/utils/active-session-reconciler')
     }
+    if (request === './utils/running-state-migrator') {
+      return require('../pages/pomodoro/utils/running-state-migrator')
+    }
     if (request === './utils/resume-error-controller') {
       return require('../pages/pomodoro/utils/resume-error-controller')
     }
