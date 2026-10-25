@@ -428,6 +428,7 @@ jobs:
           node --test miniprogram/tests/test-practice-launch-return-controller.js
           node --test miniprogram/tests/test-practice-exit-guard-controller.js
           node --test miniprogram/tests/test-practice-exit-request-controller.js
+          node --test miniprogram/tests/test-practice-paused-confirm-controller.js
           node --test miniprogram/tests/test-practice-launch-preset.js
           node --test miniprogram/tests/test-practice-question-batch.js
           node --test miniprogram/tests/test-practice-recent-subjects.js

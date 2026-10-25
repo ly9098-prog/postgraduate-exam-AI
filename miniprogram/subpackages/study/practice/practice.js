@@ -38,6 +38,7 @@ const { createSubjectSelectionController } = require('./utils/subject-selection-
 const { createLaunchReturnController } = require('./utils/launch-return-controller')
 const { createExitGuardController } = require('./utils/exit-guard-controller')
 const { createExitRequestController } = require('./utils/exit-request-controller')
+const { createPausedConfirmController } = require('./utils/paused-confirm-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -1248,30 +1249,23 @@ return Promise.resolve(false)
 return comp.show(opts)
 },
 async _showSubmitConfirmPaused(opts) {
-const session = this._practiceSession
-const pauseStartedMonoMs = monotonicNow()
-if (session) session._timingPauseActive = true
-this._settleQuestionTime(true)
-this._clearTimer()
-let confirmed = false
-try {
-confirmed = await this._showSubmitConfirm(opts)
-} finally {
-const pausedMs = Math.max(0, monotonicNow() - pauseStartedMonoMs)
-if (session) {
-session.backgroundMs = (session.backgroundMs || 0) + pausedMs
-session._timingPauseActive = false
-}
-}
-if (
-!confirmed && this._pageAlive && this._practiceSession === session &&
-this.data.started && !this.data.submitted && !this.data.submitting &&
-session && !session.submissionSnapshot
-) {
-session.currentQuestionStartedMonoMs = monotonicNow()
-this._startTimer()
-}
-return !!confirmed
+  return this._pausedConfirmController().show(opts)
+},
+_pausedConfirmController() {
+  return this._pausedConfirmControllerInstance || (
+    this._pausedConfirmControllerInstance = createPausedConfirmController({
+      getSession: () => this._practiceSession,
+      monotonicNow,
+      settleQuestionTime: pause => this._settleQuestionTime(pause),
+      clearTimer: () => this._clearTimer(),
+      showConfirm: options => this._showSubmitConfirm(options),
+      isPageAlive: () => this._pageAlive,
+      isStarted: () => this.data.started,
+      isSubmitted: () => this.data.submitted,
+      isSubmitting: () => this.data.submitting,
+      startTimer: () => this._startTimer(),
+    })
+  )
 },
 async doSubmit(skipConfirm) {
 if (this.data.submitting) return
