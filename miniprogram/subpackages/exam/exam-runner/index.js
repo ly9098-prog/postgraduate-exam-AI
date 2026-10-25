@@ -36,6 +36,9 @@ const {
 const {
   createExamReconnectController,
 } = require('../utils/exam-reconnect-controller')
+const {
+  createExamSubmitEntryController,
+} = require('../utils/exam-submit-entry-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -638,46 +641,39 @@ Page({
   },
 
   async submitExam(options = {}) {
-    if (this._attemptTerminal || this._navigationLocked) return false
-    if (this._submitPromise) return this._submitPromise
-    if (this.data.submitting) return
-    const auto = !!options.auto || this.data.timeExpired
-    if (!auto) {
-      if (this._confirmingSubmit) return
-      this._confirmingSubmit = true
-      const unanswered = Math.max(0, this.data.totalCount - this.data.answeredCount)
-      const marked = (this.data.questions || []).filter((q) => q._marked).length
-      let confirmed = false
-      try {
-        confirmed = await this._showAppDialog({
-          scenario: unanswered ? 'unanswered' : 'all-done',
-          title: '确认交卷',
-          message: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题待检查。` : ''}\n交卷后不可修改。`,
-          confirmText: '确认交卷',
-          cancelText: '继续检查',
-          hideEyebrow: true,
-        })
-      } finally {
-        this._confirmingSubmit = false
-      }
-      if (!confirmed) return
-    }
+    return this._examSubmitEntryController().request(options)
+  },
 
-    // The countdown can expire while the manual confirmation modal is open.
-    // In that case the auto-submit path may already have started; do not launch
-    // a second client-side flush/submit sequence after the modal resolves.
-    if (this._submitPromise) return this._submitPromise
-    if (this.data.submitting || this._attemptTerminal || this._navigationLocked) {
-      return false
-    }
-
-    const task = this._performSubmit(auto)
-    this._submitPromise = task
-    try {
-      return await task
-    } finally {
-      if (this._submitPromise === task) this._submitPromise = null
-    }
+  _examSubmitEntryController() {
+    return this._examSubmitEntry || (
+      this._examSubmitEntry = createExamSubmitEntryController({
+        isAttemptTerminal: () => this._attemptTerminal,
+        isNavigationLocked: () => this._navigationLocked,
+        getSubmitPromise: () => this._submitPromise,
+        isSubmitting: () => this.data.submitting,
+        isTimeExpired: () => this.data.timeExpired,
+        isConfirmingSubmit: () => this._confirmingSubmit,
+        setConfirmingSubmit: value => { this._confirmingSubmit = value },
+        showConfirmDialog: dialog => this._showAppDialog(dialog),
+        buildConfirmDialog: () => {
+          const unanswered = Math.max(0, this.data.totalCount - this.data.answeredCount)
+          const marked = (this.data.questions || []).filter((q) => q._marked).length
+          return {
+            scenario: unanswered ? 'unanswered' : 'all-done',
+            title: '确认交卷',
+            message: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题待检查。` : ''}\n交卷后不可修改。`,
+            confirmText: '确认交卷',
+            cancelText: '继续检查',
+            hideEyebrow: true,
+          }
+        },
+        performSubmit: auto => this._performSubmit(auto),
+        setSubmitPromise: task => { this._submitPromise = task },
+        clearSubmitPromise: task => {
+          if (this._submitPromise === task) this._submitPromise = null
+        },
+      })
+    )
   },
 
   async _performSubmit(auto) {

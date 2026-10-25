@@ -74,7 +74,7 @@ assert.equal(target.data.resultRecoveryPending, false)
   assert(source.includes('isTimeExpired: () => this.data.timeExpired'))
   assert(source.includes('isSubmitting: () => this.data.submitting'))
   assert(source.includes('isNavigationLocked: () => this._navigationLocked'))
-  assert(source.includes('if (this._attemptTerminal || this._navigationLocked) return false'))
+  assert(source.includes('isAttemptTerminal: () => this._attemptTerminal'))
 
   console.log('Exam terminal navigation regression passed')
 })().catch((error) => {
