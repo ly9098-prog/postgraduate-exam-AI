@@ -127,6 +127,7 @@ from app.services.task_queue_v2_dead_retry_contract import (
 )
 from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
 from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
+from app.services.task_queue_v1_to_v2_redis_contract import execute_v1_to_v2_drain
 from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
 from app.services.task_queue_v2_enqueue_contract import (
     build_v1_enqueue_task,
@@ -2126,58 +2127,18 @@ class DurableTaskQueue:
         """
         if not self._redis_enabled:
             return 0
-        migrated = 0
-        client = None
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return 0
-            await self._load_scripts(client)
-
-            max_ready = _get_max_ready(task_type)
-            for _ in range(batch_size):
-                result = await self._evalsha_or_reload(
-                    client,
-                    "_lua_drain_one_v1_to_v2",
-                    6,
-                    _q_key(task_type),
-                    _TASK_PREFIX,
-                    _v2_q_key(task_type),
-                    _V2_TASK_PREFIX,
-                    _V2_IDEMPOTENCY_PREFIX,
-                    _v2_corrupt_key(task_type),
-                    task_type,
-                    str(_IDEMPOTENT_TTL),
-                    str(max_ready),
-                    str(settings.TASK_QUEUE_CORRUPT_MAX),
-                    str(_FENCING_TOMBSTONE_TTL),
-                )
-                step = parse_v1_to_v2_result(result)
-                if not step.should_continue:
-                    break
-                if step.should_stop:
-                    if step.outcome == "queue_full":
-                        logger.warning(
-                            "v1→v2 drain paused: v2 ready queue full for %s",
-                            task_type,
-                        )
-                    else:
-                        logger.warning(
-                            "v1→v2 drain paused: task %s has v2 state without guard",
-                            step.task_id,
-                        )
-                    break
-                if step.is_migrated:
-                    migrated += 1
-                elif step.outcome == "duplicate":
-                    logger.info(
-                        "v1→v2 drain: task %s already in v2, skipping", step.task_id
-                    )
-                elif step.outcome == "corrupt":
-                    logger.warning(
-                        "v1→v2 drain: task %s preserved as corrupt", step.task_id
-                    )
-
+            migrated = await execute_v1_to_v2_drain(
+                self._get_script_client,
+                self._load_scripts,
+                self._evalsha_or_reload,
+                task_type=task_type,
+                batch_size=batch_size,
+                max_ready=_get_max_ready(task_type),
+                idempotent_ttl=_IDEMPOTENT_TTL,
+                corrupt_max=settings.TASK_QUEUE_CORRUPT_MAX,
+                tombstone_ttl=_FENCING_TOMBSTONE_TTL,
+            )
             if migrated:
                 logger.info(
                     "v1→v2 drain: migrated %d tasks for %s", migrated, task_type
@@ -2186,12 +2147,6 @@ class DurableTaskQueue:
         except Exception as e:
             logger.warning("v1→v2 drain failed for %s: %s", task_type, e)
             return migrated
-        finally:
-            if client is not None:
-                try:
-                    await client.aclose()
-                except Exception:
-                    pass
 
     async def drain_all_v1_to_v2(
         self, task_types: list[str] | None = None
