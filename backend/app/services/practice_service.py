@@ -134,6 +134,12 @@ from app.services.practice.smart_orchestrator import (
     SmartPracticeRequest,
     run_smart_practice,
 )
+from app.services.practice.stats import (
+    accuracy as _practice_accuracy,
+    load_daily_breakdown,
+    load_practice_totals,
+    load_subject_breakdown,
+)
 from app.services.practice.batch_wrong_book import (
     enqueue_wrong_answer_prewarm,
     persist_wrong_answer,
@@ -3011,79 +3017,15 @@ async def get_practice_stats(
     user_id: int,
     days: int = 7,
 ) -> dict:
-    base = select(
-        func.count(PracticeRecord.id),
-        func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-    ).where(PracticeRecord.user_id == user_id)
-
-    total_row = (await db.execute(base)).one()
-    total_answered = total_row[0]
-    total_correct = total_row[1]
-    accuracy = round(total_correct / total_answered, 4) if total_answered > 0 else 0.0
-
-    # By subject_code
-    from app.models.admin import Subject
-
-    subject_result = await db.execute(
-        select(
-            PracticeRecord.subject_id,
-            Subject.code,
-            Subject.name,
-            func.count(PracticeRecord.id),
-            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-        )
-        .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
-        .where(PracticeRecord.user_id == user_id)
-        .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
-    )
-    by_subject = []
-    for row in subject_result.all():
-        answered = row[3]
-        correct = row[4]
-        by_subject.append(
-            {
-                "subject_id": row[0],
-                "subject_code": row[1] or "",
-                "subject_name": row[2] or "",
-                "answered": answered,
-                "correct": correct,
-                "accuracy": round(correct / answered, 4) if answered > 0 else 0.0,
-            }
-        )
-
-    # Daily stats — bucket UTC DB timestamps by China calendar day.
-    today = shanghai_today()
-    since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
-    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
-    daily_result = await db.execute(
-        select(
-            day_expr,
-            func.count(PracticeRecord.id),
-            func.coalesce(func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0),
-        )
-        .where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.answered_at >= since,
-        )
-        .group_by(day_expr)
-        .order_by(day_expr)
-    )
-    daily_map = {
-        str(r[0]): {"answered": r[1], "correct": r[2]} for r in daily_result.all()
-    }
-
-    daily_stats = []
-    for i in range(days):
-        d = (today - timedelta(days=days - 1 - i)).isoformat()
-        entry = daily_map.get(d, {"answered": 0, "correct": 0})
-        daily_stats.append({"date": d, **entry})
-
+    total_answered, total_correct = await load_practice_totals(db, user_id)
+    by_subject = await load_subject_breakdown(db, user_id)
+    daily_stats = await load_daily_breakdown(db, user_id, days, _china_date_expr)
     streak = await _calc_streak(db, user_id)
 
     return {
         "total_answered": total_answered,
         "total_correct": total_correct,
-        "accuracy": accuracy,
+        "accuracy": _practice_accuracy(total_correct, total_answered),
         "by_subject": by_subject,
         "daily_stats": daily_stats,
         "current_streak": streak,
