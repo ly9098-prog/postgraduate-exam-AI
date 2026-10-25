@@ -30,6 +30,9 @@ const {
 const {
   createExamQuestionTimeController,
 } = require('../utils/exam-question-time-controller')
+const {
+  createExamQuestionNavigationController,
+} = require('../utils/exam-question-navigation-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -338,23 +341,7 @@ Page({
   },
 
   _setCurrent(index) {
-    const questions = this.data.questions || []
-    if (!questions.length) return
-    index = Math.max(0, Math.min(Number(index) || 0, questions.length - 1))
-    const q = questions[index]
-    const itemId = String(q._itemId)
-    const answer = this._answers[itemId] || {}
-    const renderView = this._renderCache[itemId]
-    this._questionEnterAt = api.now()
-    const answeredCount = questions.reduce((n, item) => n + (item._answered ? 1 : 0), 0)
-    this.setData({
-      currentIndex: index,
-      currentQuestion: q,
-      currentAnswerState: view.buildAnswerState(renderView, answer.selected_answer),
-      markedForReview: !!answer.marked_for_review,
-      answeredCount,
-      progressPercent: questions.length ? Math.round((answeredCount / questions.length) * 100) : 0,
-    })
+    this._examQuestionNavigationController().setCurrent(index)
   },
 
   _startTimer(initialRemaining) {
@@ -595,11 +582,28 @@ Page({
   },
 
   _moveTo(index) {
-    if (this.data.timeExpired || this.data.submitting || this._navigationLocked) return
-    const previousItemId = this._currentItemId()
-    this._settleCurrentTime({ sync: false })
-    if (previousItemId) this._syncItem(previousItemId).catch(() => {})
-    this._setCurrent(index)
+    this._examQuestionNavigationController().moveTo(index)
+  },
+
+  _examQuestionNavigationController() {
+    return this._examQuestionNavigation || (
+      this._examQuestionNavigation = createExamQuestionNavigationController({
+        getQuestions: () => this.data.questions || [],
+        getAnswer: itemId => this._answers[itemId],
+        getRenderView: itemId => this._renderCache[itemId],
+        setQuestionEnterAt: value => { this._questionEnterAt = value },
+        now: () => api.now(),
+        setData: patch => this.setData(patch),
+        buildAnswerState: (renderView, answer) => view.buildAnswerState(renderView, answer),
+        isTimeExpired: () => this.data.timeExpired,
+        isSubmitting: () => this.data.submitting,
+        isNavigationLocked: () => this._navigationLocked,
+        getCurrentItemId: () => this._currentItemId(),
+        settleCurrentTime: options => this._settleCurrentTime(options),
+        syncItem: itemId => this._syncItem(itemId),
+        setCurrent: index => this._setCurrent(index),
+      })
+    )
   },
   goPrev(e) { this._moveTo(e.detail.index) },
   goNext(e) { this._moveTo(e.detail.index) },
