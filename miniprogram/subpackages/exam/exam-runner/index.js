@@ -33,6 +33,9 @@ const {
 const {
   createExamQuestionNavigationController,
 } = require('../utils/exam-question-navigation-controller')
+const {
+  createExamReconnectController,
+} = require('../utils/exam-reconnect-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -565,20 +568,25 @@ Page({
   },
 
   async _recoverPendingAfterReconnect() {
-    if (!this._pageAlive || !this._attemptLoaded || this._reconnectSyncing || this._attemptTerminal || this._terminalNavigation) return
-    this._reconnectSyncing = true
-    try {
-      this._tickTimer()
-      if (this.data.timeExpired) {
-        if (!this.data.submitting) await this.submitExam({ auto: true })
-      } else {
-        await this._flushAllPending({ quiet: true })
-      }
-    } catch (_) {
-      // 保留 pending，等待下一次网络恢复或用户操作再次同步。
-    } finally {
-      this._reconnectSyncing = false
-    }
+    return this._examReconnectController().recoverPending()
+  },
+
+  _examReconnectController() {
+    return this._examReconnect || (
+      this._examReconnect = createExamReconnectController({
+        isPageAlive: () => this._pageAlive,
+        isAttemptLoaded: () => this._attemptLoaded,
+        isReconnectSyncing: () => this._reconnectSyncing,
+        isAttemptTerminal: () => this._attemptTerminal,
+        isTerminalNavigation: () => this._terminalNavigation,
+        setReconnectSyncing: value => { this._reconnectSyncing = value },
+        tickTimer: () => this._tickTimer(),
+        isTimeExpired: () => this.data.timeExpired,
+        isSubmitting: () => this.data.submitting,
+        submitExam: options => this.submitExam(options),
+        flushAllPending: options => this._flushAllPending(options),
+      })
+    )
   },
 
   _moveTo(index) {
