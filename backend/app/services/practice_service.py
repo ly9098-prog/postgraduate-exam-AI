@@ -143,6 +143,11 @@ from app.services.practice.sequential_service import (
     get_sequential_practice_questions,
     reset_sequential_progress,  # noqa: F401 — re-exported for the practice API
 )
+from app.services.practice.similar_supplement import (
+    SimilarRecallRequest,
+    load_similar_fill_questions,
+    load_similar_vector_questions,
+)
 from app.services.practice.strategy_weight_rerank import apply_strategy_weight_rerank
 from app.services.practice.smart_scored_supplement import (
     ScoredSupplementRequest,
@@ -1015,7 +1020,6 @@ async def get_similar_practice_questions(
     # 在向量召回后用 question_review_service.get_due_question_ids() 二次过滤
     # next_review_at > now 的题目，不足时用 random fallback 补齐（见
     # question_issuance.issue_practice_questions）。本函数只负责候选召回。
-    metadata: dict[int, dict] = {}
     scope_ids = (
         subject_ids
         if subject_ids is not None
@@ -1023,59 +1027,24 @@ async def get_similar_practice_questions(
     )
 
     # 1. 向量召回
-    vector_questions: list[Question] = []
-    vector_excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-    )
-    try:
-        from app.services import vector_retrieval_service
+    from app.services import vector_retrieval_service
 
-        result = await vector_retrieval_service.search_similar_questions(
+    vector_questions, metadata = await load_similar_vector_questions(
+        SimilarRecallRequest(
             db=db,
             user_id=user_id,
-            question_id=source_question_id,
-            count=count,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
+            source_question_id=source_question_id,
+            scope_ids=scope_ids,
+            excluded_sub=_build_excluded_question_subquery(
+                user_id=user_id,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+            ),
+            logger=logger,
+            search_similar=vector_retrieval_service.search_similar_questions,
+            revision_condition=_practice_revision_scope_condition,
         )
-        if result.get("enabled") and result.get("recommendations"):
-            rec_ids = [r["question_id"] for r in result["recommendations"]]
-            if rec_ids:
-                vector_conditions = [
-                    Question.id.in_(rec_ids),
-                    # A similarity session must never hand the seed question
-                    # straight back to the user, even if the vector provider
-                    # includes self-similarity in its top-k response.
-                    Question.id != source_question_id,
-                    Question.is_active,
-                    Question.subject_id.in_(scope_ids),
-                    _practice_revision_scope_condition(scope_ids),
-                ]
-                # Enforce repeat-window semantics at the authoritative DB read,
-                # rather than trusting a vector service/cache to have applied
-                # the latest PracticeRecord state perfectly.
-                if vector_excluded_sub is not None:
-                    vector_conditions.append(Question.id.notin_(vector_excluded_sub))
-                q_result = await db.execute(
-                    select(Question)
-                    .where(and_(*vector_conditions))
-                    .options(selectinload(Question.subject_ref))
-                )
-                q_map = {q.id: q for q in q_result.scalars().all()}
-                for rec in result["recommendations"]:
-                    q = q_map.get(rec["question_id"])
-                    if q:
-                        vector_questions.append(q)
-                        metadata[q.id] = {
-                            "recommend_reason": rec.get("match_reason", "向量相似"),
-                            "recommend_score": rec.get("recommend_score"),
-                            "strategy": "vector",
-                            "similarity": rec.get("similarity"),
-                        }
-    except Exception:
-        logger.warning("similar 模式向量召回失败，回退到随机", exc_info=True)
+    )
 
     if len(vector_questions) >= count:
         return vector_questions[:count], metadata
@@ -1100,19 +1069,12 @@ async def get_similar_practice_questions(
     if excluded_sub is not None:
         conditions.append(Question.id.notin_(excluded_sub))
 
-    need = count - len(vector_questions)
-    q = select(func.count()).select_from(
-        select(Question).where(and_(*conditions)).subquery()
+    fill_questions = await load_similar_fill_questions(
+        db,
+        conditions,
+        count - len(vector_questions),
+        _random_sample_query,
     )
-    total = (await db.execute(q)).scalar() or 0
-    q = (
-        select(Question)
-        .where(and_(*conditions))
-        .options(selectinload(Question.subject_ref))
-    )
-    q = _random_sample_query(q, total, need, Question.id)
-    result = await db.execute(q)
-    fill_questions = list(result.scalars().all())
 
     for fq in fill_questions:
         metadata[fq.id] = {
