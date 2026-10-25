@@ -39,6 +39,9 @@ const {
 const {
   createExamSubmitEntryController,
 } = require('../utils/exam-submit-entry-controller')
+const {
+  createExamExitRequestController,
+} = require('../utils/exam-exit-request-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -627,17 +630,26 @@ Page({
   },
 
   async requestExit() {
-    if (this.data.submitting || this._navigationLocked) return
-    this._settleCurrentTime().catch(() => {})
-    const confirmed = await this._showAppDialog({
-      scenario: 'all-done',
-      title: '暂时退出考试？',
-      message: '60 分钟内回来可继续作答；超过 60 分钟草稿将被清除，需要重新作答。',
-      confirmText: '退出',
-      cancelText: '继续作答',
-      hideEyebrow: true,
-    })
-    if (confirmed) wx.navigateBack({ delta: 1 })
+    return this._examExitRequestController().request()
+  },
+
+  _examExitRequestController() {
+    return this._examExitRequest || (
+      this._examExitRequest = createExamExitRequestController({
+        isSubmitting: () => this.data.submitting,
+        isNavigationLocked: () => this._navigationLocked,
+        settleCurrentTime: options => this._settleCurrentTime(options),
+        showExitDialog: () => this._showAppDialog({
+          scenario: 'all-done',
+          title: '暂时退出考试？',
+          message: '60 分钟内回来可继续作答；超过 60 分钟草稿将被清除，需要重新作答。',
+          confirmText: '退出',
+          cancelText: '继续作答',
+          hideEyebrow: true,
+        }),
+        navigateBack: options => wx.navigateBack(options),
+      })
+    )
   },
 
   async submitExam(options = {}) {
