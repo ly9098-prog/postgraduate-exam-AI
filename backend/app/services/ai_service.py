@@ -62,6 +62,10 @@ from app.services.ai.analysis_persistence import (
     persist_repaired_analysis,
     persist_valid_analysis,
 )
+from app.services.ai.analysis_preparation import (
+    AnalysisPreparationRequest,
+    prepare_analysis,
+)
 from app.services.ai.analysis_responses import (
     analysis_model_unconfigured_response,
     generation_in_progress_response,
@@ -512,101 +516,39 @@ async def analyze_error(
     wrong_question_id: int,
     force_regenerate: bool = False,
 ) -> dict:
-    wq_result = await db.execute(
-        select(WrongQuestion).where(
-            WrongQuestion.id == wrong_question_id,
-            WrongQuestion.user_id == user_id,
+    preparation = await prepare_analysis(
+        AnalysisPreparationRequest(
+            db=db,
+            user_id=user_id,
+            wrong_question_id=wrong_question_id,
+            force_regenerate=force_regenerate,
+            logger=logger,
+            load_runtime=_resolve_healthy_analysis_runtime,
+            build_grounding=build_answer_grounding,
+            revision_guard=check_analysis_revision_drift,
+            collect_visual_sources=_collect_question_visual_sources,
+            has_visual_slot=_question_has_unresolved_visual_slot,
+            load_knowledge_points=load_question_kps,
+            input_signature=_analysis_input_signature,
+            model_signature=_analysis_model_signature,
+            cached_response=build_cached_error_analysis_response,
+            cache_age=_analysis_cache_age_ms,
+            stale_reason=_analysis_cache_stale_reason,
         )
     )
-    wq = wq_result.scalar_one_or_none()
-    if not wq:
-        raise ValueError("错题记录不存在")
+    if preparation.response is not None:
+        return preparation.response
 
-    # AI advice is rendered next to wrong-book detail, so the teaching context
-    # follows the current question-bank projection that the learner sees. The
-    # immutable wrong-attempt revision is still checked as a safety boundary:
-    # if option/answer semantics changed, an old answer key must never be
-    # reinterpreted against the new projection.
-    q_result = await db.execute(select(Question).where(Question.id == wq.question_id))
-    q = q_result.scalar_one_or_none()
-    if q is None:
-        raise ValueError("题目不存在")
-
-    current_answer_grounding = build_answer_grounding(
-        question_type=getattr(q, "question_type", None),
-        content=q.content,
-        options=q.options,
-        correct_answer=q.answer,
-        user_answer=wq.wrong_answer,
-    )
-    revision_guard_response = await check_analysis_revision_drift(
-        db, wrong_question=wq, question=q
-    )
-    if revision_guard_response is not None:
-        return revision_guard_response
-
-    stored_visual_sources = _collect_question_visual_sources(q)
-    requires_visual = bool(
-        stored_visual_sources
-    ) or _question_has_unresolved_visual_slot(q)
-    # Pure text questions are valid and continue through the normal analysis
-    # path.  Fail fast only when the question schema explicitly declares a
-    # visual element but the persisted asset URL is missing.
-    if requires_visual and not stored_visual_sources:
-        logger.info(
-            "ai.error_analysis.image_missing wq_id=%d question_id=%d reason=declared_visual_without_source",
-            wq.id,
-            q.id,
-        )
-        return vision_input_missing_response()
-
-    kp_map = await load_question_kps(db, [int(q.id)])
-    knowledge_points = kp_map.get(int(q.id), [])
-    # Resolve the currently selected analysis model before the cache decision.
-    # This is a cheap DB lookup compared with an LLM call and lets a model
-    # configuration change invalidate old advice deterministically.
-    runtime = await _resolve_healthy_analysis_runtime(db)
-    input_signature = _analysis_input_signature(
-        wq, q, knowledge_points, visual_sources=stored_visual_sources
-    )
-    model_signature = _analysis_model_signature(runtime)
-
-    effective_force = bool(force_regenerate)
-
-    if not effective_force:
-        cached = build_cached_error_analysis_response(
-            wq,
-            requires_visual=requires_visual,
-            expected_input_signature=input_signature,
-            expected_model_signature=model_signature,
-        )
-        if cached is not None:
-            logger.info(
-                "ai.error_analysis.cache_hit wq_id=%d user_id=%d age_ms=%s model=%s",
-                wq.id,
-                user_id,
-                _analysis_cache_age_ms(wq.ai_analysis),
-                ((wq.ai_analysis or {}).get("_meta") or {}).get("model") or "unknown",
-            )
-            return cached
-        stale_reason = _analysis_cache_stale_reason(
-            wq.ai_analysis,
-            requires_visual=requires_visual,
-            expected_input_signature=input_signature,
-            expected_model_signature=model_signature,
-        )
-        logger.info(
-            "ai.error_analysis.cache_miss wq_id=%d user_id=%d reason=%s",
-            wq.id,
-            user_id,
-            stale_reason or "unknown",
-        )
-    else:
-        logger.info(
-            "force regenerate error analysis wq_id=%d user_id=%d",
-            wq.id,
-            user_id,
-        )
+    wq = preparation.wrong_question
+    q = preparation.question
+    current_answer_grounding = preparation.answer_grounding
+    stored_visual_sources = preparation.visual_sources
+    requires_visual = preparation.requires_visual
+    knowledge_points = preparation.knowledge_points
+    runtime = preparation.runtime
+    input_signature = preparation.input_signature
+    model_signature = preparation.model_signature
+    effective_force = preparation.force
 
     timeout_sec = (
         ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS
