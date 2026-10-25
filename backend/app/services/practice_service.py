@@ -134,6 +134,10 @@ from app.services.practice.smart_orchestrator import (
     SmartPracticeRequest,
     run_smart_practice,
 )
+from app.services.practice.batch_wrong_book import (
+    enqueue_wrong_answer_prewarm,
+    persist_wrong_answer,
+)
 from app.services.practice.smart_weakness_vector import (
     SmartWeaknessVectorRequest,
     run_smart_weakness_vector,
@@ -2909,27 +2913,17 @@ async def batch_submit_answers(
                     question_version_id=int(q.question_version_id),
                     commit=False,
                 )
-                from app.services import error_diagnosis_service
-
-                diagnosis = await error_diagnosis_service.record_error_event(
+                diagnosis_payload = await persist_wrong_answer(
                     db,
                     user_id=user_id,
-                    wrong_question_id=int(wrong.id),
-                    question_id=int(q.id),
-                    question_version_id=int(q.question_version_id),
-                    practice_record_id=int(record.id),
-                    source_context="practice",
-                    user_answer=record.user_answer,
-                    occurred_at=record.answered_at or now,
-                    queue_ai=False,
+                    record=record,
+                    question=q,
+                    wrong=wrong,
+                    now=now,
                 )
                 prewarm_wrong_questions.append(wrong)
                 wrong_question_ids[int(q.id)] = int(wrong.id)
-                setattr(
-                    record,
-                    "_error_diagnosis_payload",
-                    error_diagnosis_service.serialize_diagnosis(diagnosis),
-                )
+                setattr(record, "_error_diagnosis_payload", diagnosis_payload)
             await _create_answer_projection_outbox(
                 db,
                 practice_record_id=int(record.id),
@@ -2997,12 +2991,12 @@ async def batch_submit_answers(
             from app.ai.prewarm_revision import build_prewarm_revision
             from app.services.ai_prewarm_worker import enqueue_prewarm
 
-            for wrong in prewarm_wrong_questions:
-                revision = build_prewarm_revision(
-                    review_count=wrong.review_count,
-                    wrong_answer=wrong.wrong_answer,
-                )
-                await enqueue_prewarm(wrong.id, user_id, revision=revision)
+            await enqueue_wrong_answer_prewarm(
+                prewarm_wrong_questions,
+                user_id,
+                build_revision=build_prewarm_revision,
+                enqueue=enqueue_prewarm,
+            )
         except Exception:
             logger.warning(
                 "AI prewarm enqueue failed after practice batch", exc_info=True
