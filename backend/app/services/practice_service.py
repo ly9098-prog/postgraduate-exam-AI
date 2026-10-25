@@ -65,10 +65,12 @@ from app.services.practice.batch_token import (
     create_practice_batch_token,  # noqa: F401 — historical public import
 )
 from app.services.practice.chapter_scope import (
-    bucket_targets as _chapter_bucket_targets,
+    build_question_buckets,
+    question_knowledge_mapping,
+    select_bucket_questions,
 )
 from app.services.practice.chapter_scope import (
-    knowledge_bucket as _chapter_knowledge_bucket,
+    bucket_targets as _chapter_bucket_targets,
 )
 from app.services.practice.knowledge_scope import (
     load_active_knowledge_point,
@@ -547,8 +549,6 @@ async def get_knowledge_scope_practice_questions(
     A question linked to several target KPs is assigned to its highest-priority
     bucket and is returned at most once.
     """
-    from collections import defaultdict
-
     from app.models.question_knowledge_point import QuestionKnowledgePoint
     from app.models.user_knowledge_state import UserKnowledgeState
 
@@ -594,46 +594,14 @@ async def get_knowledge_scope_practice_questions(
             QuestionKnowledgePoint.knowledge_point_id.in_(target_ids),
         )
     )
-    q_to_kps: dict[int, list[int]] = defaultdict(list)
-    for question_id, kp_id in mapping_rows.all():
-        q_to_kps[int(question_id)].append(int(kp_id))
-
-    bucket_rank = {"weak": 0, "unobserved": 1, "developing": 2, "stable": 3}
-    buckets: dict[str, list[Question]] = {name: [] for name in bucket_rank}
-    for question in candidates:
-        kp_ids = q_to_kps.get(int(question.id), [])
-        labels = [_chapter_knowledge_bucket(states.get(kp_id)) for kp_id in kp_ids]
-        bucket = (
-            min(labels, key=lambda name: bucket_rank[name]) if labels else "unobserved"
-        )
-        buckets[bucket].append(question)
+    q_to_kps = question_knowledge_mapping(mapping_rows.all())
+    buckets = build_question_buckets(candidates, q_to_kps, states)
 
     # Preserve the candidate order produced by the Leitner/fallback pipeline.
     # Its SQL sampling already supplies randomness where appropriate; reshuffling
     # here would incorrectly let relaxed-repeat candidates jump ahead of fresh/due ones.
+    selected = select_bucket_questions(buckets, count)
     targets = _chapter_bucket_targets(count)
-    selected: list[Question] = []
-    selected_ids: set[int] = set()
-    for bucket in ("weak", "unobserved", "developing", "stable"):
-        for question in buckets[bucket][: targets[bucket]]:
-            if int(question.id) in selected_ids:
-                continue
-            selected.append(question)
-            selected_ids.add(int(question.id))
-
-    # Sparse buckets are common for new users. Fill the remaining capacity in
-    # priority order instead of returning a short batch.
-    if len(selected) < count:
-        for bucket in ("weak", "unobserved", "developing", "stable"):
-            for question in buckets[bucket]:
-                if int(question.id) in selected_ids:
-                    continue
-                selected.append(question)
-                selected_ids.add(int(question.id))
-                if len(selected) >= count:
-                    break
-            if len(selected) >= count:
-                break
 
     logger.info(
         "[KNOWLEDGE_SCOPE_PRACTICE] root_scope_size=%d requested=%d candidates=%d "
@@ -2609,10 +2577,12 @@ async def batch_submit_answers(
             f"skipped_question_ids 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题"
         )
 
-    answer_question_ids, skipped_ids, all_question_ids = validate_batch_submission_inputs(
-        answers=answers,
-        skipped_question_ids=skipped_question_ids,
-        max_questions=PRACTICE_BATCH_MAX_QUESTIONS,
+    answer_question_ids, skipped_ids, all_question_ids = (
+        validate_batch_submission_inputs(
+            answers=answers,
+            skipped_question_ids=skipped_question_ids,
+            max_questions=PRACTICE_BATCH_MAX_QUESTIONS,
+        )
     )
 
     payload_hash = _practice_submission_fingerprint(
@@ -2869,7 +2839,6 @@ async def batch_submit_answers(
             )
 
     return response_payload
-
 
 
 async def get_practice_stats(
