@@ -38,6 +38,7 @@ from app.services.task_queue_service import (
     TaskQueueUnavailableError,
     task_queue,
 )
+from app.services.worker_task_types import DISPATCHER_TASK_TYPES, REAPER_TASK_TYPES
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
 
@@ -863,17 +864,7 @@ async def run_pipeline_worker(
     global _worker_running
     _worker_running = True
 
-    task_types = [
-        TASK_TYPE_IMPORT_PIPELINE,
-        TASK_TYPE_IMAGE_PIPELINE,
-        TASK_TYPE_EXCEL_PIPELINE,
-        TASK_TYPE_RESUME_PIPELINE,
-        TASK_TYPE_ADMIN_RESUME,
-        TASK_TYPE_BATCH_IMAGE,
-        TASK_TYPE_FORMULA_BATCH,
-        TASK_TYPE_ANSWER_PROJECTION,
-        TASK_TYPE_ERROR_DIAGNOSIS,
-    ]
+    task_types = DISPATCHER_TASK_TYPES
 
     logger.info("Pipeline worker started: polling every %ss", poll_interval)
 
@@ -1584,17 +1575,7 @@ async def run_dispatcher_v2(
 
     semaphore = await get_worker_semaphore()
 
-    task_types = [
-        TASK_TYPE_IMPORT_PIPELINE,
-        TASK_TYPE_IMAGE_PIPELINE,
-        TASK_TYPE_EXCEL_PIPELINE,
-        TASK_TYPE_RESUME_PIPELINE,
-        TASK_TYPE_ADMIN_RESUME,
-        TASK_TYPE_BATCH_IMAGE,
-        TASK_TYPE_FORMULA_BATCH,
-        TASK_TYPE_ANSWER_PROJECTION,
-        TASK_TYPE_ERROR_DIAGNOSIS,
-    ]
+    task_types = DISPATCHER_TASK_TYPES
 
     logger.info(
         "v2 Dispatcher started: concurrency=%d poll=%ss",
@@ -1946,18 +1927,7 @@ async def run_reaper_loop(
     global _reaper_running
     _reaper_running = True
 
-    types = task_types or [
-        TASK_TYPE_IMPORT_PIPELINE,
-        TASK_TYPE_IMAGE_PIPELINE,
-        TASK_TYPE_EXCEL_PIPELINE,
-        TASK_TYPE_RESUME_PIPELINE,
-        TASK_TYPE_ADMIN_RESUME,
-        TASK_TYPE_BATCH_IMAGE,
-        TASK_TYPE_FORMULA_BATCH,
-        TASK_TYPE_ANSWER_PROJECTION,
-        TASK_TYPE_ERROR_DIAGNOSIS,
-        TASK_TYPE_PREWARM_ANALYSIS,
-    ]
+    types = task_types or REAPER_TASK_TYPES
 
     try:
         while _reaper_running:
@@ -1992,18 +1962,7 @@ async def run_reaper_loop_v2(
     global _v2_reaper_running
     _v2_reaper_running = True
 
-    types = task_types or [
-        TASK_TYPE_IMPORT_PIPELINE,
-        TASK_TYPE_IMAGE_PIPELINE,
-        TASK_TYPE_EXCEL_PIPELINE,
-        TASK_TYPE_RESUME_PIPELINE,
-        TASK_TYPE_ADMIN_RESUME,
-        TASK_TYPE_BATCH_IMAGE,
-        TASK_TYPE_FORMULA_BATCH,
-        TASK_TYPE_ANSWER_PROJECTION,
-        TASK_TYPE_ERROR_DIAGNOSIS,
-        TASK_TYPE_PREWARM_ANALYSIS,
-    ]
+    types = task_types or REAPER_TASK_TYPES
 
     try:
         while _v2_reaper_running:
