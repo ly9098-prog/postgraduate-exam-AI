@@ -80,7 +80,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2204
+const PAGE_MAX_LINES = 2193
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -161,6 +161,7 @@ const PAGE_METHODS = new Set([
   '_clearPendingPomodoroSync', '_updatePendingPomodoroSync',
   '_dropPendingPomodoroSessionActions', '_isPomodoroStorageError',
   '_isValidConfirmSnapshot', '_postPauseWithRetry',
+  '_getSessionActionDropController',
   // Pause adjustment helpers
   '_pauseAdjustmentStorage', '_clearLocalPauseAdjustment',
   '_maybeClearLocalPauseAdjustment', '_getLocalPauseAdjustment',

@@ -51,6 +51,7 @@ const {
 const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
 const { createPomodoroPauseSyncController } = require('./utils/pause-sync-controller')
+const { createPomodoroSessionActionDropper } = require('./utils/session-action-dropper')
 const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
@@ -1411,30 +1412,18 @@ Page({
   },
 
   _dropPendingPomodoroSessionActions(sessionId) {
-    const queue = this._getPendingPomodoroSyncQueue()
-    if (queue === null) return false
-    const persisted = this._writePendingPomodoroSyncQueue(
-      queue.filter(item => item.sessionId !== sessionId)
-    )
-    if (!persisted) return false
+    return this._sessionActionDropper().drop(sessionId)
+  },
 
-    // Also remove stale per-session optimistic snapshots. Never touch a newer
-    // session's cache when reconciliation discovers an old cross-device row.
-    const staleSnapshotKeys = ['pomodoro_pause', 'pomodoro_free_pause', 'pomodoro_pause_adjustment']
-    for (var keyIndex = 0; keyIndex < staleSnapshotKeys.length; keyIndex += 1) {
-      const key = staleSnapshotKeys[keyIndex]
-      const stored = this._safeGetPomodoroStorage(key, 'drop reconciled session snapshot')
-      if (!stored.ok) return false
-      if (stored.value && stored.value.sessionId === sessionId) {
-        if (!this._safeRemovePomodoroStorage(key, 'drop reconciled session snapshot')) return false
-      }
-    }
-    const running = this._safeGetPomodoroStorage('pomodoro_running_state', 'drop reconciled running snapshot')
-    if (!running.ok) return false
-    if (running.value && running.value.sessionId === sessionId) {
-      if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'drop reconciled running snapshot')) return false
-    }
-    return true
+  _getSessionActionDropController() {
+    return this._sessionActionDrop || (
+      this._sessionActionDrop = createPomodoroSessionActionDropper({
+        getPendingPomodoroSyncQueue: () => this._getPendingPomodoroSyncQueue(),
+        writePendingPomodoroSyncQueue: queue => this._writePendingPomodoroSyncQueue(queue),
+        safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+        safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+      })
+    )
   },
 
   _isPomodoroStorageError(value) {
