@@ -214,76 +214,81 @@ this._loadedOnce = true
 this.setData({ loading: false })
 }
 },
-applyOverview(overview) {
-const data = overview || {}
-const defaults = data.suggested_defaults || {}
-if (!data.configured || !data.plan) {
-const dailyValue = Number(defaults.daily_minutes) || 90
-const weeklyValue = Number(defaults.weekly_days) || 6
-const priorityValue = String(defaults.priority_mode || 'balanced')
-this.setData({
-configured: false,
-dailyIndex: Math.max(0, DAILY_OPTIONS.indexOf(dailyValue)),
-weeklyIndex: Math.max(0, WEEKLY_OPTIONS.indexOf(weeklyValue)),
-priorityIndex: Math.max(0, PRIORITY_OPTIONS.findIndex(item => item.value === priorityValue)),
-allocations: [],
-})
-return
-}
-const plan = data.plan
-const countdown = data.countdown || {}
-const weekly = data.weekly || {}
-const today = data.today || {}
-const dailyIndex = DAILY_OPTIONS.indexOf(Number(plan.daily_minutes))
-const weeklyIndex = WEEKLY_OPTIONS.indexOf(Number(plan.weekly_days))
-const priorityIndex = PRIORITY_OPTIONS.findIndex(item => item.value === String(plan.priority_mode))
-const allocations = (Array.isArray(today.allocations) ? today.allocations : []).map(item => {
-const meta = CATEGORY_META[item.category] || { label: '任务', code: 'T' }
-const adjusted = Math.max(0, Number(item.adjusted_minutes) || 0)
-const planned = Math.max(0, Number(item.planned_minutes) || 0)
-const completed = Math.max(0, Number(item.completed_minutes) || 0)
-let statusText = '等待安排'
-if (item.status === 'done') statusText = '本项已完成'
-else if (item.status === 'unavailable') statusText = '时间已转给其他任务'
-else if (adjusted > 0) statusText = `接下来 ${adjusted} 分钟`
-return {
-category: item.category,
-label: meta.label,
-code: meta.code,
-title: item.title || `${meta.label}任务`,
-reason: item.reason || '',
-plannedMinutes: planned,
-completedMinutes: completed,
-adjustedMinutes: adjusted,
-status: item.status || 'available',
-statusText,
-actionLabel: item.action_label || '开始',
-route: item.route || '',
-routeParams: item.route_params || {},
-canOpen: !!item.route && adjusted > 0,
-}
-})
-this._overview = data
-this.setData({
-configured: true,
-targetDate: String(plan.target_date || ''),
-targetDateText: formatTargetDate(plan.target_date),
-dailyIndex: dailyIndex >= 0 ? dailyIndex : 3,
-weeklyIndex: weeklyIndex >= 0 ? weeklyIndex : 3,
-priorityIndex: priorityIndex >= 0 ? priorityIndex : 0,
-daysRemaining: Math.max(0, Number(countdown.days_remaining) || 0),
-phaseLabel: countdown.phase_label || '',
-weeklyText: `本周 ${Number(weekly.active_days) || 0}/${Number(weekly.target_days) || plan.weekly_days} 天`,
-todayTargetText: today.is_rest_day
-? '今天建议休息 / 轻量复盘'
-: `今日 ${Number(today.target_minutes) || 0} 分钟`,
-todayProgressText: `${Number(today.completed_minutes) || 0} / ${Number(today.target_minutes) || 0} 分钟`,
-todayProgressPercent: Math.max(0, Math.min(100, Number(today.completion_percent) || 0)),
-focusMinutes: Math.max(0, Number(today.focus_minutes) || 0),
-isRestDay: !!today.is_rest_day,
-allocations,
-})
-},
+  applyOverview(overview) {
+    var data = overview || {}
+    var defaults = data.suggested_defaults || {}
+    if (!data.configured || !data.plan) {
+      this._applyOverviewDefaults(defaults)
+      return
+    }
+    this._applyOverviewConfigured(data)
+  },
+
+  _applyOverviewDefaults(defaults) {
+    var dailyValue = Number(defaults.daily_minutes) || 90
+    var weeklyValue = Number(defaults.weekly_days) || 6
+    var priorityValue = String(defaults.priority_mode || "balanced")
+    this.setData({
+      configured: false,
+      dailyIndex: Math.max(0, DAILY_OPTIONS.indexOf(dailyValue)),
+      weeklyIndex: Math.max(0, WEEKLY_OPTIONS.indexOf(weeklyValue)),
+      priorityIndex: Math.max(0, PRIORITY_OPTIONS.findIndex(function(item) { return item.value === priorityValue; })),
+      allocations: [],
+    })
+  },
+
+  _applyOverviewConfigured(data) {
+    var plan = data.plan, countdown = data.countdown || {}, weekly = data.weekly || {}, today = data.today || {}
+    var dailyIndex = DAILY_OPTIONS.indexOf(Number(plan.daily_minutes))
+    var weeklyIndex = WEEKLY_OPTIONS.indexOf(Number(plan.weekly_days))
+    var priorityIndex = PRIORITY_OPTIONS.findIndex(function(item) { return item.value === String(plan.priority_mode); })
+    var allocations = this._buildAllocations(today.allocations)
+    this._overview = data
+    this.setData(this._buildOverviewPatch(plan, countdown, weekly, today, dailyIndex, weeklyIndex, priorityIndex, allocations))
+  },
+
+  _buildAllocations(rawAllocations) {
+    return (Array.isArray(rawAllocations) ? rawAllocations : []).map(this._buildAllocationItem.bind(this))
+  },
+
+  _buildAllocationItem(item) {
+    var meta = CATEGORY_META[item.category] || { label: "任务", code: "T" }
+    var adjusted = Math.max(0, Number(item.adjusted_minutes) || 0)
+    var planned = Math.max(0, Number(item.planned_minutes) || 0)
+    var completed = Math.max(0, Number(item.completed_minutes) || 0)
+    var statusText = "等待安排"
+    if (item.status === "done") statusText = "本项已完成"
+    else if (item.status === "unavailable") statusText = "时间已转给其他任务"
+    else if (adjusted > 0) statusText = "接下来 " + adjusted + " 分钟"
+    return {
+      category: item.category, label: meta.label, code: meta.code,
+      title: item.title || (meta.label + "任务"), reason: item.reason || "",
+      plannedMinutes: planned, completedMinutes: completed, adjustedMinutes: adjusted,
+      status: item.status || "available", statusText: statusText,
+      actionLabel: item.action_label || "开始", route: item.route || "",
+      routeParams: item.route_params || {}, canOpen: !!item.route && adjusted > 0,
+    }
+  },
+
+  _buildOverviewPatch(plan, countdown, weekly, today, dailyIndex, weeklyIndex, priorityIndex, allocations) {
+    return {
+      configured: true,
+      targetDate: String(plan.target_date || ""),
+      targetDateText: formatTargetDate(plan.target_date),
+      dailyIndex: dailyIndex >= 0 ? dailyIndex : 3,
+      weeklyIndex: weeklyIndex >= 0 ? weeklyIndex : 3,
+      priorityIndex: priorityIndex >= 0 ? priorityIndex : 0,
+      daysRemaining: Math.max(0, Number(countdown.days_remaining) || 0),
+      phaseLabel: countdown.phase_label || "",
+      weeklyText: "本周 " + (Number(weekly.active_days) || 0) + "/" + (Number(weekly.target_days) || plan.weekly_days) + " 天",
+      todayTargetText: today.is_rest_day ? "今天建议休息 / 轻量复盘" : "今日 " + (Number(today.target_minutes) || 0) + " 分钟",
+      todayProgressText: (Number(today.completed_minutes) || 0) + " / " + (Number(today.target_minutes) || 0) + " 分钟",
+      todayProgressPercent: Math.max(0, Math.min(100, Number(today.completion_percent) || 0)),
+      focusMinutes: Math.max(0, Number(today.focus_minutes) || 0),
+      isRestDay: !!today.is_rest_day,
+      allocations: allocations,
+    }
+  },
 
 _getQuestionGoalIndex() {
 const stored = Number(storage.get(QUESTION_GOAL_KEY))
@@ -393,58 +398,55 @@ const dialog = this.selectComponent('#appDialog')
 if (!dialog || typeof dialog.show !== 'function') return Promise.resolve(false)
 return dialog.show(opts || {})
 },
-async savePlan() {
-if (this.data.saving) return
-this._saveQuestionGoal(this.data.questionGoalIndex)
-const strategyValidation = studyStrategy.validateProfile(this._buildStrategyProfile())
-if (!strategyValidation.valid) {
-wx.showToast({ title: strategyValidation.message, icon: 'none' })
-return
-}
-try {
-studyStrategy.saveProfile(strategyValidation.profile)
-} catch (error) {
-wx.showToast({ title: error.message || '四科策略保存失败', icon: 'none' })
-return
-}
-const today = this._syncMinDate()
-const targetDate = String(this.data.targetDate || '')
-if (!targetDate) {
-wx.showToast({ title: '四科策略已保存', icon: 'success' })
-return
-}
-const targetDateMs = getChinaDayStartUtcMs(targetDate)
-if (!Number.isFinite(targetDateMs) || getChinaDate(0, targetDateMs) !== targetDate) {
-wx.showToast({ title: '请选择有效的目标日期', icon: 'none' })
-return
-}
-if (targetDate < today) {
-wx.showToast({ title: '目标日期已过期，请重新选择', icon: 'none' })
-return
-}
-const payload = {
-target_date: targetDate,
-daily_minutes: DAILY_OPTIONS[this.data.dailyIndex],
-weekly_days: WEEKLY_OPTIONS[this.data.weeklyIndex],
-priority_mode: PRIORITY_OPTIONS[this.data.priorityIndex].value,
-}
-this.setData({ saving: true })
-try {
-await api.put('/study-plan', payload)
-wx.showToast({ title: this.data.configured ? '计划已更新' : '计划已创建', icon: 'success' })
-await this.loadOverview()
-} catch (error) {
-const today = this._syncMinDate()
-const expired = error.statusCode === 422 && payload.target_date < today
-wx.showToast({
-title: expired ? '目标日期已过期，请重新选择' : `计划保存失败，四科策略已保留：${api.getErrorMessage(error)}`,
-icon: 'none',
-duration: 2600,
-})
-} finally {
-this.setData({ saving: false })
-}
-},
+  async savePlan() {
+    if (this.data.saving) return
+    this._saveQuestionGoal(this.data.questionGoalIndex)
+    if (!this._validateAndSaveStrategy()) return
+    if (!this._validateTargetDate()) return
+    await this._submitPlan()
+  },
+
+  _validateAndSaveStrategy() {
+    var v = studyStrategy.validateProfile(this._buildStrategyProfile())
+    if (!v.valid) { wx.showToast({ title: v.message, icon: "none" }); return false }
+    try { studyStrategy.saveProfile(v.profile) } catch (error) {
+      wx.showToast({ title: error.message || "四科策略保存失败", icon: "none" }); return false
+    }
+    return true
+  },
+
+  _validateTargetDate() {
+    var today = this._syncMinDate()
+    var targetDate = String(this.data.targetDate || "")
+    if (!targetDate) { wx.showToast({ title: "四科策略已保存", icon: "success" }); return false }
+    var targetDateMs = getChinaDayStartUtcMs(targetDate)
+    if (!Number.isFinite(targetDateMs) || getChinaDate(0, targetDateMs) !== targetDate) {
+      wx.showToast({ title: "请选择有效的目标日期", icon: "none" }); return false
+    }
+    if (targetDate < today) { wx.showToast({ title: "目标日期已过期，请重新选择", icon: "none" }); return false }
+    return true
+  },
+
+  async _submitPlan() {
+    var payload = {
+      target_date: String(this.data.targetDate || ""),
+      daily_minutes: DAILY_OPTIONS[this.data.dailyIndex],
+      weekly_days: WEEKLY_OPTIONS[this.data.weeklyIndex],
+      priority_mode: PRIORITY_OPTIONS[this.data.priorityIndex].value,
+    }
+    this.setData({ saving: true })
+    try {
+      await api.put("/study-plan", payload)
+      wx.showToast({ title: this.data.configured ? "计划已更新" : "计划已创建", icon: "success" })
+      await this.loadOverview()
+    } catch (error) {
+      var today = this._syncMinDate()
+      var expired = error.statusCode === 422 && payload.target_date < today
+      wx.showToast({ title: expired ? "目标日期已过期，请重新选择" : "计划保存失败，四科策略已保留：" + api.getErrorMessage(error), icon: "none", duration: 2600 })
+    } finally {
+      this.setData({ saving: false })
+    }
+  },
 async deletePlan() {
 if (!this.data.configured || this.data.saving) return
 const confirmed = await this._showAppDialog({
