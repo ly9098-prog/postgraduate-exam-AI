@@ -125,69 +125,84 @@ if (/入栈|出栈|栈|stack|序列|操作/.test(text)) return 'layers'
 if (/c语言|字符|标识符|code|string|kmp|search|查找|binary/.test(text)) return 'code'
 return ['nodes', 'tree', 'move', 'layers', 'code', 'relation', 'chip', 'queue'][index % 8]
 }
+const collectMatchedNodes = (group, config, query) => {
+  const matchedIds = new Set()
+  const matchedAliases = new Map()
+  group.nodes.forEach((node) => {
+    if (config.statuses && !config.statuses.includes(node.status)) return
+    const searchMatch = pointSearchMatch(node, query)
+    if (!searchMatch.matched) return
+    const id = Number(node.knowledge_point_id)
+    matchedIds.add(id)
+    if (searchMatch.alias) matchedAliases.set(id, searchMatch.alias)
+  })
+  return { matchedIds, matchedAliases }
+}
+
+const expandVisibleAncestors = (matchedIds, fullById) => {
+  const visibleIds = new Set(matchedIds)
+  matchedIds.forEach((id) => {
+    let cursor = fullById.get(Number(id))
+    const seen = new Set()
+    while (cursor && cursor.parentId && !seen.has(Number(cursor.parentId))) {
+      const parentId = Number(cursor.parentId)
+      seen.add(parentId)
+      if (!fullById.has(parentId)) break
+      visibleIds.add(parentId)
+      cursor = fullById.get(parentId)
+    }
+  })
+  return visibleIds
+}
+
+const buildFilteredNodes = (group, visibleIds, matchedIds, matchedAliases) => {
+  let filteredNodes = group.nodes.reduce((result, node, nodeIndex) => {
+    const id = Number(node.knowledge_point_id)
+    if (!visibleIds.has(id)) return result
+    const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
+    result.push({
+      ...node,
+      groupKey: String(group.key),
+      groupName: group.name,
+      iconKind: nodeIconKind,
+      iconSrc: themeIconSrc(nodeIconKind),
+      matched: matchedIds.has(id),
+      contextOnly: !matchedIds.has(id),
+      matchedAlias: matchedAliases.get(id) || '',
+    })
+    return result
+  }, [])
+  const visibleChildCount = new Map()
+  filteredNodes.forEach((node) => {
+    const parentId = Number(node.parentId)
+    if (!parentId) return
+    visibleChildCount.set(parentId, (visibleChildCount.get(parentId) || 0) + 1)
+  })
+  filteredNodes = filteredNodes.map(node => ({ ...node, visibleChildCount: visibleChildCount.get(Number(node.knowledge_point_id)) || 0 }))
+  return filteredNodes
+}
+
+const buildFilteredKnowledgeGroup = (group, groupIndex, config, query) => {
+  const groupIconKind = themeIconKind(group, groupIndex)
+  const groupIconSrc = themeIconSrc(groupIconKind)
+  const fullById = new Map(group.nodes.map(node => [Number(node.knowledge_point_id), node]))
+  const { matchedIds, matchedAliases } = collectMatchedNodes(group, config, query)
+  const forceOpenTree = Boolean(query) || config.id !== 'all'
+  const visibleIds = forceOpenTree ? expandVisibleAncestors(matchedIds, fullById) : new Set(matchedIds)
+  const filteredNodes = buildFilteredNodes(group, visibleIds, matchedIds, matchedAliases)
+  return {
+    ...group,
+    iconKind: groupIconKind,
+    iconSrc: groupIconSrc,
+    matchCount: matchedIds.size,
+    nodes: filteredNodes,
+    rootNode: filteredNodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId)) || null,
+  }
+}
+
 const buildFilteredKnowledgeGroups = (groups, config, queryValue) => {
-const query = normalizeSearchText(queryValue)
-const forceOpenTree = Boolean(query) || config.id !== 'all'
-return (Array.isArray(groups) ? groups : []).map((group, groupIndex) => {
-const groupIconKind = themeIconKind(group, groupIndex)
-const groupIconSrc = themeIconSrc(groupIconKind)
-const fullById = new Map(group.nodes.map(node => [Number(node.knowledge_point_id), node]))
-const matchedIds = new Set()
-const matchedAliases = new Map()
-group.nodes.forEach((node) => {
-if (config.statuses && !config.statuses.includes(node.status)) return
-const searchMatch = pointSearchMatch(node, query)
-if (!searchMatch.matched) return
-const id = Number(node.knowledge_point_id)
-matchedIds.add(id)
-if (searchMatch.alias) matchedAliases.set(id, searchMatch.alias)
-})
-const visibleIds = new Set(matchedIds)
-if (forceOpenTree) {
-matchedIds.forEach((id) => {
-let cursor = fullById.get(Number(id))
-const seen = new Set()
-while (cursor && cursor.parentId && !seen.has(Number(cursor.parentId))) {
-const parentId = Number(cursor.parentId)
-seen.add(parentId)
-if (!fullById.has(parentId)) break
-visibleIds.add(parentId)
-cursor = fullById.get(parentId)
-}
-})
-}
-let filteredNodes = group.nodes.reduce((result, node, nodeIndex) => {
-const id = Number(node.knowledge_point_id)
-if (!visibleIds.has(id)) return result
-const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
-result.push({
-...node,
-groupKey: String(group.key),
-groupName: group.name,
-iconKind: nodeIconKind,
-iconSrc: themeIconSrc(nodeIconKind),
-matched: matchedIds.has(id),
-contextOnly: !matchedIds.has(id),
-matchedAlias: matchedAliases.get(id) || '',
-})
-return result
-}, [])
-const visibleChildCount = new Map()
-filteredNodes.forEach((node) => {
-const parentId = Number(node.parentId)
-if (!parentId) return
-visibleChildCount.set(parentId, (visibleChildCount.get(parentId) || 0) + 1)
-})
-filteredNodes = filteredNodes.map(node => ({ ...node, visibleChildCount: visibleChildCount.get(Number(node.knowledge_point_id)) || 0 }))
-return {
-...group,
-iconKind: groupIconKind,
-iconSrc: groupIconSrc,
-matchCount: matchedIds.size,
-nodes: filteredNodes,
-rootNode: filteredNodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId)) || null,
-}
-})
+  const query = normalizeSearchText(queryValue)
+  return (Array.isArray(groups) ? groups : []).map((group, groupIndex) => buildFilteredKnowledgeGroup(group, groupIndex, config, query))
 }
 const formatThemeOrder = (group, index = 0) => {
 const value = group && group.number != null ? String(group.number) : String(index + 1)
@@ -498,126 +513,147 @@ _restoreScrollPosition() {
 // route creation/return can race the WebView lifecycle in DevTools.
 },
 async loadMap(showLoading = true, options = {}) {
-if (!Number.isInteger(this.subjectId) || this.subjectId <= 0) return
-const requestId = (this._requestId || 0) + 1
-this._requestId = requestId
-if (showLoading) this.setData({ loading: !this._loadedOnce, error: '', refreshError: '' })
-try {
-const data = await api.get(`/knowledge-map/subjects/${this.subjectId}`)
-if (this._unloaded || this._pageVisible === false || requestId !== this._requestId) return
-if (!data || !data.subject) throw new Error('知识图谱暂不可用')
-const pendingReceipts = knowledgePracticeSync.getForSubject(this.subjectId)
-const receiptByPointId = new Map()
-pendingReceipts.forEach((receipt) => {
-const id = Number(receipt && receipt.knowledgePointId) || 0
-if (id && !receiptByPointId.has(id)) receiptByPointId.set(id, receipt)
-})
-const resolvedReceipts = []
-this._nodes = (Array.isArray(data.nodes) ? data.nodes : []).map((item) => {
-const score = percent(item.mastery_score)
-const backendAccuracy = accuracyPercent(item.accuracy)
-const backendAttemptCount = nonnegative(item.attempt_count)
-const backendStatus = STATUS_TEXT[item.status] ? item.status : 'no_data'
-const pointId = Number(item.knowledge_point_id) || 0
-const receipt = receiptByPointId.get(pointId) || null
-// A historical attempt is not proof that the latest session projected.
-// Only the direct counter reaching launch baseline + expected answers clears it.
-const receiptResolved = Boolean(receipt && knowledgePracticeSync.resolveReceipt(receipt, backendAttemptCount))
-if (receiptResolved) resolvedReceipts.push(receipt)
-const pendingSync = Boolean(receipt && !receiptResolved)
-const receiptAnswered = receipt ? Math.max(0, Number(receipt.correctCount) || 0) + Math.max(0, Number(receipt.wrongCount) || 0) : 0
-const receiptAccuracy = receiptAnswered > 0 ? percent((Number(receipt.correctCount) || 0) / receiptAnswered * 100) : null
-const status = pendingSync || (backendStatus === 'no_data' && backendAttemptCount > 0) ? 'insufficient' : backendStatus
-const attemptCount = pendingSync ? Math.max(backendAttemptCount, receipt.expectedMinAttemptCount || receiptAnswered) : backendAttemptCount
-const aliases = Array.isArray(item.aliases)
-? item.aliases.map(alias => String(alias || '').trim()).filter(Boolean)
-: []
-return {
-...item, aliases, name: String(item.name || '未命名知识点'), status,
-statusText: pendingSync ? '已作答 · 待更新' : STATUS_TEXT[status],
-tone: status === 'weak' || status === 'developing' ? 'weak' : (status === 'good' || status === 'mastered' ? 'stable' : 'unseen'),
-scoreText: score == null ? '待建立' : `${score}%`, hasScore: score != null,
-accuracyText: pendingSync ? (receiptAccuracy == null ? '已作答' : `${receiptAccuracy}%`) : (backendAccuracy == null ? '暂无' : `${backendAccuracy}%`),
-attempt_count: attemptCount,
-pendingSync,
-trainable_question_count: nonnegative(item.trainable_question_count),
-hasPractice: nonnegative(item.trainable_question_count) > 0,
-}
-})
-if (resolvedReceipts.length) knowledgePracticeSync.remove(resolvedReceipts)
-this._groups = buildKnowledgeGroups(this._nodes, data.subject)
-const graduation = summarizeGroups(this._groups)
-this._groups = graduation.items
-if (!this._loadedOnce && !(options && options.preserveViewState) && !(this._expandedNodeIds && this._expandedNodeIds.size)) {
-const firstStructuredGroup = this._groups.find(group => group && group.rootNode && group.rootNode.hasChildren)
-if (firstStructuredGroup) {
-const rootId = Number(firstStructuredGroup.rootId)
-if (rootId) this._expandedNodeIds.add(rootId)
-const firstStructuredChild = firstStructuredGroup.nodes.find(node => Number(node.parentId) === rootId && node.hasChildren)
-if (firstStructuredChild) this._expandedNodeIds.add(Number(firstStructuredChild.knowledge_point_id))
-}
-}
-this._nodeById = new Map()
-this._groups.forEach(group => group.nodes.forEach((node) => {
-const pathNames = (Array.isArray(node.pathIds) ? node.pathIds : [])
-.map(id => group.nodes.find(item => Number(item.knowledge_point_id) === Number(id)))
-.filter(Boolean)
-.map(item => item.name)
-this._nodeById.set(Number(node.knowledge_point_id), {
-...node,
-groupKey: group.key,
-groupName: group.name,
-pathText: pathNames.join(' > ') || group.name,
-})
-}))
-const validNodeIds = new Set(this._nodeById.keys())
-this._expandedNodeIds = new Set(Array.from(this._expandedNodeIds || []).filter(id => validNodeIds.has(Number(id))))
-const total = nonnegative(data.subject.trainable_knowledge_points == null ? this._nodes.filter(node => node.hasPractice).length : data.subject.trainable_knowledge_points)
-const reliable = nonnegative(data.subject.reliable_knowledge_points)
-const weak = nonnegative(data.subject.weak_knowledge_points)
-const coverageRatio = Number(data.subject.coverage_ratio)
-const coverage = Number.isFinite(coverageRatio)
-? percent(Math.abs(coverageRatio) <= 1 ? coverageRatio * 100 : coverageRatio)
-: (total ? percent(reliable / total * 100) : 0)
-const syllabus = data.syllabus_version
-const filters = FILTERS.map(item => ({ id: item.id, label: item.label, count: item.statuses ? this._nodes.filter(node => item.statuses.includes(node.status)).length : this._nodes.length }))
-const firstLoad = !this._loadedOnce
-const preserveViewState = options && options.preserveViewState
-if (preserveViewState) {
-this._focusNodeId = Math.max(0, Number(preserveViewState.focusNodeId) || 0)
-this._graphPage = Math.max(0, Number(preserveViewState.graphPage) || 0)
-this._selectedId = Math.max(0, Number(preserveViewState.selectedId) || 0)
-this._expandedNodeIds = new Set((Array.isArray(preserveViewState.expandedNodeIds) ? preserveViewState.expandedNodeIds : [])
-.map(Number)
-.filter(id => Number.isInteger(id) && id > 0 && validNodeIds.has(id)))
-this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(preserveViewState.indexLimit) || INITIAL_INDEX_LIMIT)
-if (preserveViewState.camera && this._frame) {
-this._camera = clampCamera({
-x: Number(preserveViewState.camera.x) || 0,
-y: Number(preserveViewState.camera.y) || 0,
-scale: Number(preserveViewState.camera.scale) || 1,
-}, this._frame)
-}
-}
-this._loadedOnce = true
-wx.setNavigationBarTitle({ title: `${data.subject.subject_name} · 知识图谱` })
-this.setData({
-loading: false, error: '', refreshError: '', subject: data.subject, filters,
-syllabusText: syllabus ? [syllabus.name, syllabus.effective_year].filter(Boolean).join(' · ') : '',
-stats: { total, reliable, weak, coverage: coverage == null ? 0 : coverage },
-chapterGraduation: graduation.summary,
-...(preserveViewState ? this._viewStateDataPatch(preserveViewState) : {}),
-...(preserveViewState ? this.cameraPayload(true) : {}),
-}, () => this.applyView(firstLoad && !preserveViewState, firstLoad && !preserveViewState, () => {
-if (firstLoad) this.enterPage()
-if (preserveViewState) this._restoreScrollPosition(preserveViewState)
-this._pendingInitialViewState = null
-}))
-} catch (error) {
-if (this._unloaded || this._pageVisible === false || requestId !== this._requestId) return
-const message = api.getErrorMessage(error)
-this.setData(this.data.subject ? { loading: false, refreshError: message } : { loading: false, error: message })
-}
+  if (!Number.isInteger(this.subjectId) || this.subjectId <= 0) return
+  const requestId = (this._requestId || 0) + 1
+  this._requestId = requestId
+  if (showLoading) this.setData({ loading: !this._loadedOnce, error: '', refreshError: '' })
+  try {
+    const data = await api.get(`/knowledge-map/subjects/${this.subjectId}`)
+    if (this._unloaded || this._pageVisible === false || requestId !== this._requestId) return
+    if (!data || !data.subject) throw new Error('知识图谱暂不可用')
+    this._nodes = this._buildMapNodes(data)
+    this._groups = buildKnowledgeGroups(this._nodes, data.subject)
+    const graduation = summarizeGroups(this._groups)
+    this._groups = graduation.items
+    this._expandInitialGroups(options)
+    this._buildNodeById()
+    const validNodeIds = new Set(this._nodeById.keys())
+    this._expandedNodeIds = new Set(Array.from(this._expandedNodeIds || []).filter(id => validNodeIds.has(Number(id))))
+    const stats = this._buildMapStats(data)
+    const filters = FILTERS.map(item => ({ id: item.id, label: item.label, count: item.statuses ? this._nodes.filter(node => item.statuses.includes(node.status)).length : this._nodes.length }))
+    const firstLoad = !this._loadedOnce
+    const preserveViewState = options && options.preserveViewState
+    if (preserveViewState) this._applyPreservedViewState(preserveViewState, validNodeIds)
+    this._loadedOnce = true
+    wx.setNavigationBarTitle({ title: `${data.subject.subject_name} · 知识图谱` })
+    this.setData({
+      loading: false, error: '', refreshError: '', subject: data.subject, filters,
+      syllabusText: this._buildSyllabusText(data.syllabus_version),
+      stats,
+      chapterGraduation: graduation.summary,
+      ...(preserveViewState ? this._viewStateDataPatch(preserveViewState) : {}),
+      ...(preserveViewState ? this.cameraPayload(true) : {}),
+    }, () => this.applyView(firstLoad && !preserveViewState, firstLoad && !preserveViewState, () => {
+      if (firstLoad) this.enterPage()
+      if (preserveViewState) this._restoreScrollPosition(preserveViewState)
+      this._pendingInitialViewState = null
+    }))
+  } catch (error) {
+    if (this._unloaded || this._pageVisible === false || requestId !== this._requestId) return
+    const message = api.getErrorMessage(error)
+    this.setData(this.data.subject ? { loading: false, refreshError: message } : { loading: false, error: message })
+  }
+},
+
+_buildMapNodes(data) {
+  const pendingReceipts = knowledgePracticeSync.getForSubject(this.subjectId)
+  const receiptByPointId = new Map()
+  pendingReceipts.forEach((receipt) => {
+    const id = Number(receipt && receipt.knowledgePointId) || 0
+    if (id && !receiptByPointId.has(id)) receiptByPointId.set(id, receipt)
+  })
+  const resolvedReceipts = []
+  const nodes = (Array.isArray(data.nodes) ? data.nodes : []).map((item) => {
+    const score = percent(item.mastery_score)
+    const backendAccuracy = accuracyPercent(item.accuracy)
+    const backendAttemptCount = nonnegative(item.attempt_count)
+    const backendStatus = STATUS_TEXT[item.status] ? item.status : 'no_data'
+    const pointId = Number(item.knowledge_point_id) || 0
+    const receipt = receiptByPointId.get(pointId) || null
+    // A historical attempt is not proof that the latest session projected.
+    // Only the direct counter reaching launch baseline + expected answers clears it.
+    const receiptResolved = Boolean(receipt && knowledgePracticeSync.resolveReceipt(receipt, backendAttemptCount))
+    if (receiptResolved) resolvedReceipts.push(receipt)
+    const pendingSync = Boolean(receipt && !receiptResolved)
+    const receiptAnswered = receipt ? Math.max(0, Number(receipt.correctCount) || 0) + Math.max(0, Number(receipt.wrongCount) || 0) : 0
+    const receiptAccuracy = receiptAnswered > 0 ? percent((Number(receipt.correctCount) || 0) / receiptAnswered * 100) : null
+    const status = pendingSync || (backendStatus === 'no_data' && backendAttemptCount > 0) ? 'insufficient' : backendStatus
+    const attemptCount = pendingSync ? Math.max(backendAttemptCount, receipt.expectedMinAttemptCount || receiptAnswered) : backendAttemptCount
+    const aliases = Array.isArray(item.aliases)
+      ? item.aliases.map(alias => String(alias || '').trim()).filter(Boolean)
+      : []
+    return {
+      ...item, aliases, name: String(item.name || '未命名知识点'), status,
+      statusText: pendingSync ? '已作答 · 待更新' : STATUS_TEXT[status],
+      tone: status === 'weak' || status === 'developing' ? 'weak' : (status === 'good' || status === 'mastered' ? 'stable' : 'unseen'),
+      scoreText: score == null ? '待建立' : `${score}%`, hasScore: score != null,
+      accuracyText: pendingSync ? (receiptAccuracy == null ? '已作答' : `${receiptAccuracy}%`) : (backendAccuracy == null ? '暂无' : `${backendAccuracy}%`),
+      attempt_count: attemptCount,
+      pendingSync,
+      trainable_question_count: nonnegative(item.trainable_question_count),
+      hasPractice: nonnegative(item.trainable_question_count) > 0,
+    }
+  })
+  if (resolvedReceipts.length) knowledgePracticeSync.remove(resolvedReceipts)
+  return nodes
+},
+
+_expandInitialGroups(options) {
+  if (this._loadedOnce || (options && options.preserveViewState) || (this._expandedNodeIds && this._expandedNodeIds.size)) return
+  const firstStructuredGroup = this._groups.find(group => group && group.rootNode && group.rootNode.hasChildren)
+  if (!firstStructuredGroup) return
+  const rootId = Number(firstStructuredGroup.rootId)
+  if (rootId) this._expandedNodeIds.add(rootId)
+  const firstStructuredChild = firstStructuredGroup.nodes.find(node => Number(node.parentId) === rootId && node.hasChildren)
+  if (firstStructuredChild) this._expandedNodeIds.add(Number(firstStructuredChild.knowledge_point_id))
+},
+
+_buildNodeById() {
+  this._nodeById = new Map()
+  this._groups.forEach(group => group.nodes.forEach((node) => {
+    const pathNames = (Array.isArray(node.pathIds) ? node.pathIds : [])
+      .map(id => group.nodes.find(item => Number(item.knowledge_point_id) === Number(id)))
+      .filter(Boolean)
+      .map(item => item.name)
+    this._nodeById.set(Number(node.knowledge_point_id), {
+      ...node,
+      groupKey: group.key,
+      groupName: group.name,
+      pathText: pathNames.join(' > ') || group.name,
+    })
+  }))
+},
+
+_buildMapStats(data) {
+  const total = nonnegative(data.subject.trainable_knowledge_points == null ? this._nodes.filter(node => node.hasPractice).length : data.subject.trainable_knowledge_points)
+  const reliable = nonnegative(data.subject.reliable_knowledge_points)
+  const weak = nonnegative(data.subject.weak_knowledge_points)
+  const coverageRatio = Number(data.subject.coverage_ratio)
+  const coverage = Number.isFinite(coverageRatio)
+    ? percent(Math.abs(coverageRatio) <= 1 ? coverageRatio * 100 : coverageRatio)
+    : (total ? percent(reliable / total * 100) : 0)
+  return { total, reliable, weak, coverage: coverage == null ? 0 : coverage }
+},
+
+_buildSyllabusText(syllabus) {
+  return syllabus ? [syllabus.name, syllabus.effective_year].filter(Boolean).join(' · ') : ''
+},
+
+_applyPreservedViewState(preserveViewState, validNodeIds) {
+  this._focusNodeId = Math.max(0, Number(preserveViewState.focusNodeId) || 0)
+  this._graphPage = Math.max(0, Number(preserveViewState.graphPage) || 0)
+  this._selectedId = Math.max(0, Number(preserveViewState.selectedId) || 0)
+  this._expandedNodeIds = new Set((Array.isArray(preserveViewState.expandedNodeIds) ? preserveViewState.expandedNodeIds : [])
+    .map(Number)
+    .filter(id => Number.isInteger(id) && id > 0 && validNodeIds.has(id)))
+  this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(preserveViewState.indexLimit) || INITIAL_INDEX_LIMIT)
+  if (preserveViewState.camera && this._frame) {
+    this._camera = clampCamera({
+      x: Number(preserveViewState.camera.x) || 0,
+      y: Number(preserveViewState.camera.y) || 0,
+      scale: Number(preserveViewState.camera.scale) || 1,
+    }, this._frame)
+  }
 },
 enterPage() {
 clearTimeout(this._entryTimer)
@@ -631,97 +667,118 @@ if (wx.nextTick) wx.nextTick(reveal)
 else reveal()
 },
 _buildIndexPayload(options = {}) {
-const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
-const query = normalizeSearchText(options.query != null ? options.query : (this.data.indexQuery || this.data.query))
-const dedicatedQuery = normalizeSearchText(options.dedicatedQuery != null ? options.dedicatedQuery : this.data.indexQuery)
-const indexScopeGroupKey = String(options.indexScopeGroupKey != null ? options.indexScopeGroupKey : (this.data.indexScopeGroupKey || ''))
-const forceOpenTree = Boolean(query) || config.id !== 'all'
-const filteredGroups = buildFilteredKnowledgeGroups(this._groups, config, query)
-const availableGroups = filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
-const activeIndexGroup = indexScopeGroupKey ? availableGroups.find(group => String(group.key) === indexScopeGroupKey) : null
-const scopedGroups = dedicatedQuery ? availableGroups : (activeIndexGroup ? [activeIndexGroup] : availableGroups)
-const limit = this._indexLimit || INITIAL_INDEX_LIMIT
-const indexRows = []
-scopedGroups.forEach((group, groupIndex) => {
-const byParent = new Map()
-group.nodes.forEach((node) => {
-const parentId = Number(node.parentId) || 0
-if (!byParent.has(parentId)) byParent.set(parentId, [])
-byParent.get(parentId).push(node)
-})
-const fullGroup = (this._groups || []).find(item => String(item.key) === String(group.key)) || group
-const fullNodes = Array.isArray(fullGroup.nodes) ? fullGroup.nodes : []
-const root = group.nodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId))
-if (!root) return
-const walk = (node, siblingIndex = 0, siblingCount = 1, ancestorHasNext = []) => {
-const id = Number(node.knowledge_point_id)
-const children = byParent.get(id) || []
-const indexExpandable = children.length > 0
-const indexForcedOpen = indexExpandable && forceOpenTree
-const indexExpanded = indexExpandable && (indexForcedOpen || this._expandedNodeIds.has(id))
-const subtreeNodes = fullNodes.filter(candidate => Array.isArray(candidate.pathIds) && candidate.pathIds.some(pathId => Number(pathId) === id))
-const subtreeTotal = Math.max(1, subtreeNodes.length || Number(node.descendantCount || 0) + 1)
-const establishedCount = subtreeNodes.reduce((count, candidate) => count + (isEstablishedNode(candidate) ? 1 : 0), 0)
-let indexMetaText = node.pendingSync
-? `${node.attempt_count} 题已记录 · 待后台汇总`
-: `${node.statusText} · ${node.trainable_question_count} 题可练`
-if (node.contextOnly) indexMetaText = `路径 · ${children.length || node.visibleChildCount || 1} 个匹配分支`
-else if (node.hasChildren) indexMetaText = `${node.childCount} 个子节点 · ${branchStatusText(node)} · 已建立 ${establishedCount}/${subtreeTotal}`
-const indexSelected = Number(this._selectedId) === id
-let indexActionText = indexForcedOpen
-? (node.contextOnly ? '路径' : '查看')
-: (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级' : '定位'))
-if (!indexExpandable && !node.hasChildren && indexSelected) indexActionText = '已定位'
-const depth = Math.max(0, Number(node.depth) || 0)
-const visualDepth = Math.min(depth, 5)
-const indexHasNextSibling = siblingIndex + 1 < siblingCount
-const indexAncestorGuides = ancestorHasNext
-.slice(1, visualDepth)
-.reduce((guides, hasNext, ancestorIndex) => {
-if (hasNext) guides.push({ left: INDEX_TREE_BASE_X + ancestorIndex * INDEX_TREE_STEP_X })
-return guides
-}, [])
-const iconKind = indexIconKind(node, depth, siblingIndex + groupIndex)
-indexRows.push({
-...node,
-depth,
-indexExpandable,
-indexForcedOpen,
-indexExpanded,
-indexSelected,
-indexHasNextSibling,
-indexMetaText,
-indexActionText,
-indexIconKind: iconKind,
-indexIconSrc: indexIconSrc(iconKind),
-indexIndent: INDEX_CONTENT_BASE_INDENT + Math.max(0, Math.min(depth - 1, 4)) * INDEX_TREE_STEP_X,
-indexAncestorGuides,
-indexJointLeft: depth ? INDEX_TREE_BASE_X + Math.max(0, visualDepth - 1) * INDEX_TREE_STEP_X : 0,
-indexChildStemLeft: INDEX_TREE_BASE_X + Math.min(depth, 4) * INDEX_TREE_STEP_X,
-indexSearchTarget: Boolean(dedicatedQuery && node.matched),
-indexAriaAction: dedicatedQuery && node.matched
-? '在图谱中查看'
-: (indexSelected && !indexExpandable && !node.hasChildren
-? '已在图谱中定位'
-: (indexForcedOpen ? (node.contextOnly ? '匹配路径' : '在图谱中查看') : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级路径' : '在图谱中定位')))),
-})
-if (indexExpanded) {
-const descendantAncestorFlags = ancestorHasNext.concat(indexHasNextSibling)
-children.forEach((child, childIndex) => walk(child, childIndex, children.length, descendantAncestorFlags))
-}
-}
-walk(root, 0, 1, [])
-})
-return {
-indexNodes: indexRows.slice(0, limit).map((row, rowIndex, visibleRows) => ({
-...row,
-indexIsLastVisible: rowIndex === visibleRows.length - 1,
-})),
-indexCount: scopedGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0),
-indexDisplayCount: indexRows.length,
-hasMore: indexRows.length > limit,
-indexSearchResultCount: availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0),
-}
+  const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
+  const query = normalizeSearchText(options.query != null ? options.query : (this.data.indexQuery || this.data.query))
+  const dedicatedQuery = normalizeSearchText(options.dedicatedQuery != null ? options.dedicatedQuery : this.data.indexQuery)
+  const indexScopeGroupKey = String(options.indexScopeGroupKey != null ? options.indexScopeGroupKey : (this.data.indexScopeGroupKey || ''))
+  const forceOpenTree = Boolean(query) || config.id !== 'all'
+  const filteredGroups = buildFilteredKnowledgeGroups(this._groups, config, query)
+  const availableGroups = filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
+  const activeIndexGroup = indexScopeGroupKey ? availableGroups.find(group => String(group.key) === indexScopeGroupKey) : null
+  const scopedGroups = dedicatedQuery ? availableGroups : (activeIndexGroup ? [activeIndexGroup] : availableGroups)
+  const limit = this._indexLimit || INITIAL_INDEX_LIMIT
+  const indexRows = []
+  scopedGroups.forEach((group, groupIndex) => this._walkIndexGroup(group, groupIndex, indexRows, forceOpenTree, dedicatedQuery))
+  return this._buildIndexResult(indexRows, limit, scopedGroups, availableGroups)
+},
+
+_walkIndexGroup(group, groupIndex, indexRows, forceOpenTree, dedicatedQuery) {
+  const byParent = new Map()
+  group.nodes.forEach((node) => {
+    const parentId = Number(node.parentId) || 0
+    if (!byParent.has(parentId)) byParent.set(parentId, [])
+    byParent.get(parentId).push(node)
+  })
+  const fullGroup = (this._groups || []).find(item => String(item.key) === String(group.key)) || group
+  const fullNodes = Array.isArray(fullGroup.nodes) ? fullGroup.nodes : []
+  const root = group.nodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId))
+  if (!root) return
+  this._walkIndexNode(root, 0, 1, [], byParent, fullNodes, groupIndex, indexRows, forceOpenTree, dedicatedQuery)
+},
+
+_walkIndexNode(node, siblingIndex, siblingCount, ancestorHasNext, byParent, fullNodes, groupIndex, indexRows, forceOpenTree, dedicatedQuery) {
+  const id = Number(node.knowledge_point_id)
+  const children = byParent.get(id) || []
+  const indexExpandable = children.length > 0
+  const indexForcedOpen = indexExpandable && forceOpenTree
+  const indexExpanded = indexExpandable && (indexForcedOpen || this._expandedNodeIds.has(id))
+  const subtreeNodes = fullNodes.filter(candidate => Array.isArray(candidate.pathIds) && candidate.pathIds.some(pathId => Number(pathId) === id))
+  const subtreeTotal = Math.max(1, subtreeNodes.length || Number(node.descendantCount || 0) + 1)
+  const establishedCount = subtreeNodes.reduce((count, candidate) => count + (isEstablishedNode(candidate) ? 1 : 0), 0)
+  const indexMetaText = this._buildIndexMetaText(node, children, establishedCount, subtreeTotal)
+  const indexSelected = Number(this._selectedId) === id
+  const indexActionText = this._buildIndexActionText(node, indexExpandable, indexForcedOpen, indexExpanded, indexSelected)
+  const depth = Math.max(0, Number(node.depth) || 0)
+  const visualDepth = Math.min(depth, 5)
+  const indexHasNextSibling = siblingIndex + 1 < siblingCount
+  const indexAncestorGuides = ancestorHasNext
+    .slice(1, visualDepth)
+    .reduce((guides, hasNext, ancestorIndex) => {
+      if (hasNext) guides.push({ left: INDEX_TREE_BASE_X + ancestorIndex * INDEX_TREE_STEP_X })
+      return guides
+    }, [])
+  const iconKind = indexIconKind(node, depth, siblingIndex + groupIndex)
+  indexRows.push({
+    ...node,
+    depth,
+    indexExpandable,
+    indexForcedOpen,
+    indexExpanded,
+    indexSelected,
+    indexHasNextSibling,
+    indexMetaText,
+    indexActionText,
+    indexIconKind: iconKind,
+    indexIconSrc: indexIconSrc(iconKind),
+    indexIndent: INDEX_CONTENT_BASE_INDENT + Math.max(0, Math.min(depth - 1, 4)) * INDEX_TREE_STEP_X,
+    indexAncestorGuides,
+    indexJointLeft: depth ? INDEX_TREE_BASE_X + Math.max(0, visualDepth - 1) * INDEX_TREE_STEP_X : 0,
+    indexChildStemLeft: INDEX_TREE_BASE_X + Math.min(depth, 4) * INDEX_TREE_STEP_X,
+    indexSearchTarget: Boolean(dedicatedQuery && node.matched),
+    indexAriaAction: this._buildIndexAriaAction(node, indexExpandable, indexForcedOpen, indexExpanded, indexSelected, dedicatedQuery),
+  })
+  if (indexExpanded) {
+    const descendantAncestorFlags = ancestorHasNext.concat(indexHasNextSibling)
+    children.forEach((child, childIndex) => this._walkIndexNode(child, childIndex, children.length, descendantAncestorFlags, byParent, fullNodes, groupIndex, indexRows, forceOpenTree, dedicatedQuery))
+  }
+},
+
+_buildIndexMetaText(node, children, establishedCount, subtreeTotal) {
+  let indexMetaText = node.pendingSync
+    ? `${node.attempt_count} 题已记录 · 待后台汇总`
+    : `${node.statusText} · ${node.trainable_question_count} 题可练`
+  if (node.contextOnly) indexMetaText = `路径 · ${children.length || node.visibleChildCount || 1} 个匹配分支`
+  else if (node.hasChildren) indexMetaText = `${node.childCount} 个子节点 · ${branchStatusText(node)} · 已建立 ${establishedCount}/${subtreeTotal}`
+  return indexMetaText
+},
+
+_buildIndexActionText(node, indexExpandable, indexForcedOpen, indexExpanded, indexSelected) {
+  let indexActionText = indexForcedOpen
+    ? (node.contextOnly ? '路径' : '查看')
+    : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级' : '定位'))
+  if (!indexExpandable && !node.hasChildren && indexSelected) indexActionText = '已定位'
+  return indexActionText
+},
+
+_buildIndexAriaAction(node, indexExpandable, indexForcedOpen, indexExpanded, indexSelected, dedicatedQuery) {
+  return dedicatedQuery && node.matched
+    ? '在图谱中查看'
+    : (indexSelected && !indexExpandable && !node.hasChildren
+      ? '已在图谱中定位'
+      : (indexForcedOpen ? (node.contextOnly ? '匹配路径' : '在图谱中查看') : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级路径' : '在图谱中定位'))))
+},
+
+_buildIndexResult(indexRows, limit, scopedGroups, availableGroups) {
+  return {
+    indexNodes: indexRows.slice(0, limit).map((row, rowIndex, visibleRows) => ({
+      ...row,
+      indexIsLastVisible: rowIndex === visibleRows.length - 1,
+    })),
+    indexCount: scopedGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0),
+    indexDisplayCount: indexRows.length,
+    hasMore: indexRows.length > limit,
+    indexSearchResultCount: availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0),
+  }
 },
 _applyIndexViewOnly(callback) {
 if (!this.data.subject) { if (typeof callback === 'function') callback(); return }
@@ -731,113 +788,146 @@ const payload = this._buildIndexPayload({ query: effectiveQuery, dedicatedQuery,
 this.setData(payload, () => { if (typeof callback === 'function') callback() })
 },
 applyView(resetCamera = false, animateScene = resetCamera, callback) {
-if (!this.data.subject) return
-const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
-const query = normalizeSearchText(this.data.query)
-this._filteredGroups = buildFilteredKnowledgeGroups(this._groups, config, query)
-const availableGroups = this._filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
-let indexScopeGroupKey = String(this.data.indexScopeGroupKey || '')
-if (indexScopeGroupKey && !availableGroups.some(group => String(group.key) === indexScopeGroupKey)) indexScopeGroupKey = ''
-let activeGroupKey = availableGroups.some(group => String(group.key) === String(this.data.activeGroupKey)) ? String(this.data.activeGroupKey) : ''
-let activeFilteredGroup = activeGroupKey ? availableGroups.find(group => String(group.key) === activeGroupKey) : null
-let focusNodeId = 0
-if (activeFilteredGroup) {
-focusNodeId = Number(this._focusNodeId) || Number(activeFilteredGroup.rootId) || 0
-if (!activeFilteredGroup.nodes.some(node => Number(node.knowledge_point_id) === focusNodeId)) {
-focusNodeId = Number(activeFilteredGroup.rootId) || 0
-}
-const focusBase = this._nodeById && this._nodeById.get(focusNodeId)
-;(focusBase && Array.isArray(focusBase.pathIds) ? focusBase.pathIds : []).forEach(id => this._expandedNodeIds.add(Number(id)))
-} else {
-activeGroupKey = ''
-this._focusNodeId = 0
-}
-this._focusNodeId = focusNodeId
-const scopedGroups = activeFilteredGroup ? [activeFilteredGroup] : availableGroups
-this._visibleNodes = scopedGroups.reduce((result, group) => result.concat(group.nodes), [])
-let scene = buildScene(availableGroups, this.data.subject, {
-groupKey: activeGroupKey,
-focusNodeId,
-page: this._graphPage || 0,
-selectedId: this._selectedId,
-})
-this._focusNodeId = Number(scene.focusNodeId) || 0
-if (!scene.pointIds.some(id => Number(id) === Number(this._selectedId))) {
-this._selectedId = scene.focused && scene.pointIds.length ? Number(scene.pointIds[0]) : 0
-scene = buildScene(availableGroups, this.data.subject, {
-groupKey: activeGroupKey,
-focusNodeId: this._focusNodeId,
-page: scene.page,
-selectedId: this._selectedId,
-})
-}
-this._graphPage = scene.page
-const visibleById = new Map(this._visibleNodes.map(node => [Number(node.knowledge_point_id), node]))
-const selectedVisible = visibleById.get(Number(this._selectedId)) || null
-const selectedBase = this._nodeById && this._nodeById.get(Number(this._selectedId))
-const filteredByKey = new Map((this._filteredGroups || []).map(group => [String(group.key), group]))
-const groupChips = (this._groups || []).map((group, index) => {
-const filteredGroup = filteredByKey.get(String(group.key))
-const iconKind = themeIconKind(group, index)
-return {
-key: String(group.key),
-name: group.name,
-count: filteredGroup ? filteredGroup.matchCount : 0,
-number: group.number,
-orderText: formatThemeOrder(group, index),
-iconKind,
-iconSrc: themeIconSrc(iconKind),
-nodeCount: Number(group.nodeCount || group.nodes.length || 0),
-descendantCount: Number(group.descendantCount || 0),
-directChildCount: Number(group.directChildCount || 0),
-orderIndex: index,
-graduationState: group.graduation ? group.graduation.state : 'unavailable',
-graduationLabel: group.graduation ? group.graduation.label : '暂无判定',
-graduationReason: group.graduation ? group.graduation.reason : '',
-graduated: Boolean(group.graduation && group.graduation.graduated),
-}
-})
-const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey, this._recentGroupKeys)
-const themeSheetGroups = groupChips.filter(group => themeSearchMatch(group, this.data.themeQuery))
-const activeGroup = groupChips.find(group => group.key === activeGroupKey)
-const searchResultCount = availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0)
-const effectiveIndexQuery = normalizeSearchText(this.data.indexQuery) || query
-const indexPayload = this._buildIndexPayload({ query: effectiveIndexQuery, dedicatedQuery: normalizeSearchText(this.data.indexQuery), indexScopeGroupKey })
-const payload = {
-activeGroupKey,
-activeGroupName: activeGroup ? activeGroup.name : '',
-indexScopeGroupKey,
-scene,
-groupChips,
-quickGroupChips,
-themeGroupCount: groupChips.length,
-themeSheetGroups,
-searchPending: normalizeSearchText(this.data.searchDraft) !== query,
-searchResultCount,
-selectedPoint: selectedBase && selectedVisible ? { ...selectedBase, matchedAlias: selectedVisible.matchedAlias || '' } : null,
-...indexPayload,
-}
-if (animateScene) payload.sceneAnimating = true
-if (resetCamera && this._frame) {
-this.stopCameraInertia()
-this._camera = fitCamera(this._frame)
-Object.assign(payload, this.cameraPayload(true, { graphInteracting: false }))
-}
-const commit = () => this.setData(payload, () => {
-const next = () => { if (!this._unloaded && this._pageVisible !== false) this.measureViewport(false) }
-if (wx.nextTick) wx.nextTick(next)
-else next()
-if (animateScene) {
-clearTimeout(this._sceneAnimationTimer)
-this._sceneAnimationTimer = setTimeout(() => {
-this._sceneAnimationTimer = null
-if (!this._unloaded && this._pageVisible !== false) this.setData({ sceneAnimating: false })
-}, 820)
-}
-if (typeof callback === 'function') callback()
-})
-if (animateScene && this.data.sceneAnimating) this.setData({ sceneAnimating: false }, commit)
-else commit()
+  if (!this.data.subject) return
+  const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
+  const query = normalizeSearchText(this.data.query)
+  this._filteredGroups = buildFilteredKnowledgeGroups(this._groups, config, query)
+  const availableGroups = this._filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
+  const { activeGroupKey, activeFilteredGroup, focusNodeId } = this._resolveActiveGroup(availableGroups)
+  const scopedGroups = activeFilteredGroup ? [activeFilteredGroup] : availableGroups
+  this._visibleNodes = scopedGroups.reduce((result, group) => result.concat(group.nodes), [])
+  const sceneState = this._buildSceneState(availableGroups, activeGroupKey, focusNodeId)
+  this._focusNodeId = sceneState.focusNodeId
+  this._selectedId = sceneState.selectedId
+  this._graphPage = sceneState.scene.page
+  const indexScopeGroupKey = this._resolveIndexScopeGroupKey(availableGroups)
+  const groupChips = this._buildGroupChips()
+  const payload = this._buildViewPayload(activeGroupKey, indexScopeGroupKey, groupChips, availableGroups, sceneState.scene, query)
+  if (animateScene) payload.sceneAnimating = true
+  if (resetCamera && this._frame) {
+    this.stopCameraInertia()
+    this._camera = fitCamera(this._frame)
+    Object.assign(payload, this.cameraPayload(true, { graphInteracting: false }))
+  }
+  this._commitView(payload, animateScene, callback)
+},
+
+_resolveActiveGroup(availableGroups) {
+  let indexScopeGroupKey = String(this.data.indexScopeGroupKey || '')
+  if (indexScopeGroupKey && !availableGroups.some(group => String(group.key) === indexScopeGroupKey)) indexScopeGroupKey = ''
+  let activeGroupKey = availableGroups.some(group => String(group.key) === String(this.data.activeGroupKey)) ? String(this.data.activeGroupKey) : ''
+  let activeFilteredGroup = activeGroupKey ? availableGroups.find(group => String(group.key) === activeGroupKey) : null
+  let focusNodeId = 0
+  if (activeFilteredGroup) {
+    focusNodeId = Number(this._focusNodeId) || Number(activeFilteredGroup.rootId) || 0
+    if (!activeFilteredGroup.nodes.some(node => Number(node.knowledge_point_id) === focusNodeId)) {
+      focusNodeId = Number(activeFilteredGroup.rootId) || 0
+    }
+    const focusBase = this._nodeById && this._nodeById.get(focusNodeId)
+    ;(focusBase && Array.isArray(focusBase.pathIds) ? focusBase.pathIds : []).forEach(id => this._expandedNodeIds.add(Number(id)))
+  } else {
+    activeGroupKey = ''
+    this._focusNodeId = 0
+  }
+  this._focusNodeId = focusNodeId
+  return { activeGroupKey, activeFilteredGroup, focusNodeId }
+},
+
+_buildSceneState(availableGroups, activeGroupKey, focusNodeId) {
+  let scene = buildScene(availableGroups, this.data.subject, {
+    groupKey: activeGroupKey,
+    focusNodeId,
+    page: this._graphPage || 0,
+    selectedId: this._selectedId,
+  })
+  let focusNodeIdResolved = Number(scene.focusNodeId) || 0
+  let selectedId = this._selectedId
+  if (!scene.pointIds.some(id => Number(id) === Number(selectedId))) {
+    selectedId = scene.focused && scene.pointIds.length ? Number(scene.pointIds[0]) : 0
+    scene = buildScene(availableGroups, this.data.subject, {
+      groupKey: activeGroupKey,
+      focusNodeId: focusNodeIdResolved,
+      page: scene.page,
+      selectedId,
+    })
+  }
+  return { scene, focusNodeId: focusNodeIdResolved, selectedId }
+},
+
+_resolveIndexScopeGroupKey(availableGroups) {
+  let indexScopeGroupKey = String(this.data.indexScopeGroupKey || '')
+  if (indexScopeGroupKey && !availableGroups.some(group => String(group.key) === indexScopeGroupKey)) indexScopeGroupKey = ''
+  return indexScopeGroupKey
+},
+
+_buildGroupChips() {
+  const filteredByKey = new Map((this._filteredGroups || []).map(group => [String(group.key), group]))
+  return (this._groups || []).map((group, index) => {
+    const filteredGroup = filteredByKey.get(String(group.key))
+    const iconKind = themeIconKind(group, index)
+    return {
+      key: String(group.key),
+      name: group.name,
+      count: filteredGroup ? filteredGroup.matchCount : 0,
+      number: group.number,
+      orderText: formatThemeOrder(group, index),
+      iconKind,
+      iconSrc: themeIconSrc(iconKind),
+      nodeCount: Number(group.nodeCount || group.nodes.length || 0),
+      descendantCount: Number(group.descendantCount || 0),
+      directChildCount: Number(group.directChildCount || 0),
+      orderIndex: index,
+      graduationState: group.graduation ? group.graduation.state : 'unavailable',
+      graduationLabel: group.graduation ? group.graduation.label : '暂无判定',
+      graduationReason: group.graduation ? group.graduation.reason : '',
+      graduated: Boolean(group.graduation && group.graduation.graduated),
+    }
+  })
+},
+
+_buildViewPayload(activeGroupKey, indexScopeGroupKey, groupChips, availableGroups, scene, query) {
+  const visibleById = new Map(this._visibleNodes.map(node => [Number(node.knowledge_point_id), node]))
+  const selectedVisible = visibleById.get(Number(this._selectedId)) || null
+  const selectedBase = this._nodeById && this._nodeById.get(Number(this._selectedId))
+  const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey, this._recentGroupKeys)
+  const themeSheetGroups = groupChips.filter(group => themeSearchMatch(group, this.data.themeQuery))
+  const activeGroup = groupChips.find(group => group.key === activeGroupKey)
+  const searchResultCount = availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0)
+  const effectiveIndexQuery = normalizeSearchText(this.data.indexQuery) || query
+  const indexPayload = this._buildIndexPayload({ query: effectiveIndexQuery, dedicatedQuery: normalizeSearchText(this.data.indexQuery), indexScopeGroupKey })
+  const payload = {
+    activeGroupKey,
+    activeGroupName: activeGroup ? activeGroup.name : '',
+    indexScopeGroupKey,
+    scene,
+    groupChips,
+    quickGroupChips,
+    themeGroupCount: groupChips.length,
+    themeSheetGroups,
+    searchPending: normalizeSearchText(this.data.searchDraft) !== query,
+    searchResultCount,
+    selectedPoint: selectedBase && selectedVisible ? { ...selectedBase, matchedAlias: selectedVisible.matchedAlias || '' } : null,
+    ...indexPayload,
+  }
+  return payload
+},
+
+_commitView(payload, animateScene, callback) {
+  const commit = () => this.setData(payload, () => {
+    const next = () => { if (!this._unloaded && this._pageVisible !== false) this.measureViewport(false) }
+    if (wx.nextTick) wx.nextTick(next)
+    else next()
+    if (animateScene) {
+      clearTimeout(this._sceneAnimationTimer)
+      this._sceneAnimationTimer = setTimeout(() => {
+        this._sceneAnimationTimer = null
+        if (!this._unloaded && this._pageVisible !== false) this.setData({ sceneAnimating: false })
+      }, 820)
+    }
+    if (typeof callback === 'function') callback()
+  })
+  if (animateScene && this.data.sceneAnimating) this.setData({ sceneAnimating: false }, commit)
+  else commit()
 },
 transitionLabelView(dataChanges = {}, callback) {
 clearTimeout(this._labelSwitchTimer)
@@ -1064,167 +1154,189 @@ _restoreIndexSearchAnchor() {
 // Intentionally no-op: native scroll anchoring is more stable than pageScrollTo here.
 },
 _commitIndexSearchQuery(value, options = {}) {
-const nextQuery = String(value || '').slice(0, 80)
-const normalizedNext = normalizeSearchText(nextQuery)
-const normalizedCurrent = normalizeSearchText(this.data.indexQuery)
-clearTimeout(this._indexSearchTimer)
-this._indexSearchTimer = null
-if (normalizedNext === normalizedCurrent) {
-if (this.data.indexSearchPending || String(this.data.indexSearchDraft || '') !== nextQuery) {
-this.setData({ indexSearchDraft: nextQuery, indexSearchPending: false })
-}
-return
-}
-const token = (this._indexSearchTransitionToken || 0) + 1
-this._indexSearchTransitionToken = token
-clearTimeout(this._indexSearchLeaveTimer)
-clearTimeout(this._indexSearchSettleTimer)
-this._captureIndexSearchLayout((anchor) => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
-const oldRetention = Math.max(0, Number(this._indexSearchRetentionHeight) || 0)
-const oldFootprint = this._capIndexSearchFootprint(anchor, Math.max(oldHeight + oldRetention, Number(this._indexSearchFootprintHeight) || 0))
-this._indexSearchFootprintHeight = oldFootprint
-const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
-this.setData({
-indexSearchPending: true,
-indexResultsTransitioning: true,
-indexResultsPhase: 'leaving',
-indexResultsHeightStyle: leavingStyle,
-}, () => {
-const commit = () => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-this._indexLimit = INITIAL_INDEX_LIMIT
-this.setData({ indexQuery: nextQuery }, () => {
-this._applyIndexViewOnly(() => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-this._restoreIndexSearchAnchor(anchor)
-this._measureIndexResultsHeight((newHeight) => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-const measuredNewHeight = Math.max(0, Number(newHeight) || 0)
-const nextFootprint = Math.max(oldFootprint, measuredNewHeight)
-this._indexSearchFootprintHeight = nextFootprint
-const retentionPatch = this._indexSearchRetentionPatch(Math.max(0, nextFootprint - measuredNewHeight))
-const heightStyle = oldHeight > 0 && measuredNewHeight > 0 ? `height:${measuredNewHeight}px;overflow:hidden;` : ''
-const stillPending = normalizeSearchText(this.data.indexSearchDraft) !== normalizedNext
-this.setData({
-...retentionPatch,
-indexSearchPending: stillPending,
-indexResultsPhase: 'entering',
-indexResultsHeightStyle: heightStyle,
-}, () => {
-this._restoreIndexSearchAnchor(anchor)
-this._indexSearchSettleTimer = setTimeout(() => {
-this._indexSearchSettleTimer = null
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-this.setData({
-indexResultsTransitioning: false,
-indexResultsPhase: '',
-indexResultsHeightStyle: '',
-}, () => this._restoreIndexSearchAnchor(anchor))
-}, Math.max(INDEX_SEARCH_ENTER_MS, INDEX_SEARCH_HEIGHT_MS))
-})
-})
-})
-})
-}
-if (options.immediate || !oldHeight) commit()
-else {
-this._indexSearchLeaveTimer = setTimeout(() => {
-this._indexSearchLeaveTimer = null
-commit()
-}, INDEX_SEARCH_LEAVE_MS)
-}
-})
-}, Boolean(options.preserveIndexAnchor))
+  const nextQuery = String(value || '').slice(0, 80)
+  const normalizedNext = normalizeSearchText(nextQuery)
+  const normalizedCurrent = normalizeSearchText(this.data.indexQuery)
+  clearTimeout(this._indexSearchTimer)
+  this._indexSearchTimer = null
+  if (normalizedNext === normalizedCurrent) {
+    if (this.data.indexSearchPending || String(this.data.indexSearchDraft || '') !== nextQuery) {
+      this.setData({ indexSearchDraft: nextQuery, indexSearchPending: false })
+    }
+    return
+  }
+  const token = (this._indexSearchTransitionToken || 0) + 1
+  this._indexSearchTransitionToken = token
+  clearTimeout(this._indexSearchLeaveTimer)
+  clearTimeout(this._indexSearchSettleTimer)
+  this._captureIndexSearchLayout((anchor) => this._runIndexSearchTransition(anchor, token, nextQuery, normalizedNext, options), Boolean(options.preserveIndexAnchor))
+},
+
+_runIndexSearchTransition(anchor, token, nextQuery, normalizedNext, options) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
+  const oldRetention = Math.max(0, Number(this._indexSearchRetentionHeight) || 0)
+  const oldFootprint = this._capIndexSearchFootprint(anchor, Math.max(oldHeight + oldRetention, Number(this._indexSearchFootprintHeight) || 0))
+  this._indexSearchFootprintHeight = oldFootprint
+  const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
+  this.setData({
+    indexSearchPending: true,
+    indexResultsTransitioning: true,
+    indexResultsPhase: 'leaving',
+    indexResultsHeightStyle: leavingStyle,
+  }, () => this._scheduleIndexSearchCommit(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint, options))
+},
+
+_scheduleIndexSearchCommit(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint, options) {
+  const commit = () => this._commitIndexSearchResult(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint)
+  if (options.immediate || !oldHeight) commit()
+  else {
+    this._indexSearchLeaveTimer = setTimeout(() => {
+      this._indexSearchLeaveTimer = null
+      commit()
+    }, INDEX_SEARCH_LEAVE_MS)
+  }
+},
+
+_commitIndexSearchResult(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  this._indexLimit = INITIAL_INDEX_LIMIT
+  this.setData({ indexQuery: nextQuery }, () => {
+    this._applyIndexViewOnly(() => this._finalizeIndexSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint))
+  })
+},
+
+_finalizeIndexSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  this._restoreIndexSearchAnchor(anchor)
+  this._measureIndexResultsHeight((newHeight) => this._enterIndexSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint, newHeight))
+},
+
+_enterIndexSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint, newHeight) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  const measuredNewHeight = Math.max(0, Number(newHeight) || 0)
+  const nextFootprint = Math.max(oldFootprint, measuredNewHeight)
+  this._indexSearchFootprintHeight = nextFootprint
+  const retentionPatch = this._indexSearchRetentionPatch(Math.max(0, nextFootprint - measuredNewHeight))
+  const heightStyle = oldHeight > 0 && measuredNewHeight > 0 ? `height:${measuredNewHeight}px;overflow:hidden;` : ''
+  const stillPending = normalizeSearchText(this.data.indexSearchDraft) !== normalizedNext
+  this.setData({
+    ...retentionPatch,
+    indexSearchPending: stillPending,
+    indexResultsPhase: 'entering',
+    indexResultsHeightStyle: heightStyle,
+  }, () => this._settleIndexSearchResult(anchor, token))
+},
+
+_settleIndexSearchResult(anchor, token) {
+  this._restoreIndexSearchAnchor(anchor)
+  this._indexSearchSettleTimer = setTimeout(() => {
+    this._indexSearchSettleTimer = null
+    if (this._unloaded || token !== this._indexSearchTransitionToken) return
+    this.setData({
+      indexResultsTransitioning: false,
+      indexResultsPhase: '',
+      indexResultsHeightStyle: '',
+    }, () => this._restoreIndexSearchAnchor(anchor))
+  }, Math.max(INDEX_SEARCH_ENTER_MS, INDEX_SEARCH_HEIGHT_MS))
 },
 _commitSearchQuery(value, options = {}) {
-const nextQuery = String(value || '').slice(0, 80)
-const normalizedNext = normalizeSearchText(nextQuery)
-const normalizedCurrent = normalizeSearchText(this.data.query)
-clearTimeout(this._searchTimer)
-this._searchTimer = null
-if (normalizedNext === normalizedCurrent) {
-if (this.data.searchPending || String(this.data.searchDraft || '') !== nextQuery) {
-this.setData({ searchDraft: nextQuery, searchPending: false })
-}
-return
-}
-const token = (this._indexSearchTransitionToken || 0) + 1
-this._indexSearchTransitionToken = token
-clearTimeout(this._indexSearchLeaveTimer)
-clearTimeout(this._indexSearchSettleTimer)
-this._captureIndexSearchLayout((anchor) => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
-const oldRetention = options.preserveIndexAnchor ? Math.max(0, Number(this._indexSearchRetentionHeight) || 0) : 0
-const oldFootprint = options.preserveIndexAnchor
-? this._capIndexSearchFootprint(anchor, Math.max(oldHeight + oldRetention, Number(this._indexSearchFootprintHeight) || 0))
-: oldHeight
-if (options.preserveIndexAnchor) this._indexSearchFootprintHeight = oldFootprint
-const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
-this.setData({
-searchPending: true,
-indexResultsTransitioning: true,
-indexResultsPhase: 'leaving',
-indexResultsHeightStyle: leavingStyle,
-}, () => {
-const commit = () => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-this._graphPage = 0
-this._indexLimit = INITIAL_INDEX_LIMIT
-this.setData({
-query: nextQuery,
-activeGroupKey: '',
-indexScopeGroupKey: '',
-themeSheetOpen: false,
-themeSheetClosing: false,
-themeSheetPendingKey: '__idle__',
-themeQuery: '',
-}, () => {
-this.applyView(false, false, () => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-this._restoreIndexSearchAnchor(anchor)
-this._measureIndexResultsHeight((newHeight) => {
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-const measuredNewHeight = Math.max(0, Number(newHeight) || 0)
-const targetHeight = measuredNewHeight > 0 ? measuredNewHeight : oldHeight
-const retentionPatch = options.preserveIndexAnchor
-? this._indexSearchRetentionPatch(Math.max(0, Math.max(oldFootprint, targetHeight) - targetHeight))
-: {}
-if (options.preserveIndexAnchor) this._indexSearchFootprintHeight = Math.max(oldFootprint, targetHeight)
-const heightStyle = oldHeight > 0 && targetHeight > 0 ? `height:${targetHeight}px;overflow:hidden;` : ''
-const stillPending = normalizeSearchText(this.data.searchDraft) !== normalizedNext
-this.setData({
-...retentionPatch,
-searchPending: stillPending,
-indexResultsPhase: 'entering',
-indexResultsHeightStyle: heightStyle,
-}, () => {
-this._restoreIndexSearchAnchor(anchor)
-this._indexSearchSettleTimer = setTimeout(() => {
-this._indexSearchSettleTimer = null
-if (this._unloaded || token !== this._indexSearchTransitionToken) return
-this.setData({
-indexResultsTransitioning: false,
-indexResultsPhase: '',
-indexResultsHeightStyle: '',
-}, () => this._restoreIndexSearchAnchor(anchor))
-}, Math.max(INDEX_SEARCH_ENTER_MS, INDEX_SEARCH_HEIGHT_MS))
-})
-})
-})
-})
-}
-if (options.immediate || !oldHeight) commit()
-else {
-this._indexSearchLeaveTimer = setTimeout(() => {
-this._indexSearchLeaveTimer = null
-commit()
-}, INDEX_SEARCH_LEAVE_MS)
-}
-})
-}, Boolean(options.preserveIndexAnchor))
+  const nextQuery = String(value || '').slice(0, 80)
+  const normalizedNext = normalizeSearchText(nextQuery)
+  const normalizedCurrent = normalizeSearchText(this.data.query)
+  clearTimeout(this._searchTimer)
+  this._searchTimer = null
+  if (normalizedNext === normalizedCurrent) {
+    if (this.data.searchPending || String(this.data.searchDraft || '') !== nextQuery) {
+      this.setData({ searchDraft: nextQuery, searchPending: false })
+    }
+    return
+  }
+  const token = (this._indexSearchTransitionToken || 0) + 1
+  this._indexSearchTransitionToken = token
+  clearTimeout(this._indexSearchLeaveTimer)
+  clearTimeout(this._indexSearchSettleTimer)
+  this._captureIndexSearchLayout((anchor) => this._runSearchTransition(anchor, token, nextQuery, normalizedNext, options), Boolean(options.preserveIndexAnchor))
+},
+
+_runSearchTransition(anchor, token, nextQuery, normalizedNext, options) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  const oldHeight = anchor && anchor.resultsHeight > 0 ? anchor.resultsHeight : 0
+  const oldRetention = options.preserveIndexAnchor ? Math.max(0, Number(this._indexSearchRetentionHeight) || 0) : 0
+  const oldFootprint = options.preserveIndexAnchor
+    ? this._capIndexSearchFootprint(anchor, Math.max(oldHeight + oldRetention, Number(this._indexSearchFootprintHeight) || 0))
+    : oldHeight
+  if (options.preserveIndexAnchor) this._indexSearchFootprintHeight = oldFootprint
+  const leavingStyle = oldHeight > 0 ? `height:${oldHeight}px;overflow:hidden;` : ''
+  this.setData({
+    searchPending: true,
+    indexResultsTransitioning: true,
+    indexResultsPhase: 'leaving',
+    indexResultsHeightStyle: leavingStyle,
+  }, () => this._scheduleSearchCommit(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint, options))
+},
+
+_scheduleSearchCommit(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint, options) {
+  const commit = () => this._commitSearchResult(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint, options)
+  if (options.immediate || !oldHeight) commit()
+  else {
+    this._indexSearchLeaveTimer = setTimeout(() => {
+      this._indexSearchLeaveTimer = null
+      commit()
+    }, INDEX_SEARCH_LEAVE_MS)
+  }
+},
+
+_commitSearchResult(anchor, token, nextQuery, normalizedNext, oldHeight, oldFootprint, options) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  this._graphPage = 0
+  this._indexLimit = INITIAL_INDEX_LIMIT
+  this.setData({
+    query: nextQuery,
+    activeGroupKey: '',
+    indexScopeGroupKey: '',
+    themeSheetOpen: false,
+    themeSheetClosing: false,
+    themeSheetPendingKey: '__idle__',
+    themeQuery: '',
+  }, () => this.applyView(false, false, () => this._finalizeSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint, options)))
+},
+
+_finalizeSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint, options) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  this._restoreIndexSearchAnchor(anchor)
+  this._measureIndexResultsHeight((newHeight) => this._enterSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint, newHeight, options))
+},
+
+_enterSearchResult(anchor, token, normalizedNext, oldHeight, oldFootprint, newHeight, options) {
+  if (this._unloaded || token !== this._indexSearchTransitionToken) return
+  const measuredNewHeight = Math.max(0, Number(newHeight) || 0)
+  const targetHeight = measuredNewHeight > 0 ? measuredNewHeight : oldHeight
+  const retentionPatch = options.preserveIndexAnchor
+    ? this._indexSearchRetentionPatch(Math.max(0, Math.max(oldFootprint, targetHeight) - targetHeight))
+    : {}
+  if (options.preserveIndexAnchor) this._indexSearchFootprintHeight = Math.max(oldFootprint, targetHeight)
+  const heightStyle = oldHeight > 0 && targetHeight > 0 ? `height:${targetHeight}px;overflow:hidden;` : ''
+  const stillPending = normalizeSearchText(this.data.searchDraft) !== normalizedNext
+  this.setData({
+    ...retentionPatch,
+    searchPending: stillPending,
+    indexResultsPhase: 'entering',
+    indexResultsHeightStyle: heightStyle,
+  }, () => this._settleSearchResult(anchor, token))
+},
+
+_settleSearchResult(anchor, token) {
+  this._restoreIndexSearchAnchor(anchor)
+  this._indexSearchSettleTimer = setTimeout(() => {
+    this._indexSearchSettleTimer = null
+    if (this._unloaded || token !== this._indexSearchTransitionToken) return
+    this.setData({
+      indexResultsTransitioning: false,
+      indexResultsPhase: '',
+      indexResultsHeightStyle: '',
+    }, () => this._restoreIndexSearchAnchor(anchor))
+  }, Math.max(INDEX_SEARCH_ENTER_MS, INDEX_SEARCH_HEIGHT_MS))
 },
 resetFilters() {
 clearTimeout(this._searchTimer)
@@ -1447,62 +1559,66 @@ if (typeof callback === 'function' && !this._unloaded && this._pageVisible !== f
 })
 },
 _expandIndexDetailCard(token, callback) {
-const done = typeof callback === 'function' ? callback : () => {}
-if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
-if (this._indexDetailRevealHadCard) {
-this._indexDetailRevealHadCard = false
-this.setData({ indexDetailRevealPhase: 'settling', indexDetailRevealStyle: '' }, () => {
-clearTimeout(this._indexDetailRevealTimer)
-this._indexDetailRevealTimer = setTimeout(() => {
-this._indexDetailRevealTimer = null
-if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
-this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
-}, INDEX_DETAIL_REVEAL_MS)
-})
-return
-}
-const measure = () => {
-if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
-if (!wx.createSelectorQuery) {
-this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
-return
-}
-try {
-let query = wx.createSelectorQuery()
-if (query.in) query = query.in(this)
-query.select('#knowledge-point-detail-card').boundingClientRect()
-query.exec((result) => {
-if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
-const rect = result && result[0]
-const height = rect && Number.isFinite(Number(rect.height)) ? Math.max(1, Math.ceil(Number(rect.height))) : 0
-if (!height) {
-this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
-return
-}
-let width = 375
-try {
-const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
-width = Number(info && info.windowWidth) || width
-} catch (error) { }
-const gap = Math.max(0, 18 * width / 750)
-this.setData({
-indexDetailRevealPhase: 'expanding',
-indexDetailRevealStyle: `height:${height}px;margin-top:${gap}px;opacity:1;overflow:hidden;`,
-}, () => {
-clearTimeout(this._indexDetailRevealTimer)
-this._indexDetailRevealTimer = setTimeout(() => {
-this._indexDetailRevealTimer = null
-if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
-this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
-}, INDEX_DETAIL_REVEAL_MS)
-})
-})
-} catch (error) {
-this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
-}
-}
-if (typeof wx.nextTick === 'function') wx.nextTick(measure)
-else setTimeout(measure, 0)
+  const done = typeof callback === 'function' ? callback : () => {}
+  if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+  if (this._indexDetailRevealHadCard) {
+    this._indexDetailRevealHadCard = false
+    this.setData({ indexDetailRevealPhase: 'settling', indexDetailRevealStyle: '' }, () => this._settleIndexDetailReveal(token, done))
+    return
+  }
+  const measure = () => this._measureIndexDetailCard(token, done)
+  if (typeof wx.nextTick === 'function') wx.nextTick(measure)
+  else setTimeout(measure, 0)
+},
+
+_settleIndexDetailReveal(token, done) {
+  clearTimeout(this._indexDetailRevealTimer)
+  this._indexDetailRevealTimer = setTimeout(() => {
+    this._indexDetailRevealTimer = null
+    if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+    this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+  }, INDEX_DETAIL_REVEAL_MS)
+},
+
+_measureIndexDetailCard(token, done) {
+  if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+  if (!wx.createSelectorQuery) {
+    this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+    return
+  }
+  try {
+    let query = wx.createSelectorQuery()
+    if (query.in) query = query.in(this)
+    query.select('#knowledge-point-detail-card').boundingClientRect()
+    query.exec((result) => this._applyIndexDetailMeasure(result, token, done))
+  } catch (error) {
+    this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+  }
+},
+
+_applyIndexDetailMeasure(result, token, done) {
+  if (this._unloaded || this._pageVisible === false || token !== this._indexDetailRevealToken) { done(false); return }
+  const rect = result && result[0]
+  const height = rect && Number.isFinite(Number(rect.height)) ? Math.max(1, Math.ceil(Number(rect.height))) : 0
+  if (!height) {
+    this.setData({ indexDetailRevealPhase: '', indexDetailRevealStyle: '' }, () => done(true))
+    return
+  }
+  const width = this._indexDetailRevealWidth()
+  const gap = Math.max(0, 18 * width / 750)
+  this.setData({
+    indexDetailRevealPhase: 'expanding',
+    indexDetailRevealStyle: `height:${height}px;margin-top:${gap}px;opacity:1;overflow:hidden;`,
+  }, () => this._settleIndexDetailReveal(token, done))
+},
+
+_indexDetailRevealWidth() {
+  let width = 375
+  try {
+    const info = wx.getWindowInfo ? wx.getWindowInfo() : {}
+    width = Number(info && info.windowWidth) || width
+  } catch (error) { }
+  return width
 },
 _finishIndexNavigation(pointId) {
 if (this._unloaded || this._pageVisible === false) return
@@ -1542,69 +1658,83 @@ afterRender: () => this._expandIndexDetailCard(revealToken, () => this._finishIn
 })
 },
 _navigateFromIndexSearch(id) {
-const pointId = Number(id)
-const point = this._nodeById && this._nodeById.get(pointId)
-if (!point) return
-const sourceGroup = (this._groups || []).find(group => String(group.key) === String(point.groupKey))
-if (!sourceGroup) return
-clearTimeout(this._indexNavigateTimer)
-if (typeof wx.hideKeyboard === 'function') {
-try { wx.hideKeyboard() } catch (error) { }
-}
-this.setData({ indexNavigatingId: pointId, indexSearchFocused: false, searchFocused: false })
-this._indexNavigateTimer = setTimeout(() => {
-this._indexNavigateTimer = null
-if (this._unloaded || this._pageVisible === false) return
-this._scrollToIndexDetailTarget((ready) => {
-if (!ready || this._unloaded || this._pageVisible === false) { this._finishIndexNavigation(pointId); return }
-this._prepareIndexDetailReveal((revealToken) => {
-const currentConfig = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
-const targetFilter = currentConfig.statuses && !currentConfig.statuses.includes(point.status) ? 'all' : this.data.filter
-const currentGraphQuery = String(this.data.query || '')
-const targetGraphQuery = currentGraphQuery && !pointSearchMatch(point, currentGraphQuery).matched ? '' : currentGraphQuery
-const targetConfig = FILTERS.find(item => item.id === targetFilter) || FILTERS[0]
-this._selectedId = pointId
-;(Array.isArray(point.pathIds) ? point.pathIds : []).forEach(pathId => this._expandedNodeIds.add(Number(pathId)))
-let activeGroupKey = String(point.groupKey || '')
-if (point.hasChildren) {
-this._focusNodeId = pointId
-this._graphPage = 0
-} else {
-const parentId = Number(point.parentId) || 0
-if (parentId) {
-this._focusNodeId = parentId
-const siblings = sourceGroup.nodes.filter((item) => {
-if (Number(item.parentId) !== parentId) return false
-if (targetConfig.statuses && !targetConfig.statuses.includes(item.status)) return false
-return pointSearchMatch(item, targetGraphQuery).matched
-})
-const siblingIndex = Math.max(0, siblings.findIndex(item => Number(item.knowledge_point_id) === pointId))
-this._graphPage = Math.floor(siblingIndex / POINTS_PER_PAGE)
-} else {
-this._focusNodeId = 0
-activeGroupKey = ''
-const visibleGroups = (this._groups || []).filter((group) => group.nodes.some((item) => {
-if (targetConfig.statuses && !targetConfig.statuses.includes(item.status)) return false
-return pointSearchMatch(item, targetGraphQuery).matched
-}))
-const groupIndex = Math.max(0, visibleGroups.findIndex(group => String(group.key) === String(point.groupKey)))
-this._graphPage = Math.floor(groupIndex / POINTS_PER_PAGE)
-}
-}
-this.setData({
-filter: targetFilter,
-query: targetGraphQuery,
-searchDraft: targetGraphQuery,
-searchPending: false,
-activeGroupKey,
-}, () => {
-// Avoid graph entrance animation while landing on the detail card; the graph is
-// outside the focal viewport and the extra compositor pass can look like a flash.
-this.applyView(true, false, () => this._expandIndexDetailCard(revealToken, () => this._finishIndexNavigation(pointId)))
-})
-})
-})
-}, INDEX_NAVIGATE_FEEDBACK_MS)
+  const pointId = Number(id)
+  const point = this._nodeById && this._nodeById.get(pointId)
+  if (!point) return
+  const sourceGroup = (this._groups || []).find(group => String(group.key) === String(point.groupKey))
+  if (!sourceGroup) return
+  clearTimeout(this._indexNavigateTimer)
+  if (typeof wx.hideKeyboard === 'function') {
+    try { wx.hideKeyboard() } catch (error) { }
+  }
+  this.setData({ indexNavigatingId: pointId, indexSearchFocused: false, searchFocused: false })
+  this._indexNavigateTimer = setTimeout(() => {
+    this._indexNavigateTimer = null
+    if (this._unloaded || this._pageVisible === false) return
+    this._scrollToIndexDetailTarget((ready) => this._onIndexScrollReady(ready, pointId, point, sourceGroup))
+  }, INDEX_NAVIGATE_FEEDBACK_MS)
+},
+
+_onIndexScrollReady(ready, pointId, point, sourceGroup) {
+  if (!ready || this._unloaded || this._pageVisible === false) { this._finishIndexNavigation(pointId); return }
+  this._prepareIndexDetailReveal((revealToken) => this._applyIndexNavigation(revealToken, pointId, point, sourceGroup))
+},
+
+_applyIndexNavigation(revealToken, pointId, point, sourceGroup) {
+  const { targetFilter, targetGraphQuery, targetConfig } = this._resolveIndexNavigationFilter(point)
+  this._selectedId = pointId
+  ;(Array.isArray(point.pathIds) ? point.pathIds : []).forEach(pathId => this._expandedNodeIds.add(Number(pathId)))
+  const { activeGroupKey } = this._resolveIndexNavigationFocus(point, pointId, sourceGroup, targetConfig, targetGraphQuery)
+  this.setData({
+    filter: targetFilter,
+    query: targetGraphQuery,
+    searchDraft: targetGraphQuery,
+    searchPending: false,
+    activeGroupKey,
+  }, () => {
+    // Avoid graph entrance animation while landing on the detail card; the graph is
+    // outside the focal viewport and the extra compositor pass can look like a flash.
+    this.applyView(true, false, () => this._expandIndexDetailCard(revealToken, () => this._finishIndexNavigation(pointId)))
+  })
+},
+
+_resolveIndexNavigationFilter(point) {
+  const currentConfig = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
+  const targetFilter = currentConfig.statuses && !currentConfig.statuses.includes(point.status) ? 'all' : this.data.filter
+  const currentGraphQuery = String(this.data.query || '')
+  const targetGraphQuery = currentGraphQuery && !pointSearchMatch(point, currentGraphQuery).matched ? '' : currentGraphQuery
+  const targetConfig = FILTERS.find(item => item.id === targetFilter) || FILTERS[0]
+  return { targetFilter, targetGraphQuery, targetConfig }
+},
+
+_resolveIndexNavigationFocus(point, pointId, sourceGroup, targetConfig, targetGraphQuery) {
+  let activeGroupKey = String(point.groupKey || '')
+  if (point.hasChildren) {
+    this._focusNodeId = pointId
+    this._graphPage = 0
+  } else {
+    const parentId = Number(point.parentId) || 0
+    if (parentId) {
+      this._focusNodeId = parentId
+      const siblings = sourceGroup.nodes.filter((item) => {
+        if (Number(item.parentId) !== parentId) return false
+        if (targetConfig.statuses && !targetConfig.statuses.includes(item.status)) return false
+        return pointSearchMatch(item, targetGraphQuery).matched
+      })
+      const siblingIndex = Math.max(0, siblings.findIndex(item => Number(item.knowledge_point_id) === pointId))
+      this._graphPage = Math.floor(siblingIndex / POINTS_PER_PAGE)
+    } else {
+      this._focusNodeId = 0
+      activeGroupKey = ''
+      const visibleGroups = (this._groups || []).filter((group) => group.nodes.some((item) => {
+        if (targetConfig.statuses && !targetConfig.statuses.includes(item.status)) return false
+        return pointSearchMatch(item, targetGraphQuery).matched
+      }))
+      const groupIndex = Math.max(0, visibleGroups.findIndex(group => String(group.key) === String(point.groupKey)))
+      this._graphPage = Math.floor(groupIndex / POINTS_PER_PAGE)
+    }
+  }
+  return { activeGroupKey }
 },
 handleIndexRowTap(event) { this._runIndexInteraction(Number(event.currentTarget.dataset.id)) },
 handleIndexActionTap(event) { this._runIndexInteraction(Number(event.currentTarget.dataset.id)) },
