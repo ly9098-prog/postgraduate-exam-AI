@@ -104,3 +104,16 @@ async def load_similar_fill_questions(
     query = random_sample(query, total, need, Question.id)
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+def apply_fill_metadata(
+    metadata: dict[int, dict], fill_questions: list[Question]
+) -> dict[int, dict]:
+    for question in fill_questions:
+        metadata[question.id] = {
+            "recommend_reason": "规则补齐",
+            "recommend_score": None,
+            "strategy": "fallback",
+            "similarity": None,
+        }
+    return metadata

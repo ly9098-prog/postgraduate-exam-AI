@@ -149,6 +149,7 @@ from app.services.practice.sequential_service import (
 )
 from app.services.practice.similar_supplement import (
     SimilarRecallRequest,
+    apply_fill_metadata,
     load_similar_fill_questions,
     load_similar_vector_questions,
 )
@@ -1084,13 +1085,7 @@ async def get_similar_practice_questions(
         _random_sample_query,
     )
 
-    for fq in fill_questions:
-        metadata[fq.id] = {
-            "recommend_reason": "规则补齐",
-            "recommend_score": None,
-            "strategy": "fallback",
-            "similarity": None,
-        }
+    apply_fill_metadata(metadata, fill_questions)
 
     return vector_questions + fill_questions, metadata
 
