@@ -24,23 +24,16 @@ from app.features.pipeline_orchestrator import (
     resume_pipeline_background,
     run_pipeline_background,
 )
-from app.services.import_image_completion import (
-    ImageCompletionRequest,
-    finalize_image_pipeline_result,
+from app.services.import_image_completion import finalize_image_pipeline_result
+from app.services.import_image_lifecycle import (
+    ImageLifecycleRequest,
+    _record_image_failure,
+    persist_image_import_failure,
+    run_image_import_lifecycle,
 )
 from app.services.import_image_stages import (
-    ImagePipelineExecutionRequest,
-    ImageFailurePersistence,
-    ImageCompletionPersistence,
-    ImageOcrStage,
-    ImagePipelineStage,
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
-    run_image_pipeline_stage,
-    persist_image_completion,
-    persist_image_failure,
-    execute_image_pipeline_stages,
-    run_prepared_image_ocr,
 )
 from app.services.import_background_execution import (
     ImportBackgroundExecutionRequest,
@@ -402,6 +395,53 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
     )
 
 
+def _image_lifecycle_request(
+    pipeline_id: str,
+    image_path: str,
+    source_file: str,
+    subject: str | None,
+    subject_id: int | None,
+    options: dict,
+    created_by: str | None = None,
+) -> ImageLifecycleRequest:
+    from app.features import pipeline_checkpoint as ckpt
+
+    from app.features.import_ai_policy import apply_image_single_pass_policy
+    from app.services.ocr_service import clean_ocr_text
+
+    lifecycle = ImageLifecycleRequest(
+        pipeline_id=pipeline_id,
+        image_path=image_path,
+        source_file=source_file,
+        subject=subject,
+        subject_id=subject_id,
+        options=options,
+        created_by=created_by,
+        logger=logger,
+        async_session=async_session,
+        ensure_record=ckpt.ensure_pipeline_record,
+        update_record=ckpt.update_pipeline_status,
+        run_pipeline=run_pipeline,
+        clean_text=clean_ocr_text,
+        build_runtime_diagnostics=_build_ocr_runtime_diagnostics,
+        run_ocr=_run_ocr_via_configured_backend,
+        build_diagnostics=_build_ocr_text_diagnostics,
+        build_blocks=_build_pre_extracted_ocr_blocks,
+        set_status=_set_image_pipeline_status,
+        set_stage_tags=lambda stage_name, engine: (
+            set_tag("stage", stage_name),
+            set_tag("ocr.engine", engine),
+        ),
+        apply_policy=apply_image_single_pass_policy,
+        finalize_result=finalize_image_pipeline_result,
+        get_status=_get_image_pipeline_status,
+        fail_pipeline=_fail_image_pipeline,
+        log_event=log_event,
+        classify_result=_classify_image_pipeline_result,
+    )
+    return lifecycle
+
+
 async def _run_image_pipeline_with_db(
     pipeline_id: str,
     image_path: str,
@@ -419,7 +459,6 @@ async def _run_image_pipeline_with_db(
         source_type="image",
         source_file=source_file,
     )
-
     log_event(
         logger,
         "import.background.start",
@@ -427,117 +466,32 @@ async def _run_image_pipeline_with_db(
         source_type="image",
         source_file=source_file,
     )
-
     set_tag("stage", "upload")
     set_tag("upload.filename", source_file)
     set_tag("upload.type", "image")
+    lifecycle = _image_lifecycle_request(
+        pipeline_id,
+        image_path,
+        source_file,
+        subject,
+        subject_id,
+        options,
+        created_by,
+    )
     try:
-        from app.features import pipeline_checkpoint as ckpt
-
         await ensure_image_checkpoint(
             ImageStageCheckpointRequest(
                 pipeline_id=pipeline_id,
                 source_file=source_file,
                 created_by=created_by,
                 async_session=async_session,
-                ensure_record=ckpt.ensure_pipeline_record,
+                ensure_record=lifecycle.ensure_record,
             )
         )
-        from app.services.ocr_service import clean_ocr_text
-
-        from app.features.import_ai_policy import apply_image_single_pass_policy
-
-        (
-            result,
-            raw_text,
-            raw_ocr_text,
-            ocr_diagnostics,
-            runtime_diagnostics,
-        ) = await execute_image_pipeline_stages(
-            ImagePipelineExecutionRequest(
-                pipeline_id=pipeline_id,
-                image_path=image_path,
-                source_file=source_file,
-                subject=subject,
-                subject_id=subject_id,
-                options=options,
-                created_by=created_by,
-                logger=logger,
-                async_session=async_session,
-                ensure_record=ckpt.ensure_pipeline_record,
-                run_pipeline=run_pipeline,
-                clean_text=clean_ocr_text,
-                build_runtime_diagnostics=_build_ocr_runtime_diagnostics,
-                run_ocr=_run_ocr_via_configured_backend,
-                build_diagnostics=_build_ocr_text_diagnostics,
-                build_blocks=_build_pre_extracted_ocr_blocks,
-                set_status=_set_image_pipeline_status,
-                set_stage_tags=lambda stage_name, engine: (
-                    set_tag("stage", stage_name),
-                    set_tag("ocr.engine", engine),
-                ),
-                apply_policy=apply_image_single_pass_policy,
-            )
-        )
-
-        result, status = finalize_image_pipeline_result(
-            ImageCompletionRequest(
-                pipeline_id=pipeline_id,
-                result=result,
-                cleaned_text=raw_text,
-                raw_ocr_text=raw_ocr_text,
-                ocr_diagnostics=ocr_diagnostics,
-                runtime_diagnostics=runtime_diagnostics,
-                classify_result=_classify_image_pipeline_result,
-            )
-        )
-        await persist_image_completion(
-            ImageCompletionPersistence(
-                pipeline_id=pipeline_id,
-                source_file=source_file,
-                result=result,
-                status=status,
-                async_session=async_session,
-                get_status=_get_image_pipeline_status,
-                set_status=_set_image_pipeline_status,
-                update_record=ckpt.update_pipeline_status,
-                log_event=log_event,
-            )
-        )
+        await run_image_import_lifecycle(lifecycle)
     except Exception as exc:
-        logger.exception(
-            "image pipeline failed: pipeline_id=%s file=%s", pipeline_id, source_file
-        )
-        log_event(
-            logger,
-            "import.background.error",
-            level="error",
-            pipeline_id=pipeline_id,
-            source_type="image",
-            source_file=source_file,
-            error_type=type(exc).__name__,
-            error_message=str(exc)[:300],
-        )
-        capture_exception(
-            exc,
-            tags={
-                "pipeline_id": pipeline_id,
-                "source_file": source_file,
-                "stage": "ocr",
-            },
-        )
-        from app.features import pipeline_checkpoint as ckpt
-
-        await persist_image_failure(
-            ImageFailurePersistence(
-                pipeline_id=pipeline_id,
-                source_file=source_file,
-                exc=exc,
-                async_session=async_session,
-                fail_pipeline=_fail_image_pipeline,
-                update_record=ckpt.update_pipeline_status,
-            )
-        )
+        _record_image_failure(lifecycle, exc)
+        await persist_image_import_failure(lifecycle, exc)
         raise
     finally:
         await _release_pipeline_reservation(pipeline_id)
