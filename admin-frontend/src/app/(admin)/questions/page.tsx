@@ -3,9 +3,6 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import {
-  Copy,
-} from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useAuthStore } from "@/lib/auth/auth-store";
@@ -18,6 +15,7 @@ import { QuestionListCard } from "./question-list-card";
 import { QuestionBatchSelectionBar } from "./question-batch-selection-bar";
 import { QuestionMessageToast } from "./question-message-toast";
 import { QuestionDetailDrawer } from "./question-detail-drawer";
+import { QuestionCopyButton } from "./question-copy-button";
 import { exportQuestions } from "./question-api";
 
 import { useQuestionExport } from "./hooks/use-question-export";
@@ -213,17 +211,11 @@ export default function QuestionsPage() {
     copyQuestion: handleCopyQuestion,
   } = useQuestionCopy(selectedQuestion, setMessage);
   const copyQuestionButton = (
-    <button
-      type="button"
-      onClick={handleCopyQuestion}
+    <QuestionCopyButton
       disabled={!selectedQuestion || copyingQuestion}
-      aria-label="复制题干和选项"
-      aria-busy={copyingQuestion}
-      title="复制题干和选项（保留 LaTeX）"
-      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      <Copy className="h-4 w-4" aria-hidden="true" />
-    </button>
+      busy={copyingQuestion}
+      onCopy={handleCopyQuestion}
+    />
   );
   // placeholderData 会在新版本到达前保留上一份详情，因此标签也跟随"当前实际展示的数据"
   // 而不是提前切到新版本号，避免短暂出现"新标签 + 旧内容"的错觉。
