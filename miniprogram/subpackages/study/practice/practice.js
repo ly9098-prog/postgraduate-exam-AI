@@ -40,6 +40,7 @@ const { createExitGuardController } = require('./utils/exit-guard-controller')
 const { createExitRequestController } = require('./utils/exit-request-controller')
 const { createPausedConfirmController } = require('./utils/paused-confirm-controller')
 const { createSubmittedResultController } = require('./utils/submitted-result-controller')
+const { createSubmitSuccessController } = require('./utils/submit-success-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -1279,52 +1280,34 @@ return
 }
 submission.serverAccepted = true
 submission.retryBlocked = false
-const partialCount = (submission.partialQuestionIds || []).length
-var userId = this._getCurrentUserId()
-var cacheCreatedAt = Date.now()
-var cacheKey = 'pr_' + cacheCreatedAt + '_' + Math.random().toString(36).slice(2, 8)
-const localResultPayload = buildSubmitResultPayload({
-submission,
-submitResult,
-questions,
-traceId: this._practiceSession.traceId,
-cacheKey,
-userId,
-createdAt: cacheCreatedAt,
+this._submitSuccessController().complete(submission, submitResult, questions)
+},
+_submitSuccessController() {
+return this._submitSuccessControllerInstance || (
+this._submitSuccessControllerInstance = createSubmitSuccessController({
+getCurrentUserId: () => this._getCurrentUserId(),
+now: () => Date.now(),
+buildCacheKey: createdAt => 'pr_' + createdAt + '_' + Math.random().toString(36).slice(2, 8),
+getTraceId: () => this._practiceSession.traceId,
+buildResultPayload: options => buildSubmitResultPayload({
+...options,
 buildStoredResults,
 buildLightQuestions,
 computeDisplaySkippedCount,
+}),
+setSubmittedResultPayload: payload => { this._submittedResultPayload = payload },
+writeResultCache: payload => wx.setStorageSync('lastPracticeResult', payload),
+logWarn: (...args) => console.warn(...args),
+buildResultUrl: options => buildPracticeResultUrl(options),
+getLaunchSource: () => this._launchSource || '',
+getLaunchReturnTo: () => this._launchReturnTo || '',
+setPendingResultUrl: value => { this._pendingResultUrl = value },
+persistPendingSubmission: (submission, status, resultUrl) => this._persistPendingSubmission(submission, status, resultUrl),
+setUnloadGuard: enabled => this._setPracticeUnloadGuard(enabled),
+setData: patch => this.setData(patch),
+openSubmittedResult: (resultUrl, submission) => this._openSubmittedResult(resultUrl, submission),
 })
-const displaySkippedCount = localResultPayload.skipped
-this._submittedResultPayload = localResultPayload
-var resultCacheStored = false
-try {
-wx.setStorageSync('lastPracticeResult', localResultPayload)
-resultCacheStored = true
-} catch (storageError) {
-console.warn('答题已提交成功，但本地结果缓存失败', storageError)
-}
-const resultUrl = buildPracticeResultUrl({
-correct: localResultPayload.correct,
-wrong: localResultPayload.wrong,
-skipped: displaySkippedCount,
-partial: partialCount,
-total: localResultPayload.total,
-subjectId: localResultPayload.subject_id,
-subjectName: localResultPayload.subject_name || '',
-duration: localResultPayload.duration,
-cacheKey,
-requestId: submission.requestId || '',
-resultCacheStored,
-source: this._launchSource || '',
-returnTo: this._launchReturnTo || '',
-})
-submission.keepPendingUntilResult = !resultCacheStored
-this._pendingResultUrl = resultUrl
-submission.pendingPersisted = this._persistPendingSubmission(submission, 'submitted', resultUrl) || submission.pendingPersisted
-this._setPracticeUnloadGuard(false)
-this.setData({ submitting: false, submitted: true })
-this._openSubmittedResult(resultUrl, submission)
+)
 },
 _submitErrorController() {
 return this._submitError || (
