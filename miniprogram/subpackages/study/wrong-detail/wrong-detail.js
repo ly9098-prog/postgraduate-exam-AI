@@ -687,82 +687,79 @@ aiInlineNotice: '',
 })
 return true
 },
-async loadAiAnalysis(wqId) {
-if (!wqId) return
-if (this.data.aiLoading) return
-const baselineGeneratedAt = String(this._aiGenerationMarker || _generationMarker(this.data.wq) || '')
-const requestId = ++this._aiRequestId
-this.setData({
-aiLoading: true,
-aiRequested: true,
-aiFallback: false,
-aiErrorText: '',
-aiRetryable: true,
-aiInlineNotice: '',
-})
-try {
-const result = await this._requestAiAnalysis(wqId, false)
-if (!this._isCurrentAiRequest(requestId, wqId)) {
-this._resetAiLoadingState()
-return
-}
-const normalized = _normalizeAiPayload(result)
-const hasContent = _hasAiContent(normalized)
-const model = (result && result.model) || ''
-const fromFallback = !!(result && result.from_fallback)
-if (model === 'generating') {
-const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
-requireNewGeneration: true,
-baselineGeneratedAt,
-})
-if (this._applyRecoveredAiResult(recovered)) return
-if (!this._isCurrentAiRequest(requestId, wqId)) return
-this._resetAiLoadingState()
-this.setData({ aiFallback: true, aiErrorText: 'AI 分析正在生成中，请稍后重试' })
-return
-}
-if (fromFallback) {
-this._resetAiLoadingState()
-this.setData(Object.assign({ aiFallback: true }, this._analysisFailureState(model, result)))
-return
-}
-if (!hasContent) {
-this._resetAiLoadingState()
-this.setData({ aiFallback: true, aiErrorText: 'AI 分析结果为空，请稍后重试' })
-return
-}
-this._resetAiLoadingState()
-this._aiResult = normalized
-this._aiGenerationMarker = String((result && result.generated_at) || this._aiGenerationMarker || '')
-this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
-this.setData({
-aiCards: _normalizeAiResult(normalized),
-aiFallback: false,
-aiFromCache: !!(result && result.from_cache),
-aiFromQuestionAnalysis: false,
-aiErrorText: '',
-aiRetryable: true,
-})
-} catch (e) {
-console.error('加载 AI 分析失败', e)
-if (this._isCurrentAiRequest(requestId, wqId)) {
-this.setData({ aiInlineNotice: 'AI 正在继续生成，完成后会自动显示' })
-this._enqueueAiRecovery(wqId, false, '')
-const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
-requireNewGeneration: true,
-baselineGeneratedAt,
-})
-if (this._applyRecoveredAiResult(recovered)) return
-}
-if (this._isCurrentAiRequest(requestId, wqId)) {
-const msg = _isTimeoutError(e)
-? 'AI 分析生成超时，请稍后重试'
-: 'AI 分析生成失败，请稍后重试'
-this._resetAiLoadingState()
-this.setData({ aiFallback: true, aiErrorText: msg })
-}
-}
-},
+  async loadAiAnalysis(wqId) {
+    if (!wqId || this.data.aiLoading) return
+    const baselineGeneratedAt = String(this._aiGenerationMarker || _generationMarker(this.data.wq) || '')
+    const requestId = ++this._aiRequestId
+    this.setData({
+      aiLoading: true, aiRequested: true, aiFallback: false,
+      aiErrorText: '', aiRetryable: true, aiInlineNotice: '',
+    })
+    try {
+      const result = await this._requestAiAnalysis(wqId, false)
+      if (!this._isCurrentAiRequest(requestId, wqId)) { this._resetAiLoadingState(); return }
+      await this._applyAiAnalysisResult(result, wqId, requestId, baselineGeneratedAt)
+    } catch (e) {
+      await this._handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt)
+    }
+  },
+
+  async _applyAiAnalysisResult(result, wqId, requestId, baselineGeneratedAt) {
+    const normalized = _normalizeAiPayload(result)
+    const hasContent = _hasAiContent(normalized)
+    const model = (result && result.model) || ''
+    const fromFallback = !!(result && result.from_fallback)
+    if (model === 'generating') {
+      const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+        requireNewGeneration: true, baselineGeneratedAt,
+      })
+      if (this._applyRecoveredAiResult(recovered)) return
+      if (!this._isCurrentAiRequest(requestId, wqId)) return
+      this._resetAiLoadingState()
+      this.setData({ aiFallback: true, aiErrorText: 'AI 分析正在生成中，请稍后重试' })
+      return
+    }
+    if (fromFallback) {
+      this._resetAiLoadingState()
+      this.setData(Object.assign({ aiFallback: true }, this._analysisFailureState(model, result)))
+      return
+    }
+    if (!hasContent) {
+      this._resetAiLoadingState()
+      this.setData({ aiFallback: true, aiErrorText: 'AI 分析结果为空，请稍后重试' })
+      return
+    }
+    this._commitAiAnalysisSuccess(result, normalized, wqId)
+  },
+
+  _commitAiAnalysisSuccess(result, normalized, wqId) {
+    this._resetAiLoadingState()
+    this._aiResult = normalized
+    this._aiGenerationMarker = String((result && result.generated_at) || this._aiGenerationMarker || '')
+    this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
+    this.setData({
+      aiCards: _normalizeAiResult(normalized), aiFallback: false,
+      aiFromCache: !!(result && result.from_cache), aiFromQuestionAnalysis: false,
+      aiErrorText: '', aiRetryable: true,
+    })
+  },
+
+  async _handleAiAnalysisError(e, wqId, requestId, baselineGeneratedAt) {
+    console.error('加载 AI 分析失败', e)
+    if (this._isCurrentAiRequest(requestId, wqId)) {
+      this.setData({ aiInlineNotice: 'AI 正在继续生成，完成后会自动显示' })
+      this._enqueueAiRecovery(wqId, false, '')
+      const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+        requireNewGeneration: true, baselineGeneratedAt,
+      })
+      if (this._applyRecoveredAiResult(recovered)) return
+    }
+    if (this._isCurrentAiRequest(requestId, wqId)) {
+      const msg = _isTimeoutError(e) ? 'AI 分析生成超时，请稍后重试' : 'AI 分析生成失败，请稍后重试'
+      this._resetAiLoadingState()
+      this.setData({ aiFallback: true, aiErrorText: msg })
+    }
+  },
 async regenerateAiAnalysis() {
 const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
 if (!wqId || this.data.aiLoading || this.data.aiRegenerating) return
