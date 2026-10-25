@@ -33,6 +33,7 @@ const { createCumulativeStartController } = require('./cumulative-start-controll
 const { createDistributionLoadController } = require('./distribution-load-controller')
 const { createDistributionEntryController } = require('./distribution-entry-controller')
 const { createCloseDetailController } = require('./close-detail-controller')
+const { createDayStartEntryController } = require('./day-start-entry-controller')
 const { createSubjectMetaController } = require('./subject-meta-controller')
 const { createTrendAnimationController } = require('./trend-animation-controller')
 const { createPieAnimationController } = require('./pie-animation-controller')
@@ -828,11 +829,18 @@ var pageConfig = {
   /* ==================== 统计日设置 ==================== */
 
   onDayStartChange(e) {
-    const timeText = e && e.detail && e.detail.value
-    if (typeof timeText !== 'string') return
-    const minute = chinaTime.timeTextToMinute(timeText)
-    if (minute === this.data.dayStartMinute) return
-    this._saveDayStart(minute)
+    this._getDayStartEntryController().change(e)
+  },
+
+  _getDayStartEntryController() {
+    if (!this._dayStartEntryController) {
+      this._dayStartEntryController = createDayStartEntryController({
+        timeTextToMinute: timeText => chinaTime.timeTextToMinute(timeText),
+        getDayStartMinute: () => this.data.dayStartMinute,
+        saveDayStart: minute => this._saveDayStart(minute),
+      })
+    }
+    return this._dayStartEntryController
   },
 
   async _saveDayStart(minute) {
