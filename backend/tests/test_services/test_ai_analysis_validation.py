@@ -72,6 +72,7 @@ def test_answer_check_failure_preserves_reason_and_actual_value():
     assert validation.valid is False
     assert validation.guard_reason == "answer_mismatch"
     assert validation.actual_answer_check == ["B"]
+    assert validation.answer_grounding is None
 
 
 def test_diagnosis_contradiction_uses_model_reason_with_fallback():
@@ -145,7 +146,7 @@ async def test_valid_initial_evidence_skips_retry_probe():
     async def unexpected_retry(*args, **kwargs):
         raise AssertionError("retry probe must not run")
 
-    await reconcile_visual_evidence(
+    validation = await reconcile_visual_evidence(
         validation_request(
             image_data_urls=["data:image/png;base64,x"],
             retry_visual_ack=unexpected_retry,
@@ -160,3 +161,4 @@ async def test_valid_initial_evidence_skips_retry_probe():
     assert usage.visual_ack_retried is False
     assert usage.total_duration_ms == 100
     assert usage.total_tokens_used == 10
+    assert validation.answer_grounding == {"answer": "A"}

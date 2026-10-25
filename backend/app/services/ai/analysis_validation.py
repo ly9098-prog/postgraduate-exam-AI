@@ -12,6 +12,7 @@ class GroundingValidation:
     valid: bool
     guard_reason: str
     actual_answer_check: Any = None
+    answer_grounding: Any = None
 
 
 @dataclass(slots=True)
@@ -82,6 +83,7 @@ async def reconcile_visual_evidence(
         validate_answer_check=request.validate_answer_check,
         diagnosis_contradicts_grounding=request.diagnosis_contradicts_grounding,
     )
+    grounding.answer_grounding = answer_grounding
 
     if request.image_data_urls and not request.evidence_is_valid(usage.visual_evidence):
         if request.should_retry_visual_ack(

@@ -62,6 +62,13 @@ from app.services.ai.analysis_persistence import (
     persist_repaired_analysis,
     persist_valid_analysis,
 )
+from app.services.ai.analysis_outcomes import (
+    build_analysis_usage,
+    detect_visual_ack_failure,
+    grounding_repair_outcome,
+    valid_analysis_outcome,
+    visual_ack_failure_outcome,
+)
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
     prepare_analysis,
@@ -693,14 +700,11 @@ async def analyze_error(
         raw_content = result.get("content", "")
         parsed = parse_error_analysis_content(raw_content)
         parsed_valid = is_valid_ai_analysis(parsed)
-        usage = AnalysisUsage(
-            visual_evidence=(
-                _extract_visual_evidence(raw_content) if image_data_urls else ""
-            ),
-            visual_ack_retried=False,
-            visual_ack_retry_ms=0,
-            total_tokens_used=int(result.get("tokens_used") or 0),
-            total_duration_ms=int(result.get("duration_ms") or 0),
+        usage = build_analysis_usage(
+            raw_content=raw_content,
+            result=result,
+            image_data_urls=image_data_urls,
+            extract_evidence=_extract_visual_evidence,
         )
 
         grounding = await reconcile_visual_evidence(
@@ -724,35 +728,23 @@ async def analyze_error(
             usage=usage,
         )
         grounding_valid = grounding.valid
-        grounding_guard_reason = grounding.guard_reason
-        actual_answer_check = grounding.actual_answer_check
         visual_evidence = usage.visual_evidence
         visual_ack_retried = usage.visual_ack_retried
-        visual_ack_retry_ms = usage.visual_ack_retry_ms
-        total_tokens_used = usage.total_tokens_used
-        total_duration_ms = usage.total_duration_ms
 
-        if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
-            evidence_text = str(visual_evidence or "").strip()
-            ack_missing = not evidence_text
-            error_code = "vision_ack_missing" if ack_missing else "vision_parse_failed"
-            retryable = bool(ack_missing)
-            logger.info(
-                "ai.error_analysis.visual_ack_failed wq_id=%s model=%s evidence=%r "
-                "retried=%s error_code=%s retryable=%s",
-                wq.id,
-                result.get("model"),
-                evidence_text[:120],
-                visual_ack_retried,
-                error_code,
-                retryable,
-            )
-            return visual_ack_failed_response(
-                error_code=error_code,
-                retryable=retryable,
-                tokens_used=total_tokens_used,
-                duration_ms=total_duration_ms,
-                visual_input_count=len(image_data_urls),
+        ack_failure = detect_visual_ack_failure(
+            image_data_urls=image_data_urls,
+            visual_evidence=visual_evidence,
+            evidence_is_valid=_visual_evidence_is_valid,
+        )
+        if ack_failure is not None:
+            return visual_ack_failure_outcome(
+                wrong_question_id=wq.id,
+                result=result,
+                image_data_urls=image_data_urls,
+                usage=usage,
+                visual_ack_retried=visual_ack_retried,
+                failure=ack_failure,
+                logger=logger,
             )
 
         if not parsed_valid:
@@ -772,102 +764,43 @@ async def analyze_error(
             # deterministic repair is still useful to the learner and prevents
             # repeated paid calls on every page open. Manual regeneration can
             # replace it once the configured model follows the contract.
-            safe, generated_at = await persist_repaired_analysis(
+            return await grounding_repair_outcome(
                 db,
                 wrong_question=wq,
                 user_id=user_id,
                 context=context,
                 result=result,
-                answer_grounding=answer_grounding,
-                visual_evidence=visual_evidence,
-                visual_ack_retried=visual_ack_retried,
-                visual_ack_retry_ms=visual_ack_retry_ms,
-                image_count=len(image_data_urls),
+                grounding=grounding,
+                usage=usage,
                 input_signature=input_signature,
                 model_signature=model_signature,
                 expected_answer_check=expected_answer_check,
-                grounding_guard_reason=grounding_guard_reason,
-                actual_answer_check=actual_answer_check,
-                tokens_used=total_tokens_used,
-                duration_ms=total_duration_ms,
                 effective_force=effective_force,
                 runtime=runtime,
-            )
-            logger.warning(
-                "ai.error_analysis.grounding_repaired wq_id=%s force=%s model=%s reason=%s "
-                "expected=%s actual=%s",
-                wq.id,
-                effective_force,
-                result.get("model"),
-                grounding_guard_reason,
-                expected_answer_check,
-                actual_answer_check,
-            )
-            return grounding_repaired_response(
-                content=safe,
-                tokens_used=total_tokens_used,
-                duration_ms=total_duration_ms,
-                effective_force=effective_force,
-                visual_input_count=len(image_data_urls),
-                visual_evidence=visual_evidence,
-                generated_at=generated_at,
+                logger=logger,
             )
 
         # The answer-difference sentence is always server generated. The model
         # contributes only the pedagogical reason after that authoritative fact.
-        generated_at = await persist_valid_analysis(
+        return await valid_analysis_outcome(
             db,
             wrong_question=wq,
             user_id=user_id,
             context=context,
             result=result,
             parsed=parsed,
-            answer_grounding=answer_grounding,
-            visual_evidence=visual_evidence,
-            visual_ack_retried=visual_ack_retried,
-            visual_ack_retry_ms=visual_ack_retry_ms,
-            image_count=len(image_data_urls),
+            grounding=grounding,
+            usage=usage,
             input_signature=input_signature,
             model_signature=model_signature,
             expected_answer_check=expected_answer_check,
             effective_force=effective_force,
-            tokens_used=total_tokens_used,
-            duration_ms=total_duration_ms,
+            visual_evidence_is_valid=_visual_evidence_is_valid,
+            max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
             runtime=runtime,
+            logger=logger,
         )
 
-        logger.info(
-            "ai.error_analysis.result wq_id=%s force=%s model=%s input_mode=%s visual_count=%s "
-            "visual_evidence_valid=%s parsed_valid=%s compatibility=%s max_tokens=%s "
-            "visual_ack_retried=%s visual_ack_retry_ms=%s "
-            "fields=%s duration_ms=%s",
-            wq.id,
-            effective_force,
-            result.get("model"),
-            "vision" if image_data_urls else "text",
-            len(image_data_urls),
-            _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
-            parsed_valid,
-            result.get("compatibility_profile") or "default",
-            _ERROR_ANALYSIS_MAX_TOKENS,
-            visual_ack_retried,
-            visual_ack_retry_ms,
-            {
-                k: bool(parsed.get(k))
-                for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]
-            },
-            total_duration_ms,
-        )
-
-        return valid_analysis_response(
-            parsed,
-            result,
-            tokens_used=total_tokens_used,
-            duration_ms=total_duration_ms,
-            effective_force=effective_force,
-            image_data_urls=image_data_urls,
-            visual_evidence=visual_evidence,
-        )
     finally:
         _generating.discard(wq_pk)
         if have_lock:
