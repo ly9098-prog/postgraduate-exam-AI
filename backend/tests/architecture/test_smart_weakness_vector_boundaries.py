@@ -79,11 +79,11 @@ def test_real_entry_delegates_exact_ports_and_keeps_query_ownership():
         "compute_weak_kps": "_compute_weak_knowledge_points",
         "load_random": "get_practice_questions",
         "load_vector_recalls": ("vector_retrieval_service.vector_recall_by_text"),
-        "load_vector_matches": "load_vector_matches",
-        "load_fill_questions": "load_fill_questions",
+        "load_vector_matches": "_load_vector_matches",
+        "load_fill_questions": "_load_fill_questions",
     }
-    # SQL and session calls stay in the two provider closures owned by the
-    # historical service entry; the extracted orchestrator has no persistence.
+    # SQL ownership now lives in the dedicated provider module; the extracted
+    # orchestrator and this service entry both have no persistence calls.
     provider_functions = [
         node
         for node in entry.body
@@ -95,7 +95,7 @@ def test_real_entry_delegates_exact_ports_and_keeps_query_ownership():
         for provider in provider_functions
         for node in ast.walk(provider)
         if isinstance(node, ast.Call)
-    } >= {"execute", "scalar", "scalars"}
+    }.isdisjoint({"execute", "scalar", "scalars"})
 
 
 def test_import_does_not_load_application_config_models_or_create_tasks():

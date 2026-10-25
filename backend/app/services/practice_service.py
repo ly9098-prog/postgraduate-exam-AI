@@ -1613,78 +1613,33 @@ async def _smart_weakness_vector(
     exclude_ids: 需要额外排除的题目 ID 集合（如 path 策略已选的题）。
     subject_ids: 精确 subject_id 列表，提供时跳过 resolve_subject_ids 递归扩展。
     """
+    from app.services.practice.weakness_vector_providers import (
+        WeaknessVectorProviderRequest,
+        load_fill_questions,
+        load_vector_matches,
+    )
     from app.services import mastery_service, vector_retrieval_service
 
-    async def load_vector_matches(
-        recalls: list[dict],
-        scope_ids: list[int],
-        exclude_ids: set[int],
-    ) -> list[tuple[Question, dict]]:
-        rec_ids = [
-            recall["question_id"]
-            for recall in recalls
-            if recall["question_id"] not in exclude_ids
-        ]
-        if not rec_ids:
-            return []
-        vector_conditions = [
-            Question.id.in_(rec_ids),
-            Question.is_active,
-            Question.subject_id.in_(scope_ids),
-            _practice_revision_scope_condition(scope_ids),
-        ]
-        vector_excluded_sub = _build_excluded_question_subquery(
-            user_id=user_id,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-        )
-        if vector_excluded_sub is not None:
-            vector_conditions.append(Question.id.notin_(vector_excluded_sub))
-        result = await db.execute(
-            select(Question)
-            .where(and_(*vector_conditions))
-            .options(selectinload(Question.subject_ref))
-        )
-        by_id = {question.id: question for question in result.scalars().all()}
-        return [
-            (by_id[recall["question_id"]], recall)
-            for recall in recalls
-            if recall["question_id"] in by_id
-            and recall["question_id"] not in exclude_ids
-        ]
+    provider_request = WeaknessVectorProviderRequest(
+        db=db,
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        revision_condition=_practice_revision_scope_condition,
+        build_excluded=_build_excluded_question_subquery,
+        utcnow=utcnow,
+        random_sample=_random_sample_query,
+    )
 
-    async def load_fill_questions(
-        remaining: int,
-        scope_ids: list[int],
-        existing_ids: set[int],
-    ) -> list[Question]:
-        conditions = [
-            Question.is_active,
-            Question.subject_id.in_(scope_ids),
-            _practice_revision_scope_condition(scope_ids),
-            Question.id.notin_(existing_ids),
-        ]
-        excluded_sub = _build_excluded_question_subquery(
-            user_id=user_id,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
+    async def _load_vector_matches(recalls, scope_ids, excluded_ids):
+        return await load_vector_matches(
+            provider_request, recalls, scope_ids, excluded_ids
         )
-        if excluded_sub is not None:
-            conditions.append(Question.id.notin_(excluded_sub))
-        total = (
-            await db.execute(
-                select(func.count()).select_from(
-                    select(Question).where(and_(*conditions)).subquery()
-                )
-            )
-        ).scalar() or 0
-        query = (
-            select(Question)
-            .where(and_(*conditions))
-            .options(selectinload(Question.subject_ref))
+
+    async def _load_fill_questions(remaining, scope_ids, existing_ids):
+        return await load_fill_questions(
+            provider_request, remaining, scope_ids, existing_ids
         )
-        query = _random_sample_query(query, total, remaining, Question.id)
-        return list((await db.execute(query)).scalars().all())
 
     return await run_smart_weakness_vector(
         SmartWeaknessVectorRequest(
@@ -1703,8 +1658,8 @@ async def _smart_weakness_vector(
             compute_weak_kps=_compute_weak_knowledge_points,
             load_random=get_practice_questions,
             load_vector_recalls=vector_retrieval_service.vector_recall_by_text,
-            load_vector_matches=load_vector_matches,
-            load_fill_questions=load_fill_questions,
+            load_vector_matches=_load_vector_matches,
+            load_fill_questions=_load_fill_questions,
         )
     )
 
