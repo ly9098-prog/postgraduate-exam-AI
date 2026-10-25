@@ -512,6 +512,9 @@ jobs:
           node --test miniprogram/tests/test-pomodoro-running-state-migrator.js
           node --test miniprogram/tests/test-exam-hydrate-helpers.js
           node --test miniprogram/tests/test-exam-paper-search.js
+          node --test miniprogram/tests/test-exam-paper-list-mapper.js
+          node --test miniprogram/tests/test-exam-paper-list-load-controller.js
+          node --test miniprogram/tests/test-exam-paper-list-page-wiring.js
           node --test miniprogram/tests/test-practice-result-tips.js
           node --test miniprogram/tests/test-practice-result-payload-readers.js
           node --test miniprogram/tests/test-practice-result-cache-validation.js

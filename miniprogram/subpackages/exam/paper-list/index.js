@@ -1,27 +1,10 @@
 const api = require('../../../utils/api')
 const examAttemptCache = require('../utils/exam-attempt-cache')
-const { normalizeSearchValue, fuzzyIncludes, matchesPaper, paperRenderSignature } = require('../utils/paper-search')
+const { matchesPaper, paperRenderSignature } = require('../utils/paper-search')
+const { buildPapers } = require('../utils/paper-list-mapper')
+const { createPaperListLoadController } = require('../utils/paper-list-load-controller')
 
 const SEARCH_DEBOUNCE_MS = 280
-
-function minutes(sec) {
-  const value = Number(sec || 0)
-  return value > 0 ? Math.max(1, Math.round(value / 60)) : 0
-}
-
-function cleanUiLabel(value, fallback = '') {
-  return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
-}
-
-function typeLabel(type) {
-  return type === 'past_exam_choice' ? '真题选择题' : '选择题模拟卷'
-}
-
-function typeHint(type) {
-  return type === 'past_exam_choice'
-    ? '历年真题 · 只做适合手机作答的选择题'
-    : '模拟训练 · 只做适合手机作答的选择题'
-}
 
 Page({
   data: {
@@ -63,69 +46,30 @@ Page({
   },
 
   async loadPapers(options = {}) {
-    const silent = !!options.silent
-    const force = !!options.force
-    const suppressErrorToast = !!options.suppressErrorToast
-    if (this._loadPromise && !force) return this._loadPromise
+    return this._paperListLoadController().load(options)
+  },
 
-    if (!silent && !this._loadedOnce) {
-      this.setData({ loading: true, errorText: '' })
+  _paperListLoadController() {
+    if (!this._paperListLoad) {
+      this._paperListLoad = createPaperListLoadController({
+        nextGeneration: () => {
+          this._loadGeneration = (this._loadGeneration || 0) + 1
+          return this._loadGeneration
+        },
+        getGeneration: () => this._loadGeneration,
+        isPageAlive: () => this._pageAlive,
+        wasLoadedOnce: () => !!this._loadedOnce,
+        markLoadedOnce: () => { this._loadedOnce = true },
+        getErrorText: () => this.data.errorText,
+        setData: data => this.setData(data),
+        getPapers: () => api.get('/exams/papers'),
+        getErrorMessage: error => api.getErrorMessage(error),
+        showToast: options => wx.showToast(options),
+        buildPapers: rows => buildPapers(rows, this.data.suggestedPaperId),
+        commitPapers: (papers, commitOptions) => this._commitPapers(papers, commitOptions),
+      })
     }
-
-    // A cancellation can happen while an onShow refresh is still in flight.
-    // Allow the post-cancel force refresh to overtake it, and only let the
-    // newest generation commit. This prevents stale responses from restoring
-    // a just-cancelled "继续作答" state.
-    const generation = (this._loadGeneration || 0) + 1
-    this._loadGeneration = generation
-
-    const request = (async () => {
-      try {
-        const rows = await api.get('/exams/papers')
-        const basePapers = (Array.isArray(rows) ? rows : []).map((item) => ({
-          ...item,
-          title: cleanUiLabel(item.title, '选择题套卷'),
-          source: cleanUiLabel(item.source, 'MemoGrad'),
-          typeLabel: typeLabel(item.paper_type),
-          typeHint: typeHint(item.paper_type),
-          durationMinutes: minutes(item.duration_sec),
-          scoreText: Number(item.total_choice_score || 0).toFixed(0),
-          bestScoreText: item.best_choice_score == null ? '' : Number(item.best_choice_score).toFixed(1),
-          canResume: item.latest_attempt_status === 'in_progress' && !!item.latest_attempt_id,
-          isSuggested: Number(item.id) === Number(this.data.suggestedPaperId),
-        }))
-
-        const latestYear = basePapers.reduce((maxYear, item) => {
-          const year = Number(item.year) || 0
-          return year > maxYear ? year : maxYear
-        }, 0)
-
-        const papers = basePapers.map((item) => ({
-          ...item,
-          isLatestYear: !!latestYear && Number(item.year) === latestYear,
-        }))
-
-        if (!this._pageAlive || generation !== this._loadGeneration) return
-        const wasLoaded = this._loadedOnce
-        this._loadedOnce = true
-        this._commitPapers(papers, { silent: silent || wasLoaded })
-      } catch (error) {
-        if (!this._pageAlive || generation !== this._loadGeneration) return
-        const message = api.getErrorMessage(error)
-        if ((silent || this._loadedOnce) && !this.data.errorText) {
-          if (!suppressErrorToast) wx.showToast({ title: message, icon: 'none' })
-          return
-        }
-        this.setData({ loading: false, errorText: message })
-      }
-    })()
-
-    this._loadPromise = request
-    try {
-      await request
-    } finally {
-      if (this._loadPromise === request) this._loadPromise = null
-    }
+    return this._paperListLoad
   },
 
   _commitPapers(papers, options = {}) {
