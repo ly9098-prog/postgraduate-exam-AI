@@ -32,6 +32,7 @@ from app.services.import_image_completion import (
     ImageCompletionRequest,
     finalize_image_pipeline_result,
 )
+from app.services.import_background_failure import record_background_pipeline_failure
 from app.features.pipeline_orchestrator import (
     get_pipeline_status as _orchestrator_get_pipeline_status,
 )
@@ -651,34 +652,14 @@ async def _run_pipeline_with_db(
             error_type=type(exc).__name__,
             error_message=str(exc)[:300],
         )
-        capture_exception(
-            exc, tags={"pipeline_id": pipeline_id, "stage": "pipeline_background"}
-        )
-        try:
-            from app.features import pipeline_checkpoint as ckpt
-
-            async with async_session() as db:
-                await ckpt.update_pipeline_status(
-                    db,
-                    pipeline_id,
-                    status="failed",
-                    error_message=str(exc)[:4000],
-                    finished=True,
-                )
-        except Exception:
-            logger.exception(
-                "Failed to persist background pipeline failure: %s", pipeline_id
-            )
-        await _set_pipeline_store(
-            pipeline_id,
-            {
-                "pipeline_id": pipeline_id,
-                "status": "failed",
-                "source_type": source_type,
-                "errors": [f"后台任务崩溃: {exc}"],
-                "started_at": "",
-                "finished_at": "",
-            },
+        await record_background_pipeline_failure(
+            pipeline_id=pipeline_id,
+            source_type=source_type,
+            source_file=source_file,
+            exc=exc,
+            async_session=async_session,
+            set_pipeline_store=_set_pipeline_store,
+            capture_exception=capture_exception,
         )
         raise
     finally:
