@@ -154,15 +154,22 @@ Page({
     this._alive = true
     this._visible = true
     this._examRoutePending = false
-
     // chooseAvatar 会打开微信原生选择界面，返回页面时会再次触发 onShow。
     // 资料弹层打开期间绝不做 setData / 用户同步，避免在原生开放能力完成回调前
     // 重建 button/input 节点，导致头像回调丢失或 nickname 快捷填入条被卸载。
     if (this.data.showProfileSheet) return
-
     const showSeq = ++this._showSeq
     this._authed = auth.isLoggedIn()
     this._isAdmin = this._authed ? auth.isAdmin() : false
+    this._applyHomeBasePatch()
+    if (!this._authed) return
+    const canContinue = await this._syncHomeUser(showSeq)
+    if (!canContinue) return
+    // 个人资料仅在用户主动点击首页头像入口时打开，不在首页自动弹出。
+    await this.loadGrowthSnapshot(showSeq)
+  },
+
+  _applyHomeBasePatch() {
     const localUser = auth.getUser() || {}
     const basePatch = {
       user: localUser,
@@ -181,11 +188,12 @@ Page({
       })
     }
     this.setData(basePatch)
-    if (!this._authed) return
+  },
 
+  async _syncHomeUser(showSeq) {
     try {
       const syncedUser = await auth.syncCurrentUser()
-      if (!this._alive || !this._visible || showSeq !== this._showSeq) return
+      if (!this._alive || !this._visible || showSeq !== this._showSeq) return false
       if (syncedUser) {
         this._isAdmin = auth.isAdmin()
         this.setData({
@@ -194,17 +202,15 @@ Page({
           userInitial: this.getUserInitial(syncedUser),
         })
       }
+      return true
     } catch (e) {
       // Profile/permission sync is helpful but must not block the home dashboard.
       // A transient /users/me failure should still allow growth data to load.
       console.error('同步用户权限失败', e)
-      if (!this._alive || !this._visible || showSeq !== this._showSeq) return
+      if (!this._alive || !this._visible || showSeq !== this._showSeq) return false
       this._authed = auth.isLoggedIn()
-      if (!this._authed) return
+      return this._authed
     }
-
-    // 个人资料仅在用户主动点击首页头像入口时打开，不在首页自动弹出。
-    await this.loadGrowthSnapshot(showSeq)
   },
 
   _getProfileNickname(user) {
@@ -252,7 +258,6 @@ Page({
     if (this.data.isDevtools || typeof wx.requirePrivacyAuthorize !== 'function') {
       return Promise.resolve(true)
     }
-
     return new Promise((resolve) => {
       let settled = false
       const finish = (value) => {
@@ -260,52 +265,54 @@ Page({
         settled = true
         resolve(!!value)
       }
-
-      const requireAuthorization = () => {
-        try {
-          wx.requirePrivacyAuthorize({
-            success: () => finish(true),
-            fail: (error) => {
-              const message = String((error && (error.errMsg || error.message)) || '')
-              if (!/cancel|deny|refuse|disagree/i.test(message)) {
-                console.warn('[PROFILE_PRIVACY] requirePrivacyAuthorize failed', error)
-              }
-              wx.showToast({
-                title: /scope is not declared|privacy agreement/i.test(message)
-                  ? '请先在小程序隐私保护指引中声明头像昵称用途'
-                  : '同意隐私保护指引后才能设置头像昵称',
-                icon: 'none',
-                duration: 2600,
-              })
-              finish(false)
-            },
-          })
-        } catch (error) {
-          console.warn('[PROFILE_PRIVACY] requirePrivacyAuthorize unavailable', error)
-          finish(true)
-        }
-      }
-
-      if (typeof wx.getPrivacySetting !== 'function') {
-        requireAuthorization()
-        return
-      }
-
-      try {
-        wx.getPrivacySetting({
-          success: (result) => {
-            if (result && result.needAuthorization) {
-              requireAuthorization()
-            } else {
-              finish(true)
-            }
-          },
-          fail: () => requireAuthorization(),
-        })
-      } catch (_) {
-        requireAuthorization()
-      }
+      const requireAuthorization = () => this._requireWechatPrivacyAuthorization(finish)
+      this._checkWechatPrivacySetting(requireAuthorization, finish)
     })
+  },
+
+  _requireWechatPrivacyAuthorization(finish) {
+    try {
+      wx.requirePrivacyAuthorize({
+        success: () => finish(true),
+        fail: (error) => this._handleWechatPrivacyFailure(error, finish),
+      })
+    } catch (error) {
+      console.warn('[PROFILE_PRIVACY] requirePrivacyAuthorize unavailable', error)
+      finish(true)
+    }
+  },
+
+  _handleWechatPrivacyFailure(error, finish) {
+    const message = String((error && (error.errMsg || error.message)) || '')
+    if (!/cancel|deny|refuse|disagree/i.test(message)) {
+      console.warn('[PROFILE_PRIVACY] requirePrivacyAuthorize failed', error)
+    }
+    wx.showToast({
+      title: /scope is not declared|privacy agreement/i.test(message)
+        ? '请先在小程序隐私保护指引中声明头像昵称用途'
+        : '同意隐私保护指引后才能设置头像昵称',
+      icon: 'none',
+      duration: 2600,
+    })
+    finish(false)
+  },
+
+  _checkWechatPrivacySetting(requireAuthorization, finish) {
+    if (typeof wx.getPrivacySetting !== 'function') {
+      requireAuthorization()
+      return
+    }
+    try {
+      wx.getPrivacySetting({
+        success: (result) => {
+          if (result && result.needAuthorization) requireAuthorization()
+          else finish(true)
+        },
+        fail: () => requireAuthorization(),
+      })
+    } catch (_) {
+      requireAuthorization()
+    }
   },
 
   closeProfileSheet() {
@@ -529,7 +536,6 @@ Page({
     clearTimeout(this._profileSavedHintTimer)
     this._profileAutoSaveTimer = null
     this._profileSavedHintTimer = null
-
     const nickname = this._normalizeProfileNickname(this.data.profileNickname)
     const avatarPath = this.data.profileAvatarPath || ''
     const currentNickname = this._getProfileNickname(this.data.user)
@@ -543,61 +549,64 @@ Page({
       this.setData({ profileSaveState: '' })
       return
     }
-
     const saveSeq = ++this._profileSaveSeq
     const draftVersionAtStart = this._profileDraftVersion
     this.setData({ profileSaving: true, profileSaveState: 'saving' })
     try {
       const updatedUser = await auth.updateProfile({ nickname, avatarPath })
       if (!this._alive || saveSeq !== this._profileSaveSeq) return
-
-      // 保存期间用户仍可重新选头像/改昵称。只清掉本次真正提交的草稿；
-      // 若期间已有更新，则保留最新本地草稿并在 finally 后自动续传。
-      const latestAvatarPath = this.data.profileAvatarPath || ''
-      const latestNickname = this._normalizeProfileNickname(this.data.profileNickname)
-      const avatarChangedDuringSave = latestAvatarPath && latestAvatarPath !== avatarPath
-      const nicknameChangedDuringSave = latestNickname !== nickname
-      const hasNewerDraft = this._profileDraftVersion !== draftVersionAtStart && (avatarChangedDuringSave || nicknameChangedDuringSave)
-      const serverAvatar = this._getProfileAvatar(updatedUser)
-      const serverNickname = this._getProfileNickname(updatedUser) || nickname
-
-      this.setData({
-        user: updatedUser,
-        displayName: this.getDisplayName(updatedUser),
-        userInitial: this.getUserInitial(updatedUser),
-        profileNickname: nicknameChangedDuringSave ? this.data.profileNickname : serverNickname,
-        profileAvatarPreview: avatarChangedDuringSave ? this.data.profileAvatarPreview : (serverAvatar || this.data.profileAvatarPreview || ''),
-        profileAvatarPath: avatarChangedDuringSave ? latestAvatarPath : '',
-        profileSaveState: hasNewerDraft ? 'pending' : 'saved',
-      })
-
-      if (!hasNewerDraft) {
-        this._profileSavedHintTimer = setTimeout(() => {
-          this._profileSavedHintTimer = null
-          if (this._alive && this.data.showProfileSheet && !this.data.profileSaving) {
-            this.setData({ profileSaveState: '' })
-          }
-        }, 1500)
-      }
+      this._applySavedProfile(updatedUser, nickname, avatarPath, draftVersionAtStart)
     } catch (e) {
       if (!this._alive || saveSeq !== this._profileSaveSeq) return
       this.setData({ profileSaveState: 'error' })
       const message = e && e.message ? e.message : '保存失败，请稍后重试'
       wx.showToast({ title: message, icon: 'none' })
     } finally {
-      if (this._alive && saveSeq === this._profileSaveSeq) {
-        this.setData({ profileSaving: false }, () => {
-          if (!this._alive || !this.data.showProfileSheet) return
-          if (this._profileDraftVersion !== draftVersionAtStart) {
-            clearTimeout(this._profileAutoSaveTimer)
-            this._profileAutoSaveTimer = setTimeout(() => {
-              this._profileAutoSaveTimer = null
-              this._scheduleProfileSaveIfReady()
-            }, 120)
-          }
-        })
-      }
+      this._finalizeProfileSave(saveSeq, draftVersionAtStart)
     }
+  },
+
+  _applySavedProfile(updatedUser, nickname, avatarPath, draftVersionAtStart) {
+    // 保存期间用户仍可重新选头像/改昵称。只清掉本次真正提交的草稿；
+    // 若期间已有更新，则保留最新本地草稿并在 finally 后自动续传。
+    const latestAvatarPath = this.data.profileAvatarPath || ''
+    const latestNickname = this._normalizeProfileNickname(this.data.profileNickname)
+    const avatarChangedDuringSave = latestAvatarPath && latestAvatarPath !== avatarPath
+    const nicknameChangedDuringSave = latestNickname !== nickname
+    const hasNewerDraft = this._profileDraftVersion !== draftVersionAtStart && (avatarChangedDuringSave || nicknameChangedDuringSave)
+    const serverAvatar = this._getProfileAvatar(updatedUser)
+    const serverNickname = this._getProfileNickname(updatedUser) || nickname
+    this.setData({
+      user: updatedUser,
+      displayName: this.getDisplayName(updatedUser),
+      userInitial: this.getUserInitial(updatedUser),
+      profileNickname: nicknameChangedDuringSave ? this.data.profileNickname : serverNickname,
+      profileAvatarPreview: avatarChangedDuringSave ? this.data.profileAvatarPreview : (serverAvatar || this.data.profileAvatarPreview || ''),
+      profileAvatarPath: avatarChangedDuringSave ? latestAvatarPath : '',
+      profileSaveState: hasNewerDraft ? 'pending' : 'saved',
+    })
+    if (!hasNewerDraft) {
+      this._profileSavedHintTimer = setTimeout(() => {
+        this._profileSavedHintTimer = null
+        if (this._alive && this.data.showProfileSheet && !this.data.profileSaving) {
+          this.setData({ profileSaveState: '' })
+        }
+      }, 1500)
+    }
+  },
+
+  _finalizeProfileSave(saveSeq, draftVersionAtStart) {
+    if (!this._alive || saveSeq !== this._profileSaveSeq) return
+    this.setData({ profileSaving: false }, () => {
+      if (!this._alive || !this.data.showProfileSheet) return
+      if (this._profileDraftVersion !== draftVersionAtStart) {
+        clearTimeout(this._profileAutoSaveTimer)
+        this._profileAutoSaveTimer = setTimeout(() => {
+          this._profileAutoSaveTimer = null
+          this._scheduleProfileSaveIfReady()
+        }, 120)
+      }
+    })
   },
 
   measureNavigation() {
@@ -635,52 +644,58 @@ Page({
     const requestSeq = ++this._growthSeq
     this._clearAnimTimer()
     try {
-      // Avoid array destructuring here. Some WeChat DevTools/SWC builds emit
-      // @swc/runtime/_sliced_to_array, whose transitive _array_with_holes
-      // helper can be omitted from the mini-program package and crash at runtime.
-      const growthResponses = await Promise.all([
-        api.get('/stats/dashboard'),
-        api.get('/stats/growth').catch(() => null),
-        api.get('/study-hub/overview').catch((error) => {
-          console.warn('加载智能学习中心失败，回退基础首页', error)
-          return null
-        }),
-        api.get('/study-plan/overview').catch((error) => {
-          console.warn('加载长期学习计划失败', error)
-          return null
-        }),
-      ])
-      const dashRes = growthResponses[0]
-      const growthRes = growthResponses[1]
-      const hubRes = growthResponses[2]
-      const planRes = growthResponses[3]
-      if (
-        !this._alive ||
-        !this._visible ||
-        requestSeq !== this._growthSeq ||
-        showSeq !== this._showSeq
-      ) return
-
-      const overview = (dashRes && dashRes.overview) || {}
-      const dashboardSubjectStats = (dashRes && Array.isArray(dashRes.subject_stats)) ? dashRes.subject_stats : []
-      const growth = growthRes || null
-      this._lastGrowth = growth
-      const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes, planRes, dashboardSubjectStats)
-      this._hasGrowthSnapshot = true
-      this.setData(snapshot, () => {
-        if (this._alive && this._visible && requestSeq === this._growthSeq) {
-          this._animateNumbers()
-        }
-      })
+      const growthResponses = await this._fetchGrowthResponses()
+      if (!this._isGrowthStale(requestSeq, showSeq)) return
+      this._applyGrowthResponses(growthResponses, requestSeq)
     } catch (e) {
-      if (
-        !this._alive ||
-        !this._visible ||
-        requestSeq !== this._growthSeq ||
-        showSeq !== this._showSeq
-      ) return
+      if (!this._isGrowthStale(requestSeq, showSeq)) return
       console.error('加载成长数据失败', e)
     }
+  },
+
+  async _fetchGrowthResponses() {
+    // Avoid array destructuring here. Some WeChat DevTools/SWC builds emit
+    // @swc/runtime/_sliced_to_array, whose transitive _array_with_holes
+    // helper can be omitted from the mini-program package and crash at runtime.
+    return Promise.all([
+      api.get('/stats/dashboard'),
+      api.get('/stats/growth').catch(() => null),
+      api.get('/study-hub/overview').catch((error) => {
+        console.warn('加载智能学习中心失败，回退基础首页', error)
+        return null
+      }),
+      api.get('/study-plan/overview').catch((error) => {
+        console.warn('加载长期学习计划失败', error)
+        return null
+      }),
+    ])
+  },
+
+  _isGrowthStale(requestSeq, showSeq) {
+    return !(
+      this._alive &&
+      this._visible &&
+      requestSeq === this._growthSeq &&
+      showSeq === this._showSeq
+    )
+  },
+
+  _applyGrowthResponses(growthResponses, requestSeq) {
+    const dashRes = growthResponses[0]
+    const growthRes = growthResponses[1]
+    const hubRes = growthResponses[2]
+    const planRes = growthResponses[3]
+    const overview = (dashRes && dashRes.overview) || {}
+    const dashboardSubjectStats = (dashRes && Array.isArray(dashRes.subject_stats)) ? dashRes.subject_stats : []
+    const growth = growthRes || null
+    this._lastGrowth = growth
+    const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes, planRes, dashboardSubjectStats)
+    this._hasGrowthSnapshot = true
+    this.setData(snapshot, () => {
+      if (this._alive && this._visible && requestSeq === this._growthSeq) {
+        this._animateNumbers()
+      }
+    })
   },
 
   /* 统一数字动画调度：80ms 间隔，一次 setData 更新三个字段 */
@@ -698,47 +713,42 @@ Page({
       levelProgress: targets.levelProgress,
     }
     if (from.streakDays === to.streakDays && from.goalDone === to.goalDone && from.levelProgress === to.levelProgress) return
-
     const durations = { streakDays: 600, goalDone: 600, levelProgress: 500 }
     const startTime = Date.now()
-
-    const tick = () => {
-      if (!this._alive || !this._visible) {
-        this._animTimer = null
-        return
-      }
-      const elapsed = Date.now() - startTime
-      const data = {}
-      let allDone = true
-
-      const updateField = (key, fromVal, toVal, duration) => {
-        if (fromVal === toVal) return
-        const p = Math.min(elapsed / duration, 1)
-        const eased = 1 - Math.pow(1 - p, 3)
-        const current = Math.round(fromVal + (toVal - fromVal) * eased)
-        data[key] = Math.min(toVal, Math.max(Math.min(fromVal, toVal), current))
-        if (p < 1) allDone = false
-      }
-
-      updateField('_animStreakDays', from.streakDays, to.streakDays, durations.streakDays)
-      updateField('_animGoalDone', from.goalDone, to.goalDone, durations.goalDone)
-      updateField('_animLevelProgress', from.levelProgress, to.levelProgress, durations.levelProgress)
-
-      if (Object.keys(data).length > 0) this.setData(data)
-
-      if (!allDone) {
-        this._animTimer = setTimeout(tick, 80)
-      } else {
-        this.setData({
-          _animStreakDays: to.streakDays,
-          _animGoalDone: to.goalDone,
-          _animLevelProgress: to.levelProgress,
-        })
-        this._animTimer = null
-      }
-    }
-
+    const tick = () => this._animateNumbersTick(from, to, durations, startTime)
     this._animTimer = setTimeout(tick, 80)
+  },
+
+  _animateNumbersTick(from, to, durations, startTime) {
+    if (!this._alive || !this._visible) {
+      this._animTimer = null
+      return
+    }
+    const elapsed = Date.now() - startTime
+    const data = {}
+    let allDone = true
+    const updateField = (key, fromVal, toVal, duration) => {
+      if (fromVal === toVal) return
+      const p = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - p, 3)
+      const current = Math.round(fromVal + (toVal - fromVal) * eased)
+      data[key] = Math.min(toVal, Math.max(Math.min(fromVal, toVal), current))
+      if (p < 1) allDone = false
+    }
+    updateField('_animStreakDays', from.streakDays, to.streakDays, durations.streakDays)
+    updateField('_animGoalDone', from.goalDone, to.goalDone, durations.goalDone)
+    updateField('_animLevelProgress', from.levelProgress, to.levelProgress, durations.levelProgress)
+    if (Object.keys(data).length > 0) this.setData(data)
+    if (!allDone) {
+      this._animTimer = setTimeout(() => this._animateNumbersTick(from, to, durations, startTime), 80)
+    } else {
+      this.setData({
+        _animStreakDays: to.streakDays,
+        _animGoalDone: to.goalDone,
+        _animLevelProgress: to.levelProgress,
+      })
+      this._animTimer = null
+    }
   },
 
   getGrowthFallback() {
@@ -765,6 +775,13 @@ Page({
     this._lastHub = hub || null
     this._lastPlan = plan || null
     if (Array.isArray(dashboardSubjectStats)) this._lastDashboardSubjectStats = dashboardSubjectStats
+    const ctx = this._buildGrowthContext(overview, hub, dashboardSubjectStats)
+    this._growthTargets = { streakDays: ctx.streakDays, todayGoalDone: ctx.todayGoalDone, levelProgress: ctx.levelProgress }
+    if (growth) return this._buildGrowthWithBadges(ctx, growth)
+    return this._buildGrowthWithoutBadges(ctx)
+  },
+
+  _buildGrowthContext(overview, hub, dashboardSubjectStats) {
     const effectiveSubjectStats = Array.isArray(dashboardSubjectStats)
       ? dashboardSubjectStats
       : (Array.isArray(this._lastDashboardSubjectStats) ? this._lastDashboardSubjectStats : [])
@@ -782,45 +799,46 @@ Page({
       ? this.getHubPrimaryTaskSnapshot(hub, todayGoalDone, todayGoalTotal)
       : this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount)
     const strategySnapshot = this.getStrategyPrimaryTaskSnapshot({
-      hub,
-      dueReviewCount,
-      todayGoalDone,
-      todayGoalTotal,
+      hub, dueReviewCount, todayGoalDone, todayGoalTotal,
       subjectMastery: hubDisplay.subjectMastery || [],
     })
-
-    this._growthTargets = { streakDays, todayGoalDone, levelProgress }
-
-    if (growth) {
-      const topBadges = (growth.badges || []).slice(0, 3)
-      return {
-        studyLevel: growth.level_title || 'Lv1 起步',
-        levelProgress,
-        todayGoalTotal,
-        ...(strategySnapshot || taskSnapshot),
-        ...hubDisplay,
-        ...planDisplay,
-        expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
-        nextLevelText: growth.level_progress_pct >= 100
-          ? '已满级，继续保持题感'
-          : `距离下一级还差 ${Math.max(0, (growth.exp_to_next || 0) - (growth.exp_current || 0))} EXP`,
-        dailyBoostText: growth.daily_boost || this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
-        badgeList: topBadges.map(b => ({
-          key: b.key, title: b.title, desc: b.unlocked ? '已点亮' : b.desc, unlocked: b.unlocked
-        })),
-        badgeTitle: streakDays >= 30 ? '连续30天徽章' : streakDays >= 7 ? '连续7天徽章' : topBadges.some(b => b.unlocked) ? '徽章进行中' : '今日待点亮',
-        missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
-      }
+    return {
+      streakDays, todayGoalDone, totalQuestions, dueReviewCount, todayGoalTotal, levelProgress,
+      hubDisplay, planDisplay, taskSnapshot, strategySnapshot,
     }
+  },
 
+  _buildGrowthWithBadges(ctx, growth) {
+    const { todayGoalDone, todayGoalTotal, levelProgress, streakDays, dueReviewCount } = ctx
+    const { hubDisplay, planDisplay, strategySnapshot, taskSnapshot } = ctx
+    const topBadges = (growth.badges || []).slice(0, 3)
+    return {
+      studyLevel: growth.level_title || 'Lv1 起步',
+      levelProgress, todayGoalTotal,
+      ...(strategySnapshot || taskSnapshot),
+      ...hubDisplay, ...planDisplay,
+      expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
+      nextLevelText: growth.level_progress_pct >= 100
+        ? '已满级，继续保持题感'
+        : `距离下一级还差 ${Math.max(0, (growth.exp_to_next || 0) - (growth.exp_current || 0))} EXP`,
+      dailyBoostText: growth.daily_boost || this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
+      badgeList: topBadges.map(b => ({
+        key: b.key, title: b.title, desc: b.unlocked ? '已点亮' : b.desc, unlocked: b.unlocked
+      })),
+      badgeTitle: streakDays >= 30 ? '连续30天徽章' : streakDays >= 7 ? '连续7天徽章' : topBadges.some(b => b.unlocked) ? '徽章进行中' : '今日待点亮',
+      missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
+    }
+  },
+
+  _buildGrowthWithoutBadges(ctx) {
+    const { streakDays, todayGoalDone, totalQuestions, levelProgress, todayGoalTotal, dueReviewCount } = ctx
+    const { hubDisplay, planDisplay, strategySnapshot, taskSnapshot } = ctx
     const levelMeta = this.getLevelMeta(totalQuestions)
     return {
       studyLevel: levelMeta.studyLevel,
-      levelProgress,
-      todayGoalTotal,
+      levelProgress, todayGoalTotal,
       ...(strategySnapshot || taskSnapshot),
-      ...hubDisplay,
-      ...planDisplay,
+      ...hubDisplay, ...planDisplay,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
@@ -864,84 +882,80 @@ Page({
   },
 
   buildSubjectMastery(hubSubjectMastery = [], dashboardSubjectStats = []) {
-    const hubByKey = {}
-    const statsByKey = {}
+    const hubByKey = this._indexSubjectMasteryByKey(hubSubjectMastery)
+    const statsByKey = this._indexSubjectMasteryByKey(dashboardSubjectStats)
+    return HOME_MASTERY_SUBJECTS.map((meta, index) => this._buildSubjectMasteryItem(meta, index, hubByKey, statsByKey))
+  },
 
-    ;(Array.isArray(hubSubjectMastery) ? hubSubjectMastery : []).forEach((item) => {
+  _indexSubjectMasteryByKey(list) {
+    const byKey = {}
+    ;(Array.isArray(list) ? list : []).forEach((item) => {
       if (!item) return
       const key = getMasterySubjectKey(item.subject_name, item.subject_code)
-      if (HOME_MASTERY_SUBJECTS.some(meta => meta.key === key) && !hubByKey[key]) hubByKey[key] = item
+      if (HOME_MASTERY_SUBJECTS.some(meta => meta.key === key) && !byKey[key]) byKey[key] = item
     })
+    return byKey
+  },
 
-    ;(Array.isArray(dashboardSubjectStats) ? dashboardSubjectStats : []).forEach((item) => {
-      if (!item) return
-      const key = getMasterySubjectKey(item.subject_name, item.subject_code)
-      if (HOME_MASTERY_SUBJECTS.some(meta => meta.key === key) && !statsByKey[key]) statsByKey[key] = item
-    })
+  _buildSubjectMasteryItem(meta, index, hubByKey, statsByKey) {
+    const hubItem = hubByKey[meta.key] || null
+    const statsItem = statsByKey[meta.key] || null
+    const hubAttempts = this.toNonNegativeInt(hubItem && hubItem.attempt_count)
+    const statsAttempts = this.toNonNegativeInt(statsItem && statsItem.total_questions)
+    const rawHubScore = hubItem && hubItem.mastery_score
+    const hubScoreNumber = rawHubScore == null ? NaN : Number(rawHubScore)
+    const hubHasData = !!(
+      hubItem &&
+      Number.isFinite(hubScoreNumber) &&
+      (hubItem.data_available !== false || hubAttempts > 0)
+    )
+    const statsAccuracy = Number(statsItem && statsItem.accuracy)
+    const statsHasData = !!(statsItem && statsAttempts > 0 && Number.isFinite(statsAccuracy))
+    const mastery = this._resolveSubjectMastery(hubItem, statsItem, hubHasData, statsHasData, hubAttempts, statsAttempts, hubScoreNumber, statsAccuracy)
+    const sourceItem = hubItem || statsItem || {}
+    const subjectName = String(sourceItem.subject_name || meta.name)
+    const subjectCode = String(sourceItem.subject_code || meta.code)
+    const subjectId = Number(sourceItem.subject_id) || 0
+    const iconClass = meta.key
+    const { score, attemptCount, correctCount, hasData } = mastery
+    return {
+      subjectId, subjectCode, subjectName,
+      orderText: String(index + 1).padStart(2, '0'),
+      mark: getMasteryMark(subjectName, subjectCode),
+      iconClass, iconSrc: getMasteryIconSrc(iconClass),
+      hasData, score,
+      scoreText: hasData ? `${score}%` : '--',
+      barWidth: hasData ? score : 0,
+      attemptCount, correctCount,
+      questionStatText: hasData ? `${correctCount}/${attemptCount} 题` : '0/0 题',
+      statusText: hasData ? (score >= 85 ? '已掌握' : '掌握不足') : '数据不足',
+    }
+  },
 
-    return HOME_MASTERY_SUBJECTS.map((meta, index) => {
-      const hubItem = hubByKey[meta.key] || null
-      const statsItem = statsByKey[meta.key] || null
-      const hubAttempts = this.toNonNegativeInt(hubItem && hubItem.attempt_count)
-      const statsAttempts = this.toNonNegativeInt(statsItem && statsItem.total_questions)
-      const rawHubScore = hubItem && hubItem.mastery_score
-      const hubScoreNumber = rawHubScore == null ? NaN : Number(rawHubScore)
-      const hubHasData = !!(
-        hubItem &&
-        Number.isFinite(hubScoreNumber) &&
-        (hubItem.data_available !== false || hubAttempts > 0)
-      )
-      const statsAccuracy = Number(statsItem && statsItem.accuracy)
-      const statsHasData = !!(statsItem && statsAttempts > 0 && Number.isFinite(statsAccuracy))
-
-      let score = 0
-      let attemptCount = 0
-      let correctCount = 0
-      let hasData = false
-
-      if (hubHasData) {
-        hasData = true
-        score = Math.max(0, Math.min(100, Math.round(hubScoreNumber)))
-        attemptCount = hubAttempts || statsAttempts
-        const hubAccuracy = Number(hubItem && hubItem.accuracy)
-        if (attemptCount > 0 && Number.isFinite(hubAccuracy)) {
-          correctCount = Math.max(0, Math.min(attemptCount, Math.round(attemptCount * hubAccuracy)))
-        } else if (statsItem && statsAttempts === attemptCount) {
-          correctCount = Math.max(0, Math.min(attemptCount, this.toNonNegativeInt(statsItem.correct_count)))
-        }
-      } else if (statsHasData) {
-        // Study Hub 暂无可用掌握度时，使用 dashboard.subject_stats 的
-        // 真实练习统计兜底，避免已有练习记录却渲染为 0/0。
-        hasData = true
-        score = Math.max(0, Math.min(100, Math.round(statsAccuracy * 100)))
-        attemptCount = statsAttempts
+  _resolveSubjectMastery(hubItem, statsItem, hubHasData, statsHasData, hubAttempts, statsAttempts, hubScoreNumber, statsAccuracy) {
+    let score = 0
+    let attemptCount = 0
+    let correctCount = 0
+    let hasData = false
+    if (hubHasData) {
+      hasData = true
+      score = Math.max(0, Math.min(100, Math.round(hubScoreNumber)))
+      attemptCount = hubAttempts || statsAttempts
+      const hubAccuracy = Number(hubItem && hubItem.accuracy)
+      if (attemptCount > 0 && Number.isFinite(hubAccuracy)) {
+        correctCount = Math.max(0, Math.min(attemptCount, Math.round(attemptCount * hubAccuracy)))
+      } else if (statsItem && statsAttempts === attemptCount) {
         correctCount = Math.max(0, Math.min(attemptCount, this.toNonNegativeInt(statsItem.correct_count)))
       }
-
-      const sourceItem = hubItem || statsItem || {}
-      const subjectName = String(sourceItem.subject_name || meta.name)
-      const subjectCode = String(sourceItem.subject_code || meta.code)
-      const subjectId = Number(sourceItem.subject_id) || 0
-      const iconClass = meta.key
-
-      return {
-        subjectId,
-        subjectCode,
-        subjectName,
-        orderText: String(index + 1).padStart(2, '0'),
-        mark: getMasteryMark(subjectName, subjectCode),
-        iconClass,
-        iconSrc: getMasteryIconSrc(iconClass),
-        hasData,
-        score,
-        scoreText: hasData ? `${score}%` : '--',
-        barWidth: hasData ? score : 0,
-        attemptCount,
-        correctCount,
-        questionStatText: hasData ? `${correctCount}/${attemptCount} 题` : '0/0 题',
-        statusText: hasData ? (score >= 85 ? '已掌握' : '掌握不足') : '数据不足',
-      }
-    })
+    } else if (statsHasData) {
+      // Study Hub 暂无可用掌握度时，使用 dashboard.subject_stats 的
+      // 真实练习统计兜底，避免已有练习记录却渲染为 0/0。
+      hasData = true
+      score = Math.max(0, Math.min(100, Math.round(statsAccuracy * 100)))
+      attemptCount = statsAttempts
+      correctCount = Math.max(0, Math.min(attemptCount, this.toNonNegativeInt(statsItem.correct_count)))
+    }
+    return { score, attemptCount, correctCount, hasData }
   },
 
   getHubDisplaySnapshot(hub, dashboardSubjectStats = []) {
@@ -962,18 +976,9 @@ Page({
         subjectMastery,
       }
     }
-
     const allTasks = Array.isArray(hub.tasks) ? hub.tasks : []
     const primaryKey = hub.primary_task && hub.primary_task.key
     const secondaryRaw = allTasks.find(task => task && task.key !== primaryKey) || null
-    const taskTypeMeta = {
-      review: { eyebrow: '记忆优先', iconSrc: '/assets/icons/home-actions/refresh-cw.svg' },
-      weakness: { eyebrow: '弱项强化', iconSrc: '/assets/icons/home-actions/target.svg' },
-      hard_questions: { eyebrow: '困难题重练', iconSrc: '/assets/icons/home-actions/triangle-alert.svg' },
-      knowledge_path: { eyebrow: '知识路径', iconSrc: '/assets/icons/home-actions/route.svg' },
-      knowledge_chapter: { eyebrow: '章节专项', iconSrc: '/assets/icons/home-actions/book-open-check.svg' },
-      smart_practice: { eyebrow: '智能新题', iconSrc: '/assets/icons/home-actions/sparkles.svg' },
-    }
     // Home exposes three recommendation entrances in total:
     // the focus-card primary task + up to two supplementary cards.
     // Permanent tools (wrong-book, random practice) are not recommendation slots.
@@ -981,27 +986,7 @@ Page({
     const displayTasks = allTasks
       .filter(task => task && task.key !== primaryKey)
       .slice(0, 2)
-      .map((task) => {
-        const meta = taskTypeMeta[task.task_type] || { eyebrow: '今日任务', iconSrc: '/assets/icons/home-actions/target.svg' }
-        const q = this.toNonNegativeInt(task.estimated_question_count)
-        const m = this.toNonNegativeInt(task.estimated_minutes)
-        return {
-          key: task.key,
-          taskType: task.task_type,
-          eyebrow: meta.eyebrow,
-          iconSrc: meta.iconSrc,
-          title: task.title || '继续学习',
-          reason: task.reason || '',
-          actionLabel: task.action_label || '开始',
-          metaText: task.completed_today
-            ? `今日已完成 · ${q > 0 ? '约 ' + q + ' 题' : '可再次练习'}`
-            : (q > 0 ? `约 ${q} 题 · ${m || 1} 分钟` : '按当前学习状态推荐'),
-          completedToday: Boolean(task.completed_today),
-          route: task.route || '',
-          routeParams: task.route_params || {},
-        }
-      })
-
+      .map((task) => this._buildHubTaskDisplay(task))
     const completedRecommendationCount = Math.min(3, this.toNonNegativeInt(hub.completed_recommendation_count))
     return {
       studyHubAvailable: true,
@@ -1012,6 +997,35 @@ Page({
       hubRecommendationCount: Math.min(3, this.toNonNegativeInt(hub.recommended_task_count) || (1 + displayTasks.length)),
       hubCompletedRecommendationCount: completedRecommendationCount,
       subjectMastery,
+    }
+  },
+
+  _buildHubTaskDisplay(task) {
+    const taskTypeMeta = {
+      review: { eyebrow: '记忆优先', iconSrc: '/assets/icons/home-actions/refresh-cw.svg' },
+      weakness: { eyebrow: '弱项强化', iconSrc: '/assets/icons/home-actions/target.svg' },
+      hard_questions: { eyebrow: '困难题重练', iconSrc: '/assets/icons/home-actions/triangle-alert.svg' },
+      knowledge_path: { eyebrow: '知识路径', iconSrc: '/assets/icons/home-actions/route.svg' },
+      knowledge_chapter: { eyebrow: '章节专项', iconSrc: '/assets/icons/home-actions/book-open-check.svg' },
+      smart_practice: { eyebrow: '智能新题', iconSrc: '/assets/icons/home-actions/sparkles.svg' },
+    }
+    const meta = taskTypeMeta[task.task_type] || { eyebrow: '今日任务', iconSrc: '/assets/icons/home-actions/target.svg' }
+    const q = this.toNonNegativeInt(task.estimated_question_count)
+    const m = this.toNonNegativeInt(task.estimated_minutes)
+    return {
+      key: task.key,
+      taskType: task.task_type,
+      eyebrow: meta.eyebrow,
+      iconSrc: meta.iconSrc,
+      title: task.title || '继续学习',
+      reason: task.reason || '',
+      actionLabel: task.action_label || '开始',
+      metaText: task.completed_today
+        ? `今日已完成 · ${q > 0 ? '约 ' + q + ' 题' : '可再次练习'}`
+        : (q > 0 ? `约 ${q} 题 · ${m || 1} 分钟` : '按当前学习状态推荐'),
+      completedToday: Boolean(task.completed_today),
+      route: task.route || '',
+      routeParams: task.route_params || {},
     }
   },
 
@@ -1343,31 +1357,7 @@ Page({
   goExams() {
     if (this._examRoutePending) return
     this._examRoutePending = true
-
-    let navigated = false
-    const navigate = () => {
-      if (navigated) return
-      if (!this._alive || !this._visible) {
-        this._examRoutePending = false
-        return
-      }
-      navigated = true
-      wx.navigateTo({
-        url: '/subpackages/exam/paper-list/index',
-        fail: (error) => {
-          this._examRoutePending = false
-          console.warn('[EXAM_ROUTE] navigateTo failed', error && (error.errMsg || error.message || error))
-        },
-        complete: () => {
-          // navigateTo success will hide Home. If routing fails while Home stays visible,
-          // release the guard after the framework has finished the current route turn.
-          setTimeout(() => {
-            if (this._alive && this._visible) this._examRoutePending = false
-          }, 300)
-        },
-      })
-    }
-
+    const navigate = () => this._navigateToExams()
     // Home may already be preloading the exam package via preloadRule. Calling
     // loadSubpackage here safely joins/waits for that load, so page creation does
     // not race the package injection. It also keeps rapid taps from creating two
@@ -1376,7 +1366,6 @@ Page({
       navigate()
       return
     }
-
     try {
       wx.loadSubpackage({
         name: 'exam',
@@ -1390,6 +1379,33 @@ Page({
       console.warn('[EXAM_ROUTE] loadSubpackage unavailable; falling back to navigateTo', error && (error.errMsg || error.message || error))
       navigate()
     }
+  },
+
+  _navigateToExams() {
+    if (this._examNavigated) return
+    if (!this._alive || !this._visible) {
+      this._examRoutePending = false
+      return
+    }
+    this._examNavigated = true
+    wx.navigateTo({
+      url: '/subpackages/exam/paper-list/index',
+      fail: (error) => {
+        this._examRoutePending = false
+        this._examNavigated = false
+        console.warn('[EXAM_ROUTE] navigateTo failed', error && (error.errMsg || error.message || error))
+      },
+      complete: () => {
+        // navigateTo success will hide Home. If routing fails while Home stays visible,
+        // release the guard after the framework has finished the current route turn.
+        setTimeout(() => {
+          if (this._alive && this._visible) {
+            this._examRoutePending = false
+            this._examNavigated = false
+          }
+        }, 300)
+      },
+    })
   },
   goStudyPlan() {
     if (this.data.showGoalPicker) this.setData({ showGoalPicker: false })
