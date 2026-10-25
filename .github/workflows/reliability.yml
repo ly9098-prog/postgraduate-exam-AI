@@ -432,6 +432,7 @@ jobs:
           node --test miniprogram/tests/test-practice-submitted-result-controller.js
           node --test miniprogram/tests/test-practice-submit-success-controller.js
           node --test miniprogram/tests/test-practice-submit-flow-controller.js
+          node --test miniprogram/tests/test-practice-start-practice-controller.js
           node --test miniprogram/tests/test-practice-launch-preset.js
           node --test miniprogram/tests/test-practice-question-batch.js
           node --test miniprogram/tests/test-practice-recent-subjects.js

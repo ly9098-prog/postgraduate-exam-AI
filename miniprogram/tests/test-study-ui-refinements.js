@@ -180,6 +180,9 @@ const context = {
     if (name === './utils/exit-request-controller') {
       return require(path.join(root, 'subpackages/study/practice/utils/exit-request-controller.js'))
     }
+    if (name === './utils/start-practice-controller') {
+      return require(path.join(root, 'subpackages/study/practice/utils/start-practice-controller.js'))
+    }
     return {}
   },
   wx: { pageScrollTo: options => wxCalls.push(options) },
@@ -205,6 +208,7 @@ function practice(overrides = {}, snapshot = null) {
     requestExitPractice: pageDefinition.requestExitPractice,
     _exitRequestController: pageDefinition._exitRequestController,
     _resetPracticeStateAfterExit: pageDefinition._resetPracticeStateAfterExit,
+    _startPracticeController: pageDefinition._startPracticeController,
     _returnToLaunchOrigin() { assert.fail('exit must not pop to home or original launch route') },
   }
   return target

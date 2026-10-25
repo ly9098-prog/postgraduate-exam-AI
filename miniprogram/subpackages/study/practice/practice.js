@@ -42,6 +42,7 @@ const { createPausedConfirmController } = require('./utils/paused-confirm-contro
 const { createSubmittedResultController } = require('./utils/submitted-result-controller')
 const { createSubmitSuccessController } = require('./utils/submit-success-controller')
 const { createSubmitFlowController } = require('./utils/submit-flow-controller')
+const { createStartPracticeController } = require('./utils/start-practice-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -685,44 +686,30 @@ setCount(e) {
 this._subjectSelectionController().setCount(e)
 },
 async startPractice() {
-if (this.data.loading || this.data.submitting) return
-if (this._readPendingSubmission()) {
-await this._offerPendingSubmissionRecovery()
-if (this._readPendingSubmission()) return
-}
-if (!this.data.selectedSubjectId) {
-this.openSubjectSheet()
-return
-}
-if (this.data.selectedMode === 'sequential' && this.data.selectedSubjectHasChildren) {
-wx.showToast({ title: '顺序练习仅支持具体科目', icon: 'none' })
-return
-}
-const traceId = api.createTraceId()
-this._submittedResultPayload = null
-this._resetSession()
-this._practiceSession.traceId = traceId
-this.setData({
-traceId,
-loading: true,
-renderCount: 0,
-started: true,
-currentIndex: 0,
-answeredCount: 0,
-results: [],
-submitted: false,
-wrongCount: 0,
-errorText: '',
-sequentialProgress: null,
-feedbackVisible: false,
-feedbackType: '',
-feedbackTitle: '',
-feedbackDetail: '',
-feedbackComboText: '',
+return this._startPracticeController().start()
+},
+_startPracticeController() {
+return this._startPracticeControllerInstance || (
+this._startPracticeControllerInstance = createStartPracticeController({
+isLoading: () => this.data.loading,
+isSubmitting: () => this.data.submitting,
+readPendingSubmission: () => this._readPendingSubmission(),
+offerPendingSubmissionRecovery: () => this._offerPendingSubmissionRecovery(),
+getSelectedSubjectId: () => this.data.selectedSubjectId,
+openSubjectSheet: () => this.openSubjectSheet(),
+getSelectedMode: () => this.data.selectedMode,
+isSelectedSubjectHasChildren: () => this.data.selectedSubjectHasChildren,
+showToast: options => wx.showToast(options),
+createTraceId: () => api.createTraceId(),
+setSubmittedResultPayload: value => { this._submittedResultPayload = value },
+resetSession: () => this._resetSession(),
+setTraceId: traceId => { this._practiceSession.traceId = traceId },
+setData: patch => this.setData(patch),
+setUnloadGuard: enabled => this._setPracticeUnloadGuard(enabled),
+flushPendingRecentSubject: () => this._flushPendingRecentSubject(),
+loadQuestions: () => this._loadQuestions(),
 })
-this._setPracticeUnloadGuard(true)
-this._flushPendingRecentSubject()
-await this._loadQuestions()
+)
 },
 _startTimer() {
 this._clearTimer()
