@@ -62,6 +62,16 @@ from app.services.ai.analysis_persistence import (
     persist_repaired_analysis,
     persist_valid_analysis,
 )
+from app.services.ai.analysis_responses import (
+    analysis_model_unconfigured_response,
+    generation_in_progress_response,
+    grounding_repaired_response,
+    parse_failed_response,
+    provider_failure_response,
+    valid_analysis_response,
+    vision_input_missing_response,
+    visual_ack_failed_response,
+)
 from app.services.ai.advice_snapshot import (
     advice_fallback_response,
     advice_success_response,
@@ -546,19 +556,7 @@ async def analyze_error(
             wq.id,
             q.id,
         )
-        return {
-            "content": get_fallback_analysis(),
-            "from_cache": False,
-            "from_fallback": True,
-            "tokens_used": 0,
-            "model": "vision_input_missing",
-            "duration_ms": 0,
-            "force_regenerated": False,
-            "cache_preserved": False,
-            "visual_input_count": 0,
-            "error_code": "vision_input_missing",
-            "retryable": False,
-        }
+        return vision_input_missing_response()
 
     kp_map = await load_question_kps(db, [int(q.id)])
     knowledge_points = kp_map.get(int(q.id), [])
@@ -616,20 +614,7 @@ async def analyze_error(
 
     wq_pk = wq.id
     if wq_pk in _generating:
-        return {
-            "content": {
-                "mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看",
-                "knowledge_patch": "",
-                "review_task": "",
-            },
-            "from_cache": False,
-            "from_fallback": True,
-            "tokens_used": 0,
-            "model": "generating",
-            "duration_ms": 0,
-            "error_code": "generation_in_progress",
-            "retryable": True,
-        }
+        return generation_in_progress_response()
     _generating.add(wq_pk)
 
     from app.core.cache import cache
@@ -644,20 +629,7 @@ async def analyze_error(
         raise
     if not have_lock and cache.is_enabled:
         _generating.discard(wq_pk)
-        return {
-            "content": {
-                "mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看",
-                "knowledge_patch": "",
-                "review_task": "",
-            },
-            "from_cache": False,
-            "from_fallback": True,
-            "tokens_used": 0,
-            "model": "generating",
-            "duration_ms": 0,
-            "error_code": "generation_in_progress",
-            "retryable": True,
-        }
+        return generation_in_progress_response()
 
     try:
         await db.refresh(wq)
@@ -696,38 +668,14 @@ async def analyze_error(
                 q.id,
                 int(visual_meta.get("declared_source_count") or 0),
             )
-            return {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "tokens_used": 0,
-                "model": "vision_input_missing",
-                "duration_ms": 0,
-                "force_regenerated": False,
-                "cache_preserved": False,
-                "visual_input_count": 0,
-                "error_code": "vision_input_missing",
-                "retryable": False,
-            }
+            return vision_input_missing_response()
 
         # Wrong-detail AI analysis must always use the same DB-configured
         # analysis LLM as the original text-only flow. Images are passed
         # directly to that model as multimodal message content; OCR/VL model
         # routing is intentionally not used here.
         if runtime is None:
-            return {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "tokens_used": 0,
-                "model": "vision_unavailable" if image_data_urls else "fallback",
-                "duration_ms": 0,
-                "force_regenerated": False,
-                "cache_preserved": False,
-                "visual_input_count": len(image_data_urls),
-                "error_code": "ai_model_unconfigured",
-                "retryable": False,
-            }
+            return analysis_model_unconfigured_response(image_data_urls)
 
         context = build_error_context(wq, q, knowledge_points)
         context["question"]["structured_visual"] = structured_visual
@@ -762,19 +710,13 @@ async def analyze_error(
                 old_cache["error_code"] = error_code
                 old_cache["retryable"] = retryable
                 return old_cache
-            return {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "tokens_used": 0,
-                "model": failure_model,
-                "duration_ms": duration_ms,
-                "force_regenerated": False,
-                "cache_preserved": False,
-                "visual_input_count": len(image_data_urls),
-                "error_code": error_code,
-                "retryable": retryable,
-            }
+            return provider_failure_response(
+                error_code=error_code,
+                retryable=retryable,
+                failure_model=failure_model,
+                duration_ms=duration_ms,
+                image_data_urls=image_data_urls,
+            )
 
         # Keep provider selection and its one auth-failure failover beside the
         # cache/persistence contract so model selection remains observable.
@@ -873,35 +815,18 @@ async def analyze_error(
                 error_code,
                 retryable,
             )
-            return {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "model": "vision_parse_failed",
-                "tokens_used": total_tokens_used,
-                "duration_ms": total_duration_ms,
-                "force_regenerated": False,
-                "cache_preserved": False,
-                "visual_input_count": len(image_data_urls),
-                "error_code": error_code,
-                "retryable": retryable,
-            }
+            return visual_ack_failed_response(
+                error_code=error_code,
+                retryable=retryable,
+                tokens_used=total_tokens_used,
+                duration_ms=total_duration_ms,
+                visual_input_count=len(image_data_urls),
+            )
 
         if not parsed_valid:
-            resp = {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "model": "parse_failed",
-                "tokens_used": 0,
-                "duration_ms": 0,
-                "visual_input_count": len(image_data_urls),
-                "error_code": "ai_response_parse_failed",
-                "retryable": True,
-            }
-            if effective_force:
-                resp["force_regenerated"] = False
-                resp["cache_preserved"] = False
+            resp = parse_failed_response(
+                image_data_urls, effective_force=effective_force
+            )
             logger.info(
                 "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
                 wq.id,
@@ -946,20 +871,15 @@ async def analyze_error(
                 expected_answer_check,
                 actual_answer_check,
             )
-            return {
-                "content": safe,
-                "from_cache": False,
-                "from_fallback": False,
-                "tokens_used": total_tokens_used,
-                "model": "grounding_guard",
-                "duration_ms": total_duration_ms,
-                "force_regenerated": effective_force,
-                "visual_input_count": len(image_data_urls),
-                "visual_evidence": visual_evidence or None,
-                "input_mode": "vision" if image_data_urls else "text",
-                "generated_at": generated_at,
-                "grounding_repaired": True,
-            }
+            return grounding_repaired_response(
+                content=safe,
+                tokens_used=total_tokens_used,
+                duration_ms=total_duration_ms,
+                effective_force=effective_force,
+                visual_input_count=len(image_data_urls),
+                visual_evidence=visual_evidence,
+                generated_at=generated_at,
+            )
 
         # The answer-difference sentence is always server generated. The model
         # contributes only the pedagogical reason after that authoritative fact.
@@ -1007,19 +927,15 @@ async def analyze_error(
             total_duration_ms,
         )
 
-        return {
-            "content": parsed,
-            "from_cache": False,
-            "from_fallback": False,
-            "tokens_used": total_tokens_used,
-            "model": result.get("model", ""),
-            "duration_ms": total_duration_ms,
-            "force_regenerated": effective_force,
-            "visual_input_count": len(image_data_urls),
-            "visual_evidence": visual_evidence or None,
-            "input_mode": "vision" if image_data_urls else "text",
-            "generated_at": parsed["_meta"]["generated_at"],
-        }
+        return valid_analysis_response(
+            parsed,
+            result,
+            tokens_used=total_tokens_used,
+            duration_ms=total_duration_ms,
+            effective_force=effective_force,
+            image_data_urls=image_data_urls,
+            visual_evidence=visual_evidence,
+        )
     finally:
         _generating.discard(wq_pk)
         if have_lock:
