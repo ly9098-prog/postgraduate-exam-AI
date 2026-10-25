@@ -9,11 +9,13 @@ import pytest
 
 from app.services.import_image_stages import (
     ImageOcrStage,
+    ImageCompletionPersistence,
     ImagePipelineStage,
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
     run_image_pipeline_stage,
     run_prepared_image_ocr,
+    persist_image_completion,
 )
 
 
@@ -150,3 +152,49 @@ async def test_image_pipeline_stage_rechecks_record_and_runs_pipeline_in_session
         page_images={1: b"image-bytes"},
         pre_extracted_blocks=[{"boxes": []}],
     )
+
+
+@pytest.mark.asyncio
+async def test_completion_persistence_projects_status_and_finishes_record():
+    db = SimpleNamespace()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=db)
+    session.__aexit__ = AsyncMock(return_value=False)
+    get_status = AsyncMock(return_value={"started_at": "started"})
+    set_status = AsyncMock()
+    update_record = AsyncMock()
+    events = []
+    result = {
+        "status": "failed",
+        "diagnostics": {"failure_reason": "no_review_batch_created"},
+    }
+
+    await persist_image_completion(
+        ImageCompletionPersistence(
+            pipeline_id="img-1",
+            source_file="source.png",
+            result=result,
+            status="failed",
+            async_session=lambda: session,
+            get_status=get_status,
+            set_status=set_status,
+            update_record=update_record,
+            log_event=lambda *args, **kwargs: events.append((args, kwargs)),
+        )
+    )
+
+    assert result["started_at"] == "started"
+    set_status.assert_awaited_once_with("img-1", **result)
+    update_record.assert_awaited_once_with(
+        db,
+        "img-1",
+        status="failed",
+        error_message="no_review_batch_created",
+        finished=True,
+    )
+    assert events[0][1] == {
+        "pipeline_id": "img-1",
+        "source_type": "image",
+        "source_file": "source.png",
+        "status": "failed",
+    }

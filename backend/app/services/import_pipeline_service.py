@@ -29,11 +29,13 @@ from app.services.import_image_completion import (
     finalize_image_pipeline_result,
 )
 from app.services.import_image_stages import (
+    ImageCompletionPersistence,
     ImageOcrStage,
     ImagePipelineStage,
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
     run_image_pipeline_stage,
+    persist_image_completion,
     run_prepared_image_ocr,
 )
 from app.services.import_background_execution import (
@@ -499,28 +501,18 @@ async def _run_image_pipeline_with_db(
                 classify_result=_classify_image_pipeline_result,
             )
         )
-        current = await _get_image_pipeline_status(pipeline_id) or {}
-        result.setdefault(
-            "started_at", current.get("started_at", serialize_utc_datetime(utcnow()))
-        )
-        await _set_image_pipeline_status(pipeline_id, **result)
-        async with async_session() as db:
-            await ckpt.update_pipeline_status(
-                db,
-                pipeline_id,
+        await persist_image_completion(
+            ImageCompletionPersistence(
+                pipeline_id=pipeline_id,
+                source_file=source_file,
+                result=result,
                 status=status,
-                error_message=result.get("diagnostics", {}).get("failure_reason")
-                if status == "failed"
-                else None,
-                finished=True,
+                async_session=async_session,
+                get_status=_get_image_pipeline_status,
+                set_status=_set_image_pipeline_status,
+                update_record=ckpt.update_pipeline_status,
+                log_event=log_event,
             )
-        log_event(
-            logger,
-            "import.background.finish",
-            pipeline_id=pipeline_id,
-            source_type="image",
-            source_file=source_file,
-            status=status,
         )
     except Exception as exc:
         logger.exception(

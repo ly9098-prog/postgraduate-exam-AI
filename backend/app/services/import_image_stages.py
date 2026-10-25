@@ -15,6 +15,19 @@ from app.services.import_image_ocr_stage import (
 
 
 @dataclass(slots=True)
+class ImageCompletionPersistence:
+    pipeline_id: str
+    source_file: str
+    result: dict
+    status: str
+    async_session: Callable[[], Any]
+    get_status: Callable[[str], Awaitable[dict | None]]
+    set_status: Callable[..., Awaitable[dict]]
+    update_record: Callable[..., Awaitable[None]]
+    log_event: Callable[..., None]
+
+
+@dataclass(slots=True)
 class ImageStageCheckpointRequest:
     pipeline_id: str
     source_file: str | None
@@ -117,3 +130,35 @@ async def run_image_pipeline_stage(stage: ImagePipelineStage) -> dict:
             page_images={1: stage.image_bytes},
             pre_extracted_blocks=stage.pre_extracted_blocks,
         )
+
+
+async def persist_image_completion(completion: ImageCompletionPersistence) -> None:
+    current = await completion.get_status(completion.pipeline_id) or {}
+    completion.result.setdefault(
+        "started_at", current.get("started_at", _now_serialized())
+    )
+    await completion.set_status(completion.pipeline_id, **completion.result)
+    async with completion.async_session() as db:
+        await completion.update_record(
+            db,
+            completion.pipeline_id,
+            status=completion.status,
+            error_message=completion.result.get("diagnostics", {}).get("failure_reason")
+            if completion.status == "failed"
+            else None,
+            finished=True,
+        )
+    completion.log_event(
+        logging.getLogger("app.services.import_pipeline_service"),
+        "import.background.finish",
+        pipeline_id=completion.pipeline_id,
+        source_type="image",
+        source_file=completion.source_file,
+        status=completion.status,
+    )
+
+
+def _now_serialized() -> str:
+    from app.core.time_utils import serialize_utc_datetime, utcnow
+
+    return serialize_utc_datetime(utcnow())
