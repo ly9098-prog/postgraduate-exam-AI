@@ -147,6 +147,10 @@ from app.services.task_queue_v1_transition_contract import (
     resolve_v1_transition_identity,
     should_v1_retry,
 )
+from app.services.task_queue_v1_fail_redis_contract import (
+    execute_v1_fail_dead,
+    execute_v1_fail_retry,
+)
 from app.services.task_queue_v1_dead_contract import (
     build_v1_dead_entry,
     build_v1_dead_purge_plan,
@@ -931,40 +935,19 @@ class DurableTaskQueue:
 
             if self._redis_enabled:
                 try:
-                    client = await self._get_script_client()
-                    if client is None:
+                    if not await execute_v1_fail_retry(
+                        self._get_script_client,
+                        self._load_scripts,
+                        self._evalsha_or_reload,
+                        task,
+                        task_id,
+                        tt,
+                        token,
+                        delay,
+                        error,
+                        queue_metrics,
+                    ):
                         return False
-                    await self._load_scripts(client)
-
-                    p_key = _p_key(tt)
-                    retry_at = time.time() + delay
-                    task_json = json.dumps(task.to_dict(), default=str)
-
-                    result = await self._evalsha_or_reload(
-                        client,
-                        "_lua_fail_retry",
-                        4,
-                        p_key,  # KEYS[1]: processing_key
-                        _retry_key(tt),  # KEYS[2]: retry_key
-                        _TASK_PREFIX,  # KEYS[3]: task_hash_prefix
-                        _HEARTBEAT_PREFIX,  # KEYS[4]: heartbeat_prefix
-                        task_id,  # ARGV[1]: task_id
-                        str(retry_at),  # ARGV[2]: retry_at
-                        task_json,  # ARGV[3]: task_json
-                        token,  # ARGV[4]: owner_token
-                        str(task.retry_count),  # ARGV[5]: retry_count
-                        error[:200],  # ARGV[6]: error
-                    )
-                    await client.aclose()
-
-                    if result == 0:
-                        logger.warning(
-                            "Fail/retry rejected (owner mismatch): task_id=%s",
-                            task_id,
-                        )
-                        queue_metrics["owner_fencing_rejected"] += 1
-                        return False
-
                 except Exception as e:
                     logger.warning("Task fail/retry Redis error: %s", e)
                     return False
@@ -987,37 +970,18 @@ class DurableTaskQueue:
         # Dead-letter path (no more retries or no Task object)
         if self._redis_enabled:
             try:
-                client = await self._get_script_client()
-                if client is None:
+                if not await execute_v1_fail_dead(
+                    self._get_script_client,
+                    self._load_scripts,
+                    self._evalsha_or_reload,
+                    task_or_id,
+                    task_id,
+                    tt,
+                    token,
+                    error,
+                    queue_metrics,
+                ):
                     return False
-                await self._load_scripts(client)
-
-                p_key = _p_key(tt)
-                task_json = build_v1_fail_dead_payload(task_or_id)
-
-                result = await self._evalsha_or_reload(
-                    client,
-                    "_lua_fail_dead",
-                    4,
-                    p_key,  # KEYS[1]: processing_key
-                    _dead_key(tt),  # KEYS[2]: dead_key
-                    _TASK_PREFIX,  # KEYS[3]: task_hash_prefix
-                    _HEARTBEAT_PREFIX,  # KEYS[4]: heartbeat_prefix
-                    task_id,  # ARGV[1]: task_id
-                    task_json,  # ARGV[2]: task_json
-                    token,  # ARGV[3]: owner_token
-                    str(_DEAD_MAX),  # ARGV[4]: dead_max
-                )
-                await client.aclose()
-
-                if result == 0:
-                    logger.warning(
-                        "Fail/dead rejected (owner mismatch): task_id=%s",
-                        task_id,
-                    )
-                    queue_metrics["owner_fencing_rejected"] += 1
-                    return False
-
             except Exception as e:
                 logger.warning("Task fail/dead Redis error: %s", e)
                 return False
