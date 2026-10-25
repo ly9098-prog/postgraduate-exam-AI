@@ -10,6 +10,7 @@ const { buildAiRichText } = require('../utils/ai-math-render')
 const errorDiagnosis = require('../utils/error-diagnosis')
 const aiTeacher408 = require('../utils/ai-teacher-408')
 const { presentTeacherResult } = require('./teacher-presentation')
+const { createTeacherActionController } = require('./utils/teacher-action-controller')
 const AI_REQUEST_TIMEOUT_MS = 55000
 const AI_CACHE_POLL_ATTEMPTS = 44
 const QUESTION_SWITCH_OUT_MS = 150
@@ -216,60 +217,73 @@ _teacherRequestSeq: 0,
 _diagnosisRequestSeq: 0,
 _bottomActionsTimer: null,
 _bottomActionsLastActiveAt: 0,
-onLoad(options) {
-setRenderGuardPage('wrong-detail')
-this._alive = true
-this._aiRequestId = 0
-this._currentWqId = null
-this._aiGenerationMarker = ''
-this._switching = false
-this._navigationSeq = 0
-this._aiSwipeStart = null
-this._contentTransitionStartedAt = 0
-this._contentTransitionDirection = ''
-this._teacherRequestSeq = 0
-this._diagnosisRequestSeq = 0
-this._teacherCache = Object.create(null)
-this._teacherInflight = Object.create(null)
-this._teacherFeedbackCache = Object.create(null)
-this._activeTeacherCacheKey = ''
-this._wqCache = {}
-this._switchMaskTimer = null
-this._contentTransitionTimer = null
-this._switchWatchdogTimer = null
-this._masterUndoTimer = null
-this._masterAdvanceTimer = null
-this._removeBackTimer = null
-this._bottomActionsTimer = null
-this._bottomActionsLastActiveAt = 0
-this._masterUndoInFlight = false
-this._pendingMasterUndo = null
-const currentId = Number(options.id)
-if (!Number.isFinite(currentId) || currentId <= 0) {
-this.setData({ loading: false, errorText: '错题ID无效', wq: null })
-return
-}
-let questionIds = []
-try {
-if (options.source === 'wrong-book' || options.source === 'practice-result' || options.source === 'exam-result') {
-const nav = wx.getStorageSync('wrong_detail_nav')
-if (nav && Array.isArray(nav.ids) && Date.now() - Number(nav.ts || 0) < 30 * 60 * 1000) {
-const normalized = nav.ids.map(Number).filter(Number.isFinite)
-const sourceMatches = !nav.source || nav.source === options.source
-if (sourceMatches && normalized.includes(currentId)) questionIds = normalized
-}
-}
-} catch (_) {}
-if (!questionIds.length) questionIds = [currentId]
-const currentIdx = questionIds.indexOf(currentId)
-this.setData({
-questionIds,
-currentIdx: currentIdx >= 0 ? currentIdx : 0,
-totalQuestions: questionIds.length,
-})
-this.loadData(currentId)
-this._showBottomActions()
-},
+  onLoad(options) {
+    this._initWrongDetailState()
+    this._initWrongDetailFromOptions(options)
+  },
+
+  _initWrongDetailState() {
+    setRenderGuardPage('wrong-detail')
+    this._alive = true
+    this._aiRequestId = 0
+    this._currentWqId = null
+    this._aiGenerationMarker = ''
+    this._switching = false
+    this._navigationSeq = 0
+    this._aiSwipeStart = null
+    this._contentTransitionStartedAt = 0
+    this._contentTransitionDirection = ''
+    this._teacherRequestSeq = 0
+    this._diagnosisRequestSeq = 0
+    this._teacherCache = Object.create(null)
+    this._teacherInflight = Object.create(null)
+    this._teacherFeedbackCache = Object.create(null)
+    this._activeTeacherCacheKey = ''
+    this._wqCache = {}
+    this._switchMaskTimer = null
+    this._contentTransitionTimer = null
+    this._switchWatchdogTimer = null
+    this._masterUndoTimer = null
+    this._masterAdvanceTimer = null
+    this._removeBackTimer = null
+    this._bottomActionsTimer = null
+    this._bottomActionsLastActiveAt = 0
+    this._masterUndoInFlight = false
+    this._pendingMasterUndo = null
+  },
+
+  _initWrongDetailFromOptions(options) {
+    const currentId = Number(options.id)
+    if (!Number.isFinite(currentId) || currentId <= 0) {
+      this.setData({ loading: false, errorText: '错题ID无效', wq: null })
+      return
+    }
+    const questionIds = this._resolveQuestionIds(options, currentId)
+    const currentIdx = questionIds.indexOf(currentId)
+    this.setData({
+      questionIds,
+      currentIdx: currentIdx >= 0 ? currentIdx : 0,
+      totalQuestions: questionIds.length,
+    })
+    this.loadData(currentId)
+    this._showBottomActions()
+  },
+
+  _resolveQuestionIds(options, currentId) {
+    let questionIds = []
+    try {
+      if (options.source === 'wrong-book' || options.source === 'practice-result' || options.source === 'exam-result') {
+        const nav = wx.getStorageSync('wrong_detail_nav')
+        if (nav && Array.isArray(nav.ids) && Date.now() - Number(nav.ts || 0) < 30 * 60 * 1000) {
+          const normalized = nav.ids.map(Number).filter(Number.isFinite)
+          const sourceMatches = !nav.source || nav.source === options.source
+          if (sourceMatches && normalized.includes(currentId)) questionIds = normalized
+        }
+      }
+    } catch (_) {}
+    if (!questionIds.length) questionIds = [currentId]
+    return questionIds
+  },
 onShow() {
 if (this._alive && this.data.wq) this._showBottomActions()
 },
@@ -543,88 +557,48 @@ String(action || ''),
 String(item.wrong_answer || ''),
 ].join('|')
 },
-async run408TeacherAction(e) {
-const action = String(e.currentTarget.dataset.action || '')
-if (!action) return
-if (this.data.aiLoading || this.data.aiRegenerating) {
-wx.showToast({ title: 'AI 复盘生成中，请稍后', icon: 'none' })
-return
-}
-if (this.data.teacherLoadingAction) {
-this.setData({ teacherSheetVisible: true })
-return
-}
-const wq = this.data.wq || {}
-const diagnosis = this.data.errorDiagnosis || {}
-const questionId = Number(wq.question_id || wq.questionId || 0)
-if (!questionId) {
-wx.showToast({ title: '缺少题目ID', icon: 'none' })
-return
-}
-const versionId = Number(
-diagnosis.question_version_id || diagnosis.questionVersionId || wq.question_version_id || wq.questionVersionId || 0
-)
-const diagnosisId = Number(diagnosis.id || 0)
-const cacheKey = this._teacherCacheKeyForWrong(wq, diagnosis, action)
-const cached = this._teacherCache && this._teacherCache[cacheKey]
-this._activeTeacherCacheKey = cacheKey
-if (cached) {
-this.setData({
-teacherLoadingAction: '',
-teacherLastAction: action,
-teacherErrorText: '',
-teacherResult: cached,
-teacherSheetVisible: true,
-teacherFeedbackSent: (this._teacherFeedbackCache && this._teacherFeedbackCache[cacheKey]) || '',
-})
-return
-}
-const requestSeq = ++this._teacherRequestSeq
-const sourceWqId = String(wq.id || '')
-const payload = { question_id: questionId, action: action }
-if (versionId > 0) payload.question_version_id = versionId
-if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
-if (wq.wrong_answer) payload.user_answer = String(wq.wrong_answer)
-if (!this._teacherInflight) this._teacherInflight = Object.create(null)
-let requestPromise = this._teacherInflight[cacheKey]
-if (!requestPromise) {
-requestPromise = api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS })
-this._teacherInflight[cacheKey] = requestPromise
-}
-this.setData({
-teacherLoadingAction: action,
-teacherLastAction: action,
-teacherErrorText: '',
-teacherResult: null,
-teacherSheetVisible: true,
-teacherFeedbackSent: '',
-})
-try {
-const raw = await requestPromise
-const normalized = aiTeacher408.normalizeResult(raw)
-if (!normalized) throw new Error('AI 返回格式异常')
-const presented = presentTeacherResult(normalized)
-if (!this._teacherCache) this._teacherCache = Object.create(null)
-this._teacherCache[cacheKey] = presented
-if (requestSeq !== this._teacherRequestSeq || !this._alive) return
-if (String((this.data.wq && this.data.wq.id) || '') !== sourceWqId) {
-this.setData({ teacherLoadingAction: '' })
-return
-}
-this._activeTeacherCacheKey = cacheKey
-this.setData({ teacherLoadingAction: '', teacherResult: presented })
-} catch (error) {
-if (requestSeq !== this._teacherRequestSeq || !this._alive) return
-this.setData({
-teacherLoadingAction: '',
-teacherErrorText: aiTeacher408.errorMessage(error, api),
-})
-} finally {
-if (this._teacherInflight && this._teacherInflight[cacheKey] === requestPromise) {
-delete this._teacherInflight[cacheKey]
-}
-}
-},
+  async run408TeacherAction(e) {
+    return this._teacherActionController().run(e)
+  },
+
+  _teacherActionController() {
+    if (!this._teacherActionCtl) {
+      this._teacherActionCtl = createTeacherActionController({
+        getAiLoading: () => this.data.aiLoading,
+        getAiRegenerating: () => this.data.aiRegenerating,
+        getTeacherLoadingAction: () => this.data.teacherLoadingAction,
+        getWq: () => this.data.wq,
+        getErrorDiagnosis: () => this.data.errorDiagnosis,
+        setData: patch => this.setData(patch),
+        showToast: options => wx.showToast(options),
+        buildCacheKey: (wq, diagnosis, action) => this._teacherCacheKeyForWrong(wq, diagnosis, action),
+        getCacheEntry: key => this._teacherCache && this._teacherCache[key],
+        setCacheEntry: (key, value) => {
+          if (!this._teacherCache) this._teacherCache = Object.create(null)
+          this._teacherCache[key] = value
+        },
+        getFeedbackEntry: key => (this._teacherFeedbackCache && this._teacherFeedbackCache[key]) || '',
+        setActiveCacheKey: key => { this._activeTeacherCacheKey = key },
+        getInflight: key => {
+          if (!this._teacherInflight) this._teacherInflight = Object.create(null)
+          return this._teacherInflight[key]
+        },
+        setInflight: (key, promise) => {
+          if (!this._teacherInflight) this._teacherInflight = Object.create(null)
+          this._teacherInflight[key] = promise
+        },
+        deleteInflight: key => { delete this._teacherInflight[key] },
+        nextRequestSequence: () => ++this._teacherRequestSeq,
+        getRequestSequence: () => this._teacherRequestSeq,
+        isAlive: () => this._alive,
+        postTeacher: payload => api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS }),
+        normalizeResult: raw => aiTeacher408.normalizeResult(raw),
+        presentResult: normalized => presentTeacherResult(normalized),
+        errorMessage: error => aiTeacher408.errorMessage(error, api),
+      })
+    }
+    return this._teacherActionCtl
+  },
 close408TeacherSheet() {
 this.setData({ teacherSheetVisible: false })
 },
@@ -942,62 +916,63 @@ this.openUnmasterConfirm()
 this.openMasterConfirm()
 }
 },
-async confirmMastered() {
-const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
-if (!wqId || this.data.masterSubmitting) return
-this.setData({ masterSubmitting: true, masterConfirmVisible: false })
-try {
-const masterResult = await api.post('/wrong-questions/batch', {
-action: 'mark_mastered',
-ids: [wqId],
-})
-if (!this._alive) return
-const masterSkipped = !!(
-masterResult && Array.isArray(masterResult.skipped_ids) &&
-masterResult.skipped_ids.some(id => String(id) === String(wqId))
-)
-const masterChanged = !masterSkipped && !(
-masterResult && masterResult.updated_count != null && Number(masterResult.updated_count) <= 0
-)
-if (!masterChanged) {
-this._clearMasterUndo()
-this.setData({ masterSubmitting: false })
-await this.loadData(wqId)
-if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
-return
-}
-this._clearMasterUndo()
-this._pendingMasterUndo = {
-wqId,
-originalIdx: this.data.currentIdx,
-}
-if (this._wqCache && this._wqCache[wqId]) {
-this._wqCache[wqId].data = Object.assign({}, this._wqCache[wqId].data, { is_mastered: true })
-}
-if (this.data.wq && String(this.data.wq.id) === String(wqId)) {
-this.setData({
-wq: Object.assign({}, this.data.wq, { is_mastered: true }),
-isCurrentMastered: true,
-masterSubmitting: false,
-masterUndoVisible: true,
-})
-} else {
-this.setData({ masterSubmitting: false, masterUndoVisible: true })
-}
-this._armMasterUndoExpiry(5000)
-if (this.data.currentIdx < this.data.questionIds.length - 1) {
-this._masterAdvanceTimer = setTimeout(() => {
-this._masterAdvanceTimer = null
-this._navigateTo(this.data.currentIdx + 1, 150)
-}, 120)
-}
-} catch (e) {
-if (!this._alive) return
-console.error('标记已掌握失败', e)
-this.setData({ masterSubmitting: false })
-wx.showToast({ title: '操作失败，请重试', icon: 'none' })
-}
-},
+  async confirmMastered() {
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId || this.data.masterSubmitting) return
+    this.setData({ masterSubmitting: true, masterConfirmVisible: false })
+    try {
+      const masterResult = await api.post('/wrong-questions/batch', {
+        action: 'mark_mastered', ids: [wqId],
+      })
+      if (!this._alive) return
+      await this._handleMasterResult(masterResult, wqId)
+    } catch (e) {
+      if (!this._alive) return
+      console.error('标记已掌握失败', e)
+      this.setData({ masterSubmitting: false })
+    }
+  },
+
+  async _handleMasterResult(masterResult, wqId) {
+    const masterSkipped = !!(
+      masterResult && Array.isArray(masterResult.skipped_ids) &&
+      masterResult.skipped_ids.some(id => String(id) === String(wqId))
+    )
+    const masterChanged = !masterSkipped && !(
+      masterResult && masterResult.updated_count != null && Number(masterResult.updated_count) <= 0
+    )
+    if (!masterChanged) {
+      this._clearMasterUndo()
+      this.setData({ masterSubmitting: false })
+      await this.loadData(wqId)
+      if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
+      return
+    }
+    this._applyMasterChanged(wqId)
+  },
+
+  _applyMasterChanged(wqId) {
+    this._clearMasterUndo()
+    this._pendingMasterUndo = { wqId, originalIdx: this.data.currentIdx }
+    if (this._wqCache && this._wqCache[wqId]) {
+      this._wqCache[wqId].data = Object.assign({}, this._wqCache[wqId].data, { is_mastered: true })
+    }
+    if (this.data.wq && String(this.data.wq.id) === String(wqId)) {
+      this.setData({
+        wq: Object.assign({}, this.data.wq, { is_mastered: true }),
+        isCurrentMastered: true, masterSubmitting: false, masterUndoVisible: true,
+      })
+    } else {
+      this.setData({ masterSubmitting: false, masterUndoVisible: true })
+    }
+    this._armMasterUndoExpiry(5000)
+    if (this.data.currentIdx < this.data.questionIds.length - 1) {
+      this._masterAdvanceTimer = setTimeout(() => {
+        this._masterAdvanceTimer = null
+        this._navigateTo(this.data.currentIdx + 1, 150)
+      }, 120)
+    }
+  },
 async confirmUnmastered() {
 const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
 if (!wqId || this.data.masterSubmitting) return
