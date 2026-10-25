@@ -24,6 +24,9 @@ const {
 const {
   createExamSubmitPreparationController,
 } = require('../utils/exam-submit-preparation-controller')
+const {
+  createExamInteractionController,
+} = require('../utils/exam-interaction-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -414,35 +417,35 @@ Page({
   },
 
   selectOption(e) {
-    if (this.data.timeExpired || this.data.submitting || this._navigationLocked) return
-    const itemId = this._currentItemId()
-    if (!itemId) return
-    const answer = this._answers[itemId] || { used_time: 0 }
-    answer.selected_answer = String(e.detail.option || '').trim().toUpperCase() || null
-    this._answers[itemId] = answer
-    this._queueItem(itemId)
-    this._updateQuestionFlags(itemId)
-    const rv = this._renderCache[itemId]
-    this.setData({ currentAnswerState: view.buildAnswerState(rv, answer.selected_answer) })
-    this._setCountsOnly()
-    this._syncItem(itemId).catch(() => {})
+    this._examInteractionController().selectOption(e)
   },
 
   toggleMark() {
-    if (this.data.timeExpired || this.data.submitting || this._navigationLocked) return
-    const itemId = this._currentItemId()
-    if (!itemId) return
-    const answer = this._answers[itemId] || { used_time: 0 }
-    answer.marked_for_review = !answer.marked_for_review
-    this._answers[itemId] = answer
-    this._queueItem(itemId)
-    this._updateQuestionFlags(itemId)
-    this.setData({ markedForReview: !!answer.marked_for_review })
-    this._syncItem(itemId).catch(() => {})
+    this._examInteractionController().toggleMark()
   },
 
   _setCountsOnly() {
     this.setData(computeAnsweredProgress(this.data.questions))
+  },
+
+  _examInteractionController() {
+    return this._examInteraction || (
+      this._examInteraction = createExamInteractionController({
+        isTimeExpired: () => this.data.timeExpired,
+        isSubmitting: () => this.data.submitting,
+        isNavigationLocked: () => this._navigationLocked,
+        getCurrentItemId: () => this._currentItemId(),
+        getAnswer: itemId => this._answers[itemId],
+        setAnswer: (itemId, answer) => { this._answers[itemId] = answer },
+        queueItem: itemId => this._queueItem(itemId),
+        updateQuestionFlags: itemId => this._updateQuestionFlags(itemId),
+        getRenderView: itemId => this._renderCache[itemId],
+        buildAnswerState: (renderView, answer) => view.buildAnswerState(renderView, answer),
+        setData: patch => this.setData(patch),
+        setCountsOnly: () => this._setCountsOnly(),
+        syncItem: itemId => this._syncItem(itemId),
+      })
+    )
   },
 
   _queueItem(itemId) {
