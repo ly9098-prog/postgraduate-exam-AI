@@ -50,6 +50,7 @@ const {
 } = require('./utils/end-confirm-snapshot')
 const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
+const { createPomodoroPauseSyncController } = require('./utils/pause-sync-controller')
 const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
@@ -1278,11 +1279,17 @@ Page({
   // intentionally serialized with resume/complete/interrupt so a late /pause can
   // never arrive after the user has already chosen "continue".
   async _postPauseWithRetry(sessionId, clientActionAt) {
-    const pending = this._setPendingPomodoroSync('pause', sessionId, clientActionAt)
-    if (!pending) throw new Error('pomodoro local persistence unavailable')
-    const synced = await this._retryPendingPomodoroSync()
-    if (!synced) throw new Error('pomodoro pause sync pending')
-    return true
+    return this._pauseSyncController().postPause(sessionId, clientActionAt)
+  },
+
+  _pauseSyncController() {
+    return this._pauseSync || (
+      this._pauseSync = createPomodoroPauseSyncController({
+        setPendingPomodoroSync: (action, sessionId, clientActionAt) =>
+          this._setPendingPomodoroSync(action, sessionId, clientActionAt),
+        retryPendingPomodoroSync: () => this._retryPendingPomodoroSync(),
+      })
+    )
   },
 
   async _pauseCountdownForEndConfirm() {

@@ -505,6 +505,7 @@ jobs:
           node --test miniprogram/tests/test-exam-reconnect-controller.js
           node --test miniprogram/tests/test-exam-submit-entry-controller.js
           node --test miniprogram/tests/test-exam-exit-request-controller.js
+          node --test miniprogram/tests/test-pomodoro-pause-sync-controller.js
           node --test miniprogram/tests/test-exam-hydrate-helpers.js
           node --test miniprogram/tests/test-exam-paper-search.js
           node --test miniprogram/tests/test-practice-result-tips.js
