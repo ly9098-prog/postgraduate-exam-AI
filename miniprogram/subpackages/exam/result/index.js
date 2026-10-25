@@ -74,85 +74,68 @@ function firstWrongIdByQuestion(question) {
 }
 
 function buildKnowledgeMetrics(result) {
-  const questions = Array.isArray(result && result.questions) ? result.questions : []
-  const stats = new Map()
+  var questions = Array.isArray(result && result.questions) ? result.questions : []
+  var stats = buildKnowledgeStats(questions)
+  var metrics = sortAndSliceMetrics(stats)
+  var usedNames = new Set(metrics.map(function(item) { return item.name }))
+  fillSubjectBreakdown(metrics, usedNames, result, questions)
+  fillOverallAndFallback(metrics, result)
+  return metrics.slice(0, RADAR_SIZE)
+}
 
-  questions.forEach((question) => {
-    const names = Array.isArray(question && question.knowledge_points)
-      ? Array.from(new Set(question.knowledge_points.map(name => normalizeName(name, '')).filter(Boolean)))
+function buildKnowledgeStats(questions) {
+  var stats = new Map()
+  questions.forEach(function(question) {
+    var names = Array.isArray(question && question.knowledge_points)
+      ? Array.from(new Set(question.knowledge_points.map(function(name) { return normalizeName(name, "") }).filter(Boolean)))
       : []
-    names.forEach((name) => {
-      let item = stats.get(name)
-      if (!item) {
-        item = { name, questionCount: 0, correctCount: 0, wrongQuestionId: 0, source: 'knowledge' }
-        stats.set(name, item)
-      }
+    names.forEach(function(name) {
+      var item = stats.get(name)
+      if (!item) { item = { name: name, questionCount: 0, correctCount: 0, wrongQuestionId: 0, source: "knowledge" }; stats.set(name, item) }
       item.questionCount += 1
-      if (question.status === 'correct') item.correctCount += 1
-      if (!item.wrongQuestionId && question.status !== 'correct') {
-        item.wrongQuestionId = firstWrongIdByQuestion(question)
-      }
+      if (question.status === "correct") item.correctCount += 1
+      if (!item.wrongQuestionId && question.status !== "correct") item.wrongQuestionId = firstWrongIdByQuestion(question)
     })
   })
+  return stats
+}
 
-  let metrics = Array.from(stats.values()).map((item) => ({
-    ...item,
-    accuracyPct: item.questionCount ? Math.round(item.correctCount / item.questionCount * 100) : 0,
-  }))
-  metrics.sort((a, b) => {
+function sortAndSliceMetrics(stats) {
+  var metrics = Array.from(stats.values()).map(function(item) {
+    return Object.assign({}, item, { accuracyPct: item.questionCount ? Math.round(item.correctCount / item.questionCount * 100) : 0 })
+  })
+  metrics.sort(function(a, b) {
     if (b.questionCount !== a.questionCount) return b.questionCount - a.questionCount
     if (b.accuracyPct !== a.accuracyPct) return b.accuracyPct - a.accuracyPct
-    return a.name.localeCompare(b.name, 'zh-CN')
+    return a.name.localeCompare(b.name, "zh-CN")
   })
-  metrics = metrics.slice(0, RADAR_SIZE)
+  return metrics.slice(0, RADAR_SIZE)
+}
 
-  const usedNames = new Set(metrics.map(item => item.name))
-  const subjectBreakdown = Array.isArray(result && result.subject_breakdown) ? result.subject_breakdown : []
-  for (let index = 0; index < subjectBreakdown.length && metrics.length < RADAR_SIZE; index += 1) {
-    const subject = subjectBreakdown[index] || {}
-    const name = normalizeName(subject.subject_name, `科目${index + 1}`)
+function fillSubjectBreakdown(metrics, usedNames, result, questions) {
+  var subjectBreakdown = Array.isArray(result && result.subject_breakdown) ? result.subject_breakdown : []
+  for (var index = 0; index < subjectBreakdown.length && metrics.length < RADAR_SIZE; index += 1) {
+    var subject = subjectBreakdown[index] || {}
+    var name = normalizeName(subject.subject_name, "科目" + (index + 1))
     if (usedNames.has(name)) continue
-    const matchingWrong = questions.find(question => (
-      normalizeName(question && question.subject_name, '') === name &&
-      question && question.status !== 'correct' &&
-      firstWrongIdByQuestion(question)
-    ))
-    metrics.push({
-      name,
-      questionCount: Number(subject.question_count || 0),
-      correctCount: Number(subject.correct_count || 0),
-      accuracyPct: percentNumber(subject.accuracy),
-      wrongQuestionId: firstWrongIdByQuestion(matchingWrong),
-      source: 'subject',
+    var matchingWrong = questions.find(function(question) {
+      return normalizeName(question && question.subject_name, "") === name && question && question.status !== "correct" && firstWrongIdByQuestion(question)
     })
+    metrics.push({ name: name, questionCount: Number(subject.question_count || 0), correctCount: Number(subject.correct_count || 0), accuracyPct: percentNumber(subject.accuracy), wrongQuestionId: firstWrongIdByQuestion(matchingWrong), source: "subject" })
     usedNames.add(name)
   }
+}
 
-  const overallAccuracy = percentNumber(result && result.accuracy)
+function fillOverallAndFallback(metrics, result) {
+  var overallAccuracy = percentNumber(result && result.accuracy)
   if (metrics.length < RADAR_SIZE) {
-    metrics.push({
-      name: '综合表现',
-      questionCount: Number(result && result.question_count || 0),
-      correctCount: Number(result && result.correct_count || 0),
-      accuracyPct: overallAccuracy,
-      wrongQuestionId: firstWrongIdByQuestion(questions.find(q => q && q.status === 'wrong' && firstWrongIdByQuestion(q))),
-      source: 'overall',
-    })
+    var questions = Array.isArray(result && result.questions) ? result.questions : []
+    metrics.push({ name: "综合表现", questionCount: Number(result && result.question_count || 0), correctCount: Number(result && result.correct_count || 0), accuracyPct: overallAccuracy, wrongQuestionId: firstWrongIdByQuestion(questions.find(function(q) { return q && q.status === "wrong" && firstWrongIdByQuestion(q) })), source: "overall" })
   }
-
   while (metrics.length < RADAR_SIZE) {
-    const index = metrics.length + 1
-    metrics.push({
-      name: `能力维度${index}`,
-      questionCount: Number(result && result.question_count || 0),
-      correctCount: Number(result && result.correct_count || 0),
-      accuracyPct: overallAccuracy,
-      wrongQuestionId: 0,
-      source: 'fallback',
-    })
+    var index = metrics.length + 1
+    metrics.push({ name: "能力维度" + index, questionCount: Number(result && result.question_count || 0), correctCount: Number(result && result.correct_count || 0), accuracyPct: overallAccuracy, wrongQuestionId: 0, source: "fallback" })
   }
-
-  return metrics.slice(0, RADAR_SIZE)
 }
 
 function buildRadar(items) {
