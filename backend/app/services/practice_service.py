@@ -1124,75 +1124,45 @@ async def get_smart_practice_questions(
     返回: (questions_list, metadata_dict)
     """
     # use_leitner 由 issuance 层统一执行；本函数只负责候选召回与策略编排。
-    from app.services import recommendation_experiment_service
+    from app.services import knowledge_path_service, recommendation_experiment_service
+    from app.services.practice.smart_branches import (
+        SmartBranchProviders,
+        SmartBranchRequest,
+        create_smart_branches,
+    )
 
     scope_ids = (
         subject_ids
         if subject_ids is not None
         else await resolve_subject_ids(db, subject_code)
     )
-
-    async def run_scored_branch(
-        experiment_info: dict,
-        _strategy: str,
-        branch_scope_ids: list[int],
-    ) -> tuple[list[Question], dict[int, dict]] | None:
-        return await run_scored_supplement(
-            ScoredSupplementRequest(
-                db=db,
-                user_id=user_id,
-                subject_code=subject_code,
-                count=count,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-                use_leitner=use_leitner,
-                request_id=request_id,
-                scope_ids=branch_scope_ids,
-                skip_finalize=skip_finalize,
-                experiment_id=experiment_info.get("experiment_id"),
-                variant_key=experiment_info.get("variant_key"),
-                logger=logger,
-                load_scored=get_smart_scored_questions,
-                load_fallback=_smart_weakness_vector,
-                merge_results=merge_recommendation_results,
-                finalize=_maybe_finalize_smart,
-            )
-        )
-
-    async def run_path_branch(
-        experiment_info: dict,
-        _strategy: str,
-        branch_scope_ids: list[int],
-    ) -> tuple[list[Question], dict[int, dict]] | None:
-        from app.services import knowledge_path_service
-
-        build_path_conditions = _build_path_conditions
-
-        return await run_smart_path(
-            SmartPathRequest(
-                db=db,
-                user_id=user_id,
-                subject_code=subject_code,
-                count=count,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-                use_leitner=use_leitner,
-                scope_ids=branch_scope_ids,
-                skip_finalize=skip_finalize,
-                experiment_id=experiment_info.get("experiment_id"),
-                variant_key=experiment_info.get("variant_key"),
-                request_id=request_id,
-                logger=logger,
-                load_path=knowledge_path_service.get_user_path_recommendations,
-                load_fallback=_smart_weakness_vector,
-                merge_results=merge_recommendation_results,
-                finalize=_maybe_finalize_smart,
-                build_conditions=build_path_conditions,
-            )
-        )
-
-    async def run_weakness_branch(**kwargs) -> tuple[list[Question], dict[int, dict]]:
-        return await _legacy_weakness_vector(**kwargs)
+    run_scored_branch, run_path_branch, run_weakness_branch = create_smart_branches(
+        SmartBranchRequest(
+            db=db,
+            user_id=user_id,
+            subject_code=subject_code,
+            count=count,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
+            request_id=request_id,
+            skip_finalize=skip_finalize,
+            load_path=knowledge_path_service.get_user_path_recommendations,
+            load_fallback=_smart_weakness_vector,
+            merge_results=merge_recommendation_results,
+            finalize=_maybe_finalize_smart,
+            build_conditions=_build_path_conditions,
+        ),
+        SmartBranchProviders(
+            load_scored=get_smart_scored_questions,
+            load_fallback=_smart_weakness_vector,
+            merge_results=merge_recommendation_results,
+            finalize_scored=_maybe_finalize_smart,
+            finalize_path=_maybe_finalize_smart,
+            build_path_conditions=_build_path_conditions,
+            load_path=knowledge_path_service.get_user_path_recommendations,
+        ),
+    )
 
     return await run_smart_practice(
         SmartPracticeRequest(
@@ -2337,7 +2307,7 @@ async def batch_submit_answers(
             now=now,
             record_wrong=record_wrong,
             create_outbox=_create_answer_projection_outbox,
-        persist_wrong_answer=persist_wrong_answer,
+            persist_wrong_answer=persist_wrong_answer,
         )
         records = persisted.records
         prewarm_wrong_questions = persisted.prewarm_wrong_questions

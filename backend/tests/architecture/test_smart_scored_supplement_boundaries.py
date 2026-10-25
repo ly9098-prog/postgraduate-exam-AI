@@ -22,7 +22,8 @@ def _call_name(node):
 def _entry():
     source = (APP / "services/practice_service.py").read_text()
     return next(
-        node for node in ast.parse(source).body
+        node
+        for node in ast.parse(source).body
         if getattr(node, "name", "") == "get_smart_practice_questions"
     )
 
@@ -38,8 +39,15 @@ def test_module_has_no_application_io_dependencies_or_persistence_calls():
             assert node.end_lineno - node.lineno + 1 <= 50
         if isinstance(node, ast.Call):
             assert _call_name(node.func) not in {
-                "execute", "scalar", "scalars", "commit", "rollback", "begin",
-                "begin_nested", "flush", "add",
+                "execute",
+                "scalar",
+                "scalars",
+                "commit",
+                "rollback",
+                "begin",
+                "begin_nested",
+                "flush",
+                "add",
             }
     assert not any(isinstance(node, ast.For) for node in ast.walk(tree))
 
@@ -49,61 +57,83 @@ def test_real_entry_consumes_exact_ports_and_keeps_scored_provider():
     from app.services.practice import smart_scored_supplement
 
     entry = _entry()
+    branch_source = (APP / "services/practice/smart_branches.py").read_text(
+        encoding="utf-8"
+    )
+    branch_tree = ast.parse(branch_source)
     requests = [
-        node for node in ast.walk(entry)
+        node
+        for node in ast.walk(entry)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "create_smart_branches"
+    ]
+    assert len(requests) == 1
+    scored_requests = [
+        node
+        for node in ast.walk(branch_tree)
         if isinstance(node, ast.Call)
         and getattr(node.func, "id", "") == "ScoredSupplementRequest"
     ]
-    assert len(requests) == 1
-    assert {
+    assert len(scored_requests) == 1
+    provider_fields = {
         keyword.arg: ast.unparse(keyword.value)
-        for keyword in requests[0].keywords
-    } == {
-        "db": "db",
-        "user_id": "user_id",
-        "subject_code": "subject_code",
-        "count": "count",
-        "exclude_answered": "exclude_answered",
-        "no_repeat_days": "no_repeat_days",
-        "use_leitner": "use_leitner",
-        "request_id": "request_id",
-        "scope_ids": "branch_scope_ids",
-        "skip_finalize": "skip_finalize",
-        "experiment_id": "experiment_info.get('experiment_id')",
-        "variant_key": "experiment_info.get('variant_key')",
-        "logger": "logger",
+        for keyword in requests[0].args[1].keywords
+    }
+    assert provider_fields == {
         "load_scored": "get_smart_scored_questions",
         "load_fallback": "_smart_weakness_vector",
         "merge_results": "merge_recommendation_results",
-        "finalize": "_maybe_finalize_smart",
+        "finalize_scored": "_maybe_finalize_smart",
+        "finalize_path": "_maybe_finalize_smart",
+        "build_path_conditions": "_build_path_conditions",
+        "load_path": "knowledge_path_service.get_user_path_recommendations",
+    }
+    assert {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in scored_requests[0].keywords
+    } == {
+        "db": "request.db",
+        "user_id": "request.user_id",
+        "subject_code": "request.subject_code",
+        "count": "request.count",
+        "exclude_answered": "request.exclude_answered",
+        "no_repeat_days": "request.no_repeat_days",
+        "use_leitner": "request.use_leitner",
+        "request_id": "request.request_id",
+        "scope_ids": "branch_scope_ids",
+        "skip_finalize": "request.skip_finalize",
+        "experiment_id": "experiment_info.get('experiment_id')",
+        "variant_key": "experiment_info.get('variant_key')",
+        "logger": "_branch_logger()",
+        "load_scored": "providers.load_scored",
+        "load_fallback": "providers.load_fallback",
+        "merge_results": "providers.merge_results",
+        "finalize": "providers.finalize_scored",
     }
     assert svc.run_scored_supplement is smart_scored_supplement.run_scored_supplement
-    scored_branches = [
-        node
-        for node in ast.walk(entry)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "run_scored_branch"
-    ]
-    assert len(scored_branches) == 1
+    entry_text = ast.unparse(entry)
+    assert "get_smart_scored_questions" in entry_text
+    assert "_smart_weakness_vector" in entry_text
     assert not any(
-        isinstance(node, ast.Try)
-        and "get_smart_scored_questions" in ast.unparse(node)
-        for node in ast.walk(scored_branches[0])
+        isinstance(node, ast.Try) and "get_smart_scored_questions" in ast.unparse(node)
+        for node in ast.walk(branch_tree)
     )
-    assert "get_smart_scored_questions" in ast.unparse(requests[0])
-    assert "_smart_weakness_vector" in ast.unparse(requests[0])
+    branch_text = ast.unparse(branch_tree)
+    assert "get_smart_scored_questions" not in branch_text
+    assert "_smart_weakness_vector" not in branch_text
 
 
 def test_flow_preserves_completion_and_shortfall_order():
     source = (APP / "services/practice/smart_scored_supplement.py").read_text()
     tree = ast.parse(source)
     flow = next(
-        node for node in tree.body
+        node
+        for node in tree.body
         if getattr(node, "name", "") == "run_scored_supplement"
     )
     assert [
         ast.unparse(node.test) for node in ast.walk(flow) if isinstance(node, ast.If)
-    ] == ['len(scored) >= request.count']
+    ] == ["len(scored) >= request.count"]
     text = ast.unparse(flow)
     assert "request.count - len(scored)" in text
     assert "exclude_ids={question.id for question in scored}" in text
