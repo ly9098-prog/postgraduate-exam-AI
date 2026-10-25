@@ -415,8 +415,8 @@ jobs:
             miniprogram/tests/test-pomodoro-start-break-controller.js \
             miniprogram/tests/test-pomodoro-start-timer-controller.js \
             miniprogram/tests/test-pomodoro-canvas-init-controller.js \
-            miniprogram/tests/test-pomodoro-draw-ring-controller.js
-            miniprogram/tests/test-pomodoro-apply-subjects-controller.js
+            miniprogram/tests/test-pomodoro-draw-ring-controller.js \
+            miniprogram/tests/test-pomodoro-apply-subjects-controller.js \
             miniprogram/tests/test-pomodoro-effective-paused-ms.js
           node miniprogram/scripts/test-pomodoro-stability-runtime.js
           node miniprogram/scripts/test-pomodoro-resilience.js
@@ -424,6 +424,7 @@ jobs:
           node miniprogram/scripts/test-pomodoro-free-timer-limit.js
           node --test miniprogram/tests/test-practice-subject-tree.js
           node --test miniprogram/tests/test-practice-subject-sheet-controller.js
+          node --test miniprogram/tests/test-practice-subject-selection-controller.js
           node --test miniprogram/tests/test-practice-launch-preset.js
           node --test miniprogram/tests/test-practice-question-batch.js
           node --test miniprogram/tests/test-practice-recent-subjects.js

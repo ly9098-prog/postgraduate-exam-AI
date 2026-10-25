@@ -34,6 +34,7 @@ const {
 } = require('./utils/recent-subjects')
 const { createRecentSubjectController } = require('./utils/recent-subject-controller')
 const { createSubjectSheetController } = require('./utils/subject-sheet-controller')
+const { createSubjectSelectionController } = require('./utils/subject-selection-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -633,36 +634,27 @@ this._launchAllowRepeat = false
 this._launchPlanToken = ''
 },
 _selectSubject(subjectId, subjectName, expandedSubjectId, hasChildren) {
-const id = Number(subjectId)
-if (!id || !subjectName) return
-if (Number(this.data.selectedSubjectId) !== id) {
-this._clearLaunchOverridesForManualConfig()
-}
-const resolvedHasChildren = hasChildren != null
-? Boolean(hasChildren)
-: this._subjectHasChildren(id)
-const patch = {
-selectedSubjectId: id,
-selectedSubjectName: subjectName,
-selectedSubjectHasChildren: resolvedHasChildren,
-}
-if (expandedSubjectId != null) {
-patch.expandedSubjectId = Number(expandedSubjectId)
-} else if (resolvedHasChildren) {
-patch.expandedSubjectId = id
-}
-this._queueRememberSubject(id, subjectName)
-this.setData(patch)
+this._subjectSelectionController().select(subjectId, subjectName, expandedSubjectId, hasChildren)
+},
+_subjectSelectionController() {
+return this._subjectSelectionControllerInstance || (
+this._subjectSelectionControllerInstance = createSubjectSelectionController({
+getSelectedSubjectId: () => this.data.selectedSubjectId,
+getSelectedMode: () => this.data.selectedMode,
+getCount: () => this.data.count,
+getExpandedSubjectId: () => this.data.expandedSubjectId,
+findParentSubjectId: id => this._findParentSubjectId(id),
+subjectHasChildren: id => this._subjectHasChildren(id),
+clearLaunchOverrides: () => this._clearLaunchOverridesForManualConfig(),
+queueRememberSubject: (id, name) => this._queueRememberSubject(id, name),
+handleSubjectOptionTap: (id, source) => this._handleSubjectOptionTap(id, source),
+setData: (patch, callback) => this.setData(patch, callback),
+updateComputedFields: () => this._updateComputedFields(),
+})
+)
 },
 chooseRecentSubject(e) {
-const ds = e.currentTarget.dataset || {}
-const subjectId = Number(ds.subjectId)
-const subjectName = ds.subjectName
-const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
-if (!subjectId || !subjectName) return
-const parentId = this._findParentSubjectId(subjectId)
-this._selectSubject(subjectId, subjectName, parentId || subjectId, hasChildren)
-this._handleSubjectOptionTap(subjectId, 'recent')
+this._subjectSelectionController().chooseRecent(e)
 },
 _findLaunchReturnStackIndex(pages, returnTo) {
 if (!Array.isArray(pages) || pages.length < 2 || !returnTo) return -1
@@ -780,47 +772,19 @@ goBack() {
 this._returnToLaunchOrigin()
 },
 chooseParentSubject(e) {
-const ds = e.currentTarget.dataset || {}
-const subjectId = Number(ds.subjectId)
-const subjectName = ds.subjectName
-const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
-if (!subjectId || !subjectName) return
-const selectedName = hasChildren ? `${subjectName}（全部）` : subjectName
-this._selectSubject(subjectId, selectedName, undefined, hasChildren)
-this._handleSubjectOptionTap(subjectId, 'parent')
+this._subjectSelectionController().chooseParent(e)
 },
 toggleParentExpansion(e) {
-const subjectId = Number((e.currentTarget.dataset || {}).subjectId)
-if (!subjectId) return
-const next = this.data.expandedSubjectId === subjectId ? null : subjectId
-this.setData({ expandedSubjectId: next })
+this._subjectSelectionController().toggleExpansion(e)
 },
 chooseChildSubject(e) {
-const ds = e.currentTarget.dataset || {}
-const subjectId = Number(ds.subjectId)
-const subjectName = ds.subjectName
-const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
-if (!subjectId || !subjectName) return
-this._selectSubject(subjectId, subjectName, this._findParentSubjectId(subjectId), hasChildren)
-this._handleSubjectOptionTap(subjectId, 'child')
+this._subjectSelectionController().chooseChild(e)
 },
 chooseMode(e) {
-const mode = e.currentTarget.dataset.mode
-if (String(this.data.selectedMode || '') !== String(mode || '')) {
-this._clearLaunchOverridesForManualConfig()
-}
-this.setData({ selectedMode: mode }, () => {
-this._updateComputedFields()
-})
+this._subjectSelectionController().chooseMode(e)
 },
 setCount(e) {
-const count = Number(e.currentTarget.dataset.count)
-if (Number(this.data.count) !== count) {
-this._clearLaunchOverridesForManualConfig()
-}
-this.setData({ count }, () => {
-this._updateComputedFields()
-})
+this._subjectSelectionController().setCount(e)
 },
 async startPractice() {
 if (this.data.loading || this.data.submitting) return
