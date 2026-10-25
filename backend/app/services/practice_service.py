@@ -64,6 +64,9 @@ from app.services.practice.batch_token import (
     _validate_practice_batch_token,
     create_practice_batch_token,  # noqa: F401 — historical public import
 )
+from app.services.practice.batch_persistence import (
+    persist_practice_batch_records,
+)
 from app.services.practice.chapter_scope import (
     build_question_buckets,
     question_knowledge_mapping,
@@ -2529,56 +2532,22 @@ async def batch_submit_answers(
 
     try:
         now = utcnow()
-        records: list[tuple[PracticeRecord, object, bool, str, int | None]] = []
-        for q, is_correct, user_answer, used_time in evaluated_answers:
-            record = PracticeRecord(
-                user_id=user_id,
-                question_id=int(q.id),
-                question_version_id=int(q.question_version_id),
-                subject_id=int(q.subject_id),
-                question_type=q.question_type,
-                user_answer=user_answer,
-                is_correct=is_correct,
-                used_time=used_time,
-                answered_at=now,
-                mode=session_values["mode"],
-                projection_state="pending",
-            )
-            db.add(record)
-            records.append((record, q, is_correct, user_answer, used_time))
-        if records:
-            await db.flush()
-
         from app.services.wrong_question_service import record_wrong
 
-        prewarm_wrong_questions = []
-        wrong_question_ids: dict[int, int] = {}
-        for record, q, is_correct, user_answer, _used_time in records:
-            if not is_correct:
-                wrong = await record_wrong(
-                    db,
-                    user_id,
-                    int(q.id),
-                    user_answer,
-                    question_version_id=int(q.question_version_id),
-                    commit=False,
-                )
-                diagnosis_payload = await persist_wrong_answer(
-                    db,
-                    user_id=user_id,
-                    record=record,
-                    question=q,
-                    wrong=wrong,
-                    now=now,
-                )
-                prewarm_wrong_questions.append(wrong)
-                wrong_question_ids[int(q.id)] = int(wrong.id)
-                setattr(record, "_error_diagnosis_payload", diagnosis_payload)
-            await _create_answer_projection_outbox(
-                db,
-                practice_record_id=int(record.id),
-                request_id=answer_request_ids.get(int(q.id)),
-            )
+        persisted = await persist_practice_batch_records(
+            db,
+            user_id=user_id,
+            evaluated_answers=evaluated_answers,
+            answer_request_ids=answer_request_ids,
+            mode=session_values["mode"],
+            now=now,
+            record_wrong=record_wrong,
+            create_outbox=_create_answer_projection_outbox,
+        persist_wrong_answer=persist_wrong_answer,
+        )
+        records = persisted.records
+        prewarm_wrong_questions = persisted.prewarm_wrong_questions
+        wrong_question_ids = persisted.wrong_question_ids
 
         revision_kps = await load_revision_kp_names(db, issued_revisions.values())
         response_by_question = build_response_by_question(
