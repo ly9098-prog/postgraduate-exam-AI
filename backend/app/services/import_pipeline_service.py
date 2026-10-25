@@ -18,6 +18,7 @@ from app.core.log_context import bind_log_context, log_event
 from app.core.resource_guard import resource_guard
 from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.features.pipeline_coordinator_entry import run_pipeline
+from app.features.ocr_layout_blocks import build_pre_extracted_ocr_blocks
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     resume_pipeline_background,
@@ -309,88 +310,12 @@ def _build_pre_extracted_ocr_blocks(
     cleaned_text: str,
     ocr_result: dict,
 ) -> list[dict]:
-    """Build layout-capable raw blocks from the first OCR pass.
-
-    Prefer the worker's line-level geometry when it is available.  The older
-    implementation collapsed every OCR line into one giant block and attached
-    a list of boxes to that block.  Layout reconstruction then had very little
-    spatial structure to work with and frequently routed image imports into a
-    second ``VL_REBUILD`` OCR pass.
-
-    Returning one block per OCR line preserves reading order and bbox geometry,
-    while the single-block fallback keeps non-geometric OCR providers working.
-    """
-    width = 0
-    height = 0
-    try:
-        from PIL import Image
-
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            width, height = image.size
-    except Exception as exc:
-        logger.debug("Unable to read image dimensions for OCR block: %s", exc)
-
-    engine_fingerprint = str(ocr_result.get("engine_fingerprint") or "")
-    raw_lines = ocr_result.get("lines")
-    blocks: list[dict] = []
-    if isinstance(raw_lines, list):
-        for index, line in enumerate(raw_lines):
-            if not isinstance(line, dict):
-                continue
-            text = str(line.get("text") or "").strip()
-            if not text:
-                continue
-            bbox = line.get("bbox")
-            valid_bbox = (
-                isinstance(bbox, (list, tuple))
-                and len(bbox) == 4
-                and all(isinstance(v, (int, float)) for v in bbox)
-            )
-            conf = line.get("confidence", line.get("conf", 0.0))
-            box_entries = (
-                [
-                    {
-                        "bbox": list(bbox),
-                        "conf": float(conf or 0.0),
-                        "text": text,
-                    }
-                ]
-                if valid_bbox
-                else []
-            )
-            blocks.append(
-                {
-                    "page": 1,
-                    "block_index": index,
-                    "text": text,
-                    "boxes": box_entries,
-                    "page_width": width,
-                    "page_height": height,
-                    "source": "ocr",
-                    "has_boxes": bool(box_entries),
-                    "engine_fingerprint": engine_fingerprint,
-                }
-            )
-
-    if blocks:
-        return blocks
-
-    boxes = ocr_result.get("boxes")
-    if not isinstance(boxes, list):
-        boxes = []
-    return [
-        {
-            "page": 1,
-            "block_index": 0,
-            "text": cleaned_text,
-            "boxes": boxes,
-            "page_width": width,
-            "page_height": height,
-            "source": "ocr",
-            "has_boxes": bool(boxes),
-            "engine_fingerprint": engine_fingerprint,
-        }
-    ]
+    """Backward-compatible historical import for callers and tests."""
+    return build_pre_extracted_ocr_blocks(
+        image_bytes=image_bytes,
+        cleaned_text=cleaned_text,
+        ocr_result=ocr_result,
+    )
 
 
 def _build_pre_extracted_ocr_block(
@@ -820,8 +745,6 @@ async def _run_pipeline_with_db(
                 logger.warning(
                     "Failed to delete pipeline tmp file %s: %s", file_path, e
                 )
-
-
 
 
 async def get_pipeline_status(

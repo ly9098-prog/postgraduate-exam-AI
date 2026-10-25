@@ -70,7 +70,6 @@ from app.services.ai.advice_snapshot import (
 )
 from app.services.ai.prewarm_transition import (
     failure_category,
-    prewarm_failure,
     skipped_not_found,
     success_outcome,
     superseded_regenerated,
@@ -1115,7 +1114,7 @@ async def prewarm_wrong_question_analysis(
         if result.get("from_fallback") or (
             result.get("cache_preserved") and result.get("error_code")
         ):
-            failure = prewarm_failure(result)
+            failure = _prewarm_failure_from_result(result)
             category = failure_category(failure.error_code, failure.retryable)
             logger.warning(
                 "[prewarm] %s id=%d uid=%d revision=%s error_code=%s retryable=%s model=%s",

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 
-
 def skipped_not_found() -> dict:
     return {
         "status": "skipped",
@@ -28,12 +27,6 @@ def superseded_regenerated() -> dict:
         "reason": "analysis_already_regenerated",
         "from_cache": True,
     }
-
-
-def prewarm_failure(result: dict):
-    from app.services.ai_service import _prewarm_failure_from_result
-
-    return _prewarm_failure_from_result(result)
 
 
 def failure_category(error_code: str, retryable: bool) -> str:
