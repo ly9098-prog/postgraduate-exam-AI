@@ -1,4 +1,8 @@
 const adapter = require('../../utils/question-runner-adapter')
+const {
+  nextComboCount,
+  feedbackPatch,
+} = require('./answer-feedback-state')
 
 function createAnswerFeedbackController(options) {
   return {
@@ -12,7 +16,7 @@ function showImpl(options, q, answer) {
   const isCorrect = adapter.isAnswerCorrect(q, answer)
   const hasAnswer = !!answer
   const currentCombo = options.getComboCount()
-  const nextCombo = isCorrect === true ? currentCombo + 1 : (isCorrect === false ? 0 : currentCombo)
+  const nextCombo = nextComboCount(isCorrect, currentCombo)
 
   if (!hasAnswer) {
     options.setComboCount(nextCombo)
@@ -29,15 +33,7 @@ function showImpl(options, q, answer) {
 
   options.clearFeedbackTimer()
   options.setComboCount(nextCombo)
-  options.setData({
-    feedbackVisible: true,
-    feedbackType: feedback.type,
-    feedbackTitle: feedback.title,
-    feedbackDetail: feedback.detail,
-    feedbackComboText: feedback.comboText,
-    feedbackComboLevel: feedback.comboLevel,
-    feedbackStarCount: feedback.starCount,
-  })
+  options.setData(feedbackPatch(feedback))
 
   options.setFeedbackTimer(() => {
     options.setData({ feedbackVisible: false })
