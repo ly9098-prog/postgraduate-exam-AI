@@ -745,136 +745,148 @@ return true
       this.setData({ aiFallback: true, aiErrorText: msg })
     }
   },
-async regenerateAiAnalysis() {
-const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
-if (!wqId || this.data.aiLoading || this.data.aiRegenerating) return
-const oldCards = this.data.aiCards
-const oldResult = this._aiResult
-const baselineGeneratedAt = String(this._aiGenerationMarker || _generationMarker(this.data.wq) || '')
-const requestId = ++this._aiRequestId
-this.setData({
-aiRegenerating: true,
-aiSkeletonVisible: true,
-aiErrorText: '',
-aiRetryable: true,
-aiFallback: false,
-aiInlineNotice: '',
-})
-try {
-const result = await this._requestAiAnalysis(wqId, true)
-if (!this._isCurrentAiRequest(requestId, wqId)) {
-this._resetAiLoadingState()
-return
-}
-const normalized = _normalizeAiPayload(result)
-const hasContent = _hasAiContent(normalized)
-const model = (result && result.model) || ''
-const fromFallback = !!(result && result.from_fallback)
-const cachePreserved = !!(result && result.cache_preserved)
-if (model === 'generating') {
-this.setData({ aiInlineNotice: 'AI 正在生成中，完成后会自动更新' })
-const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
-requireNewGeneration: true,
-baselineGeneratedAt,
-})
-if (this._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
-wx.showToast({ title: '已重新生成', icon: 'success' })
-return
-}
-if (!this._isCurrentAiRequest(requestId, wqId)) return
-this._resetAiLoadingState()
-this.setData({ aiInlineNotice: 'AI 正在生成中，请稍后重试' })
-return
-}
-if (cachePreserved && hasContent) {
-this._resetAiLoadingState()
-this._aiResult = normalized
-this._aiGenerationMarker = String((result && result.generated_at) || baselineGeneratedAt || '')
-this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
-this.setData({
-aiCards: _normalizeAiResult(normalized),
-aiFallback: false,
-aiFromCache: true,
-aiFromQuestionAnalysis: false,
-aiInlineNotice: '重新生成失败，已保留历史解析',
-})
-wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
-return
-}
-if (fromFallback) {
-this._resetAiLoadingState()
-var failure = this._analysisFailureState(model, result)
-if (oldCards) {
-this.setData({
-aiFallback: false,
-aiInlineNotice: failure.aiErrorText || '重新生成失败，已保留当前解析',
-})
-wx.showToast({ title: '重新生成失败，已保留当前解析', icon: 'none' })
-} else {
-this.setData(Object.assign({ aiFallback: true }, failure))
-}
-return
-}
-if (!hasContent) {
-if (oldCards) {
-this._resetAiLoadingState()
-this.setData({
-aiFallback: false,
-aiInlineNotice: '返回内容为空，已保留当前解析',
-})
-wx.showToast({ title: '返回内容为空，已保留当前解析', icon: 'none' })
-} else {
-this._resetAiLoadingState()
-this.setData({ aiFallback: true, aiErrorText: 'AI 返回内容为空，请稍后重试' })
-}
-return
-}
-this._resetAiLoadingState()
-this._aiResult = normalized
-this._aiGenerationMarker = String((result && result.generated_at) || this._aiGenerationMarker || '')
-this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
-this.setData({
-aiCards: _normalizeAiResult(normalized),
-aiFallback: false,
-aiFromCache: !!(result && result.from_cache),
-aiFromQuestionAnalysis: false,
-aiErrorText: '',
-aiRetryable: true,
-})
-wx.showToast({ title: '已重新生成', icon: 'success' })
-} catch (e) {
-console.error('重新生成 AI 分析失败', e)
-if (this._isCurrentAiRequest(requestId, wqId)) {
-this.setData({ aiInlineNotice: 'AI 正在继续重新生成，完成后会自动更新' })
-this._enqueueAiRecovery(wqId, true, baselineGeneratedAt)
-const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
-requireNewGeneration: true,
-baselineGeneratedAt,
-})
-if (this._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
-wx.showToast({ title: '已重新生成', icon: 'success' })
-return
-}
-}
-if (this._isCurrentAiRequest(requestId, wqId)) {
-const timeoutText = _isTimeoutError(e) ? '重新生成超时' : '重新生成失败'
-if (oldCards) {
-this._resetAiLoadingState()
-this._aiResult = oldResult
-this.setData({
-aiCards: oldCards,
-aiFallback: false,
-aiInlineNotice: `${timeoutText}，已保留历史解析`,
-})
-wx.showToast({ title: `${timeoutText}，已保留历史解析`, icon: 'none' })
-} else {
-this._resetAiLoadingState()
-this.setData({ aiErrorText: `${timeoutText}，请稍后重试` })
-wx.showToast({ title: timeoutText, icon: 'none' })
-}
-}
-}
-},
+  async regenerateAiAnalysis() {
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId || this.data.aiLoading || this.data.aiRegenerating) return
+    const oldCards = this.data.aiCards
+    const oldResult = this._aiResult
+    const baselineGeneratedAt = String(this._aiGenerationMarker || _generationMarker(this.data.wq) || '')
+    const requestId = ++this._aiRequestId
+    this.setData({
+      aiRegenerating: true, aiSkeletonVisible: true, aiErrorText: '',
+      aiRetryable: true, aiFallback: false, aiInlineNotice: '',
+    })
+    try {
+      const result = await this._requestAiAnalysis(wqId, true)
+      if (!this._isCurrentAiRequest(requestId, wqId)) { this._resetAiLoadingState(); return }
+      await this._applyRegenerateResult(result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
+    } catch (e) {
+      this._handleRegenerateError(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
+    }
+  },
+
+  async _applyRegenerateResult(result, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {
+    const normalized = _normalizeAiPayload(result)
+    const hasContent = _hasAiContent(normalized)
+    const model = (result && result.model) || ''
+    const fromFallback = !!(result && result.from_fallback)
+    const cachePreserved = !!(result && result.cache_preserved)
+    if (model === 'generating') {
+      await this._handleRegeneratingModel(wqId, requestId, baselineGeneratedAt)
+      return
+    }
+    if (cachePreserved && hasContent) {
+      this._commitRegenerateCachePreserved(result, normalized, wqId, baselineGeneratedAt)
+      return
+    }
+    if (fromFallback) {
+      this._handleRegenerateFallback(model, result, oldCards)
+      return
+    }
+    if (!hasContent) {
+      this._handleRegenerateEmpty(oldCards)
+      return
+    }
+    this._commitRegenerateSuccess(result, normalized, wqId)
+  },
+
+  async _handleRegeneratingModel(wqId, requestId, baselineGeneratedAt) {
+    this.setData({ aiInlineNotice: 'AI 正在生成中，完成后会自动更新' })
+    const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+      requireNewGeneration: true, baselineGeneratedAt,
+    })
+    if (this._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
+      wx.showToast({ title: '已重新生成', icon: 'success' })
+      return
+    }
+    if (!this._isCurrentAiRequest(requestId, wqId)) return
+    this._resetAiLoadingState()
+    this.setData({ aiInlineNotice: 'AI 正在生成中，请稍后重试' })
+  },
+
+  _commitRegenerateCachePreserved(result, normalized, wqId, baselineGeneratedAt) {
+    this._resetAiLoadingState()
+    this._aiResult = normalized
+    this._aiGenerationMarker = String((result && result.generated_at) || baselineGeneratedAt || '')
+    this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
+    this.setData({
+      aiCards: _normalizeAiResult(normalized), aiFallback: false, aiFromCache: true,
+      aiFromQuestionAnalysis: false, aiInlineNotice: '重新生成失败，已保留历史解析',
+    })
+    wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
+  },
+
+  _handleRegenerateFallback(model, result, oldCards) {
+    this._resetAiLoadingState()
+    var failure = this._analysisFailureState(model, result)
+    if (oldCards) {
+      this.setData({ aiFallback: false, aiInlineNotice: failure.aiErrorText || '重新生成失败，已保留当前解析' })
+      wx.showToast({ title: '重新生成失败，已保留当前解析', icon: 'none' })
+    } else {
+      this.setData(Object.assign({ aiFallback: true }, failure))
+    }
+  },
+
+  _handleRegenerateEmpty(oldCards) {
+    if (oldCards) {
+      this._resetAiLoadingState()
+      this.setData({ aiFallback: false, aiInlineNotice: '返回内容为空，已保留当前解析' })
+      wx.showToast({ title: '返回内容为空，已保留当前解析', icon: 'none' })
+    } else {
+      this._resetAiLoadingState()
+      this.setData({ aiFallback: true, aiErrorText: 'AI 返回内容为空，请稍后重试' })
+    }
+  },
+
+  _commitRegenerateSuccess(result, normalized, wqId) {
+    this._resetAiLoadingState()
+    this._aiResult = normalized
+    this._aiGenerationMarker = String((result && result.generated_at) || this._aiGenerationMarker || '')
+    this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
+    this.setData({
+      aiCards: _normalizeAiResult(normalized), aiFallback: false,
+      aiFromCache: !!(result && result.from_cache), aiFromQuestionAnalysis: false,
+      aiErrorText: '', aiRetryable: true,
+    })
+    wx.showToast({ title: '已重新生成', icon: 'success' })
+  },
+
+  _handleRegenerateError(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {
+    console.error('重新生成 AI 分析失败', e)
+    if (this._isCurrentAiRequest(requestId, wqId)) {
+      this._handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult)
+      return
+    }
+  },
+
+  async _handleRegenerateRecovery(e, wqId, requestId, baselineGeneratedAt, oldCards, oldResult) {
+    this.setData({ aiInlineNotice: 'AI 正在继续重新生成，完成后会自动更新' })
+    this._enqueueAiRecovery(wqId, true, baselineGeneratedAt)
+    const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+      requireNewGeneration: true, baselineGeneratedAt,
+    })
+    if (this._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
+      wx.showToast({ title: '已重新生成', icon: 'success' })
+      return
+    }
+    if (this._isCurrentAiRequest(requestId, wqId)) {
+      this._handleRegenerateTimeout(e, oldCards, oldResult)
+    }
+  },
+
+  _handleRegenerateTimeout(e, oldCards, oldResult) {
+    const timeoutText = _isTimeoutError(e) ? '重新生成超时' : '重新生成失败'
+    if (oldCards) {
+      this._resetAiLoadingState()
+      this._aiResult = oldResult
+      this.setData({ aiCards: oldCards, aiFallback: false, aiInlineNotice: `${timeoutText}，已保留历史解析` })
+      wx.showToast({ title: `${timeoutText}，已保留历史解析`, icon: 'none' })
+    } else {
+      this._resetAiLoadingState()
+      this.setData({ aiErrorText: `${timeoutText}，请稍后重试` })
+      wx.showToast({ title: timeoutText, icon: 'none' })
+    }
+  },
 openMasterConfirm() {
 if (this.data.masterSubmitting || this.data.isCurrentMastered) return
 this.setData({ masterConfirmVisible: true })
