@@ -626,69 +626,9 @@ class DurableTaskQueue:
                 if client is None:
                     return None
                 await self._load_scripts(client)
-
-                # 1. Try ready queue
-                q_key = _q_key(task_type)
-                p_key = _p_key(task_type)
-                lease_expiry = time.time() + lease_sec
-                owner_token = uuid.uuid4().hex
-                generation = int(time.time() * 1000)  # monotonic generation
-
-                result = await self._evalsha_or_reload(
-                    client,
-                    "_lua_claim",
-                    4,
-                    q_key,  # KEYS[1]: queue_key
-                    p_key,  # KEYS[2]: processing_key
-                    _HEARTBEAT_PREFIX,  # KEYS[3]: heartbeat_prefix
-                    _TASK_PREFIX,  # KEYS[4]: task_hash_prefix
-                    str(lease_expiry),  # ARGV[1]: lease_expiry
-                    str(lease_sec),  # ARGV[2]: lease_ttl
-                    owner_token,  # ARGV[3]: owner_token
-                    str(generation),  # ARGV[4]: execution_generation
+                return await self._dequeue_from_redis(
+                    client, task_type, lease_sec
                 )
-
-                if result is not None:
-                    task = build_v1_claimed_task(
-                        result,
-                        owner_token=owner_token,
-                        lease_expiry=lease_expiry,
-                        generation=generation,
-                    )
-                    logger.info(
-                        "Task dequeued: task_id=%s type=%s lease=%ds gen=%d",
-                        task.task_id,
-                        task_type,
-                        lease_sec,
-                        task.generation,
-                    )
-                    return task
-
-                # 2. Retry ZSET (payload returned inline from Lua)
-                retry_data = await self._dequeue_retry(
-                    client,
-                    task_type,
-                    lease_sec,
-                    generation,
-                )
-                if retry_data is None:
-                    return None
-                task = build_v1_retry_claimed_task(
-                    retry_data,
-                    owner_token=owner_token,
-                    generation=generation,
-                    lease_sec=lease_sec,
-                )
-
-                logger.info(
-                    "Task dequeued (retry): task_id=%s type=%s lease=%ds gen=%d",
-                    task.task_id,
-                    task_type,
-                    lease_sec,
-                    task.generation,
-                )
-                return task
-
             except redis_exc.ConnectionError:
                 logger.warning(
                     "Redis dequeue failed (connection): task_type=%s", task_type
@@ -697,16 +637,86 @@ class DurableTaskQueue:
             except Exception as e:
                 logger.warning("Redis dequeue failed: %s", e)
                 return None
+        return self._dequeue_local_fallback(task_type, lease_sec)
 
-        # Local fallback (dev only)
-        if self._allow_local_fallback:
-            for tid, t in list(self._local_tasks.items()):
-                if t.task_type == task_type and t.status == TaskStatus.PENDING:
-                    t.status = TaskStatus.PROCESSING
-                    t.lease_expires_at = time.time() + lease_sec
-                    t.owner_token = uuid.uuid4().hex
-                    return t
+    async def _dequeue_from_redis(
+        self,
+        client,
+        task_type: str,
+        lease_sec: int,
+    ) -> Task | None:
+        """Claim from the ready queue, then the retry ZSET."""
+        lease_expiry = time.time() + lease_sec
+        owner_token = uuid.uuid4().hex
+        generation = int(time.time() * 1000)  # monotonic generation
+
+        result = await self._evalsha_or_reload(
+            client,
+            "_lua_claim",
+            4,
+            _q_key(task_type),  # KEYS[1]: queue_key
+            _p_key(task_type),  # KEYS[2]: processing_key
+            _HEARTBEAT_PREFIX,  # KEYS[3]: heartbeat_prefix
+            _TASK_PREFIX,  # KEYS[4]: task_hash_prefix
+            str(lease_expiry),  # ARGV[1]: lease_expiry
+            str(lease_sec),  # ARGV[2]: lease_ttl
+            owner_token,  # ARGV[3]: owner_token
+            str(generation),  # ARGV[4]: execution_generation
+        )
+
+        if result is not None:
+            task = build_v1_claimed_task(
+                result,
+                owner_token=owner_token,
+                lease_expiry=lease_expiry,
+                generation=generation,
+            )
+            logger.info(
+                "Task dequeued: task_id=%s type=%s lease=%ds gen=%d",
+                task.task_id,
+                task_type,
+                lease_sec,
+                task.generation,
+            )
+            return task
+
+        retry_data = await self._dequeue_retry(
+            client,
+            task_type,
+            lease_sec,
+            generation,
+        )
+        if retry_data is None:
+            return None
+        task = build_v1_retry_claimed_task(
+            retry_data,
+            owner_token=owner_token,
+            generation=generation,
+            lease_sec=lease_sec,
+        )
+        logger.info(
+            "Task dequeued (retry): task_id=%s type=%s lease=%ds gen=%d",
+            task.task_id,
+            task_type,
+            lease_sec,
+            task.generation,
+        )
+        return task
+
+    def _dequeue_local_fallback(
+        self, task_type: str, lease_sec: int
+    ) -> Task | None:
+        """Claim the first matching pending local task (dev only)."""
+        if not self._allow_local_fallback:
+            return None
+        for _tid, task in list(self._local_tasks.items()):
+            if task.task_type == task_type and task.status == TaskStatus.PENDING:
+                task.status = TaskStatus.PROCESSING
+                task.lease_expires_at = time.time() + lease_sec
+                task.owner_token = uuid.uuid4().hex
+                return task
         return None
+
 
     async def _dequeue_retry(
         self,
