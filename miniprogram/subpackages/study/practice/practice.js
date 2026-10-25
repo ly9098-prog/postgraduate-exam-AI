@@ -39,6 +39,7 @@ const { createLaunchReturnController } = require('./utils/launch-return-controll
 const { createExitGuardController } = require('./utils/exit-guard-controller')
 const { createExitRequestController } = require('./utils/exit-request-controller')
 const { createPausedConfirmController } = require('./utils/paused-confirm-controller')
+const { createSubmittedResultController } = require('./utils/submitted-result-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -331,51 +332,24 @@ return true
 )
 },
 _openSubmittedResult(resultUrl, submission) {
-if (!resultUrl || !this._pageAlive) return
-if (submission && submission.keepPendingUntilResult && !submission.pendingPersisted) {
-try {
-if (!this._submittedResultPayload) throw new Error('missing in-memory result payload')
-wx.setStorageSync('lastPracticeResult', this._submittedResultPayload)
-submission.keepPendingUntilResult = false
-} catch (storageError) {
-console.warn('结果缓存与待确认快照均不可持久化', storageError)
-this._showSubmitConfirm({
-scenario: 'info',
-title: '复盘数据暂未保存',
-message: '成绩已保存。请保持当前页面，释放设备存储后再次打开复盘。',
-showCancel: false,
-confirmText: '知道了',
-hideEyebrow: true,
-})
-return
-}
-}
-this._pendingResultUrl = resultUrl
-wx.redirectTo({
-url: resultUrl,
-success: () => {
-if (this._practiceSession && this._practiceSession.submissionSnapshot === submission) {
-this._practiceSession.submissionSnapshot = null
-}
-this._pendingResultUrl = ''
+  this._submittedResultController().open(resultUrl, submission)
 },
-fail: (err) => {
-console.error('结果页打开失败', err)
-if (!this._pageAlive) return
-this.setData({ submitting: false, submitted: true })
-this._setPracticeUnloadGuard(false)
-this._showSubmitConfirm({
-scenario: 'info',
-title: '结果页打开失败',
-message: submission && submission.pendingPersisted
-? '成绩已保存，可稍后再次打开复盘。'
-: '成绩已保存，请保持当前页面后再次打开复盘。',
-showCancel: false,
-confirmText: '知道了',
-hideEyebrow: true,
-})
-},
-})
+_submittedResultController() {
+  return this._submittedResultControllerInstance || (
+    this._submittedResultControllerInstance = createSubmittedResultController({
+      isPageAlive: () => this._pageAlive,
+      getSubmittedResultPayload: () => this._submittedResultPayload,
+      writeResultCache: payload => wx.setStorageSync('lastPracticeResult', payload),
+      logWarn: (...args) => console.warn(...args),
+      logError: (...args) => console.error(...args),
+      showConfirm: options => this._showSubmitConfirm(options),
+      getSession: () => this._practiceSession,
+      setPendingResultUrl: value => { this._pendingResultUrl = value },
+      setData: patch => this.setData(patch),
+      setUnloadGuard: enabled => this._setPracticeUnloadGuard(enabled),
+      redirectTo: options => wx.redirectTo(options),
+    })
+  )
 },
 onShow() {
 const s = this._practiceSession
