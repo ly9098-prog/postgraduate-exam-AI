@@ -67,6 +67,10 @@ from app.services.practice.batch_token import (
 from app.services.practice.batch_persistence import (
     persist_practice_batch_records,
 )
+from app.services.practice.batch_reservation_cleanup import (
+    build_sequential_reservation_cleanup,
+)
+from app.services.practice.batch_response import build_batch_submission_response
 from app.services.practice.chapter_scope import (
     build_question_buckets,
     question_knowledge_mapping,
@@ -2561,43 +2565,27 @@ async def batch_submit_answers(
             persisted_knowledge_session,
         )
 
-        response_payload = jsonable_encoder(
-            {
-                "results": [response_by_question[qid] for qid in issued_order],
-                "total_correct": total_correct,
-                "total_wrong": total_wrong,
-                "total_skipped": len(skipped_questions),
-                "knowledge_session": persisted_knowledge_session(
-                    batch_payload.get("knowledge_context")
-                ),
-                "entry_context": (
-                    dict(batch_payload.get("entry_context"))
-                    if isinstance(batch_payload.get("entry_context"), dict)
-                    else None
-                ),
-            }
+        response_payload = build_batch_submission_response(
+            response_by_question=response_by_question,
+            issued_order=issued_order,
+            total_correct=total_correct,
+            total_wrong=total_wrong,
+            skipped_questions=skipped_questions,
+            knowledge_context=batch_payload.get("knowledge_context"),
+            entry_context=batch_payload.get("entry_context"),
+            persisted_knowledge_session=persisted_knowledge_session,
         )
         # submission_response is a SQL JSON column and is also the source used
         # for idempotent replay. Nested diagnostics may contain datetime values,
         # so normalize the entire payload once before persistence and response.
         session_obj.submission_response = response_payload
-        sequential_reservation_request_id = batch_payload.get(
-            "seq_reservation_request_id"
+        sequential_cleanup = build_sequential_reservation_cleanup(
+            user_id=user_id,
+            batch_payload=batch_payload,
+            all_question_ids=all_question_ids,
         )
-        if (
-            sequential_reservation_request_id
-            and str(batch_payload.get("mode")) == "sequential"
-        ):
-            await db.execute(
-                delete(SequentialReservation).where(
-                    SequentialReservation.user_id == user_id,
-                    SequentialReservation.subject_id
-                    == int(batch_payload.get("sid") or 0),
-                    SequentialReservation.start_request_id
-                    == str(sequential_reservation_request_id),
-                    SequentialReservation.question_id.in_(all_question_ids),
-                )
-            )
+        if sequential_cleanup is not None:
+            await db.execute(sequential_cleanup)
         await db.commit()
     except BaseException:
         # Once the session claim is accepted this service owns the whole outer
