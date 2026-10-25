@@ -3,7 +3,6 @@ import json
 import logging
 import re
 import time
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -69,18 +68,22 @@ from app.services.ai.analysis_outcomes import (
     valid_analysis_outcome,
     visual_ack_failure_outcome,
 )
+from app.services.ai.analysis_execution import (
+    begin_analysis_generation,
+    finish_analysis_generation,
+    prepare_locked_analysis_inputs,
+    review_locked_analysis_cache,
+)
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
     prepare_analysis,
 )
 from app.services.ai.analysis_responses import (
-    analysis_model_unconfigured_response,
     generation_in_progress_response,
     grounding_repaired_response,
     parse_failed_response,
     provider_failure_response,
     valid_analysis_response,
-    vision_input_missing_response,
     visual_ack_failed_response,
 )
 from app.services.ai.analysis_validation import (
@@ -563,76 +566,60 @@ async def analyze_error(
         else ERROR_ANALYSIS_TIMEOUT_SECONDS
     )
 
-    wq_pk = wq.id
-    if wq_pk in _generating:
-        return generation_in_progress_response()
-    _generating.add(wq_pk)
-
     from app.core.cache import cache
 
-    lock_key = f"ai:error_analysis:{wq_pk}"
-    lock_value = f"{user_id}:{uuid.uuid4().hex}"
-    lock_ttl = timeout_sec + ERROR_ANALYSIS_LOCK_GRACE_SECONDS
-    try:
-        have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=lock_ttl)
-    except Exception:
-        _generating.discard(wq_pk)
-        raise
-    if not have_lock and cache.is_enabled:
-        _generating.discard(wq_pk)
+    lease = await begin_analysis_generation(
+        wrong_question_id=wq.id,
+        user_id=user_id,
+        timeout_sec=timeout_sec,
+        lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
+        generating=_generating,
+        cache=cache,
+    )
+    if lease is None:
         return generation_in_progress_response()
 
     try:
-        await db.refresh(wq)
-        # The same wrong-question row can be updated while this request waits
-        # for the cross-process generation lock. Recompute the digest so a
-        # just-written cache is only reused if it matches the latest answer.
-        input_signature = _analysis_input_signature(
-            wq, q, knowledge_points, visual_sources=stored_visual_sources
+        locked_cache = await review_locked_analysis_cache(
+            db,
+            wq,
+            q,
+            user_id=user_id,
+            force=effective_force,
+            requires_visual=requires_visual,
+            stored_visual_sources=stored_visual_sources,
+            knowledge_points=knowledge_points,
+            model_signature=model_signature,
+            input_signature=_analysis_input_signature,
+            cached_response=build_cached_error_analysis_response,
+            cache_age=_analysis_cache_age_ms,
+            logger=logger,
         )
-        if not effective_force:
-            cached = build_cached_error_analysis_response(
-                wq,
-                requires_visual=requires_visual,
-                expected_input_signature=input_signature,
-                expected_model_signature=model_signature,
-            )
-            if cached is not None:
-                logger.info(
-                    "ai.error_analysis.cache_hit_after_lock wq_id=%d user_id=%d age_ms=%s",
-                    wq.id,
-                    user_id,
-                    _analysis_cache_age_ms(wq.ai_analysis),
-                )
-                return cached
+        input_signature = locked_cache.input_signature
+        if locked_cache.response is not None:
+            return locked_cache.response
 
-        image_data_urls, visual_meta = await _prepare_visual_inputs(q)
-        structured_visual = str(visual_meta.get("structured_visual") or "")
-
-        # If the question really contains a raster visual, every declared asset
-        # failing to load is a hard failure.  A genuine text-only question has
-        # zero images by design and should continue with a text LLM request.
-        if requires_visual and not image_data_urls:
-            logger.info(
-                "ai.error_analysis.image_load_failed wq_id=%d question_id=%d declared_sources=%d",
-                wq.id,
-                q.id,
-                int(visual_meta.get("declared_source_count") or 0),
-            )
-            return vision_input_missing_response()
-
-        # Wrong-detail AI analysis must always use the same DB-configured
-        # analysis LLM as the original text-only flow. Images are passed
-        # directly to that model as multimodal message content; OCR/VL model
-        # routing is intentionally not used here.
-        if runtime is None:
-            return analysis_model_unconfigured_response(image_data_urls)
-
-        context = build_error_context(wq, q, knowledge_points)
-        context["question"]["structured_visual"] = structured_visual
-        answer_grounding = current_answer_grounding
-        prompt_grounding = grounding_prompt_payload(answer_grounding)
-        expected_answer_check = grounding_verification_payload(answer_grounding)
+        inputs = await prepare_locked_analysis_inputs(
+            wq,
+            q,
+            current_answer_grounding=current_answer_grounding,
+            requires_visual=requires_visual,
+            runtime=runtime,
+            knowledge_points=knowledge_points,
+            timeout_sec=timeout_sec,
+            logger=logger,
+            prepare_visual_inputs=_prepare_visual_inputs,
+            build_context=build_error_context,
+            build_prompt_grounding=grounding_prompt_payload,
+            build_expected_answer_check=grounding_verification_payload,
+        )
+        image_data_urls = inputs.image_data_urls
+        if inputs.response is not None:
+            return inputs.response
+        context = inputs.context
+        answer_grounding = inputs.answer_grounding
+        prompt_grounding = inputs.prompt_grounding
+        expected_answer_check = inputs.expected_answer_check
         # Persist only compact deterministic facts in the audit snapshot. They
         # contain no model reasoning and make future incident review reproducible.
         context["answer_grounding"] = prompt_grounding
@@ -640,7 +627,7 @@ async def analyze_error(
         # Text and multimodal calls get the same provider budget. The mini-program
         # cannot hold one wx.request open for this entire duration; it times out
         # earlier and recovers the committed result through polling/recovery.
-        model_timeout_sec = timeout_sec
+        model_timeout_sec = inputs.model_timeout_sec
 
         def _failure_response(
             *,
@@ -802,12 +789,12 @@ async def analyze_error(
         )
 
     finally:
-        _generating.discard(wq_pk)
-        if have_lock:
-            try:
-                await cache.release_lock(lock_key, lock_value)
-            except Exception:
-                pass
+        await finish_analysis_generation(
+            wrong_question_id=wq.id,
+            generating=_generating,
+            lease=lease,
+            cache=cache,
+        )
 
 
 async def prewarm_wrong_question_analysis(
