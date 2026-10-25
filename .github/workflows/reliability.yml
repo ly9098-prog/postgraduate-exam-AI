@@ -311,6 +311,8 @@ jobs:
       - name: Pomodoro module boundaries and lifecycle regressions
         run: |
           node miniprogram/scripts/architecture/pomodoro-boundaries.js
+          node miniprogram/scripts/architecture/page-budgets.js
+          node --test miniprogram/tests/test-page-budgets.js
           node --test \
             miniprogram/tests/test-pomodoro-module-boundaries.js \
             miniprogram/tests/test-pomodoro-hide-storage.js \
