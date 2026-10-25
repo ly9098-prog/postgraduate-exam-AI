@@ -425,6 +425,7 @@ jobs:
           node --test miniprogram/tests/test-practice-subject-tree.js
           node --test miniprogram/tests/test-practice-subject-sheet-controller.js
           node --test miniprogram/tests/test-practice-subject-selection-controller.js
+          node --test miniprogram/tests/test-practice-launch-return-controller.js
           node --test miniprogram/tests/test-practice-launch-preset.js
           node --test miniprogram/tests/test-practice-question-batch.js
           node --test miniprogram/tests/test-practice-recent-subjects.js

@@ -35,6 +35,7 @@ const {
 const { createRecentSubjectController } = require('./utils/recent-subject-controller')
 const { createSubjectSheetController } = require('./utils/subject-sheet-controller')
 const { createSubjectSelectionController } = require('./utils/subject-selection-controller')
+const { createLaunchReturnController } = require('./utils/launch-return-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -657,116 +658,34 @@ chooseRecentSubject(e) {
 this._subjectSelectionController().chooseRecent(e)
 },
 _findLaunchReturnStackIndex(pages, returnTo) {
-if (!Array.isArray(pages) || pages.length < 2 || !returnTo) return -1
-const targetPath = String(returnTo).split('?')[0].replace(/^\//, '')
-if (!targetPath) return -1
-let expectedSubjectId = 0
-let expectedPointId = 0
-const query = String(returnTo).split('?')[1] || ''
-query.split('&').forEach((part) => {
-const pair = String(part || '').split('=')
-const key = pair[0]
-const value = Number(safeDecodeURIComponent(pair.slice(1).join('='), ''))
-if (key === 'subject_id' && Number.isInteger(value) && value > 0) expectedSubjectId = value
-if (key === 'knowledge_point_id' && Number.isInteger(value) && value > 0) expectedPointId = value
+return this._launchReturnController().findStackIndex(pages, returnTo)
+},
+_launchReturnController() {
+return this._launchReturnControllerInstance || (
+this._launchReturnControllerInstance = createLaunchReturnController({
+safeDecodeURIComponent,
+isPageAlive: () => this._pageAlive,
+getCurrentPages: () => (getCurrentPages ? getCurrentPages() : []),
+setNavigationLocked: value => { this._returnNavigationLocked = value },
+isNavigationLocked: () => this._returnNavigationLocked,
+redirectTo: options => wx.redirectTo(options),
+reLaunch: options => wx.reLaunch(options),
+navigateBack: options => wx.navigateBack(options),
+showToast: options => wx.showToast(options),
+setTimeout: (callback, delay) => setTimeout(callback, delay),
+hasNextTick: () => typeof wx.nextTick === 'function',
+nextTick: callback => wx.nextTick(callback),
+getReturnTo: () => this._launchReturnTo || (this._launchPreset && this._launchPreset.returnTo) || '',
+isExitGuardVisible: () => this.data.practiceExitGuardVisible,
+setData: (patch, callback) => this.setData(patch, callback),
 })
-const matchesIdentity = (page) => {
-if (!page) return false
-const route = String(page.route || '').replace(/^\//, '')
-if (route !== targetPath) return false
-if (targetPath === 'subpackages/knowledge/knowledge-subject/index' && expectedSubjectId) {
-const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0
-return !pageSubjectId || pageSubjectId === expectedSubjectId
-}
-if (targetPath === 'subpackages/knowledge/knowledge-detail/index' && expectedPointId) {
-const currentPointId = Number(page.knowledgePointId || (page.options && page.options.knowledge_point_id)) || 0
-return !currentPointId || currentPointId === expectedPointId
-}
-return true
-}
-let nearest = -1
-for (let i = pages.length - 2; i >= 0; i -= 1) {
-if (matchesIdentity(pages[i])) {
-nearest = i
-break
-}
-}
-if (nearest < 0) return -1
-let targetIndex = nearest
-for (let i = nearest - 1; i >= 0; i -= 1) {
-if (!matchesIdentity(pages[i])) break
-targetIndex = i
-}
-return targetIndex
+)
 },
 _navigateBackToLaunchTarget(returnTo, attempt = 0) {
-if (!this._pageAlive) return
-const pages = getCurrentPages ? getCurrentPages() : []
-const targetIndex = this._findLaunchReturnStackIndex(pages, returnTo)
-if (targetIndex < 0) {
-this._returnNavigationLocked = false
-if (returnTo) {
-wx.redirectTo({
-url: returnTo,
-fail: () => wx.reLaunch({ url: '/pages/home/home' }),
-})
-return
-}
-if (pages.length > 1) {
-wx.navigateBack({
-delta: 1,
-fail: () => wx.reLaunch({ url: '/pages/home/home' }),
-})
-return
-}
-wx.reLaunch({ url: '/pages/home/home' })
-return
-}
-const delta = Math.max(1, pages.length - 1 - targetIndex)
-const retryDelays = [44, 96, 180]
-let retryQueued = false
-const retry = () => {
-if (retryQueued || !this._pageAlive) return
-retryQueued = true
-if (attempt >= retryDelays.length) {
-this._returnNavigationLocked = false
-wx.showToast({ title: '返回失败，请再试一次', icon: 'none' })
-return
-}
-setTimeout(() => {
-if (!this._pageAlive) return
-this._returnNavigationLocked = true
-this._navigateBackToLaunchTarget(returnTo, attempt + 1)
-}, retryDelays[attempt])
-}
-wx.navigateBack({
-delta,
-success: () => {
-setTimeout(() => {
-if (!this._pageAlive) return
-const currentPages = getCurrentPages ? getCurrentPages() : []
-const current = currentPages[currentPages.length - 1] || {}
-const currentRoute = String(current.route || '').replace(/^\//, '')
-if (currentRoute === 'subpackages/study/practice/practice') retry()
-}, 64)
-},
-fail: retry,
-})
+this._launchReturnController().navigateBack(returnTo, attempt)
 },
 _returnToLaunchOrigin() {
-if (this._returnNavigationLocked) return
-this._returnNavigationLocked = true
-const returnTo = this._launchReturnTo || (this._launchPreset && this._launchPreset.returnTo) || ''
-const navigate = () => {
-const run = () => setTimeout(() => this._navigateBackToLaunchTarget(returnTo, 0), 20)
-if (typeof wx.nextTick === 'function') wx.nextTick(run)
-else run()
-}
-if (this.data.practiceExitGuardVisible) {
-this.setData({ practiceExitGuardVisible: false }, navigate)
-} else {
-navigate()
-}
+this._launchReturnController().returnToOrigin()
 },
 goBack() {
 this._returnToLaunchOrigin()
