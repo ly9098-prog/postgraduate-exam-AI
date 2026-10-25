@@ -938,43 +938,7 @@ class DurableTaskQueue:
 
         # Retry path (requires Task object for retry tracking)
         if is_task and should_v1_retry(task_or_id):
-            task = task_or_id
-            delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (task.retry_count - 1))
-            prepare_v1_retry_task(task)
-
-            if self._redis_enabled:
-                try:
-                    if not await execute_v1_fail_retry(
-                        self._get_script_client,
-                        self._load_scripts,
-                        self._evalsha_or_reload,
-                        task,
-                        task_id,
-                        tt,
-                        token,
-                        delay,
-                        error,
-                        queue_metrics,
-                    ):
-                        return False
-                except Exception as e:
-                    logger.warning("Task fail/retry Redis error: %s", e)
-                    return False
-            else:
-                apply_v1_local_retry(
-                    task,
-                    allow_local_fallback=self._allow_local_fallback,
-                )
-
-            logger.warning(
-                "Task failed (retry %d/%d, +%ds): task_id=%s error=%s",
-                task.retry_count,
-                task.max_retries,
-                delay,
-                task_id,
-                error[:200],
-            )
-            return True
+            return await self._fail_with_v1_retry(task_or_id, task_id, tt, token, error)
 
         # Dead-letter path (no more retries or no Task object)
         if self._redis_enabled:
@@ -1005,6 +969,57 @@ class DurableTaskQueue:
             error[:200],
         )
         return True
+
+    async def _fail_with_v1_retry(
+        self,
+        task: Task,
+        task_id: str,
+        task_type: str,
+        token: str | None,
+        error: str,
+    ) -> bool:
+        task, delay = self._build_v1_retry_attempt(task)
+        if self._redis_enabled:
+            try:
+                if not await execute_v1_fail_retry(
+                    self._get_script_client,
+                    self._load_scripts,
+                    self._evalsha_or_reload,
+                    task,
+                    task_id,
+                    task_type,
+                    token,
+                    delay,
+                    error,
+                    queue_metrics,
+                ):
+                    return False
+            except Exception as e:
+                logger.warning("Task fail/retry Redis error: %s", e)
+                return False
+        else:
+            apply_v1_local_retry(
+                task,
+                allow_local_fallback=self._allow_local_fallback,
+            )
+
+        logger.warning(
+            "Task failed (retry %d/%d, +%ds): task_id=%s error=%s",
+            task.retry_count,
+            task.max_retries,
+            delay,
+            task_id,
+            error[:200],
+        )
+        return True
+
+    def _build_v2_fail_retry_plan(self, task: Task, error: str):
+        return build_v2_retry_plan(task, error, _DEFAULT_RETRY_BASE_DELAY)
+
+    def _build_v1_retry_attempt(self, task: Task) -> tuple[Task, int]:
+        delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (task.retry_count - 1))
+        prepare_v1_retry_task(task)
+        return task, delay
 
     # ── reaper ──
 
@@ -1547,12 +1562,33 @@ class DurableTaskQueue:
         max_retries = _DEFAULT_MAX_RETRIES
         retry_plan = None
         if isinstance(task_or_id, Task):
-            retry_plan = build_v2_retry_plan(
-                task_or_id, error, _DEFAULT_RETRY_BASE_DELAY
-            )
+            retry_plan = self._build_v2_fail_retry_plan(task_or_id, error)
             retry_count = retry_plan.retry_count
             max_retries = retry_plan.max_retries
 
+        return await self._execute_v2_fail_transition(
+            task_or_id,
+            task_id=task_id,
+            task_type=tt,
+            owner_token=token,
+            retry_count=retry_count,
+            max_retries=max_retries,
+            retry_plan=retry_plan,
+            error=error,
+        )
+
+    async def _execute_v2_fail_transition(
+        self,
+        task_or_id: Task | str,
+        *,
+        task_id: str,
+        task_type: str,
+        owner_token: str,
+        retry_count: int,
+        max_retries: int,
+        retry_plan,
+        error: str,
+    ) -> int:
         try:
             if isinstance(task_or_id, Task) and retry_count < max_retries:
                 assert retry_plan is not None
@@ -1575,8 +1611,8 @@ class DurableTaskQueue:
                 self._evalsha_or_reload,
                 task_or_id,
                 task_id=task_id,
-                task_type=tt,
-                owner_token=token,
+                task_type=task_type,
+                owner_token=owner_token,
                 error=error,
                 retry_count=retry_count,
                 dead_max=settings.TASK_QUEUE_DEAD_MAX,
