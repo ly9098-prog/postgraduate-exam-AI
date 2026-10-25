@@ -41,6 +41,7 @@ const { createExitRequestController } = require('./utils/exit-request-controller
 const { createPausedConfirmController } = require('./utils/paused-confirm-controller')
 const { createSubmittedResultController } = require('./utils/submitted-result-controller')
 const { createSubmitSuccessController } = require('./utils/submit-success-controller')
+const { createSubmitFlowController } = require('./utils/submit-flow-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -1243,44 +1244,30 @@ _pausedConfirmController() {
   )
 },
 async doSubmit(skipConfirm) {
-if (this.data.submitting) return
-let submission = this._practiceSession.submissionSnapshot
-if (this.data.submitted && this._pendingResultUrl && submission) {
-this._openSubmittedResult(this._pendingResultUrl, submission)
-return
-}
-if (submission && submission.retryBlocked) {
-await this._showSubmitConfirm({
-scenario: 'danger',
-title: '本次提交无法继续重试',
-message: '请退出本组练习后重新开始。',
-showCancel: false,
-confirmText: '知道了',
-hideEyebrow: true,
+return this._submitFlowController().submit(skipConfirm)
+},
+_submitFlowController() {
+return this._submitFlowControllerInstance || (
+this._submitFlowControllerInstance = createSubmitFlowController({
+isSubmitting: () => this.data.submitting,
+getSubmissionSnapshot: () => this._practiceSession.submissionSnapshot,
+isSubmitted: () => this.data.submitted,
+getPendingResultUrl: () => this._pendingResultUrl,
+openSubmittedResult: (resultUrl, submission) => this._openSubmittedResult(resultUrl, submission),
+showConfirm: options => this._showSubmitConfirm(options),
+getQuestions: () => this.data.questions || [],
+prepareSubmission: skipConfirm => this._submitEntryController().prepare(skipConfirm),
+clearTimer: () => this._clearTimer(),
+persistPendingSubmission: (submission, status, resultUrl) => this._persistPendingSubmission(submission, status, resultUrl),
+setData: patch => this.setData(patch),
+buildSubmitPayload,
+getTraceId: () => this._practiceSession.traceId,
+requestSubmit: payload => api.post('/practice/batch-submit', payload),
+isPageAlive: () => this._pageAlive,
+handleSubmitError: (submission, error) => this._submitErrorController().handle(submission, error),
+completeSubmit: (submission, submitResult, questions) => this._submitSuccessController().complete(submission, submitResult, questions),
 })
-return
-}
-const questions = this.data.questions || []
-if (!submission) {
-submission = await this._submitEntryController().prepare(skipConfirm)
-if (!submission) return
-} else {
-this._clearTimer()
-submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '') || submission.pendingPersisted
-}
-this.setData({ submitting: true })
-let submitResult
-try {
-const submitPayload = buildSubmitPayload(submission, this._practiceSession.traceId)
-submitResult = await api.post('/practice/batch-submit', submitPayload)
-if (!this._pageAlive) return
-} catch (e) {
-await this._submitErrorController().handle(submission, e)
-return
-}
-submission.serverAccepted = true
-submission.retryBlocked = false
-this._submitSuccessController().complete(submission, submitResult, questions)
+)
 },
 _submitSuccessController() {
 return this._submitSuccessControllerInstance || (
