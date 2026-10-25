@@ -81,6 +81,10 @@ from app.services.task_queue_v2_fail_redis_contract import (
     execute_v2_fail_dead,
     execute_v2_fail_retry,
 )
+from app.services.task_queue_v2_transition_redis_contract import (
+    execute_v2_complete,
+    execute_v2_enqueue,
+)
 from app.services.task_queue_v2_claim_contract import (
     build_v2_claimed_task,
     v2_dequeue_unavailable,
@@ -1267,51 +1271,19 @@ class DurableTaskQueue:
 
         if not self._redis_enabled:
             return v2_enqueue_unavailable()
-        client = None
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return v2_enqueue_unavailable()
-            await self._load_scripts(client)
-
-            if plan.idempotent:
-                result = await self._evalsha_or_reload(
-                    client,
-                    "_lua_enqueue_v2",
-                    3,
-                    _v2_q_key(task_type),
-                    _V2_TASK_PREFIX,
-                    _V2_IDEMPOTENCY_PREFIX,
-                    tid,
-                    task_json,
-                    str(_IDEMPOTENT_TTL),
-                    str(max_ready),
-                )
-            else:
-                result = await self._evalsha_or_reload(
-                    client,
-                    "_lua_enqueue_non_idempotent_v2",
-                    2,
-                    _v2_q_key(task_type),
-                    _V2_TASK_PREFIX,
-                    tid,
-                    task_json,
-                    str(max_ready),
-                )
-
-            if result == "__duplicate__":
-                logger.info("v2 Duplicate task: task_id=%s", tid)
-                queue_metrics["duplicate_enqueue_prevented"] += 1
-                return v2_enqueue_duplicate(tid)
-            if result == "__queue_full__":
-                logger.warning("v2 Queue full: task_id=%s type=%s", tid, task_type)
-                queue_metrics["enqueue_rejected"] += 1
-                return v2_enqueue_queue_full()
-            if result is None:
-                logger.error("v2 Enqueue nil: task_id=%s type=%s", tid, task_type)
-                return v2_enqueue_internal_error()
-
-            return EnqueueResult(accepted=True, task_id=tid)
+            return await execute_v2_enqueue(
+                self._get_script_client,
+                self._load_scripts,
+                self._evalsha_or_reload,
+                task_id=tid,
+                task_type=task_type,
+                task_json=task_json,
+                idempotent=plan.idempotent,
+                max_ready=max_ready,
+                idempotent_ttl=_IDEMPOTENT_TTL,
+                metrics=queue_metrics,
+            )
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:
             # Redis availability is surfaced structurally to callers.  The
             # Outbox dispatcher owns outage-level pause/resume logging, so do
@@ -1320,15 +1292,6 @@ class DurableTaskQueue:
             return EnqueueResult(
                 accepted=False, task_id=None, reason="redis_unavailable", retry_after=30
             )
-        finally:
-            # Redis failures can occur while loading/evaluating scripts. Always
-            # release the wrapper back to the shared pool so an outage cannot
-            # gradually exhaust dispatcher connections.
-            if client is not None:
-                try:
-                    await client.aclose()
-                except Exception:
-                    pass
 
     async def dequeue_v2(
         self,
@@ -1519,56 +1482,18 @@ class DurableTaskQueue:
             return 0
 
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return 0
-            await self._load_scripts(client)
-
-            updated_at = time.time()
-            if isinstance(task_or_id, Task):
-                task_json = build_v2_completed_payload(
-                    task_or_id,
-                    updated_at=updated_at,
-                )
-            else:
-                current = await client.hget(_v2_task_hash_key(task_id), "data")
-                task_json = build_v2_completed_payload(
-                    task_id,
-                    task_type=tt,
-                    current_payload=current,
-                    updated_at=updated_at,
-                )
-
-            result = await self._evalsha_or_reload(
-                client,
-                "_lua_complete_v2",
-                5,
-                _v2_p_key(tt),
-                _v2_retry_key(tt),
-                _V2_TASK_PREFIX,
-                _V2_HEARTBEAT_PREFIX,
-                _V2_FENCING_PREFIX,
-                task_id,
-                token,
-                task_json,
-                str(_COMPLETED_TTL),
-                str(_FENCING_TOMBSTONE_TTL),
+            return await execute_v2_complete(
+                self._get_script_client,
+                self._load_scripts,
+                self._evalsha_or_reload,
+                task_or_id,
+                task_id=task_id,
+                task_type=tt,
+                owner_token=token,
+                completed_ttl=_COMPLETED_TTL,
+                tombstone_ttl=_FENCING_TOMBSTONE_TTL,
+                metrics=queue_metrics,
             )
-            await client.aclose()
-
-            result = int(result) if result is not None else 0
-            if result == 0:
-                logger.warning("v2 Complete owner mismatch: task_id=%s", task_id)
-                queue_metrics["owner_fencing_rejected"] += 1
-            elif result == -1:
-                logger.warning("v2 Complete generation mismatch: task_id=%s", task_id)
-                queue_metrics["owner_fencing_rejected"] += 1
-            else:
-                if isinstance(task_or_id, Task):
-                    apply_v2_completed_result(task_or_id, updated_at=updated_at)
-                logger.info("v2 Task completed: task_id=%s", task_id)
-
-            return result
 
         except (
             redis_exc.ConnectionError,
