@@ -92,34 +92,7 @@ function buildKnowledgeDiagnosisSnapshot(raw) {
   }
 }
 
-function buildDeepAnalysisState(source) {
-  const hero = source.hero || {}
-  const trend = source.trend || {}
-  const subjects = source.subjects || null
-  const reviewRisk = source.reviewRisk || null
-  const growth = source.growth || null
-  const yearly = source.yearly || null
-  const insights = source.insights || null
-  const repeatWrong = insights && insights.repeatWrong
-  const speed = insights && insights.speedAccuracy
-  const consistency = insights && insights.weeklyConsistency
-  const weakest = subjects && subjects.itemsByWeak && subjects.itemsByWeak[0]
-
-  const highForget = reviewRisk ? (reviewRisk.highForgetCount || 0) : 0
-  const stuck = reviewRisk ? (reviewRisk.stuckQuestions || 0) : 0
-  const pseudo = reviewRisk ? (reviewRisk.pseudoMasteredCount || 0) : 0
-  const riskTotal = highForget + stuck + pseudo
-  const riskWidthPct = clampPct(riskTotal <= 0 ? 0 : Math.min(100, riskTotal * 8))
-  const riskEntries = [
-    { key: 'stuck', value: stuck, priority: 3 },
-    { key: 'highForget', value: highForget, priority: 2 },
-    { key: 'pseudo', value: pseudo, priority: 1 },
-  ].sort((a, b) => b.value - a.value || b.priority - a.priority)
-  const primaryRisk = riskEntries[0].value > 0 ? riskEntries[0].key : 'none'
-  const allTopics = reviewRisk && reviewRisk.topTopics ? reviewRisk.topTopics : []
-  const topTopics = allTopics.slice(0, 3)
-  const remainingTopicCount = Math.max(0, allTopics.length - topTopics.length)
-
+const buildSpeedMetrics = (speed) => {
   const correctSec = speed ? Number(speed.avgTimeCorrectSec || 0) : 0
   const wrongSec = speed ? Number(speed.avgTimeWrongSec || 0) : 0
   const hasSpeedData = correctSec > 0 && wrongSec > 0
@@ -136,7 +109,29 @@ function buildDeepAnalysisState(source) {
   const linkLeftPct = Math.min(correctPositionPct, wrongPositionPct)
   const linkWidthPct = Math.max(0, Math.abs(wrongPositionPct - correctPositionPct))
   const speedConclusion = speed ? speed.conclusion : '完成更多练习后，将显示正确题与错题的耗时差异。'
+  return {
+    correctSec, wrongSec, hasSpeedData, speedMax,
+    correctPositionPct, wrongPositionPct, linkLeftPct, linkWidthPct,
+    speedDiffText, speedRatioText, speedConclusion,
+  }
+}
 
+function buildMemoryCompare(reviewRisk, speed) {
+  const highForget = reviewRisk ? (reviewRisk.highForgetCount || 0) : 0
+  const stuck = reviewRisk ? (reviewRisk.stuckQuestions || 0) : 0
+  const pseudo = reviewRisk ? (reviewRisk.pseudoMasteredCount || 0) : 0
+  const riskTotal = highForget + stuck + pseudo
+  const riskWidthPct = clampPct(riskTotal <= 0 ? 0 : Math.min(100, riskTotal * 8))
+  const riskEntries = [
+    { key: 'stuck', value: stuck, priority: 3 },
+    { key: 'highForget', value: highForget, priority: 2 },
+    { key: 'pseudo', value: pseudo, priority: 1 },
+  ].sort((a, b) => b.value - a.value || b.priority - a.priority)
+  const primaryRisk = riskEntries[0].value > 0 ? riskEntries[0].key : 'none'
+  const allTopics = reviewRisk && reviewRisk.topTopics ? reviewRisk.topTopics : []
+  const topTopics = allTopics.slice(0, 3)
+  const remainingTopicCount = Math.max(0, allTopics.length - topTopics.length)
+  const sm = buildSpeedMetrics(speed)
   let riskLabel = '风险较低'
   let riskTone = 'green'
   if (stuck >= 8 || riskTotal >= 12) {
@@ -146,95 +141,78 @@ function buildDeepAnalysisState(source) {
     riskLabel = '建议持续复盘'
     riskTone = 'blue'
   }
-
-  const memoryCompare = {
-    highForget,
-    stuck,
-    pseudo,
-    riskTotal,
-    riskWidthPct,
-    riskLabel,
-    riskTone,
-    primaryRisk,
-    topTopics,
-    remainingTopicCount,
-    correctSec: correctSec ? Math.round(correctSec * 10) / 10 : 0,
-    wrongSec: wrongSec ? Math.round(wrongSec * 10) / 10 : 0,
-    correctWidthPct: clampPct(correctSec / speedMax * 100),
-    wrongWidthPct: clampPct(wrongSec / speedMax * 100),
-    hasSpeedData,
-    correctPositionPct,
-    wrongPositionPct,
-    linkLeftPct,
-    linkWidthPct,
-    speedDiffText,
-    speedRatioText,
-    speedConclusion,
+  return {
+    highForget, stuck, pseudo, riskTotal, riskWidthPct, riskLabel, riskTone, primaryRisk,
+    topTopics, remainingTopicCount,
+    correctSec: sm.correctSec ? Math.round(sm.correctSec * 10) / 10 : 0,
+    wrongSec: sm.wrongSec ? Math.round(sm.wrongSec * 10) / 10 : 0,
+    correctWidthPct: clampPct(sm.correctSec / sm.speedMax * 100),
+    wrongWidthPct: clampPct(sm.wrongSec / sm.speedMax * 100),
+    hasSpeedData: sm.hasSpeedData, correctPositionPct: sm.correctPositionPct, wrongPositionPct: sm.wrongPositionPct,
+    linkLeftPct: sm.linkLeftPct, linkWidthPct: sm.linkWidthPct,
+    speedDiffText: sm.speedDiffText, speedRatioText: sm.speedRatioText, speedConclusion: sm.speedConclusion,
   }
+}
 
-  let diagnosis
+const diag = (tone, levelLabel, title, desc, evidence) => ({ tone, levelLabel, title, desc, evidence })
+
+function buildDiagnosis(source, memoryCompare) {
+  const { hero, trend, yearly, insights, subjects } = source
+  const repeatWrong = insights && insights.repeatWrong
+  const consistency = insights && insights.weeklyConsistency
+  const weakest = subjects && subjects.itemsByWeak && subjects.itemsByWeak[0]
+  const { stuck, highForget } = memoryCompare
   if (repeatWrong && repeatWrong.repeatRatePct >= 40) {
-    diagnosis = {
-      tone: 'orange',
-      levelLabel: '优先级高',
-      title: '重复错题正在拖慢整体提升',
-      desc: '先处理反复答错的题目，再进入新题练习，能够更快降低无效重复。',
-      evidence: [
+    return diag('orange', '优先级高', '重复错题正在拖慢整体提升',
+      '先处理反复答错的题目，再进入新题练习，能够更快降低无效重复。',
+      [
         { label: '错题复发率', value: `${repeatWrong.repeatRatePct}%`, tone: 'orange' },
         { label: '反复错题', value: `${repeatWrong.repeatWrongCount || 0}道`, tone: '' },
         { label: '待复习', value: `${hero.dueReviewCount || 0}道`, tone: 'blue' },
-      ],
-    }
-  } else if (stuck >= 5) {
-    diagnosis = {
-      tone: 'orange',
-      levelLabel: '需要巩固',
-      title: '长期未掌握内容需要集中突破',
-      desc: '当前主要问题不是练习数量，而是部分知识点长期停留在低掌握状态。',
-      evidence: [
+      ])
+  }
+  if (stuck >= 5) {
+    return diag('orange', '需要巩固', '长期未掌握内容需要集中突破',
+      '当前主要问题不是练习数量，而是部分知识点长期停留在低掌握状态。',
+      [
         { label: '长期未掌握', value: `${stuck}`, tone: 'orange' },
         { label: '高频遗忘', value: `${highForget}`, tone: '' },
         { label: '错题掌握率', value: `${source.masteryRatePct || 0}%`, tone: 'blue' },
-      ],
-    }
-  } else if (weakest && weakest.accuracyPct < 50) {
-    diagnosis = {
-      tone: 'blue',
-      levelLabel: '重点关注',
-      title: `${weakest.label}是当前最明显的短板`,
-      desc: `该科目正确率为 ${weakest.accuracyPct}%，建议围绕高频错题进行小范围专项练习。`,
-      evidence: [
+      ])
+  }
+  if (weakest && weakest.accuracyPct < 50) {
+    return diag('blue', '重点关注', `${weakest.label}是当前最明显的短板`,
+      `该科目正确率为 ${weakest.accuracyPct}%，建议围绕高频错题进行小范围专项练习。`,
+      [
         { label: '当前正确率', value: `${weakest.accuracyPct}%`, tone: 'orange' },
         { label: '累计错题', value: `${weakest.wrongCount || 0}道`, tone: '' },
         { label: '练习题量', value: `${weakest.totalQuestions || 0}题`, tone: 'blue' },
-      ],
-    }
-  } else if (consistency && consistency.activeDays <= 2) {
-    diagnosis = {
-      tone: 'blue',
-      levelLabel: '节奏提醒',
-      title: '学习节奏仍不够连续',
-      desc: '正确率之外，更稳定的活跃天数会让复习计划和薄弱点判断更加可靠。',
-      evidence: [
+      ])
+  }
+  if (consistency && consistency.activeDays <= 2) {
+    return diag('blue', '节奏提醒', '学习节奏仍不够连续',
+      '正确率之外，更稳定的活跃天数会让复习计划和薄弱点判断更加可靠。',
+      [
         { label: '活跃天数', value: `${consistency.activeDays}/${consistency.days}`, tone: 'orange' },
         { label: '本期做题', value: `${trend.totalQuestions || 0}题`, tone: '' },
         { label: '平均正确率', value: `${trend.avgAccuracyPct || 0}%`, tone: 'blue' },
-      ],
-    }
-  } else {
-    diagnosis = {
-      tone: 'green',
-      levelLabel: '状态稳定',
-      title: '当前学习节奏基本稳定',
-      desc: '继续保持练习频率，并优先处理到期复习与当前排名最低的知识点。',
-      evidence: [
-        { label: '平均正确率', value: `${trend.avgAccuracyPct || 0}%`, tone: 'green' },
-        { label: '活跃天数', value: `${trend.activeDays || 0}天`, tone: '' },
-        { label: '今年学习', value: `${yearly ? yearly.activeDays : 0}天`, tone: 'blue' },
-      ],
-    }
+      ])
   }
+  return diag('green', '状态稳定', '当前学习节奏基本稳定',
+    '继续保持练习频率，并优先处理到期复习与当前排名最低的知识点。',
+    [
+      { label: '平均正确率', value: `${trend.avgAccuracyPct || 0}%`, tone: 'green' },
+      { label: '活跃天数', value: `${trend.activeDays || 0}天`, tone: '' },
+      { label: '今年学习', value: `${yearly ? yearly.activeDays : 0}天`, tone: 'blue' },
+    ])
+}
 
+function buildDeepAnalysisState(source) {
+  const reviewRisk = source.reviewRisk || null
+  const insights = source.insights || null
+  const speed = insights && insights.speedAccuracy
+  const memoryCompare = buildMemoryCompare(reviewRisk, speed)
+  const diagnosis = buildDiagnosis(source, memoryCompare)
   return { deepDiagnosis: diagnosis, memoryCompare }
 }
 
@@ -495,77 +473,17 @@ Page({
 
   async loadDashboard({ mode = 'initial' } = {}) {
     if (!this._alive || !this._visible) return null
-
     // Dedup concurrent loads
     if (this._loadPromise) return this._loadPromise
-
     const hasExistingData = this.data.pageReady && this.data.hero
     const seq = ++this._dashboardSeq
-
     if (mode === 'initial' && !hasExistingData) {
       this.setData({ initialLoading: true, error: null })
     } else if (mode === 'background') {
       this.setData({ backgroundRefreshing: true })
     }
     // silent: no visual change
-
-    const loadPromise = (async () => {
-      try {
-        const res = await api.get('/stats/dashboard-v2', {
-          trend_days: this.data.trendDays,
-          include_yearly_summary: true,
-          include_growth: true,
-          include_adaptive: true,
-          include_subjects: true,
-        })
-        if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
-
-        // dashboard-v2 is the primary source. Only an actual contract gap warrants
-        // the legacy endpoint; users who have practiced 1-3 subjects must not trigger
-        // a compatibility request on every dashboard load.
-        let choiceSubjectStats = []
-        const subjectsResponse = res && res.subjects
-        const totalQuestions = Math.max(
-          0,
-          Number(res && res.overview && res.overview.total_questions) || 0
-        )
-        const hasSubjectContract = Boolean(
-          subjectsResponse && (
-            (Array.isArray(subjectsResponse) && subjectsResponse.length) ||
-            (!Array.isArray(subjectsResponse) && Array.isArray(subjectsResponse.items) && subjectsResponse.items.length)
-          )
-        )
-        if (totalQuestions > 0 && !hasSubjectContract) {
-          try {
-            const legacyDashboard = await api.get('/stats/dashboard')
-            if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
-            choiceSubjectStats = legacyDashboard && Array.isArray(legacyDashboard.subject_stats)
-              ? legacyDashboard.subject_stats
-              : []
-          } catch (fallbackError) {
-            console.warn('[dashboard] choice loss budget fallback unavailable', fallbackError)
-          }
-        }
-
-        this._lastLoadAt = Date.now()
-        this._processDashboard(res, mode, choiceSubjectStats)
-        this.loadErrorDiagnosisStats()
-        return res
-      } catch (e) {
-        console.error('[dashboard] load failed', e)
-        if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
-
-        if (!hasExistingData) {
-          this.setData({ initialLoading: false, error: '学习数据加载失败' })
-        } else {
-          // Keep existing data, just show toast
-          this.setData({ backgroundRefreshing: false })
-          wx.showToast({ title: '刷新失败', icon: 'none' })
-        }
-        return null
-      }
-    })()
-
+    const loadPromise = this._runDashboardLoad(seq, mode, hasExistingData)
     this._loadPromise = loadPromise
     try {
       return await loadPromise
@@ -574,6 +492,63 @@ Page({
       // has already started. Never let the old request clear the new promise.
       if (this._loadPromise === loadPromise) this._loadPromise = null
     }
+  },
+
+  async _runDashboardLoad(seq, mode, hasExistingData) {
+    try {
+      const res = await api.get('/stats/dashboard-v2', {
+        trend_days: this.data.trendDays,
+        include_yearly_summary: true,
+        include_growth: true,
+        include_adaptive: true,
+        include_subjects: true,
+      })
+      if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
+      const choiceSubjectStats = await this._fetchLegacySubjectStats(res, seq)
+      if (choiceSubjectStats === null) return null
+      this._lastLoadAt = Date.now()
+      this._processDashboard(res, mode, choiceSubjectStats)
+      this.loadErrorDiagnosisStats()
+      return res
+    } catch (e) {
+      console.error('[dashboard] load failed', e)
+      if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
+      if (!hasExistingData) {
+        this.setData({ initialLoading: false, error: '学习数据加载失败' })
+      } else {
+        // Keep existing data, just show toast
+        this.setData({ backgroundRefreshing: false })
+        wx.showToast({ title: '刷新失败', icon: 'none' })
+      }
+      return null
+    }
+  },
+
+  async _fetchLegacySubjectStats(res, seq) {
+    // dashboard-v2 is the primary source. Only an actual contract gap warrants
+    // the legacy endpoint; users who have practiced 1-3 subjects must not trigger
+    // a compatibility request on every dashboard load.
+    let choiceSubjectStats = []
+    const subjectsResponse = res && res.subjects
+    const totalQuestions = Math.max(0, Number(res && res.overview && res.overview.total_questions) || 0)
+    const hasSubjectContract = Boolean(
+      subjectsResponse && (
+        (Array.isArray(subjectsResponse) && subjectsResponse.length) ||
+        (!Array.isArray(subjectsResponse) && Array.isArray(subjectsResponse.items) && subjectsResponse.items.length)
+      )
+    )
+    if (totalQuestions > 0 && !hasSubjectContract) {
+      try {
+        const legacyDashboard = await api.get('/stats/dashboard')
+        if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
+        choiceSubjectStats = legacyDashboard && Array.isArray(legacyDashboard.subject_stats)
+          ? legacyDashboard.subject_stats
+          : []
+      } catch (fallbackError) {
+        console.warn('[dashboard] choice loss budget fallback unavailable', fallbackError)
+      }
+    }
+    return choiceSubjectStats
   },
 
   async loadErrorDiagnosisStats() {
@@ -585,48 +560,60 @@ Page({
         window_days: this.data.trendDays || 7,
       })
       if (!this._alive || !this._visible || seq !== this._errorDiagnosisSeq) return
-      const byType = (raw.by_type || []).map(item => ({
-        ...item,
-        label: item.label || errorDiagnosis.labelOf(item.type),
-        percentPct: Math.round(Number(item.percent || 0) * 100),
-      }))
-      const classified = byType.filter(item => item.type !== 'unknown' && Number(item.count || 0) > 0)
-      const topTypes = classified.slice(0, 5)
-      const top = topTypes[0]
-      let summary = '近期暂无错题，继续保持'
-      if (Number(raw.total_errors || 0) > 0 && top) {
-        summary = `最近主要是“${top.label}”，占已记录错误的 ${top.percentPct}%`
-      } else if (Number(raw.total_errors || 0) > 0) {
-        summary = `近 ${raw.window_days || this.data.trendDays} 天有 ${raw.total_errors} 次错误待确认错因`
-      }
-      const changes = (raw.changes || [])
-        .filter(item => item.type !== 'unknown' && Number(item.delta || 0) !== 0)
-        .slice(0, 3)
-        .map(item => ({
-          ...item,
-          label: item.label || errorDiagnosis.labelOf(item.type),
-          deltaText: Number(item.delta || 0) > 0 ? `较上期 +${item.delta}` : `较上期 ${item.delta}`,
-        }))
-      const kp = (raw.by_knowledge_point || [])[0]
-      const primaryChange = top ? changes.find(item => item.type === top.type) || changes[0] || null : changes[0] || null
-      this.setData({
-        errorDiagnosisStats: raw,
-        errorDiagnosisLoading: false,
-        errorDiagnosisSummary: summary,
-        errorDiagnosisTopTypes: topTypes,
-        errorDiagnosisPrimary: top || null,
-        errorDiagnosisPrimaryChange: primaryChange,
-        errorDiagnosisChanges: changes,
-        errorDiagnosisTopKnowledge: kp ? {
-          name: kp.name,
-          count: kp.count,
-          topLabel: kp.top_label || errorDiagnosis.labelOf(kp.top_type),
-        } : null,
-      })
+      this.setData({ errorDiagnosisLoading: false, ...this._buildErrorDiagnosisPayload(raw) })
     } catch (e) {
       if (!this._alive || !this._visible || seq !== this._errorDiagnosisSeq) return
       this.setData({ errorDiagnosisLoading: false })
     }
+  },
+
+  _buildErrorDiagnosisPayload(raw) {
+    const byType = (raw.by_type || []).map(item => ({
+      ...item,
+      label: item.label || errorDiagnosis.labelOf(item.type),
+      percentPct: Math.round(Number(item.percent || 0) * 100),
+    }))
+    const classified = byType.filter(item => item.type !== 'unknown' && Number(item.count || 0) > 0)
+    const topTypes = classified.slice(0, 5)
+    const top = topTypes[0]
+    const summary = this._buildErrorDiagnosisSummary(raw, top)
+    const changes = this._buildErrorDiagnosisChanges(raw)
+    const kp = (raw.by_knowledge_point || [])[0]
+    const primaryChange = top ? changes.find(item => item.type === top.type) || changes[0] || null : changes[0] || null
+    return {
+      errorDiagnosisStats: raw,
+      errorDiagnosisSummary: summary,
+      errorDiagnosisTopTypes: topTypes,
+      errorDiagnosisPrimary: top || null,
+      errorDiagnosisPrimaryChange: primaryChange,
+      errorDiagnosisChanges: changes,
+      errorDiagnosisTopKnowledge: kp ? {
+        name: kp.name,
+        count: kp.count,
+        topLabel: kp.top_label || errorDiagnosis.labelOf(kp.top_type),
+      } : null,
+    }
+  },
+
+  _buildErrorDiagnosisSummary(raw, top) {
+    if (Number(raw.total_errors || 0) > 0 && top) {
+      return `最近主要是“${top.label}”，占已记录错误的 ${top.percentPct}%`
+    }
+    if (Number(raw.total_errors || 0) > 0) {
+      return `近 ${raw.window_days || this.data.trendDays} 天有 ${raw.total_errors} 次错误待确认错因`
+    }
+    return '近期暂无错题，继续保持'
+  },
+
+  _buildErrorDiagnosisChanges(raw) {
+    return (raw.changes || [])
+      .filter(item => item.type !== 'unknown' && Number(item.delta || 0) !== 0)
+      .slice(0, 3)
+      .map(item => ({
+        ...item,
+        label: item.label || errorDiagnosis.labelOf(item.type),
+        deltaText: Number(item.delta || 0) > 0 ? `较上期 +${item.delta}` : `较上期 ${item.delta}`,
+      }))
   },
 
   _preferredKnowledgeSubjectId(subjects = this.data.subjects) {
@@ -736,22 +723,30 @@ Page({
       this.setData(selection)
       return null
     }
-
     const cached = this._knowledgeDiagnosisCache.get(id)
     // A cached selection must also invalidate any other subject's pending response.
     const seq = ++this._knowledgeDiagnosisSeq
     if (!force && cached && Date.now() - cached.loadedAt < 30000) {
-      if (sheetClosed) await sheetClosed
-      if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
-      this.setData({
-        ...selection,
-        knowledgeDiagnosisLoading: false,
-        knowledgeDiagnosisError: '',
-        knowledgeDiagnosisSubjectId: id,
-        knowledgeDiagnosis: cached.snapshot,
-      }, () => this._reserveKnowledgeDiagnosisHeight())
-      return cached.snapshot
+      const cachedResult = await this._applyCachedKnowledgeDiagnosis(cached, id, selection, sheetClosed, seq)
+      if (cachedResult !== null) return cachedResult
     }
+    return this._fetchKnowledgeDiagnosis(id, selection, sheetClosed, seq)
+  },
+
+  async _applyCachedKnowledgeDiagnosis(cached, id, selection, sheetClosed, seq) {
+    if (sheetClosed) await sheetClosed
+    if (!this._alive || !this._visible || seq !== this._knowledgeDiagnosisSeq) return null
+    this.setData({
+      ...selection,
+      knowledgeDiagnosisLoading: false,
+      knowledgeDiagnosisError: '',
+      knowledgeDiagnosisSubjectId: id,
+      knowledgeDiagnosis: cached.snapshot,
+    }, () => this._reserveKnowledgeDiagnosisHeight())
+    return cached.snapshot
+  },
+
+  async _fetchKnowledgeDiagnosis(id, selection, sheetClosed, seq) {
     const keepCurrent = this.data.knowledgeDiagnosisSubjectId === id && this.data.knowledgeDiagnosis
     try {
       let settled = false
@@ -776,25 +771,7 @@ Page({
       const snapshot = buildKnowledgeDiagnosisSnapshot(raw)
       this._knowledgeDiagnosisLoadedAt = Date.now()
       this._knowledgeDiagnosisCache.set(id, { snapshot, loadedAt: this._knowledgeDiagnosisLoadedAt })
-      this.setData({
-        ...selection,
-        knowledgeDiagnosisLoading: false,
-        knowledgeDiagnosisError: '',
-        knowledgeDiagnosis: snapshot,
-        knowledgeDiagnosisSubjectId: id,
-      }, () => {
-        this._reserveKnowledgeDiagnosisHeight()
-        if (this._focusDiagnosisOnLoad && !this._diagnosisAutoScrolled && typeof wx.pageScrollTo === 'function') {
-          this._diagnosisAutoScrolled = true
-          const scroll = () => {
-            if (this._alive && this._visible && seq === this._knowledgeDiagnosisSeq) {
-              wx.pageScrollTo({ selector: '#knowledge-diagnosis-section', duration: 180 })
-            }
-          }
-          if (typeof wx.nextTick === 'function') wx.nextTick(scroll)
-          else setTimeout(scroll, 0)
-        }
-      })
+      this._commitKnowledgeDiagnosis(snapshot, id, selection, seq)
       return snapshot
     } catch (e) {
       if (sheetClosed) await sheetClosed
@@ -809,6 +786,28 @@ Page({
       })
       return null
     }
+  },
+
+  _commitKnowledgeDiagnosis(snapshot, id, selection, seq) {
+    this.setData({
+      ...selection,
+      knowledgeDiagnosisLoading: false,
+      knowledgeDiagnosisError: '',
+      knowledgeDiagnosis: snapshot,
+      knowledgeDiagnosisSubjectId: id,
+    }, () => {
+      this._reserveKnowledgeDiagnosisHeight()
+      if (this._focusDiagnosisOnLoad && !this._diagnosisAutoScrolled && typeof wx.pageScrollTo === 'function') {
+        this._diagnosisAutoScrolled = true
+        const scroll = () => {
+          if (this._alive && this._visible && seq === this._knowledgeDiagnosisSeq) {
+            wx.pageScrollTo({ selector: '#knowledge-diagnosis-section', duration: 180 })
+          }
+        }
+        if (typeof wx.nextTick === 'function') wx.nextTick(scroll)
+        else setTimeout(scroll, 0)
+      }
+    })
   },
 
   retryKnowledgeDiagnosis() {
@@ -849,7 +848,6 @@ Page({
 
   async loadInsights(retryCount = 0, requestSeq = null) {
     if (!this._alive || !this._visible) return
-
     let seq = requestSeq
     if (retryCount === 0 || seq == null) {
       clearTimeout(this._insightRetryTimer)
@@ -857,7 +855,6 @@ Page({
       seq = ++this._insightSeq
       this._insightsLoading = true
     }
-
     try {
       const res = await api.get('/stats/dashboard-insights', {
         days: this.data.trendDays,
@@ -865,81 +862,94 @@ Page({
         include_topics: true,
       })
       if (!this._alive || !this._visible || seq !== this._insightSeq) return
-      const insights = model.buildInsights(res)
-      // Enrich subjects with input_output data
-      const enrichedMap = {}
-      if (res && res.input_output && res.input_output.items) {
-        res.input_output.items.forEach(item => {
-          const sid = item.subject_id != null ? item.subject_id : item.subject
-          if (sid == null) return
-          enrichedMap[sid] = {
-            weak_topics: [],
-            suggestion: item.suggestion,
-            repeat_wrong_count: 0,
-            status_label: item.efficiency_label,
-          }
-        })
-      }
-      // Merge weak topics from weak_topic_ranking into enriched map
-      if (res && res.weak_topic_ranking && res.weak_topic_ranking.items) {
-        res.weak_topic_ranking.items.forEach(t => {
-          const sid = t.subject_id != null ? t.subject_id : t.subject
-          if (sid == null) return
-          if (!enrichedMap[sid]) {
-            enrichedMap[sid] = { weak_topics: [], suggestion: '', repeat_wrong_count: 0, status_label: '' }
-          }
-          if (!enrichedMap[sid].weak_topics) enrichedMap[sid].weak_topics = []
-          if (enrichedMap[sid].weak_topics.length < 3) {
-            enrichedMap[sid].weak_topics.push({ name: t.name })
-          }
-        })
-      }
-      // Re-build subjects with enriched data and refresh the diagnosis view-model.
-      // Prefer fresh subject rows returned by dashboard-insights when present;
-      // otherwise enrich the already-rendered dashboard subject rows.
-      let nextSubjects = this.data.subjects
-      const insightSubjectAnalysis = normalizeSubjectAnalysis(res && res.subjects)
-      if (insightSubjectAnalysis && Array.isArray(insightSubjectAnalysis.items) && insightSubjectAnalysis.items.length) {
-        nextSubjects = model.buildSubjects(insightSubjectAnalysis, enrichedMap)
-      } else if (this.data.subjects && this.data.subjects.items) {
-        nextSubjects = model.buildSubjects(
-          { items: this.data.subjects.items, strongest: this.data.subjects.strongest, weakest: this.data.subjects.weakest, totalQuestions: this.data.subjects.totalQuestions },
-          enrichedMap
-        )
-      }
-      const currentChoiceBudget = this.data.choiceLossBudget || studyStrategy.buildChoiceLossBudget([])
-      const insightChoiceBudget = buildChoiceBudgetWithFallback(nextSubjects, [])
-      const nextChoiceLossBudget = insightChoiceBudget.coveredSubjects >= currentChoiceBudget.coveredSubjects
-        ? insightChoiceBudget
-        : currentChoiceBudget
-      const deepState = buildDeepAnalysisState({
-        hero: this.data.hero,
-        trend: this.data.trend,
-        subjects: nextSubjects,
-        reviewRisk: this.data.reviewRisk,
-        growth: this.data.growth,
-        yearly: this.data.yearly,
-        masteryRatePct: this.data.masteryRatePct,
-        insights,
-      })
-      this._insightsLoading = false
-      this._insightsError = null
-      this.setData({ subjects: nextSubjects, choiceLossBudget: nextChoiceLossBudget, insights, ...deepState })
+      this._applyInsights(res)
     } catch (e) {
       console.error('[dashboard] insights load failed', e)
       if (!this._alive || !this._visible || seq !== this._insightSeq) return
-      if (retryCount < 2) {
-        clearTimeout(this._insightRetryTimer)
-        this._insightRetryTimer = setTimeout(() => {
-          this._insightRetryTimer = null
-          if (!this._alive || !this._visible || seq !== this._insightSeq) return
-          this.loadInsights(retryCount + 1, seq)
-        }, 2000)
-        return
-      }
-      this._insightsLoading = false
-      this._insightsError = '诊断数据加载失败'
+      this._retryInsights(retryCount, seq)
     }
+  },
+
+  _retryInsights(retryCount, seq) {
+    if (retryCount < 2) {
+      clearTimeout(this._insightRetryTimer)
+      this._insightRetryTimer = setTimeout(() => {
+        this._insightRetryTimer = null
+        if (!this._alive || !this._visible || seq !== this._insightSeq) return
+        this.loadInsights(retryCount + 1, seq)
+      }, 2000)
+      return
+    }
+    this._insightsLoading = false
+    this._insightsError = '诊断数据加载失败'
+  },
+
+  _buildEnrichedSubjectMap(res) {
+    const enrichedMap = {}
+    // Enrich subjects with input_output data
+    if (res && res.input_output && res.input_output.items) {
+      res.input_output.items.forEach(item => {
+        const sid = item.subject_id != null ? item.subject_id : item.subject
+        if (sid == null) return
+        enrichedMap[sid] = {
+          weak_topics: [],
+          suggestion: item.suggestion,
+          repeat_wrong_count: 0,
+          status_label: item.efficiency_label,
+        }
+      })
+    }
+    // Merge weak topics from weak_topic_ranking into enriched map
+    if (res && res.weak_topic_ranking && res.weak_topic_ranking.items) {
+      res.weak_topic_ranking.items.forEach(t => {
+        const sid = t.subject_id != null ? t.subject_id : t.subject
+        if (sid == null) return
+        if (!enrichedMap[sid]) {
+          enrichedMap[sid] = { weak_topics: [], suggestion: '', repeat_wrong_count: 0, status_label: '' }
+        }
+        if (!enrichedMap[sid].weak_topics) enrichedMap[sid].weak_topics = []
+        if (enrichedMap[sid].weak_topics.length < 3) {
+          enrichedMap[sid].weak_topics.push({ name: t.name })
+        }
+      })
+    }
+    return enrichedMap
+  },
+
+  _applyInsights(res) {
+    const insights = model.buildInsights(res)
+    const enrichedMap = this._buildEnrichedSubjectMap(res)
+    // Re-build subjects with enriched data and refresh the diagnosis view-model.
+    // Prefer fresh subject rows returned by dashboard-insights when present;
+    // otherwise enrich the already-rendered dashboard subject rows.
+    let nextSubjects = this.data.subjects
+    const insightSubjectAnalysis = normalizeSubjectAnalysis(res && res.subjects)
+    if (insightSubjectAnalysis && Array.isArray(insightSubjectAnalysis.items) && insightSubjectAnalysis.items.length) {
+      nextSubjects = model.buildSubjects(insightSubjectAnalysis, enrichedMap)
+    } else if (this.data.subjects && this.data.subjects.items) {
+      nextSubjects = model.buildSubjects(
+        { items: this.data.subjects.items, strongest: this.data.subjects.strongest, weakest: this.data.subjects.weakest, totalQuestions: this.data.subjects.totalQuestions },
+        enrichedMap
+      )
+    }
+    const currentChoiceBudget = this.data.choiceLossBudget || studyStrategy.buildChoiceLossBudget([])
+    const insightChoiceBudget = buildChoiceBudgetWithFallback(nextSubjects, [])
+    const nextChoiceLossBudget = insightChoiceBudget.coveredSubjects >= currentChoiceBudget.coveredSubjects
+      ? insightChoiceBudget
+      : currentChoiceBudget
+    const deepState = buildDeepAnalysisState({
+      hero: this.data.hero,
+      trend: this.data.trend,
+      subjects: nextSubjects,
+      reviewRisk: this.data.reviewRisk,
+      growth: this.data.growth,
+      yearly: this.data.yearly,
+      masteryRatePct: this.data.masteryRatePct,
+      insights,
+    })
+    this._insightsLoading = false
+    this._insightsError = null
+    this.setData({ subjects: nextSubjects, choiceLossBudget: nextChoiceLossBudget, insights, ...deepState })
   },
 
   _redrawAllCharts() {
@@ -959,7 +969,13 @@ Page({
         if (this._alive && this._visible) this.loadInsights()
       }, 200)
     }
+    const models = this._buildDashboardModels(res, choiceSubjectStats)
+    const { hero, trend, subjects, choiceLossBudget, reviewRisk, growth, adaptive, yearly, subtitle } = models
+    const canRedraw = this._updateChartHashes(hero, trend, subjects, models.masteryRatePct, growth, adaptive)
+    this._commitDashboard(models, mode, canRedraw.trend)
+  },
 
+  _buildDashboardModels(res, choiceSubjectStats) {
     const hero = model.buildHero(res.overview)
     const rec = res.recommendation
     const trend = model.buildTrends(res.trends)
@@ -975,89 +991,83 @@ Page({
     const adaptive = model.buildAdaptive(res.adaptive)
     const yearly = model.buildYearly(res.yearly_summary)
     const subtitle = model.buildSubtitle(hero, rec, reviewRisk)
-
-    const hasData = (hero.totalQuestions || 0) > 0
     const ov = res.overview || {}
-    const wrongQ = ov.wrong_question_count || 0
-    const masteredW = ov.mastered_wrong_count || 0
     const masteryRate = ov.mastery_rate || 0
     const masteryRatePct = Math.round(masteryRate * 100)
-    const masteryStatusText = model.buildMasteryStatus(masteryRatePct)
     const deepState = buildDeepAnalysisState({
-      hero,
-      trend,
-      subjects,
-      choiceLossBudget,
-      reviewRisk,
-      growth,
-      yearly,
-      masteryRatePct,
+      hero, trend, subjects, choiceLossBudget, reviewRisk, growth, yearly, masteryRatePct,
       insights: this.data.insights,
     })
+    return {
+      hero, trend, subjects, choiceLossBudget, reviewRisk, growth, adaptive, yearly, subtitle,
+      recommendation: rec,
+      hasData: (hero.totalQuestions || 0) > 0,
+      wrongQuestionCount: ov.wrong_question_count || 0,
+      masteredWrongCount: ov.mastered_wrong_count || 0,
+      masteryRate, masteryRatePct,
+      masteryStatusText: model.buildMasteryStatus(masteryRatePct),
+      deepState,
+    }
+  },
 
-    // Build chart hashes
+  _updateChartHashes(hero, trend, subjects, masteryRatePct, growth, adaptive) {
     const heroHash = '' + (hero.totalAccuracy || 0)
     const trendHash = trend ? [trend.points, trend.previousPoints || []].map(list => list.map(p => p.date + p.questions + p.accuracy).join('|')).join('::') : ''
     const subjectHash = subjects ? subjects.items.map(s => (s.subject_id != null ? s.subject_id : s.subject) + s.accuracyPct).join('|') : ''
     const masteryHash = '' + masteryRatePct
     const growthHash = growth ? '' + (growth.levelProgressPct || 0) : ''
     const adaptiveHash = adaptive ? '' + (adaptive.recallPct || 0) : ''
-
     // Prevent canvas flicker: skip redraw if hash unchanged
-    const canRedrawHero = heroHash !== this._heroHash
-    const canRedrawTrend = trendHash !== this._trendHash
-    const canRedrawSubject = subjectHash !== this._subjectHash
-    const canRedrawMastery = masteryHash !== this._masteryHash
-    const canRedrawGrowth = growthHash !== this._growthHash
-    const canRedrawAdaptive = adaptiveHash !== this._adaptiveHash
-
-    // Update instance hash keys
+    const canRedraw = {
+      hero: heroHash !== this._heroHash,
+      trend: trendHash !== this._trendHash,
+      subject: subjectHash !== this._subjectHash,
+      mastery: masteryHash !== this._masteryHash,
+      growth: growthHash !== this._growthHash,
+      adaptive: adaptiveHash !== this._adaptiveHash,
+    }
     this._heroHash = heroHash
     this._trendHash = trendHash
     this._subjectHash = subjectHash
     this._masteryHash = masteryHash
     this._growthHash = growthHash
     this._adaptiveHash = adaptiveHash
+    return canRedraw
+  },
 
-    // When background/refresh, keep old data until setData
-    this._insight = rec
-    this._masteryRate = masteryRate
+  _commitDashboard(models, mode, canRedrawTrend) {
+    const { hero, trend, subjects, choiceLossBudget, reviewRisk, growth, adaptive, yearly, subtitle, deepState } = models
+    this._insight = models.recommendation
+    this._masteryRate = models.masteryRate
     this.setData({
-      hero,
-      subtitle,
-      trend,
-      subjects,
-      choiceLossBudget,
-      reviewRisk,
-      growth,
-      adaptive,
-      yearly,
-      wrongQuestionCount: wrongQ,
-      masteredWrongCount: masteredW,
-      masteryRatePct,
-      masteryStatusText,
+      hero, subtitle, trend, subjects, choiceLossBudget, reviewRisk, growth, adaptive, yearly,
+      wrongQuestionCount: models.wrongQuestionCount,
+      masteredWrongCount: models.masteredWrongCount,
+      masteryRatePct: models.masteryRatePct,
+      masteryStatusText: models.masteryStatusText,
       ...deepState,
       initialLoading: false,
       backgroundRefreshing: false,
       pageReady: true,
       error: null,
-      _hasData: hasData,
-    }, () => {
-      if (!this._alive) return
+      _hasData: models.hasData,
+    }, () => this._afterDashboardCommit(models, mode, canRedrawTrend))
+  },
 
-      const diagnosisSubjectId = this._preferredKnowledgeSubjectId(subjects)
-      if (diagnosisSubjectId) {
-        this.loadKnowledgeDiagnosis(diagnosisSubjectId, { force: mode !== 'initial' })
-      }
-
-      // The redesigned dashboard uses a single primary chart to keep the page calm and focused.
-      if (trend && canRedrawTrend) {
-        this._trendTimer = setTimeout(() => {
-          if (!this._alive || !this._visible) return
-          charts.drawTrendChart('trend-chart', this, trend.points, { metric: this.data.trendMetric, previousPoints: trend.previousPoints })
-        }, 160)
-      }
-    })
+  _afterDashboardCommit(models, mode, canRedrawTrend) {
+    if (!this._alive) return
+    const { subjects, trend } = models
+    const diagnosisSubjectId = this._preferredKnowledgeSubjectId(subjects)
+    if (diagnosisSubjectId) {
+      this.loadKnowledgeDiagnosis(diagnosisSubjectId, { force: mode !== 'initial' })
+    }
+    // The redesigned dashboard uses a single primary chart to keep the page calm and focused.
+    if (trend && canRedrawTrend) {
+      this._trendTimer = setTimeout(() => {
+        if (!this._alive || !this._visible) return
+        charts.drawTrendChart('trend-chart', this, trend.points, { metric: this.data.trendMetric, previousPoints: trend.previousPoints })
+      }, 160)
+    }
   },
 
   // ── Trend ──

@@ -53,52 +53,23 @@ function buildHero(ov) {
 /**
  * Build trends view-model.
  */
-function buildTrends(tr) {
-  if (!tr || !tr.points || !tr.points.length) return null
+const normalizeTrendPoint = p => ({
+  date: p.date,
+  shortDate: (p.date || '').slice(5),
+  questions: p.questions || 0,
+  correct: p.correct || 0,
+  accuracy: p.accuracy || 0,
+  accuracyPct: accuracyPct(p.accuracy),
+  accuracyClass: accuracyClass(p.accuracy),
+})
 
-  const normalizePoint = p => ({
-    date: p.date,
-    shortDate: (p.date || '').slice(5),
-    questions: p.questions || 0,
-    correct: p.correct || 0,
-    accuracy: p.accuracy || 0,
-    accuracyPct: accuracyPct(p.accuracy),
-    accuracyClass: accuracyClass(p.accuracy),
-  })
+const computeAvgAccuracy = (points) => {
+  const q = points.reduce((sum, p) => sum + p.questions, 0)
+  const c = points.reduce((sum, p) => sum + p.correct, 0)
+  return q > 0 ? c / q : 0
+}
 
-  const points = tr.points.map(normalizePoint)
-  const previousPoints = (tr.previous_points || []).map(normalizePoint)
-  const totalQuestions = tr.total_questions != null
-    ? tr.total_questions
-    : points.reduce((sum, p) => sum + p.questions, 0)
-  const activeDays = tr.active_days != null
-    ? tr.active_days
-    : points.filter(p => p.questions > 0).length
-  const avgAccuracy = tr.avg_accuracy != null
-    ? tr.avg_accuracy
-    : (() => {
-        const q = points.reduce((sum, p) => sum + p.questions, 0)
-        const c = points.reduce((sum, p) => sum + p.correct, 0)
-        return q > 0 ? c / q : 0
-      })()
-  const avgPct = accuracyPct(avgAccuracy)
-
-  const previousTotalQuestions = tr.previous_total_questions != null
-    ? tr.previous_total_questions
-    : previousPoints.reduce((sum, p) => sum + p.questions, 0)
-  const previousActiveDays = tr.previous_active_days != null
-    ? tr.previous_active_days
-    : previousPoints.filter(p => p.questions > 0).length
-  const previousAvgAccuracy = tr.previous_avg_accuracy != null
-    ? tr.previous_avg_accuracy
-    : (() => {
-        const q = previousPoints.reduce((sum, p) => sum + p.questions, 0)
-        const c = previousPoints.reduce((sum, p) => sum + p.correct, 0)
-        return q > 0 ? c / q : 0
-      })()
-  const previousAvgPct = accuracyPct(previousAvgAccuracy)
-  const hasPrevious = previousPoints.length > 0
-
+const buildTrendComparison = (avgPct, previousAvgPct, hasPrevious) => {
   const accuracyDelta = avgPct - previousAvgPct
   let accuracyCompareText = '等待上周期数据'
   let accuracyCompareClass = 'neutral'
@@ -113,7 +84,10 @@ function buildTrends(tr) {
       accuracyCompareText = '与上周期持平'
     }
   }
+  return { accuracyCompareText, accuracyCompareClass }
+}
 
+const buildQuestionsComparison = (totalQuestions, previousTotalQuestions, hasPrevious) => {
   let questionsCompareText = '等待上周期数据'
   let questionsCompareClass = 'neutral'
   if (hasPrevious) {
@@ -135,7 +109,10 @@ function buildTrends(tr) {
       questionsCompareText = '两周期均暂无做题记录'
     }
   }
+  return { questionsCompareText, questionsCompareClass }
+}
 
+const buildTrendStatusTitle = (totalQuestions, avgPct, activeDays) => {
   let statusTitle = '正在积累学习数据'
   if (totalQuestions > 0) {
     if (avgPct >= 85 && activeDays >= 4) statusTitle = '状态很稳，继续保持'
@@ -144,7 +121,33 @@ function buildTrends(tr) {
     else if (activeDays <= 2) statusTitle = '需要重新找回节奏'
     else statusTitle = '基础还需要巩固'
   }
+  return statusTitle
+}
 
+function buildTrends(tr) {
+  if (!tr || !tr.points || !tr.points.length) return null
+  const points = tr.points.map(normalizeTrendPoint)
+  const previousPoints = (tr.previous_points || []).map(normalizeTrendPoint)
+  const totalQuestions = tr.total_questions != null
+    ? tr.total_questions
+    : points.reduce((sum, p) => sum + p.questions, 0)
+  const activeDays = tr.active_days != null
+    ? tr.active_days
+    : points.filter(p => p.questions > 0).length
+  const avgAccuracy = tr.avg_accuracy != null ? tr.avg_accuracy : computeAvgAccuracy(points)
+  const avgPct = accuracyPct(avgAccuracy)
+  const previousTotalQuestions = tr.previous_total_questions != null
+    ? tr.previous_total_questions
+    : previousPoints.reduce((sum, p) => sum + p.questions, 0)
+  const previousActiveDays = tr.previous_active_days != null
+    ? tr.previous_active_days
+    : previousPoints.filter(p => p.questions > 0).length
+  const previousAvgAccuracy = tr.previous_avg_accuracy != null ? tr.previous_avg_accuracy : computeAvgAccuracy(previousPoints)
+  const previousAvgPct = accuracyPct(previousAvgAccuracy)
+  const hasPrevious = previousPoints.length > 0
+  const { accuracyCompareText, accuracyCompareClass } = buildTrendComparison(avgPct, previousAvgPct, hasPrevious)
+  const { questionsCompareText, questionsCompareClass } = buildQuestionsComparison(totalQuestions, previousTotalQuestions, hasPrevious)
+  const statusTitle = buildTrendStatusTitle(totalQuestions, avgPct, activeDays)
   return {
     days: tr.days || 7,
     points,
@@ -171,69 +174,68 @@ function buildTrends(tr) {
  * Build subjects view-model from SubjectAnalysisV2.
  * Enriched with weak topics, avg time, suggestion when insights data available.
  */
+const buildSubjectItem = (s, i, enrichedMap) => {
+  const acc = s.accuracy || 0
+  const subjectId = s.subject_id != null ? s.subject_id : (s.id != null ? s.id : null)
+  const subjectCode = s.subject_code || ''
+  const subjectName = s.subject_name || s.label || ''
+  const enriched = (enrichedMap && (subjectId != null ? enrichedMap[subjectId] : enrichedMap[subjectCode])) || {}
+  const totalQuestions = s.total_questions != null ? s.total_questions : (s.totalQuestions || 0)
+  const correctCount = s.correct_count != null ? s.correct_count : (s.correctCount || 0)
+  const wrongCount = s.wrong_count != null ? s.wrong_count : (s.wrongCount || 0)
+  const totalDurationSec = s.total_duration_sec != null ? s.total_duration_sec : (s.totalDurationSec || 0)
+  const avgTime = totalDurationSec > 0 && totalQuestions > 0
+    ? Math.round(totalDurationSec / totalQuestions)
+    : (s.avgTimeSec || 0)
+  const baseWeakTopics = enriched.weak_topics || s.weakTopics || []
+  return {
+    subject_id: subjectId,
+    subjectId,
+    subject: subjectCode,
+    subjectCode,
+    subjectName,
+    label: s.label || subjectName || subjectLabel(subjectCode),
+    totalQuestions,
+    correctCount,
+    wrongCount,
+    accuracy: acc,
+    accuracyPct: accuracyPct(acc),
+    barWidthPct: Math.max(2, Math.min(80, accuracyPct(acc) * 0.8)),
+    valueLeftPct: Math.max(4, Math.min(84, accuracyPct(acc) * 0.8 + 2)),
+    accuracyClass: accuracyClass(acc),
+    accuracyColor: acc >= 0.7 ? '#22C55E' : acc >= 0.4 ? '#F59E0B' : '#EF4444',
+    color: s.color || SUBJECT_COLORS[i % SUBJECT_COLORS.length],
+    totalDurationSec,
+    durationText: fmtDuration(totalDurationSec),
+    avgTimeSec: avgTime,
+    avgTimeText: avgTime > 0 ? '均时' + avgTime + 's' : '',
+    weakTopics: baseWeakTopics.slice(0, 3).map(w => w.name || w),
+    suggestion: enriched.suggestion || s.suggestion || '',
+    repeatWrongCount: enriched.repeat_wrong_count || s.repeatWrongCount || 0,
+    statusLabel: enriched.status_label || s.statusLabel || '',
+  }
+}
+
+const resolveSubjectLabel = (entry) => {
+  if (typeof entry === 'string') return entry
+  return (entry && (entry.subject_name || entry.subject)
+    ? (entry.subject_name || subjectLabel(entry.subject))
+    : null)
+}
+
 function buildSubjects(sa, enrichedMap) {
   if (!sa || !sa.items || !sa.items.length) return null
-  const items = sa.items.map((s, i) => {
-    const acc = s.accuracy || 0
-    const subjectId = s.subject_id != null ? s.subject_id : (s.id != null ? s.id : null)
-    const subjectCode = s.subject_code || ''
-    const subjectName = s.subject_name || s.label || ''
-    const enriched = (enrichedMap && (subjectId != null ? enrichedMap[subjectId] : enrichedMap[subjectCode])) || {}
-    const totalQuestions = s.total_questions != null ? s.total_questions : (s.totalQuestions || 0)
-    const correctCount = s.correct_count != null ? s.correct_count : (s.correctCount || 0)
-    const wrongCount = s.wrong_count != null ? s.wrong_count : (s.wrongCount || 0)
-    const totalDurationSec = s.total_duration_sec != null ? s.total_duration_sec : (s.totalDurationSec || 0)
-    const avgTime = totalDurationSec > 0 && totalQuestions > 0
-      ? Math.round(totalDurationSec / totalQuestions)
-      : (s.avgTimeSec || 0)
-    const baseWeakTopics = enriched.weak_topics || s.weakTopics || []
-    return {
-      subject_id: subjectId,
-      subjectId,
-      subject: subjectCode,
-      subjectCode,
-      subjectName,
-      label: s.label || subjectName || subjectLabel(subjectCode),
-      totalQuestions,
-      correctCount,
-      wrongCount,
-      accuracy: acc,
-      accuracyPct: accuracyPct(acc),
-      barWidthPct: Math.max(2, Math.min(80, accuracyPct(acc) * 0.8)),
-      valueLeftPct: Math.max(4, Math.min(84, accuracyPct(acc) * 0.8 + 2)),
-      accuracyClass: accuracyClass(acc),
-      accuracyColor: acc >= 0.7 ? '#22C55E' : acc >= 0.4 ? '#F59E0B' : '#EF4444',
-      color: s.color || SUBJECT_COLORS[i % SUBJECT_COLORS.length],
-      totalDurationSec,
-      durationText: fmtDuration(totalDurationSec),
-      avgTimeSec: avgTime,
-      avgTimeText: avgTime > 0 ? '均时' + avgTime + 's' : '',
-      weakTopics: baseWeakTopics.slice(0, 3).map(w => w.name || w),
-      suggestion: enriched.suggestion || s.suggestion || '',
-      repeatWrongCount: enriched.repeat_wrong_count || s.repeatWrongCount || 0,
-      statusLabel: enriched.status_label || s.statusLabel || '',
-    }
-  })
+  const items = sa.items.map((s, i) => buildSubjectItem(s, i, enrichedMap))
   const itemsByWeak = items.slice().sort((a, b) => {
     if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy
     return b.wrongCount - a.wrongCount
   })
-  const strongestLabel = typeof sa.strongest === 'string'
-    ? sa.strongest
-    : (sa.strongest && (sa.strongest.subject_name || sa.strongest.subject)
-        ? (sa.strongest.subject_name || subjectLabel(sa.strongest.subject))
-        : null)
-  const weakestLabel = typeof sa.weakest === 'string'
-    ? sa.weakest
-    : (sa.weakest && (sa.weakest.subject_name || sa.weakest.subject)
-        ? (sa.weakest.subject_name || subjectLabel(sa.weakest.subject))
-        : null)
   return {
     items,
     itemsByWeak,
     focusItem: itemsByWeak[0] || null,
-    strongest: strongestLabel,
-    weakest: weakestLabel,
+    strongest: resolveSubjectLabel(sa.strongest),
+    weakest: resolveSubjectLabel(sa.weakest),
     totalQuestions: sa.total_questions != null
       ? sa.total_questions
       : (sa.totalQuestions != null ? sa.totalQuestions : items.reduce((sum, item) => sum + item.totalQuestions, 0)),
