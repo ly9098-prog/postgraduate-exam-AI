@@ -70,6 +70,11 @@ from app.services.practice.chapter_scope import (
 from app.services.practice.chapter_scope import (
     knowledge_bucket as _chapter_knowledge_bucket,
 )
+from app.services.practice.knowledge_scope import (
+    load_active_knowledge_point,
+    load_descendant_scope,
+    root_scope,
+)
 from app.services.practice.merge_utils import (
     build_fallback_metadata as _build_fallback_metadata,
 )
@@ -491,9 +496,6 @@ async def resolve_practice_knowledge_scope(
     are returned.  The root itself is always included so parent nodes that own
     questions directly remain trainable.
     """
-    from collections import defaultdict, deque
-
-    from app.models.knowledge_edge import KnowledgeEdge
     from app.services import syllabus_service
 
     normalized_subject_ids = list(
@@ -502,15 +504,9 @@ async def resolve_practice_knowledge_scope(
     if not normalized_subject_ids:
         return None
 
-    point = (
-        await db.execute(
-            select(KnowledgePoint).where(
-                KnowledgePoint.id == int(knowledge_point_id),
-                KnowledgePoint.subject_id.in_(normalized_subject_ids),
-                KnowledgePoint.is_active.is_(True),
-            )
-        )
-    ).scalar_one_or_none()
+    point = await load_active_knowledge_point(
+        db, knowledge_point_id, normalized_subject_ids
+    )
     if point is None:
         return None
 
@@ -521,73 +517,14 @@ async def resolve_practice_knowledge_scope(
         return None
 
     if not include_descendants:
-        return {
-            "root_id": int(point.id),
-            "root_name": str(point.name),
-            "subject_id": int(point.subject_id),
-            "syllabus_version_id": int(syllabus_version.id),
-            "knowledge_point_ids": [int(point.id)],
-            "include_descendants": False,
-        }
+        return root_scope(point, int(syllabus_version.id))
 
-    allowed_ids = set(int(kp_id) for kp_id in memberships)
-    active_rows = await db.execute(
-        select(KnowledgePoint.id).where(
-            KnowledgePoint.subject_id == int(point.subject_id),
-            KnowledgePoint.id.in_(allowed_ids),
-            KnowledgePoint.is_active.is_(True),
-        )
+    return await load_descendant_scope(
+        db,
+        point,
+        int(syllabus_version.id),
+        memberships,
     )
-    active_ids = {int(value) for value in active_rows.scalars().all()}
-    if int(point.id) not in active_ids:
-        return None
-
-    edge_rows = await db.execute(
-        select(
-            KnowledgeEdge.source_knowledge_point_id,
-            KnowledgeEdge.target_knowledge_point_id,
-        ).where(
-            KnowledgeEdge.subject_id == int(point.subject_id),
-            KnowledgeEdge.relation_type == "parent",
-            KnowledgeEdge.is_active.is_(True),
-            KnowledgeEdge.source_knowledge_point_id.in_(active_ids),
-            KnowledgeEdge.target_knowledge_point_id.in_(active_ids),
-        )
-    )
-    children: dict[int, list[int]] = defaultdict(list)
-    for parent_id, child_id in edge_rows.all():
-        children[int(parent_id)].append(int(child_id))
-
-    # Preserve syllabus order in each level so diagnostics and future client
-    # surfaces receive a stable scope even though the SQL edge table has no order.
-    def sort_key(kp_id: int) -> tuple[int, int]:
-        return (
-            int(memberships[kp_id].sort_order or 0) if kp_id in memberships else 0,
-            kp_id,
-        )
-
-    for child_ids in children.values():
-        child_ids.sort(key=sort_key)
-
-    ordered_ids: list[int] = []
-    queue = deque([int(point.id)])
-    seen: set[int] = set()
-    while queue:
-        current = queue.popleft()
-        if current in seen:
-            continue
-        seen.add(current)
-        ordered_ids.append(current)
-        queue.extend(children.get(current, ()))
-
-    return {
-        "root_id": int(point.id),
-        "root_name": str(point.name),
-        "subject_id": int(point.subject_id),
-        "syllabus_version_id": int(syllabus_version.id),
-        "knowledge_point_ids": ordered_ids,
-        "include_descendants": True,
-    }
 
 
 async def get_knowledge_scope_practice_questions(
