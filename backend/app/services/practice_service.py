@@ -138,6 +138,10 @@ from app.services.practice.scored_fallback_flow import (
     run_scored_fallback,
 )
 from app.services.practice.scored_fallback_merge import merge_fill_questions
+from app.services.practice.scored_context import (
+    load_scored_candidate_context,
+    load_scored_learning_context,
+)
 from app.services.practice.scored_ranking import score_and_rank_candidates
 from app.services.practice.scored_selection import select_scored_candidates
 from app.services.practice.sequential_service import (
@@ -1819,29 +1823,27 @@ async def get_smart_scored_questions(
     metadata: dict[int, dict] = {}
     fallback_level = 0
 
-    scored_runtime = await _load_scored_runtime_config(db)
+    scored_runtime, candidate_context = await load_scored_candidate_context(
+        db=db,
+        user_id=user_id,
+        subject_code=subject_code,
+        subject_ids=subject_ids,
+        count=count,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        now=now,
+        load_runtime=_load_scored_runtime_config,
+        load_candidates=_load_smart_scored_candidates,
+        build_subject_condition=Question.subject_id.in_,
+    )
     system_weights = scored_runtime.get("weights") or {}
     graph_runtime = scored_runtime.get("graph") or {}
-
-    candidate_limit = max(count * 5, 50)
-    (
-        candidates,
-        active_candidate_conditions,
-        scope_ids,
-        excluded_sub,
-        fallback_level,
-    ) = await _load_smart_scored_candidates(
-        db,
-        user_id,
-        subject_code,
-        subject_ids,
-        candidate_limit,
-        exclude_answered,
-        no_repeat_days,
-        count,
-        now,
-    )
-    subject_cond = Question.subject_id.in_(scope_ids)
+    candidates = candidate_context.candidates
+    active_candidate_conditions = candidate_context.active_candidate_conditions
+    scope_ids = candidate_context.scope_ids
+    excluded_sub = candidate_context.excluded_sub
+    fallback_level = candidate_context.fallback_level
+    subject_cond = candidate_context.subject_condition
 
     if not candidates:
         logger.warning(
@@ -1849,36 +1851,32 @@ async def get_smart_scored_questions(
         )
         return [], metadata
 
-    (
-        kp_mastery,
-        kp_observations,
-        graph_context,
-    ) = await _load_knowledge_and_graph_context(
-        db,
-        user_id,
-        scope_ids,
-        candidates,
-        active_candidate_conditions,
-        graph_runtime,
-        count,
+    learning = await load_scored_learning_context(
+        db=db,
+        user_id=user_id,
+        candidates=candidates,
+        active_candidate_conditions=active_candidate_conditions,
+        scope_ids=scope_ids,
+        graph_runtime=graph_runtime,
+        count=count,
+        system_weights=system_weights,
+        load_knowledge_graph=_load_knowledge_and_graph_context,
+        load_candidate_states=_load_candidate_states,
+        extract_graph_context=_extract_graph_context,
+        load_kp_names=_load_kp_names,
+        compute_weights=_compute_recommendation_weights,
     )
-
     cand_ids = {q.id for q in candidates}
-    q_state_map, recent_kp_ids, q_kp_map = await _load_candidate_states(
-        db,
-        user_id,
-        cand_ids,
-        scope_ids,
-    )
-    blocked_kps, graph_candidates, prerequisites_by_target = _extract_graph_context(
-        graph_context
-    )
-    kp_names = await _load_kp_names(db, q_kp_map, scope_ids)
-    rec_weights = await _compute_recommendation_weights(
-        db,
-        user_id,
-        system_weights,
-    )
+    kp_mastery = learning.kp_mastery
+    kp_observations = learning.kp_observations
+    q_state_map = learning.q_state_map
+    recent_kp_ids = learning.recent_kp_ids
+    q_kp_map = learning.q_kp_map
+    blocked_kps = learning.blocked_kps
+    graph_candidates = learning.graph_candidates
+    prerequisites_by_target = learning.prerequisites_by_target
+    kp_names = learning.kp_names
+    rec_weights = learning.rec_weights
 
     scored = score_and_rank_candidates(
         candidates,
