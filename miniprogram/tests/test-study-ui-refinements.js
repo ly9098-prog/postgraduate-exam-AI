@@ -176,7 +176,12 @@ let pageDefinition
 const wxCalls = []
 const context = {
   Page: definition => { pageDefinition = definition },
-  require: () => ({}),
+  require: name => {
+    if (name === './utils/exit-request-controller') {
+      return require(path.join(root, 'subpackages/study/practice/utils/exit-request-controller.js'))
+    }
+    return {}
+  },
   wx: { pageScrollTo: options => wxCalls.push(options) },
   setTimeout, clearTimeout, setInterval, clearInterval, console,
 }
@@ -198,6 +203,8 @@ function practice(overrides = {}, snapshot = null) {
     _clearPendingSubmission(id) { cleared.push(id) },
     _resetSession: pageDefinition._resetSession,
     requestExitPractice: pageDefinition.requestExitPractice,
+    _exitRequestController: pageDefinition._exitRequestController,
+    _resetPracticeStateAfterExit: pageDefinition._resetPracticeStateAfterExit,
     _returnToLaunchOrigin() { assert.fail('exit must not pop to home or original launch route') },
   }
   return target

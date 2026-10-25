@@ -37,6 +37,7 @@ const { createSubjectSheetController } = require('./utils/subject-sheet-controll
 const { createSubjectSelectionController } = require('./utils/subject-selection-controller')
 const { createLaunchReturnController } = require('./utils/launch-return-controller')
 const { createExitGuardController } = require('./utils/exit-guard-controller')
+const { createExitRequestController } = require('./utils/exit-request-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -1007,97 +1008,74 @@ this._showQuestion(e.detail.index)
 goPrev(e) {
 this._showQuestion(e.detail.index)
 },
-async requestExitPractice() {
-if (this._exitConfirmInFlight) return
-if (this.data.submitting) {
-this._exitConfirmInFlight = true
-try {
-await this._showSubmitConfirm({
-scenario: 'info',
-title: '正在交卷',
-message: '提交完成前请保持当前页面。',
-confirmText: '知道了',
-hideCancel: true,
-hideEyebrow: true,
-})
-} finally {
-this._exitConfirmInFlight = false
-}
-return
-}
-const submission = this._practiceSession && this._practiceSession.submissionSnapshot
-if (this.data.submitted && this._pendingResultUrl && submission) {
-this._openSubmittedResult(this._pendingResultUrl, submission)
-return
-}
-const hasPendingSubmit = !!submission
-const retryBlocked = !!(submission && submission.retryBlocked)
-this._exitConfirmInFlight = true
-let confirmed = false
-try {
-const showExitConfirm = hasPendingSubmit
-? this._showSubmitConfirm.bind(this)
-: this._showSubmitConfirmPaused.bind(this)
-confirmed = await showExitConfirm({
-scenario: 'info',
-layout: 'minimal',
-title: '退出练习？',
-message: retryBlocked
-? '本次提交未通过，退出后可重新开始。'
-: (hasPendingSubmit
-? '交卷仍在确认中，退出后可下次继续确认。'
-: '本组练习尚未提交，确定退出吗？'),
-confirmText: '退出',
-cancelText: hasPendingSubmit && !retryBlocked ? '继续确认' : '继续作答',
-hideEyebrow: true,
-})
-} finally {
-this._exitConfirmInFlight = false
-}
-if (!confirmed) return
-if (!this._pageAlive) return
-if (retryBlocked && submission) this._clearPendingSubmission(submission.requestId)
-this._setPracticeUnloadGuard(false)
-this._questionsRequestSeq++
-this._clearTimer()
-if (this._feedbackTimer) {
-clearTimeout(this._feedbackTimer)
-this._feedbackTimer = null
-}
-this._resetSession()
-this._pendingResultUrl = ''
-this._submittedResultPayload = null
-// The runner lives inside this page. Restore its setup surface rather than
-// popping the page back to home (or a knowledge-map launch origin).
-this._launchPreset = null
-this._fastLaunchEligible = false
-this._launchKnowledgePoint = ''
-this._launchKnowledgePointId = null
-this._launchIncludeDescendants = false
-this._launchQuestionIds = ''
-this._launchAllowRepeat = false
-this._launchSource = ''
-this._launchPlanToken = ''
-this._launchReturnTo = ''
-this.setData({
-started: false,
-loading: false,
-launchingPreset: false,
-submitting: false,
-submitted: false,
-practiceExitGuardVisible: false,
-questions: [],
-currentQuestion: null,
-currentAnswerState: null,
-currentIndex: 0,
-totalQuestions: 0,
-answeredCount: 0,
-progressPercent: 0,
-elapsedText: '00:00',
-errorText: '',
-feedbackVisible: false,
-})
-if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ scrollTop: 0, duration: 0 })
+async requestExitPractice(source) {
+  return this._exitRequestController().request(source)
+},
+_exitRequestController() {
+  return this._exitRequestControllerInstance || (
+    this._exitRequestControllerInstance = createExitRequestController({
+      isExitConfirmInFlight: () => this._exitConfirmInFlight,
+      setExitConfirmInFlight: value => { this._exitConfirmInFlight = value },
+      isSubmitting: () => this.data.submitting,
+      isSubmitted: () => this.data.submitted,
+      getPendingResultUrl: () => this._pendingResultUrl,
+      getSubmissionSnapshot: () => this._practiceSession && this._practiceSession.submissionSnapshot,
+      showConfirm: options => this._showSubmitConfirm(options),
+      showPausedConfirm: options => this._showSubmitConfirmPaused(options),
+      openSubmittedResult: (resultUrl, submission) => this._openSubmittedResult(resultUrl, submission),
+      isPageAlive: () => this._pageAlive,
+      clearPendingSubmission: requestId => this._clearPendingSubmission(requestId),
+      setUnloadGuard: enabled => this._setPracticeUnloadGuard(enabled),
+      incrementQuestionRequestSeq: () => { this._questionsRequestSeq++ },
+      clearTimer: () => this._clearTimer(),
+      clearFeedbackTimer: () => {
+        if (this._feedbackTimer) {
+          clearTimeout(this._feedbackTimer)
+          this._feedbackTimer = null
+        }
+      },
+      resetPracticeState: () => this._resetPracticeStateAfterExit(),
+      setLastExitSource: value => { this._lastExitSource = value || '' },
+      scrollToSetupTop: () => {
+        if (typeof wx.pageScrollTo === 'function') wx.pageScrollTo({ scrollTop: 0, duration: 0 })
+      },
+    })
+  )
+},
+_resetPracticeStateAfterExit() {
+  this._resetSession()
+  this._pendingResultUrl = ''
+  this._submittedResultPayload = null
+  // The runner lives inside this page. Restore its setup surface rather than
+  // popping the page back to home (or a knowledge-map launch origin).
+  this._launchPreset = null
+  this._fastLaunchEligible = false
+  this._launchKnowledgePoint = ''
+  this._launchKnowledgePointId = null
+  this._launchIncludeDescendants = false
+  this._launchQuestionIds = ''
+  this._launchAllowRepeat = false
+  this._launchSource = ''
+  this._launchPlanToken = ''
+  this._launchReturnTo = ''
+  this.setData({
+    started: false,
+    loading: false,
+    launchingPreset: false,
+    submitting: false,
+    submitted: false,
+    practiceExitGuardVisible: false,
+    questions: [],
+    currentQuestion: null,
+    currentAnswerState: null,
+    currentIndex: 0,
+    totalQuestions: 0,
+    answeredCount: 0,
+    progressPercent: 0,
+    elapsedText: '00:00',
+    errorText: '',
+    feedbackVisible: false,
+  })
 },
 _questionDisplayController() {
 return this._questionDisplay || (
