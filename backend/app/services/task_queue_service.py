@@ -77,6 +77,10 @@ from app.services.task_queue_v2_fail_contract import (
     build_v2_retry_plan,
     resolve_v2_fail_identity,
 )
+from app.services.task_queue_v2_fail_redis_contract import (
+    execute_v2_fail_dead,
+    execute_v2_fail_retry,
+)
 from app.services.task_queue_v2_claim_contract import (
     build_v2_claimed_task,
     v2_dequeue_unavailable,
@@ -1617,7 +1621,6 @@ class DurableTaskQueue:
         max_retries = _DEFAULT_MAX_RETRIES
         retry_plan = None
         if isinstance(task_or_id, Task):
-            task = task_or_id
             retry_plan = build_v2_retry_plan(
                 task_or_id, error, _DEFAULT_RETRY_BASE_DELAY
             )
@@ -1625,105 +1628,35 @@ class DurableTaskQueue:
             max_retries = retry_plan.max_retries
 
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return 0
-            await self._load_scripts(client)
-
             if isinstance(task_or_id, Task) and retry_count < max_retries:
                 assert retry_plan is not None
-                delay = retry_plan.delay
-                task_json = retry_plan.task_json
-
-                result = await self._evalsha_or_reload(
-                    client,
-                    "_lua_fail_retry_v2",
-                    6,
-                    _v2_p_key(tt),
-                    _v2_retry_key(tt),
-                    _v2_dead_key(tt),
-                    _V2_TASK_PREFIX,
-                    _V2_HEARTBEAT_PREFIX,
-                    _V2_FENCING_PREFIX,
-                    task_id,
-                    str(delay),
-                    task_json,
-                    token,
-                    str(retry_count),
-                    error[:200],
-                    str(settings.TASK_QUEUE_RETRY_MAX),
-                    str(settings.TASK_QUEUE_DEAD_MAX),
-                    str(_FENCING_TOMBSTONE_TTL),
+                return await execute_v2_fail_retry(
+                    self._get_script_client,
+                    self._load_scripts,
+                    self._evalsha_or_reload,
+                    task_or_id,
+                    retry_plan,
+                    error=error,
+                    retry_max=settings.TASK_QUEUE_RETRY_MAX,
+                    dead_max=settings.TASK_QUEUE_DEAD_MAX,
+                    tombstone_ttl=_FENCING_TOMBSTONE_TTL,
+                    metrics=queue_metrics,
                 )
-                await client.aclose()
 
-                result = int(result) if result is not None else 0
-                if result == 1:
-                    apply_v2_retry_result(task, retry_plan, error)
-                    logger.warning(
-                        "v2 Fail/retry (%d/%d, +%ds): task_id=%s",
-                        retry_count,
-                        max_retries,
-                        delay,
-                        task_id,
-                    )
-                elif result == 2:
-                    dead_plan = build_v2_dead_plan(
-                        task,
-                        error,
-                        retry_count=retry_count,
-                        updated_at=retry_plan.updated_at,
-                    )
-                    apply_v2_dead_result(task, dead_plan, error)
-                    logger.warning(
-                        "v2 Fail/retry-full dead: task_id=%s (retry ZSET full)",
-                        task_id,
-                    )
-                elif result == 0:
-                    logger.warning("v2 Fail/retry owner mismatch: task_id=%s", task_id)
-                    queue_metrics["owner_fencing_rejected"] += 1
-                elif result == -1:
-                    logger.warning("v2 Fail/retry gen mismatch: task_id=%s", task_id)
-                    queue_metrics["owner_fencing_rejected"] += 1
-                return result
-
-            # Dead-letter path
-            dead_plan = build_v2_dead_plan(
+            return await execute_v2_fail_dead(
+                self._get_script_client,
+                self._load_scripts,
+                self._evalsha_or_reload,
                 task_or_id,
-                error,
-                retry_count=retry_count,
+                task_id=task_id,
                 task_type=tt,
+                owner_token=token,
+                error=error,
+                retry_count=retry_count,
+                dead_max=settings.TASK_QUEUE_DEAD_MAX,
+                tombstone_ttl=_FENCING_TOMBSTONE_TTL,
+                metrics=queue_metrics,
             )
-            task_json = dead_plan.task_json
-            result = await self._evalsha_or_reload(
-                client,
-                "_lua_fail_dead_v2",
-                5,
-                _v2_p_key(tt),
-                _v2_dead_key(tt),
-                _V2_TASK_PREFIX,
-                _V2_HEARTBEAT_PREFIX,
-                _V2_FENCING_PREFIX,
-                task_id,
-                task_json,
-                token,
-                str(settings.TASK_QUEUE_DEAD_MAX),
-                str(_FENCING_TOMBSTONE_TTL),
-            )
-            await client.aclose()
-
-            result = int(result) if result is not None else 0
-            if result == 1:
-                apply_v2_dead_result(task_or_id, dead_plan, error)
-                logger.error("v2 Dead-letter: task_id=%s type=%s", task_id, tt)
-            elif result == 0:
-                logger.warning("v2 Fail/dead owner mismatch: task_id=%s", task_id)
-                queue_metrics["owner_fencing_rejected"] += 1
-            elif result == -1:
-                logger.warning("v2 Fail/dead gen mismatch: task_id=%s", task_id)
-                queue_metrics["owner_fencing_rejected"] += 1
-            return result
-
         except (
             redis_exc.ConnectionError,
             redis_exc.TimeoutError,
