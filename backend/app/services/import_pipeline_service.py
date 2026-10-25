@@ -510,7 +510,9 @@ async def _run_image_pipeline_with_db(
                 db,
                 pipeline_id,
                 status=status,
-                error_message=failure_reason if status == "failed" else None,
+                error_message=result.get("diagnostics", {}).get("failure_reason")
+                if status == "failed"
+                else None,
                 finished=True,
             )
         log_event(

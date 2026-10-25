@@ -13,9 +13,9 @@ def request(result):
         raw_ocr_text="raw text",
         ocr_diagnostics={"cleaned_line_count": 2},
         runtime_diagnostics={"execution_backend": "local"},
-        classify_result=lambda value, text: "classified-failure"
-        if value.get("classify")
-        else None,
+        classify_result=lambda value, text: (
+            "classified-failure" if value.get("classify") else None
+        ),
     )
 
 
