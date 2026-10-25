@@ -1,17 +1,12 @@
 const {
-  buildGroupReviews,
-  buildGroupResult,
-} = require('./group-submission')
+  buildReviewSubmission,
+  buildGroupResults,
+} = require('./submit-request-state')
 
 function createGroupSubmitRequestController(options) {
   return {
     async submit(input) {
-      const reviewBuild = buildGroupReviews({
-        groupQuestions: input.groupQuestions,
-        answers: input.answers,
-        isQuestionAnswered: input.isQuestionAnswered,
-        getRequestId: input.getRequestId,
-      })
+      const reviewBuild = buildReviewSubmission(input)
       if (reviewBuild.error === 'version') {
         options.showToast({ title: '复习任务版本信息缺失，请刷新后重试', icon: 'none' })
         options.setSubmitting(false)
@@ -41,15 +36,7 @@ function createGroupSubmitRequestController(options) {
         }
       }
 
-      const groupResults = input.groupQuestions.map(question => buildGroupResult({
-        question,
-        results,
-        reviews,
-        answers: input.answers,
-        isQuestionAnswered: input.isQuestionAnswered,
-        enrichForResult: input.enrichForResult,
-        failureNeedsRefresh: input.failureNeedsRefresh,
-      }))
+      const groupResults = buildGroupResults(input, reviews, results)
       return { status: 'submitted', results, groupResults }
     },
   }
