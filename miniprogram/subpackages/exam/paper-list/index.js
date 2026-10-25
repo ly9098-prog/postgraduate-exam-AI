@@ -3,6 +3,7 @@ const examAttemptCache = require('../utils/exam-attempt-cache')
 const { matchesPaper, paperRenderSignature } = require('../utils/paper-search')
 const { buildPapers } = require('../utils/paper-list-mapper')
 const { createPaperListLoadController } = require('../utils/paper-list-load-controller')
+const { createPaperCancelResumeController } = require('../utils/paper-cancel-resume-controller')
 
 const SEARCH_DEBOUNCE_MS = 280
 
@@ -231,63 +232,39 @@ Page({
   },
 
   async cancelResume(e) {
-    const paperId = Number(e.currentTarget.dataset.id)
-    const attemptId = Number(e.currentTarget.dataset.attemptId)
-    if (!paperId || !attemptId || this.data.startingId || this.data.cancellingAttemptId) return
+    return this._paperCancelResumeController().cancel(e)
+  },
 
-    const paper = this.data.papers.find((item) => Number(item.id) === paperId)
-    if (!paper || !paper.canResume || Number(paper.latest_attempt_id) !== attemptId) {
-      await this.loadPapers({ silent: true, force: true, suppressErrorToast: true })
-      return
+  _paperCancelResumeController() {
+    if (!this._paperCancelResume) {
+      this._paperCancelResume = createPaperCancelResumeController({
+        getStartingId: () => this.data.startingId,
+        getCancellingAttemptId: () => this.data.cancellingAttemptId,
+        setCancellingAttemptId: value => this.setData({ cancellingAttemptId: value }),
+        isPageAlive: () => this._pageAlive,
+        findPaper: paperId => this.data.papers.find(item => Number(item.id) === paperId),
+        refreshAfterStateMismatch: () =>
+          this.loadPapers({ silent: true, force: true, suppressErrorToast: true }),
+        confirmCancel: () => this._showAppDialog({
+          scenario: 'danger',
+          title: '取消本次作答？',
+          message: '当前未提交的作答进度将被放弃，之后会从头开始；本次不会生成考试记录。',
+          confirmText: '取消本次',
+          cancelText: '继续作答',
+          maskClose: false,
+        }),
+        abandonAttempt: attemptId => api.post(`/exams/attempts/${attemptId}/abandon`),
+        clearAttemptCache: attemptId => this._clearCancelledAttemptCache(attemptId),
+        optimisticallyClearResume: (paperId, attemptId) =>
+          this._optimisticallyClearResume(paperId, attemptId),
+        refreshAfterCancel: () =>
+          this.loadPapers({ silent: true, force: true, suppressErrorToast: true }),
+        reconcileAttemptCache: attemptId => this._reconcileCancelledAttemptCache(attemptId),
+        getErrorMessage: error => api.getErrorMessage(error),
+        showToast: options => wx.showToast(options),
+      })
     }
-
-    const confirmed = await this._showAppDialog({
-      scenario: 'danger',
-      title: '取消本次作答？',
-      message: '当前未提交的作答进度将被放弃，之后会从头开始；本次不会生成考试记录。',
-      confirmText: '取消本次',
-      cancelText: '继续作答',
-      maskClose: false,
-    })
-    if (!confirmed || !this._pageAlive) return
-
-    this.setData({ cancellingAttemptId: attemptId })
-    try {
-      const result = await api.post(`/exams/attempts/${attemptId}/abandon`)
-      if (!result || result.status !== 'abandoned' || Number(result.id) !== attemptId) {
-        throw new Error('INVALID_ABANDON_RESPONSE')
-      }
-
-      // Only clear local drafts after the server has durably accepted the
-      // cancellation. A network failure must leave the cache intact so the
-      // user can still resume safely.
-      this._clearCancelledAttemptCache(attemptId)
-      if (!this._pageAlive) return
-      this._optimisticallyClearResume(paperId, attemptId)
-      wx.showToast({ title: '已取消本次作答', icon: 'success' })
-
-      // Reconcile with the server after the optimistic update. force=true is
-      // important when an older onShow request is still running.
-      await this.loadPapers({ silent: true, force: true, suppressErrorToast: true })
-    } catch (error) {
-      if (!this._pageAlive) return
-
-      // A 409 means another request/device won a terminal-state race, or the
-      // countdown has just elapsed. Confirm the real attempt state before
-      // touching local drafts: list_papers may *present* an elapsed in_progress
-      // row as expired even though its pending answers still need atomic submit.
-      if (Number(error && error.statusCode) === 409) {
-        await this._reconcileCancelledAttemptCache(attemptId)
-        await this.loadPapers({ silent: true, force: true, suppressErrorToast: true })
-        wx.showToast({ title: '作答状态已变化，请重新确认', icon: 'none' })
-      } else {
-        wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
-      }
-    } finally {
-      if (this._pageAlive && Number(this.data.cancellingAttemptId) === attemptId) {
-        this.setData({ cancellingAttemptId: 0 })
-      }
-    }
+    return this._paperCancelResume
   },
 
   goHistory() {
