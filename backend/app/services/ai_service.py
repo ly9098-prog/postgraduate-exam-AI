@@ -53,6 +53,11 @@ from app.services.ai.analysis_cache import (
     _analysis_model_signature,
     build_cached_error_analysis_response,
 )
+from app.services.ai.visual_ack_retry import (
+    ACK_MAIN_BUDGET_MS,
+    retry_visual_ack,
+    should_retry_visual_ack,
+)
 from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
@@ -187,9 +192,6 @@ _ERROR_ANALYSIS_MAX_TOKENS = 800
 # The primary visual analysis can occasionally return all three pedagogical
 # fields correctly while omitting only ``visual_evidence``.  A tiny same-model
 # probe repairs that protocol-level omission without re-running the full answer.
-_ERROR_ANALYSIS_VISUAL_ACK_MAX_TOKENS = 160
-_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS = 8
-_ERROR_ANALYSIS_VISUAL_ACK_RETRY_MAIN_BUDGET_MS = 38_000
 
 
 class PrewarmAnalysisError(RuntimeError):
@@ -1027,55 +1029,25 @@ async def analyze_error(
             # model omitted the acknowledgement field.  Do one tiny SAME analysis
             # model visual probe instead of discarding an otherwise good answer.
             # No OCR/VL routing is introduced.
-            can_probe = (
-                parsed_valid
-                and grounding_valid
-                and total_duration_ms <= _ERROR_ANALYSIS_VISUAL_ACK_RETRY_MAIN_BUDGET_MS
-            )
-            if can_probe:
-                visual_ack_retried = True
-                probe_messages = build_visual_evidence_probe(image_data_urls)
-                try:
-                    async with asyncio.timeout(
-                        _ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS + 1
-                    ):
-                        probe = await llm.chat(
-                            probe_messages,
-                            temperature=0.0,
-                            model=runtime.model_name,
-                            api_key=runtime.api_key,
-                            base_url=runtime.base_url,
-                            provider=runtime.provider,
-                            timeout=_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS,
-                            max_tokens=_ERROR_ANALYSIS_VISUAL_ACK_MAX_TOKENS,
-                            prefer_direct_answer=True,
-                        )
-                    visual_ack_retry_ms = int(probe.get("duration_ms") or 0)
-                    total_duration_ms += visual_ack_retry_ms
-                    total_tokens_used += int(probe.get("tokens_used") or 0)
-                    recovered = _extract_visual_evidence(probe.get("content", ""))
-                    if _visual_evidence_is_valid(recovered):
-                        visual_evidence = recovered
-                        logger.info(
-                            "ai.error_analysis.visual_ack_recovered wq_id=%s model=%s "
-                            "retry_ms=%s evidence=%r",
-                            wq.id,
-                            result.get("model"),
-                            visual_ack_retry_ms,
-                            visual_evidence[:120],
-                        )
-                    else:
-                        # Preserve explicit unreadable so the failure below can
-                        # distinguish a real visual-input failure from a schema
-                        # omission that is safe for background retry.
-                        visual_evidence = recovered
-                except Exception as exc:
-                    logger.warning(
-                        "ai.error_analysis.visual_ack_retry_failed wq_id=%s model=%s err=%s",
-                        wq.id,
-                        result.get("model"),
-                        type(exc).__name__,
-                    )
+            if should_retry_visual_ack(
+                parsed_valid=parsed_valid,
+                grounding_valid=grounding_valid,
+                duration_ms=total_duration_ms,
+            ):
+                ack = await retry_visual_ack(
+                    image_data_urls,
+                    runtime=runtime,
+                    source_model=str(result.get("model") or ""),
+                    wrong_question_id=wq.id,
+                    current_evidence=visual_evidence,
+                    chat=llm.chat,
+                    extract_evidence=_extract_visual_evidence,
+                )
+                visual_ack_retried = ack.retried
+                visual_ack_retry_ms = ack.retry_ms
+                total_duration_ms += ack.retry_ms
+                total_tokens_used += ack.tokens_used_delta
+                visual_evidence = ack.evidence
 
         if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
             evidence_text = str(visual_evidence or "").strip()
