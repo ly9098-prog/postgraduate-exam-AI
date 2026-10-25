@@ -17,8 +17,12 @@ from app.core.database import async_session
 from app.core.log_context import bind_log_context, log_event
 from app.core.resource_guard import resource_guard
 from app.core.time_utils import serialize_utc_datetime, utcnow
-from app.features.pipeline_coordinator_entry import run_pipeline
 from app.features.ocr_layout_blocks import build_pre_extracted_ocr_blocks
+from app.features.pipeline_coordinator_entry import run_pipeline
+from app.services.import_image_ocr_stage import (
+    ImageOcrStageRequest,
+    run_image_ocr_stage,
+)
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     resume_pipeline_background,
@@ -431,69 +435,24 @@ async def _run_image_pipeline_with_db(
         set_tag("stage", "ocr")
         set_tag("ocr.engine", "PaddleOCR")
 
-        logger.info(
-            "image OCR started: pipeline_id=%s file=%s", pipeline_id, source_file
-        )
-        runtime_diagnostics = _build_ocr_runtime_diagnostics()
-        await _set_image_pipeline_status(
-            pipeline_id,
-            status="ocr_running",
-            diagnostics={"ocr_runtime": runtime_diagnostics},
-            stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
-        )
-        ocr_result = await _run_ocr_via_configured_backend(image_content)
-        raw_ocr_text = str(ocr_result.get("text") or "")
-        raw_text = clean_ocr_text(raw_ocr_text)
-        pre_extracted_blocks = _build_pre_extracted_ocr_blocks(
-            image_bytes=image_content,
-            cleaned_text=raw_text,
-            ocr_result=ocr_result,
-        )
-        ocr_diagnostics = _build_ocr_text_diagnostics(raw_ocr_text, raw_text)
-        ocr_diagnostics.update(
-            {
-                "execution_backend": runtime_diagnostics.get("execution_backend"),
-                "box_count": len(pre_extracted_blocks[0].get("boxes") or []),
-                "engine_fingerprint": ocr_result.get("engine_fingerprint", ""),
-            }
-        )
-        if not raw_text:
-            await _set_image_pipeline_status(
-                pipeline_id,
-                status="failed",
-                stats={"ocr": ocr_diagnostics},
-                diagnostics={
-                    "ocr_runtime": runtime_diagnostics,
-                    "failure_reason": "ocr_empty_text",
-                },
-                errors=["ocr_empty_text"],
-                stages={
-                    "upload": {"status": "completed"},
-                    "ocr": {"status": "failed", "error": "ocr_empty_text"},
-                },
+        ocr_stage = await run_image_ocr_stage(
+            ImageOcrStageRequest(
+                pipeline_id=pipeline_id,
+                source_file=source_file,
+                image_bytes=image_content,
+                build_runtime_diagnostics=_build_ocr_runtime_diagnostics,
+                run_ocr=_run_ocr_via_configured_backend,
+                clean_text=clean_ocr_text,
+                build_diagnostics=_build_ocr_text_diagnostics,
+                build_blocks=_build_pre_extracted_ocr_blocks,
+                set_status=_set_image_pipeline_status,
             )
-            raise ValueError("图片 OCR 未识别到可导入文本")
-        logger.info(
-            "image OCR completed: pipeline_id=%s raw_chars=%d cleaned_chars=%d raw_lines=%d cleaned_lines=%d",
-            pipeline_id,
-            ocr_diagnostics["raw_text_length"],
-            ocr_diagnostics["cleaned_text_length"],
-            ocr_diagnostics["raw_line_count"],
-            ocr_diagnostics["cleaned_line_count"],
         )
-        await _set_image_pipeline_status(
-            pipeline_id,
-            status="parsing",
-            raw_text_preview=raw_text[:500],
-            stats={"ocr": ocr_diagnostics},
-            diagnostics={
-                "ocr_runtime": runtime_diagnostics,
-                "ocr_raw_text": raw_ocr_text[:1000],
-                "ocr_cleaned_text": raw_text[:1000],
-                "failure_reason": None,
-            },
-            stages={"upload": {"status": "completed"}, "ocr": {"status": "completed"}},
-        )
+        raw_ocr_text = ocr_stage.raw_ocr_text
+        raw_text = ocr_stage.cleaned_text
+        pre_extracted_blocks = ocr_stage.pre_extracted_blocks
+        runtime_diagnostics = ocr_stage.runtime_diagnostics
+        ocr_diagnostics = ocr_stage.diagnostics
 
         logger.info("image pipeline started: pipeline_id=%s", pipeline_id)
         from app.features.import_ai_policy import apply_image_single_pass_policy
