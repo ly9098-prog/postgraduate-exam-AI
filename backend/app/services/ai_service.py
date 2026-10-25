@@ -62,6 +62,7 @@ from app.services.ai.analysis_persistence import (
     persist_repaired_analysis,
     persist_valid_analysis,
 )
+from app.services.ai.provider_exception import classify_ai_provider_exception
 from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
@@ -229,88 +230,7 @@ class PrewarmAnalysisError(RuntimeError):
 def _classify_ai_provider_exception(
     exc: Exception, *, visual: bool
 ) -> tuple[str, bool, str]:
-    """Map provider/client failures to stable API + prewarm semantics.
-
-    The OpenAI-compatible client exposes only a typed status plus a small safe
-    error category; provider response bodies are never propagated to clients.
-    """
-    text = str(exc or "").lower()
-    error_kind = str(getattr(exc, "error_kind", "") or "")
-    typed_retryable = getattr(exc, "retryable", None)
-    typed_status = getattr(exc, "status_code", None)
-    try:
-        status = int(typed_status) if typed_status is not None else None
-    except (TypeError, ValueError):
-        status = None
-    if status is None:
-        status_match = re.search(
-            r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text
-        )
-        status = int(status_match.group(1)) if status_match else None
-
-    if (
-        error_kind == "auth"
-        or status in {401, 403}
-        or any(
-            token in text
-            for token in (
-                "invalid_api_key",
-                "invalid api-key",
-                "authentication",
-                "unauthorized",
-                "forbidden",
-            )
-        )
-    ):
-        return "ai_provider_auth_failed", False, "fallback"
-
-    if (
-        error_kind == "rate_limit"
-        or status == 429
-        or any(
-            token in text
-            for token in ("rate limit", "rate_limit", "too many requests", "quota")
-        )
-    ):
-        return "ai_provider_rate_limited", True, "fallback"
-
-    if (
-        error_kind == "transient"
-        or status in {408, 425, 500, 502, 503, 504}
-        or any(
-            token in text
-            for token in (
-                "timeout",
-                "timed out",
-                "temporarily unavailable",
-                "connection reset",
-                "connection error",
-            )
-        )
-    ):
-        return "ai_provider_transient", True, "fallback"
-
-    if error_kind == "model_not_found":
-        return "ai_provider_model_not_found", False, "fallback"
-
-    if error_kind in {"parameter_unsupported", "invalid_request"}:
-        return "ai_provider_request_incompatible", False, "fallback"
-
-    looks_like_vision_rejection = visual and (
-        error_kind == "vision_unsupported"
-        or any(
-            token in text
-            for token in ("image", "vision", "multimodal", "image_url", "content type")
-        )
-    )
-    if looks_like_vision_rejection:
-        return "vision_unavailable", False, "vision_unavailable"
-
-    # Unknown transport/provider failures may still be transient. Preserve a
-    # typed client's retryability decision when available instead of retrying a
-    # deterministic 4xx forever.
-    retryable = True if typed_retryable is None else bool(typed_retryable)
-    return "ai_provider_error", retryable, "fallback"
+    return classify_ai_provider_exception(exc, visual=visual)
 
 
 def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
