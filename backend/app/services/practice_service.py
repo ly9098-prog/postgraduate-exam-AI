@@ -88,6 +88,7 @@ from app.services.practice.leitner_query import (
     leitner_query,
     oldest_first_order,
 )
+from app.services.practice.leitner_layers import run_leitner_layers
 from app.services.practice.merge_utils import (
     build_fallback_metadata as _build_fallback_metadata,
 )
@@ -906,79 +907,29 @@ async def _get_questions_with_leitner(
             extra_order=extra_order,
         )
 
-    # 第一层：新题 + 已到期复习题
-    due_cond = due_condition(now)
-    questions = await _leitner_query(due_cond)
-
-    if len(questions) >= count:
-        logger.info(
-            "[Leitner Query] mode=%s count=%d resultCount=%d (layer: new+due)",
+    async def load_v1_fallback(*, existing_ids: set[int]) -> list[Question]:
+        return await _get_questions_v1_fallback(
+            db,
+            base_conditions,
             mode,
-            count,
-            len(questions),
+            count - len(existing_ids),
+            user_id=user_id,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            exclude_ids=existing_ids,
         )
-        return questions[:count]
 
-    existing_ids = {q.id for q in questions}
-
-    # 第二层：快到期题（next_review_at <= now + 1 天）
-    soon = now + timedelta(days=1)
-    due_soon_cond = due_soon_condition(soon)
-    more = await _leitner_query(
-        due_soon_cond, exclude_ids=existing_ids, limit=count - len(questions)
+    return await run_leitner_layers(
+        now=now,
+        logger=logger,
+        mode=mode,
+        count=count,
+        load_questions=_leitner_query,
+        due_condition=due_condition,
+        due_soon_condition=due_soon_condition,
+        oldest_first_order=oldest_first_order,
+        load_v1_fallback=load_v1_fallback,
     )
-    questions.extend(more)
-    existing_ids.update(q.id for q in more)
-
-    if len(questions) >= count:
-        logger.info(
-            "[Leitner Query] mode=%s count=%d resultCount=%d (layer: due+1d)",
-            mode,
-            count,
-            len(questions),
-        )
-        return questions[:count]
-
-    # 第三层：最久未做的题（last_answered_at ASC NULLS FIRST）
-    all_cond = due_soon_condition(soon + timedelta(days=30))
-    more = await _leitner_query(
-        all_cond,
-        exclude_ids=existing_ids,
-        limit=count - len(questions),
-        extra_order=oldest_first_order(),
-    )
-    questions.extend(more)
-    existing_ids.update(q.id for q in more)
-
-    if len(questions) >= count:
-        logger.info(
-            "[Leitner Query] mode=%s count=%d resultCount=%d (layer: oldest)",
-            mode,
-            count,
-            len(questions),
-        )
-        return questions[:count]
-
-    # 第四层：回退到 V1 no_repeat_days fallback
-    v1_results = await _get_questions_v1_fallback(
-        db,
-        base_conditions,
-        mode,
-        count - len(questions),
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-        exclude_ids=existing_ids,
-    )
-    questions.extend(v1_results)
-
-    logger.info(
-        "[Leitner Query] mode=%s count=%d resultCount=%d (layer: v1-fallback)",
-        mode,
-        count,
-        len(questions),
-    )
-    return questions[:count]
 
 
 async def _get_questions_v1_fallback(
