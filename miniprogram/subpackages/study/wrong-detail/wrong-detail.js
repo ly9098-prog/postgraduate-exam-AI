@@ -1012,85 +1012,72 @@ this.setData({ masterSubmitting: false })
 wx.showToast({ title: '操作失败，请重试', icon: 'none' })
 }
 },
-async undoMastered() {
-const pending = this._pendingMasterUndo
-if (!pending || this._masterUndoInFlight) return
-this._masterUndoInFlight = true
-if (this._masterUndoTimer) {
-clearTimeout(this._masterUndoTimer)
-this._masterUndoTimer = null
-}
-if (this._masterAdvanceTimer) {
-clearTimeout(this._masterAdvanceTimer)
-this._masterAdvanceTimer = null
-}
-if (this._switching) this._forceResetSwitchLock()
-try {
-const undoResult = await api.post('/wrong-questions/batch', {
-action: 'unmark_mastered',
-ids: [pending.wqId],
-})
-if (!this._alive) return
-const undoSkipped = !!(
-undoResult && Array.isArray(undoResult.skipped_ids) &&
-undoResult.skipped_ids.some(id => String(id) === String(pending.wqId))
-) || !!(
-undoResult && undoResult.updated_count != null && Number(undoResult.updated_count) <= 0
-)
-if (undoSkipped) {
-try {
-const fresh = await api.get(`/wrong-questions/${pending.wqId}`)
-if (!this._alive) return
-if (!fresh) throw Object.assign(new Error('not found'), { statusCode: 404 })
-if (this._wqCache) this._wqCache[pending.wqId] = { data: fresh, ts: Date.now() }
-const targetIdx = (this.data.questionIds || []).findIndex(id => String(id) === String(pending.wqId))
-this._clearMasterUndo()
-if (targetIdx >= 0 && targetIdx !== this.data.currentIdx) {
-await this._navigateTo(targetIdx, 150)
-} else if (targetIdx >= 0) {
-await this.loadData(pending.wqId)
-}
-if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
-return
-} catch (freshError) {
-const freshStatus = Number(freshError && (freshError.statusCode || freshError.status)) || 0
-if (freshStatus === 404 || freshStatus === 410) {
-this._clearMasterUndo()
-this._dropQuestionFromNavigation(pending.wqId)
-if (this._alive) wx.showToast({ title: '该错题已被移除，无法撤销', icon: 'none' })
-return
-}
-throw freshError
-}
-}
-if (this._wqCache && this._wqCache[pending.wqId]) {
-this._wqCache[pending.wqId].data = Object.assign({}, this._wqCache[pending.wqId].data, { is_mastered: false })
-}
-const targetIdx = this.data.questionIds.findIndex(id => String(id) === String(pending.wqId))
-this._clearMasterUndo()
-if (targetIdx >= 0 && targetIdx !== this.data.currentIdx) {
-await this._navigateTo(targetIdx, 150)
-} else if (this.data.wq && String(this.data.wq.id) === String(pending.wqId)) {
-this.setData({
-wq: Object.assign({}, this.data.wq, { is_mastered: false }),
-isCurrentMastered: false,
-})
-} else if (targetIdx >= 0) {
-await this.loadData(pending.wqId)
-}
-wx.showToast({ title: '已撤销掌握', icon: 'none' })
-} catch (e) {
-if (!this._alive) return
-console.error('撤销已掌握失败', e)
-if (this._pendingMasterUndo === pending) {
-this.setData({ masterUndoVisible: true })
-this._armMasterUndoExpiry(5000)
-}
-wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
-} finally {
-this._masterUndoInFlight = false
-}
-},
+  async undoMastered() {
+    const pending = this._pendingMasterUndo
+    if (!pending || this._masterUndoInFlight) return
+    this._masterUndoInFlight = true
+    this._clearMasterUndoTimers()
+    try {
+      await this._performUndoMastered(pending)
+      wx.showToast({ title: '已撤销掌握', icon: 'none' })
+    } catch (e) {
+      this._handleUndoMasterError(e, pending)
+    } finally {
+      this._masterUndoInFlight = false
+    }
+  },
+
+  _clearMasterUndoTimers() {
+    if (this._masterUndoTimer) { clearTimeout(this._masterUndoTimer); this._masterUndoTimer = null }
+    if (this._masterAdvanceTimer) { clearTimeout(this._masterAdvanceTimer); this._masterAdvanceTimer = null }
+  },
+
+  async _performUndoMastered(pending) {
+    try {
+      await api.post('/wrong-questions/batch', {
+        action: 'unmark_mastered', ids: [pending.wqId],
+      })
+    } catch (freshError) {
+      await this._handleUndoRequestError(freshError, pending)
+    }
+    this._commitUndoMastered(pending)
+  },
+
+  async _handleUndoRequestError(freshError, pending) {
+    const freshStatus = Number(freshError && (freshError.statusCode || freshError.status)) || 0
+    if (freshStatus === 404 || freshStatus === 410) {
+      this._clearMasterUndo()
+      this._dropQuestionFromNavigation(pending.wqId)
+      if (this._alive) wx.showToast({ title: '该错题已被移除，无法撤销', icon: 'none' })
+      return
+    }
+    throw freshError
+  },
+
+  _commitUndoMastered(pending) {
+    if (this._wqCache && this._wqCache[pending.wqId]) {
+      this._wqCache[pending.wqId].data = Object.assign({}, this._wqCache[pending.wqId].data, { is_mastered: false })
+    }
+    const targetIdx = this.data.questionIds.findIndex(id => String(id) === String(pending.wqId))
+    this._clearMasterUndo()
+    if (targetIdx >= 0 && targetIdx !== this.data.currentIdx) {
+      this._navigateTo(targetIdx, 150)
+    } else if (this.data.wq && String(this.data.wq.id) === String(pending.wqId)) {
+      this.setData({ wq: Object.assign({}, this.data.wq, { is_mastered: false }), isCurrentMastered: false })
+    } else if (targetIdx >= 0) {
+      this.loadData(pending.wqId)
+    }
+  },
+
+  _handleUndoMasterError(e, pending) {
+    if (!this._alive) return
+    console.error('撤销已掌握失败', e)
+    if (this._pendingMasterUndo === pending) {
+      this.setData({ masterUndoVisible: true })
+      this._armMasterUndoExpiry(5000)
+    }
+    wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
+  },
 _armMasterUndoExpiry(ms) {
 if (this._masterUndoTimer) clearTimeout(this._masterUndoTimer)
 var duration = Number(ms) > 0 ? Number(ms) : 5000
