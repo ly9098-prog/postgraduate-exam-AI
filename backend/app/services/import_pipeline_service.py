@@ -33,6 +33,11 @@ from app.services.import_image_completion import (
     finalize_image_pipeline_result,
 )
 from app.services.import_background_failure import record_background_pipeline_failure
+from app.services.import_source_digest import (
+    SourceDigestRequest,
+    default_open_file,
+    resolve_source_digest,
+)
 from app.features.pipeline_orchestrator import (
     get_pipeline_status as _orchestrator_get_pipeline_status,
 )
@@ -602,18 +607,15 @@ async def _run_pipeline_with_db(
     )
 
     try:
-        if source_sha256 is None:
-            try:
-                hasher = hashlib.sha256()
-                with open(file_path, "rb") as fh:
-                    for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                        hasher.update(chunk)
-                source_sha256 = hasher.hexdigest()
-            except Exception:
-                logger.exception(
-                    "compute source_sha256 failed for pipeline %s; resume identity check will be skipped",
-                    pipeline_id,
-                )
+        source_sha256 = resolve_source_digest(
+            SourceDigestRequest(
+                pipeline_id=pipeline_id,
+                file_path=file_path,
+                provided_sha256=source_sha256,
+                open_file=default_open_file,
+                logger=logger,
+            )
+        )
 
         async with async_session() as db:
             await run_pipeline_background(
