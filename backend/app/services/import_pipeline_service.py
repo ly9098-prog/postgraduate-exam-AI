@@ -32,12 +32,11 @@ from app.services.import_image_completion import (
     ImageCompletionRequest,
     finalize_image_pipeline_result,
 )
-from app.services.import_background_failure import record_background_pipeline_failure
-from app.services.import_source_digest import (
-    SourceDigestRequest,
-    default_open_file,
-    resolve_source_digest,
+from app.services.import_background_execution import (
+    ImportBackgroundExecutionRequest,
+    execute_import_background,
 )
+from app.services.import_background_failure import record_background_pipeline_failure
 from app.features.pipeline_orchestrator import (
     get_pipeline_status as _orchestrator_get_pipeline_status,
 )
@@ -597,28 +596,9 @@ async def _run_pipeline_with_db(
         source_file=source_file,
     )
 
-    lgr = logging.getLogger("postgraduate-ai")
-    log_event(
-        lgr,
-        "import.background.start",
-        pipeline_id=pipeline_id,
-        source_type=source_type,
-        source_file=source_file,
-    )
-
     try:
-        source_sha256 = resolve_source_digest(
-            SourceDigestRequest(
-                pipeline_id=pipeline_id,
-                file_path=file_path,
-                provided_sha256=source_sha256,
-                open_file=default_open_file,
-                logger=logger,
-            )
-        )
-
-        async with async_session() as db:
-            await run_pipeline_background(
+        await execute_import_background(
+            ImportBackgroundExecutionRequest(
                 pipeline_id=pipeline_id,
                 file_path=file_path,
                 source_type=source_type,
@@ -626,16 +606,12 @@ async def _run_pipeline_with_db(
                 subject=subject,
                 subject_id=subject_id,
                 options=options,
-                db=db,
                 created_by=created_by,
                 source_sha256=source_sha256,
+                async_session=async_session,
+                run_background=run_pipeline_background,
+                logger=logger,
             )
-        log_event(
-            lgr,
-            "import.background.finish",
-            pipeline_id=pipeline_id,
-            source_type=source_type,
-            source_file=source_file,
         )
     except Exception as exc:
         logger.error(
@@ -645,7 +621,7 @@ async def _run_pipeline_with_db(
             traceback.format_exc(),
         )
         log_event(
-            lgr,
+            logging.getLogger("postgraduate-ai"),
             "import.background.error",
             level="error",
             pipeline_id=pipeline_id,
