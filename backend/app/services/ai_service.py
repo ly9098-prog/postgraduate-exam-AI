@@ -63,7 +63,6 @@ from app.services.ai.analysis_persistence import (
 )
 from app.services.ai.analysis_outcomes import (
     build_analysis_usage,
-    detect_visual_ack_failure,
     grounding_repair_outcome,
     valid_analysis_outcome,
     visual_ack_failure_outcome,
@@ -75,6 +74,10 @@ from app.services.ai.analysis_execution import (
     review_locked_analysis_cache,
 )
 from app.services.ai.analysis_provider_failure import build_provider_failure_response
+from app.services.ai.analysis_result_review import (
+    resolve_analysis_outcome,
+    review_analysis_result,
+)
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
     prepare_analysis,
@@ -82,14 +85,8 @@ from app.services.ai.analysis_preparation import (
 from app.services.ai.analysis_responses import (
     generation_in_progress_response,
     grounding_repaired_response,
-    parse_failed_response,
     valid_analysis_response,
     visual_ack_failed_response,
-)
-from app.services.ai.analysis_validation import (
-    AnalysisUsage,
-    VisualValidationRequest,
-    reconcile_visual_evidence,
 )
 from app.services.ai.advice_snapshot import (
     advice_fallback_response,
@@ -663,104 +660,35 @@ async def analyze_error(
                 failure_response=_failure_response,
             )
         )
+        review = await review_analysis_result(
+            invocation,
+            image_data_urls=image_data_urls,
+            wrong_question_id=wq.id,
+            chat=llm.chat,
+            expected_answer_check=expected_answer_check,
+            answer_grounding=answer_grounding,
+            parse_content=parse_error_analysis_content,
+            validate_content=is_valid_ai_analysis,
+            extract_evidence=_extract_visual_evidence,
+            build_usage=build_analysis_usage,
+            validate_answer_check=_validate_answer_check,
+            diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
+            evidence_is_valid=_visual_evidence_is_valid,
+            should_retry_visual_ack=should_retry_visual_ack,
+            retry_visual_ack=retry_visual_ack,
+        )
         result = invocation.result
         runtime = invocation.runtime
         model_signature = _analysis_model_signature(runtime)
 
-        raw_content = result.get("content", "")
-        parsed = parse_error_analysis_content(raw_content)
-        parsed_valid = is_valid_ai_analysis(parsed)
-        usage = build_analysis_usage(
-            raw_content=raw_content,
-            result=result,
-            image_data_urls=image_data_urls,
-            extract_evidence=_extract_visual_evidence,
-        )
-
-        grounding = await reconcile_visual_evidence(
-            VisualValidationRequest(
-                result=result,
-                image_data_urls=image_data_urls,
-                runtime=runtime,
-                wrong_question_id=wq.id,
-                chat=llm.chat,
-                extract_evidence=_extract_visual_evidence,
-                validate_answer_check=_validate_answer_check,
-                diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
-                evidence_is_valid=_visual_evidence_is_valid,
-                should_retry_visual_ack=should_retry_visual_ack,
-                retry_visual_ack=retry_visual_ack,
-            ),
-            parsed,
-            parsed_valid=parsed_valid,
-            expected_answer_check=expected_answer_check,
-            answer_grounding=answer_grounding,
-            usage=usage,
-        )
-        grounding_valid = grounding.valid
-        visual_evidence = usage.visual_evidence
-        visual_ack_retried = usage.visual_ack_retried
-
-        ack_failure = detect_visual_ack_failure(
-            image_data_urls=image_data_urls,
-            visual_evidence=visual_evidence,
-            evidence_is_valid=_visual_evidence_is_valid,
-        )
-        if ack_failure is not None:
-            return visual_ack_failure_outcome(
-                wrong_question_id=wq.id,
-                result=result,
-                image_data_urls=image_data_urls,
-                usage=usage,
-                visual_ack_retried=visual_ack_retried,
-                failure=ack_failure,
-                logger=logger,
-            )
-
-        if not parsed_valid:
-            resp = parse_failed_response(
-                image_data_urls, effective_force=effective_force
-            )
-            logger.info(
-                "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
-                wq.id,
-                effective_force,
-            )
-            return resp
-
-        if not grounding_valid:
-            # Fail closed: never persist/display an LLM response whose answer
-            # facts disagree with deterministic server-side grading.  A compact
-            # deterministic repair is still useful to the learner and prevents
-            # repeated paid calls on every page open. Manual regeneration can
-            # replace it once the configured model follows the contract.
-            return await grounding_repair_outcome(
-                db,
-                wrong_question=wq,
-                user_id=user_id,
-                context=context,
-                result=result,
-                grounding=grounding,
-                usage=usage,
-                input_signature=input_signature,
-                model_signature=model_signature,
-                expected_answer_check=expected_answer_check,
-                effective_force=effective_force,
-                runtime=runtime,
-                logger=logger,
-            )
-
-        # The answer-difference sentence is always server generated. The model
-        # contributes only the pedagogical reason after that authoritative fact.
-        return await valid_analysis_outcome(
+        return await resolve_analysis_outcome(
             db,
+            review,
             wrong_question=wq,
             user_id=user_id,
             context=context,
             result=result,
-            parsed=parsed,
-            grounding=grounding,
-            usage=usage,
+            image_data_urls=image_data_urls,
             input_signature=input_signature,
             model_signature=model_signature,
             expected_answer_check=expected_answer_check,
@@ -769,6 +697,9 @@ async def analyze_error(
             max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
             runtime=runtime,
             logger=logger,
+            visual_ack_failure=visual_ack_failure_outcome,
+            grounding_repair=grounding_repair_outcome,
+            valid_outcome=valid_analysis_outcome,
         )
 
     finally:
