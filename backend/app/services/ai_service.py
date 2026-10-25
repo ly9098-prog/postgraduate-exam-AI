@@ -58,6 +58,10 @@ from app.services.ai.visual_ack_retry import (
     retry_visual_ack,
     should_retry_visual_ack,
 )
+from app.services.ai.analysis_persistence import (
+    persist_repaired_analysis,
+    persist_valid_analysis,
+)
 from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
@@ -1106,53 +1110,27 @@ async def analyze_error(
             # deterministic repair is still useful to the learner and prevents
             # repeated paid calls on every page open. Manual regeneration can
             # replace it once the configured model follows the contract.
-            safe = build_safe_grounded_analysis(answer_grounding)
-            generated_at = datetime.now(UTC).isoformat()
-            safe["_meta"] = {
-                "model": "grounding_guard",
-                "source_model": result.get("model", ""),
-                "provider": runtime.provider,
-                "model_config_id": runtime.model_config_id,
-                "generated_at": generated_at,
-                "version": AI_ANALYSIS_PROMPT_VERSION,
-                "from_fallback": False,
-                "force_regenerated": effective_force,
-                "visual_input_count": len(image_data_urls),
-                "visual_evidence": visual_evidence or None,
-                "visual_ack_retried": visual_ack_retried,
-                "visual_ack_retry_ms": visual_ack_retry_ms,
-                "input_mode": "vision" if image_data_urls else "text",
-                "input_signature": input_signature,
-                "model_signature": model_signature,
-                "answer_check": expected_answer_check,
-                "grounding_guard": "repaired",
-                "grounding_guard_reason": grounding_guard_reason,
-            }
-            wq.ai_analysis = safe
-            await db.commit()
-
-            context_snapshot = dict(context)
-            context_snapshot["visual_input_count"] = len(image_data_urls)
-            context_snapshot["visual_evidence"] = visual_evidence or None
-            context_snapshot["grounding_guard"] = {
-                "status": "repaired",
-                "reason": grounding_guard_reason,
-                "expected_answer_check": expected_answer_check,
-                "actual_answer_check": actual_answer_check,
-            }
-            db.add(
-                AiChat(
-                    user_id=user_id,
-                    session_type="error_analysis",
-                    user_message=str(context["question"]),
-                    ai_response=result.get("content", ""),
-                    context_snapshot=context_snapshot,
-                    tokens_used=total_tokens_used,
-                    model=result.get("model", ""),
-                    duration_ms=total_duration_ms,
-                )
+            safe, generated_at = await persist_repaired_analysis(
+                db,
+                wrong_question=wq,
+                user_id=user_id,
+                context=context,
+                result=result,
+                answer_grounding=answer_grounding,
+                visual_evidence=visual_evidence,
+                visual_ack_retried=visual_ack_retried,
+                visual_ack_retry_ms=visual_ack_retry_ms,
+                image_count=len(image_data_urls),
+                input_signature=input_signature,
+                model_signature=model_signature,
+                expected_answer_check=expected_answer_check,
+                grounding_guard_reason=grounding_guard_reason,
+                actual_answer_check=actual_answer_check,
+                tokens_used=total_tokens_used,
+                duration_ms=total_duration_ms,
+                effective_force=effective_force,
+                runtime=runtime,
             )
-            await db.commit()
             logger.warning(
                 "ai.error_analysis.grounding_repaired wq_id=%s force=%s model=%s reason=%s "
                 "expected=%s actual=%s",
@@ -1180,50 +1158,26 @@ async def analyze_error(
 
         # The answer-difference sentence is always server generated. The model
         # contributes only the pedagogical reason after that authoritative fact.
-        parsed["mistake_diagnosis"] = merge_grounded_diagnosis(
-            answer_grounding, parsed.get("mistake_diagnosis", "")
+        generated_at = await persist_valid_analysis(
+            db,
+            wrong_question=wq,
+            user_id=user_id,
+            context=context,
+            result=result,
+            parsed=parsed,
+            answer_grounding=answer_grounding,
+            visual_evidence=visual_evidence,
+            visual_ack_retried=visual_ack_retried,
+            visual_ack_retry_ms=visual_ack_retry_ms,
+            image_count=len(image_data_urls),
+            input_signature=input_signature,
+            model_signature=model_signature,
+            expected_answer_check=expected_answer_check,
+            effective_force=effective_force,
+            tokens_used=total_tokens_used,
+            duration_ms=total_duration_ms,
+            runtime=runtime,
         )
-        parsed["_meta"] = {
-            "model": result.get("model", ""),
-            "provider": runtime.provider,
-            "model_config_id": runtime.model_config_id,
-            "generated_at": datetime.now(UTC).isoformat(),
-            "version": AI_ANALYSIS_PROMPT_VERSION,
-            "from_fallback": False,
-            "force_regenerated": effective_force,
-            "visual_input_count": len(image_data_urls),
-            "visual_evidence": visual_evidence or None,
-            "visual_ack_retried": visual_ack_retried,
-            "visual_ack_retry_ms": visual_ack_retry_ms,
-            "input_mode": "vision" if image_data_urls else "text",
-            "input_signature": input_signature,
-            "model_signature": model_signature,
-            "answer_check": expected_answer_check,
-            "grounding_guard": "passed",
-        }
-
-        wq.ai_analysis = parsed
-        await db.commit()
-
-        context_snapshot = dict(context)
-        context_snapshot["visual_input_count"] = len(image_data_urls)
-        context_snapshot["visual_evidence"] = visual_evidence or None
-        context_snapshot["visual_ack_retried"] = visual_ack_retried
-        context_snapshot["visual_ack_retry_ms"] = visual_ack_retry_ms
-        # Never persist base64 image payloads in chat logs/context snapshots.
-        db.add(
-            AiChat(
-                user_id=user_id,
-                session_type="error_analysis",
-                user_message=str(context["question"]),
-                ai_response=result["content"],
-                context_snapshot=context_snapshot,
-                tokens_used=total_tokens_used,
-                model=result["model"],
-                duration_ms=total_duration_ms,
-            )
-        )
-        await db.commit()
 
         logger.info(
             "ai.error_analysis.result wq_id=%s force=%s model=%s input_mode=%s visual_count=%s "
