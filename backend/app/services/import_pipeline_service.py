@@ -28,6 +28,10 @@ from app.features.pipeline_orchestrator import (
     resume_pipeline_background,
     run_pipeline_background,
 )
+from app.services.import_image_completion import (
+    ImageCompletionRequest,
+    finalize_image_pipeline_result,
+)
 from app.features.pipeline_orchestrator import (
     get_pipeline_status as _orchestrator_get_pipeline_status,
 )
@@ -485,37 +489,17 @@ async def _run_image_pipeline_with_db(
             )
         del image_content
 
-        status = "completed" if result.get("status") == "completed" else "failed"
-        failure_reason = _classify_image_pipeline_result(result, raw_text)
-        if status == "completed" and not result.get("batch_id"):
-            status = "failed"
-            failure_reason = failure_reason or "no_review_batch_created"
-            result.setdefault("errors", []).append("OCR 文本未生成待审核批次")
-        if result.get("batch_id"):
-            logger.info(
-                "image review created: pipeline_id=%s batch_id=%s count=%s",
-                pipeline_id,
-                result.get("batch_id"),
-                result.get("stats", {}).get("to_review", 0),
+        result, status = finalize_image_pipeline_result(
+            ImageCompletionRequest(
+                pipeline_id=pipeline_id,
+                result=result,
+                cleaned_text=raw_text,
+                raw_ocr_text=raw_ocr_text,
+                ocr_diagnostics=ocr_diagnostics,
+                runtime_diagnostics=runtime_diagnostics,
+                classify_result=_classify_image_pipeline_result,
             )
-        logger.info(
-            "image pipeline completed: pipeline_id=%s status=%s", pipeline_id, status
         )
-        result["pipeline_id"] = pipeline_id
-        result["status"] = status
-        result["raw_text_preview"] = raw_text[:500]
-        result["finished_at"] = serialize_utc_datetime(utcnow())
-        result_stats = result.setdefault("stats", {})
-        result_stats["ocr"] = ocr_diagnostics
-        result["diagnostics"] = {
-            **result.get("diagnostics", {}),
-            "ocr_runtime": runtime_diagnostics,
-            "ocr_raw_text": raw_ocr_text[:1000],
-            "ocr_cleaned_text": raw_text[:1000],
-            "failure_reason": failure_reason,
-        }
-        if status == "completed" and result.get("batch_id"):
-            result["question_count"] = result.get("stats", {}).get("to_review", 0)
         current = await _get_image_pipeline_status(pipeline_id) or {}
         result.setdefault(
             "started_at", current.get("started_at", serialize_utc_datetime(utcnow()))
