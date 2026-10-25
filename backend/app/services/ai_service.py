@@ -74,6 +74,7 @@ from app.services.ai.analysis_execution import (
     prepare_locked_analysis_inputs,
     review_locked_analysis_cache,
 )
+from app.services.ai.analysis_provider_failure import build_provider_failure_response
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
     prepare_analysis,
@@ -82,7 +83,6 @@ from app.services.ai.analysis_responses import (
     generation_in_progress_response,
     grounding_repaired_response,
     parse_failed_response,
-    provider_failure_response,
     valid_analysis_response,
     visual_ack_failed_response,
 )
@@ -629,32 +629,15 @@ async def analyze_error(
         # earlier and recovers the committed result through polling/recovery.
         model_timeout_sec = inputs.model_timeout_sec
 
-        def _failure_response(
-            *,
-            error_code: str,
-            retryable: bool,
-            failure_model: str,
-            duration_ms: int = 0,
-        ) -> dict:
-            old_cache = build_cached_error_analysis_response(
-                wq,
-                requires_visual=requires_visual,
-                expected_input_signature=input_signature,
-                expected_model_signature=model_signature,
-            )
-            if effective_force and old_cache is not None:
-                old_cache["force_regenerated"] = False
-                old_cache["cache_preserved"] = True
-                old_cache["error_code"] = error_code
-                old_cache["retryable"] = retryable
-                return old_cache
-            return provider_failure_response(
-                error_code=error_code,
-                retryable=retryable,
-                failure_model=failure_model,
-                duration_ms=duration_ms,
-                image_data_urls=image_data_urls,
-            )
+        _failure_response = build_provider_failure_response(
+            wrong_question=wq,
+            requires_visual=requires_visual,
+            input_signature=input_signature,
+            model_signature=model_signature,
+            effective_force=effective_force,
+            image_data_urls=image_data_urls,
+            cached_response=build_cached_error_analysis_response,
+        )
 
         # Keep provider selection and its one auth-failure failover beside the
         # cache/persistence contract so model selection remains observable.
