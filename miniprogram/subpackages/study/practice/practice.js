@@ -33,6 +33,7 @@ const {
   selectDefaultSubject,
 } = require('./utils/recent-subjects')
 const { createRecentSubjectController } = require('./utils/recent-subject-controller')
+const { createSubjectSheetController } = require('./utils/subject-sheet-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -114,7 +115,6 @@ const {
 } = require('./utils/submit-session-builder')
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
-const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice', 'multi_blank_multiple_choice'])
 Page({
 _pageAlive: false,
@@ -591,53 +591,34 @@ toggleSettings() {
 this.setData({ settingsExpanded: !this.data.settingsExpanded })
 },
 openSubjectSheet() {
-if (this._subjectSheetCloseTimer) {
-clearTimeout(this._subjectSheetCloseTimer)
-this._subjectSheetCloseTimer = null
-}
-this.setData({
-subjectSheetVisible: true,
-subjectSheetClosing: false,
+this._subjectSheetController().open()
+},
+_subjectSheetController() {
+return this._subjectSheetControllerInstance || (
+this._subjectSheetControllerInstance = createSubjectSheetController({
+getCloseTimer: () => this._subjectSheetCloseTimer,
+setCloseTimer: timer => { this._subjectSheetCloseTimer = timer },
+clearTimeout: timer => clearTimeout(timer),
+setData: (patch, callback) => this.setData(patch, callback),
+isVisible: () => this.data.subjectSheetVisible,
+isClosing: () => this.data.subjectSheetClosing,
+isPageAlive: () => this._pageAlive,
+setTimeout: (callback, delay) => setTimeout(callback, delay),
+getLastTap: () => this._lastSubjectOptionTap,
+setLastTap: value => { this._lastSubjectOptionTap = value },
+now: () => Date.now(),
+closeSheet: () => this.closeSubjectSheet(),
 })
+)
 },
 _hideSubjectSheet(afterClose) {
-if (!this.data.subjectSheetVisible) {
-if (typeof afterClose === 'function') afterClose()
-return
-}
-if (this.data.subjectSheetClosing) return
-if (this._subjectSheetCloseTimer) clearTimeout(this._subjectSheetCloseTimer)
-this.setData({ subjectSheetClosing: true }, () => {
-this._subjectSheetCloseTimer = setTimeout(() => {
-this._subjectSheetCloseTimer = null
-if (!this._pageAlive) return
-this.setData({
-subjectSheetVisible: false,
-subjectSheetClosing: false,
-}, () => {
-if (typeof afterClose === 'function') afterClose()
-})
-}, 180)
-})
+this._subjectSheetController().hide(afterClose)
 },
 closeSubjectSheet() {
-this._hideSubjectSheet()
+this._subjectSheetController().hide()
 },
 _handleSubjectOptionTap(subjectId, source) {
-const id = Number(subjectId)
-if (!id || !this.data.subjectSheetVisible || this.data.subjectSheetClosing) return
-const now = Date.now()
-const key = `${source || 'subject'}:${id}`
-const lastTap = this._lastSubjectOptionTap
-const isDoubleTap = Boolean(
-lastTap &&
-lastTap.key === key &&
-now - lastTap.time <= SUBJECT_DOUBLE_TAP_INTERVAL
-)
-this._lastSubjectOptionTap = isDoubleTap ? null : { key, time: now }
-if (isDoubleTap) {
-this.closeSubjectSheet()
-}
+this._subjectSheetController().handleOptionTap(subjectId, source)
 },
 _clearLaunchOverridesForManualConfig() {
 // Home/Study Hub route params are setup defaults, not invisible constraints.
