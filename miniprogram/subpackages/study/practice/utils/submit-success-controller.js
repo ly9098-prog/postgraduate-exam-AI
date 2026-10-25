@@ -8,27 +8,11 @@ function completeImpl(options, submission, submitResult, questions) {
   submission.serverAccepted = true
   submission.retryBlocked = false
   const partialCount = (submission.partialQuestionIds || []).length
-  const userId = options.getCurrentUserId()
-  const cacheCreatedAt = options.now()
-  const cacheKey = options.buildCacheKey(cacheCreatedAt)
-  const localResultPayload = options.buildResultPayload({
-    submission,
-    submitResult,
-    questions,
-    traceId: options.getTraceId(),
-    cacheKey,
-    userId,
-    createdAt: cacheCreatedAt,
-  })
+  const localResult = buildLocalResult(options, submission, submitResult, questions)
+  const localResultPayload = localResult.payload
   const displaySkippedCount = localResultPayload.skipped
   options.setSubmittedResultPayload(localResultPayload)
-  let resultCacheStored = false
-  try {
-    options.writeResultCache(localResultPayload)
-    resultCacheStored = true
-  } catch (storageError) {
-    options.logWarn('答题已提交成功，但本地结果缓存失败', storageError)
-  }
+  const resultCacheStored = storeResultCache(options, localResultPayload)
   const resultUrl = options.buildResultUrl({
     correct: localResultPayload.correct,
     wrong: localResultPayload.wrong,
@@ -38,7 +22,7 @@ function completeImpl(options, submission, submitResult, questions) {
     subjectId: localResultPayload.subject_id,
     subjectName: localResultPayload.subject_name || '',
     duration: localResultPayload.duration,
-    cacheKey,
+    cacheKey: localResult.cacheKey,
     requestId: submission.requestId || '',
     resultCacheStored,
     source: options.getLaunchSource(),
@@ -59,3 +43,7 @@ function completeImpl(options, submission, submitResult, questions) {
 module.exports = {
   createSubmitSuccessController,
 }
+const {
+  buildLocalResult,
+  storeResultCache,
+} = require('./submit-success-state')
