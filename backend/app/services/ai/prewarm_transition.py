@@ -41,6 +41,33 @@ def failure_category(error_code: str, retryable: bool) -> str:
     return "retry" if retryable else "failed_permanent"
 
 
+def revision_changed(
+    *,
+    wrong_question: Any,
+    expected_revision: str | None,
+    build_revision: Callable[..., str],
+) -> bool:
+    if not expected_revision:
+        return False
+    current_revision = build_revision(
+        review_count=wrong_question.review_count,
+        wrong_answer=wrong_question.wrong_answer,
+    )
+    return current_revision != expected_revision
+
+
+def recovery_regenerated(
+    *,
+    wrong_question: Any,
+    baseline_generated_at: str | None,
+    generated_at: Callable[[Any], str | None],
+) -> bool:
+    if baseline_generated_at is None:
+        return False
+    current_generated_at = generated_at(wrong_question.ai_analysis) or ""
+    return current_generated_at != str(baseline_generated_at or "")
+
+
 def success_outcome(result: dict[str, Any]) -> dict:
     status = "cache_hit" if result.get("from_cache") else "success"
     return {

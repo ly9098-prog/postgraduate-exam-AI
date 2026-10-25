@@ -86,6 +86,8 @@ from app.services.ai.advice_snapshot import (
 from app.services.ai.prewarm_transition import (
     failure_category,
     finish_prewarm_result,
+    recovery_regenerated,
+    revision_changed,
     skipped_not_found,
     superseded_regenerated,
     superseded_revision,
@@ -978,17 +980,20 @@ async def prewarm_wrong_question_analysis(
         if expected_revision:
             from app.ai.prewarm_revision import build_prewarm_revision
 
-            current_revision = build_prewarm_revision(
-                review_count=wq.review_count,
-                wrong_answer=wq.wrong_answer,
-            )
-            if current_revision != expected_revision:
+            if revision_changed(
+                wrong_question=wq,
+                expected_revision=expected_revision,
+                build_revision=build_prewarm_revision,
+            ):
                 logger.info(
                     "[prewarm] superseded id=%d uid=%d expected_revision=%s current_revision=%s",
                     wrong_question_id,
                     user_id,
                     expected_revision,
-                    current_revision,
+                    build_prewarm_revision(
+                        review_count=wq.review_count,
+                        wrong_answer=wq.wrong_answer,
+                    ),
                 )
                 return superseded_revision()
 
@@ -998,8 +1003,12 @@ async def prewarm_wrong_question_analysis(
         # already replaced the baseline; otherwise the recovery task would cause a
         # second paid regeneration after the first one eventually completed.
         if force_regenerate and baseline_generated_at is not None:
-            current_generated_at = ai_analysis_generated_at(wq.ai_analysis) or ""
-            if current_generated_at != str(baseline_generated_at or ""):
+            if recovery_regenerated(
+                wrong_question=wq,
+                baseline_generated_at=baseline_generated_at,
+                generated_at=ai_analysis_generated_at,
+            ):
+                current_generated_at = ai_analysis_generated_at(wq.ai_analysis) or ""
                 logger.info(
                     "[prewarm] recovery_superseded id=%d uid=%d baseline=%s current=%s",
                     wrong_question_id,
