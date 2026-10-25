@@ -321,14 +321,7 @@ Page({
     if (this._capabilityPromise && !force) return this._capabilityPromise
 
     const requestId = ++this._capabilityRequestId
-    this.setData({
-      exportAvailable: false,
-      exportCapabilityChecked: false,
-      exportCapabilityLoading: true,
-      exportCapabilityRetryable: true,
-      exportUnavailableText: '当前导出功能不可用',
-      loading: false,
-    })
+    this._resetCapabilityState()
     this._stopWatchTimer()
     this._destroySyncManager()
 
@@ -342,54 +335,63 @@ Page({
       return false
     }
 
-    const check = async () => {
-      try {
-        const capability = await exportApi.getCapabilities()
-        if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
-        const available = !!(
-          capability &&
-          capability.export_enabled === true &&
-          capability.pdf_enabled === true
-        )
-
-        this.setData({
-          exportAvailable: available,
-          exportCapabilityChecked: true,
-          exportCapabilityLoading: false,
-          exportCapabilityRetryable: !available,
-          exportUnavailableText: available
-            ? ''
-            : exportApi.getExportCapabilityErrorMessage(null, capability),
-        })
-
-        if (!available) return false
-        // If the capability response arrives while hidden, keep only the
-        // capability state. onShow will start timers/sync and perform the first
-        // list load, avoiding background work that immediately gets torn down.
-        if (this._pageAlive) {
-          this._createSyncManager()
-          this._startWatchTimer()
-          await this._loadList(true)
-        }
-        return true
-      } catch (error) {
-        if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
-        this.setData({
-          exportAvailable: false,
-          exportCapabilityChecked: true,
-          exportCapabilityLoading: false,
-          exportCapabilityRetryable: true,
-          exportUnavailableText: exportApi.getExportCapabilityErrorMessage(error),
-        })
-        return false
-      }
-    }
-
-    this._capabilityPromise = check()
+    this._capabilityPromise = this._runCapabilityCheck(requestId)
     try {
       return await this._capabilityPromise
     } finally {
       if (requestId === this._capabilityRequestId) this._capabilityPromise = null
+    }
+  },
+
+  _resetCapabilityState() {
+    this.setData({
+      exportAvailable: false,
+      exportCapabilityChecked: false,
+      exportCapabilityLoading: true,
+      exportCapabilityRetryable: true,
+      exportUnavailableText: '当前导出功能不可用',
+      loading: false,
+    })
+  },
+
+  async _runCapabilityCheck(requestId) {
+    try {
+      const capability = await exportApi.getCapabilities()
+      if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
+      const available = !!(
+        capability &&
+        capability.export_enabled === true &&
+        capability.pdf_enabled === true
+      )
+      this.setData({
+        exportAvailable: available,
+        exportCapabilityChecked: true,
+        exportCapabilityLoading: false,
+        exportCapabilityRetryable: !available,
+        exportUnavailableText: available
+          ? ''
+          : exportApi.getExportCapabilityErrorMessage(null, capability),
+      })
+      if (!available) return false
+      // If the capability response arrives while hidden, keep only the
+      // capability state. onShow will start timers/sync and perform the first
+      // list load, avoiding background work that immediately gets torn down.
+      if (this._pageAlive) {
+        this._createSyncManager()
+        this._startWatchTimer()
+        await this._loadList(true)
+      }
+      return true
+    } catch (error) {
+      if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
+      this.setData({
+        exportAvailable: false,
+        exportCapabilityChecked: true,
+        exportCapabilityLoading: false,
+        exportCapabilityRetryable: true,
+        exportUnavailableText: exportApi.getExportCapabilityErrorMessage(error),
+      })
+      return false
     }
   },
 
@@ -446,52 +448,48 @@ Page({
    */
   async _onStatusUpdate(taskId, data) {
     if (!this._pageAlive) return
-
-    // Normalize: WS events use task_id, API responses use id
     const numericTaskId = Number(taskId)
     if (!numericTaskId) return
     const normalized = this._normalizeUpdate(numericTaskId, data || {})
     let currentTask = this.data.list.find(t => Number(t.id) === numericTaskId)
-
     // Calibration requests often return the exact same task snapshot. Avoid
     // replacing the whole list in setData for no-op updates; on long-running
     // exports that repeated full-list diffing can make the page visibly janky.
-    if (currentTask && this._isStatusUpdateUnchanged(currentTask, normalized)) {
-      return
-    }
+    if (currentTask && this._isStatusUpdateUnchanged(currentTask, normalized)) return
+    await this._maybeFetchFullTask(numericTaskId, normalized, data, currentTask)
+    if (!this._pageAlive) return
+    this._applyStatusUpdate(numericTaskId, normalized)
+  },
 
+  async _maybeFetchFullTask(numericTaskId, normalized, data, currentTask) {
     const incomingCompleted = normalized.status === 'completed'
     const currentTerminal = currentTask && TERMINAL_STATES.includes(currentTask.status)
-    if (incomingCompleted && !currentTerminal) {
-      // WebSocket events are partial, while calibration GET responses are already
-      // complete. Only perform the extra detail request for a partial WS event.
-      const hasFullTaskPayload = data && data.file_name !== undefined && data.has_file !== undefined
-      if (!hasFullTaskPayload) {
-        try {
-          const full = await exportApi.getExport(numericTaskId)
-          if (!this._pageAlive) return
-          Object.assign(normalized, full || {}, { id: numericTaskId })
-        } catch (e) {
-          if (!this._pageAlive) return
-          // Use what we have
-        }
-      }
+    if (!(incomingCompleted && !currentTerminal)) return
+    // WebSocket events are partial, while calibration GET responses are already
+    // complete. Only perform the extra detail request for a partial WS event.
+    const hasFullTaskPayload = data && data.file_name !== undefined && data.has_file !== undefined
+    if (hasFullTaskPayload) return
+    try {
+      const full = await exportApi.getExport(numericTaskId)
+      if (!this._pageAlive) return
+      Object.assign(normalized, full || {}, { id: numericTaskId })
+    } catch (e) {
+      if (!this._pageAlive) return
+      // Use what we have
     }
+  },
 
-    if (!this._pageAlive) return
+  _applyStatusUpdate(numericTaskId, normalized) {
     // The detail request above can be slower than another WS/calibration update.
     // Re-read the current task and reject an older snapshot instead of allowing
     // a late response to regress the UI.
-    currentTask = this.data.list.find(t => Number(t.id) === numericTaskId)
+    const currentTask = this.data.list.find(t => Number(t.id) === numericTaskId)
     if (currentTask && this._isTaskSnapshotOlder(normalized, currentTask)) return
-
     const wasTerminal = currentTask && TERMINAL_STATES.includes(currentTask.status)
     const finalCompleted = normalized.status === 'completed'
-
     // Enrich and merge
     const enriched = this._enrichTask({ ...(currentTask || {}), ...normalized, id: numericTaskId })
     this._mergeTask(enriched)
-
     // Show completion toast once per task
     if (finalCompleted && !wasTerminal) {
       if (!this._completedNotified.has(numericTaskId)) {
@@ -610,7 +608,6 @@ Page({
 
   async _loadList(reset = false) {
     if (!this._pageAlive || !this.data.exportAvailable) return null
-
     // A foreground reset is allowed to supersede an in-flight load-more. This
     // matters when the user leaves/returns while pagination is still pending.
     if (this._loadPromise) {
@@ -620,59 +617,10 @@ Page({
       this._loadPromiseReset = false
     }
     if (this.data.loading && !reset) return null
-
     this.setData({ loading: true })
     const requestId = ++this._listRequestId
     const page = reset ? 1 : this.data.page + 1
-
-    const loadPromise = (async () => {
-      try {
-        const res = await exportApi.listExports(page, 20)
-        if (this._pageDestroyed || requestId !== this._listRequestId) return null
-
-        const tasks = res.items || []
-        const currentById = new Map(
-          (this.data.list || []).map((task) => [Number(task.id), task])
-        )
-        const enriched = tasks.map((task) => {
-          const incoming = this._enrichTask(task)
-          const current = currentById.get(Number(incoming.id))
-          return current && this._isTaskSnapshotOlder(incoming, current) ? current : incoming
-        })
-        const combined = reset ? enriched : (this.data.list || []).concat(enriched)
-        const seen = {}
-        const list = combined.filter(function(item) {
-          const id = Number(item.id)
-          if (!id || seen[id]) return false
-          seen[id] = true
-          return true
-        })
-        const responseTotal = Number(res.total)
-        const totalRecords = Number.isFinite(responseTotal)
-          ? responseTotal
-          : list.length
-
-        this.setData({
-          list,
-          totalRecords,
-          page: Number(res.page) || page,
-          hasMore: list.length < totalRecords,
-          loading: false,
-        })
-
-        this._hasLoadedOnce = true
-        this._restartStatusSync()
-        return res
-      } catch (err) {
-        if (this._pageDestroyed || requestId !== this._listRequestId) return null
-        this.setData({ loading: false })
-        if (this._pageAlive) {
-          wx.showToast({ title: '加载失败', icon: 'none' })
-        }
-        return null
-      }
-    })()
-
+    const loadPromise = this._runListLoad(page, requestId, reset)
     this._loadPromise = loadPromise
     this._loadPromiseReset = reset
     try {
@@ -683,6 +631,54 @@ Page({
         this._loadPromiseReset = false
       }
     }
+  },
+
+  async _runListLoad(page, requestId, reset) {
+    try {
+      const res = await exportApi.listExports(page, 20)
+      if (this._pageDestroyed || requestId !== this._listRequestId) return null
+      const list = this._buildMergedList(res, reset)
+      const responseTotal = Number(res.total)
+      const totalRecords = Number.isFinite(responseTotal) ? responseTotal : list.length
+      this.setData({
+        list,
+        totalRecords,
+        page: Number(res.page) || page,
+        hasMore: list.length < totalRecords,
+        loading: false,
+      })
+      this._hasLoadedOnce = true
+      this._restartStatusSync()
+      return res
+    } catch (err) {
+      if (this._pageDestroyed || requestId !== this._listRequestId) return null
+      this.setData({ loading: false })
+      if (this._pageAlive) {
+        wx.showToast({ title: '加载失败', icon: 'none' })
+      }
+      return null
+    }
+  },
+
+  _buildMergedList(res, reset) {
+    const tasks = res.items || []
+    const currentById = new Map(
+      (this.data.list || []).map((task) => [Number(task.id), task])
+    )
+    const enriched = tasks.map((task) => {
+      const incoming = this._enrichTask(task)
+      const current = currentById.get(Number(incoming.id))
+      return current && this._isTaskSnapshotOlder(incoming, current) ? current : incoming
+    })
+    const combined = reset ? enriched : (this.data.list || []).concat(enriched)
+    const seen = {}
+    const list = combined.filter(function(item) {
+      const id = Number(item.id)
+      if (!id || seen[id]) return false
+      seen[id] = true
+      return true
+    })
+    return list
   },
 
   /**
@@ -716,57 +712,56 @@ Page({
     if (!this._pageAlive) return
     if (!this._taskWatchStartedAt) return
     if (this.data.list.length === 0) return
-
     const now = Date.now()
     var needsUpdate = false
-    const list = this.data.list.map(t => {
-      let nextTask = t
-
-      // Keep the human-readable expiry countdown fresh while the page stays open.
-      if (t.expires_at) {
-        const expiry = formatExpiry(t.expires_at, t.status)
-        if (
-          expiry.expiresText !== t.expiresText ||
-          expiry.expiresRelativeText !== t.expiresRelativeText ||
-          expiry.expiresSoon !== t.expiresSoon
-        ) {
-          needsUpdate = true
-          nextTask = { ...nextTask, ...expiry }
-        }
-      }
-
-      // Only check timeout warnings for non-terminal tasks that we're watching.
-      if (TERMINAL_STATES.includes(t.status)) return nextTask
-      const watchStart = this._taskWatchStartedAt.get(t.id)
-      if (!watchStart) return nextTask
-
-      const elapsed = (now - watchStart) / 1000
-      var warning = null
-
-      if (t.status === 'pending') {
-        if (elapsed > PENDING_WARNING_SECONDS) {
-          warning = '等待时间较长，任务仍在导出队列中'
-        }
-      } else if (t.status === 'processing') {
-        if (elapsed > PROCESSING_WARNING_SECONDS) {
-          warning = '生成时间较长，任务仍在处理中'
-        }
-      }
-
-      // Recompute the warning from the current task state instead of retaining
-      // a previous pending-state warning forever. This also removes stale
-      // service-unavailable copy as soon as the task begins processing.
-      const newWarning = warning || this._getTaskStatusWarning(t)
-      if (newWarning !== t._warning) {
-        needsUpdate = true
-        return { ...nextTask, _warning: newWarning }
-      }
-      return nextTask
-    })
-
+    const list = this.data.list.map(t => this._refreshTaskDuration(t, now, (changed) => { if (changed) needsUpdate = true }))
     if (needsUpdate) {
       this.setData({ list })
     }
+  },
+
+  _refreshTaskDuration(t, now, markChanged) {
+    let nextTask = t
+    // Keep the human-readable expiry countdown fresh while the page stays open.
+    if (t.expires_at) {
+      const expiry = formatExpiry(t.expires_at, t.status)
+      if (
+        expiry.expiresText !== t.expiresText ||
+        expiry.expiresRelativeText !== t.expiresRelativeText ||
+        expiry.expiresSoon !== t.expiresSoon
+      ) {
+        markChanged(true)
+        nextTask = { ...nextTask, ...expiry }
+      }
+    }
+    // Only check timeout warnings for non-terminal tasks that we're watching.
+    if (TERMINAL_STATES.includes(t.status)) return nextTask
+    const watchStart = this._taskWatchStartedAt.get(t.id)
+    if (!watchStart) return nextTask
+    const elapsed = (now - watchStart) / 1000
+    const warning = this._computeTaskTimeoutWarning(t, elapsed)
+    // Recompute the warning from the current task state instead of retaining
+    // a previous pending-state warning forever. This also removes stale
+    // service-unavailable copy as soon as the task begins processing.
+    const newWarning = warning || this._getTaskStatusWarning(t)
+    if (newWarning !== t._warning) {
+      markChanged(true)
+      return { ...nextTask, _warning: newWarning }
+    }
+    return nextTask
+  },
+
+  _computeTaskTimeoutWarning(t, elapsed) {
+    if (t.status === 'pending') {
+      if (elapsed > PENDING_WARNING_SECONDS) {
+        return '等待时间较长，任务仍在导出队列中'
+      }
+    } else if (t.status === 'processing') {
+      if (elapsed > PROCESSING_WARNING_SECONDS) {
+        return '生成时间较长，任务仍在处理中'
+      }
+    }
+    return null
   },
 
   onLoadMore() {
@@ -800,6 +795,39 @@ Page({
       task.is_reexporting ||
       (task.error_code === 'reexporting' && ['pending', 'processing'].includes(task.status))
     )
+    const st = this._resolveTaskStatus(task, reexportFailed, reexporting)
+    const fmtText = FORMAT_MAP[task.file_format] || task.file_format || '文件'
+    const expiry = formatExpiry(task.expires_at, task.status)
+    this._updateTaskWatch(normalizedTaskId, task, st)
+    const warning = this._resolveTaskWarning(task)
+    const resultText = this._buildResultText(task)
+    const layoutSummary = this._buildLayoutSummary(task)
+    const hasPreviousFile = !!(reexporting && (task.has_file || task.file_size))
+    return {
+      ...task,
+      id: normalizedTaskId,
+      is_reexporting: reexporting,
+      reexport_failed: reexportFailed,
+      visualStatus: reexportFailed ? 'warning' : task.status,
+      statusLabel: st.label,
+      statusSummary: st.summary,
+      statusTone: st.tone,
+      statusGlyph: st.glyph,
+      _terminal: st.terminal,
+      _warning: warning,
+      fileSizeText: formatFileSize(task.file_size),
+      formatText: fmtText,
+      dateText: formatDateTime(task.completed_at || task.created_at),
+      hasPreviousFile,
+      questionCountText: Number(task.total_count || 0) + ' 道题',
+      resultText,
+      displayFileName: task.file_name || '未命名导出文件',
+      layoutSummary,
+      ...expiry,
+    }
+  },
+
+  _resolveTaskStatus(task, reexportFailed, reexporting) {
     let st = STATUS_MAP[task.status] || {
       label: task.status || '未知状态',
       summary: '状态更新中',
@@ -822,12 +850,10 @@ Page({
         summary: '上一版文件仍可预览',
       }
     }
-    const fmtText = FORMAT_MAP[task.file_format] || task.file_format || '文件'
-    const expiry = formatExpiry(task.expires_at, task.status)
-    const totalCount = Number(task.total_count || 0)
-    const successCount = task.success_count == null ? null : Number(task.success_count)
-    const skipCount = Number(task.skip_count || 0)
+    return st
+  },
 
+  _updateTaskWatch(normalizedTaskId, task, st) {
     // Initialize watch start time for non-terminal tasks
     if (!st.terminal && this._taskWatchStartedAt) {
       if (!this._taskWatchStartedAt.has(normalizedTaskId)) {
@@ -840,7 +866,9 @@ Page({
     } else if (st.terminal && this._taskWatchStartedAt) {
       this._taskWatchStartedAt.delete(normalizedTaskId)
     }
+  },
 
+  _resolveTaskWarning(task) {
     // Only expose task-specific, actionable status messages. Processor
     // availability diagnostics are deliberately hidden while the task is
     // pending/processing because they can become stale before the next render.
@@ -848,40 +876,18 @@ Page({
     if (!warning && task.status === 'pending' && task.status_reason === 'pending_timeout') {
       warning = '等待时间较长，任务仍在导出队列中'
     }
+    return warning
+  },
 
+  _buildResultText(task) {
+    const successCount = task.success_count == null ? null : Number(task.success_count)
+    const skipCount = Number(task.skip_count || 0)
     let resultText = ''
     if (successCount != null) {
       resultText = successCount + ' 道已导出'
       if (skipCount > 0) resultText += ' · ' + skipCount + ' 道跳过'
     }
-    const layoutSummary = this._buildLayoutSummary(task)
-    const hasPreviousFile = !!(
-      reexporting &&
-      (task.has_file || task.file_size)
-    )
-
-    return {
-      ...task,
-      id: normalizedTaskId,
-      is_reexporting: reexporting,
-      reexport_failed: reexportFailed,
-      visualStatus: reexportFailed ? 'warning' : task.status,
-      statusLabel: st.label,
-      statusSummary: st.summary,
-      statusTone: st.tone,
-      statusGlyph: st.glyph,
-      _terminal: st.terminal,
-      _warning: warning,
-      fileSizeText: formatFileSize(task.file_size),
-      formatText: fmtText,
-      dateText: formatDateTime(task.completed_at || task.created_at),
-      hasPreviousFile,
-      questionCountText: totalCount + ' 道题',
-      resultText,
-      displayFileName: task.file_name || '未命名导出文件',
-      layoutSummary,
-      ...expiry,
-    }
+    return resultText
   },
 
   _buildLayoutSummary(task) {
@@ -1042,6 +1048,23 @@ Page({
   async _getPreviewFile(task) {
     const taskId = Number(task && task.id)
     const cacheKey = this._previewCacheVersion(task)
+    const cachedPath = await this._resolveCachedPreviewFile(cacheKey)
+    if (cachedPath) return cachedPath
+    if (this._previewDownloadPromises && this._previewDownloadPromises.has(cacheKey)) {
+      return this._previewDownloadPromises.get(cacheKey)
+    }
+    const downloadPromise = this._downloadPreviewFile(taskId, cacheKey, task)
+    if (this._previewDownloadPromises) {
+      this._previewDownloadPromises.set(cacheKey, downloadPromise)
+    }
+    try {
+      return await downloadPromise
+    } finally {
+      if (this._previewDownloadPromises) this._previewDownloadPromises.delete(cacheKey)
+    }
+  },
+
+  async _resolveCachedPreviewFile(cacheKey) {
     const cachedPath = this._previewFileCache && this._previewFileCache.get(cacheKey)
     if (cachedPath) {
       try {
@@ -1053,7 +1076,6 @@ Page({
         previewTempFiles.forget(cachedPath)
       }
     }
-
     // Restore a still-valid temp path tracked by a previous page instance.
     // The host may have removed it already, so always verify with fs.access.
     const trackedPath = previewTempFiles.findByCacheKey(cacheKey)
@@ -1067,44 +1089,30 @@ Page({
         previewTempFiles.forget(trackedPath)
       }
     }
+    return null
+  },
 
-    if (this._previewDownloadPromises && this._previewDownloadPromises.has(cacheKey)) {
-      return this._previewDownloadPromises.get(cacheKey)
-    }
-
-    const downloadPromise = (async () => {
-      const info = await exportApi.getDownloadInfo(taskId)
-      const version = cacheKey
-      const useApiStream = info.method === 'stream'
-      const url = useApiStream
-        ? exportApi.getFileUrl(taskId, version)
-        : (info.url || exportApi.getFileUrl(taskId, version))
-
-      // Authenticated export files use the same wx.request transport as the
-      // rest of the API, then persist the returned ArrayBuffer locally before
-      // wx.openDocument is called. This avoids a separate wx.downloadFile
-      // connection to the API host, which can fail on real devices even while
-      // normal API requests and the export task itself are working correctly.
-      const filePath = useApiStream
-        ? await this._requestStreamFile(url, task, cacheKey)
-        : await this._downloadFile(url, false)
-
-      if (this._previewFileCache) this._previewFileCache.set(cacheKey, filePath)
-      previewTempFiles.register(filePath, {
-        taskId: taskId,
-        cacheKey: cacheKey,
-      })
-      return filePath
-    })()
-
-    if (this._previewDownloadPromises) {
-      this._previewDownloadPromises.set(cacheKey, downloadPromise)
-    }
-    try {
-      return await downloadPromise
-    } finally {
-      if (this._previewDownloadPromises) this._previewDownloadPromises.delete(cacheKey)
-    }
+  async _downloadPreviewFile(taskId, cacheKey, task) {
+    const info = await exportApi.getDownloadInfo(taskId)
+    const version = cacheKey
+    const useApiStream = info.method === 'stream'
+    const url = useApiStream
+      ? exportApi.getFileUrl(taskId, version)
+      : (info.url || exportApi.getFileUrl(taskId, version))
+    // Authenticated export files use the same wx.request transport as the
+    // rest of the API, then persist the returned ArrayBuffer locally before
+    // wx.openDocument is called. This avoids a separate wx.downloadFile
+    // connection to the API host, which can fail on real devices even while
+    // normal API requests and the export task itself are working correctly.
+    const filePath = useApiStream
+      ? await this._requestStreamFile(url, task, cacheKey)
+      : await this._downloadFile(url, false)
+    if (this._previewFileCache) this._previewFileCache.set(cacheKey, filePath)
+    previewTempFiles.register(filePath, {
+      taskId: taskId,
+      cacheKey: cacheKey,
+    })
+    return filePath
   },
 
   async onPreview(e) {

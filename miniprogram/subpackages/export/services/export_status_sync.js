@@ -223,29 +223,22 @@ class ExportStatusSyncManager {
       this._startPolling()
       return
     }
-
     if (this._stopped || this._hidden) return
     if (this._wsOpened) return
-
     // Exceeded reconnect limit — fall back to polling permanently
     if (this._reconnectAttempts >= this._maxReconnectAttempts) {
       this._startPolling()
       return
     }
-
     // Clean up any previous connection state
     this._closeWebSocket()
     this._clearTimers()
-
     const token = storage.get('token')
     if (!token) {
       this._startPolling()
       return
     }
-
-    const wsBase = config.BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '')
-    const wsUrl = `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
-
+    const wsUrl = this._buildWsUrl(token)
     try {
       const socketTask = wx.connectSocket({
         url: wsUrl,
@@ -256,55 +249,56 @@ class ExportStatusSyncManager {
         fail: () => this._fallbackToPolling(),
       })
       this._ws = socketTask
-
-      socketTask.onOpen(() => {
-        if (this._stopped) {
-          this._closeWebSocket()
-          return
-        }
-        this._wsOpened = true
-        this._consecutiveErrors = 0
-        this._reconnectAttempts = 0
-
-        // If we were polling, stop — WS is healthy now
-        this._stopPolling()
-
-        // Start heartbeat pings
-        this._startHeartbeat()
-
-        // Start calibration polling (reduced frequency, always on)
-        this._startCalibration()
-
-        // Send initial ping to verify
-        this._wsSend({ type: 'ping' })
-      })
-
-      socketTask.onMessage((res) => {
-        if (this._stopped) return
-        try {
-          const msg = JSON.parse(res.data)
-          this._handleMessage(msg)
-        } catch (e) {
-          // Malformed message — ignore
-        }
-      })
-
-      socketTask.onError(() => {
-        if (this._stopped) return
-        this._wsOpened = false
-        this._fallbackToPolling()
-      })
-
-      socketTask.onClose(() => {
-        this._wsOpened = false
-        this._stopHeartbeat()
-        if (this._stopped || this._hidden) return
-        // Schedule reconnect
-        this._scheduleReconnect()
-      })
+      this._bindSocketHandlers(socketTask)
     } catch (e) {
       this._fallbackToPolling()
     }
+  }
+
+  _buildWsUrl(token) {
+    const wsBase = config.BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '')
+    return `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
+  }
+
+  _bindSocketHandlers(socketTask) {
+    socketTask.onOpen(() => {
+      if (this._stopped) {
+        this._closeWebSocket()
+        return
+      }
+      this._wsOpened = true
+      this._consecutiveErrors = 0
+      this._reconnectAttempts = 0
+      // If we were polling, stop — WS is healthy now
+      this._stopPolling()
+      // Start heartbeat pings
+      this._startHeartbeat()
+      // Start calibration polling (reduced frequency, always on)
+      this._startCalibration()
+      // Send initial ping to verify
+      this._wsSend({ type: 'ping' })
+    })
+    socketTask.onMessage((res) => {
+      if (this._stopped) return
+      try {
+        const msg = JSON.parse(res.data)
+        this._handleMessage(msg)
+      } catch (e) {
+        // Malformed message — ignore
+      }
+    })
+    socketTask.onError(() => {
+      if (this._stopped) return
+      this._wsOpened = false
+      this._fallbackToPolling()
+    })
+    socketTask.onClose(() => {
+      this._wsOpened = false
+      this._stopHeartbeat()
+      if (this._stopped || this._hidden) return
+      // Schedule reconnect
+      this._scheduleReconnect()
+    })
   }
 
   /** Route incoming WS messages by task_id. */
@@ -492,43 +486,16 @@ class ExportStatusSyncManager {
   _startPolling() {
     if (this._pollTimer) return  // Already polling — single loop guarantee
     if (this._taskIds.size === 0) return
-
     const poll = async () => {
       if (this._stopped) return
-
       // If WS reconnected while we were waiting, switch to calibration mode
       if (this._wsOpened) {
         this._stopPolling()
         this._startCalibration()
         return
       }
-
       try {
-        const ids = Array.from(this._taskIds)
-        for (let taskIndex = 0; taskIndex < ids.length; taskIndex++) {
-          const tid = ids[taskIndex]
-          if (this._stopped) return
-          try {
-            const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })
-            this._consecutiveErrors = 0
-
-            // Transition protection
-            if (!this._acceptTransition(tid, task.status)) {
-              continue
-            }
-
-            this._taskStatuses[tid] = task.status
-            if (this._onUpdate) this._onUpdate(tid, task)
-
-            if (TERMINAL_STATES.includes(task.status)) {
-              this._taskIds.delete(tid)
-            }
-          } catch (e) {
-            this._consecutiveErrors++
-            if (this._onError) this._onError(e)
-          }
-        }
-
+        await this._pollAllTasks()
         if (this._allTerminal()) {
           this.pause()
           return
@@ -541,7 +508,6 @@ class ExportStatusSyncManager {
           return
         }
       }
-
       // Schedule next poll
       if (!this._stopped) {
         const backoff = this._consecutiveErrors > 0
@@ -550,9 +516,32 @@ class ExportStatusSyncManager {
         this._pollTimer = setTimeout(poll, backoff)
       }
     }
-
     // Start first poll after a short delay
     this._pollTimer = setTimeout(poll, 500)
+  }
+
+  async _pollAllTasks() {
+    const ids = Array.from(this._taskIds)
+    for (let taskIndex = 0; taskIndex < ids.length; taskIndex++) {
+      const tid = ids[taskIndex]
+      if (this._stopped) return
+      try {
+        const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })
+        this._consecutiveErrors = 0
+        // Transition protection
+        if (!this._acceptTransition(tid, task.status)) {
+          continue
+        }
+        this._taskStatuses[tid] = task.status
+        if (this._onUpdate) this._onUpdate(tid, task)
+        if (TERMINAL_STATES.includes(task.status)) {
+          this._taskIds.delete(tid)
+        }
+      } catch (e) {
+        this._consecutiveErrors++
+        if (this._onError) this._onError(e)
+      }
+    }
   }
 
   _stopPolling() {

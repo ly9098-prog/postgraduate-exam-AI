@@ -321,7 +321,6 @@ Page({
   async _checkCapabilities() {
     if (this._pageDestroyed) return
     const capabilityRequestSeq = ++this._capabilityRequestSeq
-
     // Invalidate any in-flight count request before restarting capability
     // discovery so stale results cannot overwrite the new page state.
     this._previewRequestSeq += 1
@@ -334,76 +333,80 @@ Page({
       capabilityError: '',
       submitError: '',
     }, () => this._syncFloatingAction())
-
     try {
       const cap = await exportApi.getCapabilities()
       if (this._pageDestroyed || capabilityRequestSeq !== this._capabilityRequestSeq) return
-
-      // Treat an explicit capability denial as authoritative. Network failures
-      // still use the PDF-safe fallback below, but a successful response that
-      // disables export must never leave a previously calculated count usable.
-      const exportAvailable = !!(
-        cap &&
-        cap.export_enabled === true &&
-        cap.pdf_enabled === true
-      )
+      const exportAvailable = !!(cap && cap.export_enabled === true && cap.pdf_enabled === true)
       if (!exportAvailable) {
-        this._previewRequestSeq += 1
-        const capabilityError = exportApi.getExportCapabilityErrorMessage(null, cap)
-        this.setData({
-          wordDisabled: true,
-          wordTip: 'Word 导出暂未开放',
-          format: 'pdf',
-          _wsEnabled: false,
-          capabilityLoading: false,
-          capabilityError,
-          countLoading: false,
-          previewCountReady: false,
-        }, () => this._syncFloatingAction())
+        this._handleCapabilityDenied(cap)
         return
       }
-
-      const wordDisabled = cap.docx_enabled !== true
-      const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
-      const maxQuestionCountRaw = Number(cap.max_question_count)
-      const maxQuestionCount = Number.isFinite(maxQuestionCountRaw) && maxQuestionCountRaw > 0
-        ? Math.floor(maxQuestionCountRaw)
-        : 100
-      this.setData({
-        wordDisabled,
-        wordTip,
-        _wsEnabled: cap.websocket_enabled === true,
-        maxQuestionCount,
-        capabilityLoading: false,
-        capabilityError: '',
-      }, () => this._syncFloatingAction())
-
-      if (wordDisabled && this.data.format === 'docx') {
-        this.setData({ format: 'pdf' })
-      }
-      this._schedulePreviewCount(true)
+      this._applyCapabilitySuccess(cap)
     } catch (e) {
       if (this._pageDestroyed || capabilityRequestSeq !== this._capabilityRequestSeq) return
-      // A capability endpoint failure must not leave the page permanently in
-      // "checking" state. Continue in PDF-safe mode and try the actual count
-      // endpoint; if the current selected range is known locally, it remains
-      // exportable even while the lightweight warning is shown.
-      const msg = exportApi.getExportCapabilityErrorMessage(e)
-      const knownCount = this._knownRangeCount()
-      this.setData({
-        wordDisabled: true,
-        wordTip: '能力检查失败，暂仅提供 PDF 导出',
-        format: 'pdf',
-        capabilityLoading: false,
-        capabilityError: msg,
-        countLoading: false,
-        previewCount: knownCount !== null ? knownCount : this.data.previewCount,
-        previewCountReady: knownCount !== null,
-      }, () => {
-        this._syncFloatingAction()
-        this._schedulePreviewCount(true)
-      })
+      this._handleCapabilityError(e)
     }
+  },
+
+  _handleCapabilityDenied(cap) {
+    this._previewRequestSeq += 1
+    const capabilityError = exportApi.getExportCapabilityErrorMessage(null, cap)
+    this.setData({
+      wordDisabled: true,
+      wordTip: 'Word 导出暂未开放',
+      format: 'pdf',
+      _wsEnabled: false,
+      capabilityLoading: false,
+      capabilityError,
+      countLoading: false,
+      previewCountReady: false,
+    }, () => this._syncFloatingAction())
+  },
+
+  _applyCapabilitySuccess(cap) {
+    // Treat an explicit capability denial as authoritative. Network failures
+    // still use the PDF-safe fallback below, but a successful response that
+    // disables export must never leave a previously calculated count usable.
+    const wordDisabled = cap.docx_enabled !== true
+    const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
+    const maxQuestionCountRaw = Number(cap.max_question_count)
+    const maxQuestionCount = Number.isFinite(maxQuestionCountRaw) && maxQuestionCountRaw > 0
+      ? Math.floor(maxQuestionCountRaw)
+      : 100
+    this.setData({
+      wordDisabled,
+      wordTip,
+      _wsEnabled: cap.websocket_enabled === true,
+      maxQuestionCount,
+      capabilityLoading: false,
+      capabilityError: '',
+    }, () => this._syncFloatingAction())
+    if (wordDisabled && this.data.format === 'docx') {
+      this.setData({ format: 'pdf' })
+    }
+    this._schedulePreviewCount(true)
+  },
+
+  _handleCapabilityError(e) {
+    // A capability endpoint failure must not leave the page permanently in
+    // "checking" state. Continue in PDF-safe mode and try the actual count
+    // endpoint; if the current selected range is known locally, it remains
+    // exportable even while the lightweight warning is shown.
+    const msg = exportApi.getExportCapabilityErrorMessage(e)
+    const knownCount = this._knownRangeCount()
+    this.setData({
+      wordDisabled: true,
+      wordTip: '能力检查失败，暂仅提供 PDF 导出',
+      format: 'pdf',
+      capabilityLoading: false,
+      capabilityError: msg,
+      countLoading: false,
+      previewCount: knownCount !== null ? knownCount : this.data.previewCount,
+      previewCountReady: knownCount !== null,
+    }, () => {
+      this._syncFloatingAction()
+      this._schedulePreviewCount(true)
+    })
   },
 
   onRetryCapability() {
@@ -655,73 +658,29 @@ Page({
     if (this._pageDestroyed || this.data.submitting || this._navigating) return
     if (this.data.capabilityLoading) return
     this._registerInteraction()
-
     if (!this.data.previewCountReady) {
       const msg = '请先完成题目数量计算'
       this.setData({ submitError: msg }, () => this._syncFloatingAction())
       wx.showToast({ title: msg, icon: 'none' })
       return
     }
-
-    // Validate count
-    const count = this.data.previewCount
-    const max = this.data.maxQuestionCount || 100
-    if (count === 0) {
-      const msg = '没有可导出的错题'
-      this.setData({ submitError: msg }, () => this._syncFloatingAction())
-      wx.showToast({ title: msg, icon: 'none' })
+    const validationError = this._validateSubmitCount()
+    if (validationError) {
+      this.setData({ submitError: validationError }, () => this._syncFloatingAction())
+      wx.showToast({ title: validationError, icon: 'none' })
       return
     }
-    if (count > max) {
-      const msg = '单次最多导出 ' + max + ' 道，请调整导出范围。'
-      this.setData({ submitError: msg }, () => this._syncFloatingAction())
-      wx.showToast({ title: msg, icon: 'none' })
-      return
-    }
-
     const submitRequestSeq = ++this._submitRequestSeq
     this.setData({ submitting: true, submitError: '' }, () => this._syncFloatingAction())
-
     try {
-      const rangeParams = this._buildRangeParams()
-      const params = {
-        range_type: rangeParams.range_type,
-        filters: rangeParams.filters,
-        selected_ids: rangeParams.selected_ids,
-        title: (typeof this.data.title === 'string' ? this.data.title.trim() : '') || this.data.titleDefault,
-        show_date: false,
-        export_date: '',
-        sort_by: this.data.sortBy,
-        group_by: this.data.groupBy,
-        answer_position: this.data.answerPosition,
-        analysis_position: this.data.analysisPosition,
-        space_style: this.data.spaceStyle,
-        file_format: this.data.format,
-      }
-
-      const task = await exportApi.createExport(params)
+      const task = await exportApi.createExport(this._buildSubmitParams())
       if (this._pageDestroyed || submitRequestSeq !== this._submitRequestSeq) return
-
       // Task created — reset submitting immediately, don't wait for file generation
       this.setData({ submitting: false }, () => this._syncFloatingAction())
-
       if (!task || !task.id) {
         throw new Error('导出任务创建成功，但未返回任务编号')
       }
-
-      // Navigate to export records page with highlight
-      this._navigating = true
-      try {
-        await this._navigateToRecords(task.id)
-      } catch (navErr) {
-        // Navigation failed — show fallback message
-        wx.showToast({
-          title: '导出任务已创建，可从「导出记录」中查看',
-          icon: 'none',
-        })
-      } finally {
-        this._navigating = false
-      }
+      await this._navigateAfterSubmit(task.id)
     } catch (err) {
       if (this._pageDestroyed || submitRequestSeq !== this._submitRequestSeq) return
       const msg = (err && err.message) || '创建导出任务失败'
@@ -732,6 +691,49 @@ Page({
       if (!this._pageDestroyed && submitRequestSeq === this._submitRequestSeq && this.data.submitting) {
         this.setData({ submitting: false }, () => this._syncFloatingAction())
       }
+    }
+  },
+
+  _validateSubmitCount() {
+    // Validate count
+    const count = this.data.previewCount
+    const max = this.data.maxQuestionCount || 100
+    if (count === 0) return '没有可导出的错题'
+    if (count > max) return '单次最多导出 ' + max + ' 道，请调整导出范围。'
+    return null
+  },
+
+  _buildSubmitParams() {
+    const rangeParams = this._buildRangeParams()
+    return {
+      range_type: rangeParams.range_type,
+      filters: rangeParams.filters,
+      selected_ids: rangeParams.selected_ids,
+      title: (typeof this.data.title === 'string' ? this.data.title.trim() : '') || this.data.titleDefault,
+      show_date: false,
+      export_date: '',
+      sort_by: this.data.sortBy,
+      group_by: this.data.groupBy,
+      answer_position: this.data.answerPosition,
+      analysis_position: this.data.analysisPosition,
+      space_style: this.data.spaceStyle,
+      file_format: this.data.format,
+    }
+  },
+
+  async _navigateAfterSubmit(taskId) {
+    // Navigate to export records page with highlight
+    this._navigating = true
+    try {
+      await this._navigateToRecords(taskId)
+    } catch (navErr) {
+      // Navigation failed — show fallback message
+      wx.showToast({
+        title: '导出任务已创建，可从「导出记录」中查看',
+        icon: 'none',
+      })
+    } finally {
+      this._navigating = false
     }
   },
 
