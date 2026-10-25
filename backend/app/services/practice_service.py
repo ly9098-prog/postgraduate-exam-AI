@@ -46,10 +46,14 @@ from app.services.knowledge_point_service import (
     kp_id_any_condition,
     load_question_kps,
 )
+from app.services.practice.aggregated_random import (
+    AggregatedRandomRequest,
+    run_aggregated_random,
+)
+from app.services.practice.aggregated_smart import run_aggregated_smart
 from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
 )
-from app.services.practice.aggregated_smart import run_aggregated_smart
 from app.services.practice.batch_token import (
     PRACTICE_ANSWER_DURATION_TOLERANCE_SEC,
     PRACTICE_BATCH_CLOCK_SKEW_SEC,  # noqa: F401 — historical public import
@@ -724,10 +728,8 @@ async def get_aggregated_random_questions(
     不存在因全局 LIMIT 导致子科目被完全排除的风险。每科最多返回 count 道题，
     再通过 round-robin 确保最终分布均衡。
     """
-    buckets: list[list[Question]] = []
 
-    for sid in subject_ids:
-        # 为每个精确 subject_id 构建独立查询条件
+    async def load_bucket(db, sid, bucket_count):
         conds = [
             Question.is_active,
             Question.subject_id == sid,
@@ -741,59 +743,36 @@ async def get_aggregated_random_questions(
                 conds.append(kp_id_condition)
 
         if use_leitner:
-            candidates = await _get_questions_with_leitner(
+            return await _get_questions_with_leitner(
                 db,
                 user_id,
                 conds,
                 "random",
-                count,
+                bucket_count,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
             )
-        else:
-            candidates = await _get_questions_v1_fallback(
-                db,
-                conds,
-                "random",
-                count,
-                user_id=user_id,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-            )
-        if candidates:
-            # Each bucket is already randomized inside its own Leitner/V1 query,
-            # while the list order still encodes fallback priority (fresh/due
-            # questions first, relaxed repeat-window candidates last).  Shuffling
-            # the whole bucket here used to destroy that priority and could surface
-            # a just-practiced fallback question even when a fresh candidate from
-            # the same subject was available.  Only randomize bucket start order in
-            # the round-robin merge below.
-            buckets.append(candidates)
-
-    if not buckets:
-        logger.info(
-            "[AGG_RANDOM] subject_code=%s subject_ids=%s count=%d no_buckets",
-            subject_code,
-            subject_ids,
-            count,
+        return await _get_questions_v1_fallback(
+            db,
+            conds,
+            "random",
+            bucket_count,
+            user_id=user_id,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
-        return []
 
-    result = _round_robin_merge(buckets, count, randomize_order=True)
-    from collections import Counter
-
-    per_subject = Counter(q.subject_id for q in result)
-    logger.info(
-        "[AGG_RANDOM] subject_code=%s subject_ids=%s count=%d "
-        "non_empty_buckets=%d returned=%d per_subject=%s",
-        subject_code,
-        subject_ids,
-        count,
-        len(buckets),
-        len(result),
-        dict(per_subject),
+    return await run_aggregated_random(
+        AggregatedRandomRequest(
+            db=db,
+            subject_code=subject_code,
+            subject_ids=subject_ids,
+            count=count,
+            logger=logger,
+            load_bucket=load_bucket,
+            merge=_round_robin_merge,
+        )
     )
-    return result
 
 
 async def get_aggregated_smart_questions(
