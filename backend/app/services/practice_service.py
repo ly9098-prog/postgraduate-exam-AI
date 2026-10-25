@@ -106,6 +106,9 @@ from app.services.practice.recommendation_pipeline import (
     merge_recommendation_results,
     normalize_smart_strategy,
 )
+from app.services.practice.revision_scope_guard import (
+    filter_questions_to_revision_scope as _filter_questions_to_revision_scope,
+)
 from app.services.practice.scored_fallback import (
     load_random_fill_questions,
     load_repeat_fill_questions,
@@ -357,127 +360,14 @@ async def filter_questions_to_revision_scope(
     immutable revision that will be sent to the client and drop any candidate
     whose mutable row, current revision or requested subject scope disagree.
     """
-    if not questions:
-        return []
-    scope = {int(sid) for sid in subject_ids or []}
-    resolved_revision_ids = revision_ids or await load_latest_question_revision_ids(
-        db, [int(q.id) for q in questions]
+    return await _filter_questions_to_revision_scope(
+        db,
+        questions,
+        subject_ids,
+        revision_ids,
+        load_revision_ids=load_latest_question_revision_ids,
+        answerable_types=PRACTICE_ANSWERABLE_QUESTION_TYPES,
     )
-    version_ids = {
-        int(version_id) for version_id in resolved_revision_ids.values() if version_id
-    }
-    if not scope or not version_ids:
-        if questions:
-            logger.error(
-                "[PRACTICE_REVISION_SCOPE] empty scope/version set scope=%s question_ids=%s",
-                sorted(scope),
-                [int(q.id) for q in questions],
-            )
-        return []
-
-    rows = await db.execute(
-        select(
-            QuestionVersion.id,
-            QuestionVersion.question_id,
-            QuestionVersion.subject_id,
-            QuestionVersion.question_type,
-            QuestionVersion.is_active,
-            QuestionVersion.content,
-        ).where(QuestionVersion.id.in_(version_ids))
-    )
-    revisions = {int(row.id): row for row in rows.all()}
-
-    # Subject ids/codes are dynamic; never assume the historical numeric ids for
-    # 数据结构/操作系统/组成原理/计网.  Resolve the live rows once so the semantic
-    # guard also works after subject migrations or custom deployments.
-    from app.models.admin import Subject
-
-    revision_subject_ids = {
-        int(row.subject_id) for row in revisions.values() if row.subject_id is not None
-    }
-    subject_rows = await db.execute(
-        select(Subject.id, Subject.code, Subject.name).where(
-            Subject.id.in_(scope | revision_subject_ids)
-        )
-    )
-    subjects = {
-        int(row.id): (str(row.code or ""), str(row.name or ""))
-        for row in subject_rows.all()
-    }
-
-    kept: list[Question] = []
-    rejected: list[dict] = []
-    for question in questions:
-        qid = int(question.id)
-        q_subject_id = (
-            int(question.subject_id) if question.subject_id is not None else None
-        )
-        version_id = resolved_revision_ids.get(qid)
-        revision = revisions.get(version_id) if version_id else None
-        revision_subject_id = (
-            int(revision.subject_id)
-            if revision is not None and revision.subject_id is not None
-            else None
-        )
-        q_question_type = str(getattr(question, "question_type", "") or "")
-        revision_question_type = str(getattr(revision, "question_type", "") or "")
-        structural_valid = bool(
-            q_subject_id in scope
-            and revision is not None
-            and int(revision.question_id) == qid
-            and revision_subject_id == q_subject_id
-            and revision_subject_id in scope
-            and revision_question_type == q_question_type
-            and revision_question_type in PRACTICE_ANSWERABLE_QUESTION_TYPES
-            and bool(getattr(question, "is_active", False))
-            and str(getattr(question, "review_status", "") or "") == "approved"
-            and revision.is_active is True
-        )
-
-        semantic_mismatch = None
-        semantic_scores: dict[str, int] = {}
-        if structural_valid and revision_subject_id is not None:
-            subject_code, subject_name = subjects.get(revision_subject_id, ("", ""))
-            semantic_mismatch, semantic_scores = _detect_408_subject_mismatch(
-                subject_code=subject_code,
-                subject_name=subject_name,
-                stem=_question_stem_for_subject_guard(revision.content),
-            )
-
-        if structural_valid and semantic_mismatch is None:
-            kept.append(question)
-        else:
-            rejected.append(
-                {
-                    "question_id": qid,
-                    "question_subject_id": q_subject_id,
-                    "current_version_id": (
-                        int(question.current_version_id)
-                        if getattr(question, "current_version_id", None)
-                        else None
-                    ),
-                    "issued_latest_version_id": version_id,
-                    "revision_subject_id": revision_subject_id,
-                    "question_type": q_question_type,
-                    "revision_question_type": revision_question_type,
-                    "answerable_type": revision_question_type
-                    in PRACTICE_ANSWERABLE_QUESTION_TYPES,
-                    "question_active": getattr(question, "is_active", None),
-                    "review_status": getattr(question, "review_status", None),
-                    "revision_active": getattr(revision, "is_active", None),
-                    "semantic_mismatch": semantic_mismatch,
-                    "semantic_scores": semantic_scores or None,
-                }
-            )
-
-    if rejected:
-        logger.error(
-            "[PRACTICE_REVISION_SCOPE] rejected=%d scope_ids=%s rows=%s",
-            len(rejected),
-            sorted(scope),
-            rejected,
-        )
-    return kept
 
 
 def _build_excluded_question_subquery(
