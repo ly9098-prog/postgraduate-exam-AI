@@ -62,13 +62,15 @@ test('lazily creates one next-group controller and delegates next', async () => 
 
 test('lazily creates the retry-group controller with page ports', async () => {
   const page = createPage()
-  assert.equal(typeof page._nextRetryGroupController, 'undefined')
+  // The accessor method exists; the cached instance is lazily created.
+  assert.equal(typeof page._nextRetryGroupController, 'function')
+  assert.equal(page._nextRetryGroup, undefined)
 
   page.data.groups = [[{ schedule_id: 1 }], [{ schedule_id: 2 }]]
   page.data.currentGroupIdx = 0
   page.data.todayRemainingCount = 1
   assert.equal((await page.nextGroup()).status, 'retry-group')
-  assert.ok(page._nextRetryGroupController)
+  assert.ok(page._nextRetryGroup)
   assert.deepEqual(page.calls, [
     'clear-undo',
     'clear-fade',
@@ -79,4 +81,17 @@ test('lazily creates the retry-group controller with page ports', async () => {
   ])
   assert.equal(page.data.currentGroupIdx, 1)
   assert.equal(page.data.resultTransitioning, false)
+})
+
+test('next-group controller delegates sub-controllers to dedicated accessors', () => {
+  const page = createPage()
+  page._nextGroupController()
+  // The sub-controllers are now wired via accessor methods, not inline IIFEs.
+  const retry = page._nextRetryGroupController()
+  const remote = page._nextRemoteBatchController()
+  assert.ok(retry, 'retry-group controller accessor returns an instance')
+  assert.ok(remote, 'remote-batch controller accessor returns an instance')
+  // Cached on second call.
+  assert.equal(page._nextRetryGroupController(), retry)
+  assert.equal(page._nextRemoteBatchController(), remote)
 })

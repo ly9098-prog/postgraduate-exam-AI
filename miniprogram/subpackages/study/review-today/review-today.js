@@ -724,8 +724,18 @@ isFlowCurrent: seq => seq === this._flowRequestSeq,
 syncReviewSessionDay: () => this._syncReviewSessionDayIfNeeded(),
 getCurrentGroupIdx: () => this.data.currentGroupIdx,
 getTodayRemainingCount: () => this.data.todayRemainingCount,
-retryGroupController: this._nextRetryGroupController || (
-this._nextRetryGroupController = createNextRetryGroupController({
+retryGroupController: this._nextRetryGroupController(),
+remoteBatchController: this._nextRemoteBatchController(),
+logError: (message, error) => console.error(message, error),
+showToast: options => wx.showToast(options),
+showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
+})
+)
+},
+
+_nextRetryGroupController() {
+return this._nextRetryGroup || (
+this._nextRetryGroup = createNextRetryGroupController({
 getGroups: () => this.data.groups,
 getSession: () => this._reviewSession,
 setData: patch => this.setData(patch),
@@ -733,9 +743,12 @@ syncAnsweredFlags: () => this._syncAnsweredFlags(),
 showQuestion: index => this._showQuestion(index),
 startReviewTimer: () => this._startReviewTimer(),
 })
-),
-remoteBatchController: this._nextRemoteBatchController || (
-this._nextRemoteBatchController = createNextRemoteBatchController({
+)
+},
+
+_nextRemoteBatchController() {
+return this._nextRemoteBatch || (
+this._nextRemoteBatch = createNextRemoteBatchController({
 getBatchSize: () => this.data.reviewBatchSize,
 postNextBatch: payload => api.post('/review/today/next-batch', payload),
 isPageAlive: () => this._alive,
@@ -754,11 +767,6 @@ showQuestion: index => this._showQuestion(index),
 startReviewTimer: () => this._startReviewTimer(),
 showToast: options => wx.showToast(options),
 refreshOverviewStatsSilently: () => this.refreshOverviewStatsSilently(),
-})
-),
-logError: (message, error) => console.error(message, error),
-showToast: options => wx.showToast(options),
-showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
 })
 )
 },
