@@ -67,23 +67,27 @@ from app.services.ai.analysis_outcomes import (
     valid_analysis_outcome,
     visual_ack_failure_outcome,
 )
-from app.services.ai.analysis_execution import (
+from app.services.ai.analysis_execution import (  # noqa: F401 — historical public import
     begin_analysis_generation,
     finish_analysis_generation,
     prepare_locked_analysis_inputs,
     review_locked_analysis_cache,
 )
-from app.services.ai.analysis_result_review import (
+from app.services.ai.analysis_result_review import (  # noqa: F401 — historical public import
     resolve_analysis_outcome,
     review_analysis_result,
 )
-from app.services.ai.analysis_invocation import (
+from app.services.ai.analysis_invocation import (  # noqa: F401 — historical public import
     AnalysisInvocationRequest,
     invoke_prepared_analysis,
 )
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
     prepare_analysis,
+)
+from app.services.ai.analysis_orchestration import (
+    AnalysisOrchestrationRequest,
+    execute_locked_analysis,
 )
 from app.services.ai.analysis_responses import (
     generation_in_progress_response,
@@ -564,97 +568,35 @@ async def analyze_error(
 
     from app.core.cache import cache
 
-    lease = await begin_analysis_generation(
-        wrong_question_id=wq.id,
-        user_id=user_id,
-        timeout_sec=timeout_sec,
-        lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
-        generating=_generating,
-        cache=cache,
-    )
-    if lease is None:
-        return generation_in_progress_response()
-
-    try:
-        locked_cache = await review_locked_analysis_cache(
-            db,
-            wq,
-            q,
+    return await execute_locked_analysis(
+        AnalysisOrchestrationRequest(
+            db=db,
             user_id=user_id,
-            force=effective_force,
-            requires_visual=requires_visual,
+            wrong_question=wq,
+            question=q,
+            answer_grounding=current_answer_grounding,
             stored_visual_sources=stored_visual_sources,
-            knowledge_points=knowledge_points,
-            model_signature=model_signature,
-            input_signature=_analysis_input_signature,
-            cached_response=build_cached_error_analysis_response,
-            cache_age=_analysis_cache_age_ms,
-            logger=logger,
-        )
-        input_signature = locked_cache.input_signature
-        if locked_cache.response is not None:
-            return locked_cache.response
-
-        inputs = await prepare_locked_analysis_inputs(
-            wq,
-            q,
-            current_answer_grounding=current_answer_grounding,
             requires_visual=requires_visual,
-            runtime=runtime,
             knowledge_points=knowledge_points,
+            runtime=runtime,
+            input_signature=input_signature,
+            model_signature=model_signature,
+            effective_force=effective_force,
             timeout_sec=timeout_sec,
+            lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
+            generating=_generating,
+            cache=cache,
             logger=logger,
             prepare_visual_inputs=_prepare_visual_inputs,
             build_context=build_error_context,
             build_prompt_grounding=grounding_prompt_payload,
             build_expected_answer_check=grounding_verification_payload,
-        )
-        image_data_urls = inputs.image_data_urls
-        if inputs.response is not None:
-            return inputs.response
-        context = inputs.context
-        answer_grounding = inputs.answer_grounding
-        prompt_grounding = inputs.prompt_grounding
-        expected_answer_check = inputs.expected_answer_check
-        # Persist only compact deterministic facts in the audit snapshot. They
-        # contain no model reasoning and make future incident review reproducible.
-        context["answer_grounding"] = prompt_grounding
-
-        # Text and multimodal calls get the same provider budget. The mini-program
-        # cannot hold one wx.request open for this entire duration; it times out
-        # earlier and recovers the committed result through polling/recovery.
-        model_timeout_sec = inputs.model_timeout_sec
-
-        invocation = await invoke_prepared_analysis(
-            AnalysisInvocationRequest(
-                db=db,
-                wrong_question=wq,
-                question=q,
-                context=context,
-                runtime=runtime,
-                image_data_urls=image_data_urls,
-                requires_visual=requires_visual,
-                prompt_grounding=prompt_grounding,
-                input_signature=input_signature,
-                model_signature=model_signature,
-                force=effective_force,
-                model_timeout_sec=model_timeout_sec,
-                max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
-                timeout_guard_sec=ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
-                logger=logger,
-                chat=llm.chat,
-                resolve_runtime=_resolve_healthy_analysis_runtime,
-                quarantine_runtime=_quarantine_analysis_runtime_auth,
-                cached_response=build_cached_error_analysis_response,
-            )
-        )
-        review = await review_analysis_result(
-            invocation,
-            image_data_urls=image_data_urls,
-            wrong_question_id=wq.id,
+            input_signature_builder=_analysis_input_signature,
+            cached_response=build_cached_error_analysis_response,
+            cache_age=_analysis_cache_age_ms,
             chat=llm.chat,
-            expected_answer_check=expected_answer_check,
-            answer_grounding=answer_grounding,
+            resolve_runtime=_resolve_healthy_analysis_runtime,
+            quarantine_runtime=_quarantine_analysis_runtime_auth,
             parse_content=parse_error_analysis_content,
             validate_content=is_valid_ai_analysis,
             extract_evidence=_extract_visual_evidence,
@@ -664,39 +606,14 @@ async def analyze_error(
             evidence_is_valid=_visual_evidence_is_valid,
             should_retry_visual_ack=should_retry_visual_ack,
             retry_visual_ack=retry_visual_ack,
-        )
-        result = invocation.result
-        runtime = invocation.runtime
-        model_signature = _analysis_model_signature(runtime)
-
-        return await resolve_analysis_outcome(
-            db,
-            review,
-            wrong_question=wq,
-            user_id=user_id,
-            context=context,
-            result=result,
-            image_data_urls=image_data_urls,
-            input_signature=input_signature,
-            model_signature=model_signature,
-            expected_answer_check=expected_answer_check,
-            effective_force=effective_force,
-            visual_evidence_is_valid=_visual_evidence_is_valid,
+            model_signature_builder=_analysis_model_signature,
             max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
-            runtime=runtime,
-            logger=logger,
+            timeout_guard_sec=ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
             visual_ack_failure=visual_ack_failure_outcome,
             grounding_repair=grounding_repair_outcome,
             valid_outcome=valid_analysis_outcome,
         )
-
-    finally:
-        await finish_analysis_generation(
-            wrong_question_id=wq.id,
-            generating=_generating,
-            lease=lease,
-            cache=cache,
-        )
+    )
 
 
 async def prewarm_wrong_question_analysis(
