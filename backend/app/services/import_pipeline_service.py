@@ -29,6 +29,7 @@ from app.services.import_image_completion import (
     finalize_image_pipeline_result,
 )
 from app.services.import_image_stages import (
+    ImageFailurePersistence,
     ImageCompletionPersistence,
     ImageOcrStage,
     ImagePipelineStage,
@@ -36,6 +37,7 @@ from app.services.import_image_stages import (
     ensure_image_checkpoint,
     run_image_pipeline_stage,
     persist_image_completion,
+    persist_image_failure,
     run_prepared_image_ocr,
 )
 from app.services.import_background_execution import (
@@ -536,17 +538,18 @@ async def _run_image_pipeline_with_db(
                 "stage": "ocr",
             },
         )
-        await _fail_image_pipeline(pipeline_id, str(exc))
         from app.features import pipeline_checkpoint as ckpt
 
-        async with async_session() as db:
-            await ckpt.update_pipeline_status(
-                db,
-                pipeline_id,
-                status="failed",
-                error_message=str(exc)[:4000],
-                finished=True,
+        await persist_image_failure(
+            ImageFailurePersistence(
+                pipeline_id=pipeline_id,
+                source_file=source_file,
+                exc=exc,
+                async_session=async_session,
+                fail_pipeline=_fail_image_pipeline,
+                update_record=ckpt.update_pipeline_status,
             )
+        )
         raise
     finally:
         await _release_pipeline_reservation(pipeline_id)

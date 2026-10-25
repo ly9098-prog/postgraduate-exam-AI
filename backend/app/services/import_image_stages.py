@@ -28,6 +28,16 @@ class ImageCompletionPersistence:
 
 
 @dataclass(slots=True)
+class ImageFailurePersistence:
+    pipeline_id: str
+    source_file: str
+    exc: Exception
+    async_session: Callable[[], Any]
+    fail_pipeline: Callable[[str, str], Awaitable[None]]
+    update_record: Callable[..., Awaitable[None]]
+
+
+@dataclass(slots=True)
 class ImageStageCheckpointRequest:
     pipeline_id: str
     source_file: str | None
@@ -156,6 +166,18 @@ async def persist_image_completion(completion: ImageCompletionPersistence) -> No
         source_file=completion.source_file,
         status=completion.status,
     )
+
+
+async def persist_image_failure(failure: ImageFailurePersistence) -> None:
+    await failure.fail_pipeline(failure.pipeline_id, str(failure.exc))
+    async with failure.async_session() as db:
+        await failure.update_record(
+            db,
+            failure.pipeline_id,
+            status="failed",
+            error_message=str(failure.exc)[:4000],
+            finished=True,
+        )
 
 
 def _now_serialized() -> str:

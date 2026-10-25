@@ -10,12 +10,14 @@ import pytest
 from app.services.import_image_stages import (
     ImageOcrStage,
     ImageCompletionPersistence,
+    ImageFailurePersistence,
     ImagePipelineStage,
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
     run_image_pipeline_stage,
     run_prepared_image_ocr,
     persist_image_completion,
+    persist_image_failure,
 )
 
 
@@ -198,3 +200,30 @@ async def test_completion_persistence_projects_status_and_finishes_record():
         "source_file": "source.png",
         "status": "failed",
     }
+
+
+@pytest.mark.asyncio
+async def test_failure_persistence_updates_status_store_and_record():
+    db = SimpleNamespace()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=db)
+    session.__aexit__ = AsyncMock(return_value=False)
+    fail_pipeline = AsyncMock()
+    update_record = AsyncMock()
+    exc = ValueError("failed")
+
+    await persist_image_failure(
+        ImageFailurePersistence(
+            pipeline_id="img-1",
+            source_file="source.png",
+            exc=exc,
+            async_session=lambda: session,
+            fail_pipeline=fail_pipeline,
+            update_record=update_record,
+        )
+    )
+
+    fail_pipeline.assert_awaited_once_with("img-1", "failed")
+    update_record.assert_awaited_once_with(
+        db, "img-1", status="failed", error_message="failed", finished=True
+    )
