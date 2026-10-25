@@ -9,8 +9,10 @@ import pytest
 
 from app.services.import_image_stages import (
     ImageOcrStage,
+    ImagePipelineStage,
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
+    run_image_pipeline_stage,
     run_prepared_image_ocr,
 )
 
@@ -99,4 +101,52 @@ async def test_prepared_ocr_reads_bytes_sets_tags_and_delegates(monkeypatch, tmp
         "set_status": stage.set_status,
     }
     assert fields["image_bytes"] == b"image-bytes"
-    assert fields is not None
+
+
+@pytest.mark.asyncio
+async def test_image_pipeline_stage_rechecks_record_and_runs_pipeline_in_session():
+    db = SimpleNamespace()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=db)
+    session.__aexit__ = AsyncMock(return_value=False)
+    ensure_record = AsyncMock()
+    run_pipeline = AsyncMock(return_value={"status": "completed"})
+    stage = ImagePipelineStage(
+        pipeline_id="img-1",
+        source_file="source.png",
+        subject="DS",
+        subject_id=3,
+        options={"image_fast_mode": True},
+        created_by="admin",
+        image_bytes=b"image-bytes",
+        cleaned_text="cleaned",
+        pre_extracted_blocks=[{"boxes": []}],
+        async_session=lambda: session,
+        ensure_record=ensure_record,
+        run_pipeline=run_pipeline,
+    )
+
+    result = await run_image_pipeline_stage(stage)
+
+    assert result == {"status": "completed"}
+    ensure_record.assert_awaited_once_with(
+        db,
+        pipeline_id="img-1",
+        source_type="image",
+        source_file="source.png",
+        total_pages=1,
+        chunk_size=1,
+        created_by="admin",
+        status="processing",
+    )
+    run_pipeline.assert_awaited_once_with(
+        file_content=b"cleaned",
+        source_type="txt",
+        source_file="source.png",
+        subject="DS",
+        subject_id=3,
+        options={"image_fast_mode": True},
+        db=db,
+        page_images={1: b"image-bytes"},
+        pre_extracted_blocks=[{"boxes": []}],
+    )

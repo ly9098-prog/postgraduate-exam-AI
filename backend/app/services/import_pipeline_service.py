@@ -30,8 +30,10 @@ from app.services.import_image_completion import (
 )
 from app.services.import_image_stages import (
     ImageOcrStage,
+    ImagePipelineStage,
     ImageStageCheckpointRequest,
     ensure_image_checkpoint,
+    run_image_pipeline_stage,
     run_prepared_image_ocr,
 )
 from app.services.import_background_execution import (
@@ -469,29 +471,22 @@ async def _run_image_pipeline_with_db(
             options,
             enabled=bool(options.get("image_fast_mode", True)),
         )
-        async with async_session() as db:
-            await ckpt.ensure_pipeline_record(
-                db,
+        result = await run_image_pipeline_stage(
+            ImagePipelineStage(
                 pipeline_id=pipeline_id,
-                source_type="image",
-                source_file=source_file or None,
-                total_pages=1,
-                chunk_size=1,
-                created_by=created_by,
-                status="processing",
-            )
-            result = await run_pipeline(
-                file_content=raw_text.encode("utf-8"),
-                source_type="txt",
                 source_file=source_file,
                 subject=subject,
                 subject_id=subject_id,
                 options=pipeline_options,
-                db=db,
-                page_images={1: image_content},
+                created_by=created_by,
+                image_bytes=image_content,
+                cleaned_text=raw_text,
                 pre_extracted_blocks=pre_extracted_blocks,
+                async_session=async_session,
+                ensure_record=ckpt.ensure_pipeline_record,
+                run_pipeline=run_pipeline,
             )
-        del image_content
+        )
 
         result, status = finalize_image_pipeline_result(
             ImageCompletionRequest(
