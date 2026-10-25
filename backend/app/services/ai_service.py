@@ -53,6 +53,7 @@ from app.services.ai.analysis_cache import (
     _analysis_model_signature,
     build_cached_error_analysis_response,
 )
+from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
     _analysis_cache_age_ms,
@@ -583,56 +584,11 @@ async def analyze_error(
         correct_answer=q.answer,
         user_answer=wq.wrong_answer,
     )
-    current_version_id = int(getattr(q, "current_version_id", 0) or 0)
-    wrong_version_id = int(getattr(wq, "question_version_id", 0) or 0)
-    if (
-        current_version_id
-        and wrong_version_id
-        and current_version_id != wrong_version_id
-    ):
-        revision = await db.scalar(
-            select(QuestionVersion).where(
-                QuestionVersion.id == wrong_version_id,
-                QuestionVersion.question_id == wq.question_id,
-            )
-        )
-        revision_semantics_match = False
-        if revision is not None:
-            historical_grounding = build_answer_grounding(
-                question_type=getattr(revision, "question_type", None)
-                or getattr(q, "question_type", None),
-                content=revision.content,
-                options=revision.options,
-                correct_answer=revision.answer,
-                user_answer=wq.wrong_answer,
-            )
-            revision_semantics_match = grounding_fact_signature(
-                current_answer_grounding
-            ) == grounding_fact_signature(historical_grounding)
-        if not revision_semantics_match:
-            logger.warning(
-                "ai.error_analysis.revision_guard wq_id=%s question_id=%s "
-                "wrong_version_id=%s current_version_id=%s revision_found=%s",
-                wq.id,
-                q.id,
-                wrong_version_id,
-                current_version_id,
-                revision is not None,
-            )
-            generated_at = datetime.now(UTC).isoformat()
-            return {
-                "content": build_revision_drift_analysis(),
-                "from_cache": False,
-                "from_fallback": False,
-                "tokens_used": 0,
-                "model": "revision_guard",
-                "duration_ms": 0,
-                "force_regenerated": False,
-                "visual_input_count": 0,
-                "input_mode": "text",
-                "generated_at": generated_at,
-                "revision_guarded": True,
-            }
+    revision_guard_response = await check_analysis_revision_drift(
+        db, wrong_question=wq, question=q
+    )
+    if revision_guard_response is not None:
+        return revision_guard_response
 
     stored_visual_sources = _collect_question_visual_sources(q)
     requires_visual = bool(
