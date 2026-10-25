@@ -297,55 +297,46 @@ function stabilizeFormulaTree(nodes) {
 }
 
 function stabilizeRichMathTree(nodes) {
-  function hasDirectKatexChild(node) {
-    var children = node && node.children
-    if (!Array.isArray(children)) return false
-    for (var i = 0; i < children.length; i++) {
-      var child = children[i] || {}
-      var className = child.attrs ? String(child.attrs.class || '') : ''
-      if (className.split(/\s+/).indexOf('katex') >= 0) return true
-    }
-    return false
-  }
-
-  function walk(items) {
-    if (!Array.isArray(items)) return
-    for (var i = 0; i < items.length; i++) {
-      var node = items[i] || {}
-      var className = node.attrs ? String(node.attrs.class || '') : ''
-      var classes = className ? className.split(/\s+/) : []
-      stabilizeRadicalSvg(node, classes)
-
-      // Only the wrapper created for this exact formula is atomic. Never mark
-      // an ancestor span merely because it contains KaTeX: doing that turns the
-      // whole Chinese paragraph into one no-wrap inline block and pushes it
-      // outside the viewport.
-      if (node.l === 'T') {
-        if (shouldScrollInlineFormula(node)) {
-          appendNodeStyle(node, 'display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;margin:0 3rpx;padding:5rpx 0 7rpx;')
-        } else {
-          appendNodeStyle(node, 'display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow:visible;box-sizing:border-box;margin:0 3rpx;padding:0;')
-        }
-      } else if (hasDirectKatexChild(node)) {
-        // Explicit $$...$$ / \[...\] content is a block formula. Keep its
-        // full KaTeX tree, but constrain scrolling to this formula only.
-        appendNodeStyle(node, 'display:block;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;white-space:nowrap;')
-      }
-      if (classes.indexOf('katex') >= 0) {
-        appendNodeStyle(node, 'display:inline-block;width:auto;max-width:none;white-space:nowrap;font-size:1.12em;line-height:1.22;vertical-align:middle;')
-      }
-      if (classes.indexOf('katex-html') >= 0) {
-        appendNodeStyle(node, 'display:inline-block;width:auto;white-space:nowrap;')
-      }
-      if (classes.indexOf('base') >= 0) {
-        appendNodeStyle(node, 'width:auto;white-space:nowrap;')
-      }
-      if (node.children) walk(node.children)
-    }
-  }
-
-  walk(nodes)
+  walkStabilize(nodes)
   return nodes
+}
+
+function hasDirectKatexChild(node) {
+  var children = node && node.children
+  if (!Array.isArray(children)) return false
+  for (var i = 0; i < children.length; i++) {
+    var child = children[i] || {}
+    var className = child.attrs ? String(child.attrs.class || "") : ""
+    if (className.split(/\s+/).indexOf("katex") >= 0) return true
+  }
+  return false
+}
+
+function walkStabilize(items) {
+  if (!Array.isArray(items)) return
+  for (var i = 0; i < items.length; i++) {
+    var node = items[i] || {}
+    var className = node.attrs ? String(node.attrs.class || "") : ""
+    var classes = className ? className.split(/\s+/) : []
+    stabilizeRadicalSvg(node, classes)
+    stabilizeNodeStyles(node, classes)
+    if (node.children) walkStabilize(node.children)
+  }
+}
+
+function stabilizeNodeStyles(node, classes) {
+  if (node.l === "T") {
+    if (shouldScrollInlineFormula(node)) {
+      appendNodeStyle(node, "display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;margin:0 3rpx;padding:5rpx 0 7rpx;")
+    } else {
+      appendNodeStyle(node, "display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow:visible;box-sizing:border-box;margin:0 3rpx;padding:0;")
+    }
+  } else if (hasDirectKatexChild(node)) {
+    appendNodeStyle(node, "display:block;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;white-space:nowrap;")
+  }
+  if (classes.indexOf("katex") >= 0) appendNodeStyle(node, "display:inline-block;width:auto;max-width:none;white-space:nowrap;font-size:1.12em;line-height:1.22;vertical-align:middle;")
+  if (classes.indexOf("katex-html") >= 0) appendNodeStyle(node, "display:inline-block;width:auto;white-space:nowrap;")
+  if (classes.indexOf("base") >= 0) appendNodeStyle(node, "width:auto;white-space:nowrap;")
 }
 
 function parseStaticHtmlNodes(html) {

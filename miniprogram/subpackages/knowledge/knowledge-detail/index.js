@@ -90,64 +90,70 @@ throw error
 this._detailRequests[key] = request
 return request
 },
-_normalizeDetail(rawDetail) {
-const source = rawDetail || {}
-const directChildren = Array.isArray(source.direct_children) ? source.direct_children : []
-const descendantCount = Math.max(0, Number(source.descendant_count) || 0)
-const isParentNode = directChildren.length > 0 || descendantCount > 0
-const detail = {
-...source,
-prerequisites: Array.isArray(source.prerequisites) ? source.prerequisites : [],
-next_nodes: Array.isArray(source.next_nodes) ? source.next_nodes : [],
-related_nodes: Array.isArray(source.related_nodes) ? source.related_nodes : [],
-ancestors: Array.isArray(source.ancestors) ? source.ancestors : [],
-direct_children: directChildren,
-recent_answers: Array.isArray(source.recent_answers) ? source.recent_answers : [],
-practice_route_params: source.practice_route_params || {},
-correct_count: Number(source.correct_count) || 0,
-wrong_count: Number(source.wrong_count) || 0,
-recent_wrong_count: Number(source.recent_wrong_count) || 0,
-attempt_count: Number(source.attempt_count) || 0,
-trainable_question_count: Number(source.trainable_question_count) || 0,
-descendant_count: descendantCount,
-subtree_trainable_knowledge_points: Math.max(0, Number(source.subtree_trainable_knowledge_points) || 0),
-subtree_reliable_knowledge_points: Math.max(0, Number(source.subtree_reliable_knowledge_points) || 0),
-subtree_weak_knowledge_points: Math.max(0, Number(source.subtree_weak_knowledge_points) || 0),
-subtree_coverage_ratio: Math.max(0, Number(source.subtree_coverage_ratio) || 0),
-is_parent_node: isParentNode,
-}
-const recent = detail.recent_answers.map(item => ({
-...item,
-mark: item.is_correct ? '✓' : '×',
-cls: item.is_correct ? 'correct' : 'wrong',
-}))
-const relationItems = this._buildRelationItems(detail)
-const relationCount = detail.prerequisites.length + detail.next_nodes.length + detail.related_nodes.length
-const displayMastery = isParentNode ? source.subtree_mastery_score : source.mastery_score
-const displayConfidence = isParentNode ? source.subtree_confidence : source.confidence
-const displayStatus = isParentNode ? (source.subtree_status || source.status) : source.status
-const coverageText = isParentNode
-? `${Math.round(Math.min(1, detail.subtree_coverage_ratio) * 100)}%`
-: (detail.accuracy == null ? '--' : `${Math.round((Number(detail.accuracy) || 0) * 100)}%`)
-detail.display_status = displayStatus || 'no_data'
-const practiceTrainable = isParentNode
-? detail.subtree_trainable_knowledge_points
-: detail.trainable_question_count
-const practiceDisabled = !detail.practice_route_params.subject_id ||
-!detail.practice_route_params.knowledge_point_id ||
-practiceTrainable <= 0
-return {
-detail,
-syllabusVersion: detail.syllabus_version || null,
-recent,
-relationItems,
-relationCount,
-scoreText: displayMastery == null ? '--' : `${Math.round(Number(displayMastery) || 0)}%`,
-confidenceText: `${Math.round((Number(displayConfidence) || 0) * 100)}%`,
-accuracyText: coverageText,
-practiceDisabled,
-}
-},
+  _normalizeDetail(rawDetail) {
+    var source = rawDetail || {}
+    var directChildren = Array.isArray(source.direct_children) ? source.direct_children : []
+    var descendantCount = Math.max(0, Number(source.descendant_count) || 0)
+    var isParentNode = directChildren.length > 0 || descendantCount > 0
+    var detail = this._buildDetailObject(source, directChildren, descendantCount, isParentNode)
+    var recent = detail.recent_answers.map(function(item) {
+      return Object.assign({}, item, { mark: item.is_correct ? "✓" : "×", cls: item.is_correct ? "correct" : "wrong" })
+    })
+    var relationItems = this._buildRelationItems(detail)
+    var relationCount = detail.prerequisites.length + detail.next_nodes.length + detail.related_nodes.length
+    var displayInfo = this._resolveDisplayInfo(detail, source, isParentNode)
+    detail.display_status = displayInfo.displayStatus || "no_data"
+    var practiceDisabled = this._resolvePracticeDisabled(detail, isParentNode)
+    return this._buildDetailResult(detail, recent, relationItems, relationCount, displayInfo, practiceDisabled)
+  },
+
+  _buildDetailObject(source, directChildren, descendantCount, isParentNode) {
+    return Object.assign({}, source, {
+      prerequisites: Array.isArray(source.prerequisites) ? source.prerequisites : [],
+      next_nodes: Array.isArray(source.next_nodes) ? source.next_nodes : [],
+      related_nodes: Array.isArray(source.related_nodes) ? source.related_nodes : [],
+      ancestors: Array.isArray(source.ancestors) ? source.ancestors : [],
+      direct_children: directChildren,
+      recent_answers: Array.isArray(source.recent_answers) ? source.recent_answers : [],
+      practice_route_params: source.practice_route_params || {},
+      correct_count: Number(source.correct_count) || 0,
+      wrong_count: Number(source.wrong_count) || 0,
+      recent_wrong_count: Number(source.recent_wrong_count) || 0,
+      attempt_count: Number(source.attempt_count) || 0,
+      trainable_question_count: Number(source.trainable_question_count) || 0,
+      descendant_count: descendantCount,
+      subtree_trainable_knowledge_points: Math.max(0, Number(source.subtree_trainable_knowledge_points) || 0),
+      subtree_reliable_knowledge_points: Math.max(0, Number(source.subtree_reliable_knowledge_points) || 0),
+      subtree_weak_knowledge_points: Math.max(0, Number(source.subtree_weak_knowledge_points) || 0),
+      subtree_coverage_ratio: Math.max(0, Number(source.subtree_coverage_ratio) || 0),
+      is_parent_node: isParentNode,
+    })
+  },
+
+  _resolveDisplayInfo(detail, source, isParentNode) {
+    var displayMastery = isParentNode ? source.subtree_mastery_score : source.mastery_score
+    var displayConfidence = isParentNode ? source.subtree_confidence : source.confidence
+    var displayStatus = isParentNode ? (source.subtree_status || source.status) : source.status
+    var coverageText = isParentNode
+      ? Math.round(Math.min(1, detail.subtree_coverage_ratio) * 100) + "%"
+      : (detail.accuracy == null ? "--" : Math.round((Number(detail.accuracy) || 0) * 100) + "%")
+    return { displayMastery: displayMastery, displayConfidence: displayConfidence, displayStatus: displayStatus, coverageText: coverageText }
+  },
+
+  _resolvePracticeDisabled(detail, isParentNode) {
+    var practiceTrainable = isParentNode ? detail.subtree_trainable_knowledge_points : detail.trainable_question_count
+    return !detail.practice_route_params.subject_id || !detail.practice_route_params.knowledge_point_id || practiceTrainable <= 0
+  },
+
+  _buildDetailResult(detail, recent, relationItems, relationCount, displayInfo, practiceDisabled) {
+    return {
+      detail: detail, syllabusVersion: detail.syllabus_version || null,
+      recent: recent, relationItems: relationItems, relationCount: relationCount,
+      scoreText: displayInfo.displayMastery == null ? "--" : Math.round(Number(displayInfo.displayMastery) || 0) + "%",
+      confidenceText: Math.round((Number(displayInfo.displayConfidence) || 0) * 100) + "%",
+      accuracyText: displayInfo.coverageText, practiceDisabled: practiceDisabled,
+    }
+  },
 _buildRelationItems(detail) {
 const groups = [
 { key: 'prerequisites', type: 'prerequisite' },

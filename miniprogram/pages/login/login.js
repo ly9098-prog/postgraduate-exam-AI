@@ -169,77 +169,64 @@ Page({
    */
   async _autoLogin() {
     if (this._pageDestroyed) return
-    const attemptSeq = ++this._loginAttemptSeq
-    this._safeSetData({ loading: true, error: '' })
+    var attemptSeq = ++this._loginAttemptSeq
+    this._safeSetData({ loading: true, error: "" })
+    if (await this._tryExistingSession(attemptSeq)) return
+    if (!this.data.agreed) { this._safeSetData({ loading: false }); return }
+    await this._tryWxLoginLoop(attemptSeq)
+  },
 
-    if (auth.isLoggedIn()) {
-      const ok = await auth.checkAndRefreshToken()
-      if (!this._isCurrentAttempt(attemptSeq)) return
-      if (ok && privacy.hasAcceptedCurrentPrivacy()) {
-        this._safeSetData({ loading: false })
-        this._scheduleHomeRedirect(0)
-        return
-      }
-
-      // A failed refresh may already have cleared auth and initiated a reLaunch
-      // back to this page. Do not start a competing wx.login from the stale
-      // page instance; the new login page will handle Phase 2.
-      if (!auth.isLoggedIn()) {
-        this._safeSetData({ loading: false })
-        return
-      }
-    }
-
-    // Phase 2 requires agreement — don't silently login without user consent
-    if (!this.data.agreed) {
+  async _tryExistingSession(attemptSeq) {
+    if (!auth.isLoggedIn()) return false
+    var ok = await auth.checkAndRefreshToken()
+    if (!this._isCurrentAttempt(attemptSeq)) return true
+    if (ok && privacy.hasAcceptedCurrentPrivacy()) {
       this._safeSetData({ loading: false })
-      return
+      this._scheduleHomeRedirect(0)
+      return true
     }
+    if (!auth.isLoggedIn()) { this._safeSetData({ loading: false }); return true }
+    return false
+  },
 
-    let lastErr
-    for (let i = 0; i < 2; i++) {
-      if (i > 0) await new Promise(resolve => setTimeout(resolve, 600))
+  async _tryWxLoginLoop(attemptSeq) {
+    var lastErr
+    for (var i = 0; i < 2; i++) {
+      if (i > 0) await new Promise(function(resolve) { setTimeout(resolve, 600) })
       if (!this._isCurrentAttempt(attemptSeq)) return
-
       try {
-        if (config.DEV) console.log('[AUTH] Phase 2 attempt ' + (i + 1) + ': wx.login')
-        const loginResult = await wx.login()
-        if (!this._isCurrentAttempt(attemptSeq)) return
-        const code = loginResult && loginResult.code
-        if (!code) throw new Error('微信登录失败，请重试')
-
-        if (config.DEV) console.log('[AUTH] Phase 2: code received, calling POST /auth/login')
-        const data = await api.post('/auth/login', { code })
-        if (!this._isCurrentAttempt(attemptSeq)) return
-
-        if (config.DEV) console.log('[AUTH] Phase 2: login succeeded, storing token')
-        auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
-        this._savePrivacyAfterLogin()
-        api.resetRedirecting()
-
-        const valid = await auth.checkAndRefreshToken()
-        if (!this._isCurrentAttempt(attemptSeq)) return
-        if (!valid) {
-          storage.clearSession({ preservePrivacyAcceptance: true, includeDebugSnapshots: false })
-          throw new Error('登录状态校验失败，请重试')
-        }
-
-        this._safeSetData({ loading: false })
-        this._scheduleHomeRedirect(0)
+        await this._performWxLoginAttempt(attemptSeq)
         return
       } catch (e) {
         lastErr = e
-        const msg = (e && (e.errMsg || e.message)) || ''
-        if (config.DEV) console.warn('[AUTH] Phase 2 attempt ' + (i + 1) + ' FAILED:', msg)
+        if (config.DEV) console.warn("[AUTH] Phase 2 attempt " + (i + 1) + " FAILED:", (e && (e.errMsg || e.message)) || "")
       }
     }
-
     if (!this._isCurrentAttempt(attemptSeq)) return
-    this._safeSetData({
-      error: this._loginErrorMessage(lastErr, '自动登录失败，请点击微信登录重试'),
-      showDevLogin: !!config.DEV,
-      loading: false,
-    })
+    this._safeSetData({ error: this._loginErrorMessage(lastErr, "自动登录失败，请点击微信登录重试"), showDevLogin: !!config.DEV, loading: false })
+  },
+
+  async _performWxLoginAttempt(attemptSeq) {
+    if (config.DEV) console.log("[AUTH] Phase 2 attempt: wx.login")
+    var loginResult = await wx.login()
+    if (!this._isCurrentAttempt(attemptSeq)) return
+    var code = loginResult && loginResult.code
+    if (!code) throw new Error("微信登录失败，请重试")
+    if (config.DEV) console.log("[AUTH] Phase 2: code received, calling POST /auth/login")
+    var data = await api.post("/auth/login", { code: code })
+    if (!this._isCurrentAttempt(attemptSeq)) return
+    if (config.DEV) console.log("[AUTH] Phase 2: login succeeded, storing token")
+    auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
+    this._savePrivacyAfterLogin()
+    api.resetRedirecting()
+    var valid = await auth.checkAndRefreshToken()
+    if (!this._isCurrentAttempt(attemptSeq)) return
+    if (!valid) {
+      storage.clearSession({ preservePrivacyAcceptance: true, includeDebugSnapshots: false })
+      throw new Error("登录状态校验失败，请重试")
+    }
+    this._safeSetData({ loading: false })
+    this._scheduleHomeRedirect(0)
   },
 
   onAgreementChange(e) {

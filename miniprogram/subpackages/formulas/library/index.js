@@ -661,97 +661,74 @@ Page({
   async loadFormulas(replace = false) {
     if (!this._pageAlive) return
     if (replace) this._replaceRequestVersion = (this._replaceRequestVersion || 0) + 1
-    const requestVersion = this._replaceRequestVersion || 0
-    const { loading, loadingMore, initialLoading, page, pageSize, activeSubject, activeChapterId,
-            activeTags, searchValue, onlyFavorites, hasMore, activeLibraryType, activeStudyCardType } = this.data
-    if (loading || loadingMore || (initialLoading && !replace) || !hasMore) return
-    const loadingFlag = replace ? 'initialLoading' : 'loadingMore'
+    var requestVersion = this._replaceRequestVersion || 0
+    var d = this.data
+    if (d.loading || d.loadingMore || (d.initialLoading && !replace) || !d.hasMore) return
+    var loadingFlag = replace ? "initialLoading" : "loadingMore"
     this.setData({ [loadingFlag]: true, loadError: false })
-
     try {
-      const baseParams = {
-        subject_code: activeSubject,
-        page_size: pageSize,
-        library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
-      }
-      if (activeSubject === EXAM408_FORMULA_SUBJECT) baseParams.exam_scope = EXAM408_FORMULA_SUBJECT
-      if (activeSubject === EXAM408_FORMULA_SUBJECT && activeStudyCardType) baseParams.study_card_type = activeStudyCardType
-      if (activeChapterId) baseParams.chapter_id = activeChapterId
-      if (activeTags.length) {
-        const tagCodes = this.data.tags
-          .filter(t => activeTags.includes(t.id))
-          .map(t => t.code)
-          .join(',')
-        if (tagCodes) baseParams.tags = tagCodes
-      }
-      if (searchValue) baseParams.q = searchValue
-      if (onlyFavorites) baseParams.favorite_only = true
-
-      // Always use /formulas — it supports all filter params including favorite_only
-      const url = '/formulas'
-
-      let requestPage = page
-      let responseData = null
-      let rawItems = []
-      let items = []
-      let attempts = 0
-
-      // The backend is expected to filter before pagination. The small client
-      // still performs the same classification as a compatibility fallback so
-      // older deployments do not mix pure formulas into the graph tab. When a
-      // legacy page contains no graph, scan a few following pages automatically
-      // to avoid showing a false empty state.
-      do {
-        responseData = await api.request('GET', url, { ...baseParams, page: requestPage })
-        rawItems = responseData?.items || []
-        const decorated = this.decorateFormulaItems(rawItems)
-        items = filterFormulaItemsByLibraryType(decorated, activeLibraryType)
-        requestPage += 1
-        attempts += 1
-      } while (
-        activeLibraryType === LIBRARY_TYPE_FUNCTION_GRAPH &&
-        items.length === 0 &&
-        rawItems.length === pageSize &&
-        attempts < MAX_GRAPH_FALLBACK_PAGES
-      )
-
+      var baseParams = this._buildFormulaParams(d)
+      var fetchResult = await this._fetchFormulaPages(baseParams, d.pageSize, d.activeLibraryType)
       if (!this._pageAlive || requestVersion !== (this._replaceRequestVersion || 0)) return
-
-      const rawTotal = responseData?.filtered_total ?? responseData?.total
-      const parsedTotal = Number(rawTotal)
-      const hasKnownTotal = Number.isFinite(parsedTotal) && parsedTotal >= 0
-      const mergedFormulas = replace
-        ? items
-        : (this.data.formulas || []).concat(items).filter((item, index, list) => (
-          list.findIndex((candidate) => String(candidate.id) === String(item.id)) === index
-        ))
-      const fetchedThroughPage = Math.max(0, requestPage - 1)
-      const totalItems = hasKnownTotal ? parsedTotal : mergedFormulas.length
-      const hasMoreByResponse = rawItems.length === pageSize
-      this.setData({
-        formulas: mergedFormulas,
-        total: totalItems,
-        page: requestPage,
-        hasMore: hasKnownTotal
-          ? fetchedThroughPage * pageSize < totalItems
-          : hasMoreByResponse,
-        initialLoading: false,
-        loadingMore: false,
-      })
+      this.setData(this._buildFormulaResultPatch(fetchResult, d, replace, requestVersion))
     } catch (e) {
-      if (!this._pageAlive || requestVersion !== (this._replaceRequestVersion || 0)) return
-      console.error('Failed to load formulas', e)
-      const shouldReplaceWithError = replace || !(this.data.formulas || []).length
-      this.setData({
-        initialLoading: false,
-        loadingMore: false,
-        loadError: shouldReplaceWithError,
-        loadErrorMessage: shouldReplaceWithError ? (e.message || '加载失败') : '',
-      })
-      if (!shouldReplaceWithError) {
-        wx.showToast({ title: '加载更多失败，请重试', icon: 'none' })
-      }
+      this._handleFormulaLoadError(e, replace, requestVersion)
     }
+  },
+
+  _buildFormulaParams(d) {
+    var params = {
+      subject_code: d.activeSubject,
+      page_size: d.pageSize,
+      library_type: d.activeLibraryType || LIBRARY_TYPE_FORMULA,
+    }
+    if (d.activeSubject === EXAM408_FORMULA_SUBJECT) params.exam_scope = EXAM408_FORMULA_SUBJECT
+    if (d.activeSubject === EXAM408_FORMULA_SUBJECT && d.activeStudyCardType) params.study_card_type = d.activeStudyCardType
+    if (d.activeChapterId) params.chapter_id = d.activeChapterId
+    if (d.activeTags.length) {
+      var tagCodes = this.data.tags.filter(function(t) { return d.activeTags.includes(t.id) }).map(function(t) { return t.code }).join(",")
+      if (tagCodes) params.tags = tagCodes
+    }
+    if (d.searchValue) params.q = d.searchValue
+    if (d.onlyFavorites) params.favorite_only = true
+    return params
+  },
+
+  async _fetchFormulaPages(baseParams, pageSize, activeLibraryType) {
+    var requestPage = this.data.page, responseData = null, rawItems = [], items = [], attempts = 0
+    do {
+      responseData = await api.request("GET", "/formulas", Object.assign({}, baseParams, { page: requestPage }))
+      rawItems = (responseData && responseData.items) || []
+      var decorated = this.decorateFormulaItems(rawItems)
+      items = filterFormulaItemsByLibraryType(decorated, activeLibraryType)
+      requestPage += 1; attempts += 1
+    } while (activeLibraryType === LIBRARY_TYPE_FUNCTION_GRAPH && items.length === 0 && rawItems.length === pageSize && attempts < MAX_GRAPH_FALLBACK_PAGES)
+    return { responseData: responseData, rawItems: rawItems, items: items, requestPage: requestPage, pageSize: pageSize }
+  },
+
+  _buildFormulaResultPatch(fetchResult, d, replace, requestVersion) {
+    var rawTotal = (fetchResult.responseData && (fetchResult.responseData.filtered_total != null ? fetchResult.responseData.filtered_total : fetchResult.responseData.total))
+    var parsedTotal = Number(rawTotal)
+    var hasKnownTotal = Number.isFinite(parsedTotal) && parsedTotal >= 0
+    var mergedFormulas = replace ? fetchResult.items : (d.formulas || []).concat(fetchResult.items).filter(function(item, index, list) {
+      return list.findIndex(function(candidate) { return String(candidate.id) === String(item.id) }) === index
+    })
+    var fetchedThroughPage = Math.max(0, fetchResult.requestPage - 1)
+    var totalItems = hasKnownTotal ? parsedTotal : mergedFormulas.length
+    var hasMoreByResponse = fetchResult.rawItems.length === fetchResult.pageSize
+    return {
+      formulas: mergedFormulas, total: totalItems, page: fetchResult.requestPage,
+      hasMore: hasKnownTotal ? fetchedThroughPage * fetchResult.pageSize < totalItems : hasMoreByResponse,
+      initialLoading: false, loadingMore: false,
+    }
+  },
+
+  _handleFormulaLoadError(e, replace, requestVersion) {
+    if (!this._pageAlive || requestVersion !== (this._replaceRequestVersion || 0)) return
+    console.error("Failed to load formulas", e)
+    var shouldReplaceWithError = replace || !(this.data.formulas || []).length
+    this.setData({ initialLoading: false, loadingMore: false, loadError: shouldReplaceWithError, loadErrorMessage: shouldReplaceWithError ? (e.message || "加载失败") : "" })
+    if (!shouldReplaceWithError) wx.showToast({ title: "加载更多失败，请重试", icon: "none" })
   },
 
   isFunctionGraphItem(item) {
