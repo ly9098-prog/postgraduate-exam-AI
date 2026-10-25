@@ -77,6 +77,10 @@ from app.services.practice.knowledge_scope import (
     load_descendant_scope,
     root_scope,
 )
+from app.services.practice.knowledge_scope_loaders import (
+    load_knowledge_states,
+    load_question_knowledge_rows,
+)
 from app.services.practice.leitner_query import (
     LeitnerQueryRequest,
     due_condition,
@@ -585,9 +589,6 @@ async def get_knowledge_scope_practice_questions(
     A question linked to several target KPs is assigned to its highest-priority
     bucket and is returned at most once.
     """
-    from app.models.question_knowledge_point import QuestionKnowledgePoint
-    from app.models.user_knowledge_state import UserKnowledgeState
-
     target_ids = list(
         dict.fromkeys(int(value) for value in knowledge_point_ids if int(value) > 0)
     )
@@ -611,25 +612,8 @@ async def get_knowledge_scope_practice_questions(
         return candidates
 
     candidate_ids = [int(question.id) for question in candidates]
-    state_rows = await db.execute(
-        select(UserKnowledgeState).where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.knowledge_point_id.in_(target_ids),
-        )
-    )
-    states = {
-        int(state.knowledge_point_id): state for state in state_rows.scalars().all()
-    }
-
-    mapping_rows = await db.execute(
-        select(
-            QuestionKnowledgePoint.question_id,
-            QuestionKnowledgePoint.knowledge_point_id,
-        ).where(
-            QuestionKnowledgePoint.question_id.in_(candidate_ids),
-            QuestionKnowledgePoint.knowledge_point_id.in_(target_ids),
-        )
-    )
+    states = await load_knowledge_states(db, user_id, target_ids)
+    mapping_rows = await load_question_knowledge_rows(db, candidate_ids, target_ids)
     q_to_kps = question_knowledge_mapping(mapping_rows.all())
     buckets = build_question_buckets(candidates, q_to_kps, states)
 
