@@ -353,133 +353,118 @@ this._activeTeacherCacheKey = ''
 this._aiGenerationMarker = ''
 resetRenderGuard()
 },
-async loadData(wqId) {
-var loadSeq = ++this._aiRequestId
-this._resetAiLoadingState()
-this._aiResult = null
-this.setData({
-loading: true,
-errorText: '',
-aiFallback: false,
-aiErrorText: '',
-aiRetryable: true,
-aiRequested: false,
-aiFromCache: false,
-aiFromQuestionAnalysis: false,
-masterConfirmVisible: false,
-unmasterConfirmVisible: false,
-moreMenuVisible: false,
-removeConfirmVisible: false,
-masterSubmitting: false,
-removeSubmitting: false,
-diagnosisSheetVisible: false,
-diagnosisSaving: false,
-diagnosisSyncing: false,
-})
-this._diagnosisRequestSeq++
-this._teacherRequestSeq++
-try {
-const wq = await api.get(`/wrong-questions/${wqId}`)
-if (loadSeq !== this._aiRequestId || !this._alive) return
-if (!wq) throw new Error('not found')
-if (this._wqCache) this._wqCache[wqId] = { data: wq, ts: Date.now() }
-const raw = _processWqData(wq, this.data.safeModeActive)
-const currentQuestion = Object.assign({}, wq, {
-_optionList: raw._optionList,
-_optionKeys: raw._optionKeys,
-_opts: raw._opts,
-_blankOptionGroups: raw._blankOptionGroups,
-_hasBlankOptionGroups: raw._hasBlankOptionGroups,
-_renderModel: raw._renderModel,
-})
-var totalQ = this.data.totalQuestions || 1
-var wrongQuestions = []
-for (var wi = 0; wi < totalQ; wi++) {
-wrongQuestions.push({ _answered: true })
-}
-this._currentWqId = wqId
-this._diagnosisRequestSeq++
-this._teacherRequestSeq++
-this._errorTypeLabelText = raw.errorTypeLabelText
-this._aiGenerationMarker = _generationMarker(wq)
-this._aiResult = null
-var data = {
-wq,
-currentQuestion,
-wrongQuestions,
-runnerProgressPercent: totalQ > 0 ? Math.round((this.data.currentIdx + 1) / totalQ * 100) : 0,
-subjectLabelText: raw.subjectLabelText,
-loading: false,
-aiLoading: false,
-errorText: '',
-aiCards: null,
-aiRequested: false,
-aiFromCache: false,
-aiFromQuestionAnalysis: false,
-aiFallback: false,
-aiErrorText: '',
-aiRetryable: true,
-isCurrentMastered: _isWqMastered(wq),
-masterSubmitting: false,
-removeSubmitting: false,
-errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
-nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),
-diagnosisSyncing: false,
-teacherLoadingAction: '',
-teacherLastAction: '',
-teacherResult: null,
-teacherSheetVisible: false,
-teacherErrorText: '',
-teacherFeedbackSent: '',
-teacherActionsExpanded: false,
-}
-var preferredAnalysis = _resolvePreferredAnalysis(wq)
-if (preferredAnalysis) {
-var preferredNormalized = preferredAnalysis.normalized
-data.aiRequested = true
-if (_hasAiContent(preferredNormalized)) {
-this._aiResult = preferredNormalized
-data.aiCards = _normalizeAiResult(this._aiResult)
-data.aiFromCache = preferredAnalysis.source === 'ai'
-data.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
-data.aiFallback = false
-data.aiErrorText = ''
-} else {
-this._aiResult = null
-data.aiCards = null
-data.aiFromCache = false
-data.aiFromQuestionAnalysis = false
-data.aiFallback = true
-data.aiErrorText = preferredNormalized && preferredNormalized.formatError
-? 'AI 返回格式异常，请重新生成'
-: 'AI 分析结果为空，请重新生成'
-}
-}
-if (loadSeq !== this._aiRequestId || !this._alive) return
-this.setData(data)
-this._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
-const checkModel = data.currentQuestion && data.currentQuestion._renderModel
-if (checkModel) {
-this._checkRenderInvariant(checkModel)
-this._recordRenderTrace(checkModel.renderTrace)
-}
-} catch (e) {
-if (loadSeq !== this._aiRequestId || !this._alive) return
-console.error('加载错题详情失败', e)
-this._aiResult = null
-this.setData({
-loading: false,
-errorText: '错题不存在或已被移除',
-wq: null,
-aiLoading: false,
-aiFallback: false,
-aiErrorText: '',
-aiRequested: false,
-aiFromCache: false,
-aiFromQuestionAnalysis: false,
-})
-}
-},
+  async loadData(wqId) {
+    var loadSeq = ++this._aiRequestId
+    this._resetAiLoadingState()
+    this._aiResult = null
+    this.setData(this._loadDataInitialPatch())
+    this._diagnosisRequestSeq++
+    this._teacherRequestSeq++
+    try {
+      const wq = await api.get(`/wrong-questions/${wqId}`)
+      if (loadSeq !== this._aiRequestId || !this._alive) return
+      if (!wq) throw new Error('not found')
+      if (this._wqCache) this._wqCache[wqId] = { data: wq, ts: Date.now() }
+      const data = this._buildLoadedDataPatch(wq, wqId, loadSeq)
+      if (!data) return
+      this.setData(data)
+      this._refreshDiagnosisFromServer(wqId, wq.error_diagnosis)
+      this._checkLoadedRenderInvariant(data)
+    } catch (e) {
+      this._handleLoadDataError(e, loadSeq)
+    }
+  },
+
+  _loadDataInitialPatch() {
+    return {
+      loading: true, errorText: '', aiFallback: false, aiErrorText: '',
+      aiRetryable: true, aiRequested: false, aiFromCache: false,
+      aiFromQuestionAnalysis: false, masterConfirmVisible: false,
+      unmasterConfirmVisible: false, moreMenuVisible: false,
+      removeConfirmVisible: false, masterSubmitting: false,
+      removeSubmitting: false, diagnosisSheetVisible: false,
+      diagnosisSaving: false, diagnosisSyncing: false,
+    }
+  },
+
+  _buildLoadedDataPatch(wq, wqId, loadSeq) {
+    const raw = _processWqData(wq, this.data.safeModeActive)
+    const currentQuestion = Object.assign({}, wq, {
+      _optionList: raw._optionList, _optionKeys: raw._optionKeys,
+      _opts: raw._opts, _blankOptionGroups: raw._blankOptionGroups,
+      _hasBlankOptionGroups: raw._hasBlankOptionGroups, _renderModel: raw._renderModel,
+    })
+    var totalQ = this.data.totalQuestions || 1
+    var wrongQuestions = []
+    for (var wi = 0; wi < totalQ; wi++) wrongQuestions.push({ _answered: true })
+    this._currentWqId = wqId
+    this._diagnosisRequestSeq++
+    this._teacherRequestSeq++
+    this._errorTypeLabelText = raw.errorTypeLabelText
+    this._aiGenerationMarker = _generationMarker(wq)
+    this._aiResult = null
+    var data = this._buildLoadedDataFields(wq, currentQuestion, wrongQuestions, raw, totalQ)
+    this._applyPreferredAnalysisToData(data, wq)
+    if (loadSeq !== this._aiRequestId || !this._alive) return null
+    return data
+  },
+
+  _buildLoadedDataFields(wq, currentQuestion, wrongQuestions, raw, totalQ) {
+    return {
+      wq, currentQuestion, wrongQuestions,
+      runnerProgressPercent: totalQ > 0 ? Math.round((this.data.currentIdx + 1) / totalQ * 100) : 0,
+      subjectLabelText: raw.subjectLabelText, loading: false, aiLoading: false,
+      errorText: '', aiCards: null, aiRequested: false, aiFromCache: false,
+      aiFromQuestionAnalysis: false, aiFallback: false, aiErrorText: '', aiRetryable: true,
+      isCurrentMastered: _isWqMastered(wq), masterSubmitting: false, removeSubmitting: false,
+      errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
+      nextErrorAction: errorDiagnosis.buildNextAction(wq, errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis)),
+      diagnosisSyncing: false, teacherLoadingAction: '', teacherLastAction: '',
+      teacherResult: null, teacherSheetVisible: false, teacherErrorText: '',
+      teacherFeedbackSent: '', teacherActionsExpanded: false,
+    }
+  },
+
+  _applyPreferredAnalysisToData(data, wq) {
+    var preferredAnalysis = _resolvePreferredAnalysis(wq)
+    if (!preferredAnalysis) return
+    var preferredNormalized = preferredAnalysis.normalized
+    data.aiRequested = true
+    if (_hasAiContent(preferredNormalized)) {
+      this._aiResult = preferredNormalized
+      data.aiCards = _normalizeAiResult(this._aiResult)
+      data.aiFromCache = preferredAnalysis.source === 'ai'
+      data.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
+      data.aiFallback = false
+      data.aiErrorText = ''
+    } else {
+      this._aiResult = null
+      data.aiCards = null
+      data.aiFromCache = false
+      data.aiFromQuestionAnalysis = false
+      data.aiFallback = true
+      data.aiErrorText = preferredNormalized && preferredNormalized.formatError
+        ? 'AI 返回格式异常，请重新生成' : 'AI 分析结果为空，请重新生成'
+    }
+  },
+
+  _checkLoadedRenderInvariant(data) {
+    const checkModel = data.currentQuestion && data.currentQuestion._renderModel
+    if (checkModel) {
+      this._checkRenderInvariant(checkModel)
+      this._recordRenderTrace(checkModel.renderTrace)
+    }
+  },
+
+  _handleLoadDataError(e, loadSeq) {
+    if (loadSeq !== this._aiRequestId || !this._alive) return
+    console.error('加载错题详情失败', e)
+    this._aiResult = null
+    this.setData({
+      loading: false, errorText: '错题不存在或已被移除', wq: null,
+      aiLoading: false, aiFallback: false,
+    })
+  },
 _resetAiLoadingState() {
 this.setData({
 aiLoading: false,
