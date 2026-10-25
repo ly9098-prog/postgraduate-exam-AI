@@ -16,7 +16,7 @@
 | 健康统计 | `queue_length_v2` 等、`get_metrics_v2` | Admin 任务页、readiness、指标采样 | v2 健康方法在 Redis 不可用时抛 `QueueHealthError`，不能伪装为空队列。 |
 | 死信/损坏管理 | `list_*_v2`、`retry_from_dead_v2`、`delete_*_v2`、`purge_dead_v2` | Admin 任务页/运维接口 | 保留可见错误摘要、FIFO/LIFO 顺序和受限容量；管理重试开启新 retry cycle。 |
 | v1 兼容健康/死信 | `queue_length`、`get_metrics`、`oldest_ready_age`、`list_dead`、`purge_dead` | 旧调用/迁移与诊断入口 | v1 深度、指标聚合、就绪年龄与死信投影规则已拆为纯契约；仍保留 v1 吞 Redis 异常、返回 0/本地计数的旧语义，不得与 v2 抛错语义合并。 |
-| v1→v2 迁移 | `drain_v1_to_v2`、`drain_all_v1_to_v2`、`delete_v1_keys` | 一次性迁移/运维工具 | v1 仅兼容保留，不被 v2 dispatcher 消费；每个任务由原子 Lua 迁移，校验身份、写 v2 hash/admission guard/ready list 后才移除 v1 位置。v2 满时保留 v1 队头；payload 缺失或身份不符时转为 v2 corrupt 诊断。 |
+| v1→v2 迁移 | `drain_v1_to_v2`、`drain_all_v1_to_v2`、`delete_v1_keys` | 一次性迁移/运维工具 | v1 仅兼容保留，不被 v2 dispatcher 消费；每个任务由原子 Lua 迁移，校验身份、写 v2 hash/admission guard/ready list 后才移除 v1 位置。v2 满时保留 v1 队头；payload 缺失或身份不符时转为 v2 corrupt 诊断；v2 写入中途失败时回滚本次 partial hash/guard/ready 位置，保留 v1 队头供重试。 |
 
 ## 2. Redis 键空间与版本边界
 
@@ -57,6 +57,7 @@
 ## 6. 已知风险与后续
 
 - `drain_v1_to_v2` 的 fakeredis Lua 契约与上述真实 Redis hardening 集成都已覆盖迁移、容量和 cancel/terminal 语义。
+- 2026-10-25 修复迁移脚本的写入失败窗口：HSET/RPUSH/SETEX 包裹在 Lua `pcall` 中，任一失败会 LREM 本次 ready 位置、删除 partial v2 hash 与 idempotency guard，并把错误抛回 Python；`drain_v1_to_v2` 保持吞异常并返回已迁移数量的旧语义。fakeredis 注入 HSET 失败验证 partial 状态清零、v1 队头保留，恢复后可成功重试。该证据不替代真实 Redis 连接中断/进程崩溃测试。
 - 同日补跑 `backend/tests/integration/test_worker_sigterm.py --run-integration`（真实 Redis，worker dispatcher 端口/替身）：7 passed，覆盖 drain 停止新领取、未知类型 dead-letter、heartbeat 安全/不安全 Redis 超时与 Lua 拒绝、取消 checkpoint、并发=1 时不超额执行。修复的是测试端口漂移：`set_draining_v2`/`stop_worker_v2` 现在是 async，heartbeat 替身需抛 `redis.exceptions.TimeoutError`，并保存/恢复模块级 running 标志；未改生产 worker 语义。
 - 仍未验证：跨进程完整 worker 主循环、多 dispatcher 并发、Redis 进程中断后自动恢复的端到端故障注入、生产角色退出和备份恢复演练。上述单进程集成测试不能替代这些生产验收。
 - Admin 任务页的真实浏览器操作、真实死信重试和长任务取消仍未验收。

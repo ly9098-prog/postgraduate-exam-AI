@@ -93,19 +93,27 @@ if max_ready > 0 and ready_len >= max_ready then
     return {"queue_full", task_id}
 end
 
--- Keep the v1 position until all v2 writers succeed. Any command error leaves
--- enough evidence for the hash-only conflict guard above instead of silently
--- dropping the only ready-list reference.
-redis.call("HSET", v2_task_key,
-    "data", raw,
-    "status", "pending",
-    "owner_token", "",
-    "generation", 0,
-    "retry_count", 0,
-    "error", "",
-    "lease_expires_at", 0)
-redis.call("RPUSH", KEYS[3], task_id)
-redis.call("SETEX", v2_idem_key, idem_ttl, "1")
+-- Keep the v1 position until all v2 writers succeed. If a writer fails, the
+-- rollback removes partial v2 state so the next drain retries from the v1
+-- ready-list entry rather than stranding it behind a hash-only conflict.
+local ok, err = pcall(function()
+    redis.call("HSET", v2_task_key,
+        "data", raw,
+        "status", "pending",
+        "owner_token", "",
+        "generation", 0,
+        "retry_count", 0,
+        "error", "",
+        "lease_expires_at", 0)
+    redis.call("RPUSH", KEYS[3], task_id)
+    redis.call("SETEX", v2_idem_key, idem_ttl, "1")
+end)
+if not ok then
+    redis.call("LREM", KEYS[3], 1, task_id)
+    redis.call("DEL", v2_idem_key)
+    redis.call("DEL", v2_task_key)
+    return redis.error_reply(err)
+end
 redis.call("LPOP", KEYS[1])
 return {"migrated", task_id}
 """

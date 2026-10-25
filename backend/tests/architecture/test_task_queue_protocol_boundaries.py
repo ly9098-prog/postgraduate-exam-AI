@@ -104,7 +104,7 @@ EXPECTED_SCRIPT_SHA256 = {
         "75bb2d8adff2a648dbbf48aa9cd647db74b4615ac71bd508331d16921f87c775"
     ),
     "_LUA_DRAIN_ONE_V1_TO_V2": (
-        "527da83d9a77ddb7db7b574750d347769d39021d1a40ff8484a3e0f5c0632f89"
+        "2dc0f6eb495ff1e6170b4a600ab4b5b99fcbc6632876cc83cb37e0eee9a790ac"
     ),
 }
 

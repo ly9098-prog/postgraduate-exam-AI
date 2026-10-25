@@ -148,3 +148,63 @@ async def test_partial_v2_hash_keeps_v1_position_for_review(rig):
     assert migrated == 0
     assert await client.lrange(_q_key("demo"), 0, -1) == ["partial-task"]
     assert await client.exists(_v2_idempotent_key("partial-task")) == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_v2_writer_rolls_back_partial_state_and_keeps_v1(rig, monkeypatch):
+    queue, client = rig
+    await seed_v1_task(client, "writer-fails", "demo")
+    connection = await client.connection_pool.get_connection("HSET")
+    socket = connection._sock
+    await client.connection_pool.release(connection)
+    original_send = socket.sendall
+    calls = 0
+
+    def failing_send(data):
+        nonlocal calls
+        if b"HSET" in data and b"lease_expires_at" in data:
+            calls += 1
+            raise RuntimeError("simulated writer failure")
+        return original_send(data)
+
+    monkeypatch.setattr(socket, "sendall", failing_send)
+
+    migrated = await queue.drain_v1_to_v2("demo", batch_size=1)
+
+    assert migrated == 0
+    assert calls == 1
+    assert await client.lrange(_q_key("demo"), 0, -1) == ["writer-fails"]
+    assert await client.lrange(_v2_q_key("demo"), 0, -1) == []
+    assert await client.exists(_v2_idempotent_key("writer-fails")) == 0
+    assert await client.exists(_v2_task_hash_key("writer-fails")) == 0
+
+
+@pytest.mark.asyncio
+async def test_recovered_writer_failure_can_retry_migration(rig, monkeypatch):
+    queue, client = rig
+    await seed_v1_task(client, "retry-writer", "demo")
+    connection = await client.connection_pool.get_connection("HSET")
+    socket = connection._sock
+    await client.connection_pool.release(connection)
+    original_send = socket.sendall
+    calls = 0
+
+    def failing_once_send(data):
+        nonlocal calls
+        if b"HSET" in data and b"lease_expires_at" in data:
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("simulated transient writer failure")
+        return original_send(data)
+
+    monkeypatch.setattr(socket, "sendall", failing_once_send)
+    first_attempt = await queue.drain_v1_to_v2("demo", batch_size=1)
+    assert first_attempt == 0
+    monkeypatch.setattr(socket, "sendall", original_send)
+
+    migrated = await queue.drain_v1_to_v2("demo", batch_size=1)
+
+    assert migrated == 1
+    assert await client.lrange(_q_key("demo"), 0, -1) == []
+    assert await client.lrange(_v2_q_key("demo"), 0, -1) == ["retry-writer"]
+    assert await client.exists(_v2_idempotent_key("retry-writer")) == 1
