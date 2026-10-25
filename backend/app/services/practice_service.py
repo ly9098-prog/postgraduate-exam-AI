@@ -55,27 +55,12 @@ from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
 )
 from app.services.practice.batch_token import (
-    PRACTICE_ANSWER_DURATION_TOLERANCE_SEC,
     PRACTICE_BATCH_CLOCK_SKEW_SEC,  # noqa: F401 — historical public import
-    PRACTICE_BATCH_MAX_QUESTIONS,
     PracticeBatchTokenError,
     _PRACTICE_BATCH_TOKEN_VERSION,  # noqa: F401 — historical public import
     _decode_practice_batch_token,  # noqa: F401 — historical public import
-    _validate_practice_batch_token,
     create_practice_batch_token,  # noqa: F401 — historical public import
 )
-from app.services.practice.batch_persistence import (
-    persist_practice_batch_records,
-)
-from app.services.practice.batch_claim import (
-    claim_practice_request_id,
-    load_committed_replay,
-)
-from app.services.practice.batch_commit import persist_claimed_practice_batch
-from app.services.practice.batch_reservation_cleanup import (
-    build_sequential_reservation_cleanup,
-)
-from app.services.practice.batch_response import build_batch_submission_response
 from app.services.practice.chapter_scope import (
     build_question_buckets,
     question_knowledge_mapping,
@@ -180,10 +165,6 @@ from app.services.practice.stats import (
     load_daily_breakdown,
     load_practice_totals,
     load_subject_breakdown,
-)
-from app.services.practice.batch_wrong_book import (
-    enqueue_wrong_answer_prewarm,
-    persist_wrong_answer,
 )
 from app.services.practice.smart_weakness_vector import (
     SmartWeaknessVectorRequest,
@@ -2113,214 +2094,26 @@ async def batch_submit_answers(
     reference that revision; current Question rows are never consulted to decide
     what the user saw.
     """
-    from app.services.practice.batch_submission import (
-        build_response_by_question,
-        build_session_consistency_error,
-        evaluate_batch_answers,
-        validate_answer_duration,
-        validate_batch_submission_inputs,
+    from app.services.practice.batch_submission_flow import (
+        BatchSubmissionFlowRequest,
+        submit_practice_batch,
     )
 
-    if not batch_token:
-        raise PracticeBatchTokenError("batch_token 不能为空，请重新获取题目")
-    if not session_meta:
-        raise PracticeBatchTokenError("session 不能为空，请重新获取题目")
-    if skipped_question_ids is None:
-        raise PracticeBatchTokenError("skipped_question_ids 必须显式提交")
-    if len(answers) > PRACTICE_BATCH_MAX_QUESTIONS:
-        raise ValueError(f"answers 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
-    if len(skipped_question_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
-        raise ValueError(
-            f"skipped_question_ids 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题"
-        )
-
-    answer_question_ids, skipped_ids, all_question_ids = (
-        validate_batch_submission_inputs(
+    return await submit_practice_batch(
+        BatchSubmissionFlowRequest(
+            db=db,
+            user_id=user_id,
             answers=answers,
+            session_meta=session_meta,
             skipped_question_ids=skipped_question_ids,
-            max_questions=PRACTICE_BATCH_MAX_QUESTIONS,
+            batch_token=batch_token,
+            logger=logger,
+            replay=_replay_committed_submission,
+            start_transaction=_start_explicit_transaction,
+            is_unique_violation=_is_unique_violation,
+            create_outbox=_create_answer_projection_outbox,
         )
     )
-
-    payload_hash = _practice_submission_fingerprint(
-        answers=answers,
-        skipped_question_ids=skipped_ids,
-        session_meta=session_meta,
-        batch_token=batch_token,
-    )
-    request_id = _normalize_practice_request_id(session_meta.get("request_id"))
-    if not request_id:
-        raise ValueError("session.request_id 不能为空")
-
-    # Fast idempotent replay does not depend on token expiry or current question
-    # state. Once a submission is committed, request_id + payload hash is enough.
-    existing_replay = await load_committed_replay(
-        db,
-        user_id=user_id,
-        request_id=request_id,
-        payload_hash=payload_hash,
-        replay=_replay_committed_submission,
-    )
-    if existing_replay is not None:
-        return existing_replay
-
-    issued_revisions, issued_order, batch_payload = _validate_practice_batch_token(
-        batch_token,
-        user_id=user_id,
-        question_ids=all_question_ids,
-        session_meta=session_meta,
-        answers=answers,
-    )
-
-    from app.services.question_revision_service import (
-        load_revision_kp_names,
-        load_revision_views,
-    )
-
-    revision_views = await load_revision_views(db, issued_revisions.values())
-    if len(revision_views) != len(issued_revisions):
-        raise PracticeBatchTokenError("练习批次引用的题目 revision 不完整")
-
-    questions: dict[int, object] = {}
-    for qid, revision_id in issued_revisions.items():
-        view = revision_views.get(int(revision_id))
-        if view is None or int(view.question_id) != int(qid):
-            raise PracticeBatchTokenError("练习批次题目与 revision 绑定关系无效")
-        if not view.is_active:
-            # A valid issued practice batch can only originate from an active
-            # revision. This catches corrupted/manual token state, not later edits.
-            raise PracticeBatchTokenError("练习批次包含不可用题目 revision")
-        questions[int(qid)] = view
-
-    evaluated_answers, answer_request_ids, total_correct, total_wrong = (
-        evaluate_batch_answers(answers=answers, questions=questions)
-    )
-    skipped_questions = [questions[qid] for qid in skipped_ids]
-
-    session_values = _normalize_practice_session(
-        session_meta,
-        user_id=user_id,
-        answered_count=len(evaluated_answers),
-        total_correct=total_correct,
-        total_wrong=total_wrong,
-    )
-    consistency_error = build_session_consistency_error(
-        session_values=session_values,
-        request_id=request_id,
-        total_question_count=len(all_question_ids),
-        batch_payload=batch_payload,
-    )
-    if consistency_error:
-        if "request_id" in consistency_error or "question_count" in consistency_error:
-            raise ValueError(consistency_error)
-        raise PracticeBatchTokenError(consistency_error)
-
-    duration_error = validate_answer_duration(
-        evaluated_answers=evaluated_answers,
-        duration_sec=int(session_values.get("duration_sec") or 0),
-        tolerance_sec=PRACTICE_ANSWER_DURATION_TOLERANCE_SEC,
-    )
-    if duration_error:
-        raise ValueError(duration_error)
-
-    from app.services.practice.session_scope import build_practice_session_scope
-
-    scope_snapshot = build_practice_session_scope(
-        batch_payload.get("knowledge_context"),
-        fallback_subject_id=int(session_values.get("subject_id") or 0),
-    )
-    if scope_snapshot is not None:
-        signed_scope_subject_id = int(scope_snapshot.get("subject_id") or 0)
-        if signed_scope_subject_id and signed_scope_subject_id != int(
-            session_values.get("subject_id") or 0
-        ):
-            raise PracticeBatchTokenError("知识练习范围与练习科目不一致")
-
-    session_obj = PracticeSession(
-        **session_values,
-        submission_payload_hash=payload_hash,
-        scope_type=(
-            str(scope_snapshot["practice_mode"]) if scope_snapshot is not None else None
-        ),
-        scope_root_knowledge_point_id=(
-            int(scope_snapshot["root_knowledge_point_id"])
-            if scope_snapshot is not None
-            else None
-        ),
-        scope_snapshot=scope_snapshot,
-    )
-    claim = await claim_practice_request_id(
-        db,
-        user_id=user_id,
-        session_obj=session_obj,
-        request_id=request_id,
-        payload_hash=payload_hash,
-        start_transaction=_start_explicit_transaction,
-        is_unique_violation=_is_unique_violation,
-        replay=_replay_committed_submission,
-    )
-    if not claim.claimed:
-        return claim.replay
-    now = utcnow()
-    from app.services.wrong_question_service import record_wrong
-
-    from app.services.practice.knowledge_session_summary import (
-        persisted_knowledge_session,
-    )
-
-    committed = await persist_claimed_practice_batch(
-        db,
-        session_obj=session_obj,
-        persist_records=persist_practice_batch_records,
-        load_revision_kp_names=load_revision_kp_names,
-        build_response_by_question=build_response_by_question,
-        build_response=build_batch_submission_response,
-        persisted_knowledge_session=persisted_knowledge_session,
-        build_cleanup=build_sequential_reservation_cleanup,
-        execute=db.execute,
-        commit=db.commit,
-        rollback=db.rollback,
-        user_id=user_id,
-        batch_payload=batch_payload,
-        all_question_ids=all_question_ids,
-        issued_revisions=issued_revisions,
-        issued_order=issued_order,
-        skipped_questions=skipped_questions,
-        total_correct=total_correct,
-        total_wrong=total_wrong,
-        knowledge_context=batch_payload.get("knowledge_context"),
-        entry_context=batch_payload.get("entry_context"),
-        persist_records_kwargs={
-            "user_id": user_id,
-            "evaluated_answers": evaluated_answers,
-            "answer_request_ids": answer_request_ids,
-            "mode": session_values["mode"],
-            "now": now,
-            "record_wrong": record_wrong,
-            "create_outbox": _create_answer_projection_outbox,
-            "persist_wrong_answer": persist_wrong_answer,
-        },
-    )
-    response_payload = committed.response_payload
-    prewarm_wrong_questions = committed.prewarm_wrong_questions
-
-    if prewarm_wrong_questions:
-        try:
-            from app.ai.prewarm_revision import build_prewarm_revision
-            from app.services.ai_prewarm_worker import enqueue_prewarm
-
-            await enqueue_wrong_answer_prewarm(
-                prewarm_wrong_questions,
-                user_id,
-                build_revision=build_prewarm_revision,
-                enqueue=enqueue_prewarm,
-            )
-        except Exception:
-            logger.warning(
-                "AI prewarm enqueue failed after practice batch", exc_info=True
-            )
-
-    return response_payload
 
 
 async def get_practice_stats(
