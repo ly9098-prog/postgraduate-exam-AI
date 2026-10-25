@@ -1,5 +1,7 @@
 const api = require('../../../utils/api')
 const aiTeacher408 = require('../../study/utils/ai-teacher-408')
+const { createExamResultLoadController } = require('../utils/exam-result-load-controller')
+const { createExam408TeacherController } = require('../utils/exam-408-teacher-controller')
 
 const RADAR_SIZE = 5
 const RADAR_ANGLES = [-90, -18, 54, 126, 198]
@@ -347,75 +349,40 @@ Page({
   },
 
   async loadResult(options = {}) {
-    if (this._loadPromise) return this._loadPromise
-    const seq = ++this._loadSeq
-    if (!options || options.skipLoadingState !== true) {
-      this.setData({ loading: true, errorText: '' })
+    return this._examResultLoadController().load(options)
+  },
+
+  _examResultLoadController() {
+    if (!this._examResultLoad) {
+      this._examResultLoad = createExamResultLoadController({
+        getInflight: () => this._loadPromise,
+        setInflight: value => { this._loadPromise = value },
+        nextSequence: () => ++this._loadSeq,
+        getSequence: () => this._loadSeq,
+        isPageAlive: () => this._pageAlive,
+        setData: patch => this.setData(patch),
+        fetchResult: () => api.get(`/exams/attempts/${this.data.attemptId}/result`),
+        getErrorMessage: error => api.getErrorMessage(error),
+        percentNumber,
+        clamp,
+        compactScore,
+        compactDuration,
+        encouragement,
+        encouragementTail,
+        buildKnowledgeMetrics,
+        buildScoreRing,
+        buildRadar,
+        buildTopItems,
+        collectWrongIds,
+        firstWrongIdByQuestion,
+        setWrongIds: ids => { this._wrongIds = ids },
+        getWrongIdsLength: () => this._wrongIds.length,
+        resetDiagnosisIndex: () => { this._diagnosisIdByWrongId = Object.create(null) },
+        setDiagnosisId: (wrongId, diagnosisId) => { this._diagnosisIdByWrongId[wrongId] = diagnosisId },
+        setFirstQuestionId: id => { this._firstQuestionId = id },
+      })
     }
-    const request = (async () => {
-      try {
-        const response = await api.get(`/exams/attempts/${this.data.attemptId}/result`)
-        if (!this._pageAlive || seq !== this._loadSeq) return
-
-        const accuracyPct = percentNumber(response.accuracy)
-        const score = Number(response.choice_score || 0)
-        const totalScore = Number(response.total_choice_score || 0)
-        const scoreRatePct = totalScore > 0 ? Math.round(clamp(score / totalScore * 100, 0, 100)) : accuracyPct
-        const metrics = buildKnowledgeMetrics(response)
-        const scoreRing = buildScoreRing(scoreRatePct)
-        const radar = buildRadar(metrics)
-        const topItems = buildTopItems(metrics)
-        const weakCount = metrics.filter(item => Number(item.accuracyPct) < 70).length
-        this._wrongIds = collectWrongIds(response)
-        this._diagnosisIdByWrongId = Object.create(null)
-        const resultQuestions = Array.isArray(response.questions) ? response.questions : []
-        const firstResultQuestion = resultQuestions[0] || null
-        this._firstQuestionId = Number(firstResultQuestion && firstResultQuestion.question_id) || 0
-        ;(Array.isArray(response.questions) ? response.questions : []).forEach((question) => {
-          const wrongId = firstWrongIdByQuestion(question)
-          if (!wrongId) return
-          const diagnosis = question && question.error_diagnosis
-          const diagnosisId = Number(diagnosis && diagnosis.id || 0)
-          if (diagnosisId > 0) this._diagnosisIdByWrongId[wrongId] = diagnosisId
-        })
-
-        this.setData({
-          loading: false,
-          result: {
-            scoreValue: compactScore(score),
-            scoreRatePct,
-            accuracyPct,
-            correctCount: Number(response.correct_count || 0),
-            wrongCount: Number(response.wrong_count || 0),
-            unansweredCount: Number(response.unanswered_count || 0),
-            durationText: compactDuration(response.duration_sec),
-            headline: encouragement(scoreRatePct, accuracyPct),
-            encourageTail: encouragementTail(
-              Number(response.wrong_count || 0),
-              Number(response.unanswered_count || 0)
-            ),
-            showScoreRingCaps: scoreRing.showScoreRingCaps,
-            scoreRingEndStyle: scoreRing.scoreRingEndStyle,
-          },
-          radarItems: radar.radarItems,
-          radarEdges: radar.radarEdges,
-          radarPolygonStyle: radar.radarPolygonStyle,
-          topItems,
-          weakCount,
-          wrongDetailCount: this._wrongIds.length,
-        })
-      } catch (error) {
-        if (!this._pageAlive || seq !== this._loadSeq) return
-        this.setData({ loading: false, errorText: api.getErrorMessage(error) })
-      }
-    })()
-
-    this._loadPromise = request
-    try {
-      await request
-    } finally {
-      if (this._loadPromise === request) this._loadPromise = null
-    }
+    return this._examResultLoad
   },
 
   openWeakReview() {
@@ -520,56 +487,31 @@ Page({
   },
 
   async run408Teacher(action, questionId) {
-    if (this.data.teacherLoading) {
-      this.setData({ teacherSheetVisible: true })
-      return
-    }
-    if (!this.data.attemptId || !questionId) return
-    const cacheKey = [Number(this.data.attemptId || 0), Number(questionId || 0), String(action || '')].join('|')
-    const cached = this._teacherCache[cacheKey]
-    this._activeTeacherCacheKey = cacheKey
-    if (cached) {
-      this.setData({
-        teacherLoading: false,
-        teacherResult: cached,
-        teacherErrorText: '',
-        teacherSheetVisible: true,
-        teacherFeedbackSent: this._teacherFeedbackCache[cacheKey] || '',
+    return this._exam408TeacherController().run(action, questionId)
+  },
+
+  _exam408TeacherController() {
+    if (!this._exam408Teacher) {
+      this._exam408Teacher = createExam408TeacherController({
+        getAttemptId: () => this.data.attemptId,
+        getTeacherLoading: () => this.data.teacherLoading,
+        isPageAlive: () => this._pageAlive,
+        setData: patch => this.setData(patch),
+        getCacheEntry: key => this._teacherCache[key],
+        setCacheEntry: (key, value) => { this._teacherCache[key] = value },
+        getFeedbackEntry: key => this._teacherFeedbackCache[key],
+        setActiveCacheKey: key => { this._activeTeacherCacheKey = key },
+        getInflight: key => this._teacherInflight[key],
+        setInflight: (key, promise) => { this._teacherInflight[key] = promise },
+        deleteInflight: key => { delete this._teacherInflight[key] },
+        nextRequestSequence: () => ++this._teacherRequestSeq,
+        getRequestSequence: () => this._teacherRequestSeq,
+        postTeacher: payload => api.post('/ai/408-teacher', payload, { timeout: 55000 }),
+        normalizeResult: raw => aiTeacher408.normalizeResult(raw),
+        errorMessage: error => aiTeacher408.errorMessage(error, api),
       })
-      return
     }
-    const requestSeq = ++this._teacherRequestSeq
-    const payload = {
-      question_id: Number(questionId),
-      action,
-      exam_attempt_id: Number(this.data.attemptId),
-    }
-    let requestPromise = this._teacherInflight[cacheKey]
-    if (!requestPromise) {
-      requestPromise = api.post('/ai/408-teacher', payload, { timeout: 55000 })
-      this._teacherInflight[cacheKey] = requestPromise
-    }
-    this.setData({
-      teacherLoading: true,
-      teacherResult: null,
-      teacherErrorText: '',
-      teacherSheetVisible: true,
-      teacherFeedbackSent: '',
-    })
-    try {
-      const raw = await requestPromise
-      const normalized = aiTeacher408.normalizeResult(raw)
-      if (!normalized) throw new Error('AI 返回格式异常')
-      this._teacherCache[cacheKey] = normalized
-      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return
-      this._activeTeacherCacheKey = cacheKey
-      this.setData({ teacherLoading: false, teacherResult: normalized })
-    } catch (error) {
-      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return
-      this.setData({ teacherLoading: false, teacherErrorText: aiTeacher408.errorMessage(error, api) })
-    } finally {
-      if (this._teacherInflight[cacheKey] === requestPromise) delete this._teacherInflight[cacheKey]
-    }
+    return this._exam408Teacher
   },
 
   close408Teacher() {
