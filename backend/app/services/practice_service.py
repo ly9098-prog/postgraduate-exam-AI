@@ -2905,6 +2905,14 @@ async def batch_submit_answers(
     reference that revision; current Question rows are never consulted to decide
     what the user saw.
     """
+    from app.services.practice.batch_submission import (
+        build_response_by_question,
+        build_session_consistency_error,
+        evaluate_batch_answers,
+        validate_answer_duration,
+        validate_batch_submission_inputs,
+    )
+
     if not batch_token:
         raise PracticeBatchTokenError("batch_token 不能为空，请重新获取题目")
     if not session_meta:
@@ -2918,20 +2926,11 @@ async def batch_submit_answers(
             f"skipped_question_ids 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题"
         )
 
-    answer_question_ids = [int(a["question_id"]) for a in answers]
-    if len(answer_question_ids) != len(set(answer_question_ids)):
-        raise ValueError("answers 中存在重复 question_id")
-    skipped_ids = [int(qid) for qid in skipped_question_ids]
-    if len(skipped_ids) != len(set(skipped_ids)):
-        raise ValueError("skipped_question_ids 中存在重复 question_id")
-    overlap = set(answer_question_ids) & set(skipped_ids)
-    if overlap:
-        raise ValueError(f"题目不能同时提交答案并标记跳过: {sorted(overlap)}")
-    all_question_ids = answer_question_ids + skipped_ids
-    if not all_question_ids:
-        raise ValueError("practice batch 至少需要包含 1 道题")
-    if len(all_question_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
-        raise ValueError(f"单次练习最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
+    answer_question_ids, skipped_ids, all_question_ids = validate_batch_submission_inputs(
+        answers=answers,
+        skipped_question_ids=skipped_question_ids,
+        max_questions=PRACTICE_BATCH_MAX_QUESTIONS,
+    )
 
     payload_hash = _practice_submission_fingerprint(
         answers=answers,
@@ -2982,41 +2981,9 @@ async def batch_submit_answers(
             raise PracticeBatchTokenError("练习批次包含不可用题目 revision")
         questions[int(qid)] = view
 
-    evaluated_answers: list[tuple[object, bool, str, int | None]] = []
-    answer_request_ids: dict[int, str | None] = {}
-    total_correct = 0
-    total_wrong = 0
-    for answer in answers:
-        q = questions[int(answer["question_id"])]
-        user_answer = str(
-            answer.get("user_answer", answer.get("answer", "")) or ""
-        ).strip()
-        if not user_answer:
-            # Empty strings used to be graded as a normal wrong answer, which lets
-            # stale/malformed clients inflate answered_count and wrong-question
-            # statistics.  Unattempted questions belong in skipped_question_ids.
-            raise ValueError(
-                f"question_id={int(q.id)} 的 user_answer 不能为空；未作答题请放入 skipped_question_ids"
-            )
-        used_time = _normalize_answer_used_time(answer.get("used_time"))
-        answer_request_ids[int(q.id)] = _normalize_practice_request_id(
-            answer.get("request_id")
-        )
-        slot_ids = extract_multi_blank_slot_ids(
-            getattr(q, "content", None),
-            getattr(q, "options", None),
-        )
-        is_correct = is_answer_correct(
-            user_answer,
-            q.answer or "",
-            q.question_type or "",
-            slot_ids=slot_ids,
-        )
-        evaluated_answers.append((q, is_correct, user_answer, used_time))
-        if is_correct:
-            total_correct += 1
-        else:
-            total_wrong += 1
+    evaluated_answers, answer_request_ids, total_correct, total_wrong = (
+        evaluate_batch_answers(answers=answers, questions=questions)
+    )
     skipped_questions = [questions[qid] for qid in skipped_ids]
 
     session_values = _normalize_practice_session(
@@ -3026,29 +2993,24 @@ async def batch_submit_answers(
         total_correct=total_correct,
         total_wrong=total_wrong,
     )
-    if session_values.get("request_id") != request_id:
-        raise ValueError("session.request_id 归一化结果不一致")
-    if int(session_values.get("question_count") or 0) != len(all_question_ids):
-        raise ValueError("session.question_count 与本次批次题数不一致")
+    consistency_error = build_session_consistency_error(
+        session_values=session_values,
+        request_id=request_id,
+        total_question_count=len(all_question_ids),
+        batch_payload=batch_payload,
+    )
+    if consistency_error:
+        if "request_id" in consistency_error or "question_count" in consistency_error:
+            raise ValueError(consistency_error)
+        raise PracticeBatchTokenError(consistency_error)
 
-    # The batch token snapshots subject/mode semantics at issue time. Do not
-    # re-resolve today's mutable subject tree during submit.
-    if int(session_values.get("subject_id") or 0) != int(batch_payload.get("sid") or 0):
-        raise PracticeBatchTokenError("session.subject_id 与练习批次不一致")
-    if str(session_values.get("mode")) != str(batch_payload.get("mode")):
-        raise PracticeBatchTokenError("session.mode 与练习批次不一致")
-
-    duration_sec = int(session_values.get("duration_sec") or 0)
-    answered_used_times = [
-        int(used_time)
-        for _q, _correct, _answer, used_time in evaluated_answers
-        if used_time is not None
-    ]
-    max_allowed_answer_time = duration_sec + PRACTICE_ANSWER_DURATION_TOLERANCE_SEC
-    if any(used_time > max_allowed_answer_time for used_time in answered_used_times):
-        raise ValueError("answers.used_time 不得明显超过本次练习总时长")
-    if sum(answered_used_times) > max_allowed_answer_time:
-        raise ValueError("answers.used_time 合计不得明显超过本次练习总时长")
+    duration_error = validate_answer_duration(
+        evaluated_answers=evaluated_answers,
+        duration_sec=int(session_values.get("duration_sec") or 0),
+        tolerance_sec=PRACTICE_ANSWER_DURATION_TOLERANCE_SEC,
+    )
+    if duration_error:
+        raise ValueError(duration_error)
 
     from app.services.practice.session_scope import build_practice_session_scope
 
@@ -3162,31 +3124,12 @@ async def batch_submit_answers(
             )
 
         revision_kps = await load_revision_kp_names(db, issued_revisions.values())
-        response_by_question: dict[int, dict] = {}
-        for record, q, is_correct, _user_answer, _used_time in records:
-            response_by_question[int(q.id)] = {
-                "record_id": int(record.id),
-                "question_id": int(q.id),
-                "is_correct": bool(is_correct),
-                "correct_answer": q.answer,
-                "status": "correct" if is_correct else "wrong",
-                "analysis": q.analysis,
-                "knowledge_points": revision_kps.get(int(q.question_version_id), []),
-                "is_wrong_added": int(q.id) in wrong_question_ids,
-                "wrong_question_id": wrong_question_ids.get(int(q.id)),
-                "error_diagnosis": getattr(record, "_error_diagnosis_payload", None),
-            }
-        for q in skipped_questions:
-            response_by_question[int(q.id)] = {
-                "question_id": int(q.id),
-                "is_correct": False,
-                "correct_answer": q.answer,
-                "status": "skipped",
-                "analysis": q.analysis,
-                "knowledge_points": revision_kps.get(int(q.question_version_id), []),
-                "is_wrong_added": False,
-                "wrong_question_id": None,
-            }
+        response_by_question = build_response_by_question(
+            records=records,
+            skipped_questions=skipped_questions,
+            revision_kps=revision_kps,
+            wrong_question_ids=wrong_question_ids,
+        )
 
         from app.services.practice.knowledge_session_summary import (
             persisted_knowledge_session,
@@ -3253,6 +3196,7 @@ async def batch_submit_answers(
             )
 
     return response_payload
+
 
 
 async def get_practice_stats(
