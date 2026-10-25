@@ -73,10 +73,13 @@ from app.services.ai.analysis_execution import (
     prepare_locked_analysis_inputs,
     review_locked_analysis_cache,
 )
-from app.services.ai.analysis_provider_failure import build_provider_failure_response
 from app.services.ai.analysis_result_review import (
     resolve_analysis_outcome,
     review_analysis_result,
+)
+from app.services.ai.analysis_invocation import (
+    AnalysisInvocationRequest,
+    invoke_prepared_analysis,
 )
 from app.services.ai.analysis_preparation import (
     AnalysisPreparationRequest,
@@ -99,10 +102,6 @@ from app.services.ai.prewarm_execution import (
     execute_prewarm,
 )
 from app.services.ai.provider_exception import classify_ai_provider_exception
-from app.services.ai.provider_invocation import (
-    ProviderInvocationInput,
-    invoke_analysis_provider,
-)
 from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
     MAX_VISUAL_IMAGES,
@@ -626,38 +625,27 @@ async def analyze_error(
         # earlier and recovers the committed result through polling/recovery.
         model_timeout_sec = inputs.model_timeout_sec
 
-        _failure_response = build_provider_failure_response(
-            wrong_question=wq,
-            requires_visual=requires_visual,
-            input_signature=input_signature,
-            model_signature=model_signature,
-            effective_force=effective_force,
-            image_data_urls=image_data_urls,
-            cached_response=build_cached_error_analysis_response,
-        )
-
-        # Keep provider selection and its one auth-failure failover beside the
-        # cache/persistence contract so model selection remains observable.
-        invocation = await invoke_analysis_provider(
-            ProviderInvocationInput(
+        invocation = await invoke_prepared_analysis(
+            AnalysisInvocationRequest(
                 db=db,
+                wrong_question=wq,
+                question=q,
+                context=context,
                 runtime=runtime,
-                chat=llm.chat,
-                logger=logger,
-                wrong_question_id=wq.id,
-                force=effective_force,
-                visual=bool(image_data_urls),
-                question=context["question"],
-                wrong_answer=wq.wrong_answer,
-                correct_answer=q.answer,
                 image_data_urls=image_data_urls,
-                answer_grounding=prompt_grounding,
+                requires_visual=requires_visual,
+                prompt_grounding=prompt_grounding,
+                input_signature=input_signature,
+                model_signature=model_signature,
+                force=effective_force,
                 model_timeout_sec=model_timeout_sec,
                 max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
                 timeout_guard_sec=ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
+                logger=logger,
+                chat=llm.chat,
                 resolve_runtime=_resolve_healthy_analysis_runtime,
                 quarantine_runtime=_quarantine_analysis_runtime_auth,
-                failure_response=_failure_response,
+                cached_response=build_cached_error_analysis_response,
             )
         )
         review = await review_analysis_result(
