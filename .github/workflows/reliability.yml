@@ -521,6 +521,7 @@ jobs:
           node --test miniprogram/tests/test-exam-paper-list-page-wiring.js
           node --test miniprogram/tests/test-practice-result-tips.js
           node --test miniprogram/tests/test-practice-result-payload-readers.js
+          node --test miniprogram/tests/test-practice-payload-mapper.js
           node --test miniprogram/tests/test-practice-result-cache-validation.js
           node --test miniprogram/tests/test-practice-result-counts.js
           node --test miniprogram/tests/test-practice-result-review-item-builder.js

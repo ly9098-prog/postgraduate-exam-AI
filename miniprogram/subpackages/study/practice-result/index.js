@@ -17,6 +17,13 @@ const { buildRecoveredResultPayload: _buildRecoveredResultPayload } = require('.
 const { normalizePracticeReturnRoute: _normalizePracticeReturnRoute, safeDecodeJson: _safeDecodeJson } = require('./utils/route-helpers');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
+const {
+  applyPracticePayloadOrchestration,
+} = require('./utils/practice-payload-mapper');
+const { createTrendLoadController } = require('./utils/trend-load-controller');
+const { createReview408TeacherController } = require('./utils/review-408-teacher-controller');
+const { createBatchDiagnosisController } = require('./utils/batch-diagnosis-controller');
+const { createBackNavigationController } = require('./utils/back-navigation-controller');
 const ERROR_COLORS = ['#7ED8B5', '#55C89B', '#3DA880', '#2F8066', '#8BCDB8', '#B7EBD9'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1';
@@ -659,148 +666,58 @@ console.error('恢复已提交练习结果失败', e);
 wx.showToast({ title: '详细复盘恢复失败，可稍后重试', icon: 'none' });
 }
 },
-applyPracticePayload(payload) {
-this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1;
-const source = payload && payload.data && !payload.results && typeof payload.data === 'object'
-? payload.data
-: (payload || {});
-this._sessionPayload = source;
-const embeddedKnowledgeSession = source.knowledge_session || source.knowledgeSession || null;
-const results = Array.isArray(source.results)
-? source.results
-: Array.isArray(source.submitResults)
-? source.submitResults
-: Array.isArray(source.resultList)
-? source.resultList
-: [];
-const questions = Array.isArray(source.questions)
-? source.questions
-: Array.isArray(source.questionList)
-? source.questionList
-: [];
-const answers = Array.isArray(source.answers)
-? source.answers
-: Array.isArray(source.answerList)
-? source.answerList
-: [];
-const resultMap = {};
-results.forEach(item => {
-const qid = item.question_id ?? item.questionId ?? item.id;
-if (qid !== undefined && qid !== null) resultMap[String(qid)] = item;
-});
-const answerMap = {};
-answers.forEach(item => {
-const qid = item.question_id ?? item.questionId ?? item.id;
-if (qid !== undefined && qid !== null) answerMap[String(qid)] = item;
-});
-let reviewItems = [];
-if (questions.length) {
-reviewItems = questions.map((question, index) => {
-const qid = question.id ?? question.question_id ?? question.questionId ?? index + 1;
-return this.buildReviewItem(
-question,
-resultMap[String(qid)] || {},
-answerMap[String(qid)] || {},
-index
-);
-});
-} else if (Array.isArray(source.reviewItems)) {
-reviewItems = source.reviewItems.map((item, index) => this.normalizeReviewItem(item, index));
-} else if (results.length) {
-reviewItems = results.map((item, index) => this.normalizeReviewItem(item, index));
-}
-const resultCounts = resolveResultCounts(source, reviewItems);
-let correctCount = resultCounts.correctCount;
-let wrongCount = resultCounts.wrongCount;
-let skippedCount = resultCounts.skippedCount;
-let partialCount = resultCounts.partialCount;
-let totalCount = resultCounts.totalCount;
-const answeredTotal = correctCount + wrongCount;
-const explicitAccuracy = source.accuracy ?? source.accuracyPct ?? source.correctRate ?? source.correct_rate;
-const accuracyPct = explicitAccuracy !== undefined && explicitAccuracy !== null
-? normalizePercent(explicitAccuracy)
-: (answeredTotal ? Math.round(correctCount / answeredTotal * 100) : 0);
-const usedTime = (
-source.used_time ??
-source.usedTime ??
-source.duration ??
-source.durationSec ??
-source.elapsed ??
-answers.reduce((sum, item) => sum + (Number(item.used_time ?? item.usedTime) || 0), 0)
-);
-const subjectName =
-source.subjectName ||
-source.subject_name ||
-source.subject ||
-(questions[0] && (questions[0].subject_name || questions[0].subjectName)) ||
-'';
-const growthGain = Number(source.growthGain ?? source.expGain ?? source.exp_gain ?? source.expAdded ?? 0) || 0;
-const embeddedGrowth = normalizeGrowthProfile(
-source.growth ||
-source.growth_profile ||
-source.growthProfile ||
-(source.stats && source.stats.growth) ||
-null
-);
-const wrongReviewItems = reviewItems.filter(item => item.status === 'wrong');
-const localErrorDistribution = this.buildLocalErrorDistribution(wrongReviewItems);
-const resultTip = this.getResultTip(accuracyPct, wrongCount, skippedCount, partialCount, totalCount);
-const knowledgeSession = embeddedKnowledgeSession && typeof embeddedKnowledgeSession === 'object' ? embeddedKnowledgeSession : null;
-const knowledgeRootId = Math.max(0, Number(
-(knowledgeSession && (knowledgeSession.root_knowledge_point_id || knowledgeSession.rootKnowledgePointId || knowledgeSession.knowledge_point_id || knowledgeSession.knowledgePointId)) ||
-source.knowledge_point_id || source.knowledgePointId || this._launchKnowledgePointId
-) || 0);
-const knowledgeRootName = String(knowledgeSession && (knowledgeSession.root_name || knowledgeSession.rootName) || '').trim();
-const knowledgeScopeCount = Math.max(1, Number(knowledgeSession && (knowledgeSession.knowledge_point_count || knowledgeSession.knowledgePointCount)) || 1);
-const knowledgeIncludeDescendants = Boolean(knowledgeSession && (knowledgeSession.include_descendants === true || knowledgeSession.includeDescendants === true));
-const knowledgeAnswerCount = Math.max(0, correctCount + wrongCount);
-const hasKnowledgeLaunch = Boolean(knowledgeSession || (this._launchSource === 'knowledge_map' && knowledgeRootId));
-if (hasKnowledgeLaunch && this._launchSubjectId && knowledgeRootId && knowledgeAnswerCount > 0) {
-knowledgePracticeSync.record({
-subjectId: this._launchSubjectId,
-knowledgePointId: knowledgeRootId,
-includeDescendants: knowledgeIncludeDescendants,
-answeredCount: knowledgeAnswerCount,
-baselineAttemptCount: knowledgePracticeSync.consumeBaseline(this._launchSubjectId, knowledgeRootId),
-correctCount,
-wrongCount,
-requestId: this._practiceRequestId,
-rootName: knowledgeRootName,
-});
-}
-if (!this._pageAlive) return;
-this.setData({
-subjectName,
-correctCount,
-wrongCount,
-skippedCount,
-partialCount,
-totalCount,
-accuracyPct,
-accuracyDotDeg: Math.round(accuracyPct * 3.6 - 90),
-durationText: formatDuration(usedTime),
-resultTip,
-growthGain,
-...(embeddedGrowth ? {
-growth: embeddedGrowth,
-growthAvailable: true,
-unlockedBadgeCount: embeddedGrowth.badges.filter(item => item && item.unlocked).length
-} : {}),
-reviewItems,
-filteredReviewItems: reviewItems,
-questionListHeightRpx: getQuestionListHeightRpx(reviewItems.length),
-wrongReviewItems,
-batchDiagnosisMode: false,
-batchSelectedMap: {},
-batchSelectedCount: 0,
-batchSelectableCount: wrongReviewItems.filter(item => Number(item.wrongQuestionId) > 0).length,
-batchDiagnosisSaving: false,
-errorDistribution: localErrorDistribution,
-errorDonutGradient: buildErrorDonutGradient(localErrorDistribution),
-errorDonutSvg: buildErrorDonutSvg(localErrorDistribution)
-});
-if (this._resultVisible) this.refreshWrongDiagnoses();
-},
+  applyPracticePayload(payload) {
+    return this._practicePayloadController().apply(payload)
+  },
+
+  _practicePayloadController() {
+    if (!this._practicePayloadCtl) {
+      this._practicePayloadCtl = {
+        apply: payload => applyPracticePayloadOrchestration(
+          payload, this._practicePayloadPorts(), this._practicePageState()
+        ),
+      }
+    }
+    return this._practicePayloadCtl
+  },
+
+  _practicePageState() {
+    return {
+      incrementDiagnosisRefreshSeq: () => { this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1 },
+      setSessionPayload: source => { this._sessionPayload = source },
+      isPageAlive: () => this._pageAlive,
+      isResultVisible: () => this._resultVisible,
+      setData: patch => this.setData(patch),
+      refreshWrongDiagnoses: () => this.refreshWrongDiagnoses(),
+    }
+  },
+
+  _practicePayloadPorts() {
+    if (!this._practicePayloadPortsCached) {
+      this._practicePayloadPortsCached = {
+        buildReviewItem: (q, r, a, i) => this.buildReviewItem(q, r, a, i),
+        normalizeReviewItem: (item, index) => this.normalizeReviewItem(item, index),
+        resolveResultCounts: (source, reviewItems) => resolveResultCounts(source, reviewItems),
+        normalizePercent,
+        formatDuration,
+        getQuestionListHeightRpx,
+        buildErrorDonutGradient,
+        buildErrorDonutSvg,
+        normalizeGrowthProfile,
+        buildLocalErrorDistribution: items => this.buildLocalErrorDistribution(items),
+        getResultTip: (acc, wrong, skipped, partial, total) =>
+          this.getResultTip(acc, wrong, skipped, partial, total),
+        getLaunchKnowledgePointId: () => this._launchKnowledgePointId,
+        getLaunchSource: () => this._launchSource,
+        getLaunchSubjectId: () => this._launchSubjectId,
+        getPracticeRequestId: () => this._practiceRequestId,
+        recordKnowledgePractice: data => knowledgePracticeSync.record(data),
+        consumeKnowledgeBaseline: (subjectId, kpId) =>
+          knowledgePracticeSync.consumeBaseline(subjectId, kpId),
+      };
+    }
+    return this._practicePayloadPortsCached;
+  },
 buildReviewItem(question, result, answer, index) {
   return _buildReviewItem(question, result, answer, index, { normalizeReviewStatus, pad2, getQuestionTitle, formatAnswerPreview, formatMathPreviewText, normalizeKpList });
 },
@@ -848,70 +765,30 @@ batchSelectedMap: selected,
 batchSelectedCount: Object.keys(selected).length,
 });
 },
-async applyBatchDiagnosis() {
-if (this.data.batchDiagnosisSaving) return;
-const selectedIds = Object.keys(this.data.batchSelectedMap || {})
-.filter(key => this.data.batchSelectedMap[key])
-.map(Number)
-.filter(id => Number.isFinite(id) && id > 0);
-if (!selectedIds.length) {
-wx.showToast({ title: '请先选择错题', icon: 'none' });
-return;
-}
-const options = errorDiagnosis.QUICK_TYPES;
-const index = await this._showAppOptions({
-title: `为 ${selectedIds.length} 道错题设置错因`,
-items: options.map(item => item.label),
-});
-const picked = options[index];
-if (!picked) return;
-this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1;
-const byId = {};
-;(this.data.wrongReviewItems || []).forEach(item => {
-const id = Number(item.wrongQuestionId || 0);
-if (id > 0) byId[id] = item;
-});
-this.setData({ batchDiagnosisSaving: true });
-const results = await Promise.all(selectedIds.map(async (wqId) => {
-const target = byId[wqId] || null;
-try {
-const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
-diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
-primary_type: picked.type,
-secondary_types: [],
-});
-return { wqId, ok: true, diagnosis: errorDiagnosis.normalizeDiagnosis(raw) };
-} catch (error) {
-return { wqId, ok: false, error };
-}
-}));
-if (!this._pageAlive) return;
-const succeeded = results.filter(item => item.ok);
-const successMap = {};
-succeeded.forEach(item => { successMap[item.wqId] = item.diagnosis; });
-const update = (list) => (list || []).map(item => {
-const id = Number(item.wrongQuestionId || 0);
-if (!successMap[id]) return item;
-return Object.assign({}, item, {
-errorDiagnosis: successMap[id],
-errorDiagnosisLabel: picked.label,
-});
-});
-const failedCount = results.length - succeeded.length;
-this.setData({
-reviewItems: update(this.data.reviewItems),
-filteredReviewItems: update(this.data.filteredReviewItems),
-wrongReviewItems: update(this.data.wrongReviewItems),
-batchDiagnosisSaving: false,
-batchDiagnosisMode: failedCount > 0,
-batchSelectedMap: failedCount > 0
-? results.reduce((map, item) => { if (!item.ok) map[item.wqId] = true; return map; }, {})
-: {},
-batchSelectedCount: failedCount,
-});
-if (!failedCount) wx.showToast({ title: `已标记 ${succeeded.length} 题`, icon: 'success' });
-else wx.showToast({ title: `成功 ${succeeded.length} 题，${failedCount} 题失败`, icon: 'none' });
-},
+  async applyBatchDiagnosis() {
+    return this._batchDiagnosisController().apply()
+  },
+
+  _batchDiagnosisController() {
+    if (!this._batchDiagnosis) {
+      this._batchDiagnosis = createBatchDiagnosisController({
+        getBatchDiagnosisSaving: () => this.data.batchDiagnosisSaving,
+        getBatchSelectedMap: () => this.data.batchSelectedMap,
+        getWrongReviewItems: () => this.data.wrongReviewItems,
+        getReviewItems: () => this.data.reviewItems,
+        getFilteredReviewItems: () => this.data.filteredReviewItems,
+        isPageAlive: () => this._pageAlive,
+        setData: patch => this.setData(patch),
+        showToast: options => wx.showToast(options),
+        getQuickTypes: () => errorDiagnosis.QUICK_TYPES,
+        showOptions: opts => this._showAppOptions(opts),
+        incrementDiagnosisRefreshSeq: () => { this._diagnosisRefreshSeq = (this._diagnosisRefreshSeq || 0) + 1 },
+        putDiagnosis: (wqId, payload) => api.put(`/wrong-questions/${wqId}/diagnosis`, payload),
+        normalizeDiagnosis: raw => errorDiagnosis.normalizeDiagnosis(raw),
+      })
+    }
+    return this._batchDiagnosis
+  },
 buildLocalErrorDistribution(wrongItems) {
 return _buildLocalErrorDistribution(wrongItems);
 },
@@ -929,74 +806,22 @@ this.loadGrowth(loadId)
 _isDashboardLoadCurrent(loadId) {
 return this._pageAlive && loadId === this._dashboardLoadId;
 },
-async loadTrends(loadId = this._dashboardLoadId) {
-if (!this._isDashboardLoadCurrent(loadId)) return;
-this.setData({ trendLoading: true });
-try {
-const raw = await this.requestApi('/api/v1/stats/trends', { days: 7 });
-if (!this._isDashboardLoadCurrent(loadId)) return;
-const list = Array.isArray(raw)
-? raw
-: Array.isArray(raw && raw.items)
-? raw.items
-: Array.isArray(raw && raw.data)
-? raw.data
-: [];
-if (list.length) {
-const trendData = list.slice(-7).map(item => ({
-date: item.date || '',
-accuracy: normalizePercent(item.accuracy),
-questions: Number(item.questions ?? item.answer_count ?? item.answered ?? 0) || 0
-}));
-const nonEmpty = trendData.filter(item => item.questions > 0);
-let trendSummary = '近 7 天';
-if (nonEmpty.length >= 2) {
-const first = nonEmpty[0].accuracy;
-const last = nonEmpty[nonEmpty.length - 1].accuracy;
-const diff = last - first;
-trendSummary = diff > 0 ? `提升 ${diff}%` : diff < 0 ? `下降 ${Math.abs(diff)}%` : '表现稳定';
-} else if (nonEmpty.length === 1) {
-trendSummary = `当前 ${nonEmpty[0].accuracy}%`;
-} else {
-trendSummary = '暂无作答记录';
-}
-const plot = buildTrendPlot(trendData);
-this.setData({
-trendData,
-trendPoints: plot.points,
-trendSegments: plot.segments,
-trendLastPoint: plot.lastPoint,
-trendAreaStyle: plot.areaStyle,
-trendSummary,
-trendAvailable: true
-});
-} else {
-this.setData({
-trendData: [],
-trendPoints: [],
-trendSegments: [],
-trendLastPoint: null,
-trendAreaStyle: '',
-trendSummary: '暂无历史数据',
-trendAvailable: false
-});
-}
-} catch (e) {
-if (!this._isDashboardLoadCurrent(loadId)) return;
-this.setData({
-trendData: [],
-trendPoints: [],
-trendSegments: [],
-trendLastPoint: null,
-trendAreaStyle: '',
-trendSummary: '趋势暂不可用',
-trendAvailable: false
-});
-} finally {
-if (!this._isDashboardLoadCurrent(loadId)) return;
-this.setData({ trendLoading: false });
-}
-},
+  async loadTrends(loadId = this._dashboardLoadId) {
+    return this._trendLoadController().load(loadId)
+  },
+
+  _trendLoadController() {
+    if (!this._trendLoad) {
+      this._trendLoad = createTrendLoadController({
+        isLoadCurrent: id => this._isDashboardLoadCurrent(id),
+        setData: patch => this.setData(patch),
+        requestTrends: () => this.requestApi('/api/v1/stats/trends', { days: 7 }),
+        normalizePercent,
+        buildTrendPlot: data => buildTrendPlot(data),
+      })
+    }
+    return this._trendLoad
+  },
 async loadGrowth(loadId = this._dashboardLoadId) {
 if (!this._isDashboardLoadCurrent(loadId)) return;
 let resolved = null;
@@ -1168,73 +993,43 @@ select408TeacherAction(e) {
 const action = String(e.currentTarget.dataset.action || '');
 if (action) this.run408TeacherFromReview(action);
 },
-async run408TeacherFromReview(action) {
-if (this.data.teacherLoading) {
-this.setData({ teacherSheetVisible: true });
-return;
-}
-const dialog = this.data.reviewDialog || {};
-if (!dialog.questionId) return;
-const cacheKey = this._teacherCacheKey(dialog, action);
-const cached = this._teacherCache && this._teacherCache[cacheKey];
-this._activeTeacherCacheKey = cacheKey;
-if (cached) {
-this.setData({
-teacherLoading: false,
-teacherResult: cached,
-teacherErrorText: '',
-teacherSheetVisible: true,
-teacherFeedbackSent: (this._teacherFeedbackCache && this._teacherFeedbackCache[cacheKey]) || ''
-});
-return;
-}
-const requestSeq = ++this._teacherRequestSeq;
-const questionId = Number(dialog.questionId);
-const payload = {
-question_id: questionId,
-action: action
-};
-if (Number(dialog.questionVersionId) > 0) payload.question_version_id = Number(dialog.questionVersionId);
-if (Number(dialog.diagnosisId) > 0) payload.diagnosis_id = Number(dialog.diagnosisId);
-if (dialog.userAnswer && dialog.userAnswer !== '未作答') payload.user_answer = String(dialog.userAnswer);
-if (!this._teacherInflight) this._teacherInflight = Object.create(null);
-let requestPromise = this._teacherInflight[cacheKey];
-if (!requestPromise) {
-requestPromise = api.post('/ai/408-teacher', payload, { timeout: 55000 });
-this._teacherInflight[cacheKey] = requestPromise;
-}
-this.setData({
-teacherLoading: true,
-teacherResult: null,
-teacherErrorText: '',
-teacherSheetVisible: true,
-teacherFeedbackSent: ''
-});
-try {
-const raw = await requestPromise;
-const normalized = aiTeacher408.normalizeResult(raw);
-if (!normalized) throw new Error('AI 返回格式异常');
-if (!this._teacherCache) this._teacherCache = Object.create(null);
-this._teacherCache[cacheKey] = normalized;
-if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return;
-if (Number((this.data.reviewDialog || {}).questionId) !== questionId) {
-this.setData({ teacherLoading: false });
-return;
-}
-this._activeTeacherCacheKey = cacheKey;
-this.setData({ teacherLoading: false, teacherResult: normalized });
-} catch (error) {
-if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return;
-this.setData({
-teacherLoading: false,
-teacherErrorText: aiTeacher408.errorMessage(error, api)
-});
-} finally {
-if (this._teacherInflight && this._teacherInflight[cacheKey] === requestPromise) {
-delete this._teacherInflight[cacheKey];
-}
-}
-},
+  async run408TeacherFromReview(action) {
+    return this._review408TeacherController().run(action)
+  },
+
+  _review408TeacherController() {
+    if (!this._review408Teacher) {
+      this._review408Teacher = createReview408TeacherController({
+        getTeacherLoading: () => this.data.teacherLoading,
+        getReviewDialog: () => this.data.reviewDialog,
+        setData: patch => this.setData(patch),
+        buildCacheKey: (dialog, action) => this._teacherCacheKey(dialog, action),
+        getCacheEntry: key => this._teacherCache && this._teacherCache[key],
+        setCacheEntry: (key, value) => {
+          if (!this._teacherCache) this._teacherCache = Object.create(null)
+          this._teacherCache[key] = value
+        },
+        getFeedbackEntry: key => (this._teacherFeedbackCache && this._teacherFeedbackCache[key]) || '',
+        setActiveCacheKey: key => { this._activeTeacherCacheKey = key },
+        getInflight: key => {
+          if (!this._teacherInflight) this._teacherInflight = Object.create(null)
+          return this._teacherInflight[key]
+        },
+        setInflight: (key, promise) => {
+          if (!this._teacherInflight) this._teacherInflight = Object.create(null)
+          this._teacherInflight[key] = promise
+        },
+        deleteInflight: key => { delete this._teacherInflight[key] },
+        nextRequestSequence: () => ++this._teacherRequestSeq,
+        getRequestSequence: () => this._teacherRequestSeq,
+        isPageAlive: () => this._pageAlive,
+        postTeacher: payload => api.post('/ai/408-teacher', payload, { timeout: 55000 }),
+        normalizeResult: raw => aiTeacher408.normalizeResult(raw),
+        errorMessage: error => aiTeacher408.errorMessage(error, api),
+      })
+    }
+    return this._review408Teacher
+  },
 close408Teacher() {
 this.setData({ teacherSheetVisible: false });
 },
@@ -1308,68 +1103,27 @@ return;
 }
 this.navigateToWrongDetail(wrongQuestionId);
 },
-handleBack() {
-if (this._navigationLocked) return;
-this._navigationLocked = true;
-const originalReturnTo = this._returnTo || '';
-const fromKnowledgeDetail = this._launchSource === 'knowledge_map' &&
-/^\/subpackages\/knowledge\/knowledge-detail\/index(?:\?.*)?$/.test(originalReturnTo);
-const preferredReturnTo = fromKnowledgeDetail && this._launchSubjectId
-? `/subpackages/knowledge/knowledge-subject/index?subject_id=${this._launchSubjectId}&restore_state=1`
-: originalReturnTo;
-const targetPath = String(preferredReturnTo || '').split('?')[0].replace(/^\//, '');
-const fallback = () => {
-this._navigationLocked = false;
-if (preferredReturnTo) {
-wx.redirectTo({
-url: preferredReturnTo,
-fail: () => wx.reLaunch({ url: '/pages/home/home' })
-});
-return;
-}
-wx.reLaunch({ url: '/pages/home/home' });
-};
-const findTargetIndex = (pages) => {
-if (!targetPath || !Array.isArray(pages) || pages.length < 2) return -1;
-for (let i = pages.length - 2; i >= 0; i -= 1) {
-const page = pages[i] || {};
-const route = String(page.route || '').replace(/^\//, '');
-if (route !== targetPath) continue;
-if (targetPath === 'subpackages/knowledge/knowledge-subject/index' && this._launchSubjectId) {
-const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0;
-if (pageSubjectId && pageSubjectId !== this._launchSubjectId) continue;
-}
-return i;
-}
-return -1;
-};
-const navigateExisting = (attempt = 0) => {
-const pages = getCurrentPages ? getCurrentPages() : [];
-const targetIndex = findTargetIndex(pages);
-if (targetIndex < 0) {
-if (pages.length > 1 && !preferredReturnTo) {
-wx.navigateBack({
-delta: 1,
-fail: fallback
-});
-return;
-}
-fallback();
-return;
-}
-const delta = Math.max(1, pages.length - 1 - targetIndex);
-wx.navigateBack({
-delta,
-fail: () => {
-if (attempt < 2) {
-setTimeout(() => navigateExisting(attempt + 1), attempt === 0 ? 48 : 120);
-return;
-}
-this._navigationLocked = false;
-if (this._pageAlive) wx.showToast({ title: '返回失败，请再试一次', icon: 'none' });
-}
-});
-};
-navigateExisting(0);
-},
+  handleBack() {
+    return this._backNavigationController().back()
+  },
+
+  _backNavigationController() {
+    if (!this._backNavigation) {
+      this._backNavigation = createBackNavigationController({
+        getNavigationLocked: () => this._navigationLocked,
+        setNavigationLocked: value => { this._navigationLocked = value },
+        getReturnTo: () => this._returnTo || '',
+        getLaunchSource: () => this._launchSource,
+        getLaunchSubjectId: () => this._launchSubjectId,
+        isPageAlive: () => this._pageAlive,
+        getCurrentPages: () => (typeof getCurrentPages === 'function' ? getCurrentPages() : []),
+        navigateBack: options => wx.navigateBack(options),
+        redirectTo: options => wx.redirectTo(options),
+        reLaunch: options => wx.reLaunch(options),
+        showToast: options => wx.showToast(options),
+        setTimeout,
+      })
+    }
+    return this._backNavigation
+  },
 });
