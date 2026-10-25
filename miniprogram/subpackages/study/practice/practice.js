@@ -44,6 +44,7 @@ const { createSubmitSuccessController } = require('./utils/submit-success-contro
 const { createSubmitFlowController } = require('./utils/submit-flow-controller')
 const { createStartPracticeController } = require('./utils/start-practice-controller')
 const { createImageWarmController } = require('./utils/image-warm-controller')
+const { createSubmissionLockController } = require('./utils/submission-lock-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -1154,15 +1155,15 @@ questionId: q.id, previousAnswer: prev, nextAnswer: next, answeredCount: count,
 )
 },
 _isSubmissionLocked() {
-if (!this._practiceSession || !this._practiceSession.submissionSnapshot) return false
-const submission = this._practiceSession.submissionSnapshot
-wx.showToast({
-title: submission.serverAccepted
-? '本次已交卷，请查看结果'
-: (submission.retryBlocked ? '提交已被拒绝，请退出后重试' : '交卷内容已锁定，请确认提交'),
-icon: 'none',
+return this._submissionLockController().isLocked()
+},
+_submissionLockController() {
+return this._submissionLockControllerInstance || (
+this._submissionLockControllerInstance = createSubmissionLockController({
+getSubmissionSnapshot: () => this._practiceSession && this._practiceSession.submissionSnapshot,
+showToast: options => wx.showToast(options),
 })
-return true
+)
 },
 selectOption(e) {
 this._answerInteractionController().selectOption(e)
