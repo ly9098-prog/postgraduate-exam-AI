@@ -55,6 +55,12 @@ const MODULES = {
   'start-timer-controller.js': ['./countdown-controller'],
   'canvas-init-controller.js': ['./canvas-layout'],
   'draw-ring-controller.js': ['./ring-geometry'],
+  'skip-break-controller.js': [],
+  'font-size-controller.js': [],
+  'subject-view-controller.js': ['./subject-meta'],
+  'preset-view-controller.js': [],
+  'celebration-type-controller.js': [],
+  'date-exam-controller.js': [],
   'countdown-controller.js': [],
   'free-timer-controller.js': [],
   'ring-geometry.js': [],
@@ -74,7 +80,7 @@ const MODULES = {
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2155
+const PAGE_MAX_LINES = 2197
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -134,9 +140,12 @@ const PAGE_METHODS = new Set([
   // Preset / duration / touch UI handlers
   'selectPreset', 'onWorkChange', 'onBreakChange', 'noop', 'onCustomAreaTouch',
   'onTouchStart', 'onTouchEnd', 'onExamTap', 'skipBreak',
+  '_getSkipBreakController',
   // Computed fields and labels
   '_updateComputedFields', 'subjectLabel', 'subjectColor', 'presetLabel',
-  'cycleFontSize', 'getDateStr', '_getExamDays', '_nextCelebrationType',
+  'cycleFontSize', '_getFontSizeController', '_getSubjectViewController',
+  '_getPresetViewController', 'getDateStr', '_getExamDays',
+  '_getDateExamController', '_nextCelebrationType', '_getCelebrationTypeController',
   // Free timer interval helpers
   '_getFreeTimerController', '_clearFreeTimerInterval', '_startFreeTimerInterval',
   '_restartFreeTimerInterval',

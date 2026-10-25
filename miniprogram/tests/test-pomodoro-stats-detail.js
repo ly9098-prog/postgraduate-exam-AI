@@ -52,6 +52,7 @@ assert.match(template, /class="detail-card" catchtap="noop" wx:if="\{\{selectedS
 let pageConfig
 let selectedRectCallback
 const pieTapControllerModule = require('../subpackages/productivity/pomodoro-stats/pie-tap-controller')
+const closeDetailControllerModule = require('../subpackages/productivity/pomodoro-stats/close-detail-controller')
 const wxQueryMock = {
   createSelectorQuery: () => ({
     in() { return this },
@@ -89,6 +90,12 @@ pageConfig._createPieTapControllerForPage = page =>
     renderPie: progress => page._renderPieChart(progress),
     setTimeout: (callback, delay) => { timers.push({ callback, delay }) },
   })
+pageConfig._createCloseDetailControllerForPage = page =>
+  closeDetailControllerModule.createCloseDetailController({
+    isAlive: () => page._alive,
+    setData: (patch, callback) => page.setData(patch, callback),
+    renderPie: progress => page._renderPieChart(progress),
+  })
 
 const subjects = [
   { subject: 'math', duration_sec: 60, sessions: 1, _label: '数学' },
@@ -103,6 +110,12 @@ const page = {
   _getPieTapController() {
     if (!this.__pieTapController) this.__pieTapController = pageConfig._createPieTapControllerForPage(this)
     return this.__pieTapController
+  },
+  _getCloseDetailController() {
+    if (!this.__closeDetailController) {
+      this.__closeDetailController = pageConfig._createCloseDetailControllerForPage(this)
+    }
+    return this.__closeDetailController
   },
   _renderPieChart: progress => { renders.push(progress) },
   setData(patch, callback) {

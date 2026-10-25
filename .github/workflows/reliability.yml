@@ -327,6 +327,7 @@ jobs:
             miniprogram/tests/test-pomodoro-unknown-start-controller.js \
             miniprogram/tests/test-pomodoro-pending-sync-controller.js \
             miniprogram/tests/test-pomodoro-terminal-conflict-controller.js \
+            miniprogram/tests/test-pomodoro-view-controllers.js \
             miniprogram/tests/test-pomodoro-stats-controller.js \
             miniprogram/tests/test-pomodoro-stats-date-utils.js \
             miniprogram/tests/test-pomodoro-stats-view-helpers.js \

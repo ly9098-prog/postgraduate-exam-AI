@@ -78,6 +78,12 @@ const { createStartBreakController } = require('./utils/start-break-controller')
 const { createStartTimerController } = require('./utils/start-timer-controller')
 const { createCanvasInitController } = require('./utils/canvas-init-controller')
 const { createDrawRingController } = require('./utils/draw-ring-controller')
+const { createSkipBreakController } = require('./utils/skip-break-controller')
+const { createFontSizeController } = require('./utils/font-size-controller')
+const { createSubjectViewController } = require('./utils/subject-view-controller')
+const { createPresetViewController } = require('./utils/preset-view-controller')
+const { createCelebrationTypeController } = require('./utils/celebration-type-controller')
+const { createDateExamController } = require('./utils/date-exam-controller')
 const { buildCancelEndConfirmPlan } = require('./utils/cancel-confirm-state')
 const {
   findSubjectById,
@@ -1767,9 +1773,18 @@ Page({
     return this._getStartBreakController().start(totalSec, options)
   },
   skipBreak() {
-    this._clearTimer()
-    this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
-    this._resetToIdle()
+    this._getSkipBreakController().skip()
+  },
+
+  _getSkipBreakController() {
+    if (!this._skipBreakController) {
+      this._skipBreakController = createSkipBreakController({
+        clearTimer: () => this._clearTimer(),
+        removeStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        resetIdle: () => this._resetToIdle(),
+      })
+    }
+    return this._skipBreakController
   },
 
   /* ==================== Session Restore ==================== */
@@ -2087,12 +2102,18 @@ Page({
   /* ==================== Font Size Toggle ==================== */
 
   cycleFontSize() {
-    const levels = ['medium', 'large']
-    const current = this.data.fontSizeLevel
-    const idx = levels.indexOf(current)
-    const next = levels[(idx + 1) % levels.length]
-    this.setData({ fontSizeLevel: next })
-    wx.setStorageSync('pomodoro_font_size', next)
+    this._getFontSizeController().cycle()
+  },
+
+  _getFontSizeController() {
+    if (!this._fontSizeController) {
+      this._fontSizeController = createFontSizeController({
+        getCurrentLevel: () => this.data.fontSizeLevel,
+        setLevel: value => this.setData({ fontSizeLevel: value }),
+        persist: value => wx.setStorageSync('pomodoro_font_size', value),
+      })
+    }
+    return this._fontSizeController
   },
 
   _updateComputedFields() {
@@ -2108,48 +2129,69 @@ Page({
   /* ==================== Utility ==================== */
 
   subjectLabel(key) {
-    const { getSubjectName } = require('./utils/subject-meta')
-    const s = this.data.subjects.find(s => s.code === key)
-    return s ? s.name : getSubjectName(key)
+    return this._getSubjectViewController().label(key)
+  },
+
+  _getSubjectViewController() {
+    if (!this._subjectViewController) {
+      this._subjectViewController = createSubjectViewController({
+        getSubjects: () => this.data.subjects,
+      })
+    }
+    return this._subjectViewController
   },
 
   subjectColor(key) {
-    return '#3B82F6'
+    return this._getSubjectViewController().color()
   },
 
 
   presetLabel(key) {
-    const p = PRESETS.find(p => p.key === key)
-    return p ? p.label : key
+    return this._getPresetViewController().label(key)
+  },
+
+  _getPresetViewController() {
+    if (!this._presetViewController) {
+      this._presetViewController = createPresetViewController({
+        getPresets: () => PRESETS,
+      })
+    }
+    return this._presetViewController
   },
 
   _nextCelebrationType() {
-    var types = ['excellent', 'award', 'thumbsUp']
-    var idx = wx.getStorageSync('pomodoro_anim_idx') || 0
-    var next = (idx + 1) % types.length
-    wx.setStorageSync('pomodoro_anim_idx', next)
-    return types[idx]
+    return this._getCelebrationTypeController().next()
+  },
+
+  _getCelebrationTypeController() {
+    if (!this._celebrationTypeController) {
+      this._celebrationTypeController = createCelebrationTypeController({
+        getIndex: () => wx.getStorageSync('pomodoro_anim_idx'),
+        setIndex: value => wx.setStorageSync('pomodoro_anim_idx', value),
+      })
+    }
+    return this._celebrationTypeController
   },
 
   getDateStr() {
-    const d = getChinaWallParts(api.now())
-    const week = ['日', '一', '二', '三', '四', '五', '六']
-    return `${d.month}月${d.day}日 星期${week[d.weekday]}`
+    return this._getDateExamController().dateText()
   },
 
   _getExamDays() {
-    const nowParts = getChinaWallParts(api.now())
-    const todayStart = getChinaDayStartUtcMs(`${nowParts.year}-${String(nowParts.month).padStart(2, '0')}-${String(nowParts.day).padStart(2, '0')}`)
-    const getExamDayUtc = (year) => {
-      const dec31 = new Date(Date.UTC(year, 11, 31))
-      const dayOfWeek = dec31.getUTCDay()
-      const lastSaturday = 31 - ((dayOfWeek - 6 + 7) % 7)
-      const targetDay = lastSaturday - 7
-      return Date.UTC(year, 11, targetDay) - 8 * 60 * 60 * 1000
+    return this._getDateExamController().examDays()
+  },
+
+  _getDateExamController() {
+    if (!this._dateExamController) {
+      this._dateExamController = createDateExamController({
+        now: () => api.now(),
+        getChinaWallParts,
+        getChinaDayStartUtcMs,
+        utc: parts => Date.UTC(parts.year, parts.month, parts.day),
+        getUtcDay: ms => new Date(ms).getUTCDay(),
+      })
     }
-    let examStart = getExamDayUtc(nowParts.year)
-    if (examStart < todayStart) examStart = getExamDayUtc(nowParts.year + 1)
-    return Math.max(0, Math.round((examStart - todayStart) / (24 * 60 * 60 * 1000)))
+    return this._dateExamController
   },
 
 })
