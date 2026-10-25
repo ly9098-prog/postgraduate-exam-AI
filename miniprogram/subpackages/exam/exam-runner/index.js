@@ -27,6 +27,9 @@ const {
 const {
   createExamInteractionController,
 } = require('../utils/exam-interaction-controller')
+const {
+  createExamQuestionTimeController,
+} = require('../utils/exam-question-time-controller')
 
 function cleanUiLabel(value, fallback = '') {
   return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
@@ -454,18 +457,22 @@ Page({
   },
 
   _settleCurrentTime(options = {}) {
-    const itemId = this._currentItemId()
-    if (!itemId || !this._questionEnterAt) return Promise.resolve()
-    const now = api.now()
-    const delta = Math.max(0, Math.floor((now - this._questionEnterAt) / 1000))
-    this._questionEnterAt = now
-    if (delta <= 0) return Promise.resolve()
-    const a = this._answers[itemId] || { used_time: 0 }
-    a.used_time = Math.min(6 * 60 * 60, Math.max(0, Number(a.used_time || 0)) + delta)
-    this._answers[itemId] = a
-    this._queueItem(itemId)
-    if (options.sync === false) return Promise.resolve()
-    return this._syncItem(itemId).catch(() => {})
+    return this._examQuestionTimeController().settle(options)
+  },
+
+  _examQuestionTimeController() {
+    return this._examQuestionTime || (
+      this._examQuestionTime = createExamQuestionTimeController({
+        getCurrentItemId: () => this._currentItemId(),
+        getQuestionEnterAt: () => this._questionEnterAt,
+        setQuestionEnterAt: value => { this._questionEnterAt = value },
+        now: () => api.now(),
+        getAnswer: itemId => this._answers[itemId],
+        setAnswer: (itemId, answer) => { this._answers[itemId] = answer },
+        queueItem: itemId => this._queueItem(itemId),
+        syncItem: itemId => this._syncItem(itemId),
+      })
+    )
   },
 
   async _syncItem(itemId) {
