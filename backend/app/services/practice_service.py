@@ -130,6 +130,10 @@ from app.services.practice.smart_scored_supplement import (
     ScoredSupplementRequest,
     run_scored_supplement,
 )
+from app.services.practice.smart_orchestrator import (
+    SmartPracticeRequest,
+    run_smart_practice,
+)
 from app.services.practice.smart_weakness_vector import (
     SmartWeaknessVectorRequest,
     run_smart_weakness_vector,
@@ -1390,47 +1394,21 @@ async def get_smart_practice_questions(
     Phase 2: 优先使用 UserKnowledgeState 画像，fallback 到近 30 天 PracticeRecord 统计。
     返回: (questions_list, metadata_dict)
     """
-    # use_leitner 由 issuance 层统一执行：candidate_schedule.filter_due_candidates
-    # 在向量/path 召回后用 question_review_service.get_due_question_ids() 二次
-    # 过滤 next_review_at > now 的题目，不足时用 random fallback 补齐（见
-    # question_issuance.issue_practice_questions）。本函数只负责候选召回。
-    # Phase 4: 实验策略解析（best-effort）
-    experiment_info = {
-        "experiment_id": None,
-        "variant_key": None,
-        "strategy_config_id": None,
-    }
-    try:
-        from app.services import recommendation_experiment_service
+    # use_leitner 由 issuance 层统一执行；本函数只负责候选召回与策略编排。
+    from app.services import recommendation_experiment_service
 
-        resolved = await recommendation_experiment_service.resolve_strategy_for_user(
-            db=db,
-            user_id=user_id,
-            scene="practice_smart",
-            default_strategy=smart_strategy,
-        )
-        if resolved.get("source") == "experiment" and resolved.get("strategy"):
-            smart_strategy = resolved["strategy"]
-            experiment_info["experiment_id"] = resolved.get("experiment_id")
-            experiment_info["variant_key"] = resolved.get("variant_key")
-    except Exception:
-        logger.warning("实验策略解析失败，使用默认策略", exc_info=True)
-
-    # Historical/admin naming compatibility.  The experiment/config layer uses
-    # ``knowledge_path`` while this service originally used ``path``; treat
-    # them as the same strategy.  ``hybrid_graph`` / ``smart_scored`` are safe
-    # aliases for the upgraded scored implementation rather than parallel
-    # recommendation engines.
-    smart_strategy = normalize_smart_strategy(smart_strategy)
     scope_ids = (
         subject_ids
         if subject_ids is not None
         else await resolve_subject_ids(db, subject_code)
     )
 
-    # V4: 综合打分策略
-    if smart_strategy == "scored":
-        scored_result = await run_scored_supplement(
+    async def run_scored_branch(
+        experiment_info: dict,
+        _strategy: str,
+        branch_scope_ids: list[int],
+    ) -> tuple[list[Question], dict[int, dict]] | None:
+        return await run_scored_supplement(
             ScoredSupplementRequest(
                 db=db,
                 user_id=user_id,
@@ -1440,7 +1418,7 @@ async def get_smart_practice_questions(
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
                 request_id=request_id,
-                scope_ids=scope_ids,
+                scope_ids=branch_scope_ids,
                 skip_finalize=skip_finalize,
                 experiment_id=experiment_info.get("experiment_id"),
                 variant_key=experiment_info.get("variant_key"),
@@ -1451,11 +1429,12 @@ async def get_smart_practice_questions(
                 finalize=_maybe_finalize_smart,
             )
         )
-        if scored_result is not None:
-            return scored_result
 
-    # Phase 3: 知识路径策略
-    if smart_strategy == "path":
+    async def run_path_branch(
+        experiment_info: dict,
+        _strategy: str,
+        branch_scope_ids: list[int],
+    ) -> tuple[list[Question], dict[int, dict]] | None:
         from app.services import knowledge_path_service
 
         def build_path_conditions(
@@ -1481,7 +1460,7 @@ async def get_smart_practice_questions(
                 conditions.append(Question.id.notin_(excluded_sub))
             return conditions
 
-        path_result = await run_smart_path(
+        return await run_smart_path(
             SmartPathRequest(
                 db=db,
                 user_id=user_id,
@@ -1490,7 +1469,7 @@ async def get_smart_practice_questions(
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
-                scope_ids=scope_ids,
+                scope_ids=branch_scope_ids,
                 skip_finalize=skip_finalize,
                 experiment_id=experiment_info.get("experiment_id"),
                 variant_key=experiment_info.get("variant_key"),
@@ -1503,9 +1482,51 @@ async def get_smart_practice_questions(
                 build_conditions=build_path_conditions,
             )
         )
-        if path_result is not None:
-            return path_result
-        # path 策略完全失败或没有可用候选，继续走 weakness_vector 逻辑
+
+    async def run_weakness_branch(**kwargs) -> tuple[list[Question], dict[int, dict]]:
+        return await _legacy_weakness_vector(**kwargs)
+
+    return await run_smart_practice(
+        SmartPracticeRequest(
+            db=db,
+            user_id=user_id,
+            subject_code=subject_code,
+            count=count,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
+            request_id=request_id,
+            smart_strategy=smart_strategy,
+            skip_finalize=skip_finalize,
+            subject_ids=scope_ids,
+            logger=logger,
+            resolve_experiment=(
+                recommendation_experiment_service.resolve_strategy_for_user
+            ),
+            resolve_scope_ids=resolve_subject_ids,
+            run_scored=run_scored_branch,
+            run_path=run_path_branch,
+            run_weakness=run_weakness_branch,
+        )
+    )
+
+
+async def _legacy_weakness_vector(
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    *,
+    count: int = 20,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
+    subject_ids: list[int] | None = None,
+    skip_finalize: bool = False,
+    request_id: str | None = None,
+    experiment_id: int | None = None,
+    variant_key: str | None = None,
+) -> tuple[list[Question], dict[int, dict]]:
+    """Legacy weakness-vector branch retained for direct smart-entry fallback."""
 
     metadata: dict[int, dict] = {}
     # 1. 获取薄弱知识点（Phase 2 优先使用掌握度画像）
@@ -1532,7 +1553,7 @@ async def get_smart_practice_questions(
         weak_kps = await _compute_weak_knowledge_points(
             db,
             user_id,
-            scope_ids,
+            subject_ids or [],
         )
         if weak_kps:
             pass
@@ -1549,7 +1570,7 @@ async def get_smart_practice_questions(
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
             use_leitner=use_leitner,
-            subject_ids=scope_ids,
+            subject_ids=subject_ids,
         )
         for q in questions:
             metadata[q.id] = {
@@ -1566,8 +1587,8 @@ async def get_smart_practice_questions(
             user_id,
             subject_code,
             request_id=request_id,
-            experiment_id=experiment_info.get("experiment_id"),
-            variant_key=experiment_info.get("variant_key"),
+            experiment_id=experiment_id,
+            variant_key=variant_key,
         )
 
     # 2. 构造 query_text 并向量召回
@@ -1600,8 +1621,8 @@ async def get_smart_practice_questions(
             vector_conditions = [
                 Question.id.in_(rec_ids),
                 Question.is_active,
-                Question.subject_id.in_(scope_ids),
-                _practice_revision_scope_condition(scope_ids),
+                Question.subject_id.in_(subject_ids or []),
+                _practice_revision_scope_condition(subject_ids or []),
             ]
             if vector_excluded_sub is not None:
                 vector_conditions.append(Question.id.notin_(vector_excluded_sub))
@@ -1658,17 +1679,17 @@ async def get_smart_practice_questions(
             user_id,
             subject_code,
             request_id=request_id,
-            experiment_id=experiment_info.get("experiment_id"),
-            variant_key=experiment_info.get("variant_key"),
+            experiment_id=experiment_id,
+            variant_key=variant_key,
         )
 
     # 3. 补齐：按薄弱知识点过滤 + 随机
     existing_ids = {q.id for q in vector_questions}
-    subject_cond = Question.subject_id.in_(scope_ids)
+    subject_cond = Question.subject_id.in_(subject_ids or [])
     conditions = [
         Question.is_active,
         subject_cond,
-        _practice_revision_scope_condition(scope_ids),
+        _practice_revision_scope_condition(subject_ids or []),
         Question.id.notin_(existing_ids),
     ]
     # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
@@ -1749,8 +1770,8 @@ async def get_smart_practice_questions(
         user_id,
         subject_code,
         request_id=request_id,
-        experiment_id=experiment_info.get("experiment_id"),
-        variant_key=experiment_info.get("variant_key"),
+        experiment_id=experiment_id,
+        variant_key=variant_key,
     )
 
 
