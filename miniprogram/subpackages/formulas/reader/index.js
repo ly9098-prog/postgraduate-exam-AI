@@ -207,56 +207,44 @@ Page({
   async loadCard(formulaId, {
     transition = false,
     sequenceIndex = this.data.sequenceIndex,
-    direction = 'next',
+    direction = "next",
   } = {}) {
-    const requestToken = (this._cardRequestToken || 0) + 1
+    var requestToken = (this._cardRequestToken || 0) + 1
     this._cardRequestToken = requestToken
-    const loadingKey = transition ? 'loadingNext' : 'loading'
-    this.setData({ [loadingKey]: true, loadError: false, errorText: '' })
-
+    var loadingKey = transition ? "loadingNext" : "loading"
+    this.setData({ [loadingKey]: true, loadError: false, errorText: "" })
     try {
-      const card = await this.fetchCard(formulaId)
+      var card = await this.fetchCard(formulaId)
       if (requestToken !== this._cardRequestToken) return
-      if (!card || typeof card !== 'object') throw new Error('公式数据无效')
-      const resolvedId = normalizeId(card.id || formulaId)
-      const patch = {
-        displayCards: [card],
-        currentIndex: 0,
-        formulaId: resolvedId,
-        sequenceIndex,
-      }
-
-      if (transition && this.data.currentCard) {
-        this.applyCardTransition(card, direction, patch)
-      } else {
-        this.setData({
-          ...patch,
-          currentCard: card,
-          loading: false,
-          loadingNext: false,
-          transitionClass: '',
-        }, () => {
-          this.resetReaderScroll()
-          this.syncNavigationState()
-        })
-      }
-
-      if (!this.data.isRandom && this.data.sequenceIds.length <= 1) {
-        this.ensureSequence(card).catch(() => {})
-      }
+      if (!card || typeof card !== "object") throw new Error("公式数据无效")
+      this._applyLoadedCard(card, formulaId, transition, direction, sequenceIndex)
     } catch (err) {
-      if (requestToken !== this._cardRequestToken) return
-      console.error('Failed to load formula', err)
-      if (transition) {
-        this.setData({ loadingNext: false, transitionClass: '' })
-        wx.showToast({ title: '切换失败，请重试', icon: 'none' })
-      } else {
-        this.setData({
-          loading: false,
-          loadError: true,
-          errorText: err && err.message ? err.message : '公式加载失败，请稍后重试',
-        })
-      }
+      this._handleLoadCardError(err, requestToken, transition)
+    }
+  },
+
+  _applyLoadedCard(card, formulaId, transition, direction, sequenceIndex) {
+    var resolvedId = normalizeId(card.id || formulaId)
+    var patch = { displayCards: [card], currentIndex: 0, formulaId: resolvedId, sequenceIndex: sequenceIndex }
+    if (transition && this.data.currentCard) {
+      this.applyCardTransition(card, direction, patch)
+    } else {
+      var self = this
+      this.setData(Object.assign({}, patch, { currentCard: card, loading: false, loadingNext: false, transitionClass: "" }), function() { self.resetReaderScroll(); self.syncNavigationState() })
+    }
+    if (!this.data.isRandom && this.data.sequenceIds.length <= 1) {
+      this.ensureSequence(card).catch(function() {})
+    }
+  },
+
+  _handleLoadCardError(err, requestToken, transition) {
+    if (requestToken !== this._cardRequestToken) return
+    console.error("Failed to load formula", err)
+    if (transition) {
+      this.setData({ loadingNext: false, transitionClass: "" })
+      wx.showToast({ title: "切换失败，请重试", icon: "none" })
+    } else {
+      this.setData({ loading: false, loadError: true, errorText: err && err.message ? err.message : "公式加载失败，请稍后重试" })
     }
   },
 
@@ -289,58 +277,54 @@ Page({
   },
 
   async loadRandomCard({ append = false } = {}) {
-    const requestToken = (this._randomRequestToken || 0) + 1
+    var requestToken = (this._randomRequestToken || 0) + 1
     this._randomRequestToken = requestToken
-    const loadingKey = append ? 'loadingNext' : 'loading'
-    this.setData({ [loadingKey]: true, loadError: false, errorText: '' })
-
+    var loadingKey = append ? "loadingNext" : "loading"
+    this.setData({ [loadingKey]: true, loadError: false, errorText: "" })
     try {
-      const params = { ...this.data.randomParams }
-      if (this._excludeIds && this._excludeIds.length > 0) {
-        params.exclude_ids = this._excludeIds.slice(-50).join(',')
-      }
-
-      const data = await api.request('GET', '/formulas/random/next', params)
+      var card = await this._fetchRandomCard(requestToken)
       if (requestToken !== this._randomRequestToken) return
-      const card = await this.enrichCard(data || {})
-      if (requestToken !== this._randomRequestToken) return
-      if (!card || !card.id) throw new Error('没有更多可背诵的公式')
-
-      this._excludeIds = this._excludeIds || []
-      this._excludeIds.push(normalizeId(card.id))
-
-      let cards = append ? (this.data.displayCards || []).concat([card]) : [card]
-      if (cards.length > MAX_RANDOM_HISTORY) cards = cards.slice(-MAX_RANDOM_HISTORY)
-      const currentIndex = append ? cards.length - 1 : 0
-      const patch = { displayCards: cards, currentIndex }
-
-      if (append && this.data.currentCard) {
-        this.applyCardTransition(cards[currentIndex], 'next', patch)
-      } else {
-        this.setData({
-          ...patch,
-          currentCard: cards[currentIndex],
-          loading: false,
-          loadingNext: false,
-          transitionClass: '',
-        }, () => {
-          this.resetReaderScroll()
-          this.syncNavigationState()
-        })
-      }
+      this._applyRandomCard(card, append, requestToken)
     } catch (err) {
-      if (requestToken !== this._randomRequestToken) return
-      console.error('Failed to load random formula', err)
-      if (append) {
-        this.setData({ loadingNext: false, transitionClass: '' })
-        wx.showToast({ title: '没有更多公式', icon: 'none' })
-      } else {
-        this.setData({
-          loading: false,
-          loadError: true,
-          errorText: err && err.message ? err.message : '暂时没有可背诵的公式',
-        })
-      }
+      this._handleRandomCardError(err, requestToken, append)
+    }
+  },
+
+  async _fetchRandomCard(requestToken) {
+    var params = {}
+    if (this.data.isFavorite) params.favorite_only = true
+    if (this._excludeIds && this._excludeIds.length) params.exclude_ids = this._excludeIds.join(",")
+    var data = await api.request("GET", "/formulas/random/next", params)
+    if (requestToken !== this._randomRequestToken) return
+    var card = await this.enrichCard(data || {})
+    if (requestToken !== this._randomRequestToken) return
+    if (!card || !card.id) throw new Error("没有更多可背诵的公式")
+    this._excludeIds = this._excludeIds || []
+    this._excludeIds.push(normalizeId(card.id))
+    return card
+  },
+
+  _applyRandomCard(card, append, requestToken) {
+    var cards = append ? (this.data.displayCards || []).concat([card]) : [card]
+    if (cards.length > MAX_RANDOM_HISTORY) cards = cards.slice(-MAX_RANDOM_HISTORY)
+    var currentIndex = append ? cards.length - 1 : 0
+    var patch = { displayCards: cards, currentIndex: currentIndex }
+    if (append && this.data.currentCard) {
+      this.applyCardTransition(cards[currentIndex], "next", patch)
+    } else {
+      var self = this
+      this.setData(Object.assign({}, patch, { currentCard: cards[currentIndex], loading: false, loadingNext: false, transitionClass: "" }), function() { self.resetReaderScroll(); self.syncNavigationState() })
+    }
+  },
+
+  _handleRandomCardError(err, requestToken, append) {
+    if (requestToken !== this._randomRequestToken) return
+    console.error("Failed to load random formula", err)
+    if (append) {
+      this.setData({ loadingNext: false, transitionClass: "" })
+      wx.showToast({ title: "没有更多公式", icon: "none" })
+    } else {
+      this.setData({ loading: false, loadError: true, errorText: err && err.message ? err.message : "暂时没有可背诵的公式" })
     }
   },
 
