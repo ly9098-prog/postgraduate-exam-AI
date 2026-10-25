@@ -29,6 +29,7 @@ from app.services.import_image_completion import (
     finalize_image_pipeline_result,
 )
 from app.services.import_image_stages import (
+    ImagePipelineExecutionRequest,
     ImageFailurePersistence,
     ImageCompletionPersistence,
     ImageOcrStage,
@@ -38,6 +39,7 @@ from app.services.import_image_stages import (
     run_image_pipeline_stage,
     persist_image_completion,
     persist_image_failure,
+    execute_image_pipeline_stages,
     run_prepared_image_ocr,
 )
 from app.services.import_background_execution import (
@@ -443,52 +445,38 @@ async def _run_image_pipeline_with_db(
         )
         from app.services.ocr_service import clean_ocr_text
 
-        ocr_stage = await run_prepared_image_ocr(
-            ImageOcrStage(
+        from app.features.import_ai_policy import apply_image_single_pass_policy
+
+        (
+            result,
+            raw_text,
+            raw_ocr_text,
+            ocr_diagnostics,
+            runtime_diagnostics,
+        ) = await execute_image_pipeline_stages(
+            ImagePipelineExecutionRequest(
                 pipeline_id=pipeline_id,
                 image_path=image_path,
                 source_file=source_file,
-                read_bytes=lambda _path: b"",
+                subject=subject,
+                subject_id=subject_id,
+                options=options,
+                created_by=created_by,
+                logger=logger,
+                async_session=async_session,
+                ensure_record=ckpt.ensure_pipeline_record,
+                run_pipeline=run_pipeline,
+                clean_text=clean_ocr_text,
+                build_runtime_diagnostics=_build_ocr_runtime_diagnostics,
+                run_ocr=_run_ocr_via_configured_backend,
+                build_diagnostics=_build_ocr_text_diagnostics,
+                build_blocks=_build_pre_extracted_ocr_blocks,
+                set_status=_set_image_pipeline_status,
                 set_stage_tags=lambda stage_name, engine: (
                     set_tag("stage", stage_name),
                     set_tag("ocr.engine", engine),
                 ),
-                build_runtime_diagnostics=_build_ocr_runtime_diagnostics,
-                run_ocr=_run_ocr_via_configured_backend,
-                clean_text=clean_ocr_text,
-                build_diagnostics=_build_ocr_text_diagnostics,
-                build_blocks=_build_pre_extracted_ocr_blocks,
-                set_status=_set_image_pipeline_status,
-            )
-        )
-        image_content = ocr_stage.image_bytes
-        raw_ocr_text = ocr_stage.stage_result.raw_ocr_text
-        raw_text = ocr_stage.stage_result.cleaned_text
-        pre_extracted_blocks = ocr_stage.stage_result.pre_extracted_blocks
-        runtime_diagnostics = ocr_stage.stage_result.runtime_diagnostics
-        ocr_diagnostics = ocr_stage.stage_result.diagnostics
-
-        logger.info("image pipeline started: pipeline_id=%s", pipeline_id)
-        from app.features.import_ai_policy import apply_image_single_pass_policy
-
-        pipeline_options = apply_image_single_pass_policy(
-            options,
-            enabled=bool(options.get("image_fast_mode", True)),
-        )
-        result = await run_image_pipeline_stage(
-            ImagePipelineStage(
-                pipeline_id=pipeline_id,
-                source_file=source_file,
-                subject=subject,
-                subject_id=subject_id,
-                options=pipeline_options,
-                created_by=created_by,
-                image_bytes=image_content,
-                cleaned_text=raw_text,
-                pre_extracted_blocks=pre_extracted_blocks,
-                async_session=async_session,
-                ensure_record=ckpt.ensure_pipeline_record,
-                run_pipeline=run_pipeline,
+                apply_policy=apply_image_single_pass_policy,
             )
         )
 

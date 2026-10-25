@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.services.import_image_stages import (
+    ImagePipelineExecutionRequest,
     ImageOcrStage,
     ImageCompletionPersistence,
     ImageFailurePersistence,
@@ -16,9 +18,77 @@ from app.services.import_image_stages import (
     ensure_image_checkpoint,
     run_image_pipeline_stage,
     run_prepared_image_ocr,
+    execute_image_pipeline_stages,
     persist_image_completion,
     persist_image_failure,
 )
+
+
+def execution_request(**overrides):
+    values = {
+        "pipeline_id": "img-1",
+        "image_path": "source.png",
+        "source_file": "source.png",
+        "subject": "DS",
+        "subject_id": 3,
+        "options": {"image_fast_mode": False},
+        "created_by": "admin",
+        "logger": logging.getLogger("test-image-stages"),
+        "async_session": object(),
+        "ensure_record": object(),
+        "run_pipeline": object(),
+        "clean_text": lambda value: value,
+        "build_runtime_diagnostics": lambda: {},
+        "run_ocr": AsyncMock(),
+        "build_diagnostics": lambda raw, clean: {},
+        "build_blocks": lambda **_kwargs: [],
+        "set_status": AsyncMock(),
+        "set_stage_tags": lambda *_args: None,
+        "apply_policy": lambda options, enabled: {**options, "fast": enabled},
+    }
+    values.update(overrides)
+    return ImagePipelineExecutionRequest(**values)
+
+
+@pytest.mark.asyncio
+async def test_execution_combines_ocr_and_policy_enabled_pipeline(monkeypatch, caplog):
+    image = __import__("pathlib").Path(__import__("tempfile").mkdtemp()) / "source.png"
+    image.write_bytes(b"image-bytes")
+    stage_result = SimpleNamespace(
+        cleaned_text="cleaned",
+        raw_ocr_text="raw",
+        diagnostics={"ocr": True},
+        runtime_diagnostics={"engine": "paddle"},
+        pre_extracted_blocks=[{"boxes": []}],
+    )
+    prepared = SimpleNamespace(image_bytes=b"image-bytes", stage_result=stage_result)
+    monkeypatch.setattr(
+        "app.services.import_image_stages.run_prepared_image_ocr",
+        AsyncMock(return_value=prepared),
+    )
+    run_stage = AsyncMock(return_value={"status": "completed"})
+    monkeypatch.setattr(
+        "app.services.import_image_stages.run_image_pipeline_stage",
+        run_stage,
+    )
+    request = execution_request(image_path=str(image))
+    caplog.set_level(logging.INFO, logger="test-image-stages")
+
+    result = await execute_image_pipeline_stages(request)
+
+    assert result.result == {"status": "completed"}
+    assert result.raw_text == "cleaned"
+    assert result.raw_ocr_text == "raw"
+    assert result.ocr_diagnostics == {"ocr": True}
+    assert result.runtime_diagnostics == {"engine": "paddle"}
+    assert run_stage.await_args.args[0].options == {
+        "image_fast_mode": False,
+        "fast": False,
+    }
+    assert any(
+        record.getMessage() == "image pipeline started: pipeline_id=img-1"
+        for record in caplog.records
+    )
 
 
 def checkpoint_request(**overrides):
