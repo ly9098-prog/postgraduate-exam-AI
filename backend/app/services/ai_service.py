@@ -5,6 +5,7 @@ import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import select
@@ -130,6 +131,69 @@ from app.services.knowledge_point_service import load_question_kps
 from app.services.safe_remote_fetch import request_remote_bytes
 
 logger = logging.getLogger(__name__)
+
+
+def _analysis_timeout_sec(effective_force: bool) -> int:
+    return (
+        ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS
+        if effective_force
+        else ERROR_ANALYSIS_TIMEOUT_SECONDS
+    )
+
+
+async def _analyze_error_with_lease(
+    db: AsyncSession,
+    user_id: int,
+    preparation: Any,
+) -> dict:
+    from app.core.cache import cache
+
+    return await execute_locked_analysis(
+        AnalysisOrchestrationRequest(
+            db=db,
+            user_id=user_id,
+            wrong_question=preparation.wrong_question,
+            question=preparation.question,
+            answer_grounding=preparation.answer_grounding,
+            stored_visual_sources=preparation.visual_sources,
+            requires_visual=preparation.requires_visual,
+            knowledge_points=preparation.knowledge_points,
+            runtime=preparation.runtime,
+            input_signature=preparation.input_signature,
+            model_signature=preparation.model_signature,
+            effective_force=preparation.force,
+            timeout_sec=_analysis_timeout_sec(preparation.force),
+            lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
+            generating=_generating,
+            cache=cache,
+            logger=logger,
+            prepare_visual_inputs=_prepare_visual_inputs,
+            build_context=build_error_context,
+            build_prompt_grounding=grounding_prompt_payload,
+            build_expected_answer_check=grounding_verification_payload,
+            input_signature_builder=_analysis_input_signature,
+            cached_response=build_cached_error_analysis_response,
+            cache_age=_analysis_cache_age_ms,
+            chat=llm.chat,
+            resolve_runtime=_resolve_healthy_analysis_runtime,
+            quarantine_runtime=_quarantine_analysis_runtime_auth,
+            parse_content=parse_error_analysis_content,
+            validate_content=is_valid_ai_analysis,
+            extract_evidence=_extract_visual_evidence,
+            build_usage=build_analysis_usage,
+            validate_answer_check=_validate_answer_check,
+            diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
+            evidence_is_valid=_visual_evidence_is_valid,
+            should_retry_visual_ack=should_retry_visual_ack,
+            retry_visual_ack=retry_visual_ack,
+            model_signature_builder=_analysis_model_signature,
+            max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
+            timeout_guard_sec=ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
+            visual_ack_failure=visual_ack_failure_outcome,
+            grounding_repair=grounding_repair_outcome,
+            valid_outcome=valid_analysis_outcome,
+        )
+    )
 
 # 第三方 Relay / reasoning 模型可能健康地超过 50 秒，因此服务端不能继续
 # 使用旧的 48/50 秒硬截断。微信小程序 wx.request 本身最多约 60 秒，所以
@@ -549,71 +613,7 @@ async def analyze_error(
     if preparation.response is not None:
         return preparation.response
 
-    wq = preparation.wrong_question
-    q = preparation.question
-    current_answer_grounding = preparation.answer_grounding
-    stored_visual_sources = preparation.visual_sources
-    requires_visual = preparation.requires_visual
-    knowledge_points = preparation.knowledge_points
-    runtime = preparation.runtime
-    input_signature = preparation.input_signature
-    model_signature = preparation.model_signature
-    effective_force = preparation.force
-
-    timeout_sec = (
-        ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS
-        if effective_force
-        else ERROR_ANALYSIS_TIMEOUT_SECONDS
-    )
-
-    from app.core.cache import cache
-
-    return await execute_locked_analysis(
-        AnalysisOrchestrationRequest(
-            db=db,
-            user_id=user_id,
-            wrong_question=wq,
-            question=q,
-            answer_grounding=current_answer_grounding,
-            stored_visual_sources=stored_visual_sources,
-            requires_visual=requires_visual,
-            knowledge_points=knowledge_points,
-            runtime=runtime,
-            input_signature=input_signature,
-            model_signature=model_signature,
-            effective_force=effective_force,
-            timeout_sec=timeout_sec,
-            lock_grace_sec=ERROR_ANALYSIS_LOCK_GRACE_SECONDS,
-            generating=_generating,
-            cache=cache,
-            logger=logger,
-            prepare_visual_inputs=_prepare_visual_inputs,
-            build_context=build_error_context,
-            build_prompt_grounding=grounding_prompt_payload,
-            build_expected_answer_check=grounding_verification_payload,
-            input_signature_builder=_analysis_input_signature,
-            cached_response=build_cached_error_analysis_response,
-            cache_age=_analysis_cache_age_ms,
-            chat=llm.chat,
-            resolve_runtime=_resolve_healthy_analysis_runtime,
-            quarantine_runtime=_quarantine_analysis_runtime_auth,
-            parse_content=parse_error_analysis_content,
-            validate_content=is_valid_ai_analysis,
-            extract_evidence=_extract_visual_evidence,
-            build_usage=build_analysis_usage,
-            validate_answer_check=_validate_answer_check,
-            diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
-            evidence_is_valid=_visual_evidence_is_valid,
-            should_retry_visual_ack=should_retry_visual_ack,
-            retry_visual_ack=retry_visual_ack,
-            model_signature_builder=_analysis_model_signature,
-            max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
-            timeout_guard_sec=ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS,
-            visual_ack_failure=visual_ack_failure_outcome,
-            grounding_repair=grounding_repair_outcome,
-            valid_outcome=valid_analysis_outcome,
-        )
-    )
+    return await _analyze_error_with_lease(db, user_id, preparation)
 
 
 async def prewarm_wrong_question_analysis(
