@@ -72,6 +72,11 @@ from app.services.ai.analysis_responses import (
     vision_input_missing_response,
     visual_ack_failed_response,
 )
+from app.services.ai.analysis_validation import (
+    AnalysisUsage,
+    VisualValidationRequest,
+    reconcile_visual_evidence,
+)
 from app.services.ai.advice_snapshot import (
     advice_fallback_response,
     advice_success_response,
@@ -749,56 +754,44 @@ async def analyze_error(
         raw_content = result.get("content", "")
         parsed = parse_error_analysis_content(raw_content)
         parsed_valid = is_valid_ai_analysis(parsed)
-        visual_evidence = (
-            _extract_visual_evidence(raw_content) if image_data_urls else ""
+        usage = AnalysisUsage(
+            visual_evidence=(
+                _extract_visual_evidence(raw_content) if image_data_urls else ""
+            ),
+            visual_ack_retried=False,
+            visual_ack_retry_ms=0,
+            total_tokens_used=int(result.get("tokens_used") or 0),
+            total_duration_ms=int(result.get("duration_ms") or 0),
         )
-        visual_ack_retried = False
-        visual_ack_retry_ms = 0
-        total_tokens_used = int(result.get("tokens_used") or 0)
-        total_duration_ms = int(result.get("duration_ms") or 0)
 
-        grounding_valid = False
-        grounding_guard_reason = "analysis_invalid"
-        actual_answer_check = None
-        if parsed_valid:
-            grounding_valid, grounding_guard_reason, actual_answer_check = (
-                _validate_answer_check(raw_content, expected_answer_check)
-            )
-            if grounding_valid:
-                contradicts, contradiction_reason = diagnosis_contradicts_grounding(
-                    parsed.get("mistake_diagnosis", ""), answer_grounding
-                )
-                if contradicts:
-                    grounding_valid = False
-                    grounding_guard_reason = (
-                        contradiction_reason or "diagnosis_contradiction"
-                    )
-
-        if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
-            # A surprisingly common model-protocol failure is: the answer itself
-            # clearly uses the image, all three analysis fields are valid, but the
-            # model omitted the acknowledgement field.  Do one tiny SAME analysis
-            # model visual probe instead of discarding an otherwise good answer.
-            # No OCR/VL routing is introduced.
-            if should_retry_visual_ack(
-                parsed_valid=parsed_valid,
-                grounding_valid=grounding_valid,
-                duration_ms=total_duration_ms,
-            ):
-                ack = await retry_visual_ack(
-                    image_data_urls,
-                    runtime=runtime,
-                    source_model=str(result.get("model") or ""),
-                    wrong_question_id=wq.id,
-                    current_evidence=visual_evidence,
-                    chat=llm.chat,
-                    extract_evidence=_extract_visual_evidence,
-                )
-                visual_ack_retried = ack.retried
-                visual_ack_retry_ms = ack.retry_ms
-                total_duration_ms += ack.retry_ms
-                total_tokens_used += ack.tokens_used_delta
-                visual_evidence = ack.evidence
+        grounding = await reconcile_visual_evidence(
+            VisualValidationRequest(
+                result=result,
+                image_data_urls=image_data_urls,
+                runtime=runtime,
+                wrong_question_id=wq.id,
+                chat=llm.chat,
+                extract_evidence=_extract_visual_evidence,
+                validate_answer_check=_validate_answer_check,
+                diagnosis_contradicts_grounding=diagnosis_contradicts_grounding,
+                evidence_is_valid=_visual_evidence_is_valid,
+                should_retry_visual_ack=should_retry_visual_ack,
+                retry_visual_ack=retry_visual_ack,
+            ),
+            parsed,
+            parsed_valid=parsed_valid,
+            expected_answer_check=expected_answer_check,
+            answer_grounding=answer_grounding,
+            usage=usage,
+        )
+        grounding_valid = grounding.valid
+        grounding_guard_reason = grounding.guard_reason
+        actual_answer_check = grounding.actual_answer_check
+        visual_evidence = usage.visual_evidence
+        visual_ack_retried = usage.visual_ack_retried
+        visual_ack_retry_ms = usage.visual_ack_retry_ms
+        total_tokens_used = usage.total_tokens_used
+        total_duration_ms = usage.total_duration_ms
 
         if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
             evidence_text = str(visual_evidence or "").strip()
