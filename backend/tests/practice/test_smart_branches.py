@@ -42,6 +42,7 @@ def providers(**overrides):
         "finalize_path": AsyncMock(return_value=([], {})),
         "build_path_conditions": lambda **_kwargs: [],
         "load_path": AsyncMock(side_effect=load_path),
+        "run_weakness": AsyncMock(return_value=([], {})),
     }
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -144,6 +145,7 @@ async def test_weakness_branch_delegates_keywords_to_service_fallback():
     provider = providers()
     _scored, _path, weakness = create_smart_branches(request(), provider)
     await weakness(db="db", user_id=8, subject_code="DS")
-    provider.load_fallback.assert_awaited_once_with(
+    provider.load_fallback.assert_not_awaited()
+    provider.run_weakness.assert_awaited_once_with(
         db="db", user_id=8, subject_code="DS"
     )

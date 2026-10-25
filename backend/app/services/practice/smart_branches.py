@@ -39,6 +39,7 @@ class SmartBranchProviders:
     finalize_path: Callable[..., Awaitable[RecommendationResult]]
     build_path_conditions: Callable[..., Any]
     load_path: Callable[..., Awaitable[RecommendationResult]]
+    run_weakness: Callable[..., Awaitable[RecommendationResult]]
 
 
 def create_smart_branches(request: SmartBranchRequest, providers: SmartBranchProviders):
@@ -110,7 +111,7 @@ def create_smart_branches(request: SmartBranchRequest, providers: SmartBranchPro
         )
 
     async def run_weakness_branch(**kwargs) -> RecommendationResult:
-        return await providers.load_fallback(**kwargs)
+        return await providers.run_weakness(**kwargs)
 
     return run_scored_branch, run_path_branch, run_weakness_branch
 

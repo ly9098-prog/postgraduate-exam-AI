@@ -171,9 +171,9 @@ from app.services.practice.smart_scored_supplement import (
     ScoredSupplementRequest,
     run_scored_supplement,
 )
-from app.services.practice.smart_orchestrator import (
-    SmartPracticeRequest,
-    run_smart_practice,
+from app.services.practice.smart_entry import (
+    SmartEntryRequest,
+    run_smart_entry,
 )
 from app.services.practice.stats import (
     accuracy as _practice_accuracy,
@@ -1130,19 +1130,9 @@ async def get_smart_practice_questions(
     """
     # use_leitner 由 issuance 层统一执行；本函数只负责候选召回与策略编排。
     from app.services import knowledge_path_service, recommendation_experiment_service
-    from app.services.practice.smart_branches import (
-        SmartBranchProviders,
-        SmartBranchRequest,
-        create_smart_branches,
-    )
 
-    scope_ids = (
-        subject_ids
-        if subject_ids is not None
-        else await resolve_subject_ids(db, subject_code)
-    )
-    run_scored_branch, run_path_branch, run_weakness_branch = create_smart_branches(
-        SmartBranchRequest(
+    return await run_smart_entry(
+        SmartEntryRequest(
             db=db,
             user_id=user_id,
             subject_code=subject_code,
@@ -1152,44 +1142,20 @@ async def get_smart_practice_questions(
             use_leitner=use_leitner,
             request_id=request_id,
             skip_finalize=skip_finalize,
+            smart_strategy=smart_strategy,
+            subject_ids=subject_ids,
+            logger=logger,
+            resolve_subject_ids=resolve_subject_ids,
+            resolve_experiment=(
+                recommendation_experiment_service.resolve_strategy_for_user
+            ),
+            load_scored=get_smart_scored_questions,
             load_path=knowledge_path_service.get_user_path_recommendations,
             load_fallback=_smart_weakness_vector,
             merge_results=merge_recommendation_results,
             finalize=_maybe_finalize_smart,
             build_conditions=_build_path_conditions,
-        ),
-        SmartBranchProviders(
-            load_scored=get_smart_scored_questions,
-            load_fallback=_smart_weakness_vector,
-            merge_results=merge_recommendation_results,
-            finalize_scored=_maybe_finalize_smart,
-            finalize_path=_maybe_finalize_smart,
-            build_path_conditions=_build_path_conditions,
-            load_path=knowledge_path_service.get_user_path_recommendations,
-        ),
-    )
-
-    return await run_smart_practice(
-        SmartPracticeRequest(
-            db=db,
-            user_id=user_id,
-            subject_code=subject_code,
-            count=count,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-            use_leitner=use_leitner,
-            request_id=request_id,
-            smart_strategy=smart_strategy,
-            skip_finalize=skip_finalize,
-            subject_ids=scope_ids,
-            logger=logger,
-            resolve_experiment=(
-                recommendation_experiment_service.resolve_strategy_for_user
-            ),
-            resolve_scope_ids=resolve_subject_ids,
-            run_scored=run_scored_branch,
-            run_path=run_path_branch,
-            run_weakness=run_weakness_branch,
+            run_weakness=_legacy_weakness_vector,
         )
     )
 
@@ -1311,6 +1277,10 @@ async def _smart_weakness_vector(
     use_leitner: bool = True,
     exclude_ids: set[int] | None = None,
     subject_ids: list[int] | None = None,
+    request_id: str | None = None,
+    skip_finalize: bool = False,
+    experiment_id: int | None = None,
+    variant_key: str | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """Phase 2 weakness_vector 策略：薄弱知识点 → 向量召回 → KP 补齐 → 随机补齐。
 
@@ -1318,6 +1288,7 @@ async def _smart_weakness_vector(
     exclude_ids: 需要额外排除的题目 ID 集合（如 path 策略已选的题）。
     subject_ids: 精确 subject_id 列表，提供时跳过 resolve_subject_ids 递归扩展。
     """
+    _ = (request_id, skip_finalize, experiment_id, variant_key)
     from app.services.practice.weakness_vector_providers import (
         WeaknessVectorProviderRequest,
         load_fill_questions,

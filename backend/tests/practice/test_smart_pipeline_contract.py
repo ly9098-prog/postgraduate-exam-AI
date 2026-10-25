@@ -33,26 +33,28 @@ def smart_ports(monkeypatch):
     monkeypatch.setattr(svc, "_smart_weakness_vector", fallback)
     monkeypatch.setattr(svc, "_maybe_finalize_smart", finalize)
     monkeypatch.setattr(svc, "merge_recommendation_results", merge)
-    monkeypatch.setattr(
-        experiment_service, "resolve_strategy_for_user", experiment
-    )
-    monkeypatch.setattr(
-        log_service, "create_recommendation_logs_isolated", log
-    )
+    monkeypatch.setattr(experiment_service, "resolve_strategy_for_user", experiment)
+    monkeypatch.setattr(log_service, "create_recommendation_logs_isolated", log)
     monkeypatch.setattr(
         mastery_service,
         "get_user_weak_knowledge_points",
         AsyncMock(return_value=[]),
     )
     return SimpleNamespace(
-        scored=scored, fallback=fallback, finalize=finalize,
-        log=log, experiment=experiment, merge=merge,
+        scored=scored,
+        fallback=fallback,
+        finalize=finalize,
+        log=log,
+        experiment=experiment,
+        merge=merge,
     )
 
 
 @pytest.mark.asyncio
 async def test_path_logs_only_questions_returned_after_final_guard(
-    smart_ports, monkeypatch, caplog,
+    smart_ports,
+    monkeypatch,
+    caplog,
 ):
     import app.services.knowledge_path_service as path_service
 
@@ -73,13 +75,20 @@ async def test_path_logs_only_questions_returned_after_final_guard(
     # The mock DB supplies only guard-surviving rows; qid 461 was a candidate.
     db = Mock()
     db.execute = AsyncMock(
-        return_value=Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=issued))))
+        return_value=Mock(
+            scalars=Mock(return_value=Mock(all=Mock(return_value=issued)))
+        )
     )
     monkeypatch.setattr(path_service, "get_user_path_recommendations", path)
 
     with caplog.at_level(logging.INFO):
         result, metadata = await svc.get_smart_practice_questions(
-            db, 9, "ds", count=2, smart_strategy="path", subject_ids=[2],
+            db,
+            9,
+            "ds",
+            count=2,
+            smart_strategy="path",
+            subject_ids=[2],
             request_id="req-path",
         )
 
@@ -98,24 +107,21 @@ async def test_path_logs_only_questions_returned_after_final_guard(
     logged = smart_ports.log.await_args.kwargs
     assert logged["request_id"] == "req-path"
     assert [row["question_id"] for row in logged["recommendations"]] == [459, 460]
-    assert all(
-        row["strategy"] == "knowledge_path"
-        for row in logged["recommendations"]
-    )
+    assert all(row["strategy"] == "knowledge_path" for row in logged["recommendations"])
     assert "path 策略题量不足" not in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_path_failure_falls_back_and_writes_no_candidate_logs(
-    smart_ports, monkeypatch, caplog,
+    smart_ports,
+    monkeypatch,
+    caplog,
 ):
     import app.services.knowledge_path_service as path_service
 
     smart_ports.experiment.return_value = {"source": "default"}
     fallback_rows = [question(8)]
-    fallback_metadata = {
-        8: {"strategy": "smart_vector", "recommend_reason": "weak"}
-    }
+    fallback_metadata = {8: {"strategy": "smart_vector", "recommend_reason": "weak"}}
     smart_ports.fallback.return_value = (fallback_rows, fallback_metadata)
     path = AsyncMock(side_effect=RuntimeError("path unavailable"))
     monkeypatch.setattr(path_service, "get_user_path_recommendations", path)
@@ -126,7 +132,12 @@ async def test_path_failure_falls_back_and_writes_no_candidate_logs(
 
     with caplog.at_level(logging.WARNING):
         result, metadata = await svc.get_smart_practice_questions(
-            None, 9, "ds", count=1, smart_strategy="path", subject_ids=[2],
+            None,
+            9,
+            "ds",
+            count=1,
+            smart_strategy="path",
+            subject_ids=[2],
             request_id="req-path-failure",
         )
 
@@ -140,7 +151,8 @@ async def test_path_failure_falls_back_and_writes_no_candidate_logs(
         }
     }
     failure_log = next(
-        record for record in caplog.records
+        record
+        for record in caplog.records
         if "knowledge_path 策略失败" in record.message
     )
     assert failure_log.name == "app.services.practice_service"
@@ -154,7 +166,10 @@ async def test_path_failure_falls_back_and_writes_no_candidate_logs(
     )
     smart_ports.finalize.assert_awaited_once()
     smart_ports.log.assert_awaited_once()
-    assert [row["question_id"] for row in smart_ports.log.await_args.kwargs["recommendations"]] == [8]
+    assert [
+        row["question_id"]
+        for row in smart_ports.log.await_args.kwargs["recommendations"]
+    ] == [8]
 
 
 @pytest.mark.asyncio
@@ -170,33 +185,49 @@ async def test_full_scored_result_skips_fallback_and_logs_only_returned_rows(
     rows = [question(1), question(2), question(3)]
     metadata = {
         1: {
-            "recommend_reason": "due", "recommend_score": 9.5,
-            "strategy": "smart_scored", "similarity": None,
+            "recommend_reason": "due",
+            "recommend_score": 9.5,
+            "strategy": "smart_scored",
+            "similarity": None,
             "strategy_config_id": 7,
         },
         2: {
-            "recommend_reason": "weak", "recommend_score": 8.5,
-            "strategy": "smart_scored", "similarity": 0.2,
+            "recommend_reason": "weak",
+            "recommend_score": 8.5,
+            "strategy": "smart_scored",
+            "similarity": 0.2,
             "strategy_config_id": 7,
         },
         3: {
-            "recommend_reason": "new", "recommend_score": 7.5,
-            "strategy": "smart_scored", "similarity": None,
+            "recommend_reason": "new",
+            "recommend_score": 7.5,
+            "strategy": "smart_scored",
+            "similarity": None,
             "strategy_config_id": 7,
         },
     }
     smart_ports.scored.return_value = (rows, metadata)
 
     result, result_metadata = await svc.get_smart_practice_questions(
-        None, 9, "ds", count=2, subject_ids=[2], request_id="req-9",
+        None,
+        9,
+        "ds",
+        count=2,
+        subject_ids=[2],
+        request_id="req-9",
     )
 
     assert [row.id for row in result] == [1, 2]
     assert result_metadata is metadata
     assert all(meta["strategy"] == "smart_scored" for meta in metadata.values())
     smart_ports.scored.assert_awaited_once_with(
-        db=None, user_id=9, subject_code="ds", count=2,
-        exclude_answered=False, no_repeat_days=None, request_id="req-9",
+        db=None,
+        user_id=9,
+        subject_code="ds",
+        count=2,
+        exclude_answered=False,
+        no_repeat_days=None,
+        request_id="req-9",
         subject_ids=[2],
     )
     smart_ports.fallback.assert_not_awaited()
@@ -229,7 +260,8 @@ async def test_full_scored_result_skips_fallback_and_logs_only_returned_rows(
 
 @pytest.mark.asyncio
 async def test_scored_shortfall_requests_only_remainder_and_merges_before_slice(
-    smart_ports, caplog,
+    smart_ports,
+    caplog,
 ):
     primary = [question(1), question(2)]
     primary_metadata = {
@@ -261,8 +293,7 @@ async def test_scored_shortfall_requests_only_remainder_and_merges_before_slice(
 
     assert [row.id for row in result] == [1, 2, 3, 4]
     shortfall_log = next(
-        record for record in caplog.records
-        if "scored 策略题量不足" in record.message
+        record for record in caplog.records if "scored 策略题量不足" in record.message
     )
     assert shortfall_log.name == "app.services.practice_service"
     assert metadata == {
@@ -294,7 +325,9 @@ async def test_scored_shortfall_requests_only_remainder_and_merges_before_slice(
 
 @pytest.mark.asyncio
 async def test_scored_failure_falls_through_to_inline_weakness_fallback(
-    smart_ports, monkeypatch, caplog,
+    smart_ports,
+    monkeypatch,
+    caplog,
 ):
     import app.services.mastery_service as mastery_service
 
@@ -304,21 +337,23 @@ async def test_scored_failure_falls_through_to_inline_weakness_fallback(
     random_fallback = AsyncMock(return_value=random_rows)
     smart_ports.scored.side_effect = RuntimeError("scored unavailable")
 
-    monkeypatch.setattr(
-        mastery_service, "get_user_weak_knowledge_points", mastery
-    )
+    monkeypatch.setattr(mastery_service, "get_user_weak_knowledge_points", mastery)
     monkeypatch.setattr(svc, "_compute_weak_knowledge_points", compute_weak)
     monkeypatch.setattr(svc, "get_practice_questions", random_fallback)
 
     with caplog.at_level(logging.WARNING):
         result, metadata = await svc.get_smart_practice_questions(
-            None, 9, "ds", count=1, subject_ids=[2], skip_finalize=True,
+            None,
+            9,
+            "ds",
+            count=1,
+            subject_ids=[2],
+            skip_finalize=True,
         )
 
     assert result == random_rows
     failure_log = next(
-        record for record in caplog.records
-        if "scored 策略失败" in record.message
+        record for record in caplog.records if "scored 策略失败" in record.message
     )
     assert failure_log.name == "app.services.practice_service"
     assert metadata == {
@@ -342,8 +377,8 @@ async def test_scored_failure_falls_through_to_inline_weakness_fallback(
         use_leitner=True,
         subject_ids=[2],
     )
-    smart_ports.fallback.assert_not_awaited()
     smart_ports.finalize.assert_awaited_once()
+    smart_ports.fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -354,7 +389,11 @@ async def test_scored_cancellation_propagates_without_fallback_or_finalize(
 
     with pytest.raises(asyncio.CancelledError):
         await svc.get_smart_practice_questions(
-            None, 9, "ds", count=1, subject_ids=[2],
+            None,
+            9,
+            "ds",
+            count=1,
+            subject_ids=[2],
         )
 
     smart_ports.fallback.assert_not_awaited()

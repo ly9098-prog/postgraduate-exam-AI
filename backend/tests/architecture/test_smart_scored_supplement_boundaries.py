@@ -28,6 +28,15 @@ def _entry():
     )
 
 
+def _smart_entry():
+    source = (APP / "services/practice/smart_entry.py").read_text()
+    return next(
+        node
+        for node in ast.parse(source).body
+        if getattr(node, "name", "") == "run_smart_entry"
+    )
+
+
 def test_module_has_no_application_io_dependencies_or_persistence_calls():
     graph, _ = scan_application(APP)
     assert graph[MODULE] == set()
@@ -55,15 +64,17 @@ def test_module_has_no_application_io_dependencies_or_persistence_calls():
 def test_real_entry_consumes_exact_ports_and_keeps_scored_provider():
     from app.services import practice_service as svc
     from app.services.practice import smart_scored_supplement
+    from app.services.practice import smart_entry as entry_module
 
     entry = _entry()
+    smart_entry = _smart_entry()
     branch_source = (APP / "services/practice/smart_branches.py").read_text(
         encoding="utf-8"
     )
     branch_tree = ast.parse(branch_source)
     requests = [
         node
-        for node in ast.walk(entry)
+        for node in ast.walk(smart_entry)
         if isinstance(node, ast.Call)
         and getattr(node.func, "id", "") == "create_smart_branches"
     ]
@@ -80,13 +91,14 @@ def test_real_entry_consumes_exact_ports_and_keeps_scored_provider():
         for keyword in requests[0].args[1].keywords
     }
     assert provider_fields == {
-        "load_scored": "get_smart_scored_questions",
-        "load_fallback": "_smart_weakness_vector",
-        "merge_results": "merge_recommendation_results",
-        "finalize_scored": "_maybe_finalize_smart",
-        "finalize_path": "_maybe_finalize_smart",
-        "build_path_conditions": "_build_path_conditions",
-        "load_path": "knowledge_path_service.get_user_path_recommendations",
+        "load_scored": "request.load_scored",
+        "load_fallback": "request.load_fallback",
+        "merge_results": "request.merge_results",
+        "finalize_scored": "request.finalize",
+        "finalize_path": "request.finalize",
+        "build_path_conditions": "request.build_conditions",
+        "load_path": "request.load_path",
+        "run_weakness": "request.run_weakness",
     }
     assert {
         keyword.arg: ast.unparse(keyword.value)
@@ -114,6 +126,9 @@ def test_real_entry_consumes_exact_ports_and_keeps_scored_provider():
     entry_text = ast.unparse(entry)
     assert "get_smart_scored_questions" in entry_text
     assert "_smart_weakness_vector" in entry_text
+    assert "create_smart_branches" not in entry_text
+    assert entry_module.create_smart_branches is not None
+    assert entry_module.run_smart_practice is not None
     assert not any(
         isinstance(node, ast.Try) and "get_smart_scored_questions" in ast.unparse(node)
         for node in ast.walk(branch_tree)
