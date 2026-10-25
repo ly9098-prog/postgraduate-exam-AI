@@ -62,6 +62,12 @@ from app.services.ai.analysis_persistence import (
     persist_repaired_analysis,
     persist_valid_analysis,
 )
+from app.services.ai.advice_snapshot import (
+    advice_fallback_response,
+    advice_success_response,
+    build_advice_snapshot,
+    parse_advice_content,
+)
 from app.services.ai.provider_exception import classify_ai_provider_exception
 from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
@@ -1291,52 +1297,20 @@ async def generate_advice(
     runtime = await resolve_llm_runtime_config(db, feature="analysis")
 
     if runtime is None:
-        return {
-            "content": get_fallback_advice(),
-            "from_cache": False,
-            "from_fallback": True,
-            "tokens_used": 0,
-            "model": "fallback",
-            "duration_ms": 0,
-        }
+        return advice_fallback_response(get_fallback_advice())
 
     # Collect user's wrong question stats
     conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     result = await db.execute(select(WrongQuestion).where(*conditions).limit(10))
     wrong_list = result.scalars().all()
 
-    question_ids = [int(w.question_id) for w in wrong_list if w.question_id]
-    if question_ids:
-        q_result = await db.execute(
-            select(Question).where(Question.id.in_(question_ids))
-        )
-        questions = {int(q.id): q for q in q_result.scalars().all()}
-    else:
-        questions = {}
-    kp_map = await load_question_kps(db, question_ids)
-
-    weak_points = set()
-    subject_stats = {}
-    recent_wrong = []
-    for w in wrong_list:
-        q = questions.get(int(w.question_id or 0))
-        if q:
-            weak_points.update(kp_map.get(int(q.id), []))
-            subj_label = str(q.subject_id)
-            subject_stats[subj_label] = subject_stats.get(subj_label, 0) + 1
-            recent_wrong.append(
-                {
-                    "subject_id": q.subject_id,
-                    "error_type": w.error_type,
-                    "wrong_answer": w.wrong_answer,
-                    "correct_answer": q.answer,
-                }
-            )
+    snapshot = await build_advice_snapshot(db, wrong_list)
+    subject_stats = snapshot["subject_stats"]
 
     messages = build_study_advice(
         [{"subject": k, "count": v} for k, v in subject_stats.items()],
-        list(weak_points),
-        recent_wrong,
+        snapshot["weak_points"],
+        snapshot["recent_wrong"],
     )
 
     try:
@@ -1344,20 +1318,9 @@ async def generate_advice(
         if result is None:
             raise RuntimeError("AI分析模型未配置")
     except Exception:
-        fallback = get_fallback_advice()
-        return {
-            "content": fallback,
-            "from_cache": False,
-            "from_fallback": True,
-            "tokens_used": 0,
-            "model": "fallback",
-            "duration_ms": 0,
-        }
+        return advice_fallback_response(get_fallback_advice())
 
-    try:
-        parsed = json.loads(result["content"])
-    except (json.JSONDecodeError, KeyError):
-        parsed = {"overall_assessment": result["content"]}
+    parsed = parse_advice_content(result["content"])
 
     db.add(
         AiChat(
@@ -1372,11 +1335,4 @@ async def generate_advice(
     )
     await db.commit()
 
-    return {
-        "content": parsed,
-        "from_cache": False,
-        "from_fallback": False,
-        "tokens_used": result["tokens_used"],
-        "model": result["model"],
-        "duration_ms": result["duration_ms"],
-    }
+    return advice_success_response(parsed, result)
