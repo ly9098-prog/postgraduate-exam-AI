@@ -1,3 +1,10 @@
+const {
+  parseReturnIdentity,
+  pageMatchesIdentity,
+  nearestMatchingIndex,
+  oldestMatchingIndex,
+} = require('./launch-return-state')
+
 function createLaunchReturnController(options) {
   return {
     findStackIndex: (pages, returnTo) => findStackIndex(options, pages, returnTo),
@@ -8,46 +15,11 @@ function createLaunchReturnController(options) {
 
 function findStackIndex(options, pages, returnTo) {
   if (!Array.isArray(pages) || pages.length < 2 || !returnTo) return -1
-  const targetPath = String(returnTo).split('?')[0].replace(/^\//, '')
-  if (!targetPath) return -1
-  let expectedSubjectId = 0
-  let expectedPointId = 0
-  const query = String(returnTo).split('?')[1] || ''
-  query.split('&').forEach((part) => {
-    const pair = String(part || '').split('=')
-    const key = pair[0]
-    const value = Number(options.safeDecodeURIComponent(pair.slice(1).join('='), ''))
-    if (key === 'subject_id' && Number.isInteger(value) && value > 0) expectedSubjectId = value
-    if (key === 'knowledge_point_id' && Number.isInteger(value) && value > 0) expectedPointId = value
-  })
-  const matchesIdentity = (page) => {
-    if (!page) return false
-    const route = String(page.route || '').replace(/^\//, '')
-    if (route !== targetPath) return false
-    if (targetPath === 'subpackages/knowledge/knowledge-subject/index' && expectedSubjectId) {
-      const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0
-      return !pageSubjectId || pageSubjectId === expectedSubjectId
-    }
-    if (targetPath === 'subpackages/knowledge/knowledge-detail/index' && expectedPointId) {
-      const currentPointId = Number(page.knowledgePointId || (page.options && page.options.knowledge_point_id)) || 0
-      return !currentPointId || currentPointId === expectedPointId
-    }
-    return true
-  }
-  let nearest = -1
-  for (let i = pages.length - 2; i >= 0; i -= 1) {
-    if (matchesIdentity(pages[i])) {
-      nearest = i
-      break
-    }
-  }
+  const identity = parseReturnIdentity(options, returnTo)
+  if (!identity) return -1
+  const nearest = nearestMatchingIndex(pages, identity)
   if (nearest < 0) return -1
-  let targetIndex = nearest
-  for (let i = nearest - 1; i >= 0; i -= 1) {
-    if (!matchesIdentity(pages[i])) break
-    targetIndex = i
-  }
-  return targetIndex
+  return oldestMatchingIndex(pages, identity, nearest)
 }
 
 function navigateBack(options, returnTo, attempt = 0) {
