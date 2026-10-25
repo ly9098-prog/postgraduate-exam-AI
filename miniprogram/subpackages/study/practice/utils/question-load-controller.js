@@ -71,22 +71,9 @@ async function loadQuestions(options, loadSeq) {
     return false
   }
 
-  options.debugAfterApi(response, questions)
-  options.applyBatchCredentials(response, mode)
-  if (options.hasMissingBatchCredentials(questions.length)) {
-    throw new Error('服务器未返回可提交的练习批次凭据')
-  }
-
-  if (questions.length > 0) options.warmQuestionImages(questions, 0)
+  applyLoadedBatch(options, response, questions, mode)
   const viewModelResult = renderFirstQuestion(options, questions)
-
-  options.setData(options.buildLoadedView(questions, viewModelResult))
-  if (questions.length > 0) {
-    options.startLoadedSession(viewModelResult)
-    options.checkRenderInvariant(viewModelResult.question._renderModel)
-  } else {
-    options.showNoQuestions(subjectId)
-  }
+  enterLoadedBatch(options, questions, viewModelResult)
   return true
 }
 
@@ -103,3 +90,7 @@ function renderFirstQuestion(options, questions) {
 module.exports = {
   createQuestionLoadController,
 }
+const {
+  applyLoadedBatch,
+  enterLoadedBatch,
+} = require('./question-load-state')

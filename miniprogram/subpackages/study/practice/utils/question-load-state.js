@@ -9,9 +9,7 @@ const EMPTY_VIEW = {
 }
 
 function buildResetView(errorText) {
-  const view = {
-    ...EMPTY_VIEW,
-  }
+  const view = { ...EMPTY_VIEW }
   if (errorText != null) view.errorText = errorText
   return view
 }
@@ -29,11 +27,7 @@ function hasMissingBatchCredentials(session, questionCount) {
 }
 
 function buildSequentialRestartView() {
-  return {
-    started: true,
-    errorText: '',
-    sequentialProgress: null,
-  }
+  return { started: true, errorText: '', sequentialProgress: null }
 }
 
 function resetSequentialTiming(session) {
@@ -55,6 +49,25 @@ function buildLoadedView(questions, viewModelResult) {
   }
 }
 
+function applyLoadedBatch(options, response, questions, mode) {
+  options.debugAfterApi(response, questions)
+  options.applyBatchCredentials(response, mode)
+  if (options.hasMissingBatchCredentials(questions.length)) {
+    throw new Error('服务器未返回可提交的练习批次凭据')
+  }
+  if (questions.length > 0) options.warmQuestionImages(questions, 0)
+}
+
+function enterLoadedBatch(options, questions, viewModelResult) {
+  options.setData(options.buildLoadedView(questions, viewModelResult))
+  if (questions.length > 0) {
+    options.startLoadedSession(viewModelResult)
+    options.checkRenderInvariant(viewModelResult.question._renderModel)
+  } else {
+    options.showNoQuestions(options.getSubjectId())
+  }
+}
+
 module.exports = {
   buildResetView,
   applyBatchCredentials,
@@ -62,4 +75,6 @@ module.exports = {
   buildSequentialRestartView,
   resetSequentialTiming,
   buildLoadedView,
+  applyLoadedBatch,
+  enterLoadedBatch,
 }
