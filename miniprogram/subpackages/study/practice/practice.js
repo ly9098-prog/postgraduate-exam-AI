@@ -36,6 +36,7 @@ const { createRecentSubjectController } = require('./utils/recent-subject-contro
 const { createSubjectSheetController } = require('./utils/subject-sheet-controller')
 const { createSubjectSelectionController } = require('./utils/subject-selection-controller')
 const { createLaunchReturnController } = require('./utils/launch-return-controller')
+const { createExitGuardController } = require('./utils/exit-guard-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -773,76 +774,44 @@ this._timer = null
 }
 },
 _setPracticeUnloadGuard(enabled, message) {
-if (this._practiceSession) {
-this._practiceSession.exitGuardActive = !!enabled
-this._practiceSession.exitGuardMessage = message || ''
-}
-try {
-if (wx.disableAlertBeforeUnload) wx.disableAlertBeforeUnload()
-} catch (_) {}
-if (!enabled) {
-this._systemBackRearming = false
-if (this._systemBackRearmTimer) {
-clearTimeout(this._systemBackRearmTimer)
-this._systemBackRearmTimer = null
-}
-}
-if (!this._pageAlive) return
-const visible = !!enabled
-if (this.data.practiceExitGuardVisible !== visible) {
-this.setData({ practiceExitGuardVisible: visible })
-}
+  this._exitGuardController().setUnloadGuard(enabled, message)
 },
 _shouldInterceptSystemBack() {
-const session = this._practiceSession
-return !!(
-this._pageAlive &&
-session &&
-session.exitGuardActive &&
-this.data.started &&
-!this.data.submitted
-)
+  return this._exitGuardController().shouldInterceptSystemBack()
 },
 _rearmPracticeExitGuard() {
-if (!this._shouldInterceptSystemBack() || this._systemBackRearming) return
-this._systemBackRearming = true
-const rearm = () => {
-if (!this._shouldInterceptSystemBack()) {
-this._systemBackRearming = false
-return
-}
-this.setData({ practiceExitGuardVisible: true }, () => {
-this._systemBackRearming = false
-})
-}
-this.setData({ practiceExitGuardVisible: false }, () => {
-if (!this._shouldInterceptSystemBack()) {
-this._systemBackRearming = false
-return
-}
-if (typeof wx.nextTick === 'function') {
-wx.nextTick(rearm)
-return
-}
-this._systemBackRearmTimer = setTimeout(() => {
-this._systemBackRearmTimer = null
-rearm()
-}, 0)
-})
+  this._exitGuardController().rearm()
 },
 onPracticeExitGuardLeave() {
-if (!this._shouldInterceptSystemBack()) return
-this._rearmPracticeExitGuard()
-if (this._systemBackPromptQueued || this._exitConfirmInFlight) return
-this._systemBackPromptQueued = true
-Promise.resolve().then(async () => {
-this._systemBackPromptQueued = false
-if (!this._shouldInterceptSystemBack()) return
-await this.requestExitPractice({ source: 'system-back' })
-}).catch((err) => {
-this._systemBackPromptQueued = false
-console.warn('系统返回退出确认处理失败', err)
-})
+  this._exitGuardController().handleGuardLeave()
+},
+_exitGuardController() {
+  return this._exitGuardControllerInstance || (
+    this._exitGuardControllerInstance = createExitGuardController({
+      getSession: () => this._practiceSession,
+      hasDisableAlertBeforeUnload: () => !!wx.disableAlertBeforeUnload,
+      disableAlertBeforeUnload: () => wx.disableAlertBeforeUnload(),
+      isPageAlive: () => this._pageAlive,
+      isGuardVisible: () => this.data.practiceExitGuardVisible,
+      isStarted: () => this.data.started,
+      isSubmitted: () => this.data.submitted,
+      isRearming: () => this._systemBackRearming,
+      setRearming: value => { this._systemBackRearming = value },
+      getRearmTimer: () => this._systemBackRearmTimer,
+      setRearmTimer: timer => { this._systemBackRearmTimer = timer },
+      clearTimeout: timer => clearTimeout(timer),
+      isPromptQueued: () => this._systemBackPromptQueued,
+      setPromptQueued: value => { this._systemBackPromptQueued = value },
+      isExitConfirmInFlight: () => this._exitConfirmInFlight,
+      hasNextTick: () => typeof wx.nextTick === 'function',
+      nextTick: callback => wx.nextTick(callback),
+      setData: (patch, callback) => this.setData(patch, callback),
+      setTimeout: (callback, delay) => setTimeout(callback, delay),
+      queueMicrotask: callback => Promise.resolve().then(callback),
+      requestExit: options => this.requestExitPractice(options),
+      logWarn: (...args) => console.warn(...args),
+    })
+  )
 },
 async _loadQuestions() {
 return this._questionLoadController().load()
