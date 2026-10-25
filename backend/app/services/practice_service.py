@@ -435,6 +435,30 @@ def _build_excluded_question_subquery(
     )
 
 
+def _build_path_conditions(
+    *,
+    candidate_ids: list[int],
+    scope_ids: list[int],
+    user_id: int,
+    exclude_answered: bool,
+    no_repeat_days: int | None,
+) -> list:
+    conditions = [
+        Question.id.in_(candidate_ids),
+        Question.is_active,
+        Question.subject_id.in_(scope_ids),
+        _practice_revision_scope_condition(scope_ids),
+    ]
+    excluded_sub = _build_excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
+    if excluded_sub is not None:
+        conditions.append(Question.id.notin_(excluded_sub))
+    return conditions
+
+
 # ── 父级科目聚合刷题相关函数 ─────────────────────────────────
 
 
@@ -1201,28 +1225,7 @@ async def get_smart_practice_questions(
     ) -> tuple[list[Question], dict[int, dict]] | None:
         from app.services import knowledge_path_service
 
-        def build_path_conditions(
-            *,
-            candidate_ids: list[int],
-            scope_ids: list[int],
-            user_id: int,
-            exclude_answered: bool,
-            no_repeat_days: int | None,
-        ) -> list:
-            conditions = [
-                Question.id.in_(candidate_ids),
-                Question.is_active,
-                Question.subject_id.in_(scope_ids),
-                _practice_revision_scope_condition(scope_ids),
-            ]
-            excluded_sub = _build_excluded_question_subquery(
-                user_id=user_id,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-            )
-            if excluded_sub is not None:
-                conditions.append(Question.id.notin_(excluded_sub))
-            return conditions
+        build_path_conditions = _build_path_conditions
 
         return await run_smart_path(
             SmartPathRequest(

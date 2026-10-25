@@ -67,7 +67,7 @@ def test_real_entry_consumes_exact_ports_and_keeps_scored_provider():
         "no_repeat_days": "no_repeat_days",
         "use_leitner": "use_leitner",
         "request_id": "request_id",
-        "scope_ids": "scope_ids",
+        "scope_ids": "branch_scope_ids",
         "skip_finalize": "skip_finalize",
         "experiment_id": "experiment_info.get('experiment_id')",
         "variant_key": "experiment_info.get('variant_key')",
@@ -79,9 +79,10 @@ def test_real_entry_consumes_exact_ports_and_keeps_scored_provider():
     }
     assert svc.run_scored_supplement is smart_scored_supplement.run_scored_supplement
     scored_branches = [
-        node for node in ast.walk(entry)
-        if isinstance(node, ast.If)
-        and ast.unparse(node.test) == "smart_strategy == 'scored'"
+        node
+        for node in ast.walk(entry)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "run_scored_branch"
     ]
     assert len(scored_branches) == 1
     assert not any(
