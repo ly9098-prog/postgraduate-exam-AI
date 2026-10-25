@@ -207,6 +207,75 @@ async def enrich_batch(
     }
 
 
+async def _log_generation_success(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    batch_id: str,
+    prompt_text: str,
+    raw: str,
+    resp: dict,
+    generated_count: int,
+) -> dict:
+    """Persist the successful generation log and return the response."""
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="generate",
+            target_type="batch",
+            target_id=None,
+            batch_id=batch_id,
+            prompt_text=prompt_text,
+            raw_response=raw,
+            parsed_result={"count": generated_count},
+            confidence=None,
+            model=resp["model"],
+            tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"],
+            success=True,
+        )
+    )
+    await db.commit()
+    return {
+        "batch_id": batch_id,
+        "generated": generated_count,
+        "from_fallback": False,
+        "tokens_used": resp["tokens_used"],
+        "duration_ms": resp["duration_ms"],
+    }
+
+
+async def _log_generation_fallback(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    batch_id: str,
+    prompt_text: str,
+    resp: dict,
+) -> dict:
+    """Persist the failed generation attempt and return the fallback response."""
+    db.add(
+        _build_log(
+            user_id=user_id,
+            action="generate",
+            target_type="batch",
+            target_id=None,
+            batch_id=batch_id,
+            prompt_text=prompt_text,
+            raw_response=None,
+            parsed_result=resp["fallback_value"],
+            confidence=0.0,
+            model=resp["model"],
+            tokens_used=0,
+            duration_ms=0,
+            success=False,
+            error_message=resp.get("error"),
+        )
+    )
+    await db.commit()
+    return {"batch_id": batch_id, "generated": 0, "from_fallback": True}
+
+
 async def generate_drafts(
     db: AsyncSession,
     user_id: int,
@@ -243,32 +312,55 @@ async def generate_drafts(
         db, messages, fallback.get_fallback_generation(count)
     )
     if raw is None:
-        db.add(
-            _build_log(
-                user_id=user_id,
-                action="generate",
-                target_type="batch",
-                target_id=None,
-                batch_id=batch_id,
-                prompt_text=prompt_text,
-                raw_response=None,
-                parsed_result=resp["fallback_value"],
-                confidence=0.0,
-                model=resp["model"],
-                tokens_used=0,
-                duration_ms=0,
-                success=False,
-                error_message=resp.get("error"),
-            )
+        return await _log_generation_fallback(
+            db,
+            user_id=user_id,
+            batch_id=batch_id,
+            prompt_text=prompt_text,
+            resp=resp,
         )
-        await db.commit()
-        return {"batch_id": batch_id, "generated": 0, "from_fallback": True}
 
     parsed_raw = extract_json(raw) or {}
     questions = parsed_raw.get("questions") if isinstance(parsed_raw, dict) else None
     if not isinstance(questions, list):
         questions = []
 
+    generated_count = _persist_generated_questions(
+        db,
+        questions=questions,
+        batch_id=batch_id,
+        resolved_subject_id=resolved_subject_id,
+        subject_code=subject_code,
+        knowledge_points=knowledge_points,
+        difficulty=difficulty,
+        question_type=question_type,
+        raw=raw,
+    )
+
+    return await _log_generation_success(
+        db,
+        user_id=user_id,
+        batch_id=batch_id,
+        prompt_text=prompt_text,
+        raw=raw,
+        resp=resp,
+        generated_count=generated_count,
+    )
+
+
+def _persist_generated_questions(
+    db: AsyncSession,
+    *,
+    questions: list,
+    batch_id: str,
+    resolved_subject_id: int,
+    subject_code: str,
+    knowledge_points: list[str],
+    difficulty: int,
+    question_type: str,
+    raw: str,
+) -> int:
+    """Normalize and stage generated questions; returns the accepted count."""
     generated_count = 0
     for q in questions:
         norm = normalize_generated_question(q) if isinstance(q, dict) else None
@@ -304,32 +396,41 @@ async def generate_drafts(
             )
         )
         generated_count += 1
+    return generated_count
 
+
+
+async def _log_complete_fallback(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    qi: QuestionImport,
+    prompt_text: str,
+    resp: dict,
+    missing: list[str],
+) -> dict:
+    """Persist the failed completion attempt and return the fallback response."""
+    parsed = resp["fallback_value"]
     db.add(
         _build_log(
             user_id=user_id,
-            action="generate",
-            target_type="batch",
-            target_id=None,
-            batch_id=batch_id,
+            action="complete",
+            target_type="import",
+            target_id=qi.id,
+            batch_id=qi.batch_id,
             prompt_text=prompt_text,
-            raw_response=raw,
-            parsed_result={"count": generated_count},
-            confidence=None,
+            raw_response=None,
+            parsed_result=parsed,
+            confidence=0.0,
             model=resp["model"],
-            tokens_used=resp["tokens_used"],
-            duration_ms=resp["duration_ms"],
-            success=True,
+            tokens_used=0,
+            duration_ms=0,
+            success=False,
+            error_message=resp.get("error"),
         )
     )
     await db.commit()
-    return {
-        "batch_id": batch_id,
-        "generated": generated_count,
-        "from_fallback": False,
-        "tokens_used": resp["tokens_used"],
-        "duration_ms": resp["duration_ms"],
-    }
+    return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
 
 async def complete_import(db: AsyncSession, user_id: int, import_id: int) -> dict:
@@ -356,27 +457,14 @@ async def complete_import(db: AsyncSession, user_id: int, import_id: int) -> dic
     )
 
     if raw is None:
-        parsed = resp["fallback_value"]
-        db.add(
-            _build_log(
-                user_id=user_id,
-                action="complete",
-                target_type="import",
-                target_id=qi.id,
-                batch_id=qi.batch_id,
-                prompt_text=prompt_text,
-                raw_response=None,
-                parsed_result=parsed,
-                confidence=0.0,
-                model=resp["model"],
-                tokens_used=0,
-                duration_ms=0,
-                success=False,
-                error_message=resp.get("error"),
-            )
+        return await _log_complete_fallback(
+            db,
+            user_id=user_id,
+            qi=qi,
+            prompt_text=prompt_text,
+            resp=resp,
+            missing=missing,
         )
-        await db.commit()
-        return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
     parsed_raw = extract_json(raw) or {}
     suggestion = await _apply_complete_suggestion(qi, parsed_raw, missing, db=db)
