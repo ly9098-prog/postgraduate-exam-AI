@@ -43,6 +43,7 @@ const { createSubmittedResultController } = require('./utils/submitted-result-co
 const { createSubmitSuccessController } = require('./utils/submit-success-controller')
 const { createSubmitFlowController } = require('./utils/submit-flow-controller')
 const { createStartPracticeController } = require('./utils/start-practice-controller')
+const { createImageWarmController } = require('./utils/image-warm-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -921,38 +922,23 @@ _buildQuestionViewModel(q, forceRebuild) {
 return this._questionDisplayController().buildViewModel(q, forceRebuild)
 },
 _warmQuestionImages(questions, index) {
-if (!Array.isArray(questions) || !questions.length) return
-const current = questions[index]
-if (!current || typeof adapter.getQuestionPrefetchUrls !== 'function') return
-const currentId = String(current.id == null ? '' : current.id)
-const currentUrls = adapter.getQuestionPrefetchUrls(current)
-if (currentUrls.length) {
-questionImageCache.preloadMany(currentUrls, 3).then(() => {
-if (!this._pageAlive || this.data.currentIndex !== index) return
-const visible = this.data.questions[index]
-if (!visible || String(visible.id == null ? '' : visible.id) !== currentId) return
-try {
-const refreshed = this._buildQuestionViewModel(visible, true)
-if (!refreshed) return
-this._practiceSession.optionKeys = refreshed.optionKeys
-this.setData({
-currentQuestion: refreshed.question,
-currentAnswerState: refreshed.answerState,
+this._imageWarmController().warm(questions, index)
+},
+_imageWarmController() {
+return this._imageWarmControllerInstance || (
+this._imageWarmControllerInstance = createImageWarmController({
+isPageAlive: () => this._pageAlive,
+getCurrentIndex: () => this.data.currentIndex,
+getQuestions: () => this.data.questions,
+getQuestionPrefetchUrls: adapter.getQuestionPrefetchUrls,
+preloadMany: (urls, concurrency) => questionImageCache.preloadMany(urls, concurrency),
+buildQuestionViewModel: (question, force) => this._buildQuestionViewModel(question, force),
+setOptionKeys: keys => { this._practiceSession.optionKeys = keys },
+setData: patch => this.setData(patch),
+isDev: () => config.DEV,
+logWarn: (...args) => console.warn(...args),
 })
-} catch (err) {
-if (config.DEV) console.warn('[practice] image cache refresh failed', err)
-}
-})
-}
-const neighborIndexes = [index + 1, index + 2, index - 1]
-const neighborUrls = []
-for (let i = 0; i < neighborIndexes.length; i++) {
-const q = questions[neighborIndexes[i]]
-if (!q) continue
-const urls = adapter.getQuestionPrefetchUrls(q)
-for (let j = 0; j < urls.length; j++) neighborUrls.push(urls[j])
-}
-if (neighborUrls.length) questionImageCache.preloadMany(neighborUrls, 2)
+)
 },
 _settleQuestionTime(pause) {
 this._questionTimerController().settle(pause)
