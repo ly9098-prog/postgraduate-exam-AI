@@ -324,31 +324,9 @@ if (typeof input === 'object' && !Array.isArray(input) && Object.keys(input).len
 if (Array.isArray(input) && input.length === 0) return EMPTY
 var obj = input
 if (typeof obj === 'string') {
-var trimmed = obj.trim()
-var unfenced = _stripFence(trimmed)
-var parsed = _safeParse(unfenced)
-if (typeof parsed === 'string' && parsed.trim() && parsed.trim() !== trimmed) {
-return normalizeAiAnalysisPayload(parsed)
-}
-if (parsed && typeof parsed === 'object') {
-obj = parsed
-} else {
-var parts = _splitTopLevelJson(unfenced)
-var partObjects = []
-for (var pi = 0; pi < parts.length; pi++) {
-var p = _safeParse(parts[pi])
-if (p && typeof p === 'object') partObjects.push(p)
-}
-var best = _pickBestObject(partObjects)
-if (best) {
-obj = best
-} else {
-if (_isTruncatedAnalysisJson(trimmed) || _isTruncatedAnalysisJson(unfenced)) {
-return _formatErrorResult()
-}
-return { mistake_diagnosis: trimmed, knowledge_patch: '', review_task: '' }
-}
-}
+		var stringResult = _parseAnalysisString(obj)
+		if (stringResult.isFinal) return stringResult.result
+		obj = stringResult.result
 }
 if (Array.isArray(obj)) {
 var bestObj = _pickBestObject(obj)
@@ -360,21 +338,8 @@ return _collectArrayPayload(obj)
 }
 obj = _unwrapWrapper(obj, 0)
 if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return EMPTY
-for (var eki = 0; eki < ALL_KNOWN_KEYS.length; eki++) {
-var embeddedRaw = obj[ALL_KNOWN_KEYS[eki]]
-var embeddedObj = null
-if (typeof embeddedRaw === 'string') {
-if (!_looksLikeJson(_stripFence(embeddedRaw)) && !_looksLikeJson(embeddedRaw)) continue
-embeddedObj = _tryParseStructuredString(embeddedRaw)
-} else if (embeddedRaw && typeof embeddedRaw === 'object' && !Array.isArray(embeddedRaw) && _hasDirectAnalysisField(embeddedRaw)) {
-embeddedObj = embeddedRaw
-} else {
-continue
-}
-if (!embeddedObj || typeof embeddedObj !== 'object' || Array.isArray(embeddedObj) || embeddedObj === obj) continue
-var embeddedResult = normalizeAiAnalysisPayload(embeddedObj)
-if (hasAiAnalysisContent(embeddedResult)) return embeddedResult
-}
+	var embedded = _extractEmbeddedAnalysis(obj)
+	if (embedded) return embedded
 var rawDiagnosis = _extractField(obj, DIAGNOSIS_KEYS)
 var rawKnowledge = _extractField(obj, KNOWLEDGE_KEYS)
 var rawTask = _extractField(obj, TASK_KEYS)
@@ -395,12 +360,63 @@ if (fallbackText) {
 result.mistake_diagnosis = fallbackText
 return result
 }
+
+return _finalizePayloadResult(input, result)
+}
+
+function _finalizePayloadResult(input, result) {
 if (typeof input === 'string' && !_isTruncatedAnalysisJson(input) && !_isTruncatedAnalysisJson(_stripFence(input))) {
 result.mistake_diagnosis = String(input).trim()
 return result
 }
 result.formatError = true
 return result
+}
+
+function _extractEmbeddedAnalysis(obj) {
+	for (var eki = 0; eki < ALL_KNOWN_KEYS.length; eki++) {
+		var embeddedRaw = obj[ALL_KNOWN_KEYS[eki]]
+		var embeddedObj = null
+		if (typeof embeddedRaw === 'string') {
+			if (!_looksLikeJson(_stripFence(embeddedRaw)) && !_looksLikeJson(embeddedRaw)) continue
+			embeddedObj = _tryParseStructuredString(embeddedRaw)
+		} else if (embeddedRaw && typeof embeddedRaw === 'object' && !Array.isArray(embeddedRaw) && _hasDirectAnalysisField(embeddedRaw)) {
+			embeddedObj = embeddedRaw
+		} else {
+			continue
+		}
+		if (!embeddedObj || typeof embeddedObj !== 'object' || Array.isArray(embeddedObj) || embeddedObj === obj) continue
+		var embeddedResult = normalizeAiAnalysisPayload(embeddedObj)
+		if (hasAiAnalysisContent(embeddedResult)) return embeddedResult
+	}
+	return null
+}
+
+function _parseAnalysisString(input) {
+	var trimmed = input.trim()
+	var unfenced = _stripFence(trimmed)
+	var parsed = _safeParse(unfenced)
+	if (typeof parsed === 'string' && parsed.trim() && parsed.trim() !== trimmed) {
+		return { result: normalizeAiAnalysisPayload(parsed), isFinal: true }
+	}
+	if (parsed && typeof parsed === 'object') {
+		return { result: parsed, isFinal: false }
+	}
+	var parts = _splitTopLevelJson(unfenced)
+	var partObjects = []
+	for (var pi = 0; pi < parts.length; pi++) {
+		var p = _safeParse(parts[pi])
+		if (p && typeof p === 'object') partObjects.push(p)
+	}
+	var best = _pickBestObject(partObjects)
+	if (best) return { result: best, isFinal: false }
+	if (_isTruncatedAnalysisJson(trimmed) || _isTruncatedAnalysisJson(unfenced)) {
+		return { result: _formatErrorResult(), isFinal: true }
+	}
+	return {
+		result: { mistake_diagnosis: trimmed, knowledge_patch: '', review_task: '' },
+		isFinal: true,
+	}
 }
 var EMPTY = { mistake_diagnosis: '', knowledge_patch: '', review_task: '' }
 function hasAiAnalysisContent(result) {

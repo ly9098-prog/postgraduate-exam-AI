@@ -28,6 +28,19 @@ async function prepareImpl(options, skipConfirm) {
   const confirmed = await confirmSubmission(options, skipConfirm, classification, total)
   if (!confirmed) return null
 
+  const context = buildSubmissionContext(options, questions, classification, total)
+  if (!await ensureBatchToken(options)) return null
+  const submission = buildSubmission(options, context)
+  options.setSubmissionSnapshot(submission)
+  submission.pendingPersisted = options.persistPendingSubmission(submission, 'pending', '')
+  options.setUnloadGuard(true, '交卷仍在确认中。')
+  return submission
+}
+
+function buildSubmissionContext(options, questions, classification, total) {
+  const answerMap = options.getAnswerMap()
+  const activeStartedMonoMs = options.getActiveStartedMonoMs()
+  const selectedSubjectId = options.getSelectedSubjectId()
   options.clearTimer()
   options.settleQuestionTime(true)
   const finishedMonoMs = options.monotonicNow()
@@ -55,18 +68,41 @@ async function prepareImpl(options, skipConfirm) {
     answeredCount: classification.answeredCount,
   })
   const recoveryQuestions = options.buildRecoveryQuestions(questions)
-  if (!options.getBatchToken()) {
-    await options.showConfirm({
-      scenario: 'info',
-      title: '练习批次已失效',
-      message: '请返回后重新获取本组题目。',
-      showCancel: false,
-      confirmText: '知道了',
-      hideEyebrow: true,
-    })
-    return null
+  return {
+    questions,
+    classification,
+    total,
+    answerMap,
+    requestId,
+    finishedAtMs,
+    duration,
+    answers,
+    session,
+    recoveryQuestions,
+    selectedSubjectId,
+    selectedSubjectName: options.getSelectedSubjectName(),
+    comboCount: options.getComboCount(),
+    answeredFlags: options.buildAnsweredFlags(questions, answerMap, 'id'),
   }
+}
 
+function buildSubmission(options, context) {
+  const {
+    questions,
+    classification,
+    total,
+    answerMap,
+    requestId,
+    finishedAtMs,
+    duration,
+    answers,
+    session,
+    recoveryQuestions,
+    selectedSubjectId,
+    selectedSubjectName,
+    comboCount,
+  } = context
+  const { answeredFlags } = context
   const submission = options.buildSubmissionSnapshot({
     requestId,
     traceId: options.getTraceId() || '',
@@ -86,10 +122,20 @@ async function prepareImpl(options, skipConfirm) {
     batchToken: options.getBatchToken() || '',
     knowledgeScope: options.getKnowledgeScope(),
   })
-  options.setSubmissionSnapshot(submission)
-  submission.pendingPersisted = options.persistPendingSubmission(submission, 'pending', '')
-  options.setUnloadGuard(true, '交卷仍在确认中。')
   return submission
+}
+
+async function ensureBatchToken(options) {
+  if (options.getBatchToken()) return true
+  await options.showConfirm({
+    scenario: 'info',
+    title: '练习批次已失效',
+    message: '请返回后重新获取本组题目。',
+    showCancel: false,
+    confirmText: '知道了',
+    hideEyebrow: true,
+  })
+  return false
 }
 
 async function confirmSubmission(options, skipConfirm, classification, total) {
