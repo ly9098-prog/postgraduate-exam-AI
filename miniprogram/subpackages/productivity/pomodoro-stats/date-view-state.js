@@ -16,7 +16,26 @@ function buildDateViewState(options) {
     : (Number(options.currentRawDurationSec) || 0)
   const previousSessionCount = Math.max(0, Number(options.currentDisplaySessions) || 0)
 
-  const dataPatch = {
+  const dataPatch = buildDateDataPatch(options, {
+    showDayDistribution, subjectBreakdown, selectedDurationSec, selectedSessionCount,
+    effectiveDate, todayDate, effectiveHistory, daySessions,
+  })
+
+  return {
+    daySessions,
+    subjectBreakdown,
+    selectedDurationSec,
+    selectedSessionCount,
+    previousDurationSec,
+    previousSessionCount,
+    dataPatch,
+  }
+}
+
+function buildDateDataPatch(options, ctx) {
+  const { showDayDistribution, subjectBreakdown, selectedDurationSec, selectedSessionCount,
+    effectiveDate, todayDate, effectiveHistory, daySessions } = ctx
+  return {
     todaySessions: selectedSessionCount,
     subjects: showDayDistribution
       ? options.buildSubjectItems(subjectBreakdown)
@@ -37,16 +56,6 @@ function buildDateViewState(options) {
     pieLoading: false,
     selectedSubjectDetail: null,
     _selectedSubject: null,
-  }
-
-  return {
-    daySessions,
-    subjectBreakdown,
-    selectedDurationSec,
-    selectedSessionCount,
-    previousDurationSec,
-    previousSessionCount,
-    dataPatch,
   }
 }
 
