@@ -30,6 +30,8 @@ from app.services.task_queue_contract import (
     EnqueueResult,
     Task,
     TaskStatus,
+    _minimum_worker_version_for_task,
+    _normalize_task_schema_version,
 )
 from app.services.task_queue_keys import (
     _CORRUPT_PREFIX,
@@ -479,82 +481,15 @@ class DurableTaskQueue:
         )
         tid = task.task_id
         task_json = json.dumps(task.to_dict(), default=str)
-
         max_ready = _get_max_ready(task_type)
 
         if self._redis_enabled:
             try:
-                client = await self._get_script_client()
-                if client is None:
-                    return EnqueueResult(
-                        accepted=False,
-                        task_id=None,
-                        reason="redis_unavailable",
-                        retry_after=30,
-                    )
-                await self._load_scripts(client)
-
-                if task_id is not None:
-                    result = await self._evalsha_or_reload(
-                        client,
-                        "_lua_enqueue",
-                        3,
-                        _q_key(task_type),  # KEYS[1]: queue_key
-                        _TASK_PREFIX,  # KEYS[2]: task_hash_prefix
-                        _IDEMPOTENCY_PREFIX,  # KEYS[3]: idempotent_prefix
-                        tid,  # ARGV[1]: task_id
-                        task_json,  # ARGV[2]: task_json
-                        str(_IDEMPOTENT_TTL),  # ARGV[3]: idempotent_ttl
-                        str(max_ready),  # ARGV[4]: max_ready
-                    )
-                else:
-                    result = await self._evalsha_or_reload(
-                        client,
-                        "_lua_enqueue_non_idempotent",
-                        2,
-                        _q_key(task_type),  # KEYS[1]: queue_key
-                        _TASK_PREFIX,  # KEYS[2]: task_hash_prefix
-                        tid,  # ARGV[1]: task_id
-                        task_json,  # ARGV[2]: task_json
-                        str(max_ready),  # ARGV[3]: max_ready
-                    )
-
-                await client.aclose()
-
-                if result == "__duplicate__":
-                    logger.info("Duplicate task rejected (idempotent): task_id=%s", tid)
-                    queue_metrics["duplicate_enqueue_prevented"] += 1
-                    return EnqueueResult(accepted=True, task_id=tid, reason="duplicate")
-
-                if result == "__queue_full__":
-                    logger.warning(
-                        "Queue full, rejected: task_id=%s type=%s", tid, task_type
-                    )
-                    queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(
-                        accepted=False,
-                        task_id=None,
-                        reason="queue_full",
-                        retry_after=30,
-                    )
-
-                if result is None:
-                    logger.error(
-                        "Enqueue failed (nil result): task_id=%s type=%s",
-                        tid,
-                        task_type,
-                    )
-                    queue_metrics["enqueue_rejected"] += 1
-                    return EnqueueResult(
-                        accepted=False,
-                        task_id=None,
-                        reason="internal_error",
-                        retry_after=30,
-                    )
-
-                logger.info("Task enqueued: task_id=%s type=%s", tid, task_type)
-                return EnqueueResult(accepted=True, task_id=tid)
-
+                result = await self._enqueue_via_redis(
+                    task_type, tid, task_json, max_ready, task_id is not None
+                )
+                if result is not None:
+                    return result
             except redis_exc.ConnectionError:
                 if not self._allow_local_fallback:
                     logger.error(
@@ -570,7 +505,6 @@ class DurableTaskQueue:
                 logger.warning(
                     "Redis enqueue failed, fallen back to local: task_id=%s", tid
                 )
-
             except Exception as e:
                 if not self._allow_local_fallback:
                     logger.error("Redis enqueue failed (no fallback): %s", e)
@@ -578,20 +512,98 @@ class DurableTaskQueue:
                     return v1_enqueue_failed()
                 logger.warning("Redis enqueue failed, falling back to local: %s", e)
 
-        # Local fallback (dev only, bounded)
-        if self._allow_local_fallback:
-            if tid in self._local_tasks:
-                return EnqueueResult(accepted=True, task_id=tid)
-            if len(self._local_tasks) >= _LOCAL_TASK_MAX:
-                logger.error("Local task queue full, rejected task_id=%s", tid)
-                queue_metrics["enqueue_rejected"] += 1
-                return EnqueueResult(
-                    accepted=False, task_id=None, reason="queue_full", retry_after=30
-                )
-            self._local_tasks[tid] = task
-            return EnqueueResult(accepted=True, task_id=tid)
+        return self._enqueue_local_fallback(task, tid)
 
-        return v1_enqueue_no_backend()
+    async def _enqueue_via_redis(
+        self,
+        task_type: str,
+        tid: str,
+        task_json: str,
+        max_ready: int,
+        idempotent: bool,
+    ) -> EnqueueResult | None:
+        """Execute the v1 Redis enqueue script and map its result.
+
+        Returns ``None`` when the caller should fall through to the local
+        fallback path; returns a concrete ``EnqueueResult`` otherwise.
+        """
+        client = await self._get_script_client()
+        if client is None:
+            return EnqueueResult(
+                accepted=False,
+                task_id=None,
+                reason="redis_unavailable",
+                retry_after=30,
+            )
+        try:
+            await self._load_scripts(client)
+            if idempotent:
+                result = await self._evalsha_or_reload(
+                    client,
+                    "_lua_enqueue",
+                    3,
+                    _q_key(task_type),  # KEYS[1]: queue_key
+                    _TASK_PREFIX,  # KEYS[2]: task_hash_prefix
+                    _IDEMPOTENCY_PREFIX,  # KEYS[3]: idempotent_prefix
+                    tid,  # ARGV[1]: task_id
+                    task_json,  # ARGV[2]: task_json
+                    str(_IDEMPOTENT_TTL),  # ARGV[3]: idempotent_ttl
+                    str(max_ready),  # ARGV[4]: max_ready
+                )
+            else:
+                result = await self._evalsha_or_reload(
+                    client,
+                    "_lua_enqueue_non_idempotent",
+                    2,
+                    _q_key(task_type),  # KEYS[1]: queue_key
+                    _TASK_PREFIX,  # KEYS[2]: task_hash_prefix
+                    tid,  # ARGV[1]: task_id
+                    task_json,  # ARGV[2]: task_json
+                    str(max_ready),  # ARGV[3]: max_ready
+                )
+            return self._interpret_v1_enqueue_result(result, tid, task_type)
+        finally:
+            await client.aclose()
+
+    def _interpret_v1_enqueue_result(
+        self, result: Any, tid: str, task_type: str
+    ) -> EnqueueResult:
+        if result == "__duplicate__":
+            logger.info("Duplicate task rejected (idempotent): task_id=%s", tid)
+            queue_metrics["duplicate_enqueue_prevented"] += 1
+            return EnqueueResult(accepted=True, task_id=tid, reason="duplicate")
+        if result == "__queue_full__":
+            logger.warning("Queue full, rejected: task_id=%s type=%s", tid, task_type)
+            queue_metrics["enqueue_rejected"] += 1
+            return EnqueueResult(
+                accepted=False, task_id=None, reason="queue_full", retry_after=30
+            )
+        if result is None:
+            logger.error(
+                "Enqueue failed (nil result): task_id=%s type=%s", tid, task_type
+            )
+            queue_metrics["enqueue_rejected"] += 1
+            return EnqueueResult(
+                accepted=False, task_id=None, reason="internal_error", retry_after=30
+            )
+        logger.info("Task enqueued: task_id=%s type=%s", tid, task_type)
+        return EnqueueResult(accepted=True, task_id=tid)
+
+    def _enqueue_local_fallback(self, task: Any, tid: str) -> EnqueueResult:
+        # Local fallback (dev only, bounded)
+        if not self._allow_local_fallback:
+            return v1_enqueue_no_backend()
+        if tid in self._local_tasks:
+            return EnqueueResult(accepted=True, task_id=tid)
+        if len(self._local_tasks) >= _LOCAL_TASK_MAX:
+            logger.error("Local task queue full, rejected task_id=%s", tid)
+            queue_metrics["enqueue_rejected"] += 1
+            return EnqueueResult(
+                accepted=False, task_id=None, reason="queue_full", retry_after=30
+            )
+        self._local_tasks[tid] = task
+        return EnqueueResult(accepted=True, task_id=tid)
+
 
     # ── dequeue ──
 
