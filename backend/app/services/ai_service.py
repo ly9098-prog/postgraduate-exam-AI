@@ -70,8 +70,8 @@ from app.services.ai.advice_snapshot import (
 )
 from app.services.ai.prewarm_transition import (
     failure_category,
+    finish_prewarm_result,
     skipped_not_found,
-    success_outcome,
     superseded_regenerated,
     superseded_revision,
 )
@@ -1107,38 +1107,14 @@ async def prewarm_wrong_question_analysis(
             force_regenerate=force_regenerate,
         )
 
-        # Force-regeneration failures intentionally return the old cache to the
-        # synchronous caller with ``cache_preserved=True``. A background recovery
-        # must still treat that as a failure so the durable queue can retry instead
-        # of marking the old cache as a newly generated success.
-        if result.get("from_fallback") or (
-            result.get("cache_preserved") and result.get("error_code")
-        ):
-            failure = _prewarm_failure_from_result(result)
-            category = failure_category(failure.error_code, failure.retryable)
-            logger.warning(
-                "[prewarm] %s id=%d uid=%d revision=%s error_code=%s retryable=%s model=%s",
-                category,
-                wrong_question_id,
-                user_id,
-                expected_revision or "legacy",
-                failure.error_code,
-                failure.retryable,
-                failure.model,
-            )
-            raise failure
-
-        status = "cache_hit" if result.get("from_cache") else "success"
-        logger.info(
-            "[prewarm] %s id=%d uid=%d revision=%s model=%s duration_ms=%s",
-            status,
-            wrong_question_id,
-            user_id,
-            expected_revision or "legacy",
-            result.get("model"),
-            result.get("duration_ms"),
+        return finish_prewarm_result(
+            result,
+            wrong_question_id=wrong_question_id,
+            user_id=user_id,
+            expected_revision=expected_revision,
+            logger=logger,
+            failure_factory=_prewarm_failure_from_result,
         )
-        return success_outcome(result)
 
 
 async def generate_advice(

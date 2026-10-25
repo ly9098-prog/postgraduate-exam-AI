@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from typing import Any
+from collections.abc import Callable
+from logging import Logger
 
 
 def skipped_not_found() -> dict:
@@ -48,3 +50,43 @@ def success_outcome(result: dict[str, Any]) -> dict:
         "model": result.get("model"),
         "duration_ms": result.get("duration_ms", 0),
     }
+
+
+def finish_prewarm_result(
+    result: dict[str, Any],
+    *,
+    wrong_question_id: int,
+    user_id: int,
+    expected_revision: str | None,
+    logger: Logger,
+    failure_factory: Callable[[dict], Exception],
+) -> dict:
+    """Convert synchronous fallback/cache outcomes into worker semantics."""
+    if result.get("from_fallback") or (
+        result.get("cache_preserved") and result.get("error_code")
+    ):
+        failure = failure_factory(result)
+        category = failure_category(failure.error_code, failure.retryable)
+        logger.warning(
+            "[prewarm] %s id=%d uid=%d revision=%s error_code=%s retryable=%s model=%s",
+            category,
+            wrong_question_id,
+            user_id,
+            expected_revision or "legacy",
+            failure.error_code,
+            failure.retryable,
+            failure.model,
+        )
+        raise failure
+
+    status = "cache_hit" if result.get("from_cache") else "success"
+    logger.info(
+        "[prewarm] %s id=%d uid=%d revision=%s model=%s duration_ms=%s",
+        status,
+        wrong_question_id,
+        user_id,
+        expected_revision or "legacy",
+        result.get("model"),
+        result.get("duration_ms"),
+    )
+    return success_outcome(result)
