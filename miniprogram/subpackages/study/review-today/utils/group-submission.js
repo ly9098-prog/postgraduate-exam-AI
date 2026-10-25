@@ -99,24 +99,57 @@ function mergeResultsByScheduleId(oldResults, newResults) {
 
 function buildGroupOutcome(options) {
   const groupResults = options.groupResults || []
-  const groupCorrect = groupResults.filter(item => item.isCorrect && item.wasSubmitted).length
-  const groupWrong = groupResults.filter(item => item.wasSubmitted && !item.isCorrect).length
-  const groupSkipped = groupResults.filter(item => !item.wasSubmitted).length
-  const groupFailed = groupResults.filter(item => item.submitFailed).length
-  const groupRefreshRequired = groupResults.filter(item => item.submitFailed && item.refreshRequired).length
-  const groupRetryableFailed = groupResults.filter(item => item.submitFailed && !item.refreshRequired).length
-  const failureToast = groupFailed > 0
-    ? (groupRefreshRequired > 0 && groupRetryableFailed > 0
-      ? `${groupRefreshRequired} 题需刷新，${groupRetryableFailed} 题待重试`
-      : (groupRefreshRequired > 0
-        ? `${groupRefreshRequired} 题任务已更新，将重新获取`
-        : `${groupRetryableFailed} 题提交失败，已保留待重试`))
-    : ''
-
+  const groupStats = buildGroupStats(groupResults)
   const allGroupResults = mergeResultsByScheduleId(options.allGroupResults, groupResults)
-  const totalCorrect = allGroupResults.filter(item => item.isCorrect && item.wasSubmitted).length
-  const totalWrong = allGroupResults.filter(item => item.wasSubmitted && !item.isCorrect).length
-  const totalCompleted = allGroupResults.filter(item => item.wasSubmitted).length
+  const session = buildSessionTotals(allGroupResults)
+  const groups = buildRetryGroups(options, groupResults)
+  const todayCounts = buildTodayCounts(options, session.totalCompleted)
+
+  return {
+    failureToast: groupStats.failureToast,
+    session: { todayTaskTotalCount: todayCounts.total, ...session, allGroupResults },
+    view: {
+      groups,
+      groupWrongResults: groupResults.filter(item => item.wasSubmitted && !item.isCorrect),
+      groupCorrect: groupStats.correct,
+      groupWrong: groupStats.wrong,
+      _groupSkipped: groupStats.skipped,
+      groupAccuracyPercent: buildAccuracyPercent(groupStats.correct, groupStats.wrong),
+      todayDueCount: todayCounts.total,
+      todayCompletedCount: todayCounts.completed,
+      todayRemainingCount: todayCounts.remaining,
+      todayProgressPercent: todayCounts.progressPercent,
+      _groupProgressStyle: buildGroupProgressStyle(options.currentGroupIdx, groups.length),
+    },
+  }
+}
+
+function buildGroupStats(groupResults) {
+  const correct = groupResults.filter(item => item.isCorrect && item.wasSubmitted).length
+  const wrong = groupResults.filter(item => item.wasSubmitted && !item.isCorrect).length
+  const skipped = groupResults.filter(item => !item.wasSubmitted).length
+  const refreshRequired = groupResults.filter(item => item.submitFailed && item.refreshRequired).length
+  const retryableFailed = groupResults.filter(item => item.submitFailed && !item.refreshRequired).length
+  const failed = groupResults.filter(item => item.submitFailed).length
+  const failureToast = failed > 0
+    ? (refreshRequired > 0 && retryableFailed > 0
+      ? `${refreshRequired} 题需刷新，${retryableFailed} 题待重试`
+      : (refreshRequired > 0
+        ? `${refreshRequired} 题任务已更新，将重新获取`
+        : `${retryableFailed} 题提交失败，已保留待重试`))
+    : ''
+  return { correct, wrong, skipped, failureToast }
+}
+
+function buildSessionTotals(allGroupResults) {
+  return {
+    totalCorrect: allGroupResults.filter(item => item.isCorrect && item.wasSubmitted).length,
+    totalWrong: allGroupResults.filter(item => item.wasSubmitted && !item.isCorrect).length,
+    totalCompleted: allGroupResults.filter(item => item.wasSubmitted).length,
+  }
+}
+
+function buildRetryGroups(options, groupResults) {
   const pendingQuestionIds = new Set(
     groupResults
       .filter(item => !item.wasSubmitted && (!item.submitFailed || !item.refreshRequired))
@@ -124,46 +157,38 @@ function buildGroupOutcome(options) {
   )
   const pendingQuestions = (options.groupQuestions || [])
     .filter(question => pendingQuestionIds.has(String(question.schedule_id)))
-  const groups = pendingQuestions.length > 0
+  return pendingQuestions.length > 0
     ? (options.groups || []).concat([pendingQuestions])
     : (options.groups || [])
-  const todayTaskTotalCount = Math.max(
+}
+
+function buildTodayCounts(options, totalCompleted) {
+  const total = Math.max(
     Number(options.sessionTodayTaskTotalCount || 0),
     Number(options.dataTodayDueCount || 0),
     totalCompleted
   )
-  const todayCompletedCount = Math.min(
-    todayTaskTotalCount,
+  const completed = Math.min(
+    total,
     Math.max(
       Number(options.dataTodayCompletedCount || 0),
       Number(options.completedBeforeSession || 0) + totalCompleted
     )
   )
-  const todayRemainingCount = Math.max(0, todayTaskTotalCount - todayCompletedCount)
-
   return {
-    failureToast,
-    session: {
-      todayTaskTotalCount,
-      allGroupResults,
-      totalCorrect,
-      totalWrong,
-      totalCompleted,
-    },
-    view: {
-      groups,
-      groupWrongResults: groupResults.filter(item => item.wasSubmitted && !item.isCorrect),
-      groupCorrect,
-      groupWrong,
-      _groupSkipped: groupSkipped,
-      groupAccuracyPercent: Math.round((groupCorrect + groupWrong) > 0 ? groupCorrect / (groupCorrect + groupWrong) * 100 : 0),
-      todayDueCount: todayTaskTotalCount,
-      todayCompletedCount,
-      todayRemainingCount,
-      todayProgressPercent: todayTaskTotalCount > 0 ? Math.round(todayCompletedCount / todayTaskTotalCount * 100) : 0,
-      _groupProgressStyle: 'width: ' + Math.round((options.currentGroupIdx + 1) / Math.max(1, groups.length) * 100) + '%',
-    },
+    total,
+    completed,
+    remaining: Math.max(0, total - completed),
+    progressPercent: total > 0 ? Math.round(completed / total * 100) : 0,
   }
+}
+
+function buildAccuracyPercent(correct, wrong) {
+  return Math.round((correct + wrong) > 0 ? correct / (correct + wrong) * 100 : 0)
+}
+
+function buildGroupProgressStyle(currentGroupIdx, groupCount) {
+  return 'width: ' + Math.round((currentGroupIdx + 1) / Math.max(1, groupCount) * 100) + '%'
 }
 
 module.exports = {

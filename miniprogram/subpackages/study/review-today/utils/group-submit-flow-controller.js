@@ -13,6 +13,11 @@ async function submitImpl(options) {
   const submission = await options.request({
     groupQuestions,
     answers,
+    isQuestionAnswered: options.isQuestionAnswered,
+    getRequestId: options.getRequestId,
+    buildTimingSession: options.buildTimingSession,
+    enrichForResult: options.enrichForResult,
+    failureNeedsRefresh: options.failureNeedsRefresh,
   })
   if (submission.status !== 'submitted') return false
 

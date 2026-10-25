@@ -645,6 +645,11 @@ await this._groupSubmitFlowController().submit()
         confirm: groupQuestions => this._groupSubmitEntryController().confirm(groupQuestions),
         begin: groupQuestions => this._groupSubmitEntryController().begin(groupQuestions),
         request: input => this._groupSubmitRequestController().submit(input),
+        isQuestionAnswered: (q, a) => adapter.isQuestionAnswered(q, a, KF),
+        getRequestId: q => this._getReviewRequestId(q),
+        buildTimingSession: () => this._buildReviewTimingSession(),
+        enrichForResult: q => this._enrichForResult(q),
+        failureNeedsRefresh: _reviewFailureNeedsRefresh,
         applyResult: input => this._groupSubmitResultController().apply(input),
         isPageAlive: () => this._alive,
         logError: (...args) => console.error(...args),
@@ -653,7 +658,6 @@ await this._groupSubmitFlowController().submit()
       })
     )
   },
-
   _groupSubmitEntryController() {
     return this._groupSubmitEntry || (
       this._groupSubmitEntry = createGroupSubmitEntryController({
@@ -680,7 +684,6 @@ showQuestion: index => this._showQuestion(index),
       })
     )
   },
-
   _groupSubmitRequestController() {
     return this._groupSubmitRequest || (
       this._groupSubmitRequest = createGroupSubmitRequestController({
@@ -691,7 +694,6 @@ isPageAlive: () => this._alive,
       })
     )
   },
-
   _groupSubmitResultController() {
     return this._groupSubmitResult || (
       this._groupSubmitResult = createGroupSubmitResultController({
@@ -732,7 +734,6 @@ showResultDockAndRefreshTimer: () => this._showResultDockAndRefreshTimer(),
 })
 )
 },
-
 _nextRetryGroupController() {
 return this._nextRetryGroup || (
 this._nextRetryGroup = createNextRetryGroupController({
@@ -745,7 +746,6 @@ startReviewTimer: () => this._startReviewTimer(),
 })
 )
 },
-
 _nextRemoteBatchController() {
 return this._nextRemoteBatch || (
 this._nextRemoteBatch = createNextRemoteBatchController({
