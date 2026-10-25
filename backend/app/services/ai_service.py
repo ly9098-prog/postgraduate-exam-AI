@@ -68,6 +68,14 @@ from app.services.ai.advice_snapshot import (
     build_advice_snapshot,
     parse_advice_content,
 )
+from app.services.ai.prewarm_transition import (
+    failure_category,
+    prewarm_failure,
+    skipped_not_found,
+    success_outcome,
+    superseded_regenerated,
+    superseded_revision,
+)
 from app.services.ai.provider_exception import classify_ai_provider_exception
 from app.services.ai.revision_guard import check_analysis_revision_drift
 from app.services.ai.visual_cache import (
@@ -1185,11 +1193,7 @@ async def prewarm_wrong_question_analysis(
                 wrong_question_id,
                 user_id,
             )
-            return {
-                "status": "skipped",
-                "reason": "wrong_question_not_found",
-                "from_cache": False,
-            }
+            return skipped_not_found()
 
         if expected_revision:
             from app.ai.prewarm_revision import build_prewarm_revision
@@ -1206,11 +1210,7 @@ async def prewarm_wrong_question_analysis(
                     expected_revision,
                     current_revision,
                 )
-                return {
-                    "status": "superseded",
-                    "reason": "revision_changed",
-                    "from_cache": False,
-                }
+                return superseded_revision()
 
         # A recovery task is queued only after the mini-program transport times
         # out. The original HTTP handler may still finish successfully. For force
@@ -1227,11 +1227,7 @@ async def prewarm_wrong_question_analysis(
                     baseline_generated_at or "empty",
                     current_generated_at or "empty",
                 )
-                return {
-                    "status": "superseded",
-                    "reason": "analysis_already_regenerated",
-                    "from_cache": True,
-                }
+                return superseded_regenerated()
 
         result = await analyze_error(
             bg_db,
@@ -1247,19 +1243,8 @@ async def prewarm_wrong_question_analysis(
         if result.get("from_fallback") or (
             result.get("cache_preserved") and result.get("error_code")
         ):
-            failure = _prewarm_failure_from_result(result)
-            category = (
-                "failed_input"
-                if failure.error_code
-                in {
-                    "vision_input_missing",
-                    "vision_parse_failed",
-                    "vision_unavailable",
-                }
-                else "retry"
-                if failure.retryable
-                else "failed_permanent"
-            )
+            failure = prewarm_failure(result)
+            category = failure_category(failure.error_code, failure.retryable)
             logger.warning(
                 "[prewarm] %s id=%d uid=%d revision=%s error_code=%s retryable=%s model=%s",
                 category,
@@ -1282,13 +1267,7 @@ async def prewarm_wrong_question_analysis(
             result.get("model"),
             result.get("duration_ms"),
         )
-        return {
-            "status": status,
-            "reason": None,
-            "from_cache": bool(result.get("from_cache")),
-            "model": result.get("model"),
-            "duration_ms": result.get("duration_ms", 0),
-        }
+        return success_outcome(result)
 
 
 async def generate_advice(
