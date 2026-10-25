@@ -78,21 +78,31 @@ function normalizeDistributionSubjects(subjects, meta) {
   const bucketById = {}
   const passthrough = []
   const parentBuckets = []
-  const upsertLeaf = (subjectId, fallbackItem) => {
-    const metaNode = meta.byId[subjectId] || {}
-    if (!bucketById[subjectId]) {
-      bucketById[subjectId] = {
-        subject_id: subjectId,
-        subject_code: metaNode.code || String((fallbackItem && fallbackItem.subject_code) || ''),
-        subject_name: metaNode.name || String((fallbackItem && fallbackItem.subject_name) || '未分类'),
-        sessions: 0,
-        participation_sessions: 0,
-        duration_sec: 0,
-      }
-    }
-    return bucketById[subjectId]
-  }
+  const upsertLeaf = (subjectId, fallbackItem) =>
+    upsertLeafImpl(bucketById, meta, subjectId, fallbackItem)
 
+  classifyDistributionItems(subjArr, meta, bucketById, passthrough, parentBuckets, upsertLeaf)
+  distributeParentBuckets(parentBuckets, bucketById, upsertLeaf)
+
+  return collectDistributionResult(bucketById, passthrough)
+}
+
+function upsertLeafImpl(bucketById, meta, subjectId, fallbackItem) {
+  const metaNode = meta.byId[subjectId] || {}
+  if (!bucketById[subjectId]) {
+    bucketById[subjectId] = {
+      subject_id: subjectId,
+      subject_code: metaNode.code || String((fallbackItem && fallbackItem.subject_code) || ''),
+      subject_name: metaNode.name || String((fallbackItem && fallbackItem.subject_name) || '未分类'),
+      sessions: 0,
+      participation_sessions: 0,
+      duration_sec: 0,
+    }
+  }
+  return bucketById[subjectId]
+}
+
+function classifyDistributionItems(subjArr, meta, bucketById, passthrough, parentBuckets, upsertLeaf) {
   subjArr.forEach(item => {
     const subjectId = item && item.subject_id != null ? Number(item.subject_id) : null
     const durationSec = Math.max(0, Number(item && item.duration_sec) || 0)
@@ -122,7 +132,9 @@ function normalizeDistributionSubjects(subjects, meta) {
       bucket.duration_sec += durationSec
       return
     }
-    const leafIds = Array.isArray(node.descendantLeafIds) ? node.descendantLeafIds.filter(id => meta.byId[id] && meta.byId[id].isLeaf) : []
+    const leafIds = Array.isArray(node.descendantLeafIds)
+      ? node.descendantLeafIds.filter(id => meta.byId[id] && meta.byId[id].isLeaf)
+      : []
     if (!leafIds.length) {
       passthrough.push({
         subject_id: subjectId,
@@ -136,7 +148,9 @@ function normalizeDistributionSubjects(subjects, meta) {
     }
     parentBuckets.push({ item, leafIds, durationSec, sessions, participationSessions })
   })
+}
 
+function distributeParentBuckets(parentBuckets, bucketById, upsertLeaf) {
   parentBuckets.forEach(entry => {
     const currentDurations = {}
     const currentSessions = {}
@@ -149,20 +163,15 @@ function normalizeDistributionSubjects(subjects, meta) {
     const participationShares = distributeAggregateValue(
       entry.participationSessions, entry.leafIds, currentSessions
     )
-    durationShares.forEach(share => {
-      const bucket = upsertLeaf(share.id, entry.item)
-      bucket.duration_sec += share.value
-    })
-    sessionShares.forEach(share => {
-      const bucket = upsertLeaf(share.id, entry.item)
-      bucket.sessions += share.value
-    })
+    durationShares.forEach(share => { upsertLeaf(share.id, entry.item).duration_sec += share.value })
+    sessionShares.forEach(share => { upsertLeaf(share.id, entry.item).sessions += share.value })
     participationShares.forEach(share => {
-      const bucket = upsertLeaf(share.id, entry.item)
-      bucket.participation_sessions += share.value
+      upsertLeaf(share.id, entry.item).participation_sessions += share.value
     })
   })
+}
 
+function collectDistributionResult(bucketById, passthrough) {
   return Object.values(bucketById)
     .concat(passthrough)
     .filter(item => Number(item.duration_sec) > 0 || Number(item.sessions) > 0)
