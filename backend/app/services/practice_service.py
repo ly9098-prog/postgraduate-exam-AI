@@ -67,6 +67,11 @@ from app.services.practice.batch_token import (
 from app.services.practice.batch_persistence import (
     persist_practice_batch_records,
 )
+from app.services.practice.batch_claim import (
+    claim_practice_request_id,
+    load_committed_replay,
+)
+from app.services.practice.batch_commit import persist_claimed_practice_batch
 from app.services.practice.batch_reservation_cleanup import (
     build_sequential_reservation_cleanup,
 )
@@ -2178,14 +2183,15 @@ async def batch_submit_answers(
 
     # Fast idempotent replay does not depend on token expiry or current question
     # state. Once a submission is committed, request_id + payload hash is enough.
-    existing = await db.scalar(
-        select(PracticeSession).where(
-            PracticeSession.user_id == user_id,
-            PracticeSession.request_id == request_id,
-        )
+    existing_replay = await load_committed_replay(
+        db,
+        user_id=user_id,
+        request_id=request_id,
+        payload_hash=payload_hash,
+        replay=_replay_committed_submission,
     )
-    if existing is not None:
-        return _replay_committed_submission(existing, payload_hash)
+    if existing_replay is not None:
+        return existing_replay
 
     issued_revisions, issued_order, batch_payload = _validate_practice_batch_token(
         batch_token,
@@ -2272,86 +2278,60 @@ async def batch_submit_answers(
         ),
         scope_snapshot=scope_snapshot,
     )
-    await _start_explicit_transaction(db)
-    try:
-        # Claim the request id in a savepoint. A concurrent winner must not
-        # poison the caller's transaction before we replay its committed result.
-        async with db.begin_nested():
-            db.add(session_obj)
-            await db.flush()
-    except IntegrityError as exc:
-        if not _is_unique_violation(exc):
-            await db.rollback()
-            raise
-        winner = await db.scalar(
-            select(PracticeSession).where(
-                PracticeSession.user_id == user_id,
-                PracticeSession.request_id == request_id,
-            )
-        )
-        if winner is None:
-            await db.rollback()
-            raise
-        return _replay_committed_submission(winner, payload_hash)
+    claim = await claim_practice_request_id(
+        db,
+        user_id=user_id,
+        session_obj=session_obj,
+        request_id=request_id,
+        payload_hash=payload_hash,
+        start_transaction=_start_explicit_transaction,
+        is_unique_violation=_is_unique_violation,
+        replay=_replay_committed_submission,
+    )
+    if not claim.claimed:
+        return claim.replay
+    now = utcnow()
+    from app.services.wrong_question_service import record_wrong
 
-    try:
-        now = utcnow()
-        from app.services.wrong_question_service import record_wrong
+    from app.services.practice.knowledge_session_summary import (
+        persisted_knowledge_session,
+    )
 
-        persisted = await persist_practice_batch_records(
-            db,
-            user_id=user_id,
-            evaluated_answers=evaluated_answers,
-            answer_request_ids=answer_request_ids,
-            mode=session_values["mode"],
-            now=now,
-            record_wrong=record_wrong,
-            create_outbox=_create_answer_projection_outbox,
-            persist_wrong_answer=persist_wrong_answer,
-        )
-        records = persisted.records
-        prewarm_wrong_questions = persisted.prewarm_wrong_questions
-        wrong_question_ids = persisted.wrong_question_ids
-
-        revision_kps = await load_revision_kp_names(db, issued_revisions.values())
-        response_by_question = build_response_by_question(
-            records=records,
-            skipped_questions=skipped_questions,
-            revision_kps=revision_kps,
-            wrong_question_ids=wrong_question_ids,
-        )
-
-        from app.services.practice.knowledge_session_summary import (
-            persisted_knowledge_session,
-        )
-
-        response_payload = build_batch_submission_response(
-            response_by_question=response_by_question,
-            issued_order=issued_order,
-            total_correct=total_correct,
-            total_wrong=total_wrong,
-            skipped_questions=skipped_questions,
-            knowledge_context=batch_payload.get("knowledge_context"),
-            entry_context=batch_payload.get("entry_context"),
-            persisted_knowledge_session=persisted_knowledge_session,
-        )
-        # submission_response is a SQL JSON column and is also the source used
-        # for idempotent replay. Nested diagnostics may contain datetime values,
-        # so normalize the entire payload once before persistence and response.
-        session_obj.submission_response = response_payload
-        sequential_cleanup = build_sequential_reservation_cleanup(
-            user_id=user_id,
-            batch_payload=batch_payload,
-            all_question_ids=all_question_ids,
-        )
-        if sequential_cleanup is not None:
-            await db.execute(sequential_cleanup)
-        await db.commit()
-    except BaseException:
-        # Once the session claim is accepted this service owns the whole outer
-        # transaction. Roll back before propagating so no partial state remains.
-        await db.rollback()
-        raise
+    committed = await persist_claimed_practice_batch(
+        db,
+        session_obj=session_obj,
+        persist_records=persist_practice_batch_records,
+        load_revision_kp_names=load_revision_kp_names,
+        build_response_by_question=build_response_by_question,
+        build_response=build_batch_submission_response,
+        persisted_knowledge_session=persisted_knowledge_session,
+        build_cleanup=build_sequential_reservation_cleanup,
+        execute=db.execute,
+        commit=db.commit,
+        rollback=db.rollback,
+        user_id=user_id,
+        batch_payload=batch_payload,
+        all_question_ids=all_question_ids,
+        issued_revisions=issued_revisions,
+        issued_order=issued_order,
+        skipped_questions=skipped_questions,
+        total_correct=total_correct,
+        total_wrong=total_wrong,
+        knowledge_context=batch_payload.get("knowledge_context"),
+        entry_context=batch_payload.get("entry_context"),
+        persist_records_kwargs={
+            "user_id": user_id,
+            "evaluated_answers": evaluated_answers,
+            "answer_request_ids": answer_request_ids,
+            "mode": session_values["mode"],
+            "now": now,
+            "record_wrong": record_wrong,
+            "create_outbox": _create_answer_projection_outbox,
+            "persist_wrong_answer": persist_wrong_answer,
+        },
+    )
+    response_payload = committed.response_payload
+    prewarm_wrong_questions = committed.prewarm_wrong_questions
 
     if prewarm_wrong_questions:
         try:
