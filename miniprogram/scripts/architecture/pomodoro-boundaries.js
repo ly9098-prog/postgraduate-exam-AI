@@ -27,6 +27,7 @@ const MODULES = {
   'end-confirm-snapshot.js': [],
   'active-sync-controller.js': [],
   'pause-toggle-controller.js': [],
+  'pause-sync-controller.js': [],
   'resume-error-controller.js': [],
   'celebration-dismiss-controller.js': [],
   'break-restore-controller.js': [],
@@ -77,10 +78,12 @@ const MODULES = {
   'end-confirm-view-model.js': ['./timer-math'],
   'unknown-start-helpers.js': [],
   'cached-session-builder.js': [],
+  'active-session-reconciler.js': [],
+  'session-action-dropper.js': [],
 }
 const PAGE = 'miniprogram/pages/pomodoro/pomodoro.js'
 const UTILS = 'miniprogram/pages/pomodoro/utils'
-const PAGE_MAX_LINES = 2193
+const PAGE_MAX_LINES = 2184
 const PAGE_METHODS = new Set([
   'onShow', 'onHide', 'onUnload', '_showRecoveryOptions', '_restoreCompletionView',
   '_clearRestoredConfirmation', '_restoreConfirmSnapshot', '_recoverActiveSession',
@@ -162,6 +165,8 @@ const PAGE_METHODS = new Set([
   '_dropPendingPomodoroSessionActions', '_isPomodoroStorageError',
   '_isValidConfirmSnapshot', '_postPauseWithRetry',
   '_getSessionActionDropController',
+  '_pauseSyncController',
+  '_activeSessionReconciler',
   // Pause adjustment helpers
   '_pauseAdjustmentStorage', '_clearLocalPauseAdjustment',
   '_maybeClearLocalPauseAdjustment', '_getLocalPauseAdjustment',
@@ -299,6 +304,30 @@ function pageViolations(source) {
         if (methodName === '_getStartSessionController' &&
             !hasStartControllerAccessor(node)) {
           errors.push('start ceremony must lazily assign its controller')
+        }
+        if (methodName === '_pauseSyncController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPomodoroPauseSyncController',
+              '_pauseSync',
+            )) {
+          errors.push('pause sync must lazily assign its controller')
+        }
+        if (methodName === '_getSessionActionDropController' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPomodoroSessionActionDropper',
+              '_sessionActionDrop',
+            )) {
+          errors.push('session action drop must lazily assign its controller')
+        }
+        if (methodName === '_activeSessionReconciler' &&
+            !hasLazyControllerAccessor(
+              node,
+              'createPomodoroActiveSessionReconciler',
+              '_activeSessionReconcile',
+            )) {
+          errors.push('active session reconcile must lazily assign its controller')
         }
         if (methodName === 'startSession' &&
             !returnsStartControllerCall(node, 'start')) {

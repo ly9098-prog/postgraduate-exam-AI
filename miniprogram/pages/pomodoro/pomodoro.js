@@ -52,6 +52,7 @@ const { createActiveSyncController } = require('./utils/active-sync-controller')
 const { createPauseToggleController } = require('./utils/pause-toggle-controller')
 const { createPomodoroPauseSyncController } = require('./utils/pause-sync-controller')
 const { createPomodoroSessionActionDropper } = require('./utils/session-action-dropper')
+const { createPomodoroActiveSessionReconciler } = require('./utils/active-session-reconciler')
 const { createResumeErrorController } = require('./utils/resume-error-controller')
 const { createCelebrationDismissController } = require('./utils/celebration-dismiss-controller')
 const { createBreakRestoreController } = require('./utils/break-restore-controller')
@@ -1284,13 +1285,14 @@ Page({
   },
 
   _pauseSyncController() {
-    return this._pauseSync || (
+    if (!this._pauseSync) {
       this._pauseSync = createPomodoroPauseSyncController({
         setPendingPomodoroSync: (action, sessionId, clientActionAt) =>
           this._setPendingPomodoroSync(action, sessionId, clientActionAt),
         retryPendingPomodoroSync: () => this._retryPendingPomodoroSync(),
       })
-    )
+    }
+    return this._pauseSync
   },
 
   async _pauseCountdownForEndConfirm() {
@@ -1412,18 +1414,19 @@ Page({
   },
 
   _dropPendingPomodoroSessionActions(sessionId) {
-    return this._sessionActionDropper().drop(sessionId)
+    return this._getSessionActionDropController().drop(sessionId)
   },
 
   _getSessionActionDropController() {
-    return this._sessionActionDrop || (
+    if (!this._sessionActionDrop) {
       this._sessionActionDrop = createPomodoroSessionActionDropper({
         getPendingPomodoroSyncQueue: () => this._getPendingPomodoroSyncQueue(),
         writePendingPomodoroSyncQueue: queue => this._writePendingPomodoroSyncQueue(queue),
         safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
         safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
       })
-    )
+    }
+    return this._sessionActionDrop
   },
 
   _isPomodoroStorageError(value) {
@@ -1843,33 +1846,21 @@ Page({
   },
 
   async _fetchActiveSession() {
-    const stored = this._safeGetPomodoroStorage('pomodoro_running_state', 'fetch active session')
-    if (!stored.ok) return { storageUnreadable: true }
-    const local = stored.value
-    const cached = this._buildCachedActiveSession(local)
-    try {
-      const server = await api.get('/pomodoro/active')
-      if (server) {
-        if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'server active reconcile')) {
-          return { storageUnreadable: true }
-        }
-        if (!this._hasPendingPomodoroAction(server.id, ['pause', 'resume'])) {
-          if (!this._clearLocalPauseAdjustment(server.id)) return { storageUnreadable: true }
-        }
-        return server
-      }
-      if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'server no-active reconcile')) {
-        return { storageUnreadable: true }
-      }
-      return null
-    } catch (_) {
-      // Weak/offline network: keep the timer usable from a fresh local snapshot.
-      if (cached) return cached
+    return this._activeSessionReconciler().fetchActive()
+  },
+
+  _activeSessionReconciler() {
+    if (!this._activeSessionReconcile) {
+      this._activeSessionReconcile = createPomodoroActiveSessionReconciler({
+        safeGetPomodoroStorage: (key, context) => this._safeGetPomodoroStorage(key, context),
+        buildCachedActiveSession: local => this._buildCachedActiveSession(local),
+        getActive: path => api.get(path),
+        safeRemovePomodoroStorage: (key, context) => this._safeRemovePomodoroStorage(key, context),
+        hasPendingPomodoroAction: (sessionId, actions) => this._hasPendingPomodoroAction(sessionId, actions),
+        clearLocalPauseAdjustment: sessionId => this._clearLocalPauseAdjustment(sessionId),
+      })
     }
-    if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'invalid cached active session')) {
-      return { storageUnreadable: true }
-    }
-    return null
+    return this._activeSessionReconcile
   },
 
   _restoreSession(session) {

@@ -115,6 +115,15 @@ const sandbox = {
     if (request === './utils/pause-toggle-controller') {
       return require('../pages/pomodoro/utils/pause-toggle-controller')
     }
+    if (request === './utils/pause-sync-controller') {
+      return require('../pages/pomodoro/utils/pause-sync-controller')
+    }
+    if (request === './utils/session-action-dropper') {
+      return require('../pages/pomodoro/utils/session-action-dropper')
+    }
+    if (request === './utils/active-session-reconciler') {
+      return require('../pages/pomodoro/utils/active-session-reconciler')
+    }
     if (request === './utils/resume-error-controller') {
       return require('../pages/pomodoro/utils/resume-error-controller')
     }
@@ -198,6 +207,24 @@ const sandbox = {
     }
     if (request === './utils/draw-ring-controller') {
       return require('../pages/pomodoro/utils/draw-ring-controller')
+    }
+    if (request === './utils/skip-break-controller') {
+      return require('../pages/pomodoro/utils/skip-break-controller')
+    }
+    if (request === './utils/font-size-controller') {
+      return require('../pages/pomodoro/utils/font-size-controller')
+    }
+    if (request === './utils/subject-view-controller') {
+      return require('../pages/pomodoro/utils/subject-view-controller')
+    }
+    if (request === './utils/preset-view-controller') {
+      return require('../pages/pomodoro/utils/preset-view-controller')
+    }
+    if (request === './utils/celebration-type-controller') {
+      return require('../pages/pomodoro/utils/celebration-type-controller')
+    }
+    if (request === './utils/date-exam-controller') {
+      return require('../pages/pomodoro/utils/date-exam-controller')
     }
     if (request === './utils/cancel-confirm-state') return require('../pages/pomodoro/utils/cancel-confirm-state')
     if (request === './utils/completion-celebration') return require('../pages/pomodoro/utils/completion-celebration')

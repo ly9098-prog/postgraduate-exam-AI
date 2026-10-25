@@ -13,7 +13,7 @@ const check = (source, allowed = []) => moduleViolations('fixture.js', source, a
 test('scans every governed production module and real page', () => {
   const result = scanPomodoro()
   assert.deepEqual(result.violations, [])
-  assert.equal(result.modules, 71)
+  assert.equal(result.modules, 74)
   assert.equal(result.edges, 18)
 })
 
@@ -910,7 +910,7 @@ test('full scan finds an injected reverse dependency and an emptied module', () 
     const result = scanPomodoro(root, filename => filename.endsWith('/show-recovery.js')
       ? injected : fs.readFileSync(filename, 'utf8'))
     assert.ok(result.violations.some(error => error.includes('show-recovery.js')))
-    assert.equal(result.modules, 71)
+    assert.equal(result.modules, 74)
   }
 })
 test('confirm end timer shell must lazily reuse one controller', () => {
@@ -927,4 +927,17 @@ test('confirm end timer shell must lazily reuse one controller', () => {
   )
   assert.ok(pageViolations(detachedConfirm)
     .includes('confirm end timer must delegate to its controller'))
+})
+
+test('pause sync, session action drop, and active session reconcile shells lazily reuse one controller', () => {
+  const cases = [
+    ['pause sync', 'this._pauseSync = createPomodoroPauseSyncController({'],
+    ['session action drop', 'this._sessionActionDrop = createPomodoroSessionActionDropper({'],
+    ['active session reconcile', 'this._activeSessionReconcile = createPomodoroActiveSessionReconciler({'],
+  ]
+  for (const [label, assignment] of cases) {
+    const unassigned = pageSource.replace(assignment, `void ${assignment.slice('this._'.length)}`)
+    assert.ok(pageViolations(unassigned)
+      .includes(`${label} must lazily assign its controller`))
+  }
 })
