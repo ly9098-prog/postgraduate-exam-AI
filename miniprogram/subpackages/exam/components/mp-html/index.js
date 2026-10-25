@@ -315,64 +315,42 @@ Component({
      * @param {boolean} append 是否在尾部追加
      */
     setContent (content, append) {
-      if (!this.imgList || !append) {
-        this.imgList = []
-      }
+      if (!this.imgList || !append) { this.imgList = [] }
       this._videos = []
-
-      const data = {}
-      const nodes = new Parser(this).parse(content)
-      // 尾部追加内容
+      var data = {}
+      var nodes = new Parser(this).parse(content)
       if (append) {
-        for (let i = this.data.nodes.length, j = nodes.length; j--;) {
-          data[`nodes[${i + j}]`] = nodes[j]
-        }
-      } else {
-        data.nodes = nodes
-      }
-
+        for (var i = this.data.nodes.length, j = nodes.length; j--;) { data["nodes[" + (i + j) + "]"] = nodes[j] }
+      } else { data.nodes = nodes }
       this.setData(data,
-        // #ifndef MP-TOUTIAO
-        () => {
-          this._hook('onLoad')
-          this.triggerEvent('load')
-        }
-        // #endif
+        function() { this._hook("onLoad"); this.triggerEvent("load") }.bind(this)
       )
+      this._setupContentReady()
+    },
 
-      // #ifdef MP-TOUTIAO
-      this.selectComponent('#_root', child => {
-        child.root = this
-        this._hook('onLoad')
-        this.triggerEvent('load')
-      })
-      // #endif
-
+    _setupContentReady() {
       if (this.properties.lazyLoad || this.imgList._unloadimgs < this.imgList.length / 2) {
-        // 设置懒加载，每 350ms 获取高度，不变则认为加载完毕
-        let height = 0
-        const callback = rect => {
-          if (!rect || !rect.height) rect = {}
-          // 350ms 总高度无变化就触发 ready 事件
-          if (rect.height === height) {
-            this.triggerEvent('ready', rect)
-          } else {
-            height = rect.height
-            setTimeout(() => {
-              this.getRect().then(callback).catch(callback)
-            }, 350)
-          }
-        }
-        this.getRect().then(callback).catch(callback)
+        this._setupLazyLoadReady()
       } else {
-        // 未设置懒加载，等待所有图片加载完毕
-        if (!this.imgList._unloadimgs) {
-          this.getRect().then(rect => {
-            this.triggerEvent('ready', rect)
-          }).catch(() => {
-            this.triggerEvent('ready', {})
-          })
-        }
+        this._setupImmediateReady()
+      }
+    },
+
+    _setupLazyLoadReady() {
+      var height = 0
+      var self = this
+      var callback = function(rect) {
+        if (!rect || !rect.height) rect = {}
+        if (rect.height === height) { self.triggerEvent("ready", rect) }
+        else { height = rect.height; setTimeout(function() { self.getRect().then(callback).catch(callback) }, 350) }
+      }
+      this.getRect().then(callback).catch(callback)
+    },
+
+    _setupImmediateReady() {
+      var self = this
+      if (!this.imgList._unloadimgs) {
+        this.getRect().then(function(rect) { self.triggerEvent("ready", rect) }).catch(function() { self.triggerEvent("ready", {}) })
       }
     },
 

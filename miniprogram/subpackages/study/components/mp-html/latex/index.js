@@ -46,60 +46,37 @@ function attrsOf (dom, className, styleText) {
 }
 
 function katexDomToRichNodes (items) {
-  const result = []
-  const domTree = katex.__domTree || {}
-  const Span = domTree.Span
-  const SymbolNode = domTree.SymbolNode
-  const SvgNode = domTree.SvgNode
-
-  ;(Array.isArray(items) ? items : [items]).forEach(function (dom) {
+  var result = []
+  var domTree = katex.__domTree || {}
+  var Span = domTree.Span, SymbolNode = domTree.SymbolNode, SvgNode = domTree.SvgNode
+  ;(Array.isArray(items) ? items : [items]).forEach(function(dom) {
     if (!dom) return
-
-    // Keep SVG as one data-uri image. Converting its private Path/Line nodes
-    // directly would leak unsupported KaTeX internals into native rich-text.
-    if (SvgNode && dom instanceof SvgNode) {
-      result.push({
-        name: 'img',
-        attrs: {
-          src: encodeSvgDataUri(dom.toMarkup()),
-          class: 'katex-svg'
-        }
-      })
-      return
-    }
-
-    if (SymbolNode && dom instanceof SymbolNode) {
-      const className = classNameOf(dom.classes, false)
-      const styleText = styleTextOf(dom, true)
-      const textNode = { type: 'text', text: String(dom.text == null ? '' : dom.text) }
-      if (className || styleText) {
-        result.push({
-          name: 'span',
-          attrs: attrsOf(dom, className, styleText),
-          children: [textNode]
-        })
-      } else if (textNode.text) {
-        result.push(textNode)
-      }
-      return
-    }
-
-    const children = dom.children ? katexDomToRichNodes(dom.children) : []
-    if (Span && dom instanceof Span) {
-      result.push({
-        name: 'span',
-        attrs: attrsOf(dom, classNameOf(dom.classes, true), styleTextOf(dom, false)),
-        children: children
-      })
-      return
-    }
-
-    // Unknown wrapper nodes are flattened. Supported visual primitives either
-    // arrive as Span/SymbolNode or are contained by SvgNode above.
-    for (let i = 0; i < children.length; i++) result.push(children[i])
+    if (SvgNode && dom instanceof SvgNode) { pushSvgNode(result, dom); return }
+    if (SymbolNode && dom instanceof SymbolNode) { pushSymbolNode(result, dom); return }
+    var children = dom.children ? katexDomToRichNodes(dom.children) : []
+    if (Span && dom instanceof Span) { pushSpanNode(result, dom, children); return }
+    for (var i = 0; i < children.length; i++) result.push(children[i])
   })
-
   return result
+}
+
+function pushSvgNode(result, dom) {
+  result.push({ name: "img", attrs: { src: encodeSvgDataUri(dom.toMarkup()), class: "katex-svg" } })
+}
+
+function pushSymbolNode(result, dom) {
+  var className = classNameOf(dom.classes, false)
+  var styleText = styleTextOf(dom, true)
+  var textNode = { type: "text", text: String(dom.text == null ? "" : dom.text) }
+  if (className || styleText) {
+    result.push({ name: "span", attrs: attrsOf(dom, className, styleText), children: [textNode] })
+  } else if (textNode.text) {
+    result.push(textNode)
+  }
+}
+
+function pushSpanNode(result, dom, children) {
+  result.push({ name: "span", attrs: attrsOf(dom, classNameOf(dom.classes, true), styleTextOf(dom, false)), children: children })
 }
 
 function parseKatexToNodes (source, options) {

@@ -1,6 +1,31 @@
 /**
  * @fileoverview 递归子组件，用于显示节点树
  */
+function nodeDiff(a, b, path, data) {
+  var alen = a.length
+  if (alen === 0 || b.length === 0) { data[path] = b; return }
+  while (alen > b.length) { if (Object.keys(a[alen - 1]).length !== 0) { data[path + "[" + (alen - 1) + "]"] = {} } alen -= 1 }
+  while (alen < b.length) { data[path + "[" + alen + "]"] = b[alen]; alen += 1 }
+  for (var i = 0; i < Math.min(a.length, b.length); i++) {
+    var keys = Array.from(new Set(Object.keys(a[i]).concat(Object.keys(b[i]))))
+    var skip = false
+    for (var ki = 0; ki < keys.length; ki++) {
+      var key = keys[ki]
+      if (a[i][key] === undefined || b[i][key] === undefined || (typeof b[i][key] !== "object" && a[i][key] !== b[i][key])) { data[path + "[" + i + "]"] = b[i]; skip = true; break }
+    }
+    if (!skip) {
+      for (var ki2 = 0; ki2 < keys.length; ki2++) {
+        var key2 = keys[ki2]
+        if (Array.isArray(b[i][key2])) { nodeDiff(a[i][key2], b[i][key2], path + "[" + i + "]." + key2, data) }
+        else {
+          var subKeys = Object.keys(a[i][key2]).concat(Object.keys(b[i][key2]))
+          for (var si = 0; si < subKeys.length; si++) { if (a[i][key2][subKeys[si]] !== b[i][key2][subKeys[si]]) { data[path + "[" + i + "]." + key2] = b[i][key2]; break } }
+        }
+      }
+    }
+  }
+}
+
 Component({
   data: {
     ctrl: {}, // 控制信号
@@ -14,70 +39,14 @@ Component({
       type: Array,
       value: [],
       observer (nodes) {
-        // 检测根节点是否变化（不同解析批次产生的节点对象引用不同）
         var rootChanged = this.data.nodes.length !== nodes.length
         if (!rootChanged) {
-          for (var ri = 0; ri < nodes.length; ri++) {
-            if (this.data.nodes[ri] !== nodes[ri]) { rootChanged = true; break }
-          }
+          for (var ri = 0; ri < nodes.length; ri++) { if (this.data.nodes[ri] !== nodes[ri]) { rootChanged = true; break } }
         }
-        // 根节点变化时做全量数组替换，确保 wx:key 协调正确触发
-        if (rootChanged && nodes.length > 0) {
-          this.setData({ nodes: nodes })
-          return
-        }
-        const data = {}
-        function diff (a, b, path) {
-          let alen = a.length
-          if (alen === 0 || b.length === 0) {
-            data[path] = b
-            return
-          }
-          // 列表变短，将多余的部分清空
-          while (alen > b.length) {
-            if (Object.keys(a[alen - 1]).length !== 0) {
-              data[path + '[' + (alen - 1) + ']'] = {}
-            }
-            alen -= 1
-          }
-          // 列表变长，插入新增的部分
-          while (alen < b.length) {
-            data[path + '[' + alen + ']'] = b[alen]
-            alen += 1
-          }
-          // 比较现有的部分
-          for (let i = 0; i < Math.min(a.length, b.length); i++) {
-            const keys = Array.from(new Set(Object.keys(a[i]).concat(Object.keys(b[i]))))
-            for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
-              const key = keys[keyIndex]
-              if (a[i][key] === undefined || b[i][key] === undefined || (typeof b[i][key] !== 'object' && a[i][key] !== b[i][key])) {
-                data[path + '[' + i + ']'] = b[i]
-                break
-              }
-            }
-            if (!((path + '[' + i + ']') in data)) {
-              for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
-                const key = keys[keyIndex]
-                if (Array.isArray(b[i][key])) {
-                  diff(a[i][key], b[i][key], path + '[' + i + '].' + key)
-                } else {
-                  const subKeys = Object.keys(a[i][key]).concat(Object.keys(b[i][key]))
-                  for (let subKeyIndex = 0; subKeyIndex < subKeys.length; subKeyIndex++) {
-                    const subKey = subKeys[subKeyIndex]
-                    if (a[i][key][subKey] !== b[i][key][subKey]) {
-                      data[path + '[' + i + '].' + key] = b[i][key]
-                      break
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        diff(this.data.nodes, nodes, 'nodes')
-        if (Object.keys(data).length !== 0) {
-          this.setData(data)
-        }
+        if (rootChanged && nodes.length > 0) { this.setData({ nodes: nodes }); return }
+        var data = {}
+        nodeDiff(this.data.nodes, nodes, "nodes", data)
+        if (Object.keys(data).length !== 0) { this.setData(data) }
       }
     }, // 子节点列表
     opts: Array // 设置 [是否开启懒加载, 加载中占位图, 错误占位图, 是否使用长按菜单]
