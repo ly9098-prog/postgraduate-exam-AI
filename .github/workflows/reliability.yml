@@ -426,6 +426,7 @@ jobs:
           node --test miniprogram/tests/test-practice-launch-preset.js
           node --test miniprogram/tests/test-practice-question-batch.js
           node --test miniprogram/tests/test-practice-recent-subjects.js
+          node --test miniprogram/tests/test-practice-recent-subject-controller.js
           node --test miniprogram/tests/test-practice-question-load-state.js
           node --test miniprogram/tests/test-practice-question-load-controller.js
           node --test miniprogram/tests/test-practice-pending-submission-controller.js

@@ -31,8 +31,8 @@ const {
 const {
   RECENT_SUBJECTS_STORAGE_KEY,
   selectDefaultSubject,
-  rememberSubject,
 } = require('./utils/recent-subjects')
+const { createRecentSubjectController } = require('./utils/recent-subject-controller')
 const {
   buildResetView,
   applyBatchCredentials,
@@ -555,35 +555,28 @@ _decorateRecentSubjects(subjects) {
   return decorateRecentSubjects(subjects, id => this._subjectHasChildren(id))
 },
 _rememberSubject(subjectId, subjectName) {
-const id = Number(subjectId)
-if (!id || !subjectName) return
-const parentId = this._findParentSubjectId(id)
-const hasChildren = this._subjectHasChildren(id)
-const result = rememberSubject({
-subjectId: id,
-subjectName,
-parentSubjectId: parentId,
-hasChildren,
-currentRecentSubjects: this.data.recentSubjects || [],
+this._recentSubjectController().remember(subjectId, subjectName)
+},
+_recentSubjectController() {
+return this._recentSubjectControllerInstance || (
+this._recentSubjectControllerInstance = createRecentSubjectController({
+findParentSubjectId: id => this._findParentSubjectId(id),
+subjectHasChildren: id => this._subjectHasChildren(id),
+getRecentSubjects: () => this.data.recentSubjects || [],
 decorateRecentSubjects: subjects => this._decorateRecentSubjects(subjects),
+setData: patch => this.setData(patch),
+setStorage: (key, value) => wx.setStorageSync(key, value),
+logWarn: (...args) => console.warn(...args),
+getPending: () => this._pendingRememberSubject,
+setPending: value => { this._pendingRememberSubject = value },
 })
-this.setData(result.view)
-try {
-wx.setStorageSync(RECENT_SUBJECTS_STORAGE_KEY, result.storageValue)
-} catch (e) {
-console.warn('保存最近使用科目失败', e)
-}
+)
 },
 _queueRememberSubject(subjectId, subjectName) {
-const id = Number(subjectId)
-if (!id || !subjectName) return
-this._pendingRememberSubject = { subjectId: id, subjectName }
+this._recentSubjectController().queue(subjectId, subjectName)
 },
 _flushPendingRecentSubject() {
-const pending = this._pendingRememberSubject
-this._pendingRememberSubject = null
-if (!pending) return
-this._rememberSubject(pending.subjectId, pending.subjectName)
+this._recentSubjectController().flush()
 },
 _findParentSubjectId(subjectId) {
   return findParentSubjectId(subjectId, this.data.subjectTree)
