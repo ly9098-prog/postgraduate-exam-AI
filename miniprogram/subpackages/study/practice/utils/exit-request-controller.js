@@ -1,3 +1,8 @@
+const {
+  exitPrompt,
+  exitSubmissionState,
+} = require('./exit-request-state')
+
 function createExitRequestController(options) {
   return {
     request: requestImpl.bind(null, options),
@@ -31,27 +36,14 @@ async function requestImpl(options, source) {
     return
   }
 
-  const hasPendingSubmit = !!submission
-  const retryBlocked = !!(submission && submission.retryBlocked)
+  const { hasPendingSubmit, retryBlocked } = exitSubmissionState(submission)
   options.setExitConfirmInFlight(true)
   let confirmed = false
   try {
     const showExitConfirm = hasPendingSubmit
       ? options.showConfirm
       : options.showPausedConfirm
-    confirmed = await showExitConfirm({
-      scenario: 'info',
-      layout: 'minimal',
-      title: '退出练习？',
-      message: retryBlocked
-        ? '本次提交未通过，退出后可重新开始。'
-        : (hasPendingSubmit
-          ? '交卷仍在确认中，退出后可下次继续确认。'
-          : '本组练习尚未提交，确定退出吗？'),
-      confirmText: '退出',
-      cancelText: hasPendingSubmit && !retryBlocked ? '继续确认' : '继续作答',
-      hideEyebrow: true,
-    })
+    confirmed = await showExitConfirm(exitPrompt(hasPendingSubmit, retryBlocked))
   } finally {
     options.setExitConfirmInFlight(false)
   }
