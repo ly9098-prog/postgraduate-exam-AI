@@ -156,6 +156,11 @@ from app.services.practice.smart_path_supplement import (
     SmartPathRequest,
     run_smart_path,
 )
+from app.services.practice.time_window import excluded_question_subquery
+from app.services.practice.v1_fallback import (
+    V1FallbackRequest,
+    run_v1_fallback,
+)
 from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
     _pick_graph_target_kps,
@@ -403,16 +408,12 @@ def _build_excluded_question_subquery(
     3. no_repeat_days=N：排除最近 N 天内已答题。
     4. no_repeat_days 有值时，即使 exclude_answered=False，也启用周期排除。
     """
-    if not exclude_answered and not no_repeat_days:
-        return None
-
-    sub = select(PracticeRecord.question_id).where(PracticeRecord.user_id == user_id)
-
-    if no_repeat_days:
-        cutoff = utcnow() - timedelta(days=no_repeat_days)
-        sub = sub.where(PracticeRecord.answered_at >= cutoff)
-
-    return sub.distinct()
+    return excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        utcnow=utcnow,
+    )
 
 
 # ── 父级科目聚合刷题相关函数 ─────────────────────────────────
@@ -1108,78 +1109,21 @@ async def _get_questions_v1_fallback(
     exclude_ids: set[int] | None = None,
 ) -> list[Question]:
     """V1 fallback 取题：N天 → 7天 → 1天 → 不排除。"""
-
-    async def _query(
-        excl_answered: bool,
-        excl_days: int | None,
-        extra_exclude_ids: set[int] | None = None,
-        limit: int | None = None,
-    ) -> list[Question]:
-        conds = list(base_conditions)
-        sub = _build_excluded_question_subquery(
+    return await run_v1_fallback(
+        V1FallbackRequest(
+            db=db,
+            base_conditions=base_conditions,
+            mode=mode,
+            count=count,
             user_id=user_id,
-            exclude_answered=excl_answered,
-            no_repeat_days=excl_days,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            exclude_ids=exclude_ids,
+            utcnow=utcnow,
+            random_sample=_random_sample_query,
+            execute=db.execute,
         )
-        if sub is not None:
-            conds.append(Question.id.notin_(sub))
-        all_excl = set()
-        if exclude_ids:
-            all_excl.update(exclude_ids)
-        if extra_exclude_ids:
-            all_excl.update(extra_exclude_ids)
-        if all_excl:
-            conds.append(Question.id.notin_(all_excl))
-
-        q = (
-            select(Question)
-            .where(and_(*conds))
-            .options(selectinload(Question.subject_ref))
-        )
-        if mode == "random":
-            # Use count + random offset instead of ORDER BY random() on large tables
-            total_q = select(func.count()).select_from(
-                select(Question).where(and_(*conds)).subquery()
-            )
-            total = (await db.execute(total_q)).scalar() or 0
-            q = _random_sample_query(q, total, limit or count, Question.id)
-        else:
-            q = q.order_by(Question.id.asc())
-        q = q.limit(limit if limit is not None else count)
-        result = await db.execute(q)
-        return list(result.scalars().all())
-
-    questions = await _query(exclude_answered, no_repeat_days)
-    if len(questions) >= count or not no_repeat_days:
-        return questions
-
-    existing = set(q.id for q in questions)
-    if exclude_ids:
-        existing.update(exclude_ids)
-
-    if no_repeat_days > 7:
-        more = await _query(
-            True, 7, extra_exclude_ids=existing, limit=count - len(questions)
-        )
-        questions.extend(more)
-        existing.update(q.id for q in more)
-    if len(questions) >= count:
-        return questions[:count]
-
-    if no_repeat_days > 1:
-        more = await _query(
-            True, 1, extra_exclude_ids=existing, limit=count - len(questions)
-        )
-        questions.extend(more)
-        existing.update(q.id for q in more)
-    if len(questions) >= count:
-        return questions[:count]
-
-    more = await _query(
-        False, None, extra_exclude_ids=existing, limit=count - len(questions)
     )
-    questions.extend(more)
-    return questions[:count]
 
 
 async def get_similar_practice_questions(
