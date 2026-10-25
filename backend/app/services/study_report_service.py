@@ -26,6 +26,7 @@ from app.services.learning_time_projection import (
 )
 from app.services.study_report_projection import (
     build_knowledge_mastery_response,
+    build_leitner_distribution_response,
     build_overview_response,
     build_review_plan_item,
     build_wrong_question_item,
@@ -33,6 +34,7 @@ from app.services.study_report_projection import (
     classify_mastery,
     extract_title,
     mastery_suggestion,
+    normalize_study_trend_counts,
     safe_accuracy,
 )
 
@@ -360,15 +362,6 @@ async def get_review_plan(
 
 # ── 3. Leitner Distribution ─────────────────────────────────────────
 
-_BOX_META = [
-    (0, "很不熟", "刚做错或反复错误，需要尽快复习"),
-    (1, "初步接触", "刚开始掌握，需要短周期复习"),
-    (2, "有点熟", "有一定掌握，需要周期复习"),
-    (3, "较熟", "掌握较好，保持复习"),
-    (4, "熟练", "较稳定掌握，低频复习"),
-    (5, "稳定掌握", "长期稳定，偶尔复现"),
-]
-
 
 async def get_leitner_distribution(
     db: AsyncSession, user_id: int, subject_id: int | None = None
@@ -386,19 +379,7 @@ async def get_leitner_distribution(
     q = q.group_by(UserQuestionState.box_level)
     rows = (await db.execute(q)).all()
     counts = {r.box_level: int(r.cnt) for r in rows}
-
-    total = sum(counts.values())
-    boxes = [
-        {
-            "box_level": lv,
-            "label": label,
-            "description": desc,
-            "count": counts.get(lv, 0),
-        }
-        for lv, label, desc in _BOX_META
-    ]
-
-    return {"boxes": boxes, "total_tracked_questions": total}
+    return build_leitner_distribution_response(counts)
 
 
 # ── 4. Knowledge Mastery ────────────────────────────────────────────
@@ -578,31 +559,4 @@ async def get_study_trend(
 
     q = q.group_by(day_expr).order_by(day_expr)
     rows = (await db.execute(q)).all()
-
-    data: dict[str, dict] = {}
-    for r in rows:
-        raw = r.d
-        try:
-            d_str = raw[:10] if isinstance(raw, str) else raw.isoformat()
-        except (AttributeError, TypeError):
-            d_str = str(raw)[:10]
-        data[d_str] = {"total": int(r.total), "correct": int(r.correct)}
-
-    items = []
-    for i in range(days):
-        d = today - timedelta(days=days - 1 - i)
-        d_str = d.isoformat()
-        entry = data.get(d_str, {"total": 0, "correct": 0})
-        total = entry["total"]
-        correct = entry["correct"]
-        items.append(
-            {
-                "date": d_str,
-                "answer_count": total,
-                "correct_count": correct,
-                "wrong_count": total - correct,
-                "accuracy": _safe_accuracy(correct, total),
-            }
-        )
-
-    return {"days": days, "items": items}
+    return normalize_study_trend_counts(rows, today=today, days=days)

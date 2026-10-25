@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 
 def safe_accuracy(correct: int, total: int) -> float:
@@ -186,3 +187,63 @@ def build_wrong_question_item(
         "box_level": row.box_level,
         "status": status,
     }
+
+
+def build_leitner_distribution_response(counts: dict) -> dict:
+    """Project tracked-question counts into the fixed six-box response."""
+    box_meta = (
+        (0, "很不熟", "刚做错或反复错误，需要尽快复习"),
+        (1, "初步接触", "刚开始掌握，需要短周期复习"),
+        (2, "有点熟", "有一定掌握，需要周期复习"),
+        (3, "较熟", "掌握较好，保持复习"),
+        (4, "熟练", "较稳定掌握，低频复习"),
+        (5, "稳定掌握", "长期稳定，偶尔复现"),
+    )
+    boxes = [
+        {
+            "box_level": level,
+            "label": label,
+            "description": description,
+            "count": counts.get(level, 0),
+        }
+        for level, label, description in box_meta
+    ]
+    return {
+        "boxes": boxes,
+        "total_tracked_questions": sum(counts.values()),
+    }
+
+
+def normalize_study_trend_counts(
+    rows: list,
+    *,
+    today: object,
+    days: int,
+) -> dict:
+    """Normalize Beijing-date rows and zero-fill the requested day window."""
+    data: dict[str, dict[str, int]] = {}
+    for row in rows:
+        raw = row.d
+        try:
+            date_text = raw[:10] if isinstance(raw, str) else raw.isoformat()
+        except (AttributeError, TypeError):
+            date_text = str(raw)[:10]
+        data[date_text] = {"total": int(row.total), "correct": int(row.correct)}
+
+    items = []
+    for offset in range(days):
+        day = today - timedelta(days=days - 1 - offset)
+        date_text = day.isoformat()
+        entry = data.get(date_text, {"total": 0, "correct": 0})
+        total = entry["total"]
+        correct = entry["correct"]
+        items.append(
+            {
+                "date": date_text,
+                "answer_count": total,
+                "correct_count": correct,
+                "wrong_count": total - correct,
+                "accuracy": safe_accuracy(correct, total),
+            }
+        )
+    return {"days": days, "items": items}

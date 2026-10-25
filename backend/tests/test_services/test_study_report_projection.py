@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.services.study_report_projection import (
     build_knowledge_mastery_response,
+    build_leitner_distribution_response,
     build_overview_response,
     build_review_plan_item,
     build_wrong_question_item,
@@ -14,6 +15,7 @@ from app.services.study_report_projection import (
     classify_mastery,
     extract_title,
     mastery_suggestion,
+    normalize_study_trend_counts,
     safe_accuracy,
 )
 
@@ -130,6 +132,13 @@ class WrongRow:
     q_content: object
 
 
+@dataclass
+class TrendRow:
+    d: object
+    total: int
+    correct: int
+
+
 def test_review_plan_item_projects_overdue_priority_and_knowledge_point():
     now = datetime(2026, 10, 25, 12, 0, 0)
     overdue = build_review_plan_item(
@@ -201,3 +210,73 @@ def test_wrong_question_item_preserves_status_precedence_and_title():
     assert not_mastered["knowledge_point_id"] is None
     assert needs_review["status"] == "needs_review"
     assert needs_review["title"] == "普通题干"
+
+
+def test_leitner_distribution_preserves_six_boxes_and_zero_fill():
+    response = build_leitner_distribution_response({0: 6, 2: 18, 5: 40})
+
+    assert response["total_tracked_questions"] == 64
+    assert [box["box_level"] for box in response["boxes"]] == [0, 1, 2, 3, 4, 5]
+    assert response["boxes"][0]["count"] == 6
+    assert response["boxes"][0]["label"] == "很不熟"
+    assert response["boxes"][1]["count"] == 0
+    assert response["boxes"][2]["count"] == 18
+    assert response["boxes"][5]["description"] == "长期稳定，偶尔复现"
+    assert build_leitner_distribution_response({}) == {
+        "boxes": [
+            {
+                "box_level": level,
+                "label": label,
+                "description": description,
+                "count": 0,
+            }
+            for level, label, description in [
+                (0, "很不熟", "刚做错或反复错误，需要尽快复习"),
+                (1, "初步接触", "刚开始掌握，需要短周期复习"),
+                (2, "有点熟", "有一定掌握，需要周期复习"),
+                (3, "较熟", "掌握较好，保持复习"),
+                (4, "熟练", "较稳定掌握，低频复习"),
+                (5, "稳定掌握", "长期稳定，偶尔复现"),
+            ]
+        ],
+        "total_tracked_questions": 0,
+    }
+
+
+def test_study_trend_normalizes_dates_and_zero_fills():
+    today = date(2026, 10, 22)
+    response = normalize_study_trend_counts(
+        [
+            TrendRow(today.isoformat(), 10, 8),
+            TrendRow(today - timedelta(days=2), 5, 3),
+            TrendRow("2026-10-21 12:00:00", 4, 4),
+            TrendRow(None, 1, 1),
+        ],
+        today=today,
+        days=3,
+    )
+
+    assert response["days"] == 3
+    assert response["items"] == [
+        {
+            "date": "2026-10-20",
+            "answer_count": 5,
+            "correct_count": 3,
+            "wrong_count": 2,
+            "accuracy": 60.0,
+        },
+        {
+            "date": "2026-10-21",
+            "answer_count": 4,
+            "correct_count": 4,
+            "wrong_count": 0,
+            "accuracy": 100.0,
+        },
+        {
+            "date": "2026-10-22",
+            "answer_count": 10,
+            "correct_count": 8,
+            "wrong_count": 2,
+            "accuracy": 80.0,
+        },
+    ]

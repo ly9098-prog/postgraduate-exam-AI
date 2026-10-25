@@ -101,3 +101,11 @@
 - `get_dashboard_llm_analysis` 只发送聚合 payload：overview、趋势整体比率、最多 12 个科目、遗忘风险与 top topics 前 5；不发送原始题目、用户身份或凭据。provider 返回必须为 JSON object，summary 截断 320 字符，findings/risks/actions 分别限 6/4/4，空结果回落规则分析。
 - 规则降级保持 `model="rule-based"`、`generated=False`，并按“到期复习 → 高频遗忘/长期未掌握 → 薄弱学科 → 保持练习”生成行动；这不是外部 AI 可用性验收，只保证模型/配置/超时失败时响应可用。
 - 回归入口：`test_stats_ai_projection.py`、`test_dashboard_stats_compatibility.py`。2026-10-25 定向运行 35 项通过；未调用真实外部模型，不证明生产 AI 超时、网络故障或模型配置数据库行为。
+
+## 9. 学习报告纯投影边界
+
+- `study_report_projection.py` 只承接无 IO 响应投影；`study_report_service.py` 继续持有数据库查询、subject 校验、知识点批量装载、时间窗口和响应编排。本批不修改 API schema、筛选参数、排序、limit 或数据库语义。
+- 基础规则保留：accuracy 为百分数并保留 2 位小数、除零返回 0；题目标题取第一个 text 段并截断 100 字符；掌握度先按 confidence `< 0.3` 判 unknown，再按 mastery `< 40 / < 70 / < 85` 分级；复习优先级保留逾期 `>=3` 天、错误 `>=3` 次、box `<=1` 为 high，逾期 `>=1` 天或错误 `>=1` 次为 medium。
+- overview 保留今日/近期/累计计数与百分数 accuracy；review plan 保留逾期天数、box、错误/正确次数和知识点首条映射；knowledge mastery 保留 summary 计数、mastery 1 位、confidence 2 位四舍五入及固定建议文案；wrong questions 保留 repeated_wrong > not_mastered > needs_review 的状态优先级。
+- Leitner 分布保留固定 0-5 六盒元数据、缺失盒子补零和 tracked 总数；study trend 保留北京时间日期值归一化、请求窗口内缺失日期补零、`wrong_count = total - correct` 及百分数 accuracy。数据库分组查询和自然日窗口仍由 service 持有。
+- 回归入口：`test_study_report_projection.py`、`test_study_report_compatibility.py`、`test_study_report_service.py`、`test_study_report_projection_boundaries.py`。2026-10-25 定向运行 78 项通过；仍不覆盖真实 PostgreSQL、微信页面或生产报告链路。
