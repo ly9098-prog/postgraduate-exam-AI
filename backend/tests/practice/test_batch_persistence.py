@@ -76,11 +76,11 @@ async def test_records_are_flushed_before_wrong_book_side_effects():
     assert wrong_calls[0][1]["commit"] is False
     assert diagnosis_calls[0]["wrong"].id == 77
     assert result.records[0][0]._error_diagnosis_payload == {"diagnosis": "serialized"}
-    assert outbox_calls[0].kwargs == {
+    assert outbox_calls[0][1] == {
         "practice_record_id": 78,
         "request_id": "request-1",
     }
-    assert outbox_calls[1].kwargs == {"practice_record_id": 79, "request_id": None}
+    assert outbox_calls[1][1] == {"practice_record_id": 79, "request_id": None}
 
 
 @pytest.mark.asyncio

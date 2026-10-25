@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.practice_record import PracticeRecord
 
 
-
 @dataclass(slots=True)
 class PersistedPracticeBatch:
     records: list[tuple[Any, Any, bool, str, int | None]]
@@ -80,6 +79,4 @@ async def persist_practice_batch_records(
             practice_record_id=int(record.id),
             request_id=answer_request_ids.get(int(q.id)),
         )
-    return PersistedPracticeBatch(
-        records, prewarm_wrong_questions, wrong_question_ids
-    )
+    return PersistedPracticeBatch(records, prewarm_wrong_questions, wrong_question_ids)
