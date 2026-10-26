@@ -1,5 +1,7 @@
 # AI 分析与修复执行兼容基线
 
+2026-10-26 补充原因：登记分析结果投影与两次提交边界，区分本地 SQLite 持久化证据和真实模型/生产验收。
+
 核对日期：2026-10-24。对应重构计划阶段 0；范围仅限错题 AI 复盘（`analyze_error`）、AI 修复（`repair_questions`）、令牌预算门禁和模型配置解析，不表示学习域、OCR 导入或全栈阶段 0 完成。
 
 ## 1. 错题复盘 `analyze_error`
@@ -128,3 +130,11 @@ Layer 4 规则（`repair_questions` 内）：
 - `analysis_content.py` 保留内容候选择优、历史函数定义及原模块 globals；`analysis_text_syntax.py` 承接代码围栏、结构化文本探测/解码及标题解析，`analysis_answer_check.py` 承接作答核对遍历、答案归一及比对。三个业务模块分别为 270/95/111 行，最长函数 40/33/42 行。
 - helper 通过原模块实时端口读取解析器、别名、递归函数和校验函数，保持遍历中途 monkeypatch 的生效时点；历史导入身份、`__module__`、函数 globals、深度上限 6、原结果引用、字段优先级和缺失端口的 `NameError` 保持原语义。门禁同时约束三个模块的尺寸、导入和 fresh import。
 - 新增 41 项刻画；修改前首次 135 项通过，最终专属契约在保存的原实现重放 137 项通过，新版相关解析/缓存/视觉缓存/执行/架构回归 244 项通过。作者原/新对照 10,522 组结果与异常、630 组动态端口轨迹一致；未调用真实外部 AI，不据此认定整个分析执行域验收完成。
+
+## 9. 分析结果投影与持久化边界（2026-10-26）
+
+- `analysis_persistence.persist_repaired_analysis` / `persist_valid_analysis` 保留原 async 签名、历史导入和原模块 globals；结果/元数据装配及 snapshot 扩展移入 `analysis_persistence_projection`，原入口继续持有 ORM 赋值、第一次 commit 和 `_append_analysis_chat` 调用，后者仍负责 add AiChat 及第二次 commit。没有合并事务、增加 rollback 或改变异常/取消传播。
+- valid 在调用方传入的 parsed 上原地合并 mistake_diagnosis 并覆盖 `_meta`，随后将同一对象赋给 WrongQuestion；repair 使用 grounding builder 返回的 safe 对象，保留 grounding_guard/source_model/reason 及 generated_at 返回约定。时钟、元数据、grounding merge、snapshot 等历史端口仍按原表达式时点读取，repair 的 grounding builder 仍为函数内导入。
+- 第一次提交成功后才构造 snapshot 和 AiChat；后续 snapshot、构造、add 或第二次提交失败不撤销第一次提交。本函数不替调用方回滚。metadata、视觉输入计数/证据/重试、签名、force、token 和耗时字段保持原投影。
+- `build_context_snapshot` 是 `dict(context)` 浅复制，再覆盖四个视觉观察字段，并非主动过滤 base64/URL 的安全清洗器；调用方须保持原上下文输入边界。本次不新增过滤策略，也不声称原注释已实现任意上下文的敏感内容过滤。repair 的 guard 快照保留 expected/actual answer check 的原引用。
+- 新增 persistence contract/ports/database 三组测试与架构门禁接入静态 CI。fake DB 刻画引用、动态替换、求值顺序和失败/取消；隔离 SQLite 验证成功写入及第二次提交失败后调用方回滚仍可读到已提交分析、无已提交聊天记录。它们不调用真实模型，不代表生产 PostgreSQL、Redis、凭据轮换或完整 worker 验收。
