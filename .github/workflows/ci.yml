@@ -362,6 +362,9 @@ jobs:
             tests/practice/test_knowledge_summary_numeric_contract.py \
             tests/architecture/test_knowledge_summary_boundaries.py \
             tests/practice/test_practice_knowledge_session_summary.py \
+            tests/pipeline/test_single_pass_execution_contract.py \
+            tests/pipeline/test_single_pass_state_contract.py \
+            tests/test_services/test_ai_analysis_content_ports.py \
             tests/practice/test_smart_pipeline_contract.py \
             tests/practice/test_aggregated_smart_contract.py \
             tests/practice/test_smart_path_supplement_contract.py \
