@@ -52,6 +52,20 @@ from app.features.pipeline_artifacts import (
 from app.features.pipeline_artifacts import (
     save_failed_marker as _save_failed_marker,  # noqa: F401 - live single-pass port
 )
+from app.features.pipeline_chunked_execution import execute_chunked_loop
+from app.features.pipeline_chunked_input import (
+    initialize_chunked_checkpoints,
+    load_chunked_hash_index,
+    prepare_chunked_run,
+    start_chunked_run,
+)
+from app.features.pipeline_chunked_result import (
+    aggregate_chunked_result,
+    finalize_chunked_checkpoint,
+    log_chunked_result,
+    project_chunked_result,
+)
+from app.features.pipeline_chunked_state import ChunkedRunState
 from app.features.pipeline_extract_stage import run_extract_stage
 from app.features.pipeline_ocr_router_stage import run_ocr_router_stage
 from app.features.pipeline_single_pass_stage import run_single_pass
@@ -4900,209 +4914,24 @@ class ImportPipeline:
         page_images: dict[int, bytes] | None = None,
         page_image_refs: dict[int, str] | None = None,
     ) -> dict:
-        """Drive a multi-chunk run with checkpoint persistence and failure isolation.
-
-        For each (page_start, page_end):
-            1. mark_chunk_running → run all stages → update_chunk_status
-            2. On chunk-level exception (after the catch in _run_single_pass)
-               or stage_status == "failed", record error_message and continue
-               to the next chunk — never raise out of this method.
-
-        P0-3: 每个 chunk 在自己的 ``AsyncSession`` 上下文里跑，事务边界 =
-        chunk 边界。整段循环不再共享单个 session，避免 PG
-        ``idle_in_transaction_session_timeout`` 在长 chunked 导入中触发。
-        初始化（create_pipeline_record / create_chunk_records / hash_index
-        load）也分别用临时 session，跑完即释放连接。
-
-        Pipeline-level status:
-            - "completed" iff all chunks completed AND none recorded errors
-            - "paused" otherwise (manual resume via P2-5)
-        """
-        from app.features import pipeline_checkpoint as ckpt
-        from app.features.global_hash_index import GlobalHashIndex
-
-        total_pages = chunk_ranges[-1][1]
-        chunk_size = _resolve_chunk_size()
-        chunk_overlap = _resolve_chunk_overlap()
-
-        # P0-3: 从调用方传入的 db 推导 sessionmaker，生产路径等价于全局
-        # async_session；测试路径绑到 tmp_path engine，避免污染全局。
-        session_factory = _derive_session_factory(db)
-
-        # P0-3: 把首次实际生效的 watermark patterns 序列化后落库，resume
-        # 时直接复用，避免规则漂移。
-        watermark_snapshot = _serialize_watermark_patterns(
-            shared.get("watermark_patterns") or []
+        """Run isolated chunk sessions, preserving failure propagation and cleanup."""
+        from app.features import (
+            pipeline_checkpoint as ckpt,  # noqa: F401 - captured port
+        )
+        from app.features.global_hash_index import (
+            GlobalHashIndex,  # noqa: F401 - captured port
         )
 
-        # Create parent + chunk records up-front (DB authoritative).
-        # 每个初始化步骤用独立临时 session，避免长事务。
-        async with session_factory() as init_db:
-            await ckpt.ensure_pipeline_record(
-                init_db,
-                pipeline_id=self.pipeline_id,
-                source_type=source_type,
-                source_file=source_file or None,
-                total_pages=total_pages,
-                chunk_size=chunk_size,
-                created_by=self.created_by,
-                source_sha256=self.source_sha256,
-                watermark_snapshot=watermark_snapshot or None,
-            )
-            await ckpt.ensure_chunk_records(init_db, self.pipeline_id, chunk_ranges)
-
-        # P2-4: chunked 路径只构造一次 hash 索引，整个 pipeline 共用。失败
-        # 不阻断主流程——index_loaded=False 时 similarity_match 退化为
-        # subject 全表扫描（旧行为），仅打 warning。
-        hash_index: GlobalHashIndex | None = GlobalHashIndex()
-        try:
-            async with session_factory() as init_db:
-                await hash_index.load(init_db)
-        except Exception:
-            logger.exception(
-                "GlobalHashIndex.load failed; chunked similarity match will fallback"
-            )
-            hash_index = None
-        if hash_index is not None:
-            shared = {**shared, "hash_index": hash_index}
-
-        chunk_results: list[dict] = []
-        pipeline_errors: list[str] = []
-        any_chunk_failed = False
-        # P2-3 / P1-3: shared across all chunks so dedup sees what siblings already wrote
-        seen_hashes: set[str] = set()
-
-        _chunked_logger = logging.getLogger("app.pipeline")
-        _chunked_start = time.monotonic()
-        log_event(
-            _chunked_logger,
-            "pipeline.chunked.start",
-            pipeline_id=self.pipeline_id,
-            total_pages=total_pages,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            total_chunks=len(chunk_ranges),
-        )
-
-        try:
-            for chunk_index, (page_start, logical_end) in enumerate(chunk_ranges):
-                is_last_chunk = chunk_index == len(chunk_ranges) - 1
-                # P0-3: 每个 chunk 一个独立 session（事务边界 = chunk 边界）。
-                async with session_factory() as chunk_db:
-                    outcome = await self._execute_chunk(
-                        chunk_index=chunk_index,
-                        page_start=page_start,
-                        logical_end=logical_end,
-                        total_pages=total_pages,
-                        is_last_chunk=is_last_chunk,
-                        chunk_overlap=chunk_overlap,
-                        file_content=file_content,
-                        file_path=file_path,
-                        source_type=source_type,
-                        source_file=source_file,
-                        subject=subject,
-                        subject_id=subject_id,
-                        opts=opts,
-                        db=chunk_db,
-                        shared=shared,
-                        progress_callback=progress_callback,
-                        started_at=started_at,
-                        seen_hashes=seen_hashes,
-                        hash_index=hash_index,
-                        page_images=page_images,
-                        page_image_refs=page_image_refs,
-                    )
-                chunk_results.append(outcome)
-                if outcome["status"] == "failed":
-                    any_chunk_failed = True
-                    pipeline_errors.append(
-                        f"chunk {chunk_index} (pages {page_start}-{logical_end}) "
-                        f"failed: {outcome['error_message']}"
-                    )
-        finally:
-            # P1-1: 清空 hash_index 内部 dict，避免 chunk 异常路径下大字典
-            # （最坏 ~50 万条 question + N 条 import）残留在 GlobalHashIndex
-            # 实例上。低配 2C2G 服务器友好。
-            if hash_index is not None:
-                hash_index._question_index.clear()
-                hash_index._import_index.clear()
-
-        overall_status = "paused" if any_chunk_failed else "completed"
-        async with session_factory() as final_db:
-            await ckpt.update_pipeline_status(
-                final_db,
-                self.pipeline_id,
-                status=overall_status,
-                error_message=pipeline_errors[0] if pipeline_errors else None,
-                finished=True,
-            )
-        await ckpt.invalidate_progress_cache(self.pipeline_id)
-
-        # Aggregate stats across chunks
-        agg_stats = {
-            "total_chunks": len(chunk_ranges),
-            "completed_chunks": sum(
-                1 for c in chunk_results if c["status"] == "completed"
-            ),
-            "failed_chunks": sum(1 for c in chunk_results if c["status"] == "failed"),
-            "to_review": sum(c["question_count"] or 0 for c in chunk_results),
-            "extracted": total_pages,
-            "total": total_pages,
-        }
-
-        risk_flag_counts = _merge_risk_flag_counts(chunk_results)
-
-        finished_at = serialize_utc_datetime(utcnow())
-        # Pick a representative batch_id for the overall pipeline (first
-        # successful chunk's batch). Each chunk has its own batch_id under
-        # the hood; resume logic uses chunk-level records, not this field.
-        first_batch_id = next(
-            (c["batch_id"] for c in chunk_results if c["batch_id"]),
-            "",
-        )
-
-        _chunked_event = (
-            "pipeline.chunked.finish"
-            if overall_status == "completed"
-            else "pipeline.chunked.paused"
-        )
-        _chunked_level = "info" if overall_status == "completed" else "warning"
-        log_event(
-            _chunked_logger,
-            _chunked_event,
-            level=_chunked_level,
-            pipeline_id=self.pipeline_id,
-            total_pages=total_pages,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            total_chunks=len(chunk_ranges),
-            completed_chunks=agg_stats["completed_chunks"],
-            failed_chunks=agg_stats["failed_chunks"],
-            status=overall_status,
-            duration_ms=round((time.monotonic() - _chunked_start) * 1000),
-        )
-
-        return {
-            "pipeline_id": self.pipeline_id,
-            "status": overall_status,
-            "batch_id": first_batch_id,
-            "stats": agg_stats,
-            "diagnostics": {
-                "chunked": True,
-                "chunk_size": chunk_size,
-                "chunk_overlap": chunk_overlap,
-                "total_pages": total_pages,
-                "risk_flag_counts": risk_flag_counts,
-                "chunks": chunk_results,
-                "hash_index": (
-                    dict(hash_index.stats) if hash_index is not None else None
-                ),
-            },
-            "stages": {},  # per-chunk stage info lives in diagnostics.chunks
-            "errors": pipeline_errors,
-            "started_at": started_at,
-            "finished_at": finished_at,
-        }
+        state = ChunkedRunState(locals(), globals())
+        prepare_chunked_run(state)
+        await initialize_chunked_checkpoints(state)
+        await load_chunked_hash_index(state)
+        start_chunked_run(state)
+        await execute_chunked_loop(state)
+        await finalize_chunked_checkpoint(state)
+        aggregate_chunked_result(state)
+        log_chunked_result(state)
+        return project_chunked_result(state)
 
 
 # ---------------------------------------------------------------------------

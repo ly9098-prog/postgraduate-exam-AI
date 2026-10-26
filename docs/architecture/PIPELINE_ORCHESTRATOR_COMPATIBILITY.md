@@ -87,7 +87,7 @@
 
 - 检查点测试使用进程内 dict，不验证 Redis 持久化、跨进程共享和 TTL 过期行为。
 - 工件恢复测试使用合成数据，不等于真实 PDF/图片导入的端到端恢复验收。
-- `pipeline_orchestrator.py` 的 chunked 模式、coordinator 集成、VL rebuild 和真实 OCR 引擎调用未在本文档登记完整语义。
+- chunked 逐阶段执行、coordinator 集成、VL rebuild 和真实 OCR 引擎调用未在本文档登记完整语义；chunked 顶层编排边界见第 13 节。
 - 真实 Redis 检查点、多 worker 并发恢复、大文件（400 页扫描 PDF）内存释放和外部 OCR/AI 故障恢复仍待环境可用后验收。
 
 ## 7. Single-pass 执行循环刻画（2026-10-26）
@@ -141,3 +141,12 @@
 - 阶段成功后依次合并结果、缓存 normalized block count、更新 metrics、释放输入、写检查点和保存工件。上述副作用普通失败可能使 pass 失败而 stage 仍为 completed；失败检查点写入异常直接传播，不提前释放输入或写终态。恢复跳过、review 隔离、progress 前后回调和取消传播保持原有边界。
 - 完成后仍先处理检查点和 marker，再生成 stats、diagnostics、结束时间、quality/performance/routing、工件清单和完成事件。原模块 globals/builtin 在原表达式时点动态读取，保留观察器修改当前 data 和替换后续端口的行为。
 - preparation、terminal、ports 三组新增契约及 single-pass 架构门禁接入静态 CI；既有 execution/state/observation 契约继续执行。completion 旧门禁沿实际委托链检查唯一清理入口和无重复观察器，签名门禁锁定参数名、顺序、类型和默认值；契约同时覆盖 warnings 在 metrics/checkpoint 前合并，以及结构化起止事件的字段、时序和异常传播。测试以合成阶段和副作用端口刻画行为，不验证真实 Redis、外部 OCR/AI、扫描 PDF、生产数据库或完整跨进程 worker；chunked 和 coordinator 的剩余职责仍待治理。
+
+## 13. Chunked 初始化、独立会话与终态发布（2026-10-27）
+
+- `_run_chunked` 保留原 async 签名、默认值和函数内 checkpoint 模块、GlobalHashIndex 类的导入时点。`pipeline_chunked_state` 保存本次输入与局部状态；`input` 负责配置、检查点初始化、索引加载及开始事件；`execution` 持有逐 chunk 循环和索引清理；`result` 负责最终检查点、聚合和响应。原模块 globals/builtin 在原表达式位置动态读取，checkpoint 模块属性仍在每次调用前读取。
+- 初始化记录在一个短 session 内写 parent/chunks；索引加载使用另一个 session；各 chunk 和最终状态分别使用独立 session。先保存实际水印配置，再加载一次共享索引。只有索引加载 session 的普通异常降级为无索引，取消继续传播；构造索引失败不在降级范围。索引成功时浅复制 shared 并附加索引，保留其他字段及嵌套对象引用。
+- chunk 返回 `failed` 时记录错误并继续后续 chunk；循环边界未捕获的异常或取消会传播，清理索引后不写最终状态。清理的 finally 仍只包围循环，不覆盖初始化、索引加载或开始事件；清理异常可能替代原异常并保留异常上下文。原 docstring 的“永不抛出”描述已改正，本批未扩大异常吞并或清理范围。
+- session 退出后才追加和观察 outcome。若非标准 session 抑制了执行异常，首次 outcome 尚未赋值时仍抛 UnboundLocalError；后续循环仍可能复用上一 outcome 的原引用。本批只刻画该兼容行为，不改变 session 抑制策略。
+- 最终状态按是否出现 `failed` 取 paused/completed，先写最终检查点并退出 session，再失效进度缓存，随后聚合、合并风险、取时间和代表 batch、记录结束事件并返回。代表 batch 实际取首个非空 batch_id，不额外筛选成功状态；未知 chunk 状态也不会自动变成失败。响应保留 chunk、风险对象引用，索引 stats 仅浅复制；这些历史约定没有在本批改写。
+- 四组 chunked 刻画契约、架构门禁及既有 chunk runner/resume/status 测试接入静态 CI。替身契约验证调用顺序、共享引用和失败/取消，既有隔离 SQLite 用例覆盖检查点与恢复路径；它们不等于生产 PostgreSQL、Redis 检查点、真实 OCR/AI、多 worker 或备份恢复验收。
