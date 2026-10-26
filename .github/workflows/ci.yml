@@ -336,6 +336,12 @@ jobs:
             tests/test_services/test_ai_analysis_preparation.py \
             tests/test_services/test_ai_analysis_response_contracts.py \
             tests/test_services/test_ai_analysis_result_review.py \
+            tests/test_services/test_ai_provider_exception.py \
+            tests/test_services/test_ai_provider_invocation.py \
+            tests/test_services/test_ai_provider_failure_contract.py \
+            tests/test_services/test_ai_revision_guard_contract.py \
+            tests/test_services/test_ai_guard_dynamic_ports.py \
+            tests/architecture/test_ai_failure_guard_boundaries.py \
             tests/test_services/test_ai_analysis_validation.py \
             tests/test_services/test_ai_prewarm_execution.py \
             tests/test_services/test_ai_prewarm_transition.py \

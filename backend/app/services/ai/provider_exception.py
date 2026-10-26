@@ -13,7 +13,25 @@ def classify_ai_provider_exception(
     error_kind = str(getattr(exc, "error_kind", "") or "")
     typed_retryable = getattr(exc, "retryable", None)
     status = _typed_status(exc, text)
+    if _is_auth_failure(text, error_kind, status):
+        return ("ai_provider_auth_failed", False, "fallback")
+    if _is_rate_limit_failure(text, error_kind, status):
+        return ("ai_provider_rate_limited", True, "fallback")
+    if _is_transient_failure(text, error_kind, status):
+        return ("ai_provider_transient", True, "fallback")
+    if error_kind == "model_not_found":
+        return ("ai_provider_model_not_found", False, "fallback")
+    if error_kind in {"parameter_unsupported", "invalid_request"}:
+        return ("ai_provider_request_incompatible", False, "fallback")
+    if _looks_like_vision_rejection(text, error_kind, visual):
+        return ("vision_unavailable", False, "vision_unavailable")
+    # Preserve a typed client's retryability decision instead of retrying a
+    # deterministic 4xx forever.
+    retryable = True if typed_retryable is None else bool(typed_retryable)
+    return ("ai_provider_error", retryable, "fallback")
 
+
+def _is_auth_failure(text: str, error_kind: str, status: int | None) -> bool:
     if (
         error_kind == "auth"
         or status in {401, 403}
@@ -28,18 +46,23 @@ def classify_ai_provider_exception(
             ),
         )
     ):
-        return "ai_provider_auth_failed", False, "fallback"
+        return True
+    return False
 
+
+def _is_rate_limit_failure(text: str, error_kind: str, status: int | None) -> bool:
     if (
         error_kind == "rate_limit"
         or status == 429
         or _contains_any(
-            text,
-            ("rate limit", "rate_limit", "too many requests", "quota"),
+            text, ("rate limit", "rate_limit", "too many requests", "quota")
         )
     ):
-        return "ai_provider_rate_limited", True, "fallback"
+        return True
+    return False
 
+
+def _is_transient_failure(text: str, error_kind: str, status: int | None) -> bool:
     if (
         error_kind == "transient"
         or status in {408, 425, 500, 502, 503, 504}
@@ -54,21 +77,8 @@ def classify_ai_provider_exception(
             ),
         )
     ):
-        return "ai_provider_transient", True, "fallback"
-
-    if error_kind == "model_not_found":
-        return "ai_provider_model_not_found", False, "fallback"
-
-    if error_kind in {"parameter_unsupported", "invalid_request"}:
-        return "ai_provider_request_incompatible", False, "fallback"
-
-    if _looks_like_vision_rejection(text, error_kind, visual):
-        return "vision_unavailable", False, "vision_unavailable"
-
-    # Preserve a typed client's retryability decision instead of retrying a
-    # deterministic 4xx forever.
-    retryable = True if typed_retryable is None else bool(typed_retryable)
-    return "ai_provider_error", retryable, "fallback"
+        return True
+    return False
 
 
 def _typed_status(exc: Exception, text: str) -> int | None:
@@ -79,9 +89,7 @@ def _typed_status(exc: Exception, text: str) -> int | None:
         status = None
     if status is not None:
         return status
-    match = re.search(
-        r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text
-    )
+    match = re.search(r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text)
     return int(match.group(1)) if match else None
 
 
@@ -89,9 +97,7 @@ def _contains_any(text: str, tokens: tuple[str, ...]) -> bool:
     return any(token in text for token in tokens)
 
 
-def _looks_like_vision_rejection(
-    text: str, error_kind: str, visual: bool
-) -> bool:
+def _looks_like_vision_rejection(text: str, error_kind: str, visual: bool) -> bool:
     return visual and (
         error_kind == "vision_unsupported"
         or _contains_any(

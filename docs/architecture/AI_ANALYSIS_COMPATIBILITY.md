@@ -1,6 +1,6 @@
 # AI 分析与修复执行兼容基线
 
-2026-10-26 补充原因：登记分析结果投影与两次提交边界，区分本地 SQLite 持久化证据和真实模型/生产验收。
+2026-10-27 补充原因：登记模型故障分类与题目版本守卫的判定边界；先前分析结果投影与两次提交边界继续有效，区分本地替身/SQLite 证据和真实模型/生产验收。
 
 核对日期：2026-10-24。对应重构计划阶段 0；范围仅限错题 AI 复盘（`analyze_error`）、AI 修复（`repair_questions`）、令牌预算门禁和模型配置解析，不表示学习域、OCR 导入或全栈阶段 0 完成。
 
@@ -15,8 +15,8 @@
 1. 查 `WrongQuestion`（user_id + wrong_question_id），不存在抛 `ValueError`。
 2. 查当前 `Question`，不存在抛 `ValueError`。
 3. 构建 `current_answer_grounding`（当前版本的 question_type/content/options/answer/user_answer）。
-4. 若 `current_version_id != wrong_version_id`（版本漂移）：查 `QuestionVersion(wrong_version_id)`，构建 `historical_grounding`，比较 `grounding_fact_signature`。
-5. 签名不匹配 → 返回 `revision_guard` 结果：`content=build_revision_drift_analysis()`、`model="revision_guard"`、`tokens_used=0`、`revision_guarded=True`，不调用任何 LLM。
+4. 两个版本 ID 分别按 `int(value or 0)` 转换，均非零且不相等时查历史版本；查询同时要求 `QuestionVersion.id == wrong_version_id` 与 `QuestionVersion.question_id == wrong_question.question_id`。构建 `historical_grounding`，比较 `grounding_fact_signature`。
+5. 历史版本缺失或签名不匹配 → 返回 `revision_guard` 结果：`content=build_revision_drift_analysis()`、`model="revision_guard"`、`tokens_used=0`、`revision_guarded=True`，不调用任何 LLM。
 
 不变量：旧答案键永不对新版本投影重新解释；版本漂移时返回确定性安全文案，不消耗令牌。
 
@@ -106,7 +106,7 @@ Layer 4 规则（`repair_questions` 内）：
 
 - `analyze_error` 的真实 LLM 调用、多模态视觉证据输入和认证隔离超时恢复未在 SQLite 测试中覆盖，需外部 AI 服务可用后验收。
 - `repair_questions` 的两阶段 Roman 决策真实执行、令牌预算 Redis 共享计数和 fail-closed 行为需 Redis 和 AI 服务可用后验收。
-- `ai_service.py`（2301 行）的 `generate_advice`、`prewarm_wrong_question_analysis` 完整语义未在本文档登记，需单独基线。
+- `generate_advice`、`prewarm_wrong_question_analysis` 的独立基线见 `AI_ADVICE_PREWARM_COMPATIBILITY.md`；其中真实模型与生产环境未验收项仍适用。
 - 真实外部 AI（OpenAI 兼容/DeepSeek/PaddleOCR-VL）、生产 Redis 令牌预算共享和加密凭据轮换仍待环境可用后验收。
 - SQLite 服务路径测试不等于生产 PostgreSQL/Redis 查询计划或真实 AI 调用验收。
 
@@ -145,3 +145,11 @@ Layer 4 规则（`repair_questions` 内）：
 - 发布继续读取保存回调修改过的 usage、result、parsed、grounding 和图像列表，保留 safe、generated_at 及 parsed 等对象引用。日志方法先绑定，再求值视觉校验和字段观察参数；校验回调可修改后续观察值，日志回调可替换本次响应构造器。原模块 bool、len 和响应函数端口按原表达式时点读取，并保留 globals 到 builtins 的查找行为。
 - 日志或响应构造失败继续向调用方传播；已经成功完成的保存不会由发布函数撤销。真实保存的两个提交边界仍由第 9 节的持久化入口负责。
 - 新增 publication contract/ports 与架构门禁接入静态 CI，覆盖失败、实际任务取消、回调修改、端口替换和无数据库/运行时导入副作用。原实现重放和本地替身回归用于兼容性验证，不代表真实外部模型、完整 worker 或生产验收。
+
+## 11. 模型故障与版本漂移判定（2026-10-27）
+
+- `provider_exception.classify_ai_provider_exception` 保留公开签名，在原模块内分别提取认证、限流、暂态故障的判定函数。仍先转换文本、读取 error_kind/retryable 并解析状态，再按 auth → rate limit → transient → model not found → request incompatible → vision → generic 的顺序选择完整三元组；类型、状态和文本信号冲突时也遵守此顺序，不新增重试或模型调用。
+- 有效 typed status 优先于消息中的状态码；仅状态转换的 TypeError/ValueError 回退正则，其余错误传播。已知分类不对 typed retryable 做 bool 转换；只有 generic 分支使用它。判定 helper 使用布尔分支返回字面 True/False，保持短路和每个自定义比较结果仅一次真假判断；`_contains_any` 等原模块端口仍在对应表达式处实时读取。
+- `revision_guard.check_analysis_revision_drift` 继续持有 logger 获取、current grounding、版本转换、唯一历史查询和 warning；历史语义比较及完整守卫响应留在同模块的私有 helper。current grounding 在查询前形成，历史字段、当前题型回退及 wrong_answer 在查询返回后读取。两次 grounding signature 仍分别查找函数；历史版本是否存在用 `is not None`。
+- 语义不匹配时先 warning，再调用文案 builder，最后取 UTC 时间；这些回调替换后续端口的行为保留。响应 content 保留原返回对象引用。取消、数据库查询或 builder/signature/logger/clock 错误均传播，不新增 session、事务提交、回滚或异常吞并。
+- 新增故障分类、版本守卫和动态端口契约，并将它们、架构门禁及既有 provider classification/invocation 测试接入静态 CI。门禁约束两模块的函数预算、原签名、依赖与逐函数调用权限，禁止判定/响应 helper 查询、写库或修改调用方对象。合成分类组合、隔离 SQLite 和任务取消证据不等于外部模型、生产数据库、凭据隔离超时或完整 worker 验收。

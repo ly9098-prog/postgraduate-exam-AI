@@ -24,10 +24,7 @@ __all__ = ["check_analysis_revision_drift"]
 
 
 async def check_analysis_revision_drift(
-    db: AsyncSession,
-    *,
-    wrong_question: Any,
-    question: Any,
+    db: AsyncSession, *, wrong_question: Any, question: Any
 ) -> dict | None:
     """Return a guarded response when revision semantics drifted, else ``None``."""
     import logging
@@ -43,15 +40,35 @@ async def check_analysis_revision_drift(
     )
     current_version_id = int(getattr(question, "current_version_id", 0) or 0)
     wrong_version_id = int(getattr(wrong_question, "question_version_id", 0) or 0)
-    if not (current_version_id and wrong_version_id and current_version_id != wrong_version_id):
+    if not (
+        current_version_id
+        and wrong_version_id
+        and current_version_id != wrong_version_id
+    ):
         return None
-
     revision = await db.scalar(
         select(QuestionVersion).where(
             QuestionVersion.id == wrong_version_id,
             QuestionVersion.question_id == wrong_question.question_id,
         )
     )
+    if _revision_semantics_match(revision, question, wrong_question, current_grounding):
+        return None
+    logger.warning(
+        "ai.error_analysis.revision_guard wq_id=%s question_id=%s "
+        "wrong_version_id=%s current_version_id=%s revision_found=%s",
+        wrong_question.id,
+        question.id,
+        wrong_version_id,
+        current_version_id,
+        revision is not None,
+    )
+    return _revision_guard_response()
+
+
+def _revision_semantics_match(
+    revision: Any, question: Any, wrong_question: Any, current_grounding: Any
+) -> bool:
     revision_semantics_match = False
     if revision is not None:
         historical_grounding = build_answer_grounding(
@@ -62,22 +79,13 @@ async def check_analysis_revision_drift(
             correct_answer=revision.answer,
             user_answer=wrong_question.wrong_answer,
         )
-        revision_semantics_match = (
-            grounding_fact_signature(current_grounding)
-            == grounding_fact_signature(historical_grounding)
-        )
-    if revision_semantics_match:
-        return None
+        revision_semantics_match = grounding_fact_signature(
+            current_grounding
+        ) == grounding_fact_signature(historical_grounding)
+    return revision_semantics_match
 
-    logger.warning(
-        "ai.error_analysis.revision_guard wq_id=%s question_id=%s "
-        "wrong_version_id=%s current_version_id=%s revision_found=%s",
-        wrong_question.id,
-        question.id,
-        wrong_version_id,
-        current_version_id,
-        revision is not None,
-    )
+
+def _revision_guard_response() -> dict:
     return {
         "content": build_revision_drift_analysis(),
         "from_cache": False,
