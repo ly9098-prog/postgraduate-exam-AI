@@ -38,7 +38,7 @@ from app.features.ocr_correction_common import (
 )
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.pipeline_artifacts import (
-    list_artifacts as _list_artifacts,
+    list_artifacts as _list_artifacts,  # noqa: F401 - live single-pass port
 )
 from app.features.pipeline_artifacts import (
     load_artifact as _load_artifact,
@@ -47,15 +47,16 @@ from app.features.pipeline_artifacts import (
     save_artifact as _save_artifact,
 )
 from app.features.pipeline_artifacts import (
-    save_completed_marker as _save_completed_marker,
+    save_completed_marker as _save_completed_marker,  # noqa: F401 - live single-pass port
 )
 from app.features.pipeline_artifacts import (
-    save_failed_marker as _save_failed_marker,
+    save_failed_marker as _save_failed_marker,  # noqa: F401 - live single-pass port
 )
 from app.features.pipeline_extract_stage import run_extract_stage
 from app.features.pipeline_ocr_router_stage import run_ocr_router_stage
+from app.features.pipeline_single_pass_stage import run_single_pass
 from app.features.pipeline_split_stage import run_split_stage
-from app.features.pipeline_stage_completion import complete_stage_data
+from app.features.pipeline_stage_completion import complete_stage_data  # noqa: F401
 from app.features.pipeline_stages._helpers import _log_multi_blank_stage  # noqa: F401
 from app.features.pipeline_stages.code_language_noise_layer import (
     run_code_language_noise_clean_stage,
@@ -4692,321 +4693,13 @@ class ImportPipeline:
         # resume (single-pass). Chunked mode always passes None.
         resume_from_checkpoint: dict | None = None,
     ) -> dict:
-        """Execute every stage once for the given (optionally page-restricted) input.
+        """Execute a pass, optionally restoring outputs from saved stage artifacts.
 
-        This is the legacy run() body extracted verbatim — chunked mode calls
-        this once per chunk with page_start/page_end injected.
-
-        P2-3 / P1-3: ``chunk_seen_hashes`` (mutable set across chunks) and
-        ``chunk_logical_end`` (this chunk's own last page; pages past it are
-        overlap territory) are threaded through ``data`` so ``_run_split`` can
-        dedupe overlap-region duplicates and emit the unclosed-boundary
-        warning. Both are None for legacy single-pass.
-
-        P3-2: ``resume_from_checkpoint`` — when set, completed stages in the
-        checkpoint are skipped. Stage outputs for skipped stages are NOT
-        restored from checkpoint (they must be re-derived from the source).
-        This saves AI call costs for completed stages but not extraction cost.
+        Checkpoint metadata alone does not supply stage outputs. Accepted artifacts
+        update the live payload and identify stages to skip; other stages rerun.
+        Chunk passes share overlap state and use separate checkpoint ownership.
         """
-        # Each pass gets its own stage instances so per-stage status doesn't
-        # leak between chunks.
-        self._build_pipeline()
-
-        _sp_logger = logging.getLogger("app.pipeline")
-        _sp_start = time.monotonic()
-        log_event(
-            _sp_logger,
-            "pipeline.single_pass.start",
-            pipeline_id=self.pipeline_id,
-            source_type=source_type,
-            page_start=page_start,
-            page_end=page_end,
-        )
-
-        # When called from the chunk loop, override the page range in opts
-        # without mutating the caller's dict.
-        if page_start is not None or page_end is not None:
-            opts = {**opts, "page_start": page_start, "page_end": page_end}
-
-        # Resolve vision model config for PaddleOCR-VL fallback
-        vision_config = None
-        if db is not None:
-            from app.services.model_config_resolver import resolve_active_model
-
-            try:
-                resolved = await resolve_active_model(db, feature="vision")
-                if resolved and resolved.get("api_key"):
-                    vision_config = resolved
-                    logger.info(
-                        "Vision model configured: %s (provider=%s)",
-                        vision_config.get("display_name")
-                        or vision_config.get("model_name", "?"),
-                        vision_config.get("provider", "?"),
-                    )
-            except Exception as exc:
-                logger.warning("Failed to resolve vision model config: %s", exc)
-
-        # Accumulated data passed between stages
-        data: dict[str, Any] = {
-            "file_content": file_content,
-            "file_path": file_path,
-            "source_type": source_type,
-            "source_file": source_file,
-            "subject": subject,
-            "subject_id": subject_id,
-            "options": opts,
-            "db": db,
-            "vision_config": vision_config,
-            "import_mode": shared["import_mode"],
-            "strategy": shared["strategy"],
-            "watermark_patterns": shared["watermark_patterns"],
-            "page_images": page_images,
-            "page_image_refs": page_image_refs,
-            "pre_extracted_blocks": pre_extracted_blocks,
-            "raw_blocks": [],
-            "normalized_blocks": [],
-            "layout_result": {},
-            "split_mode": "standard",
-            "frozen_option_registry": {},
-            "frozen_structures": [],
-            "freeze_checksum": "",
-            "freeze_mode": "legacy",
-            "freeze_ir_warnings": [],
-            "freeze_dual_diagnostics": {},
-            "frozen_option_registry_ir": {},
-            "quality_gate_shadow_records": [],
-            "cross_page_links": [],
-            "raw_questions": [],
-            "matched": [],
-            "unmatched": [],
-            "questions": [],
-        }
-        # P2-4: chunked 路径在 shared 里挂了 hash_index 实例，透传给
-        # similarity_match stage；单 pass 时 shared 没有该 key，stage
-        # 默认 hash_index=None 会走旧的 difflib fallback。
-        if shared.get("hash_index") is not None:
-            data["hash_index"] = shared["hash_index"]
-        # P2-3 / P1-3 chunk overlap state — only populated in chunked mode
-        if chunk_seen_hashes is not None:
-            data["_chunk_seen_hashes"] = chunk_seen_hashes
-        if chunk_logical_end is not None:
-            data["_chunk_logical_end"] = chunk_logical_end
-
-        pipeline_errors: list[str] = []
-        overall_status = "completed"
-
-        # P3-2: per-stage checkpoint tracking — only used in single-pass mode.
-        # Chunked mode has its own checkpoint via pipeline_checkpoint.py.
-        _is_chunked_mode = chunk_seen_hashes is not None
-        completed_stages: list[str] = []
-        has_resume_ckpt = resume_from_checkpoint is not None
-        if has_resume_ckpt:
-            completed_stages = list(
-                resume_from_checkpoint.get("completed_stages") or []
-            )
-            logger.info(
-                "Resuming pipeline %s from checkpoint: %d stages completed",
-                self.pipeline_id,
-                len(completed_stages),
-            )
-
-        # Write initial checkpoint so we have metadata even if first stage fails
-        if not _is_chunked_mode:
-            await _write_stage_checkpoint(
-                self.pipeline_id,
-                completed_stages=list(completed_stages),
-                current_stage="",
-                stage_statuses={},
-                source_type=source_type,
-                source_file=source_file,
-                subject=subject,
-                options=opts,
-            )
-
-        # P4-3: try restoring stage outputs from artifacts
-        _artifact_skipped: set[str] = set()
-        if has_resume_ckpt:
-            restored_stage, _artifact_skipped = _restore_from_artifacts(
-                self.pipeline_id,
-                completed_stages,
-                data,
-            )
-            if restored_stage:
-                logger.info(
-                    "True resume from artifact: restored=%s skipped_stages=%s",
-                    restored_stage,
-                    sorted(_artifact_skipped),
-                )
-
-        for name, stage in self.stages.items():
-            # P4-3: skip stages restored from artifacts
-            if name in _artifact_skipped:
-                logger.info("Skipping stage '%s' (restored from artifact)", name)
-                stage.status = "completed"
-                stage.duration_ms = 0
-                if name not in completed_stages:
-                    completed_stages.append(name)
-                continue
-
-            # P5-3: skip review if pipeline already failed (prevent partial
-            # data leaking into review pool when a prior stage failed but
-            # execution continued past the break-only-for-extract/normalize gate)
-            if name == "review" and overall_status == "failed":
-                logger.warning(
-                    "Skipping 'review' stage: pipeline already failed at "
-                    "prior stage (errors=%s)",
-                    pipeline_errors,
-                )
-                stage.status = "skipped"
-                stage.duration_ms = 0
-                continue
-
-            if progress_callback:
-                try:
-                    await progress_callback(
-                        {n: s.to_dict() for n, s in self.stages.items()},
-                        name,
-                        pipeline_errors,
-                    )
-                except Exception:
-                    pass
-
-            try:
-                result = await stage.run_async(**data)
-                if isinstance(result, dict):
-                    if result.get("warnings"):
-                        stage.warnings.extend(result["warnings"])
-                    data.update(result)
-                    # 隐患① 修复：每次 stage 写入 normalized_blocks 都同步更新
-                    # count，确保即便后续 stage 在 match 之前失败，stats 仍能
-                    # 反映真实的 block 数（之前只在 match 后缓存，前序失败会
-                    # 静默归零）。
-                    if "normalized_blocks" in result:
-                        data["normalized_block_count"] = len(
-                            result["normalized_blocks"]
-                        )
-                # P6-2: update per-stage profiling metrics from data & result
-                _update_stage_metrics(stage, data, result)
-                complete_stage_data(
-                    name, data, result, warning=lambda *args: logger.warning(*args)
-                )
-
-                # P3-2: write checkpoint after each completed stage (single-pass only)
-                if not _is_chunked_mode:
-                    completed_stages.append(name)
-                    await _write_stage_checkpoint(
-                        self.pipeline_id,
-                        completed_stages=list(completed_stages),
-                        current_stage=name,
-                        stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
-                        source_type=source_type,
-                        source_file=source_file,
-                        subject=subject,
-                        options=opts,
-                    )
-                    # P4-3: save artifact for resumable stages
-                    _save_stage_artifact(self.pipeline_id, name, data)
-            except Exception:
-                overall_status = "failed"
-                pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
-                # P3-2: write failure checkpoint (single-pass only)
-                if not _is_chunked_mode:
-                    await _write_stage_checkpoint(
-                        self.pipeline_id,
-                        completed_stages=list(completed_stages),
-                        current_stage=name,
-                        stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
-                        failed_stage=name,
-                        error=stage.error,
-                        source_type=source_type,
-                        source_file=source_file,
-                        subject=subject,
-                        options=opts,
-                    )
-                if name in ("extract", "normalize_text", "ocr_correction"):
-                    # 失败路径同样释放
-                    data.pop("file_content", None)
-                    data.pop("file_path", None)
-                    data.pop("page_images", None)
-                    if name in ("extract", "normalize_text"):
-                        break
-                logger.warning(
-                    "Stage '%s' failed, continuing with partial results", name
-                )
-
-            if progress_callback:
-                try:
-                    await progress_callback(
-                        {n: s.to_dict() for n, s in self.stages.items()},
-                        name,
-                        pipeline_errors,
-                    )
-                except Exception:
-                    pass
-
-        # P3-2: clear checkpoint on successful completion (single-pass only)
-        if not _is_chunked_mode and overall_status == "completed":
-            await _clear_stage_checkpoint(self.pipeline_id)
-            _save_completed_marker(self.pipeline_id)
-
-        # P4-3: write failed marker for TTL-based artifact cleanup
-        if not _is_chunked_mode and overall_status == "failed":
-            _save_failed_marker(self.pipeline_id)
-
-        stats = _build_stats(data, self.stages)
-        diagnostics = _build_diagnostics(data, self.stages)
-        finished_at = serialize_utc_datetime(utcnow())
-
-        # P4-5: quality report from existing data
-        quality_report = _build_quality_report(data, diagnostics)
-        # P6-2: attach performance summary to quality report
-        perf_profile = diagnostics.get("performance_profile", {})
-        if perf_profile and "_summary" in perf_profile:
-            quality_report["performance_summary"] = perf_profile["_summary"]
-        # ── 观察：routing metrics → quality report ──
-        routing_metrics = data.get("routing_metrics")
-        if routing_metrics:
-            quality_report["routing_metrics"] = routing_metrics
-        split_quality = data.get("split_quality")
-        if split_quality:
-            quality_report["split_quality_evaluation"] = split_quality
-
-        # ── 生产稳定性日志：每次 pipeline 完成记录 routing 决策 ──
-        if routing_metrics:
-            _log_routing_stability(self.pipeline_id, routing_metrics, split_quality)
-        # P4-2: artifact list for resume diagnostics
-        artifacts_list = _list_artifacts(self.pipeline_id)
-
-        log_event(
-            _sp_logger,
-            "pipeline.single_pass.finish",
-            pipeline_id=self.pipeline_id,
-            source_type=source_type,
-            page_start=page_start,
-            page_end=page_end,
-            status=overall_status,
-            duration_ms=round((time.monotonic() - _sp_start) * 1000),
-            question_count=data.get("stats", {}).get("to_review", 0)
-            if isinstance(data.get("stats"), dict)
-            else 0,
-        )
-
-        return {
-            "pipeline_id": self.pipeline_id,
-            "status": overall_status,
-            "batch_id": data.get("batch_id", ""),
-            "stats": stats,
-            "diagnostics": diagnostics,
-            "quality_report": quality_report,
-            "artifacts": artifacts_list,
-            "stages": {name: s.to_dict() for name, s in self.stages.items()},
-            "errors": pipeline_errors,
-            "started_at": started_at,
-            "finished_at": finished_at,
-            # P2-4: chunked 路径需要拿到本 chunk 已写入的 hash 推到
-            # GlobalHashIndex；single-pass 调用方忽略即可。
-            "review_new_hashes": data.get("review_new_hashes") or [],
-        }
+        return await run_single_pass(self, locals(), namespace=globals())
 
     async def _execute_chunk(
         self,

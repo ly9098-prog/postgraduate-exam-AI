@@ -133,3 +133,11 @@
 - 文本变化且置信度为正才进入 CandidateEvaluator；PaddleOCR-VL 保留零/缺失置信度例外。领域质量门处于 shadow/enforce 时仍只记录该路径的观察结果，文本发布继续使用 CandidateEvaluator 的 decision；本批没有新增 enforce 策略。先构建兼容 safety trace，再按接受/拒绝分支发布。最后敏感过滤可能修改透传原块，再汇总模型名、flush 指标并返回。
 - 保留原模块 globals/builtin 动态读取，以及预算函数在分类后的导入捕获、CandidateDecision 在 evaluator 调用前的导入捕获。新模块均满足 300 行/50 行预算；架构门禁覆盖 async、嵌套函数与 lambda，并约束依赖、端口别名、resolver 使用和 fresh import。
 - execution/result/ports 三组契约及架构门禁已接入静态 CI。验证使用合成预算、模型和指标端口；没有真实 OCR/AI、Redis 预算争用、生产数据库或完整 worker 验收，不代表全栈预算治理已经完成。
+
+## 12. Single-pass 输入、恢复、执行和收尾（2026-10-26）
+
+- `_run_single_pass` 保留 19 个 keyword-only 参数及默认值，通过 `pipeline_single_pass_stage` 编排本次调用的 input、checkpoint、execution、loop 和 result；`pipeline_single_pass_state` 保存调用输入与局部状态。七个新业务模块均不超过 300 行，所有函数不超过 50 行，fresh import 不初始化原 orchestrator、模型配置或数据库。
+- 先创建阶段并记录开始，再处理页范围和可选 vision 配置，随后创建同一个 live data，写初始检查点并恢复工件。修正入口历史 docstring：completed_stages 元数据本身不能恢复输出；接受的工件会写入后续阶段实际使用的 data，并指定跳过的阶段。options 的页范围覆盖仍为浅复制，共享 hash、图像和配置引用保留。
+- 阶段成功后依次合并结果、缓存 normalized block count、更新 metrics、释放输入、写检查点和保存工件。上述副作用普通失败可能使 pass 失败而 stage 仍为 completed；失败检查点写入异常直接传播，不提前释放输入或写终态。恢复跳过、review 隔离、progress 前后回调和取消传播保持原有边界。
+- 完成后仍先处理检查点和 marker，再生成 stats、diagnostics、结束时间、quality/performance/routing、工件清单和完成事件。原模块 globals/builtin 在原表达式时点动态读取，保留观察器修改当前 data 和替换后续端口的行为。
+- preparation、terminal、ports 三组新增契约及 single-pass 架构门禁接入静态 CI；既有 execution/state/observation 契约继续执行。completion 旧门禁沿实际委托链检查唯一清理入口和无重复观察器，签名门禁锁定参数名、顺序、类型和默认值；契约同时覆盖 warnings 在 metrics/checkpoint 前合并，以及结构化起止事件的字段、时序和异常传播。测试以合成阶段和副作用端口刻画行为，不验证真实 Redis、外部 OCR/AI、扫描 PDF、生产数据库或完整跨进程 worker；chunked 和 coordinator 的剩余职责仍待治理。

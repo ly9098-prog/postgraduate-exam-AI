@@ -366,6 +366,10 @@ jobs:
             tests/pipeline/test_single_pass_state_contract.py \
             tests/test_services/test_ai_analysis_content_ports.py \
             tests/pipeline/test_single_pass_observation_contract.py \
+            tests/pipeline/test_single_pass_preparation_contract.py \
+            tests/pipeline/test_single_pass_terminal_contract.py \
+            tests/pipeline/test_single_pass_ports_contract.py \
+            tests/architecture/test_pipeline_single_pass_boundaries.py \
             tests/architecture/test_pipeline_stage_completion_boundaries.py \
             tests/practice/test_normalization.py \
             tests/practice/test_normalization_session_contract.py \

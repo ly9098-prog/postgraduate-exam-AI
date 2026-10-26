@@ -36,6 +36,50 @@ async def test_success_runs_canonical_order_and_marks_completion_only_after_last
 
 
 @pytest.mark.asyncio
+async def test_returned_warnings_extend_existing_warnings_before_metrics_and_checkpoint(
+    monkeypatch,
+):
+    h = make_harness(monkeypatch)
+    warnings = ["first", "second"]
+    h.outputs["extract"]["warnings"] = warnings
+    build = h.pipeline._build_pipeline
+
+    def build_with_warning():
+        build()
+        h.pipeline.stages["extract"].warnings.append("existing")
+
+    observed = []
+
+    def metrics(stage, data, result):
+        if stage.name == "extract":
+            assert stage.warnings == ["existing", "first", "second"]
+            assert data["warnings"] is warnings and result["warnings"] is warnings
+            observed.append("metrics")
+
+    checkpoint = orchestrator._write_stage_checkpoint
+
+    async def write(*args, **kwargs):
+        if kwargs["current_stage"] == "extract":
+            assert observed == ["metrics"]
+            assert kwargs["stage_statuses"]["extract"]["warnings"] == [
+                "existing",
+                "first",
+                "second",
+            ]
+            observed.append("checkpoint")
+        return await checkpoint(*args, **kwargs)
+
+    monkeypatch.setattr(h.pipeline, "_build_pipeline", build_with_warning)
+    monkeypatch.setattr(orchestrator, "_update_stage_metrics", metrics)
+    monkeypatch.setattr(orchestrator, "_write_stage_checkpoint", write)
+    output = await execute(h)
+    assert output["status"] == "completed"
+    assert observed == ["metrics", "checkpoint"]
+    assert output["stages"]["extract"]["warnings"] == ["existing", "first", "second"]
+    assert warnings == ["first", "second"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failed_stage", STAGE_NAMES)
 async def test_stage_failure_breaks_only_early_input_stages_and_never_runs_review(
     monkeypatch, failed_stage
@@ -135,33 +179,51 @@ async def test_restored_artifact_skips_stages_without_progress_checkpoint_or_art
         assert harness.pipeline.stages[name].duration_ms == 0
 
 
+def restore_mutation_target():
+    entry = orchestrator.ImportPipeline._run_single_pass
+    if "_restore_from_artifacts" in inspect.getsource(entry):
+        return orchestrator.ImportPipeline, entry, vars(orchestrator)
+    from app.features import pipeline_single_pass_checkpoint as checkpoint
+    from app.features import pipeline_single_pass_stage as coordinator
+
+    return coordinator, checkpoint.restore_pass_artifacts, vars(checkpoint)
+
+
 @pytest.mark.asyncio
 async def test_restored_payload_assertions_reject_copy_instead_of_live_data(
     monkeypatch,
 ):
-    source = inspect.getsource(orchestrator.ImportPipeline._run_single_pass)
+    owner, function, globals_ = restore_mutation_target()
+    source = inspect.getsource(function)
     tree = ast.parse(textwrap.dedent(source))
     replacements = 0
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id == "_restore_from_artifacts":
-                assert isinstance(node.args[2], ast.Name) and node.args[2].id == "data"
-                node.args[2] = ast.Call(
-                    func=ast.Attribute(value=node.args[2], attr="copy", ctx=ast.Load()),
-                    args=[],
-                    keywords=[],
-                )
-                replacements += 1
+        if not isinstance(node, ast.Call):
+            continue
+        direct = (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "_restore_from_artifacts"
+        )
+        port = (
+            isinstance(node.func, ast.Call)
+            and ast.unparse(node.func) == "ports('_restore_from_artifacts')"
+        )
+        if direct or port:
+            assert ast.unparse(node.args[2]) in {"data", "state.data"}
+            node.args[2] = ast.Call(
+                func=ast.Attribute(value=node.args[2], attr="copy", ctx=ast.Load()),
+                args=[],
+                keywords=[],
+            )
+            replacements += 1
     assert replacements == 1
     namespace = {}
     exec(
         compile(ast.fix_missing_locations(tree), "<restore-copy-mutation>", "exec"),
-        vars(orchestrator),
+        globals_,
         namespace,
     )
-    monkeypatch.setattr(
-        orchestrator.ImportPipeline, "_run_single_pass", namespace["_run_single_pass"]
-    )
+    monkeypatch.setattr(owner, function.__name__, namespace[function.__name__])
     with pytest.raises(AssertionError, match="restored questions reach next stage"):
         await (
             test_restored_artifact_skips_stages_without_progress_checkpoint_or_artifact(

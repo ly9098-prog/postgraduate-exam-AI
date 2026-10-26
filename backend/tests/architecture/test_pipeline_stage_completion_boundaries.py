@@ -51,24 +51,69 @@ def test_completion_module_budget_import_and_transaction_boundaries():
     assert_boundary(MODULE.read_text())
 
 
-def test_single_pass_uses_completion_owner_once_without_duplicate_observers():
-    source = (APP / "features/pipeline_orchestrator.py").read_text()
-    tree = ast.parse(source)
-    method = next(
+def assert_completion_chain(sources):
+    chain = {
+        "_run_single_pass": "run_single_pass",
+        "run_single_pass": "execute_pass_loop",
+        "execute_pass_loop": "execute_pass_stage",
+        "execute_pass_stage": "complete_pass_stage",
+        "complete_pass_stage": "ports('complete_stage_data')",
+    }
+    trees = [ast.parse(source) for source in sources.values()]
+    for owner, callee in chain.items():
+        methods = [
+            n
+            for tree in trees
+            for n in ast.walk(tree)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == owner
+        ]
+        assert len(methods) == 1
+        calls = [n for n in ast.walk(methods[0]) if isinstance(n, ast.Call)]
+        assert sum(ast.unparse(n.func) == callee for n in calls) == 1
+    completions = [
         n
+        for tree in trees
         for n in ast.walk(tree)
-        if isinstance(n, ast.AsyncFunctionDef) and n.name == "_run_single_pass"
-    )
-    calls = [
-        n
-        for n in ast.walk(method)
         if isinstance(n, ast.Call)
-        and isinstance(n.func, ast.Name)
-        and n.func.id == "complete_stage_data"
+        and ast.unparse(n.func)
+        in {"complete_stage_data", "ports('complete_stage_data')"}
     ]
-    assert len(calls) == 1
-    assert "split_quality evaluation failed: %s" not in source
-    assert "routing_metrics build failed: %s" not in source
+    assert len(completions) == 1
+    for source in sources.values():
+        assert "split_quality evaluation failed: %s" not in source
+        assert "routing_metrics build failed: %s" not in source
+        assert "from app.evaluation." not in source
+
+
+def completion_chain_sources():
+    paths = [
+        APP / "features/pipeline_orchestrator.py",
+        *(APP / "features").glob("pipeline_single_pass_*.py"),
+    ]
+    assert len(paths) == 8
+    return {p.stem: p.read_text() for p in paths}
+
+
+def test_single_pass_uses_completion_owner_once_without_duplicate_observers():
+    assert_completion_chain(completion_chain_sources())
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "observer"])
+def test_completion_chain_rejects_missing_duplicate_or_inline_owner(mutation):
+    sources = completion_chain_sources()
+    key = "pipeline_single_pass_execution"
+    if mutation == "missing":
+        sources[key] = sources[key].replace(
+            'ports("complete_stage_data")(', 'ports("other_owner")('
+        )
+    elif mutation == "duplicate":
+        sources[key] += "\ndef extra(ports):\n    ports('complete_stage_data')()\n"
+    else:
+        sources[key] += (
+            "\nfrom app.evaluation.routing_metrics import build_routing_metrics\n"
+        )
+    with pytest.raises(AssertionError):
+        assert_completion_chain(sources)
 
 
 @pytest.mark.parametrize(
