@@ -7,11 +7,13 @@ plain dicts/primitives with no side effects.
 
 from __future__ import annotations
 
+import builtins as _builtins
 import logging
 from datetime import datetime
 
 from app.core.subject_scope import EXAM408_CORE_CODES
 from app.core.time_utils import normalize_to_naive_utc
+from app.services.practice import session_normalization as _session
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +192,17 @@ def normalize_practice_request_id(value) -> str | None:
     return request_id
 
 
+def _normalization_port(name: str):
+    """Resolve moved lookups against the historical module at each use."""
+    namespace = globals()
+    if name in namespace:
+        return namespace[name]
+    builtin_namespace = vars(_builtins)
+    if name in builtin_namespace:
+        return builtin_namespace[name]
+    raise NameError(f"name '{name}' is not defined", name=name)
+
+
 def normalize_practice_session(
     session_meta: dict,
     *,
@@ -199,74 +212,14 @@ def normalize_practice_session(
     total_wrong: int,
 ) -> dict:
     """Validate the mandatory server-issued practice session metadata."""
-    if not session_meta:
-        raise ValueError("session 不能为空")
-
-    started_at = parse_session_datetime(session_meta.get("started_at"))
-    finished_at = parse_session_datetime(session_meta.get("finished_at"))
-    if started_at is None or finished_at is None:
-        raise ValueError("session.start_at / session.finished_at 必须为合法 ISO 时间")
-    if finished_at < started_at:
-        raise ValueError("session.finished_at 不得早于 session.started_at")
-
-    duration_sec = session_meta.get("duration_sec")
-    try:
-        duration_sec = int(duration_sec) if duration_sec is not None else None
-    except (TypeError, ValueError):
-        raise ValueError("session.duration_sec 必须为整数")
-
-    wall_sec = max(0, int((finished_at - started_at).total_seconds()))
-    if duration_sec is None or duration_sec < 0:
-        duration_sec = wall_sec
-    if duration_sec > wall_sec + _PRACTICE_DURATION_ROUNDING_TOLERANCE:
-        raise ValueError(
-            "session.duration_sec 不得超过 started_at/finished_at 墙钟时长"
-        )
-    if duration_sec > PRACTICE_SESSION_MAX_DURATION_SEC:
-        raise ValueError("session.duration_sec 超过允许上限")
-
-    request_id = normalize_practice_request_id(session_meta.get("request_id"))
-    subject_id = session_meta.get("subject_id")
-    try:
-        subject_id = int(subject_id) if subject_id is not None else None
-    except (TypeError, ValueError):
-        raise ValueError("session.subject_id 必须为整数")
-
-    mode = str(session_meta.get("mode") or "random")
-    if mode not in PRACTICE_ALLOWED_MODES:
-        raise ValueError("session.mode 无效")
-
-    reported_answered_count = session_meta.get("answered_count")
-    try:
-        reported_answered_count = int(reported_answered_count)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("session.answered_count 必须为整数") from exc
-    if reported_answered_count != answered_count:
-        raise ValueError("session.answered_count 与 answers 数量不一致")
-
-    question_count = session_meta.get("question_count")
-    try:
-        question_count = (
-            int(question_count) if question_count is not None else answered_count
-        )
-    except (TypeError, ValueError):
-        question_count = answered_count
-    question_count = max(0, question_count)
-
-    return {
-        "user_id": user_id,
-        "subject_id": subject_id,
-        "request_id": request_id,
-        "mode": mode,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "duration_sec": duration_sec,
-        "question_count": question_count,
-        "answered_count": max(0, answered_count),
-        "correct_count": max(0, total_correct),
-        "wrong_count": max(0, total_wrong),
-        "status": "completed",
-    }
+    return _session.normalize_session_values(
+        session_meta,
+        user_id=user_id,
+        answered_count=answered_count,
+        total_correct=total_correct,
+        total_wrong=total_wrong,
+        ports=_normalization_port,
+    )
 
 
 def normalize_true_false_answer(value: str) -> str:
