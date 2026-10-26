@@ -108,3 +108,10 @@
 - `learning-controller-budgets.js` 动态递归扫描番茄钟、番茄统计、刷题、复习、考试、刷题结果、错题详情对应的七个 controller 目录。当前发现 154 个 `*controller.js`、905 个有函数体的 function-like，固定函数上限 50 行、模块上限 300 行，均通过；后续新增同名模式文件自动纳入。
 - 目录缺失、路径不是目录、目录内没有 controller 或 JavaScript 语法错误时失败。`node:vm` 的 `Script` 只编译校验源码，不执行；另外保留 TypeScript AST 扫描嵌套函数、对象/类方法、箭头函数和 getter。mutation 测试验证超限拒绝、50/300 边界及 JavaScript 中误写类型标注等非法语法。该命令和 21 项专属测试接入 reliability 同一步骤。
 - 这层检查补充现有 11 页入口预算及番茄钟模块依赖门禁，不覆盖所有 state/helper、渲染组件或新目录，也不替代逐业务语义审查。study 分包体积债与真实微信验收仍按前节保留。
+
+## 12. 顺序选题预留与查询（2026-10-26）
+
+- `sequential_service` 保留 scope/reset/request 身份与日志；`sequential_selection` 承接 SQL 构造、原子 INSERT/SELECT、冲突补位、同请求预留重读、进度计数及结果装载。顺序模式仍与推荐/Leitner 独立，不因掌握度改变下一题。
+- 保留 PostgreSQL 约束名与 SQLite 冲突列、24 小时 TTL、活动预留排除、失效预留清理顺序，以及读到竞争候选后重新尝试的循环。发题/预留不提交事务，显式 reset 仍写 marker 并提交，不删除答题历史。
+- 原模块的 SQL/model/时间/UUID patch 端口继续生效；必要端口在 await 后重新读取。服务 354→285 行，两个原入口 132/97→37/49 行，选择模块 235 行，全部函数不超过 50 行。
+- 新增 36 项刻画在原实现通过；核心 56 项与调用方/依赖 87 项通过。作者 720 组差分覆盖 2,805 条 SQL/参数；独立审查额外对照 1,500 个预留和 500 个发题场景，5,453 对预留 SQL/参数一致，无 P0–P3 发现。SQLite 与 SQL 编译证据不替代真实 PostgreSQL 并发竞争。

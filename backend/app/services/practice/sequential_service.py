@@ -32,6 +32,16 @@ from app.models.practice_session import PracticeSession
 from app.models.question import Question
 from app.models.sequential_reservation import SequentialReservation
 from app.services.knowledge_point_service import kp_exact_conditions
+from app.services.practice.sequential_selection import (
+    ReservationScope,
+    SelectionPorts,
+    count_sequential_progress,
+    expired_reservations,
+    fill_reservations,
+    load_reserved_questions,
+    read_request_reservations,
+    sequential_progress,
+)
 from app.services.question_revision_service import (
     latest_question_revision_scope_condition,
 )
@@ -91,6 +101,21 @@ def _sequential_scope_key(knowledge_points: list[str] | None) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _selection_ports() -> SelectionPorts:
+    """Resolve historical SQL/model ports when each query is built."""
+    return SelectionPorts(
+        select=select,
+        delete=delete,
+        exists=exists,
+        and_=and_,
+        literal=literal,
+        func=func,
+        selectinload=selectinload,
+        question=Question,
+        reservation=SequentialReservation,
+    )
+
+
 async def _reserve_sequential_questions(
     db: AsyncSession,
     *,
@@ -103,126 +128,31 @@ async def _reserve_sequential_questions(
     start_request_id: str,
     now: datetime,
 ) -> list[int]:
-    """Atomically claim the next questions with database-owned reservations.
-
-    Each INSERT is an atomic candidate selection plus reservation write. The
-    loop matters when another transaction wins one of the candidate rows while
-    this statement is waiting on the unique constraint: a later statement then
-    fills from the next unclaimed IDs without ever returning a duplicate.
-    """
-    expires_at = now + timedelta(seconds=SEQUENTIAL_RESERVATION_TTL_SEC)
-    await db.execute(
-        delete(SequentialReservation).where(
-            SequentialReservation.user_id == user_id,
-            SequentialReservation.subject_id == subject_id,
-            SequentialReservation.scope_key == scope_key,
-            SequentialReservation.expires_at <= now,
-        )
+    """Claim with atomic INSERT/SELECT; retry conflicts from the next free IDs."""
+    scope = ReservationScope(
+        user_id=user_id,
+        subject_id=subject_id,
+        scope_key=scope_key,
+        start_request_id=start_request_id,
+        now=now,
+        expires_at=now + timedelta(seconds=SEQUENTIAL_RESERVATION_TTL_SEC),
     )
-
-    existing_rows = await db.execute(
-        select(SequentialReservation.question_id)
-        .where(
-            SequentialReservation.user_id == user_id,
-            SequentialReservation.subject_id == subject_id,
-            SequentialReservation.scope_key == scope_key,
-            SequentialReservation.start_request_id == start_request_id,
-            SequentialReservation.expires_at > now,
-        )
-        .order_by(SequentialReservation.question_id.asc())
-    )
-    existing_ids = [int(question_id) for question_id in existing_rows.scalars().all()]
+    await db.execute(expired_reservations(scope, _selection_ports()))
+    existing_ids = await read_request_reservations(db, scope, _selection_ports)
     if existing_ids:
         return existing_ids
-
-    selected_ids: list[int] = []
     dialect = db.get_bind().dialect.name
     insert_factory = pg_insert if dialect == "postgresql" else sqlite_insert
-    while len(selected_ids) < count:
-        remaining = count - len(selected_ids)
-        active_reservation = exists(
-            select(1).where(
-                SequentialReservation.user_id == user_id,
-                SequentialReservation.subject_id == subject_id,
-                SequentialReservation.scope_key == scope_key,
-                SequentialReservation.question_id == Question.id,
-                SequentialReservation.expires_at > now,
-            )
-        )
-        # Build the INSERT source explicitly so every selected question is
-        # inserted in one atomic statement.
-        source_conditions = [
-            and_(*conditions),
-            Question.id.notin_(answered_ids),
-            ~active_reservation,
-        ]
-        source = select(
-            literal(user_id).label("user_id"),
-            literal(subject_id).label("subject_id"),
-            Question.id.label("question_id"),
-            literal(scope_key).label("scope_key"),
-            literal(start_request_id).label("start_request_id"),
-            literal(now).label("created_at"),
-            literal(expires_at).label("expires_at"),
-        ).where(*source_conditions)
-        source = source.order_by(Question.id.asc()).limit(remaining)
-        stmt = insert_factory(SequentialReservation).from_select(
-            [
-                "user_id",
-                "subject_id",
-                "question_id",
-                "scope_key",
-                "start_request_id",
-                "created_at",
-                "expires_at",
-            ],
-            source,
-        )
-        if dialect == "postgresql":
-            stmt = stmt.on_conflict_do_nothing(
-                constraint="uq_sequential_reservation_question"
-            ).returning(SequentialReservation.question_id)
-        else:
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=[
-                    SequentialReservation.user_id,
-                    SequentialReservation.subject_id,
-                    SequentialReservation.scope_key,
-                    SequentialReservation.question_id,
-                ]
-            ).returning(SequentialReservation.question_id)
-        result = await db.execute(stmt)
-        inserted = [int(question_id) for question_id in result.scalars().all()]
-        inserted.sort()
-        if not inserted:
-            same_request_rows = await db.execute(
-                select(SequentialReservation.question_id)
-                .where(
-                    SequentialReservation.user_id == user_id,
-                    SequentialReservation.subject_id == subject_id,
-                    SequentialReservation.scope_key == scope_key,
-                    SequentialReservation.start_request_id == start_request_id,
-                    SequentialReservation.expires_at > now,
-                )
-                .order_by(SequentialReservation.question_id.asc())
-            )
-            same_request_ids = [
-                int(question_id) for question_id in same_request_rows.scalars().all()
-            ]
-            if same_request_ids:
-                return same_request_ids
-            # A concurrent transaction may have won every row in this
-            # statement.  Re-evaluate the candidate pool under READ COMMITTED
-            # before giving up, so later questions can fill the requested batch
-            # after the conflicting reservation commits.
-            candidate_exists = await db.scalar(
-                select(Question.id).where(*source_conditions).limit(1)
-            )
-            if candidate_exists is not None:
-                continue
-            break
-        selected_ids.extend(inserted)
-    return selected_ids
+    return await fill_reservations(
+        db,
+        scope,
+        count=count,
+        conditions=conditions,
+        answered_ids=answered_ids,
+        dialect=dialect,
+        insert_factory=insert_factory,
+        get_ports=_selection_ports,
+    )
 
 
 async def get_sequential_practice_questions(
@@ -239,46 +169,22 @@ async def get_sequential_practice_questions(
     if len(subject_ids) != 1 or subject_ids[0] != subject_id:
         raise ValueError("顺序练习仅支持单一具体科目")
 
-    latest_revision_matches_subject = latest_question_revision_scope_condition(
-        [subject_id],
-        SEQUENTIAL_ANSWERABLE_QUESTION_TYPES,
-    )
-    conditions = [
-        Question.is_active,
-        Question.review_status == "approved",
-        Question.subject_id == subject_id,
-        latest_revision_matches_subject,
-    ]
-    if knowledge_points:
-        conditions.extend(kp_exact_conditions(knowledge_points))
-
+    conditions = _sequential_conditions(subject_id, knowledge_points)
     reset_at = await _get_reset_at(db, user_id=user_id, subject_id=subject_id)
     answered_ids = _answered_ids_query(
         user_id=user_id,
         subject_id=subject_id,
         reset_at=reset_at,
     )
-    start_request_id = str(
-        reservation_request_id or f"seqstart:{user_id}:{uuid4().hex}"
-    ).strip()
-    if not start_request_id or len(start_request_id) > 128:
-        raise ValueError("顺序练习 start_request_id 无效")
+    start_request_id = _sequential_start_request_id(reservation_request_id, user_id)
     scope_key = _sequential_scope_key(knowledge_points)
     now = utcnow()
 
-    total_questions = int(
-        (await db.scalar(select(func.count(Question.id)).where(and_(*conditions)))) or 0
-    )
-    completed_questions = int(
-        (
-            await db.scalar(
-                select(func.count(Question.id)).where(
-                    and_(*conditions),
-                    Question.id.in_(answered_ids),
-                )
-            )
-        )
-        or 0
+    total_questions, completed_questions = await count_sequential_progress(
+        db,
+        conditions,
+        answered_ids,
+        _selection_ports,
     )
 
     reserved_ids = await _reserve_sequential_questions(
@@ -292,33 +198,58 @@ async def get_sequential_practice_questions(
         start_request_id=start_request_id,
         now=now,
     )
-    if reserved_ids:
-        result = await db.execute(
-            select(Question)
-            .where(Question.id.in_(reserved_ids), and_(*conditions))
-            .options(selectinload(Question.subject_ref))
-            .order_by(Question.id.asc())
-        )
-        by_id = {int(question.id): question for question in result.scalars().all()}
-        questions = [by_id[qid] for qid in reserved_ids if qid in by_id]
-    else:
-        questions = []
-    remaining = max(0, total_questions - completed_questions)
-    progress = {
-        "subject_id": subject_id,
-        "total_questions": total_questions,
-        "completed_questions": completed_questions,
-        "remaining_questions": remaining,
-        "cycle_completed": total_questions > 0 and remaining == 0,
-        "next_question_id": questions[0].id if questions else None,
-    }
+    questions = await load_reserved_questions(
+        db, reserved_ids, conditions, _selection_ports()
+    )
+    return _sequential_result(
+        user_id, subject_id, total_questions, completed_questions, questions
+    )
+
+
+def _sequential_conditions(subject_id: int, knowledge_points: list[str] | None) -> list:
+    latest_revision_matches_subject = latest_question_revision_scope_condition(
+        [subject_id],
+        SEQUENTIAL_ANSWERABLE_QUESTION_TYPES,
+    )
+    conditions = [
+        Question.is_active,
+        Question.review_status == "approved",
+        Question.subject_id == subject_id,
+        latest_revision_matches_subject,
+    ]
+    if knowledge_points:
+        conditions.extend(kp_exact_conditions(knowledge_points))
+    return conditions
+
+
+def _sequential_start_request_id(
+    reservation_request_id: str | None, user_id: int
+) -> str:
+    request_id = str(
+        reservation_request_id or f"seqstart:{user_id}:{uuid4().hex}"
+    ).strip()
+    if not request_id or len(request_id) > 128:
+        raise ValueError("顺序练习 start_request_id 无效")
+    return request_id
+
+
+def _sequential_result(
+    user_id: int,
+    subject_id: int,
+    total_questions: int,
+    completed_questions: int,
+    questions: list,
+) -> tuple[list[Question], dict]:
+    progress = sequential_progress(
+        subject_id, total_questions, completed_questions, questions
+    )
     logger.info(
         "[Sequential Query] uid=%d subject_id=%d total=%d completed=%d remaining=%d returned=%d",
         user_id,
         subject_id,
         total_questions,
         completed_questions,
-        remaining,
+        progress["remaining_questions"],
         len(questions),
     )
     return questions, progress
