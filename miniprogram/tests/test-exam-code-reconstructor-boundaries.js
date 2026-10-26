@@ -5,7 +5,6 @@ const { createRequire } = require('node:module')
 const { Script } = require('node:vm')
 const { test } = require('node:test')
 
-const directory = path.resolve(__dirname, '../subpackages/exam/utils')
 const ts = createRequire(path.resolve(__dirname, '../../admin-frontend/package.json'))('typescript')
 const files = [
   'code-reconstructor.js', 'code-reconstructor-signals.js',
@@ -48,19 +47,23 @@ function inspect(source) {
   return count
 }
 
-test('all five exam code modules have bounded functions and local pure dependencies', () => {
-  const actual = fs.readdirSync(directory).filter(name => /^code-reconstructor.*\.js$/.test(name))
-  assert.deepEqual(actual.sort(), [...files].sort())
-  const count = files.reduce((sum, file) =>
-    sum + inspect(fs.readFileSync(path.join(directory, file), 'utf8')), 0)
-  assert.ok(count >= 14, 'scan must include the complete implementation')
-})
+for (const subpackage of ['exam', 'study']) {
+  test('all five ' + subpackage + ' code modules have bounded functions and local pure dependencies', () => {
+    const directory = path.resolve(__dirname, '../subpackages', subpackage, 'utils')
+    const actual = fs.readdirSync(directory).filter(name => /^code-reconstructor.*\.js$/.test(name))
+    assert.deepEqual(actual.sort(), [...files].sort())
+    const count = files.reduce((sum, file) =>
+      sum + inspect(fs.readFileSync(path.join(directory, file), 'utf8')), 0)
+    assert.ok(count >= 14, 'scan must include the complete implementation')
+  })
+}
 
 for (const [label, source] of [
   ['file budget', 'void 0\n'.repeat(301)],
   ['function budget', 'function scan() {\n' + 'void 0\n'.repeat(50) + '}'],
   ['nested function', 'function outer() {\nfunction inner() {\n' + 'void 0\n'.repeat(50) + '}\n}'],
   ['arrow function', 'const scan = () => {\n' + 'void 0\n'.repeat(50) + '}'],
+  ['exam import', "require('../../exam/utils/code-reconstructor')"],
   ['study import', "require('../../study/utils/code-reconstructor')"],
   ['runtime import', "require('../../../config')"],
   ['dynamic require', 'require(name)'],
