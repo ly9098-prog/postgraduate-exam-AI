@@ -87,7 +87,7 @@
 
 - 检查点测试使用进程内 dict，不验证 Redis 持久化、跨进程共享和 TTL 过期行为。
 - 工件恢复测试使用合成数据，不等于真实 PDF/图片导入的端到端恢复验收。
-- `pipeline_orchestrator.py`（7250 行）的 chunked 模式、coordinator 集成、VL rebuild 和真实 OCR 引擎调用未在本文档登记完整语义。
+- `pipeline_orchestrator.py` 的 chunked 模式、coordinator 集成、VL rebuild 和真实 OCR 引擎调用未在本文档登记完整语义。
 - 真实 Redis 检查点、多 worker 并发恢复、大文件（400 页扫描 PDF）内存释放和外部 OCR/AI 故障恢复仍待环境可用后验收。
 
 ## 7. Single-pass 执行循环刻画（2026-10-26）
@@ -106,3 +106,12 @@
 - 原始文件字节/图像保留到 OCR correction，路径保留到 split；保留 `pop` 顺序及结果对象引用。split 先释放路径，再收集质量结果，最后 routing 读取包含该质量结果的当前 data。两个观察器按原时点导入，普通异常仍 warning，取消传播；warning 回调在调用时读取原 orchestrator 的当前 logger。
 - 新模块 54 行，三个函数 21/14/7 行；fresh import 不加载 orchestrator、观察器、配置或数据库。原 single-pass 入口 382→340 行，仍超 50 行，整个编排器仍待继续治理，不能将本批表述为编排完成。
 - 新增 4 项观察契约先在原实现通过，与前批合计 77 项；当前核心 108 项及 pipeline、chunk/resume、工件等相关 376 项通过。作者对原分支和新实现的 2,000 组输入清理、观察、warning 与取消差分一致；测试使用合成数据，不代表外部 OCR/AI 或真实大文件内存验收。
+
+## 9. 提取源、单次 OCR 与练习区间（2026-10-26）
+
+- `ImportPipeline._run_extract` 保留同步签名与原模块 globals，入口 222→30 行；`pipeline_extract_stage.py` 负责源选择，`pipeline_extract_pdf.py` 负责 PDF 文本层、单次 OCR 及 region 处理，`pipeline_extract_diagnostics.py` 负责结果和诊断投影。三个新业务模块分别 70/198/89 行，全部函数不超过 50 行。
+- PDF 仍优先 truthy file_path，非 PDF 优先 file_content（包括空 bytes），再回退 path；已有结构化 OCR blocks 逐 mapping 浅复制，嵌套 geometry 引用保留。PDF 文本总量严格小于 100 字符且启用 OCR 才尝试一次 `_ocr_scanned_pdf`，不在此阶段调用 VL。
+- OCR blocks 一旦接受就设置成功标记，随后练习区间检测或筛选失败仍保留当时的 OCR/region 部分状态；不因后续检测失败重试 OCR 或输出“本地 OCR 无结果”的 VL 提示。只有启用 exercise detection、非 exam、没有 truthy 用户页范围时检测，region 包含首尾页并保持原 block 顺序与身份。
+- 诊断仍在提取后分四次遍历，保留 page/page_index 回退、整数转换、去重排序、getter 次数及异常优先级。原 `_extract_pdf_blocks`、`_ocr_scanned_pdf`、文本转换、logger 与 builtin patch 端口仍在原表达式时点读取；取消直接传播，不被普通 fallback 捕获。
+- 新增源/OCR/region 刻画先在原实现通过：初始 51 项（含旧提取 12 项），扩充后修改前 69 项，最终保存的原实现重放 70 项；新版同组加架构门禁 97 项、相关编排和图片阶段 282 项通过。相关回归有 7 条 AsyncMock 未 await 警告，未屏蔽；测试没有调用真实 OCR 引擎，不证明扫描 PDF 或外部服务验收完成。
+- 独立只读审查原版 70 项、当前含门禁 97 项通过；补充 1,024 组结果/部分状态/引用/遍历差分和 48 条动态端口/异常/取消轨迹一致，18 个 helper 与 2 个入口违规 mutation 均被门禁拒绝，无 P0–P3 发现。作者与独立证据分开记录，未扩展为完整 worker 或真实 OCR 验收。

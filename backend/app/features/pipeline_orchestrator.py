@@ -48,6 +48,7 @@ from app.features.pipeline_artifacts import (
 from app.features.pipeline_artifacts import (
     save_failed_marker as _save_failed_marker,
 )
+from app.features.pipeline_extract_stage import run_extract_stage
 from app.features.pipeline_stage_completion import complete_stage_data
 from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 from app.features.pipeline_stages.code_language_noise_layer import (
@@ -2730,207 +2731,15 @@ class ImportPipeline:
         image / txt 优先使用 file_content（OCR 后的 cleaned_text），
         避免把 PNG/JPEG 图片文件当文本 decode。
         """
-        if source_type == "pdf":
-            # 路径优先：底层 fitz.open 走 mmap，避免把 100~400 MB 拷到 heap
-            pdf_source: bytes | str = file_path if file_path else file_content
-            if pdf_source is None:
-                raise ValueError("either file_path or file_content must be provided")
-
-        if source_type == "pdf":
-            opts = _kw.get("options") or {}
-            raw_blocks = _extract_pdf_blocks(
-                pdf_source,
-                page_start=opts.get("page_start") or 1,
-                page_end=opts.get("page_end"),
-            )
-
-            exercise_regions_result: list[dict] = []
-            # P1-2: 仅当 exercise_regions 检测真正跑了但返回为空时设为 True；
-            # 用户指定 page_start/page_end、exam 模式、OCR 未启用等场景下保持
-            # False，避免误打 no_exercise_regions 风险标。
-            exercise_regions_missing = False
-
-            # Scanned PDF detection: if PyMuPDF extracted very little text,
-            # the PDF likely contains only images → trigger OCR fallback.
-            #
-            # Single OCR pass: _ocr_scanned_pdf at normal DPI with full
-            # PaddleOCR box-level output. Exercise detection reuses the
-            # same OCR text — no separate lightweight pass (Task 2).
-            total_text = sum(len(b.get("text", "")) for b in raw_blocks)
-            if total_text < 100:
-                from app.core.config import settings
-
-                if settings.OCR_ENABLED:
-                    logger.info(
-                        "PDF text only %d chars, attempting PaddleOCR fallback",
-                        total_text,
-                    )
-                    ocr_ok = False
-                    try:
-                        import_mode_str = opts.get("import_mode", "auto")
-                        user_specified_range = opts.get("page_start") or opts.get(
-                            "page_end"
-                        )
-
-                        # ── Single OCR pass (the ONLY PaddleOCR call) ──
-                        ocr_page_start = opts.get("page_start") or 1
-                        ocr_page_end = opts.get("page_end")
-                        ocr_blocks = _ocr_scanned_pdf(
-                            pdf_source,
-                            pipeline_id=self.pipeline_id,
-                            page_start=ocr_page_start,
-                            page_end=ocr_page_end,
-                        )
-
-                        if ocr_blocks:
-                            raw_blocks = ocr_blocks
-                            ocr_ok = True
-
-                            # Exercise detection reuses the full OCR text —
-                            # no separate lightweight OCR pass (Task 2)
-                            if (
-                                settings.EXERCISE_DETECTION_ENABLED
-                                and import_mode_str != "exam"
-                                and not user_specified_range
-                            ):
-                                from app.features.exercise_region_detector import (
-                                    detect_exercise_regions,
-                                )
-
-                                page_texts = _extract_page_texts_from_blocks(raw_blocks)
-                                exercise_regions = detect_exercise_regions(
-                                    page_texts,
-                                    config={
-                                        "max_empty_pages": settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES,
-                                        "min_confidence": settings.EXERCISE_DETECTION_MIN_CONFIDENCE,
-                                    },
-                                )
-
-                                if exercise_regions:
-                                    exercise_regions_result = [
-                                        {
-                                            "start_page": r.start_page,
-                                            "end_page": r.end_page,
-                                            "confidence": r.confidence,
-                                            "matched_keyword": r.matched_keyword,
-                                        }
-                                        for r in exercise_regions
-                                    ]
-                                    # Filter blocks to exercise region pages
-                                    region_pages: set[int] = set()
-                                    for r in exercise_regions:
-                                        for p in range(r.start_page, r.end_page + 1):
-                                            region_pages.add(p)
-                                    raw_blocks = [
-                                        b
-                                        for b in raw_blocks
-                                        if b.get("page", 0) in region_pages
-                                    ]
-                                    logger.info(
-                                        "Exercise region detection found %d region(s), filtered to %d blocks",
-                                        len(exercise_regions),
-                                        len(raw_blocks),
-                                    )
-                                    del exercise_regions
-                                else:
-                                    exercise_regions_missing = True
-                                    logger.info(
-                                        "Exercise detection found no regions, keeping all %d OCR blocks",
-                                        len(raw_blocks),
-                                    )
-                            elif user_specified_range:
-                                logger.info(
-                                    "Skipping exercise detection: user specified page range %s-%s",
-                                    opts.get("page_start"),
-                                    opts.get("page_end"),
-                                )
-
-                            logger.info("OCR succeeded: %d blocks", len(raw_blocks))
-                        else:
-                            logger.warning("OCR returned no blocks")
-                    except RuntimeError as exc:
-                        logger.warning("OCR fallback unavailable: %s", exc)
-                    except Exception as exc:
-                        logger.warning(
-                            "OCR fallback failed, using original extraction: %s",
-                            exc,
-                        )
-
-                    # PaddleOCR-VL 不在此处调用 — 由下游 ocr_correction 阶段的路由器统一处理
-                    if not ocr_ok:
-                        logger.warning(
-                            "Local OCR returned no blocks; downstream ocr_correction stage "
-                            "will attempt PaddleOCR-VL via OCRFixRouter"
-                        )
-                else:
-                    logger.warning(
-                        "PDF text only %d chars but OCR_ENABLED=false, cannot extract scanned content",
-                        total_text,
-                    )
-
-            if not raw_blocks:
-                raise ValueError(
-                    "PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）"
-                )
-        else:
-            # Image imports may already have a structured OCR result from the
-            # configured OCR Gateway.  Prefer those blocks so bbox/geometry is
-            # not discarded when the OCR text is bridged into the TXT parser.
-            # A defensive copy keeps downstream in-place layout enrichment
-            # from mutating the worker result retained in diagnostics.
-            if pre_extracted_blocks:
-                raw_blocks = [dict(block) for block in pre_extracted_blocks]
-            else:
-                text_source = file_content if file_content is not None else file_path
-                if text_source is None:
-                    raise ValueError(
-                        "either file_content or file_path must be provided"
-                    )
-                raw_blocks = _extract_text_blocks(text_source)
-            exercise_regions_result = []
-            exercise_regions_missing = False
-
-        return {
-            "raw_blocks": raw_blocks,
-            "extracted": len(raw_blocks),
-            "_original_raw_text": (_kw.get("options") or {}).get(
-                "_original_raw_text", ""
-            ),
-            "exercise_regions": exercise_regions_result,
-            "exercise_regions_missing": exercise_regions_missing,
-            "ocr_boxes_failed_pages": sorted(
-                {
-                    int(b.get("page") or b.get("page_index") or 0)
-                    for b in raw_blocks
-                    if b.get("_ocr_boxes_failed")
-                    and (b.get("page") or b.get("page_index"))
-                }
-            ),
-            "ocr_text_fallback_pages": sorted(
-                {
-                    int(b.get("page") or b.get("page_index") or 0)
-                    for b in raw_blocks
-                    if b.get("source") == "ocr_text_fallback"
-                    and (b.get("page") or b.get("page_index"))
-                }
-            ),
-            "ocr_text_fallback_unavailable_pages": sorted(
-                {
-                    int(page)
-                    for b in raw_blocks
-                    for page in (b.get("_ocr_text_fallback_unavailable_pages") or [])
-                    if page
-                }
-            ),
-            "ocr_runtime_failed_pages": sorted(
-                {
-                    int(page)
-                    for b in raw_blocks
-                    for page in (b.get("_ocr_runtime_failed_pages") or [])
-                    if page
-                }
-            ),
-        }
+        return run_extract_stage(
+            self,
+            file_content,
+            source_type,
+            file_path,
+            pre_extracted_blocks,
+            _kw,
+            namespace=globals(),
+        )
 
     def _run_wangdao_preprocess(self, raw_blocks: list[dict], **_kw) -> dict:
         """Pre-processing stage for Wangdao PDF: filter watermarks/headers/footers."""
