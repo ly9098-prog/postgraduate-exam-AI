@@ -345,6 +345,23 @@ jobs:
             tests/practice/test_scored_selection_contract.py \
             tests/practice/test_smart_score_components.py \
             tests/practice/test_smart_reason_text.py \
+            tests/practice/test_strategy_weight_rerank_contract.py \
+            tests/architecture/test_strategy_weight_rerank_boundaries.py \
+            tests/practice/test_sequential_reservation_contract.py \
+            tests/practice/test_sequential_query_contract.py \
+            tests/practice/test_sequential_boundaries.py \
+            tests/test_services/test_sequential_reservation.py \
+            tests/practice/test_answer_projection_execution.py \
+            tests/practice/test_answer_projection_storage.py \
+            tests/practice/test_projection_reconciliation_execution.py \
+            tests/practice/test_projection_reconciliation_runtime.py \
+            tests/practice/test_projection_live_ports.py \
+            tests/architecture/test_practice_projection_boundaries.py \
+            tests/practice/test_knowledge_summary_issue_contract.py \
+            tests/practice/test_knowledge_summary_read_contract.py \
+            tests/practice/test_knowledge_summary_numeric_contract.py \
+            tests/architecture/test_knowledge_summary_boundaries.py \
+            tests/practice/test_practice_knowledge_session_summary.py \
             tests/practice/test_smart_pipeline_contract.py \
             tests/practice/test_aggregated_smart_contract.py \
             tests/practice/test_smart_path_supplement_contract.py \
