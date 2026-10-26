@@ -115,6 +115,36 @@ jobs:
         working-directory: backend
         run: alembic check
 
+      - name: Install private Redis recovery test runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends redis-server
+          fi
+          redis-server --version
+
+      - name: Verify owned Redis process crash and recovery
+        working-directory: backend
+        env:
+          APP_ENV: test
+          DEPLOYMENT_PROFILE: local_import
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          REDIS_URL: ""
+          SENTRY_DSN: ""
+          STAGING_STORAGE_DIR: ${{ runner.temp }}/queue-recovery-staging
+        run: python -m pytest tests/integration/test_queue_redis_recovery.py --run-integration -q
+
+      - name: Retain private Redis recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owned-redis-recovery
+          path: /tmp/queue-recovery-*
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Run reliability unit and integration tests
         shell: bash
         run: |

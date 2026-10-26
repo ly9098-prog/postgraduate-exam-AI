@@ -1,6 +1,8 @@
 # 任务队列语义与兼容基线
 
-核对日期：2026-10-26。对应重构计划阶段 0/3；范围仅限 `DurableTaskQueue`、v2 worker/outbox 调用和 Redis 键空间，不代表完整 worker 循环、生产 Redis 故障恢复或备份演练已完成。
+核对日期：2026-10-27。对应重构计划阶段 0/3；范围仅限 `DurableTaskQueue`、v2 worker/outbox 调用和 Redis 键空间，不代表完整 worker 循环、生产 Redis 故障恢复或备份演练已完成。
+
+本次更新：补充自有独立 Redis 的真实 SIGKILL/AOF 恢复测试，记录旧 socket 首次请求可能报错的恢复边界；生产代码和队列协议未改。
 
 ## 1. 入口与消费者
 
@@ -61,5 +63,15 @@
 - 2026-10-25 修复迁移脚本的写入失败窗口：HSET/RPUSH/SETEX 包裹在 Lua `pcall` 中，任一失败会 LREM 本次 ready 位置、删除 partial v2 hash 与 idempotency guard，并把错误抛回 Python。2026-10-26 修正原失败注入夹具，改为在 fakeredis 的 Lua `redis.call` 内注入 SETEX 失败，实际覆盖 partial 状态清零、v1 队头保留和恢复重试；先前的 socket HSET 注入不能作为该 Lua 失败窗口的有效证据。这不替代真实 Redis 连接中断/进程崩溃测试。
 - 2026-10-26 修复 Python 拆分后异常进度丢失：helper 用 `V1ToV2DrainError` 携带已确认迁移数，入口保留原 warning/logger 并返回该数；首项成功、第二项失败返回 1，不输出成功汇总。普通连接/脚本失败返回已确认数量，普通 close 失败不覆盖结果或原错误；取消继续传播并关闭已获取的客户端。迁移、结果契约和协议门禁定向 43 项通过，独立审查 112 组历史/当前行为对照一致。
 - 同日补跑 `backend/tests/integration/test_worker_sigterm.py --run-integration`（真实 Redis，worker dispatcher 端口/替身）：7 passed，覆盖 drain 停止新领取、未知类型 dead-letter、heartbeat 安全/不安全 Redis 超时与 Lua 拒绝、取消 checkpoint、并发=1 时不超额执行。修复的是测试端口漂移：`set_draining_v2`/`stop_worker_v2` 现在是 async，heartbeat 替身需抛 `redis.exceptions.TimeoutError`，并保存/恢复模块级 running 标志；未改生产 worker 语义。
-- 仍未验证：跨进程完整 worker 主循环、多 dispatcher 并发、Redis 进程中断后自动恢复的端到端故障注入、生产角色退出和备份恢复演练。上述单进程集成测试不能替代这些生产验收。
+- 仍未验证：跨进程完整 worker 主循环、多 dispatcher 并发、生产 Redis 中断恢复、生产角色退出和备份恢复演练。第 7 节仅覆盖本机独立 Redis 进程崩溃后的队列恢复，上述测试不能替代这些生产验收。
 - Admin 任务页的真实浏览器操作、真实死信重试和长任务取消仍未验收。
+
+## 7. 自有 Redis 进程崩溃与恢复
+
+- `backend/tests/integration/owned_redis.py` 只启动新建 `/tmp/queue-recovery-*` 目录下的子进程，TCP port=0、私有 Unix socket、AOF 开启、`appendfsync=always`；不接受外部 URL 或已有数据目录。退出时只停止自己创建的子进程，保留 AOF、Redis 日志及包含 PID、run ID、版本、退出码、恢复结果的 `evidence.json`，不清库或删除目录。
+- `test_queue_redis_recovery.py` 在显式 `cloud_api` 与由 `APP_ENV=production` 推断的有效配置下各执行三种场景，且故意设置 `ALLOW_IN_MEMORY_TASK_QUEUE=True`，证明受限环境仍禁止本地兜底。配置仅由 pytest monkeypatch 在测试进程内修改。
+- 就绪任务场景：预热连接与全部 Lua SHA，实际 SIGKILL 并等待退出；中断期间 v1/v2 入队拒绝，v2 dequeue/health 报错。以相同 AOF 目录重启，确认 run ID 已变、脚本缓存为空、Python SHA 仍在；观察真实 `NoScriptError` 并由队列重载全部脚本。同一个队列、pool 和持久客户端恢复，原载荷保留、中断期间被拒的任务未写入、完成后的幂等重放不重新入队，重启后新任务也可完成。
+- processing 场景：未过期任务的状态、owner、generation 保留，原持有者能够续租与完成；续租从 120 秒延长至 300 秒，直接核对 Redis 时间、processing score、hash lease 和 heartbeat TTL 的实际增长。短租约在真实停机等待期间到期，reaper 恰好回收一次，新领取提高 generation 并更换 owner。旧持有者每次 heartbeat/complete/fail 被拒绝后，立即比对 task hash、processing score、heartbeat owner/TTL 和 fencing，防止后续合法心跳修复被破坏索引而掩盖问题；新持有者完成且 ready/processing 均为空。
+- 未访问中断实例的旧 socket 可能在重启后的第一次操作中抛出 `QueueHealthError` 或 `TaskQueueUnavailableError`。测试通过最多三次调用验证后续重连，并将错误写入证据；不宣称第一次请求必然成功，也未给生产方法添加自动重试。入队/完成等存在响应丢失窗口的操作不由此测试证明 exactly-once 业务效果。
+- 2026-10-27 本机 Redis 7.2.5 定向执行：6 passed、0 skipped。复现命令为从 `backend/` 执行 `python -m pytest tests/integration/test_queue_redis_recovery.py --run-integration -q`，需安装 `redis-server` 并使用隔离测试配置；不依赖 `TEST_REDIS_URL`。Reliability Gate 增加同一显式命令及证据 artifact，远端 CI 结果未验证。
+- 范围限制：这是私有单节点 Redis、合成任务、AOF always 的本地恢复证据，不覆盖生产 `everysec` 丢写窗口、网络分区、Redis 集群、完整 worker 进程、外部 OCR/AI 调用或备份恢复。
