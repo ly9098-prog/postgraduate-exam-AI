@@ -68,6 +68,19 @@ from app.features.pipeline_chunked_result import (
 from app.features.pipeline_chunked_state import ChunkedRunState
 from app.features.pipeline_extract_stage import run_extract_stage
 from app.features.pipeline_ocr_router_stage import run_ocr_router_stage
+from app.features.pipeline_resume_context import (
+    load_resume_hash_index,
+    resolve_resume_mode,
+    resolve_resume_watermarks,
+)
+from app.features.pipeline_resume_execution import execute_resume_replay
+from app.features.pipeline_resume_input import (
+    load_resume_chunks,
+    load_resume_pipeline,
+    recover_resume_subject,
+)
+from app.features.pipeline_resume_result import finalize_resume
+from app.features.pipeline_resume_state import ResumeRunState
 from app.features.pipeline_single_pass_stage import run_single_pass
 from app.features.pipeline_split_stage import run_split_stage
 from app.features.pipeline_stage_completion import complete_stage_data  # noqa: F401
@@ -5312,243 +5325,32 @@ async def resume_pipeline_background(
     options: dict | None = None,
     db,
 ) -> None:
-    """P2-5: replay only the failed/pending chunks of an existing pipeline.
+    """Replay pending chunks with frozen rules and independent sessions.
 
-    Caller (api.v1.imports.resume_pipeline) is responsible for persisting the
-    re-uploaded PDF to ``file_path`` and unlinking it once this coroutine
-    finishes.
-
-    Behaviour:
-        - Loads chunk rows from DB; if no failed/pending chunks remain, marks
-          the pipeline ``completed`` and returns immediately.
-        - Rebuilds the cross-chunk state (watermark patterns, GlobalHashIndex
-          containing already-completed chunk batches, seen_hashes set) so the
-          replayed chunks behave the same as if they had run alongside their
-          successful siblings.
-        - Reuses ``_execute_chunk`` so checkpoint writes, error isolation, and
-          hash-index updates stay identical to ``_run_chunked``.
-        - Final pipeline status is ``completed`` iff every replayed chunk
-          succeeds AND no chunk row remains failed; otherwise stays ``paused``
-          so the user can resume again.
-
-    P0-3:
-        - 每个 chunk 在独立 ``AsyncSession`` 里跑（事务边界 = chunk 边界），
-          避免 PG idle_in_transaction_session_timeout 在长导入中触发。
-        - 优先复用 ``pipeline_row.watermark_snapshot``——若存在则跳过
-          watermark service 的实时加载，避免管理员在 paused 与 resume
-          之间调整规则导致 hash 漂移。NULL（历史 paused pipeline）仍
-          fallback 到旧路径。
+    The caller owns the re-uploaded file's lifetime. Replay failures or persisted
+    failed chunks leave the pipeline paused; uncaught errors/cancellation propagate.
     """
-    from sqlalchemy import select
+    # Keep these entry-time imports captured in locals for the resume helpers.
+    from sqlalchemy import select  # noqa: F401
 
-    from app.features import pipeline_checkpoint as ckpt
-    from app.features.global_hash_index import GlobalHashIndex
+    from app.features import pipeline_checkpoint as ckpt  # noqa: F401
+    from app.features.global_hash_index import GlobalHashIndex  # noqa: F401
     from app.models.import_pipeline import (
-        ImportPipeline as ImportPipelineRow,
+        ImportPipeline as ImportPipelineRow,  # noqa: F401
     )
-    from app.models.import_pipeline import (
-        ImportPipelineChunk,
-    )
+    from app.models.import_pipeline import ImportPipelineChunk  # noqa: F401
 
-    opts = dict(options) if options else {}
-
-    # P0-3: 推导 sessionmaker，后续每个 chunk 用独立 session。
-    session_factory = _derive_session_factory(db)
-
-    pipeline_row = (
-        await db.execute(
-            select(ImportPipelineRow).where(
-                ImportPipelineRow.pipeline_id == pipeline_id
-            )
-        )
-    ).scalar_one_or_none()
-    if pipeline_row is None:
-        logger.warning(
-            "resume_pipeline_background: pipeline %s missing, abort", pipeline_id
-        )
+    state = ResumeRunState(locals(), globals())
+    if not await load_resume_pipeline(state):
         return
-
-    # Recover subject_id from checkpoint if caller didn't pass it
-    if subject_id is None:
-        try:
-            ckpt_data = await ckpt.get_stage_checkpoint(pipeline_id)
-            if ckpt_data:
-                subject_id = ckpt_data.get("subject_id")
-                if not subject and ckpt_data.get("subject"):
-                    subject = ckpt_data["subject"]
-        except Exception:
-            logger.debug("resume: could not read checkpoint for subject_id recovery")
-
-    pending = await ckpt.get_pending_chunks(db, pipeline_id)
-    if not pending:
-        # nothing to do — caller probably hit a race; mark completed if no
-        # chunks are still failing.
-        await ckpt.update_pipeline_status(
-            db,
-            pipeline_id,
-            status="completed",
-            finished=True,
-        )
-        await ckpt.invalidate_progress_cache(pipeline_id)
+    await recover_resume_subject(state)
+    if not await load_resume_chunks(state):
         return
-
-    # All chunks (for total count + completed batch_ids), single query.
-    all_chunks = (
-        (
-            await db.execute(
-                select(ImportPipelineChunk)
-                .where(ImportPipelineChunk.pipeline_id == pipeline_id)
-                .order_by(ImportPipelineChunk.chunk_index)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    if not all_chunks:
-        logger.warning(
-            "resume_pipeline_background: pipeline %s has no chunk rows", pipeline_id
-        )
-        return
-
-    total_pages = pipeline_row.total_pages or all_chunks[-1].page_end
-    chunk_overlap = _resolve_chunk_overlap()
-    max_chunk_index = all_chunks[-1].chunk_index
-    completed_batch_ids = [
-        c.batch_id for c in all_chunks if c.status == "completed" and c.batch_id
-    ]
-    # P0-3: snapshot 字段在 ORM 行里就是 list/dict/None；提早抓住后续不再
-    # 依赖 pipeline_row 的 detached 状态。
-    snapshot = pipeline_row.watermark_snapshot
-
-    # Resolve import mode + strategy + watermark patterns the same way
-    # ImportPipeline.run() does, so resumed chunks see the same shared context.
-    mode_str = opts.get("import_mode", "auto")
-    try:
-        import_mode = ImportMode(mode_str)
-    except ValueError:
-        import_mode = ImportMode.AUTO
-    strategy = get_strategy(import_mode)
-
-    # P0-3: 优先用首次导入时的 watermark snapshot；NULL 才回退到实时加载。
-    watermark_patterns: list = []
-    if snapshot:
-        watermark_patterns = _deserialize_watermark_patterns(snapshot)
-        if not watermark_patterns:
-            logger.warning(
-                "resume: watermark_snapshot present but empty/unparsable for %s; "
-                "falling back to live rules",
-                pipeline_id,
-            )
-    if not watermark_patterns:
-        if not snapshot:
-            logger.warning(
-                "resume: legacy pipeline %s without watermark_snapshot, "
-                "reloading from current rules",
-                pipeline_id,
-            )
-        try:
-            from app.services.watermark_service import load_rules
-
-            watermark_patterns = await load_rules(db)
-        except Exception as exc:
-            logger.warning(
-                "resume: watermark load_rules failed (%s); using defaults", exc
-            )
-        if not watermark_patterns:
-            from app.services.watermark_service import get_default_patterns
-
-            watermark_patterns = get_default_patterns()
-
-    shared: dict = {
-        "import_mode": import_mode,
-        "strategy": strategy,
-        "watermark_patterns": watermark_patterns,
-    }
-
-    # Rebuild GlobalHashIndex: recent_days window + every batch_id this
-    # pipeline already wrote, so resumed chunks can dedupe against their
-    # successful siblings.
-    hash_index: GlobalHashIndex | None = GlobalHashIndex()
-    try:
-        async with session_factory() as init_db:
-            await hash_index.load(init_db, batch_ids=completed_batch_ids or None)
-    except Exception:
-        logger.exception(
-            "resume: GlobalHashIndex.load failed; similarity match will fallback"
-        )
-        hash_index = None
-    if hash_index is not None:
-        shared["hash_index"] = hash_index
-
-    async with session_factory() as init_db:
-        seen_hashes = await _load_seen_hashes_for_resume(init_db, pipeline_id)
-
-    # Mark the pipeline running again so status queries reflect the in-progress
-    # resume and a concurrent second resume can detect the conflict.
-    async with session_factory() as init_db:
-        await ckpt.update_pipeline_status(init_db, pipeline_id, status="running")
-    await ckpt.invalidate_progress_cache(pipeline_id)
-
-    pipeline = ImportPipeline(options=opts)
-    pipeline.pipeline_id = pipeline_id
-    started_at = serialize_utc_datetime(utcnow())
-
-    chunk_results: list[dict] = []
-    any_chunk_failed = False
-    try:
-        for chunk in pending:
-            # P0-3: 每个 chunk 一个独立 session（事务边界 = chunk 边界）。
-            async with session_factory() as chunk_db:
-                outcome = await pipeline._execute_chunk(
-                    chunk_index=chunk.chunk_index,
-                    page_start=chunk.page_start,
-                    logical_end=chunk.page_end,
-                    total_pages=total_pages,
-                    is_last_chunk=(chunk.chunk_index == max_chunk_index),
-                    chunk_overlap=chunk_overlap,
-                    file_content=None,
-                    file_path=file_path,
-                    source_type=pipeline_row.source_type or "pdf",
-                    source_file=pipeline_row.source_file or "",
-                    subject=subject,
-                    subject_id=subject_id,
-                    opts=opts,
-                    db=chunk_db,
-                    shared=shared,
-                    progress_callback=None,
-                    started_at=started_at,
-                    seen_hashes=seen_hashes,
-                    hash_index=hash_index,
-                    page_image_refs=None,
-                )
-            chunk_results.append(outcome)
-            if outcome["status"] == "failed":
-                any_chunk_failed = True
-    finally:
-        # P1-1: 清空 hash_index 内部 dict，避免 resume 路径异常时大字典残留。
-        if hash_index is not None:
-            hash_index._question_index.clear()
-            hash_index._import_index.clear()
-
-    # Recompute overall status from current DB state — chunks not in
-    # ``pending`` could still be ``failed`` if a prior resume left them so;
-    # also covers the case where an earlier chunk silently regressed (we
-    # never overwrite completed chunks here).
-    async with session_factory() as final_db:
-        progress = await ckpt.get_pipeline_progress(
-            final_db, pipeline_id, use_cache=False
-        )
-        still_failing = progress and progress.get("failed_chunks", 0) > 0
-        overall_status = (
-            "paused" if (any_chunk_failed or still_failing) else "completed"
-        )
-        await ckpt.update_pipeline_status(
-            final_db,
-            pipeline_id,
-            status=overall_status,
-            finished=(overall_status == "completed"),
-        )
-    await ckpt.invalidate_progress_cache(pipeline_id)
+    resolve_resume_mode(state)
+    await resolve_resume_watermarks(state)
+    await load_resume_hash_index(state)
+    await execute_resume_replay(state)
+    await finalize_resume(state)
 
 
 async def run_excel_pipeline_background(

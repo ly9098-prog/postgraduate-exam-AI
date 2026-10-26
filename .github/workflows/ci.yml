@@ -382,6 +382,10 @@ jobs:
             tests/pipeline/test_chunked_terminal_contract.py \
             tests/pipeline/test_chunked_ports_contract.py \
             tests/architecture/test_pipeline_chunked_boundaries.py \
+            tests/pipeline/test_resume_preparation_contract.py \
+            tests/pipeline/test_resume_execution_contract.py \
+            tests/pipeline/test_resume_ports_contract.py \
+            tests/architecture/test_pipeline_resume_boundaries.py \
             tests/test_features/test_pipeline_chunk_runner.py \
             tests/test_features/test_pipeline_resume.py \
             tests/test_features/test_pipeline_status_chunk_progress.py \

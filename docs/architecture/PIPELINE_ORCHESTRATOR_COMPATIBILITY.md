@@ -150,3 +150,13 @@
 - session 退出后才追加和观察 outcome。若非标准 session 抑制了执行异常，首次 outcome 尚未赋值时仍抛 UnboundLocalError；后续循环仍可能复用上一 outcome 的原引用。本批只刻画该兼容行为，不改变 session 抑制策略。
 - 最终状态按是否出现 `failed` 取 paused/completed，先写最终检查点并退出 session，再失效进度缓存，随后聚合、合并风险、取时间和代表 batch、记录结束事件并返回。代表 batch 实际取首个非空 batch_id，不额外筛选成功状态；未知 chunk 状态也不会自动变成失败。响应保留 chunk、风险对象引用，索引 stats 仅浅复制；这些历史约定没有在本批改写。
 - 四组 chunked 刻画契约、架构门禁及既有 chunk runner/resume/status 测试接入静态 CI。替身契约验证调用顺序、共享引用和失败/取消，既有隔离 SQLite 用例覆盖检查点与恢复路径；它们不等于生产 PostgreSQL、Redis 检查点、真实 OCR/AI、多 worker 或备份恢复验收。
+
+## 14. 暂停流水线恢复编排（2026-10-27）
+
+- `resume_pipeline_background` 保留 keyword-only 签名及入口时导入的 SQL 查询、checkpoint 模块、索引类和模型。`pipeline_resume_input` 负责查询、科目恢复及分块元数据，`context` 负责模式、水印和索引，`execution` 负责启动与重放，`result` 负责最终状态，`state` 只承接本次调用的局部状态及原模块动态端口。
+- caller session 用于 parent、pending、全部 chunk 和实时水印查询。hash 加载、已见 hash 恢复、running 发布、每个 replay chunk 和最终状态各用独立 session。pending 保留返回顺序；页数为 parent 非零页数或最后一个有序 chunk 的 page_end，末块由最后一个 chunk_index 判定。只有 completed 且 batch_id 非空的记录进入索引加载，空列表仍传 `None`。
+- 仅当传入 subject_id 为 `None` 时尝试 checkpoint 科目恢复，普通失败只记 debug；当前 checkpoint 模块缺少该可选属性时也保留此降级。无 pending 时直接用 caller session 写 completed/finished 并失效缓存；此提前返回不会额外读取 failed 数量。无 parent 或无全部 chunk 时告警返回。
+- truthy 水印快照优先反序列化；空或无法解析为有效规则时告警后读实时规则。历史空快照告警后走同一实时路径；实时加载普通失败或空规则回退默认规则。反序列化自身异常及取消继续传播。options 仍为顶层浅拷贝；共享水印、策略、索引与已见 hash 保持原引用。
+- hash 构造异常传播，只有 load session 内的普通异常降级为无 index。清理 finally 仅覆盖 replay 循环，先清 question index 再清 import index；初始化、seen hash 恢复及 running 发布失败不会扩大清理范围。`seen_hashes` 和 `outcome` 仍是执行函数局部变量，保留非标准 session 抑制异常后的未赋值错误及上次 outcome 复用边界。source_type/source_file 在每个 chunk 参数求值时重新读取 parent 属性。
+- replay 普通异常或取消若未被既有 session 抑制，清理后传播，不写终态。正常 replay 后在独立 session 用 `use_cache=False` 读 progress；只要 outcome 精确为 `failed` 或持久化 failed_chunks 大于零就写 paused，其余写 completed，只有 completed 设置 finished。先退出最终 session，再失效进度缓存。
+- 三组恢复刻画契约和架构门禁接入静态 CI；测试使用合成端口刻画顺序、逐块完整参数、查询模型与等值条件、对象引用、水印独立内容快照、错误与取消，并运行既有隔离 SQLite 恢复用例。门禁限制逐 helper 的 state 字段与端口，拒绝 session factory 派生别名，并在跳过入口首条语句前确认它是 docstring。独立原版/新版差分及逆还原 AST 也用于核对本批兼容性；这些证据不代表外部 OCR/AI、生产 PostgreSQL/Redis、多 worker 并发恢复、真实 PDF 或备份恢复验收。编排器剩余 OCR/VL 等大函数继续治理。
