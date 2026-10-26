@@ -115,3 +115,11 @@
 - 保留 PostgreSQL 约束名与 SQLite 冲突列、24 小时 TTL、活动预留排除、失效预留清理顺序，以及读到竞争候选后重新尝试的循环。发题/预留不提交事务，显式 reset 仍写 marker 并提交，不删除答题历史。
 - 原模块的 SQL/model/时间/UUID patch 端口继续生效；必要端口在 await 后重新读取。服务 354→285 行，两个原入口 132/97→37/49 行，选择模块 235 行，全部函数不超过 50 行。
 - 新增 36 项刻画在原实现通过；核心 56 项与调用方/依赖 87 项通过。作者 720 组差分覆盖 2,805 条 SQL/参数；独立审查额外对照 1,500 个预留和 500 个发题场景，5,453 对预留 SQL/参数一致，无 P0–P3 发现。SQLite 与 SQL 编译证据不替代真实 PostgreSQL 并发竞争。
+
+## 13. 答案投影阶段与修复轮询（2026-10-26）
+
+- `answer_projection_service` 继续持有 schema 门禁、记录行锁、revision 校验、current-version 读取、终态迁移、一次 commit 和提交后缓存失效。`answer_projection_stages` 按原顺序执行 behavior、mastery、attribution，以及 current guard 放行时的 review/adaptive；不接管事务。
+- 保留不可变 source dataclass 的 frozen/slots 与原服务导入别名。答题字段在副作用前捕获；旧 revision 仍投影不可变证据，跳过可变题目状态并落为 `revision_only`。缓存普通失败仅记录 debug，取消继续传播。
+- 协调器只扫描超过 grace 的 pending 记录，不为扫描加记录行锁；原任务活跃或本小时修复已存在则跳过。每条 outbox 创建在 savepoint 内隔离，唯一冲突/普通失败分类计数，外部查询错误和取消传播；扫描非空时一次 commit，空扫描 rollback。
+- `projection_reconciliation_runtime` 只负责参数解析和租约轮询，服务通过延迟绑定端口保留跨轮 reconcile、sleep、logger 与 settings patch 行为。四个业务文件均不超过 300 行，函数不超过 50 行；两个入口 140/111→45/33 行。
+- 最终 85 项刻画在原实现通过，相关回归 158 项通过；作者 answer/reconcile 各 1,000 组差分一致。独立只读审查 88 项通过，四份行为测试在原实现重放 81 项通过，另核对动态端口、SQL/事务与 8 个保留函数 AST，无 P0–P3 发现。真实 PG 行锁竞争、Redis 租约和跨进程 worker 仍未验证。

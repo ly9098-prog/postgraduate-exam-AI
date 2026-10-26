@@ -31,6 +31,12 @@ from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
     ANSWER_PROJECTION_TASK_TYPE,
 )
+from app.services.practice.projection_reconciliation_runtime import (
+    ReconcileCyclePorts,
+    reconciler_parameters,
+    reconciliation_limits,
+    run_projection_reconcile_cycles,
+)
 
 logger = logging.getLogger("postgraduate-ai.answer-projection-reconciler")
 
@@ -108,33 +114,11 @@ async def get_projection_backlog_metrics(
     }
 
 
-async def reconcile_answer_projections(
+async def _pending_projection_ids(
     db: AsyncSession,
-    *,
-    batch_size: int | None = None,
-    grace_sec: int | None = None,
-    now: datetime | None = None,
-) -> dict[str, int]:
-    """Schedule durable repair tasks only for stale ``pending`` records."""
-    effective_batch = max(
-        1,
-        int(
-            batch_size
-            if batch_size is not None
-            else settings.ANSWER_PROJECTION_RECONCILE_BATCH_SIZE
-        ),
-    )
-    effective_grace = max(
-        0,
-        int(
-            grace_sec
-            if grace_sec is not None
-            else settings.ANSWER_PROJECTION_RECONCILE_GRACE_SEC
-        ),
-    )
-    current = normalize_to_naive_utc(now) if now is not None else utcnow()
-    cutoff = current - timedelta(seconds=effective_grace)
-
+    cutoff: datetime,
+    effective_batch: int,
+) -> list[int]:
     # Reconciliation only needs the durable record id.  Do not hydrate the
     # PracticeRecord ORM entity here: unrelated model columns must never become
     # an implicit dependency of the repair scheduler.
@@ -153,7 +137,93 @@ async def reconcile_answer_projections(
     # records can delay healthy workers and turn a repair scan into contention.
     # Races are already safe: the terminal projection state is checked again by
     # the worker and task_id uniqueness below deduplicates concurrent schedulers.
-    record_ids = [int(value) for value in (await db.execute(query)).scalars().all()]
+    return [int(value) for value in (await db.execute(query)).scalars().all()]
+
+
+async def _create_projection_repair(
+    db: AsyncSession,
+    record_id: int,
+    repair_task_id: str,
+    payload: dict[str, Any],
+    stats: dict[str, int],
+) -> None:
+    """Isolate only the outbox insert with a savepoint; other errors escape."""
+    try:
+        async with db.begin_nested():
+            await create_outbox(
+                db,
+                task_id=repair_task_id,
+                task_type=_TASK_TYPE,
+                payload=payload,
+                schema_version=ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+            )
+        stats["scheduled"] += 1
+    except IntegrityError:
+        stats["races"] += 1
+        logger.debug(
+            "answer projection repair raced: record_id=%s task_id=%s",
+            record_id,
+            repair_task_id,
+        )
+    except Exception:
+        stats["errors"] += 1
+        logger.exception(
+            "answer projection repair scheduling failed: record_id=%s", record_id
+        )
+
+
+async def _schedule_projection_repair(
+    db: AsyncSession,
+    record_id: int,
+    current: datetime,
+    stats: dict[str, int],
+) -> None:
+    original_task_id = f"{_ORIGINAL_TASK_PREFIX}:{record_id}"
+    original = await db.scalar(
+        select(TaskOutbox).where(TaskOutbox.task_id == original_task_id)
+    )
+    if original is not None and original.status in {"pending", "leased"}:
+        stats["active_original"] += 1
+        return
+
+    repair_task_id = _repair_task_id(record_id, current)
+    existing_repair = await db.scalar(
+        select(TaskOutbox.id).where(TaskOutbox.task_id == repair_task_id)
+    )
+    if existing_repair is not None:
+        stats["repair_already_scheduled"] += 1
+        return
+
+    payload: dict[str, Any] = {
+        "practice_record_id": record_id,
+        "request_id": _payload_request_id(original),
+        "reconciliation": {
+            "source": "practice_record_projection_pending",
+            "original_task_id": original_task_id,
+        },
+    }
+    original_trace = _payload_trace(original)
+    if original_trace is not None:
+        payload["_trace"] = original_trace
+    await _create_projection_repair(db, record_id, repair_task_id, payload, stats)
+
+
+async def reconcile_answer_projections(
+    db: AsyncSession,
+    *,
+    batch_size: int | None = None,
+    grace_sec: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Schedule durable repair tasks only for stale ``pending`` records."""
+    effective_batch, effective_grace = reconciliation_limits(
+        batch_size,
+        grace_sec,
+        lambda: settings,
+    )
+    current = normalize_to_naive_utc(now) if now is not None else utcnow()
+    cutoff = current - timedelta(seconds=effective_grace)
+    record_ids = await _pending_projection_ids(db, cutoff, effective_batch)
     stats = {
         "checked": len(record_ids),
         "scheduled": 0,
@@ -164,61 +234,23 @@ async def reconcile_answer_projections(
     }
 
     for record_id in record_ids:
-        original_task_id = f"{_ORIGINAL_TASK_PREFIX}:{record_id}"
-        original = await db.scalar(
-            select(TaskOutbox).where(TaskOutbox.task_id == original_task_id)
-        )
-        if original is not None and original.status in {"pending", "leased"}:
-            stats["active_original"] += 1
-            continue
-
-        repair_task_id = _repair_task_id(record_id, current)
-        existing_repair = await db.scalar(
-            select(TaskOutbox.id).where(TaskOutbox.task_id == repair_task_id)
-        )
-        if existing_repair is not None:
-            stats["repair_already_scheduled"] += 1
-            continue
-
-        payload: dict[str, Any] = {
-            "practice_record_id": record_id,
-            "request_id": _payload_request_id(original),
-            "reconciliation": {
-                "source": "practice_record_projection_pending",
-                "original_task_id": original_task_id,
-            },
-        }
-        original_trace = _payload_trace(original)
-        if original_trace is not None:
-            payload["_trace"] = original_trace
-        try:
-            async with db.begin_nested():
-                await create_outbox(
-                    db,
-                    task_id=repair_task_id,
-                    task_type=_TASK_TYPE,
-                    payload=payload,
-                    schema_version=ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
-                )
-            stats["scheduled"] += 1
-        except IntegrityError:
-            stats["races"] += 1
-            logger.debug(
-                "answer projection repair raced: record_id=%s task_id=%s",
-                record_id,
-                repair_task_id,
-            )
-        except Exception:
-            stats["errors"] += 1
-            logger.exception(
-                "answer projection repair scheduling failed: record_id=%s", record_id
-            )
+        await _schedule_projection_repair(db, record_id, current, stats)
 
     if record_ids:
         await db.commit()
     else:
         await db.rollback()
     return stats
+
+
+def _reconcile_cycle_ports() -> ReconcileCyclePorts:
+    # Resolve module ports at invocation, including changes made between cycles.
+    return ReconcileCyclePorts(
+        reconcile=lambda *args, **kwargs: reconcile_answer_projections(*args, **kwargs),
+        sleep=lambda delay: asyncio.sleep(delay),
+        log_info=lambda *args: logger.info(*args),
+        log_exception=lambda *args: logger.exception(*args),
+    )
 
 
 async def run_answer_projection_reconciler(
@@ -230,23 +262,11 @@ async def run_answer_projection_reconciler(
     from app.core.database import async_session
     from app.core.distributed_lock import DistributedLock
 
-    interval = max(
-        30.0,
-        float(
-            poll_interval
-            if poll_interval is not None
-            else settings.ANSWER_PROJECTION_RECONCILE_INTERVAL_SEC
-        ),
-    )
-    effective_grace = (
-        int(grace_sec)
-        if grace_sec is not None
-        else settings.ANSWER_PROJECTION_RECONCILE_GRACE_SEC
-    )
-    effective_batch = (
-        int(batch_size)
-        if batch_size is not None
-        else settings.ANSWER_PROJECTION_RECONCILE_BATCH_SIZE
+    interval, effective_grace, effective_batch = reconciler_parameters(
+        poll_interval,
+        grace_sec,
+        batch_size,
+        lambda: settings,
     )
     lock = DistributedLock("answer-projection-reconcile")
 
@@ -258,27 +278,14 @@ async def run_answer_projection_reconciler(
     )
     try:
         await asyncio.sleep(min(60.0, interval))
-        while True:
-            try:
-                lock_ttl = max(60, int(interval * 0.9))
-                renew_interval = max(20, min(60, lock_ttl // 3))
-                async with lock.acquire_and_renew(
-                    ttl=lock_ttl, renew_interval=renew_interval
-                ) as handle:
-                    if handle.is_still_held():
-                        async with async_session() as db:
-                            stats = await reconcile_answer_projections(
-                                db,
-                                batch_size=effective_batch,
-                                grace_sec=effective_grace,
-                            )
-                        if stats["checked"] or stats["errors"]:
-                            logger.info("Answer projection reconcile cycle: %s", stats)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Answer projection reconcile cycle failed")
-            await asyncio.sleep(interval)
+        await run_projection_reconcile_cycles(
+            _reconcile_cycle_ports(),
+            async_session,
+            lock,
+            interval,
+            effective_grace,
+            effective_batch,
+        )
     except asyncio.CancelledError:
         logger.info("Answer projection reconciler cancelled")
         raise

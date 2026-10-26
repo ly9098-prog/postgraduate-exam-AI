@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
-from datetime import datetime
 
 from sqlalchemy import inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +26,13 @@ from app.models.question import Question
 from app.services.practice.answer_projection_contract import (
     REQUIRED_PROJECTION_COLUMNS,
     RETIRED_PRACTICE_BATCH_COLUMNS,
+)
+from app.services.practice.answer_projection_stages import (
+    _ProjectionSource,
+    _RevisionSource,
+    apply_current_revision_state,
+    apply_revision_evidence,
+    capture_projection_answer,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,44 +81,24 @@ async def _verify_projection_schema_contract(db: AsyncSession) -> None:
             }
 
         database_columns = await connection.run_sync(_load_columns)
-        missing = sorted(REQUIRED_PROJECTION_COLUMNS - database_columns)
-        legacy = sorted(RETIRED_PRACTICE_BATCH_COLUMNS & database_columns)
-        if missing or legacy:
-            details: list[str] = []
-            if missing:
-                details.append("missing=" + ",".join(missing))
-            if legacy:
-                details.append("retired_present=" + ",".join(legacy))
-            raise RuntimeError(
-                "practice_records per-answer schema invariant failed ("
-                + "; ".join(details)
-                + "). Apply Alembic upgrade to head before running answer_projection workers."
-            )
-
+        _assert_projection_columns(database_columns)
         _schema_contract_verified = True
 
 
-@dataclass(frozen=True, slots=True)
-class _ProjectionSource:
-    id: int
-    user_id: int
-    question_id: int
-    question_version_id: int | None
-    subject_id: int
-    user_answer: str
-    is_correct: bool
-    used_time: int | None
-    answered_at: datetime
-    mode: str | None
-    projection_state: str
-
-
-@dataclass(frozen=True, slots=True)
-class _RevisionSource:
-    id: int
-    question_id: int
-    subject_id: int | None
-    answer: str | None
+def _assert_projection_columns(database_columns: set[str]) -> None:
+    missing = sorted(REQUIRED_PROJECTION_COLUMNS - database_columns)
+    legacy = sorted(RETIRED_PRACTICE_BATCH_COLUMNS & database_columns)
+    if missing or legacy:
+        details: list[str] = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if legacy:
+            details.append("retired_present=" + ",".join(legacy))
+        raise RuntimeError(
+            "practice_records per-answer schema invariant failed ("
+            + "; ".join(details)
+            + "). Apply Alembic upgrade to head before running answer_projection workers."
+        )
 
 
 async def _lock_projection_source(
@@ -235,33 +220,11 @@ async def _finish_projection(
         )
 
 
-async def project_practice_answer(
+async def _validate_projection_revision(
     db: AsyncSession,
-    *,
+    record: _ProjectionSource,
     practice_record_id: int,
-    request_id: str | None = None,
-) -> dict:
-    """Apply answer-derived projections exactly once for one practice record.
-
-    Revision-scoped projections (behavior + knowledge mastery + recommendation
-    attribution) always use the immutable revision recorded with the answer.
-    Mutable question-state projections (Leitner/adaptive state) are only applied
-    when that revision is still the question's current revision.
-    """
-    await _verify_projection_schema_contract(db)
-    record = await _lock_projection_source(db, practice_record_id)
-    if record is None:
-        logger.warning(
-            "answer projection record missing: record_id=%s", practice_record_id
-        )
-        return {"processed": False, "missing": True}
-
-    if record.projection_state != PROJECTION_PENDING:
-        return {
-            "processed": False,
-            "duplicate": True,
-            "projection_state": record.projection_state,
-        }
+) -> _RevisionSource:
     if record.question_version_id is None:
         raise RuntimeError(
             f"practice record {practice_record_id} has no question_version_id"
@@ -272,87 +235,48 @@ async def project_practice_answer(
         raise RuntimeError(
             f"practice record {practice_record_id} references invalid question revision"
         )
+    return revision
 
+
+async def _invalidate_projection_cache(user_id: int) -> None:
+    try:
+        from app.services.vector_retrieval_service import invalidate_vector_cache
+
+        await invalidate_vector_cache(user_id)
+    except Exception:
+        logger.debug("vector cache invalidation failed uid=%d", user_id, exc_info=True)
+
+
+async def project_practice_answer(
+    db: AsyncSession,
+    *,
+    practice_record_id: int,
+    request_id: str | None = None,
+) -> dict:
+    """Project immutable evidence once, guarding mutable state by current revision."""
+    await _verify_projection_schema_contract(db)
+    record = await _lock_projection_source(db, practice_record_id)
+    if record is None:
+        logger.warning(
+            "answer projection record missing: record_id=%s", practice_record_id
+        )
+        return {"processed": False, "missing": True}
+    if record.projection_state != PROJECTION_PENDING:
+        return {
+            "processed": False,
+            "duplicate": True,
+            "projection_state": record.projection_state,
+        }
+
+    revision = await _validate_projection_revision(db, record, practice_record_id)
     current_version_id = await _load_current_question_version(db, record.question_id)
     is_current_revision = current_version_id == record.question_version_id
-
-    user_id = record.user_id
-    question_id = record.question_id
-    is_correct = record.is_correct
-    used_time = record.used_time
-    user_answer = record.user_answer.strip()
-
-    from app.services.behavior_service import record_answer_behavior
-
-    await record_answer_behavior(
-        db=db,
-        user_id=user_id,
-        question_id=question_id,
-        practice_record_id=record.id,
-        question_version_id=record.question_version_id,
-        time_spent_sec=used_time or 0,
-        is_first_correct=is_correct,
-        is_final_correct=is_correct,
-        user_answer=user_answer,
-        correct_answer=revision.answer,
-        subject_id=revision.subject_id or record.subject_id,
-        session_type=record.mode or "practice",
-        commit=False,
-    )
-
-    from app.services import mastery_service
-
-    mastery_update = await mastery_service.update_user_knowledge_state_after_answer(
-        db,
-        user_id,
-        question_id,
-        is_correct,
-        used_time=used_time,
-        question_version_id=record.question_version_id,
-    )
-
-    from app.services import recommendation_log_service
-
-    await recommendation_log_service.mark_recommendation_answered(
-        db,
-        user_id,
-        question_id,
-        is_correct,
-        request_id=request_id,
-        mastery_after=(mastery_update or {}).get("mastery_after"),
-        mastery_delta=(mastery_update or {}).get("mastery_delta"),
-    )
-
+    answer = capture_projection_answer(record)
+    await apply_revision_evidence(db, record, revision, answer, request_id)
     if is_current_revision:
-        from app.services import question_review_service
-
-        review_transition = (
-            await question_review_service.update_user_question_state_after_answer(
-                db,
-                user_id,
-                question_id,
-                is_correct,
-                used_time=used_time,
-                answered_at=record.answered_at,
-            )
-        )
-
-        from app.services import adaptive_learning_service
-
-        await adaptive_learning_service.update_adaptive_state_after_answer(
-            db,
-            user_id=user_id,
-            question_id=question_id,
-            is_correct=is_correct,
-            answer_time_seconds=used_time,
-            answered_at=record.answered_at,
-            is_due_review=review_transition.is_due_review,
-            is_overdue_review=review_transition.is_overdue_review,
-        )
+        await apply_current_revision_state(db, record, answer)
         target_state = PROJECTION_COMPLETED
     else:
-        # Revision-scoped evidence is still valid, but mutable question state
-        # belongs to the newer revision and must not be changed by this answer.
         target_state = PROJECTION_REVISION_ONLY
 
     await _finish_projection(
@@ -361,14 +285,7 @@ async def project_practice_answer(
         target_state=target_state,
     )
     await db.commit()
-
-    try:
-        from app.services.vector_retrieval_service import invalidate_vector_cache
-
-        await invalidate_vector_cache(user_id)
-    except Exception:
-        logger.debug("vector cache invalidation failed uid=%d", user_id, exc_info=True)
-
+    await _invalidate_projection_cache(answer.user_id)
     return {
         "processed": True,
         "duplicate": False,
