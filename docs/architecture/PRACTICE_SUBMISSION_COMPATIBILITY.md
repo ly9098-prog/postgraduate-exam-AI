@@ -102,3 +102,9 @@
 - 三个 controller 的 47 项刻画在 HEAD 原实现和拆分后实现均通过；独立只读审查的 261 组调用轨迹、返回值和异常对照一致。相关 practice/page-budget 回归 401 项通过，三个生产文件全部函数不超过 50 行。
 - 本地精确重放 reliability 的 `Pomodoro module boundaries and lifecycle regressions` 步骤通过：TAP 汇总 1437 项、四个番茄钟独立脚本 46/106/12/39 项、渲染不变性 43 项和 5 个 fixture 的 31 项，另有存储清理与考试终态导航脚本通过。该步骤不包含分包体积门禁，也不构成微信开发者工具、模拟器或真机验收。
 - 单独运行 `node miniprogram/tests/test-main-package-size.js` 时，study 分包源码累计体积仍超 1.2 MiB 预算。本批前按其他工作树文件不变、三个生产文件回算 HEAD 的基线为 1,395,945 字节，当前为 1,396,402 字节，净增 457 字节；未调整门禁。这是打包忽略规则下的源码体积统计，不能等同于微信工具编译或上传体积。
+
+## 11. 客户端 controller 自动预算（2026-10-26）
+
+- `learning-controller-budgets.js` 动态递归扫描番茄钟、番茄统计、刷题、复习、考试、刷题结果、错题详情对应的七个 controller 目录。当前发现 154 个 `*controller.js`、905 个有函数体的 function-like，固定函数上限 50 行、模块上限 300 行，均通过；后续新增同名模式文件自动纳入。
+- 目录缺失、路径不是目录、目录内没有 controller 或 JavaScript 语法错误时失败。`node:vm` 的 `Script` 只编译校验源码，不执行；另外保留 TypeScript AST 扫描嵌套函数、对象/类方法、箭头函数和 getter。mutation 测试验证超限拒绝、50/300 边界及 JavaScript 中误写类型标注等非法语法。该命令和 21 项专属测试接入 reliability 同一步骤。
+- 这层检查补充现有 11 页入口预算及番茄钟模块依赖门禁，不覆盖所有 state/helper、渲染组件或新目录，也不替代逐业务语义审查。study 分包体积债与真实微信验收仍按前节保留。

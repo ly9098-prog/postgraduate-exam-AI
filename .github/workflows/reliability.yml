@@ -312,7 +312,9 @@ jobs:
         run: |
           node miniprogram/scripts/architecture/pomodoro-boundaries.js
           node miniprogram/scripts/architecture/page-budgets.js
+          node miniprogram/scripts/architecture/learning-controller-budgets.js
           node --test miniprogram/tests/test-page-budgets.js
+          node --test miniprogram/tests/test-learning-controller-budgets.js
           node --test \
             miniprogram/tests/test-pomodoro-module-boundaries.js \
             miniprogram/tests/test-pomodoro-hide-storage.js \
