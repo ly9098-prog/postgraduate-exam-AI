@@ -76,3 +76,9 @@
 - `test_scored_policy_boundaries.py` 与五个 scored 架构测试约束新的调用链、精确端口绑定、两个服务入口禁止直接执行 SQL、候选快照时序和模块导入无运行时副作用。mutation 用例分别向选题入口和 completion 的 AST 注入 `db.execute`，确认两处均被门禁拒绝。
 - `test_scored_selection_contract.py` 覆盖真实评分/选择/元数据端口、logger identity 与日志顺序，以及排序器/选择器普通异常和取消的传播。相同 selection/pipeline 契约在拆分前入口和拆分后入口均通过；本地行为测试不能替代真实 PostgreSQL、Redis、微信或外部模型验收。
 - 本批只收敛 scored 服务入口，学习域内部的评分、顺序选题、知识总结和投影协调等模块仍有超过预算的函数，不能据此宣称学习域或阶段 0 已全部完成。
+
+### 数值评分组成
+
+- `calculate_smart_score` 保留原签名、原模块的 observed-weak 回调端口，以及配置归一化和阈值校验先于题目状态读取的顺序。`smart_score_history.py` 负责到期、薄弱、错题/新题和覆盖；`smart_score_path.py` 负责阻塞惩罚、前置候选奖励和路径就绪。
+- due、weakness、wrong、new、diversity、path 六组按原顺序相加和应用权重，原因列表也按此顺序组合。阻塞路径质量沿用未裁剪的最大值，前置候选质量仍裁剪到 `[0, 1]`；空阻塞列表的键仍禁止路径就绪奖励。未知前置仍校验原有数值字段。
+- 拆分前新增的 19 项行为刻画通过；拆分后补充端口、数值校验与奖励去重用例。`test_smart_score_boundaries.py` 约束两个新模块无数据库/配置依赖、新函数不超过 50 行及原评分入口不超过 50 行。推荐文案函数仍有 126 行，后续单独治理。

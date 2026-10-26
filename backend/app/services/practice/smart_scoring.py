@@ -9,6 +9,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from app.services.practice.smart_score_history import (
+    combine_score_groups,
+    score_answer_history,
+    score_coverage,
+    score_due_review,
+    score_weakness,
+)
+from app.services.practice.smart_score_path import (
+    prerequisite_thresholds,
+    score_prerequisite_path,
+)
+
 if TYPE_CHECKING:
     from app.models.question import Question
 else:
@@ -212,222 +224,18 @@ def calculate_smart_score(
     weights: dict[str, float] | None = None,  # 系统级 × 用户级综合权重
     graph_config: dict | None = None,
 ) -> tuple[float, list[str]]:
-    """V4 综合打分 + V6.5 图谱候选扩展 + V6.4 权重个性化。
-
-    维度:
-      1. due_score        — 复习到期 (+40)         × due_weight
-      2. overdue_score    — 逾期天数 (+2/天, max 20) × due_weight
-      3. weakness_score   — 知识点薄弱              × weakness_weight
-         observed_weak    — 低置信度弱势迹象 (+12)   × weakness_weight
-      4. wrong_history    — 错题历史 (+8/次, max 30) × wrong_weight
-      5. new_question     — 新题 (+20)              × new_question_weight
-      6. long_unpracticed — 长期未练                × diversity_weight
-      7. diversity        — 知识点多样性 (+10)       × diversity_weight
-      8. path_blocked     — 前置知识点薄弱 (最多 -25) × path_weight
-      9. prerequisite_need— 推荐薄弱前置 (最多 +45)   × path_weight
-     10. path_ready       — 前置已满足可推进 (+8)      × path_weight
-    """
-    reasons: list[str] = []
-
-    # 分组计分
-    due_total = 0.0
-    weakness_total = 0.0
-    wrong_total = 0.0
-    new_total = 0.0
-    diversity_total = 0.0
-    path_total = 0.0
-
+    """Combine review, learning history, coverage and graph score groups in order."""
     graph_config = graph_config or {}
     kp_observations = kp_observations or {}
-    prerequisite_mastery_threshold = max(
-        1.0, min(float(graph_config.get("prerequisite_mastery_threshold", 60.0)), 100.0)
+    thresholds = prerequisite_thresholds(graph_config)
+    due, due_reasons = score_due_review(q_state, now)
+    weakness, weak_reasons = score_weakness(
+        kp_ids, kp_mastery, kp_observations, _get_observed_weak_kp_ids,
     )
-    prerequisite_confidence_threshold = max(
-        0.0, min(float(graph_config.get("prerequisite_confidence_threshold", 0.3)), 1.0)
+    wrong, new, history_reasons = score_answer_history(q_state)
+    diversity, coverage_reasons = score_coverage(q_state, now, kp_ids, recent_kp_ids)
+    path, path_reasons = score_prerequisite_path(
+        kp_ids, blocked_kps, graph_candidates, prerequisites_by_target, thresholds,
     )
-
-    # ── 1 & 2: 到期复习 + 逾期 ──
-    if q_state and q_state.next_review_at and q_state.next_review_at <= now:
-        due_total += 40
-        reasons.append("due_review")
-        overdue_days = (now - q_state.next_review_at).days
-        overdue_score = min(overdue_days * 2, 20)
-        due_total += overdue_score
-        if overdue_score > 0:
-            reasons.append(f"overdue_{overdue_days}d")
-
-    # ── 3: 知识点薄弱 ──
-    if kp_ids:
-        total_ws = 0.0
-        cnt = 0
-        for kid in kp_ids:
-            ms, conf = kp_mastery.get(kid, (50.0, 0.0))
-            total_ws += (100 - ms) * conf * 0.4
-            cnt += 1
-        if cnt:
-            ws = total_ws / cnt
-            weakness_total += ws
-            if ws >= 15:
-                reasons.append("weak_kp")
-            else:
-                observed_weak_kp_ids = _get_observed_weak_kp_ids(
-                    kp_ids, kp_mastery, kp_observations
-                )
-                if observed_weak_kp_ids:
-                    # Early-stage users often spread a small number of attempts
-                    # across many KPs. Give repeated poor performance a medium
-                    # bonus so related new questions can outrank generic new
-                    # questions, without prematurely declaring a confirmed weak KP.
-                    weakness_total += 12.0
-                    reasons.append("observed_weak")
-
-    # ── 4: 错题历史 ──
-    if q_state:
-        ws = min(q_state.wrong_count * 8, 30)
-        wrong_total += ws
-        if q_state.wrong_count > 0:
-            reasons.append("wrong_history")
-
-    # ── 5: 新题 ──
-    if not q_state or q_state.answer_count == 0:
-        new_total += 20
-        reasons.append("new_question")
-
-    # ── 6: 长期未练 ──
-    if q_state and q_state.last_answered_at:
-        days_since = (now - q_state.last_answered_at).days
-        if days_since >= 30:
-            ls = min(days_since * 0.5, 15)
-            diversity_total += ls
-            reasons.append("long_unpracticed")
-
-    # ── 7: 知识点多样性 ──
-    if kp_ids and not set(kp_ids) & recent_kp_ids:
-        diversity_total += 10
-        reasons.append("diversity")
-
-    # ── 8~10: 知识点路径感知 (V6.5) ──
-    if blocked_kps is not None and kp_ids:
-        has_blocked = False
-        blocked_quality = 0.0
-        for kid in kp_ids:
-            blockers = blocked_kps.get(kid) or []
-            if blockers:
-                has_blocked = True
-                blocked_quality = max(
-                    blocked_quality,
-                    max(float(b.get("path_quality") or 0.0) for b in blockers),
-                )
-        if has_blocked:
-            # Low-confidence / low-weight edges should only have a small
-            # influence; graph data is weighted evidence, not an absolute rule.
-            path_total -= 25 * blocked_quality
-            reasons.append("weak_prerequisite")
-
-    if graph_candidates and kp_ids:
-        best_bonus = 0.0
-        for kid in kp_ids:
-            graph = graph_candidates.get(kid)
-            if not graph:
-                continue
-            path_quality = max(0.0, min(float(graph.get("path_quality") or 0.0), 1.0))
-            raw_origin_mastery = graph.get("origin_mastery_score")
-            raw_origin_conf = graph.get("origin_mastery_confidence")
-            raw_prereq_mastery = graph.get("mastery_score")
-            raw_prereq_conf = graph.get("mastery_confidence")
-            origin_mastery = max(
-                0.0,
-                min(
-                    float(50.0 if raw_origin_mastery is None else raw_origin_mastery),
-                    100.0,
-                ),
-            )
-            origin_conf = max(
-                0.0,
-                min(float(0.0 if raw_origin_conf is None else raw_origin_conf), 1.0),
-            )
-            prereq_mastery = max(
-                0.0,
-                min(
-                    float(50.0 if raw_prereq_mastery is None else raw_prereq_mastery),
-                    100.0,
-                ),
-            )
-            prereq_conf = max(
-                0.0,
-                min(float(0.0 if raw_prereq_conf is None else raw_prereq_conf), 1.0),
-            )
-
-            origin_need = ((100.0 - origin_mastery) / 100.0) * origin_conf
-            if graph.get("confirmed_gap"):
-                prereq_gap = (
-                    max(
-                        0.0,
-                        (prerequisite_mastery_threshold - prereq_mastery)
-                        / prerequisite_mastery_threshold,
-                    )
-                    * prereq_conf
-                )
-                bonus = (
-                    45.0
-                    * (0.55 + 0.45 * origin_need)
-                    * (0.65 + 0.35 * prereq_gap)
-                    * path_quality
-                )
-            else:
-                # Unknown prerequisite: diagnostic exploration only.  Never let
-                # it dominate a confirmed weakness.
-                bonus = 10.0 * (0.5 + 0.5 * origin_need) * path_quality
-            best_bonus = max(best_bonus, bonus)
-
-        if best_bonus > 0:
-            path_total += best_bonus
-            reasons.append("prerequisite_need")
-
-    if (
-        prerequisites_by_target
-        and kp_ids
-        and not any(k in (blocked_kps or {}) for k in kp_ids)
-    ):
-        # Only award "ready to progress" when the KP has direct prerequisites
-        # and every one is sufficiently observed + mastered.  Unknown prereqs
-        # are diagnostic candidates, not proof that the path is unlocked.
-        for kid in kp_ids:
-            direct_prereqs = [
-                p
-                for p in (prerequisites_by_target.get(kid) or [])
-                if int(p.get("depth") or 0) == 1
-            ]
-            if direct_prereqs and all(
-                not p.get("unknown_gap")
-                and float(p.get("mastery_score") or 0.0)
-                >= prerequisite_mastery_threshold
-                and float(p.get("mastery_confidence") or 0.0)
-                >= prerequisite_confidence_threshold
-                for p in direct_prereqs
-            ):
-                path_total += 8
-                reasons.append("path_ready")
-                break
-
-    # ── V6.4: 应用个性化权重 ──
-    if weights:
-        score = (
-            due_total * weights.get("due_weight", 1.0)
-            + weakness_total * weights.get("weakness_weight", 1.0)
-            + wrong_total * weights.get("wrong_weight", 1.0)
-            + new_total * weights.get("new_question_weight", 1.0)
-            + diversity_total * weights.get("diversity_weight", 1.0)
-            + path_total * weights.get("path_weight", 1.0)
-        )
-    else:
-        score = (
-            due_total
-            + weakness_total
-            + wrong_total
-            + new_total
-            + diversity_total
-            + path_total
-        )
-
-    return score, reasons
+    score = combine_score_groups((due, weakness, wrong, new, diversity, path), weights)
+    return score, due_reasons + weak_reasons + history_reasons + coverage_reasons + path_reasons
