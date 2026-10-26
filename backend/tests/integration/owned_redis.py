@@ -13,6 +13,12 @@ from pathlib import Path
 
 import redis
 
+from tests.integration.owned_process import (
+    capture_owned_children,
+    spawn_owned,
+    stop_owned_group,
+)
+
 
 class OwnedRedis:
     """Never accepts a URL or directory belonging to another Redis instance."""
@@ -60,7 +66,7 @@ class OwnedRedis:
             "no",
         ]
         with (self.directory / "redis.log").open("ab") as log:
-            self.process = subprocess.Popen(command, stdout=log, stderr=log)
+            self.process = spawn_owned(command, log=log, directory=self.directory)
         with redis.Redis.from_url(self.url, socket_timeout=0.2) as client:
             info = self._wait_ready(client)
             assert client.config_get("port")["port"] == "0"
@@ -88,12 +94,16 @@ class OwnedRedis:
 
     def crash(self):
         assert self.process is not None and self.process.poll() is None
+        capture_owned_children(self.process)
         self.process.kill()
         result = self.process.wait(timeout=5)
         assert result == -signal.SIGKILL
+        stop_owned_group(self.process)
         self.record("crash", pid=self.process.pid, returncode=result)
 
     def stop(self):
+        if self.process is not None:
+            capture_owned_children(self.process)
         if self.process is not None and self.process.poll() is None:
             self.process.terminate()
             try:
@@ -102,6 +112,8 @@ class OwnedRedis:
                 self.process.kill()
                 result = self.process.wait(timeout=5)
             self.record("stop", pid=self.process.pid, returncode=result)
+        if self.process is not None:
+            stop_owned_group(self.process)
         self.record(
             "retained",
             directory=str(self.directory),

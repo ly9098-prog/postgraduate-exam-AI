@@ -115,7 +115,7 @@ jobs:
         working-directory: backend
         run: alembic check
 
-      - name: Install private Redis recovery test runtime
+      - name: Install private process recovery test runtimes
         shell: bash
         run: |
           set -euo pipefail
@@ -124,6 +124,10 @@ jobs:
             sudo apt-get install -y --no-install-recommends redis-server
           fi
           redis-server --version
+          if ! python -c 'from tests.integration.owned_postgres import postgres_binaries; print(postgres_binaries())'; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql
+          fi
 
       - name: Verify owned Redis process crash and recovery
         working-directory: backend
@@ -142,6 +146,30 @@ jobs:
         with:
           name: owned-redis-recovery
           path: /tmp/queue-recovery-*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Verify real worker process drain and crash recovery
+        working-directory: backend
+        timeout-minutes: 20
+        env:
+          APP_ENV: test
+          DEPLOYMENT_PROFILE: local_import
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          REDIS_URL: ""
+          SENTRY_DSN: ""
+          STAGING_STORAGE_DIR: ${{ runner.temp }}/worker-process-staging
+        run: python -m pytest tests/integration/test_worker_process_recovery.py tests/integration/test_owned_process_isolation.py --run-integration -q
+
+      - name: Retain private worker process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owned-worker-process-recovery
+          path: |
+            /tmp/worker-runtime-*
+            /tmp/worker-postgres-*
+            /tmp/queue-recovery-*
           if-no-files-found: ignore
           retention-days: 7
 

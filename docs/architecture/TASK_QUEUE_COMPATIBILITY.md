@@ -1,8 +1,8 @@
 # 任务队列语义与兼容基线
 
-核对日期：2026-10-27。对应重构计划阶段 0/3；范围仅限 `DurableTaskQueue`、v2 worker/outbox 调用和 Redis 键空间，不代表完整 worker 循环、生产 Redis 故障恢复或备份演练已完成。
+核对日期：2026-10-27。对应重构计划阶段 0/3；覆盖 `DurableTaskQueue`、v2 worker/outbox、Redis 键空间及隔离 worker 入口验证，不代表生产 worker 全部业务流程、生产 Redis 故障恢复或备份演练已完成。
 
-本次更新：补充自有独立 Redis 的真实 SIGKILL/AOF 恢复测试，记录旧 socket 首次请求可能报错的恢复边界；生产代码和队列协议未改。
+本次更新：补充自有独立 Redis 的 SIGKILL/AOF 恢复与真实 `worker_main` 进程测试，记录旧 socket 首次请求可能报错的恢复边界；生产代码和队列协议未改。
 
 ## 1. 入口与消费者
 
@@ -63,7 +63,7 @@
 - 2026-10-25 修复迁移脚本的写入失败窗口：HSET/RPUSH/SETEX 包裹在 Lua `pcall` 中，任一失败会 LREM 本次 ready 位置、删除 partial v2 hash 与 idempotency guard，并把错误抛回 Python。2026-10-26 修正原失败注入夹具，改为在 fakeredis 的 Lua `redis.call` 内注入 SETEX 失败，实际覆盖 partial 状态清零、v1 队头保留和恢复重试；先前的 socket HSET 注入不能作为该 Lua 失败窗口的有效证据。这不替代真实 Redis 连接中断/进程崩溃测试。
 - 2026-10-26 修复 Python 拆分后异常进度丢失：helper 用 `V1ToV2DrainError` 携带已确认迁移数，入口保留原 warning/logger 并返回该数；首项成功、第二项失败返回 1，不输出成功汇总。普通连接/脚本失败返回已确认数量，普通 close 失败不覆盖结果或原错误；取消继续传播并关闭已获取的客户端。迁移、结果契约和协议门禁定向 43 项通过，独立审查 112 组历史/当前行为对照一致。
 - 同日补跑 `backend/tests/integration/test_worker_sigterm.py --run-integration`（真实 Redis，worker dispatcher 端口/替身）：7 passed，覆盖 drain 停止新领取、未知类型 dead-letter、heartbeat 安全/不安全 Redis 超时与 Lua 拒绝、取消 checkpoint、并发=1 时不超额执行。修复的是测试端口漂移：`set_draining_v2`/`stop_worker_v2` 现在是 async，heartbeat 替身需抛 `redis.exceptions.TimeoutError`，并保存/恢复模块级 running 标志；未改生产 worker 语义。
-- 仍未验证：跨进程完整 worker 主循环、多 dispatcher 并发、生产 Redis 中断恢复、生产角色退出和备份恢复演练。第 7 节仅覆盖本机独立 Redis 进程崩溃后的队列恢复，上述测试不能替代这些生产验收。
+- 仍未验证：生产 worker 配置及全部业务 handler、多 dispatcher 并发、生产 Redis 中断恢复、生产角色退出和备份恢复演练。第 7 节为本机独立 Redis 队列恢复，第 8 节为隔离真实 worker 入口与学习投影；这些测试不能替代生产验收。
 - Admin 任务页的真实浏览器操作、真实死信重试和长任务取消仍未验收。
 
 ## 7. 自有 Redis 进程崩溃与恢复
@@ -75,3 +75,16 @@
 - 未访问中断实例的旧 socket 可能在重启后的第一次操作中抛出 `QueueHealthError` 或 `TaskQueueUnavailableError`。测试通过最多三次调用验证后续重连，并将错误写入证据；不宣称第一次请求必然成功，也未给生产方法添加自动重试。入队/完成等存在响应丢失窗口的操作不由此测试证明 exactly-once 业务效果。
 - 2026-10-27 本机 Redis 7.2.5 定向执行：6 passed、0 skipped。复现命令为从 `backend/` 执行 `python -m pytest tests/integration/test_queue_redis_recovery.py --run-integration -q`，需安装 `redis-server` 并使用隔离测试配置；不依赖 `TEST_REDIS_URL`。Reliability Gate 增加同一显式命令及证据 artifact，远端 CI 结果未验证。
 - 范围限制：这是私有单节点 Redis、合成任务、AOF always 的本地恢复证据，不覆盖生产 `everysec` 丢写窗口、网络分区、Redis 集群、完整 worker 进程、外部 OCR/AI 调用或备份恢复。
+
+## 8. 真实 worker 进程与学习投影
+
+- `backend/tests/integration/test_worker_process_recovery.py` 使用 `OwnedWorker` 启动未修改的 `python -m app.worker_main`。子进程采用白名单测试环境和新建私有 cwd，不加载仓库 `.env`，不注入替代 handler、信号处理器、dispatcher 或缩短租约的 monkeypatch。真实入口会启动 executors、dispatcher、reaper 和 AI prewarm，关闭 OCR/GPU/向量功能。
+- `owned_postgres.py` 通过本机 PostgreSQL server binaries 初始化全新集群，仅监听权限为 0700 的私有 Unix socket，TCP 关闭；Redis 同样使用自有实例。真实 Alembic `upgrade head` 在该集群执行，只有合成用户、题目、不可变版本、知识点和待投影的练习记录被加入。进程身份记录、数据库、AOF、日志和元数据均保留，测试退出只停止自行创建的子进程。
+- Linux harness 为服务创建独立 session，关闭前记录实际子孙进程及 PID 出生标记；正常关闭失败时通过 pidfd 仅终止这些自有进程，并核验无运行中的遗留进程。该跟踪也覆盖自行创建其他 session 的 PostgreSQL backend；一个 worker 的强制清理失败不会跳过其他 worker。服务子进程只接收白名单环境，HOME/TMPDIR 指向私有目录，Python 依赖路径保持父解释器的已安装包顺序，不透传父环境凭据。
+- SIGTERM 场景：父进程锁定练习记录，确认真实 worker 已领取任务且 PostgreSQL 实际等待该锁，再发送 SIGTERM。进入 drain 后释放锁，当前任务完成，后续任务保留 pending，进程正常退出。替换 worker 执行遗留任务，同一练习事件使用新任务 ID 再投递，业务投影不得重复。
+- SIGKILL 场景：同样在真实 SQL 锁等待时终止 worker，确认未产生学习副作用；等待默认 600 秒租约与 heartbeat 自然到期，期间不删 heartbeat、不修改 processing score 或服务器时钟。替换 worker 的真实 reaper/dispatcher 重新领取，generation/token 改变，旧 owner 操作被拒绝，释放锁后投影完成。
+- 学习效果由独立 SQL 观察核对：练习投影终态、唯一答题行为及版本、Leitner answer/correct/wrong count 和盒子等级、知识点 attempt/correct/wrong count 与掌握度、adaptive 难度状态及计数；重复投递后结果完全一致。fixture 故意令可变题目答案与不可变版本不同，并使用不同 question/version ID，锁定历史证据来源。该场景不声称覆盖所有题型、错误作答、推荐归因或外部 AI 分析。
+- 复现：从 `backend/` 执行 `python -m pytest tests/integration/test_worker_process_recovery.py --run-integration -q`，需安装 PostgreSQL server binaries 与 `redis-server`。完整用例会真实等待约 10 分钟；`-k sigterm` 只运行正常退出场景。CI 配置独立步骤及证据 artifact，远端运行未验证。
+- `test_owned_process_isolation.py` 另以真实 SIGSTOP 的 PostgreSQL backend 检查 fast stop 失败后的整组清理，并注入首个 worker 强制等待错误，验证其余 worker 仍被关闭；合成凭据标记不得进入子进程，未标记为自有的进程组必须被拒绝。
+- 2026-10-27 本机 PostgreSQL 15.8、Redis 7.2.5 最终冻结七份测试源码执行：上述两文件合计 5 passed、0 skipped，耗时 664.55 秒；相关生命周期、投影、架构与 Redis 回归另有 320 passed。独立审查修复并关闭旧 claim 采样、adaptive 与 immutable 断言、后代进程清理及环境隔离等缺口；缩短租约的独立诊断探针仅用于竞态正反对照，不计入真实 600 秒验收。
+- 范围限制：使用 `APP_ENV=test` / `local_import`，不是生产配置验证；生产 PostgreSQL/Redis、外部 OCR/AI、备份恢复和多 dispatcher 竞争仍需单独验收。旧 `test_worker_kill.py` 手动操作键的测试不作为本节实际进程信号证据。
