@@ -321,10 +321,28 @@ jobs:
             tests/test_services/test_ai_config_snapshot.py \
             tests/test_services/test_ai_prewarm_revision.py \
             tests/test_services/test_ai_prewarm_protocol.py \
+            tests/test_services/test_ai_analysis_content_compatibility.py \
+            tests/test_services/test_ai_analysis_execution.py \
+            tests/test_services/test_ai_analysis_invocation.py \
+            tests/test_services/test_ai_analysis_outcomes.py \
+            tests/test_services/test_ai_analysis_preparation.py \
+            tests/test_services/test_ai_analysis_response_contracts.py \
+            tests/test_services/test_ai_analysis_result_review.py \
+            tests/test_services/test_ai_analysis_validation.py \
+            tests/test_services/test_ai_prewarm_execution.py \
+            tests/test_services/test_ai_prewarm_transition.py \
+            tests/test_services/test_import_background_execution.py \
+            tests/test_services/test_import_background_failure.py \
+            tests/test_services/test_import_image_completion.py \
+            tests/test_services/test_import_image_lifecycle.py \
+            tests/test_services/test_import_image_stages.py \
+            tests/test_services/test_task_queue_service_compatibility.py \
+            tests/test_services/test_task_queue_v1_fail_redis_contract.py \
             tests/export/test_docx_fonts.py \
             tests/core/test_code_integrity.py \
             tests/practice/test_scored_pipeline_contract.py \
             tests/practice/test_scored_selection_contract.py \
+            tests/practice/test_smart_score_components.py \
             tests/practice/test_smart_pipeline_contract.py \
             tests/practice/test_aggregated_smart_contract.py \
             tests/practice/test_smart_path_supplement_contract.py \
@@ -335,6 +353,7 @@ jobs:
             tests/architecture/test_scored_fallback_boundaries.py \
             tests/architecture/test_scored_ranking_boundaries.py \
             tests/architecture/test_scored_policy_boundaries.py \
+            tests/architecture/test_smart_score_boundaries.py \
             tests/architecture/test_scored_fallback_merge_boundaries.py \
             tests/architecture/test_scored_fallback_flow_boundaries.py \
             tests/architecture/test_smart_scored_supplement_boundaries.py \

@@ -68,3 +68,9 @@
 - `pipeline_orchestrator.py`（7250 行）的 16 阶段检查点/工件恢复、真实 OCR 引擎调用和 AI 修复执行未在本文档登记完整语义，需单独逐阶段基线。
 - 真实外部 OCR（PaddleOCR/PaddleOCR-VL/OpenAI 兼容）、图片/Excel/PDF 导入端到端、worker 多进程并发 fence 和队列满拒绝行为仍待环境可用后验收。
 - SQLite 服务路径测试不等于生产 PostgreSQL/Redis 查询计划或并发 fence 验收。
+
+## 8. 图片与后台执行阶段（2026-10-26）
+
+- 图片后台由 `import_image_lifecycle.run_image_import_lifecycle` 组合 OCR/解析阶段、成功终态投影和完成持久化。普通失败先记录结构化日志和异常，再由服务原有失败路径调用 `persist_image_import_failure`；服务继续负责 checkpoint、预约释放和临时文件清理，不改变人工审核入库边界。
+- 通用后台的 `import_background_execution.execute_import_background` 保留 start 日志、来源 digest 解析、独立 session、后台调用和 finish 日志顺序。后台失败与其补偿仍由原服务/失败模块处理，不能把成功路径的 finish 日志移到 finally。
+- CI static 清单已纳入 image lifecycle/stages/completion 和 background execution/failure 契约，防止后续拆分遗漏完成持久化、失败补偿或端口转发。测试替身不构成外部 OCR 或完整 worker 验收。

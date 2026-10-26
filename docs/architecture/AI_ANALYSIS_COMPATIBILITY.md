@@ -107,3 +107,11 @@ Layer 4 规则（`repair_questions` 内）：
 - `ai_service.py`（2301 行）的 `generate_advice`、`prewarm_wrong_question_analysis` 完整语义未在本文档登记，需单独基线。
 - 真实外部 AI（OpenAI 兼容/DeepSeek/PaddleOCR-VL）、生产 Redis 令牌预算共享和加密凭据轮换仍待环境可用后验收。
 - SQLite 服务路径测试不等于生产 PostgreSQL/Redis 查询计划或真实 AI 调用验收。
+
+## 6. 分析执行拆分与回归入口（2026-10-26）
+
+- `ai_service.analyze_error` 保留准备阶段及原服务端口，随后进入 `analysis_orchestration.execute_locked_analysis`。编排先获取生成 lease，无法获取时返回生成中响应；获取成功后依次复查锁内缓存、准备输入、调用 provider、复核结果和选择终态，finally 释放生成状态及 lease。
+- `analysis_review_invocation.py` 分开装配调用、结果复核和终态选择；实际 runtime、模型签名、图像、答案 grounding、usage、失败响应和持久化回调继续来自原 request。历史公开导入和 monkeypatch 入口保留，拆分不改变缓存、鉴权隔离或结果入库规则。
+- CI static 清单已包含 analysis content、execution、invocation、outcomes、preparation、response contracts、result review、validation，以及 prewarm execution/transition 测试。它们覆盖本地替身执行契约，不调用真实模型。
+- `test_ai_prewarm_boundaries.py` 的真实生产者集合跟随批量提交编排移至 `practice.batch_submission_flow`，仍要求所有生产者使用 `app.ai.prewarm_revision` 中性协议，并禁止从 worker 导入该协议。
+- 服务与新编排入口经 AST 复核均不超过当前批次的 80 行预算，不表示所有内部模块均达到 50 行规范；`analysis_content._extract_analysis_fields` 仍有超过 80 行的函数，后续继续治理。真实模型、多模态和 Redis 故障恢复等验收项仍按第 5 节记录。

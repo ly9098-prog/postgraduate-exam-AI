@@ -14,7 +14,7 @@ REVISION = APP / "ai/prewarm_revision.py"
 CONSUMERS = {
     "app.api.v1.ai",
     "app.services.ai_service",
-    "app.services.practice_service",
+    "app.services.practice.batch_submission_flow",
     "app.services.exam_service",
     "app.services.review_scheduler",
     "app.services.wrong_question_service",
