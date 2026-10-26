@@ -123,3 +123,11 @@
 - 协调器只扫描超过 grace 的 pending 记录，不为扫描加记录行锁；原任务活跃或本小时修复已存在则跳过。每条 outbox 创建在 savepoint 内隔离，唯一冲突/普通失败分类计数，外部查询错误和取消传播；扫描非空时一次 commit，空扫描 rollback。
 - `projection_reconciliation_runtime` 只负责参数解析和租约轮询，服务通过延迟绑定端口保留跨轮 reconcile、sleep、logger 与 settings patch 行为。四个业务文件均不超过 300 行，函数不超过 50 行；两个入口 140/111→45/33 行。
 - 最终 85 项刻画在原实现通过，相关回归 158 项通过；作者 answer/reconcile 各 1,000 组差分一致。独立只读审查 88 项通过，四份行为测试在原实现重放 81 项通过，另核对动态端口、SQL/事务与 8 个保留函数 AST，无 P0–P3 发现。真实 PG 行锁竞争、Redis 租约和跨进程 worker 仍未验证。
+
+## 14. 知识会话总结投影（2026-10-26）
+
+- `knowledge_session_summary.py` 继续拥有数据库查询入口、事务边界和对外函数名；纯基线、点位统计与响应投影分别由 `knowledge_summary_baseline.py`、`knowledge_summary_points.py`、`knowledge_summary_projection.py` 承接。新模块不引入配置、模型、数据库或任务副作用。
+- issue-time baseline 仍只对已签发 revision 实际代表的知识点建立逐点快照，最多保留 96 个逐点 baseline；完整 scope、served 顺序、截断前数量和根节点聚合字段仍进入签名上下文。持久化 scope 优先，旧数据继续使用 legacy fallback。
+- session summary 仍先处理 `processing` 早返和 baseline 解码，再按原查询顺序投影；完整点位排序后才应用 24 个展示点上限，`touched_knowledge_point_count` 保留截断前计数。缺失 baseline 继续进入 `unavailable`，不以当前掌握度伪造历史结果。
+- `_number_or_none`、`_delta`、状态分级、异常阶段、取消传播、动态 patch 入口和 SQL 参数均保持原语义；服务不接管事务。相关入口和四个业务文件均满足 300 行/50 行函数门禁。
+- 证据：原实现重放 30 项刻画通过，当前相关回归 66 项通过；独立审查补充 5,000 组原/新差分与 13,700 组 SQLite/PostgreSQL 编译 SQL/参数对照，结果一致；架构门禁 7 项通过。SQL 对照未执行真实 PostgreSQL。
