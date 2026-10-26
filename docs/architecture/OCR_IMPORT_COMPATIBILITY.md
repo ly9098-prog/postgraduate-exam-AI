@@ -65,7 +65,7 @@
 ## 7. 未完成和未验证
 
 - 上传准入测试使用 monkeypatch 替换暂存/入队/预约，不等于真实 Redis 队列或 staging 存储验收。
-- `pipeline_orchestrator.py`（7250 行）的 16 阶段检查点/工件恢复、真实 OCR 引擎调用和 AI 修复执行未在本文档登记完整语义，需单独逐阶段基线。
+- `pipeline_orchestrator.py` 的规范定义现有 27 个阶段；检查点、工件恢复和 single-pass 执行循环基线见 `PIPELINE_ORCHESTRATOR_COMPATIBILITY.md`。各阶段实际算法、chunked/coordinator 集成、真实 OCR 引擎和 AI 修复执行仍需逐阶段审查，不按历史“16 阶段”描述判断完成度。
 - 真实外部 OCR（PaddleOCR/PaddleOCR-VL/OpenAI 兼容）、图片/Excel/PDF 导入端到端、worker 多进程并发 fence 和队列满拒绝行为仍待环境可用后验收。
 - SQLite 服务路径测试不等于生产 PostgreSQL/Redis 查询计划或并发 fence 验收。
 

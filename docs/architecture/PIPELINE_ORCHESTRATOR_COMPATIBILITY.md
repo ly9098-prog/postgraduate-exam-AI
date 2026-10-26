@@ -1,6 +1,6 @@
 # 导入流水线编排兼容基线
 
-核对日期：2026-10-24。对应重构计划阶段 0；范围仅限 `pipeline_orchestrator.py` 的阶段定义、检查点生命周期、工件恢复和内存释放，不表示学习域、AI 分析或全栈阶段 0 完成。
+核对日期：2026-10-26。对应重构计划阶段 0；范围包括 `pipeline_orchestrator.py` 的阶段定义、single-pass 执行循环、检查点生命周期、工件恢复和内存释放，不表示各阶段算法、学习域、AI 分析或全栈阶段 0 完成。
 
 ## 1. 阶段定义（`pipeline_definition.py`）
 
@@ -73,14 +73,15 @@
   - `match` 后释放 `normalized_blocks`
   - `normalize_schema` 后释放 `raw_questions`/`matched`/`unmatched`
 - `review` 阶段在 `overall_status=="failed"` 时跳过（防止部分数据进入审核池）。
-- 阶段异常 → `overall_status="failed"`、记录 error、写失败检查点、继续执行（非 abort）。
+- 普通阶段异常 → `overall_status="failed"`、记录 error、写失败检查点；`extract` / `normalize_text` 失败后中断，其余阶段继续执行但跳过 review。`ocr_correction` 失败释放文件字节、路径和图像后继续；其他早期中断也释放这些输入。
 
 ## 5. 可执行基线
 
-- `backend/tests/pipeline/test_pipeline_definition.py`：19 项测试覆盖 27 阶段快照、可恢复工件、业务域、条件启用矩阵、runner 方法存在性和纯元数据无运行时导入。
+- `backend/tests/pipeline/test_pipeline_definition.py`：18 项测试覆盖 27 阶段快照、可恢复工件、业务域、条件启用矩阵、runner 方法存在性及元数据模块导入。
 - `backend/tests/test_features/test_pipeline_checkpoint_compatibility.py`：新增 6 项测试覆盖检查点 write→read→clear 往返、缺失返回 None、大字段剥离、失败检查点记录 error、prune 驱逐。
 - `backend/tests/test_features/test_artifact_resume_equivalence.py`：7 项测试覆盖完整运行=从 normalize_schema/repair 恢复、恢复后仍运行后续阶段、版本不匹配拒绝、损坏工件返回 None、无工件不恢复。
 - `backend/tests/pipeline/` 下 20+ 项编排器、协调器、指纹、回滚和 profile 集成测试。
+- 新增 `test_single_pass_execution_contract.py` / `test_single_pass_state_contract.py` 的 73 项刻画调用真实 single-pass 循环和 `PipelineStage.run_async`，以合成阶段和副作用端口隔离外部依赖。2026-10-26 连同检查点、恢复与阶段定义共 104 项通过；这些替身不验证各阶段的实际 OCR/AI 算法。
 
 ## 6. 未完成和未验证
 
@@ -88,3 +89,13 @@
 - 工件恢复测试使用合成数据，不等于真实 PDF/图片导入的端到端恢复验收。
 - `pipeline_orchestrator.py`（7250 行）的 chunked 模式、coordinator 集成、VL rebuild 和真实 OCR 引擎调用未在本文档登记完整语义。
 - 真实 Redis 检查点、多 worker 并发恢复、大文件（400 页扫描 PDF）内存释放和外部 OCR/AI 故障恢复仍待环境可用后验收。
+
+## 7. Single-pass 执行循环刻画（2026-10-26）
+
+- 对规范 27 个阶段逐一注入普通失败和取消。普通失败经过 `PipelineStage` 记录 `failed/error`，由循环决定中断或继续；取消保留异常身份，既不写失败检查点，也不写终态 marker，当前 stage 状态保留 `running`。
+- 正常完成及普通失败后继续执行的阶段有前后 progress；extract / normalize_text 失败直接中断，取消传播也不保证后回调。普通 observer 异常被忽略，取消仍传播。从工件恢复跳过的阶段标为 completed、耗时为 0，不调用 progress、不单独写检查点或工件。仅有 completed_stages 的检查点仍重跑阶段；它本身不包含恢复输出。
+- single-pass 在首阶段前写初始检查点；每阶段成功后写检查点，再尝试保存工件；成功后清检查点、写 completed marker，失败则保留检查点并写 failed marker。chunk pass 通过非 `None` 的共享 hash 集合辨识，不写这些全局检查点、工件或 marker。
+- 初始检查点写失败阻止执行第一阶段。成功 stage 后的检查点错误会使整个 pass 失败，即便 stage 自身已 completed；此时 error 可为 `None`，已追加的 completed_stages 不回退，review 被跳过。这是既有行为的记录，不能将其表述为数据库提交或事务回滚。
+- 文件字节与图像保留到 OCR correction，路径保留到 split；raw_blocks 在 normalize_text 后释放，normalized_blocks 在 match 后释放，raw_questions/matched/unmatched 在 normalize_schema 后释放。normalized block count 在结果写入时缓存，后续清理不使计数归零。
+- chunk 页范围通过新 options 字典覆盖，保留调用方字典及其内层对象引用；共享 hash index 与已见 hash 集合仍按原引用传递。split 质量与 routing 观察器普通失败仅记录 warning，不使 stage 失败。实际文件删除、数据库提交与外部调用均未在这些合成测试中执行。
+- 工件恢复用例同时检查首个恢复后阶段和最终数据都收到原恢复题目；mutation 将恢复端口参数替换为 `data.copy()` 时，新增断言明确拒绝丢失恢复数据的循环。
