@@ -48,6 +48,7 @@ from app.features.pipeline_artifacts import (
 from app.features.pipeline_artifacts import (
     save_failed_marker as _save_failed_marker,
 )
+from app.features.pipeline_stage_completion import complete_stage_data
 from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 from app.features.pipeline_stages.code_language_noise_layer import (
     run_code_language_noise_clean_stage,
@@ -5899,51 +5900,9 @@ class ImportPipeline:
                         )
                 # P6-2: update per-stage profiling metrics from data & result
                 _update_stage_metrics(stage, data, result)
-                # P0-1 / P1-A: 大字段一过最后消费者立即释放，避免随 8+ 个阶段
-                # 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks
-                # 单独可达 50~200 MB（含 boxes），是仅次于 PDF 字节的大头。
-                if name == "extract":
-                    # PDF/图片字节保留给 ocr_correction（PaddleOCR-VL 需要原始图像）
-                    pass
-                elif name == "normalize_text":
-                    # raw_blocks 已并入 normalized_blocks，无后续消费者
-                    data.pop("raw_blocks", None)
-                elif name == "ocr_correction":
-                    # OCR correction stage finished, release original bytes
-                    # and rendered page images (PaddleOCR-VL was last consumer).
-                    # Keep file_path for potential VL_REBUILD in split stage.
-                    data.pop("file_content", None)
-                    data.pop("page_images", None)
-                elif name == "split":
-                    # split 后释放 file_path（VL_REBUILD 不再需要）
-                    data.pop("file_path", None)
-                    # ── 观察：split 质量评估 ──
-                    try:
-                        from app.evaluation.split_quality import evaluate_split_quality
-
-                        sq = evaluate_split_quality(
-                            result.get("raw_questions", []),
-                            result.get("split_diagnostics"),
-                            data.get("layout_result"),
-                        )
-                        data["split_quality"] = sq
-                    except Exception as exc:
-                        logger.warning("split_quality evaluation failed: %s", exc)
-                    # ── 观察：per-run routing metrics ──
-                    try:
-                        from app.evaluation.routing_metrics import build_routing_metrics
-
-                        data["routing_metrics"] = build_routing_metrics(data)
-                    except Exception as exc:
-                        logger.warning("routing_metrics build failed: %s", exc)
-                elif name == "match":
-                    # match 后无人再读 normalized_blocks，count 已在写入时缓存
-                    data.pop("normalized_blocks", None)
-                elif name == "normalize_schema":
-                    # questions 已落地，原始题目/匹配结果不再被读取
-                    data.pop("raw_questions", None)
-                    data.pop("matched", None)
-                    data.pop("unmatched", None)
+                complete_stage_data(
+                    name, data, result, warning=lambda *args: logger.warning(*args)
+                )
 
                 # P3-2: write checkpoint after each completed stage (single-pass only)
                 if not _is_chunked_mode:

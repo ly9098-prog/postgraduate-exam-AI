@@ -99,3 +99,10 @@
 - 文件字节与图像保留到 OCR correction，路径保留到 split；raw_blocks 在 normalize_text 后释放，normalized_blocks 在 match 后释放，raw_questions/matched/unmatched 在 normalize_schema 后释放。normalized block count 在结果写入时缓存，后续清理不使计数归零。
 - chunk 页范围通过新 options 字典覆盖，保留调用方字典及其内层对象引用；共享 hash index 与已见 hash 集合仍按原引用传递。split 质量与 routing 观察器普通失败仅记录 warning，不使 stage 失败。实际文件删除、数据库提交与外部调用均未在这些合成测试中执行。
 - 工件恢复用例同时检查首个恢复后阶段和最终数据都收到原恢复题目；mutation 将恢复端口参数替换为 `data.copy()` 时，新增断言明确拒绝丢失恢复数据的循环。
+
+## 8. 完成阶段的数据清理与观察（2026-10-26）
+
+- `pipeline_stage_completion.complete_stage_data` 承接阶段完成后的输入释放与 split 质量/routing 观察；调用仍位于结果合并、normalized block count 缓存和 metrics 更新之后、checkpoint 和工件保存之前。失败阶段的输入补偿和终态 marker 继续由原循环负责。
+- 原始文件字节/图像保留到 OCR correction，路径保留到 split；保留 `pop` 顺序及结果对象引用。split 先释放路径，再收集质量结果，最后 routing 读取包含该质量结果的当前 data。两个观察器按原时点导入，普通异常仍 warning，取消传播；warning 回调在调用时读取原 orchestrator 的当前 logger。
+- 新模块 54 行，三个函数 21/14/7 行；fresh import 不加载 orchestrator、观察器、配置或数据库。原 single-pass 入口 382→340 行，仍超 50 行，整个编排器仍待继续治理，不能将本批表述为编排完成。
+- 新增 4 项观察契约先在原实现通过，与前批合计 77 项；当前核心 108 项及 pipeline、chunk/resume、工件等相关 376 项通过。作者对原分支和新实现的 2,000 组输入清理、观察、warning 与取消差分一致；测试使用合成数据，不代表外部 OCR/AI 或真实大文件内存验收。
