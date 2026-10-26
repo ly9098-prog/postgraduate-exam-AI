@@ -127,7 +127,10 @@ from app.services.task_queue_v2_dead_retry_contract import (
 )
 from app.services.task_queue_v2_inspection_contract import build_v2_task_inspection
 from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
-from app.services.task_queue_v1_to_v2_redis_contract import execute_v1_to_v2_drain
+from app.services.task_queue_v1_to_v2_redis_contract import (
+    V1ToV2DrainError,
+    execute_v1_to_v2_drain,
+)
 from app.services.task_queue_v2_metrics_contract import build_v2_metrics_snapshot
 from app.services.task_queue_v2_enqueue_contract import (
     build_v1_enqueue_task,
@@ -2163,6 +2166,7 @@ class DurableTaskQueue:
         """
         if not self._redis_enabled:
             return 0
+        migrated = 0
         try:
             migrated = await execute_v1_to_v2_drain(
                 self._get_script_client,
@@ -2180,6 +2184,9 @@ class DurableTaskQueue:
                     "v1→v2 drain: migrated %d tasks for %s", migrated, task_type
                 )
             return migrated
+        except V1ToV2DrainError as e:
+            logger.warning("v1→v2 drain failed for %s: %s", task_type, e)
+            return e.migrated
         except Exception as e:
             logger.warning("v1→v2 drain failed for %s: %s", task_type, e)
             return migrated

@@ -19,6 +19,14 @@ from app.services.task_queue_v1_to_v2_contract import parse_v1_to_v2_result
 logger = logging.getLogger("postgraduate-ai.task-queue")
 
 
+class V1ToV2DrainError(Exception):
+    """Carry confirmed progress when a drain operation fails."""
+
+    def __init__(self, migrated: int, cause: Exception) -> None:
+        super().__init__(str(cause))
+        self.migrated = migrated
+
+
 async def execute_v1_to_v2_drain(
     get_client: Callable[[], Awaitable[Any | None]],
     load_scripts: Callable[[Any], Awaitable[None]],
@@ -31,28 +39,20 @@ async def execute_v1_to_v2_drain(
     corrupt_max: int,
     tombstone_ttl: int,
 ) -> int:
-    client = await get_client()
-    if client is None:
-        return 0
+    client = None
     migrated = 0
     try:
+        client = await get_client()
+        if client is None:
+            return 0
         await load_scripts(client)
         for _ in range(batch_size):
             raw = await evalsha(
-                client,
-                "_lua_drain_one_v1_to_v2",
-                6,
-                _q_key(task_type),
-                _TASK_PREFIX,
-                _v2_q_key(task_type),
-                _V2_TASK_PREFIX,
-                _V2_IDEMPOTENCY_PREFIX,
-                _v2_corrupt_key(task_type),
-                task_type,
-                str(idempotent_ttl),
-                str(max_ready),
-                str(corrupt_max),
-                str(tombstone_ttl),
+                client, "_lua_drain_one_v1_to_v2", 6,
+                _q_key(task_type), _TASK_PREFIX, _v2_q_key(task_type),
+                _V2_TASK_PREFIX, _V2_IDEMPOTENCY_PREFIX, _v2_corrupt_key(task_type),
+                task_type, str(idempotent_ttl), str(max_ready),
+                str(corrupt_max), str(tombstone_ttl),
             )
             step = parse_v1_to_v2_result(raw)
             if not step.should_continue or step.should_stop:
@@ -69,8 +69,14 @@ async def execute_v1_to_v2_drain(
                     "v1→v2 drain: task %s preserved as corrupt", step.task_id
                 )
         return migrated
+    except Exception as error:
+        raise V1ToV2DrainError(migrated, error) from error
     finally:
-        await client.aclose()
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
 
 
 def _log_drain_stop(step, task_type: str) -> None:
