@@ -525,6 +525,8 @@ jobs:
           node --test miniprogram/tests/test-exam-ai-teacher-408.js
           node --test miniprogram/tests/test-exam-stem-render-contract.js
           node --test miniprogram/tests/test-exam-stem-render-boundaries.js
+          node --test miniprogram/tests/test-exam-code-reconstructor.js
+          node --test miniprogram/tests/test-exam-code-reconstructor-boundaries.js
           node --test miniprogram/tests/test-exam-result-page-wiring.js
           node --test miniprogram/tests/test-exam-paper-list-page-wiring.js
           node --test miniprogram/tests/test-practice-result-tips.js

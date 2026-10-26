@@ -217,3 +217,18 @@ Fixture 格式（JSON）：
 - **行内公式横向滚动**（`shouldScrollInlineFormula`）：仅真正超长的行内公式（估算可视宽度 > 34 字符）或 `\begin{array|matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|cases|aligned|alignedat|gathered}` 等块环境才加 `overflow-x:auto` 滚动容器；短公式保持 `overflow:visible`（`padding:0`）。原因：Android/微信下对每个行内 KaTeX 容器加 `overflow-x:auto` 会把原生滚动条画成短公式下方的灰色下划线（如 `\forall x\in D_f,\ x\pm T\in D_f`）
 - KaTeX 解析错误做「外科手术式」替换（`cleanFormulaErrorNodes` + `extractReadableText`）：单个坏公式片段降级为可读纯文本，不拖垮整段中文/其他公式；`containsRenderError` / `isKatexDiagnosticText` 识别错误节点
 - `formula-content.js` 复杂度阈值（`prepareFormulaBlocks`）：`complexity > 200` 才 `isScrollable`；`> 185` `is-dense`、`> 120` `is-compact`——长但能放进手机宽度的公式不再强制横向滚动
+
+## 考试代码恢复职责（2026-10-26）
+
+考试分包的 `utils/code-reconstructor.js` 保留六个公开导出和恢复选项处理；同目录
+`code-reconstructor-signals.js` 承接代码信号判别，`code-reconstructor-structure.js`
+承接运算符与结构恢复，`code-reconstructor-artifacts.js` 承接语言保护和美元符号伪影判定，
+`code-reconstructor-strings.js` 承接保留注释、单引号和转义的字符串扫描。依赖均在考试分包内，
+保持 study 分包现有实现和主包边界。
+
+本次拆分保持当前恢复结果，包括花括号恢复中的历史边界行为；不是新的代码格式化算法。
+保留 `fixOperators`、`fixStructure`、`fixIndent` 的读取顺序，PHP/Shell/Perl 保护以及原清理日志。
+`test-exam-code-reconstructor.js` 覆盖固定输入输出、选项 getter 异常顺序和 study/exam
+对照；`test-exam-code-reconstructor-boundaries.js` 检查全部五个模块的 300 行/50 行预算、
+JavaScript 语法和分包内依赖，并拒绝注入的运行时依赖及超限代码。两项检查已接入 reliability。
+这些 Node 检查不代表微信开发者工具编译、模拟器或真机验收。
