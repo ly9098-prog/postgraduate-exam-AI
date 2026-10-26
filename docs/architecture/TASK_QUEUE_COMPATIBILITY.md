@@ -53,6 +53,7 @@
 - `backend/tests/core/test_task_queue_v1_to_v2_migration.py`：使用 fakeredis + Lua 执行原子迁移成功、v2 满保留 v1、缺失/错配 payload 转 corrupt、已有 v2 guard 去重及半写 v2 hash 冲突保护。
 - `backend/tests/core/test_queue_metrics.py`、`test_runtime_metrics_contract.py`：Task 基础字段、指标采样和队列端口契约。
 - `backend/tests/integration/test_queue_hardening.py`、`test_queue_fencing.py`、`test_queue_integration.py`：需要 `--run-integration` 和真实临时 Redis。2026-10-24 本机 `redis-server 7.2.5`（127.0.0.1:6380，DB1，无持久化）重放结果：hardening 23 passed、fencing 26 passed、integration 20 passed。
+- 2026-10-26 在新建 Unix socket 的独立 Redis 7.2.5 实例、DB1、关闭持久化的环境重放上述 69 项：首轮 68 通过、1 项因测试仍从旧 service 导入私有版本常量失败；只将该测试改为引用实际所有者 `task_queue_contract`，生产代码未改。重跑 69 passed、0 skipped，包含真实 Lua、owner/generation fencing、重试/死信、取消、过期租约回收和迁移；不包含 Redis 进程中断恢复或完整跨进程 worker。测试仅操作新实例的合成数据，完成后停止该实例并保留日志。
 
 ## 6. 已知风险与后续
 

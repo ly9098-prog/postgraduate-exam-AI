@@ -268,7 +268,7 @@ class TestTaskPayloadVersioning:
     @pytest.mark.asyncio
     async def test_task_has_versioning_fields(self, q):
         """Task dataclass includes versioning fields."""
-        from app.services.task_queue_service import _CURRENT_TASK_SCHEMA_VERSION
+        from app.services.task_queue_contract import _CURRENT_TASK_SCHEMA_VERSION
 
         task = Task(
             task_id="version_test_001",
