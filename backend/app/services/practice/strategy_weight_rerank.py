@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.knowledge_point import KnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.services.knowledge_point_service import load_question_kps
+from app.services.practice.strategy_weight_scores import build_strategy_base_scores
 
 if TYPE_CHECKING:
     from app.models.question import Question
@@ -46,84 +47,18 @@ async def apply_strategy_weight_rerank(
         if strategy_type not in (None, "weakness_vector"):
             return questions, metadata
 
-        # 批量加载知识点 id 与用户掌握度（固定 2 次查询，避免 N+1）
         kp_map = await load_question_kps(db, [q.id for q in questions])
-
-        candidate_names: set[str] = set()
-        for q in questions:
-            candidate_names.update(kp_map.get(q.id, []))
-
-        kp_name_to_id: dict[str, int] = {}
-        if candidate_names:
-            kp_result = await db.execute(
-                select(KnowledgePoint.id, KnowledgePoint.name).where(
-                    KnowledgePoint.name.in_(candidate_names)
-                )
-            )
-            for kp_id, name in kp_result.all():
-                kp_name_to_id[name] = kp_id
-
-        mastery_by_kp: dict[int, float] = {}
-        kp_ids = set(kp_name_to_id.values())
-        if kp_ids:
-            state_result = await db.execute(
-                select(
-                    UserKnowledgeState.knowledge_point_id,
-                    UserKnowledgeState.mastery_score,
-                ).where(
-                    UserKnowledgeState.user_id == user_id,
-                    UserKnowledgeState.knowledge_point_id.in_(kp_ids),
-                )
-            )
-            for kp_id, mastery in state_result.all():
-                if mastery is not None:
-                    mastery_by_kp[kp_id] = mastery
-
-        known_mastery = list(mastery_by_kp.values())
-        user_mean_mastery = (
-            sum(known_mastery) / len(known_mastery) if known_mastery else None
+        kp_name_to_id = await _load_knowledge_ids(db, questions, kp_map)
+        mastery_by_kp = await _load_mastery(db, user_id, kp_name_to_id)
+        scored = _rank_candidates(
+            questions,
+            metadata,
+            config,
+            weak_kp_names,
+            kp_map,
+            kp_name_to_id,
+            mastery_by_kp,
         )
-        target_difficulty = (
-            3 + round(user_mean_mastery / 25) if user_mean_mastery is not None else None
-        )
-        exploration = float(config.get("exploration_ratio") or 0.0)
-
-        from app.services.recommendation_strategy_service import apply_strategy_weights
-
-        scored: list[tuple[Question, float, float]] = []
-        weak_set = set(weak_kp_names)
-        for q in questions:
-            q_kps = kp_map.get(q.id, [])
-            q_kp_set = set(q_kps)
-            overlap = len(q_kp_set & weak_set) / max(1, len(q_kps))
-
-            gaps = []
-            for name in q_kps:
-                kp_id = kp_name_to_id.get(name)
-                mastery = mastery_by_kp.get(kp_id) if kp_id is not None else None
-                gaps.append((100.0 - mastery) / 100.0 if mastery is not None else 0.5)
-            mastery_gap = sum(gaps) / len(gaps) if gaps else 0.5
-
-            if target_difficulty is None:
-                difficulty_match = 1.0
-            else:
-                difficulty_match = 1.0 - min(
-                    1.0, abs((q.difficulty or 3) - target_difficulty) / 4.0
-                )
-
-            base_scores = {
-                "vector_similarity": (metadata.get(q.id) or {}).get("similarity")
-                or 0.0,
-                "knowledge_overlap": overlap,
-                "difficulty_match": difficulty_match,
-                "mastery_gap": mastery_gap,
-                "path_priority": 0.0,
-            }
-            weighted = apply_strategy_weights(base_scores, config)
-            final = (1.0 - exploration) * weighted + exploration * random.random()
-            scored.append((q, final, weighted))
-
-        scored.sort(key=lambda t: t[1], reverse=True)
         for q, _final, weighted in scored:
             meta = metadata.setdefault(q.id, {})
             meta["recommend_score"] = round(weighted, 4)
@@ -132,3 +67,85 @@ async def apply_strategy_weight_rerank(
     except Exception:
         logger.warning("策略权重重排失败，保持原顺序", exc_info=True)
         return questions, metadata
+
+
+async def _load_knowledge_ids(
+    db: AsyncSession,
+    questions: list[Question],
+    kp_map: dict[int, list[str]],
+) -> dict[str, int]:
+    candidate_names: set[str] = set()
+    for q in questions:
+        candidate_names.update(kp_map.get(q.id, []))
+    name_to_id: dict[str, int] = {}
+    if candidate_names:
+        result = await db.execute(
+            select(KnowledgePoint.id, KnowledgePoint.name).where(
+                KnowledgePoint.name.in_(candidate_names),
+            )
+        )
+        for kp_id, name in result.all():
+            name_to_id[name] = kp_id
+    return name_to_id
+
+
+async def _load_mastery(
+    db: AsyncSession,
+    user_id: int,
+    name_to_id: dict[str, int],
+) -> dict[int, float]:
+    mastery_by_kp: dict[int, float] = {}
+    kp_ids = set(name_to_id.values())
+    if kp_ids:
+        result = await db.execute(
+            select(
+                UserKnowledgeState.knowledge_point_id,
+                UserKnowledgeState.mastery_score,
+            ).where(
+                UserKnowledgeState.user_id == user_id,
+                UserKnowledgeState.knowledge_point_id.in_(kp_ids),
+            )
+        )
+        for kp_id, mastery in result.all():
+            if mastery is not None:
+                mastery_by_kp[kp_id] = mastery
+    return mastery_by_kp
+
+
+def _rank_candidates(
+    questions: list[Question],
+    metadata: dict[int, dict],
+    config: dict[str, Any],
+    weak_kp_names: list[str],
+    kp_map: dict[int, list[str]],
+    kp_name_to_id: dict[str, int],
+    mastery_by_kp: dict[int, float],
+) -> list[tuple[Question, float, float]]:
+    known_mastery = list(mastery_by_kp.values())
+    user_mean_mastery = (
+        sum(known_mastery) / len(known_mastery) if known_mastery else None
+    )
+    target_difficulty = (
+        3 + round(user_mean_mastery / 25) if user_mean_mastery is not None else None
+    )
+    exploration = float(config.get("exploration_ratio") or 0.0)
+
+    from app.services.recommendation_strategy_service import apply_strategy_weights
+
+    scored: list[tuple[Question, float, float]] = []
+    weak_set = set(weak_kp_names)
+    for q in questions:
+        base_scores = build_strategy_base_scores(
+            q,
+            kp_map.get(q.id, []),
+            metadata,
+            weak_set,
+            kp_name_to_id,
+            mastery_by_kp,
+            target_difficulty,
+        )
+        weighted = apply_strategy_weights(base_scores, config)
+        final = (1.0 - exploration) * weighted + exploration * random.random()
+        scored.append((q, final, weighted))
+    scored.sort(key=lambda t: t[1], reverse=True)
+    return scored
