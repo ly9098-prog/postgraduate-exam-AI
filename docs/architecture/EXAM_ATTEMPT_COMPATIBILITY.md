@@ -105,3 +105,11 @@ node miniprogram/tests/test-storage-session-cleanup.js
 - `ai-teacher-408.normalizeResult` 从 57 行降至 45 行，练习题建议结构由 `normalizePracticeQuestion` 处理；字段别名、truthy/nullish 区别、options 枚举顺序、getter 读取顺序、异常及中文文案不变。
 - 两模块的 exports 名称与顺序不变，均未增加跨分包依赖；当前文件 230/232 行，全部函数不超过 50 行。生产源码净增 397 字节，仅属于 exam 分包；这不是微信编译/上传体积证据。
 - 新增答案 27 项、讲解 10 项契约；独立复审在 HEAD 原模块和当前模块上重放相同 37 项均通过，无 P0–P3 发现。测试接入 reliability，仍未执行微信开发者工具、模拟器或真机验收。
+
+## 11. 考试题干渲染职责（2026-10-26）
+
+- `stem-render.js` 保留原公开 exports 的名称、顺序和形参；题干准备、模式路由与 payload 构造由 `stem-render-model.js` 负责，文本、选项、segments、代码块、诊断与依赖捕获分为同分包模块。原 `buildRenderModel` 137 行降为公开入口，核心 `renderModel` 为 29 行；八个业务文件均不超过 300 行，全部函数不超过 50 行。
+- 保留依赖加载顺序、`RENDER_MODE` 每次入口加载的独立身份、render guard/诊断状态、五种模式互斥 payload、对象引用、getter/异常顺序及图像 URL 解析。study 分包继续保留自身实现，未增加跨分包依赖；原逐字同源检查改为导出和行为对照，并用 payload 篡改、导出缺失和 helper 行为变异验证断言能拒绝差异。
+- 新增 32 项刻画在原版和新版均通过，作者 6,500 组新旧差分一致；相邻考试 60 项、考试版 CODE 197 项、render invariant 43 项、5 个历史 fixture 的 31 项及表格测试通过。门禁复用 Admin 的 TypeScript AST，并以 `vm.Script` 仅编译校验 JavaScript；不依赖 CI 未安装的小程序 node_modules。
+- 八个业务源码合计 36,085→41,875 字节，净增 5,790 字节；按现有打包忽略规则，exam 分包累计 780,351 字节。study 仍为 1,396,402 字节，超出原 1.2 MiB 源码预算；未提高阈值。源码体积与 Node 回归不等于微信工具编译或设备验收。
+- 独立审查补充 750 组结果/引用/异常/日志差分一致，原版与新版 32 项契约均通过。发现的 parity P3 已补有效 URL、选项图像 URL、跨页 guard 告警和 reset 状态对照，四种保留名称/arity 的 mutation 均由行为断言拒绝；最终两份契约与门禁 59 项通过，阻断 mini node_modules 解析仍通过，复审无 P0–P3 余项。

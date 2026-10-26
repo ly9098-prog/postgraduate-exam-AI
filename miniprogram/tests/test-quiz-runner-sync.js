@@ -87,7 +87,10 @@ for (const pkg of ['study', 'exam']) {
   console.log(pkg + ' snapshot, long-scroll, motion and action guards passed')
 }
 // The exam view builder must supply the exact payload consumed by the runner.
-assert.strictEqual(read('subpackages/study/utils/stem-render.js'), read('subpackages/exam/utils/stem-render.js'), 'render contracts are synchronized without crossing package boundaries')
+require('./exam-stem-render-support').assertRenderParity(
+  require('../subpackages/study/utils/stem-render'),
+  require('../subpackages/exam/utils/stem-render')
+)
 const examView = require('../subpackages/exam/utils/exam-runner-view')
 const plain = examView.buildRenderView({ id: 9901, content: { text: '普通考试题干必须可见' }, options: { A: '选项甲', B: '选项乙' } })
 assert.strictEqual(plain.question._renderModel.mode, 'RICH_TEXT')
