@@ -97,6 +97,7 @@ def _coerce_analysis_text(value, depth: int = 0) -> str:
 
 
 def _extract_analysis_fields(value, depth: int = 0) -> dict:
+    """Dispatch model shapes while counting only recursive content edges."""
     if depth > 6 or value is None:
         return dict(_EMPTY_ANALYSIS)
 
@@ -109,29 +110,32 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
         return _parse_titled_analysis_text(value)
 
     if isinstance(value, list):
-        best = dict(_EMPTY_ANALYSIS)
-        best_score = -1
-        for item in value:
-            candidate = _extract_analysis_fields(item, depth + 1)
-            score = sum(bool(candidate.get(k)) for k in _EMPTY_ANALYSIS)
-            if score > best_score:
-                best = candidate
-                best_score = score
-        if best_score > 0:
-            return best
-        text = _coerce_analysis_text(value, depth + 1)
-        return {"mistake_diagnosis": text, "knowledge_patch": "", "review_task": ""}
+        return _extract_analysis_list(value, depth)
 
     if not isinstance(value, dict):
         text = _coerce_analysis_text(value, depth + 1)
         return {"mistake_diagnosis": text, "knowledge_patch": "", "review_task": ""}
+    return _extract_analysis_mapping(value, depth)
 
-    direct = {
-        "mistake_diagnosis": _pick_field(value, list(_DIAGNOSIS_KEYS)),
-        "knowledge_patch": _pick_field(value, list(_KNOWLEDGE_KEYS)),
-        "review_task": _pick_field(value, list(_TASK_KEYS)),
-    }
 
+def _extract_analysis_list(value: list, depth: int) -> dict:
+    """Visit every item, keeping the first candidate with the highest score."""
+    best = dict(_EMPTY_ANALYSIS)
+    best_score = -1
+    for item in value:
+        candidate = _extract_analysis_fields(item, depth + 1)
+        score = sum(bool(candidate.get(k)) for k in _EMPTY_ANALYSIS)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    if best_score > 0:
+        return best
+    text = _coerce_analysis_text(value, depth + 1)
+    return {"mistake_diagnosis": text, "knowledge_patch": "", "review_task": ""}
+
+
+def _extract_embedded_analysis(value: dict, depth: int) -> dict | None:
+    """Rank structured strings inside field aliases before accepting direct text."""
     embedded_best = None
     embedded_score = 0
     for key in _DIAGNOSIS_KEYS + _KNOWLEDGE_KEYS + _TASK_KEYS:
@@ -150,7 +154,19 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
         if score > embedded_score:
             embedded_best = candidate
             embedded_score = score
-    if embedded_best and embedded_score > 0:
+    return embedded_best
+
+
+def _extract_analysis_mapping(value: dict, depth: int) -> dict:
+    """Resolve direct fields, embedded structures, then ordered nested candidates."""
+    direct = {
+        "mistake_diagnosis": _pick_field(value, list(_DIAGNOSIS_KEYS)),
+        "knowledge_patch": _pick_field(value, list(_KNOWLEDGE_KEYS)),
+        "review_task": _pick_field(value, list(_TASK_KEYS)),
+    }
+
+    embedded_best = _extract_embedded_analysis(value, depth)
+    if embedded_best:
         return embedded_best
 
     if is_valid_ai_analysis(direct):
@@ -163,6 +179,7 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
         else:
             return direct
 
+    # Snapshot all candidates before recursion, including non-wrapper insertion order.
     nested_values = [value[key] for key in _ANALYSIS_WRAPPER_KEYS if key in value]
     nested_values.extend(
         v

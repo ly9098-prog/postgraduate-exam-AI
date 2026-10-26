@@ -114,4 +114,11 @@ Layer 4 规则（`repair_questions` 内）：
 - `analysis_review_invocation.py` 分开装配调用、结果复核和终态选择；实际 runtime、模型签名、图像、答案 grounding、usage、失败响应和持久化回调继续来自原 request。历史公开导入和 monkeypatch 入口保留，拆分不改变缓存、鉴权隔离或结果入库规则。
 - CI static 清单已包含 analysis content、execution、invocation、outcomes、preparation、response contracts、result review、validation，以及 prewarm execution/transition 测试。它们覆盖本地替身执行契约，不调用真实模型。
 - `test_ai_prewarm_boundaries.py` 的真实生产者集合跟随批量提交编排移至 `practice.batch_submission_flow`，仍要求所有生产者使用 `app.ai.prewarm_revision` 中性协议，并禁止从 worker 导入该协议。
-- 服务与新编排入口经 AST 复核均不超过当前批次的 80 行预算，不表示所有内部模块均达到 50 行规范；`analysis_content._extract_analysis_fields` 仍有超过 80 行的函数，后续继续治理。真实模型、多模态和 Redis 故障恢复等验收项仍按第 5 节记录。
+- 服务与新编排入口经 AST 复核均不超过当前批次的 80 行预算，不表示所有内部模块均达到 50 行规范。真实模型、多模态和 Redis 故障恢复等验收项仍按第 5 节记录。
+
+## 7. 响应内容递归解析（2026-10-26）
+
+- `analysis_content._extract_analysis_fields` 从 84 行拆为形状分派、列表择优、字段内嵌结构解析和字典候选编排，均留在原模块，递归仍动态调用原模块入口。辅助函数不增加递归深度；原公开导入的函数身份保持不变。
+- 保留深度上限 6、字段别名顺序、同分首项、列表及内嵌字段完整遍历；嵌套字典仍先快照 wrapper 与其他字段，再递归搜索，首次取得三字段完整结果时停止。内嵌结构优先于直接文本，不合并来自不同候选的字段。
+- 新增 53 项刻画与原兼容 43 项在拆分前后均通过；输出差分 10,500 次、原有解析与校验端口调用轨迹 250 组一致。包含缓存、视觉缓存、响应和 SQLite 兼容的相关测试 186 项通过；另补自动架构检查，约束全部函数不超过 50 行、仅导入标准解析模块及 fresh import 不初始化模型/数据库/AI 服务。
+- 本批没有调用外部 AI。文件仍为 411 行，超过 300 行文件规范；完成函数拆分不能作为整个 AI 域或全栈预算门禁完成的依据。
