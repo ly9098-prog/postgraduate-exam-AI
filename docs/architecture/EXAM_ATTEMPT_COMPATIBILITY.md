@@ -98,3 +98,10 @@ node miniprogram/tests/test-storage-session-cleanup.js
 - 考试域仍需后续按“开始 → 保存 → 过时 → 交卷 → 结果 → 历史”补专项测试与真实设备/生产验证。
 - 已入库题目 `re_pending`、重审工作台与版本回滚已由 Admin 题库域实现；考试域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
 - `practice_service.use_leitner` 的到期过滤与 fallback 已由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行，考试域不参与选题调度。
+
+## 10. 考试答案与讲解归一化（2026-10-26）
+
+- `answer.normalizeBlankAnswer` 从 93 行收敛为 9 行分派，canonical 键值、圈号/括号/中文标记、可信 slotIds 位置答案各自解析。保留解析优先级、同分段多选续写、重复槽位处理、对象原引用返回和 slotIds 延迟读取。
+- `ai-teacher-408.normalizeResult` 从 57 行降至 45 行，练习题建议结构由 `normalizePracticeQuestion` 处理；字段别名、truthy/nullish 区别、options 枚举顺序、getter 读取顺序、异常及中文文案不变。
+- 两模块的 exports 名称与顺序不变，均未增加跨分包依赖；当前文件 230/232 行，全部函数不超过 50 行。生产源码净增 397 字节，仅属于 exam 分包；这不是微信编译/上传体积证据。
+- 新增答案 27 项、讲解 10 项契约；独立复审在 HEAD 原模块和当前模块上重放相同 37 项均通过，无 P0–P3 发现。测试接入 reliability，仍未执行微信开发者工具、模拟器或真机验收。

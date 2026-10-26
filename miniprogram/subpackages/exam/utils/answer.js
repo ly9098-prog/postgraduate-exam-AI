@@ -66,6 +66,11 @@ if (!answer) return {}
 if (typeof answer === 'object') return answer
 var result = {}
 var text = String(answer).trim()
+if (parseCanonicalBlankAnswer(text, result)) return result
+if (parseMarkedBlankAnswer(text, result)) return result
+return parsePositionalBlankAnswer(text, slotIds, result)
+}
+function parseCanonicalBlankAnswer(text, result) {
 // ①) Canonical "slot:value" pairs，value 可为逗号分隔的多个 key。
 // 同一分段内，后续无冒号的片段归属上一个 slot（多 key 续写）：
 //   "①:A,C;②:B" → {①:"A,C", ②:"B"}；"1:B,2:D" → {1:"B", 2:"D"}
@@ -96,7 +101,9 @@ canonicalMatch = true
 }
 })
 })
-if (canonicalMatch) return result
+return canonicalMatch
+}
+function parseMarkedBlankAnswer(text, result) {
 // ②) Circled compact: ①B、②D / ①AC、②D / ①A,C、②D（capture 到下一个槽位标记为止）
 var slotMarker = '[①-⑳]|[（(]\\s*\\d+\\s*[）)]|第\\s*[\\d一二三四五六七八九十]+\\s*空'
 var circledRe = new RegExp('[①-⑳]\\s*((?:(?!' + slotMarker + ')[^;；\\n])*)', 'g')
@@ -109,7 +116,7 @@ var value = normalizeSlotValue(m[2])
 if (value) result[m[1]] = value
 }
 })
-if (Object.keys(result).length > 0) return result
+if (Object.keys(result).length > 0) return true
 }
 // ③) Parenthesized: (1)B、(2)D
 var parenRe = new RegExp('[（(]\\s*(\\d+)\\s*[）)]\\s*((?:(?!' + slotMarker + ')[^;；\\n])*)', 'g')
@@ -122,7 +129,7 @@ var value = normalizeSlotValue(m[2])
 if (value) result[m[1]] = value
 }
 })
-if (Object.keys(result).length > 0) return result
+if (Object.keys(result).length > 0) return true
 }
 // ④) 第1空B，第2空D
 var cnRe = new RegExp('第\\s*[\\d一二三四五六七八九十]+\\s*空\\s*[：:]?\\s*((?:(?!' + slotMarker + ')[^;；\\n])*)', 'g')
@@ -135,8 +142,11 @@ var value = normalizeSlotValue(m[2])
 if (value) result[m[1]] = value
 }
 })
-if (Object.keys(result).length > 0) return result
+if (Object.keys(result).length > 0) return true
 }
+return false
+}
+function parsePositionalBlankAnswer(text, slotIds, result) {
 // ⑤) Positional "B,D"（仅当提供了可信 slotIds 且数量匹配）
 var trustedIds = Array.isArray(slotIds)
 ? slotIds.map(function(id) { return String(id || '').trim() }).filter(Boolean)
