@@ -384,6 +384,10 @@ jobs:
             tests/pipeline/test_split_stage_ports_contract.py \
             tests/pipeline/test_split_stage_prose_contract.py \
             tests/architecture/test_pipeline_split_boundaries.py \
+            tests/pipeline/test_router_stage_execution_contract.py \
+            tests/pipeline/test_router_stage_result_contract.py \
+            tests/pipeline/test_router_stage_ports_contract.py \
+            tests/architecture/test_pipeline_ocr_router_boundaries.py \
             tests/test_features/test_pipeline_extract.py \
             tests/practice/test_smart_pipeline_contract.py \
             tests/practice/test_aggregated_smart_contract.py \

@@ -124,3 +124,12 @@
 - chunk overlap 仅在 seen 集合与 logical_end 都不是 `None` 时启用，只有已见 hash 且 page_start 大于 logical_end 才丢弃；保留题目的 hash 在下一题计算前更新共享集合，后续异常不撤销已完成的集合更新。末题贴近边界且有 A/B/C、缺 D/E 才发出截断告警。
 - 保留动态原模块与 builtin 查找、对象引用、视觉检测普通异常边界和取消传播；最终顺序仍为多空题诊断、应用冻结选项、逐题日志、返回结果。`test_split_stage_input_contract.py`、`test_split_stage_result_contract.py`、`test_split_stage_ports_contract.py`、`test_split_stage_prose_contract.py` 与 `test_pipeline_split_boundaries.py` 已接入静态 CI；fresh import 不初始化 orchestrator、OCR、配置或数据库。
 - 以上兼容检查使用合成输入和现有本地测试，不代表真实 OCR/AI、扫描 PDF、大文件内存或完整跨进程 worker 验收。single-pass、chunked runner、OCR correction router 及编排器其他职责仍需继续治理。
+
+## 11. OCR router 分类、调用与候选发布（2026-10-26）
+
+- `_run_ocr_correction_router` 保留原 async 签名与历史模块依赖，委托 `pipeline_ocr_router_stage`；分类、预算/并发调用、失败与元数据投影、安全门与领域质量观察、候选发布、敏感内容过滤和最终指标分别落在同前缀模块。本次状态与候选对象只承接局部变量，不拥有数据库事务或队列。
+- 全部 blocks 先完成分类和分类指标，再导入预算函数并创建并发上限为 3 的 semaphore。每个候选先按估算 token 的三倍检查预算，再调用 router；用量优先读取 `metadata.router_call_stats.tokens_used`，在返回任务结果前记账。预算拒绝不调用模型；调用或记账失败均作为该块失败保留原对象。
+- `gather(return_exceptions=True)` 保留输入结果顺序。单个子任务取消按该块失败处理，父阶段取消向外传播；分类、结果安全门和最终指标等阶段自身异常继续传播。空块、未选中块及失败块保留原对象；正常返回的候选先浅复制，再保留 table/table_image/table_caption 布局元数据，包括候选未改动或被拒绝的情况。
+- 文本变化且置信度为正才进入 CandidateEvaluator；PaddleOCR-VL 保留零/缺失置信度例外。领域质量门处于 shadow/enforce 时仍只记录该路径的观察结果，文本发布继续使用 CandidateEvaluator 的 decision；本批没有新增 enforce 策略。先构建兼容 safety trace，再按接受/拒绝分支发布。最后敏感过滤可能修改透传原块，再汇总模型名、flush 指标并返回。
+- 保留原模块 globals/builtin 动态读取，以及预算函数在分类后的导入捕获、CandidateDecision 在 evaluator 调用前的导入捕获。新模块均满足 300 行/50 行预算；架构门禁覆盖 async、嵌套函数与 lambda，并约束依赖、端口别名、resolver 使用和 fresh import。
+- execution/result/ports 三组契约及架构门禁已接入静态 CI。验证使用合成预算、模型和指标端口；没有真实 OCR/AI、Redis 预算争用、生产数据库或完整 worker 验收，不代表全栈预算治理已经完成。
