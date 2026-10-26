@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import ast
-import json
-import re
+import ast  # noqa: F401 - historical parser patch port
+import json  # noqa: F401 - historical parser patch port
+import re  # noqa: F401 - historical parser patch port
+
+from app.services.ai import analysis_answer_check as _answer_check
+from app.services.ai import analysis_text_syntax as _text_syntax
 
 _ANALYSIS_WRAPPER_KEYS = (
     "content",
@@ -57,6 +60,14 @@ _ROMAN_ECHO_TRANSLATION = str.maketrans(
         "Ⅹ": "X",
     }
 )
+
+
+def _content_port(name: str):
+    """Resolve historical globals at use time, including missing-name errors."""
+    try:
+        return globals()[name]
+    except KeyError:
+        raise NameError(f"name '{name}' is not defined", name=name) from None
 
 
 def _pick_field(d: dict, candidates: list[str]) -> str:
@@ -201,89 +212,20 @@ def _extract_analysis_mapping(value: dict, depth: int) -> dict:
 
 def _strip_code_fence(text: str) -> str:
     """Strip complete or truncated Markdown code fences from model output."""
-    value = str(text or "").strip()
-    match = re.search(
-        r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", value, re.IGNORECASE
-    )
-    if match:
-        return match.group(1).strip()
-    value = re.sub(r"^```(?:json|javascript|js)?\s*", "", value, flags=re.IGNORECASE)
-    value = re.sub(r"\s*```$", "", value)
-    return value.strip()
+    return _text_syntax.strip_code_fence(text, ports=_content_port)
 
 
 def _looks_like_structured_analysis_text(text: str) -> bool:
-    value = str(text or "").strip()
-    if not value:
-        return False
-    if value[:1] in {"{", "["}:
-        return True
-    keys = _DIAGNOSIS_KEYS + _KNOWLEDGE_KEYS + _TASK_KEYS
-    return any(
-        re.search(rf'(["\']){re.escape(key)}\1\s*:', value, re.IGNORECASE)
-        for key in keys
-    )
+    return _text_syntax.looks_like_structured_analysis_text(text, ports=_content_port)
 
 
 def _decode_structured_content(raw: str):
     """Decode JSON/Python-literal model output, including text around the object."""
-    original = (raw or "").strip()
-    decoder = json.JSONDecoder()
-
-    def decode_candidates(value: str):
-        starts = [0]
-        starts.extend(i for i, char in enumerate(value) if i > 0 and char in "{[")
-        for start in starts:
-            candidate = value[start:].lstrip()
-            if not candidate:
-                continue
-            try:
-                decoded, _ = decoder.raw_decode(candidate)
-                return decoded
-            except (json.JSONDecodeError, ValueError):
-                pass
-            try:
-                decoded = ast.literal_eval(candidate)
-                if isinstance(decoded, (dict, list, str)):
-                    return decoded
-            except (SyntaxError, ValueError):
-                pass
-        return None
-
-    # Parse the original value first so a valid outer JSON object can carry a
-    # fenced JSON string in one field without losing its embedded fields.
-    decoded = decode_candidates(original)
-    if decoded is not None:
-        return decoded
-
-    stripped = _strip_code_fence(original)
-    if stripped != original:
-        return decode_candidates(stripped)
-    return None
+    return _text_syntax.decode_structured_content(raw, ports=_content_port)
 
 
 def _parse_titled_analysis_text(text: str) -> dict:
-    stripped = _strip_code_fence(text)
-    heading_re = re.compile(
-        r"(?im)^\s*(?:#{1,6}\s*)?(?:\d+[.、)]\s*)?(?:[-*]\s*)?"
-        r"(?:\*\*)?\s*(错因诊断|补漏重点|复练任务)\s*(?:\*\*)?\s*[：:]\s*(?:\*\*)?\s*"
-    )
-    matches = list(heading_re.finditer(stripped))
-    if not matches:
-        if _looks_like_structured_analysis_text(stripped):
-            return dict(_EMPTY_ANALYSIS)
-        return {"mistake_diagnosis": stripped, "knowledge_patch": "", "review_task": ""}
-
-    result = dict(_EMPTY_ANALYSIS)
-    key_map = {
-        "错因诊断": "mistake_diagnosis",
-        "补漏重点": "knowledge_patch",
-        "复练任务": "review_task",
-    }
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(stripped)
-        result[key_map[match.group(1)]] = stripped[match.end() : end].strip()
-    return result
+    return _text_syntax.parse_titled_analysis_text(text, ports=_content_port)
 
 
 def parse_error_analysis_content(raw: str) -> dict:
@@ -297,106 +239,23 @@ def parse_error_analysis_content(raw: str) -> dict:
 
 def _extract_answer_check(value, depth: int = 0) -> dict | None:
     """Find the machine-verifiable ``answer_check`` object in model output."""
-    if depth > 6 or value is None:
-        return None
-    if isinstance(value, str):
-        decoded = _decode_structured_content(value)
-        if decoded is None or decoded == value:
-            return None
-        return _extract_answer_check(decoded, depth + 1)
-    if isinstance(value, list):
-        for item in value:
-            found = _extract_answer_check(item, depth + 1)
-            if found is not None:
-                return found
-        return None
-    if not isinstance(value, dict):
-        return None
-    for key in _ANSWER_CHECK_KEYS:
-        candidate = value.get(key)
-        if isinstance(candidate, dict):
-            return candidate
-    for key in _ANALYSIS_WRAPPER_KEYS:
-        if key in value:
-            found = _extract_answer_check(value.get(key), depth + 1)
-            if found is not None:
-                return found
-    for nested in value.values():
-        if isinstance(nested, (dict, list, str)):
-            found = _extract_answer_check(nested, depth + 1)
-            if found is not None:
-                return found
-    return None
+    return _answer_check.extract_answer_check(value, depth, ports=_content_port)
 
 
 def _canonical_answer_echo(value, expected: str) -> str:
-    raw = str(value or "").strip().upper()
-    expected = str(expected or "").strip().upper()
-    if expected and re.fullmatch(r"[A-Z](?:,[A-Z])*", expected):
-        letters = sorted(set(re.findall(r"[A-Z]", raw)))
-        return ",".join(letters)
-    return raw.replace("，", ",").replace("；", ",").replace("、", ",")
+    return _answer_check.canonical_answer_echo(value, expected, ports=_content_port)
 
 
 def _canonical_answer_check_list(value) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        items = [item for item in re.split(r"[,，、;；\s]+", value) if item]
-    elif isinstance(value, (list, tuple, set)):
-        items = list(value)
-    else:
-        items = [value]
-    result: list[str] = []
-    for item in items:
-        if isinstance(item, dict):
-            item = item.get("label") or item.get("key") or item.get("id") or ""
-        text = str(item or "").strip().translate(_ROMAN_ECHO_TRANSLATION).upper()
-        if text and text not in result:
-            result.append(text)
-    return result
+    return _answer_check.canonical_answer_check_list(value, ports=_content_port)
 
 
 def _validate_answer_check(
     raw_content: str, expected: dict
 ) -> tuple[bool, str, dict | None]:
-    decoded = _decode_structured_content(raw_content)
-    actual = _extract_answer_check(decoded if decoded is not None else raw_content)
-    if actual is None:
-        return False, "answer_check_missing", None
-
-    correct_actual = _canonical_answer_echo(
-        actual.get("correct_answer", actual.get("correctAnswer", "")),
-        str(expected.get("correct_answer") or ""),
+    return _answer_check.validate_answer_check(
+        raw_content, expected, ports=_content_port
     )
-    user_actual = _canonical_answer_echo(
-        actual.get("user_answer", actual.get("userAnswer", "")),
-        str(expected.get("user_answer") or ""),
-    )
-    correct_expected = _canonical_answer_echo(
-        expected.get("correct_answer", ""), str(expected.get("correct_answer") or "")
-    )
-    user_expected = _canonical_answer_echo(
-        expected.get("user_answer", ""), str(expected.get("user_answer") or "")
-    )
-    if correct_actual != correct_expected:
-        return False, "answer_check_correct_mismatch", actual
-    if user_actual != user_expected:
-        return False, "answer_check_user_mismatch", actual
-
-    missing_actual = _canonical_answer_check_list(
-        actual.get("missing", actual.get("missing_items", []))
-    )
-    extra_actual = _canonical_answer_check_list(
-        actual.get("extra", actual.get("extra_items", []))
-    )
-    missing_expected = _canonical_answer_check_list(expected.get("missing", []))
-    extra_expected = _canonical_answer_check_list(expected.get("extra", []))
-    if sorted(missing_actual) != sorted(missing_expected):
-        return False, "answer_check_missing_mismatch", actual
-    if sorted(extra_actual) != sorted(extra_expected):
-        return False, "answer_check_extra_mismatch", actual
-    return True, "", actual
 
 
 def is_valid_ai_analysis(content: dict) -> bool:
