@@ -139,8 +139,14 @@ from app.services.practice.scored_fallback_flow import (
 )
 from app.services.practice.scored_fallback_merge import merge_fill_questions
 from app.services.practice.scored_context import (
+    ScoredCandidateContext,
     load_scored_candidate_context,
     load_scored_learning_context,
+)
+from app.services.practice.scored_policy import (
+    ScoredPolicyRequest,
+    ScoredSelection,
+    rank_and_select_candidates,
 )
 from app.services.practice.scored_ranking import score_and_rank_candidates
 from app.services.practice.scored_selection import select_scored_candidates
@@ -1795,20 +1801,7 @@ async def get_smart_scored_questions(
     request_id: str | None = None,
     subject_ids: list[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
-    """V4 综合打分推荐。
-
-    流程:
-      1. 构建候选题池 (candidate_limit)
-      2. 批量加载 UserQuestionState / UserKnowledgeState
-      3. 查询最近练习知识点 (diversity)
-      4. 批量加载 QuestionKnowledgePoint 映射
-      5. 逐题打分 → 降序排列
-      6. 知识点多样性控制 (同一 KP <= 50%)
-      7. 不足时 5 层降级
-
-    降级链:
-      高分候选 → 放宽多样性 → 随机补齐(含24h内) → 放弃24h限制重查 → 最终随机
-    """
+    """Select scored questions; the smart/aggregated caller owns finalization."""
     from app.models.question_knowledge_point import (
         QuestionKnowledgePoint,  # noqa: F401 - preserve entry import boundary
     )
@@ -1821,8 +1814,6 @@ async def get_smart_scored_questions(
 
     now = utcnow()
     metadata: dict[int, dict] = {}
-    fallback_level = 0
-
     scored_runtime, candidate_context = await load_scored_candidate_context(
         db=db,
         user_id=user_id,
@@ -1836,15 +1827,8 @@ async def get_smart_scored_questions(
         load_candidates=_load_smart_scored_candidates,
         build_subject_condition=Question.subject_id.in_,
     )
-    system_weights = scored_runtime.get("weights") or {}
     graph_runtime = scored_runtime.get("graph") or {}
     candidates = candidate_context.candidates
-    active_candidate_conditions = candidate_context.active_candidate_conditions
-    scope_ids = candidate_context.scope_ids
-    excluded_sub = candidate_context.excluded_sub
-    fallback_level = candidate_context.fallback_level
-    subject_cond = candidate_context.subject_condition
-
     if not candidates:
         logger.warning(
             "[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject_code
@@ -1855,11 +1839,11 @@ async def get_smart_scored_questions(
         db=db,
         user_id=user_id,
         candidates=candidates,
-        active_candidate_conditions=active_candidate_conditions,
-        scope_ids=scope_ids,
+        active_candidate_conditions=candidate_context.active_candidate_conditions,
+        scope_ids=candidate_context.scope_ids,
         graph_runtime=graph_runtime,
         count=count,
-        system_weights=system_weights,
+        system_weights=scored_runtime.get("weights") or {},
         load_knowledge_graph=_load_knowledge_and_graph_context,
         load_candidate_states=_load_candidate_states,
         extract_graph_context=_extract_graph_context,
@@ -1867,78 +1851,54 @@ async def get_smart_scored_questions(
         compute_weights=_compute_recommendation_weights,
     )
     cand_ids = {q.id for q in candidates}
-    kp_mastery = learning.kp_mastery
-    kp_observations = learning.kp_observations
-    q_state_map = learning.q_state_map
-    recent_kp_ids = learning.recent_kp_ids
-    q_kp_map = learning.q_kp_map
-    blocked_kps = learning.blocked_kps
-    graph_candidates = learning.graph_candidates
-    prerequisites_by_target = learning.prerequisites_by_target
-    kp_names = learning.kp_names
-    rec_weights = learning.rec_weights
-
-    scored = score_and_rank_candidates(
-        candidates,
-        q_state_map,
-        q_kp_map,
-        kp_mastery,
-        recent_kp_ids,
-        now,
-        kp_observations=kp_observations,
-        blocked_kps=blocked_kps,
-        graph_candidates=graph_candidates,
-        prerequisites_by_target=prerequisites_by_target,
-        weights=rec_weights,
-        graph_config=graph_runtime,
-        calculate_score=calculate_smart_score,
+    selection = rank_and_select_candidates(
+        ScoredPolicyRequest(
+            candidates=candidates,
+            learning=learning,
+            runtime=scored_runtime,
+            graph_config=graph_runtime,
+            now=now,
+            count=count,
+            user_id=user_id,
+            metadata=metadata,
+            logger=logger,
+            rank_candidates=score_and_rank_candidates,
+            select_candidates=select_scored_candidates,
+            calculate_score=calculate_smart_score,
+            build_metadata=_build_scored_metadata,
+        )
+    )
+    return await _complete_scored_selection(
+        db, user_id, subject_code, count, candidate_context, cand_ids, selection, metadata,
     )
 
-    # 调试日志
-    if scored:
-        top = scored[:5]
-        logger.info(
-            "[smart_scored] top5 uid=%s: %s",
-            user_id,
-            [(q.id, round(s, 1), r) for q, s, r in top],
-        )
 
-    def scored_metadata(score: float, reasons: list[str], kp_ids: list[int]) -> dict:
-        return _build_scored_metadata(
-            score,
-            reasons,
-            kp_ids,
-            kp_names,
-            graph_candidates=graph_candidates,
-            blocked_kps=blocked_kps,
-            kp_mastery=kp_mastery,
-            kp_observations=kp_observations,
-            strategy_config_id=scored_runtime.get("strategy_config_id"),
-        )
-
-    selected, selected_ids, relaxed_diversity = select_scored_candidates(
-        scored,
-        count,
-        q_kp_map,
-        metadata,
-        scored_metadata,
-    )
-    if relaxed_diversity:
+async def _complete_scored_selection(
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    count: int,
+    context: ScoredCandidateContext,
+    candidate_ids: set[int],
+    selection: ScoredSelection,
+    metadata: dict[int, dict],
+) -> tuple[list[Question], dict[int, dict]]:
+    fallback_level = context.fallback_level
+    if selection.relaxed_diversity:
         fallback_level = max(fallback_level, 2)
-
     fallback = await run_scored_fallback(
         ScoredFallbackRequest(
             db=db,
-            selected=selected,
-            selected_ids=selected_ids,
+            selected=selection.questions,
+            selected_ids=selection.question_ids,
             metadata=metadata,
             count=count,
             fallback_level=fallback_level,
             base_conditions=[Question.is_active],
-            subject_condition=subject_cond,
-            candidate_ids=cand_ids,
-            excluded_subquery=excluded_sub,
-            scope_ids=scope_ids,
+            subject_condition=context.subject_condition,
+            candidate_ids=candidate_ids,
+            excluded_subquery=context.excluded_sub,
+            scope_ids=context.scope_ids,
             revision_condition=_practice_revision_scope_condition,
             random_fill=load_random_fill_questions,
             repeat_fill=load_repeat_fill_questions,
@@ -1947,21 +1907,15 @@ async def get_smart_scored_questions(
             metadata_factory=_build_fallback_metadata,
         )
     )
-    selected = fallback.questions
-    fallback_level = fallback.fallback_level
-
     logger.info(
         "[smart_recommend] user_id=%s subject_id=%s candidates=%s selected=%s fallback=%s",
         user_id,
         subject_code,
-        len(candidates),
-        len(selected),
-        fallback_level,
+        len(context.candidates),
+        len(fallback.questions),
+        fallback.fallback_level,
     )
-
-    # 统一由 get_smart_practice_questions / get_aggregated_smart_questions
-    # 收尾，避免 scored 策略重复写推荐日志，并保证 skip_finalize 生效。
-    return selected[:count], metadata
+    return fallback.questions[:count], metadata
 
 
 async def _compute_weak_knowledge_points(

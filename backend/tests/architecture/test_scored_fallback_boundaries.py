@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.architecture.dependency_scan import scan_application
 
 APP = Path(__file__).resolve().parents[2] / "app"
@@ -31,15 +33,34 @@ def test_scored_entry_uses_real_loaders_with_original_filters_and_sampler():
     from app.services.practice import scored_fallback, scored_fallback_flow
 
     source = (APP / "services/practice_service.py").read_text()
-    entry = next(node for node in ast.parse(source).body if getattr(node, "name", "") == "get_smart_scored_questions")
-    calls = [node for node in ast.walk(entry) if isinstance(node, ast.Call)]
+    entry = next(node for node in ast.parse(source).body if getattr(node, "name", "") == "_complete_scored_selection")
+    caller = next(
+        node for node in ast.parse(source).body
+        if getattr(node, "name", "") == "get_smart_scored_questions"
+    )
     for name in ("load_random_fill_questions", "load_repeat_fill_questions"):
         assert getattr(svc, name) is getattr(scored_fallback, name)
         assert name in ast.unparse(entry)
-    assert not any(getattr(node.func, "attr", "") == "execute" for node in calls)
+    _assert_no_direct_sql(caller)
+    _assert_no_direct_sql(entry)
     assert "_practice_revision_scope_condition" in ast.unparse(entry)
     assert "run_scored_fallback" in ast.unparse(entry)
     assert svc.run_scored_fallback is scored_fallback_flow.run_scored_fallback
+
+
+def _assert_no_direct_sql(function):
+    calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
+    assert not any(getattr(node.func, "attr", "") == "execute" for node in calls)
+
+
+@pytest.mark.parametrize("name", ["get_smart_scored_questions", "_complete_scored_selection"])
+def test_direct_sql_guard_rejects_injection_in_either_service_function(name):
+    source = (APP / "services/practice_service.py").read_text()
+    function = next(node for node in ast.parse(source).body if getattr(node, "name", "") == name)
+    _assert_no_direct_sql(function)
+    function.body.extend(ast.parse("await db.execute(None)").body)
+    with pytest.raises(AssertionError):
+        _assert_no_direct_sql(function)
 
 
 def test_import_does_not_load_models_configuration_database_or_create_tasks():

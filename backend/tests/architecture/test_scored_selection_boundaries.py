@@ -29,23 +29,33 @@ def test_real_scored_caller_keeps_projection_and_fallback_ownership():
     source = (APP / "services/practice_service.py").read_text()
     tree = ast.parse(source)
     entry = next(node for node in tree.body if getattr(node, "name", "") == "get_smart_scored_questions")
-    calls = [node for node in ast.walk(entry) if isinstance(node, ast.Call)]
-    policy_calls = [node for node in calls if getattr(node.func, "id", "") == "select_scored_candidates"]
+    policy_source = (APP / "services/practice/scored_policy.py").read_text()
+    policy_tree = ast.parse(policy_source)
+    calls = [node for node in ast.walk(policy_tree) if isinstance(node, ast.Call)]
+    policy_calls = [
+        node for node in calls if ast.unparse(node.func) == "request.select_candidates"
+    ]
     assert len(policy_calls) == 1
     assert [ast.unparse(arg) for arg in policy_calls[0].args] == [
-        "scored", "count", "q_kp_map", "metadata", "scored_metadata",
+        "scored", "request.count", "learning.q_kp_map", "request.metadata", "scored_metadata",
     ]
     assert not policy_calls[0].keywords
     assert not any(isinstance(node, ast.Name) and node.id == "max_per_kp" for node in ast.walk(entry))
-    projection = next(node for node in entry.body if getattr(node, "name", "") == "scored_metadata")
-    assert "_build_scored_metadata" in ast.unparse(projection)
-    assert "scored_runtime.get('strategy_config_id')" in ast.unparse(projection)
-    fallback = next(node for node in entry.body if getattr(node, "targets", []) and
+    projection = next(
+        node for node in ast.walk(policy_tree)
+        if getattr(node, "name", "") == "scored_metadata"
+    )
+    assert "request.build_metadata" in ast.unparse(projection)
+    assert "request.runtime.get('strategy_config_id')" in ast.unparse(projection)
+    completion = next(
+        node for node in tree.body if getattr(node, "name", "") == "_complete_scored_selection"
+    )
+    fallback = next(node for node in completion.body if getattr(node, "targets", []) and
                     getattr(node.targets[0], "id", "") == "fallback")
     fallback_text = ast.unparse(fallback)
     assert "load_random_fill_questions" in fallback_text
     assert "load_repeat_fill_questions" in fallback_text
-    assert any(getattr(node.func, "id", "") == "score_and_rank_candidates" for node in calls)
+    assert any(ast.unparse(node.func) == "request.rank_candidates" for node in calls)
 
 
 def test_import_has_no_runtime_or_resource_side_effects():

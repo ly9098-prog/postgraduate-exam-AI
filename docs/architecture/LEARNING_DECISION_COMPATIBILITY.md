@@ -67,3 +67,12 @@
 - 未执行生产 Admin 浏览器、真实推荐日志回填、完整 scheduler/worker 循环或 Redis 中断恢复。
 - 已入库题目 `re_pending`、重审/版本回滚已由 Admin 题库域实现；学习决策域仍只消费 `approved + is_active` 题目，不参与审核状态迁移。
 - `practice_service` 的 `get_similar_practice_questions` / `get_smart_practice_questions` 保留 `use_leitner` 形参，但实际到期过滤与 fallback 由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行（`question_issuance.issue_practice_questions` 调用），不再在各召回函数内重复实现。
+
+## 6. scored 选题编排边界（2026-10-26）
+
+- `get_smart_scored_questions` 负责候选与学习上下文装载，并在图谱扩充后、评分前快照候选 ID；后续 fallback 排除范围沿用这一快照，不能从评分器可能修改过的候选列表重建。
+- `practice/scored_policy.py` 组合排序、top5 日志、元数据投影和多样性选择。真实评分器、排序器、选择器、元数据构造器和 logger 由服务入口显式注入；运行时配置中的 graph 对象保持原引用。该模块不装载数据库或运行时配置，不捕获评分/选择异常。
+- `_complete_scored_selection` 留在 `practice_service`，继续绑定原 SQL loader、fallback 过滤器、采样器和合并器，保留降级级别、最终日志和结果切片。事务、持久化与推荐最终记录职责不变。
+- `test_scored_policy_boundaries.py` 与五个 scored 架构测试约束新的调用链、精确端口绑定、两个服务入口禁止直接执行 SQL、候选快照时序和模块导入无运行时副作用。mutation 用例分别向选题入口和 completion 的 AST 注入 `db.execute`，确认两处均被门禁拒绝。
+- `test_scored_selection_contract.py` 覆盖真实评分/选择/元数据端口、logger identity 与日志顺序，以及排序器/选择器普通异常和取消的传播。相同 selection/pipeline 契约在拆分前入口和拆分后入口均通过；本地行为测试不能替代真实 PostgreSQL、Redis、微信或外部模型验收。
+- 本批只收敛 scored 服务入口，学习域内部的评分、顺序选题、知识总结和投影协调等模块仍有超过预算的函数，不能据此宣称学习域或阶段 0 已全部完成。

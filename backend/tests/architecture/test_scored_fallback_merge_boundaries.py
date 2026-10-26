@@ -33,7 +33,7 @@ def test_scored_entry_uses_real_merge_for_both_different_fallback_rules():
     source = (APP / "services/practice_service.py").read_text()
     entry = next(
         node for node in ast.parse(source).body
-        if getattr(node, "name", "") == "get_smart_scored_questions"
+        if getattr(node, "name", "") == "_complete_scored_selection"
     )
     text = ast.unparse(entry)
     assert svc.merge_fill_questions is scored_fallback_merge.merge_fill_questions

@@ -34,20 +34,20 @@ def test_real_entry_passes_policy_ports_to_the_flow_without_inline_fallback():
     source = (APP / "services/practice_service.py").read_text()
     entry = next(
         node for node in ast.parse(source).body
-        if getattr(node, "name", "") == "get_smart_scored_questions"
+        if getattr(node, "name", "") == "_complete_scored_selection"
     )
     assert _fallback_request(entry) == {
         "db": "db",
-        "selected": "selected",
-        "selected_ids": "selected_ids",
+        "selected": "selection.questions",
+        "selected_ids": "selection.question_ids",
         "metadata": "metadata",
         "count": "count",
         "fallback_level": "fallback_level",
         "base_conditions": "[Question.is_active]",
-        "subject_condition": "subject_cond",
-        "candidate_ids": "cand_ids",
-        "excluded_subquery": "excluded_sub",
-        "scope_ids": "scope_ids",
+        "subject_condition": "context.subject_condition",
+        "candidate_ids": "candidate_ids",
+        "excluded_subquery": "context.excluded_sub",
+        "scope_ids": "context.scope_ids",
         "revision_condition": "_practice_revision_scope_condition",
         "random_fill": "load_random_fill_questions",
         "repeat_fill": "load_repeat_fill_questions",

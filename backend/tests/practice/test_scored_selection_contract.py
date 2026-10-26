@@ -94,6 +94,55 @@ def fallback_level(state):
 
 
 @pytest.mark.asyncio
+async def test_policy_keeps_live_service_ports_and_logger_identity(
+    selection_ports, monkeypatch, caplog,
+):
+    ranker = Mock(wraps=svc.score_and_rank_candidates)
+    selector = Mock(wraps=svc.select_scored_candidates)
+    metadata_factory = Mock(wraps=svc._build_scored_metadata)
+    monkeypatch.setattr(svc, "score_and_rank_candidates", ranker)
+    monkeypatch.setattr(svc, "select_scored_candidates", selector)
+    monkeypatch.setattr(svc, "_build_scored_metadata", metadata_factory)
+    monkeypatch.setattr(svc, "logger", svc.logging.getLogger("app.services.practice_service"))
+
+    with caplog.at_level("INFO", logger="app.services.practice_service"):
+        selected, metadata = await run(selection_ports, count=3)
+
+    ranker.assert_called_once()
+    selector.assert_called_once()
+    assert ranker.call_args.args[0] is selection_ports.candidates
+    assert ranker.call_args.kwargs["calculate_score"] is svc.calculate_smart_score
+    assert selector.call_args.args[3] is metadata
+    assert metadata_factory.call_count == 3
+    assert [q.id for q in selected] == [1, 2, 3]
+    records = [r for r in caplog.records if r.name == "app.services.practice_service"]
+    assert len(records) == 2
+    assert records[0].msg == "[smart_scored] top5 uid=%s: %s"
+    assert records[1].args == (7, "ds", 6, 3, 0)
+    assert not selection_ports.queries
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("port", ["score_and_rank_candidates", "select_scored_candidates"])
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+async def test_policy_port_errors_propagate_without_fallback(
+    selection_ports, monkeypatch, port, error_type,
+):
+    error = error_type("synthetic policy failure")
+    provider = Mock(side_effect=error)
+    monkeypatch.setattr(svc, port, provider)
+    with pytest.raises(error_type) as caught:
+        await run(selection_ports)
+    assert caught.value is error
+    provider.assert_called_once()
+    assert not selection_ports.queries
+    assert not any(
+        call.args[0].startswith("[smart_recommend]")
+        for call in selection_ports.logger.info.call_args_list
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mapping,expected,fallback", [
     ({1: [9], 2: [9], 3: [9], 4: [9], 5: [10], 6: [10]}, [1, 2, 5, 6], 0),
     ({qid: [9] for qid in range(1, 7)}, [1, 2, 3, 4], 2),

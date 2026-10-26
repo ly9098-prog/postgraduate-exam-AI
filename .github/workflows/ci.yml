@@ -334,6 +334,7 @@ jobs:
             tests/architecture/test_scored_selection_boundaries.py \
             tests/architecture/test_scored_fallback_boundaries.py \
             tests/architecture/test_scored_ranking_boundaries.py \
+            tests/architecture/test_scored_policy_boundaries.py \
             tests/architecture/test_scored_fallback_merge_boundaries.py \
             tests/architecture/test_scored_fallback_flow_boundaries.py \
             tests/architecture/test_smart_scored_supplement_boundaries.py \

@@ -28,25 +28,33 @@ def test_scored_entry_uses_real_ranker_and_keeps_debug_and_explanation_ownership
     from app.services.practice import scored_ranking
 
     source = (APP / "services/practice_service.py").read_text()
-    tree = ast.parse(source)
-    entry = next(node for node in tree.body if getattr(node, "name", "") == "get_smart_scored_questions")
-    calls = [node for node in ast.walk(entry) if isinstance(node, ast.Call)]
-    ranking = [node for node in calls if getattr(node.func, "id", "") == "score_and_rank_candidates"]
+    entry = next(
+        node for node in ast.parse(source).body
+        if getattr(node, "name", "") == "get_smart_scored_questions"
+    )
+    policy_source = (APP / "services/practice/scored_policy.py").read_text()
+    policy_tree = ast.parse(policy_source)
+    policy = next(
+        node for node in policy_tree.body
+        if getattr(node, "name", "") == "rank_and_select_candidates"
+    )
+    calls = [node for node in ast.walk(policy) if isinstance(node, ast.Call)]
+    ranking = [node for node in calls if ast.unparse(node.func) == "request.rank_candidates"]
     assert svc.score_and_rank_candidates is scored_ranking.score_and_rank_candidates
     assert len(ranking) == 1
     assert [ast.unparse(arg) for arg in ranking[0].args] == [
-        "candidates", "q_state_map", "q_kp_map", "kp_mastery",
-        "recent_kp_ids", "now",
+        "request.candidates", "learning.q_state_map", "learning.q_kp_map",
+        "learning.kp_mastery", "learning.recent_kp_ids", "request.now",
     ]
     keywords = {keyword.arg: ast.unparse(keyword.value) for keyword in ranking[0].keywords}
     assert keywords == {
-        "kp_observations": "kp_observations",
-        "blocked_kps": "blocked_kps",
-        "graph_candidates": "graph_candidates",
-        "prerequisites_by_target": "prerequisites_by_target",
-        "weights": "rec_weights",
-        "graph_config": "graph_runtime",
-        "calculate_score": "calculate_smart_score",
+        "kp_observations": "learning.kp_observations",
+        "blocked_kps": "learning.blocked_kps",
+        "graph_candidates": "learning.graph_candidates",
+        "prerequisites_by_target": "learning.prerequisites_by_target",
+        "weights": "learning.rec_weights",
+        "graph_config": "request.graph_config",
+        "calculate_score": "request.calculate_score",
     }
     assert not any(isinstance(node, ast.For) for node in entry.body)
     assert not any(isinstance(node, ast.Call) and getattr(node.func, "id", "") == "calculate_smart_score" for node in calls)
@@ -54,12 +62,15 @@ def test_scored_entry_uses_real_ranker_and_keeps_debug_and_explanation_ownership
         isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_build_fallback_metadata"
         for node in calls
     )
-    assert "run_scored_fallback" in ast.unparse(entry)
+    assert "_complete_scored_selection" in ast.unparse(entry)
     assert any(isinstance(node, ast.If) and "top5" in ast.unparse(node)
-               for node in entry.body)
-    projection = next(node for node in entry.body if getattr(node, "name", "") == "scored_metadata")
-    assert "_build_scored_metadata" in ast.unparse(projection)
-    assert "scored_runtime.get('strategy_config_id')" in ast.unparse(projection)
+               for node in policy.body)
+    projection = next(
+        node for node in ast.walk(policy_tree)
+        if getattr(node, "name", "") == "scored_metadata"
+    )
+    assert "request.build_metadata" in ast.unparse(projection)
+    assert "request.runtime.get('strategy_config_id')" in ast.unparse(projection)
 
 
 def test_import_does_not_load_models_database_configuration_or_create_tasks():
