@@ -322,6 +322,7 @@ jobs:
             tests/test_services/test_ai_prewarm_revision.py \
             tests/test_services/test_ai_prewarm_protocol.py \
             tests/test_services/test_ai_analysis_content_compatibility.py \
+            tests/test_services/test_ai_analysis_content_recursion.py \
             tests/test_services/test_ai_analysis_execution.py \
             tests/test_services/test_ai_analysis_invocation.py \
             tests/test_services/test_ai_analysis_outcomes.py \
@@ -343,6 +344,7 @@ jobs:
             tests/practice/test_scored_pipeline_contract.py \
             tests/practice/test_scored_selection_contract.py \
             tests/practice/test_smart_score_components.py \
+            tests/practice/test_smart_reason_text.py \
             tests/practice/test_smart_pipeline_contract.py \
             tests/practice/test_aggregated_smart_contract.py \
             tests/practice/test_smart_path_supplement_contract.py \
@@ -354,6 +356,7 @@ jobs:
             tests/architecture/test_scored_ranking_boundaries.py \
             tests/architecture/test_scored_policy_boundaries.py \
             tests/architecture/test_smart_score_boundaries.py \
+            tests/architecture/test_ai_analysis_content_boundaries.py \
             tests/architecture/test_scored_fallback_merge_boundaries.py \
             tests/architecture/test_scored_fallback_flow_boundaries.py \
             tests/architecture/test_smart_scored_supplement_boundaries.py \
