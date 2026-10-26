@@ -93,3 +93,12 @@
 - 未执行真实微信开发者工具/模拟器/真机交卷恢复、真实弱网/进程终止、外部 OCR/AI、生产 Admin 浏览器、Redis 中断恢复、完整 worker、多 dispatcher 或备份恢复演练。
 - 已入库题目 `re_pending` 重审/回滚已由 Admin 题库域实现；刷题提交域仍只消费 `approved + is_active` 题目，本基线不参与审核状态迁移。
 - `practice_service` 的 `get_similar_practice_questions` / `get_smart_practice_questions` 保留 `use_leitner` 形参，但实际到期过滤与 fallback 由 issuance 层 `candidate_schedule.filter_due_candidates` 统一执行（`question_issuance.issue_practice_questions` 调用），不再在各召回函数内重复实现。
+
+## 10. 刷题 controller 职责边界（2026-10-26）
+
+- `answer-feedback-controller.buildFeedback` 保留错误分支，正确连击的原档位、文案和动画参数由 `buildCorrectFeedback` 生成；计时器取消、反馈回调和页面状态更新顺序不变。
+- `launch-return-controller.navigateBack` 分开处理无栈目标回退、每次尝试的重试闭包和成功复查。保留 44/96/180ms 重试、64ms 成功复查、nextTick 后 20ms 调度、重试去重和页面死亡解锁；知识页身份匹配及最近/最旧目标规则不变。
+- `question-load-controller.loadQuestions` 将响应科目范围与批次校验交给 `acceptQuestionResponse`。仍按范围校验、应用范围、批次校验、交卷凭据、预热、渲染的顺序执行，保留请求序号和页面存活守卫、迟响应忽略、顺序重启与原异常恢复。
+- 三个 controller 的 47 项刻画在 HEAD 原实现和拆分后实现均通过；独立只读审查的 261 组调用轨迹、返回值和异常对照一致。相关 practice/page-budget 回归 401 项通过，三个生产文件全部函数不超过 50 行。
+- 本地精确重放 reliability 的 `Pomodoro module boundaries and lifecycle regressions` 步骤通过：TAP 汇总 1437 项、四个番茄钟独立脚本 46/106/12/39 项、渲染不变性 43 项和 5 个 fixture 的 31 项，另有存储清理与考试终态导航脚本通过。该步骤不包含分包体积门禁，也不构成微信开发者工具、模拟器或真机验收。
+- 单独运行 `node miniprogram/tests/test-main-package-size.js` 时，study 分包源码累计体积仍超 1.2 MiB 预算。本批前按其他工作树文件不变、三个生产文件回算 HEAD 的基线为 1,395,945 字节，当前为 1,396,402 字节，净增 457 字节；未调整门禁。这是打包忽略规则下的源码体积统计，不能等同于微信工具编译或上传体积。

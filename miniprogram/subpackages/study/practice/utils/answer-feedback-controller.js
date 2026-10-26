@@ -52,7 +52,10 @@ function buildFeedback(isCorrect, comboCount) {
       starCount: 0,
     }
   }
+  return buildCorrectFeedback(comboCount)
+}
 
+function buildCorrectFeedback(comboCount) {
   if (comboCount >= 10) {
     return {
       type: 'correct',

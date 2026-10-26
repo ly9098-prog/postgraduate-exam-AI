@@ -37,23 +37,7 @@ async function loadQuestions(options, loadSeq) {
   const response = await options.requestQuestions(params)
   if (!options.isPageAlive() || loadSeq !== options.getRequestSeq()) return false
 
-  const scopeError = options.validateKnowledgeScope(response)
-  if (scopeError) {
-    options.logError(scopeError.logTag, scopeError.logDetail)
-    options.resetToSetup(scopeError.resetMessage)
-    options.showToast({ title: scopeError.toastTitle, icon: 'none' })
-    return false
-  }
-
-  options.applyKnowledgeScope(response)
-  const batchError = options.findBatchError(response)
-  const recovery = options.resolveBatchErrorRecovery(batchError, response)
-  if (recovery) {
-    options.logError(recovery.logTag, recovery.logDetail)
-    options.resetToSetup(recovery.resetMessage)
-    options.showToast({ title: recovery.toastTitle, icon: 'none' })
-    return false
-  }
+  if (!acceptQuestionResponse(options, response)) return false
 
   const questions = options.applyAnsweredFlags(response)
   const sequentialProgress = mode === 'sequential'
@@ -74,6 +58,27 @@ async function loadQuestions(options, loadSeq) {
   applyLoadedBatch(options, response, questions, mode)
   const viewModelResult = renderFirstQuestion(options, questions)
   enterLoadedBatch(options, questions, viewModelResult)
+  return true
+}
+
+function acceptQuestionResponse(options, response) {
+  const scopeError = options.validateKnowledgeScope(response)
+  if (scopeError) {
+    options.logError(scopeError.logTag, scopeError.logDetail)
+    options.resetToSetup(scopeError.resetMessage)
+    options.showToast({ title: scopeError.toastTitle, icon: 'none' })
+    return false
+  }
+
+  options.applyKnowledgeScope(response)
+  const batchError = options.findBatchError(response)
+  const recovery = options.resolveBatchErrorRecovery(batchError, response)
+  if (recovery) {
+    options.logError(recovery.logTag, recovery.logDetail)
+    options.resetToSetup(recovery.resetMessage)
+    options.showToast({ title: recovery.toastTitle, icon: 'none' })
+    return false
+  }
   return true
 }
 

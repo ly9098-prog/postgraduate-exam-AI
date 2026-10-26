@@ -16,7 +16,7 @@ function createHarness(overrides = {}) {
     calls: [],
     pages: [],
   }
-  const controller = createLaunchReturnController({
+  const options = {
     safeDecodeURIComponent: (value, fallback) => {
       if (typeof value !== 'string') return fallback
       try { return decodeURIComponent(value) } catch (_) { return fallback }
@@ -42,8 +42,9 @@ function createHarness(overrides = {}) {
       if (callback) state.patches.push(callback)
     },
     ...overrides,
-  })
-  return { controller, state }
+  }
+  const controller = createLaunchReturnController(options)
+  return { controller, state, options }
 }
 
 test('findStackIndex validates input and matches knowledge page identity', () => {
@@ -212,4 +213,140 @@ test('returnToOrigin hides a visible exit guard before navigation and respects t
   state.nextTicks[0]()
   state.timers[0].callback()
   assert.equal(state.calls[0].kind, 'navigateBack')
+})
+
+function matchingStack(state) {
+  const returnTo = '/subpackages/knowledge/knowledge-detail/index?knowledge_point_id=9'
+  state.pages = [
+    { route: 'subpackages/knowledge/knowledge-detail/index', knowledgePointId: 9 },
+    { route: 'subpackages/study/practice/practice' },
+  ]
+  return returnTo
+}
+
+test('fail and success rechecks deduplicate retries separately for each attempt', () => {
+  const { controller, state } = createHarness()
+  const returnTo = matchingStack(state)
+  controller.navigateBack(returnTo)
+  const first = state.calls[0].options
+  first.fail()
+  first.fail()
+  first.success()
+  assert.deepEqual(state.timers.map(timer => timer.delay), [44, 64])
+  state.timers[1].callback()
+  assert.deepEqual(state.timers.map(timer => timer.delay), [44, 64])
+  state.timers[0].callback()
+  state.calls[1].options.fail()
+  state.calls[1].options.fail()
+  assert.deepEqual(state.timers.map(timer => timer.delay), [44, 64, 96])
+})
+
+test('success recheck accepts a changed route or an empty stack without retrying', () => {
+  for (const pages of [[{ route: 'pages/home/home' }], []]) {
+    const { controller, state } = createHarness()
+    const returnTo = matchingStack(state)
+    state.locked = true
+    controller.navigateBack(returnTo)
+    state.calls[0].options.success()
+    assert.equal(state.timers[0].delay, 64)
+    state.pages = pages
+    state.timers[0].callback()
+    assert.equal(state.timers.length, 1)
+    assert.equal(state.calls.length, 1)
+    assert.equal(state.locked, true)
+  }
+})
+
+test('retry re-reads the stack and falls back if the target disappears', () => {
+  const { controller, state } = createHarness()
+  const returnTo = matchingStack(state)
+  controller.navigateBack(returnTo)
+  state.calls[0].options.fail()
+  state.pages = [{ route: 'subpackages/study/practice/practice' }]
+  state.timers[0].callback()
+  assert.equal(state.locked, false)
+  assert.equal(state.calls[1].kind, 'redirect')
+  assert.equal(state.calls[1].options.url, returnTo)
+})
+
+test('exhausted retry unlocks and shows its toast only once', () => {
+  const { controller, state } = createHarness()
+  const returnTo = matchingStack(state)
+  state.locked = true
+  controller.navigateBack(returnTo, 3)
+  state.calls[0].options.fail()
+  state.calls[0].options.fail()
+  assert.equal(state.locked, false)
+  assert.deepEqual(state.timers, [])
+  assert.deepEqual(state.calls[1], {
+    kind: 'toast', options: { title: '返回失败，请再试一次', icon: 'none' },
+  })
+  assert.equal(state.calls.length, 2)
+})
+
+test('stack matching stops at identity gaps and preserves undecoded fallback rules', () => {
+  const { controller } = createHarness()
+  const route = 'subpackages/knowledge/knowledge-subject/index'
+  const pages = [
+    { route, subjectId: 7 },
+    { route, subjectId: 8 },
+    { route: `/${route}`, options: { subject_id: '7' } },
+    { route: 'subpackages/study/practice/practice' },
+  ]
+  assert.equal(controller.findStackIndex(pages, `/${route}?subject_id=%37`), 2)
+  assert.equal(controller.findStackIndex(pages, `/${route}?subject_id=%ZZ`), 0)
+  pages[1] = { route }
+  assert.equal(controller.findStackIndex(pages, `/${route}?subject_id=7`), 0)
+  pages[0] = { route, subjectId: 8 }
+  assert.equal(controller.findStackIndex(pages, `/${route}?subject_id=7`), 1)
+})
+
+test('returnToOrigin waits for guard completion and retains the navigation port identity', () => {
+  const h = createHarness()
+  const returnTo = matchingStack(h.state)
+  h.state.exitGuardVisible = true
+  h.state.returnTo = returnTo
+  const calls = []
+  h.options.navigateBack = function (...args) {
+    assert.equal(this, h.options)
+    calls.push(args)
+  }
+  h.controller.returnToOrigin()
+  h.controller.returnToOrigin()
+  assert.equal(h.state.patches.length, 2)
+  assert.equal(h.state.nextTicks.length, 0)
+  assert.equal(h.state.timers.length, 0)
+  h.state.returnTo = '/pages/home/home'
+  h.state.patches[1]()
+  assert.equal(h.state.nextTicks.length, 1)
+  assert.equal(h.state.timers.length, 0)
+  h.state.nextTicks[0]()
+  assert.deepEqual(h.state.timers.map(timer => timer.delay), [20])
+  assert.deepEqual(calls, [])
+  h.state.timers[0].callback()
+  assert.deepEqual(calls, [[returnTo, 0]])
+})
+
+test('navigation and retry ports preserve their receiver and lock ordering', () => {
+  const h = createHarness()
+  const returnTo = matchingStack(h.state)
+  const calls = []
+  for (const name of Object.keys(h.options)) {
+    const original = h.options[name]
+    h.options[name] = function (...args) {
+      assert.equal(this, h.options)
+      calls.push([name, ...args])
+      return original(...args)
+    }
+  }
+  h.controller.navigateBack(returnTo)
+  h.state.calls[0].options.fail()
+  h.state.timers[0].callback()
+  assert.deepEqual(calls.map(call => call[0]), [
+    'isPageAlive', 'getCurrentPages', 'safeDecodeURIComponent', 'navigateBack',
+    'isPageAlive', 'setTimeout', 'isPageAlive', 'setNavigationLocked',
+    'isPageAlive', 'getCurrentPages', 'safeDecodeURIComponent', 'navigateBack',
+  ])
+  assert.deepEqual(calls.find(call => call[0] === 'setNavigationLocked'),
+    ['setNavigationLocked', true])
 })

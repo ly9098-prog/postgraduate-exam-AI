@@ -1,6 +1,5 @@
 const {
   parseReturnIdentity,
-  pageMatchesIdentity,
   nearestMatchingIndex,
   oldestMatchingIndex,
 } = require('./launch-return-state')
@@ -30,28 +29,41 @@ function navigateBack(options, returnTo, attempt = 0) {
   const pages = options.getCurrentPages()
   const targetIndex = findStackIndex(options, pages, returnTo)
   if (targetIndex < 0) {
-    options.setNavigationLocked(false)
-    if (returnTo) {
-      options.redirectTo({
-        url: returnTo,
-        fail: () => options.reLaunch({ url: '/pages/home/home' }),
-      })
-      return
-    }
-    if (pages.length > 1) {
-      options.navigateBack({
-        delta: 1,
-        fail: () => options.reLaunch({ url: '/pages/home/home' }),
-      })
-      return
-    }
-    options.reLaunch({ url: '/pages/home/home' })
+    navigateWithoutStackTarget(options, pages, returnTo)
     return
   }
   const delta = Math.max(1, pages.length - 1 - targetIndex)
+  const retry = createNavigationRetry(options, returnTo, attempt)
+  options.navigateBack({
+    delta,
+    success: () => checkNavigationSuccess(options, retry),
+    fail: retry,
+  })
+}
+
+function navigateWithoutStackTarget(options, pages, returnTo) {
+  options.setNavigationLocked(false)
+  if (returnTo) {
+    options.redirectTo({
+      url: returnTo,
+      fail: () => options.reLaunch({ url: '/pages/home/home' }),
+    })
+    return
+  }
+  if (pages.length > 1) {
+    options.navigateBack({
+      delta: 1,
+      fail: () => options.reLaunch({ url: '/pages/home/home' }),
+    })
+    return
+  }
+  options.reLaunch({ url: '/pages/home/home' })
+}
+
+function createNavigationRetry(options, returnTo, attempt) {
   const retryDelays = [44, 96, 180]
   let retryQueued = false
-  const retry = () => {
+  return () => {
     if (retryQueued) return
     if (!options.isPageAlive()) {
       options.setNavigationLocked(false)
@@ -72,22 +84,19 @@ function navigateBack(options, returnTo, attempt = 0) {
       navigateBack(options, returnTo, attempt + 1)
     }, retryDelays[attempt])
   }
-  options.navigateBack({
-    delta,
-    success: () => {
-      options.setTimeout(() => {
-        if (!options.isPageAlive()) {
-          options.setNavigationLocked(false)
-          return
-        }
-        const currentPages = options.getCurrentPages()
-        const current = currentPages[currentPages.length - 1] || {}
-        const currentRoute = String(current.route || '').replace(/^\//, '')
-        if (currentRoute === 'subpackages/study/practice/practice') retry()
-      }, 64)
-    },
-    fail: retry,
-  })
+}
+
+function checkNavigationSuccess(options, retry) {
+  options.setTimeout(() => {
+    if (!options.isPageAlive()) {
+      options.setNavigationLocked(false)
+      return
+    }
+    const currentPages = options.getCurrentPages()
+    const current = currentPages[currentPages.length - 1] || {}
+    const currentRoute = String(current.route || '').replace(/^\//, '')
+    if (currentRoute === 'subpackages/study/practice/practice') retry()
+  }, 64)
 }
 
 function returnToOrigin(options) {
