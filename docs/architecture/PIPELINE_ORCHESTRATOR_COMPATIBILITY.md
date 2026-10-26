@@ -115,3 +115,12 @@
 - 诊断仍在提取后分四次遍历，保留 page/page_index 回退、整数转换、去重排序、getter 次数及异常优先级。原 `_extract_pdf_blocks`、`_ocr_scanned_pdf`、文本转换、logger 与 builtin patch 端口仍在原表达式时点读取；取消直接传播，不被普通 fallback 捕获。
 - 新增源/OCR/region 刻画先在原实现通过：初始 51 项（含旧提取 12 项），扩充后修改前 69 项，最终保存的原实现重放 70 项；新版同组加架构门禁 97 项、相关编排和图片阶段 282 项通过。相关回归有 7 条 AsyncMock 未 await 警告，未屏蔽；测试没有调用真实 OCR 引擎，不证明扫描 PDF 或外部服务验收完成。
 - 独立只读审查原版 70 项、当前含门禁 97 项通过；补充 1,024 组结果/部分状态/引用/遍历差分和 48 条动态端口/异常/取消轨迹一致，18 个 helper 与 2 个入口违规 mutation 均被门禁拒绝，无 P0–P3 发现。作者与独立证据分开记录，未扩展为完整 worker 或真实 OCR 验收。
+
+## 10. 分割输入、恢复与重叠去重（2026-10-26）
+
+- `ImportPipeline._run_split` 保留原签名、docstring 和模块 globals，入口 473→29 行；`pipeline_split_stage` 按原顺序调用 input、rebuild、prose、fallback、overlap、result，`pipeline_split_state` 仅保存本次调用的局部状态。八个新模块均不超过 300 行，所有函数不超过 50 行。
+- 跨页合并只有在存在 links 时接受替换 blocks 和 warnings；book/PDF 布局过滤仍读取原 normalized blocks，可能覆盖此前合并，过滤普通失败则保留已接受的输入。VL 重建成功后先发布 blocks、清空 layout、切回 standard，再按原冻结 registry 重映射；缺输入或无结果回退 layout_enhanced。
+- 初始 raw question count/hash 和 prose 风险计数仍在过滤前采集；book/PDF 先过滤 prose，视觉回退成功后再次过滤并累积计数，每次 preview 上限 20。无题号的普通文档仍生成低置信人工审核项，book/PDF 不生成该回退项；没有纯 AI/OCR 自动入库路径。
+- chunk overlap 仅在 seen 集合与 logical_end 都不是 `None` 时启用，只有已见 hash 且 page_start 大于 logical_end 才丢弃；保留题目的 hash 在下一题计算前更新共享集合，后续异常不撤销已完成的集合更新。末题贴近边界且有 A/B/C、缺 D/E 才发出截断告警。
+- 保留动态原模块与 builtin 查找、对象引用、视觉检测普通异常边界和取消传播；最终顺序仍为多空题诊断、应用冻结选项、逐题日志、返回结果。`test_split_stage_input_contract.py`、`test_split_stage_result_contract.py`、`test_split_stage_ports_contract.py`、`test_split_stage_prose_contract.py` 与 `test_pipeline_split_boundaries.py` 已接入静态 CI；fresh import 不初始化 orchestrator、OCR、配置或数据库。
+- 以上兼容检查使用合成输入和现有本地测试，不代表真实 OCR/AI、扫描 PDF、大文件内存或完整跨进程 worker 验收。single-pass、chunked runner、OCR correction router 及编排器其他职责仍需继续治理。
