@@ -326,6 +326,9 @@ jobs:
             tests/test_services/test_ai_analysis_execution.py \
             tests/test_services/test_ai_analysis_invocation.py \
             tests/test_services/test_ai_analysis_outcomes.py \
+            tests/test_services/test_ai_analysis_publication_contract.py \
+            tests/test_services/test_ai_analysis_publication_ports.py \
+            tests/architecture/test_ai_analysis_publication_boundaries.py \
             tests/test_services/test_ai_analysis_persistence_contract.py \
             tests/test_services/test_ai_analysis_persistence_ports.py \
             tests/test_services/test_ai_analysis_persistence_database.py \

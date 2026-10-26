@@ -138,3 +138,10 @@ Layer 4 规则（`repair_questions` 内）：
 - 第一次提交成功后才构造 snapshot 和 AiChat；后续 snapshot、构造、add 或第二次提交失败不撤销第一次提交。本函数不替调用方回滚。metadata、视觉输入计数/证据/重试、签名、force、token 和耗时字段保持原投影。
 - `build_context_snapshot` 是 `dict(context)` 浅复制，再覆盖四个视觉观察字段，并非主动过滤 base64/URL 的安全清洗器；调用方须保持原上下文输入边界。本次不新增过滤策略，也不声称原注释已实现任意上下文的敏感内容过滤。repair 的 guard 快照保留 expected/actual answer check 的原引用。
 - 新增 persistence contract/ports/database 三组测试与架构门禁接入静态 CI。fake DB 刻画引用、动态替换、求值顺序和失败/取消；隔离 SQLite 验证成功写入及第二次提交失败后调用方回滚仍可读到已提交分析、无已提交聊天记录。它们不调用真实模型，不代表生产 PostgreSQL、Redis、凭据轮换或完整 worker 验收。
+
+## 10. 持久化后的日志与响应发布（2026-10-26）
+
+- `analysis_outcomes.grounding_repair_outcome` / `valid_analysis_outcome` 保留原 async 签名、定义时绑定的默认 persist 回调和 await 参数求值；仅在保存成功后进入 `analysis_publication` 的同步日志与响应组装。保存失败或取消时不发布，不新增重试、事务或回滚。
+- 发布继续读取保存回调修改过的 usage、result、parsed、grounding 和图像列表，保留 safe、generated_at 及 parsed 等对象引用。日志方法先绑定，再求值视觉校验和字段观察参数；校验回调可修改后续观察值，日志回调可替换本次响应构造器。原模块 bool、len 和响应函数端口按原表达式时点读取，并保留 globals 到 builtins 的查找行为。
+- 日志或响应构造失败继续向调用方传播；已经成功完成的保存不会由发布函数撤销。真实保存的两个提交边界仍由第 9 节的持久化入口负责。
+- 新增 publication contract/ports 与架构门禁接入静态 CI，覆盖失败、实际任务取消、回调修改、端口替换和无数据库/运行时导入副作用。原实现重放和本地替身回归用于兼容性验证，不代表真实外部模型、完整 worker 或生产验收。

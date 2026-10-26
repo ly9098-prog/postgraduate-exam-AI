@@ -13,9 +13,13 @@ from app.services.ai.analysis_persistence import (
     persist_repaired_analysis,
     persist_valid_analysis,
 )
+from app.services.ai.analysis_publication import (
+    publish_repaired_analysis,
+    publish_valid_analysis,
+)
 from app.services.ai.analysis_responses import (
-    grounding_repaired_response,
-    valid_analysis_response,
+    grounding_repaired_response,  # noqa: F401 - live publication port
+    valid_analysis_response,  # noqa: F401 - live publication port
     visual_ack_failed_response,
 )
 from app.services.ai.analysis_validation import AnalysisUsage, GroundingValidation
@@ -129,25 +133,7 @@ async def grounding_repair_outcome(
         effective_force=effective_force,
         runtime=runtime,
     )
-    logger.warning(
-        "ai.error_analysis.grounding_repaired wq_id=%s force=%s model=%s reason=%s "
-        "expected=%s actual=%s",
-        wrong_question.id,
-        effective_force,
-        result.get("model"),
-        grounding.guard_reason,
-        expected_answer_check,
-        grounding.actual_answer_check,
-    )
-    return grounding_repaired_response(
-        content=safe,
-        tokens_used=usage.total_tokens_used,
-        duration_ms=usage.total_duration_ms,
-        effective_force=effective_force,
-        visual_input_count=len(image_data_urls),
-        visual_evidence=usage.visual_evidence,
-        generated_at=generated_at,
-    )
+    return publish_repaired_analysis(locals(), namespace=globals())
 
 
 async def valid_analysis_outcome(
@@ -191,34 +177,4 @@ async def valid_analysis_outcome(
         duration_ms=usage.total_duration_ms,
         runtime=runtime,
     )
-    logger.info(
-        "ai.error_analysis.result wq_id=%s force=%s model=%s input_mode=%s visual_count=%s "
-        "visual_evidence_valid=%s parsed_valid=%s compatibility=%s max_tokens=%s "
-        "visual_ack_retried=%s visual_ack_retry_ms=%s "
-        "fields=%s duration_ms=%s",
-        wrong_question.id,
-        effective_force,
-        result.get("model"),
-        "vision" if image_data_urls else "text",
-        len(image_data_urls),
-        visual_evidence_is_valid(usage.visual_evidence) if image_data_urls else None,
-        True,
-        result.get("compatibility_profile") or "default",
-        max_tokens,
-        usage.visual_ack_retried,
-        usage.visual_ack_retry_ms,
-        {
-            k: bool(parsed.get(k))
-            for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]
-        },
-        usage.total_duration_ms,
-    )
-    return valid_analysis_response(
-        parsed,
-        result,
-        tokens_used=usage.total_tokens_used,
-        duration_ms=usage.total_duration_ms,
-        effective_force=effective_force,
-        image_data_urls=image_data_urls,
-        visual_evidence=usage.visual_evidence,
-    )
+    return publish_valid_analysis(locals(), namespace=globals())
