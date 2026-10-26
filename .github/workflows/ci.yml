@@ -371,6 +371,9 @@ jobs:
             tests/practice/test_normalization_session_contract.py \
             tests/practice/test_normalization_ports.py \
             tests/architecture/test_practice_normalization_boundaries.py \
+            tests/practice/test_batch_submission_flow.py \
+            tests/practice/test_batch_submission_preparation.py \
+            tests/architecture/test_batch_preparation_boundaries.py \
             tests/test_services/test_practice_batch_token_compatibility.py \
             tests/pipeline/test_extract_stage_source_contract.py \
             tests/pipeline/test_extract_stage_ocr_contract.py \

@@ -138,3 +138,10 @@
 - 时间先于身份和题数校验；保留两个日期都解析后才拒绝无效日期、墙钟秒取整、时长负值/缺失回退、2 秒容差与 6 小时上限、answered_count 严格一致、question_count 转换失败回退等原规则。返回新字典，保留 ID、日期和计数对象引用及原错误文案/异常链。
 - helper 在原表达式位置解析原模块和 builtin 端口，保持执行中替换解析器、阈值、转换函数时的生效顺序；naive 日期仍先记录原 warning 再转换，取消和 logger 异常继续传播。架构门禁检查两个模块的 300/50、依赖、IO 与 fresh import。
 - 作者最终原版 148 项、新版相关 284 项通过，4,096 组结果/引用/异常/日志与 384 组动态端口/getter/取消轨迹一致。主流程合并旧 token 测试导入修复后专项 185 项通过；不包含真实 PostgreSQL、微信或生产提交验收。
+
+## 16. 批量提交的准备边界（2026-10-26）
+
+- `batch_submission_flow.py` 保留原 dataclass 和函数定义，以及历史模块中的可替换校验依赖；`batch_submission_preparation.py` 承接协议校验、revision 绑定校验、评分与 session/scope 准备、session 模型装配。新模块只导入标准库，不读取数据库、配置或 worker。
+- 保留输入校验 → 已提交回放 → 签名与 revision 读取 → 评分和 session/scope 校验 → 请求认领 → 持久化提交 → 提交后预热顺序。准备模块不接管认领、事务、持久化或失败补偿。已提交回放继续先于 token 校验。
+- 原模块和 builtin 依赖在原表达式执行位置解析，保留执行中替换校验器或阈值的时点、错误优先级、结果对象引用和取消传播。session 的墙钟容差仍是 2 秒；批次答案用时校验继续使用独立的 `PRACTICE_ANSWER_DURATION_TOLERANCE_SEC`。
+- `test_batch_submission_preparation.py` 锁定评分/校验先后、首错中断、返回引用、动态阈值、revision 绑定与模型参数；`test_batch_preparation_boundaries.py` 检查两模块 300/50、准备模块依赖和 fresh import。两项与原 flow 契约接入静态 CI。此处不包含生产提交、真实 PostgreSQL 或完整跨进程 worker 验收。
