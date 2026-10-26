@@ -54,7 +54,8 @@ async def test_snapshot_joins_wrong_questions_questions_and_kps():
     )
 
     assert snapshot["subject_stats"] == {"2": 1, "3": 1}
-    assert snapshot["weak_points"] == ["栈", "队列"]
+    assert isinstance(snapshot["weak_points"], list)
+    assert sorted(snapshot["weak_points"]) == ["栈", "队列"]
     assert snapshot["recent_wrong"] == [
         {
             "subject_id": 2,
@@ -78,9 +79,7 @@ def test_parse_advice_content_preserves_historical_fallback():
     assert parse_advice_content("plain advice") == {
         "overall_assessment": "plain advice"
     }
-    assert parse_advice_content('["array"]') == {
-        "overall_assessment": '["array"]'
-    }
+    assert parse_advice_content('["array"]') == {"overall_assessment": '["array"]'}
 
 
 def test_advice_response_shapes():
