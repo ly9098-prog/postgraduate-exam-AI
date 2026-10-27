@@ -28,6 +28,8 @@ class SplitState:
     split_diagnostics: Any = field(init=False)
     seen_hashes: Any = field(init=False)
     logical_end: Any = field(init=False)
+    ir_freeze_binding: Any = None
+    freeze_input_changed: bool = False
 
 
 def resolve_split_port(namespace: dict, name: str) -> Any:

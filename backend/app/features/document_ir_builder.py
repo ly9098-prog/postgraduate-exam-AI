@@ -8,6 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.features.freeze_source_binding import (
+    begin_source_capture,
+    finish_source_capture,
+    record_region_source,
+)
+
 
 def blocks_to_document_ir(
     blocks: list[dict],
@@ -55,6 +61,7 @@ def blocks_to_document_ir(
 
     doc = new_document(source_bytes=effective_source)
     doc.pipeline_fingerprint = pipeline_id
+    begin_source_capture(doc, blocks)
 
     # Group blocks by page
     page_blocks: dict[int, list[dict]] = {}
@@ -154,6 +161,7 @@ def blocks_to_document_ir(
                         region_id, line.bbox, line.text
                     )
             regions.append(region)
+            record_region_source(doc, b, zero_based_idx, region)
 
         doc.add_page(
             PageIR(
@@ -165,4 +173,5 @@ def blocks_to_document_ir(
             )
         )
 
+    finish_source_capture(doc)
     return doc

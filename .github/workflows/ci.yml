@@ -435,6 +435,12 @@ jobs:
             tests/test_services/test_pipeline_freeze_failures.py \
             tests/test_services/test_pipeline_freeze_ports.py \
             tests/architecture/test_pipeline_freeze_boundaries.py \
+            tests/architecture/test_ir_freeze_binding_boundaries.py \
+            tests/pipeline/test_ir_freeze_split_binding.py \
+            tests/pipeline/test_ir_freeze_binding_safety.py \
+            tests/pipeline/test_ir_freeze_binding_restore.py \
+            tests/pipeline/test_ir_freeze_source_admission.py \
+            tests/pipeline/test_ir_freeze_stage_execution.py \
             tests/test_services/test_structure_freeze.py \
             tests/pipeline/test_structure_freeze_pipeline_integration.py \
             tests/document_ir/test_region_freeze_binding.py \

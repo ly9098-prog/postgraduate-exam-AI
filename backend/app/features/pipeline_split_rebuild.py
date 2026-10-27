@@ -46,6 +46,7 @@ def publish_vl_rebuild(
 ) -> None:
     """Publish rebuilt blocks before remapping bindings and warning."""
     state.split_blocks = rebuilt
+    state.freeze_input_changed = True
     old_registry = state.frozen_option_registry
     state.split_mode = "standard"
     state.layout_result = {}

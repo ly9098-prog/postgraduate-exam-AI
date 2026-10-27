@@ -18,6 +18,7 @@ FILES = {
     "overlap",
     "result",
     "stage",
+    "binding",
 }
 IMPORTS = {
     "__future__": {"annotations"},
@@ -33,6 +34,11 @@ IMPORTS = {
         "resolve_split_options",
     },
     "app.features.pipeline_split_rebuild": {"rebuild_split_input"},
+    "app.features.pipeline_split_binding": {
+        "execute_split_questions",
+        "initialize_split_binding",
+        "finalize_split_binding",
+    },
     "app.features.pipeline_split_prose": {
         "filter_book_pdf_prose",
         "record_book_pdf_prose_from_blocks",
@@ -98,6 +104,7 @@ HELPERS = {
     "try_visual_split",
     "create_review_fallback",
     "warn_unclosed_boundary",
+    "execute_split_questions",
 }
 
 
@@ -132,9 +139,7 @@ def inspect_port_use(node, parents):
 def inspect_split_module(source):
     assert len(source.splitlines()) <= 300
     tree = ast.parse(source, feature_version=(3, 11))
-    parents = {
-        child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)
-    }
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     functions = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.Lambda)):
@@ -149,8 +154,7 @@ def inspect_split_module(source):
         if isinstance(node, ast.ImportFrom):
             assert not node.level and node.module in IMPORTS
             assert all(
-                alias.name in IMPORTS[node.module] and alias.asname is None
-                for alias in node.names
+                alias.name in IMPORTS[node.module] and alias.asname is None for alias in node.names
             )
         if isinstance(node, ast.Call):
             name = getattr(node.func, "id", "")
@@ -179,10 +183,7 @@ def inspect_split_module(source):
 
 
 def test_split_modules_have_complete_scan_bounded_functions_and_dependencies():
-    actual = {
-        p.stem.removeprefix("pipeline_split_")
-        for p in FEATURES.glob("pipeline_split_*.py")
-    }
+    actual = {p.stem.removeprefix("pipeline_split_") for p in FEATURES.glob("pipeline_split_*.py")}
     assert actual == FILES
     for name in FILES:
         functions = inspect_split_module(

@@ -29,6 +29,7 @@ def merge_split_pages(state: SplitState, *, ports: Callable[[str], Any]) -> None
     )(state.split_blocks)
     if xp_links:
         state.split_blocks = xp_blocks
+        state.freeze_input_changed = True
         state.warnings.extend(xp_warnings)
         state.warnings.append(f"cross_page: {ports('len')(xp_links)} link(s) applied")
         state.extra_data["cross_page_merge_results"] = xp_merge_results
@@ -59,6 +60,7 @@ def filter_split_layout(state: SplitState, *, ports: Callable[[str], Any]) -> No
                 state.split_blocks, state.layout_filter_diagnostics = (
                     filter_book_layout_blocks_from_ir(doc_ir)
                 )
+                state.freeze_input_changed = True
             else:
                 state.split_blocks, state.layout_filter_diagnostics = (
                     state.normalized_blocks,

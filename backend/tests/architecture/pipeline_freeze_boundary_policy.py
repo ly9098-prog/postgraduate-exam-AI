@@ -30,6 +30,7 @@ FUNCTIONS = {
         "_project_empty_ir",
         "project_canary_fallback",
         "project_canary_success",
+        "_bind_legacy_fallback",
     },
     "canary": {"project_canary_freeze"},
     "dual": {"project_dual_freeze"},
@@ -56,7 +57,7 @@ POLICY = {
         "exc",
     ),
     "project_ir_freeze": (
-        "ir_registry_raw ir_result legacy_result",
+        "doc_ir ir_registry_raw ir_result legacy_result",
         "",
         "dict list",
         "legacy_compat",
@@ -74,7 +75,7 @@ POLICY = {
         "result",
     ),
     "project_canary_success": (
-        "converter ir_registry_raw ir_result legacy_result",
+        "doc_ir converter ir_registry_raw ir_result legacy_result",
         "",
         "dict list",
         "legacy_compat",
@@ -91,6 +92,7 @@ POLICY = {
         "_compare_freeze_results logger dict",
         "comparison diff result",
     ),
+    "_bind_legacy_fallback": ("doc_ir", "", "", ""),
 }
 
 PREFIX = "app.features.pipeline_freeze_"
@@ -101,7 +103,12 @@ MODULE_IMPORTS = {
         (PREFIX + "dual", "project_dual_freeze", None),
         (PREFIX + "projection", "project_ir_freeze", None),
     },
-    "projection": {(PREFIX + "state", "FreezeState", None), ("typing", "Any", None)},
+    "projection": {
+        (PREFIX + "state", "FreezeState", None),
+        ("typing", "Any", None),
+        ("app.features.freeze_source_binding", "source_binding_fields", None),
+        ("app.features.freeze_source_binding", "bind_legacy_result", None),
+    },
     "canary": {
         (PREFIX + "state", "FreezeState", None),
         (PREFIX + "projection", "project_canary_fallback", None),
@@ -224,6 +231,7 @@ CALLS = {
         "state.port('logger').warning",
     },
     "project_ir_freeze": {
+        "source_binding_fields",
         "_freeze_deep_freeze",
         "_ir_to_legacy",
         "_project_empty_ir",
@@ -234,6 +242,7 @@ CALLS = {
         "state.port('list')",
     },
     "_project_empty_ir": {
+        "_bind_legacy_fallback",
         "result.get",
         "state.ir_result.get",
         "state.port",
@@ -243,6 +252,7 @@ CALLS = {
         "state.port('logger').warning",
     },
     "project_canary_fallback": {
+        "_bind_legacy_fallback",
         "result.get",
         "state.ir_result.get",
         "state.port",
@@ -251,6 +261,7 @@ CALLS = {
         "state.port('logger').warning",
     },
     "project_canary_success": {
+        "source_binding_fields",
         "_freeze_deep_freeze",
         "state.ir_result.get",
         "state.converter",
@@ -283,4 +294,5 @@ CALLS = {
         "state.port('dict')",
         "state.port('logger').info",
     },
+    "_bind_legacy_fallback": {"bind_legacy_result"},
 }

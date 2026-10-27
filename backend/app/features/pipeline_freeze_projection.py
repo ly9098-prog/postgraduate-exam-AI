@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.features.freeze_source_binding import (
+    bind_legacy_result,
+    source_binding_fields,
+)
 from app.features.pipeline_freeze_state import FreezeState
 
 
@@ -28,6 +32,7 @@ def project_ir_freeze(state: FreezeState) -> dict:
                 state.legacy_result.get("warnings", []) + state.ir_result.get("warnings", [])
             )
         ),
+        **source_binding_fields(state.doc_ir, legacy_compat),
     }
 
 
@@ -43,7 +48,7 @@ def _project_empty_ir(state: FreezeState) -> dict:
     result["freeze_mode"] = "ir"
     result["freeze_ir_warnings"] = ir_warns
     result["freeze_ir_empty"] = True
-    return result
+    return _bind_legacy_fallback(state, result)
 
 
 def project_canary_fallback(state: FreezeState, failover_reasons: Any) -> dict:
@@ -62,7 +67,11 @@ def project_canary_fallback(state: FreezeState, failover_reasons: Any) -> dict:
             + ["freeze_ir_canary_fallback_legacy"]
         )
     )
-    return result
+    return _bind_legacy_fallback(state, result)
+
+
+def _bind_legacy_fallback(state: FreezeState, result: dict) -> dict:
+    return bind_legacy_result(state.doc_ir, result)
 
 
 def project_canary_success(state: FreezeState, comparison: Any) -> dict:
@@ -83,4 +92,5 @@ def project_canary_success(state: FreezeState, comparison: Any) -> dict:
                 state.legacy_result.get("warnings", []) + state.ir_result.get("warnings", [])
             )
         ),
+        **source_binding_fields(state.doc_ir, legacy_compat),
     }

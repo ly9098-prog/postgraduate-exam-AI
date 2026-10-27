@@ -130,7 +130,7 @@ worker、生产导入及真机验收仍按第 7 节单独验证，不以测试�
 专项契约的隔离守卫未记录真实 `.env` 读取、网络或数据库连接尝试；
 这些结果不构成外部 OCR/AI、完整 worker 或生产验收。
 
-### 10.1 已确认的既有 IR → split 协议缺口（尚未修复）
+### 10.1 拆分时确认的 IR → split 协议缺口（修复见第 11 节）
 
 `freeze_from_document_ir` 按 `region_id` 生成 registry；
 `freeze_registry_to_block_format` 仅转换选项条目，保留 region 键。
@@ -142,7 +142,7 @@ worker、生产导入及真机验收仍按第 7 节单独验证，不以测试�
 真实 builder → freeze → split 的单 block 合成案例已复现上述区别：
 legacy/dual 的 `1:0` 能标记冻结并剥离 raw text 中的选项；IR/canary 的 region 键不能。
 该案例的 regex 仍可恢复选项，不能据此声称所有选项丢失。
-本批保持既有行为；后续修复须基于可验证的 region/block 来源关系，
+第 10 节的拆分批次保持既有行为；绑定修复须基于可验证的 region/block 来源关系，
 覆盖多 block 同页、聚合/过滤/重排及无法确定绑定时的回退，不能靠文本或位置 zip 猜测。
 
 真实 normalize → layout → freeze → split 的同页双题合成探针还确认：layout 会把
@@ -150,3 +150,58 @@ legacy/dual 的 `1:0` 能标记冻结并剥离 raw text 中的选项；IR/canary
 将这一 registry 简单改键为 `1:0` 后，第二题会被错误注入第一题选项；
 不注入冻结结果的对照仍可分别解析两题。因此绑定修复还须在最终 split 边界确认
 选项唯一归属；聚页多题等无法证明安全的范围不能强行接受候选冻结数据。
+
+## 11. IR 冻结来源与题目绑定（2026-10-27）
+
+IR / canary 的冻结选项现在通过来源计划传入真实 splitter；能证明唯一归属的题目
+接受冻结选项，无法证明的题目保留文本或分组选项解析结果。默认 legacy / dual
+继续使用原 block registry。此修复不把 region ID 简单重命名为 block key。
+
+### 11.1 捕获、投影和消费
+
+| 层次 | 实现事实 |
+| --- | --- |
+| `document_ir_builder` | 构建开始记录原输入顺序、唯一坐标和 normalized_text 摘要；创建每个 RegionIR 时记录其来源索引；构建结束丢弃临时对象 ID 查找表，不修改输入 blocks |
+| `freeze_source_binding` | 私有 capture 校验 region 的页、成员顺序、ID、revision 和文本；重复实例、region ID、坐标及非法坐标均不发布计划；公开 DocumentIR codec 不包含此私有 capture |
+| freeze projection | 成功分支附带 `freeze_block_binding` v1：generation、完整有序输入摘要、region/source 映射、独立选项快照及校验和；IR 空结果或 canary 策略回退时，仅通过显式来源坐标绑定选中的 legacy 选项 |
+| `pipeline_split_binding` | 显式 `freeze_mode=ir/ir_canary` 进入新消费策略；重建前清空旧 registry，向 splitter 传计划；缺失或无效计划仍禁止最终 `_apply_frozen_options` 再次按文本子串注入 |
+| `question_freeze_binding` | 使用实际 `filtered_boundaries` 和有限 block 内容区间证明唯一归属；每题参与的全部来源必须完整归属该题；允许一题多来源，冲突选项或共享来源拒绝冻结 |
+
+计划是独立 JSON 数据，不保存对象引用或原选项的可变别名；内容校验和用于发现
+后续修改与损坏，不是鉴权或签名。JSON roundtrip 和通用 artifact save/load 均有
+结果回归。正常 split 工件保存已完成绑定的 raw_questions；实际阶段保存/恢复探针
+也验证冻结与回退结果原样保留。恢复的 DocumentIR 若没有构建时 capture，
+不按文本或 region 顺序补造来源。
+
+### 11.2 输入变化与回退
+
+- 跨页链接被接纳、book/PDF layout filter 成功或 VL rebuild 成功后，旧来源计划失效；即使返回相同内容，也不假定来源关系已被保留。
+- 输入内容、坐标、顺序或成员变化使完整视图校验失败。SEPARATED 模式跳过 answer-only 页面时仍使用原来源索引，不按消费子集重新编号。
+- book 内部裁剪改变全文起点时停止冻结，不把裁剪后的题目位置套用到旧 page_map。
+- 一个来源覆盖两道实际题目时，两题均不接受该来源；同页其他来源独立、归属明确的题目仍可冻结。
+- 分组选项题保留 groups；未接受冻结的 IR 题目不接受无题级来源的页级 layout 选项注入。
+- 跨页选项恢复遇到任一参与题已经接受新冻结绑定时跳过该配对，防止重写冻结选项或另一道冻结题。
+
+canary 的原比较与回退策略继续运行；选中的 legacy 结果也须经过新来源消费检查。
+kill-switch 直接返回原 legacy 结果的行为保留。新增
+`freeze_binding_diagnostics` 记录解析期与最终接受数量，以及缺失来源、输入变换、
+共享来源、冲突、分组和校验失败等原因，不保存新增原文副本。
+
+### 11.3 工件与验证范围
+
+pipeline artifact schema 从 2 提升为 3，兼容检查拒绝带旧版本元数据的工件，
+防止直接恢复修复前的 split 结果；检查不会删除原工件。无元数据工件仍遵循既有
+`REJECT_LEGACY_ARTIFACTS` 配置，本批未改变这一兼容开关。
+
+固定旧提交 `06e906fb` 的 10 项真实回归为 5 失败、5 通过：四项暴露 IR/canary
+没有冻结，两题聚页的 canary 回退还暴露真实选项串题。相同用例在修复后全部通过。
+新增安全、恢复和阶段执行矩阵同时核对单题、同页独立题、多来源单题、聚页回退、
+同页混合接受/拒绝、非法来源、IR 变动、输入变换、book 裁剪、分组、恢复和最终注入。
+实际 `PipelineStage.run_async` 与 `complete_pass_stage` 的组合回归验证同步线程执行和
+阶段数据合并会保留来源计划；这不等于完整 worker 或生产队列验收。
+
+当前相关契约和门禁合并重放 554 项通过，隔离守卫未记录网络、数据库连接或真实
+`.env` 读取尝试。源码哈希固定后的 CI static 全量重放为 5497 项通过、无跳过。
+四类内存变体（忽略共享来源、恢复无来源页级 layout 注入、误用消费子集索引、
+恢复最终 legacy 注入）均被结果断言拒绝；实际阶段工件保存/恢复另有 4 项探针通过。
+外部 OCR/AI、完整 worker、生产 Redis、真机和生产导入仍按第 7 节单独验收。

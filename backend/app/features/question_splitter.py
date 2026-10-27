@@ -9,6 +9,12 @@
 import logging
 import re
 
+from app.features.question_freeze_binding import (
+    question_bound_options,
+    reject_binding,
+    resolve_question_bindings,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -1260,6 +1266,8 @@ def split_questions(
     layout_result: dict | None = None,
     split_mode: str = "standard",
     frozen_option_registry: dict | None = None,
+    *,
+    freeze_block_binding: dict | None = None,
 ) -> list[dict]:
     """从文档块中切分出单道题目。
 
@@ -1287,6 +1295,8 @@ def split_questions(
         raw_questions 列表
     """
     if not normalized_blocks:
+        if freeze_block_binding is not None:
+            reject_binding(freeze_block_binding, "no_split_input")
         return []
 
     # 构建全文和页码映射
@@ -1333,6 +1343,8 @@ def split_questions(
     boundaries = _find_question_boundaries(full_text)
 
     if not boundaries:
+        if freeze_block_binding is not None:
+            reject_binding(freeze_block_binding, "no_question_boundaries")
         return []
 
     # Detect exam section headers in full_text (allow number resets after them)
@@ -1388,9 +1400,18 @@ def split_questions(
         previous_valid_num = num
 
     if not filtered_boundaries:
+        if freeze_block_binding is not None:
+            reject_binding(freeze_block_binding, "no_question_boundaries")
         return []
 
     questions: list[dict] = []
+    bound_options = (
+        resolve_question_bindings(
+            freeze_block_binding, normalized_blocks, page_map, filtered_boundaries, full_text
+        )
+        if freeze_block_binding is not None
+        else {}
+    )
 
     # ── Structure Freeze: precompute which pages have frozen option data ──
     frozen_pages: set[int] = set()
@@ -1435,7 +1456,15 @@ def split_questions(
         # not page granularity, so questions on the same page don't cross-contaminate.
         q_frozen_opts: dict[str, str] = {}
         original_raw: str | None = None
-        if freeze_has_page_data and frozen_option_registry:
+        if freeze_block_binding is not None:
+            q_frozen_opts = question_bound_options(
+                freeze_block_binding,
+                bound_options,
+                start_pos,
+                grouped=bool(grouped_options) or has_grouped_options,
+            )
+            freeze_has_page_data = bool(q_frozen_opts)
+        elif freeze_has_page_data and frozen_option_registry:
             span_blocks = _get_span_blocks(start_pos, end_pos, page_map)
             for fkey, fopts in frozen_option_registry.items():
                 try:
@@ -1452,20 +1481,19 @@ def split_questions(
                     continue
                 if (fk_page, fk_block) in span_blocks:
                     q_frozen_opts.update(dict(fopts))
-            if q_frozen_opts:
-                # Save original text before stripping so match_answers can
-                # extract explicit answers from it downstream.
-                original_raw = raw_text
-                stripped_raw = strip_frozen_options_from_stem(raw_text, q_frozen_opts)
-                if stripped_raw and len(stripped_raw) < len(raw_text):
-                    logger.info(
-                        "split: stripped frozen options from stem for q%d "
-                        "(removed %d chars, frozen_opts=%s)",
-                        num,
-                        len(raw_text) - len(stripped_raw),
-                        sorted(q_frozen_opts.keys()),
-                    )
-                    raw_text = stripped_raw
+        if q_frozen_opts:
+            # Preserve answer/explanation material before removing frozen options.
+            original_raw = raw_text
+            stripped_raw = strip_frozen_options_from_stem(raw_text, q_frozen_opts)
+            if stripped_raw and len(stripped_raw) < len(raw_text):
+                logger.info(
+                    "split: stripped frozen options from stem for q%d "
+                    "(removed %d chars, frozen_opts=%s)",
+                    num,
+                    len(raw_text) - len(stripped_raw),
+                    sorted(q_frozen_opts.keys()),
+                )
+                raw_text = stripped_raw
 
         if freeze_has_page_data:
             if q_frozen_opts:
@@ -1488,7 +1516,12 @@ def split_questions(
         # Layout-aware option injection: use layout's spatial option_groups
         # when text-only extraction is insufficient.
         # NOTE: skipped entirely when frozen data exists (freeze is the sole source of truth).
-        if not freeze_has_page_data and not has_grouped_options and layout_result:
+        if (
+            not freeze_has_page_data
+            and not has_grouped_options
+            and layout_result
+            and freeze_block_binding is None
+        ):
             page_key = str(page_start)
             layout_page_opts = layout_result.get("option_groups", {}).get(page_key, {})
 
@@ -1587,7 +1620,11 @@ def split_questions(
             }
         )
 
-    questions = _recover_cross_page_options(questions)
+    questions = (
+        _recover_cross_page_options(questions, respect_frozen=True)
+        if freeze_block_binding is not None
+        else _recover_cross_page_options(questions)
+    )
 
     # Detect and split questions that were merged due to two-column OCR layout
     # (see docs/BUGS.md 案例二)
@@ -1912,7 +1949,9 @@ def _detect_orphan_options_at_start(raw_text: str) -> tuple[bool, dict[str, str]
     return True, orphan_options, chars_consumed
 
 
-def _recover_cross_page_options(questions: list[dict]) -> list[dict]:
+def _recover_cross_page_options(
+    questions: list[dict], *, respect_frozen: bool = False
+) -> list[dict]:
     """Post-process split results to recover orphaned options from page breaks.
 
     Detects pattern:
@@ -1928,6 +1967,10 @@ def _recover_cross_page_options(questions: list[dict]) -> list[dict]:
     while i < len(questions) - 1:
         current = questions[i]
         next_q = questions[i + 1]
+
+        if respect_frozen and (current.get("is_frozen") or next_q.get("is_frozen")):
+            i += 1
+            continue
 
         if current.get("has_grouped_options") or current.get("blank_option_groups"):
             i += 1

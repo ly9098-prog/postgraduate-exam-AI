@@ -5,6 +5,10 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
+from app.features.pipeline_split_binding import (
+    execute_split_questions,
+    initialize_split_binding,
+)
 from app.features.pipeline_split_fallback import resolve_split_fallback
 from app.features.pipeline_split_input import (
     filter_split_layout,
@@ -40,18 +44,9 @@ def run_split_stage(
     merge_split_pages(state, ports=ports)
     filter_split_layout(state, ports=ports)
     resolve_split_options(state, ports=ports)
+    initialize_split_binding(state)
     rebuild_split_input(state, ports=ports)
-    state.raw_questions = ports("split_questions")(
-        state.split_blocks,
-        structure=state.structure,
-        gap_tolerance=state.gap_tolerance,
-        import_mode=state.import_mode_str,
-        layout_result=state.layout_result
-        if state.layout_result.get("option_groups")
-        else None,
-        split_mode=state.split_mode,
-        frozen_option_registry=state.frozen_option_registry,
-    )
+    execute_split_questions(state, ports=ports)
     initialize_split_diagnostics(state, ports=ports)
     filter_book_pdf_prose(state, ports=ports)
     record_book_pdf_prose_from_blocks(state, ports=ports)

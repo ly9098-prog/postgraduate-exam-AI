@@ -58,10 +58,9 @@ CANONICAL_STAGE_ORDER: list[str] = list(_PipelineDefinition.stage_names())
 # Built from stage order hash + code + config fingerprints so that any
 # relevant change automatically invalidates existing artifacts.
 # Bump the explicit suffix when artifact data format changes.
-# table_detect artifacts now persist canonical ``table.v2`` segments instead
-# of the legacy ``table_markdown`` payload.  Bump the explicit schema suffix so
-# resumes never load incompatible pre-migration artifacts.
-_PIPELINE_SCHEMA_VERSION = "2"
+# IR freeze binding changes split output semantics. Reject older split artifacts
+# rather than resuming questions that bypassed source ownership validation.
+_PIPELINE_SCHEMA_VERSION = "3"
 
 
 def _build_pipeline_fingerprint() -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from app.features.pipeline_split_binding import finalize_split_binding
 from app.features.pipeline_split_state import SplitState
 
 
@@ -37,6 +38,7 @@ def initialize_split_diagnostics(
 
 def finish_split_result(state: SplitState, *, ports: Callable[[str], Any]) -> dict:
     """Observe, apply frozen options, log and return the final question references."""
+    finalize_split_binding(state)
     ports("_log_multi_blank_stage")(
         "split",
         state.raw_questions,
