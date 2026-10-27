@@ -606,36 +606,43 @@ async def _pick_path_prerequisite(
     return None
 
 
-async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
-    root, core_subjects = await _load_subject_scope(db)
-    if root is None or len(core_subjects) != len(EXAM408_CORE_CODES):
-        # 迁移/科目治理异常时宁可明确失败态，也不要用旧编码或名称猜测产品身份。
-        fallback_task = {
-            "key": "scope-not-ready",
-            "task_type": "smart_practice",
-            "priority": 1,
-            "title": "科目配置需要检查",
-            "reason": "未找到完整的计算机专业课科目树，请先完成科目治理后再开始智能学习。",
-            "action_label": "查看刷题入口",
-            "route": "practice",
-            "route_params": {},
-            "estimated_question_count": 0,
-            "estimated_minutes": 0,
-        }
-        return {
-            "date": shanghai_today().isoformat(),
-            "scope": EXAM408_ROOT_CODE,
-            "scope_ready": False,
-            "fallback_used": True,
-            "today_question_count": 0,
-            "total_practice_count": 0,
-            "review": {},
-            "primary_task": fallback_task,
-            "tasks": [fallback_task],
-            "subject_mastery": [],
-        }
+def _scope_not_ready_overview() -> dict:
+    """Return the explicit failure payload when the 408 subject tree is broken.
 
-    root_id = int(root.id)
+    迁移/科目治理异常时宁可明确失败态，也不要用旧编码或名称猜测产品身份。
+    """
+    fallback_task = {
+        "key": "scope-not-ready",
+        "task_type": "smart_practice",
+        "priority": 1,
+        "title": "科目配置需要检查",
+        "reason": "未找到完整的计算机专业课科目树，请先完成科目治理后再开始智能学习。",
+        "action_label": "查看刷题入口",
+        "route": "practice",
+        "route_params": {},
+        "estimated_question_count": 0,
+        "estimated_minutes": 0,
+    }
+    return {
+        "date": shanghai_today().isoformat(),
+        "scope": EXAM408_ROOT_CODE,
+        "scope_ready": False,
+        "fallback_used": True,
+        "today_question_count": 0,
+        "total_practice_count": 0,
+        "review": {},
+        "primary_task": fallback_task,
+        "tasks": [fallback_task],
+        "subject_mastery": [],
+    }
+
+
+async def _load_study_hub_inputs(
+    db: AsyncSession,
+    user_id: int,
+    core_subjects: list[Subject],
+) -> tuple:
+    """Load review, counts, mastery and the four candidate sources in order."""
     core_ids = [int(subject.id) for subject in core_subjects]
 
     review_overview = await review_scheduler.get_today_review_overview(db, user_id)
@@ -651,32 +658,192 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
     weak_point = await _pick_weak_point(db, user_id, core_ids)
     hard_questions = await _pick_hard_questions(db, user_id, core_ids)
     path_prereq = await _pick_path_prerequisite(db, user_id, core_ids)
+    return (
+        review_overview,
+        total_practice_count,
+        today_question_count,
+        subject_mastery,
+        chapter_task,
+        weak_point,
+        hard_questions,
+        path_prereq,
+    )
 
-    remaining_review = int(review_overview.get("today_remaining_count") or 0)
 
+def _build_review_task(review_overview: dict, remaining_review: int) -> dict:
+    """Build the due-review recommendation with its overdue explanation."""
+    overdue = int(review_overview.get("today_overdue_count") or 0)
+    reason = (
+        f"其中 {overdue} 道已经逾期，先处理可避免复习债继续累积。"
+        if overdue > 0
+        else "这些题已经进入最佳复习窗口，优先巩固比继续加新题更划算。"
+    )
+    return {
+        "key": "review:due",
+        "task_type": "review",
+        "priority": 0,
+        "title": f"先完成 {remaining_review} 道到期复习",
+        "reason": reason,
+        "action_label": "开始今日复习",
+        "route": "review_today",
+        "route_params": {},
+        "estimated_question_count": remaining_review,
+        "estimated_minutes": int(review_overview.get("estimated_minutes") or 0),
+    }
+
+
+def _build_weakness_task(weak_point: dict) -> dict:
+    """Build the weak-knowledge-point drill recommendation."""
+    recent_wrong = int(weak_point["recent_wrong_count"])
+    if recent_wrong >= 2:
+        reason = (
+            f"「{weak_point['knowledge_point_name']}」近期重复错误 {recent_wrong} 次，"
+            f"当前掌握度约 {round(weak_point['mastery_score'])} 分。"
+        )
+    else:
+        reason = (
+            f"已练 {weak_point['attempt_count']} 次，当前掌握度约 "
+            f"{round(weak_point['mastery_score'])} 分，适合做一轮小范围强化。"
+        )
+    weak_count = min(WEAK_TASK_COUNT, int(weak_point["available_question_count"]))
+    return {
+        "key": f"weak:{weak_point['knowledge_point_id']}",
+        "task_type": "weakness",
+        "priority": 0,
+        "title": f"强化「{weak_point['knowledge_point_name']}」",
+        "reason": reason,
+        "action_label": "开始弱项强化",
+        "route": "practice",
+        "route_params": _practice_params(
+            subject_id=weak_point["subject_id"],
+            mode="random",
+            count=weak_count,
+            knowledge_point_id=weak_point["knowledge_point_id"],
+            allow_repeat=True,
+        ),
+        "estimated_question_count": weak_count,
+        "estimated_minutes": _minutes_for_questions(weak_count),
+        "subject_id": weak_point["subject_id"],
+        "subject_code": weak_point["subject_code"],
+        "subject_name": weak_point["subject_name"],
+        "knowledge_point_id": weak_point["knowledge_point_id"],
+        "knowledge_point_name": weak_point["knowledge_point_name"],
+    }
+
+
+def _build_hard_task(root: Subject, root_id: int, hard_questions: list[dict]) -> dict:
+    """Build the personal hard-question replay recommendation."""
+    hard_ids = [item["question_id"] for item in hard_questions]
+    max_wrong = max(int(item["wrong_count"]) for item in hard_questions)
+    reason = f"系统识别出 {len(hard_ids)} 道个人高难题" + (
+        f"，其中最高已错 {max_wrong} 次。"
+        if max_wrong > 0
+        else "，适合重新检验解题稳定性。"
+    )
+    return {
+        "key": "hard:top",
+        "task_type": "hard_questions",
+        "priority": 0,
+        "title": f"重练 {len(hard_ids)} 道个人难题",
+        "reason": reason,
+        "action_label": "开始困难题重练",
+        "route": "practice",
+        "route_params": _practice_params(
+            subject_id=root_id,
+            mode="random",
+            count=len(hard_ids),
+            question_ids=hard_ids,
+        ),
+        "estimated_question_count": len(hard_ids),
+        "estimated_minutes": _minutes_for_questions(
+            len(hard_ids), per_question_sec=120
+        ),
+        "subject_id": root_id,
+        "subject_code": str(root.code),
+        "subject_name": str(root.name),
+        "question_ids": hard_ids,
+    }
+
+
+def _build_path_task(path_prereq: dict) -> dict:
+    """Build the prerequisite knowledge-path recommendation."""
+    target_name = path_prereq["target_knowledge_point_name"] or "后续知识点"
+    path_count = min(PATH_TASK_COUNT, int(path_prereq["available_question_count"]))
+    return {
+        "key": f"path:{path_prereq['knowledge_point_id']}:{path_prereq['target_knowledge_point_id']}",
+        "task_type": "knowledge_path",
+        "priority": 0,
+        "title": f"先补「{path_prereq['knowledge_point_name']}」",
+        "reason": (
+            f"它是「{target_name}」的前置知识，当前掌握度约 "
+            f"{round(path_prereq['mastery_score'])} 分；先补前置再推进更稳。"
+        ),
+        "action_label": "继续知识路径",
+        "route": "practice",
+        "route_params": _practice_params(
+            subject_id=path_prereq["subject_id"],
+            mode="random",
+            count=path_count,
+            knowledge_point=path_prereq["knowledge_point_name"],
+            allow_repeat=True,
+        ),
+        "estimated_question_count": path_count,
+        "estimated_minutes": _minutes_for_questions(path_count),
+        "subject_id": path_prereq["subject_id"],
+        "subject_code": path_prereq["subject_code"],
+        "subject_name": path_prereq["subject_name"],
+        "knowledge_point_id": path_prereq["knowledge_point_id"],
+        "knowledge_point_name": path_prereq["knowledge_point_name"],
+    }
+
+
+def _build_smart_task(root: Subject, root_id: int, is_new_user: bool) -> dict:
+    """Build the final smart/first-group practice slot.
+
+    无历史数据时明确回退随机；有数据时进入现有 smart 推荐链，后续的题目级
+    exposure/click/answer 继续沿用 recommendation_log/feedback 机制。
+    """
+    smart_mode = "random" if is_new_user else "smart"
+    return {
+        "key": "practice:fallback" if is_new_user else "practice:smart",
+        "task_type": "smart_practice",
+        "priority": 0,
+        "title": "完成第一组练习" if is_new_user else "继续智能新题",
+        "reason": (
+            "当前学习数据还不足，先完成一组四科练习建立个性化推荐基线。"
+            if is_new_user
+            else "结合当前知识状态与近期表现继续推进新题，避免只在旧错题里循环。"
+        ),
+        "action_label": "开始练习" if is_new_user else "开始智能练习",
+        "route": "practice",
+        "route_params": _practice_params(
+            subject_id=root_id,
+            mode=smart_mode,
+            count=SMART_TASK_COUNT,
+        ),
+        "estimated_question_count": SMART_TASK_COUNT,
+        "estimated_minutes": _minutes_for_questions(SMART_TASK_COUNT),
+        "subject_id": root_id,
+        "subject_code": str(root.code),
+        "subject_name": str(root.name),
+    }
+
+
+def _collect_study_hub_tasks(
+    root: Subject,
+    root_id: int,
+    remaining_review: int,
+    review_overview: dict,
+    chapter_task: dict | None,
+    weak_point: dict | None,
+    hard_questions: list[dict],
+    path_prereq: dict | None,
+) -> list[dict]:
+    """Assemble the ordered recommendation candidates from the loaded inputs."""
     tasks: list[dict] = []
 
     if remaining_review > 0:
-        overdue = int(review_overview.get("today_overdue_count") or 0)
-        reason = (
-            f"其中 {overdue} 道已经逾期，先处理可避免复习债继续累积。"
-            if overdue > 0
-            else "这些题已经进入最佳复习窗口，优先巩固比继续加新题更划算。"
-        )
-        tasks.append(
-            {
-                "key": "review:due",
-                "task_type": "review",
-                "priority": 0,
-                "title": f"先完成 {remaining_review} 道到期复习",
-                "reason": reason,
-                "action_label": "开始今日复习",
-                "route": "review_today",
-                "route_params": {},
-                "estimated_question_count": remaining_review,
-                "estimated_minutes": int(review_overview.get("estimated_minutes") or 0),
-            }
-        )
+        tasks.append(_build_review_task(review_overview, remaining_review))
 
     if chapter_task is not None:
         tasks.append(chapter_task)
@@ -686,77 +853,10 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
         or int(chapter_task.get("subject_id") or 0)
         != int(weak_point.get("subject_id") or 0)
     ):
-        recent_wrong = int(weak_point["recent_wrong_count"])
-        if recent_wrong >= 2:
-            reason = (
-                f"「{weak_point['knowledge_point_name']}」近期重复错误 {recent_wrong} 次，"
-                f"当前掌握度约 {round(weak_point['mastery_score'])} 分。"
-            )
-        else:
-            reason = (
-                f"已练 {weak_point['attempt_count']} 次，当前掌握度约 "
-                f"{round(weak_point['mastery_score'])} 分，适合做一轮小范围强化。"
-            )
-        weak_count = min(WEAK_TASK_COUNT, int(weak_point["available_question_count"]))
-        tasks.append(
-            {
-                "key": f"weak:{weak_point['knowledge_point_id']}",
-                "task_type": "weakness",
-                "priority": 0,
-                "title": f"强化「{weak_point['knowledge_point_name']}」",
-                "reason": reason,
-                "action_label": "开始弱项强化",
-                "route": "practice",
-                "route_params": _practice_params(
-                    subject_id=weak_point["subject_id"],
-                    mode="random",
-                    count=weak_count,
-                    knowledge_point_id=weak_point["knowledge_point_id"],
-                    allow_repeat=True,
-                ),
-                "estimated_question_count": weak_count,
-                "estimated_minutes": _minutes_for_questions(weak_count),
-                "subject_id": weak_point["subject_id"],
-                "subject_code": weak_point["subject_code"],
-                "subject_name": weak_point["subject_name"],
-                "knowledge_point_id": weak_point["knowledge_point_id"],
-                "knowledge_point_name": weak_point["knowledge_point_name"],
-            }
-        )
+        tasks.append(_build_weakness_task(weak_point))
 
     if hard_questions:
-        hard_ids = [item["question_id"] for item in hard_questions]
-        max_wrong = max(int(item["wrong_count"]) for item in hard_questions)
-        reason = f"系统识别出 {len(hard_ids)} 道个人高难题" + (
-            f"，其中最高已错 {max_wrong} 次。"
-            if max_wrong > 0
-            else "，适合重新检验解题稳定性。"
-        )
-        tasks.append(
-            {
-                "key": "hard:top",
-                "task_type": "hard_questions",
-                "priority": 0,
-                "title": f"重练 {len(hard_ids)} 道个人难题",
-                "reason": reason,
-                "action_label": "开始困难题重练",
-                "route": "practice",
-                "route_params": _practice_params(
-                    subject_id=root_id,
-                    mode="random",
-                    count=len(hard_ids),
-                    question_ids=hard_ids,
-                ),
-                "estimated_question_count": len(hard_ids),
-                "estimated_minutes": _minutes_for_questions(
-                    len(hard_ids), per_question_sec=120
-                ),
-                "subject_id": root_id,
-                "subject_code": str(root.code),
-                "subject_name": str(root.name),
-                "question_ids": hard_ids,
-            }
-        )
+        tasks.append(_build_hard_task(root, root_id, hard_questions))
 
     used_kp_ids = {
         int(task["knowledge_point_id"])
@@ -764,69 +864,19 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
         if task.get("knowledge_point_id") is not None
     }
     if path_prereq is not None and path_prereq["knowledge_point_id"] not in used_kp_ids:
-        target_name = path_prereq["target_knowledge_point_name"] or "后续知识点"
-        path_count = min(PATH_TASK_COUNT, int(path_prereq["available_question_count"]))
-        tasks.append(
-            {
-                "key": f"path:{path_prereq['knowledge_point_id']}:{path_prereq['target_knowledge_point_id']}",
-                "task_type": "knowledge_path",
-                "priority": 0,
-                "title": f"先补「{path_prereq['knowledge_point_name']}」",
-                "reason": (
-                    f"它是「{target_name}」的前置知识，当前掌握度约 "
-                    f"{round(path_prereq['mastery_score'])} 分；先补前置再推进更稳。"
-                ),
-                "action_label": "继续知识路径",
-                "route": "practice",
-                "route_params": _practice_params(
-                    subject_id=path_prereq["subject_id"],
-                    mode="random",
-                    count=path_count,
-                    knowledge_point=path_prereq["knowledge_point_name"],
-                    allow_repeat=True,
-                ),
-                "estimated_question_count": path_count,
-                "estimated_minutes": _minutes_for_questions(path_count),
-                "subject_id": path_prereq["subject_id"],
-                "subject_code": path_prereq["subject_code"],
-                "subject_name": path_prereq["subject_name"],
-                "knowledge_point_id": path_prereq["knowledge_point_id"],
-                "knowledge_point_name": path_prereq["knowledge_point_name"],
-            }
-        )
+        tasks.append(_build_path_task(path_prereq))
 
-    # 无历史数据时明确回退随机；有数据时进入现有 smart 推荐链，后续的题目级
-    # exposure/click/answer 继续沿用 recommendation_log/feedback 机制。
-    is_new_user = total_practice_count <= 0
-    smart_mode = "random" if is_new_user else "smart"
-    tasks.append(
-        {
-            "key": "practice:fallback" if is_new_user else "practice:smart",
-            "task_type": "smart_practice",
-            "priority": 0,
-            "title": "完成第一组练习" if is_new_user else "继续智能新题",
-            "reason": (
-                "当前学习数据还不足，先完成一组四科练习建立个性化推荐基线。"
-                if is_new_user
-                else "结合当前知识状态与近期表现继续推进新题，避免只在旧错题里循环。"
-            ),
-            "action_label": "开始练习" if is_new_user else "开始智能练习",
-            "route": "practice",
-            "route_params": _practice_params(
-                subject_id=root_id,
-                mode=smart_mode,
-                count=SMART_TASK_COUNT,
-            ),
-            "estimated_question_count": SMART_TASK_COUNT,
-            "estimated_minutes": _minutes_for_questions(SMART_TASK_COUNT),
-            "subject_id": root_id,
-            "subject_code": str(root.code),
-            "subject_name": str(root.name),
-        }
-    )
+    return tasks
 
-    # 决策顺序是产品规则本身，保持确定性。完成复习后 review 会自然消失，
-    # 其他任务只有学习状态真实变化时才会重新排序。
+
+async def _finalize_study_hub_tasks(
+    db: AsyncSession, user_id: int, tasks: list[dict]
+) -> tuple[list[dict], object, set[str]]:
+    """Order tasks, demote completed keys, cap slots and attach plan tokens.
+
+    决策顺序是产品规则本身，保持确定性。完成复习后 review 会自然消失，
+    其他任务只有学习状态真实变化时才会重新排序。
+    """
     task_order = {
         "review": 1,
         "knowledge_chapter": 2,
@@ -867,14 +917,54 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
             user_id=user_id,
             plan_date=plan_date.isoformat(),
         )
+    return tasks, plan_date, completed_plan_keys
 
-    review_summary = {
+
+def _build_review_summary(review_overview: dict, remaining_review: int) -> dict:
+    """Project the review overview onto the Home summary counters."""
+    return {
         "due_count": int(review_overview.get("today_due_count") or 0),
         "completed_count": int(review_overview.get("today_completed_count") or 0),
         "remaining_count": remaining_review,
         "overdue_count": int(review_overview.get("today_overdue_count") or 0),
         "estimated_minutes": int(review_overview.get("estimated_minutes") or 0),
     }
+
+
+async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
+    root, core_subjects = await _load_subject_scope(db)
+    if root is None or len(core_subjects) != len(EXAM408_CORE_CODES):
+        return _scope_not_ready_overview()
+
+    root_id = int(root.id)
+    (
+        review_overview,
+        total_practice_count,
+        today_question_count,
+        subject_mastery,
+        chapter_task,
+        weak_point,
+        hard_questions,
+        path_prereq,
+    ) = await _load_study_hub_inputs(db, user_id, core_subjects)
+
+    remaining_review = int(review_overview.get("today_remaining_count") or 0)
+    tasks = _collect_study_hub_tasks(
+        root,
+        root_id,
+        remaining_review,
+        review_overview,
+        chapter_task,
+        weak_point,
+        hard_questions,
+        path_prereq,
+    )
+    is_new_user = total_practice_count <= 0
+    tasks.append(_build_smart_task(root, root_id, is_new_user))
+
+    tasks, plan_date, completed_plan_keys = await _finalize_study_hub_tasks(
+        db, user_id, tasks
+    )
 
     return {
         "date": plan_date.isoformat(),
@@ -886,7 +976,7 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
         "completed_recommendation_count": len(completed_plan_keys),
         "today_question_count": today_question_count,
         "total_practice_count": total_practice_count,
-        "review": review_summary,
+        "review": _build_review_summary(review_overview, remaining_review),
         "primary_task": tasks[0],
         "tasks": tasks,
         "subject_mastery": subject_mastery,

@@ -148,3 +148,49 @@
 - 仍未执行生产操作、真实 PostgreSQL、微信页面或生产报告链路；本批不覆盖
   `study_hub_service`、`adaptive_learning_service` 等学习域其余大函数，也不声称
   学习域整体完成。
+
+## 11. 学习中心 overview 编排拆分
+
+- 2026-10-28，`study_hub_service.get_study_hub_overview` 从 285 行收敛至 50 行，拆除为
+  十个小函数：`_scope_not_ready_overview`（29 行）、`_load_study_hub_inputs`（31 行）、
+  `_build_review_task`（20 行）、`_build_weakness_task`（37 行）、`_build_hard_task`
+  （32 行）、`_build_path_task`（30 行）、`_build_smart_task`（30 行）、
+  `_collect_study_hub_tasks`（38 行）、`_finalize_study_hub_tasks`（49 行）、
+  `_build_review_summary`（9 行），全部满足 300/50 预算。
+- 语义与顺序保持：科目树异常（root 缺失或核心科目数不等于 4）仍返回原失败态字段
+  （`scope_ready=False`、`fallback_used=True`、`tasks=[scope-not-ready]` 且
+  `primary_task` 与 `tasks[0]` 同对象）；加载顺序保持 review → 408 计数 → 掌握度 →
+  `total>0` 才探测章节 → 弱项 → 难题 → 知识路径；`remaining_review` 仍取
+  `today_remaining_count`；候选组装保持复习/章节/弱项（与章节同学科则跳过）/难题/
+  知识路径（`used_kp_ids` 去重）/智能练习的既有守卫与顺序，配额仍为弱项 8、路径 6、
+  智能 10、难题按结果数且 `per_question_sec=120`；收尾保持 task_order 1-6 排序、
+  完成项顺延、`[:3]` 槽位、`priority=index`、逐任务签发 plan token（plan_date 用
+  ISO 字符串）与 review 汇总五字段。
+- 15 项固定契约在拆分前的原实现与拆分后均通过，覆盖科目树异常与核心科目不足回退、
+  新用户单任务与免章节探测、复习逾期/窗口两套文案与汇总计数、现有练习才探测章节、
+  同学科弱项跳过、弱项两套文案与 allowed repeat、难题有/无错次文案与 question_ids、
+  路径同学科点跳过与目标名缺省、完成项顺延后截断编号、仅完成项仍保留在尾部，以及
+  加载调用顺序与 core_ids 投影。
+- 36 个故障变体全部被拒绝（证据 `/tmp/study-hub-overview-mutants-tdj7ngfx`），覆盖失败态
+  标志与任务回显、守卫运算符、章节探测条件、加载顺序与 core_ids、复习任务键/阈值/
+  分钟、弱项阈值与配额与 repeat、难题极值/题目集/学科、路径目标名/配额/过滤、
+  `used_kp_ids` 过滤、智能模式/键/配额/入参、候选条件、槽位截断、完成标记、优先级、
+  token 日期、汇总字段与响应字段。
+- 反向展开十个 helper（按 `return` ↔ `tasks.append`、8 元组装载、纯表达式内联等六项
+  已记录归一化）后与原实现 AST 一致；模块其余定义不变
+  （`/tmp/study-hub-overview-ast-report.json`）。
+- 3 项架构门禁（`tests/architecture/test_study_hub_overview_boundaries.py`）约束十个
+  函数预算、入口委派顺序与不内联查询、装载器返回元组与入口解包逐项一致、候选守卫、
+  文案/配额单点、收尾顺序与优先级循环，含“放宽槽位截断到 4”“交换智能模式三元”
+  两项反向自检。
+- 定向回归：学习中心/学习计划/学习报告/番茄钟统计/学习时间投影相关契约与门禁合计
+  203 passed；`tests/practice/test_batch_issuance.py` 30 passed。严格 Ruff/format、
+  compileall、50 行预算与 diff-check 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 408 个测试文件：
+  6961 passed、0 failed、64 条既有弃用 warning，449.78 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作或真实 PostgreSQL 验收；本批不覆盖 `study_hub_service` 其余大函数
+  （`_pick_weak_point` 93、`_pick_chapter_recommendation` 92、
+  `_pick_path_prerequisite` 73、`_build_subject_mastery` 60）与
+  `adaptive_learning_service` 的大函数，也不声称学习域整体完成。
