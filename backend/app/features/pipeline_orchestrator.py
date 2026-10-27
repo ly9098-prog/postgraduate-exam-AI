@@ -108,6 +108,15 @@ from app.features.pipeline_stages.structure_freeze_stage import (
     run_structure_freeze_stage,
 )
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
+from app.features.pipeline_vl_rebuild_guard import (
+    rebuild_vl_config_guard,
+    rebuild_vl_input_guard,
+)
+from app.features.pipeline_vl_rebuild_merge import merge_original_options_into_text
+from app.features.pipeline_vl_rebuild_publish import publish_vl_rebuild_block
+from app.features.pipeline_vl_rebuild_select import select_vl_rebuild_page_text
+from app.features.pipeline_vl_rebuild_source import load_vl_rebuild_sources
+from app.features.pipeline_vl_rebuild_state import VlRebuildState
 from app.features.question_splitter import split_questions  # noqa: F401
 from app.features.question_type_classifier import (
     detect_options_from_text as _detect_options_from_text,
@@ -2942,289 +2951,31 @@ class ImportPipeline:
         vl_config: dict | None = None,
         original_raw_text: str = "",
     ) -> list[dict] | None:
-        """用 PaddleOCR-VL 重建 blocks（VL_REBUILD 路径）。
-
-        当 layout 结构失败时，通过 OCRFixRouter 调用 PaddleOCR-VL 从原始
-        页面（PDF 或图片）重新识别文字，输出与 normalized_blocks 兼容的格式。
-
-        Args:
-            file_path: PDF 或图片文件路径。
-            original_blocks: 当前 normalized_blocks（用于获取 page_width/page_height）。
-            vl_config: PaddleOCR-VL 配置（含 api_key, api_base_url, model_name）。
-
-        Returns:
-            list[dict] 重建后的 blocks，或 None（不可用/失败）。
-        """
-        if not vl_config:
-            logger.warning("VL_REBUILD: no vision config available")
+        """Rebuild blocks via PaddleOCR-VL with dual-source OCR and option recovery."""
+        state = VlRebuildState(values=locals(), namespace=globals())
+        if not rebuild_vl_input_guard(state):
             return None
-
-        file_lower = file_path.lower()
-        is_pdf = file_lower.endswith(".pdf")
-        is_image = any(file_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg"))
-
-        if not is_pdf and not is_image:
-            logger.warning("VL_REBUILD: unsupported file type: %s", file_path)
-            return None
-
         try:
-            api_token = (
-                vl_config.get("api_key")
-                or vl_config.get("paddleocr_vl_api_token")
-                or ""
-            )
-            base_url = (
-                vl_config.get("api_base_url") or "https://paddleocr.aistudio-app.com"
-            )
-            model = vl_config.get("model_name") or "PaddleOCR-VL-1.6"
-
-            if not api_token:
-                logger.warning("VL_REBUILD: PaddleOCR-VL not configured")
+            if not rebuild_vl_config_guard(state):
                 return None
-
-            # 通过 OCRFixRouter 调用 PaddleOCR-VL（唯一入口）
-            from app.features.ocr_fix.router import STRATEGY_MANUAL, OCRFixRouter
-
-            router = OCRFixRouter()
-            router.configure(
-                {
-                    "ocr_fix_strategy": STRATEGY_MANUAL,
-                    "ocr_fix_model": "paddleocr-vl",
-                    "paddleocr_vl_api_token": api_token,
-                    "paddleocr_vl_base_url": base_url,
-                    "paddleocr_vl_model": model,
-                }
-            )
-
-            new_blocks: list[dict] = []
-            page_batches: list[
-                tuple[int, bytes, int, int]
-            ] = []  # (page_idx, png_bytes, pw, ph)
-
-            if is_pdf:
-                # ── PDF path: render each page to image ──
-                import fitz
-
-                doc = fitz.open(file_path, filetype="pdf")
-                try:
-                    total_pages = len(doc)
-
-                    page_dim: dict[int, tuple[int, int]] = {}
-                    for b in original_blocks:
-                        p = b.get("page") or b.get("page_index") or 0
-                        pw = b.get("page_width") or 800
-                        ph = b.get("page_height") or 1200
-                        if p not in page_dim:
-                            page_dim[p] = (pw, ph)
-
-                    for page_num in range(total_pages):
-                        page_idx = page_num + 1
-                        pix = doc[page_num].get_pixmap(dpi=150)
-                        png_bytes = pix.tobytes("png")
-                        pw, ph = page_dim.get(page_idx, (pix.width, pix.height))
-                        page_batches.append((page_idx, png_bytes, pw, ph))
-                finally:
-                    doc.close()
-            else:
-                # ── Image path: read file directly ──
-                import os
-
-                if not os.path.isfile(file_path):
-                    logger.warning("VL_REBUILD: image file not found: %s", file_path)
+            if not load_vl_rebuild_sources(state):
+                return None
+            for page_idx, png_bytes, pw, ph in state.page_batches:
+                select_vl_rebuild_page_text(state, page_idx, png_bytes, pw, ph)
+                merge_original_options_into_text(state, page_idx, png_bytes, pw, ph)
+                if not publish_vl_rebuild_block(state, page_idx, png_bytes, pw, ph):
                     return None
-
-                with open(file_path, "rb") as f:
-                    image_bytes = f.read()
-
-                pw, ph = 800, 1200
-                if original_blocks:
-                    b0 = original_blocks[0]
-                    pw = b0.get("page_width") or pw
-                    ph = b0.get("page_height") or ph
-                page_batches.append((1, image_bytes, pw, ph))
-
-            # ── Dual-source strategy: PP-OCRv4 primary, VL fallback ──
-            from app.core.deployment_profile import (
-                DeploymentProfile,
-                detect_deployment_profile,
-            )
-            from app.features.ocr_correction_common import repair_option_structure
-            from app.features.question_type_classifier import (
-                detect_options_from_text,
-                extract_options_from_text,
-            )
-
-            _is_cloud_vl = detect_deployment_profile() == DeploymentProfile.CLOUD_API
-
-            for page_idx, png_bytes, pw, ph in page_batches:
-                best_text = ""
-                pp_text = ""
-                pp_opt_count = 0
-                page_table_blocks: list[dict] = []
-
-                # Phase 1: Run PP-OCRv4 locally (structure primary)
-                # Skipped in cloud_api — cloud uses VL API as primary, not fallback
-                if not _is_cloud_vl:
-                    try:
-                        from app.services.ocr_service import ocr_raw_text
-
-                        pp_text = ocr_raw_text(png_bytes)
-
-                        if detect_options_from_text(pp_text):
-                            best_text = pp_text
-                            pp_opt_count = len(extract_options_from_text(pp_text))
-                            logger.info(
-                                "VL_REBUILD page %d: PP-OCRv4 (%d chars, %d options detected)",
-                                page_idx,
-                                len(pp_text),
-                                pp_opt_count,
-                            )
-                    except Exception as exc:
-                        logger.warning(
-                            "VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc
-                        )
-
-                # Phase 2: Call VL when PP-OCR has fewer than 4 options
-                # (PP-OCR re-run on raw image can miss options that VL recovers)
-                if pp_opt_count < 4:
-                    ctx = {
-                        "page_num": page_idx,
-                        "filename": f"page_{page_idx}.png",
-                        "entry_point": "vl_rebuild",
-                    }
-                    result = _run_coro_in_loop(
-                        router.fix(image=png_bytes, ocr_text="", context=ctx)
-                    )
-
-                    if result and result.fixed_text:
-                        vl_raw = result.fixed_text.strip()
-                        page_table_blocks = [
-                            item
-                            for item in (
-                                (getattr(result, "metadata", None) or {}).get(
-                                    "layout_blocks"
-                                )
-                                or []
-                            )
-                            if isinstance(item, dict)
-                            and str(item.get("type") or item.get("label") or "").lower()
-                            in {"table", "table_image", "table_caption"}
-                        ]
-                        repaired = repair_option_structure(
-                            vl_raw, pp_text, original_raw_text
-                        )
-                        vl_has_opts = detect_options_from_text(repaired)
-                        vl_text = repaired if vl_has_opts else vl_raw
-                        vl_opt_count = (
-                            len(extract_options_from_text(vl_text))
-                            if vl_has_opts
-                            else 0
-                        )
-
-                        if vl_opt_count > pp_opt_count:
-                            best_text = vl_text
-                            logger.info(
-                                "VL_REBUILD page %d: switching to VL (%d chars, %d options "
-                                "vs PP-OCR's %d)",
-                                page_idx,
-                                len(best_text),
-                                vl_opt_count,
-                                pp_opt_count,
-                            )
-                        elif not best_text:
-                            best_text = vl_text
-                            logger.info(
-                                "VL_REBUILD page %d: using VL (%d chars, options=%s)",
-                                page_idx,
-                                len(best_text),
-                                vl_has_opts,
-                            )
-
-                # Phase 3: Check original_raw_text for missing options.
-                # PP-OCR re-run and VL may each miss different options (e.g.
-                # re-run has A correct but B garbled, original has B correct
-                # but A garbled). Extract from original and merge.
-                if best_text and original_raw_text:
-                    current_opts = extract_options_from_text(best_text)
-                    original_opts = extract_options_from_text(original_raw_text)
-                    if original_opts:
-                        missing = set(original_opts.keys()) - set(current_opts.keys())
-                        if missing:
-                            for line in original_raw_text.split("\n"):
-                                for key in list(missing):
-                                    prefix = f"{key}."
-                                    if line.strip().startswith(prefix):
-                                        best_text = best_text + "\n" + line
-                                        current_opts[key] = original_opts[key]
-                                        missing.remove(key)
-                                        logger.info(
-                                            "VL_REBUILD page %d: merged option %s from "
-                                            "original_raw_text (now %d options)",
-                                            page_idx,
-                                            key,
-                                            len(current_opts),
-                                        )
-                                        break
-
-                if best_text:
-                    # Final Phase 8 merge: select the best value for each A-D
-                    # key across VL, PP-OCR and original raw text.  This also
-                    # repairs the narrow mirrored ``xau<-s`` signature.
-                    from app.features.option_recovery import (
-                        recover_options_from_sources,
-                    )
-
-                    recovered = recover_options_from_sources(
-                        best_text,
-                        pp_text,
-                        original_raw_text,
-                    )
-                    if len(recovered.options) >= max(
-                        2, len(extract_options_from_text(best_text))
-                    ):
-                        best_text = recovered.text
-                        if recovered.repaired_keys:
-                            logger.info(
-                                "VL_REBUILD page %d: Phase 8 recovered keys=%s mirror_repairs=%d",
-                                page_idx,
-                                recovered.repaired_keys,
-                                recovered.mirror_repairs,
-                            )
-
-                    # Clean standalone page/order markers (<1>, <2>, <>, etc.)
-                    # that OCR introduces as transition noise
-                    best_text = re.sub(
-                        r"(?:^|\n)\s*<\d*>\s*(?:\n|$)", r"\n", best_text
-                    ).strip()
-                    new_blocks.append(
-                        {
-                            "page": page_idx,
-                            "page_index": page_idx,
-                            "block_index": len(new_blocks),
-                            "text": best_text,
-                            "normalized_text": best_text,
-                            "boxes": [],
-                            "page_width": pw,
-                            "page_height": ph,
-                            "source": "vl_rebuild",
-                            "has_boxes": False,
-                            "vl_layout_blocks": page_table_blocks,
-                        }
-                    )
-
-            if not new_blocks:
-                logger.warning("VL_REBUILD: no blocks produced")
+            if not state.new_blocks:
+                state.port("logger").warning("VL_REBUILD: no blocks produced")
                 return None
-
-            logger.info(
+            state.port("logger").info(
                 "VL_REBUILD: %d blocks from %s",
-                len(new_blocks),
-                "PDF" if is_pdf else "image",
+                state.port("len")(state.new_blocks),
+                "PDF" if state.is_pdf else "image",
             )
-            return new_blocks
-
+            return state.new_blocks
         except Exception as exc:
-            logger.warning("VL_REBUILD failed: %s", exc)
+            state.port("logger").warning("VL_REBUILD failed: %s", exc)
             return None
 
     async def _load_ocr_strategies(self, db) -> set[str] | None:

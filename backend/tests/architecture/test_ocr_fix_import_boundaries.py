@@ -26,8 +26,11 @@ def test_ocr_package_has_no_eager_exports_and_consumers_use_defining_modules():
     assert graph[PACKAGE] == set()
     assert not any(PACKAGE in targets for targets in graph.values())
     assert not any(source.startswith(PACKAGE) for source, _ in cyclic_edges(graph))
-    for consumer in ("app.features.ocr_correction", "app.features.pipeline_orchestrator"):
+    for consumer in ("app.features.ocr_correction", "app.features.pipeline_vl_rebuild_source"):
         assert f"{PACKAGE}.router" in graph[consumer]
+    assert "app.features.pipeline_vl_rebuild_source" in graph[
+        "app.features.pipeline_orchestrator"
+    ]
     assert f"{PACKAGE}.interfaces" in graph[f"{PACKAGE}.openai_compatible_adapter"]
 
 

@@ -414,6 +414,13 @@ jobs:
             tests/pipeline/test_split_stage_ports_contract.py \
             tests/pipeline/test_split_stage_prose_contract.py \
             tests/architecture/test_pipeline_split_boundaries.py \
+            tests/pipeline/test_vl_rebuild_input_contract.py \
+            tests/pipeline/test_vl_rebuild_ports_contract.py \
+            tests/pipeline/test_vl_rebuild_selection_contract.py \
+            tests/pipeline/test_vl_rebuild_state_contract.py \
+            tests/pipeline/test_vl_rebuild_import_contract.py \
+            tests/pipeline/test_vl_rebuild_global_contract.py \
+            tests/architecture/test_pipeline_vl_rebuild_boundaries.py \
             tests/pipeline/test_router_stage_execution_contract.py \
             tests/pipeline/test_router_stage_result_contract.py \
             tests/pipeline/test_router_stage_ports_contract.py \

@@ -74,3 +74,31 @@
 - 图片后台由 `import_image_lifecycle.run_image_import_lifecycle` 组合 OCR/解析阶段、成功终态投影和完成持久化。普通失败先记录结构化日志和异常，再由服务原有失败路径调用 `persist_image_import_failure`；服务继续负责 checkpoint、预约释放和临时文件清理，不改变人工审核入库边界。
 - 通用后台的 `import_background_execution.execute_import_background` 保留 start 日志、来源 digest 解析、独立 session、后台调用和 finish 日志顺序。后台失败与其补偿仍由原服务/失败模块处理，不能把成功路径的 finish 日志移到 finally。
 - CI static 清单已纳入 image lifecycle/stages/completion 和 background execution/failure 契约，防止后续拆分遗漏完成持久化、失败补偿或端口转发。测试替身不构成外部 OCR 或完整 worker 验收。
+
+## 9. VL 重建阶段（2026-10-27）
+
+`ImportPipeline._run_vl_rebuild_blocks` 保持同步调用，返回 `list[dict] | None`；
+`_run_split`、`run_split_stage` 及 OCR 回归 runner 同样保持原同步接口。
+重建职责分为 `pipeline_vl_rebuild_guard/source/select/merge/publish/state`，分别负责
+输入与配置、源文件准备、双源文字选择、原文选项合并、最终恢复发布和调用内状态。
+
+| 边界 | 保持的行为 |
+| --- | --- |
+| 输入与配置 | 配置为空、扩展名判断在普通异常捕获外；token/URL/model 读取在捕获内。缺图立即返回，普通执行异常返回 `None` |
+| 源文件 | PDF 全部页面渲染并关闭后才开始 OCR；尺寸按同页首条原 block 提供，默认读取 pixmap 尺寸；图片读取保留上下文退出语义 |
+| 局部依赖 | router 在 token 校验后导入；profile/classifier 在源准备后捕获；本地 OCR 每页重新导入；recovery 每个有候选文字的页面重新导入 |
+| PP/VL 选择 | PP 阶段赋值与日志失败保留既有部分状态；仅 PP 选项数小于 4 时调用 VL；未胜出的 VL 仍保留表格 metadata |
+| 合并与发布 | 原文按行序和严格 `key.` 前缀补缺；recovery 门槛为 `max(2, 当前选项数)`；清理后即使文字为空仍发布 block |
+| 异常与资源 | 后页普通异常丢弃全部本次重建结果；取消继续传播，资源退出或 PDF close 异常仍可能覆盖原异常 |
+
+六组 `test_vl_rebuild_*_contract.py` 的 94 项测试已分别在 HEAD 拆分前方法和
+拆分后实现上运行通过，包括真实同步协程桥接、逐页重新导入、原模块动态端口、
+配置失败范围、动态异常/metadata 类型查找和测试替身恢复。
+测试使用合成文件/OCR 结果，不依赖真实凭据。
+`test_pipeline_vl_rebuild_boundaries.py` 限制同步接口、Python 3.11 语法、文件
+300 行/函数 50 行、完整入口签名、逐 helper 字段/端口能力、惰性依赖和事务边界；
+上述测试已加入 CI static 清单。PDF 契约逐页核对完整 VL 调用参数及结果对应关系，
+PP 日志异常契约在 VL 无结果时核对已接受的 PP 文字仍保留。
+
+这些证据仅验证当前 VL 重建拆分的兼容性。外部 OCR/AI 质量与可用性、完整
+worker、生产导入及真机验收仍按第 7 节单独验证，不以测试替身或跳过结果替代。
