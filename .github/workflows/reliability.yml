@@ -581,6 +581,8 @@ jobs:
           node --test miniprogram/tests/test-exam-submit-preparation-controller.js
           node --test miniprogram/tests/test-exam-submit-helpers.js
           node --test miniprogram/tests/test-exam-answer.js
+          node --test miniprogram/tests/test-study-answer.js
+          node --test miniprogram/tests/test-study-answer-boundaries.js
           node --test miniprogram/tests/test-exam-interaction-controller.js
           node --test miniprogram/tests/test-exam-question-time-controller.js
           node --test miniprogram/tests/test-exam-question-navigation-controller.js

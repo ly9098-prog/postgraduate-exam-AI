@@ -243,3 +243,29 @@
 - 按当前 `ci.yml` 的静态架构与非 GPU 步骤本机精确重放，6,865 项通过、0 失败，
   包含 64 个既有 datetime/OCR 弃用警告。该结果是本地重放，不是远端 CI，
   也不包含真实 PostgreSQL、Redis、外部 AI/OCR、微信或生产验收。
+
+## 21. 学习分包答案归一化与跨分包同步（2026-10-28）
+
+- `miniprogram/subpackages/study/utils/answer.js` 的 `normalizeBlankAnswer` 从 93 行
+  收敛为 9 行分派，canonical 键值、圈号/括号/中文标记、可信 slotIds 位置答案分别由
+  `parseCanonicalBlankAnswer`、`parseMarkedBlankAnswer`、`parsePositionalBlankAnswer`
+  承接；模块 220→230 行，全部函数不超过 50 行，exports 的名称与顺序不变。
+- 语义保持：解析优先级（canonical → 标记 → 位置）与提前返回不变；同一分段内后续无冒号
+  片段归属上一槽位；`normalizeSlotValue` 仍按逗号/顿号拆分、去重、升序连接；重复槽位
+  仍覆盖；非字符串对象仍原引用返回且不读取属性；`slotIds` 仍延迟读取并保留 `map`
+  接收者、转换顺序与异常；`__proto__`/`constructor` 等特殊槽位仍走普通对象原型行为。
+- 该实现与已评审的考试分包副本（`subpackages/exam/utils/answer.js`）现为逐字节一致，
+  两分包仍互相不引用；本题只把学习分包补齐到同一已评审结构，源码净增 333 字节。
+  `test-main-package-size.js` 报告 study 分包源码 1110.4 KiB / 196 个文件并继续通过
+  1.2 MiB 源码预算；这是源码体积，不是微信编译或上传体积证据。
+- 27 项契约（`tests/test-study-answer.js`，含 exports 名称/顺序、空值与对象短路、
+  canonical/圈号/括号/中文/位置全部形状、原型与回调异常、导出替换不被判题读取）在
+  HEAD 原模块与当前模块上均通过。改为提交前重放 HEAD 模块：27 通过。
+- 差分刻画：以 5,284 组调用对照学习/考试两份实现，拆分前与拆分后均为 0 不一致；
+  新门禁 `tests/test-study-answer-boundaries.js` 内置 3,376 组同样对照，另含模块 300
+  行/函数 50 行预算、分派形状、exports 顺序与 source 同步断言，5 项全部通过。
+- 10 个故障变体全部被拒绝（`/tmp/study-answer-mutants.log`）：分派重排、解析器改名、
+  丢失分派返回、重复分派调用、解析器参数个数、exports 缺失、函数与模块超预算、语法错误。
+- 按当前 `reliability.yml` 的小程序步骤（257 行命令）本机精确重放：退出码 0、
+  0 个 `not ok`，含新增两项；本机重放不等于远端 CI。仍未执行真实微信开发者工具、
+  模拟器或真机验收，也未做真机答案录入/判题对照。
