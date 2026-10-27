@@ -160,3 +160,56 @@
 - hash 构造异常传播，只有 load session 内的普通异常降级为无 index。清理 finally 仅覆盖 replay 循环，先清 question index 再清 import index；初始化、seen hash 恢复及 running 发布失败不会扩大清理范围。`seen_hashes` 和 `outcome` 仍是执行函数局部变量，保留非标准 session 抑制异常后的未赋值错误及上次 outcome 复用边界。source_type/source_file 在每个 chunk 参数求值时重新读取 parent 属性。
 - replay 普通异常或取消若未被既有 session 抑制，清理后传播，不写终态。正常 replay 后在独立 session 用 `use_cache=False` 读 progress；只要 outcome 精确为 `failed` 或持久化 failed_chunks 大于零就写 paused，其余写 completed，只有 completed 设置 finished。先退出最终 session，再失效进度缓存。
 - 三组恢复刻画契约和架构门禁接入静态 CI；测试使用合成端口刻画顺序、逐块完整参数、查询模型与等值条件、对象引用、水印独立内容快照、错误与取消，并运行既有隔离 SQLite 恢复用例。门禁限制逐 helper 的 state 字段与端口，拒绝 session factory 派生别名，并在跳过入口首条语句前确认它是 docstring。独立原版/新版差分及逆还原 AST 也用于核对本批兼容性；这些证据不代表外部 OCR/AI、生产 PostgreSQL/Redis、多 worker 并发恢复、真实 PDF 或备份恢复验收。编排器剩余 OCR/VL 等大函数继续治理。
+
+## 15. OCR 后端选择与导入后台包装器（2026-10-28）
+
+- `import_pipeline_service` 三个超预算函数收敛：`_run_ocr_via_configured_backend`
+  71→40、`_run_pipeline_with_db` 78→50、`_run_image_pipeline_with_db` 58→37；新增
+  `_resolve_ocr_backend_ports`（19）、`_select_ocr_backend_result`（5）、
+  `_validate_ocr_backend_result`（12）、`_shutdown_temporary_ocr_client`（6）、
+  `_bind_image_pipeline_context`（21）、`_cleanup_image_pipeline_temp_file`（8）、
+  `_log_pipeline_background_crash`（22）、`_record_pipeline_background_crash`（14）、
+  `_cleanup_pipeline_temp_file`（8），全部满足 300/50 预算。
+- OCR 后端语义保持：函数内延迟导入 `get_runtime_config/sanitize_url/get_gateway/
+  create_ocr_worker_client` 后仍先判 `enabled`（未启用报“OCR 功能未启用”）再判
+  `execution_backend == "disabled"`，随后按 backend/远端 URL（空则 `-`）/GPU 记录
+  选择日志；Gateway 为真时走 `recognize_pages([(1, image_bytes)])` 且不建临时客户端，
+  否则建 worker client 并走 `recognize_batch([(1, image_bytes)])`，为空结果报
+  “OCR 后端未返回识别结果”；结果必须 status 成功且无 `failed`，否则报
+  `OCR 后端调用失败: <stable_code|ocr.backend_failed>: <detail|unknown>`，文本空白报
+  “OCR 后端返回成功，但未识别到文本”；异常按 `OCR failed: %s` 记录后原样抛出，
+  仅自建客户端在 finally 关闭，关闭失败只记 warning 不改变结果。
+- 后台包装器语义保持：`_run_pipeline_with_db` 仍先绑定 trace/request/pipeline/
+  source_type/source_file 上下文，再以 `ImportBackgroundExecutionRequest` 注入
+  `async_session`、`run_pipeline_background` 与模块 logger 调用
+  `execute_import_background`；异常时按原格式记录 app 日志、向 `postgraduate-ai`
+  事件流写 level=error（含 error_type 与截断 300 字符的 message）、持久化失败后重抛；
+  finally 先释放资源预约再删除临时文件，未配置路径或文件不存在时不删除，删除失败
+  仅 warning。图片路径保留 `ensure_image_checkpoint(ImageStageCheckpointRequest(...))`
+  → `run_image_import_lifecycle(lifecycle)` 顺序、失败时 `_record_image_failure` +
+  `persist_image_import_failure` 后重抛，以及 upload 阶段标签与 start 事件。
+- 22 项固定契约在拆分前的原实现（AST 提取原三函数运行）与拆分后均通过，覆盖配置
+  拒绝、Gateway/临时客户端两路、空结果、失败码与兜底 detail、空白/非 dict 结果、
+  异常原样传播与关闭失败降级、远端 URL 清洗与占位符、页面下标与单页参数、后台请求
+  字段与注入身份、崩溃日志/事件/持久化字段与 300 字符截断、清理顺序与空路径/删除
+  失败，以及图片检查点字段、生命周期失败与清理。26 个故障变体全部被拒绝
+  （证据 `/tmp/ocr-import-execution-mutants-2wrg1bep`）。
+- 反向展开九个 helper 并按六项已记录归一化（端口解析折叠、结果选择/校验折叠、
+  临时客户端关闭折叠、清理折叠、崩溃日志/持久化折叠并回置 `import traceback`、
+  图片前导折叠）后，三个入口函数与原实现 AST 一致；本模块其余定义不变
+  （`/tmp/ocr-import-execution-ast-report.json`）。
+- 3 项架构门禁（`tests/architecture/test_ocr_import_execution_boundaries.py`）约束
+  九 helper 与方法预算、入口不内联函数级导入、解析/校验/收尾顺序与单点文案，以及
+  清理“先释放后删除”的顺序，含“把 300 字符截断改成 100”“把释放挪到删除之后”
+  两项反向自检。
+- 定向回归：OCR 服务/适配/网关/失败/回退、云档案隔离与相关架构门禁合计
+  393 passed、1 xfailed；pipeline/import/worker v2 相关契约合计 395 passed、
+  2 xfailed。严格 Ruff（沿用既有 `--ignore I001,F401,N818`，该文件在 HEAD 即存在
+  同类提示）、format、compileall 与 diff-check 通过。
+- 仍未执行真实外部 OCR/AI、生产 PostgreSQL/Redis、多 worker 并发导入或备份恢复；
+  `import_pipeline_service` 内 `run_resume_background`（47）及其余 OCR/流水线大函数
+  继续治理。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 410 个测试文件：
+  6986 passed、0 failed、64 条既有弃用 warning，451.03 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。

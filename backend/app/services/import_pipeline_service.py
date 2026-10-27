@@ -247,22 +247,8 @@ def _build_ocr_runtime_diagnostics() -> dict:
     }
 
 
-async def _run_ocr_via_configured_backend(image_bytes: bytes) -> dict:
-    """Run image OCR through the configured OCR worker backend.
-
-    The image-import path used to call ``ocr_executor`` directly, which is a
-    deprecated local-process compatibility service.  That silently bypassed
-    ``OCR_EXECUTION_BACKEND=paddlex_http`` and therefore used local PaddleOCR
-    even when the remote httpx/GPU service was configured.
-
-    This helper uses the application OCR Gateway when available.  For tooling
-    or tests where the lifespan Gateway has not been created yet, it creates a
-    short-lived worker client from the same runtime config.  Importantly, a
-    configured ``paddlex_http`` backend never falls back to local CPU OCR.
-
-    Returns the standard ``WorkerResult.result`` mapping so callers can retain
-    OCR boxes/geometry instead of reducing the first OCR pass to plain text.
-    """
+def _resolve_ocr_backend_ports() -> tuple:
+    """Validate the configured OCR runtime and return its live backend ports."""
     from app.core.ocr_runtime_config import get_runtime_config, sanitize_url
     from app.services.ocr_service import get_gateway
     from app.services.ocr_worker_client import create_ocr_worker_client
@@ -279,6 +265,55 @@ async def _run_ocr_via_configured_backend(image_bytes: bytes) -> dict:
         sanitize_url(cfg.remote_url) if cfg.remote_url else "-",
         cfg.use_gpu,
     )
+    return cfg, get_gateway, create_ocr_worker_client
+
+
+def _select_ocr_backend_result(results) -> object:
+    """Return the single image OCR result, failing loudly on an empty batch."""
+    if not results:
+        raise RuntimeError("OCR 后端未返回识别结果")
+    return results[0]
+
+
+def _validate_ocr_backend_result(worker_result) -> dict:
+    """Normalize one worker result into the OCR payload or raise a stable error."""
+    result = worker_result.result if isinstance(worker_result.result, dict) else {}
+    if worker_result.status != "success" or result.get("failed"):
+        stable_code = worker_result.stable_error_code or "ocr.backend_failed"
+        detail = result.get("error") or worker_result.error_type or "unknown"
+        raise RuntimeError(f"OCR 后端调用失败: {stable_code}: {detail}")
+
+    text = str(result.get("text") or "")
+    if not text.strip():
+        raise RuntimeError("OCR 后端返回成功，但未识别到文本")
+    return result
+
+
+async def _shutdown_temporary_ocr_client(worker_client) -> None:
+    """Shut down a temporary OCR worker client without masking the OCR outcome."""
+    try:
+        await worker_client.shutdown()
+    except Exception as exc:
+        logger.warning("Temporary OCR worker client shutdown failed: %s", exc)
+
+
+async def _run_ocr_via_configured_backend(image_bytes: bytes) -> dict:
+    """Run image OCR through the configured OCR worker backend.
+
+    The image-import path used to call ``ocr_executor`` directly, which is a
+    deprecated local-process compatibility service.  That silently bypassed
+    ``OCR_EXECUTION_BACKEND=paddlex_http`` and therefore used local PaddleOCR
+    even when the remote httpx/GPU service was configured.
+
+    This helper uses the application OCR Gateway when available.  For tooling
+    or tests where the lifespan Gateway has not been created yet, it creates a
+    short-lived worker client from the same runtime config.  Importantly, a
+    configured ``paddlex_http`` backend never falls back to local CPU OCR.
+
+    Returns the standard ``WorkerResult.result`` mapping so callers can retain
+    OCR boxes/geometry instead of reducing the first OCR pass to plain text.
+    """
+    cfg, get_gateway, create_ocr_worker_client = _resolve_ocr_backend_ports()
 
     gateway = get_gateway()
     worker_client = None
@@ -295,29 +330,13 @@ async def _run_ocr_via_configured_backend(image_bytes: bytes) -> dict:
             owns_worker_client = True
             results = await worker_client.recognize_batch([(1, image_bytes)])
 
-        if not results:
-            raise RuntimeError("OCR 后端未返回识别结果")
-
-        worker_result = results[0]
-        result = worker_result.result if isinstance(worker_result.result, dict) else {}
-        if worker_result.status != "success" or result.get("failed"):
-            stable_code = worker_result.stable_error_code or "ocr.backend_failed"
-            detail = result.get("error") or worker_result.error_type or "unknown"
-            raise RuntimeError(f"OCR 后端调用失败: {stable_code}: {detail}")
-
-        text = str(result.get("text") or "")
-        if not text.strip():
-            raise RuntimeError("OCR 后端返回成功，但未识别到文本")
-        return result
+        return _validate_ocr_backend_result(_select_ocr_backend_result(results))
     except Exception as e:
         logger.error("OCR failed: %s", e)
         raise
     finally:
         if owns_worker_client and worker_client is not None:
-            try:
-                await worker_client.shutdown()
-            except Exception as exc:
-                logger.warning("Temporary OCR worker client shutdown failed: %s", exc)
+            await _shutdown_temporary_ocr_client(worker_client)
 
 
 def _build_pre_extracted_ocr_blocks(
@@ -442,16 +461,10 @@ def _image_lifecycle_request(
     return lifecycle
 
 
-async def _run_image_pipeline_with_db(
-    pipeline_id: str,
-    image_path: str,
-    source_file: str,
-    subject: str | None,
-    subject_id: int | None,
-    options: dict,
-    created_by: str | None = None,
+def _bind_image_pipeline_context(
+    pipeline_id: str, source_file: str, options: dict
 ) -> None:
-    """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
+    """Bind log context and upload tags for one image background pipeline."""
     bind_log_context(
         trace_id=options.get("_trace_id"),
         request_id=options.get("_request_id"),
@@ -469,6 +482,19 @@ async def _run_image_pipeline_with_db(
     set_tag("stage", "upload")
     set_tag("upload.filename", source_file)
     set_tag("upload.type", "image")
+
+
+async def _run_image_pipeline_with_db(
+    pipeline_id: str,
+    image_path: str,
+    source_file: str,
+    subject: str | None,
+    subject_id: int | None,
+    options: dict,
+    created_by: str | None = None,
+) -> None:
+    """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
+    _bind_image_pipeline_context(pipeline_id, source_file, options)
     lifecycle = _image_lifecycle_request(
         pipeline_id,
         image_path,
@@ -494,12 +520,67 @@ async def _run_image_pipeline_with_db(
         await persist_image_import_failure(lifecycle, exc)
         raise
     finally:
-        await _release_pipeline_reservation(pipeline_id)
-        if image_path and os.path.exists(image_path):
-            try:
-                os.unlink(image_path)
-            except OSError as e:
-                logger.warning("Failed to delete image tmp file %s: %s", image_path, e)
+        await _cleanup_image_pipeline_temp_file(pipeline_id, image_path)
+
+
+async def _cleanup_image_pipeline_temp_file(pipeline_id: str, image_path: str) -> None:
+    """Release the reservation and delete the image temp file if present."""
+    await _release_pipeline_reservation(pipeline_id)
+    if image_path and os.path.exists(image_path):
+        try:
+            os.unlink(image_path)
+        except OSError as e:
+            logger.warning("Failed to delete image tmp file %s: %s", image_path, e)
+
+
+def _log_pipeline_background_crash(
+    pipeline_id: str, source_type: str, source_file: str, exc: Exception
+) -> None:
+    """Log a crashed background import to the app log and the event stream."""
+    import traceback
+
+    logger.error(
+        "Background task for pipeline %s crashed: %s\n%s",
+        pipeline_id,
+        exc,
+        traceback.format_exc(),
+    )
+    log_event(
+        logging.getLogger("postgraduate-ai"),
+        "import.background.error",
+        level="error",
+        pipeline_id=pipeline_id,
+        source_type=source_type,
+        source_file=source_file,
+        error_type=type(exc).__name__,
+        error_message=str(exc)[:300],
+    )
+
+
+async def _record_pipeline_background_crash(
+    pipeline_id: str, source_type: str, source_file: str, exc: Exception
+) -> None:
+    """Log and persist one crashed background import before the caller re-raises."""
+    _log_pipeline_background_crash(pipeline_id, source_type, source_file, exc)
+    await record_background_pipeline_failure(
+        pipeline_id=pipeline_id,
+        source_type=source_type,
+        source_file=source_file,
+        exc=exc,
+        async_session=async_session,
+        set_pipeline_store=_set_pipeline_store,
+        capture_exception=capture_exception,
+    )
+
+
+async def _cleanup_pipeline_temp_file(pipeline_id: str, file_path: str) -> None:
+    """Release the reservation and delete the pipeline temp file if present."""
+    await _release_pipeline_reservation(pipeline_id)
+    if file_path and os.path.exists(file_path):
+        try:
+            os.unlink(file_path)
+        except OSError as e:
+            logger.warning("Failed to delete pipeline tmp file %s: %s", file_path, e)
 
 
 async def _run_pipeline_with_db(
@@ -517,8 +598,6 @@ async def _run_pipeline_with_db(
 
     接收已写在磁盘上的临时文件路径，直接使用。完成后清理。
     """
-    import traceback
-
     bind_log_context(
         trace_id=options.get("_trace_id"),
         request_id=options.get("_request_id"),
@@ -545,41 +624,15 @@ async def _run_pipeline_with_db(
             )
         )
     except Exception as exc:
-        logger.error(
-            "Background task for pipeline %s crashed: %s\n%s",
-            pipeline_id,
-            exc,
-            traceback.format_exc(),
-        )
-        log_event(
-            logging.getLogger("postgraduate-ai"),
-            "import.background.error",
-            level="error",
-            pipeline_id=pipeline_id,
-            source_type=source_type,
-            source_file=source_file,
-            error_type=type(exc).__name__,
-            error_message=str(exc)[:300],
-        )
-        await record_background_pipeline_failure(
+        await _record_pipeline_background_crash(
             pipeline_id=pipeline_id,
             source_type=source_type,
             source_file=source_file,
             exc=exc,
-            async_session=async_session,
-            set_pipeline_store=_set_pipeline_store,
-            capture_exception=capture_exception,
         )
         raise
     finally:
-        await _release_pipeline_reservation(pipeline_id)
-        if file_path and os.path.exists(file_path):
-            try:
-                os.unlink(file_path)
-            except OSError as e:
-                logger.warning(
-                    "Failed to delete pipeline tmp file %s: %s", file_path, e
-                )
+        await _cleanup_pipeline_temp_file(pipeline_id, file_path)
 
 
 async def get_pipeline_status(

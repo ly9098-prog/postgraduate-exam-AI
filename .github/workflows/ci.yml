@@ -358,6 +358,8 @@ jobs:
             tests/test_services/test_import_background_execution.py \
             tests/test_services/test_import_background_failure.py \
             tests/test_services/test_import_image_completion.py \
+            tests/test_services/test_ocr_import_execution_contract.py \
+            tests/architecture/test_ocr_import_execution_boundaries.py \
             tests/test_services/test_import_image_lifecycle.py \
             tests/test_services/test_import_image_stages.py \
             tests/test_services/test_task_queue_service_compatibility.py \
