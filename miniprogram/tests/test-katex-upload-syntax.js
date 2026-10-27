@@ -10,7 +10,7 @@ const path = require('node:path')
 const acorn = require('acorn')
 const miniRoot = path.resolve(__dirname, '..')
 const directories = [
-  'subpackages/study/components/mp-html/latex',
+  'vendor/katex',
   'subpackages/exam/components/mp-html/latex',
   'subpackages/formulas/utils/katex',
 ]
@@ -35,5 +35,12 @@ for (const file of files) {
     assert.doesNotThrow(() => parseUploadScript(source), relative + ': incompatible upload syntax')
     assert.equal(source, reference, relative + ': vendor copies must stay identical')
   }
+  const shim = path.join(miniRoot, 'subpackages/study/components/mp-html/latex', file)
+  const source = fs.readFileSync(shim, 'utf8')
+  const target = path.relative(path.dirname(shim), path.join(miniRoot, directories[0], file))
+    .split(path.sep).join('/')
+  assert.equal(source, "module.exports = require('" + target + "')\n",
+    file + ': retain the synchronous study entry and exact vendor target')
+  assert.doesNotThrow(() => parseUploadScript(source), file + ': forwarding upload syntax')
 }
-console.log('KaTeX upload syntax checks passed: 3 copies × 6 files (ES2015)')
+console.log('KaTeX upload syntax checks passed: 3 copies and 6 study forwarders (ES2015)')

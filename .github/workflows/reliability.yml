@@ -350,7 +350,6 @@ jobs:
           fi
 
       - name: Set up Node.js
-        if: steps.admin-manifest.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -365,6 +364,10 @@ jobs:
           else
             npm install --no-audit --no-fund
           fi
+
+      - name: Install miniprogram test dependencies
+        working-directory: miniprogram
+        run: npm ci --include=dev
 
       - name: Pomodoro module boundaries and lifecycle regressions
         run: |
@@ -585,6 +588,9 @@ jobs:
           node --test miniprogram/tests/test-exam-stem-render-boundaries.js
           node --test miniprogram/tests/test-exam-code-reconstructor.js
           node --test miniprogram/tests/test-exam-code-reconstructor-boundaries.js
+          node miniprogram/tests/test-package-quality.js
+          node miniprogram/tests/test-katex-vendor-runtime.js
+          node --test miniprogram/tests/test-katex-main-vendor.js
           node --test miniprogram/tests/test-exam-result-page-wiring.js
           node --test miniprogram/tests/test-exam-paper-list-page-wiring.js
           node --test miniprogram/tests/test-practice-result-tips.js

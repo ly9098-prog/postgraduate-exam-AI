@@ -54,7 +54,7 @@ try {
 const miniRoot = path.resolve(__dirname, '..')
 const readJson = name => JSON.parse(fs.readFileSync(path.join(miniRoot, name), 'utf8'))
 const config = readJson('project.config.json')
-const vendorPrefix = 'subpackages/study/components/mp-html/latex/'
+const vendorPrefix = 'vendor/katex/'
 const expected = [
   'katex-core.js', 'katex-part-150.js', 'katex-part-187.js',
   'katex-part-64.js', 'katex-part-970.js', 'katex.min.js',

@@ -7,6 +7,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const vendors = [
+  '../vendor/katex/katex.min',
   '../subpackages/study/components/mp-html/latex/katex.min',
   '../subpackages/exam/components/mp-html/latex/katex.min',
   '../subpackages/formulas/utils/katex/katex.min',

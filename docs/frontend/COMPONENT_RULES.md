@@ -169,3 +169,27 @@ Node 回归在独立进程测试 33 个公式案例，包含重音、上下标�
 本次临时对比确认修复前后 HTML 完全一致。语法回归与质量扫描不能代替微信服务器实际上传，
 本次未执行新的版本上传或发布。
 Android/iOS 真机渲染仍未验证。
+
+### 2026-10-27：study 运行时迁入主包
+
+上述 2026-10-04 的编译扫描与模拟器结果是历史验收。当前六个预构建文件位于
+`miniprogram/vendor/katex/`，与迁移前 study 文件字节一致；study 的六个原入口保留同步
+`module.exports = require(...)` 转发。exam、formulas 的独立副本继续保留。
+`babelSetting.ignore` 精确迁至主包的这六个文件，业务编译开关、打包忽略规则和预算未变。
+study 是普通分包，引用主包运行时；不能将其改为独立分包后继续沿用此依赖。
+
+study、exam 的 `latex/index.js`、Parser、组件模板和样式保留各自实现。study 的 DOM-tree
+转 rich-text 与 exam 的 HTML 解析存在语义差异，不能合并包装器或替换整套组件。
+这次只是包间体积转移：study 源码 1,399,232 → 1,124,220 字节，低于既有 1.2 MiB 门禁；
+主包为 772,769 字节，低于既有 1.4 MiB 门禁。六个转发入口合计 434 字节，
+配置路径缩短另减少 180 字节，本批源码统计总量净增 254 字节。
+
+`test-katex-upload-syntax.js` 现检查主包、exam、formulas 的 18 个 vendor 文件及六个
+study 转发入口。`test-katex-vendor-runtime.js` 在四个独立进程验证旧入口和新入口；
+新增 `node --test tests/test-katex-main-vendor.js` 固定迁移前 vendor 哈希，检查同步转发与
+打包边界，并对三分包六种加载顺序逐包比较迁移前后的公式 HTML 和完整富文本节点。
+比较包括默认/natural 布局、复杂矩阵、无效 LaTeX 和中文；不要求 study 与 exam 节点相同。
+质量、运行时与边界回归均已接入 reliability。
+
+当前迁移仅有 Node 与源码体积证据；微信开发者工具重新编译、编译包扫描、模拟器、
+Android/iOS 真机及服务器上传尚未验证，不能复用历史结果作为本次验收。

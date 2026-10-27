@@ -220,12 +220,12 @@
     "minifyWXML": true,
     "babelSetting": {
       "ignore": [
-        "subpackages/study/components/mp-html/latex/katex-core.js",
-        "subpackages/study/components/mp-html/latex/katex-part-150.js",
-        "subpackages/study/components/mp-html/latex/katex-part-187.js",
-        "subpackages/study/components/mp-html/latex/katex-part-64.js",
-        "subpackages/study/components/mp-html/latex/katex-part-970.js",
-        "subpackages/study/components/mp-html/latex/katex.min.js"
+        "vendor/katex/katex-core.js",
+        "vendor/katex/katex-part-150.js",
+        "vendor/katex/katex-part-187.js",
+        "vendor/katex/katex-part-64.js",
+        "vendor/katex/katex-part-970.js",
+        "vendor/katex/katex.min.js"
       ],
       "disablePlugins": [],
       "outputPath": ""
