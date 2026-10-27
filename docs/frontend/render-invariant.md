@@ -259,3 +259,37 @@ exam/formulas 的 vendor 与包装器仍各自保留。study 从 1,399,232 降�
 与现实现逐包比较三分包六种加载顺序下的 HTML、默认/natural 布局完整节点。
 原 study/exam 公式包装差异继续保留。上传语法检查覆盖六个转发入口及三份预构建文件。
 这些结果只证明 Node 契约与源码预算；本次微信编译、模拟器、真机和上传仍未验证。
+
+## 刷题与考试 quiz-runner 组件职责（2026-10-28）
+
+study、exam 的 `components/quiz-runner/quiz-runner.js` 各从 452 行收敛至 268 行，
+题目/答案观察器从 133 行收敛至 3 行。两个入口继续同步注册相同的 properties、data、
+生命周期、观察器和 methods；WXML、WXSS、组件配置及页面接线保持原样。
+
+每包各新增五个本地模块：`question-sync.js` 负责题目身份与 render-model 引用缓存，
+`question-render-patch.js` 负责五类题干、图片与未知模式回退字段，
+`question-answer-patch.js` 负责答案身份、多空选项富化与普通选项回退，
+`question-view-commit.js` 将题干、答案、滚动重置与入场动画写入同一次 setData，
+`navigation-methods.js` 承接切题导航、动画结束和父页面拒绝切题时的恢复。
+入口与所有新增模块均满足 300 行/50 行预算；没有引入跨分包运行时引用。
+两包继续保留各自副本，本批不声称已消除所有重复组件。
+
+保留的边界包括：同一 render-model 仅更新答案时不重建题干；图片 adapter 仍在重建时
+动态 require，答案 adapter 仍使用组件注册前捕获的对象；多空组选项与普通选项保留原
+对象引用、能力检查及异常捕获范围。首次渲染不重置视口，flow/compact 布局不重置滚动；
+切题仍等待 100ms、入场 300ms、拒绝切题恢复 800ms，回调继续检查 detached 和当前 phase。
+空题目清空渲染缓存的原行为也保留。展开五个 helper、还原方法组合后，整个 Component
+定义的 AST 与迁移前一致，包括其余方法、属性、参数和方法顺序。
+
+96 项新行为刻画在原实现与拆分后均通过，覆盖五种模式、未知模式、缓存、图片、
+答案身份与引用、多空富化、getter 的捕获边界、写回前状态、原子 setData、计时和卸载。
+另有 13 项预算/语法/依赖检查，共 109 项定向通过；12 个有效故障变体均被拒绝。
+现有 `test-quiz-runner-sync.js`、`test-study-ui-refinements.js`、
+`test-practice-reference-ui.js` 也通过，并和新增测试一起接入 reliability。
+冻结源码后按当前 YAML 精确重放 Node 步骤，TAP 合计 1738 passed、0 failed、0 skipped；
+另有渲染不变式 43 项和 5 个 fixture 的 31 项通过。该结果是本地重放，不是远端 CI。
+
+固定源码预算未放宽：study 为 1,126,391 字节/183 文件，exam 为 785,352 字节/102 文件；
+两包分别比本批前增加 2,171 字节，主包和媒体预算也通过。这些是现有忽略规则下的源码
+统计，不是微信编译体积。本批未获得微信开发者工具、模拟器、Android/iOS 真机或上传
+验收证据，不能将 Node 契约或此前版本的设备结果作为本次验收。

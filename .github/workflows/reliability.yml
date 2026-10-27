@@ -377,6 +377,15 @@ jobs:
           node --test miniprogram/tests/test-page-budgets.js
           node --test miniprogram/tests/test-learning-controller-budgets.js
           node --test \
+            miniprogram/tests/test-quiz-runner-observer.js \
+            miniprogram/tests/test-quiz-runner-answer-projection.js \
+            miniprogram/tests/test-quiz-runner-view-commit.js \
+            miniprogram/tests/test-quiz-runner-observer-ports.js \
+            miniprogram/tests/test-quiz-runner-component-boundaries.js
+          node miniprogram/tests/test-quiz-runner-sync.js
+          node miniprogram/tests/test-study-ui-refinements.js
+          node miniprogram/tests/test-practice-reference-ui.js
+          node --test \
             miniprogram/tests/test-pomodoro-module-boundaries.js \
             miniprogram/tests/test-pomodoro-hide-storage.js \
             miniprogram/tests/test-pomodoro-show-recovery.js \
