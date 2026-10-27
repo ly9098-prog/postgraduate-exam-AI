@@ -44,6 +44,9 @@ const resumeFreeTimerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pom
 const activeSessionReconcilerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/active-session-reconciler.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
+// The session cache key list lives with the storage primitives; utils/storage.js
+// re-exports it for callers.
+const storageCoreSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage-core.js'), 'utf8')
 const backendServiceSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/services/pomodoro_service.py'), 'utf8')
 const backendApiSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/api/v1/pomodoro.py'), 'utf8')
 const backendModelSrc = fs.readFileSync(path.resolve(__dirname, '../../backend/app/models/pomodoro.py'), 'utf8')
@@ -268,9 +271,9 @@ t('clock-skew actions are recalibrated and replayed instead of silently deleted'
   assert.ok(reconcilePending.includes('return false'))
 })
 t('logout clears pending, unknown-start and terminal-conflict pomodoro mutations', () => {
-  assert.ok(storageSrc.includes("'pomodoro_pending_sync'"))
-  assert.ok(storageSrc.includes("'pomodoro_unknown_start'"))
-  assert.ok(storageSrc.includes("'pomodoro_terminal_conflict'"))
+  assert.ok(storageCoreSrc.includes("'pomodoro_pending_sync'"))
+  assert.ok(storageCoreSrc.includes("'pomodoro_unknown_start'"))
+  assert.ok(storageCoreSrc.includes("'pomodoro_terminal_conflict'"))
 })
 t('terminal conflicts persist across process death before pending cleanup', () => {
   const record = method('record', terminalConflictSrc, true)

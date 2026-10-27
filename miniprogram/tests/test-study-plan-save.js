@@ -49,12 +49,22 @@ function harness(options = {}) {
       request.success({ statusCode, data, header: { Date: new Date(serverNow).toUTCString() } })
     },
   }
+  // Every utility module a loaded file reaches stays inside this vm context so the
+  // fake wx/clock are shared, exactly like the Mini Program runtime.
+  const loaded = new Map()
   function load(relative, dependencies = {}) {
-    const filename = path.join(root, relative)
+    return loadFile(path.join(root, relative), dependencies)
+  }
+  function loadFile(filename, dependencies = {}) {
+    if (loaded.has(filename)) return loaded.get(filename).exports
     const module = { exports: {} }
+    loaded.set(filename, module)
     vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
       module, exports: module.exports, wx, Date: Clock, console,
-      require(name) { return dependencies[name] || require(path.resolve(path.dirname(filename), name)) },
+      require(name) {
+        if (dependencies[name]) return dependencies[name]
+        return loadFile(path.resolve(path.dirname(filename), `${name}.js`))
+      },
     }, { filename })
     return module.exports
   }
