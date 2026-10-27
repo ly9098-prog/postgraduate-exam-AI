@@ -43,6 +43,8 @@ const pauseFreeTimerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomo
 const resumeFreeTimerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/resume-free-timer-controller.js'), 'utf8')
 const activeSessionReconcilerSrc = fs.readFileSync(path.resolve(__dirname, '../pages/pomodoro/utils/active-session-reconciler.js'), 'utf8')
 const apiSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api.js'), 'utf8')
+// The server-clock sampling lives in its own module behind utils/api.js.
+const apiClockSrc = fs.readFileSync(path.resolve(__dirname, '../utils/api-clock.js'), 'utf8')
 const storageSrc = fs.readFileSync(path.resolve(__dirname, '../utils/storage.js'), 'utf8')
 // The session cache key list lives with the storage primitives; utils/storage.js
 // re-exports it for callers.
@@ -550,13 +552,13 @@ t('onHide invalidates in-flight start requests', () => assert.ok(onHide.includes
 
 console.log('\n--- Server clock calibration ---')
 t('API clock offset uses request/response RTT midpoint', () => {
-  assert.ok(apiSrc.includes('const clientMidpointMs = startedAt + rttMs / 2'))
-  assert.ok(apiSrc.includes('const candidateOffsetMs = serverMs - clientMidpointMs'))
+  assert.ok(apiClockSrc.includes('const clientMidpointMs = startedAt + rttMs / 2'))
+  assert.ok(apiClockSrc.includes('const candidateOffsetMs = serverMs - clientMidpointMs'))
 })
 t('clock calibration prefers explicit server_now and better RTT samples', () => {
-  assert.ok(apiSrc.includes('sourceRank = 2'))
-  assert.ok(apiSrc.includes('_serverClockBestRttMs'))
-  assert.ok(apiSrc.includes('rttImproved'))
+  assert.ok(apiClockSrc.includes('sourceRank = 2'))
+  assert.ok(apiClockSrc.includes('_serverClockBestRttMs'))
+  assert.ok(apiClockSrc.includes('rttImproved'))
 })
 
 console.log('\n--- Canonical start-time display ---')
