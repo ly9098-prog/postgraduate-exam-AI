@@ -361,6 +361,11 @@ jobs:
             tests/test_services/test_import_image_lifecycle.py \
             tests/test_services/test_import_image_stages.py \
             tests/test_services/test_task_queue_service_compatibility.py \
+            tests/test_services/test_worker_v2_handlers.py \
+            tests/test_services/test_worker_v2_failures.py \
+            tests/test_services/test_worker_v2_ports.py \
+            tests/test_services/test_worker_v2_cleanup.py \
+            tests/architecture/test_worker_v2_execution_boundaries.py \
             tests/test_services/test_task_queue_v1_fail_redis_contract.py \
             tests/export/test_docx_fonts.py \
             tests/core/test_code_integrity.py \

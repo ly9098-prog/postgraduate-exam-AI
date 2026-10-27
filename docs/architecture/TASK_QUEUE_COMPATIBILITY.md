@@ -107,3 +107,40 @@
 - 转换顺序保持：标记损坏与取消在关闭后解释结果；回收在关闭前按原 `raw or 0` 规则并转换整数，关闭后才检查正数、记录日志及累加 `reaper_reclaimed`。日志失败时不新增计数。mark-corrupt 保留 bool 结果和不截断摘要；cancel 原因仍经原 helper 裁剪至 200 字符，正状态码才输出成功日志。
 - 服务方法、配置、键函数、结果/日志/指标端口按原等待边界动态读取，不捕获副本。125 项兼容行为在原实现与新实现均通过；新增清理回归在原实现为 66 failed、3 passed，修复后全部通过。定向行为/架构/协议合计 208 passed，队列相关合计 484 passed，均无外部连接尝试；11 个有效破坏版本全部被拒绝。
 - 本批重新启动独立私有 Unix socket Redis 7.2.5，重放第 9 节列出的四个集成文件：76 passed、0 skipped，71.17 秒；仅允许本实例 socket 的守卫零触发，实例正常退出且日志/AOF/所有权证据保留。未执行生产操作、Redis 进程崩溃、真实 `worker_main` 全 handler、真实 Admin 浏览器或备份恢复验收。
+
+## 11. v2 worker 分发、fencing 生命周期与工作副本清理
+
+- `_process_task_v2` 从 310 行收敛至 21 行，保留签名、docstring、None 返回及最先导入
+  context 回调的边界。`worker_v2_execution.py` 组合准备、资源清理和 post-fence；
+  `worker_v2_dispatch.py` 保留九类任务的有序分支；pipeline/aux handlers 保留各分支的
+  延迟导入及参数装配。`worker_v2_state.py` 只持有本次任务身份、载荷引用、token 和工作
+  副本清单；五个新增业务文件均满足 300 行/50 行预算，独立导入不启动运行时或加载 ORM。
+- 保留各 handler 的执行顺序：PDF 先 verify 再 staging，图片先 staging 再 verify，
+  Excel 先 staging/读字节再 verify，admin resume 先 staging/checkpoint 再 verify 和
+  session。批量图片保留原 staging 列表的序号空位、逐项工作副本与 payload 默认值。
+  直接学习投影和错因分析仍调用原 worker 端口，formula 保留查询结束后执行 batch。
+- record ID、task type、pipeline ID 与 payload 引用按原时点捕获；owner/generation、
+  worker 端口与 fencing 类型集合仍在原等待边界读取。分支内导入的业务回调不因后续 await
+  被替换，batch source 构造器与每次 cleanup 回调继续动态读取。Excel 仍支持 worker
+  命名空间的 open 端口。成功清理后才执行原子 post-fence：拒绝仍 rollback 并抛出
+  FencingRejectedError，普通 post-fence 异常仍沿用非致命 warning 策略，取消继续传播。
+- 修复原 finally 的失败窗口：原先第一个 cleanup 报错/取消会跳过后续副本及 context
+  reset，并覆盖 handler 的主错误。现在顺序尝试所有已登记工作副本，再尝试一次 context
+  reset；已有主错误时保留其原对象和类型，否则传播最早的清理错误。后续失败仅添加异常
+  类型 note，不添加清理详情；note 损坏也不阻断剩余清理。有任何主错误或清理错误时均
+  不执行 post-fence。这里只处理该 claim 登记的工作副本，不删除 staging 原件或扩展清理范围。
+- 82 项原有行为刻画在原实现与拆分后均通过；新增清理回归在原实现为 14 failed、
+  2 passed，修复后全部通过，包含真实 asyncio Task 的主取消及清理期间第二次取消。
+  7 项架构检查约束入口绑定、依赖、预算、staging 身份参数和 fresh import。反向展开
+  helper 后，准备、九类分发、staging 解析及 post-fence 的业务 AST 与原实现一致；
+  worker 其他定义一致。12 个故障变体均被拦截，对照 98 项通过，隔离守卫无违规尝试。
+- 关联队列、staging、运行时、学习投影、错因分析与架构纯端口回归 818 项通过，守卫零
+  触发。真实 checkpoint 的 13 项 SQLite 契约另在仅允许专属临时目录 `.db` 的守卫下通过，
+  放行 67 次连接，无违规。独立私有 Unix socket Redis 7.2.5 的四文件集成回归 76 项
+  通过、无跳过，74.44 秒；实例正常退出，AOF、日志和所有权证据保留。
+- 本批另重放第 8 节真实 `worker_main` SIGTERM 场景：PostgreSQL 15.8 / Redis 7.2.5、
+  真实迁移、SQL 锁等待、drain、替换 worker、投影及重复投递断言均通过；1 passed、
+  1 deselected，24.31 秒，排除项为 SIGKILL/600 秒租约恢复场景。父 pytest 守卫仅允许
+  私有目录的 Unix socket，零违规；子进程沿用白名单测试环境，两个 worker 与自建 PG/Redis
+  均正常退出，日志和数据保留。该结果不等于生产配置、全部 OCR/AI handler、外部 provider、
+  多 dispatcher 或备份恢复验收；v1 执行与 v2 dispatcher/claim/heartbeat 仍有剩余大函数。
