@@ -24,13 +24,14 @@ def save_stage(stage, pipeline_id):
 
 
 @pytest.mark.parametrize("stage", STAGES)
-def test_version_three_results_rejected_without_mutating_files_or_resume_state(
-    stage, monkeypatch, tmp_path
+@pytest.mark.parametrize("old_version", ["3", "4"])
+def test_previous_results_rejected_without_mutating_files_or_resume_state(
+    stage, old_version, monkeypatch, tmp_path
 ):
     monkeypatch.setenv("PIPELINE_ARTIFACT_DIR", str(tmp_path))
     pipeline_id = "old-ocr-binding-" + stage
     with monkeypatch.context() as previous:
-        previous.setattr(artifacts, "_PIPELINE_SCHEMA_VERSION", "3")
+        previous.setattr(artifacts, "_PIPELINE_SCHEMA_VERSION", old_version)
         previous.setattr(
             artifacts, "PIPELINE_VERSION", artifacts._build_pipeline_fingerprint()
         )
@@ -64,8 +65,9 @@ def test_current_results_still_restore(stage, monkeypatch, tmp_path):
     assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
 
 
+@pytest.mark.parametrize("old_version", ["3", "4"])
 def test_real_pass_restore_does_not_skip_extract_for_old_artifact(
-    monkeypatch, tmp_path
+    old_version, monkeypatch, tmp_path
 ):
     from types import SimpleNamespace
 
@@ -76,7 +78,7 @@ def test_real_pass_restore_does_not_skip_extract_for_old_artifact(
     monkeypatch.setenv("PIPELINE_ARTIFACT_DIR", str(tmp_path))
     pipeline_id = "old-ocr-pass-binding"
     with monkeypatch.context() as previous:
-        previous.setattr(artifacts, "_PIPELINE_SCHEMA_VERSION", "3")
+        previous.setattr(artifacts, "_PIPELINE_SCHEMA_VERSION", old_version)
         previous.setattr(
             artifacts, "PIPELINE_VERSION", artifacts._build_pipeline_fingerprint()
         )

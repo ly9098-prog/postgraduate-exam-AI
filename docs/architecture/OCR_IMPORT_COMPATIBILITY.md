@@ -189,7 +189,7 @@ kill-switch 直接返回原 legacy 结果的行为保留。新增
 
 ### 11.3 工件与验证范围
 
-该批将 pipeline artifact schema 从 2 提升为 3（当前版本见第 13 节），兼容检查拒绝带旧版本元数据的工件，
+该批将 pipeline artifact schema 从 2 提升为 3（当前版本见第 14 节），兼容检查拒绝带旧版本元数据的工件，
 防止直接恢复修复前的 split 结果；检查不会删除原工件。无元数据工件仍遵循既有
 `REJECT_LEGACY_ARTIFACTS` 配置，本批未改变这一兼容开关。
 
@@ -287,9 +287,9 @@ adapter 类型边界门禁保持。
 取消继续向外传播。正常 `failed=True` 页仍执行原有 reset/文本回退，合法文本、
 boxes 引用、页序、字段和失败页列表别名保持。
 
-该校验针对适配器交付的映射，不验证 OCR 识别正确率。另一个仍待处理的下层问题是
+该校验针对适配器交付的映射，不验证 OCR 识别正确率。提交 `3ecfd078` 当时尚未处理的下层问题是
 `ocr_service._legacy_ocr_pages_with_boxes` 会把缺失 entry 或 executor 异常转换成
-`failed=False` 的空结果；本层无法把这种结果与真实空白页区分，本批未改该适配器。
+`failed=False` 的空结果；该批未改适配器，后续修复见第 14 节。
 
 ### 13.3 工件兼容与证据
 
@@ -311,3 +311,49 @@ extract 被跳过。无元数据工件仍遵循既有 REJECT_LEGACY_ARTIFACTS �
 758 项通过；七种错误变体在最终源码上再次全部被拒绝。
 固定最终源码哈希后，当前 CI YAML static 清单本地完整重放为 5592 项通过、
 无跳过，另有 15 条已有 datetime 弃用警告；这不是远程 CI 或外部服务验收。
+
+## 14. OCR 适配器失败状态与逐页回退（2026-10-27）
+
+本批修复第 13 节记录的下层失败状态丢失，以及同类 Gateway 混合结果问题。
+变更位于既有 `ocr_service` 适配边界，未新增 OCR 算法或本地引擎入口。
+
+| 路径 | 实现行为 |
+| --- | --- |
+| legacy boxed | 缺失 entry、None 或空 dict 产生 failed=True / ocr.legacy_missing_result；调用或映射读取发生普通异常时，所有请求页产生 failed=True / ocr.legacy_execution_failed |
+| Gateway boxed | WorkerResult 的非 success 状态优先，失败载荷中的残留文本/boxes 不接纳；沿用外层 page_index 和 stable_error_code，无错误码时使用 ocr.gateway_execution_failed |
+| Gateway 缺少载荷 | success 状态下缺失、空或非 dict 载荷仍是失败，使用 ocr.gateway_missing_result |
+| Gateway text | 只有 worker success、dict 载荷且载荷未报告 failed 时返回文本；其他页返回原接口约定的空字符串 |
+| Gateway 整批判定 | 无结果、全部 worker 失败或全部载荷不可用时，继续原有非受限环境 legacy 降级；受限环境拒绝本地降级；部分成功继续保留可用页，不重做整批 |
+
+显式 `text=""` 的合法空白结果仍成功；不会仅因空白文本触发额外文本 OCR。
+legacy 返回的有效 OcrPageResult 对象保留原实例，合法 boxes/transforms 引用保持。
+新增失败结果使用稳定错误码，不把原异常文本复制到新增 error 字段；原日志边界保持。
+CancelledError、KeyboardInterrupt 等 BaseException 继续传播；cloud legacy guard 仍在
+executor 导入前运行。五个修改/新增职责函数均不超过 50 行；其余服务函数 AST 不变。
+
+### 14.1 包装器到流水线的结果验证
+
+合成 executor / gateway 配合真实同步包装器与 `_ocr_scanned_pdf`，验证缺页会按原图片
+触发文本回退、有效页不重做、失败载荷不会串到另一页、可恢复页保留、未恢复页进入
+`_ocr_runtime_failed_pages` / `_ocr_text_fallback_unavailable_pages`，以及取消后的文档关闭
+和进度清理。混合文本回退中失败页的残留文字也不会被接纳。
+
+固定提交 `3ecfd078` 的原判定/转换、legacy boxed 和文本函数重放，同组 57 项行为
+用例为 40 失败、17 通过；修复后全部通过。八类内存错误变体分别恢复缺页成功、
+executor 异常成功、忽略 worker 状态、无载荷成功、失败文本泄漏、旧整批判定、
+真实空白误判失败和旧工件版本，均被结果断言拒绝。
+
+### 14.2 恢复门禁与验证范围
+
+artifact schema 从 4 提升为 5，防止恢复修复前漏页的下游工件后跳过新的失败处理。
+版本 3 / 4 工件在五类可恢复阶段均被拒绝，原文件及调用方恢复状态保持；当前版本
+仍可恢复。真实 pass 恢复/skip 判断也覆盖两个旧版本，相关工件契约共 17 项通过。
+无元数据工件仍遵循既有 REJECT_LEGACY_ARTIFACTS 配置，未删除任何旧工件。
+
+本批适配器、调用链、旧回退、预算和恢复契约合并 88 项通过；相关 extract/split/freeze、
+适配器和依赖门禁合并 835 项通过，隔离守卫未记录网络、数据库连接或真实 `.env` 读取尝试。
+cloud profile 隔离 30 项通过：运行器保留已安装依赖的 PYTHONUSERBASE，HOME/cwd 仍在
+临时目录，未通过真实环境文件补齐凭据。上述均为合成端口与导入隔离证据，不等于
+真实 PaddleOCR、外部 OCR/AI、完整 worker 或生产导入验收。
+固定最终源码哈希后，当前 CI YAML static 清单本地完整重放为 5669 项通过、
+无跳过；55 条弃用警告来自 datetime 和兼容 OCR 包装器调用。

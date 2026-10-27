@@ -18,7 +18,7 @@ import warnings
 
 from app.core.config import settings
 from app.core.ocr_isolation import is_restricted_ocr_environment
-from app.core.ocr_types import OcrPageResult
+from app.core.ocr_types import OcrPageResult, WorkerResult
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,24 @@ def _gateway_results_all_failed(results) -> bool:
     """
     if not results:
         return True
-    return all(r.status != "success" or not r.result for r in results)
+    return all(
+        r.status != "success"
+        or not isinstance(r.result, dict)
+        or not r.result
+        or r.result.get("failed", False)
+        for r in results
+    )
+
+
+def _gateway_page_text(result: WorkerResult) -> str:
+    """Return text only when both worker status and payload report success."""
+    if (
+        result.status != "success"
+        or not isinstance(result.result, dict)
+        or result.result.get("failed", False)
+    ):
+        return ""
+    return result.result.get("text", "")
 
 
 def _ensure_sync_context() -> None:
@@ -126,8 +143,7 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     DEPRECATED: Use ``OCRGateway.recognize_pages()`` instead.
     """
     warnings.warn(
-        "ocr_service.ocr_pages() is deprecated. "
-        "Use OCRGateway.recognize_pages() instead.",
+        "ocr_service.ocr_pages() is deprecated. Use OCRGateway.recognize_pages() instead.",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -146,10 +162,7 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
             )
             if _gateway_results_all_failed(results):
                 raise RuntimeError("OCR gateway returned no successful results")
-            return {
-                r.page_index: (r.result.get("text", "") if r.result else "")
-                for r in results
-            }
+            return {r.page_index: _gateway_page_text(r) for r in results}
         except Exception as exc:
             if is_restricted_ocr_environment():
                 raise RuntimeError(
@@ -158,9 +171,7 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
             logger.warning("Gateway OCR failed, using local fallback: %s", exc)
 
     if is_restricted_ocr_environment():
-        raise RuntimeError(
-            "OCR gateway is unavailable; local OCR fallback is forbidden"
-        )
+        raise RuntimeError("OCR gateway is unavailable; local OCR fallback is forbidden")
     return _legacy_ocr_pages(page_images)
 
 
@@ -371,8 +382,14 @@ def _legacy_ocr_pages_with_boxes(
         result: dict[int, OcrPageResult] = {}
         for idx, _ in page_images:
             entry = raw.get(idx)
-            if entry is None:
-                result[idx] = OcrPageResult(page_index=idx, text="", boxes=[])
+            if entry is None or (isinstance(entry, dict) and not entry):
+                result[idx] = OcrPageResult(
+                    page_index=idx,
+                    text="",
+                    boxes=[],
+                    failed=True,
+                    error="ocr.legacy_missing_result",
+                )
             elif isinstance(entry, dict):
                 result[idx] = OcrPageResult(
                     page_index=entry.get("page_index", idx),
@@ -387,7 +404,13 @@ def _legacy_ocr_pages_with_boxes(
     except Exception as exc:
         logger.error("Legacy OCR boxes failed: %s", exc)
         return {
-            idx: OcrPageResult(page_index=idx, text="", boxes=[])
+            idx: OcrPageResult(
+                page_index=idx,
+                text="",
+                boxes=[],
+                failed=True,
+                error="ocr.legacy_execution_failed",
+            )
             for idx, _ in page_images
         }
 
@@ -407,12 +430,19 @@ def _legacy_ocr_raw_text(image_bytes: bytes) -> str:
 def _worker_result_to_page_result(r) -> OcrPageResult:
     """Convert a WorkerResult (or similar) from Gateway to OcrPageResult."""
     if r is None:
+        return OcrPageResult(page_index=0, text="", boxes=[], failed=True, error="No result")
+
+    if getattr(r, "status", "success") != "success":
         return OcrPageResult(
-            page_index=0, text="", boxes=[], failed=True, error="No result"
+            page_index=getattr(r, "page_index", 0),
+            text="",
+            boxes=[],
+            failed=True,
+            error=getattr(r, "stable_error_code", None) or "ocr.gateway_execution_failed",
         )
 
     result_data = r.result if hasattr(r, "result") else r
-    if isinstance(result_data, dict):
+    if isinstance(result_data, dict) and result_data:
         return OcrPageResult(
             page_index=result_data.get("page_index", getattr(r, "page_index", 0)),
             text=result_data.get("text", ""),
@@ -426,5 +456,6 @@ def _worker_result_to_page_result(r) -> OcrPageResult:
         page_index=getattr(r, "page_index", 0),
         text="",
         boxes=[],
-        failed=False,
+        failed=True,
+        error="ocr.gateway_missing_result",
     )

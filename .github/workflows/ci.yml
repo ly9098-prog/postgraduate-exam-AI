@@ -439,6 +439,11 @@ jobs:
             tests/test_services/test_scanned_pdf_failures.py \
             tests/test_services/test_scanned_pdf_reliability.py \
             tests/pipeline/test_scanned_pdf_restore_safety.py \
+            tests/test_services/test_ocr_adapter_failures.py \
+            tests/test_services/test_ocr_gateway_failure_conversion.py \
+            tests/test_services/test_ocr_failure_pipeline.py \
+            tests/test_services/test_ocr_service_fallback.py \
+            tests/architecture/test_ocr_failure_adapter_boundaries.py \
             tests/architecture/test_pipeline_scanned_boundaries.py \
             tests/architecture/test_ir_freeze_binding_boundaries.py \
             tests/pipeline/test_ir_freeze_split_binding.py \

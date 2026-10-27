@@ -58,9 +58,9 @@ CANONICAL_STAGE_ORDER: list[str] = list(_PipelineDefinition.stage_names())
 # Built from stage order hash + code + config fingerprints so that any
 # relevant change automatically invalidates existing artifacts.
 # Bump the explicit suffix when artifact data format changes.
-# OCR batch identity checks reject results previously accepted across page batches.
-# Older derived artifacts must not bypass those checks during resume.
-_PIPELINE_SCHEMA_VERSION = "4"
+# OCR failure status now survives legacy and gateway adapters instead of silently
+# omitting failed pages. Older derived artifacts must not bypass that correction.
+_PIPELINE_SCHEMA_VERSION = "5"
 
 
 def _build_pipeline_fingerprint() -> str:
