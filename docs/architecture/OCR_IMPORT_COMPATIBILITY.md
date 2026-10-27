@@ -102,3 +102,51 @@ PP 日志异常契约在 VL 无结果时核对已接受的 PP 文字仍保留。
 
 这些证据仅验证当前 VL 重建拆分的兼容性。外部 OCR/AI 质量与可用性、完整
 worker、生产导入及真机验收仍按第 7 节单独验证，不以测试替身或跳过结果替代。
+
+## 10. 结构冻结模式编排（2026-10-27）
+
+`ImportPipeline._run_structure_freeze` 保留同步签名，将调用内状态、IR 尝试、
+模式选择、灰度策略、结果投影和 dual 日志分别交给
+`pipeline_freeze_state/orchestration/canary/projection/dual`。阶段顺序保持
+`classify_pages → structure_freeze → split`；同步阶段仍由既有 runner 调度，
+取消等待不能据此推断后台线程已经终止。
+
+| 边界 | 保持的行为 |
+| --- | --- |
+| legacy 与未知模式 | 先运行 legacy 并读取其 registry；legacy 立即返回原对象；未知模式仍先尝试 IR，再告警返回原对象 |
+| 异常范围 | DocumentIR 获取在捕获外；仅首次 IR 导入、执行和 registry 读取捕获普通异常；转换、策略、比较和日志失败继续传播；取消不被普通异常吞掉 |
+| 局部导入 | IR 成功投影重新导入 converter；canary 成功使用初次捕获的 converter；canary 三个策略函数在开关检查前局部导入 |
+| 灰度与诊断 | kill-switch 保留短路，比较仅执行一次；空 IR 强制回退；dual 仅记录前 10 条差异并保留 legacy 输出 |
+| 结果与查找 | 保留原 registry、结构、警告列表的引用/复制语义及警告顺序去重；端口先读取原模块实时 globals，再读取原入口绑定的 canonical builtins 字典 |
+
+修改原模块 `__builtins__` 键不会改变已存在函数绑定的内置字典，resolver 因此不从
+该键重新取 builtins；修改 canonical 字典或原模块同名全局仍按原时序可见。
+新增契约使用同一份测试分别验证拆分前入口（`1f5d5c28`）和拆分后实现，
+各 128 项通过；原有冻结、IR 绑定、灰度故障注入和阶段定义七文件另有 104 项通过。
+架构门禁另有 44 项通过，限制完整同步入口、300/50 预算、逐职责能力和惰性依赖。
+契约包含运行前内容快照、canary checker 的首次导入捕获，以及未绑定 converter 的
+`UnboundLocalError` 类型、消息和异常上下文。
+最终源码哈希固定后，本地重放 CI static 全量清单为 5410 项通过、无跳过。
+专项契约的隔离守卫未记录真实 `.env` 读取、网络或数据库连接尝试；
+这些结果不构成外部 OCR/AI、完整 worker 或生产验收。
+
+### 10.1 已确认的既有 IR → split 协议缺口（尚未修复）
+
+`freeze_from_document_ir` 按 `region_id` 生成 registry；
+`freeze_registry_to_block_format` 仅转换选项条目，保留 region 键。
+真实 split 和 `_apply_frozen_options` 按 `page:block_index` 消费。
+因此 IR/canary 成功路径虽能返回选项映射，却未实现下游冻结标记、冻结选项剥离和
+冻结选项覆盖的完整绑定；legacy/dual 的 block 键不受此缺口影响。
+比较器核对选项内容，不验证这些键能否被 split 寻址，故 canary 通过不能证明绑定闭环。
+
+真实 builder → freeze → split 的单 block 合成案例已复现上述区别：
+legacy/dual 的 `1:0` 能标记冻结并剥离 raw text 中的选项；IR/canary 的 region 键不能。
+该案例的 regex 仍可恢复选项，不能据此声称所有选项丢失。
+本批保持既有行为；后续修复须基于可验证的 region/block 来源关系，
+覆盖多 block 同页、聚合/过滤/重排及无法确定绑定时的回退，不能靠文本或位置 zip 猜测。
+
+真实 normalize → layout → freeze → split 的同页双题合成探针还确认：layout 会把
+多个 region 聚成一个 page block；该 block 内重复的 A/B 字母可能在 IR 冻结时只保留首组。
+将这一 registry 简单改键为 `1:0` 后，第二题会被错误注入第一题选项；
+不注入冻结结果的对照仍可分别解析两题。因此绑定修复还须在最终 split 边界确认
+选项唯一归属；聚页多题等无法证明安全的范围不能强行接受候选冻结数据。

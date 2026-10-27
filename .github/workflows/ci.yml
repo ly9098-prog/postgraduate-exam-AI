@@ -431,6 +431,17 @@ jobs:
             tests/pipeline/test_vl_rebuild_import_contract.py \
             tests/pipeline/test_vl_rebuild_global_contract.py \
             tests/architecture/test_pipeline_vl_rebuild_boundaries.py \
+            tests/test_services/test_pipeline_freeze_modes.py \
+            tests/test_services/test_pipeline_freeze_failures.py \
+            tests/test_services/test_pipeline_freeze_ports.py \
+            tests/architecture/test_pipeline_freeze_boundaries.py \
+            tests/test_services/test_structure_freeze.py \
+            tests/pipeline/test_structure_freeze_pipeline_integration.py \
+            tests/document_ir/test_region_freeze_binding.py \
+            tests/pipeline/test_vl_rebuild_freeze_binding.py \
+            tests/canary/test_canary_fault_injection.py \
+            tests/canary/test_canary_auto_stop.py \
+            tests/pipeline/test_pipeline_definition.py \
             tests/pipeline/test_router_stage_execution_contract.py \
             tests/pipeline/test_router_stage_result_contract.py \
             tests/pipeline/test_router_stage_ports_contract.py \
