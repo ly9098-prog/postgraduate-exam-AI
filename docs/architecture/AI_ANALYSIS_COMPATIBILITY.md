@@ -172,3 +172,46 @@ Layer 4 规则（`repair_questions` 内）：
 - 修改前原实现通过 106 项时序/端口/读取契约；针对缺参的 8 项严格回归在固定原实现失败，错误为缺少 image_data_urls。后续对照参考仅向原两个调用各补这一参数，以隔离参数修复与职责提取。源码为 239 行，全部函数不超过 50 行；新增契约、数据库回归、签名/预算/依赖/原始引用捕获门禁已接入静态 CI。
 - 本地重放完整静态 CI 步骤为 5,130 项通过；此后测试审查加固，最终相关回归 139 项通过，仅补两处参数的原版参考重放 124 项通过。加固包含 parse 的 None/空字典响应、中间回调原始引用以及嵌套定义重绑定负对照；5,130 项结果不代表重新执行了加固后的完整步骤。
 - 上述为本地替身和隔离 SQLite 证据，不代表外部模型、多模态真实输入、生产 PostgreSQL/Redis、完整 worker 或用户端验收；这些仍按第 5 节保留。
+
+## 14. 学习报告生成与规则降级拆分（2026-10-28）
+
+- `ai_learning_service.generate_learning_report` 从 224 行收敛至 49 行，拆为
+  `_load_learning_report_subject`（13）、`_load_learning_report_records`（22）、
+  `_empty_learning_report`（13）、`_knowledge_point_accuracy_list`（26）、
+  `_report_weak_points`（10）、`_report_strong_points`（10）、
+  `_low_volume_learning_report`（27）、`_token_limited_learning_report`（28）、
+  `_ai_fallback_learning_report`（23）、`_project_parsed_report_points`（22）、
+  `_ai_learning_report`（44）、`_learning_report_metrics`（12），全部满足 300/50 预算。
+- 语义保持：科目头一次读取（缺科目时代码/名称为空串）；`since = utcnow() -
+  timedelta(days=days)`；记录仍只投影 `(question_id, is_correct)` 并过滤 user/subject/
+  `answered_at >= since`、按 `answered_at DESC` 排序（刻意不 hydration 完整 ORM）；
+  `total == 0` 直接返回空报告；accuracy 为 correct/total；知识点按记录×知识点累计后
+  以 accuracy 升序排序；`total < 5` 走规则报告（weak `< 0.6` 前 3 条“数据不足…”、
+  strong `>= 0.85` 前 3 条“继续保持”、tokens 0、`from_fallback=False`）；不足 5 条
+  之外且 token 限额被拒时走另一套规则文案（weak `< 0.6` 前 5 条“建议重点复习该知识点”、
+  两条学习建议、`from_fallback=True`）；模型返回 None 时改用全局
+  `get_fallback_report()` 三列表（缺省空列表）；模型成功时解析 JSON（解析失败把回复
+  文本作为唯一建议）、按原 label 记录 token 用量、weak/strong 逐项归一化（缺省
+  `""`/`0`）、suggestions 原样透传、`tokens_used` 取模型返回值、`from_fallback=False`。
+  各分支响应字典的字段与键序保持原字面量，不重排 JSON 输出顺序。
+- 13 项固定契约在拆分前的原实现（AST 提取原函数运行，`/tmp/ai-learning-report-contracts-original.log`）
+  与拆分后均通过，覆盖空记录短路与调用顺序、缺失科目、查询列/过滤/排序/窗口参数、
+  低量规则文案与配额（weak 3 / strong 3）、恰好 5 条进入 AI 路径、token 拒绝规则
+  文案与配额（weak 5 / strong 3）、模型不可用全局回退、AI 成功投影与用量记录、
+  不可解析回复、知识点聚合排序与 prompt 入参。
+- 23 个故障变体全部被拒绝（证据 `/tmp/ai-learning-report-mutants-_xweisgs`），覆盖空
+  报告文案/计数/标志、查询排序/窗口/列/时间参数、weak 与 strong 阈值、两套规则配额、
+  低量标志、token 阈值与入参、prompt 参数顺序、回退键选择、逐项缺省、不可解析建议、
+  用量 label、最终 tokens、知识点集合与 accuracy 除法。
+- 反向展开十二个 helper 并按七项已记录归一化（科目头、记录查询、空报告、指标与聚合、
+  弱/强投影、三条规则分支、模型结果投影与用量持久化）后，入口函数与原实现 AST 一致；
+  本模块其余定义不变（`/tmp/ai-learning-report-ast-report.json`）。
+- 3 项架构门禁（`tests/architecture/test_ai_learning_report_boundaries.py`）约束十三个
+  函数的预算、入口不再内联 select/db.get/记录持久化、加载与聚合顺序、两套规则文案与
+  配额单点、AI 成功路径顺序，含“把 select 内联回入口”“放宽低量规则文案”两项反向
+  自检。
+- 定向回归：`tests/test_services/test_ai_*.py` 与 `tests/architecture/test_ai_*.py`
+  合计 975 passed。严格 Ruff/format、compileall 与 diff-check 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 412 个测试文件：7002 passed、0 failed、64 条既有弃用 warning，449.73 秒；Mocked readiness boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。这是本地清单重放，不代表远端 CI 或生产验收。
+- 同模块 `ai_explain`（91）、`ai_analyze_mistake`（90）、`recommend_similar_questions`
+  （113）仍未拆分；本批不覆盖外部模型、真实多模态输入或生产验收。

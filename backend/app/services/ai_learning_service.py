@@ -453,13 +453,8 @@ async def recommend_similar_questions(
 # ============================================================
 
 
-async def generate_learning_report(
-    db: AsyncSession,
-    user_id: int,
-    subject_id: int,
-    days: int = 7,
-) -> dict:
-    """生成 AI 学习报告。"""
+async def _load_learning_report_subject(db: AsyncSession, subject_id: int) -> tuple:
+    """Load the subject header that is echoed in every learning report."""
     from app.models.admin import Subject
 
     subj = await db.get(Subject, subject_id)
@@ -470,10 +465,18 @@ async def generate_learning_report(
         "subject_code": subject_code,
         "subject_name": subject_name,
     }
+    return subject_code, subject_name, subject_payload
 
-    since = utcnow() - timedelta(days=days)
 
-    # 查询该时间段内用户的做题记录
+async def _load_learning_report_records(
+    db: AsyncSession, user_id: int, subject_id: int, since
+) -> list:
+    """Load the per-answer projection used by the learning report.
+
+    Read only the per-answer fields used by the report.  Full ORM hydration is
+    intentionally avoided so retired PracticeRecord batch columns can never
+    become an implicit dependency of this path.
+    """
     records_result = await db.execute(
         select(
             PracticeRecord.question_id,
@@ -486,33 +489,26 @@ async def generate_learning_report(
         )
         .order_by(PracticeRecord.answered_at.desc())
     )
-    # Read only the per-answer fields used by the report.  Full ORM hydration is
-    # intentionally avoided so retired PracticeRecord batch columns can never
-    # become an implicit dependency of this path.
-    records = records_result.all()
+    return records_result.all()
 
-    total = len(records)
-    if total == 0:
-        return {
-            **subject_payload,
-            "period_days": days,
-            "total_answered": 0,
-            "accuracy": 0.0,
-            "weak_points": [],
-            "strong_points": [],
-            "learning_suggestions": ["暂无做题记录，建议开始练习。"],
-            "tokens_used": 0,
-            "from_fallback": True,
-        }
 
-    correct = sum(1 for r in records if r.is_correct)
-    accuracy = correct / total if total > 0 else 0.0
+def _empty_learning_report(subject_payload: dict, days: int) -> dict:
+    """Return the no-practice-yet report payload."""
+    return {
+        **subject_payload,
+        "period_days": days,
+        "total_answered": 0,
+        "accuracy": 0.0,
+        "weak_points": [],
+        "strong_points": [],
+        "learning_suggestions": ["暂无做题记录，建议开始练习。"],
+        "tokens_used": 0,
+        "from_fallback": True,
+    }
 
-    # 获取涉及题目的知识点
-    qids = list({r.question_id for r in records})
-    q_map = await load_question_kps(db, qids)
 
-    # 按知识点聚合正确率
+def _knowledge_point_accuracy_list(records: list, q_map: dict) -> list:
+    """Aggregate per-answer rows into per-knowledge-point accuracy, weakest first."""
     kp_stats: dict[str, dict] = {}
     for r in records:
         kps = q_map.get(r.question_id) or []
@@ -536,114 +532,119 @@ async def generate_learning_report(
             }
         )
     kp_list.sort(key=lambda x: x["accuracy"])
+    return kp_list
 
-    # 数据太少时不调用 AI
-    if total < 5:
-        weak = [
-            {
-                "knowledge_point": kp["knowledge_point"],
-                "accuracy": kp["accuracy"],
-                "suggestion": "数据不足，继续练习以获取更准确的建议",
-            }
-            for kp in [k for k in kp_list if k["accuracy"] < 0.6][:3]
-        ]
-        strong = [
-            {
-                "knowledge_point": kp["knowledge_point"],
-                "accuracy": kp["accuracy"],
-                "suggestion": "继续保持",
-            }
-            for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]
-        ]
-        return {
-            "subject_id": subject_id,
-            "subject_code": subject_code,
-            "subject_name": subject_name,
-            "period_days": days,
-            "total_answered": total,
-            "accuracy": accuracy,
-            "weak_points": weak,
-            "strong_points": strong,
-            "learning_suggestions": [
-                "数据较少，建议积累更多练习记录后再查看 AI 报告。"
-            ],
-            "tokens_used": 0,
-            "from_fallback": False,
+
+def _report_weak_points(kp_list: list, *, limit: int, suggestion: str) -> list:
+    """Project sub-0.6 knowledge points into report weak points."""
+    return [
+        {
+            "knowledge_point": kp["knowledge_point"],
+            "accuracy": kp["accuracy"],
+            "suggestion": suggestion,
         }
+        for kp in [k for k in kp_list if k["accuracy"] < 0.6][:limit]
+    ]
 
-    # 调用 AI 生成报告
-    messages = build_report_prompt(subject_code, days, total, accuracy, kp_list)
 
-    if not await check_token_limit(db, user_id, 1000):
-        # 限额内用规则生成
-        weak = [
-            {
-                "knowledge_point": kp["knowledge_point"],
-                "accuracy": kp["accuracy"],
-                "suggestion": "建议重点复习该知识点",
-            }
-            for kp in [k for k in kp_list if k["accuracy"] < 0.6][:5]
-        ]
-        strong = [
-            {
-                "knowledge_point": kp["knowledge_point"],
-                "accuracy": kp["accuracy"],
-                "suggestion": "继续保持",
-            }
-            for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]
-        ]
-        return {
-            "subject_id": subject_id,
-            "subject_code": subject_code,
-            "subject_name": subject_name,
-            "period_days": days,
-            "total_answered": total,
-            "accuracy": accuracy,
-            "weak_points": weak,
-            "strong_points": strong,
-            "learning_suggestions": [
-                f"薄弱知识点有 {len(weak)} 个，建议每天重点练习",
-                "尝试做更多同类题目的变体练习",
-            ],
-            "tokens_used": 0,
-            "from_fallback": True,
+def _report_strong_points(kp_list: list, *, limit: int) -> list:
+    """Project >=0.85 knowledge points into report strong points."""
+    return [
+        {
+            "knowledge_point": kp["knowledge_point"],
+            "accuracy": kp["accuracy"],
+            "suggestion": "继续保持",
         }
+        for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:limit]
+    ]
 
-    result = await _call_ai(messages, db)
 
-    if result is None:
-        fallback = get_fallback_report()
-        return {
-            "subject_id": subject_id,
-            "subject_code": subject_code,
-            "subject_name": subject_name,
-            "period_days": days,
-            "total_answered": total,
-            "accuracy": accuracy,
-            "weak_points": fallback.get("weak_points", []),
-            "strong_points": fallback.get("strong_points", []),
-            "learning_suggestions": fallback.get("learning_suggestions", []),
-            "tokens_used": 0,
-            "from_fallback": True,
-        }
-
-    parsed = _parse_json_response(result["content"])
-    if parsed is None:
-        parsed = {
-            "weak_points": [],
-            "strong_points": [],
-            "learning_suggestions": [result["content"]],
-        }
-
-    await record_token_usage(
-        db,
-        user_id,
-        "learning_report",
-        f"subject_id={subject_id} days={days}",
-        result["content"],
-        result,
+def _low_volume_learning_report(
+    subject_id: int,
+    subject_code: str,
+    subject_name: str,
+    days: int,
+    total: int,
+    accuracy: float,
+    kp_list: list,
+) -> dict:
+    """Rule-based report used while there are fewer than five answers."""
+    weak = _report_weak_points(
+        kp_list, limit=3, suggestion="数据不足，继续练习以获取更准确的建议"
     )
+    strong = _report_strong_points(kp_list, limit=3)
+    return {
+        "subject_id": subject_id,
+        "subject_code": subject_code,
+        "subject_name": subject_name,
+        "period_days": days,
+        "total_answered": total,
+        "accuracy": accuracy,
+        "weak_points": weak,
+        "strong_points": strong,
+        "learning_suggestions": ["数据较少，建议积累更多练习记录后再查看 AI 报告。"],
+        "tokens_used": 0,
+        "from_fallback": False,
+    }
 
+
+def _token_limited_learning_report(
+    subject_id: int,
+    subject_code: str,
+    subject_name: str,
+    days: int,
+    total: int,
+    accuracy: float,
+    kp_list: list,
+) -> dict:
+    """Rule-based report used when the daily/monthly token quota is exhausted."""
+    weak = _report_weak_points(kp_list, limit=5, suggestion="建议重点复习该知识点")
+    strong = _report_strong_points(kp_list, limit=3)
+    return {
+        "subject_id": subject_id,
+        "subject_code": subject_code,
+        "subject_name": subject_name,
+        "period_days": days,
+        "total_answered": total,
+        "accuracy": accuracy,
+        "weak_points": weak,
+        "strong_points": strong,
+        "learning_suggestions": [
+            f"薄弱知识点有 {len(weak)} 个，建议每天重点练习",
+            "尝试做更多同类题目的变体练习",
+        ],
+        "tokens_used": 0,
+        "from_fallback": True,
+    }
+
+
+def _ai_fallback_learning_report(
+    subject_id: int,
+    subject_code: str,
+    subject_name: str,
+    days: int,
+    total: int,
+    accuracy: float,
+) -> dict:
+    """Rule-based report reused when the configured model is unavailable."""
+    fallback = get_fallback_report()
+    return {
+        "subject_id": subject_id,
+        "subject_code": subject_code,
+        "subject_name": subject_name,
+        "period_days": days,
+        "total_answered": total,
+        "accuracy": accuracy,
+        "weak_points": fallback.get("weak_points", []),
+        "strong_points": fallback.get("strong_points", []),
+        "learning_suggestions": fallback.get("learning_suggestions", []),
+        "tokens_used": 0,
+        "from_fallback": True,
+    }
+
+
+def _project_parsed_report_points(parsed: dict) -> tuple:
+    """Normalize model-provided weak/strong points into the report shape."""
     weak_points = []
     for wp in parsed.get("weak_points", []):
         weak_points.append(
@@ -663,6 +664,39 @@ async def generate_learning_report(
                 "suggestion": sp.get("suggestion", ""),
             }
         )
+    return weak_points, strong_points
+
+
+async def _ai_learning_report(
+    db: AsyncSession,
+    user_id: int,
+    subject_id: int,
+    subject_code: str,
+    subject_name: str,
+    days: int,
+    total: int,
+    accuracy: float,
+    result: dict,
+) -> dict:
+    """Persist token usage and project a model answer into the report payload."""
+    parsed = _parse_json_response(result["content"])
+    if parsed is None:
+        parsed = {
+            "weak_points": [],
+            "strong_points": [],
+            "learning_suggestions": [result["content"]],
+        }
+
+    await record_token_usage(
+        db,
+        user_id,
+        "learning_report",
+        f"subject_id={subject_id} days={days}",
+        result["content"],
+        result,
+    )
+
+    weak_points, strong_points = _project_parsed_report_points(parsed)
 
     return {
         "subject_id": subject_id,
@@ -677,3 +711,68 @@ async def generate_learning_report(
         "tokens_used": result["tokens_used"],
         "from_fallback": False,
     }
+
+
+async def _learning_report_metrics(
+    db: AsyncSession, records: list, total: int
+) -> tuple:
+    """Return accuracy plus the weakest-first knowledge point list for the report."""
+    correct = sum(1 for r in records if r.is_correct)
+    accuracy = correct / total if total > 0 else 0.0
+
+    # 获取涉及题目的知识点
+    qids = list({r.question_id for r in records})
+    q_map = await load_question_kps(db, qids)
+    kp_list = _knowledge_point_accuracy_list(records, q_map)
+    return accuracy, kp_list
+
+
+async def generate_learning_report(
+    db: AsyncSession,
+    user_id: int,
+    subject_id: int,
+    days: int = 7,
+) -> dict:
+    """生成 AI 学习报告。"""
+    subject_code, subject_name, subject_payload = await _load_learning_report_subject(
+        db, subject_id
+    )
+
+    since = utcnow() - timedelta(days=days)
+    records = await _load_learning_report_records(db, user_id, subject_id, since)
+
+    total = len(records)
+    if total == 0:
+        return _empty_learning_report(subject_payload, days)
+
+    accuracy, kp_list = await _learning_report_metrics(db, records, total)
+
+    # 数据太少时不调用 AI
+    if total < 5:
+        return _low_volume_learning_report(
+            subject_id, subject_code, subject_name, days, total, accuracy, kp_list
+        )
+
+    messages = build_report_prompt(subject_code, days, total, accuracy, kp_list)
+    if not await check_token_limit(db, user_id, 1000):
+        return _token_limited_learning_report(
+            subject_id, subject_code, subject_name, days, total, accuracy, kp_list
+        )
+
+    result = await _call_ai(messages, db)
+    if result is None:
+        return _ai_fallback_learning_report(
+            subject_id, subject_code, subject_name, days, total, accuracy
+        )
+
+    return await _ai_learning_report(
+        db,
+        user_id,
+        subject_id,
+        subject_code,
+        subject_name,
+        days,
+        total,
+        accuracy,
+        result,
+    )
