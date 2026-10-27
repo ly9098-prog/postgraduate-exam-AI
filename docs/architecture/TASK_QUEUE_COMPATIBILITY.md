@@ -187,3 +187,46 @@
 - 本批没有执行生产操作、全部业务 handler、外部 OCR/AI、真实微信、生产 Admin 浏览器、
   多 dispatcher 竞争或备份恢复；这些仍需单独验收。worker 的 v1 执行、v2 dispatcher
   与 heartbeat 等仍有剩余大函数，不能把本次结果表述为任务队列或全部优先任务完成。
+
+## 13. legacy v1 任务分派处理器拆分
+
+- 2026-10-28，`_process_task` 从 207 行收敛至 35 行，保留签名、task_type/payload/
+  pipeline_id 的读取、初始 info 日志、工作副本清单、`_resolve_legacy_staging` 闭包、
+  try/finally 清理顺序与 `namespace=globals()` 动态命名空间。九类 v1 分支移入
+  `backend/app/services/worker_legacy_handlers.py`（228 行，最长函数 39 行），入口改为
+  `select_legacy_handler(task_type, globals())` + `await handler(context)`，仍在原
+  try/finally 内执行，finally 仍按登记顺序清理工作副本。
+- 分支顺序与惰性导入保持：import、image、excel、resume、admin-resume、
+  answer-projection、error-diagnosis、formula、batch-image。九个 handler 的业务导入
+  全部延迟到调用时；Excel 仍读取 worker 命名空间的 open 端口；answer/error 仍调用
+  原 worker 端口；formula 仍在 session 关闭后执行 `process_batch`；batch-image 保留
+  原始 1 基序号（含空档）、逐项工作副本和“无有效来源即 FileNotFoundError”；未知类型
+  仍抛出完全一致的 `unknown_task_type: {task_type}`。admin-resume 的 payload 字段
+  读取时点与原实现一致（staging 解析之后、checkpoint 与 session 之前）。
+- 12 项固定契约在拆分前的原实现与拆分后均通过（8 项原有 + 4 项新增：Excel 命名空间
+  open 覆盖、admin payload 读取顺序、空 staging 不登记也不清理、batch-image 空来源
+  守卫）。18 个故障变体全部被拒绝，覆盖选择器映射与未知错误文本、惰性导入、命名空间
+  open、实时端口、payload 读取时点、formula session 顺序与 cards、batch 序号/路径/
+  守卫、pipeline_id 捕获、resolve 钩子、工作副本登记与 finally 清理、空命名空间、
+  初始日志移除。
+- 7 项架构门禁约束 300/50 预算、显式依赖集合、模块级零 `app.*` 导入（业务导入只能
+  出现在函数体内）、选择器九分支顺序与 `namespace[...]` 动态常量、入口委托与清理
+  所有权、worker 模块不再定义 handler、fresh import 不加载 config/ORM/业务模块，
+  并含两项门禁反向自检。worker 定义除 `_process_task` 外与原实现 AST 一致，选择器
+  分支顺序经 AST 校验（`/tmp/worker-legacy-dispatch-ast-report.json`）。
+- 既有 question writer / formula batch 依赖门禁同步改为新 owner：writer 的消费方
+  列表与 formula batch runner 的导入方由 `task_queue_worker` 改为
+  `worker_legacy_handlers`，并保留“spec service 不得被 worker/legacy 反向导入”的
+  方向约束；未删除或放宽任何原断言，所有权现由新增模块的显式依赖集合门禁覆盖。
+- 定向回归：新增契约/门禁与 worker v2、claimed、AI prewarm、formula 批次合计
+  246 passed；task queue v1/v2 契约、协议与脚本绑定合计 122 passed；严格
+  Ruff/format、compileall、300/50 预算与 diff-check 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 398 个测试文件：
+  6884 passed、0 failed、64 条既有弃用 warning，430.14 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、全部业务 handler、外部 OCR/AI、真实微信、生产 Admin 浏览器、
+  多 dispatcher 竞争或备份恢复。v1 执行仍有剩余大函数：`run_pipeline_worker` 131 行、
+  `run_dispatcher_v2` 108、`_v2_heartbeat_loop_with_lease_window` 102、
+  `_enqueue_v2_with_local_fallback` 72、`graceful_shutdown_v2` 56；task queue service
+  的 `retry_from_dead_v2`、`heartbeat`、`dequeue_v2` 等仍在待拆分清单。

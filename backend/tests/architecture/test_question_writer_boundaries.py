@@ -24,7 +24,7 @@ def test_question_core_and_writer_form_one_way_dependency():
     for consumer in (
         "app.api.v1.imports", "app.api.v1.admin_imports",
         "app.features.text_question_parser", "app.features.question_draft_generator",
-        "app.services.task_queue_worker",
+        "app.services.worker_legacy_handlers",
     ):
         assert WRITER in graph[consumer], consumer
 

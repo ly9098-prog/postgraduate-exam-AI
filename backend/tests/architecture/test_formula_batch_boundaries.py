@@ -16,13 +16,15 @@ def test_formula_batch_has_one_state_owner_and_one_way_execution():
     runner = f"{PREFIX}batch_runner"
     state = f"{PREFIX}batch_state"
     worker = "app.services.task_queue_worker"
+    legacy = "app.services.worker_legacy_handlers"
     assert worker in graph[producer]
-    assert runner in graph[worker]
+    assert runner in graph[legacy]
     assert service in graph[runner]
     assert state in graph[producer] and state in graph[runner]
     assert graph[state] == set()
     assert worker not in graph[service]
     assert service not in graph[worker]
+    assert service not in graph[legacy]
     assert not any(source.startswith(PREFIX) or target.startswith(PREFIX)
                    for source, target in cyclic_edges(graph))
 
