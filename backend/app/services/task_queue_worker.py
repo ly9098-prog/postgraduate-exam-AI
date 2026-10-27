@@ -1032,6 +1032,107 @@ async def _process_claimed_task_v2(
     )
 
 
+async def _probe_v2_redis_recovery(backoff: float) -> None:
+    """Sleep in five-second steps while waiting for Redis to recover.
+
+    The fragmented sleep keeps graceful shutdown responsive during the
+    circuit-breaker probe window.
+    """
+    _probe_target = min(backoff * 2, 300)
+    _probe_step = 5
+    _probe_waited = 0
+    while (
+        _probe_waited < _probe_target and _v2_worker_running and not _v2_worker_draining
+    ):
+        await asyncio.sleep(min(_probe_step, _probe_target - _probe_waited))
+        _probe_waited += _probe_step
+
+
+async def _handle_v2_redis_failure(
+    error: TaskQueueUnavailableError,
+    failure_count: int,
+    max_failures: int = 10,
+) -> int:
+    """Back off after a Redis failure and return the new consecutive count."""
+    failure_count += 1
+    queue_metrics["queue_redis_failure"] += 1
+    backoff = min(error.retry_after * (1 << min(failure_count - 1, 4)), 300)
+    logger.error(
+        "v2 Dispatcher Redis unavailable (failure #%d): %s — backing off %ds",
+        failure_count,
+        error,
+        backoff,
+    )
+    if failure_count >= max_failures:
+        logger.critical(
+            "v2 Dispatcher circuit breaker OPEN after %d Redis failures — "
+            "entering degraded probe mode (worker stays alive, retries periodically)",
+            failure_count,
+        )
+        # 熔断后不退出循环：退出会让 worker 进程存活但不领任务（半死）、
+        # 队列持续堆积直到人工重启。降级为周期探测 Redis，恢复后自动重入。
+        # 分段 sleep 期间检查 draining，保证 graceful shutdown 及时生效。
+        await _probe_v2_redis_recovery(backoff)
+    else:
+        await asyncio.sleep(backoff)
+    return failure_count
+
+
+def _spawn_v2_processing(
+    task: Task, lease_sec: int, semaphore: asyncio.Semaphore
+) -> None:
+    """Spawn background processing; it releases the semaphore on completion."""
+    proc_task = asyncio.create_task(
+        _process_claimed_task_v2(task, lease_sec, semaphore),
+        name=f"proc:{task.task_id}",
+    )
+    _v2_active_processing.add(proc_task)
+    proc_task.add_done_callback(_v2_active_processing.discard)
+
+
+async def _run_dispatcher_v2_loop(
+    task_types: list[str],
+    semaphore: asyncio.Semaphore,
+    poll_interval: float,
+    lease_sec: int,
+) -> None:
+    """Run the v2 claim/spawn loop until draining, cancellation or stop."""
+    _redis_failure_count = 0
+    _max_redis_failures = 10
+
+    while _v2_worker_running and not _v2_worker_draining:
+        # 1. Wait for an available slot before claiming
+        await semaphore.acquire()
+
+        if _v2_worker_draining or not _v2_worker_running:
+            semaphore.release()
+            break
+
+        # 2. Claim one task (any type)
+        try:
+            task = await _try_claim_any_v2(task_types, lease_sec)
+        except TaskQueueUnavailableError as e:
+            semaphore.release()
+            _redis_failure_count = await _handle_v2_redis_failure(
+                e, _redis_failure_count, _max_redis_failures
+            )
+            continue
+
+        _redis_failure_count = 0
+
+        if task is None:
+            # No task available — release slot and sleep
+            semaphore.release()
+            await asyncio.sleep(poll_interval)
+            continue
+
+        # 3. Spawn background processing — task releases sem on completion
+        _spawn_v2_processing(task, lease_sec, semaphore)
+
+        # Yield control briefly so the just-created task can start
+        await asyncio.sleep(0)
+
+
 async def run_dispatcher_v2(
     poll_interval: float = 5.0,
     lease_sec: int = _LEASE_SEC,
@@ -1063,77 +1164,8 @@ async def run_dispatcher_v2(
         poll_interval,
     )
 
-    _redis_failure_count = 0
-    _max_redis_failures = 10
-
     try:
-        while _v2_worker_running and not _v2_worker_draining:
-            # 1. Wait for an available slot before claiming
-            await semaphore.acquire()
-
-            if _v2_worker_draining or not _v2_worker_running:
-                semaphore.release()
-                break
-
-            # 2. Claim one task (any type)
-            try:
-                task = await _try_claim_any_v2(task_types, lease_sec)
-            except TaskQueueUnavailableError as e:
-                semaphore.release()
-                _redis_failure_count += 1
-                queue_metrics["queue_redis_failure"] += 1
-                backoff = min(
-                    e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300
-                )
-                logger.error(
-                    "v2 Dispatcher Redis unavailable (failure #%d): %s — backing off %ds",
-                    _redis_failure_count,
-                    e,
-                    backoff,
-                )
-                if _redis_failure_count >= _max_redis_failures:
-                    logger.critical(
-                        "v2 Dispatcher circuit breaker OPEN after %d Redis failures — "
-                        "entering degraded probe mode (worker stays alive, retries periodically)",
-                        _redis_failure_count,
-                    )
-                    # 熔断后不退出循环：退出会让 worker 进程存活但不领任务（半死）、
-                    # 队列持续堆积直到人工重启。降级为周期探测 Redis，恢复后自动重入。
-                    # 分段 sleep 期间检查 draining，保证 graceful shutdown 及时生效。
-                    _probe_target = min(backoff * 2, 300)
-                    _probe_step = 5
-                    _probe_waited = 0
-                    while (
-                        _probe_waited < _probe_target
-                        and _v2_worker_running
-                        and not _v2_worker_draining
-                    ):
-                        await asyncio.sleep(
-                            min(_probe_step, _probe_target - _probe_waited)
-                        )
-                        _probe_waited += _probe_step
-                    continue
-                await asyncio.sleep(backoff)
-                continue
-
-            _redis_failure_count = 0
-
-            if task is None:
-                # No task available — release slot and sleep
-                semaphore.release()
-                await asyncio.sleep(poll_interval)
-                continue
-
-            # 3. Spawn background processing — task releases sem on completion
-            proc_task = asyncio.create_task(
-                _process_claimed_task_v2(task, lease_sec, semaphore),
-                name=f"proc:{task.task_id}",
-            )
-            _v2_active_processing.add(proc_task)
-            proc_task.add_done_callback(_v2_active_processing.discard)
-
-            # Yield control briefly so the just-created task can start
-            await asyncio.sleep(0)
+        await _run_dispatcher_v2_loop(task_types, semaphore, poll_interval, lease_sec)
     except asyncio.CancelledError:
         logger.info("v2 Dispatcher cancelled")
         raise

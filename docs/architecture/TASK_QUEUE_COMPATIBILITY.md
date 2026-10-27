@@ -267,3 +267,42 @@
   `run_dispatcher_v2` 108、`_v2_heartbeat_loop_with_lease_window` 102、
   `_enqueue_v2_with_local_fallback` 72、`graceful_shutdown_v2` 56；task queue service
   的 `retry_from_dead_v2`、`heartbeat`、`dequeue_v2`、`enqueue` 等仍在待拆分清单。
+
+## 15. v2 dispatcher 循环与 Redis 退避拆分
+
+- 2026-10-28，`run_dispatcher_v2` 从 108 行收敛至 39 行，保留签名、docstring、
+  `_v2_worker_running` 置位、调用时的 `get_worker_semaphore` 延迟导入、
+  `DISPATCHER_TASK_TYPES` 一次性读取、启动日志与 CancelledError/finally 复位；循环体
+  抽为 `_run_dispatcher_v2_loop`（41 行），Redis 退避抽为
+  `_handle_v2_redis_failure`（28 行）与 `_probe_v2_redis_recovery`（14 行），任务派生
+  抽为 `_spawn_v2_processing`（10 行），全部满足 300/50 预算。
+- 并发槽所有权保持：先 acquire 再认领；draining/running 变化时 release 后停止；
+  Redis 失败释放后进入退避，空队列释放后按 `poll_interval` 休眠，派生成功则由处理
+  任务在完成时释放。退避算术保持 `min(retry_after * (1 << min(count-1, 4)), 300)`，
+  连续失败计数在任意成功认领（含空队列）后归零；第 10 次失败输出 critical 并进入
+  降级探测，探测按 5 秒分片推进且每步检查 running/draining，可提前退出；派生使用
+  `proc:<task_id>` 名称并登记/注销 `_v2_active_processing`，之后 `await asyncio.sleep(0)`
+  让新任务起步。
+- 9 项固定契约在拆分前的原实现（AST 提取原 `run_dispatcher_v2` 运行）与拆分后均
+  通过，覆盖派生与槽释放、draining、失败计数与退避、300 秒上限、第 10 次熔断后的
+  分片探测序列、探测对 draining/running 的提前退出、成功认领后的计数归零与取消复位。
+  21 个故障变体全部被拒绝，覆盖探测步长/目标/提前退出、计数与指标、退避位移与上限、
+  熔断阈值与 else 分支、派生名称与登记/注销、失败计数归零、认领 lease、任务类型快照、
+  draining 释放、启动置位、启动日志与取消日志。
+- 反向展开各 helper 并按三项已记录归一化（循环内失败计数器提升、`if 熔断: … continue`
+  ＋尾随 `await sleep; continue` 折叠为 if/else、调用方赋值时丢弃同值 return）后，
+  AST 与原实现一致；worker 其余定义不变（`/tmp/worker-dispatcher-v2-ast-report.json`）。
+- 4 项架构门禁约束入口/循环/退避/探测/派生的预算与结构，含“删掉 draining 分支
+  release”“把请求指标换成计数”两项反向自检。定向回归：dispatcher、legacy 循环/分派、
+  worker v2/claimed 与心跳/管理执行批次合计 408 passed；runtime/lifespan 端口与
+  task queue v1/v2 契约合计 387 passed；严格 Ruff/format、compileall、300/50 预算与
+  diff-check 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 402 个测试文件：
+  6915 passed、0 failed、64 条既有弃用 warning，434.90 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、全部业务 handler、外部 OCR/AI、真实微信、生产 Admin 浏览器、
+  多 dispatcher 竞争或备份恢复。worker 剩余大函数为
+  `_v2_heartbeat_loop_with_lease_window` 102、`_enqueue_v2_with_local_fallback` 72、
+  `graceful_shutdown_v2` 56；task queue service 的 `retry_from_dead_v2`、`heartbeat`、
+  `dequeue_v2`、`enqueue` 等仍在待拆分清单。
