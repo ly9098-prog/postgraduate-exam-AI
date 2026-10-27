@@ -230,3 +230,40 @@
   `run_dispatcher_v2` 108、`_v2_heartbeat_loop_with_lease_window` 102、
   `_enqueue_v2_with_local_fallback` 72、`graceful_shutdown_v2` 56；task queue service
   的 `retry_from_dead_v2`、`heartbeat`、`dequeue_v2` 等仍在待拆分清单。
+
+## 14. legacy v1 worker 循环监督拆分
+
+- 2026-10-28，`run_pipeline_worker` 从 131 行收敛至 49 行，保留签名、docstring、
+  `_worker_running` 全局读写、`task_types = DISPATCHER_TASK_TYPES` 的一次性读取、
+  draining 跳过、dequeue 失败告警、空轮询休眠，以及 CancelledError 日志和 finally
+  复位。逐任务监督抽为 6 个模块级 helper：`_process_supervised_task`（19 行，创建
+  heartbeat、processing、owner-loss monitor 并委托）、`_settle_supervised_task`
+  （27 行，持有 try/except/finally 与清理所有权）、`_dispatch_supervised_outcome`
+  （15 行）、`_complete_supervised_task`（14 行）、`_fail_supervised_task`（18 行）、
+  `_cancel_supervised_tasks`（25 行）；全部满足 300/50 预算。
+- 保留原语义，包括可观察的运行特性：处理中被取消仍按 owner-loss 吞掉取消、指标累加
+  两次且外层循环继续；空闲期（dequeue/休眠）取消则抛出 CancelledError、记录
+  “Pipeline worker cancelled”并在 finally 复位 `_worker_running=False`；complete
+  抛错转入 fail 路径；fail 被拒绝、owner-lost 跳过 fail 各自累计 `owner_fencing_rejected`；
+  heartbeat 在取消后抛出的非取消异常只告警；heartbeat/processing/monitor 的创建顺序、
+  monitor→heartbeat→processing 的清理顺序与 “处理已结束则不再二次取消” 均未改变。
+- 14 项固定契约在拆分前的原实现（本次先写测试后改代码）与拆分后均通过。18 个故障
+  变体全部被拒绝：16 个由断言捕获，2 个（跳过取消 monitor 或 heartbeat）表现为
+  监督协程永不结束、测试挂起超时，同样判定为检测成功。反向展开 6 个 helper 与
+  `run_pipeline_worker` 的委托调用后，AST 与原实现完全一致；worker 其余定义不变
+  （`/tmp/worker-legacy-loop-ast-report.json`）。
+- 4 项架构门禁约束循环与 helper 的 50 行预算、draining→dequeue 顺序、dequeue
+  lease 参数、监督创建顺序、settle 的 except/finally 归属、清理顺序与 heartbeat
+  异常告警，并含“内联监督/交换创建顺序会被拒绝”两项反向自检。
+- 定向回归：新增契约/门禁与 worker v2、claimed、legacy dispatch 批次合计 224 passed；
+  worker lifespan/readiness 端口与 task queue v1 契约合计 199 passed；严格
+  Ruff/format、compileall、300/50 预算与 diff-check 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 400 个测试文件：
+  6902 passed、0 failed、64 条既有弃用 warning，434.11 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、全部业务 handler、外部 OCR/AI、真实微信、生产 Admin 浏览器、
+  多 dispatcher 竞争或备份恢复。v1 循环已收敛后，worker 剩余大函数为
+  `run_dispatcher_v2` 108、`_v2_heartbeat_loop_with_lease_window` 102、
+  `_enqueue_v2_with_local_fallback` 72、`graceful_shutdown_v2` 56；task queue service
+  的 `retry_from_dead_v2`、`heartbeat`、`dequeue_v2`、`enqueue` 等仍在待拆分清单。

@@ -683,6 +683,136 @@ async def _process_task(task: Task) -> None:
             await async_cleanup_work_copy(work_path)
 
 
+async def _cancel_supervised_tasks(
+    cancel_monitor: asyncio.Task,
+    heartbeat_task: asyncio.Task,
+    processing_task: asyncio.Task,
+) -> None:
+    """Cancel the owner-loss monitor, heartbeat and any running processing task."""
+    cancel_monitor.cancel()
+    try:
+        await cancel_monitor
+    except asyncio.CancelledError:
+        pass
+    heartbeat_task.cancel()
+    try:
+        await heartbeat_task
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.warning("Heartbeat task raised after cancel: %s", e)
+
+    if not processing_task.done():
+        processing_task.cancel()
+        try:
+            await processing_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+async def _complete_supervised_task(task: Task) -> None:
+    """Complete a supervised task, counting owner-fencing rejections."""
+    ok = await task_queue.complete(task)
+    if ok:
+        logger.info(
+            "Task completed successfully: task_id=%s",
+            task.task_id,
+        )
+    else:
+        logger.warning(
+            "Complete rejected (owner mismatch, fencing): task_id=%s",
+            task.task_id,
+        )
+        queue_metrics["owner_fencing_rejected"] += 1
+
+
+async def _fail_supervised_task(
+    task: Task, error: Exception, owner_lost: asyncio.Event
+) -> None:
+    """Fail a supervised task unless the owner was lost mid-processing."""
+    if owner_lost.is_set():
+        logger.warning(
+            "Owner lost during processing, skipping fail: task_id=%s",
+            task.task_id,
+        )
+        queue_metrics["owner_fencing_rejected"] += 1
+    else:
+        ok = await task_queue.fail(task, str(error))
+        if not ok:
+            logger.warning(
+                "Fail rejected (owner mismatch, fencing): task_id=%s",
+                task.task_id,
+            )
+            queue_metrics["owner_fencing_rejected"] += 1
+
+
+async def _dispatch_supervised_outcome(
+    task: Task, processing_task: asyncio.Task, owner_lost: asyncio.Event
+) -> None:
+    """Route a settled processing task to completion or owner-loss handling."""
+    was_cancelled = processing_task.cancelled()
+
+    if was_cancelled or owner_lost.is_set():
+        logger.warning(
+            "Owner lost, skipping complete/fail: task_id=%s",
+            task.task_id,
+        )
+        if was_cancelled:
+            queue_metrics["owner_fencing_rejected"] += 1
+    else:
+        await _complete_supervised_task(task)
+
+
+async def _settle_supervised_task(
+    task: Task,
+    task_type: str,
+    processing_task: asyncio.Task,
+    owner_lost: asyncio.Event,
+    cancel_monitor: asyncio.Task,
+    heartbeat_task: asyncio.Task,
+) -> None:
+    """Await processing, settle the outcome, then cancel supervised children."""
+    try:
+        try:
+            await processing_task
+        except asyncio.CancelledError:
+            logger.warning(
+                "Processing cancelled (owner lost): task_id=%s",
+                task.task_id,
+            )
+            queue_metrics["owner_fencing_rejected"] += 1
+
+        await _dispatch_supervised_outcome(task, processing_task, owner_lost)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.exception("Task failed: task_id=%s type=%s", task.task_id, task_type)
+        await _fail_supervised_task(task, e, owner_lost)
+    finally:
+        await _cancel_supervised_tasks(cancel_monitor, heartbeat_task, processing_task)
+
+
+async def _process_supervised_task(task: Task, task_type: str, lease_sec: int) -> None:
+    """Run one claimed legacy task with heartbeat and owner-loss supervision."""
+    owner_lost = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(task, lease_sec, owner_lost))
+
+    # Wrap processing in a cancellable task so owner loss terminates it
+    processing_task = asyncio.create_task(_process_task(task))
+    cancel_monitor = asyncio.create_task(
+        _cancel_on_owner_loss(processing_task, owner_lost)
+    )
+
+    await _settle_supervised_task(
+        task,
+        task_type,
+        processing_task,
+        owner_lost,
+        cancel_monitor,
+        heartbeat_task,
+    )
+
+
 async def run_pipeline_worker(
     poll_interval: float = 5.0,
     lease_sec: int = _LEASE_SEC,
@@ -722,89 +852,7 @@ async def run_pipeline_worker(
                     continue
 
                 processed = True
-                owner_lost = asyncio.Event()
-                heartbeat_task = asyncio.create_task(
-                    _heartbeat_loop(task, lease_sec, owner_lost)
-                )
-
-                # Wrap processing in a cancellable task so owner loss terminates it
-                processing_task = asyncio.create_task(_process_task(task))
-                cancel_monitor = asyncio.create_task(
-                    _cancel_on_owner_loss(processing_task, owner_lost)
-                )
-
-                try:
-                    try:
-                        await processing_task
-                    except asyncio.CancelledError:
-                        logger.warning(
-                            "Processing cancelled (owner lost): task_id=%s",
-                            task.task_id,
-                        )
-                        queue_metrics["owner_fencing_rejected"] += 1
-
-                    was_cancelled = processing_task.cancelled()
-
-                    if was_cancelled or owner_lost.is_set():
-                        logger.warning(
-                            "Owner lost, skipping complete/fail: task_id=%s",
-                            task.task_id,
-                        )
-                        if was_cancelled:
-                            queue_metrics["owner_fencing_rejected"] += 1
-                    else:
-                        ok = await task_queue.complete(task)
-                        if ok:
-                            logger.info(
-                                "Task completed successfully: task_id=%s",
-                                task.task_id,
-                            )
-                        else:
-                            logger.warning(
-                                "Complete rejected (owner mismatch, fencing): task_id=%s",
-                                task.task_id,
-                            )
-                            queue_metrics["owner_fencing_rejected"] += 1
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    logger.exception(
-                        "Task failed: task_id=%s type=%s", task.task_id, task_type
-                    )
-                    if owner_lost.is_set():
-                        logger.warning(
-                            "Owner lost during processing, skipping fail: task_id=%s",
-                            task.task_id,
-                        )
-                        queue_metrics["owner_fencing_rejected"] += 1
-                    else:
-                        ok = await task_queue.fail(task, str(e))
-                        if not ok:
-                            logger.warning(
-                                "Fail rejected (owner mismatch, fencing): task_id=%s",
-                                task.task_id,
-                            )
-                            queue_metrics["owner_fencing_rejected"] += 1
-                finally:
-                    cancel_monitor.cancel()
-                    try:
-                        await cancel_monitor
-                    except asyncio.CancelledError:
-                        pass
-                    heartbeat_task.cancel()
-                    try:
-                        await heartbeat_task
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as e:
-                        logger.warning("Heartbeat task raised after cancel: %s", e)
-
-                    if not processing_task.done():
-                        processing_task.cancel()
-                        try:
-                            await processing_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
+                await _process_supervised_task(task, task_type, lease_sec)
 
             if not processed:
                 await asyncio.sleep(poll_interval)
