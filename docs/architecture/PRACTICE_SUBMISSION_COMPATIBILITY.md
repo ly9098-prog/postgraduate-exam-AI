@@ -195,3 +195,27 @@
 - 学习域相关回归 1,159 项通过；按当前 `ci.yml` 的静态架构与非 GPU 步骤本机精确重放，
   6,802 项通过、0 失败，包含 64 个既有 datetime/OCR 弃用警告。该重放不是远端 CI，
   也不包含真实 PostgreSQL、Redis、微信或生产提交验收。
+
+## 19. 批次记录持久化与事务提交职责（2026-10-28）
+
+- `batch_persistence.py` 保留 `PersistedPracticeBatch` 和公开入口；记录字段装配、
+  批量 staging/flush、单条错题与诊断副作用分别交给 `_build_practice_record`、
+  `_stage_practice_batch_records`、`_persist_practice_wrong_record`。原 61 行入口收敛为
+  43 行，模块 145 行，最长函数 43 行；持久化模块仍不持有 commit/rollback。
+- 保留逐条构造和 `db.add`、非空批次只 flush 一次、每条错题按
+  `record_wrong → persist_wrong_answer → setattr(_error_diagnosis_payload) → create_outbox`
+  执行、题号/revision 的 int 转换、预热门和错题 ID 映射，以及空批次不触发任何端口。
+- `batch_commit.py` 保留原公开签名和函数定义；响应装配、提交后清理/提交、
+  整个事务体分别由 `_build_claimed_practice_response`、`_finalize_claimed_practice_batch`、
+  `_run_claimed_practice_batch` 承接。原 60 行入口收敛为 31 行，模块 168 行，
+  最长函数 33 行。`submission_response` 仍在 cleanup 构建/执行前赋值，`cleanup is None`
+  才跳过 execute，任何 `BaseException`（含取消和 KeyboardInterrupt）仍触发 rollback。
+- 新增契约覆盖多记录顺序、动态端口、异常身份、空批次和清理 `None`/其他 falsy 语句、
+  各阶段失败回滚、响应对象身份及请求参数。22 项在当前新契约的原实现重放中通过，
+  当前入口、既有测试和 10 项模块边界共 36 项通过；12 个有效故障变体全部被拒绝，
+  覆盖 `commit` 参数、projection 状态、正确分支、空 flush、错题映射、诊断字段、
+  request_id、truthy cleanup、rollback、execute/commit 顺序、响应身份和 issued_order。
+  学习域关联回归 1,169 项通过。反向展开四个持久化 helper 及三个提交 helper 后，
+  两个模块的 AST 与原实现一致；仅 `dataclasses`/`datetime` 导入顺序按 Ruff 规范化。
+- 上述事务顺序和异常契约使用内存 doubles，不代表真实 SQLAlchemy 会话、
+  PostgreSQL 并发提交或生产 worker 验收。
