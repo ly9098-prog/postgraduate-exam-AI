@@ -194,3 +194,65 @@
   （`_pick_weak_point` 93、`_pick_chapter_recommendation` 92、
   `_pick_path_prerequisite` 73、`_build_subject_mastery` 60）与
   `adaptive_learning_service` 的大函数，也不声称学习域整体完成。
+
+## 12. 学习中心推荐投影拆分
+
+- 2026-10-28，`study_hub_service` 四个推荐投影函数收敛：`_build_subject_mastery` 60 → 13 行、
+  `_pick_chapter_recommendation` 92 → 24 行、`_pick_weak_point` 93 → 15 行、
+  `_pick_path_prerequisite` 73 → 26 行；拆出 16 个 helper：`_fetch_subject_mastery_rows`（23）、
+  `_subject_mastery_entry`（24）、`_rank_practiced_subjects`（21）、`_chapter_task_payload`（39）、
+  `_chapter_task_for_subject`（36）、`_weak_point_columns`（15）、`_weak_point_joins`（16）、
+  `_weak_point_filters`（18）、`_weak_point_group_by`（13）、`_weak_point_order_by`（9）、
+  `_weak_point_statement`（13）、`_weak_point_payload`（14）、`_prerequisite_target_ids`（15）、
+  `_rank_blocked_targets`（6）、`_rank_prerequisite_blockers`（9）、`_trainable_prerequisite`（34），
+  全部满足 300/50 预算；模块 983 → 1080 行，增量仅为 helper 定义与文档字符串。
+- 掌握度投影语义保持：聚合查询仍是 `user_id` + 科目 id 集 + `attempt_count > 0` +
+  `GROUP BY subject_id` 且无 ORDER BY；核心科目顺序与逐条投影不变；聚合缺失的科目仍返回
+  `mastery_score=None`、`confidence=0.0`、`attempt_count=0`、`accuracy=None`，命中行
+  attempts=0 时仍返回 `mastery_score=0.0`、`data_available=False`、`accuracy=None`；
+  `mastery_score`/`confidence`/`accuracy` 小数位仍是 1/3/4。
+- 章节推荐语义保持：排序仍为 mastery asc（缺失按 100.0）、confidence asc、attempt_count desc、
+  subject_id asc，仍只探测 `practiced[:2]` 且逐科目 requery `days=30`；
+  `trainable_knowledge_points` 仍 clamp 到 `[3, SMART_TASK_COUNT]`；任务键
+  `chapter:{subject}:{kp}`、类型、优先级、文案回退、`route=practice`、`include_descendants=True`、
+  `allow_repeat=True`、`estimated_minutes` 与 subject 标签回退（诊断结果优先、其次科目行）不变。
+- 弱项投影语义保持：select 列、5 个 join 顺序、14 条过滤、10 列 GROUP BY、
+  `HAVING count(distinct(questions.id)) >= 3`、排序（`CASE recent_wrong_count>=2` 优先、
+  recent desc、mastery asc、wrong desc、知识点 id asc）与 `limit(1)` + `.first()` 读取不变；
+  拆分后渲染出的 SQL 文本与绑定参数（含 `_ANSWERABLE_TYPES` post-compile 列表、
+  attempts≥2、mastery<70、`review_status='approved'`、HAVING 阈值、LIMIT）与拆分前逐字节一致。
+- 知识路径语义保持：target id 查询（科目作用域、`relation_type='prerequisite'`、`is_active`、
+  distinct、id asc）不变；仍只检查阻塞前置最多（同数取 id 更小）的**单个** target，其阻塞项按
+  mastery asc、path_quality desc、知识点 id asc 排序，并逐个跳过非核心科目、非法知识点、
+  可训练题不足 3 或科目行缺失的候选；全部失败时返回 `None`，不回退下一个 target。
+- 21 项固定契约（`tests/test_services/test_study_hub_recommendation_contract.py`）在拆分前原实现与
+  拆分后均通过：在原有 18 项基础上补齐“缺失掌握度按 100.0 排名”“诊断标签优先于科目行标签”
+  “阻塞项取最低掌握度”三项用例，并给掌握度聚合查询与弱项查询补上绑定参数、join/GROUP BY/
+  ORDER BY 顺序断言，避免只断言 SQL 片段造成的弱守卫。
+- 1600 例随机差分（`/tmp/study_hub_recommendation_differential.py`，四个投影各 400 例）比较
+  payload/异常、渲染 SQL、绑定参数与语句条数：0 mismatch；含 47/79/41 例两侧同样抛出的
+  TypeError 边界，失败路径也逐项一致。
+- 39 个故障变体全部被拒绝（日志 `/tmp/study-hub-recommendation-mutants.log`，报告
+  `/tmp/study-hub-recommendation-mutants-jxvdp7hs/report.json`），覆盖掌握度取整/可用标志/缺失分支/
+  列下标/core_ids/过滤阈值/聚合查找，章节排序四键、探测上限、建议守卫、知识点与配额守卫、
+  分钟与路由、descendants、标签优先级、优先级与键，弱项 is_active/review_status/attempts 阈值/
+  HAVING/分组列/排序顺序/join 顺序/取整/列下标/投影，以及路径 target 排序两键、阻塞项排序两键、
+  可训练下限、作用域守卫、top target、科目必查与知识点名来源。
+- AST 证明（`/tmp/verify_study_hub_recommendation_ast.py`、报告
+  `/tmp/study-hub-recommendation-ast-report.json`）：模块其余 19 个定义与 HEAD AST 完全一致；
+  6 个 payload 字典字面量与 47 个比较/排序表达式逐字保留；渲染 SQL 与拆分前逐字节相同。
+- 4 项架构门禁（`tests/architecture/test_study_hub_recommendation_boundaries.py`）约束 20 个函数的
+  预算、四个入口的签名（overview 装载器与其 mock 依赖该形状）、掌握度/章节/弱项/路径的委派顺序与
+  单点语义（阈值与 SQL 子句只出现在 helper 内），并含“放宽章节探测到 3”“反转阻塞项排序”
+  “放宽弱项 attempts 阈值”三项反向自检。
+- 定向回归：`tests/test_services -k study` 201 passed；
+  `tests/architecture -k "study or knowledge_summary or learning_time or smart or practice_projection"`
+  59 passed；严格 Ruff、`ruff format --check`、compileall、50 行预算与 `git diff --check` 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 414 个测试文件：
+  7027 passed、0 failed、64 条既有弃用 warning，457.12 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批不覆盖
+  `study_hub_service` 其余函数与 `adaptive_learning_service`、`study_report_service`、
+  `review_scheduler`、`wrong_question_service`、任务队列、OCR 导入编排、AI 分析执行等学习域大函数，
+  也不声称学习域整体完成。

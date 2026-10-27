@@ -134,15 +134,11 @@ async def _load_408_practice_counts(
     return int(total), int(today)
 
 
-async def _build_subject_mastery(
+async def _fetch_subject_mastery_rows(
     db: AsyncSession,
     user_id: int,
-    core_subjects: list[Subject],
-) -> list[dict]:
-    core_ids = [int(subject.id) for subject in core_subjects]
-    if not core_ids:
-        return []
-
+    core_ids: list[int],
+) -> dict[int, object]:
     rows = await db.execute(
         select(
             UserKnowledgeState.subject_id,
@@ -160,40 +156,150 @@ async def _build_subject_mastery(
         )
         .group_by(UserKnowledgeState.subject_id)
     )
-    aggregate = {int(row[0]): row for row in rows.all()}
+    return {int(row[0]): row for row in rows.all()}
 
-    result: list[dict] = []
-    for subject in core_subjects:
-        row = aggregate.get(int(subject.id))
-        if row is None:
-            result.append(
-                {
-                    "subject_id": int(subject.id),
-                    "subject_code": str(subject.code),
-                    "subject_name": str(subject.name),
-                    "data_available": False,
-                    "mastery_score": None,
-                    "confidence": 0.0,
-                    "attempt_count": 0,
-                    "accuracy": None,
-                }
-            )
-            continue
-        attempts = int(row[3] or 0)
-        correct = int(row[4] or 0)
-        result.append(
-            {
-                "subject_id": int(subject.id),
-                "subject_code": str(subject.code),
-                "subject_name": str(subject.name),
-                "data_available": bool(row[6] and attempts > 0),
-                "mastery_score": round(float(row[1] or 0.0), 1),
-                "confidence": round(float(row[2] or 0.0), 3),
-                "attempt_count": attempts,
-                "accuracy": round(correct / attempts, 4) if attempts > 0 else None,
-            }
+
+def _subject_mastery_entry(subject: Subject, row) -> dict:
+    if row is None:
+        return {
+            "subject_id": int(subject.id),
+            "subject_code": str(subject.code),
+            "subject_name": str(subject.name),
+            "data_available": False,
+            "mastery_score": None,
+            "confidence": 0.0,
+            "attempt_count": 0,
+            "accuracy": None,
+        }
+    attempts = int(row[3] or 0)
+    correct = int(row[4] or 0)
+    return {
+        "subject_id": int(subject.id),
+        "subject_code": str(subject.code),
+        "subject_name": str(subject.name),
+        "data_available": bool(row[6] and attempts > 0),
+        "mastery_score": round(float(row[1] or 0.0), 1),
+        "confidence": round(float(row[2] or 0.0), 3),
+        "attempt_count": attempts,
+        "accuracy": round(correct / attempts, 4) if attempts > 0 else None,
+    }
+
+
+async def _build_subject_mastery(
+    db: AsyncSession,
+    user_id: int,
+    core_subjects: list[Subject],
+) -> list[dict]:
+    core_ids = [int(subject.id) for subject in core_subjects]
+    if not core_ids:
+        return []
+    aggregate = await _fetch_subject_mastery_rows(db, user_id, core_ids)
+    return [
+        _subject_mastery_entry(subject, aggregate.get(int(subject.id)))
+        for subject in core_subjects
+    ]
+
+
+def _rank_practiced_subjects(subject_mastery: list[dict]) -> list[dict]:
+    practiced = [
+        item
+        for item in subject_mastery
+        if bool(item.get("data_available")) and int(item.get("attempt_count") or 0) > 0
+    ]
+    if not practiced:
+        return []
+    practiced.sort(
+        key=lambda item: (
+            float(
+                item.get("mastery_score")
+                if item.get("mastery_score") is not None
+                else 100.0
+            ),
+            float(item.get("confidence") or 0.0),
+            -int(item.get("attempt_count") or 0),
+            int(item.get("subject_id") or 0),
         )
-    return result
+    )
+    return practiced
+
+
+def _chapter_task_payload(
+    *,
+    subject: dict,
+    diagnosis: dict,
+    recommendation: dict,
+    subject_id: int,
+    kp_id: int,
+    count: int,
+) -> dict:
+    return {
+        "key": f"chapter:{subject_id}:{kp_id}",
+        "task_type": "knowledge_chapter",
+        "priority": 0,
+        "title": str(recommendation.get("title") or "进行章节专项"),
+        "reason": str(
+            recommendation.get("reason") or "根据当前知识覆盖和掌握状态安排章节练习。"
+        ),
+        "action_label": str(recommendation.get("action_label") or "开始章节专项"),
+        "route": "practice",
+        "route_params": _practice_params(
+            subject_id=subject_id,
+            mode="random",
+            count=count,
+            knowledge_point_id=kp_id,
+            include_descendants=True,
+            allow_repeat=True,
+        ),
+        "estimated_question_count": count,
+        "estimated_minutes": _minutes_for_questions(count),
+        "subject_id": subject_id,
+        "subject_code": str(
+            diagnosis.get("subject_code") or subject.get("subject_code") or ""
+        ),
+        "subject_name": str(
+            diagnosis.get("subject_name") or subject.get("subject_name") or ""
+        ),
+        "knowledge_point_id": kp_id,
+        "knowledge_point_name": str(recommendation.get("knowledge_point_name") or ""),
+    }
+
+
+async def _chapter_task_for_subject(
+    db: AsyncSession,
+    user_id: int,
+    subject: dict,
+    diagnosis_module,
+) -> dict | None:
+    subject_id = int(subject.get("subject_id") or 0)
+    if subject_id <= 0:
+        return None
+    diagnosis = await diagnosis_module.get_knowledge_diagnosis(
+        db,
+        user_id,
+        subject_id,
+        days=30,
+    )
+    recommendation = diagnosis.get("primary_recommendation") if diagnosis else None
+    if not isinstance(recommendation, dict):
+        return None
+    kp_id = int(recommendation.get("knowledge_point_id") or 0)
+    if kp_id <= 0:
+        return None
+    count = min(
+        SMART_TASK_COUNT,
+        max(
+            3,
+            int(recommendation.get("trainable_knowledge_points") or SMART_TASK_COUNT),
+        ),
+    )
+    return _chapter_task_payload(
+        subject=subject,
+        diagnosis=diagnosis,
+        recommendation=recommendation,
+        subject_id=subject_id,
+        kp_id=kp_id,
+        count=count,
+    )
 
 
 async def _pick_chapter_recommendation(
@@ -207,86 +313,18 @@ async def _pick_chapter_recommendation(
     for the one or two weakest practiced subjects, avoiding four full knowledge-map
     projections on every page show while still producing a concrete chapter plan.
     """
-    practiced = [
-        item
-        for item in subject_mastery
-        if bool(item.get("data_available")) and int(item.get("attempt_count") or 0) > 0
-    ]
+    practiced = _rank_practiced_subjects(subject_mastery)
     if not practiced:
         return None
-    practiced.sort(
-        key=lambda item: (
-            float(
-                item.get("mastery_score")
-                if item.get("mastery_score") is not None
-                else 100.0
-            ),
-            float(item.get("confidence") or 0.0),
-            -int(item.get("attempt_count") or 0),
-            int(item.get("subject_id") or 0),
-        )
-    )
 
     from app.services import knowledge_diagnosis_service
 
     for subject in practiced[:2]:
-        subject_id = int(subject.get("subject_id") or 0)
-        if subject_id <= 0:
-            continue
-        diagnosis = await knowledge_diagnosis_service.get_knowledge_diagnosis(
-            db,
-            user_id,
-            subject_id,
-            days=30,
+        task = await _chapter_task_for_subject(
+            db, user_id, subject, knowledge_diagnosis_service
         )
-        recommendation = diagnosis.get("primary_recommendation") if diagnosis else None
-        if not isinstance(recommendation, dict):
-            continue
-        kp_id = int(recommendation.get("knowledge_point_id") or 0)
-        if kp_id <= 0:
-            continue
-        count = min(
-            SMART_TASK_COUNT,
-            max(
-                3,
-                int(
-                    recommendation.get("trainable_knowledge_points") or SMART_TASK_COUNT
-                ),
-            ),
-        )
-        return {
-            "key": f"chapter:{subject_id}:{kp_id}",
-            "task_type": "knowledge_chapter",
-            "priority": 0,
-            "title": str(recommendation.get("title") or "进行章节专项"),
-            "reason": str(
-                recommendation.get("reason")
-                or "根据当前知识覆盖和掌握状态安排章节练习。"
-            ),
-            "action_label": str(recommendation.get("action_label") or "开始章节专项"),
-            "route": "practice",
-            "route_params": _practice_params(
-                subject_id=subject_id,
-                mode="random",
-                count=count,
-                knowledge_point_id=kp_id,
-                include_descendants=True,
-                allow_repeat=True,
-            ),
-            "estimated_question_count": count,
-            "estimated_minutes": _minutes_for_questions(count),
-            "subject_id": subject_id,
-            "subject_code": str(
-                diagnosis.get("subject_code") or subject.get("subject_code") or ""
-            ),
-            "subject_name": str(
-                diagnosis.get("subject_name") or subject.get("subject_name") or ""
-            ),
-            "knowledge_point_id": kp_id,
-            "knowledge_point_name": str(
-                recommendation.get("knowledge_point_name") or ""
-            ),
-        }
+        if task is not None:
+            return task
     return None
 
 
@@ -365,86 +403,103 @@ def _attach_plan_token(
     task["route_params"] = params
 
 
-async def _pick_weak_point(
-    db: AsyncSession,
-    user_id: int,
-    core_subject_ids: list[int],
-) -> dict | None:
-    """Pick a real, trainable weak point with a deterministic ranking.
+def _weak_point_columns(available_count) -> tuple:
+    """Projection of the weak-point aggregate, in the original render order."""
+    return (
+        UserKnowledgeState.knowledge_point_id,
+        KnowledgePoint.name,
+        UserKnowledgeState.subject_id,
+        Subject.code,
+        Subject.name,
+        UserKnowledgeState.mastery_score,
+        UserKnowledgeState.confidence,
+        UserKnowledgeState.attempt_count,
+        UserKnowledgeState.wrong_count,
+        UserKnowledgeState.recent_wrong_count,
+        available_count.label("available_question_count"),
+    )
 
-    A low mastery row is not enough: the current question bank must still contain
-    at least three approved, answerable questions whose mutable row and issued
-    revision agree on the same canonical 408 subject.
-    """
+
+def _weak_point_joins() -> tuple:
+    """Join target and predicate pairs; the join order is part of the contract."""
+    return (
+        (
+            KnowledgePoint,
+            KnowledgePoint.id == UserKnowledgeState.knowledge_point_id,
+        ),
+        (Subject, Subject.id == UserKnowledgeState.subject_id),
+        (
+            QuestionKnowledgePoint,
+            QuestionKnowledgePoint.knowledge_point_id
+            == UserKnowledgeState.knowledge_point_id,
+        ),
+        (Question, Question.id == QuestionKnowledgePoint.question_id),
+        (QuestionVersion, QuestionVersion.id == Question.current_version_id),
+    )
+
+
+def _weak_point_filters(user_id: int, core_subject_ids: list[int]) -> tuple:
+    """Approved and answerable rows whose question agrees with the 408 subject."""
+    return (
+        UserKnowledgeState.user_id == user_id,
+        UserKnowledgeState.subject_id.in_(core_subject_ids),
+        UserKnowledgeState.attempt_count >= 2,
+        UserKnowledgeState.mastery_score < 70,
+        KnowledgePoint.is_active.is_(True),
+        KnowledgePoint.subject_id == UserKnowledgeState.subject_id,
+        Question.subject_id == UserKnowledgeState.subject_id,
+        Question.is_active.is_(True),
+        Question.review_status == "approved",
+        QuestionVersion.question_id == Question.id,
+        QuestionVersion.subject_id == Question.subject_id,
+        QuestionVersion.question_type == Question.question_type,
+        QuestionVersion.question_type.in_(_ANSWERABLE_TYPES),
+        QuestionVersion.is_active.is_(True),
+    )
+
+
+def _weak_point_group_by() -> tuple:
+    return (
+        UserKnowledgeState.knowledge_point_id,
+        KnowledgePoint.name,
+        UserKnowledgeState.subject_id,
+        Subject.code,
+        Subject.name,
+        UserKnowledgeState.mastery_score,
+        UserKnowledgeState.confidence,
+        UserKnowledgeState.attempt_count,
+        UserKnowledgeState.wrong_count,
+        UserKnowledgeState.recent_wrong_count,
+    )
+
+
+def _weak_point_order_by() -> tuple:
+    """Recent wrong answers first, then mastery asc, wrong count desc, id asc."""
+    return (
+        case((UserKnowledgeState.recent_wrong_count >= 2, 0), else_=1),
+        UserKnowledgeState.recent_wrong_count.desc(),
+        UserKnowledgeState.mastery_score.asc(),
+        UserKnowledgeState.wrong_count.desc(),
+        UserKnowledgeState.knowledge_point_id.asc(),
+    )
+
+
+def _weak_point_statement(user_id: int, core_subject_ids: list[int]):
+    """Assemble the read-only weak-point query; execution stays in the picker."""
     available_count = func.count(func.distinct(Question.id))
-    row = (
-        await db.execute(
-            select(
-                UserKnowledgeState.knowledge_point_id,
-                KnowledgePoint.name,
-                UserKnowledgeState.subject_id,
-                Subject.code,
-                Subject.name,
-                UserKnowledgeState.mastery_score,
-                UserKnowledgeState.confidence,
-                UserKnowledgeState.attempt_count,
-                UserKnowledgeState.wrong_count,
-                UserKnowledgeState.recent_wrong_count,
-                available_count.label("available_question_count"),
-            )
-            .join(
-                KnowledgePoint,
-                KnowledgePoint.id == UserKnowledgeState.knowledge_point_id,
-            )
-            .join(Subject, Subject.id == UserKnowledgeState.subject_id)
-            .join(
-                QuestionKnowledgePoint,
-                QuestionKnowledgePoint.knowledge_point_id
-                == UserKnowledgeState.knowledge_point_id,
-            )
-            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
-            .join(QuestionVersion, QuestionVersion.id == Question.current_version_id)
-            .where(
-                UserKnowledgeState.user_id == user_id,
-                UserKnowledgeState.subject_id.in_(core_subject_ids),
-                UserKnowledgeState.attempt_count >= 2,
-                UserKnowledgeState.mastery_score < 70,
-                KnowledgePoint.is_active.is_(True),
-                KnowledgePoint.subject_id == UserKnowledgeState.subject_id,
-                Question.subject_id == UserKnowledgeState.subject_id,
-                Question.is_active.is_(True),
-                Question.review_status == "approved",
-                QuestionVersion.question_id == Question.id,
-                QuestionVersion.subject_id == Question.subject_id,
-                QuestionVersion.question_type == Question.question_type,
-                QuestionVersion.question_type.in_(_ANSWERABLE_TYPES),
-                QuestionVersion.is_active.is_(True),
-            )
-            .group_by(
-                UserKnowledgeState.knowledge_point_id,
-                KnowledgePoint.name,
-                UserKnowledgeState.subject_id,
-                Subject.code,
-                Subject.name,
-                UserKnowledgeState.mastery_score,
-                UserKnowledgeState.confidence,
-                UserKnowledgeState.attempt_count,
-                UserKnowledgeState.wrong_count,
-                UserKnowledgeState.recent_wrong_count,
-            )
-            .having(available_count >= 3)
-            .order_by(
-                case((UserKnowledgeState.recent_wrong_count >= 2, 0), else_=1),
-                UserKnowledgeState.recent_wrong_count.desc(),
-                UserKnowledgeState.mastery_score.asc(),
-                UserKnowledgeState.wrong_count.desc(),
-                UserKnowledgeState.knowledge_point_id.asc(),
-            )
-            .limit(1)
-        )
-    ).first()
-    if row is None:
-        return None
+    statement = select(*_weak_point_columns(available_count))
+    for entity, onclause in _weak_point_joins():
+        statement = statement.join(entity, onclause)
+    return (
+        statement.where(*_weak_point_filters(user_id, core_subject_ids))
+        .group_by(*_weak_point_group_by())
+        .having(available_count >= 3)
+        .order_by(*_weak_point_order_by())
+        .limit(1)
+    )
+
+
+def _weak_point_payload(row) -> dict:
     return {
         "knowledge_point_id": int(row[0]),
         "knowledge_point_name": str(row[1]),
@@ -458,6 +513,23 @@ async def _pick_weak_point(
         "recent_wrong_count": int(row[9] or 0),
         "available_question_count": int(row[10] or 0),
     }
+
+
+async def _pick_weak_point(
+    db: AsyncSession,
+    user_id: int,
+    core_subject_ids: list[int],
+) -> dict | None:
+    """Pick a real, trainable weak point with a deterministic ranking.
+
+    A low mastery row is not enough: the current question bank must still contain
+    at least three approved, answerable questions whose mutable row and issued
+    revision agree on the same canonical 408 subject.
+    """
+    row = (await db.execute(_weak_point_statement(user_id, core_subject_ids))).first()
+    if row is None:
+        return None
+    return _weak_point_payload(row)
 
 
 async def _pick_hard_questions(
@@ -531,11 +603,10 @@ async def _count_trainable_kp_questions(
     return int(result.scalar_one() or 0)
 
 
-async def _pick_path_prerequisite(
+async def _prerequisite_target_ids(
     db: AsyncSession,
-    user_id: int,
     core_subject_ids: list[int],
-) -> dict | None:
+) -> list[int]:
     target_rows = await db.execute(
         select(KnowledgeEdge.target_knowledge_point_id)
         .where(
@@ -546,7 +617,70 @@ async def _pick_path_prerequisite(
         .distinct()
         .order_by(KnowledgeEdge.target_knowledge_point_id.asc())
     )
-    target_ids = [int(row[0]) for row in target_rows.all()]
+    return [int(row[0]) for row in target_rows.all()]
+
+
+def _rank_blocked_targets(blocked_targets: dict) -> list[tuple]:
+    # 确定性选择：阻塞前置最多的 target 优先；同数时 target id 小者优先。
+    return sorted(
+        ((int(target_id), blockers) for target_id, blockers in blocked_targets.items()),
+        key=lambda item: (-len(item[1] or []), item[0]),
+    )
+
+
+def _rank_prerequisite_blockers(blockers: list) -> list[dict]:
+    return sorted(
+        blockers or [],
+        key=lambda item: (
+            float(item.get("mastery_score", 50.0)),
+            -float(item.get("path_quality", 0.0)),
+            int(item.get("knowledge_point_id") or 0),
+        ),
+    )
+
+
+async def _trainable_prerequisite(
+    db: AsyncSession,
+    prereq: dict,
+    target_id: int,
+    core_subject_ids: list[int],
+) -> dict | None:
+    prereq_subject_id = int(prereq.get("subject_id") or 0)
+    prereq_kp_id = int(prereq.get("knowledge_point_id") or 0)
+    if prereq_subject_id not in core_subject_ids or prereq_kp_id <= 0:
+        return None
+    available_count = await _count_trainable_kp_questions(
+        db,
+        knowledge_point_id=prereq_kp_id,
+        subject_id=prereq_subject_id,
+    )
+    if available_count < 3:
+        return None
+
+    subject = (
+        await db.execute(select(Subject).where(Subject.id == prereq_subject_id))
+    ).scalar_one_or_none()
+    if subject is None:
+        return None
+    return {
+        "target_knowledge_point_id": target_id,
+        "target_knowledge_point_name": str(prereq.get("origin_name") or ""),
+        "knowledge_point_id": prereq_kp_id,
+        "knowledge_point_name": str(prereq.get("name") or ""),
+        "subject_id": prereq_subject_id,
+        "subject_code": str(subject.code),
+        "subject_name": str(subject.name),
+        "mastery_score": round(float(prereq.get("mastery_score") or 0.0), 1),
+        "available_question_count": available_count,
+    }
+
+
+async def _pick_path_prerequisite(
+    db: AsyncSession,
+    user_id: int,
+    core_subject_ids: list[int],
+) -> dict | None:
+    target_ids = await _prerequisite_target_ids(db, core_subject_ids)
     if not target_ids:
         return None
 
@@ -560,49 +694,12 @@ async def _pick_path_prerequisite(
     if not blocked_targets:
         return None
 
-    # 确定性选择：阻塞前置最多的 target 优先；同数时 target id 小者优先。
-    ranked_targets = sorted(
-        ((int(target_id), blockers) for target_id, blockers in blocked_targets.items()),
-        key=lambda item: (-len(item[1] or []), item[0]),
-    )
-    target_id, blockers = ranked_targets[0]
-    blockers = sorted(
-        blockers or [],
-        key=lambda item: (
-            float(item.get("mastery_score", 50.0)),
-            -float(item.get("path_quality", 0.0)),
-            int(item.get("knowledge_point_id") or 0),
-        ),
-    )
-    for prereq in blockers:
-        prereq_subject_id = int(prereq.get("subject_id") or 0)
-        prereq_kp_id = int(prereq.get("knowledge_point_id") or 0)
-        if prereq_subject_id not in core_subject_ids or prereq_kp_id <= 0:
-            continue
-        available_count = await _count_trainable_kp_questions(
-            db,
-            knowledge_point_id=prereq_kp_id,
-            subject_id=prereq_subject_id,
-        )
-        if available_count < 3:
-            continue
-
-        subject = (
-            await db.execute(select(Subject).where(Subject.id == prereq_subject_id))
-        ).scalar_one_or_none()
-        if subject is None:
-            continue
-        return {
-            "target_knowledge_point_id": target_id,
-            "target_knowledge_point_name": str(prereq.get("origin_name") or ""),
-            "knowledge_point_id": prereq_kp_id,
-            "knowledge_point_name": str(prereq.get("name") or ""),
-            "subject_id": prereq_subject_id,
-            "subject_code": str(subject.code),
-            "subject_name": str(subject.name),
-            "mastery_score": round(float(prereq.get("mastery_score") or 0.0), 1),
-            "available_question_count": available_count,
-        }
+    target_id, blockers = _rank_blocked_targets(blocked_targets)[0]
+    ranked_blockers = _rank_prerequisite_blockers(blockers)
+    for prereq in ranked_blockers:
+        payload = await _trainable_prerequisite(db, prereq, target_id, core_subject_ids)
+        if payload is not None:
+            return payload
     return None
 
 

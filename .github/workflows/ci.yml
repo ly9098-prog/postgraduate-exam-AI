@@ -655,6 +655,8 @@ jobs:
             tests/architecture/test_study_overview_boundaries.py \
             tests/test_services/test_study_hub_overview_contract.py \
             tests/architecture/test_study_hub_overview_boundaries.py \
+            tests/test_services/test_study_hub_recommendation_contract.py \
+            tests/architecture/test_study_hub_recommendation_boundaries.py \
             tests/test_services/test_vector_config_service_compatibility.py \
             tests/test_services/test_formula_graph_spec_renderer_compatibility.py \
             tests/test_services/test_formula_graph_batch_state_compatibility.py \
