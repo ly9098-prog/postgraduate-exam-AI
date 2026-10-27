@@ -13,7 +13,7 @@ const PAGES = {
   'subpackages/study/wrong-detail/wrong-detail.js': 1653,
   'subpackages/study/review-today/review-today.js': 901,
   'subpackages/exam/exam-runner/index.js': 762,
-  'subpackages/exam/result/index.js': 527,
+  'subpackages/exam/result/index.js': 302,
   'subpackages/exam/paper-list/index.js': 283,
   'subpackages/exam/history/index.js': 235,
   'subpackages/productivity/pomodoro-stats/index.js': 1291,

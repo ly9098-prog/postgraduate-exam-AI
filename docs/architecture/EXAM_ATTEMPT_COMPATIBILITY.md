@@ -113,3 +113,41 @@ node miniprogram/tests/test-storage-session-cleanup.js
 - 新增 32 项刻画在原版和新版均通过，作者 6,500 组新旧差分一致；相邻考试 60 项、考试版 CODE 197 项、render invariant 43 项、5 个历史 fixture 的 31 项及表格测试通过。门禁复用 Admin 的 TypeScript AST，并以 `vm.Script` 仅编译校验 JavaScript；不依赖 CI 未安装的小程序 node_modules。
 - 八个业务源码合计 36,085→41,875 字节，净增 5,790 字节；按现有打包忽略规则，exam 分包累计 780,351 字节。study 仍为 1,396,402 字节，超出原 1.2 MiB 源码预算；未提高阈值。源码体积与 Node 回归不等于微信工具编译或设备验收。
 - 独立审查补充 750 组结果/引用/异常/日志差分一致，原版与新版 32 项契约均通过。发现的 parity P3 已补有效 URL、选项图像 URL、跨页 guard 告警和 reset 状态对照，四种保留名称/arity 的 mutation 均由行为断言拒绝；最终两份契约与门禁 59 项通过，阻断 mini node_modules 解析仍通过，复审无 P0–P3 余项。
+
+## 12. 考试结果页雷达/指标纯规则拆分（2026-10-28）
+
+- 2026-10-28，`subpackages/exam/result/index.js` 由 526 行收敛到 301 行；`page-budgets.js` 的该页
+  legacy ceiling 由 527 收紧到 302（预算只降不升）。
+- 页面顶部 21 个纯声明（2 个常量 + 19 个函数）迁入新模块
+  `subpackages/exam/utils/exam-result-view.js`（255 行，函数最长 45 行，均满足 300/50 预算）：
+  `RADAR_SIZE`、`RADAR_ANGLES`、`clamp`、`percentNumber`、`compactDuration`、`compactScore`、
+  `normalizeName`、`shortName`、`masteryTag`、`encouragement`、`encouragementTail`、
+  `firstWrongIdByQuestion`、`buildKnowledgeMetrics`、`buildKnowledgeStats`、`sortAndSliceMetrics`、
+  `fillSubjectBreakdown`、`fillOverallAndFallback`、`buildRadar`、`buildScoreRing`、`buildTopItems`、
+  `collectWrongIds`；页面只 require 其中 12 个对外使用项，其余 9 个作为模块内部实现保留。
+- 语义保持：时长 `Math.round` 后再分时/补零、分数整数值去尾零、`percentNumber` 的
+  `<=1` 视为比例、`clamp` 非有限值返回下界、知识点名空白折叠与 `未命名知识点` 兜底、
+  `shortName` 的 `maxLength-1` 截断加省略号、掌握度 85/70 分档、激励文案 90/80/60 分档、
+  尾部文案“错题优先于未作答”、`firstWrongIdByQuestion` 仅接受正数、知识点统计按
+  `status` 计数并保留首个 wrong id、`sortAndSliceMetrics` 的题量→正确率→名称排序与 5 条上限、
+  综合表现与 `能力维度N` 兜底、雷达坐标/边/多边形样式、`buildScoreRing` 的 0/100 边界、
+  `buildTopItems` 的 fallback 过滤与题量/正确率/名称排序、`collectWrongIds` 去重均逐字保留。
+- 页面 `_examResultLoadController()` 的 25 项 capability 端口名称与顺序未变
+  （`tests/test-exam-result-page-wiring.js` 原样通过），只是端口指向迁出的纯函数。
+- 差分刻画：6,797 组调用（含 600 组种子随机的题目/结果形状）对照 HEAD 页面原实现与拆分后
+  模块，返回值、错误与 JSON 形状 0 不一致（`/tmp/exam_result_view_parity.js`、
+  `/tmp/exam-result-view-parity.log`）。
+- 15 项契约（`tests/test-exam-result-view.js`）在 HEAD 原实现重放
+  （`/tmp/exam-result-view-contracts-original.log`）与当前实现上均通过；其中补上
+  `compactDuration(65.6)`、`percentNumber(1)`、同分同名项排序与负数 wrong id 等边界，
+  使 30 个故障变体全部被拒绝（`/tmp/exam-result-view-mutants.log`、报告目录
+  `/tmp/exam-result-view-mutants-2CiSEx`），覆盖时长阈值/取整、分数小数与非有限值、
+  clamp 兜底、比例边界、名称折叠与兜底、截断长度、掌握度分档、激励取值与分档、尾部优先级、
+  wrong id 分支、统计字段与 wrong 守卫、排序键与两种切片上限、兜底标签、雷达圆心/半径、
+  环形边界与半径、Top 过滤/上限/同分排序、wrong id 去重与取值。
+- 定向回归：`tests/test-exam-*.js` 392 passed；`scripts/test-408-ai-teacher.js` 与
+  `scripts/test-408-feature-integration.js` 在 HEAD 树与本批前后失败集合完全一致
+  （预存在失败，非本批回归）。
+- 按当前 `reliability.yml` 的小程序步骤（265 行命令，含新增一项）本机精确重放：退出码 0、
+  0 个 `not ok`、14,258 行输出、22.9 秒；本机重放不等于远端 CI。仍未执行真实微信开发者
+  工具、模拟器或真机验收，也未验证结果页雷达图在真机上的渲染与点击。

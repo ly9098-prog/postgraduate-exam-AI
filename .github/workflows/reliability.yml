@@ -617,6 +617,7 @@ jobs:
           node miniprogram/tests/test-katex-vendor-runtime.js
           node --test miniprogram/tests/test-katex-main-vendor.js
           node --test miniprogram/tests/test-exam-result-page-wiring.js
+          node --test miniprogram/tests/test-exam-result-view.js
           node --test miniprogram/tests/test-exam-paper-list-page-wiring.js
           node --test miniprogram/tests/test-study-result-helper-boundaries.js
           node --test miniprogram/tests/test-practice-result-tips.js
