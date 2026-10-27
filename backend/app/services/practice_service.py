@@ -42,8 +42,8 @@ from app.models.sequential_reservation import SequentialReservation
 from app.models.syllabus import SyllabusKnowledgePoint
 from app.services.knowledge_point_service import (
     kp_any_condition,
-    kp_exact_conditions,
-    kp_id_any_condition,
+    kp_exact_conditions,  # noqa: F401 — historical public import / live selection port
+    kp_id_any_condition,  # noqa: F401 — historical public import / live selection port
     load_question_kps,
 )
 from app.services.practice.aggregated_random import (
@@ -53,6 +53,11 @@ from app.services.practice.aggregated_random import (
 from app.services.practice.aggregated_smart import run_aggregated_smart
 from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+)
+from app.services.practice.basic_selection import (
+    BasicSelectionOptions,
+    bind_random_bucket,
+    run_basic_selection,
 )
 from app.services.practice.batch_token import (
     PRACTICE_BATCH_CLOCK_SKEW_SEC,  # noqa: F401 — historical public import
@@ -157,8 +162,8 @@ from app.services.practice.scored_policy import (
 from app.services.practice.scored_ranking import score_and_rank_candidates
 from app.services.practice.scored_selection import select_scored_candidates
 from app.services.practice.sequential_service import (
-    SEQUENTIAL_MODE,
-    get_sequential_practice_questions,
+    SEQUENTIAL_MODE,  # noqa: F401 — historical public import / live selection port
+    get_sequential_practice_questions,  # noqa: F401 — historical public import / live selection port
     reset_sequential_progress,  # noqa: F401 — re-exported for the practice API
 )
 from app.services.practice.similar_supplement import (
@@ -670,38 +675,17 @@ async def get_aggregated_random_questions(
     再通过 round-robin 确保最终分布均衡。
     """
 
-    async def load_bucket(db, sid, bucket_count):
-        conds = [
-            Question.is_active,
-            Question.subject_id == sid,
-            _practice_revision_scope_condition([sid]),
-        ]
-        if knowledge_points:
-            conds.extend(kp_exact_conditions(knowledge_points))
-        if knowledge_point_ids:
-            kp_id_condition = kp_id_any_condition(knowledge_point_ids)
-            if kp_id_condition is not None:
-                conds.append(kp_id_condition)
-
-        if use_leitner:
-            return await _get_questions_with_leitner(
-                db,
-                user_id,
-                conds,
-                "random",
-                bucket_count,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-            )
-        return await _get_questions_v1_fallback(
-            db,
-            conds,
-            "random",
-            bucket_count,
+    load_bucket = bind_random_bucket(
+        BasicSelectionOptions(
             user_id=user_id,
+            knowledge_points=knowledge_points,
+            knowledge_point_ids=knowledge_point_ids,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
+            namespace=globals(),
         )
+    )
 
     return await run_aggregated_random(
         AggregatedRandomRequest(
@@ -816,59 +800,21 @@ async def get_practice_questions(
         subject_ids: 可选。如果提供，跳过 resolve_subject_ids 的内部扩展，
             直接使用给定的 subject_id 列表。用于 include_children=false 的精确查询。
     """
-    if subject_ids is not None:
-        ids = subject_ids
-    else:
-        ids = await resolve_subject_ids(db, subject_code)
-    subject_cond = Question.subject_id.in_(ids)
-    base_conditions = [
-        Question.is_active,
-        subject_cond,
-        _practice_revision_scope_condition(ids),
-    ]
-
-    if knowledge_points:
-        base_conditions.extend(kp_exact_conditions(knowledge_points))
-    if knowledge_point_ids:
-        kp_id_condition = kp_id_any_condition(knowledge_point_ids)
-        if kp_id_condition is not None:
-            base_conditions.append(kp_id_condition)
-
-    # ── 顺序模式：严格题库进度，不参与 Leitner / no-repeat 调度 ──
-    if mode == SEQUENTIAL_MODE:
-        if len(ids) != 1:
-            raise ValueError("顺序练习仅支持单一具体科目")
-        questions, _progress = await get_sequential_practice_questions(
-            db,
+    return await run_basic_selection(
+        db,
+        subject_code,
+        count=count,
+        mode=mode,
+        subject_ids=subject_ids,
+        options=BasicSelectionOptions(
             user_id=user_id,
-            subject_id=ids[0],
-            subject_ids=ids,
-            count=count,
             knowledge_points=knowledge_points,
-        )
-        return questions
-
-    # ── V2 Leitner 模式 ──
-    if use_leitner:
-        return await _get_questions_with_leitner(
-            db,
-            user_id,
-            base_conditions,
-            mode,
-            count,
+            knowledge_point_ids=knowledge_point_ids,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
-        )
-
-    # ── V1 兼容模式：use_leitner=False ──
-    return await _get_questions_v1_fallback(
-        db,
-        base_conditions,
-        mode,
-        count,
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
+            namespace=globals(),
+        ),
     )
 
 

@@ -374,6 +374,10 @@ jobs:
             tests/practice/test_leitner_service_queries.py \
             tests/practice/test_leitner_layers.py \
             tests/architecture/test_leitner_selection_boundaries.py \
+            tests/practice/test_basic_selection_contract.py \
+            tests/practice/test_random_bucket_selection_contract.py \
+            tests/practice/test_basic_selection_sql_contract.py \
+            tests/architecture/test_basic_selection_boundaries.py \
             tests/practice/test_sequential_reservation_contract.py \
             tests/practice/test_sequential_query_contract.py \
             tests/practice/test_sequential_boundaries.py \

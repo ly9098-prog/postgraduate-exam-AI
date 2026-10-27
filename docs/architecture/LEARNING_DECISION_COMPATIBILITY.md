@@ -105,3 +105,12 @@
 - 层次顺序继续为新题/到期、一天内到期、31 天内按最早作答排序、V1 回退。第二、三层按当前候选列表长度计算缺口；V1 按已选唯一 ID 数计算缺口。候选次序、列表内已有重复项、最终切片和日志沿用原调度器，不在装配模块新增去重或排序。
 - 普通异常与取消原样传播，不隐式启动后续层或回退，不提交、回滚或创建后台任务。新模块不导入 ORM、运行时配置、数据库或原服务，保留单向依赖。
 - `test_leitner_service_contract.py`、`test_leitner_service_queries.py` 与既有 `test_leitner_layers.py` 合计 56 项，在拆分前后均通过；新增 3 项架构检查约束函数/文件预算、服务入口与独立导入。查询测试只编译 SQLite/PostgreSQL SQL，实际任务取消使用本地 asyncio；这些证据不代表真实数据库、Redis、微信或完整 worker 验收。
+
+## 9. 基本选题范围与聚合随机桶（2026-10-27）
+
+- `get_practice_questions` 与 `get_aggregated_random_questions` 保留原签名和默认参数，分别从 73/63 行收敛至 35/42 行。`practice/basic_selection.py` 承担科目条件、知识点过滤和基本模式分派；原 Leitner、V1、顺序预留、聚合器与 round-robin 合并器仍执行各自的职责。
+- 普通选题仅在 `subject_ids is None` 时扩展科目；显式空列表继续原样构造条件。科目条件使用 `IN`，revision 守卫接收原科目列表引用。聚合随机按输入顺序逐科目建立等值条件和独立的 `[sid]` revision 范围，不扩展科目、不折叠重复科目、不把各桶合为一次全局 LIMIT 查询。
+- 两条路径均先构造 active、科目与 revision 条件，再按旧名称、canonical ID 顺序追加过滤；名称继续逐项 AND，canonical ID 继续由既有 helper 规范化并 OR 匹配。ID helper 返回 `None` 时才跳过条件。组装模块不替代最新版本、科目/题型一致性、active 或 `approved` 的原 SQL 守卫。
+- 顺序模式先完成原过滤构造，再校验单一具体科目。它继续只向顺序预留入口传递科目、数量和旧名称过滤，不透传 canonical ID、Leitner 或重复窗口选项；保留原错误消息与触发顺序，不在本批改变已有行为。其余模式把原模式、数量和重复窗口交给原调度入口，候选池可继续超过 API 最终下发数量，不新增 50 题裁剪。
+- 查询、过滤和模式常量继续从服务原命名空间动态读取，保留 resolver 等待期间及桶之间替换回调的行为。聚合器仍绑定原 logger/merge；桶加载器使用聚合器传入的 DB 和桶数量，不误用外层会话或外层数量。候选列表、过滤输入与合并结果保留原引用；异常和取消不触发后续桶、合并或额外回退。
+- `test_basic_selection_contract.py`、`test_random_bucket_selection_contract.py`、`test_basic_selection_sql_contract.py` 合计 234 项在拆分前后均通过；另有 5 项架构检查约束两个入口、共同选项绑定、聚合器所有权、预算与独立导入。真实 revision/知识点 helper 的 SQL 编译和本地 asyncio 取消不代表真实 PostgreSQL、Redis、小程序或生产验收，学习域及阶段 0 其余职责仍未全部收敛。
