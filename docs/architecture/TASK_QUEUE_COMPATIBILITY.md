@@ -2,7 +2,7 @@
 
 核对日期：2026-10-27。对应重构计划阶段 0/3；覆盖 `DurableTaskQueue`、v2 worker/outbox、Redis 键空间及隔离 worker 入口验证，不代表生产 worker 全部业务流程、生产 Redis 故障恢复或备份演练已完成。
 
-本次更新：补充自有独立 Redis 的 SIGKILL/AOF 恢复与真实 `worker_main` 进程测试，记录旧 socket 首次请求可能报错的恢复边界；生产代码和队列协议未改。
+本次更新：修复 v2 心跳在脚本异常或取消后未释放已获取客户端的路径，并分离心跳执行装配。Lua、键空间与 owner/generation fencing 协议未改；第 7、8 节的独立 Redis 恢复与真实 `worker_main` 证据继续保留。
 
 ## 1. 入口与消费者
 
@@ -88,3 +88,13 @@
 - `test_owned_process_isolation.py` 另以真实 SIGSTOP 的 PostgreSQL backend 检查 fast stop 失败后的整组清理，并注入首个 worker 强制等待错误，验证其余 worker 仍被关闭；合成凭据标记不得进入子进程，未标记为自有的进程组必须被拒绝。
 - 2026-10-27 本机 PostgreSQL 15.8、Redis 7.2.5 最终冻结七份测试源码执行：上述两文件合计 5 passed、0 skipped，耗时 664.55 秒；相关生命周期、投影、架构与 Redis 回归另有 320 passed。独立审查修复并关闭旧 claim 采样、adaptive 与 immutable 断言、后代进程清理及环境隔离等缺口；缩短租约的独立诊断探针仅用于竞态正反对照，不计入真实 600 秒验收。
 - 范围限制：使用 `APP_ENV=test` / `local_import`，不是生产配置验证；生产 PostgreSQL/Redis、外部 OCR/AI、备份恢复和多 dispatcher 竞争仍需单独验收。旧 `test_worker_kill.py` 手动操作键的测试不作为本节实际进程信号证据。
+
+## 9. v2 心跳执行与客户端释放
+
+- `heartbeat_v2` 保留签名、身份解析及 Redis 启用检查，委托 `task_queue_v2_heartbeat_execution.py` 执行脚本与结果处理。任务身份在获取客户端前快照；方法、Lua key/前缀和结果回调仍按原时序动态读取。没有新增 Redis 客户端、连接池、后台任务或协议脚本。
+- 修复前，`_load_scripts` 或 `_evalsha_or_reload` 抛出异常或取消时，已获取客户端没有调用 `aclose()`。修复后两条路径都尝试关闭一次，再传播原始异常；未获取客户端时不关闭。正常执行仍先关闭，再转换 Lua 结果及更新指标/本地租约估计。
+- 关闭失败不能替换已有的脚本错误或取消，仅在原异常上附加关闭异常类型，不附加可能含连接信息的错误详情；诊断 note 本身失败也不替换主异常。正常关闭没有主异常时，关闭错误继续直接传播。第二次取消若中断异常清理，保留第一次取消及其类型 note；这里只保证关闭尝试，不把中断的关闭宣称为完成。
+- 客户端为 `None` 继续返回 0 且不计 fencing 拒绝；Lua `None` 继续按 0 处理并记录 owner mismatch。`0/-1` 继续更新拒绝计数，只有成功结果 1 的 `Task` 才更新本地租约估计，Redis TIME 仍为真实租约依据。Redis 连接、超时、ResponseError 及其他异常保持原类型，不包装为 complete/fail 使用的 unavailable 错误。
+- 本地行为基线覆盖 wire 参数、关闭/结果顺序、动态端口、身份快照和异常传播；取消测试使用真实 asyncio Task。修复前保留行为基线 68 项通过，新增清理回归 34 项失败、1 项通过，失败均指向遗漏的关闭路径。该结果不代表生产 Redis、全部 worker handler、真实微信、外部 OCR/AI 或备份恢复验收。
+- 修复后定向 115 项与队列相关 282 项均通过，连接守卫零触发；10 个有效破坏版本全部被拒绝，覆盖漏关/重复关闭、取消遗漏、主异常被覆盖、结果过早写回、空客户端误计 fencing、错误 key 前缀、端口快照、身份重读和清理详情泄漏。
+- 本批另以自有私有 Unix socket Redis 7.2.5 重放 `test_queue_hardening.py`、`test_queue_fencing.py`、`test_queue_integration.py`、`test_worker_sigterm.py`：76 passed、0 skipped，71.63 秒。守卫只允许本实例 socket，数据库、外部网络及真实 `.env` 读取零触发；实例已停止，AOF、日志与所有权证据保留。最后一个文件使用 dispatcher/heartbeat 端口替身，不能计作真实 `worker_main` 全流程或进程信号验收；本轮没有重跑第 7、8 节的 Redis 崩溃恢复与 worker 进程测试。

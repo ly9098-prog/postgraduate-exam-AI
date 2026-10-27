@@ -95,10 +95,11 @@ from app.services.task_queue_v2_completion_contract import (
     v2_complete_unavailable,
 )
 from app.services.task_queue_v2_heartbeat_contract import (
-    apply_v2_heartbeat_result,
+    apply_v2_heartbeat_result,  # noqa: F401 — live heartbeat result port
     resolve_v2_heartbeat_identity,
-    v2_heartbeat_mismatch,
+    v2_heartbeat_mismatch,  # noqa: F401 — live heartbeat result port
 )
+from app.services.task_queue_v2_heartbeat_execution import execute_v2_heartbeat
 from app.services.task_queue_v2_admin_contract import (
     normalize_v2_admin_result,
     should_log_v2_cancel,
@@ -1434,43 +1435,15 @@ class DurableTaskQueue:
         if not self._redis_enabled:
             return 0
 
-        try:
-            client = await self._get_script_client()
-            if client is None:
-                return 0
-            await self._load_scripts(client)
-
-            # Note: Lua uses Redis TIME internally for lease expiry, not client time
-            result = await self._evalsha_or_reload(
-                client,
-                "_lua_heartbeat_v2",
-                4,
-                _v2_p_key(task_type),
-                _V2_HEARTBEAT_PREFIX,
-                _V2_TASK_PREFIX,
-                _V2_FENCING_PREFIX,
-                task_id,
-                str(lease_sec),
-                token,
-            )
-            await client.aclose()
-
-            result = int(result) if result is not None else 0
-            mismatch = v2_heartbeat_mismatch(result)
-            if mismatch is not None:
-                logger.warning(
-                    "v2 Heartbeat %s mismatch: task_id=%s",
-                    mismatch,
-                    task_id,
-                )
-                queue_metrics["owner_fencing_rejected"] += 1
-            else:
-                apply_v2_heartbeat_result(task_or_id, result=result, lease_sec=lease_sec)
-
-            return result
-
-        except (redis_exc.ConnectionError, redis_exc.TimeoutError):
-            raise
+        return await execute_v2_heartbeat(
+            self,
+            task_or_id,
+            task_id=task_id,
+            task_type=task_type,
+            owner_token=token,
+            lease_sec=lease_sec,
+            namespace=globals(),
+        )
 
     async def complete_v2(
         self,
