@@ -386,6 +386,12 @@ jobs:
           node miniprogram/tests/test-study-ui-refinements.js
           node miniprogram/tests/test-practice-reference-ui.js
           node --test \
+            miniprogram/tests/test-question-adapter-options.js \
+            miniprogram/tests/test-question-adapter-answers.js \
+            miniprogram/tests/test-question-adapter-images.js \
+            miniprogram/tests/test-question-adapter-ports.js \
+            miniprogram/tests/test-question-adapter-boundaries.js
+          node --test \
             miniprogram/tests/test-pomodoro-module-boundaries.js \
             miniprogram/tests/test-pomodoro-hide-storage.js \
             miniprogram/tests/test-pomodoro-show-recovery.js \
