@@ -334,6 +334,9 @@ jobs:
             tests/test_services/test_ai_analysis_persistence_database.py \
             tests/architecture/test_ai_analysis_persistence_boundaries.py \
             tests/test_services/test_ai_analysis_preparation.py \
+            tests/test_services/test_ai_analysis_preparation_sequence.py \
+            tests/test_services/test_ai_analysis_orchestration.py \
+            tests/architecture/test_ai_analysis_preparation_boundaries.py \
             tests/test_services/test_ai_analysis_response_contracts.py \
             tests/test_services/test_ai_analysis_result_review.py \
             tests/test_services/test_ai_provider_exception.py \

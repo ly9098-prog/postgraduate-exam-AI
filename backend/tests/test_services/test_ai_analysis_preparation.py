@@ -160,11 +160,12 @@ async def test_cache_hit_returns_cached_projection_with_stable_log():
 
 @pytest.mark.asyncio
 async def test_force_regenerate_skips_cache_without_hit_or_miss_logs():
-    item = harness(force_regenerate=True)
+    cache = MagicMock(side_effect=AssertionError("force must skip cached response"))
+    item = harness(force_regenerate=True, cached_response=cache)
     preparation = await prepare_analysis(item.request)
     assert preparation.force is True
     assert preparation.response is None
-    item.cached_response = MagicMock()
+    cache.assert_not_called()
     item.logger.info.assert_called_once_with(
         "force regenerate error analysis wq_id=%d user_id=%d", 7, 8
     )

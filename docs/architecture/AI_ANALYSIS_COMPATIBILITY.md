@@ -153,3 +153,12 @@ Layer 4 规则（`repair_questions` 内）：
 - `revision_guard.check_analysis_revision_drift` 继续持有 logger 获取、current grounding、版本转换、唯一历史查询和 warning；历史语义比较及完整守卫响应留在同模块的私有 helper。current grounding 在查询前形成，历史字段、当前题型回退及 wrong_answer 在查询返回后读取。两次 grounding signature 仍分别查找函数；历史版本是否存在用 `is not None`。
 - 语义不匹配时先 warning，再调用文案 builder，最后取 UTC 时间；这些回调替换后续端口的行为保留。响应 content 保留原返回对象引用。取消、数据库查询或 builder/signature/logger/clock 错误均传播，不新增 session、事务提交、回滚或异常吞并。
 - 新增故障分类、版本守卫和动态端口契约，并将它们、架构门禁及既有 provider classification/invocation 测试接入静态 CI。门禁约束两模块的函数预算、原签名、依赖与逐函数调用权限，禁止判定/响应 helper 查询、写库或修改调用方对象。合成分类组合、隔离 SQLite 和任务取消证据不等于外部模型、生产数据库、凭据隔离超时或完整 worker 验收。
+
+## 12. 准备阶段与持锁执行职责（2026-10-27）
+
+- `analysis_preparation.prepare_analysis` 保留错题/题目查询、版本守卫和缺图短路；同模块 `_prepare_material_analysis` 承接材料加载、grounding、输入/模型签名、初次缓存决策和准备结果。知识点仍先于 runtime，runtime 先于 grounding，缓存回调和日志之后才读取最终 force 值；传入内容、选项、知识点、视觉源与返回对象保留原引用。
+- `analysis_orchestration._execute_with_lease` 保留锁内缓存和输入的两处提前返回、原 context 的 `answer_grounding` 写入以及 invoke→resolve 顺序；同模块 helper 分别装配锁内缓存复查和输入准备参数。原函数、模块 globals 和异步签名保留，锁内刷新后的签名继续传给 provider 与结果处理。
+- 外层 `execute_locked_analysis` 仍独占 lease 获取与 finally 释放；获取失败或返回 `None` 不进入清理，获取成功后各阶段失败/取消仍清理。finally 按执行到清理时的 request 读取 ID、generating 和 cache，不新增快照、shield、重试、提交或回滚。清理异常覆盖原失败并保留异常上下文的行为也未改变。
+- 两模块分别为 249/162 行，全部函数不超过 50 行。新增准备时序、持锁串联契约及预算/依赖/调用门禁接入静态 CI；原版重放 56 项通过，覆盖 falsey 提前响应、参数/引用、端口晚替换、普通异常、取消和真实任务取消。原 force 测试改为调用前安装缓存失败哨兵，实际证明强制生成不访问缓存。
+- 无回调修改的串联测试在执行前固定参数预期并保存 request 字段引用，防止错误改写 request 后连预期一起漂移；允许的 runtime 替换使用显式预期。门禁拒绝受信调用名的局部重绑定、导入别名及非原 context 写入，并用数据库提交伪装、request.db 覆盖等负对照验证拒绝能力。
+- 结果复核/终态选择的 `review_analysis_result`、`resolve_analysis_outcome` 仍有函数预算债务，未在本批修改。真实外部 AI、多模态、生产 Redis/数据库和完整 worker 验收仍按第 5 节保留。

@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ai.analysis_execution import (
     AnalysisLease,
+    LockedAnalysisInputs,
+    LockedCacheReview,
     begin_analysis_generation,
     finish_analysis_generation,
     prepare_locked_analysis_inputs,
@@ -95,39 +97,12 @@ async def _execute_with_lease(
     request: AnalysisOrchestrationRequest, lease: AnalysisLease
 ) -> dict:
     del lease
-    locked_cache = await review_locked_analysis_cache(
-        request.db,
-        request.wrong_question,
-        request.question,
-        user_id=request.user_id,
-        force=request.effective_force,
-        requires_visual=request.requires_visual,
-        stored_visual_sources=request.stored_visual_sources,
-        knowledge_points=request.knowledge_points,
-        model_signature=request.model_signature,
-        input_signature=request.input_signature_builder,
-        cached_response=request.cached_response,
-        cache_age=request.cache_age,
-        logger=request.logger,
-    )
+    locked_cache = await _review_cache(request)
     input_signature = locked_cache.input_signature
     if locked_cache.response is not None:
         return locked_cache.response
 
-    inputs = await prepare_locked_analysis_inputs(
-        request.wrong_question,
-        request.question,
-        current_answer_grounding=request.answer_grounding,
-        requires_visual=request.requires_visual,
-        runtime=request.runtime,
-        knowledge_points=request.knowledge_points,
-        timeout_sec=request.timeout_sec,
-        logger=request.logger,
-        prepare_visual_inputs=request.prepare_visual_inputs,
-        build_context=request.build_context,
-        build_prompt_grounding=request.build_prompt_grounding,
-        build_expected_answer_check=request.build_expected_answer_check,
-    )
+    inputs = await _prepare_inputs(request)
     if inputs.response is not None:
         return inputs.response
 
@@ -149,4 +124,39 @@ async def _execute_with_lease(
         inputs=inputs,
         invocation=invocation,
         review=review,
+    )
+
+
+async def _review_cache(request: AnalysisOrchestrationRequest) -> LockedCacheReview:
+    return await review_locked_analysis_cache(
+        request.db,
+        request.wrong_question,
+        request.question,
+        user_id=request.user_id,
+        force=request.effective_force,
+        requires_visual=request.requires_visual,
+        stored_visual_sources=request.stored_visual_sources,
+        knowledge_points=request.knowledge_points,
+        model_signature=request.model_signature,
+        input_signature=request.input_signature_builder,
+        cached_response=request.cached_response,
+        cache_age=request.cache_age,
+        logger=request.logger,
+    )
+
+
+async def _prepare_inputs(request: AnalysisOrchestrationRequest) -> LockedAnalysisInputs:
+    return await prepare_locked_analysis_inputs(
+        request.wrong_question,
+        request.question,
+        current_answer_grounding=request.answer_grounding,
+        requires_visual=request.requires_visual,
+        runtime=request.runtime,
+        knowledge_points=request.knowledge_points,
+        timeout_sec=request.timeout_sec,
+        logger=request.logger,
+        prepare_visual_inputs=request.prepare_visual_inputs,
+        build_context=request.build_context,
+        build_prompt_grounding=request.build_prompt_grounding,
+        build_expected_answer_check=request.build_expected_answer_check,
     )

@@ -75,6 +75,18 @@ async def prepare_analysis(
             None,
         )
 
+    return await _prepare_material_analysis(
+        request, wrong_question, question, visual_sources, requires_visual
+    )
+
+
+async def _prepare_material_analysis(
+    request: AnalysisPreparationRequest,
+    wrong_question: Any,
+    question: Any,
+    visual_sources: list,
+    requires_visual: bool,
+) -> AnalysisPreparation:
     knowledge_points, runtime = await _load_materials(request, question)
     grounding = request.build_grounding(
         question_type=getattr(question, "question_type", None),
