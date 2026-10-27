@@ -47,6 +47,23 @@ def _urlsafe_b64decode(text_value: str) -> bytes:
     return base64.urlsafe_b64decode((text_value + padding).encode("ascii"))
 
 
+def _collect_practice_batch_revisions(
+    questions: list, revision_ids: dict[int, int]
+) -> dict[int, int]:
+    revisions: dict[int, int] = {}
+    for question in questions:
+        question_id = int(question.id)
+        if question_id in revisions:
+            raise PracticeBatchTokenError("练习批次包含重复题目")
+        version_id = revision_ids.get(question_id)
+        if not version_id:
+            raise RuntimeError(
+                f"题目 {question.id} 缺少可用 question_version，题目版本数据不完整"
+            )
+        revisions[question_id] = int(version_id)
+    return revisions
+
+
 def create_practice_batch_token(
     *,
     user_id: int,
@@ -67,18 +84,7 @@ def create_practice_batch_token(
     if normalized_mode not in PRACTICE_ALLOWED_MODES:
         raise PracticeBatchTokenError("练习模式无效")
 
-    revisions: dict[int, int] = {}
-    for question in questions:
-        question_id = int(question.id)
-        if question_id in revisions:
-            raise PracticeBatchTokenError("练习批次包含重复题目")
-        version_id = revision_ids.get(question_id)
-        if not version_id:
-            raise RuntimeError(
-                f"题目 {question.id} 缺少可用 question_version，题目版本数据不完整"
-            )
-        revisions[question_id] = int(version_id)
-
+    revisions = _collect_practice_batch_revisions(questions, revision_ids)
     now = int(time.time())
     submission_request_id = str(
         submission_request_id or f"practice_{uuid4().hex}"
@@ -102,6 +108,11 @@ def create_practice_batch_token(
         payload["entry_context"] = entry_context
     if sequential_reservation_request_id:
         payload["seq_reservation_request_id"] = str(sequential_reservation_request_id)
+    token = _encode_practice_batch_payload(payload)
+    return token, revisions, submission_request_id
+
+
+def _encode_practice_batch_payload(payload: dict) -> str:
     body = _urlsafe_b64encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
@@ -110,7 +121,7 @@ def create_practice_batch_token(
             _practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256
         ).digest()
     )
-    return f"{body}.{signature}", revisions, submission_request_id
+    return f"{body}.{signature}"
 
 
 def _decode_practice_batch_token(token: str) -> dict:
@@ -138,18 +149,7 @@ def _decode_practice_batch_token(token: str) -> dict:
     return payload
 
 
-def _validate_practice_batch_token(
-    token: str,
-    *,
-    user_id: int,
-    question_ids: list[int],
-    session_meta: dict,
-    answers: list[dict],
-) -> tuple[dict[int, int], list[int], dict]:
-    payload = _decode_practice_batch_token(token)
-    if int(payload.get("uid") or 0) != int(user_id):
-        raise PracticeBatchTokenError("练习批次不属于当前用户")
-
+def _read_practice_batch_questions(payload: dict) -> tuple[dict[int, int], list[int]]:
     raw_questions = payload.get("questions")
     if (
         not isinstance(raw_questions, list)
@@ -171,13 +171,12 @@ def _validate_practice_batch_token(
             issued_order.append(qid)
     except (TypeError, ValueError) as exc:
         raise PracticeBatchTokenError("练习批次题目列表无效") from exc
+    return revisions, issued_order
 
-    submitted_ids = [int(qid) for qid in question_ids]
-    if len(submitted_ids) != len(issued_order) or set(submitted_ids) != set(
-        issued_order
-    ):
-        raise PracticeBatchTokenError("提交题目与服务器下发批次不一致")
 
+def _validate_practice_batch_identity(
+    payload: dict, session_meta: dict, answers: list[dict]
+) -> None:
     try:
         subject_id = int(session_meta.get("subject_id"))
     except (TypeError, ValueError) as exc:
@@ -200,6 +199,25 @@ def _validate_practice_batch_token(
         if actual_rec_rid != expected_rec_rid:
             raise PracticeBatchTokenError("推荐反馈 request_id 与服务器下发批次不一致")
 
+
+def _validate_practice_batch_token(
+    token: str,
+    *,
+    user_id: int,
+    question_ids: list[int],
+    session_meta: dict,
+    answers: list[dict],
+) -> tuple[dict[int, int], list[int], dict]:
+    payload = _decode_practice_batch_token(token)
+    if int(payload.get("uid") or 0) != int(user_id):
+        raise PracticeBatchTokenError("练习批次不属于当前用户")
+    revisions, issued_order = _read_practice_batch_questions(payload)
+    submitted_ids = [int(qid) for qid in question_ids]
+    if len(submitted_ids) != len(issued_order) or set(submitted_ids) != set(
+        issued_order
+    ):
+        raise PracticeBatchTokenError("提交题目与服务器下发批次不一致")
+    _validate_practice_batch_identity(payload, session_meta, answers)
     issued_at = int(payload.get("iat") or 0)
     started_at = parse_session_datetime(session_meta.get("started_at"))
     finished_at = parse_session_datetime(session_meta.get("finished_at"))

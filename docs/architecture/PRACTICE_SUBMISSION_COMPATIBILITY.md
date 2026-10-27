@@ -175,3 +175,23 @@
   22 条 I001/F401 诊断与拆分前一致，全 app 按既有 ignore 配置检查通过。
 - 上述查询编译与合成端口不代表真实向量 provider、PostgreSQL、微信或生产选题验收；
   学习域及 `practice_service` 其余超预算函数仍待治理。
+
+## 18. 批次 token 签发与验收职责（2026-10-28）
+
+- `batch_token.py` 保留公开入口、异常类型、常量和 HMAC v2 wire format；
+  `_collect_practice_batch_revisions` 负责签发侧题目版本收集，`_encode_practice_batch_payload`
+  负责签名编码，`_read_practice_batch_questions` 负责下发题目列表解析，
+  `_validate_practice_batch_identity` 负责用户之外的提交身份匹配。模块仍不接触数据库、
+  网络、文件 IO 或异步执行。
+- 保留题目 `id` 的两次读取、重复题先于第二次 revision 查找、缺失 revision 的原 RuntimeError、
+  签发顺序、`sort_keys` JSON 字节、动态 UUID/TTL/签名密钥端口，以及提交侧
+  用户 → 题目列表 → 提交集合 → 科目/模式/request_id/推荐反馈 → 时间的校验顺序。
+  50 题上限、5 分钟时钟偏移、异常链和 payload 引用返回均不变。
+- 57 项新增契约在拆分前原实现重放通过；当前契约、既有 token 兼容测试和架构门禁共 86 项通过。
+  14 个有效故障变体全部被拒绝，覆盖重复题、缺失版本、wire key/JSON、上限边界、
+  下发顺序、异常链、用户/request 绑定和时钟偏移。另有 6,000 组新旧差分：
+  签发 2,000 组中 405 组成功、1,595 组匹配原错误；验收 4,000 组中 403 组成功、
+  3,597 组匹配原错误。反向展开四个 helper 后整个模块 AST 与原实现一致。
+- 学习域相关回归 1,159 项通过；按当前 `ci.yml` 的静态架构与非 GPU 步骤本机精确重放，
+  6,802 项通过、0 失败，包含 64 个既有 datetime/OCR 弃用警告。该重放不是远端 CI，
+  也不包含真实 PostgreSQL、Redis、微信或生产提交验收。

@@ -436,6 +436,9 @@ jobs:
             tests/practice/test_batch_submission_preparation.py \
             tests/architecture/test_batch_preparation_boundaries.py \
             tests/test_services/test_practice_batch_token_compatibility.py \
+            tests/practice/test_batch_token_issue_contract.py \
+            tests/practice/test_batch_token_validation_contract.py \
+            tests/architecture/test_practice_batch_token_boundaries.py \
             tests/pipeline/test_extract_stage_source_contract.py \
             tests/pipeline/test_extract_stage_ocr_contract.py \
             tests/pipeline/test_extract_stage_regions_contract.py \
