@@ -101,16 +101,21 @@ from app.services.task_queue_v2_heartbeat_contract import (
 )
 from app.services.task_queue_v2_heartbeat_execution import execute_v2_heartbeat
 from app.services.task_queue_v2_admin_contract import (
-    normalize_v2_admin_result,
-    should_log_v2_cancel,
-    v2_cancel_reason,
-    v2_mark_corrupt_success,
+    normalize_v2_admin_result,  # noqa: F401 — live administrative transition port
+    should_log_v2_cancel,  # noqa: F401 — live administrative transition port
+    v2_cancel_reason,  # noqa: F401 — live administrative transition port
+    v2_mark_corrupt_success,  # noqa: F401 — live administrative transition port
+)
+from app.services.task_queue_v2_admin_execution import (
+    execute_v2_cancel,
+    execute_v2_mark_corrupt,
+    execute_v2_reclaim,
 )
 from app.services.task_queue_v2_reaper_contract import (
     apply_v1_reaper_result,
-    apply_v2_reaper_result,
+    apply_v2_reaper_result,  # noqa: F401 — live administrative transition port
     normalize_v1_reaper_result,
-    normalize_v2_reaper_result,
+    normalize_v2_reaper_result,  # noqa: F401 — live administrative transition port
 )
 from app.services.task_queue_v2_health_contract import (
     v1_oldest_ready_age,
@@ -1619,27 +1624,13 @@ class DurableTaskQueue:
             return False
 
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return False
-            await self._load_scripts(client)
-
-            result = await self._evalsha_or_reload(
-                client,
-                "_lua_mark_corrupt_v2",
-                5,
-                _v2_p_key(task_type),
-                _v2_corrupt_key(task_type),
-                _V2_TASK_PREFIX,
-                _V2_HEARTBEAT_PREFIX,
-                _V2_FENCING_PREFIX,
+            return await execute_v2_mark_corrupt(
+                self,
                 task_id,
+                task_type,
                 error_summary,
-                str(settings.TASK_QUEUE_CORRUPT_MAX),
-                str(_FENCING_TOMBSTONE_TTL),
+                namespace=globals(),
             )
-            await client.aclose()
-            return v2_mark_corrupt_success(result)
 
         except Exception as e:
             logger.warning("v2 Mark corrupt error: %s", e)
@@ -1672,37 +1663,13 @@ class DurableTaskQueue:
             return 0
 
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return 0
-            await self._load_scripts(client)
-
-            result = await self._evalsha_or_reload(
-                client,
-                "_lua_cancel_v2",
-                7,
-                _v2_q_key(task_type),
-                _v2_p_key(task_type),
-                _v2_retry_key(task_type),
-                _v2_dead_key(task_type),
-                _V2_HEARTBEAT_PREFIX,
-                _V2_TASK_PREFIX,
-                _V2_FENCING_PREFIX,
+            return await execute_v2_cancel(
+                self,
                 task_id,
-                v2_cancel_reason(reason),
-                str(_FENCING_TOMBSTONE_TTL),
+                task_type,
+                reason,
+                namespace=globals(),
             )
-            await client.aclose()
-
-            result = normalize_v2_admin_result(result)
-            if should_log_v2_cancel(result):
-                logger.info(
-                    "v2 Cancel (code=%d): task_id=%s type=%s",
-                    result,
-                    task_id,
-                    task_type,
-                )
-            return result
 
         except Exception as e:
             logger.warning("v2 Cancel error: %s", e)
@@ -1714,39 +1681,11 @@ class DurableTaskQueue:
             return 0
 
         try:
-            client = await self._get_script_client()
-            if client is None:
-                return 0
-
-            await self._load_scripts(client)
-            reclaimed = (
-                await self._evalsha_or_reload(
-                    client,
-                    "_lua_reaper_v2",
-                    6,
-                    _v2_p_key(task_type),
-                    _v2_q_key(task_type),
-                    _V2_HEARTBEAT_PREFIX,
-                    _V2_TASK_PREFIX,
-                    _v2_corrupt_key(task_type),
-                    _V2_FENCING_PREFIX,
-                    "100",
-                    str(_get_max_ready(task_type)),
-                    str(settings.TASK_QUEUE_CORRUPT_MAX),
-                    str(_DEAD_HASH_TTL),
-                )
-                or 0
+            return await execute_v2_reclaim(
+                self,
+                task_type,
+                namespace=globals(),
             )
-            reclaimed = normalize_v2_reaper_result(reclaimed)
-            await client.aclose()
-
-            if apply_v2_reaper_result(reclaimed):
-                logger.info(
-                    "v2 Reclaimed %d expired tasks for %s", reclaimed, task_type
-                )
-                queue_metrics["reaper_reclaimed"] += reclaimed
-
-            return reclaimed
 
         except Exception as e:
             logger.warning("v2 Reclaim failed for %s: %s", task_type, e)

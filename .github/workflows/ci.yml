@@ -585,6 +585,10 @@ jobs:
             tests/test_services/test_task_queue_v2_heartbeat_cleanup.py \
             tests/architecture/test_task_queue_v2_heartbeat_execution.py \
             tests/test_services/test_task_queue_v2_admin_contract.py \
+            tests/test_services/test_task_queue_v2_admin_execution.py \
+            tests/test_services/test_task_queue_v2_admin_ports.py \
+            tests/test_services/test_task_queue_v2_admin_cleanup.py \
+            tests/architecture/test_task_queue_v2_admin_execution.py \
             tests/test_services/test_task_queue_v2_reaper_contract.py \
             tests/test_services/test_task_queue_v2_health_contract.py \
             tests/test_services/test_task_queue_v2_diagnostics_contract.py \

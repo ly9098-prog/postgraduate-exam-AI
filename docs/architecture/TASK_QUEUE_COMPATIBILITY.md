@@ -2,7 +2,7 @@
 
 核对日期：2026-10-27。对应重构计划阶段 0/3；覆盖 `DurableTaskQueue`、v2 worker/outbox、Redis 键空间及隔离 worker 入口验证，不代表生产 worker 全部业务流程、生产 Redis 故障恢复或备份演练已完成。
 
-本次更新：修复 v2 心跳在脚本异常或取消后未释放已获取客户端的路径，并分离心跳执行装配。Lua、键空间与 owner/generation fencing 协议未改；第 7、8 节的独立 Redis 恢复与真实 `worker_main` 证据继续保留。
+本次更新：修复 v2 心跳以及标记损坏、取消、过期回收在异常或取消后未释放已获取客户端的路径，并分离对应执行装配。Lua、键空间与 owner/generation fencing 协议未改；第 7、8 节的独立 Redis 恢复与真实 `worker_main` 证据继续保留。
 
 ## 1. 入口与消费者
 
@@ -98,3 +98,12 @@
 - 本地行为基线覆盖 wire 参数、关闭/结果顺序、动态端口、身份快照和异常传播；取消测试使用真实 asyncio Task。修复前保留行为基线 68 项通过，新增清理回归 34 项失败、1 项通过，失败均指向遗漏的关闭路径。该结果不代表生产 Redis、全部 worker handler、真实微信、外部 OCR/AI 或备份恢复验收。
 - 修复后定向 115 项与队列相关 282 项均通过，连接守卫零触发；10 个有效破坏版本全部被拒绝，覆盖漏关/重复关闭、取消遗漏、主异常被覆盖、结果过早写回、空客户端误计 fencing、错误 key 前缀、端口快照、身份重读和清理详情泄漏。
 - 本批另以自有私有 Unix socket Redis 7.2.5 重放 `test_queue_hardening.py`、`test_queue_fencing.py`、`test_queue_integration.py`、`test_worker_sigterm.py`：76 passed、0 skipped，71.63 秒。守卫只允许本实例 socket，数据库、外部网络及真实 `.env` 读取零触发；实例已停止，AOF、日志与所有权证据保留。最后一个文件使用 dispatcher/heartbeat 端口替身，不能计作真实 `worker_main` 全流程或进程信号验收；本轮没有重跑第 7、8 节的 Redis 崩溃恢复与 worker 进程测试。
+
+## 10. v2 管理转换与过期回收的客户端释放
+
+- `mark_corrupt_v2`、`cancel_v2`、`_reclaim_expired_v2` 继续检查 Redis 是否启用，并保留普通异常的原 warning 和 `False/0` 返回；取消仍向调用方传播。临时客户端执行装配移入 `task_queue_v2_admin_execution.py`，不改变 Lua、键、ARGV、容量、tombstone TTL 或取消状态码。认领路径使用持久客户端，不纳入本批逐次释放。
+- 三条路径在脚本装载或执行失败后均尝试关闭已获取客户端一次；取消原因构造与回收结果转换在关闭前失败时也执行清理。未取得客户端时不关闭，成功后不重复关闭。二次取消可能中断关闭，因此“关闭尝试”不能冒充“关闭完成”。
+- 清理错误只附加异常类型，不把原错误替换为清理错误，也不输出清理详情；诊断 note 损坏仍保留主错误。普通主错误继续由服务原 handler 记录并返回 `False/0`，主取消则继续传播。正常关闭失败没有主错误时仍按原 handler 处理，正常关闭期间的取消继续传播。
+- 转换顺序保持：标记损坏与取消在关闭后解释结果；回收在关闭前按原 `raw or 0` 规则并转换整数，关闭后才检查正数、记录日志及累加 `reaper_reclaimed`。日志失败时不新增计数。mark-corrupt 保留 bool 结果和不截断摘要；cancel 原因仍经原 helper 裁剪至 200 字符，正状态码才输出成功日志。
+- 服务方法、配置、键函数、结果/日志/指标端口按原等待边界动态读取，不捕获副本。125 项兼容行为在原实现与新实现均通过；新增清理回归在原实现为 66 failed、3 passed，修复后全部通过。定向行为/架构/协议合计 208 passed，队列相关合计 484 passed，均无外部连接尝试；11 个有效破坏版本全部被拒绝。
+- 本批重新启动独立私有 Unix socket Redis 7.2.5，重放第 9 节列出的四个集成文件：76 passed、0 skipped，71.17 秒；仅允许本实例 socket 的守卫零触发，实例正常退出且日志/AOF/所有权证据保留。未执行生产操作、Redis 进程崩溃、真实 `worker_main` 全 handler、真实 Admin 浏览器或备份恢复验收。
