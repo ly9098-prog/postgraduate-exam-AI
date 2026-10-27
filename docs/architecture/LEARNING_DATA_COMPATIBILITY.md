@@ -109,3 +109,42 @@
 - overview 保留今日/近期/累计计数与百分数 accuracy；review plan 保留逾期天数、box、错误/正确次数和知识点首条映射；knowledge mastery 保留 summary 计数、mastery 1 位、confidence 2 位四舍五入及固定建议文案；wrong questions 保留 repeated_wrong > not_mastered > needs_review 的状态优先级。
 - Leitner 分布保留固定 0-5 六盒元数据、缺失盒子补零和 tracked 总数；study trend 保留北京时间日期值归一化、请求窗口内缺失日期补零、`wrong_count = total - correct` 及百分数 accuracy。数据库分组查询和自然日窗口仍由 service 持有。
 - 回归入口：`test_study_report_projection.py`、`test_study_report_compatibility.py`、`test_study_report_service.py`、`test_study_report_projection_boundaries.py`。2026-10-25 定向运行 78 项通过；仍不覆盖真实 PostgreSQL、微信页面或生产报告链路。
+
+## 10. 学习报告 overview 查询编排拆分
+
+- 2026-10-28，`study_report_service.get_overview` 从 191 行收敛至 47 行，签名、
+  参数与响应字段不变。查询与计数按职责抽为 8 个模块级 helper：
+  `_practice_counts_query`（50 行）、`_load_practice_counts`（21）、
+  `_review_state_count_query`（10）、`_count_review_states`（33）、
+  `_wrong_state_count_query`（12）、`_count_wrong_states`（15）、
+  `_knowledge_state_count_query`（8）、`_count_knowledge_states`（42）；全部满足
+  50 行预算，模块 625 行。
+- 保持原有查询语义与顺序：practice 单次聚合（today/recent/total）→ due → overdue →
+  wrong_total → repeated_wrong → subject 存在性探测 → weak → unstable → mastered。
+  subject 过滤保持“题目表 join 条件”与“知识点 subject_id 条件”两种原写法；阈值保持
+  `< 40`、`>= 40 && < 85`、`>= 85` 与 confidence `>= 0.3 / >= 0.5`、
+  `next_review_at <= now` / `< now-1d`、`wrong_count > 0` / `>= 3`。subject 不存在时
+  仍返回知识点 0 但保留已算出的错题统计；helper 不做写入，模块保持只读（无
+  commit/flush/add/delete）。
+- 7 项固定契约在拆分前的原实现与拆分后均通过：4 项查询形态/参数契约（SQLite 与
+  PostgreSQL 双 dialect 编译，覆盖过滤列、join、阈值参数与调用顺序）与 3 项真实
+  SQLite 差分（无 subject、subject 过滤、缺失 subject 三条路径的计数结果）。
+  14 个故障变体全部被拒绝，覆盖 today 窗口、practice subject 过滤、today_correct
+  取值、due/overdue 参数互换与 join 移除、repeated 阈值、wrong 基础过滤、weak 阈值与
+  confidence、mastered 阈值、知识点 subject 过滤、subject 探测反转、recent 窗口与
+  调用顺序。
+- AST 校验：三个闭包查询构造器与 practice select 在变量改名归一后与原实现一致，
+  知识点过滤构造（列表初始化 + append 条件）一致，8 次 `db.execute` 顺序一致；服务
+  其余定义不变（`/tmp/study-overview-ast-report.json`）。
+- 4 项架构门禁约束 overview 与 helper 的预算、overview 不再内联 select/聚合/标量读取、
+  subject 探测先于知识点计数的分支形状、阈值仅在 helper 中单点出现、模块无写入调用，
+  并含“阈值泄漏进 overview”“反转 subject 分支”两项反向自检。
+- 定向回归：study report overview/服务/兼容/投影与 stats、pomodoro 统计、学习时间
+  投影门禁合计 242 passed；严格 Ruff/format、compileall、50 行预算与 diff-check 通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 404 个测试文件：
+  6926 passed、0 failed、64 条既有弃用 warning，436.54 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 PostgreSQL、微信页面或生产报告链路；本批不覆盖
+  `study_hub_service`、`adaptive_learning_service` 等学习域其余大函数，也不声称
+  学习域整体完成。

@@ -64,15 +64,14 @@ async def _subject_exists(db: AsyncSession, subject_id: int) -> bool:
 # ── 1. Overview ─────────────────────────────────────────────────────
 
 
-async def get_overview(
-    db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7
-) -> dict:
-    now = utcnow()
-    today_start = _today_utc()
-    recent_start = today_start - timedelta(days=days)
-
-    # -- 答题统计（today / recent / total 一次查询） --
-    pr_q = select(
+def _practice_counts_query(
+    user_id: int,
+    subject_id: int | None,
+    today_start,
+    recent_start,
+):
+    """Build the single practice-record aggregation query."""
+    query = select(
         func.coalesce(
             func.sum(case((PracticeRecord.answered_at >= today_start, 1), else_=0)), 0
         ).label("today_count"),
@@ -113,132 +112,196 @@ async def get_overview(
     ).where(PracticeRecord.user_id == user_id)
 
     if subject_id is not None:
-        pr_q = pr_q.where(PracticeRecord.subject_id == subject_id)
+        query = query.where(PracticeRecord.subject_id == subject_id)
+    return query
 
-    pr_row = (await db.execute(pr_q)).one()
-    today_count = int(pr_row.today_count or 0)
-    today_correct = int(pr_row.today_correct or 0)
-    recent_count = int(pr_row.recent_count or 0)
-    recent_correct = int(pr_row.recent_correct or 0)
-    total_count = int(pr_row.total_count or 0)
-    total_correct = int(pr_row.total_correct or 0)
 
-    # -- 待复习 / 逾期 --
-    overdue_threshold = now - timedelta(days=1)
-
-    def _uqs_count_q(where_extra):
-        """构造 UserQuestionState 计数查询，支持可选 subject 过滤。"""
-        q = select(func.count(UserQuestionState.id)).where(
-            UserQuestionState.user_id == user_id, *where_extra
+async def _load_practice_counts(
+    db: AsyncSession,
+    user_id: int,
+    subject_id: int | None,
+    today_start,
+    recent_start,
+) -> tuple[int, int, int, int, int, int]:
+    """Execute the practice aggregation once and return integer counters."""
+    row = (
+        await db.execute(
+            _practice_counts_query(user_id, subject_id, today_start, recent_start)
         )
-        if subject_id is not None:
-            q = q.join(Question, UserQuestionState.question_id == Question.id).where(
-                Question.subject_id == subject_id
-            )
-        return q
+    ).one()
+    return (
+        int(row.today_count or 0),
+        int(row.today_correct or 0),
+        int(row.recent_count or 0),
+        int(row.recent_correct or 0),
+        int(row.total_count or 0),
+        int(row.total_correct or 0),
+    )
 
+
+def _review_state_count_query(user_id: int, subject_id: int | None, where_extra):
+    """Build a UserQuestionState count query with optional subject filtering."""
+    query = select(func.count(UserQuestionState.id)).where(
+        UserQuestionState.user_id == user_id, *where_extra
+    )
+    if subject_id is not None:
+        query = query.join(
+            Question, UserQuestionState.question_id == Question.id
+        ).where(Question.subject_id == subject_id)
+    return query
+
+
+async def _count_review_states(
+    db: AsyncSession,
+    user_id: int,
+    subject_id: int | None,
+    now,
+    overdue_threshold,
+) -> tuple[int, int]:
+    """Count due and overdue review states in the original query order."""
     due_count = (
         await db.execute(
-            _uqs_count_q(
+            _review_state_count_query(
+                user_id,
+                subject_id,
                 [
                     UserQuestionState.next_review_at <= now,
                     UserQuestionState.next_review_at.isnot(None),
-                ]
+                ],
             )
         )
     ).scalar_one()
-
     overdue_count = (
         await db.execute(
-            _uqs_count_q(
+            _review_state_count_query(
+                user_id,
+                subject_id,
                 [
                     UserQuestionState.next_review_at < overdue_threshold,
                     UserQuestionState.next_review_at.isnot(None),
-                ]
+                ],
             )
         )
     ).scalar_one()
+    return int(due_count), int(overdue_count)
 
-    # -- 错题统计（与知识点无关，始终计算） --
-    def _wq_count_q(where_extra):
-        q = select(func.count(UserQuestionState.id)).where(
-            UserQuestionState.user_id == user_id,
-            UserQuestionState.wrong_count > 0,
-            *where_extra,
-        )
-        if subject_id is not None:
-            q = q.join(Question, UserQuestionState.question_id == Question.id).where(
-                Question.subject_id == subject_id
-            )
-        return q
 
-    wrong_total = (await db.execute(_wq_count_q([]))).scalar_one()
-
-    repeated_wrong = (
-        await db.execute(_wq_count_q([UserQuestionState.wrong_count >= 3]))
-    ).scalar_one()
-
-    # -- 知识点分类 --
-    ks_subject_filter = []
+def _wrong_state_count_query(user_id: int, subject_id: int | None, where_extra):
+    """Build a wrong-question count query with optional subject filtering."""
+    query = select(func.count(UserQuestionState.id)).where(
+        UserQuestionState.user_id == user_id,
+        UserQuestionState.wrong_count > 0,
+        *where_extra,
+    )
     if subject_id is not None:
-        if not await _subject_exists(db, subject_id):
-            # 该 subject_id 不存在，知识点统计返回 0，但错题统计仍有效
-            return build_overview_response(
-                today_count=today_count,
-                today_correct=today_correct,
-                recent_count=recent_count,
-                recent_correct=recent_correct,
-                total_count=total_count,
-                total_correct=total_correct,
-                due_count=int(due_count),
-                overdue_count=int(overdue_count),
-                weak_count=0,
-                unstable_count=0,
-                mastered_count=0,
-                wrong_total=int(wrong_total),
-                repeated_wrong=int(repeated_wrong),
+        query = query.join(
+            Question, UserQuestionState.question_id == Question.id
+        ).where(Question.subject_id == subject_id)
+    return query
+
+
+async def _count_wrong_states(
+    db: AsyncSession, user_id: int, subject_id: int | None
+) -> tuple[int, int]:
+    """Count wrong-question totals and repeated wrong questions."""
+    wrong_total = (
+        await db.execute(_wrong_state_count_query(user_id, subject_id, []))
+    ).scalar_one()
+    repeated_wrong = (
+        await db.execute(
+            _wrong_state_count_query(
+                user_id, subject_id, [UserQuestionState.wrong_count >= 3]
             )
-        ks_subject_filter.append(UserKnowledgeState.subject_id == subject_id)
-
-    def _ks_count_q(where_extra):
-        q = select(func.count(UserKnowledgeState.id)).where(
-            UserKnowledgeState.user_id == user_id, *ks_subject_filter, *where_extra
         )
-        return q
+    ).scalar_one()
+    return int(wrong_total), int(repeated_wrong)
 
+
+def _knowledge_state_count_query(user_id: int, subject_id: int | None, where_extra):
+    """Build a UserKnowledgeState count query with optional subject filtering."""
+    subject_filter = []
+    if subject_id is not None:
+        subject_filter.append(UserKnowledgeState.subject_id == subject_id)
+    return select(func.count(UserKnowledgeState.id)).where(
+        UserKnowledgeState.user_id == user_id, *subject_filter, *where_extra
+    )
+
+
+async def _count_knowledge_states(
+    db: AsyncSession, user_id: int, subject_id: int | None
+) -> tuple[int, int, int]:
+    """Count weak, unstable and mastered knowledge states in query order."""
     weak_count = (
         await db.execute(
-            _ks_count_q(
+            _knowledge_state_count_query(
+                user_id,
+                subject_id,
                 [
                     UserKnowledgeState.mastery_score < 40,
                     UserKnowledgeState.confidence >= 0.3,
-                ]
+                ],
             )
         )
     ).scalar_one()
-
     unstable_count = (
         await db.execute(
-            _ks_count_q(
+            _knowledge_state_count_query(
+                user_id,
+                subject_id,
                 [
                     UserKnowledgeState.mastery_score >= 40,
                     UserKnowledgeState.mastery_score < 85,
                     UserKnowledgeState.confidence >= 0.3,
-                ]
+                ],
             )
         )
     ).scalar_one()
-
     mastered_count = (
         await db.execute(
-            _ks_count_q(
+            _knowledge_state_count_query(
+                user_id,
+                subject_id,
                 [
                     UserKnowledgeState.mastery_score >= 85,
                     UserKnowledgeState.confidence >= 0.5,
-                ]
+                ],
             )
         )
     ).scalar_one()
+    return int(weak_count), int(unstable_count), int(mastered_count)
+
+
+async def get_overview(
+    db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7
+) -> dict:
+    now = utcnow()
+    today_start = _today_utc()
+    recent_start = today_start - timedelta(days=days)
+
+    (
+        today_count,
+        today_correct,
+        recent_count,
+        recent_correct,
+        total_count,
+        total_correct,
+    ) = await _load_practice_counts(db, user_id, subject_id, today_start, recent_start)
+
+    due_count, overdue_count = await _count_review_states(
+        db, user_id, subject_id, now, now - timedelta(days=1)
+    )
+    wrong_total, repeated_wrong = await _count_wrong_states(db, user_id, subject_id)
+
+    weak_count = unstable_count = mastered_count = 0
+    if subject_id is None:
+        weak_count, unstable_count, mastered_count = await _count_knowledge_states(
+            db, user_id, None
+        )
+    elif await _subject_exists(db, subject_id):
+        weak_count, unstable_count, mastered_count = await _count_knowledge_states(
+            db, user_id, subject_id
+        )
+    # 该 subject_id 不存在时知识点统计保持 0，但错题统计仍有效
 
     return build_overview_response(
         today_count=today_count,
@@ -247,13 +310,13 @@ async def get_overview(
         recent_correct=recent_correct,
         total_count=total_count,
         total_correct=total_correct,
-        due_count=int(due_count),
-        overdue_count=int(overdue_count),
-        weak_count=int(weak_count),
-        unstable_count=int(unstable_count),
-        mastered_count=int(mastered_count),
-        wrong_total=int(wrong_total),
-        repeated_wrong=int(repeated_wrong),
+        due_count=due_count,
+        overdue_count=overdue_count,
+        weak_count=weak_count,
+        unstable_count=unstable_count,
+        mastered_count=mastered_count,
+        wrong_total=wrong_total,
+        repeated_wrong=repeated_wrong,
     )
 
 
