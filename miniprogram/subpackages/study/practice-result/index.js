@@ -1,6 +1,3 @@
-const { toPlainInlineMathText } = require('../utils/stem-render');
-const { formatInlineMathText } = require('../utils/math-format');
-const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer');
 const api = require('../../../utils/api');
 const { knowledgePracticeSync } = require('../../../utils/storage');
 const { getChinaDate } = require('../../../utils/china-time');
@@ -17,6 +14,8 @@ const { buildRecoveredResultPayload: _buildRecoveredResultPayload } = require('.
 const { normalizePracticeReturnRoute: _normalizePracticeReturnRoute, safeDecodeJson: _safeDecodeJson } = require('./utils/route-helpers');
 const aiTeacher408 = require('../utils/ai-teacher-408');
 const { safeDecodeURIComponent } = require('../utils/route-params');
+const { formatMathPreviewText, formatAnswerPreview, normalizeReviewStatus, pad2, getQuestionTitle, normalizeKpList } = require('./utils/review-preview-format');
+const { buildReviewAnalysisView } = require('./utils/review-analysis-view');
 const {
   applyPracticePayloadOrchestration,
 } = require('./utils/practice-payload-mapper');
@@ -42,25 +41,7 @@ daily_boost: '',
 badges: []
 };
 function normalizePracticeReturnRoute(value) { return _normalizePracticeReturnRoute(value) }
-function clamp(value, min, max) {
-const n = Number(value);
-if (!Number.isFinite(n)) return min;
-return Math.min(max, Math.max(min, n));
-}
 function normalizePercent(value) { return _normalizePercent(value) }
-function normalizeReviewStatus(source, isCorrectFallback) {
-const raw = String(
-source && (source.status ?? source.answer_status ?? source.answerStatus) || ''
-).trim().toLowerCase();
-if (raw === 'partial' || raw === 'incomplete' || (source && source._local_partial)) return 'partial';
-if (raw === 'skipped' || raw === 'skip' || (source && source._local_skipped)) return 'skipped';
-if (raw === 'correct') return 'correct';
-if (raw === 'wrong' || raw === 'incorrect') return 'wrong';
-return isCorrectFallback ? 'correct' : 'wrong';
-}
-function pad2(n) {
-return String(Math.max(0, Number(n) || 0)).padStart(2, '0');
-}
 function getQuestionListHeightRpx(count) { return _getQuestionListHeightRpx(count) }
 function buildTrendPlot(data) { return _buildTrendPlot(data) }
 function buildErrorDonutGradient(distribution) { return _buildErrorDonutGradient(distribution) }
@@ -112,220 +93,6 @@ return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 function formatDuration(seconds) { return _formatDuration(seconds) }
 function safeDecodeJson(value) { return _safeDecodeJson(value) }
-function formatMathPreviewText(value) {
-if (value === undefined || value === null) return '';
-const source = String(value)
-.replace(/<br\s*\/?>/gi, ' ')
-.replace(/<[^>]+>/g, ' ')
-.replace(/&nbsp;/gi, ' ')
-.replace(/&amp;/gi, '&')
-.replace(/&lt;/gi, '<')
-.replace(/&gt;/gi, '>')
-.replace(/\r?\n/g, ' ')
-.replace(/\s+/g, ' ')
-.trim();
-if (!source) return '';
-const plain = toPlainInlineMathText(source);
-const rendered = plain !== null ? plain : formatInlineMathText(source);
-return String(rendered || source).replace(/\s+/g, ' ').trim();
-}
-function formatAnswerPreview(value) {
-if (typeof value !== 'string') return value;
-const text = value.trim();
-if (!text) return '';
-const parts = text.split(';').map(item => item.trim()).filter(Boolean);
-if (parts.length && parts.every(item => /^(?:[①-⑳]|\d+|[一二三四五六七八九十]+)[:：].+$/.test(item))) {
-return parts.map(item => {
-const match = item.match(/^([^:：;]+)[:：](.+)$/);
-if (!match) return item;
-const slot = match[1].trim();
-const answer = match[2].trim();
-const label = /^[①-⑳]$/.test(slot) ? slot : `第${slot}空`;
-return `${label}：${answer}`;
-}).join('；');
-}
-return formatMathPreviewText(text);
-}
-function looksLikeStructuredReviewAnalysis(value) {
-if (value && typeof value === 'object') return true;
-if (typeof value !== 'string') return false;
-const text = value.trim();
-if (!text) return false;
-if (/^```(?:json|javascript|js)?/i.test(text)) return true;
-if (/^[\[{]/.test(text)) {
-try {
-const parsed = JSON.parse(text);
-if (parsed && typeof parsed === 'object') {
-if (!Array.isArray(parsed)) return true;
-if (parsed.some(item => typeof item === 'string' || (item && typeof item === 'object'))) return true;
-}
-} catch (_) {}
-}
-return /["'](?:mistake_diagnosis|mistakediagnosis|mistakeDiagnosis|error_analysis|diagnosis|knowledge_patch|knowledgePatch|knowledgepatch|knowledge_weakness|review_task|reviewTask|reviewtask|reviewask|suggestion|错因诊断|补漏重点|复练任务|analysis|explanation|solution|answer_analysis|answerAnalysis|解析|题目解析)["']\s*:/i.test(text);
-}
-function containsRawAnalysisJson(value) {
-if (typeof value !== 'string') return false;
-return /(?:["']?(?:mistake_diagnosis|mistakediagnosis|mistakeDiagnosis|error_analysis|knowledge_patch|knowledgePatch|knowledgepatch|knowledge_weakness|review_task|reviewTask|reviewtask|reviewask)["']?\s*:|["'](?:错因诊断|补漏重点|复练任务)["']\s*:)/i.test(value);
-}
-function formatReviewAnalysisText(value) {
-if (value === undefined || value === null) return '';
-const text = String(value).trim();
-if (!text || containsRawAnalysisJson(text)) return '';
-return text
-.split(/\r?\n+/)
-.map(line => formatMathPreviewText(line))
-.filter(Boolean)
-.join('\n')
-.trim();
-}
-function buildReadableReviewParagraphs(value) {
-const text = String(value || '').trim();
-if (!text) return [];
-const explicitParagraphs = text
-.split(/\n+/)
-.map(part => part.trim())
-.filter(Boolean);
-const result = [];
-explicitParagraphs.forEach(part => {
-if (part.length < 72) {
-result.push(part);
-return;
-}
-const sentences = part.match(/[^。！？!?；]+[。！？!?；]?/g) || [part];
-let bucket = '';
-sentences.forEach(sentence => {
-const piece = String(sentence || '').trim();
-if (!piece) return;
-if (bucket && (bucket.length + piece.length > 76)) {
-result.push(bucket);
-bucket = piece;
-} else {
-bucket += piece;
-}
-});
-if (bucket) result.push(bucket);
-});
-return result.length ? result : [text];
-}
-function extractGenericReviewAnalysis(value, depth = 0) {
-if (depth > 4 || value === undefined || value === null) return '';
-let current = value;
-if (typeof current === 'string') {
-let text = current.trim();
-if (!text) return '';
-text = text.replace(/^```(?:json|javascript|js)?\s*/i, '').replace(/\s*```$/, '').trim();
-if (!/^[\[{]/.test(text)) return '';
-try {
-current = JSON.parse(text);
-} catch (_) {
-return '';
-}
-}
-if (Array.isArray(current)) {
-const parts = current
-.map(item => typeof item === 'string'
-? formatReviewAnalysisText(item)
-: extractGenericReviewAnalysis(item, depth + 1))
-.filter(Boolean);
-return parts.join('\n');
-}
-if (!current || typeof current !== 'object') return '';
-const keys = [
-'analysis', 'explanation', 'solution', 'answer_analysis', 'answerAnalysis',
-'解析', '题目解析', 'text', 'content', 'value', 'description'
-];
-for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
-const key = keys[keyIndex];
-const raw = current[key];
-if (raw === undefined || raw === null) continue;
-if (typeof raw === 'string') {
-const direct = formatReviewAnalysisText(raw);
-if (direct) return direct;
-const nested = extractGenericReviewAnalysis(raw, depth + 1);
-if (nested) return nested;
-} else {
-const nested = extractGenericReviewAnalysis(raw, depth + 1);
-if (nested) return nested;
-}
-}
-return '';
-}
-function buildReviewAnalysisView(value) {
-if (value === undefined || value === null || value === '') {
-return { sections: [], formatError: false };
-}
-const normalized = normalizeAiAnalysisPayload(value);
-const structured = looksLikeStructuredReviewAnalysis(value);
-const sections = [];
-const append = (key, title, tone) => {
-const text = formatReviewAnalysisText(normalized && normalized[key]);
-if (text) sections.push({ key, title, tone, text });
-};
-if (hasAiAnalysisContent(normalized)) {
-if (structured) {
-append('mistake_diagnosis', '解析要点', 'primary');
-append('knowledge_patch', '知识补充', 'knowledge');
-append('review_task', '复习建议', 'task');
-} else {
-const plain = formatReviewAnalysisText(normalized.mistake_diagnosis);
-if (plain) sections.push({ key: 'analysis', title: '题目解析', tone: 'primary', text: plain });
-append('knowledge_patch', '知识补充', 'knowledge');
-append('review_task', '复习建议', 'task');
-}
-}
-if (!sections.length && structured) {
-const genericText = extractGenericReviewAnalysis(value);
-if (genericText) {
-sections.push({ key: 'analysis', title: '题目解析', tone: 'primary', text: genericText });
-}
-}
-if (!sections.length && !structured && typeof value === 'string') {
-const plainFallback = formatReviewAnalysisText(value);
-if (plainFallback) {
-sections.push({ key: 'analysis', title: '题目解析', tone: 'primary', text: plainFallback });
-}
-}
-return {
-sections: sections.map(section => ({
-...section,
-paragraphs: buildReadableReviewParagraphs(section.text).map((text, index) => ({
-key: `${section.key || 'section'}-${index}`,
-text
-}))
-})),
-formatError: structured && (sections.length === 0 || !!(normalized && normalized.formatError))
-};
-}
-function getQuestionTitle(question) {
-if (!question) return '';
-const content = question.content || {};
-return formatMathPreviewText(
-content.text ||
-content.stem ||
-question.stem ||
-question.text ||
-question.title ||
-''
-);
-}
-function normalizeKpList(value) {
-if (!value) return [];
-if (Array.isArray(value)) {
-return value
-.map(item => {
-if (typeof item === 'string') return item;
-if (item && typeof item === 'object') {
-return item.name || item.title || item.knowledge_point_name || item.label || '';
-}
-return '';
-})
-.filter(Boolean);
-}
-if (typeof value === 'string') {
-return value.split(/[,，、]/).map(v => v.trim()).filter(Boolean);
-}
-return [];
-}
 function stripLevelPrefix(title, level) { return _stripLevelPrefix(title, level) }
 function growthFromTotalExp(totalExp, streakDays, badges) { return _growthFromTotalExp(totalExp, streakDays, badges) }
 function normalizeGrowthProfile(raw) { return _normalizeGrowthProfile(raw) }

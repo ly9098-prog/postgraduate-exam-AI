@@ -269,3 +269,48 @@
 - 按当前 `reliability.yml` 的小程序步骤（259 行命令）本机精确重放：退出码 0、
   0 个 `not ok`，含新增两项；本机重放不等于远端 CI。仍未执行真实微信开发者工具、
   模拟器或真机验收，也未做真机答案录入/判题对照。
+
+## 22. 练习结果页复习视图纯规则拆分（2026-10-28）
+
+- 2026-10-28，`subpackages/study/practice-result/index.js` 由 1,129 行收敛到 896 行；
+  `scripts/architecture/page-budgets.js` 的该页 legacy ceiling 同步由 1130 收紧到 897（预算只降不升）。
+- 12 个页面级纯函数迁到两个新模块：`utils/review-preview-format.js`（98 行）
+  承接 `normalizeReviewStatus`、`pad2`、`formatMathPreviewText`、`formatAnswerPreview`、
+  `getQuestionTitle`、`normalizeKpList`；`utils/review-analysis-view.js`（171 行）承接
+  `looksLikeStructuredReviewAnalysis`、`containsRawAnalysisJson`、`formatReviewAnalysisText`、
+  `buildReadableReviewParagraphs`、`extractGenericReviewAnalysis`、`buildReviewAnalysisView`。
+  两模块均满足 300 行模块 / 50 行函数预算。
+- 语义保持：预览文本仍先归一化 `<br>/标签/实体/换行`，再按
+  `toPlainInlineMathText` → `formatInlineMathText` 两级渲染；`formatAnswerPreview` 的
+  ①/数字/中文序号槽位判定与 `第N空：` 重写、`normalizeReviewStatus` 的
+  partial/skipped/correct/wrong 优先级与 correctness 回退、`pad2` 的 `Number(n) || 0`
+  负数归零、`getQuestionTitle` 的 `content.text → content.stem → stem → text → title` 顺序、
+  `normalizeKpList` 的 `name/title/knowledge_point_name/label` 顺序与 `[,，、]` 切分全部逐字保留；
+  分析视图保持 72/76 段落阈值、`extractGenericReviewAnalysis` 的 depth>4 上限与 11 个候选键顺序、
+  `buildReviewAnalysisView` 的 structured/plain/generic/fallback 四段分支、section 顺序与 tone、
+  `${key}-${index}` 段落键以及 `formatError` 判定。
+- 页面同时删除已无引用的重复 `clamp`（职责早前已由 `utils/format-helpers.js` 承接，两者 NaN
+  语义不同故未合并），并移除只服务被迁函数的 3 条 `require`。
+- 差分刻画：14,985 组调用（含 1,200 组种子随机的 token 串与嵌套对象）对照 HEAD 页面原实现与
+  拆分后模块，返回值、错误与 JSON 形状 0 不一致（`/tmp/practice_result_view_parity.js`、
+  `/tmp/practice-result-view-parity.log`）。
+- 18 项契约（`tests/test-practice-result-review-preview-format.js` 10 项、
+  `tests/test-practice-result-review-analysis-view.js` 8 项）在 HEAD 原实现重放（
+  `/tmp/practice-result-view-contracts-original.log`）与当前实现上均通过。
+- 26 个故障变体全部被拒绝（`/tmp/practice-result-view-mutants.log`、
+  `/tmp/practice-result-view-mutants-RpiOSD/report.json`），覆盖实体解码、渲染优先级、空位标签、
+  分隔符、圈号上下界、pad2 NaN、标题/知识点顺序、知识点分隔符、status 优先级与 partial 识别、
+  JSON 数组判定、已知键集合、换行 join、段落 72/76 阈值、depth 守卫、键顺序/缺失、tone 与标题文案、
+  `formatError`、段落键、plain 段键与 fallback 守卫。
+- 门禁强化：`scripts/architecture/learning-controller-budgets.js` 新增 `scanModules()`，把原 7 个
+  治理目录从“只检查 `*controller.js`”扩展为检查其中全部 JS 模块（页入口
+  `subpackages/productivity/pomodoro-stats/index.js` 仍由 page-budgets 的 legacy ceiling 管理），
+  当前覆盖 282 个模块 / 1,818 个函数、0 违规；`tests/test-learning-controller-budgets.js`
+  新增 5 项模块扫描用例（合计 26 项）。
+- 定向回归：practice-result 相关 135 passed、practice 相关 423 passed、
+  package-quality/component-paths/code-mode 3 passed。三项预存在失败
+  （`scripts/test-error-diagnosis.js`、`scripts/test-408-ai-teacher.js` 与
+  `scripts/test-pomodoro-practice-stats.js` 的 12 项）在 HEAD 树与本批前后逐项一致，非本批回归。
+- 按当前 `reliability.yml` 的小程序步骤（264 行命令，含新增两项）本机精确重放：退出码 0、
+  0 个 `not ok`、14,158 行输出、23.2 秒；本机重放不等于远端 CI。仍未执行真实微信开发者工具、
+  模拟器或真机验收，也未验证结果页在真机上的排版与交互。

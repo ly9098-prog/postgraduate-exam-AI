@@ -6,7 +6,8 @@ const { spawnSync } = require('node:child_process')
 const { test } = require('node:test')
 
 const {
-  DIRECTORIES, FUNCTION_BUDGET, MODULE_BUDGET, inspectSource, scanControllers,
+  DIRECTORIES, MODULE_DIRECTORIES, PAGE_ENTRIES, FUNCTION_BUDGET, MODULE_BUDGET,
+  inspectSource, scanControllers, scanModules,
 } = require('../scripts/architecture/learning-controller-budgets')
 
 function fixtureRoot(t) {
@@ -161,4 +162,52 @@ test('standalone command reports the actual discovered controller and function c
   const functions = scan.modules.reduce((sum, module) => sum + module.functions.length, 0)
   assert.equal(result.status, 0, result.stderr)
   assert.ok(result.stdout.includes(`${scan.modules.length} controllers, ${functions} functions`))
+})
+
+test('every governed module, not only controllers, stays within budgets', () => {
+  const result = scanModules()
+  assert.deepEqual(result.errors, [])
+  assert.equal(MODULE_DIRECTORIES.length, 7)
+  assert.equal(result.directories.length, MODULE_DIRECTORIES.length)
+  const controllers = scanControllers()
+  assert.ok(result.modules.length > controllers.modules.length)
+  assert.ok(result.modules.every(module => module.lines <= MODULE_BUDGET))
+  assert.ok(result.modules.flatMap(module => module.functions)
+    .every(fn => fn.lines <= FUNCTION_BUDGET))
+})
+
+test('module scan covers non-controller helpers and excludes governed page entries', () => {
+  const modules = scanModules().modules.map(module => module.path)
+  for (const filename of [
+    'subpackages/study/practice-result/utils/format-helpers.js',
+    'subpackages/study/practice-result/utils/review-preview-format.js',
+    'subpackages/study/practice-result/utils/review-analysis-view.js',
+    'subpackages/exam/utils/answer.js',
+    'pages/pomodoro/utils/timer-math.js',
+  ]) assert.ok(modules.includes(filename), filename)
+  assert.ok(PAGE_ENTRIES.every(entry => !modules.includes(entry)))
+})
+
+test('a missing governed module directory fails the module scan as well', t => {
+  assert.equal(scanModules(fixtureRoot(t)).errors.length, MODULE_DIRECTORIES.length)
+})
+
+test('module scan rejects an over-budget helper but accepts the excluded page entry', t => {
+  const root = populatedRoot(t)
+  const helper = `${DIRECTORIES[0]}/helper-module.js`
+  writeFixture(root, helper, 'void 0\n'.repeat(301))
+  assert.ok(scanModules(root).errors.some(error =>
+    error.startsWith(`${helper}:`) && error.includes('module has 301 lines')))
+  const entry = PAGE_ENTRIES[0]
+  writeFixture(root, entry, 'void 0\n'.repeat(400))
+  assert.deepEqual(scanModules(root).errors.filter(error => error.startsWith(entry)), [])
+})
+
+test('standalone command reports the discovered module and function counts', () => {
+  const script = path.resolve(__dirname, '../scripts/architecture/learning-controller-budgets.js')
+  const result = spawnSync(process.execPath, [script], { cwd: os.tmpdir(), encoding: 'utf8' })
+  const scan = scanModules()
+  const functions = scan.modules.reduce((sum, module) => sum + module.functions.length, 0)
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(result.stdout.includes(`${scan.modules.length} modules, ${functions} functions`))
 })

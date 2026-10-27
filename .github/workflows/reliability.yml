@@ -630,6 +630,8 @@ jobs:
           node --test miniprogram/tests/test-practice-result-trend-plot.js
           node --test miniprogram/tests/test-practice-result-recovered-payload.js
           node --test miniprogram/tests/test-practice-result-route-helpers.js
+          node --test miniprogram/tests/test-practice-result-review-preview-format.js
+          node --test miniprogram/tests/test-practice-result-review-analysis-view.js
           node miniprogram/tests/test-code-mode.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
