@@ -328,6 +328,34 @@ exam 785,352 字节/102 文件、主包 772,769 字节/174 文件。源码与媒
 原阈值未调整。源码统计和 Node 契约仍不能证明微信编译体积、开发者工具、模拟器、
 Android/iOS 真机或上传验收；本批没有获得这些新证据。
 
+## 学习结果页 AI 与趋势 helper 职责（2026-10-28）
+
+study 的 `utils/ai-teacher-408.js` 将 52 行的练习题建议结构投影拆为
+`normalizePracticeQuestion`，`normalizeResult` 从 52 行降至 40 行，公开 exports 不变；
+study/exam 两份实现继续保留各自副本。`practice-result/utils/trend-plot-builder.js`
+将趋势线段几何拆为 `buildTrendSegments`，`buildTrendPlot` 从 55 行降至 39 行。
+三个文件均不超过 300 行/50 行函数预算，且无运行时 require/import。
+
+原 36 项固定契约在拆分前通过，覆盖 AI 结果别名、sections 去重、知识点和练习题投影、
+反馈错误身份，以及趋势点位、线段、面积、日期、精度 clamp、getter 读取顺序、
+NaN 保留和异常传播。当前契约加 15 项 300/50、JavaScript 语法、运行时依赖拒绝和
+非执行检查共 51 项通过；`test-exam-ai-teacher-408.js` 现同时执行 study 原版重放与
+exam 契约，趋势测试支持原版重放，helper 门禁接入 reliability。
+
+另有 AI 结果和趋势构建各 5,000 组固定随机输入差分，完整结果一致；1,000 组
+getter/固定异常身份对照也一致。反向展开两个 helper 后，模块 AST 与拆分前逐字等价；
+12 个有效故障变体均被契约拒绝，覆盖别名优先级、截断上限、选项过滤、难度字段优先级、
+动作元数据、文本 trim、日期标签、面积顺序、末点标记、纵轴比例和精度 clamp。
+
+冻结源码和 reliability YAML 后，本机精确重放完整小程序 Node 步骤，
+TAP 合计 1,929 passed、0 failed、0 skipped；另有 CODE 197、渲染不变式 43
+及 5 个 fixture 的 31 项通过。源码统计为 study 1,136,667 字节/196 文件，
+仅比本批前增加 259 字节；exam 789,579 字节/108 文件、主包 772,769 字节/174 文件，
+源码与媒体预算均通过，阈值未调整。该重放仍是本地 Node 结果，不是远端 CI。
+
+本批是 Node 级兼容证据，不代表微信开发者工具编译、模拟器、Android/iOS 真机、
+上传或生产 AI 服务验收；这些环境仍待验证。
+
 ## 刷题与考试题目适配职责（2026-10-28）
 
 study、exam 的 `utils/question-runner-adapter.js` 各从 648 行收敛至 31 行，

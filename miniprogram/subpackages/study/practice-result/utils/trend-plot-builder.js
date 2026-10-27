@@ -7,6 +7,27 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
 }
 
+function buildTrendSegments(points, aspect) {
+  var segments = []
+  for (var index = 0; index < points.length - 1; index += 1) {
+    var from = points[index]
+    var to = points[index + 1]
+    var dxPct = to.leftPct - from.leftPct
+    var dyPct = to.topPct - from.topPct
+    var scaledDy = dyPct * aspect
+    var widthPct = Math.sqrt(dxPct * dxPct + scaledDy * scaledDy)
+    var angleDeg = Math.atan2(scaledDy, dxPct) * 180 / Math.PI
+    segments.push({
+      key: 'segment-' + index,
+      leftPct: from.leftPct,
+      topPct: from.topPct,
+      widthPct: Number(widthPct.toFixed(3)),
+      angleDeg: Number(angleDeg.toFixed(3))
+    })
+  }
+  return segments
+}
+
 /**
  * Build trend plot points, segments, and area polygon from daily accuracy data.
  */
@@ -36,23 +57,7 @@ function buildTrendPlot(data) {
     }
   })
 
-  var segments = []
-  for (var index = 0; index < points.length - 1; index += 1) {
-    var from = points[index]
-    var to = points[index + 1]
-    var dxPct = to.leftPct - from.leftPct
-    var dyPct = to.topPct - from.topPct
-    var scaledDy = dyPct * aspect
-    var widthPct = Math.sqrt(dxPct * dxPct + scaledDy * scaledDy)
-    var angleDeg = Math.atan2(scaledDy, dxPct) * 180 / Math.PI
-    segments.push({
-      key: 'segment-' + index,
-      leftPct: from.leftPct,
-      topPct: from.topPct,
-      widthPct: Number(widthPct.toFixed(3)),
-      angleDeg: Number(angleDeg.toFixed(3))
-    })
-  }
+  var segments = buildTrendSegments(points, aspect)
 
   var areaPolygon = points.length > 1
     ? ['0% 100%'].concat(points.map(function(point) { return point.leftPct + '% ' + point.topPct + '%' }), ['100% 100%'])

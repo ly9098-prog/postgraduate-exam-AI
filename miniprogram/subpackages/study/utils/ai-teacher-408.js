@@ -119,6 +119,22 @@ result.push({ key: `${result.length}-${heading}`, heading, points })
 })
 return result.slice(0, 8)
 }
+function normalizePracticeQuestion(practiceRaw) {
+let practiceQuestion = null
+if (practiceRaw && typeof practiceRaw === 'object') {
+const options = practiceRaw.options && typeof practiceRaw.options === 'object'
+? Object.keys(practiceRaw.options).map(key => ({ key, text: cleanText(practiceRaw.options[key]) })).filter(item => item.text)
+: []
+practiceQuestion = {
+stem: cleanText(practiceRaw.stem),
+options,
+answer: cleanText(practiceRaw.answer),
+analysis: cleanText(practiceRaw.analysis),
+difficultyDelta: Number(practiceRaw.difficulty_delta ?? practiceRaw.difficultyDelta ?? 0) || 0,
+}
+}
+return practiceQuestion
+}
 function normalizeResult(raw) {
 let source = raw
 if (typeof source === 'string') source = tryParseObject(source)
@@ -142,19 +158,7 @@ masteryHint: cleanText(item && (item.mastery_hint || item.masteryHint)),
 })).filter(item => item.name).slice(0, 8)
 : []
 const practiceRaw = source.practice_question || source.practiceQuestion
-let practiceQuestion = null
-if (practiceRaw && typeof practiceRaw === 'object') {
-const options = practiceRaw.options && typeof practiceRaw.options === 'object'
-? Object.keys(practiceRaw.options).map(key => ({ key, text: cleanText(practiceRaw.options[key]) })).filter(item => item.text)
-: []
-practiceQuestion = {
-stem: cleanText(practiceRaw.stem),
-options,
-answer: cleanText(practiceRaw.answer),
-analysis: cleanText(practiceRaw.analysis),
-difficultyDelta: Number(practiceRaw.difficulty_delta ?? practiceRaw.difficultyDelta ?? 0) || 0,
-}
-}
+const practiceQuestion = normalizePracticeQuestion(practiceRaw)
 const action = cleanText(source.action)
 const actionMeta = ACTION_BY_KEY[action] || {}
 return {

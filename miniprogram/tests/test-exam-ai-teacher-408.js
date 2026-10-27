@@ -1,8 +1,14 @@
 const assert = require('node:assert/strict')
-const { test } = require('node:test')
-const teacher = require('../subpackages/exam/utils/ai-teacher-408')
+const { test: nodeTest } = require('node:test')
+const path = require('node:path')
 
-test('exam teacher retains exports and the complete empty result shape and text', () => {
+for (const pkg of ['study', 'exam']) {
+const teacher = require(pkg === 'study' && process.env.STUDY_RESULT_BASELINE
+  ? path.join(process.env.STUDY_RESULT_BASELINE, 'ai-teacher-408.js')
+  : `../subpackages/${pkg}/utils/ai-teacher-408`)
+const test = (name, ...args) => nodeTest(`${pkg}: ${name}`, ...args)
+
+test('teacher retains exports and the complete empty result shape and text', () => {
   assert.deepEqual(Object.keys(teacher), [
     'ACTIONS', 'PRIMARY_ACTIONS', 'MORE_ACTIONS', 'ACTION_BY_KEY',
     'normalizeResult', 'errorMessage', 'submitFeedback',
@@ -175,3 +181,4 @@ test('error text and feedback retain receiver, payload, coercion and rejected er
     questionId: '4', feedbackType: 'like', result: { action: 'core_concept', promptVersion: 'v1' },
   }), error => error === failure)
 })
+}
