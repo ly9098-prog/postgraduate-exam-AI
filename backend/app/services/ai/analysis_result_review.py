@@ -32,6 +32,28 @@ class ReviewedAnalysis:
     ack_failure: VisualAckFailure | None
 
 
+@dataclass(slots=True)
+class _OutcomeArguments:
+    """Keep callback inputs by reference without evaluating review properties."""
+
+    db: AsyncSession
+    wrong_question: Any
+    user_id: int
+    context: dict
+    result: dict
+    image_data_urls: list[str]
+    input_signature: str
+    model_signature: str
+    expected_answer_check: Any
+    effective_force: bool
+    runtime: Any
+    visual_evidence_is_valid: Callable[[str], bool]
+    max_tokens: int
+    logger: Logger
+    grounding_repair: Callable[..., Awaitable[dict]]
+    valid_outcome: Callable[..., Awaitable[dict]]
+
+
 async def review_analysis_result(
     invocation: ProviderInvocationResult,
     *,
@@ -80,6 +102,17 @@ async def review_analysis_result(
         answer_grounding=answer_grounding,
         usage=usage,
     )
+    return _make_review(parsed, parsed_valid, usage, grounding, image_data_urls, evidence_is_valid)
+
+
+def _make_review(
+    parsed: dict,
+    parsed_valid: bool,
+    usage: AnalysisUsage,
+    grounding: GroundingValidation,
+    image_data_urls: list[str],
+    evidence_is_valid: Callable[[str], bool],
+) -> ReviewedAnalysis:
     return ReviewedAnalysis(
         parsed=parsed,
         parsed_valid=parsed_valid,
@@ -114,57 +147,93 @@ async def resolve_analysis_outcome(
     grounding_repair: Callable[..., Awaitable[dict]],
     valid_outcome: Callable[..., Awaitable[dict]],
 ) -> dict:
-    if review.ack_failure is not None:
-        return visual_ack_failure(
-            wrong_question_id=wrong_question.id,
-            result=result,
-            image_data_urls=image_data_urls,
-            usage=review.usage,
-            visual_ack_retried=review.usage.visual_ack_retried,
-            failure=review.ack_failure,
-            logger=logger,
-        )
-    if not review.parsed_valid:
-        response = parse_failed_response(
-            image_data_urls, effective_force=effective_force
-        )
-        logger.info(
-            "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
-            wrong_question.id,
-            effective_force,
-        )
-        return response
-    if not review.grounding.valid:
-        return await grounding_repair(
-            db,
-            wrong_question=wrong_question,
-            user_id=user_id,
-            context=context,
-            result=result,
-            grounding=review.grounding,
-            usage=review.usage,
-            input_signature=input_signature,
-            model_signature=model_signature,
-            expected_answer_check=expected_answer_check,
-            effective_force=effective_force,
-            runtime=runtime,
-            logger=logger,
-        )
-    return await valid_outcome(
-        db,
+    arguments = _OutcomeArguments(
+        db=db,
         wrong_question=wrong_question,
         user_id=user_id,
         context=context,
         result=result,
-        parsed=review.parsed,
-        grounding=review.grounding,
-        usage=review.usage,
+        image_data_urls=image_data_urls,
         input_signature=input_signature,
         model_signature=model_signature,
         expected_answer_check=expected_answer_check,
         effective_force=effective_force,
+        runtime=runtime,
         visual_evidence_is_valid=visual_evidence_is_valid,
         max_tokens=max_tokens,
-        runtime=runtime,
         logger=logger,
+        grounding_repair=grounding_repair,
+        valid_outcome=valid_outcome,
+    )
+    handled, response = _resolve_early_outcome(
+        review, arguments, image_data_urls, visual_ack_failure
+    )
+    if handled:
+        return response
+    return await _resolve_grounded_outcome(review, arguments)
+
+
+def _resolve_early_outcome(
+    review: ReviewedAnalysis,
+    arguments: _OutcomeArguments,
+    image_data_urls: list[str],
+    visual_ack_failure: Callable[..., dict],
+) -> tuple[bool, dict | None]:
+    if review.ack_failure is not None:
+        return True, visual_ack_failure(
+            wrong_question_id=arguments.wrong_question.id,
+            result=arguments.result,
+            image_data_urls=image_data_urls,
+            usage=review.usage,
+            visual_ack_retried=review.usage.visual_ack_retried,
+            failure=review.ack_failure,
+            logger=arguments.logger,
+        )
+    if not review.parsed_valid:
+        response = parse_failed_response(image_data_urls, effective_force=arguments.effective_force)
+        arguments.logger.info(
+            "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
+            arguments.wrong_question.id,
+            arguments.effective_force,
+        )
+        return True, response
+    return False, None
+
+
+async def _resolve_grounded_outcome(review: ReviewedAnalysis, arguments: _OutcomeArguments) -> dict:
+    if not review.grounding.valid:
+        return await arguments.grounding_repair(
+            arguments.db,
+            wrong_question=arguments.wrong_question,
+            user_id=arguments.user_id,
+            context=arguments.context,
+            result=arguments.result,
+            grounding=review.grounding,
+            usage=review.usage,
+            image_data_urls=arguments.image_data_urls,
+            input_signature=arguments.input_signature,
+            model_signature=arguments.model_signature,
+            expected_answer_check=arguments.expected_answer_check,
+            effective_force=arguments.effective_force,
+            runtime=arguments.runtime,
+            logger=arguments.logger,
+        )
+    return await arguments.valid_outcome(
+        arguments.db,
+        wrong_question=arguments.wrong_question,
+        user_id=arguments.user_id,
+        context=arguments.context,
+        result=arguments.result,
+        parsed=review.parsed,
+        grounding=review.grounding,
+        usage=review.usage,
+        image_data_urls=arguments.image_data_urls,
+        input_signature=arguments.input_signature,
+        model_signature=arguments.model_signature,
+        expected_answer_check=arguments.expected_answer_check,
+        effective_force=arguments.effective_force,
+        visual_evidence_is_valid=arguments.visual_evidence_is_valid,
+        max_tokens=arguments.max_tokens,
+        runtime=arguments.runtime,
+        logger=arguments.logger,
     )

@@ -161,4 +161,14 @@ Layer 4 规则（`repair_questions` 内）：
 - 外层 `execute_locked_analysis` 仍独占 lease 获取与 finally 释放；获取失败或返回 `None` 不进入清理，获取成功后各阶段失败/取消仍清理。finally 按执行到清理时的 request 读取 ID、generating 和 cache，不新增快照、shield、重试、提交或回滚。清理异常覆盖原失败并保留异常上下文的行为也未改变。
 - 两模块分别为 249/162 行，全部函数不超过 50 行。新增准备时序、持锁串联契约及预算/依赖/调用门禁接入静态 CI；原版重放 56 项通过，覆盖 falsey 提前响应、参数/引用、端口晚替换、普通异常、取消和真实任务取消。原 force 测试改为调用前安装缓存失败哨兵，实际证明强制生成不访问缓存。
 - 无回调修改的串联测试在执行前固定参数预期并保存 request 字段引用，防止错误改写 request 后连预期一起漂移；允许的 runtime 替换使用显式预期。门禁拒绝受信调用名的局部重绑定、导入别名及非原 context 写入，并用数据库提交伪装、request.db 覆盖等负对照验证拒绝能力。
-- 结果复核/终态选择的 `review_analysis_result`、`resolve_analysis_outcome` 仍有函数预算债务，未在本批修改。真实外部 AI、多模态、生产 Redis/数据库和完整 worker 验收仍按第 5 节保留。
+- 当时结果复核/终态选择的 `review_analysis_result`、`resolve_analysis_outcome` 仍有函数预算债务，后续在第 13 节处理。真实外部 AI、多模态、生产 Redis/数据库和完整 worker 验收仍按第 5 节保留。
+
+## 13. 结果复核、终态选择与视觉参数修复（2026-10-27）
+
+- `analysis_result_review` 的公开异步签名保留；`_make_review` 在视觉复核之后组装结果及 ack 判定，构造器仍先于 ack 回调绑定。解析、初次有效性判断、usage 创建、视觉请求构造与 reconcile 的顺序不变，ack 读取 reconcile 更新后的同一 usage，原 result、parsed、图像与 grounding 引用不复制。
+- `_OutcomeArguments` 是同模块私有 slots 数据对象，仅保存原始参数引用，不读取 review 的属性。同步 early helper 按 ack 非 None → 解析失败处理，并用独立 handled 标志保留 callback 返回 None/空字典的行为；异步 grounded helper 再选择修复或有效结果。属性读取次数、未选分支不读取、callback 先绑定再求值参数、解析失败响应先于日志及异常/取消传播保持原轨迹，不新增重试、回滚或清理。
+- 本批另修复一个既有执行缺陷：原 repair/valid 分支均未向真实 `grounding_repair_outcome` / `valid_analysis_outcome` 转发必需的 `image_data_urls`，会在参数绑定时 TypeError，无法进入保存；文本空列表同样受影响。现两分支传入原列表，恢复真实 outcome、视觉计数和持久化链路。这是明确的行为修复，不能把本批整体称为纯兼容拆分。
+- 新增严格真实回调签名、默认 outcome/persist 执行与隔离 SQLite 回归，包含 0/1/2 图像输入、正常两次提交及第二次提交失败后的持久性。SQLite 验证分析第一次提交仍可读，失败的聊天提交经调用方回滚后不可读；不改变原有两个提交边界。
+- 修改前原实现通过 106 项时序/端口/读取契约；针对缺参的 8 项严格回归在固定原实现失败，错误为缺少 image_data_urls。后续对照参考仅向原两个调用各补这一参数，以隔离参数修复与职责提取。源码为 239 行，全部函数不超过 50 行；新增契约、数据库回归、签名/预算/依赖/原始引用捕获门禁已接入静态 CI。
+- 本地重放完整静态 CI 步骤为 5,130 项通过；此后测试审查加固，最终相关回归 139 项通过，仅补两处参数的原版参考重放 124 项通过。加固包含 parse 的 None/空字典响应、中间回调原始引用以及嵌套定义重绑定负对照；5,130 项结果不代表重新执行了加固后的完整步骤。
+- 上述为本地替身和隔离 SQLite 证据，不代表外部模型、多模态真实输入、生产 PostgreSQL/Redis、完整 worker 或用户端验收；这些仍按第 5 节保留。

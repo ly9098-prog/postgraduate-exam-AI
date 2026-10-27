@@ -148,6 +148,7 @@ async def test_valid_review_dispatches_to_valid_outcome_with_contract_fields():
         "parsed": review.parsed,
         "grounding": review.grounding,
         "usage": review.usage,
+        "image_data_urls": ["data:image/png;base64,x"],
         "input_signature": "input",
         "model_signature": "model",
         "expected_answer_check": ["B"],
