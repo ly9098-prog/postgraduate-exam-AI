@@ -357,3 +357,38 @@ cloud profile 隔离 30 项通过：运行器保留已安装依赖的 PYTHONUSER
 真实 PaddleOCR、外部 OCR/AI、完整 worker 或生产导入验收。
 固定最终源码哈希后，当前 CI YAML static 清单本地完整重放为 5669 项通过、
 无跳过；55 条弃用警告来自 datetime 和兼容 OCR 包装器调用。
+
+## 15. 视觉区域裁剪与原题快照编排（2026-10-27）
+
+- `_run_visual_region_crop` 从 204 行收敛至 16 行，保留原签名、docstring 和返回结构。
+  `pipeline_visual_crop.py` 按题组合区域投影与快照发布；`pipeline_visual_crop_regions.py`
+  负责区域重建、截图/表格合并与风险标记；`pipeline_visual_crop_snapshot.py` 保留快照
+  执行器、上传和普通异常降级。独立 state 只持有本次调用的依赖和输出，不管理数据库。
+- 无页面图片时只复制并累加 `source_snapshot_failed`，返回原 questions 引用与原 warning，
+  不获取 storage。其余路径先获取一次 storage，按 pipeline ID 的 MD5 前 8 位生成虚拟
+  import ID，并固定本次月份；逐题依次投影 segments、发布 snapshot，不并发或重排。
+- 区域 ID 的去重范围仍为单题；有 ID 的无 bbox 区域也占据去重位置，空 ID 不阻止后续
+  裁剪。只有四元素 list/tuple bbox 转成 tuple 后触发裁剪，不新增数值校验。未知区域类型与坐标枚举沿用 UNKNOWN /
+  IMAGE_PIXELS 回退，confidence、alt、option_key 和 requires_review 保留原默认与转换。
+- 原生 table 的 region ID 匹配后，原 table 对象获得 source/fallback image URL；只有
+  没有结构化 table 或任一 table 需要复核时才追加截图。已有同 type/region ID/URL 的图片
+  不重复追加；warning 仍按原输入 ID 和裁剪结果页码生成，不因裁剪器替换区域 ID 改写。
+  segments 列表与 parsed_content 外壳按原方式复制，既有 table 与内层对象保持原引用。
+- snapshot 沿用原页码 key，不把字符串转换为整数。四元 question_bbox 交给 image executor，
+  坐标仍为 cropper 的 IMAGE_PIXELS；否则用 file_io executor 读取整页。PNG 非空才按
+  MD5 前 12 位命名并上传，storage key 仍为 `YYYYMM/snapshots/…`。缺页或空字节保留原
+  静默行为；只有不存在 parsed_content 键时创建含捕获 stem 的字典，不覆盖已有 None/字符串。
+- storage、VisualRegion 构造器及 crop-and-upload 回调在循环前绑定；坐标/区域枚举每个
+  区域重新导入，snapshot 的 executor、crop 函数与坐标来源在原分支内重新导入。快照失败
+  日志继续读取 pipeline 当前 ID，普通错误追加风险标记后继续下一题；区域错误和取消继续
+  传播，已完成的 segments 投影保持，不新增隐式回退、事务、后台任务或工件版本变更。
+- 90 项区域/快照/端口契约在拆分前后均通过，含真实 asyncio Task 的裁剪、读取、上传取消；
+  另有 6 项架构检查约束依赖、预算、入口绑定及独立导入。反向展开 helper 并还原 state 字段
+  后，业务 AST 与原实现一致，原编排器其他函数一致。本地测试不替代真实图片存储服务、
+  外部 OCR/AI、完整 worker、微信或生产导入验收；OCR 其余大函数仍未全部收敛。
+- 10 个故障变体均被契约拦截，覆盖重复裁剪/表格截图、缺失表格回退、丢失 parsed_content
+  扩展字段、覆盖既有 None、快照坐标或 bbox 错误、缺少页面风险标记、warning ID 改写与
+  吞掉取消。未修改的对照版本 90 项通过；变体运行无收集错误，隔离守卫无违规尝试。
+  最终关联裁剪、表格、extract/split/freeze、OCR 适配与依赖门禁合并 1097 项通过、
+  无跳过，40 条警告来自既有 OCR 兼容包装器的弃用提示；隔离守卫未记录网络、数据库连接
+  或真实 `.env` 读取尝试。新增业务模块均满足 300 行/50 行预算与 Python 3.11 语法要求。

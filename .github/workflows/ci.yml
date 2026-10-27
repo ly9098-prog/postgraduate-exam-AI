@@ -453,6 +453,12 @@ jobs:
             tests/test_services/test_ocr_service_fallback.py \
             tests/architecture/test_ocr_failure_adapter_boundaries.py \
             tests/architecture/test_pipeline_scanned_boundaries.py \
+            tests/test_services/test_pipeline_visual_crop_regions.py \
+            tests/test_services/test_pipeline_visual_crop_snapshots.py \
+            tests/test_services/test_pipeline_visual_crop_ports.py \
+            tests/architecture/test_pipeline_visual_crop_boundaries.py \
+            tests/pipeline/test_question_snapshot_pipeline.py \
+            tests/test_services/test_visual_region_cropper_conversion_compatibility.py \
             tests/architecture/test_ir_freeze_binding_boundaries.py \
             tests/pipeline/test_ir_freeze_split_binding.py \
             tests/pipeline/test_ir_freeze_binding_safety.py \
