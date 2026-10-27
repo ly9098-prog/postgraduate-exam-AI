@@ -1174,6 +1174,112 @@ async def run_dispatcher_v2(
         logger.info("v2 Dispatcher stopped")
 
 
+async def _v2_heartbeat_cancel_requested(
+    task: Task, owner_lost: asyncio.Event | None
+) -> bool:
+    """Check the task hash for a cancel request; failures stay non-fatal."""
+    try:
+        task_data = await task_queue.get_task_v2(task.task_id)
+    except Exception:
+        return False  # Cancel check failure is non-fatal for heartbeat
+    if task_data and task_data.get("cancel_requested") == "1":
+        logger.warning(
+            "v2 Cancel requested, stopping: task_id=%s reason=%s",
+            task.task_id,
+            task_data.get("cancel_reason", ""),
+        )
+        if owner_lost is not None:
+            owner_lost.set()
+        return True
+    return False
+
+
+def _abandon_v2_heartbeat(
+    owner_lost: asyncio.Event | None, message: str, *args
+) -> None:
+    """Log a heartbeat failure, count it and mark the owner as lost."""
+    logger.warning(message, *args)
+    queue_metrics["lease_renewal_failure"] += 1
+    if owner_lost is not None:
+        owner_lost.set()
+
+
+async def _retry_v2_heartbeat_once(
+    task: Task,
+    lease_sec: int,
+    interval: int,
+    owner_lost: asyncio.Event | None,
+) -> bool:
+    """Retry the heartbeat once after a transient error; True means recovered."""
+    try:
+        await asyncio.sleep(1)
+        ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
+        if ok == 1:
+            await asyncio.sleep(interval)
+            return True
+    except Exception:
+        pass
+
+    _abandon_v2_heartbeat(
+        owner_lost,
+        "v2 Heartbeat retry failed, owner lost: task_id=%s",
+        task.task_id,
+    )
+    return False
+
+
+async def _v2_heartbeat_tick(
+    task: Task,
+    lease_sec: int,
+    interval: int,
+    owner_lost: asyncio.Event | None,
+) -> bool:
+    """Run one heartbeat cycle; True continues the loop, False stops it."""
+    try:
+        ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
+        if ok == 1:
+            if await _v2_heartbeat_cancel_requested(task, owner_lost):
+                return False
+            await asyncio.sleep(interval)
+            return True
+        _abandon_v2_heartbeat(
+            owner_lost,
+            "v2 Heartbeat rejected (code=%d), owner lost: task_id=%s",
+            ok,
+            task.task_id,
+        )
+        return False
+    except (redis_exc.ConnectionError, redis_exc.TimeoutError) as exc:
+        lease_window_remaining = task.lease_expires_at - time.time()
+        if lease_window_remaining < interval * 2:
+            _abandon_v2_heartbeat(
+                owner_lost,
+                "v2 Heartbeat transient error + short lease window (%.1fs < %ds), "
+                "owner lost: task_id=%s error=%s",
+                lease_window_remaining,
+                interval * 2,
+                task.task_id,
+                exc,
+            )
+            return False
+        logger.warning(
+            "v2 Heartbeat transient error, retrying once: task_id=%s error=%s",
+            task.task_id,
+            exc,
+        )
+        return await _retry_v2_heartbeat_once(task, lease_sec, interval, owner_lost)
+    except asyncio.CancelledError:
+        return False
+    except Exception as exc:
+        _abandon_v2_heartbeat(
+            owner_lost,
+            "v2 Heartbeat unexpected error, owner lost: task_id=%s error=%s",
+            task.task_id,
+            exc,
+        )
+        return False
+
+
 async def _v2_heartbeat_loop_with_lease_window(
     task: Task,
     lease_sec: int,
@@ -1194,87 +1300,7 @@ async def _v2_heartbeat_loop_with_lease_window(
     """
     interval = max(lease_sec // 3, 10)
     while _v2_worker_running:
-        try:
-            ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
-            if ok == 1:
-                # Check for cancel_requested flag on the task hash
-                try:
-                    task_data = await task_queue.get_task_v2(task.task_id)
-                    if task_data and task_data.get("cancel_requested") == "1":
-                        logger.warning(
-                            "v2 Cancel requested, stopping: task_id=%s reason=%s",
-                            task.task_id,
-                            task_data.get("cancel_reason", ""),
-                        )
-                        if owner_lost is not None:
-                            owner_lost.set()
-                        break
-                except Exception:
-                    pass  # Cancel check failure is non-fatal for heartbeat
-                await asyncio.sleep(interval)
-                continue
-
-            # Explicit rejection from Lua — fencing failure
-            logger.warning(
-                "v2 Heartbeat rejected (code=%d), owner lost: task_id=%s",
-                ok,
-                task.task_id,
-            )
-            queue_metrics["lease_renewal_failure"] += 1
-            if owner_lost is not None:
-                owner_lost.set()
-            break
-        except (redis_exc.ConnectionError, redis_exc.TimeoutError) as exc:
-            # Transient error — check lease window before giving up
-            lease_window_remaining = task.lease_expires_at - time.time()
-            if lease_window_remaining < interval * 2:
-                logger.warning(
-                    "v2 Heartbeat transient error + short lease window (%.1fs < %ds), "
-                    "owner lost: task_id=%s error=%s",
-                    lease_window_remaining,
-                    interval * 2,
-                    task.task_id,
-                    exc,
-                )
-                queue_metrics["lease_renewal_failure"] += 1
-                if owner_lost is not None:
-                    owner_lost.set()
-                break
-
-            # Safe window — retry once
-            logger.warning(
-                "v2 Heartbeat transient error, retrying once: task_id=%s error=%s",
-                task.task_id,
-                exc,
-            )
-            try:
-                await asyncio.sleep(1)
-                ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
-                if ok == 1:
-                    await asyncio.sleep(interval)
-                    continue
-            except Exception:
-                pass
-
-            logger.warning(
-                "v2 Heartbeat retry failed, owner lost: task_id=%s",
-                task.task_id,
-            )
-            queue_metrics["lease_renewal_failure"] += 1
-            if owner_lost is not None:
-                owner_lost.set()
-            break
-        except asyncio.CancelledError:
-            break
-        except Exception as exc:
-            logger.warning(
-                "v2 Heartbeat unexpected error, owner lost: task_id=%s error=%s",
-                task.task_id,
-                exc,
-            )
-            queue_metrics["lease_renewal_failure"] += 1
-            if owner_lost is not None:
-                owner_lost.set()
+        if not await _v2_heartbeat_tick(task, lease_sec, interval, owner_lost):
             break
 
 

@@ -306,3 +306,45 @@
   `_v2_heartbeat_loop_with_lease_window` 102、`_enqueue_v2_with_local_fallback` 72、
   `graceful_shutdown_v2` 56；task queue service 的 `retry_from_dead_v2`、`heartbeat`、
   `dequeue_v2`、`enqueue` 等仍在待拆分清单。
+
+## 16. v2 心跳租约窗口拆分
+
+- 2026-10-28，`_v2_heartbeat_loop_with_lease_window` 从 102 行收敛至 22 行，保留签名、
+  docstring 与 `interval = max(lease_sec // 3, 10)`；单轮心跳体抽为
+  `_v2_heartbeat_tick`（50 行），取消读取抽为 `_v2_heartbeat_cancel_requested`（18 行），
+  失败登记抽为 `_abandon_v2_heartbeat`（8 行），瞬时错误重试抽为
+  `_retry_v2_heartbeat_once`（22 行），全部满足 300/50 预算。
+- 语义与顺序保持：成功心跳先读任务 hash 判断 `cancel_requested`（hash 缺失或读取异常
+  均按非致命处理，原因缺省为空串），随后 `sleep(interval)` 继续；显式 Lua 拒绝
+  （`ok != 1`）立即 owner-lost 并累加 `lease_renewal_failure`；瞬时错误
+  （`ConnectionError`/`TimeoutError`）先算 `lease_window_remaining = lease_expires_at -
+  time.time()`，小于 `interval * 2` 直接 owner-lost，否则告警后重试一次
+  （`sleep(1)` + heartbeat），重试成功继续循环，重试被拒或抛错仍 owner-lost；
+  `CancelledError` 静默退出；其他异常按 unexpected 处理并 owner-lost。失败登记固定为
+  `logger.warning` → `queue_metrics["lease_renewal_failure"] += 1` → `owner_lost.set()`，
+  owner_lost 置位后循环停止且不再尝试心跳。
+- 14 项固定契约在拆分前的原实现（AST 提取原循环运行）与拆分后均通过，覆盖成功间隔
+  休眠与取消标记跳过、取消请求、缺失原因默认空串、hash 缺失与读取异常、显式拒绝与
+  指标、短窗口瞬时错误、安全窗口重试成功并继续循环、重试被拒、重试抛错、未预期异常、
+  取消无副作用、无 owner_lost 事件时仍退出。25 个故障变体全部被拒绝（24 个产生失败、
+  `while True` 变体超时判定为拒绝；证据 `/tmp/worker-heartbeat-v2-mutants-uq42szzy`），
+  覆盖取消判定、读取失败处理、失败登记与指标、重试条件/休眠/异常范围、短窗口比较与
+  参数、handler 顺序与类型、租约窗口取值、循环退出条件与间隔公式。
+- 反向展开四个 helper 并按四项已记录归一化（`return True/False` 折回 `continue`/`break`、
+  取消读取 try/except 折成谓词 helper、`return await _retry_v2_heartbeat_once(...)`
+  就地内联、`_abandon_v2_heartbeat` 展开为 warning → 指标 → `owner_lost.set()`）后，
+  与拆分前 AST 一致；worker 其余定义不变（`/tmp/worker-heartbeat-v2-ast-report.json`）。
+- 3 项架构门禁（`tests/architecture/test_worker_heartbeat_v2_boundaries.py`）约束五个函数
+  预算、循环委派与无 try/无指标、取消谓词结构、失败登记顺序、重试结构与单轮 handler
+  顺序，含“去掉失败指标”“把短窗口比较放宽为 `interval`”两项反向自检。
+- 定向回归：心跳/派发/legacy 循环与分派/claimed 边界合计 79 passed；worker claimed/v2、
+  task queue v1/v2 心跳与管理执行批次合计 302 passed。`tests/integration/test_worker_sigterm.py`
+  本机 7 skipped（缺 Redis 等依赖），未执行。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 406 个测试文件：
+  6943 passed、0 failed、64 条既有弃用 warning，441.55 秒；Mocked readiness
+  boundary regression 69 passed；Cloud OCR profile boundary regression 30 passed。
+  这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 Redis 故障恢复、多 dispatcher 竞争或备份恢复。worker 剩余
+  超预算函数为 `_enqueue_v2_with_local_fallback` 72、`graceful_shutdown_v2` 56、
+  v1 `_heartbeat_loop`；task queue service 的 `retry_from_dead_v2`、`heartbeat`、
+  `dequeue_v2`、`enqueue` 等仍在待拆分清单。
