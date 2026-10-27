@@ -4,7 +4,9 @@ const vm = require('node:vm')
 const assert = require('node:assert/strict')
 const { createRequire } = require('node:module')
 
-const filename = path.resolve(__dirname, '../subpackages/exam/utils/stem-render.js')
+const packageName = process.env.STEM_RENDER_PACKAGE || 'exam'
+assert.ok(['study', 'exam'].includes(packageName), 'unknown renderer package')
+const filename = path.resolve(__dirname, `../subpackages/${packageName}/utils/stem-render.js`)
 const nativeRequire = createRequire(filename)
 const exportedNames = [
   'RENDER_MODE', 'buildRenderModel', 'resetRenderGuard', 'setRenderGuardPage',
@@ -15,10 +17,12 @@ const exportedNames = [
 ]
 
 function loadRenderer({ source, config, code, table, image, freeze } = {}) {
-  if (source === undefined && process.env.EXAM_STEM_SOURCE) {
-    source = fs.readFileSync(process.env.EXAM_STEM_SOURCE, 'utf8')
+  const sourcePath = process.env.STEM_RENDER_SOURCE || process.env.EXAM_STEM_SOURCE
+  if (source === undefined && sourcePath) {
+    source = fs.readFileSync(sourcePath, 'utf8')
   }
   const events = []
+  const imports = []
   const appConfig = config || { DEV: false, BASE_URL: 'https://fixture.invalid/api/v1' }
   const modules = new Map()
   const context = vm.createContext({
@@ -37,6 +41,7 @@ function loadRenderer({ source, config, code, table, image, freeze } = {}) {
     modules.set(file, module)
     const localRequire = createRequire(file)
     function dependency(request) {
+      imports.push(request)
       if (request === '../../../config') return appConfig
       if (request === './code-reconstructor' && code) return code
       if (request === './table-structure' && table) return table
@@ -46,13 +51,15 @@ function loadRenderer({ source, config, code, table, image, freeze } = {}) {
           path.basename(target).startsWith('stem-render')) return load(target)
       return localRequire(request)
     }
-    const text = file === filename && source !== undefined ? source : fs.readFileSync(file, 'utf8')
+    const overrideDirectory = process.env.STEM_RENDER_OVERRIDE_DIR
+    const sourceFile = overrideDirectory ? path.join(overrideDirectory, path.basename(file)) : file
+    const text = file === filename && source !== undefined ? source : fs.readFileSync(sourceFile, 'utf8')
     const factory = vm.runInContext(`(function(require,module,exports) {\n${text}\n})`,
       context, { filename: file })
     factory(dependency, module, module.exports)
     return module.exports
   }
-  return { renderer: load(filename), events, context, config: appConfig }
+  return { renderer: load(filename), events, context, config: appConfig, imports }
 }
 
 function plain(value) {

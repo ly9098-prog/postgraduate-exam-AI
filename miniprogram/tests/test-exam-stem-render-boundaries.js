@@ -6,8 +6,35 @@ const { Script } = require('node:vm')
 const { test } = require('node:test')
 const { assertRenderParity } = require('./exam-stem-render-support')
 
-const directory = path.resolve(__dirname, '../subpackages/exam/utils')
 const ts = createRequire(path.resolve(__dirname, '../../admin-frontend/package.json'))('typescript')
+const DEPENDENCIES = {
+  'stem-render': ['stem-render-dependencies', 'stem-render-text', 'stem-render-options',
+    'stem-render-segments', 'stem-render-blocks', 'stem-render-diagnostics', 'stem-render-model'],
+  'stem-render-dependencies': ['../../../config', 'math-format', 'code-reconstructor',
+    'table-structure', 'question-image-cache'],
+  'stem-render-text': ['stem-render-dependencies'],
+  'stem-render-options': ['stem-render-text'],
+  'stem-render-segments': ['stem-render-dependencies', 'stem-render-text', 'stem-render-options'],
+  'stem-render-blocks': ['stem-render-dependencies', 'stem-render-text'],
+  'stem-render-diagnostics': ['stem-render-dependencies', 'stem-render-text'],
+  'stem-render-model': ['stem-render-dependencies', 'stem-render-text', 'stem-render-options',
+    'stem-render-segments', 'stem-render-blocks', 'stem-render-diagnostics'],
+}
+
+function localImports(source, name) {
+  const tree = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const imports = []
+  function walk(node) {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
+        node.expression.text === 'require') {
+      assert.ok(ts.isStringLiteral(node.arguments[0]))
+      imports.push(node.arguments[0].text.replace(/^\.\//, ''))
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(tree)
+  return imports
+}
 
 function inspect(source) {
   const lines = source.split('\n').length - (source.endsWith('\n') ? 1 : 0)
@@ -41,14 +68,36 @@ function inspect(source) {
   return functions
 }
 
-test('all exam stem-render modules obey 300/50 and local package dependencies', () => {
-  const files = fs.readdirSync(directory).filter(name => /^stem-render(?:-.*)?\.js$/.test(name))
-  assert.ok(files.includes('stem-render.js'))
-  assert.ok(files.includes('stem-render-model.js'))
-  const count = files.reduce((sum, name) =>
-    sum + inspect(fs.readFileSync(path.join(directory, name), 'utf8')), 0)
-  assert.ok(count > 50, 'the module scan must not be empty')
-})
+for (const pkg of ['study', 'exam']) {
+  test(`all ${pkg} stem-render modules obey 300/50 and local package dependencies`, () => {
+    const directory = path.resolve(__dirname, `../subpackages/${pkg}/utils`)
+    const files = fs.readdirSync(directory).filter(name => /^stem-render(?:-.*)?\.js$/.test(name))
+    assert.ok(files.includes('stem-render.js'))
+    assert.ok(files.includes('stem-render-model.js'))
+    const count = files.reduce((sum, name) =>
+      sum + inspect(fs.readFileSync(path.join(directory, name), 'utf8')), 0)
+    assert.ok(count > 50, 'the module scan must not be empty')
+  })
+
+  test(`${pkg} renderer has the explicit dependency graph and no local cycle`, () => {
+    const directory = path.resolve(__dirname, `../subpackages/${pkg}/utils`)
+    const files = fs.readdirSync(directory).filter(name => /^stem-render(?:-.*)?\.js$/.test(name))
+    assert.deepEqual(files.sort(), Object.keys(DEPENDENCIES).map(name => name + '.js').sort())
+    const graph = {}
+    for (const name of Object.keys(DEPENDENCIES)) {
+      const source = fs.readFileSync(path.join(directory, name + '.js'), 'utf8')
+      graph[name] = localImports(source, name)
+      assert.deepEqual(graph[name], DEPENDENCIES[name], name)
+    }
+    function visit(name, parents = []) {
+      assert.ok(!parents.includes(name), 'cyclic renderer dependency')
+      for (const dependency of graph[name].filter(name => name in graph)) {
+        visit(dependency, [...parents, name])
+      }
+    }
+    Object.keys(graph).forEach(name => visit(name))
+  })
+}
 
 for (const [name, source] of [
   ['module', 'void 0\n'.repeat(301)],

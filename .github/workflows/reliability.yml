@@ -594,6 +594,10 @@ jobs:
           node --test miniprogram/tests/test-exam-408-teacher-controller.js
           node --test miniprogram/tests/test-exam-ai-teacher-408.js
           node --test miniprogram/tests/test-exam-stem-render-contract.js
+          node --test miniprogram/tests/test-stem-render-dependency-contract.js
+          STEM_RENDER_PACKAGE=study node --test \
+            miniprogram/tests/test-exam-stem-render-contract.js \
+            miniprogram/tests/test-stem-render-dependency-contract.js
           node --test miniprogram/tests/test-exam-stem-render-boundaries.js
           node --test miniprogram/tests/test-exam-code-reconstructor.js
           node --test miniprogram/tests/test-exam-code-reconstructor-boundaries.js
@@ -613,6 +617,7 @@ jobs:
           node --test miniprogram/tests/test-practice-result-trend-plot.js
           node --test miniprogram/tests/test-practice-result-recovered-payload.js
           node --test miniprogram/tests/test-practice-result-route-helpers.js
+          node miniprogram/tests/test-code-mode.js
           node miniprogram/tests/test-render-invariant.js
           node miniprogram/tests/render_regression/run.js
 
