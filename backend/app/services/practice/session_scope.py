@@ -62,6 +62,47 @@ def _legacy_served_ids(context: dict) -> list[int]:
     return _ordered_positive_ids(ids)
 
 
+def _scope_identity(
+    context: dict, fallback_subject_id: int | None
+) -> tuple[int, str, int | None, int | None] | None:
+    root_id = _positive_int(context.get("root_id"))
+    if root_id is None:
+        return None
+
+    practice_mode = str(context.get("practice_mode") or "knowledge_point")
+    if practice_mode not in _SCOPE_TYPES:
+        return None
+
+    subject_id = _positive_int(context.get("subject_id")) or _positive_int(
+        fallback_subject_id
+    )
+    syllabus_version_id = _positive_int(context.get("syllabus_version_id"))
+    return root_id, practice_mode, subject_id, syllabus_version_id
+
+
+def _resolved_scope_ids(context: dict, root_id: int) -> tuple[list[int], int, bool]:
+    resolved_ids = _ordered_positive_ids(context.get("scope_ids"))
+    declared_resolved_count = _positive_int(context.get("scope_count")) or 1
+    resolved_ids_complete = (
+        bool(resolved_ids) and len(resolved_ids) == declared_resolved_count
+    )
+    if resolved_ids and root_id not in resolved_ids:
+        # A server-issued exact scope must always include its root.  Treat a malformed
+        # context as partial rather than inventing membership.
+        resolved_ids_complete = False
+    return resolved_ids, declared_resolved_count, resolved_ids_complete
+
+
+def _served_scope_ids(context: dict) -> tuple[list[int], bool]:
+    served_ids = _ordered_positive_ids(context.get("served_ids"))
+    if not served_ids:
+        served_ids = _legacy_served_ids(context)
+    served_ids_complete = bool(context.get("served_ids") is not None) or bool(
+        served_ids
+    )
+    return served_ids, served_ids_complete
+
+
 def build_practice_session_scope(
     context: dict | None,
     *,
@@ -76,35 +117,14 @@ def build_practice_session_scope(
     if not isinstance(context, dict):
         return None
 
-    root_id = _positive_int(context.get("root_id"))
-    if root_id is None:
+    identity = _scope_identity(context, fallback_subject_id)
+    if identity is None:
         return None
-
-    practice_mode = str(context.get("practice_mode") or "knowledge_point")
-    if practice_mode not in _SCOPE_TYPES:
-        return None
-
-    subject_id = _positive_int(context.get("subject_id")) or _positive_int(
-        fallback_subject_id
+    root_id, practice_mode, subject_id, syllabus_version_id = identity
+    resolved_ids, declared_resolved_count, resolved_ids_complete = _resolved_scope_ids(
+        context, root_id
     )
-    syllabus_version_id = _positive_int(context.get("syllabus_version_id"))
-
-    resolved_ids = _ordered_positive_ids(context.get("scope_ids"))
-    declared_resolved_count = _positive_int(context.get("scope_count")) or 1
-    resolved_ids_complete = (
-        bool(resolved_ids) and len(resolved_ids) == declared_resolved_count
-    )
-    if resolved_ids and root_id not in resolved_ids:
-        # A server-issued exact scope must always include its root.  Treat a malformed
-        # context as partial rather than inventing membership.
-        resolved_ids_complete = False
-
-    served_ids = _ordered_positive_ids(context.get("served_ids"))
-    if not served_ids:
-        served_ids = _legacy_served_ids(context)
-    served_ids_complete = bool(context.get("served_ids") is not None) or bool(
-        served_ids
-    )
+    served_ids, served_ids_complete = _served_scope_ids(context)
 
     if resolved_ids_complete:
         resolved_set = set(resolved_ids)

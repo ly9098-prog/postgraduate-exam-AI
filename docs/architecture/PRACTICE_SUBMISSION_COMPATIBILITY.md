@@ -219,3 +219,27 @@
   两个模块的 AST 与原实现一致；仅 `dataclasses`/`datetime` 导入顺序按 Ruff 规范化。
 - 上述事务顺序和异常契约使用内存 doubles，不代表真实 SQLAlchemy 会话、
   PostgreSQL 并发提交或生产 worker 验收。
+
+## 20. 智能分支、入口装配与会话 scope 职责（2026-10-28）
+
+- `smart_branches.py` 保留两个 dataclass 和 `create_smart_branches`；
+  scored/path 两个闭包由 `_create_scored_branch`、`_create_path_branch` 构造。
+  入口 72→11 行，两个工厂分别为 34/35 行，模块 134 行。scored/path supplement
+  仍在闭包调用时延迟导入，weakness 仍直接委托 `providers.run_weakness(**kwargs)`。
+- `smart_entry.py` 的 `run_smart_entry` 保留 subject scope 解析和
+  `create_smart_branches` 组装，`_run_smart_practice_request` 承接 orchestrator
+  `SmartPracticeRequest` 装配；入口 56→42 行，模块 122 行。provider 字段对象、
+  显式 scope、回调对象身份、logger 和 subject_ids 传递顺序保持不变。
+- `session_scope.py` 将身份门禁、resolved 集合、legacy served 回退分别交给
+  `_scope_identity`、`_resolved_scope_ids`、`_served_scope_ids`。原 66 行入口收敛为
+  45 行，模块 228 行，最长函数 45 行；默认 `knowledge_point`、scope_count 缺省 1、
+  精确 scope 的 root 检查和 served 交集过滤保持原顺序。
+- 新增契约覆盖分支 lazy import、请求对象先构造后 await、logger 动态查找、
+  provider 身份、显式/默认 scope、root 缺失、未知 mode、正整数去重、
+  legacy baseline 回退和 snapshot 字段顺序。18 项在当前实现改动前原版重放通过，
+  当前行为与 9 项模块边界及既有 smart 架构检查共 31 项通过；13 个有效故障变体
+  全部被拒绝。反向展开三个模块的职责 helper 后 AST 与原实现一致；
+  `smart_entry` 仅按 Ruff 重排导入顺序。学习域关联回归 1,179 项通过。
+- 按当前 `ci.yml` 的静态架构与非 GPU 步骤本机精确重放，6,865 项通过、0 失败，
+  包含 64 个既有 datetime/OCR 弃用警告。该结果是本地重放，不是远端 CI，
+  也不包含真实 PostgreSQL、Redis、外部 AI/OCR、微信或生产验收。

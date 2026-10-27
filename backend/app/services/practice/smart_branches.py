@@ -42,9 +42,7 @@ class SmartBranchProviders:
     run_weakness: Callable[..., Awaitable[RecommendationResult]]
 
 
-def create_smart_branches(request: SmartBranchRequest, providers: SmartBranchProviders):
-    """Build the exact scored/path callbacks consumed by the orchestrator."""
-
+def _create_scored_branch(request: SmartBranchRequest, providers: SmartBranchProviders):
     async def run_scored_branch(
         experiment_info: dict,
         _strategy: str,
@@ -77,6 +75,10 @@ def create_smart_branches(request: SmartBranchRequest, providers: SmartBranchPro
             )
         )
 
+    return run_scored_branch
+
+
+def _create_path_branch(request: SmartBranchRequest, providers: SmartBranchProviders):
     async def run_path_branch(
         experiment_info: dict,
         _strategy: str,
@@ -110,10 +112,20 @@ def create_smart_branches(request: SmartBranchRequest, providers: SmartBranchPro
             )
         )
 
+    return run_path_branch
+
+
+def create_smart_branches(request: SmartBranchRequest, providers: SmartBranchProviders):
+    """Build the exact scored/path callbacks consumed by the orchestrator."""
+
     async def run_weakness_branch(**kwargs) -> RecommendationResult:
         return await providers.run_weakness(**kwargs)
 
-    return run_scored_branch, run_path_branch, run_weakness_branch
+    return (
+        _create_scored_branch(request, providers),
+        _create_path_branch(request, providers),
+        run_weakness_branch,
+    )
 
 
 def _branch_logger() -> Logger:

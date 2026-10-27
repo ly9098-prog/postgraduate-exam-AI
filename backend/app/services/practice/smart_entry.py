@@ -10,9 +10,9 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.practice.smart_branches import (
-    create_smart_branches,
     SmartBranchProviders,
     SmartBranchRequest,
+    create_smart_branches,
 )
 from app.services.practice.smart_orchestrator import (
     SmartPracticeRequest,
@@ -82,6 +82,23 @@ async def run_smart_entry(request: SmartEntryRequest) -> RecommendationResult:
             run_weakness=request.run_weakness,
         ),
     )
+    return await _run_smart_practice_request(
+        request,
+        scope_ids=scope_ids,
+        run_scored=run_scored,
+        run_path=run_path,
+        run_weakness=run_weakness,
+    )
+
+
+async def _run_smart_practice_request(
+    request: SmartEntryRequest,
+    *,
+    scope_ids: list[int],
+    run_scored,
+    run_path,
+    run_weakness,
+) -> RecommendationResult:
     return await run_smart_practice(
         SmartPracticeRequest(
             db=request.db,

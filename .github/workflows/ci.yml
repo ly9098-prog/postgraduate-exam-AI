@@ -513,6 +513,10 @@ jobs:
             tests/architecture/test_scored_fallback_merge_boundaries.py \
             tests/architecture/test_scored_fallback_flow_boundaries.py \
             tests/architecture/test_smart_scored_supplement_boundaries.py \
+            tests/practice/test_smart_branches.py \
+            tests/practice/test_smart_entry.py \
+            tests/practice/test_practice_session_scope.py \
+            tests/architecture/test_practice_smart_scope_boundaries.py \
             tests/core/test_http_error_contract.py \
             tests/core/test_http_middleware_contract.py \
             tests/core/test_runtime_metrics_contract.py \

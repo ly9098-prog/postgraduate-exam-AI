@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.services.practice.smart_branches import (
-    SmartBranchProviders,
     SmartBranchRequest,
     create_smart_branches,
 )
@@ -149,3 +148,77 @@ async def test_weakness_branch_delegates_keywords_to_service_fallback():
     provider.run_weakness.assert_awaited_once_with(
         db="db", user_id=8, subject_code="DS"
     )
+
+
+@pytest.mark.asyncio
+async def test_branch_logger_is_created_at_call_time_with_service_name():
+    import logging
+
+    from app.services.practice.smart_branches import _branch_logger
+
+    marker = object()
+    try:
+        logging.Logger.manager.loggerDict["app.services.practice_service"] = marker
+        assert _branch_logger() is marker
+    finally:
+        if marker in logging.Logger.manager.loggerDict.values():
+            del logging.Logger.manager.loggerDict["app.services.practice_service"]
+    assert isinstance(_branch_logger(), logging.Logger)
+
+
+@pytest.mark.asyncio
+async def test_scored_import_and_request_are_lazy(monkeypatch):
+    provider = providers()
+    from unittest.mock import patch
+
+    calls = []
+
+    def import_error(name, *args, **kwargs):
+        calls.append(name)
+        raise AssertionError("supplement import must be lazy")
+
+    with patch("builtins.__import__", import_error):
+        create_smart_branches(request(), provider)
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_scored_request_is_created_before_runner_awaits(monkeypatch):
+    provider = providers()
+    import app.services.practice.smart_scored_supplement as supplement
+
+    events = []
+
+    class Request:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            events.append("request")
+
+    async def run(item):
+        events.append("run")
+        return ["sentinel"], {}
+
+    monkeypatch.setattr(supplement, "ScoredSupplementRequest", Request)
+    monkeypatch.setattr(supplement, "run_scored_supplement", run)
+    scored, _path, _weakness = create_smart_branches(request(), provider)
+    assert await scored({"experiment_id": 2}, "scored", [11]) == (["sentinel"], {})
+    assert events == ["request", "run"]
+
+
+@pytest.mark.asyncio
+async def test_path_import_and_request_are_lazy_and_ordered(monkeypatch):
+    provider = providers()
+    import app.services.practice.smart_path_supplement as supplement
+
+    class Request:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    async def run(item):
+        return ["path"], {}
+
+    monkeypatch.setattr(supplement, "SmartPathRequest", Request)
+    monkeypatch.setattr(supplement, "run_smart_path", run)
+    _scored, path, _weakness = create_smart_branches(request(), provider)
+    result = await path({"experiment_id": 3}, "path", [12])
+    assert result == (["path"], {})
