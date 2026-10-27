@@ -166,11 +166,12 @@ from app.services.practice.sequential_service import (
     get_sequential_practice_questions,  # noqa: F401 — historical public import / live selection port
     reset_sequential_progress,  # noqa: F401 — re-exported for the practice API
 )
+from app.services.practice.similar_selection import run_similar_selection
 from app.services.practice.similar_supplement import (
-    SimilarRecallRequest,
-    apply_fill_metadata,
-    load_similar_fill_questions,
-    load_similar_vector_questions,
+    SimilarRecallRequest,  # noqa: F401 — historical import / live similar port
+    apply_fill_metadata,  # noqa: F401 — historical import / live similar port
+    load_similar_fill_questions,  # noqa: F401 — historical import / live similar port
+    load_similar_vector_questions,  # noqa: F401 — historical import / live similar port
 )
 from app.services.practice.strategy_weight_rerank import apply_strategy_weight_rerank
 from app.services.practice.smart_scored_supplement import (
@@ -895,60 +896,16 @@ async def get_similar_practice_questions(
         if subject_ids is not None
         else await resolve_subject_ids(db, subject_code)
     )
-
-    # 1. 向量召回
-    from app.services import vector_retrieval_service
-
-    vector_questions, metadata = await load_similar_vector_questions(
-        SimilarRecallRequest(
-            db=db,
-            user_id=user_id,
-            source_question_id=source_question_id,
-            scope_ids=scope_ids,
-            excluded_sub=_build_excluded_question_subquery(
-                user_id=user_id,
-                exclude_answered=exclude_answered,
-                no_repeat_days=no_repeat_days,
-            ),
-            logger=logger,
-            search_similar=vector_retrieval_service.search_similar_questions,
-            revision_condition=_practice_revision_scope_condition,
-        )
-    )
-
-    if len(vector_questions) >= count:
-        return vector_questions[:count], metadata
-
-    # 2. 补齐：规则推荐 + 随机
-    existing_ids = {q.id for q in vector_questions}
-    existing_ids.add(source_question_id)
-
-    subject_cond = Question.subject_id.in_(scope_ids)
-    conditions = [
-        Question.is_active,
-        subject_cond,
-        _practice_revision_scope_condition(scope_ids),
-        Question.id.notin_(existing_ids),
-    ]
-    # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
-    excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
+    return await run_similar_selection(
+        db,
+        user_id,
+        source_question_id,
+        scope_ids,
+        count=count,
         exclude_answered=exclude_answered,
         no_repeat_days=no_repeat_days,
+        namespace=globals(),
     )
-    if excluded_sub is not None:
-        conditions.append(Question.id.notin_(excluded_sub))
-
-    fill_questions = await load_similar_fill_questions(
-        db,
-        conditions,
-        count - len(vector_questions),
-        _random_sample_query,
-    )
-
-    apply_fill_metadata(metadata, fill_questions)
-
-    return vector_questions + fill_questions, metadata
 
 
 async def _maybe_finalize_smart(

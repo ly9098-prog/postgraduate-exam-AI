@@ -145,3 +145,33 @@
 - 保留输入校验 → 已提交回放 → 签名与 revision 读取 → 评分和 session/scope 校验 → 请求认领 → 持久化提交 → 提交后预热顺序。准备模块不接管认领、事务、持久化或失败补偿。已提交回放继续先于 token 校验。
 - 原模块和 builtin 依赖在原表达式执行位置解析，保留执行中替换校验器或阈值的时点、错误优先级、结果对象引用和取消传播。session 的墙钟容差仍是 2 秒；批次答案用时校验继续使用独立的 `PRACTICE_ANSWER_DURATION_TOLERANCE_SEC`。
 - `test_batch_submission_preparation.py` 锁定评分/校验先后、首错中断、返回引用、动态阈值、revision 绑定与模型参数；`test_batch_preparation_boundaries.py` 检查两模块 300/50、准备模块依赖和 fresh import。两项与原 flow 契约接入静态 CI。此处不包含生产提交、真实 PostgreSQL 或完整跨进程 worker 验收。
+
+## 17. Similar 候选召回与随机补齐装配（2026-10-27）
+
+- `get_similar_practice_questions` 从 79 行收敛至 35 行，保留原签名、docstring、返回类型
+  与科目范围解析；`similar_selection.py` 按原顺序组合向量召回与补齐条件，两个函数分别为
+  43/36 行。实际向量查询、随机装载及 metadata 投影仍由 `similar_supplement.py` 承接。
+  新模块不接管签发、到期过滤、事务、数据库执行、后台任务或鉴权。
+- 显式 `subject_ids=[]` 保持空范围，只有 None 才调用原科目解析器。召回与补齐共用原
+  scope 列表引用，召回期间对该列表的修改仍被后续条件读取。保留 provider 次序及重复候选；
+  候选足够时只做原 Python 切片，metadata 不裁剪；不足时拼接补齐结果，不新增去重、
+  数量截断或 50 题上限。Public 路由参数上限与内部候选池数量仍是不同边界。
+- 补齐仍排除所有已召回 ID 及源题，保持 active、subject IN、revision scope 和可选历史
+  作答排除；第二次历史排除查询按原参数重新构造，不复用召回请求中的表达式。随机装载
+  仍先 COUNT 再按 need 调用采样，保留 subject_ref 预加载及 metadata 原地写入。
+- 原 service 模块继续保留历史可替换端口；召回函数及请求构造器在参数求值前绑定，
+  logger、向量 search 和 revision callback 在原参数位置读取。补齐条件与回调在召回
+  await 后读取，随机回调在补齐 await 前绑定，metadata 回调在补齐 await 后读取。
+  保留 `use_leitner` 参数；调度仍由 issuance 层执行，不在候选召回内增加到期查询。
+- 新增 94 项行为契约在原实现与拆分后均通过，包括 SQLite/PostgreSQL 查询编译、实际
+  召回/补齐 helper 装配、普通失败回退、端口替换、对象引用及真实 asyncio Task 取消。6 项架构
+  检查约束 300/50 预算、依赖、入口绑定和独立导入；反向展开 helper 与端口替换后，业务
+  AST、入口签名/docstring/返回类型及 service 其余定义与原实现一致。10 个故障变体均被
+  契约拦截，对照 94 项通过，隔离守卫无违规尝试。
+- 关联 practice 与依赖门禁纯端口回归 1074 项通过；1 项真实 SQLite 契约从零连接运行器
+  中排除后，使用仅允许专属临时目录 `.db` 的守卫单独通过，放行 5 次连接。两类成功运行
+  均无守卫违规；首次扩大运行时该 SQLite 契约因连接禁令失败的证据仍保留。新增 6 个
+  Python 文件严格 Ruff、格式、Python 3.11 语法及 300/50 检查通过；原 service 的
+  22 条 I001/F401 诊断与拆分前一致，全 app 按既有 ignore 配置检查通过。
+- 上述查询编译与合成端口不代表真实向量 provider、PostgreSQL、微信或生产选题验收；
+  学习域及 `practice_service` 其余超预算函数仍待治理。

@@ -378,6 +378,10 @@ jobs:
             tests/practice/test_random_bucket_selection_contract.py \
             tests/practice/test_basic_selection_sql_contract.py \
             tests/architecture/test_basic_selection_boundaries.py \
+            tests/practice/test_similar_selection_contract.py \
+            tests/practice/test_similar_selection_ports.py \
+            tests/practice/test_similar_selection_queries.py \
+            tests/architecture/test_similar_selection_boundaries.py \
             tests/practice/test_sequential_reservation_contract.py \
             tests/practice/test_sequential_query_contract.py \
             tests/practice/test_sequential_boundaries.py \
