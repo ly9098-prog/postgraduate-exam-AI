@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 FEATURES = Path(__file__).resolve().parents[2] / "app/features"
-ROLES = ("state", "inputs", "batch", "execution", "output")
+ROLES = ("state", "inputs", "batch", "execution", "output", "results")
 
 
 def load_role(role):
@@ -71,7 +71,7 @@ def test_entry_retains_signature_docstring_and_lazy_delegation():
     assert entry.end_lineno - entry.lineno + 1 <= 50
 
 
-def test_imports_remain_lazy_and_single_close_owner_keeps_original_boundary():
+def test_imports_remain_lazy_and_single_close_owner_covers_initialization():
     _, inputs = load_role("inputs")
     assert [n.module for n in inputs.body if isinstance(n, ast.ImportFrom)] == [
         "__future__",
@@ -85,13 +85,33 @@ def test_imports_remain_lazy_and_single_close_owner_keeps_original_boundary():
         "app.core.ocr_profile",
         "app.services.ocr_service",
     ]
+
+
+def test_single_close_owner_covers_initialization_and_cleans_progress():
+    _, inputs = load_role("inputs")
+    load = next(n for n in inputs.body if isinstance(n, ast.FunctionDef))
     _, execution = load_role("execution")
     run = next(n for n in execution.body if isinstance(n, ast.FunctionDef))
     assert isinstance(run.body[0], ast.Assign)
     assert isinstance(run.body[1], ast.Try)
-    assert ast.unparse(run.body[1].finalbody[0]) == "state.doc.close()"
+    assert ast.unparse(run.body[1].body[0]) == "initialize_scanned_pdf(state)"
+    assert ast.unparse(run.body[1].handlers[0].type) == "BaseException"
+    assert ast.unparse(run.body[1].orelse[0]) == "release_scanned_pdf(state)"
     assert isinstance(run.body[2], ast.Return)
     assert ast.unparse(run.body[2].value) == "finish_scanned_pdf(state)"
+    release = next(
+        n
+        for n in execution.body
+        if isinstance(n, ast.FunctionDef) and n.name == "release_scanned_pdf"
+    )
+    assert ast.unparse(release.body[2].body[0]) == "state.doc.close()"
+    assert ast.unparse(release.body[3].body[0]) == (
+        "if state.progress_started:\n"
+        "    state.port('_ocr_progress').pop(state.pipeline_id, None)"
+    )
+    assert ast.unparse(load.body[-2]) == (
+        "state.doc = state.port('_open_pdf_doc')(state.content_or_path)"
+    )
     close_calls = [
         n
         for n in ast.walk(execution)

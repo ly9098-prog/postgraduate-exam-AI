@@ -7,8 +7,12 @@ from app.features.pipeline_scanned_batch import (
     fallback_scanned_batch,
     render_scanned_batch,
 )
-from app.features.pipeline_scanned_inputs import load_scanned_pdf
+from app.features.pipeline_scanned_inputs import (
+    initialize_scanned_pdf,
+    load_scanned_pdf,
+)
 from app.features.pipeline_scanned_output import finish_scanned_pdf
+from app.features.pipeline_scanned_results import validate_scanned_results
 from app.features.pipeline_scanned_state import ScannedPdfState
 
 
@@ -24,10 +28,39 @@ def run_scanned_pdf(
         content_or_path, pipeline_id, page_start, page_end, namespace=namespace
     )
     try:
+        initialize_scanned_pdf(state)
         run_scanned_batches(state)
-    finally:
-        state.doc.close()
+    except BaseException as error:
+        try:
+            release_scanned_pdf(state)
+        except BaseException as cleanup_error:
+            BaseException.add_note(
+                error, f"scanned PDF cleanup also failed ({type(cleanup_error).__name__})"
+            )
+        raise
+    else:
+        release_scanned_pdf(state)
     return finish_scanned_pdf(state)
+
+
+def release_scanned_pdf(state: ScannedPdfState) -> None:
+    """Close once; clear progress only after this invocation published it."""
+    close_error = None
+    try:
+        state.doc.close()
+    except BaseException as error:
+        close_error = error
+    try:
+        if state.progress_started:
+            state.port("_ocr_progress").pop(state.pipeline_id, None)
+    except BaseException as error:
+        if close_error is None:
+            raise
+        BaseException.add_note(
+            close_error, f"scanned PDF progress cleanup also failed ({type(error).__name__})"
+        )
+    if close_error is not None:
+        raise close_error
 
 
 def run_scanned_batches(state: ScannedPdfState) -> None:
@@ -50,6 +83,7 @@ def process_scanned_batch(state: ScannedPdfState, batch_start: int) -> None:
     batch_end = state.port("min")(batch_start + state.batch_size, state.pages_to_process)
     batch_images = render_scanned_batch(state, batch_start, batch_end)
     results = state.ocr_pages_with_boxes(batch_images, skip_rotation=True)
+    validate_scanned_results(batch_images, results)
     fallback_results = fallback_scanned_batch(state, batch_images, results)
     del batch_images
     state.gc.collect()

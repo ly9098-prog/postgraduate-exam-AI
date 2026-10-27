@@ -37,12 +37,11 @@ def load_scanned_pdf(
     state.timeout = state.profile.timeout_seconds
     state.batch_size = state.profile.max_workers
     state.doc = state.port("_open_pdf_doc")(state.content_or_path)
-    state.total_pages = state.port("len")(state.doc)
-    initialize_scanned_pdf(state)
     return state
 
 
 def initialize_scanned_pdf(state: ScannedPdfState) -> None:
+    state.total_pages = state.port("len")(state.doc)
     state.port("set_tag")("ocr.engine", "PaddleOCR")
     ocr_source = (
         state.port("str")(state.content_or_path)
@@ -73,3 +72,4 @@ def initialize_scanned_pdf(state: ScannedPdfState) -> None:
     )
     if state.pipeline_id:
         state.port("_ocr_progress")[state.pipeline_id] = f"0/{state.pages_to_process} pages"
+        state.progress_started = True

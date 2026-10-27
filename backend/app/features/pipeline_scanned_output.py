@@ -20,8 +20,6 @@ def finish_scanned_pdf(state: ScannedPdfState) -> list[dict]:
         pages = state.port("sorted")(state.ocr_text_fallback_unavailable_pages)
         state.blocks[0]["_ocr_text_fallback_unavailable_pages"] = pages
         state.blocks[0]["_ocr_runtime_failed_pages"] = pages
-    if state.pipeline_id:
-        state.port("_ocr_progress").pop(state.pipeline_id, None)
     doc_ir = state.port("_blocks_to_document_ir")(state.blocks, pipeline_id=state.pipeline_id)
     if doc_ir and state.blocks:
         state.blocks[0]["_document_ir"] = doc_ir

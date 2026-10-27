@@ -34,6 +34,7 @@ class ScannedPdfState:
     ocr_text_fallback_unavailable_pages: Any = field(init=False)
     timed_out: Any = field(init=False)
     start_time: Any = field(init=False)
+    progress_started: bool = False
 
     def port(self, name: str) -> Any:
         if name in self.namespace:

@@ -312,5 +312,5 @@ class TestPipelineVersion:
 
     def test_build_pipeline_fingerprint_is_short(self):
         """Module-level fingerprint is a compact string."""
-        assert PIPELINE_VERSION.startswith("p3_s")
+        assert PIPELINE_VERSION.startswith("p4_s")
         assert len(PIPELINE_VERSION) < 30

@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.core.ocr_types import OcrPageResult
 from app.features import pipeline_orchestrator as target
 
 
@@ -52,7 +53,7 @@ def configure_engine(h):
             raise h.boxes
         return {
             idx: h.boxes.get(
-                idx, SimpleNamespace(failed=False, text=f"text{idx}", boxes=[])
+                idx, OcrPageResult(page_index=idx, text=f"text{idx}", boxes=[])
             )
             for idx, _ in images
         }

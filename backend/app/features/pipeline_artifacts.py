@@ -58,9 +58,9 @@ CANONICAL_STAGE_ORDER: list[str] = list(_PipelineDefinition.stage_names())
 # Built from stage order hash + code + config fingerprints so that any
 # relevant change automatically invalidates existing artifacts.
 # Bump the explicit suffix when artifact data format changes.
-# IR freeze binding changes split output semantics. Reject older split artifacts
-# rather than resuming questions that bypassed source ownership validation.
-_PIPELINE_SCHEMA_VERSION = "3"
+# OCR batch identity checks reject results previously accepted across page batches.
+# Older derived artifacts must not bypass those checks during resume.
+_PIPELINE_SCHEMA_VERSION = "4"
 
 
 def _build_pipeline_fingerprint() -> str:

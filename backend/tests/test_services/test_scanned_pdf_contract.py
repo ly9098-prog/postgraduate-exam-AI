@@ -1,10 +1,10 @@
 """Collected business contracts for the synchronous local scanned-PDF path."""
 
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 
+from app.core.ocr_types import OcrPageResult
 from tests.test_services.scanned_pdf_support import make_scan
 
 
@@ -43,8 +43,8 @@ def test_page_selection(scan, start, end, cap, expected):
 def test_box_reference_and_empty_page_filter(scan):
     boxes = [{"bbox": [1, 2, 3, 4]}]
     scan.boxes = {
-        1: SimpleNamespace(failed=False, text="  ", boxes=[]),
-        2: SimpleNamespace(failed=False, text=" exact ", boxes=boxes),
+        1: OcrPageResult(page_index=1, failed=False, text="  ", boxes=[]),
+        2: OcrPageResult(page_index=2, failed=False, text=" exact ", boxes=boxes),
     }
     blocks = scan.run(page_end=2)
     assert len(blocks) == 1
@@ -57,7 +57,7 @@ def test_box_reference_and_empty_page_filter(scan):
 
 @pytest.mark.parametrize("failure", ["none", "first", "both", "empty"])
 def test_text_fallback_and_reset_retry(scan, failure):
-    scan.boxes = {2: SimpleNamespace(failed=True, text="ignored", boxes=[])}
+    scan.boxes = {2: OcrPageResult(page_index=2, failed=True, text="ignored", boxes=[])}
     scan.fallback = {2: " fallback "} if failure != "empty" else {}
     if failure == "first":
         scan.reset.side_effect = [RuntimeError("reset"), None]
@@ -81,12 +81,12 @@ def test_text_fallback_and_reset_retry(scan, failure):
 
 
 @pytest.mark.parametrize("error", [RuntimeError("engine"), asyncio.CancelledError()])
-def test_exception_closes_document_but_retains_original_progress(scan, error):
+def test_exception_closes_document_and_clears_progress(scan, error):
     scan.boxes = error
     with pytest.raises(type(error)):
         scan.run()
     scan.doc.close.assert_called_once()
-    assert scan.progress == {"scan": "0/5 pages"}
+    assert scan.progress == {}
     scan.build.assert_not_called()
 
 
@@ -130,12 +130,12 @@ def test_cloud_guard_precedes_pdf_open(scan, monkeypatch):
     scan.doc.close.assert_not_called()
 
 
-def test_unexpected_result_page_retains_key_error_boundary(scan):
+def test_unexpected_result_page_is_rejected_before_fallback(scan):
     scan.boxed.side_effect = None
     scan.boxed.return_value = {
-        42: SimpleNamespace(failed=False, text="stray", boxes=[])
+        42: OcrPageResult(page_index=2, failed=False, text="stray", boxes=[])
     }
-    with pytest.raises(KeyError, match="42"):
+    with pytest.raises(ValueError, match="OCR batch"):
         scan.run(page_end=1)
     scan.doc.close.assert_called_once()
-    assert scan.progress == {"scan": "0/1 pages"}
+    assert scan.progress == {}

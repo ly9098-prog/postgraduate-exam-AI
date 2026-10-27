@@ -1,11 +1,11 @@
-"""Error/resource timing and runtime-port contracts shared with the old entry."""
+"""Error/resource timing and runtime ports for scanned PDF execution."""
 
 import asyncio
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from app.core.ocr_types import OcrPageResult
 from app.features import pipeline_orchestrator as target
 from tests.test_services.scanned_pdf_support import make_scan
 
@@ -36,15 +36,13 @@ def test_failure_resource_and_progress_boundary(scan, monkeypatch, boundary):
         scan.build.side_effect = error
     with pytest.raises(ValueError, match=boundary):
         scan.run(page_end=1)
-    assert scan.doc.close.call_count == (boundary in {"render", "collect", "ir"})
-    assert scan.progress == (
-        {"scan": "0/1 pages"} if boundary in {"render", "collect"} else {}
-    )
+    assert scan.doc.close.call_count == (boundary != "open")
+    assert scan.progress == {}
 
 
 @pytest.mark.parametrize("error", [ValueError("text"), asyncio.CancelledError()])
 def test_text_error_retry_and_base_exception_propagation(scan, error):
-    scan.boxes = {1: SimpleNamespace(failed=True)}
+    scan.boxes = {1: OcrPageResult(page_index=1, text="", failed=True)}
     scan.text.side_effect = error
     if isinstance(error, Exception):
         assert scan.run(page_end=1) == []
@@ -55,7 +53,7 @@ def test_text_error_retry_and_base_exception_propagation(scan, error):
         with pytest.raises(asyncio.CancelledError):
             scan.run(page_end=1)
         assert scan.text.call_count == 1
-        assert scan.progress == {"scan": "0/1 pages"}
+        assert scan.progress == {}
     scan.doc.close.assert_called_once()
 
 
@@ -82,8 +80,8 @@ def test_progress_observation_and_close_before_ir(scan):
 def test_returned_pages_are_sorted_within_each_batch(scan):
     scan.boxed.side_effect = None
     scan.boxed.return_value = {
-        2: SimpleNamespace(failed=False, text="second", boxes=[]),
-        1: SimpleNamespace(failed=False, text="first", boxes=[]),
+        2: OcrPageResult(page_index=2, failed=False, text="second", boxes=[]),
+        1: OcrPageResult(page_index=1, failed=False, text="first", boxes=[]),
     }
     assert [b["text"] for b in scan.run(page_end=2)] == ["first", "second"]
 
@@ -147,7 +145,7 @@ def test_nonpositive_batch_size_keeps_range_behavior(scan, size):
     if size == 0:
         with pytest.raises(ValueError, match="range"):
             scan.run()
-        assert scan.progress == {"scan": "0/5 pages"}
+        assert scan.progress == {}
     else:
         assert scan.run() == []
         assert scan.progress == {}
@@ -160,14 +158,14 @@ def test_invalid_render_dpi_closes_before_any_engine_call(scan, monkeypatch):
         scan.run()
     scan.doc.close.assert_called_once()
     scan.boxed.assert_not_called()
-    assert scan.progress == {"scan": "0/5 pages"}
+    assert scan.progress == {}
 
 
 def test_close_error_prevents_result_finalization(scan):
     scan.doc.close.side_effect = RuntimeError("close failed")
     with pytest.raises(RuntimeError, match="close failed"):
         scan.run(page_end=1)
-    assert scan.progress == {"scan": "1/1 pages"}
+    assert scan.progress == {}
     scan.build.assert_not_called()
 
 

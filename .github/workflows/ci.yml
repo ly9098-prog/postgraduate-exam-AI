@@ -437,6 +437,8 @@ jobs:
             tests/architecture/test_pipeline_freeze_boundaries.py \
             tests/test_services/test_scanned_pdf_contract.py \
             tests/test_services/test_scanned_pdf_failures.py \
+            tests/test_services/test_scanned_pdf_reliability.py \
+            tests/pipeline/test_scanned_pdf_restore_safety.py \
             tests/architecture/test_pipeline_scanned_boundaries.py \
             tests/architecture/test_ir_freeze_binding_boundaries.py \
             tests/pipeline/test_ir_freeze_split_binding.py \
