@@ -144,3 +144,46 @@
   私有目录的 Unix socket，零违规；子进程沿用白名单测试环境，两个 worker 与自建 PG/Redis
   均正常退出，日志和数据保留。该结果不等于生产配置、全部 OCR/AI handler、外部 provider、
   多 dispatcher 或备份恢复验收；v1 执行与 v2 dispatcher/claim/heartbeat 仍有剩余大函数。
+
+## 12. v2 已领取任务的启动、监督与资源释放
+
+- 2026-10-28，`_process_claimed_task_v2` 从 141 行收敛至 26 行，保留签名、
+  docstring 和最先导入日志 context 回调的边界。新增 `worker_claimed_state.py`、
+  `worker_claimed_execution.py`、`worker_claimed_outcome.py`、
+  `worker_claimed_cleanup.py`，分别持有本次资源、启动三个子任务、监督业务与终态转换、
+  顺序清理；新业务文件均满足 300 行/50 行预算，独立导入不加载配置、ORM 或 worker。
+- 修复启动不完整时的泄漏：非法 payload、日志身份准备失败、子协程构造失败、部分
+  `create_task` 失败都进入资源清理；未提交成功的协程尝试关闭，已登记的子任务取消并
+  等待。日志 reset 失败也继续尝试释放已持有的 semaphore 槽位。没有更改 claim 协议、
+  payload 校验或数据库/Redis 状态机；非法 payload 仍传播原错误。
+- 已有主错误或取消优先保留，后续清理错误只附加异常类型 note，不附加错误详情；
+  note 损坏也继续释放资源。没有主错误时传播最早的清理错误。原来等待 heartbeat/watcher
+  时忽略普通异常和取消的策略保持；清理顺序仍为 watcher、heartbeat、必要时 process、
+  日志 context、semaphore。只保证尝试清理，不能把被二次取消中断的等待表述为完成。
+- 修复业务 `TimeoutError` 被误判为硬超时：当业务 Task 已结束且未取消，异常进入原
+  业务失败/fencing 策略，不增加 hard-deadline 指标，也不再发生先 fail 后 complete。
+  真正由 `wait_for` 取消业务 Task 的超时仍沿用原硬期限策略。外层在业务等待期间取消
+  仍按原 owner-loss 策略处理，终态转换期间取消仍向调用方传播；不扩大本批取消语义。
+- heartbeat 继续覆盖 complete/fail 转换。日志回调在生成身份前捕获；worker 端口、
+  日志器、指标与完成回调在原执行边界动态读取；三个子任务仍按 heartbeat、process、
+  owner-loss watcher 顺序创建。完成码 `1/0/-1`、fencing 处理、500 字符错误摘要和
+  原日志保持。逆向展开 helper 并移除上述超时修复后，业务 try/except 与原 AST 一致；
+  context 准备与 worker 其余定义也一致。
+- 41 项兼容性用例在原版和修复版均通过；33 项新增回归在原版全部失败，修复版全部
+  通过，包含实际 claim adapter 可产生的非法 payload。另有 8 项架构检查，共 82 项
+  定向通过；队列、staging、运行时、学习投影与错因分析关联回归共 900 项通过，隔离
+  守卫零违规。10 个有效故障变体均被拒绝，覆盖漏关协程、漏放槽位、跳过部分子任务、
+  主错误被覆盖、超时误判、过早停心跳、完成码、指标、摘要长度及 note 损坏。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 384 个测试文件：
+  6733 passed、0 skipped、55 条既有弃用 warning，529.14 秒。新 Python 文件的
+  3.11 语法、预算、严格 Ruff/format，app 正确性 Ruff、compileall 与 diff-check
+  均通过；这是本地清单重放，不代表远端 CI 或生产验收。
+- 独立私有 Unix socket Redis 7.2.5 四文件集成回归 76 passed、0 skipped，
+  71.20 秒；仅放行自有 socket，守卫零违规。实例已停止，AOF、日志和所有权证据保留。
+  本批另重放第 8 节未修改的真实 `worker_main`，独立 PostgreSQL 15.8 / Redis 7.2.5、
+  实际迁移、SQL 锁等待、SIGTERM drain、SIGKILL 后默认 600 秒租约自然到期、
+  替换 worker 与重复学习投影检查：2 passed、0 skipped，666.11 秒。父 pytest 守卫
+  零违规，子进程使用白名单测试环境，数据及日志保留。
+- 本批没有执行生产操作、全部业务 handler、外部 OCR/AI、真实微信、生产 Admin 浏览器、
+  多 dispatcher 竞争或备份恢复；这些仍需单独验收。worker 的 v1 执行、v2 dispatcher
+  与 heartbeat 等仍有剩余大函数，不能把本次结果表述为任务队列或全部优先任务完成。

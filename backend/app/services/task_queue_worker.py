@@ -38,6 +38,7 @@ from app.services.task_queue_service import (
     TaskQueueUnavailableError,
     task_queue,
 )
+from app.services.worker_claimed_execution import run_claimed_task
 from app.services.worker_task_types import DISPATCHER_TASK_TYPES, REAPER_TASK_TYPES
 from app.services.worker_v2_execution import run_v2_task
 
@@ -1121,9 +1122,7 @@ async def _fail_with_retry_v2(task: Task, error: str, max_attempts: int = 3) -> 
     return 0
 
 
-async def _process_claimed_task_v2(
-    task: Task, lease_sec: int, sem: asyncio.Semaphore
-) -> None:
+async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Semaphore) -> None:
     """Process a claimed v2 task with heartbeat, cancellation, and lifecycle.
 
     Holds the semaphore slot for the duration of processing.
@@ -1139,129 +1138,16 @@ async def _process_claimed_task_v2(
         reset_log_context,
     )
 
-    pipeline_id = str(
-        task.payload.get("pipeline_id") or task.payload.get("job_id") or task.task_id
+    return await run_claimed_task(
+        task,
+        lease_sec,
+        sem,
+        namespace=globals(),
+        bind_context=bind_log_context,
+        generate_request_id=generate_request_id,
+        generate_trace_id=generate_trace_id,
+        reset_context=reset_log_context,
     )
-    trace_id = task.trace_id or generate_trace_id("tr_job")
-    request_id = task.request_id or generate_request_id("req_job")
-    log_tokens = bind_log_context(
-        trace_id=trace_id,
-        request_id=request_id,
-        job_id=task.task_id,
-        pipeline_id=pipeline_id,
-    )
-
-    owner_lost = asyncio.Event()
-
-    hb_task = asyncio.create_task(
-        _v2_heartbeat_loop_with_lease_window(task, lease_sec, owner_lost)
-    )
-    process_task = asyncio.create_task(_process_task_v2(task))
-    cancel_watcher = asyncio.create_task(
-        _cancel_on_owner_loss(process_task, owner_lost)
-    )
-
-    try:
-        try:
-            await asyncio.wait_for(process_task, timeout=_PROCESS_HARD_DEADLINE_SEC)
-        except asyncio.CancelledError:
-            logger.warning(
-                "v2 Processing cancelled (owner lost): task_id=%s",
-                task.task_id,
-            )
-            queue_metrics["owner_fencing_rejected"] += 1
-        except asyncio.TimeoutError:
-            logger.critical(
-                "v2 Processing exceeded hard deadline (%ds): task_id=%s type=%s — marking failed",
-                _PROCESS_HARD_DEADLINE_SEC,
-                task.task_id,
-                task.task_type,
-            )
-            queue_metrics["hard_deadline_exceeded"] += 1
-            try:
-                await _fail_with_retry_v2(task, "hard wall-clock deadline exceeded")
-            except Exception as fe:
-                logger.warning(
-                    "v2 Fail after hard deadline error: task_id=%s error=%s",
-                    task.task_id,
-                    fe,
-                )
-
-        was_cancelled = process_task.cancelled()
-
-        if was_cancelled or owner_lost.is_set():
-            if was_cancelled:
-                logger.warning(
-                    "v2 Owner lost, skipping complete/fail: task_id=%s",
-                    task.task_id,
-                )
-        else:
-            try:
-                ok = await _complete_with_retry_v2(task)
-                if ok == 1:
-                    logger.info("v2 Task completed: task_id=%s", task.task_id)
-                elif ok == 0:
-                    logger.warning(
-                        "v2 Complete owner mismatch: task_id=%s",
-                        task.task_id,
-                    )
-                    queue_metrics["owner_fencing_rejected"] += 1
-                elif ok == -1:
-                    logger.warning(
-                        "v2 Complete generation mismatch: task_id=%s",
-                        task.task_id,
-                    )
-                    queue_metrics["owner_fencing_rejected"] += 1
-            except Exception as e:
-                logger.warning(
-                    "v2 Complete error: task_id=%s error=%s", task.task_id, e
-                )
-    except asyncio.CancelledError:
-        raise
-    except FencingRejectedError:
-        logger.warning(
-            "v2 DB fencing rejected (stale worker): task_id=%s type=%s gen=%d",
-            task.task_id,
-            task.task_type,
-            task.generation,
-        )
-        queue_metrics["owner_fencing_rejected"] += 1
-        # Do NOT call fail_v2 — this worker no longer owns the fence
-    except Exception as e:
-        logger.exception(
-            "v2 Task failed: task_id=%s type=%s",
-            task.task_id,
-            task.task_type,
-        )
-        if owner_lost.is_set():
-            queue_metrics["owner_fencing_rejected"] += 1
-        else:
-            try:
-                await _fail_with_retry_v2(task, str(e)[:500])
-            except Exception as fe:
-                logger.warning("v2 Fail error: task_id=%s error=%s", task.task_id, fe)
-    finally:
-        cancel_watcher.cancel()
-        try:
-            await cancel_watcher
-        except (asyncio.CancelledError, Exception):
-            pass
-
-        hb_task.cancel()
-        try:
-            await hb_task
-        except (asyncio.CancelledError, Exception):
-            pass
-
-        if not process_task.done():
-            process_task.cancel()
-            try:
-                await process_task
-            except (asyncio.CancelledError, Exception):
-                pass
-
-        reset_log_context(log_tokens)
-        sem.release()
 
 
 async def run_dispatcher_v2(

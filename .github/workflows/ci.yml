@@ -366,6 +366,10 @@ jobs:
             tests/test_services/test_worker_v2_ports.py \
             tests/test_services/test_worker_v2_cleanup.py \
             tests/architecture/test_worker_v2_execution_boundaries.py \
+            tests/test_services/test_worker_claimed_outcomes.py \
+            tests/test_services/test_worker_claimed_ports.py \
+            tests/test_services/test_worker_claimed_resources.py \
+            tests/architecture/test_worker_claimed_boundaries.py \
             tests/test_services/test_task_queue_v1_fail_redis_contract.py \
             tests/export/test_docx_fonts.py \
             tests/core/test_code_integrity.py \
