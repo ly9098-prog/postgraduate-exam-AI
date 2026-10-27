@@ -79,13 +79,19 @@ from app.services.practice.knowledge_scope_loaders import (
     load_question_knowledge_rows,
 )
 from app.services.practice.leitner_query import (
-    LeitnerQueryRequest,
-    due_condition,
-    due_soon_condition,
-    leitner_query,
-    oldest_first_order,
+    LeitnerQueryRequest,  # noqa: F401 — historical public import / live selection port
+    due_condition,  # noqa: F401 — historical public import / live selection port
+    due_soon_condition,  # noqa: F401 — historical public import / live selection port
+    leitner_query,  # noqa: F401 — historical public import / live selection port
+    oldest_first_order,  # noqa: F401 — historical public import / live selection port
 )
-from app.services.practice.leitner_layers import run_leitner_layers
+from app.services.practice.leitner_layers import (
+    run_leitner_layers,  # noqa: F401 — historical public import / live selection port
+)
+from app.services.practice.leitner_selection import (
+    LeitnerSelectionRequest,
+    run_leitner_selection,
+)
 from app.services.practice.merge_utils import (
     build_fallback_metadata as _build_fallback_metadata,
 )
@@ -876,66 +882,17 @@ async def _get_questions_with_leitner(
     no_repeat_days: int | None = None,
 ) -> list[Question]:
     """V2 Leitner 取题：新题 + 到期复习题优先，逐步 fallback。"""
-    now = utcnow()
-    # ``use_leitner`` only controls *which* questions are due; it must not
-    # silently disable the caller's repeat-window contract.  The practice page
-    # currently requests ``exclude_answered=true&no_repeat_days=30``.  Before
-    # this guard the first three Leitner layers ignored both arguments, so a
-    # question answered minutes ago could be selected again simply because its
-    # UserQuestionState was due (or had a NULL next_review_at).
-    excluded_sub = _build_excluded_question_subquery(
-        user_id=user_id,
-        exclude_answered=exclude_answered,
-        no_repeat_days=no_repeat_days,
-    )
-
-    query_request = LeitnerQueryRequest(
-        user_id=user_id,
-        base_conditions=base_conditions,
-        mode=mode,
-        count=count,
-        excluded_sub=excluded_sub,
-        random_sample=_random_sample_query,
-        scalar=db.scalar,
-        execute=db.execute,
-    )
-
-    async def _leitner_query(
-        due_condition,
-        exclude_ids: set[int] | None = None,
-        limit: int | None = None,
-        extra_order=None,
-    ) -> list[Question]:
-        return await leitner_query(
-            query_request,
-            due_condition,
-            exclude_ids=exclude_ids,
-            limit=limit,
-            extra_order=extra_order,
-        )
-
-    async def load_v1_fallback(*, existing_ids: set[int]) -> list[Question]:
-        return await _get_questions_v1_fallback(
-            db,
-            base_conditions,
-            mode,
-            count - len(existing_ids),
+    return await run_leitner_selection(
+        LeitnerSelectionRequest(
+            db=db,
             user_id=user_id,
+            base_conditions=base_conditions,
+            mode=mode,
+            count=count,
             exclude_answered=exclude_answered,
             no_repeat_days=no_repeat_days,
-            exclude_ids=existing_ids,
+            namespace=globals(),
         )
-
-    return await run_leitner_layers(
-        now=now,
-        logger=logger,
-        mode=mode,
-        count=count,
-        load_questions=_leitner_query,
-        due_condition=due_condition,
-        due_soon_condition=due_soon_condition,
-        oldest_first_order=oldest_first_order,
-        load_v1_fallback=load_v1_fallback,
     )
 
 

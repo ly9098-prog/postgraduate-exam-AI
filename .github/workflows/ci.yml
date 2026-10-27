@@ -370,6 +370,10 @@ jobs:
             tests/practice/test_smart_reason_text.py \
             tests/practice/test_strategy_weight_rerank_contract.py \
             tests/architecture/test_strategy_weight_rerank_boundaries.py \
+            tests/practice/test_leitner_service_contract.py \
+            tests/practice/test_leitner_service_queries.py \
+            tests/practice/test_leitner_layers.py \
+            tests/architecture/test_leitner_selection_boundaries.py \
             tests/practice/test_sequential_reservation_contract.py \
             tests/practice/test_sequential_query_contract.py \
             tests/practice/test_sequential_boundaries.py \
