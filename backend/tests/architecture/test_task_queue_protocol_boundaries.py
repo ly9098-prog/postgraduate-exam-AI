@@ -221,3 +221,170 @@ def test_redis_key_builders_preserve_namespaces() -> None:
     assert _v2_heartbeat_key("t1") == "taskq:v2:heartbeat:t1"
     assert _v2_fencing_key("t1") == "taskq:v2:fencing:t1"
     assert _v2_idempotent_key("t1") == "taskq:v2:idempotent:t1"
+
+
+# ── Service entry-point split guard ──
+#
+# The eleven Redis-touching entry points were split into thin orchestrators plus
+# bounded helpers.  These guards pin the delegation order (so a helper cannot be
+# inlined again or silently reordered) and the function/line budgets, and every
+# check is paired with a negative self-check that proves it catches the drift.
+
+MAX_FUNCTION_LINES = 50
+SERVICE_SOURCE = SERVICE_PATH.read_text()
+
+ENTRY_DELEGATIONS: dict[str, tuple[str, ...]] = {
+    "enqueue": (
+        "_warn_v1_restricted_enqueue",
+        "_enqueue_v1_redis_path",
+        "_enqueue_local_fallback",
+    ),
+    "_dequeue_from_redis": ("_claim_v1_ready", "_claim_v1_retry"),
+    "heartbeat": (
+        "_get_script_client",
+        "_load_scripts",
+        "_heartbeat_v1_fenced",
+        "_heartbeat_v1_legacy",
+    ),
+    "complete": ("_get_script_client", "_load_scripts", "_complete_v1_redis"),
+    "fail": ("_fail_with_v1_retry", "_fail_v1_dead_letter"),
+    "enqueue_v2": ("_enqueue_v2_redis",),
+    "dequeue_v2": (
+        "_get_client",
+        "_load_scripts",
+        "_claim_v2",
+        "_project_v2_claim",
+    ),
+    "complete_v2": ("_execute_v2_complete",),
+    "fail_v2": ("_v2_fail_retry_budget", "_execute_v2_fail_transition"),
+    "_execute_v2_fail_transition": (
+        "_execute_v2_fail_retry",
+        "_execute_v2_fail_dead",
+    ),
+    "retry_from_dead_v2": (
+        "_get_script_client",
+        "_load_v2_dead_retry_payload",
+        "_requeue_v2_dead_task",
+    ),
+}
+
+
+def _function_nodes(source: str):
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node
+
+
+def _self_call_order(source: str, name: str) -> list[str]:
+    """Ordered ``self.<attr>()`` call names inside the given function."""
+    for node in _function_nodes(source):
+        if node.name != name:
+            continue
+        calls = [
+            (sub.lineno, sub.col_offset, sub.func.attr)
+            for sub in ast.walk(node)
+            if isinstance(sub, ast.Call)
+            and isinstance(sub.func, ast.Attribute)
+            and isinstance(sub.func.value, ast.Name)
+            and sub.func.value.id == "self"
+        ]
+        return [attr for _line, _col, attr in sorted(calls)]
+    raise AssertionError(f"function not found: {name}")
+
+
+def _over_budget_functions(source: str, budget: int = MAX_FUNCTION_LINES):
+    return [
+        (node.name, node.end_lineno - node.lineno + 1)
+        for node in _function_nodes(source)
+        if node.end_lineno - node.lineno + 1 > budget
+    ]
+
+
+def test_entry_points_delegate_in_a_pinned_order() -> None:
+    observed = {
+        name: tuple(_self_call_order(SERVICE_SOURCE, name))
+        for name in ENTRY_DELEGATIONS
+    }
+
+    assert observed == ENTRY_DELEGATIONS
+
+
+def test_service_functions_stay_within_the_line_budget() -> None:
+    assert _over_budget_functions(SERVICE_SOURCE) == []
+
+
+def test_lua_literals_live_in_exactly_one_helper_each() -> None:
+    for literal in ("_lua_claim", "_lua_complete", "_lua_heartbeat"):
+        assert SERVICE_SOURCE.count(f'"{literal}"') == 1, literal
+    for entry in ("enqueue", "fail", "complete_v2", "fail_v2"):
+        segment = ast.get_source_segment(
+            SERVICE_SOURCE,
+            next(
+                node for node in _function_nodes(SERVICE_SOURCE) if node.name == entry
+            ),
+        )
+        assert "_lua_" not in segment, entry
+
+
+def test_entry_delegation_gate_rejects_inlined_helper() -> None:
+    mutated = SERVICE_SOURCE.replace(
+        "return await self._complete_v1_redis(client, task_id, tt, token)",
+        "return False",
+    )
+
+    assert mutated != SERVICE_SOURCE
+    assert (
+        tuple(_self_call_order(mutated, "complete")) != (ENTRY_DELEGATIONS["complete"])
+    )
+
+
+def test_entry_delegation_gate_rejects_reordered_delegation() -> None:
+    segment = ast.get_source_segment(
+        SERVICE_SOURCE,
+        next(
+            node
+            for node in _function_nodes(SERVICE_SOURCE)
+            if node.name == "_execute_v2_fail_transition"
+        ),
+    )
+    swapped = (
+        segment.replace("self._execute_v2_fail_retry", "self.___retry__")
+        .replace("self._execute_v2_fail_dead", "self._execute_v2_fail_retry")
+        .replace("self.___retry__", "self._execute_v2_fail_dead")
+    )
+    mutated = SERVICE_SOURCE.replace(segment, swapped)
+
+    assert mutated != SERVICE_SOURCE
+    assert (
+        tuple(_self_call_order(mutated, "_execute_v2_fail_transition"))
+        != ENTRY_DELEGATIONS["_execute_v2_fail_transition"]
+    )
+
+
+def test_function_budget_gate_rejects_oversized_body() -> None:
+    oversized = "def _oversized():\n" + "".join(
+        f"    value_{index} = {index}\n" for index in range(MAX_FUNCTION_LINES)
+    )
+    exact = "def _exact():\n" + "".join(
+        f"    value_{index} = {index}\n" for index in range(MAX_FUNCTION_LINES - 1)
+    )
+
+    assert _over_budget_functions(exact + oversized) == [
+        ("_oversized", MAX_FUNCTION_LINES + 1)
+    ]
+
+
+def test_lua_literal_gate_rejects_a_second_call_site() -> None:
+    mutated = SERVICE_SOURCE.replace(
+        "\n    async def _dequeue_retry(",
+        "\n    async def _duplicate_claim():\n        return await self._claim()\n"
+        "\n    async def _dequeue_retry(",
+    )
+    mutated = mutated.replace(
+        "\n    async def _claim_v1_retry(",
+        "\n    async def _claim():\n        return await self._evalsha_or_reload(\n"
+        '            None, "_lua_claim", 4\n        )\n'
+        "\n    async def _claim_v1_retry(",
+    )
+
+    assert mutated.count('"_lua_claim"') == 2

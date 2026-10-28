@@ -348,3 +348,62 @@
   超预算函数为 `_enqueue_v2_with_local_fallback` 72、`graceful_shutdown_v2` 56、
   v1 `_heartbeat_loop`；task queue service 的 `retry_from_dead_v2`、`heartbeat`、
   `dequeue_v2`、`enqueue` 等仍在待拆分清单。
+
+## 17. task queue service 入口拆分（v1/v2 enqueue、claim、heartbeat、complete、fail、dead retry）
+
+- 2026-10-28，`backend/app/services/task_queue_service.py` 的 11 个超预算入口收敛为「薄编排 +
+  有界 helper」：`enqueue` 68 → 39、`_dequeue_from_redis` 63 → 28、`heartbeat` 73 → 50、
+  `complete` 63 → 36、`fail` 58 → 40、`enqueue_v2` 52 → 30、`dequeue_v2` 73 → 30、
+  `complete_v2` 54 → 34、`fail_v2` 52 → 48、`_execute_v2_fail_transition` 54 → 37、
+  `retry_from_dead_v2` 79 → 42 行；模块 2146 → 2345 行，顶层定义 63 → 81。
+- 新增 17 个类方法与 1 个模块级解析函数，全部满足 300/50 预算（最大 `_claim_v1_ready` 40 行，
+  其余 36 行以下）：`_warn_v1_restricted_enqueue`、`_enqueue_v1_redis_path`、`_claim_v1_ready`、
+  `_claim_v1_retry`、`_heartbeat_v1_fenced`、`_heartbeat_v1_legacy`、`_complete_v1_redis`、
+  `_fail_v1_dead_letter`、`_enqueue_v2_redis`、`_claim_v2`、`_project_v2_claim`、
+  `_execute_v2_complete`、`_v2_fail_retry_budget`、`_execute_v2_fail_retry`、
+  `_execute_v2_fail_dead`、`_load_v2_dead_retry_payload`、`_requeue_v2_dead_task`，
+  以及模块级 `_resolve_v2_complete_identity`。
+- 拆分只移动代码，不重写协议：Lua 脚本名、`num_keys`、KEYS 顺序、ARGV 取值（lease_expiry /
+  lease_ttl / owner_token / execution_generation / completed_ttl / tombstone_ttl /
+  retry_max / dead_max / corrupt_max / dead hash TTL）、端口调用顺序、直接 Redis 调用
+  （`hget`/`lrem`/`hset`/`rpush`/`expire`）、`pipeline(transaction=True)` 命令顺序都保持不变。
+- 兼容语义逐条保持：v1 `enqueue` 的 restricted 告警与「ConnectionError → 结构化拒绝 /
+  本地回落」分支、`v1_enqueue_failed()` 与 `redis_unavailable` 两种 reason 的区分；
+  claim 先 ready 再 retry 且两个脚本共用同一 generation；heartbeat 只在 token 非空时走
+  加锁脚本、否则退回 `EXPIRE`；v1 `complete` 允许空 token 的 legacy 形式；`fail` 在
+  Task 且 retry 预算未用尽时走 retry，否则进 dead-letter；v2 `enqueue` 的
+  `redis_unavailable` 结构化返回；`dequeue_v2` 的 corrupt 隔离与 `retry_after=30`
+  异常映射；`complete_v2`/`fail_v2` 必须同时具备 task_id、task_type 与 owner_token，
+  缺任一项直接返回 0 且不触达 Redis；`fail_v2` 的 retry 预算派生与
+  `retry_count < max_retries` 边界；`retry_from_dead_v2` 的 hash 缺失时 LREM 修复、
+  dead payload 校验失败拒绝、以及 `lrem`/`hset`/`rpush` 管线与 `finally` 释放。
+- 新增入口契约基线 `tests/test_services/test_task_queue_service_entry_contract.py`（44 项）：
+  用脚本化 Redis 替身钉住 11 个入口的脚本 ARGV、fallback 决策、fencing 拒绝、指标计数、
+  异常映射、管线命令顺序与客户端释放次数；同一份测试通过 AST 重放 HEAD 实现（plugin
+  `/tmp/tqb-batch/tqb_head_plugin.py`）时为 44 passed，证明它是行为基线而不是新布局的回归锁。
+- 架构门禁 `tests/architecture/test_task_queue_protocol_boundaries.py` 6 → 13 项：新增入口委派
+  顺序表（含 `_get_script_client`/`_load_scripts`/`_get_client` 的生命周期调用）、全模块 50 行
+  预算、`_lua_claim`/`_lua_complete`/`_lua_heartbeat` 单一调用点，并附 4 项反向自检
+  （内联 helper、交换委派顺序、放大函数预算、复制 Lua 字面量）。
+- 差分对拍 `/tmp/tqb-batch/differential.py`：HEAD 实现（`types.MethodType` 绑定到同一实例）
+  与拆分实现跑同一随机用例，比较返回值、异常（类型名/消息/`retry_after`）、脚本与 Redis
+  调用日志、指标增量、日志记录、实例状态与 `_local_tasks`；4 个种子 × 800 用例 = 3200 用例
+  全部 0 mismatch、0 harness gap、0 dead queue，20 类脚本化响应的消费次数两侧完全一致。
+- 变异测试 42 个（覆盖每个新增 helper 的关键判定：告警移除、reason 替换、fallback 返回值、
+  指标漏记、ARGV 换位、日志移除、TTL 互换、`retry_after` 改值、边界 `<=`、管线顺序、
+  retry_count 归零、缺失释放等），全部被拒绝（0 survivor、0 pattern miss）；另记录 1 项
+  等价变异排除（`execute_v1_fail_dead` 从不读取 `error` 参数）。
+- AST 证明：52 个未触碰函数逐字未变、0 个旧函数消失、模块语句与类方法序列无删除且保持相对
+  顺序（新增模块函数 `_resolve_v2_complete_identity` 已声明）、19 条入口内消失语句全部由 19 条
+  已触发规则解释（anti-vacuity：无未触发规则）。
+- 本机按当前 YAML 精确重放 CI 三步：Static architecture & non-GPU regression 422 个路径
+  7350 passed / 0 failed（442.03 秒，64 条既有 DeprecationWarning）、Mocked readiness boundary
+  regression 69 passed、Cloud OCR profile boundary regression 30 passed；这是本地清单重放，
+  不代表远端 CI 或生产验收。
+- Ruff（`--ignore I001,F401,N818`，与 HEAD 同一既有豁免集）通过；`ruff format --check` 的
+  格式化差异数量与 HEAD 相同（4 处，均为既有差异），未给该文件新增格式漂移。
+- 仍未执行生产操作、真实 Redis 故障恢复、多 dispatcher 竞争或备份恢复演练；本批只覆盖
+  `task_queue_service`，不覆盖 OCR 导入编排、AI 分析执行或真实 worker 进程。任务队列域剩余
+  超预算函数为 `task_queue_worker._enqueue_v2_with_local_fallback` 72、
+  `task_queue_worker.graceful_shutdown_v2` 56、`task_queue_v2_transition_redis_contract.
+  execute_v2_complete` 61 与 v1 `_heartbeat_loop`。
