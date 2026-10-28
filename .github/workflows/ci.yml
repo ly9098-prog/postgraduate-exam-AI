@@ -658,6 +658,7 @@ jobs:
             tests/test_services/test_study_report_projection.py \
             tests/architecture/test_study_report_projection_boundaries.py \
             tests/test_services/test_study_report_overview_query_contract.py \
+            tests/test_services/test_study_report_detail_contract.py \
             tests/architecture/test_study_overview_boundaries.py \
             tests/test_services/test_study_hub_overview_contract.py \
             tests/architecture/test_study_hub_overview_boundaries.py \

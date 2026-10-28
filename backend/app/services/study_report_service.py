@@ -323,47 +323,12 @@ async def get_overview(
 # ── 2. Review Plan ──────────────────────────────────────────────────
 
 
-async def get_review_plan(
-    db: AsyncSession, user_id: int, subject_id: int | None = None, limit: int = 20
-) -> dict:
-    now = utcnow()
-    overdue_threshold = now - timedelta(days=1)
+# ── 2. Review Plan ──────────────────────────────────────────────────
 
-    # 总数
-    def _rp_count_q(where_extra):
-        q = select(func.count(UserQuestionState.id)).where(
-            UserQuestionState.user_id == user_id, *where_extra
-        )
-        if subject_id is not None:
-            q = q.join(Question, UserQuestionState.question_id == Question.id).where(
-                Question.subject_id == subject_id
-            )
-        return q
 
-    due_count = (
-        await db.execute(
-            _rp_count_q(
-                [
-                    UserQuestionState.next_review_at <= now,
-                    UserQuestionState.next_review_at.isnot(None),
-                ]
-            )
-        )
-    ).scalar_one()
-
-    overdue_count = (
-        await db.execute(
-            _rp_count_q(
-                [
-                    UserQuestionState.next_review_at < overdue_threshold,
-                    UserQuestionState.next_review_at.isnot(None),
-                ]
-            )
-        )
-    ).scalar_one()
-
-    # 明细列表（按优先级排序）
-    items_q = select(
+def _review_plan_items_query(user_id: int, subject_id: int | None, now, limit: int):
+    """Build the priority-ordered due-review detail query."""
+    query = select(
         UserQuestionState.question_id,
         UserQuestionState.box_level,
         UserQuestionState.wrong_count,
@@ -375,49 +340,72 @@ async def get_review_plan(
         UserQuestionState.next_review_at.isnot(None),
     )
     if subject_id is not None:
-        items_q = items_q.join(
+        query = query.join(
             Question, UserQuestionState.question_id == Question.id
         ).where(Question.subject_id == subject_id)
-
-    items_q = items_q.order_by(
+    return query.order_by(
         UserQuestionState.next_review_at.asc(),
         UserQuestionState.box_level.asc(),
         UserQuestionState.wrong_count.desc(),
     ).limit(limit)
 
-    rows = (await db.execute(items_q)).all()
-    q_ids = [r.question_id for r in rows]
 
-    # 批量加载知识点
-    kp_map: dict[int, tuple[int, str]] = {}
-    if q_ids:
-        kp_rows = (
-            await db.execute(
-                select(
-                    QuestionKnowledgePoint.question_id,
-                    QuestionKnowledgePoint.knowledge_point_id,
-                    KnowledgePoint.name,
-                )
-                .join(
-                    KnowledgePoint,
-                    QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
-                )
-                .where(QuestionKnowledgePoint.question_id.in_(q_ids))
-                .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
+async def _load_first_knowledge_point_map(
+    db: AsyncSession, question_ids: list[int]
+) -> dict[int, tuple[int, str]]:
+    """Batch-load each question's first knowledge point (lowest link id wins)."""
+    knowledge_points: dict[int, tuple[int, str]] = {}
+    if not question_ids:
+        return knowledge_points
+    rows = (
+        await db.execute(
+            select(
+                QuestionKnowledgePoint.question_id,
+                QuestionKnowledgePoint.knowledge_point_id,
+                KnowledgePoint.name,
             )
-        ).all()
-        for r in kp_rows:
-            if r.question_id not in kp_map:
-                kp_map[r.question_id] = (r.knowledge_point_id, r.name)
+            .join(
+                KnowledgePoint,
+                QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+            )
+            .where(QuestionKnowledgePoint.question_id.in_(question_ids))
+            .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
+        )
+    ).all()
+    for row in rows:
+        if row.question_id not in knowledge_points:
+            knowledge_points[row.question_id] = (row.knowledge_point_id, row.name)
+    return knowledge_points
 
-    items = []
-    for r in rows:
-        kp = kp_map.get(r.question_id)
-        items.append(build_review_plan_item(row=r, knowledge_point=kp, now=now))
 
+async def get_review_plan(
+    db: AsyncSession, user_id: int, subject_id: int | None = None, limit: int = 20
+) -> dict:
+    now = utcnow()
+    overdue_threshold = now - timedelta(days=1)
+
+    # 总数
+    due_count, overdue_count = await _count_review_states(
+        db, user_id, subject_id, now, overdue_threshold
+    )
+
+    # 明细列表（按优先级排序）
+    rows = (
+        await db.execute(_review_plan_items_query(user_id, subject_id, now, limit))
+    ).all()
+    kp_map = await _load_first_knowledge_point_map(
+        db, [row.question_id for row in rows]
+    )
+
+    items = [
+        build_review_plan_item(
+            row=row, knowledge_point=kp_map.get(row.question_id), now=now
+        )
+        for row in rows
+    ]
     return {
-        "due_count": int(due_count),
-        "overdue_count": int(overdue_count),
+        "due_count": due_count,
+        "overdue_count": overdue_count,
         "today_recommended_count": len(items),
         "items": items,
     }
@@ -501,37 +489,14 @@ async def get_knowledge_mastery(
 # ── 5. Wrong Questions ──────────────────────────────────────────────
 
 
-async def get_wrong_questions_summary(
-    db: AsyncSession,
-    user_id: int,
-    subject_id: int | None = None,
-    limit: int = 20,
-    min_wrong_count: int = 1,
-) -> dict:
-    # 总数
-    count_q = select(func.count(UserQuestionState.id)).where(
-        UserQuestionState.user_id == user_id,
-        UserQuestionState.wrong_count >= min_wrong_count,
-    )
-    if subject_id is not None:
-        count_q = count_q.join(
-            Question, UserQuestionState.question_id == Question.id
-        ).where(Question.subject_id == subject_id)
-    wrong_total = (await db.execute(count_q)).scalar_one()
+# ── 5. Wrong Questions ──────────────────────────────────────────────
 
-    repeated_q = select(func.count(UserQuestionState.id)).where(
-        UserQuestionState.user_id == user_id,
-        UserQuestionState.wrong_count >= 3,
-        UserQuestionState.wrong_count >= min_wrong_count,
-    )
-    if subject_id is not None:
-        repeated_q = repeated_q.join(
-            Question, UserQuestionState.question_id == Question.id
-        ).where(Question.subject_id == subject_id)
-    repeated_count = (await db.execute(repeated_q)).scalar_one()
 
-    # 明细（先查 UserQuestionState + Question，再批量加载知识点，避免 outerjoin 行膨胀）
-    detail_q = select(
+def _wrong_summary_items_query(
+    user_id: int, subject_id: int | None, min_wrong_count: int, limit: int
+):
+    """Build the wrong-question detail query; the question join always applies."""
+    query = select(
         UserQuestionState.question_id,
         UserQuestionState.wrong_count,
         UserQuestionState.correct_count,
@@ -545,51 +510,75 @@ async def get_wrong_questions_summary(
         UserQuestionState.wrong_count >= min_wrong_count,
     )
     if subject_id is not None:
-        detail_q = detail_q.join(
+        query = query.join(
             Question, UserQuestionState.question_id == Question.id
         ).where(Question.subject_id == subject_id)
     else:
-        detail_q = detail_q.join(Question, UserQuestionState.question_id == Question.id)
-
-    detail_q = detail_q.order_by(
+        query = query.join(Question, UserQuestionState.question_id == Question.id)
+    return query.order_by(
         UserQuestionState.wrong_count.desc(),
         UserQuestionState.box_level.asc(),
         UserQuestionState.last_answered_at.desc().nullslast(),
     ).limit(limit)
 
-    rows = (await db.execute(detail_q)).all()
-    q_ids = [r.question_id for r in rows]
 
-    # 批量加载知识点（每题只取第一个 KP）
-    kp_map: dict[int, tuple[int, str]] = {}
-    if q_ids:
-        kp_rows = (
-            await db.execute(
-                select(
-                    QuestionKnowledgePoint.question_id,
-                    QuestionKnowledgePoint.knowledge_point_id,
-                    KnowledgePoint.name,
-                )
-                .join(
-                    KnowledgePoint,
-                    QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
-                )
-                .where(QuestionKnowledgePoint.question_id.in_(q_ids))
-                .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.id)
+async def _count_wrong_summary_states(
+    db: AsyncSession, user_id: int, subject_id: int | None, min_wrong_count: int
+) -> tuple[int, int]:
+    """Count wrong-question totals and repeated ones in the original order."""
+    wrong_total = (
+        await db.execute(
+            _review_state_count_query(
+                user_id,
+                subject_id,
+                [UserQuestionState.wrong_count >= min_wrong_count],
             )
-        ).all()
-        for r in kp_rows:
-            if r.question_id not in kp_map:
-                kp_map[r.question_id] = (r.knowledge_point_id, r.name)
+        )
+    ).scalar_one()
+    repeated_count = (
+        await db.execute(
+            _review_state_count_query(
+                user_id,
+                subject_id,
+                [
+                    UserQuestionState.wrong_count >= 3,
+                    UserQuestionState.wrong_count >= min_wrong_count,
+                ],
+            )
+        )
+    ).scalar_one()
+    return int(wrong_total), int(repeated_count)
 
-    items = []
-    for r in rows:
-        kp = kp_map.get(r.question_id)
-        items.append(build_wrong_question_item(row=r, knowledge_point=kp))
 
+async def get_wrong_questions_summary(
+    db: AsyncSession,
+    user_id: int,
+    subject_id: int | None = None,
+    limit: int = 20,
+    min_wrong_count: int = 1,
+) -> dict:
+    # 总数
+    wrong_total, repeated_count = await _count_wrong_summary_states(
+        db, user_id, subject_id, min_wrong_count
+    )
+
+    # 明细（先查 UserQuestionState + Question，再批量加载知识点，避免 outerjoin 行膨胀）
+    rows = (
+        await db.execute(
+            _wrong_summary_items_query(user_id, subject_id, min_wrong_count, limit)
+        )
+    ).all()
+    kp_map = await _load_first_knowledge_point_map(
+        db, [row.question_id for row in rows]
+    )
+
+    items = [
+        build_wrong_question_item(row=row, knowledge_point=kp_map.get(row.question_id))
+        for row in rows
+    ]
     return {
-        "wrong_question_count": int(wrong_total),
-        "repeated_wrong_question_count": int(repeated_count),
+        "wrong_question_count": wrong_total,
+        "repeated_wrong_question_count": repeated_count,
         "items": items,
     }
 

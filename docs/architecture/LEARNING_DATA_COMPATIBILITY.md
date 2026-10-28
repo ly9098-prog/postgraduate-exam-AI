@@ -540,3 +540,61 @@
 - 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
   `review_scheduler`，不覆盖 `study_report_service`、任务队列、OCR 导入编排、AI 分析执行等学习域大函数，
   也不声称学习域整体完成。
+
+## 16. 学习报告明细投影（study_report_service）拆分
+
+- 2026-10-28，`study_report_service` 两个超预算入口收敛：`get_review_plan` 98 → 31 行、
+  `get_wrong_questions_summary` 91 → 31 行；新增 4 个 helper：`_wrong_summary_items_query` 28、
+  `_load_first_knowledge_point_map` 26、`_count_wrong_summary_states` 26、`_review_plan_items_query` 22，
+  全部满足 300/50 预算；模块 625 → 614 行，顶层定义 15 → 19，其余 13 个函数逐字未动。
+- 该批次优先复用既有单点而非新增平行实现：`get_review_plan` 的两路去重计数改为调用既有
+  `_count_review_states`（其内部复用既有 `_review_state_count_query`），`get_wrong_questions_summary`
+  的两路计数改用同一 `_review_state_count_query` 组装；原先在两个入口里逐字重复的知识点批量加载
+  （含 `question_knowledge_points.id` 升序取首条、`IN` 批量、join `knowledge_points`）收敛为
+  `_load_first_knowledge_point_map`，模块内该 loader 只有一处定义、两处调用，两个入口内不再出现
+  `QuestionKnowledgePoint`。
+- 复习计划语义保持：仍先取 `utcnow()` 一次并派生 `overdue_threshold = now - 1 天`；到期计数仍是
+  `next_review_at <= now AND next_review_at IS NOT NULL`，逾期计数仍是
+  `next_review_at < overdue_threshold AND next_review_at IS NOT NULL`，给定 `subject_id` 时两者都
+  追加 `JOIN questions ... AND questions.subject_id = ?`；明细仍是同一列集
+  （`question_id`/`box_level`/`wrong_count`/`correct_count`/`next_review_at`）配同一组过滤，
+  仍按 `next_review_at ASC, box_level ASC, wrong_count DESC` 排序并 `LIMIT`，仍批量取知识点、
+  缺失时回落 `knowledge_point_id=None`/`knowledge_point_name=None`，返回键序
+  `due_count`/`overdue_count`/`today_recommended_count`/`items` 不变。
+- 错题摘要语义保持：总数仍是 `wrong_count >= min_wrong_count`，重复错题仍是
+  `wrong_count >= 3 AND wrong_count >= min_wrong_count`（两条阈值并存这一历史形态逐字保留），
+  给定科目时同样追加科目 JOIN 过滤；明细仍是 8 列（含 `questions.content AS q_content`），
+  无论是否限定科目都 JOIN `questions`，仍按 `wrong_count DESC, box_level ASC,
+  last_answered_at DESC NULLS LAST` 排序并 `LIMIT`，题目状态仍按
+  「`wrong_count >= 3` → `repeated_wrong`，否则 `correct_count == 0` → `not_mastered`，否则
+  `needs_review`」的优先级判定，返回键序与 `items` 投影不变。
+- 一处时间点差异已记录：`int(due_count)`/`int(wrong_total)` 等换算从「返回载荷时」提前到
+  「共享计数 helper 内」，对真实数据库不可观测——`COUNT()` 永不返回 NULL，而 HEAD 的共享 helper
+  本来就是提前换算；本批差分工具因此只注入合法聚合结果（0/正整数），并在工具内注明该约束。
+- 13 项固定契约（`tests/test_services/test_study_report_detail_contract.py`）在拆分后与拆分前均可通过
+  （HEAD 原实现经 AST 提取后以 pytest 插件回放：13 passed），覆盖语句顺序、科目 JOIN 的有无、
+  两路计数的绑定参数、`LIMIT` 与阈值透传、`IS NOT NULL` 与 `<=` 边界、排序键顺序、`NULLS LAST`、
+  首条知识点胜出、载荷缺省回落与错题状态优先级，以及「同一次 `utcnow()` 同时喂给计数与逐行投影」。
+- 1400 例随机差分（`/tmp/srs-batch/differential.py`，两个入口各 700 例）比较返回值、异常、渲染 SQL 与
+  绑定参数序列、结果访问器序列以及响应队列消费集合：0 mismatch、0 harness gap、0 dead queue。
+- 32 个故障变体全部被拒绝（日志 `/tmp/srs-batch/mutants.log`，32/32 rejected），每个变体仅作用于单个函数，
+  覆盖计数阈值与范围透传、计数投影互换、`LIMIT` 透传、时间窗口（`<=` 边界、单次取时钟）、`IS NOT NULL`
+  守卫、排序键顺序与 `NULLS LAST`、科目 JOIN、知识点 join 与首条规则、明细列集与 `>=`/`>` 边界。
+- AST 证明（`/tmp/srs-batch/verify_ast.py`、报告 `/tmp/srs-batch/ast-report.json`）：13 个未触及函数与 HEAD AST
+  完全一致（0 differing、0 old-only）；模块级语句 23/23 逐字保留、0 新增；两个入口消失的 57 个表达式由
+  15 条allowance 规则全部解释且每条规则至少命中一次（反空规则自检），0 去重缺口、0 未解释差异。
+- 架构门禁（`tests/architecture/test_study_report_projection_boundaries.py`）在既有 3 项之上新增 6 项：
+  6 个函数的预算、两个入口签名与默认值、4 个 helper 的冻结单行语义、委派顺序、单点归属
+  （计数经 `_count_review_states`/`_review_state_count_query`、知识点 loader 唯一、`.limit(limit)` 与
+  `NULLS LAST` 各一处），并含「放宽 helper 预算」「颠倒计数与明细读取顺序」「复制知识点 loader」
+  三项反向自检。
+- 定向回归：新增契约 13 + 门禁 9 与既有 `test_study_report_service`、
+  `test_study_report_compatibility`、`test_study_report_projection`、
+  `test_study_report_overview_query_contract` 合计 104 passed；严格 Ruff、`ruff format --check` 与
+  50 行预算扫描通过。
+- 冻结业务、测试与 CI 清单后，本机按当前 YAML 的静态步骤精确重放 421 个测试文件：7299 passed、0 failed、
+  64 条既有弃用 warning，420.35 秒；Mocked readiness boundary regression 69 passed；
+  Cloud OCR profile boundary regression 30 passed。这是本地清单重放，不代表远端 CI 或生产验收。
+- 仍未执行生产操作、真实 PostgreSQL、真实 OCR/AI、微信真机或生产 Admin 浏览器验收；本批只覆盖
+  `study_report_service` 的两个明细入口，不覆盖任务队列、OCR 导入编排、AI 分析执行等学习域大函数，
+  也不声称学习域整体完成。
