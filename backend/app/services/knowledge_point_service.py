@@ -76,6 +76,35 @@ async def _create_canonical_knowledge_point(
     )
 
 
+async def _resolve_entry_point(
+    db: AsyncSession,
+    subject_id: int,
+    display: str,
+    normalized: str,
+    active_names: dict,
+    active_aliases: dict,
+    inactive_terms: set[str],
+    *,
+    create_if_missing: bool,
+) -> KnowledgePoint | None:
+    """Resolve one normalized entry, optionally creating its canonical row."""
+    point = _resolve_from_indexes(
+        normalized,
+        active_names,
+        active_aliases,
+        inactive_terms,
+        block_inactive=create_if_missing,
+    )
+    if point is None and create_if_missing:
+        point = await _create_canonical_knowledge_point(
+            db, subject_id, display, normalized
+        )
+        # Make the just-created point visible to later entries in this same
+        # payload without another catalog query.
+        active_names[normalized] = point
+    return point
+
+
 async def resolve_knowledge_points(
     db: AsyncSession,
     subject_id: int,
@@ -85,15 +114,10 @@ async def resolve_knowledge_points(
 ) -> list[KnowledgePoint]:
     """Resolve user/AI/import names to active canonical KnowledgePoint rows.
 
-    Resolution order for each input is deterministic:
-    1. active canonical ``normalized_name`` exact match;
-    2. active canonical ``aliases`` exact match after normalization;
-    3. if the term belongs only to inactive data, writes are blocked;
-    4. only when ``create_if_missing=True`` may a genuinely new canonical row be created.
-
-    Multiple input spellings resolving to the same canonical point are collapsed
-    while preserving first occurrence.  This prevents e.g. ``Catalan数`` and
-    ``卡特兰数`` from creating duplicate question mappings in one import payload.
+    Deterministic order per input: active ``normalized_name`` exact match, then
+    active ``aliases`` after normalization; terms matching only inactive data are
+    blocked, and only ``create_if_missing=True`` may create a canonical row.
+    Spellings resolving to one point collapse while preserving first occurrence.
     """
     entries = normalize_kp_input(names)
     if not entries:
@@ -107,20 +131,16 @@ async def resolve_knowledge_points(
     resolved_points: list[KnowledgePoint] = []
     seen_ids: set[int] = set()
     for display, normalized in entries:
-        point = _resolve_from_indexes(
+        point = await _resolve_entry_point(
+            db,
+            int(subject_id),
+            display,
             normalized,
             active_names,
             active_aliases,
             inactive_terms,
-            block_inactive=create_if_missing,
+            create_if_missing=create_if_missing,
         )
-        if point is None and create_if_missing:
-            point = await _create_canonical_knowledge_point(
-                db, int(subject_id), display, normalized
-            )
-            # Make the just-created point visible to later entries in this same
-            # payload without another catalog query.
-            active_names[normalized] = point
         if point is None:
             continue
 
@@ -170,6 +190,133 @@ async def _load_mappings(
     return list(result.scalars().all())
 
 
+def _sync_summary(created: int, updated: int, deleted: int, total: int) -> dict:
+    return {
+        "changed": bool(created or updated or deleted),
+        "created": created,
+        "updated": updated,
+        "deleted": deleted,
+        "total": total,
+    }
+
+
+async def _sync_without_subject(
+    db: AsyncSession, question_id: int, existing: list, replace: bool
+) -> dict:
+    """No valid subject: only an explicit replace may clear the old mappings."""
+    if replace and existing:
+        for mapping in existing:
+            await db.delete(mapping)
+        await db.flush()
+        return _sync_summary(0, 0, len(existing), 0)
+    logger.warning(
+        "sync_question_knowledge_points: qid=%d has no subject, skip", question_id
+    )
+    return _sync_summary(0, 0, 0, 0)
+
+
+async def _swap_question_positions(
+    db: AsyncSession, existing_by_kp: dict, kp_entries: list[tuple[int, int]]
+) -> int:
+    """Two-phase position rewrite so a swap never trips the unique constraint."""
+    changed = [
+        (kp_id, position)
+        for kp_id, position in kp_entries
+        if kp_id in existing_by_kp and existing_by_kp[kp_id].position != position
+    ]
+    if not changed:
+        return 0
+    offset = 1_000_000
+    for index, (kp_id, _position) in enumerate(changed):
+        existing_by_kp[kp_id].position = offset + index
+    await db.flush()
+    for kp_id, position in changed:
+        existing_by_kp[kp_id].position = position
+    await db.flush()
+    return len(changed)
+
+
+def _insert_missing_mappings(
+    db: AsyncSession,
+    question_id: int,
+    existing_by_kp: dict,
+    kp_entries: list[tuple[int, int]],
+    source: str,
+    *,
+    base: int = 0,
+) -> int:
+    """Insert mappings absent from ``existing_by_kp`` at ``base + position``."""
+    created = 0
+    for offset, (kp_id, _position) in enumerate(kp_entries):
+        if kp_id in existing_by_kp:
+            continue
+        db.add(
+            QuestionKnowledgePoint(
+                question_id=question_id,
+                knowledge_point_id=kp_id,
+                role="main",
+                weight=1.0,
+                source=source,
+                position=base + offset,
+            )
+        )
+        created += 1
+    return created
+
+
+async def _replace_question_mappings(
+    db: AsyncSession,
+    question_id: int,
+    existing: list,
+    existing_by_kp: dict,
+    kp_entries: list[tuple[int, int]],
+    source: str,
+) -> tuple[int, int, int]:
+    """Replace branch: delete removed rows, rewrite positions, insert new ones."""
+    kp_ids = {kp_id for kp_id, _position in kp_entries}
+    deleted = 0
+    # 先删后 flush：释放旧 position，避免后续 INSERT/UPDATE 与未删除行冲突。
+    removed = [m for m in existing if m.knowledge_point_id not in kp_ids]
+    for mapping in removed:
+        await db.delete(mapping)
+        deleted += 1
+    if removed:
+        await db.flush()
+        existing_by_kp = {
+            m.knowledge_point_id: m for m in existing if m.knowledge_point_id in kp_ids
+        }
+    updated = await _swap_question_positions(db, existing_by_kp, kp_entries)
+    created = _insert_missing_mappings(
+        db, question_id, existing_by_kp, kp_entries, source
+    )
+    return created, updated, deleted
+
+
+async def _resolve_kp_entries(
+    db: AsyncSession, subject_id: int, entries: list[tuple[str, str]]
+) -> list[tuple[int, int]]:
+    """Resolve payload names to (knowledge_point_id, position) pairs in order."""
+    resolved_points = await resolve_knowledge_points(
+        db, subject_id, [display for display, _norm in entries], create_if_missing=True
+    )
+    # Position belongs to canonical distinct points: alias spellings collapse.
+    return [(int(kp.id), position) for position, kp in enumerate(resolved_points)]
+
+
+def _append_missing_mappings(
+    db: AsyncSession,
+    question_id: int,
+    existing_by_kp: dict,
+    kp_entries: list[tuple[int, int]],
+    source: str,
+) -> int:
+    """Additive branch: append missing mappings after every existing position."""
+    base = max((m.position for m in existing_by_kp.values()), default=-1) + 1
+    return _insert_missing_mappings(
+        db, question_id, existing_by_kp, kp_entries, source, base=base
+    )
+
+
 async def sync_question_knowledge_points(
     db: AsyncSession,
     question: Question,
@@ -180,23 +327,15 @@ async def sync_question_knowledge_points(
 ) -> dict:
     """把题目的知识点同步进 question_knowledge_points 关联表（唯一事实源）。
 
-    语义（固定）：
-    - ``kp_names is None``：字段未提供，不改动旧映射（no-op）。
-    - ``kp_names == []`` 且 ``replace=True``：用户明确清空，删除全部映射。
-    - 非空数组 + ``replace=True``：最终映射与新数组完全一致（顺序按 position）。
-    - 非空数组 + ``replace=False``：additive/idempotent（用于回填等）。
-
-    subject 不变量：get/create 一律使用 ``question.subject_id``；调用方在修改
-    subject 后调用本函数，旧科目映射会在 replace 时被删除。
-
-    返回: {"changed", "created", "updated", "deleted", "total"}
+    kp_names 为 None 时 no-op；replace=True 时最终映射与新数组一致（[] 显式清空），
+    replace=False 时 additive/idempotent，get/create 一律使用 ``question.subject_id``。
+    返回 {"changed","created","updated","deleted","total"}。
     """
     if kp_names is None:
-        return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
+        return _sync_summary(0, 0, 0, 0)
 
-    # KP links are part of the immutable revision state. Serialize mutations on
-    # the parent Question row so concurrent scalar/KP edits cannot produce a
-    # revision assembled from two different transaction states.
+    # KP links are part of the immutable revision state: serialize mutations on
+    # the parent Question row so concurrent scalar/KP edits cannot mix revisions.
     from app.services.question_revision_service import lock_question_for_revision
 
     question = await lock_question_for_revision(db, int(question.id))
@@ -206,104 +345,22 @@ async def sync_question_knowledge_points(
     existing_by_kp = {m.knowledge_point_id: m for m in existing}
 
     if not subject_id:
-        # 无有效科目：无法 get/create；仅 replace 且要求清空时删除全部。
-        if replace and existing:
-            for m in existing:
-                await db.delete(m)
-            await db.flush()
-            return {
-                "changed": True,
-                "created": 0,
-                "updated": 0,
-                "deleted": len(existing),
-                "total": 0,
-            }
-        logger.warning(
-            "sync_question_knowledge_points: qid=%d has no subject, skip", question.id
-        )
-        return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
+        return await _sync_without_subject(db, question.id, existing, replace)
 
-    resolved_points = await resolve_knowledge_points(
-        db, subject_id, [display for display, _norm in entries], create_if_missing=True
-    )
-    # Position belongs to canonical distinct points, not raw aliases.  If one
-    # payload contains both “Catalan数” and “卡特兰数”, they become one mapping.
-    kp_entries: list[tuple[int, int]] = [
-        (int(kp.id), position) for position, kp in enumerate(resolved_points)
-    ]
-
-    target_kp_ids = {kp_id for kp_id, _position in kp_entries}
-    created = updated = deleted = 0
+    kp_entries = await _resolve_kp_entries(db, subject_id, entries)
 
     if replace:
-        # 先删后 flush：释放旧 position，避免后续 INSERT/UPDATE 与未删除行冲突。
-        removed = [m for m in existing if m.knowledge_point_id not in target_kp_ids]
-        for m in removed:
-            await db.delete(m)
-            deleted += 1
-        if removed:
-            await db.flush()
-            existing = [m for m in existing if m.knowledge_point_id in target_kp_ids]
-            existing_by_kp = {m.knowledge_point_id: m for m in existing}
-
-        # 两阶段 position 更新：先把要改的行挪到唯一临时位，再落最终位。
-        # SQLAlchemy 同表 flush 按 UPDATE→INSERT→DELETE 排序，逐条 UPDATE 会造成
-        # 瞬时重复 (question_id, position)，违反 uq_qkp_question_position（swap 场景）。
-        changed = [
-            (kp_id, position)
-            for kp_id, position in kp_entries
-            if kp_id in existing_by_kp and existing_by_kp[kp_id].position != position
-        ]
-        if changed:
-            offset = 1_000_000
-            for i, (kp_id, _pos) in enumerate(changed):
-                existing_by_kp[kp_id].position = offset + i
-            await db.flush()
-            for kp_id, position in changed:
-                existing_by_kp[kp_id].position = position
-                updated += 1
-            await db.flush()
-
-        for kp_id, position in kp_entries:
-            if kp_id in existing_by_kp:
-                continue
-            db.add(
-                QuestionKnowledgePoint(
-                    question_id=question.id,
-                    knowledge_point_id=kp_id,
-                    role="main",
-                    weight=1.0,
-                    source=source,
-                    position=position,
-                )
-            )
-            created += 1
+        created, updated, deleted = await _replace_question_mappings(
+            db, question.id, existing, existing_by_kp, kp_entries, source
+        )
     else:
-        # additive：仅补充缺失映射，追加到现有 position 之后，保持幂等（不动旧行）。
-        base = max((m.position for m in existing), default=-1) + 1
-        for position, (kp_id, _pos) in enumerate(kp_entries):
-            if kp_id in existing_by_kp:
-                continue
-            db.add(
-                QuestionKnowledgePoint(
-                    question_id=question.id,
-                    knowledge_point_id=kp_id,
-                    role="main",
-                    weight=1.0,
-                    source=source,
-                    position=base + position,
-                )
-            )
-            created += 1
+        created = _append_missing_mappings(
+            db, question.id, existing_by_kp, kp_entries, source
+        )
+        updated = deleted = 0
 
     await db.flush()
-    return {
-        "changed": bool(created or updated or deleted),
-        "created": created,
-        "updated": updated,
-        "deleted": deleted,
-        "total": len(entries),
-    }
+    return _sync_summary(created, updated, deleted, len(entries))
 
 
 async def replace_question_knowledge_points(
